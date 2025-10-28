@@ -1,5 +1,23 @@
 # Task Work - Unified Implementation Command
 
+## Feature Detection
+
+This command supports **graceful degradation** based on installed packages:
+
+### Taskwright Only (Core Workflow)
+- Loads task description, acceptance criteria, implementation notes
+- Executes full workflow with architectural review and quality gates
+- No requirements/epic/BDD loading (require-kit features)
+
+### Taskwright + Require-Kit (Enhanced Workflow)
+- All core features PLUS:
+- Loads EARS requirements if linked in task frontmatter
+- Loads BDD/Gherkin scenarios if linked
+- Includes epic/feature context for hierarchy
+- Enables requirements-based acceptance criteria enrichment
+
+**Note**: The workflow automatically detects require-kit availability and adjusts Phase 1 loading accordingly. No manual configuration required.
+
 ## Command Syntax
 
 ```bash
@@ -628,6 +646,13 @@ Proceed with state transition? [Y/n]:
 
 **READ** task file from final location: `{file_path}`
 
+**FEATURE DETECTION** - Check for require-kit:
+```python
+from lib.feature_detection import supports_requirements, supports_epics, supports_bdd
+
+REQUIREMENTS_AVAILABLE = supports_requirements()  # True if require-kit installed
+```
+
 **EXTRACT** required context:
 ```python
 task_context = {
@@ -635,26 +660,33 @@ task_context = {
     "file_path": file_path,
     "state": current_state,
 
-    # From frontmatter
+    # Core fields (always available)
     "title": frontmatter.title,
-    "requirements": frontmatter.requirements,  # List of REQ-XXX IDs
-    "bdd_scenarios": frontmatter.bdd_scenarios,  # List of BDD-XXX IDs
-    "epic": frontmatter.epic,  # EPIC-XXX
-    "feature": frontmatter.feature,  # FEAT-XXX
     "priority": frontmatter.priority,
     "assignee": frontmatter.assignee,
-
-    # From content
-    "acceptance_criteria": extract_acceptance_criteria(content),
     "description": extract_description(content),
+    "acceptance_criteria": extract_acceptance_criteria(content),
     "implementation_notes": extract_implementation_notes(content)
 }
+
+# Conditional fields (only if require-kit installed)
+if REQUIREMENTS_AVAILABLE:
+    task_context["requirements"] = frontmatter.requirements or []      # List of REQ-XXX IDs
+    task_context["bdd_scenarios"] = frontmatter.bdd_scenarios or []    # List of BDD-XXX IDs
+    task_context["epic"] = frontmatter.epic or None                    # EPIC-XXX
+    task_context["feature"] = frontmatter.feature or None              # FEAT-XXX
+else:
+    # Gracefully skip requirements features if require-kit not installed
+    task_context["requirements"] = []
+    task_context["bdd_scenarios"] = []
+    task_context["epic"] = None
+    task_context["feature"] = None
 ```
 
 **VALIDATE** essential fields exist:
 - `title`: Must be present
 - `acceptance_criteria`: At least one criterion required
-- Warn if missing: `requirements`, `bdd_scenarios` (not blocking)
+- Warn if missing: `requirements`, `bdd_scenarios` (only if require-kit installed)
 
 **DISPLAY** loaded context summary:
 ```
@@ -665,10 +697,14 @@ Title: {title}
 State: {state}
 Priority: {priority}
 
+{if REQUIREMENTS_AVAILABLE:}
 Requirements: {len(requirements)} linked ({', '.join(requirements[:3])}{' ...' if len > 3})
 BDD Scenarios: {len(bdd_scenarios)} linked
 Epic: {epic or 'None'}
 Feature: {feature or 'None'}
+{else:}
+[Requirements features not available - install require-kit for EARS/BDD/Epic support]
+{endif}
 
 Acceptance Criteria: {len(acceptance_criteria)} items
 ```

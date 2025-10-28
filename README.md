@@ -15,17 +15,65 @@ All with automatic test execution, quality gates, and state management!
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ai-engineer.git
-cd ai-engineer
+git clone https://github.com/yourusername/taskwright.git
+cd taskwright
 
-# Run setup
-chmod +x .claude/setup.sh
-.claude/setup.sh
+# Install to ~/.agentecflow
+chmod +x installer/scripts/install.sh
+./installer/scripts/install.sh
 
 # Create your first task (in Claude Code)
 /task-create "My first feature"
 /task-work TASK-001              # This does EVERYTHING!
 ```
+
+## 📦 Installation Options
+
+**Taskwright** supports flexible installation for different workflow needs:
+
+### Option 1: Taskwright Only (Task Workflow)
+```bash
+cd taskwright
+./installer/scripts/install.sh
+```
+
+**What you get:**
+- ✅ Task management workflow
+- ✅ Quality gates and architectural review
+- ✅ Test enforcement
+- ✅ `/task-create`, `/task-work`, `/task-status` commands
+- ❌ No EARS requirements management
+- ❌ No epic/feature hierarchy
+- ❌ No BDD scenario generation
+
+### Option 2: Taskwright + Require-Kit (Full Agentecflow)
+```bash
+# Install taskwright first
+cd taskwright
+./installer/scripts/install.sh
+
+# Then install require-kit
+cd ../require-kit
+./installer/scripts/install.sh
+```
+
+**What you get:**
+- ✅ Everything from Taskwright PLUS:
+- ✅ EARS requirements notation
+- ✅ BDD/Gherkin scenario generation
+- ✅ Epic → Feature → Task hierarchy
+- ✅ PM tool integration (Jira, Linear, GitHub, Azure DevOps)
+- ✅ Requirements-based acceptance criteria enrichment
+
+### Graceful Degradation
+
+Commands automatically detect which packages are installed and adjust their features:
+
+- **`/task-create`**: Epic/feature fields only appear if require-kit installed
+- **`/task-work`**: Requirements loading only if require-kit installed
+- **`/task-status`**: Epic/feature filters only if require-kit installed
+
+**No configuration needed!** The system detects package availability automatically.
 
 ## 📋 System Overview
 

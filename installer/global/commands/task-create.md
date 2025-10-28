@@ -2,6 +2,30 @@
 
 Create a new task with requirements, acceptance criteria, and optional BDD scenarios.
 
+## Feature Detection
+
+This command supports **graceful degradation** based on installed packages:
+
+### Taskwright Only (Core Features)
+```bash
+# Basic task creation
+/task-create "Add user authentication"
+/task-create "Add user authentication" priority:high tags:[auth,security]
+```
+
+Available fields: `title`, `priority`, `tags`, `status`, `complexity`
+
+### Taskwright + Require-Kit (Full Features)
+```bash
+# Advanced task creation with requirements management
+/task-create "Add user authentication" epic:EPIC-001 feature:FEAT-003 requirements:[REQ-001]
+/task-create "Add user authentication" epic:EPIC-001 export:jira bdd:[BDD-001]
+```
+
+Additional fields: `epic`, `feature`, `requirements`, `bdd_scenarios`, `export`
+
+**Note**: Epic, feature, and requirements functionality requires [require-kit](https://github.com/appmilla/require-kit) to be installed. The command will gracefully skip these fields if require-kit is not available.
+
 ## Usage
 ```bash
 /task-create <title> [options]
@@ -30,7 +54,9 @@ Create a new task with requirements, acceptance criteria, and optional BDD scena
 
 ## Task Structure
 
-Creates a markdown file with complete metadata:
+Creates a markdown file with metadata. The fields included depend on which packages are installed:
+
+### Core Fields (Taskwright)
 ```markdown
 ---
 id: TASK-XXX
@@ -40,15 +66,34 @@ created: 2024-01-15T10:00:00Z
 updated: 2024-01-15T10:00:00Z
 priority: high
 tags: [auth, security]
-epic: EPIC-001
-feature: FEAT-003
-requirements: [REQ-001, REQ-002]
-external_ids:
+complexity: 0
+test_results:
+  status: pending
+  coverage: null
+  last_run: null
+---
+```
+
+### Extended Fields (Taskwright + Require-Kit)
+```markdown
+---
+id: TASK-XXX
+title: Add user authentication
+status: backlog
+created: 2024-01-15T10:00:00Z
+updated: 2024-01-15T10:00:00Z
+priority: high
+tags: [auth, security]
+complexity: 0
+epic: EPIC-001                    # Requires require-kit
+feature: FEAT-003                  # Requires require-kit
+requirements: [REQ-001, REQ-002]  # Requires require-kit
+external_ids:                      # Requires require-kit
   epic_jira: PROJ-123
   epic_linear: PROJECT-456
   jira: null        # Populated after export
   linear: null      # Populated after export
-bdd_scenarios: [BDD-001]
+bdd_scenarios: [BDD-001]          # Requires require-kit
 test_results:
   status: pending
   coverage: null

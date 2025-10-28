@@ -1,21 +1,35 @@
 {
-  "name": "agentic-flow",
-  "version": "2.0.0",
-  "description": "Complete Agentecflow Implementation - Enterprise Software Engineering Lifecycle System",
-  "homepage": "https://github.com/appmilla/agentic-flow",
+  "name": "taskwright",
+  "version": "1.0.0",
+  "description": "Lightweight task workflow with quality gates, architectural review, and test enforcement",
+  "homepage": "https://github.com/appmilla/taskwright",
   "repository": {
     "type": "git",
-    "url": "https://github.com/appmilla/agentic-flow.git"
+    "url": "https://github.com/appmilla/taskwright.git"
   },
   "author": "AppMilla",
   "license": "MIT",
+  "install_to": "~/.agentecflow",
   "system": {
     "min_version": "1.0.0",
     "api_version": "v1"
   },
+  "provides": [
+    "task-management",
+    "quality-gates",
+    "architectural-review",
+    "test-enforcement",
+    "complexity-evaluation",
+    "design-first-workflow",
+    "state-tracking",
+    "kanban-workflow",
+    "test-orchestration",
+    "test-verification"
+  ],
+  "optional_integration": [
+    "require-kit"
+  ],
   "capabilities": [
-    "requirements-engineering",
-    "bdd-generation",
     "test-orchestration",
     "quality-gates",
     "state-tracking",
