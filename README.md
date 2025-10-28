@@ -13,15 +13,55 @@ All with automatic test execution, quality gates, and state management!
 
 ## 🚀 Quick Start
 
+### Installation Options
+
+taskwright supports **bidirectional optional integration** with require-kit. Choose your installation based on your needs:
+
+#### Option 1: taskwright Only (Task Execution)
+Install just the task workflow system:
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/ai-engineer.git
-cd ai-engineer
+git clone https://github.com/yourusername/taskwright.git
+cd taskwright
+chmod +x installer/scripts/install.sh
+./installer/scripts/install.sh
+```
 
-# Run setup
-chmod +x .claude/setup.sh
-.claude/setup.sh
+**Provides:**
+- ✅ Task management workflow (`/task-create`, `/task-work`, `/task-complete`)
+- ✅ Quality gates (compilation, tests, coverage)
+- ✅ Architectural review (SOLID/DRY/YAGNI)
+- ✅ Test enforcement (Phase 4.5 auto-fix loop)
+- ✅ Stack templates (react, python, .NET MAUI, etc.)
+- ❌ Requirements management (install require-kit for this)
 
+#### Option 2: taskwright + require-kit (Full Agentecflow)
+Install both for complete requirements → tasks → implementation workflow:
+```bash
+# Install taskwright first
+git clone https://github.com/yourusername/taskwright.git
+cd taskwright
+./installer/scripts/install.sh
+
+# Then install require-kit
+cd ..
+git clone https://github.com/yourusername/require-kit.git
+cd require-kit
+./installer/scripts/install.sh
+```
+
+**Provides:**
+- ✅ Everything from taskwright
+- ✅ Requirements engineering (EARS notation)
+- ✅ Epic/Feature hierarchy management
+- ✅ BDD/Gherkin scenario generation
+- ✅ Full requirements traceability
+- ✅ PM tool integration (Jira, Linear, GitHub, Azure DevOps)
+
+**See**: [Bidirectional Integration Guide](docs/architecture/bidirectional-integration.md) for complete details.
+
+### Basic Usage
+
+```bash
 # Create your first task (in Claude Code)
 /task-create "My first feature"
 /task-work TASK-001              # This does EVERYTHING!
