@@ -630,19 +630,23 @@ Proceed with state transition? [Y/n]:
 
 **EXTRACT** required context:
 ```python
+from installer.global.lib.feature_detection import supports_requirements
+
 task_context = {
     "task_id": task_id,
     "file_path": file_path,
     "state": current_state,
 
-    # From frontmatter
+    # From frontmatter (core fields - always available)
     "title": frontmatter.title,
-    "requirements": frontmatter.requirements,  # List of REQ-XXX IDs
-    "bdd_scenarios": frontmatter.bdd_scenarios,  # List of BDD-XXX IDs
-    "epic": frontmatter.epic,  # EPIC-XXX
-    "feature": frontmatter.feature,  # FEAT-XXX
     "priority": frontmatter.priority,
     "assignee": frontmatter.assignee,
+
+    # From frontmatter (require-kit fields - conditional)
+    "requirements": frontmatter.requirements if supports_requirements() else [],
+    "bdd_scenarios": frontmatter.bdd_scenarios if supports_requirements() else [],
+    "epic": frontmatter.epic if supports_requirements() else None,
+    "feature": frontmatter.feature if supports_requirements() else None,
 
     # From content
     "acceptance_criteria": extract_acceptance_criteria(content),
@@ -654,23 +658,24 @@ task_context = {
 **VALIDATE** essential fields exist:
 - `title`: Must be present
 - `acceptance_criteria`: At least one criterion required
-- Warn if missing: `requirements`, `bdd_scenarios` (not blocking)
+- Warn if missing: `requirements`, `bdd_scenarios` (only if require-kit installed)
 
 **DISPLAY** loaded context summary:
-```
-📋 Task Context Loaded
+```python
+print("📋 Task Context Loaded\n")
+print(f"ID: {task_id}")
+print(f"Title: {title}")
+print(f"State: {state}")
+print(f"Priority: {priority}")
 
-ID: {task_id}
-Title: {title}
-State: {state}
-Priority: {priority}
+# Conditional display - only if require-kit installed
+if supports_requirements():
+    print(f"\nRequirements: {len(requirements)} linked ({', '.join(requirements[:3])}{' ...' if len(requirements) > 3})")
+    print(f"BDD Scenarios: {len(bdd_scenarios)} linked")
+    print(f"Epic: {epic or 'None'}")
+    print(f"Feature: {feature or 'None'}")
 
-Requirements: {len(requirements)} linked ({', '.join(requirements[:3])}{' ...' if len > 3})
-BDD Scenarios: {len(bdd_scenarios)} linked
-Epic: {epic or 'None'}
-Feature: {feature or 'None'}
-
-Acceptance Criteria: {len(acceptance_criteria)} items
+print(f"\nAcceptance Criteria: {len(acceptance_criteria)} items")
 ```
 
 **PROCEED** to Step 2 (Detect Technology Stack)
@@ -686,7 +691,11 @@ If file not exists: Set stack to "default"
 
 ### Step 3: Select Agents for Stack (REQUIRED - 5 seconds)
 
+**Bidirectional Integration Note:** Agent selection adapts based on installed packages.
+
 Based on detected stack, **MAP** to agents using this table:
+
+**With require-kit installed (full integration):**
 
 | Stack | Analysis | Planning | Arch Review | Implementation | Testing | Review |
 |-------|----------|----------|-------------|----------------|---------|--------|
@@ -698,6 +707,29 @@ Based on detected stack, **MAP** to agents using this table:
 | **dotnet-microservice** | requirements-analyst | dotnet-api-specialist | architectural-reviewer | dotnet-domain-specialist | dotnet-testing-specialist | code-reviewer |
 | **default** | requirements-analyst | software-architect | architectural-reviewer | task-manager | test-verifier | code-reviewer |
 
+**Without require-kit (taskwright standalone):**
+
+| Stack | Analysis | Planning | Arch Review | Implementation | Testing | Review |
+|-------|----------|----------|-------------|----------------|---------|--------|
+| **maui** | task-manager | maui-usecase-specialist | architectural-reviewer | maui-usecase-specialist | dotnet-testing-specialist | code-reviewer |
+| **react** | task-manager | react-state-specialist | architectural-reviewer | react-state-specialist | react-testing-specialist | code-reviewer |
+| **python** | task-manager | python-api-specialist | architectural-reviewer | python-api-specialist | python-testing-specialist | code-reviewer |
+| **python-mcp** | task-manager | python-mcp-specialist | architectural-reviewer | python-mcp-specialist | python-testing-specialist | code-reviewer |
+| **typescript-api** | task-manager | nestjs-api-specialist | architectural-reviewer | typescript-domain-specialist | nodejs-testing-specialist | code-reviewer |
+| **dotnet-microservice** | task-manager | dotnet-api-specialist | architectural-reviewer | dotnet-domain-specialist | dotnet-testing-specialist | code-reviewer |
+| **default** | task-manager | software-architect | architectural-reviewer | task-manager | test-verifier | code-reviewer |
+
+**Implementation:**
+```python
+from installer.global.lib.feature_detection import supports_requirements
+
+# Select analysis agent based on feature availability
+if supports_requirements():
+    analysis_agent = "requirements-analyst"
+else:
+    analysis_agent = "task-manager"  # Fallback for standalone taskwright
+```
+
 **DISPLAY**: "🤖 Selected agents: [list agent names]"
 
 ### Step 4: INVOKE TASK TOOL FOR EACH PHASE (REQUIRED - DO NOT SKIP)
@@ -706,14 +738,23 @@ Based on detected stack, **MAP** to agents using this table:
 
 #### Phase 1: Requirements Analysis
 
+**Bidirectional Integration:** This phase adapts based on installed packages.
+
 **INVOKE** Task tool:
-```
-subagent_type: "requirements-analyst"
+```python
+# Use analysis_agent selected in Step 3 (based on supports_requirements())
+subagent_type: analysis_agent  # "requirements-analyst" if require-kit installed, else "task-manager"
 description: "Analyze requirements for TASK-XXX"
-prompt: "Analyze task TASK-XXX requirements and acceptance criteria.
+prompt: """Analyze task TASK-XXX requirements and acceptance criteria.
          Extract key functional requirements, non-functional requirements,
          and testable acceptance criteria for {stack} implementation.
-         Identify any gaps or ambiguities that need clarification."
+         Identify any gaps or ambiguities that need clarification.
+
+         Note: {
+            'Full requirements analysis available (require-kit installed)'
+            if supports_requirements()
+            else 'Basic task analysis (standalone taskwright mode)'
+         }"""
 ```
 
 **WAIT** for agent to complete before proceeding.

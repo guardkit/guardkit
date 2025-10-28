@@ -2,19 +2,28 @@
 
 Create a new task with requirements, acceptance criteria, and optional BDD scenarios.
 
+**Bidirectional Integration:** This command adapts based on installed packages.
+- **taskwright standalone**: Core task creation without epic/feature/requirements
+- **With require-kit**: Full integration with EARS requirements, epics, features, and BDD
+
 ## Usage
 ```bash
 /task-create <title> [options]
 ```
 
 ## Examples
+
+### Core Examples (Always Available)
 ```bash
 # Simple task creation
 /task-create "Add user authentication"
 
 # With priority and tags
 /task-create "Add user authentication" priority:high tags:[auth,security]
+```
 
+### Integration Examples (require-kit required)
+```bash
 # Link to requirements immediately
 /task-create "Add user authentication" requirements:[REQ-001,REQ-002]
 
@@ -27,6 +36,8 @@ Create a new task with requirements, acceptance criteria, and optional BDD scena
 # Epic linking with automatic PM tool integration
 /task-create "Add user authentication" epic:EPIC-001 export:jira
 ```
+
+**Note:** If require-kit is not installed, epic/feature/requirements options will show a warning.
 
 ## Task Structure
 
@@ -79,20 +90,36 @@ test_results:
 
 ## Options
 
-### Priority Levels
+### Core Options (Always Available)
+
+#### Priority Levels
 - `critical` - Must be done immediately
 - `high` - Important, do soon
 - `normal` - Standard priority (default)
 - `low` - Can wait
 
-### Status Values
+#### Status Values
 - `backlog` - Not started (default)
 - `in_progress` - Being worked on
 - `in_review` - Implementation complete, under review
 - `blocked` - Cannot proceed
 - `completed` - Done and verified
 
-### Linking Specifications
+#### Basic Task Creation
+```bash
+/task-create "Title" priority:high tags:[feature,backend]
+```
+
+### Integration Options (require-kit Required)
+
+**Note:** These options require require-kit to be installed. If not available, a warning will be shown.
+
+Install require-kit for full integration:
+```bash
+cd require-kit && ./installer/scripts/install.sh
+```
+
+#### Linking Specifications
 ```bash
 # Link requirements during creation
 /task-create "Title" requirements:[REQ-001,REQ-002,REQ-003]

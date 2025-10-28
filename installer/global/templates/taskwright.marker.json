@@ -1,0 +1,21 @@
+{
+  "package": "taskwright",
+  "version": "1.0.0",
+  "installed": "{{ INSTALL_DATE }}",
+  "install_location": "~/.agentecflow",
+  "provides": [
+    "task_management",
+    "quality_gates",
+    "architectural_review",
+    "test_enforcement",
+    "design_first_workflow",
+    "complexity_evaluation",
+    "stack_templates"
+  ],
+  "optional_integration": [
+    "require-kit"
+  ],
+  "integration_model": "bidirectional_optional",
+  "description": "Task execution and quality gates for Agentecflow",
+  "homepage": "https://github.com/your-org/taskwright"
+}
