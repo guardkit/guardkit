@@ -7,6 +7,10 @@ This module analyzes implementation against requirements to detect:
 3. Compliance scoring (how well does implementation match spec?)
 
 Part of Phase 5 Code Review workflow.
+
+**Bidirectional Integration:**
+- Works standalone (basic scope creep detection without requirements)
+- Enhanced when require-kit installed (full requirements traceability)
 """
 
 from dataclasses import dataclass
@@ -14,6 +18,11 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set
 import re
 import yaml
+import sys
+
+# Import feature detection for graceful degradation
+sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+from feature_detection import supports_requirements
 
 
 @dataclass
@@ -152,7 +161,21 @@ class SpecDriftDetector:
         return frontmatter
 
     def _load_requirements(self, task_data: Dict) -> List[Requirement]:
-        """Load requirements linked to the task."""
+        """
+        Load requirements linked to the task.
+
+        **Graceful Degradation:**
+        - If require-kit not installed: returns empty list (requirements feature unavailable)
+        - If require-kit installed: loads EARS requirements from docs/requirements/
+        """
+        # Graceful degradation: Skip requirements if require-kit not installed
+        if not supports_requirements():
+            return []
+
+        # Check if requirements directory exists
+        if not self.requirements_dir.exists():
+            return []
+
         requirements = []
         req_ids = task_data.get('requirements', [])
 
@@ -430,15 +453,23 @@ def format_drift_report(report: DriftReport, task_id: str) -> str:
     lines.append("📋 REQUIREMENTS COVERAGE")
     lines.append("-" * 70)
 
-    for req_id, req in sorted(report.requirements_coverage.items()):
-        status = "✅" if req.implemented else "❌"
-        lines.append(f"{status} {req_id}: {req.text[:60]}...")
+    # Graceful degradation message if require-kit not installed
+    if not supports_requirements():
+        lines.append("ℹ️  Requirements traceability unavailable")
+        lines.append("   Install require-kit for EARS requirements tracking")
+        lines.append("   cd require-kit && ./installer/scripts/install.sh")
+    elif not report.requirements_coverage:
+        lines.append("ℹ️  No requirements linked to this task")
+    else:
+        for req_id, req in sorted(report.requirements_coverage.items()):
+            status = "✅" if req.implemented else "❌"
+            lines.append(f"{status} {req_id}: {req.text[:60]}...")
 
-        if req.implemented and req.implementation_files:
-            for file in req.implementation_files:
-                lines.append(f"    └─ {file}")
-        elif not req.implemented:
-            lines.append(f"    └─ NOT IMPLEMENTED")
+            if req.implemented and req.implementation_files:
+                for file in req.implementation_files:
+                    lines.append(f"    └─ {file}")
+            elif not req.implemented:
+                lines.append(f"    └─ NOT IMPLEMENTED")
 
     lines.append("")
 

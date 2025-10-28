@@ -1136,6 +1136,54 @@ setup_claude_integration() {
     fi
 }
 
+# Create marker file for bidirectional integration
+create_marker_file() {
+    print_info "Creating marker file for package detection..."
+
+    local marker_file="$INSTALL_DIR/taskwright.marker.json"
+    local install_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Create marker file from template with substitution
+    cat > "$marker_file" << EOF
+{
+  "package": "taskwright",
+  "version": "$AGENTECFLOW_VERSION",
+  "installed": "$install_date",
+  "install_location": "$INSTALL_DIR",
+  "provides": [
+    "task_management",
+    "quality_gates",
+    "architectural_review",
+    "test_enforcement",
+    "design_first_workflow",
+    "complexity_evaluation",
+    "stack_templates"
+  ],
+  "optional_integration": [
+    "require-kit"
+  ],
+  "integration_model": "bidirectional_optional",
+  "description": "Task execution and quality gates for Agentecflow",
+  "homepage": "https://github.com/your-org/taskwright"
+}
+EOF
+
+    if [ -f "$marker_file" ]; then
+        print_success "Marker file created: $marker_file"
+        print_info "  Package: taskwright (standalone + optional require-kit integration)"
+        print_info "  Model: Bidirectional optional integration"
+
+        # Check if require-kit is also installed
+        if [ -f "$INSTALL_DIR/require-kit.marker.json" ]; then
+            print_success "  ✓ require-kit detected - Full Agentecflow integration available"
+        else
+            print_info "  ℹ Install require-kit for requirements management features"
+        fi
+    else
+        print_error "Failed to create marker file"
+    fi
+}
+
 # Main installation
 main() {
     print_header
@@ -1157,6 +1205,7 @@ main() {
     setup_cache
     create_package_marker
     setup_claude_integration
+    create_marker_file
 
     # Print summary
     print_summary

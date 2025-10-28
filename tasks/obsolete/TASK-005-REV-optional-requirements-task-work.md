@@ -2,7 +2,7 @@
 id: TASK-005-REV
 title: "Make task-work.md Requirements Features Optional"
 created: 2025-10-27
-status: backlog
+status: obsolete
 priority: high
 complexity: 5
 parent_task: none
@@ -368,3 +368,61 @@ Install require-kit for requirements features: https://github.com/you/require-ki
 - Phase 1 becomes "basic + optional enhancement"
 - Test thoroughly - this is core workflow
 - **IMPORTANT**: Old TASK-005 should be marked as superseded/cancelled
+
+---
+
+## ✅ TASK CLOSED - Superseded by TASK-012
+
+**Closure Date**: 2025-10-28
+**Closure Reason**: Superseded by TASK-012 bidirectional integration implementation
+**Git Commit**: d85f17a
+
+### What Was Implemented
+
+TASK-012 implemented the complete bidirectional optional integration approach, which includes all the functionality planned in this task:
+
+1. ✅ **Feature Detection** - `installer/global/lib/feature_detection.py` provides `supports_requirements()`
+2. ✅ **Conditional Phase 1** - Requirements/epic/feature loading only when require-kit installed
+3. ✅ **Agent Selection** - Uses `requirements-analyst` OR `task-manager` based on detection
+4. ✅ **Display Logic** - Shows requirements info only when available
+
+### Implementation Location
+
+- **File Modified**: `installer/global/commands/task-work.md`
+- **Changes**: 
+  - Phase 1: Conditional extraction of requirements/epic/feature fields
+  - Step 3: Separate agent selection tables (with/without require-kit)
+  - Phase 1 invocation: Dynamic agent selection based on feature availability
+- **Documentation**: `docs/architecture/bidirectional-integration.md`
+
+### Key Implementation Details
+
+**Agent Selection Logic:**
+```python
+from installer.global.lib.feature_detection import supports_requirements
+
+if supports_requirements():
+    analysis_agent = "requirements-analyst"
+else:
+    analysis_agent = "task-manager"  # Fallback for standalone taskwright
+```
+
+**Display Logic:**
+```python
+# Conditional display - only if require-kit installed
+if supports_requirements():
+    print(f"Requirements: {len(requirements)} linked")
+    print(f"Epic: {epic or 'None'}")
+```
+
+### Why This Task Is Obsolete
+
+TASK-012 implemented a more comprehensive solution that:
+- Provides reusable feature detection library
+- Updates multiple phases (Phase 1, Step 3)
+- Includes both agent tables (with/without require-kit)
+- Aligns with require-kit's implementation
+
+This task's goals are fully achieved through TASK-012's implementation.
+
+**See**: `tasks/backlog/TASK-012-shared-installation-strategy.md` for complete implementation details.

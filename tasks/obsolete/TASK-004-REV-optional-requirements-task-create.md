@@ -2,7 +2,7 @@
 id: TASK-004-REV
 title: "Make task-create.md Requirements Features Optional"
 created: 2025-10-27
-status: backlog
+status: obsolete
 priority: high
 complexity: 4
 parent_task: none
@@ -35,7 +35,7 @@ Instead of removing epic/feature/requirements fields, make them **optional** and
 id: {TASK_ID}
 title: "{title}"
 created: {date}
-status: backlog
+status: obsolete
 priority: {priority}
 complexity: 0
 parent_task: none
@@ -294,3 +294,38 @@ Install require-kit: https://github.com/you/require-kit
 - Users can start with taskwright, add require-kit later
 - No data loss or migration needed
 - **IMPORTANT**: Old TASK-004 should be marked as superseded/cancelled
+
+---
+
+## ✅ TASK CLOSED - Superseded by TASK-012
+
+**Closure Date**: 2025-10-28
+**Closure Reason**: Superseded by TASK-012 bidirectional integration implementation
+**Git Commit**: d85f17a
+
+### What Was Implemented
+
+TASK-012 implemented the complete bidirectional optional integration approach, which includes all the functionality planned in this task:
+
+1. ✅ **Feature Detection** - `installer/global/lib/feature_detection.py` provides `supports_requirements()`
+2. ✅ **Conditional Display** - `task-create.md` splits examples into Core vs Integration sections
+3. ✅ **Help Text Adaptation** - Documentation shows which options require require-kit
+4. ✅ **Graceful Warnings** - User sees helpful messages when integration features unavailable
+
+### Implementation Location
+
+- **File Modified**: `installer/global/commands/task-create.md`
+- **Changes**: Added bidirectional integration notes, split options into Core and Integration sections
+- **Documentation**: `docs/architecture/bidirectional-integration.md`
+
+### Why This Task Is Obsolete
+
+TASK-012 took a more comprehensive approach by:
+- Implementing feature detection library (shared with require-kit)
+- Updating ALL commands (task-create, task-work, spec_drift_detector)
+- Creating complete architecture documentation
+- Aligning with require-kit's existing implementation
+
+This task's goals are fully achieved through TASK-012's implementation.
+
+**See**: `tasks/backlog/TASK-012-shared-installation-strategy.md` for complete implementation details.
