@@ -1,11 +1,51 @@
 """
 Feature Detection Library
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  SHARED FILE - KEEP IN SYNC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This file is duplicated across multiple repositories:
+  • taskwright/installer/global/lib/feature_detection.py
+  • require-kit/installer/global/lib/feature_detection.py
+
+When making changes:
+  1. Update both copies to maintain consistency
+  2. Test in both contexts (taskwright-only and require-kit-only)
+  3. Changes should be rare (only when adding new packages or features)
+
+Why duplicated?
+  • Simple: No dependency management, each repo is self-contained
+  • Stable: Infrequent changes (only when package ecosystem evolves)
+  • Small: ~270 lines, stdlib-only, easy to keep in sync
+
+If this grows beyond 1000 lines or 3+ repos need it, consider creating
+a shared agentecflow-common package. Until then, duplication is the
+pragmatic choice.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 Provides utilities to detect which Agentecflow packages are installed
 and enable graceful degradation of features.
 
 This enables taskwright and require-kit to coexist in ~/.agentecflow
-with conditional feature availability.
+with conditional feature availability based on installed marker files.
+
+Core Capabilities:
+  • Detect installed packages (taskwright, require-kit)
+  • Query feature availability (requirements, epics, BDD, etc.)
+  • Check package compatibility
+  • Provide user-friendly status messages
+
+Usage:
+    from lib.feature_detection import supports_requirements
+
+    if supports_requirements():
+        # Load EARS requirements
+        requirements = load_requirements()
+    else:
+        # Gracefully skip requirements features
+        requirements = []
 """
 
 from pathlib import Path
