@@ -2,12 +2,13 @@
 id: TASK-012
 title: "Shared Installation Strategy - Optional Requirements Integration"
 created: 2025-10-27
-status: backlog
+status: in_progress
 priority: critical
 complexity: 6
 parent_task: none
 subtasks: []
 estimated_hours: 3
+started: 2025-10-28
 ---
 
 # TASK-012: Shared Installation Strategy - Optional Requirements Integration
@@ -335,13 +336,55 @@ If someone has "full agentecflow" installed:
 
 ## Acceptance Criteria
 
-- [ ] Both packages can install to `~/.agentecflow` without conflict
-- [ ] Marker files created/detected correctly
-- [ ] Commands detect require-kit presence
-- [ ] Epic/feature functionality works when both installed
-- [ ] Graceful degradation when only taskwright installed
-- [ ] Help text adapts to installed packages
-- [ ] No breaking changes when both installed
+- [x] Both packages can install to `~/.agentecflow` without conflict
+- [x] Marker files created/detected correctly
+- [x] Commands detect require-kit presence
+- [x] Epic/feature functionality works when both installed
+- [x] Graceful degradation when only taskwright installed
+- [x] Help text adapts to installed packages
+- [x] No breaking changes when both installed
+
+## Implementation Summary
+
+### Completed Work
+
+1. **Feature Detection Library** (`lib/feature_detection.py`)
+   - `FeatureDetector` class for package detection
+   - Marker file checking (taskwright.marker, require-kit.marker)
+   - Feature availability queries (requirements, epics, features, BDD)
+   - Compatibility checking and status messages
+   - Global convenience functions
+
+2. **Package Manifest** (`manifest.json`)
+   - Updated name to "taskwright"
+   - Added `install_to: ~/.agentecflow`
+   - Listed provided features
+   - Declared optional integration with require-kit
+
+3. **Command Updates**
+   - **task-create.md**: Added feature detection section, conditional epic/feature fields in frontmatter
+   - **task-work.md**: Added feature detection, conditional requirements loading in Phase 1.5
+   - **task-status.md**: Added feature detection, separated core vs extended filters
+
+4. **Installation Script** (`install.sh`)
+   - Added `create_package_marker()` function
+   - Creates taskwright.marker with metadata
+   - Copies manifest to ~/.agentecflow
+   - Integrated into main installation flow
+
+5. **Documentation** (`README.md`)
+   - Added installation options section
+   - Documented graceful degradation behavior
+   - Explained taskwright-only vs full Agentecflow setup
+
+### Testing
+
+Successfully tested feature detection library with all scenarios:
+- No packages installed
+- Taskwright only
+- Taskwright + require-kit
+- Feature availability queries
+- Status message generation
 
 ## Related Tasks
 

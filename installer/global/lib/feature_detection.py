@@ -1,0 +1,260 @@
+"""
+Feature Detection Library
+
+Provides utilities to detect which Agentecflow packages are installed
+and enable graceful degradation of features.
+
+This enables taskwright and require-kit to coexist in ~/.agentecflow
+with conditional feature availability.
+"""
+
+from pathlib import Path
+from typing import Dict, List, Optional
+import json
+
+
+class FeatureDetector:
+    """Detects installed Agentecflow packages and available features."""
+
+    def __init__(self, agentecflow_home: Optional[Path] = None):
+        """
+        Initialize feature detector.
+
+        Args:
+            agentecflow_home: Path to .agentecflow directory.
+                            Defaults to ~/.agentecflow
+        """
+        self.agentecflow_home = agentecflow_home or Path.home() / ".agentecflow"
+
+    def is_taskwright_installed(self) -> bool:
+        """Check if taskwright is installed."""
+        marker = self.agentecflow_home / "taskwright.marker"
+        return marker.exists()
+
+    def is_require_kit_installed(self) -> bool:
+        """Check if require-kit is installed."""
+        marker = self.agentecflow_home / "require-kit.marker"
+        return marker.exists()
+
+    def supports_requirements(self) -> bool:
+        """
+        Check if requirements management features are available.
+
+        Returns:
+            True if require-kit is installed, False otherwise
+        """
+        return self.is_require_kit_installed()
+
+    def supports_epics(self) -> bool:
+        """
+        Check if epic management features are available.
+
+        Returns:
+            True if require-kit is installed, False otherwise
+        """
+        return self.is_require_kit_installed()
+
+    def supports_features(self) -> bool:
+        """
+        Check if feature management is available.
+
+        Returns:
+            True if require-kit is installed, False otherwise
+        """
+        return self.is_require_kit_installed()
+
+    def supports_bdd(self) -> bool:
+        """
+        Check if BDD/Gherkin scenario generation is available.
+
+        Returns:
+            True if require-kit is installed, False otherwise
+        """
+        return self.is_require_kit_installed()
+
+    def get_installed_packages(self) -> List[str]:
+        """
+        Get list of installed Agentecflow packages.
+
+        Returns:
+            List of package names (e.g., ['taskwright', 'require-kit'])
+        """
+        packages = []
+        if self.is_taskwright_installed():
+            packages.append("taskwright")
+        if self.is_require_kit_installed():
+            packages.append("require-kit")
+        return packages
+
+    def get_package_info(self, package_name: str) -> Optional[Dict]:
+        """
+        Get information about an installed package.
+
+        Args:
+            package_name: Name of the package (e.g., 'taskwright')
+
+        Returns:
+            Package manifest dict or None if not installed
+        """
+        manifest_path = self.agentecflow_home / f"{package_name}.manifest.json"
+        if not manifest_path.exists():
+            return None
+
+        try:
+            with open(manifest_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def get_available_features(self) -> Dict[str, bool]:
+        """
+        Get dictionary of all features and their availability.
+
+        Returns:
+            Dict mapping feature names to availability (True/False)
+        """
+        return {
+            "task_management": self.is_taskwright_installed(),
+            "quality_gates": self.is_taskwright_installed(),
+            "architectural_review": self.is_taskwright_installed(),
+            "test_enforcement": self.is_taskwright_installed(),
+            "requirements_engineering": self.supports_requirements(),
+            "bdd_generation": self.supports_bdd(),
+            "epic_management": self.supports_epics(),
+            "feature_management": self.supports_features(),
+        }
+
+    def check_compatibility(self) -> Dict[str, any]:
+        """
+        Check compatibility between installed packages.
+
+        Returns:
+            Dict with compatibility status and any warnings
+        """
+        result = {
+            "compatible": True,
+            "warnings": [],
+            "errors": []
+        }
+
+        # require-kit depends on taskwright
+        if self.is_require_kit_installed() and not self.is_taskwright_installed():
+            result["compatible"] = False
+            result["errors"].append(
+                "require-kit requires taskwright to be installed first"
+            )
+
+        return result
+
+    def get_feature_status_message(self) -> str:
+        """
+        Get a human-readable message about feature availability.
+
+        Returns:
+            Status message string
+        """
+        packages = self.get_installed_packages()
+
+        if not packages:
+            return "No Agentecflow packages installed"
+
+        if len(packages) == 1:
+            if packages[0] == "taskwright":
+                return "taskwright installed (task workflow only)"
+            elif packages[0] == "require-kit":
+                return "ERROR: require-kit requires taskwright"
+
+        if "taskwright" in packages and "require-kit" in packages:
+            return "Full Agentecflow (taskwright + require-kit)"
+
+        return f"Installed: {', '.join(packages)}"
+
+
+# Global instance for convenience
+_detector = FeatureDetector()
+
+
+def is_require_kit_installed() -> bool:
+    """
+    Check if require-kit is installed.
+
+    Returns:
+        True if require-kit is available, False otherwise
+    """
+    return _detector.is_require_kit_installed()
+
+
+def supports_requirements() -> bool:
+    """
+    Check if requirements features are available.
+
+    Returns:
+        True if requirements management is available, False otherwise
+    """
+    return _detector.supports_requirements()
+
+
+def supports_epics() -> bool:
+    """
+    Check if epic management is available.
+
+    Returns:
+        True if epic management is available, False otherwise
+    """
+    return _detector.supports_epics()
+
+
+def supports_features() -> bool:
+    """
+    Check if feature management is available.
+
+    Returns:
+        True if feature management is available, False otherwise
+    """
+    return _detector.supports_features()
+
+
+def supports_bdd() -> bool:
+    """
+    Check if BDD/Gherkin generation is available.
+
+    Returns:
+        True if BDD generation is available, False otherwise
+    """
+    return _detector.supports_bdd()
+
+
+def get_available_features() -> Dict[str, bool]:
+    """
+    Get all available features.
+
+    Returns:
+        Dict mapping feature names to availability
+    """
+    return _detector.get_available_features()
+
+
+def check_feature_or_warn(feature_name: str, command_name: str) -> bool:
+    """
+    Check if a feature is available, print warning if not.
+
+    Args:
+        feature_name: Name of the feature to check
+        command_name: Name of the command requiring the feature
+
+    Returns:
+        True if available, False otherwise (with warning printed)
+    """
+    features = get_available_features()
+
+    if feature_name not in features:
+        print(f"Warning: Unknown feature '{feature_name}'")
+        return False
+
+    if not features[feature_name]:
+        print(f"Warning: {command_name} requires '{feature_name}' feature")
+        print(f"Install require-kit to enable this feature:")
+        print(f"  cd require-kit && ./installer/scripts/install.sh")
+        return False
+
+    return True

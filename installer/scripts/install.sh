@@ -1060,6 +1060,34 @@ print_summary() {
     echo -e "${BLUE}🔗 Conductor: https://conductor.build${NC}"
 }
 
+# Create marker file for taskwright installation
+create_package_marker() {
+    print_info "Creating package marker file..."
+
+    # Create taskwright.marker file
+    cat > "$INSTALL_DIR/taskwright.marker" << EOF
+{
+  "package": "taskwright",
+  "version": "$AGENTECFLOW_VERSION",
+  "installed": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "provides": [
+    "task-management",
+    "quality-gates",
+    "architectural-review",
+    "test-enforcement"
+  ]
+}
+EOF
+
+    # Also create manifest for compatibility
+    if [ -f "$INSTALLER_DIR/global/manifest.json" ]; then
+        cp "$INSTALLER_DIR/global/manifest.json" "$INSTALL_DIR/taskwright.manifest.json"
+        print_success "Package marker and manifest created"
+    else
+        print_success "Package marker created"
+    fi
+}
+
 # Setup Claude Code integration (for Conductor compatibility)
 setup_claude_integration() {
     print_info "Setting up Claude Code integration..."
@@ -1127,6 +1155,7 @@ main() {
     install_completions
     create_version_management
     setup_cache
+    create_package_marker
     setup_claude_integration
 
     # Print summary

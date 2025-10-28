@@ -2,6 +2,30 @@
 
 Display comprehensive task status with epic/feature hierarchy context, progress tracking, PM tool sync status, and Agentecflow Stage 3 integration.
 
+## Feature Detection
+
+This command supports **graceful degradation** based on installed packages:
+
+### Taskwright Only (Core Filters)
+```bash
+/task-status --status in_progress    # Filter by status
+/task-status --assignee "John"       # Filter by assignee
+/task-status --priority high         # Filter by priority
+```
+
+Available filters: `--status`, `--assignee`, `--priority`, `--tags`
+
+### Taskwright + Require-Kit (Extended Filters)
+```bash
+/task-status --epic EPIC-001         # Filter by epic (requires require-kit)
+/task-status --feature FEAT-003      # Filter by feature (requires require-kit)
+/task-status TASK-001 --hierarchy    # Show epic/feature context (requires require-kit)
+```
+
+Additional filters: `--epic`, `--feature`, `--hierarchy`, `--sync-status`
+
+**Note**: Epic and feature filtering requires [require-kit](https://github.com/appmilla/require-kit) to be installed. These filters will show a helpful message if require-kit is not available.
+
 ## Usage
 ```bash
 /task-status [task-id] [options]
@@ -201,6 +225,8 @@ Shows velocity metrics, quality metrics, cycle time analysis, bottlenecks, risk 
 ## Options
 
 ### Filtering Options
+
+#### Core Filters (Always Available)
 ```bash
 # View by status
 /task-status --status in_progress
@@ -211,14 +237,25 @@ Shows velocity metrics, quality metrics, cycle time analysis, bottlenecks, risk 
 /task-status --assignee "Sarah Chen"
 /task-status --unassigned
 
-# View by hierarchy
-/task-status --epic EPIC-001
-/task-status --feature FEAT-003
-
 # View by timeline
 /task-status --overdue
 /task-status --due-today
 /task-status --current-sprint
+
+# View by priority
+/task-status --priority high
+/task-status --priority critical
+```
+
+#### Extended Filters (Requires require-kit)
+```bash
+# View by hierarchy (requires require-kit)
+/task-status --epic EPIC-001
+/task-status --feature FEAT-003
+
+# If require-kit not installed, these will show:
+# "⚠️ Epic filtering requires require-kit package"
+# "Install: cd require-kit && ./installer/scripts/install.sh"
 ```
 
 ### Display Options
