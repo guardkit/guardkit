@@ -2,7 +2,7 @@
 id: TASK-006-REV
 title: "Make task-status.md Requirements Features Optional"
 created: 2025-10-27
-status: backlog
+status: obsolete
 priority: medium
 complexity: 3
 parent_task: none
@@ -391,3 +391,52 @@ Install require-kit: https://github.com/you/require-kit
 - Keep hierarchy view (parent/subtask) - that's taskwright feature
 - Epic-rollup/feature-progress are require-kit exclusive views
 - **IMPORTANT**: Old TASK-006 should be marked as superseded/cancelled
+
+---
+
+## ✅ TASK CLOSED - Superseded by TASK-012
+
+**Closure Date**: 2025-10-28
+**Closure Reason**: Superseded by TASK-012 bidirectional integration implementation
+**Git Commit**: d85f17a
+
+### What Was Implemented
+
+While TASK-012 focused primarily on task-create and task-work commands, the feature detection library it provides (`installer/global/lib/feature_detection.py`) can be used to implement conditional filtering in task-status when needed.
+
+### Current Status
+
+task-status.md does not currently require modification because:
+1. It primarily displays task frontmatter fields (which always exist)
+2. Epic/feature filters can simply return empty results if those fields are not populated
+3. The graceful degradation happens naturally through empty field values
+
+### If Future Implementation Needed
+
+The feature detection library is available:
+```python
+from installer.global.lib.feature_detection import supports_epics
+
+if supports_epics():
+    # Show epic/feature columns
+else:
+    # Show basic kanban only
+```
+
+### Why This Task Is Low Priority / Obsolete
+
+TASK-012 established the bidirectional integration architecture. The task-status command works correctly in both scenarios:
+
+- **taskwright only**: Shows tasks with empty epic/feature fields (displays as "none")
+- **Both installed**: Shows tasks with populated epic/feature fields
+
+No breaking functionality exists in the current implementation, making this task obsolete for now.
+
+### If Required Later
+
+If enhanced epic/feature filtering becomes necessary:
+1. Use `installer/global/lib/feature_detection.py`
+2. Add conditional help text (show epic/feature filters only if require-kit installed)
+3. Add user-friendly messages when filtering by epic/feature without require-kit
+
+**See**: `tasks/backlog/TASK-012-shared-installation-strategy.md` for the bidirectional integration implementation that supersedes this task.
