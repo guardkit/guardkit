@@ -902,13 +902,166 @@ public class UseCaseFactory : IUseCaseFactory
 5. Minimize memory allocations
 6. Profile critical paths
 
-### Testing
-1. Unit test each use case
-2. Mock external dependencies
-3. Test error scenarios
-4. Verify side effects
-5. Use property-based testing
-6. Maintain high coverage
+### ErrorOr Patterns: Production Code vs Tests
+
+**CRITICAL DISTINCTION**: Production code and test mocking use DIFFERENT patterns for ErrorOr. Do not mix them up!
+
+#### Production Code Pattern (Repository Methods)
+
+**ALWAYS use simple implicit conversion** - ErrorOr library handles conversion automatically.
+
+**✅ CORRECT Production Pattern** (from DriverRepository blueprint):
+
+```csharp
+// Single object return - Line 116 of DriverRepository
+public Task<ErrorOr<DriverDetails>> SaveDriver(DriverDetails driverDetails)
+{
+    // ... validation and logic ...
+
+    return Task.FromResult<ErrorOr<DriverDetails>>(driverDetails);  // ✅ Simple!
+}
+
+// Collection return - Lines 52-54 of DriverRepository
+public Task<ErrorOr<IReadOnlyList<DriverDetails>>> GetAllDrivers()
+{
+    var driverDetails = new List<DriverDetails>();
+    // ... populate list ...
+
+    return Task.FromResult<ErrorOr<IReadOnlyList<DriverDetails>>>(
+        driverDetails.AsReadOnly()  // ✅ Clean implicit conversion
+    );
+}
+
+// IList return (if mutability needed)
+public Task<ErrorOr<IList<Loading>>> Write(IList<Loading> loading)
+{
+    // ... validation and logic ...
+
+    return Task.FromResult<ErrorOr<IList<Loading>>>(loading);  // ✅ Simple!
+}
+```
+
+**❌ WRONG Production Patterns** - DO NOT USE:
+```csharp
+// ❌ Double cast with boxing (unnecessary, bypasses type safety)
+return Task.FromResult<ErrorOr<IList<T>>>((ErrorOr<IList<T>>)(object)result);
+
+// ❌ ErrorOrFactory in production (use implicit conversion)
+return Task.FromResult(ErrorOrFactory.From(result));
+
+// ❌ Unnecessary ToList() when already IList
+List<T> result = data.ToList();  // Wasteful if data is already IList
+return Task.FromResult<ErrorOr<IList<T>>>(result);
+```
+
+**Key Rule**: In production code, ErrorOr's implicit conversion operator handles ALL conversions - just pass the value directly!
+
+#### Test Pattern (Mocking ErrorOr Returns)
+
+**CRITICAL**: When writing tests that mock methods returning `Task<ErrorOr<T>>`, you MUST create the ErrorOr value explicitly before wrapping in Task.FromResult due to generic type inference limitations in test frameworks.
+
+#### Common Test Pitfalls and Solutions
+
+**❌ WRONG** - These patterns will cause compilation errors:
+```csharp
+// ERROR: Cannot implicitly convert IList<T> to ErrorOr<IList<T>>
+_mockRepository.Write(Arg.Any<IList<Loading>>())
+    .Returns(callInfo => Task.FromResult(callInfo.Arg<IList<Loading>>()));
+
+// ERROR: ErrorOrFactory.From() not accessible in test context
+_mockRepository.Write(Arg.Any<IList<Loading>>())
+    .Returns(callInfo => Task.FromResult(ErrorOrFactory.From(callInfo.Arg<IList<Loading>>())));
+```
+
+**✅ CORRECT** - Use these patterns:
+```csharp
+// Option 1: Create ErrorOr variable explicitly (RECOMMENDED)
+_mockRepository.Write(Arg.Any<IList<Loading>>())
+    .Returns(callInfo =>
+    {
+        var data = callInfo.Arg<IList<Loading>>();
+        ErrorOr<IList<Loading>> result = data;  // Implicit conversion works here
+        return Task.FromResult(result);
+    });
+
+// Option 2: Return success directly (for simple cases)
+_mockRepository.Write(Arg.Any<IList<Loading>>())
+    .Returns(Task.FromResult(ErrorOr<IList<Loading>>.From(mockData)));
+
+// Option 3: Mock returning error
+_mockRepository.Write(Arg.Any<IList<Loading>>())
+    .Returns(Task.FromResult<ErrorOr<IList<Loading>>>(
+        Error.Validation("Test.Error", "Validation failed")));
+```
+
+#### Complete Test Example
+```csharp
+using NSubstitute;
+using ErrorOr;
+using FluentAssertions;
+using Xunit;
+
+public class LoadingDataServiceTests
+{
+    private readonly ILoadingRepository _mockRepository;
+    private readonly LoadingDataService _service;
+
+    public LoadingDataServiceTests()
+    {
+        _mockRepository = Substitute.For<ILoadingRepository>();
+        _service = new LoadingDataService(_mockRepository);
+    }
+
+    [Fact]
+    public async Task SeedTestDataAsync_Success_ReturnsLoadings()
+    {
+        // Arrange
+        var expectedData = new List<Loading> { /* test data */ };
+
+        // CORRECT: Create ErrorOr variable explicitly before Task.FromResult
+        _mockRepository.Write(Arg.Any<IList<Loading>>())
+            .Returns(callInfo =>
+            {
+                var data = callInfo.Arg<IList<Loading>>();
+                ErrorOr<IList<Loading>> result = data;
+                return Task.FromResult(result);
+            });
+
+        // Act
+        var actualResult = await _service.SeedTestDataAsync();
+
+        // Assert
+        actualResult.IsError.Should().BeFalse();
+        actualResult.Value.Should().HaveCount(expectedData.Count);
+    }
+
+    [Fact]
+    public async Task SeedTestDataAsync_RepositoryError_ReturnsError()
+    {
+        // Arrange
+        var error = Error.Failure("Repository.Error", "Write failed");
+        _mockRepository.Write(Arg.Any<IList<Loading>>())
+            .Returns(Task.FromResult<ErrorOr<IList<Loading>>>(error));
+
+        // Act
+        var result = await _service.SeedTestDataAsync();
+
+        // Assert
+        result.IsError.Should().BeTrue();
+        result.FirstError.Code.Should().Be("Repository.Error");
+    }
+}
+```
+
+#### Testing Checklist
+1. ✅ Unit test each use case
+2. ✅ Mock external dependencies (use NSubstitute)
+3. ✅ Test error scenarios (both validation and runtime errors)
+4. ✅ Test ErrorOr success paths (`.Value` property)
+5. ✅ Test ErrorOr error paths (`.FirstError`, `.Errors`)
+6. ✅ Verify side effects (logging, events)
+7. ✅ Use FluentAssertions for readable assertions
+8. ✅ Maintain high coverage (>80% line, >75% branch)
 
 ## When I'm Engaged
 - UseCase pattern implementation

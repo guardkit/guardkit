@@ -774,19 +774,26 @@ prompt: "Design {stack} implementation approach for TASK-XXX.
 
 **QUERY** Design Patterns MCP using problem description from implementation plan:
 ```
-Use find_patterns or search_patterns to query:
-- Problem description from task requirements
-- Constraints extracted from EARS requirements (performance, scalability, security)
-- Technology stack context
+Use find_patterns with REQUIRED programmingLanguage parameter:
 
-Example query:
-"I need a pattern for handling external API failures gracefully with timeout constraints under 200ms"
+mcp__design-patterns__find_patterns(
+  query: "{problem description from task} for {stack} application",
+  programmingLanguage: "{map stack to language: maui->csharp, react->typescript, python->python, typescript-api->typescript, dotnet-microservice->csharp}",
+  maxResults: 3  // Limit to top 3 to reduce noise
+)
+
+Example for MAUI stack:
+query: "Repository pattern with error handling using ErrorOr for database write operations in C# .NET MAUI mobile application"
+programmingLanguage: "csharp"
+maxResults: 3
 
 Parse MCP response to extract:
 - Recommended patterns (with confidence scores)
 - Pattern categories (Resilience, Performance, etc.)
 - Why each pattern is recommended
 - Implementation guidance for {stack}
+
+**FILTER RESULTS**: Skip patterns that don't match detected stack (e.g., React patterns for MAUI tasks)
 ```
 
 **DISPLAY** pattern recommendations (if any found):
