@@ -135,17 +135,67 @@ check_prerequisites() {
                 print_success "pip3 found - can install Python dependencies"
 
                 # Check if Jinja2 and python-frontmatter are installed
-                python3 -c "import jinja2" 2>/dev/null
-                if [ $? -ne 0 ]; then
+                print_info "Checking for Jinja2..."
+                set +e  # Temporarily allow errors for package checks
+                python3 -c "import jinja2" </dev/null 2>&1 >/dev/null
+                jinja2_status=$?
+                set -e  # Re-enable exit on error
+                print_info "Jinja2 check completed (status: $jinja2_status)"
+
+                if [ $jinja2_status -ne 0 ]; then
                     print_info "Installing Jinja2 (required for plan markdown rendering)..."
-                    pip3 install -q Jinja2 || print_warning "Failed to install Jinja2 - install manually with: pip3 install Jinja2"
+                    print_info "This may take a moment, please wait..."
+                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
+                    set +e  # Temporarily allow errors
+                    pip3 install --break-system-packages Jinja2 2>&1
+                    if [ $? -ne 0 ]; then
+                        # Fallback to user install if --break-system-packages not supported
+                        print_info "Retrying with --user flag..."
+                        pip3 install --user Jinja2 2>&1
+                        if [ $? -ne 0 ]; then
+                            print_warning "Failed to install Jinja2 - install manually with: pip3 install --user Jinja2"
+                        else
+                            print_success "Jinja2 installed successfully (user mode)"
+                        fi
+                    else
+                        print_success "Jinja2 installed successfully"
+                    fi
+                    set -e  # Re-enable exit on error
+                else
+                    print_success "Jinja2 already installed"
                 fi
 
-                python3 -c "import frontmatter" 2>/dev/null
-                if [ $? -ne 0 ]; then
+                print_info "Checking for python-frontmatter..."
+                set +e  # Temporarily allow errors for package checks
+                python3 -c "import frontmatter" </dev/null 2>&1 >/dev/null
+                frontmatter_status=$?
+                set -e  # Re-enable exit on error
+                print_info "python-frontmatter check completed (status: $frontmatter_status)"
+
+                if [ $frontmatter_status -ne 0 ]; then
                     print_info "Installing python-frontmatter (required for plan metadata)..."
-                    pip3 install -q python-frontmatter || print_warning "Failed to install python-frontmatter - install manually with: pip3 install python-frontmatter"
+                    print_info "This may take a moment, please wait..."
+                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
+                    set +e  # Temporarily allow errors
+                    pip3 install --break-system-packages python-frontmatter 2>&1
+                    if [ $? -ne 0 ]; then
+                        # Fallback to user install if --break-system-packages not supported
+                        print_info "Retrying with --user flag..."
+                        pip3 install --user python-frontmatter 2>&1
+                        if [ $? -ne 0 ]; then
+                            print_warning "Failed to install python-frontmatter - install manually with: pip3 install --user python-frontmatter"
+                        else
+                            print_success "python-frontmatter installed successfully (user mode)"
+                        fi
+                    else
+                        print_success "python-frontmatter installed successfully"
+                    fi
+                    set -e  # Re-enable exit on error
+                else
+                    print_success "python-frontmatter already installed"
                 fi
+
+                print_success "Python dependency checks complete"
             fi
         fi
     fi
