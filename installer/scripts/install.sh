@@ -832,18 +832,28 @@ setup_shell_integration() {
         return
     fi
 
-    # Add to shell configuration
-    cat >> "$shell_config" << 'EOF'
+    # Add to shell configuration with shell-specific completions
+    if [ "$shell_name" = "bash" ]; then
+        cat >> "$shell_config" << 'EOF'
 
 # Agentecflow
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 
-# Agentecflow completions (if available)
+# Agentecflow completions (bash)
 if [ -f "$HOME/.agentecflow/completions/agentecflow.bash" ]; then
     source "$HOME/.agentecflow/completions/agentecflow.bash"
 fi
 EOF
+    else
+        # For zsh or other shells, skip bash completions
+        cat >> "$shell_config" << 'EOF'
+
+# Agentecflow
+export PATH="$HOME/.agentecflow/bin:$PATH"
+export AGENTECFLOW_HOME="$HOME/.agentecflow"
+EOF
+    fi
     
     print_success "Shell integration added to $shell_config"
     print_info "Please restart your shell or run: source $shell_config"
