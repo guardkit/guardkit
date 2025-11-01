@@ -38,10 +38,24 @@ shared/           # Shared types and utilities
 
 ## Development Workflow
 
-1. **Requirements**: Use `/gather-requirements` for both frontend and backend
-2. **Epics**: Create epics that span both applications
-3. **Features**: Break down into frontend and backend features
-4. **Tasks**: Implement with automatic testing for both stacks
+### Unified Task System
+```bash
+# 1. Create task (frontend, backend, or full-stack)
+/task-create "Add user authentication"
+
+# 2. Work on task with automatic testing
+/task-work TASK-XXX [--mode=standard|tdd|bdd]
+
+# 3. Complete task
+/task-complete TASK-XXX
+```
+
+### Full-Stack Implementation Flow
+1. **Define API Contract** - OpenAPI schema first
+2. **Backend Implementation** - FastAPI endpoints with tests
+3. **Frontend Implementation** - React components with tests
+4. **Integration Testing** - Full-stack user scenarios
+5. **Quality Gates** - Automatic verification for both stacks
 
 ## Testing Strategy
 
