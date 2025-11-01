@@ -21,8 +21,65 @@ This command supports **graceful degradation** based on installed packages:
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--design-only | --implement-only | --micro] [other-flags...]
+/task-work TASK-XXX [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
 ```
+
+## Documentation Level Control (NEW - TASK-036)
+
+Control the verbosity of documentation generated during task execution. This significantly impacts execution time and token consumption.
+
+### Flag: --docs=LEVEL
+
+**Purpose**: Override automatic documentation level selection
+
+**Values**:
+- `--docs=minimal` - Structured data only, ~8-12 minutes, 2 files
+- `--docs=standard` - Brief explanations, ~12-18 minutes, 2 files (default for complexity 4+)
+- `--docs=comprehensive` - Full documentation, ~36+ minutes, 13+ files
+
+**Auto-selection** (when flag not provided):
+- Complexity 1-3: `minimal` mode (structured data)
+- Complexity 4-10: `standard` mode (brief explanations)
+- Security/compliance keywords: `comprehensive` mode (forced)
+
+**Configuration hierarchy** (highest to lowest priority):
+1. Command-line flag (`--docs=minimal`)
+2. Force-comprehensive triggers (security, compliance, breaking changes)
+3. Settings.json default (`.claude/settings.json` → `documentation.default_level`)
+4. Auto-selection (complexity-based)
+
+**Examples**:
+```bash
+# Explicit minimal mode (fastest)
+/task-work TASK-042 --docs=minimal
+
+# Explicit comprehensive mode (security tasks)
+/task-work TASK-043 --docs=comprehensive
+
+# Auto-selection based on complexity (default)
+/task-work TASK-044
+```
+
+**Performance impact**:
+| Level | Duration | Files | Tokens | Use When |
+|-------|----------|-------|--------|----------|
+| **minimal** | 8-12 min | 2 | 100-150k | Simple tasks, fast iteration |
+| **standard** | 12-18 min | 2 | 150-250k | Normal development |
+| **comprehensive** | 36+ min | 13+ | 500k+ | Security, compliance, complex tasks |
+
+**Agent context format**:
+All agents receive documentation level via `<AGENT_CONTEXT>` block in prompts:
+```
+<AGENT_CONTEXT>
+documentation_level: minimal|standard|comprehensive
+complexity_score: {1-10}
+task_id: TASK-XXX
+stack: {detected_stack}
+phase: {1|2|2.5|4|5}
+</AGENT_CONTEXT>
+```
+
+See individual agent files (installer/global/agents/*.md) for documentation level behavior specifications.
 
 ## Micro-Task Mode (NEW - TASK-020)
 
@@ -426,13 +483,23 @@ If Context7 library is not found:
 
 When user runs `/task-work TASK-XXX [flags]`, **EXECUTE THIS EXACT SEQUENCE**:
 
-### Step 0: Parse and Validate Flags (NEW - Required for design-first workflow)
+### Step 0: Parse and Validate Flags (ENHANCED - Design-first + Documentation Levels)
 
 **PARSE** command-line flags from user input:
 ```python
 # Extract flags from command
 design_only = "--design-only" in user_input or "-d" in user_input
 implement_only = "--implement-only" in user_input or "-i" in user_input
+micro = "--micro" in user_input
+
+# Parse documentation level flag (TASK-036)
+docs_flag = None
+if "--docs=minimal" in user_input:
+    docs_flag = "minimal"
+elif "--docs=standard" in user_input:
+    docs_flag = "standard"
+elif "--docs=comprehensive" in user_input:
+    docs_flag = "comprehensive"
 ```
 
 **VALIDATE** flag mutual exclusivity:
@@ -442,7 +509,8 @@ from installer.global.commands.lib.flag_validator import validate_flags
 flags = {
     "design_only": design_only,
     "implement_only": implement_only,
-    # ... other flags
+    "micro": micro,
+    "docs_flag": docs_flag  # TASK-036
 }
 
 try:
@@ -460,9 +528,17 @@ if design_only:
 elif implement_only:
     print("🚀 Workflow Mode: IMPLEMENT-ONLY (Phases 3-5)")
     print("   Using previously approved design\n")
+elif micro:
+    print("⚡ Workflow Mode: MICRO-TASK (Streamlined)")
+    print("   Lightweight workflow for trivial tasks\n")
 else:
     print("🔄 Workflow Mode: STANDARD (All phases)")
     print("   Complete workflow with complexity-based checkpoints\n")
+
+# TASK-036: Display documentation level if explicitly set
+if docs_flag:
+    print(f"📄 Documentation Level: {docs_flag.upper()} (explicit override)")
+    print(f"   Estimated time: {'8-12min' if docs_flag == 'minimal' else '12-18min' if docs_flag == 'standard' else '36+min'}\n")
 ```
 
 **PROCEED** to Step 1 with flag context.
@@ -720,6 +796,97 @@ If file not exists: Set stack to "default"
 
 **DISPLAY**: "🔍 Detected stack: {stack}"
 
+### Step 2.5: Determine Documentation Level (NEW - TASK-036)
+
+**PURPOSE**: Establish documentation verbosity based on configuration hierarchy
+
+**Configuration Hierarchy** (highest to lowest priority):
+1. Command-line flag: `--docs=minimal|standard|comprehensive`
+2. Force-comprehensive triggers (security, compliance, breaking changes)
+3. Settings.json default: `.claude/settings.json` → `documentation.default_level`
+4. Auto-selection: Complexity-based (1-3=minimal, 4+=standard)
+
+**STEP 1: Load Configuration**
+
+```python
+# Read documentation settings from .claude/settings.json
+try:
+    settings = read_json(".claude/settings.json")
+    doc_config = settings.get("documentation", {})
+    enabled = doc_config.get("enabled", True)
+    default_level = doc_config.get("default_level", "auto")
+    force_triggers = doc_config.get("force_comprehensive", {}).get("triggers", {})
+except FileNotFoundError:
+    # No settings file - use defaults
+    enabled = True
+    default_level = "auto"
+    force_triggers = {}
+```
+
+**STEP 2: Check Force-Comprehensive Triggers**
+
+```python
+task_text = (task_context.get("title", "") + " " + task_context.get("description", "")).lower()
+
+# Check triggers from settings or use defaults
+security_keywords = force_triggers.get("security_keywords", ["auth", "password", "encryption", "security"])
+compliance_keywords = force_triggers.get("compliance_keywords", ["gdpr", "hipaa", "compliance", "audit"])
+breaking_keywords = force_triggers.get("breaking_changes", ["breaking", "migration", "deprecated"])
+
+force_comprehensive = (
+    any(kw in task_text for kw in security_keywords) or
+    any(kw in task_text for kw in compliance_keywords) or
+    any(kw in task_text for kw in breaking_keywords)
+)
+```
+
+**STEP 3: Apply Configuration Hierarchy**
+
+```python
+documentation_level = None
+reason = None
+
+# Priority 1: Command-line flag (highest)
+if docs_flag:
+    documentation_level = docs_flag
+    reason = f"explicit flag (--docs={docs_flag})"
+
+# Priority 2: Force-comprehensive triggers
+elif force_comprehensive:
+    documentation_level = "comprehensive"
+    reason = "force trigger (security/compliance/breaking keywords)"
+
+# Priority 3: Settings.json default_level
+elif default_level != "auto":
+    documentation_level = default_level
+    reason = "settings.json default"
+
+# Priority 4: Complexity-based auto-selection (lowest)
+else:
+    complexity = task_context.get("complexity", 5)
+    if complexity <= 3:
+        documentation_level = "minimal"
+        reason = f"auto-select (complexity {complexity}/10)"
+    else:
+        documentation_level = "standard"
+        reason = f"auto-select (complexity {complexity}/10)"
+```
+
+**STEP 4: Store in Context & Display**
+
+```python
+# Add to task_context for agent invocations
+task_context["documentation_level"] = documentation_level
+
+**DISPLAY**:
+📄 Documentation Level: {documentation_level.upper()}
+   Reason: {reason}
+   Files: {2 if documentation_level != 'comprehensive' else '13+'} files
+   Estimated: {8-12 if documentation_level == 'minimal' else 12-18 if documentation_level == 'standard' else 36+} minutes
+```
+
+**PROCEED** to Step 3 (Select Agents)
+
 ### Step 3: Select Agents for Stack (REQUIRED - 5 seconds)
 
 Based on detected stack, **MAP** to agents using this table:
@@ -742,28 +909,57 @@ Based on detected stack, **MAP** to agents using this table:
 
 #### Phase 1: Requirements Analysis
 
-**INVOKE** Task tool:
+**INVOKE** Task tool with documentation context:
 ```
 subagent_type: "requirements-analyst"
 description: "Analyze requirements for TASK-XXX"
-prompt: "Analyze task TASK-XXX requirements and acceptance criteria.
-         Extract key functional requirements, non-functional requirements,
-         and testable acceptance criteria for {stack} implementation.
-         Identify any gaps or ambiguities that need clarification."
+prompt: "<AGENT_CONTEXT>
+documentation_level: {documentation_level}
+complexity_score: {task_context.complexity}
+task_id: {task_id}
+stack: {stack}
+phase: 1
+</AGENT_CONTEXT>
+
+Analyze task {task_id} requirements and acceptance criteria.
+Extract key functional requirements, non-functional requirements,
+and testable acceptance criteria for {stack} implementation.
+Identify any gaps or ambiguities that need clarification.
+
+DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
+- minimal: Return structured data only (lists of requirements), no verbose docs
+- standard: Return structured data with brief explanations
+- comprehensive: Generate full requirement documents with rationale and traceability
+
+See installer/global/agents/requirements-analyst.md for full documentation level specifications."
 ```
 
 **WAIT** for agent to complete before proceeding.
 
 #### Phase 2: Implementation Planning
 
-**INVOKE** Task tool:
+**INVOKE** Task tool with documentation context:
 ```
 subagent_type: "{selected_planning_agent_from_table}"
 description: "Plan implementation for TASK-XXX"
-prompt: "Design {stack} implementation approach for TASK-XXX.
-         Include architecture decisions, pattern selection, and component structure.
-         Consider {stack}-specific best practices and testing strategies.
-         Output: Implementation plan with file structure and key components."
+prompt: "<AGENT_CONTEXT>
+documentation_level: {documentation_level}
+complexity_score: {task_context.complexity}
+task_id: {task_id}
+stack: {stack}
+phase: 2
+</AGENT_CONTEXT>
+
+Design {stack} implementation approach for {task_id}.
+Include architecture decisions, pattern selection, and component structure.
+Consider {stack}-specific best practices and testing strategies.
+
+DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
+- minimal: Return plan as structured data (file list, phases, estimates)
+- standard: Return plan with brief architecture notes and key decisions
+- comprehensive: Generate detailed implementation guide with ADRs and diagrams
+
+Output: Implementation plan matching documentation level expectations."
 ```
 
 **WAIT** for agent to complete before proceeding.
@@ -819,26 +1015,40 @@ Based on task requirements and constraints:
 
 #### Phase 2.5B: Architectural Review (Catch design issues early)
 
-**INVOKE** Task tool:
+**INVOKE** Task tool with documentation context:
 ```
 subagent_type: "architectural-reviewer"
 description: "Review architecture for TASK-XXX"
-prompt: "Review the implementation plan from Phase 2 for TASK-XXX.
-         Evaluate against SOLID principles, DRY principle, and YAGNI principle.
-         Check for: single responsibility, proper abstraction, unnecessary complexity.
-         Score each principle (0-100) and provide specific recommendations.
+prompt: "<AGENT_CONTEXT>
+documentation_level: {documentation_level}
+complexity_score: {task_context.complexity}
+task_id: {task_id}
+stack: {stack}
+phase: 2.5
+</AGENT_CONTEXT>
 
-         PATTERN CONTEXT (if Design Patterns MCP was queried):
-         {Include pattern recommendations from Phase 2.5A}
-         - Validate if suggested patterns are appropriate
-         - Check if implementation plan aligns with pattern best practices
-         - Identify if patterns are over-engineered for the requirements
+Review the implementation plan from Phase 2 for {task_id}.
+Evaluate against SOLID principles, DRY principle, and YAGNI principle.
+Check for: single responsibility, proper abstraction, unnecessary complexity.
+Score each principle (0-100) and provide specific recommendations.
 
-         Approval thresholds:
-         - ≥80/100: Auto-approve (proceed to Phase 3)
-         - 60-79/100: Approve with recommendations
-         - <60/100: Reject (revise design)
-         Output: Architectural review report with approval decision."
+PATTERN CONTEXT (if Design Patterns MCP was queried):
+{Include pattern recommendations from Phase 2.5A}
+- Validate if suggested patterns are appropriate
+- Check if implementation plan aligns with pattern best practices
+- Identify if patterns are over-engineered for the requirements
+
+DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
+- minimal: Return scores and critical issues only (structured data)
+- standard: Return scores with brief explanations and recommendations
+- comprehensive: Generate detailed architecture review report with rationale
+
+Approval thresholds:
+- ≥80/100: Auto-approve (proceed to Phase 3)
+- 60-79/100: Approve with recommendations
+- <60/100: Reject (revise design)
+
+See installer/global/agents/architectural-reviewer.md for documentation level specifications."
 ```
 
 **WAIT** for agent to complete before proceeding.
@@ -1536,28 +1746,41 @@ prompt: "Implement TASK-XXX following {stack} best practices and planned archite
 
 **CRITICAL**: Refer to test-orchestrator.md for mandatory compilation verification before testing.
 
-**INVOKE** Task tool:
+**INVOKE** Task tool with documentation context:
 ```
 subagent_type: "{selected_testing_agent_from_table}"
 description: "Generate and execute tests for TASK-XXX"
-prompt: "Create comprehensive test suite for TASK-XXX implementation.
-         Include: unit tests, integration tests, edge cases.
-         Target: 80%+ line coverage, 75%+ branch coverage.
-         Use {stack}-specific testing frameworks and patterns.
+prompt: "<AGENT_CONTEXT>
+documentation_level: {documentation_level}
+complexity_score: {task_context.complexity}
+task_id: {task_id}
+stack: {stack}
+phase: 4
+</AGENT_CONTEXT>
 
-         🚨 MANDATORY COMPILATION CHECK (See test-orchestrator.md):
-         1. MUST verify code COMPILES/BUILDS successfully BEFORE running tests
-         2. If compilation fails, report errors immediately with file:line details
-         3. ONLY proceed to test execution if compilation succeeds with zero errors
-         4. Use stack-specific build commands (see test-orchestrator.md for details)
+Create comprehensive test suite for {task_id} implementation.
+Include: unit tests, integration tests, edge cases.
+Target: 80%+ line coverage, 75%+ branch coverage.
+Use {stack}-specific testing frameworks and patterns.
 
-         EXECUTE the test suite and report detailed results:
-         - Build/compilation status (MUST be success before tests run)
-         - Test execution results (passed/failed counts)
-         - Coverage metrics (line and branch percentages)
-         - Detailed failure information for any failing tests
+🚨 MANDATORY COMPILATION CHECK (See test-orchestrator.md):
+1. MUST verify code COMPILES/BUILDS successfully BEFORE running tests
+2. If compilation fails, report errors immediately with file:line details
+3. ONLY proceed to test execution if compilation succeeds with zero errors
+4. Use stack-specific build commands (see test-orchestrator.md for details)
 
-         Cross-reference: installer/global/agents/test-orchestrator.md (MANDATORY RULE #1)"
+EXECUTE the test suite and report detailed results:
+- Build/compilation status (MUST be success before tests run)
+- Test execution results (passed/failed counts)
+- Coverage metrics (line and branch percentages)
+- Detailed failure information for any failing tests
+
+DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
+- minimal: Return test results as structured data (counts, coverage, failures)
+- standard: Return results with brief test descriptions
+- comprehensive: Generate detailed test report with rationale for each test
+
+Cross-reference: installer/global/agents/test-orchestrator.md (MANDATORY RULE #1)"
 ```
 
 **WAIT** for agent to complete before proceeding.
@@ -1694,15 +1917,30 @@ attempt = 1
 
 **ONLY EXECUTE IF Phase 4.5 succeeded (all tests passing)**
 
-**INVOKE** Task tool:
+**INVOKE** Task tool with documentation context:
 ```
 subagent_type: "code-reviewer"
 description: "Review TASK-XXX implementation"
-prompt: "Review TASK-XXX implementation for quality and best practices.
-         Check: code quality, test coverage, error handling, documentation.
-         Verify {stack}-specific patterns are correctly applied.
-         Provide actionable feedback if improvements needed.
-         Confirm readiness for IN_REVIEW state or identify blockers."
+prompt: "<AGENT_CONTEXT>
+documentation_level: {documentation_level}
+complexity_score: {task_context.complexity}
+task_id: {task_id}
+stack: {stack}
+phase: 5
+</AGENT_CONTEXT>
+
+Review {task_id} implementation for quality and best practices.
+Check: code quality, test coverage, error handling, documentation.
+Verify {stack}-specific patterns are correctly applied.
+Provide actionable feedback if improvements needed.
+Confirm readiness for IN_REVIEW state or identify blockers.
+
+DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
+- minimal: Return approval status and critical issues only
+- standard: Return review with brief feedback on key areas
+- comprehensive: Generate detailed code review report with recommendations
+
+See installer/global/agents/code-reviewer.md for documentation level specifications."
 ```
 
 **WAIT** for agent to complete before proceeding.
