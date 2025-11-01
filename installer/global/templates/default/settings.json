@@ -1,0 +1,82 @@
+{
+  "documentation": {
+    "enabled": true,
+    "default_level": "auto",
+    "complexity_thresholds": {
+      "minimal_max": 3,
+      "standard_max": 10
+    },
+    "force_comprehensive": {
+      "keywords": ["security", "authentication", "compliance", "breaking change"],
+      "triggers": ["security_changes", "compliance_required", "breaking_changes"]
+    },
+    "output_format": {
+      "minimal": {
+        "summary": "required",
+        "plan": "required",
+        "architecture_guide": "skip",
+        "test_reports": "embedded",
+        "code_review": "embedded"
+      },
+      "standard": {
+        "summary": "required",
+        "plan": "required",
+        "architecture_guide": "embedded",
+        "test_reports": "embedded",
+        "code_review": "embedded"
+      },
+      "comprehensive": {
+        "summary": "required",
+        "plan": "required",
+        "architecture_guide": "standalone",
+        "test_reports": "standalone",
+        "code_review": "standalone",
+        "supporting_docs": "all"
+      }
+    },
+    "agent_behavior": {
+      "architectural_reviewer": {
+        "minimal": "json_scores",
+        "standard": "embedded_summary",
+        "comprehensive": "standalone_guide"
+      },
+      "test_orchestrator": {
+        "minimal": "json_results",
+        "standard": "full_report",
+        "comprehensive": "enhanced_report_with_supporting_docs"
+      },
+      "code_reviewer": {
+        "minimal": "json_findings",
+        "standard": "full_report",
+        "comprehensive": "detailed_report_with_metrics"
+      },
+      "test_verifier": {
+        "minimal": "json_status",
+        "standard": "full_verification_report",
+        "comprehensive": "enhanced_with_failure_analysis"
+      },
+      "task_manager": {
+        "minimal": "quick_summary",
+        "standard": "full_summary",
+        "comprehensive": "comprehensive_report_with_links"
+      }
+    },
+    "performance_targets": {
+      "minimal": {
+        "duration_minutes": "8-12",
+        "token_estimate": "100-150k",
+        "files_generated": 2
+      },
+      "standard": {
+        "duration_minutes": "12-18",
+        "token_estimate": "150-250k",
+        "files_generated": "2-5"
+      },
+      "comprehensive": {
+        "duration_minutes": "36+",
+        "token_estimate": "500k+",
+        "files_generated": "13+"
+      }
+    }
+  }
+}

@@ -1,9 +1,9 @@
 ---
 id: TASK-035
 title: Implement Documentation Levels for task-work Command (TaskWright)
-status: backlog
+status: in_progress
 created: 2025-10-29T12:00:00Z
-updated: 2025-10-30T12:30:00Z
+updated: 2025-11-01T00:00:00Z
 priority: high
 complexity: 5
 estimated_time: 2-3 hours

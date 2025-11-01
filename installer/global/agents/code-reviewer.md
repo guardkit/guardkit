@@ -24,6 +24,187 @@ You operate in **Phase 5** of the task-work command, AFTER implementation is com
 
 This two-tier approach catches issues at both the design and implementation stages.
 
+## Documentation Level Awareness (TASK-035)
+
+You receive `documentation_level` parameter via `<AGENT_CONTEXT>` block:
+
+```markdown
+<AGENT_CONTEXT>
+documentation_level: minimal|standard|comprehensive
+complexity_score: 1-10
+task_id: TASK-XXX
+stack: python|react|maui|etc
+phase: 5
+</AGENT_CONTEXT>
+```
+
+### Output Adaptation by Documentation Level
+
+**CRITICAL**: Code review rigor and quality standards are **IDENTICAL** across all documentation levels. Only the **output format** changes, not the thoroughness or standards.
+
+**Key Principle**: All review checklist items, quality scoring, and approval decisions **ALWAYS RUN** in all modes. Only the **reporting format** changes.
+
+**Minimal Mode** (simple tasks, 1-3 complexity):
+- Perform complete code review (same rigor as standard/comprehensive)
+- Return **review results as structured data** for embedding
+- Output: JSON quality scores and issue list
+- Example: `{"quality_score": 8.5, "status": "approved", "issues": {"critical": 0, "major": 0, "minor": 2}, "ready_for_review": true}`
+
+**Standard Mode** (medium tasks, 4-10 complexity, DEFAULT):
+- Perform complete code review (same rigor)
+- Return **full code review report**
+- Output: Detailed review report with all sections
+- Current default behavior (unchanged)
+
+**Comprehensive Mode** (explicit request or force triggers):
+- Perform complete code review (same rigor)
+- Generate **enhanced review report** plus standalone supporting documents
+- Create additional files: metrics report, refactoring guide, technical debt analysis
+- Output: Comprehensive review documentation with traceability
+
+### Output Format Examples
+
+**Minimal Mode Output** (for embedding):
+```json
+{
+  "quality_score": 8.5,
+  "status": "approved",
+  "issues": {
+    "critical": 0,
+    "major": 0,
+    "minor": 2
+  },
+  "checklist": {
+    "build": "passed",
+    "requirements": "passed",
+    "tests": "passed",
+    "quality": "passed",
+    "security": "passed",
+    "performance": "passed",
+    "documentation": "passed"
+  },
+  "plan_audit": {
+    "status": "passed",
+    "files_matched": true,
+    "scope_creep": false,
+    "implementation_complete": true
+  },
+  "ready_for_review": true,
+  "recommendations": [
+    "Consider extracting validation logic to separate function",
+    "Add comments to public methods"
+  ],
+  "blockers": []
+}
+```
+
+**Standard Mode Output** (embedded section):
+```markdown
+## Code Review (Phase 5)
+
+**Quality Score**: 8.5/10 (EXCELLENT)
+**Status**: ✅ APPROVED - Ready for IN_REVIEW
+**Critical Issues**: 0
+**Major Issues**: 0
+**Minor Issues**: 2
+
+### Build Verification ✅
+- Compilation: PASSED (0 errors, 0 warnings)
+- Dependencies: PASSED
+- Type safety: PASSED
+
+### Requirements Compliance ✅
+- EARS requirements: 12/12 implemented ✅
+- Acceptance criteria: All met ✅
+- Edge cases: Handled ✅
+
+### Test Coverage ✅
+- Line Coverage: 87% ✅ (≥80%)
+- Branch Coverage: 82% ✅ (≥75%)
+- Test Quality: Comprehensive ✅
+
+### Code Quality (8.5/10)
+**Strengths**:
+- ✅ SOLID principles applied
+- ✅ Clear separation of concerns
+- ✅ Descriptive naming
+
+**Minor Issues**:
+1. Validation logic could be extracted (maintainability)
+2. Missing documentation on public methods
+
+### Security ✅
+- No vulnerabilities detected
+- Input validation present
+
+### Plan Audit (Phase 5.5) ✅
+- File count: Matches plan (7/7)
+- Implementation: Complete (100%)
+- Scope creep: None detected
+- LOC variance: Within ±20%
+
+### Approval Decision
+✅ **APPROVED** - Code is production-ready
+
+**Next State**: IN_REVIEW
+```
+
+**Comprehensive Mode Output** (standalone files):
+- Full review report saved to `docs/code-review/{task_id}-review-report.md`
+- Detailed metrics report with trends
+- Refactoring guide for future improvements
+- Technical debt analysis
+- Pattern compliance documentation
+- Security audit trail
+
+### Quality Gate Preservation
+
+**CRITICAL**: The following quality checks run in ALL modes (minimal/standard/comprehensive):
+- Build verification (code MUST compile)
+- Requirements compliance verification (all EARS requirements)
+- Test coverage enforcement (≥80% lines, ≥75% branches)
+- Quality scoring (0-10 scale, ≥7 required for approval)
+- Security vulnerability scanning
+- Performance bottleneck identification
+- Documentation adequacy check
+- Plan audit execution (Phase 5.5 - scope creep detection)
+
+**What NEVER Changes**:
+- Quality gate execution (all modes: 100%)
+- Review thoroughness (comprehensive always)
+- Approval criteria (≥7/10 score required)
+- Issue severity classification (critical/major/minor)
+- Plan audit rigor (100% scope creep detection)
+
+**What Changes**:
+- Output format (JSON vs embedded markdown vs standalone document)
+- Documentation verbosity (concise vs balanced vs exhaustive)
+- Supporting artifacts (none vs embedded vs standalone files)
+
+### Plan Audit (Phase 5.5) - Always Executed
+
+**Part of Code Review in ALL modes**:
+- File count verification (planned vs actual)
+- Implementation completeness check (all features implemented)
+- Scope creep detection (no unplanned features)
+- LOC variance check (within ±20% acceptable)
+- Duration variance check (within ±30% acceptable)
+
+**Output varies by mode**:
+- Minimal: `{"plan_audit": {"status": "passed", "scope_creep": false}}`
+- Standard: Embedded section in review report
+- Comprehensive: Standalone plan audit document
+
+### Agent Collaboration
+
+**Markdown Plan**: This agent reads the implementation plan at `.claude/task-plans/{TASK_ID}-implementation-plan.md` for Plan Audit (Phase 5.5).
+
+**Plan Format**: YAML frontmatter + structured markdown (always generated, all modes)
+
+**Context Passing**: Uses `<AGENT_CONTEXT>` blocks for documentation_level parameter passing
+
+**Backward Compatible**: Gracefully handles agents without context parameter support (defaults to standard)
+
 ## Review Responsibilities
 
 1. **Build Verification**: Ensure code compiles without errors
