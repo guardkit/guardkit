@@ -2,12 +2,14 @@
 id: TASK-011
 title: "Update Root Documentation Files"
 created: 2025-10-27
-status: backlog
+status: completed
 priority: high
 complexity: 4
 parent_task: none
 subtasks: []
 estimated_hours: 2
+actual_hours: 1.5
+completed: 2025-11-01
 ---
 
 # TASK-011: Update Root Documentation Files
@@ -272,3 +274,105 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 - Show quality gates as key differentiator
 - Keep it concise - target 200-300 lines max for README
 - Use concrete examples, not abstract benefits
+
+## Completion Summary
+
+### Date: 2025-11-01
+
+### Status: IN_REVIEW ✅
+
+### Files Updated:
+1. ✅ README.md - Complete rewrite for Taskwright positioning
+2. ✅ CLAUDE.md (root) - Removed enterprise features, simplified to task workflow
+3. ✅ .claude/CLAUDE.md - Updated for consistency with Taskwright focus
+
+### Backups Created:
+- README.md.backup
+- CLAUDE.md.backup
+- .claude/CLAUDE.md.backup
+
+### Validation Results:
+
+#### README.md ✅
+- [x] Title changed to "Taskwright"
+- [x] Tagline emphasizes lightweight + quality gates
+- [x] 5-minute quickstart present
+- [x] No EARS/BDD/epic references (except acceptable "upgrade to full" context)
+- [x] Quality gates explained (Phase 2.5, 4.5) - 6 mentions
+- [x] Simple workflow examples - 14 task command references
+
+#### CLAUDE.md (Root) ✅
+- [x] Project context updated for taskwright - 3 mentions
+- [x] Stage 1 and 2 removed
+- [x] Command list simplified to 8 commands (task-create, task-work, task-complete, task-status, task-refine, figma-to-react, zeplin-to-maui, debug)
+- [x] Quality gates section retained - 3 sections
+- [x] EARS/Epic sections removed (except upgrade path reference)
+- [x] Task workflow emphasized - 17 mentions
+
+#### Grep Verification ✅
+- [x] No forbidden command references (/gather-requirements, /formalize-ears, /epic-create, etc.)
+- [x] Only acceptable references to requirements management (in "upgrade to full" context)
+
+### Key Changes:
+
+**README.md:**
+- Changed from "AI Engineer - Complete Agentecflow Implementation" to "Taskwright"
+- New tagline: "Lightweight AI-assisted development with built-in quality gates"
+- Added compelling "Stop shipping broken code" messaging
+- 5-minute quickstart with concrete examples
+- Clear "When to Use" vs "Upgrade to Full Agentecflow" sections
+- Removed all Stage 1/2 (Specification/Tasks Definition) content
+- Focused on quality gates (Phase 2.5, 4.5) as key differentiators
+- Simplified from 346 lines to 306 lines (more focused)
+
+**CLAUDE.md:**
+- Changed from "AI Engineer - Complete Agentecflow Implementation" to "Taskwright - Lightweight AI-Assisted Development"
+- Removed EARS Notation Patterns section
+- Removed Epic/Feature Hierarchy sections
+- Removed External PM Tool Integration
+- Removed System Capabilities (enterprise focus)
+- Removed Team Collaboration workflows
+- Simplified Core Principles from 6 to 5
+- Command list reduced from 15+ to 8 essential commands
+- Clear upgrade path to full Agentecflow for enterprise needs
+
+**.claude/CLAUDE.md:**
+- Updated title from "Claude Code Software Engineering Lifecycle System" to "Taskwright - Lightweight Task Workflow System"
+- Removed "Requirements First" principle
+- Removed "Test-Driven: BDD scenarios" reference
+- Simplified workflow from 6 steps to 4
+- Updated getting started message
+
+### Acceptance Criteria: ALL MET ✅
+
+- [x] README.md rewritten for taskwright
+- [x] Root CLAUDE.md updated
+- [x] .claude/CLAUDE.md updated
+- [x] No requirements management references (except upgrade path)
+- [x] Lightweight positioning clear
+- [x] Quality gates prominently featured
+- [x] 5-minute quickstart included
+- [x] Grep verification passes
+
+### Positioning Summary:
+
+**Taskwright is now positioned as:**
+- Lightweight, pragmatic task workflow system
+- Built-in quality gates (Phase 2.5, 4.5) as main differentiator
+- Simple 3-command workflow (create → work → complete)
+- No ceremony, no EARS/BDD/epics
+- Clear upgrade path to full Agentecflow for enterprise needs
+
+**Target Audience:**
+- Solo developers or small teams (1-3 people)
+- Individual tasks (1-8 hours)
+- Small-to-medium projects
+- Developers who want quality without ceremony
+
+### Time Taken:
+~1.5 hours (under the 2-hour estimate)
+
+### Next Steps:
+1. Human review of updated documentation
+2. Test `/task-create` and `/task-work` commands to ensure they align with new positioning
+3. Consider updating any other marketing/documentation that references old positioning

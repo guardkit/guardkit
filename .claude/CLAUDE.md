@@ -1,14 +1,14 @@
-# Claude Code Software Engineering Lifecycle System
+# Taskwright - Lightweight Task Workflow System
 
 ## Project Context
 
-This is an AI-powered software engineering lifecycle system that uses EARS notation for requirements, BDD/Gherkin for test specifications, and markdown-driven state tracking. The system is technology-agnostic with stack-specific plugins.
+This is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. The system is technology-agnostic with stack-specific plugins.
 
 ## Core Principles
 
-1. **Requirements First**: Every feature starts with EARS-notated requirements
-2. **Test-Driven**: BDD scenarios generated from requirements drive implementation
-3. **Quality Gates**: Automated testing and verification before completion
+1. **Quality First**: Never compromise on test coverage or architecture
+2. **Pragmatic Approach**: Right amount of process for task complexity
+3. **Quality Gates**: Automated architectural review and test enforcement
 4. **State Tracking**: Transparent progress monitoring through markdown
 5. **Technology Agnostic**: Core methodology works across all stacks
 
@@ -22,21 +22,20 @@ This is an AI-powered software engineering lifecycle system that uses EARS notat
 
 ## Workflow Overview
 
-1. **Gather Requirements**: Interactive Q&A sessions
-2. **Formalize with EARS**: Convert to structured notation
-3. **Generate BDD**: Create testable scenarios
-4. **Implement**: Build with tests
-5. **Verify**: Execute tests and quality gates
-6. **Track**: Update state and changelog
+1. **Create Task**: Define what needs to be done
+2. **Work on Task**: AI implements with quality gates (Phases 1-5.5)
+3. **Review**: Human reviews approved implementation
+4. **Complete**: Archive and track
 
 ## Technology Stack Detection
 
 The system will detect your project's technology stack and apply appropriate testing strategies:
 - React/TypeScript → Playwright + Vitest
 - Python API → pytest + pytest-bdd
+- .NET → xUnit/NUnit + platform-specific testing
 - Mobile → Platform-specific testing
 - Infrastructure → Terraform testing
 
 ## Getting Started
 
-Run `/gather-requirements` to begin a new feature development cycle.
+Run `/task-create "Your task"` to begin a new task, then use `/task-work TASK-XXX` to implement it with automatic quality gates.

@@ -1,345 +1,306 @@
-# AI Engineer - Claude Code Software Engineering Lifecycle System
+# Taskwright
 
-A comprehensive, markdown-driven software engineering lifecycle system that combines EARS requirements notation, BDD/Gherkin specifications, and a unified task workflow with automatic testing and quality verification.
+**Lightweight AI-assisted development with built-in quality gates.**
 
-## 🎉 New in v2.0: Unified Task Workflow
+Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
 
-**One command to rule them all!** The new `/task-work` command supports three development modes:
-- **Standard**: Traditional development (implementation + tests together)
-- **TDD**: Test-Driven Development (Red → Green → Refactor)
-- **BDD**: Behavior-Driven Development (Scenarios → Implementation)
+## What You Get
 
-All with automatic test execution, quality gates, and state management!
+- **Phase 2.5 - Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
+- **Phase 4.5 - Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
+- **Specialized Agents**: Stack-specific AI agents for React, Python, .NET, TypeScript
+- **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
+- **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
+- **Design-First Workflow**: Optional design approval checkpoint for complex tasks (complexity ≥7)
 
-## 🚀 Quick Start
+## 5-Minute Quickstart
 
 ```bash
-# Clone the repository
+# Install
 git clone https://github.com/yourusername/taskwright.git
 cd taskwright
-
-# Install to ~/.agentecflow
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
-# Create your first task (in Claude Code)
-/task-create "My first feature"
-/task-work TASK-001              # This does EVERYTHING!
-```
+# Initialize your project (choose a template)
+agentic-init react  # or: python, typescript-api, maui-appshell, default
 
-## 📦 Installation Options
-
-**Taskwright** supports flexible installation for different workflow needs:
-
-### Option 1: Taskwright Only (Task Workflow)
-```bash
-cd taskwright
-./installer/scripts/install.sh
-```
-
-**What you get:**
-- ✅ Task management workflow
-- ✅ Quality gates and architectural review
-- ✅ Test enforcement
-- ✅ `/task-create`, `/task-work`, `/task-status` commands
-- ❌ No EARS requirements management
-- ❌ No epic/feature hierarchy
-- ❌ No BDD scenario generation
-
-### Option 2: Taskwright + Require-Kit (Full Agentecflow)
-```bash
-# Install taskwright first
-cd taskwright
-./installer/scripts/install.sh
-
-# Then install require-kit
-cd ../require-kit
-./installer/scripts/install.sh
-```
-
-**What you get:**
-- ✅ Everything from Taskwright PLUS:
-- ✅ EARS requirements notation
-- ✅ BDD/Gherkin scenario generation
-- ✅ Epic → Feature → Task hierarchy
-- ✅ PM tool integration (Jira, Linear, GitHub, Azure DevOps)
-- ✅ Requirements-based acceptance criteria enrichment
-
-### Graceful Degradation
-
-Commands automatically detect which packages are installed and adjust their features:
-
-- **`/task-create`**: Epic/feature fields only appear if require-kit installed
-- **`/task-work`**: Requirements loading only if require-kit installed
-- **`/task-status`**: Epic/feature filters only if require-kit installed
-
-**No configuration needed!** The system detects package availability automatically.
-
-## 📋 System Overview
-
-This system provides a structured approach to software development that emphasizes:
-
-1. **Requirements First**: Every feature starts with clear EARS-notated requirements
-2. **Unified Workflow**: Single command handles implementation, testing, and verification
-3. **Development Flexibility**: Choose between Standard, TDD, or BDD approaches
-4. **Quality Built-In**: Automatic test execution and quality gate enforcement
-5. **Smart State Management**: Tasks progress automatically based on test results
-6. **Technology Agnostic**: Core methodology works across all stacks
-
-## 🔄 NEW: Simplified Development Workflow
-
-### Complete Task Lifecycle (3 Commands!)
-
-```bash
-# 1. Create task with requirements
-/task-create "User authentication feature" priority:high
-
-# 2. Implement with your preferred approach
-/task-work TASK-001 --mode=tdd    # or standard, or bdd
-
-# 3. Complete after review
+# In Claude Code - create and work on a task
+/task-create "Add user login feature"
+/task-work TASK-001  # Does everything: plan, review, implement, test, verify
 /task-complete TASK-001
 ```
 
-That's it! The `/task-work` command handles:
-- ✅ Code generation based on requirements
-- ✅ Comprehensive test creation
-- ✅ Automatic test execution
-- ✅ Quality gate verification
-- ✅ State management based on results
-- ✅ Clear, actionable feedback
+That's it! Three commands from idea to production-ready code.
+
+## What Makes This Different?
+
+### Phase 2.5: Architectural Review
+Before writing a single line of code, get automated evaluation of:
+- **SOLID Principles** (60/100 minimum score)
+- **DRY Violations** (detect duplication risks)
+- **YAGNI Compliance** (flag over-engineering)
+
+**Result**: Catches design flaws before implementation, saving 40-50% rework time.
+
+### Phase 4.5: Test Enforcement Loop
+After implementation, automatic test fixing:
+1. Run all tests
+2. If failures detected → analyze root cause
+3. Auto-fix code (up to 3 attempts)
+4. Re-run tests
+5. Block task if all attempts fail (zero tolerance for failing tests)
+
+**Result**: 100% test pass rate before code review. No "we'll fix it later."
+
+### Phase 2.7: Complexity Evaluation
+Automatic complexity scoring (0-10 scale):
+- **1-3 (Simple)**: Auto-proceed, no checkpoint (<4 hours)
+- **4-6 (Medium)**: Quick optional checkpoint (30s timeout)
+- **7-10 (Complex)**: Mandatory design approval (>8 hours)
+
+**Result**: Right level of oversight for task complexity.
+
+## When to Use Taskwright
+
+### Use When:
+- Individual tasks or small features (1-8 hours)
+- Solo dev or small teams (1-3 developers)
+- Need quality enforcement without ceremony
+- Want AI assistance with human oversight
+- Small-to-medium projects
+
+### Don't Use When:
+- Just want a code editor (use plain Claude Code)
+- Need formal requirements management (see note below)
+- Enterprise compliance workflows required
+- Multi-epic portfolio management (10+ features, 5+ devs)
+
+**Note**: For full requirements management (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see the complete Agentecflow system at [agentecflow_platform](../agentecflow_platform).
+
+## Available Commands
+
+### Core Workflow
+```bash
+/task-create "Title" [priority:high|medium|low]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only] [--implement-only]
+/task-complete TASK-XXX
+/task-status [TASK-XXX]
+/task-refine TASK-XXX  # Lightweight improvements
+```
 
 ### Development Modes
+- **Standard** (default): Implementation + tests together
+- **TDD**: Test-Driven Development (Red → Green → Refactor)
+- **BDD**: Behavior-Driven Development (requires BDD scenarios)
 
-#### Standard Mode (Default)
+### Design-First Workflow
 ```bash
-/task-work TASK-001
+# Complex task? Split design and implementation
+/task-work TASK-XXX --design-only      # Phases 1-2.8, stops at checkpoint
+# [Review and approve plan]
+/task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
 ```
-Best for straightforward features where implementation and tests are created together.
 
-#### TDD Mode
+### UX Design Integration
 ```bash
-/task-work TASK-001 --mode=tdd
+/figma-to-react <file-key> [node-id]    # Figma → TypeScript React + Tailwind
+/zeplin-to-maui <project-id> <screen-id> # Zeplin → .NET MAUI + XAML
 ```
-Follows Red-Green-Refactor cycle. Best for complex business logic.
 
-#### BDD Mode
+### Utilities
 ```bash
-/task-work TASK-001 --mode=bdd
-```
-Starts from Gherkin scenarios. Best for user-facing features.
-
-## 🏗️ Architecture
-
-```
-.claude/                    # Claude Code configuration
-├── methodology/           # Core SDLC methodology
-├── agents/               # Specialized AI agents
-│   └── task-manager.md  # NEW: Unified workflow orchestrator
-├── commands/             # Development workflow commands
-│   └── task-work.md     # NEW: Single command for everything
-├── templates/            # Reusable document templates
-├── stacks/              # Technology-specific configurations
-└── hooks/               # Automation scripts
-
-docs/                      # Project documentation
-├── requirements/         # EARS requirements
-├── bdd/                 # BDD/Gherkin scenarios
-├── adr/                 # Architecture decisions
-├── state/               # Progress tracking
-└── guides/              # User guides
-    ├── MIGRATION-GUIDE.md          # NEW: How to migrate to v2.0
-    └── task-work-practical-example.md  # NEW: Real examples
-
-tasks/                     # Task management (NEW structure)
-├── backlog/             # New tasks
-├── in_progress/         # Active development
-├── in_review/           # Passed quality gates
-├── blocked/             # Failed quality gates
-└── completed/           # Finished tasks
+/debug                     # Troubleshoot issues
 ```
 
-## 📊 Automatic Quality Gates
+## Supported Stacks
 
-The `/task-work` command enforces quality standards automatically:
+Choose your template during initialization:
+
+| Template | Technologies | Use For |
+|----------|-------------|---------|
+| **react** | React + TypeScript + Next.js + Tailwind + Vitest + Playwright | Web applications |
+| **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
+| **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
+| **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
+| **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM | Mobile (page-based) |
+| **dotnet-microservice** | .NET + FastEndpoints + REPR pattern | Microservices |
+| **default** | Language-agnostic | Any other stack |
+
+See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
+
+## Quality Gates (Automatic)
+
+All enforced automatically during `/task-work`:
 
 | Gate | Threshold | Action if Failed |
 |------|-----------|-----------------|
-| Tests Pass | 100% | Task → BLOCKED |
+| Compilation | 100% | Task → BLOCKED |
+| Tests Pass | 100% | Auto-fix (3 attempts) then BLOCKED |
 | Line Coverage | ≥80% | Request more tests |
 | Branch Coverage | ≥75% | Request more tests |
-| Performance | <30s | Warning only |
+| Architectural Review | ≥60/100 | Human checkpoint required |
+| Plan Audit | 0 violations | Variance review (scope creep detection) |
 
-No manual checking needed - everything is automatic!
+## Philosophy
 
-## 🔧 Task States (Automatic Management)
+1. **Quality First**: Never compromise on test coverage or architecture
+2. **Pragmatic Approach**: Right amount of process for task complexity
+3. **AI/Human Collaboration**: AI does heavy lifting, humans make decisions
+4. **Zero Ceremony**: No unnecessary documentation or process
+5. **Fail Fast**: Block bad code early, don't let it reach production
+
+## Project Structure
 
 ```
-BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
-             ↓              ↓
-          BLOCKED        BLOCKED
+.claude/                    # Configuration
+├── agents/                # Specialized AI agents
+├── commands/              # Command specifications
+└── task-plans/            # Implementation plans (Markdown)
+
+tasks/                      # Task management
+├── backlog/
+├── in_progress/
+├── in_review/
+├── blocked/
+└── completed/
+
+docs/                       # Documentation
+├── guides/                # Workflow guides
+└── workflows/             # Detailed workflows
+
+installer/global/           # Global resources
+├── agents/                # Core AI agents
+├── commands/              # Command specs
+└── templates/             # Stack templates
 ```
 
-States update automatically based on test results:
-- ✅ All quality gates pass → `IN_REVIEW`
+## Task States
+
+```
+BACKLOG
+   ├─ (task-work) ──────→ IN_PROGRESS ──→ IN_REVIEW ──→ COMPLETED
+   │                            ↓              ↓
+   │                        BLOCKED        BLOCKED
+   │
+   └─ (task-work --design-only) ─→ DESIGN_APPROVED
+                                        │
+                                        └─ (task-work --implement-only) ─→ IN_PROGRESS ──→ IN_REVIEW
+```
+
+**Automatic transitions based on results:**
+- ✅ All gates pass → `IN_REVIEW`
 - ❌ Tests fail → `BLOCKED`
-- ⚠️ Coverage low → Stay in `IN_PROGRESS` with feedback
+- ⚠️ Coverage low → Request more tests
+- 🔄 Design approved → `DESIGN_APPROVED`
 
-## 📚 EARS Notation
+## Documentation
 
-The system uses five EARS patterns for requirements:
+### Getting Started
+- [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md) - Complete workflow guide
+- [Complexity Management](docs/workflows/complexity-management-workflow.md) - Understanding complexity evaluation
+- [Design-First Workflow](docs/workflows/design-first-workflow.md) - When and how to split design/implementation
 
-1. **Ubiquitous**: `The [system] shall [behavior]`
-2. **Event-Driven**: `When [trigger], the [system] shall [response]`
-3. **State-Driven**: `While [state], the [system] shall [behavior]`
-4. **Unwanted Behavior**: `If [error], then the [system] shall [recovery]`
-5. **Optional Feature**: `Where [feature], the [system] shall [behavior]`
+### Advanced
+- [UX Design Integration](docs/workflows/ux-design-integration-workflow.md) - Figma/Zeplin → Code
+- [MCP Optimization Guide](docs/guides/mcp-optimization-guide.md) - Model Context Protocol integration
+- [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations
 
-## 🧪 Testing Strategy (Now Automatic!)
+### Templates
+- [MAUI Template Selection](docs/guides/maui-template-selection.md) - AppShell vs NavigationPage
+- [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
 
-### Test Execution by Technology
-- **Python**: pytest with coverage
-- **TypeScript/JavaScript**: npm test with coverage
-- **.NET**: dotnet test with coverage
-- **Java**: mvn test with jacoco
+## Example Workflow
 
-All handled automatically by `/task-work`!
-
-### Development Mode Testing
-
-#### TDD Mode Testing
-1. **RED**: Generate failing tests
-2. **GREEN**: Minimal implementation
-3. **REFACTOR**: Improve with tests passing
-
-#### BDD Mode Testing
-1. Parse Gherkin scenarios
-2. Generate step definitions
-3. Implement features
-4. Verify scenarios pass
-
-## 🔧 Supported Technology Stacks
-
-- **React/TypeScript**: Vite, Vitest, Playwright
-- **Python API**: FastAPI, pytest, LangGraph
-- **.NET Microservice**: FastEndpoints, Either monad
-- **.NET MAUI**: Cross-platform mobile with MVVM
-- **Java/Spring**: Maven, JUnit, Cucumber
-
-## 📊 Example Workflow
-
-### Real-World Example: User Authentication
+### Real-World: User Authentication Feature
 
 ```bash
 # 1. Create task
-/task-create "Implement user authentication"
+/task-create "Add JWT-based user authentication"
 
-# 2. Work on it with TDD
-/task-work TASK-042 --mode=tdd
+# 2. Work on it (automatic phases)
+/task-work TASK-001
 
 # Output:
-# 🔴 RED Phase: Creating 8 failing tests...
-# 🟢 GREEN Phase: Implementing to pass tests...
-# 🔵 REFACTOR Phase: Improving code quality...
-# ✅ All tests passing! Coverage: 92%
-# 📊 Task moved to IN_REVIEW
+# Phase 1: Requirements Analysis ✅
+# Phase 2: Implementation Planning ✅
+# Phase 2.5: Architectural Review (Score: 75/100) ✅
+# Phase 2.7: Complexity Evaluation (3/10 - Simple) ✅
+# Phase 2.8: Auto-proceed (no checkpoint needed)
+# Phase 3: Implementation (7 files created) ✅
+# Phase 4: Testing (15 tests, 92% coverage) ✅
+# Phase 4.5: Test Enforcement (All tests passing) ✅
+# Phase 5: Code Review ✅
+# Phase 5.5: Plan Audit (0 violations) ✅
+#
+# Task moved to IN_REVIEW
 
-# 3. Complete after review
-/task-complete TASK-042
+# 3. Complete
+/task-complete TASK-001
 ```
 
-Total time: ~2 minutes vs ~10 minutes with old workflow!
+Total time: ~2 minutes. Zero manual quality checks.
 
-## 🚀 Migration from v1.0
+## Contributing
 
-If you're using the old multi-command workflow:
+1. Fork the repository
+2. Create a task: `/task-create "Your contribution"`
+3. Implement: `/task-work TASK-XXX`
+4. Quality gates pass automatically
+5. Submit PR
 
-### Old Way (7+ commands)
+See [Contributing Guide](CONTRIBUTING.md) for details.
+
+## Conductor Integration
+
+Fully compatible with [Conductor.build](https://conductor.build) for parallel development across worktrees.
+
+**Features:**
+- Symlink architecture for shared state
+- Auto-commit state changes
+- 100% state preservation across parallel sessions
+- Zero manual intervention required
+
+**Setup:**
 ```bash
-/task-create → /task-start → /task-implement → /task-test → /task-review → /task-complete
+./installer/scripts/install.sh  # Creates symlinks automatically
+agentecflow doctor              # Verify integration
 ```
 
-### New Way (3 commands)
+See [Conductor Integration](agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md) for details.
+
+## Testing by Stack
+
+Automatic detection and execution:
+
+**Python:**
 ```bash
-/task-create → /task-work → /task-complete
+pytest tests/ -v --cov=src --cov-report=term --cov-report=json
 ```
 
-See [Migration Guide](docs/guides/MIGRATION-GUIDE.md) for detailed instructions.
+**TypeScript/JavaScript:**
+```bash
+npm test -- --coverage
+```
 
-## 📚 Documentation
+**.NET:**
+```bash
+dotnet test --collect:"XPlat Code Coverage" --logger:"json"
+```
 
-### Essential Guides
-- **[Quick Reference v2.0](.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md)** - All commands at a glance
-- **[Migration Guide](docs/guides/MIGRATION-GUIDE.md)** - Moving from v1.0 to v2.0
-- **[Task Work Examples](docs/guides/task-work-practical-example.md)** - Real-world scenarios
-- **[Command Specification](.claude/commands/task-work-specification.md)** - Technical details
+All handled automatically by Phase 4 and 4.5!
 
-### Getting Started
-- [Setup Guide](installer/SETUP_GUIDE.md) - Complete setup instructions
-- [User Guide](docs/guides/AI-ENGINEER-USER-GUIDE.md) - Comprehensive user manual
-- [Command Usage](docs/guides/COMMAND_USAGE_GUIDE.md) - All commands explained
-
-### Architecture & Design
-- [Task System Review](docs/guides/TASK-SYSTEM-REVIEW-AND-PLAN.md) - Design decisions
-- [Project Structure](docs/PROJECT_STRUCTURE_GUIDE.md) - Directory organization
-- [Workflow Guide](docs/guides/task-creation-implementation-workflow.md) - Detailed workflows
-
-### Stack-Specific Documentation
-- [.NET Integration](docs/guides/NET_STACKS_INTEGRATION.md) - .NET Microservice and MAUI
-- [React Patterns](installer/global/templates/react/PATTERNS.md) - Production React patterns
-- [Python Patterns](installer/global/templates/python/CLAUDE.md) - LangGraph and SSE patterns
-
-## 🤝 Contributing
-
-1. Create a task using `/task-create`
-2. Implement using `/task-work` with your preferred mode
-3. Ensure all quality gates pass (automatic!)
-4. Submit PR after task completion
-
-## 📈 Benefits of v2.0
-
-### Developer Productivity
-- **70% fewer commands** to remember
-- **50% faster** task completion
-- **Zero** manual quality checks
-
-### Code Quality
-- **100%** of tasks have tests
-- **Automatic** coverage enforcement
-- **Built-in** TDD/BDD support
-
-### Team Collaboration
-- **Clear** task states
-- **Transparent** progress tracking
-- **Consistent** quality standards
-
-## 🔮 Future Enhancements
-
-### Coming Soon
-- MCP integration for Jira/Azure DevOps/Linear
-- Advanced test failure diagnosis
-- Performance profiling
-- AI-powered test generation
-
-## 📄 License
+## License
 
 MIT License - See LICENSE file for details
 
-## 🙏 Acknowledgments
+## Support
 
-- Inspired by Agent OS's markdown-driven approach
-- EARS notation by Alistair Mavin
-- BDD methodology by Dan North
-- TDD practices by Kent Beck
-
-## 📞 Support
-
-For questions or issues:
-- Check [Quick Reference v2.0](.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md)
-- Read [Migration Guide](docs/guides/MIGRATION-GUIDE.md)
-- See [Examples](docs/guides/task-work-practical-example.md)
+- Check [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md)
+- Read [Complexity Management](docs/workflows/complexity-management-workflow.md)
+- See [Design-First Workflow](docs/workflows/design-first-workflow.md)
 - Create a GitHub issue
 
 ---
 
-Built with ❤️ for AI-powered software engineering - Now with unified workflow!
+**Built for pragmatic developers who ship quality code fast.**

@@ -2,58 +2,99 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Taskwright - Lightweight AI-Assisted Development
+## AI Engineer - Complete Agentecflow Implementation
 
-This is the **Taskwright** project - a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
+This is the **AI-Engineer** project - a comprehensive implementation of the **Agentecflow software engineering lifecycle system** that transforms specifications into production-ready solutions through AI-augmented workflows.
 
-**Core Features:**
-- **Quality Gates**: Architectural review (Phase 2.5) and test enforcement (Phase 4.5)
-- **Simple Workflow**: Create → Work → Complete (3 commands)
-- **AI Collaboration**: AI handles implementation, humans make decisions
-- **No Ceremony**: Minimal process, maximum productivity
+**Full Agentecflow Implementation:**
+- **Stage 1: Specification** - Interactive requirements gathering with EARS notation
+- **Stage 2: Tasks Definition** - Epic/feature breakdown with automatic PM tool export
+- **Stage 3: Engineering** - AI/human collaboration with comprehensive quality gates
+- **Stage 4: Deployment & QA** - Production readiness with automated validation
 
 ### Core Principles
 
-1. **Quality First**: Never compromise on test coverage or architecture
-2. **Pragmatic Approach**: Right amount of process for task complexity
-3. **AI/Human Collaboration**: AI does heavy lifting, humans make decisions
-4. **Zero Ceremony**: No unnecessary documentation or process
-5. **Fail Fast**: Block bad code early, don't let it reach production
+1. **Complete Agentecflow Workflow**: Full Stage 1-4 implementation with human checkpoints
+2. **Epic → Feature → Task Hierarchy**: Three-tier project management with automatic progress rollup
+3. **External PM Tool Integration**: Seamless sync with Jira, Linear, GitHub, Azure DevOps
+4. **Quality-First Engineering**: Built-in testing, validation, and enterprise-grade quality gates
+5. **Technology-Agnostic Base**: Core methodology works across all technology stacks
+6. **AI/Human Collaboration**: Intelligent delegation with full human control retention
 
 ## Essential Commands
 
-### Core Workflow
+### Stage 1: Specification
 ```bash
-/task-create "Title" [priority:high|medium|low]
+/gather-requirements   # Interactive requirements gathering (Q&A)
+/formalize-ears       # Convert requirements to EARS notation
+/generate-bdd         # Generate BDD/Gherkin scenarios
+```
+
+### Stage 2: Tasks Definition
+```bash
+# Epic Management
+/epic-create "Title" [export:jira,linear] [priority:high]
+/epic-status [EPIC-XXX] [--hierarchy]
+
+# Feature Management
+/feature-create "Title" epic:EPIC-XXX [requirements:[REQ-001]]
+/feature-generate-tasks FEAT-XXX [--interactive]
+
+# Task Management
+/task-create "Title" epic:EPIC-XXX feature:FEAT-XXX
+```
+
+### Stage 3: Engineering
+```bash
 /task-work TASK-XXX [--mode=standard|tdd|bdd]
-/task-complete TASK-XXX
-/task-status [TASK-XXX]
-/task-refine TASK-XXX
+/task-status [TASK-XXX] [--hierarchy]
+/task-sync [TASK-XXX] [--rollup-progress]
 ```
 
-### Design-First Workflow (Complex Tasks)
+**Enhanced Quality Assurance**:
+- **Architectural Review (Phase 2.5)**: Evaluates SOLID, DRY, YAGNI before implementation (saves 40-50% time)
+- **Test Enforcement (Phase 4.5)**: Auto-fixes failing tests (up to 3 attempts), ensures 100% pass rate
+- **Context7 MCP Integration**: Automatically retrieves up-to-date library documentation during implementation, ensuring latest patterns and best practices are used (not just training data)
+
+### Stage 4: Deployment & QA
 ```bash
-/task-work TASK-XXX --design-only      # Phases 1-2.8, stops at checkpoint
-# [Review and approve implementation plan]
-/task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
+/task-complete TASK-XXX [--interactive]
 ```
 
-### UX Design Integration
+### Project Visualization
 ```bash
-/figma-to-react <file-key> [node-id]    # Figma → TypeScript React + Tailwind
-/zeplin-to-maui <project-id> <screen-id> # Zeplin → .NET MAUI + XAML
-```
-
-### Utilities
-```bash
-/debug  # Troubleshoot issues
+/hierarchy-view [EPIC-XXX] [--timeline] [--agentecflow]
+/portfolio-dashboard [--business-value] [--risks]
 ```
 
 **See**: `installer/global/commands/*.md` for complete command specifications.
 
-## Task Workflow Phases
+## Agentecflow Lite: The Sweet Spot Workflow
 
-The `/task-work` command executes these phases automatically:
+**Agentecflow Lite** provides **80% of benefits with 20% of complexity** via `/task-work`.
+
+**Key Features:**
+- Automatic architectural review (Phase 2.5B)
+- Zero-tolerance test enforcement (Phase 4.5)
+- Complexity-based routing (simple auto-proceed, complex get checkpoints)
+- Human approval for critical decisions (Phase 2.8)
+- Plan auditing for scope creep detection (Phase 5.5)
+- Markdown plans for human review
+
+**When to Use:**
+- Individual tasks (not full epics)
+- Team size 1-3 developers
+- Small-to-medium projects
+- Speed with safety
+
+**Upgrade to Full Agentecflow when:**
+- Multi-epic projects (10+ features)
+- Team size >5 developers
+- Enterprise compliance required
+
+**Complete Guide**: [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md)
+
+### Task-Work Workflow Phases
 
 ```
 Phase 1: Requirements Analysis
@@ -149,12 +190,17 @@ tasks/                      # Task management
 └── completed/
 
 docs/                       # Documentation
+├── epics/                 # Epic specifications
+├── features/              # Feature specifications
+├── requirements/          # EARS requirements
+├── bdd/                   # BDD/Gherkin scenarios
 ├── guides/                # Workflow guides
 └── workflows/             # Detailed workflows
 
 installer/global/           # Global resources
 ├── agents/                # Core AI agents
 ├── commands/              # Command specs
+├── instructions/          # Methodology
 └── templates/             # Stack templates
 ```
 
@@ -170,7 +216,7 @@ agentic-init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotn
 ```
 
 **Available Templates:**
-- **default**: Language-agnostic with quality gates
+- **default**: Language-agnostic with complete Agentecflow
 - **react**: React + TypeScript + Next.js + Tailwind + Vitest + Playwright
 - **python**: FastAPI + pytest + LangGraph + Pydantic
 - **typescript-api**: NestJS + Result patterns + domain modeling
@@ -187,7 +233,7 @@ agentic-init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotn
 
 Fully compatible with [Conductor.build](https://conductor.build) for parallel development.
 
-**State Persistence:** ✅
+**State Persistence Solved (TASK-031):** ✅
 - Symlink architecture + auto-commit
 - 100% state preservation across worktrees
 - Zero manual intervention required
@@ -203,6 +249,8 @@ agentecflow doctor              # Verify integration
 - State: `{worktree}/.claude/state → {main-repo}/.claude/state`
 - All commands available in every worktree
 - Automatic state sync across parallel sessions
+
+**See**: [agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md](../agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md)
 
 ## Testing by Stack
 
@@ -267,9 +315,19 @@ BACKLOG
 - **BLOCKED**: Tests failed or quality gates not met
 - **COMPLETED**: Finished and archived
 
+## EARS Notation Patterns
+
+1. **Ubiquitous**: `The [system] shall [behavior]`
+2. **Event-Driven**: `When [trigger], the [system] shall [response]`
+3. **State-Driven**: `While [state], the [system] shall [behavior]`
+4. **Unwanted Behavior**: `If [error], then the [system] shall [recovery]`
+5. **Optional Feature**: `Where [feature], the [system] shall [behavior]`
+
 ## Core AI Agents
 
 **Global Agents:**
+- **requirements-analyst**: EARS notation requirements
+- **bdd-generator**: BDD/Gherkin scenarios
 - **architectural-reviewer**: SOLID/DRY/YAGNI compliance review
 - **task-manager**: Unified workflow management
 - **test-verifier/orchestrator**: Test execution and quality gates
@@ -317,42 +375,71 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 - **Standard**: Straightforward implementations
 
 **Architecture Compliance:**
+- EARS notation for requirements
+- BDD scenarios for user features
 - Pattern consistency per stack
 - Self-documenting code
-- Clean separation of concerns
 
-## Key Workflow
+## Key Workflows
 
-**Simple Task Workflow:**
+**Epic-to-Implementation:**
 ```bash
-# Create task
-/task-create "Add user authentication"
+# Stage 1: Specification
+/gather-requirements → /formalize-ears
 
-# Work on it (Phases 1-5.5 automatic)
-/task-work TASK-001
+# Stage 2: Tasks Definition
+/epic-create → /feature-create → /feature-generate-tasks → /task-create
 
-# Complete
-/task-complete TASK-001
+# Stage 3: Engineering (Phases 1-5.5 automatic)
+/task-work TASK-XXX
+
+# Stage 4: Deployment
+/task-complete TASK-XXX
 ```
 
-**Complex Task Workflow (Design-First):**
+**Team Collaboration:**
 ```bash
-# Create complex task
-/task-create "Refactor authentication system" priority:high
+# Team lead
+/task-status --dev-dashboard
+/hierarchy-view --agentecflow
+/portfolio-dashboard --resources
 
-# Design phase only
-/task-work TASK-002 --design-only
-
-# [Human reviews and approves plan]
-
-# Implementation phase
-/task-work TASK-002 --implement-only
-
-# Complete
-/task-complete TASK-002
+# Developer
+/task-work TASK-XXX --with-context
+/task-sync TASK-XXX --rollup-progress
 ```
 
-**See**: [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md)
+**See**: [Complete Agentecflow Workflows](docs/workflows/complete-workflows.md)
+
+## System Capabilities
+
+✅ **Complete Agentecflow**: All 4 stages with human checkpoints
+✅ **Epic → Feature → Task**: Three-tier hierarchy with progress rollup
+✅ **Enterprise QA**: Multi-level gates, comprehensive testing, security
+✅ **Visual Management**: Executive dashboards, hierarchy visualization
+✅ **Multi-Stack Support**: React, Python, TypeScript, .NET MAUI, microservices
+✅ **PM Tool Integration**: Jira, Linear, GitHub Projects, Azure DevOps
+
+## External PM Tool Integration
+
+**Supported Platforms:**
+- **Jira**: Epic → Story → Sub-task
+- **Linear**: Initiative → Feature → Issue
+- **GitHub Projects**: Milestone → Issue → Linked Issue
+- **Azure DevOps**: Epic → Feature → Task
+
+**Capabilities:**
+- Bidirectional sync
+- Hierarchy preservation
+- Progress rollup
+- Conflict resolution
+
+**MCP Integration:**
+- Requirements MCP (EARS/BDD)
+- PM Tools MCP (orchestration)
+- Testing MCP (quality gates)
+- Deployment MCP (Stage 4)
+- Code Analysis MCP (metrics)
 
 ## Iterative Refinement
 
@@ -387,21 +474,15 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 **Agent Definitions:** `installer/global/agents/*.md`
 **Workflow Guides:** `docs/guides/*.md` and `docs/workflows/*.md`
 **Stack Templates:** `installer/global/templates/*/`
+**Testing Guides:** `docs/testing.md`
 
-## When to Use Taskwright
+## Production Readiness ✅
 
-### Use When:
-- Individual tasks or small features (1-8 hours)
-- Solo dev or small teams (1-3 developers)
-- Need quality enforcement without ceremony
-- Want AI assistance with human oversight
-- Small-to-medium projects
+Enterprise-ready with:
+- Complete 4-stage Agentecflow implementation
+- Scalable architecture (1 dev → enterprise portfolio)
+- Enterprise-grade QA (testing, security, compliance)
+- Business intelligence (ROI, resources, risk)
+- Multi-stack support with specialized agents
 
-### Upgrade to Full Agentecflow When:
-- Need formal requirements management (EARS notation, BDD scenarios)
-- Multi-epic projects (10+ features)
-- Team size >5 developers
-- Enterprise compliance required
-- PM tool integration needed (Jira, Linear, Azure DevOps, GitHub)
-
-**Full System**: For complete requirements management, epic/feature hierarchy, and PM tool sync, see the [agentecflow_platform](../agentecflow_platform) repository.
+**Ready for immediate deployment across teams of any size.**
