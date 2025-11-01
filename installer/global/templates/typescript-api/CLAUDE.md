@@ -484,27 +484,26 @@ Use `/create-guard GuardName` to generate:
 - Role-based authorization logic
 - Unit tests for guard behavior
 
-## Workflow Integration
+## Task Workflow
 
-### Requirements → Implementation Flow
-1. **Gather Requirements** (`/gather-requirements`)
-   - Creates docs/requirements/draft/feature.md
+### Create and Work on Tasks
+```bash
+# 1. Create task
+/task-create "Add user authentication endpoint"
 
-2. **Formalize to EARS** (`/formalize-ears`)
-   - Moves to docs/requirements/approved/feature.md
+# 2. Work on task (implementation + testing)
+/task-work TASK-XXX [--mode=standard|tdd|bdd]
 
-3. **Generate BDD** (`/generate-bdd`)
-   - Creates docs/bdd/features/feature.feature
+# 3. Complete task
+/task-complete TASK-XXX
+```
 
-4. **Implement Feature**
-   - Create module with NestJS CLI patterns
-   - Implement services with Result pattern
-   - Create controllers with proper decorators
-   - Write comprehensive tests
-
-5. **Update State** (`/update-state`)
-   - Move to docs/requirements/implemented/
-   - Update docs/state/current-sprint.md
+### Implementation Steps
+1. **Create Module** - Use NestJS CLI patterns
+2. **Implement Services** - Use Result pattern for error handling
+3. **Create Controllers** - Apply proper decorators and validation
+4. **Write Tests** - Comprehensive unit, integration, and e2e tests
+5. **Quality Gates** - Automatic verification before completion
 
 ## Resources
 - [NestJS Documentation](https://docs.nestjs.com/)

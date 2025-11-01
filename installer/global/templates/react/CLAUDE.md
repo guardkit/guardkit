@@ -1,6 +1,6 @@
 # React Project Context for Claude Code
 
-This is a React project using the Agentic Flow system with best practices derived from production implementations.
+This is a React project using the Agentic Flow task workflow system with best practices derived from production implementations.
 
 ## Technology Stack
 - **Frontend**: React 18+ with TypeScript
@@ -32,8 +32,41 @@ This is a React project using the Agentic Flow system with best practices derive
 │   ├── unit/           # Component tests
 │   ├── integration/    # Integration tests
 │   └── e2e/            # Playwright tests
+├── tasks/              # Task management
+│   ├── backlog/
+│   ├── in_progress/
+│   ├── in_review/
+│   └── completed/
 └── docs/               # Documentation
 ```
+
+## Task Workflow
+
+### Unified 3-Command System
+```bash
+# 1. Create Task
+/task-create "Add user profile component"
+/task-create "Implement search functionality" priority:high
+
+# 2. Work on Task (Implementation + Testing Combined)
+/task-work TASK-XXX [--mode=standard|tdd|bdd]
+
+# 3. Complete Task
+/task-complete TASK-XXX
+```
+
+### Development Modes
+- **Standard Mode**: Implementation and tests created together
+- **TDD Mode**: Red-Green-Refactor cycle for complex logic
+- **BDD Mode**: Start from Gherkin scenarios for user-facing features
+
+### Quality Gates (Automatic)
+Every task must pass these gates before completion:
+- ✅ All tests passing (100%)
+- ✅ Code coverage ≥ 80%
+- ✅ Performance benchmarks met
+- ✅ No security vulnerabilities
+- ✅ Accessibility standards met
 
 ## Development Standards
 
@@ -125,17 +158,17 @@ describe('Button Component', () => {
   it('renders with correct text and handles clicks', async () => {
     const handleClick = jest.fn();
     const user = userEvent.setup();
-    
+
     render(<Button onClick={handleClick}>Click me</Button>);
-    
+
     const button = screen.getByRole('button', { name: /click me/i });
     expect(button).toBeInTheDocument();
     expect(button).toBeEnabled();
-    
+
     await user.click(button);
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
-  
+
   it('respects disabled state', () => {
     render(<Button disabled>Disabled</Button>);
     expect(screen.getByRole('button')).toBeDisabled();
@@ -151,9 +184,9 @@ import { useApi } from './useApi';
 describe('useApi Hook', () => {
   it('handles successful API calls', async () => {
     const { result } = renderHook(() => useApi('/endpoint'));
-    
+
     expect(result.current.loading).toBe(true);
-    
+
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
       expect(result.current.data).toBeDefined();
@@ -171,19 +204,19 @@ test.describe('User Journey', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
   });
-  
+
   test('complete user flow', async ({ page }) => {
     // Wait for app to load
     await expect(page.locator('[data-testid="app-loaded"]')).toBeVisible();
-    
+
     // Navigate through flow
     await page.click('text=Get Started');
     await expect(page).toHaveURL('/onboarding');
-    
+
     // Fill form
     await page.fill('[name="email"]', 'test@example.com');
     await page.click('button[type="submit"]');
-    
+
     // Verify result
     await expect(page.locator('.success-message')).toContainText('Welcome');
   });
@@ -230,3 +263,64 @@ const handleClick = useCallback(() => {
   // Handler logic
 }, [dependency]);
 ```
+
+## State Management Patterns
+
+### Local State (Simple Cases)
+```typescript
+const [count, setCount] = useState(0);
+const [isLoading, setIsLoading] = useState(false);
+```
+
+### Context API (Shared State)
+```typescript
+// Create context
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+
+// Provider component
+export const ThemeProvider: React.FC<PropsWithChildren> = ({ children }) => {
+  const [theme, setTheme] = useState<Theme>('light');
+
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
+    </ThemeContext.Provider>
+  );
+};
+
+// Custom hook for consuming context
+export const useTheme = () => {
+  const context = useContext(ThemeContext);
+  if (!context) {
+    throw new Error('useTheme must be used within ThemeProvider');
+  }
+  return context;
+};
+```
+
+### Zustand (Complex Global State)
+```typescript
+import { create } from 'zustand';
+
+interface StoreState {
+  user: User | null;
+  setUser: (user: User) => void;
+  clearUser: () => void;
+}
+
+export const useStore = create<StoreState>((set) => ({
+  user: null,
+  setUser: (user) => set({ user }),
+  clearUser: () => set({ user: null }),
+}));
+```
+
+## Best Practices
+
+1. **Choose the right mode**: TDD for complex logic, BDD for user features, Standard for simple components
+2. **Let quality gates guide you**: They ensure consistent quality
+3. **Trust the workflow**: Implementation and testing together prevent bugs
+4. **Optimize performance**: Use memoization and code splitting
+5. **Accessibility first**: Every component should be keyboard and screen reader accessible
+
+Remember: **"Implementation and testing are inseparable"** - this is the core philosophy of the unified workflow.

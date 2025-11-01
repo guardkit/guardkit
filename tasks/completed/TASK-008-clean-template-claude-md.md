@@ -2,12 +2,13 @@
 id: TASK-008
 title: "Clean Stack Template CLAUDE.md Files"
 created: 2025-10-27
-status: backlog
+status: completed
 priority: medium
 complexity: 4
 parent_task: none
 subtasks: []
 estimated_hours: 2
+completed: 2025-11-01
 ---
 
 # TASK-008: Clean Stack Template CLAUDE.md Files
@@ -230,3 +231,51 @@ grep -r "EARS\|epic.*hierarchy\|feature.*hierarchy" \
 - Some templates may not have all sections - that's OK
 - Keep any template-specific innovations
 - Focus on removing epic/feature/requirements, not rewriting everything
+
+## Completion Summary
+
+### Changes Made
+
+**Templates Updated:**
+- ✅ default/CLAUDE.md - Removed requirements management sections, simplified workflow
+- ✅ react/CLAUDE.md - Added task workflow section, enhanced with state management patterns
+- ✅ python/CLAUDE.md - No changes needed (already clean)
+- ✅ typescript-api/CLAUDE.md - Replaced requirements workflow with unified task workflow
+- ✅ maui-appshell/CLAUDE.md - No changes needed (already clean)
+- ✅ maui-navigationpage/CLAUDE.md - No changes needed (already clean)
+- ✅ dotnet-microservice/CLAUDE.md - No changes needed (already clean)
+- ✅ fullstack/CLAUDE.md - Replaced epic/feature workflow with unified task system
+
+### Sections Removed
+- Requirements Management references
+- EARS Notation guidance
+- BDD/Gherkin workflow instructions
+- Epic/Feature hierarchy documentation
+- `/gather-requirements`, `/formalize-ears`, `/generate-bdd` commands
+- `epic:EPIC-XXX`, `feature:FEAT-XXX`, `requirements:[REQ-XXX]` parameter patterns
+
+### Sections Retained
+- Task Workflow (`/task-create`, `/task-work`, `/task-complete`)
+- Quality Gates (Phase 2.5, 4.5, 2.7, 5.5)
+- Testing Patterns (stack-specific)
+- Stack-Specific Patterns and Best Practices
+- Architecture Principles
+- Development Standards
+
+### Verification
+- ✅ All 8 templates verified clean (no forbidden references)
+- ✅ Backups created (.backup files)
+- ✅ Task creation examples simplified
+- ✅ Workflow examples updated to unified system
+
+### Files Changed
+- installer/global/templates/default/CLAUDE.md
+- installer/global/templates/react/CLAUDE.md
+- installer/global/templates/typescript-api/CLAUDE.md
+- installer/global/templates/fullstack/CLAUDE.md
+
+### Files Unchanged (Already Clean)
+- installer/global/templates/python/CLAUDE.md
+- installer/global/templates/maui-appshell/CLAUDE.md
+- installer/global/templates/maui-navigationpage/CLAUDE.md
+- installer/global/templates/dotnet-microservice/CLAUDE.md

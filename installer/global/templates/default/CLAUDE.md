@@ -11,14 +11,15 @@ This project uses the AI Engineer v2.0 system with the unified task workflow for
 ## Key Technologies
 - [List main technologies]
 
-## Development Workflow - Unified 3-Command System
+## Development Workflow - Simplified Task System
 
-### The New Simplified Workflow
+### The Streamlined Workflow
 We use a unified task workflow that combines implementation and testing into an inseparable process:
 
 ```bash
 # 1. Create Task
-/task-create "Feature description" requirements:[REQ-XXX] priority:high
+/task-create "Feature description"
+/task-create "Add authentication" priority:high
 
 # 2. Work on Task (Implementation + Testing Combined)
 /task-work TASK-XXX [--mode=standard|tdd|bdd]
@@ -39,7 +40,7 @@ We use a unified task workflow that combines implementation and testing into an 
 - Tests written first, then implementation
 - Best for complex business logic
 
-#### BDD Mode  
+#### BDD Mode
 - Start from Gherkin scenarios
 - Generate step definitions
 - Best for user-facing features
@@ -52,15 +53,10 @@ Every task must pass these gates before completion:
 - ✅ No security vulnerabilities
 - ✅ All acceptance criteria satisfied
 
-## Core Methodology Commands
-
-### Requirements Engineering
-- `/gather-requirements` - Interactive requirements elicitation
-- `/formalize-ears` - Convert to EARS notation
-- `/generate-bdd` - Create Gherkin scenarios
+## Core Task Commands
 
 ### Task Management (Unified Workflow)
-- `/task-create` - Create new task with requirements
+- `/task-create` - Create new task
 - `/task-work` - Implement and test (unified command)
 - `/task-complete` - Finalize task after review
 
@@ -77,8 +73,6 @@ Every task must pass these gates before completion:
 - **Quality gates** prevent low-quality code
 
 ### Documentation
-- **EARS format** for all requirements
-- **BDD scenarios** for all features
 - **ADRs** for architectural decisions
 - **Automatic test reports** from /task-work
 
@@ -95,11 +89,6 @@ Every task must pass these gates before completion:
 │   ├── templates/    # File templates
 │   └── settings.json # Project settings
 ├── docs/            # All documentation
-│   ├── requirements/ # EARS requirements
-│   │   ├── draft/   # Work in progress
-│   │   ├── approved/# Ready to implement
-│   │   └── done/    # Implemented
-│   ├── bdd/         # BDD scenarios
 │   ├── adr/         # Architecture decisions
 │   └── state/       # Progress tracking
 ├── tasks/           # Task management
@@ -119,22 +108,13 @@ Every task must pass these gates before completion:
 
 ### Starting a New Feature
 ```bash
-# 1. Gather requirements interactively
-/gather-requirements
+# 1. Create task
+/task-create "Implement user login" priority:high
 
-# 2. Formalize into EARS notation
-/formalize-ears
-
-# 3. Generate BDD scenarios
-/generate-bdd
-
-# 4. Create task from requirements
-/task-create "Implement user login" requirements:[REQ-001,REQ-002]
-
-# 5. Work on task with your preferred mode
+# 2. Work on task with your preferred mode
 /task-work TASK-001 --mode=tdd
 
-# 6. Complete after review
+# 3. Complete after review
 /task-complete TASK-001
 ```
 
@@ -155,18 +135,17 @@ Every task must pass these gates before completion:
 
 ## Best Practices
 
-1. **Always link requirements** to tasks for traceability
-2. **Choose the right mode**: TDD for logic, BDD for features, Standard for simple tasks
-3. **Let quality gates guide you**: They ensure consistent quality
-4. **Trust the workflow**: Implementation and testing together prevent bugs
-5. **Document decisions**: Use ADRs for important choices
+1. **Choose the right mode**: TDD for logic, BDD for features, Standard for simple tasks
+2. **Let quality gates guide you**: They ensure consistent quality
+3. **Trust the workflow**: Implementation and testing together prevent bugs
+4. **Document decisions**: Use ADRs for important choices
 
 ## Why the Unified Workflow?
 
-The 3-command workflow delivers:
-- **70% fewer commands** to remember and use
+The streamlined workflow delivers:
+- **Simple task creation** - no complex hierarchies required
 - **100% test guarantee** - testing is automatic, not optional
-- **80% faster delivery** - from idea to completed task
+- **Faster delivery** - from idea to completed task
 - **Zero manual errors** - quality gates and state management are automatic
 - **Development flexibility** - choose Standard, TDD, or BDD mode based on needs
 
@@ -174,6 +153,5 @@ The 3-command workflow delivers:
 
 - **User Guide**: `docs/guides/AI-ENGINEER-USER-GUIDE.md`
 - **Quick Reference**: `.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md`
-- **Migration Guide**: `docs/guides/MIGRATION-GUIDE.md`
 
 Remember: **"Implementation and testing are inseparable"** - this is the core philosophy of the unified workflow.
