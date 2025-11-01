@@ -2,12 +2,20 @@
 id: TASK-003
 title: "Remove Requirements Management Agents"
 created: 2025-10-27
-status: backlog
+status: completed
+completed_at: 2025-11-01T14:25:51Z
 priority: high
 complexity: 2
 parent_task: none
 subtasks: []
 estimated_hours: 1
+actual_hours: 0.1
+completion_metrics:
+  files_deleted: 2
+  files_modified: 1
+  agents_removed: 2
+  agents_remaining: 15
+  references_cleaned: 1
 ---
 
 # TASK-003: Remove Requirements Management Agents
@@ -93,11 +101,11 @@ grep -r "bdd-generator" installer/global/agents/
 
 ## Acceptance Criteria
 
-- [ ] requirements-analyst.md removed
-- [ ] bdd-generator.md removed
-- [ ] 15 quality gate and supporting agents remain
-- [ ] No references to removed agents in remaining agent files
-- [ ] Git status shows deletions
+- [x] requirements-analyst.md removed
+- [x] bdd-generator.md removed
+- [x] 15 quality gate and supporting agents remain
+- [x] No references to removed agents in remaining agent files
+- [x] Git status shows deletions
 
 ## Related Tasks
 
