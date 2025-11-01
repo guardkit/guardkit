@@ -7,7 +7,6 @@ model_rationale: "Pattern selection requires sophisticated matching of requireme
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - architectural-reviewer
-  - requirements-analyst
   - software-architect
 mcp_dependencies:
   - design-patterns (required)
