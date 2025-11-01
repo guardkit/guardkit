@@ -240,7 +240,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR"/{agents,bin,cache,commands,completions,docs,instructions,plugins,scripts,templates,versions}
 
     # Create project management directories
-    mkdir -p "$INSTALL_DIR/project-templates"/{epics,features,tasks,portfolio}
+    mkdir -p "$INSTALL_DIR/project-templates"/{tasks,portfolio}
     
     # Create sub-directories for instructions
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
