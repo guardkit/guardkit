@@ -153,8 +153,7 @@ create_project_structure() {
     mkdir -p .claude/{agents,commands,hooks,templates,stacks}
     
     # Always create docs at root
-    mkdir -p docs/{requirements,bdd/features,adr,state}
-    mkdir -p docs/requirements/{draft,approved,implemented}
+    mkdir -p docs/{adr,state}
     
     # Handle test directory based on project type
     local detected_type=$(detect_project_type)

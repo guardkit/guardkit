@@ -263,16 +263,11 @@ create_smart_structure() {
     mkdir -p .claude/{agents,commands,hooks,templates,stacks}
 
     # Always create docs at root
-    mkdir -p docs/{requirements,bdd/features,adr,state}
-    mkdir -p docs/requirements/{draft,approved,implemented}
+    mkdir -p docs/{adr,state}
 
     # Create task management structure
     mkdir -p tasks/{backlog,in_progress,in_review,blocked,completed}
     mkdir -p tasks/completed/{$(date +%Y-%m)}
-
-    # Create project hierarchy structure
-    mkdir -p epics/{active,archived}
-    mkdir -p features/{active,archived}
 
     # Create portfolio tracking
     mkdir -p portfolio/{metrics,reports}
