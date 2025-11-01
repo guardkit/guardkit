@@ -1,27 +1,20 @@
 {
-  "name": "ai-engineer-sdlc",
+  "name": "taskwright",
   "version": "1.0.0",
-  "description": "Claude Code Software Engineering Lifecycle System",
+  "description": "Lightweight task workflow with quality gates and architectural review",
   "features": {
-    "requirements": {
-      "notation": "EARS",
-      "patterns": ["ubiquitous", "event-driven", "state-driven", "unwanted", "optional"]
-    },
     "testing": {
       "specification": "BDD/Gherkin",
       "execution": "automated",
       "gates": ["coverage", "complexity", "compliance"]
     },
     "tracking": {
-      "hierarchy": ["product", "epics", "features", "tasks"],
       "state": "markdown",
       "changelog": true
     }
   },
   "defaults": {
     "testCoverage": 80,
-    "earsCompliance": 100,
-    "bddCoverage": 95,
     "maxComplexity": 10
   },
   "plan_review": {
@@ -32,28 +25,6 @@
         "auto_approve": 80,
         "approve_with_recommendations": 60,
         "reject": 0
-      },
-      "stack_overrides": {
-        "python": {
-          "auto_approve": 80,
-          "approve_with_recommendations": 60,
-          "reject": 0
-        },
-        "typescript": {
-          "auto_approve": 80,
-          "approve_with_recommendations": 60,
-          "reject": 0
-        },
-        "react": {
-          "auto_approve": 80,
-          "approve_with_recommendations": 60,
-          "reject": 0
-        },
-        "dotnet": {
-          "auto_approve": 80,
-          "approve_with_recommendations": 60,
-          "reject": 0
-        }
       }
     },
     "force_triggers": {
