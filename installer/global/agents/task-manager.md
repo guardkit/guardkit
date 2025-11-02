@@ -37,7 +37,7 @@ As the **task orchestration agent**, you are responsible for passing the `docume
 
 ### Context Block Format for Sub-Agents
 
-When invoking any sub-agent (requirements-analyst, architectural-reviewer, test-orchestrator, code-reviewer, test-verifier, etc.), include:
+When invoking any sub-agent (architectural-reviewer, test-orchestrator, code-reviewer, test-verifier, etc.), include:
 
 ```markdown
 <AGENT_CONTEXT>
@@ -159,7 +159,6 @@ Next: /task-complete {TASK_ID}
 # Implementation Summary - {TASK_ID}
 
 [Full summary with all sections embedded]
-- Requirements Analysis
 - Architecture Review
 - Implementation Details
 - Test Results
@@ -1120,13 +1119,13 @@ tasks/
 
 ## Integration with Other Systems
 
-### Link to Requirements
-- Each task references EARS requirements
-- Validate requirements exist in docs/requirements/
+### Link to Requirements (Require-Kit Only)
+**Taskwright**: Tasks use description and acceptance criteria directly
+**Require-Kit**: Link EARS requirements from docs/requirements/
 
-### Link to BDD Scenarios
-- Reference Gherkin scenarios
-- Ensure scenarios exist in docs/bdd/
+### Link to BDD Scenarios (Require-Kit Only)
+**Taskwright**: Acceptance criteria are sufficient
+**Require-Kit**: Reference Gherkin scenarios from docs/bdd/
 
 ### GitHub Integration (if needed)
 - Can link to GitHub issues
