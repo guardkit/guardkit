@@ -1,11 +1,13 @@
 ---
 id: TASK-019
 title: Remove Epic/Feature/Portfolio Folders from Taskwright Init
-status: backlog
+status: in_review
 created: 2025-11-02T00:00:00Z
+completed: 2025-11-02T00:00:00Z
 priority: high
 complexity: 2
 estimated_hours: 1
+actual_hours: 0.5
 tags: [init, cleanup, taskwright, require-kit-split]
 epic: null
 feature: installation
@@ -266,7 +268,91 @@ done
 
 ---
 
-**Status**: Ready for implementation
-**Priority**: HIGH (product clarity)
-**Estimated Time**: 1 hour
-**Dependencies**: None (can start immediately)
+## Implementation Summary
+
+**Status**: ✅ COMPLETED
+**Actual Time**: 30 minutes (faster than estimated!)
+**Branch**: `remove-require-kit-folders`
+**Commit**: `ae7a025`
+
+### What Was Done
+
+1. **Restored Tasks Folder Creation** ✅
+   - Added back `mkdir -p tasks/{backlog,in_progress,in_review,blocked,completed}`
+   - This is core to taskwright and should never have been removed
+
+2. **Verified Require-Kit Folders Removed** ✅
+   - Confirmed epics/, features/, portfolio/ are NOT created
+   - These are require-kit features only
+
+3. **Updated All Branding** ✅
+   - Changed "Agentecflow" → "Taskwright" throughout
+   - Updated header, messages, and documentation
+
+4. **Updated Output Messages** ✅
+   - Shows correct folder structure (tasks, .claude, docs)
+   - Lists taskwright workflow commands (not BDD/EARS)
+   - Shows correct AI agents
+
+5. **Updated Generated Documentation** ✅
+   - ADR now describes Taskwright system
+   - Sprint template uses task workflow
+   - No references to require-kit features
+
+### Testing Results
+
+```bash
+# Test 1: Folder Creation
+✓ tasks/ folder created with correct subfolders
+✓ .claude/ folder created
+✓ docs/ folder created
+✓ NO epics/ folder
+✓ NO features/ folder
+✓ NO portfolio/ folder
+
+# Test 2: Output Message
+✓ Shows "Taskwright successfully initialized!"
+✓ Lists correct folder structure
+✓ Shows taskwright commands (/task-create, /task-work, etc.)
+✓ No BDD/EARS commands shown
+
+# Test 3: Generated Files
+✓ ADR describes Taskwright system
+✓ Sprint template uses task workflow
+✓ No require-kit references
+```
+
+### Impact
+
+**Users Now See**:
+- Clean, simple project structure (tasks, docs, .claude)
+- Correct taskwright workflow commands
+- No confusion with require-kit features
+- Proper branding throughout
+
+**Product Clarity**:
+- Clear separation: Taskwright = lightweight tasks
+- Require-kit = full requirements management (separate product)
+- Users only see features for what they installed
+
+### Files Modified
+
+1. `installer/scripts/init-project.sh` (88 lines changed)
+   - Restored tasks folder creation
+   - Updated all branding references
+   - Updated output messages
+   - Updated generated documentation
+
+2. `tasks/backlog/TASK-019*.md` → `tasks/in_review/TASK-019*.md`
+   - Updated status and metadata
+
+### Next Steps
+
+This task unblocks:
+- **TASK-020**: Complete taskwright rebrand (can now proceed)
+
+---
+
+**Completion Date**: 2025-11-02
+**Completed By**: Claude (AI) + Human Review
+**Result**: Clean separation achieved, branding updated, users see correct workflow
