@@ -22,7 +22,7 @@ Execute complete implementation workflow including code generation, testing, and
 /task-work TASK-042 --fix-only
 ```
 
-**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/appmilla/require-kit) which provides complete requirements management and BDD generation.
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/requirekit/require-kit) which provides complete requirements management and BDD generation.
 
 ## Development Modes
 

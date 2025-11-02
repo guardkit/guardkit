@@ -913,7 +913,7 @@ Based on detected stack, **MAP** to agents using this table:
 
 **Why skipped**: Taskwright is lightweight - no EARS notation or formal BDD generation needed.
 
-**For formal requirements**: Use [require-kit](https://github.com/appmilla/require-kit) which provides:
+**For formal requirements**: Use [require-kit](https://github.com/requirekit/require-kit) which provides:
 - EARS notation requirements analysis
 - BDD/Gherkin scenario generation
 - Full requirements traceability
@@ -2317,7 +2317,7 @@ The command supports multiple development modes via `--mode` flag:
 - REFACTOR: Implementation agent improves code quality
 - Best for complex business logic
 
-**Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/appmilla/require-kit) package which provides complete requirements management and BDD generation.
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/requirekit/require-kit) package which provides complete requirements management and BDD generation.
 
 ### Stack-Specific Agent Details
 

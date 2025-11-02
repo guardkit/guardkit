@@ -252,7 +252,7 @@ cd /tmp/test-project
 ```bash
 # Clone require-kit
 cd ..
-git clone https://github.com/yourusername/require-kit.git
+git clone https://github.com/requirekit/require-kit.git
 cd require-kit
 
 # Run installer

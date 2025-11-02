@@ -24,7 +24,7 @@ Available fields: `title`, `priority`, `tags`, `status`, `complexity`
 
 Additional fields: `epic`, `feature`, `requirements`, `bdd_scenarios`, `export`
 
-**Note**: Epic, feature, and requirements functionality requires [require-kit](https://github.com/appmilla/require-kit) to be installed. The command will gracefully skip these fields if require-kit is not available.
+**Note**: Epic, feature, and requirements functionality requires [require-kit](https://github.com/requirekit/require-kit) to be installed. The command will gracefully skip these fields if require-kit is not available.
 
 ## Usage
 ```bash

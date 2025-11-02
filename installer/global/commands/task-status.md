@@ -24,7 +24,7 @@ Available filters: `--status`, `--assignee`, `--priority`, `--tags`
 
 Additional filters: `--epic`, `--feature`, `--hierarchy`, `--sync-status`
 
-**Note**: Epic and feature filtering requires [require-kit](https://github.com/appmilla/require-kit) to be installed. These filters will show a helpful message if require-kit is not available.
+**Note**: Epic and feature filtering requires [require-kit](https://github.com/requirekit/require-kit) to be installed. These filters will show a helpful message if require-kit is not available.
 
 ## Usage
 ```bash

@@ -86,7 +86,7 @@ Utilities:
 
 ═══════════════════════════════════════════════════════
 For full requirements management (EARS, BDD, epics):
-Install require-kit: https://github.com/appmilla/require-kit
+Install require-kit: https://github.com/requirekit/require-kit
 ═══════════════════════════════════════════════════════
 ```
 
@@ -207,7 +207,7 @@ print_next_steps() {
     # Link to require-kit (NEW)
     echo -e "${BOLD}Need Requirements Management?${NC}"
     echo "  For EARS notation, BDD, epics, and portfolio management:"
-    echo "  Install require-kit: ${BLUE}https://github.com/appmilla/require-kit${NC}"
+    echo "  Install require-kit: ${BLUE}https://github.com/requirekit/require-kit${NC}"
     echo ""
 
     echo -e "${BLUE}Ready to start development!${NC}"
@@ -342,7 +342,7 @@ Using AI Agents:
 
 Need Requirements Management?
   For EARS notation, BDD, epics, and portfolio management:
-  Install require-kit: https://github.com/appmilla/require-kit
+  Install require-kit: https://github.com/requirekit/require-kit
 
 Ready to start development!
 ```

@@ -95,7 +95,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 ```markdown
 ## Breaking Changes (v2.0.0)
 
-**BDD Mode Removed**: The `--mode=bdd` flag has been removed. For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/appmilla/require-kit) package.
+**BDD Mode Removed**: The `--mode=bdd` flag has been removed. For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/requirekit/require-kit) package.
 ```
 
 **Impact**: LOW - Current documentation is clear, this would only improve discoverability for upgrading users

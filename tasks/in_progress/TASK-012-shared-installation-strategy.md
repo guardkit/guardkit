@@ -299,7 +299,7 @@ Lightweight task workflow with quality gates.
 
 ## Optional: Requirements Management
 
-Install [require-kit](https://github.com/you/require-kit) for:
+Install [require-kit](https://github.com/requirekit/require-kit) for:
 - EARS notation requirements
 - BDD/Gherkin scenarios
 - Epic/Feature hierarchy

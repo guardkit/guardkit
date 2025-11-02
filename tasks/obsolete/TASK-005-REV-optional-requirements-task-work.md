@@ -334,7 +334,7 @@ When require-kit is installed AND task has requirements linked:
 - All quality gates still execute
 - No functional limitations for task workflow
 
-Install require-kit for requirements features: https://github.com/you/require-kit
+Install require-kit for requirements features: https://github.com/requirekit/require-kit
 ```
 
 ## Acceptance Criteria

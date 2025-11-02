@@ -68,7 +68,7 @@ Phase 5: Code Review
 Phase 5.5: Plan Audit (scope creep detection)
 ```
 
-**Note**: Taskwright starts directly at Phase 2 using task descriptions and acceptance criteria. For formal requirements analysis (EARS, BDD), use [require-kit](https://github.com/appmilla/require-kit).
+**Note**: Taskwright starts directly at Phase 2 using task descriptions and acceptance criteria. For formal requirements analysis (EARS, BDD), use [require-kit](https://github.com/requirekit/require-kit).
 
 **Key Decision Points:**
 - **Phase 2.7**: Auto-proceed (1-3) vs checkpoint (7-10)
@@ -317,7 +317,7 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 - **TDD**: Complex business logic (Red → Green → Refactor)
 - **Standard**: Straightforward implementations
 
-**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/appmilla/require-kit) which provides complete requirements management.
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/requirekit/require-kit) which provides complete requirements management.
 
 **Architecture Compliance:**
 - Pattern consistency per stack

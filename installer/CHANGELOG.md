@@ -9,7 +9,7 @@ All notable changes to the AI-Engineer installation system will be documented in
   - Rationale: BDD mode was not actively used and added unnecessary complexity
   - Removed BDD agent (`bdd-generator.md`) from taskwright
   - Removed BDD instruction files (`bdd-gherkin.md`)
-  - Migration: Use [require-kit](https://github.com/appmilla/require-kit) for full BDD workflow (EARS → Gherkin → Implementation)
+  - Migration: Use [require-kit](https://github.com/requirekit/require-kit) for full BDD workflow (EARS → Gherkin → Implementation)
   - Alternative: Use `--mode=tdd` for test-driven development or `--mode=standard` for standard workflow
   - Note: `supports_bdd()` function preserved in shared code for backward compatibility with require-kit package
   - Impact: Only Standard and TDD modes remain available in taskwright

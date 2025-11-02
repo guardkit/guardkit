@@ -27,7 +27,7 @@ Phase 1 is **skipped** in Taskwright's lightweight workflow. Tasks use descripti
 and acceptance criteria directly without formal requirements analysis.
 
 For formal requirements management with EARS notation and BDD generation, use
-[require-kit](https://github.com/appmilla/require-kit).
+[require-kit](https://github.com/requirekit/require-kit).
 
 **Taskwright workflow proceeds directly to Phase 2 (Implementation Planning).**
 ```
@@ -50,7 +50,7 @@ Phase 1: Requirements Analysis (require-kit only - skipped in taskwright)
 ```
 **Note**: Taskwright starts directly at Phase 2 using task descriptions and
 acceptance criteria. For formal requirements analysis (EARS, BDD), use
-[require-kit](https://github.com/appmilla/require-kit).
+[require-kit](https://github.com/requirekit/require-kit).
 ```
 
 ### 3. task-work.md (installer/global/commands/task-work.md)
@@ -72,7 +72,7 @@ criteria directly without formal requirements analysis.
 **Why skipped**: Taskwright is lightweight - no EARS notation or formal BDD
 generation needed.
 
-**For formal requirements**: Use [require-kit](https://github.com/appmilla/require-kit)
+**For formal requirements**: Use [require-kit](https://github.com/requirekit/require-kit)
 
 **Taskwright workflow**: Proceed directly to Phase 2 (Implementation Planning).
 ```

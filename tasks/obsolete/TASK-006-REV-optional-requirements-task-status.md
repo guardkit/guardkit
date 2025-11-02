@@ -66,7 +66,7 @@ while [[ $# -gt 0 ]]; do
         shift
       else
         echo "⚠️  Warning: Epic filtering requires require-kit"
-        echo "   Install: https://github.com/you/require-kit"
+        echo "   Install: https://github.com/requirekit/require-kit"
         exit 1
       fi
       ;;
@@ -358,7 +358,7 @@ When require-kit is installed, task-status provides enhanced filtering:
 
 Without require-kit, task-status provides standard task filtering.
 
-Install require-kit: https://github.com/you/require-kit
+Install require-kit: https://github.com/requirekit/require-kit
 ```
 
 ## Acceptance Criteria

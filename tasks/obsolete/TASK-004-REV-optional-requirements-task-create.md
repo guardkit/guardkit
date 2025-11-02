@@ -77,7 +77,7 @@ while [[ $# -gt 0 ]]; do
         EPIC="${1#*:}"
       else
         echo "⚠️  Warning: Epic linking requires require-kit to be installed"
-        echo "   Install: https://github.com/you/require-kit"
+        echo "   Install: https://github.com/requirekit/require-kit"
       fi
       ;;
     feature:*)
@@ -262,7 +262,7 @@ When require-kit is installed, task-create supports:
 
 These features are optional. Without require-kit, tasks work standalone.
 
-Install require-kit: https://github.com/you/require-kit
+Install require-kit: https://github.com/requirekit/require-kit
 ```
 
 ## Acceptance Criteria

@@ -196,7 +196,7 @@ copy_template_files() {
     fi
     
     local template_dir="$AGENTICFLOW_HOME/templates/$effective_template"
-    
+
     if [ ! -d "$template_dir" ]; then
         print_warning "Template '$effective_template' not found, using default"
         template_dir="$AGENTICFLOW_HOME/templates/default"
@@ -466,7 +466,7 @@ print_next_steps() {
     echo ""
     echo -e "${BOLD}Need Requirements Management?${NC}"
     echo "  For EARS notation, BDD, epics, and portfolio management:"
-    echo "  Install require-kit: ${BLUE}https://github.com/appmilla/require-kit${NC}"
+    echo "  Install require-kit: ${BLUE}https://github.com/requirekit/require-kit${NC}"
     echo ""
     echo -e "${BLUE}Ready to start development!${NC}"
 }
