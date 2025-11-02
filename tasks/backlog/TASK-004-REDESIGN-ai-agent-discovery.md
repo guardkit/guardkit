@@ -91,6 +91,49 @@ response = WebFetch(url, prompt="Extract agent definitions...")
       "description": "Curated awesome list"
     },
     {
+      "name": "agentsof-dev",
+      "type": "web",
+      "url": "https://agentsof.dev",
+      "enabled": true,
+      "priority": 4,
+      "description": "Community agent marketplace"
+    },
+    {
+      "name": "github-awesome-copilot",
+      "type": "github",
+      "url": "https://github.com/github/awesome-copilot/tree/main/agents",
+      "path": "agents/*.md",
+      "enabled": true,
+      "priority": 5,
+      "description": "GitHub's official Copilot agent collection"
+    },
+    {
+      "name": "claudecode-subagents-topic",
+      "type": "github",
+      "url": "https://github.com/topics/claudecode-subagents",
+      "enabled": true,
+      "priority": 6,
+      "description": "GitHub topic search for Claude Code subagents"
+    },
+    {
+      "name": "0xfurai-subagents",
+      "type": "github",
+      "url": "https://github.com/0xfurai/claude-code-subagents",
+      "path": "README.md",
+      "enabled": true,
+      "priority": 7,
+      "description": "0xfurai's Claude Code subagent collection"
+    },
+    {
+      "name": "davepoon-subagents",
+      "type": "github",
+      "url": "https://github.com/davepoon/claude-code-subagents-collection/tree/main/subagents",
+      "path": "subagents/*.md",
+      "enabled": true,
+      "priority": 8,
+      "description": "Dave Poon's curated subagent collection"
+    },
+    {
       "name": "company-internal",
       "type": "url",
       "url": "https://internal.company.com/agents.json",
@@ -201,6 +244,49 @@ class AgentSourceConfig:
                     "enabled": True,
                     "priority": 3,
                     "description": "Curated awesome list"
+                },
+                {
+                    "name": "agentsof-dev",
+                    "type": "web",
+                    "url": "https://agentsof.dev",
+                    "enabled": True,
+                    "priority": 4,
+                    "description": "Community agent marketplace"
+                },
+                {
+                    "name": "github-awesome-copilot",
+                    "type": "github",
+                    "url": "https://github.com/github/awesome-copilot/tree/main/agents",
+                    "path": "agents/*.md",
+                    "enabled": True,
+                    "priority": 5,
+                    "description": "GitHub's official Copilot agent collection"
+                },
+                {
+                    "name": "claudecode-subagents-topic",
+                    "type": "github",
+                    "url": "https://github.com/topics/claudecode-subagents",
+                    "enabled": True,
+                    "priority": 6,
+                    "description": "GitHub topic search for Claude Code subagents"
+                },
+                {
+                    "name": "0xfurai-subagents",
+                    "type": "github",
+                    "url": "https://github.com/0xfurai/claude-code-subagents",
+                    "path": "README.md",
+                    "enabled": True,
+                    "priority": 7,
+                    "description": "0xfurai's Claude Code subagent collection"
+                },
+                {
+                    "name": "davepoon-subagents",
+                    "type": "github",
+                    "url": "https://github.com/davepoon/claude-code-subagents-collection/tree/main/subagents",
+                    "path": "subagents/*.md",
+                    "enabled": True,
+                    "priority": 8,
+                    "description": "Dave Poon's curated subagent collection"
                 }
             ]
         }
@@ -722,8 +808,18 @@ $ /template-create "myapp"
   ✓ Discovered 18 agents
 🔍 Discovering agents from awesome-claude-subagents...
   ✓ Discovered 12 agents
+🔍 Discovering agents from agentsof-dev...
+  ✓ Discovered 15 agents
+🔍 Discovering agents from github-awesome-copilot...
+  ✓ Discovered 8 agents
+🔍 Discovering agents from claudecode-subagents-topic...
+  ✓ Discovered 25 agents
+🔍 Discovering agents from 0xfurai-subagents...
+  ✓ Discovered 14 agents
+🔍 Discovering agents from davepoon-subagents...
+  ✓ Discovered 19 agents
 
-✓ Total: 68 agents discovered (15 local + 53 external)
+✓ Total: 149 agents discovered (15 local + 134 external)
 
 [Agent selection UI...]
 ```
