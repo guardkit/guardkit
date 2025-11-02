@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Agentecflow Project Initialization Script
-# Works with ~/.agentecflow structure
+# Taskwright Project Initialization Script
+# Works with ~/.agentecflow structure (backward compatible)
 
 set -e
 
@@ -17,7 +17,7 @@ elif [ -d "$HOME/.agentic-flow" ]; then
 elif [ -d "$HOME/.claude" ]; then
     AGENTECFLOW_HOME="$HOME/.claude"
 else
-    echo "Error: No Agentecflow installation found"
+    echo "Error: No Taskwright installation found"
     echo "Please run the installer first"
     exit 1
 fi
@@ -36,7 +36,7 @@ NC='\033[0m'
 print_header() {
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         Agentecflow Project Initialization             ║${NC}"
+    echo -e "${BLUE}║         Taskwright Project Initialization              ║${NC}"
     echo -e "${BLUE}║         Template: ${BOLD}$(printf '%-20s' "$TEMPLATE")${NC}${BLUE}         ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -148,13 +148,16 @@ check_existing() {
 # Create project structure
 create_project_structure() {
     print_info "Creating project structure..."
-    
+
     # Always create .claude at root
     mkdir -p .claude/{agents,commands,hooks,templates,stacks}
-    
+
     # Always create docs at root
     mkdir -p docs/{adr,state}
-    
+
+    # Create task management structure (core taskwright feature)
+    mkdir -p tasks/{backlog,in_progress,in_review,blocked,completed}
+
     # Handle test directory based on project type
     local detected_type=$(detect_project_type)
     case "$detected_type" in
@@ -170,7 +173,7 @@ create_project_structure() {
             fi
             ;;
     esac
-    
+
     print_success "Project structure created"
 }
 
@@ -243,7 +246,7 @@ copy_template_files() {
                 cp "$cmd" ".claude/commands/$cmd_name"
             fi
         done
-        print_success "Linked Agentecflow commands"
+        print_success "Linked Taskwright commands"
     fi
     
     TEMPLATE="$effective_template"  # Update for later use
@@ -321,17 +324,17 @@ status: planning
 # Sprint 1 - Project Setup
 
 ## Goals
-- [ ] Set up Agentecflow system
-- [ ] Define initial requirements
-- [ ] Create first BDD scenarios
+- [ ] Set up Taskwright system
+- [ ] Create first task
+- [ ] Complete implementation with quality gates
 
 ## Progress
 - Overall: 10% [██░░░░░░░░░░░░░░░░░░]
 
 ## Next Steps
-1. Use \`/gather-requirements\` to start requirements gathering
-2. Use \`/formalize-ears\` to convert to EARS notation
-3. Use \`/generate-bdd\` to create test scenarios
+1. Use \`/task-create\` to create your first task
+2. Use \`/task-work\` to implement with quality gates
+3. Use \`/task-complete\` to finish and archive
 EOF
     
     # Create first ADR
@@ -342,26 +345,27 @@ status: accepted
 date: $(date +%Y-%m-%d)
 ---
 
-# ADR-001: Adopt Agentecflow System
+# ADR-001: Adopt Taskwright System
 
 ## Status
 Accepted
 
 ## Context
-We need a systematic approach to software development with clear requirements, automated testing, and quality gates.
+We need a lightweight task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 ## Decision
-Adopt the Agentecflow system with EARS requirements and BDD testing.
+Adopt the Taskwright system with automated architectural review and test enforcement.
 
 ## Consequences
 **Positive:**
-- Clear requirements traceability
-- Automated test generation
-- Quality enforcement
+- Quality-first approach with automated gates
+- Lightweight task workflow (create → work → complete)
+- AI collaboration with human oversight
+- Zero ceremony overhead
 
 **Negative:**
-- Initial learning curve
-- Additional setup overhead
+- Initial setup required
+- Learning curve for quality gates
 EOF
     
     print_success "Created initial documentation"
@@ -373,12 +377,15 @@ print_next_steps() {
     
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✅ Agentecflow successfully initialized!${NC}"
+    echo -e "${GREEN}✅ Taskwright successfully initialized!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
+    echo -e "${BOLD}📁 Project Structure Created:${NC}"
+    echo "  .claude/       - Taskwright configuration"
+    echo "  docs/          - Documentation and ADRs"
+    echo "  tasks/         - Task workflow (backlog → in_progress → in_review → blocked → completed)"
+    echo ""
     echo -e "${BOLD}Project Configuration:${NC}"
-    echo "  📁 Configuration: .claude/"
-    echo "  📚 Documentation: docs/"
     echo "  🎨 Template: $TEMPLATE"
     echo "  🔍 Detected Type: $detected_type"
     echo ""
@@ -445,20 +452,23 @@ print_next_steps() {
             ;;
     esac
     
-    echo -e "${BOLD}Workflow Commands (use in Claude/Cursor):${NC}"
-    echo "  /gather-requirements - Start requirements gathering"
-    echo "  /formalize-ears     - Convert to EARS notation"
-    echo "  /generate-bdd       - Create test scenarios"
-    echo "  /execute-tests      - Run test suite"
-    echo "  /update-state       - Update progress"
+    echo -e "${BOLD}Core Workflow Commands:${NC}"
+    echo "  /task-create \"Title\"    - Create a new task"
+    echo "  /task-work TASK-XXX     - Work on a task (Phases 1-5 with quality gates)"
+    echo "  /task-complete TASK-XXX - Complete and archive a task"
+    echo "  /task-status [TASK-XXX] - View task status"
     echo ""
-    echo -e "${BOLD}Using AI Agents:${NC}"
-    echo "  @requirements-analyst - Help with requirements"
-    echo "  @bdd-generator       - Generate test scenarios"
-    echo "  @code-reviewer       - Review code quality"
-    echo "  @test-orchestrator   - Manage testing"
+    echo -e "${BOLD}Design-First Workflow (Complex Tasks):${NC}"
+    echo "  /task-work TASK-XXX --design-only     - Design phase (stop at checkpoint)"
+    echo "  /task-work TASK-XXX --implement-only  - Implementation phase (requires approved plan)"
     echo ""
-    echo -e "${BLUE}Ready to start development!${NC}"
+    echo -e "${BOLD}Key AI Agents:${NC}"
+    echo "  @architectural-reviewer - SOLID/DRY/YAGNI compliance review"
+    echo "  @task-manager          - Unified workflow management"
+    echo "  @test-orchestrator     - Test execution and quality gates"
+    echo "  @code-reviewer         - Code quality enforcement"
+    echo ""
+    echo -e "${BLUE}Ready to start development! Create your first task with /task-create${NC}"
 }
 
 # Main function
@@ -499,7 +509,7 @@ main() {
     esac
     
     print_header
-    print_info "Using Agentecflow from: $AGENTECFLOW_HOME"
+    print_info "Using Taskwright from: $AGENTECFLOW_HOME"
     check_existing
     create_project_structure
     copy_template_files

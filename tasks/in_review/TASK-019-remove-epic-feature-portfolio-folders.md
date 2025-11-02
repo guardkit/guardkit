@@ -1,11 +1,13 @@
 ---
 id: TASK-019
 title: Remove Epic/Feature/Portfolio Folders from Taskwright Init
-status: backlog
+status: in_review
 created: 2025-11-02T00:00:00Z
+completed: 2025-11-02T00:00:00Z
 priority: high
 complexity: 2
 estimated_hours: 1
+actual_hours: 0.5
 tags: [init, cleanup, taskwright, require-kit-split]
 epic: null
 feature: installation
