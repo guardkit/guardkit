@@ -1,17 +1,25 @@
 ---
 id: TASK-022
 title: Fix Phase 1 Requirements-Analyst Dependency in Task-Manager
-status: in_review
+status: completed
 created: 2025-11-02T00:30:00Z
+completed: 2025-11-02T19:30:00Z
 priority: critical
 complexity: 3
 estimated_hours: 2
+actual_hours: 1
 tags: [bug-fix, task-work, agents, workflow]
 epic: null
 feature: task-workflow
 dependencies: []
 blocks: []
 related: [TASK-003]
+completion_metrics:
+  files_modified: 3
+  files_deleted: 2
+  lines_added: 88
+  lines_removed: 388
+  duration_minutes: 60
 ---
 
 # TASK-022: Fix Phase 1 Requirements-Analyst Dependency in Task-Manager
