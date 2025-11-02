@@ -1,11 +1,13 @@
 ---
 id: TASK-021
 title: Update Init Output to Show Taskwright Workflow Only
-status: backlog
+status: completed
 created: 2025-11-02T00:00:00Z
+completed: 2025-11-02T10:30:00Z
 priority: high
 complexity: 2
 estimated_hours: 1.5
+actual_hours: 1.0
 tags: [init, output, taskwright, workflow, require-kit-split]
 epic: null
 feature: installation
@@ -419,7 +421,93 @@ done
 
 ---
 
-**Status**: Ready for implementation
+**Status**: ✅ COMPLETED
 **Priority**: HIGH (user experience)
 **Estimated Time**: 1.5 hours
+**Actual Time**: 1.0 hours
 **Dependencies**: TASK-020 (rebrand must complete first)
+
+---
+
+## Implementation Summary
+
+### Changes Made
+
+1. **Simplified print_next_steps() function** (installer/scripts/init-project.sh:375-472)
+   - Reorganized output structure with clear sections
+   - Added missing commands (/task-refine, /debug)
+   - Added UX design integration section
+   - Added require-kit link for users who need it
+
+2. **Template-specific instructions simplified**
+   - Removed verbose setup commands (dotnet new, npm install, etc.)
+   - Replaced with 3-step quick start workflow
+   - Added support for all 7 templates (including typescript-api)
+   - Consistent format across all templates
+
+3. **Output improvements**
+   - Reduced from ~80 lines to ~50 lines
+   - Better organization with clear section headers
+   - Removed all require-kit commands
+   - Added clear separation between taskwright and require-kit
+
+### Verification Results
+
+✅ All taskwright commands shown:
+- /task-create, /task-work, /task-complete, /task-status, /task-refine
+- /figma-to-react, /zeplin-to-maui
+- /debug
+
+✅ No require-kit commands shown:
+- /gather-requirements ❌ (hidden)
+- /formalize-ears ❌ (hidden)
+- /epic-create ❌ (hidden)
+- /feature-create ❌ (hidden)
+- /update-portfolio ❌ (hidden)
+
+✅ All 7 templates tested:
+- default, react, python, typescript-api
+- dotnet-microservice
+- maui-appshell, maui-navigationpage
+
+### Files Modified
+
+- `installer/scripts/init-project.sh` (50 insertions, 50 deletions)
+  - Lines 404-441: Simplified template-specific sections
+  - Lines 443-471: Reorganized workflow output
+
+### Acceptance Criteria Status
+
+- ✅ Output shows ONLY taskwright commands
+- ✅ No require-kit commands shown
+- ✅ No epic/feature/portfolio commands shown
+- ✅ Simple task workflow clearly displayed
+- ✅ Design-first flags explained
+- ✅ UX design integration commands shown
+- ✅ Link to require-kit provided
+- ✅ All 7 templates tested
+- ✅ Output is clear and concise (<50 lines)
+- ✅ Template-specific instructions simplified
+
+### Impact
+
+**User Experience:**
+- First impression is now clear and focused
+- Users understand taskwright's scope immediately
+- Clear upgrade path to require-kit if needed
+
+**Documentation:**
+- Self-documenting workflow
+- No confusion about which product does what
+- Clear separation of concerns
+
+**Maintainability:**
+- Simpler output logic
+- Easier to add new templates
+- Consistent format across all templates
+
+---
+
+**Completed**: 2025-11-02
+**Branch**: simplify-init-output
+**Commit**: 5163609
