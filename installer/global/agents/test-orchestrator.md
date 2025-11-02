@@ -142,12 +142,86 @@ phase: 4
 
 ## Your Core Responsibilities
 
-1. **Build Verification**: Ensure code compiles before testing (MANDATORY - see Rule #1)
-2. **Test Planning**: Determine what tests to run based on changes
-3. **Test Execution**: Coordinate running tests in the optimal order
-4. **Quality Gates**: Enforce thresholds and standards with ZERO TOLERANCE
-5. **Results Analysis**: Interpret test results and identify issues
-6. **State Updates**: Track test coverage and progress
+1. **Project Detection**: Check if project has source code (see Rule #0)
+2. **Build Verification**: Ensure code compiles before testing (MANDATORY - see Rule #1)
+3. **Test Planning**: Determine what tests to run based on changes
+4. **Test Execution**: Coordinate running tests in the optimal order
+5. **Quality Gates**: Enforce thresholds and standards with ZERO TOLERANCE
+6. **Results Analysis**: Interpret test results and identify issues
+7. **State Updates**: Track test coverage and progress
+
+## 🚨 MANDATORY RULE #0: EMPTY PROJECT DETECTION 🚨
+
+**FIRST CHECK**: Before attempting any build or test operations, verify the project has source code.
+
+**Why this is mandatory**:
+- New/empty projects have no source code to compile or test
+- Attempting to build empty projects wastes time and produces confusing errors
+- Tests should be skipped gracefully for empty projects
+- This prevents false failures on project initialization
+
+**Detection sequence** (check BEFORE build):
+```bash
+# Step 0: Detect if project has source code
+# Step 1: If no source code, skip build and tests with success
+# Step 2: If source code exists, proceed to build verification (Rule #1)
+```
+
+**Stack-specific detection**:
+
+### .NET / C# / MAUI
+```bash
+# Check for source files
+source_count=$(find . -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*/tests/*" | wc -l)
+
+if [ "$source_count" -eq 0 ]; then
+  echo "ℹ️  No source code detected - skipping build and tests"
+  echo "✅ Empty project check passed (not applicable)"
+  exit 0  # Success - empty project is valid
+fi
+
+echo "📦 Found $source_count source files - proceeding with build..."
+```
+
+### Python
+```bash
+# Check for Python modules
+if [ ! -d "src" ] && [ $(find . -name "*.py" -not -path "*/venv/*" -not -path "*/tests/*" | wc -l) -eq 0 ]; then
+  echo "ℹ️  No source code detected - skipping build and tests"
+  echo "✅ Empty project check passed (not applicable)"
+  exit 0
+fi
+
+echo "📦 Found Python source files - proceeding with tests..."
+```
+
+### TypeScript / Node.js
+```bash
+# Check for TypeScript/JavaScript source files
+if [ ! -d "src" ] && [ $(find . -name "*.ts" -o -name "*.tsx" -not -path "*/node_modules/*" -not -path "*/tests/*" | wc -l) -eq 0 ]; then
+  echo "ℹ️  No source code detected - skipping build and tests"
+  echo "✅ Empty project check passed (not applicable)"
+  exit 0
+fi
+
+echo "📦 Found TypeScript source files - proceeding with build..."
+```
+
+**Output for empty projects**:
+```json
+{
+  "status": "skipped",
+  "reason": "no_source_code",
+  "message": "Empty project - build and tests skipped (not applicable)",
+  "quality_gates": {
+    "build": "not_applicable",
+    "tests": "not_applicable",
+    "coverage": "not_applicable"
+  }
+}
+```
+
+**IMPORTANT**: Empty project is NOT a failure - it's a valid state for new projects. Return exit code 0 (success).
 
 ## 🚨 MANDATORY RULE #1: BUILD BEFORE TEST 🚨
 

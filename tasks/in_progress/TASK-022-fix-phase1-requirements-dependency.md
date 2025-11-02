@@ -1,7 +1,7 @@
 ---
 id: TASK-022
 title: Fix Phase 1 Requirements-Analyst Dependency in Task-Manager
-status: backlog
+status: in_progress
 created: 2025-11-02T00:30:00Z
 priority: critical
 complexity: 3
