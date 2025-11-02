@@ -36,7 +36,7 @@ print_message() {
 print_header() {
     echo ""
     print_message "$BLUE" "╔════════════════════════════════════════════════════════╗"
-    print_message "$BLUE" "║         Agentecflow Installation System                ║"
+    print_message "$BLUE" "║         Taskwright Installation System                 ║"
     print_message "$BLUE" "║         Version: $AGENTECFLOW_VERSION                  ║"
     print_message "$BLUE" "╚════════════════════════════════════════════════════════╝"
     echo ""
@@ -110,7 +110,7 @@ check_prerequisites() {
     # Check for Python (REQUIRED for complexity evaluation and task splitting)
     if ! command -v python3 &> /dev/null; then
         print_error "Python 3 is REQUIRED for complexity evaluation and task splitting features"
-        print_info "Agentecflow requires Python 3.7+ for core functionality"
+        print_info "Taskwright requires Python 3.7+ for core functionality"
         print_info "Please install Python 3.7 or higher and try again"
         missing_deps+=("python3")
     else
@@ -803,7 +803,7 @@ setup_shell_integration() {
 
     # Remove old configurations if they exist
     if grep -q "\.agenticflow\|\.agentic-flow\|\.claude\|CLAUDE_HOME\|AGENTIC_FLOW_HOME\|AGENTICFLOW_HOME" "$shell_config" 2>/dev/null; then
-        print_info "Removing old Agentecflow configurations..."
+        print_info "Removing old Taskwright configurations..."
         # Create backup
         cp "$shell_config" "$shell_config.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -1043,7 +1043,7 @@ EOF
 print_summary() {
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✅ Agentecflow installation complete!${NC}"
+    echo -e "${GREEN}✅ Taskwright installation complete!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${BOLD}Installation Summary:${NC}"
@@ -1063,11 +1063,11 @@ print_summary() {
     echo "  ⚡ Commands: $command_count"
     echo ""
     echo -e "${BOLD}Available Commands:${NC}"
-    echo "  • agentec-init [template]  - Initialize a project"
-    echo "  • agentecflow init         - Alternative initialization"
-    echo "  • agentecflow doctor       - Check system health"
-    echo "  • af                       - Short for agentecflow"
-    echo "  • ai                       - Short for agentec-init"
+    echo "  • taskwright-init [template]  - Initialize a project"
+    echo "  • taskwright init             - Alternative initialization"
+    echo "  • taskwright doctor           - Check system health"
+    echo "  • tw                          - Short for taskwright"
+    echo "  • twi                         - Short for taskwright-init"
     echo ""
     echo -e "${BOLD}Available Templates:${NC}"
     for template in "$INSTALL_DIR/templates"/*/; do
@@ -1114,11 +1114,11 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: agentec-init dotnet-microservice"
+    echo "  3. Run: taskwright-init dotnet-microservice"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"
-    echo -e "${BLUE}❓ Check health: agentecflow doctor${NC}"
+    echo -e "${BLUE}❓ Check health: taskwright doctor${NC}"
     echo -e "${BLUE}🔗 Conductor: https://conductor.build${NC}"
 }
 
@@ -1190,7 +1190,7 @@ setup_claude_integration() {
         print_info "  Commands: ~/.claude/commands → ~/.agentecflow/commands"
         print_info "  Agents: ~/.claude/agents → ~/.agentecflow/agents"
         echo ""
-        print_success "All agentecflow commands now available in Claude Code!"
+        print_success "All taskwright commands now available in Claude Code!"
         print_info "Compatible with Conductor.build for parallel development"
     else
         print_error "Failed to create symlinks for Claude Code integration"
@@ -1237,7 +1237,7 @@ EOF
 
         # Check if require-kit is also installed
         if [ -f "$INSTALL_DIR/require-kit.marker.json" ]; then
-            print_success "  ✓ require-kit detected - Full Agentecflow integration available"
+            print_success "  ✓ require-kit detected - Full requirements management available"
         else
             print_info "  ℹ Install require-kit for requirements management features"
         fi
@@ -1250,7 +1250,7 @@ EOF
 main() {
     print_header
 
-    print_info "Installing Agentecflow to $INSTALL_DIR"
+    print_info "Installing Taskwright to $INSTALL_DIR"
     echo ""
 
     # Run installation steps
