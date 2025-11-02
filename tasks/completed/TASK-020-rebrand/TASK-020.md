@@ -1,17 +1,22 @@
 ---
 id: TASK-020
 title: Complete Taskwright Rebrand (agentecflow → taskwright)
-status: backlog
+status: completed
 created: 2025-11-02T00:00:00Z
+updated: 2025-11-02T16:30:00Z
+completed: 2025-11-02T17:45:00Z
 priority: high
 complexity: 3
 estimated_hours: 2
+actual_hours: 1.5
 tags: [branding, documentation, cli, taskwright]
 epic: null
 feature: installation
 dependencies: [TASK-019]
 blocks: [TASK-021]
 replaces: [TASK-033]
+verified: 2025-11-02T17:45:00Z
+note: "ID conflict - Old TASK-020 (Micro-Task Mode) kept in tasks/completed/TASK-020/, rebrand moved to TASK-020-rebrand/"
 ---
 
 # TASK-020: Complete Taskwright Rebrand
