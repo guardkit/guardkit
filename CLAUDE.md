@@ -25,7 +25,7 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 ### Core Workflow
 ```bash
 /task-create "Title" [priority:high|medium|low]
-/task-work TASK-XXX [--mode=standard|tdd|bdd]
+/task-work TASK-XXX [--mode=standard|tdd]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
 /task-refine TASK-XXX
@@ -313,8 +313,9 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 
 **Development Mode Selection:**
 - **TDD**: Complex business logic (Red → Green → Refactor)
-- **BDD**: User-facing features (Scenarios → Implementation)
 - **Standard**: Straightforward implementations
+
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/appmilla/require-kit) which provides complete requirements management.
 
 **Architecture Compliance:**
 - Pattern consistency per stack
@@ -398,7 +399,7 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 - Small-to-medium projects
 
 ### Upgrade to Full Agentecflow When:
-- Need formal requirements management (EARS notation, BDD scenarios)
+- Need formal requirements management (EARS notation, BDD with require-kit)
 - Multi-epic projects (10+ features)
 - Team size >5 developers
 - Enterprise compliance required

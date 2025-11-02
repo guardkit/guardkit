@@ -4,7 +4,7 @@
   "description": "Lightweight task workflow with quality gates and architectural review",
   "features": {
     "testing": {
-      "specification": "BDD/Gherkin",
+      "specification": "automated",
       "execution": "automated",
       "gates": ["coverage", "complexity", "compliance"]
     },

@@ -31,7 +31,7 @@ This is an AI-powered task workflow system with built-in quality gates that prev
 
 The system will detect your project's technology stack and apply appropriate testing strategies:
 - React/TypeScript → Playwright + Vitest
-- Python API → pytest + pytest-bdd
+- Python API → pytest
 - .NET → xUnit/NUnit + platform-specific testing
 - Mobile → Platform-specific testing
 - Infrastructure → Terraform testing

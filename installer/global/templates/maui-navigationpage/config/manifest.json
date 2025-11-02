@@ -17,7 +17,6 @@
   },
   "agents": [
     "architectural-reviewer.md",
-    "bdd-generator.md",
     "code-reviewer.md",
     "maui-ui-specialist.md",
     "maui-usecase-specialist.md",

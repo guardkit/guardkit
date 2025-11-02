@@ -4,7 +4,7 @@ Execute complete implementation workflow including code generation, testing, and
 
 ## Usage
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--language=auto|python|typescript|csharp] [--coverage-threshold=80]
+/task-work TASK-XXX [--mode=standard|tdd] [--language=auto|python|typescript|csharp] [--coverage-threshold=80]
 ```
 
 ## Examples
@@ -15,15 +15,14 @@ Execute complete implementation workflow including code generation, testing, and
 # Test-Driven Development (tests first, then implementation)
 /task-work TASK-042 --mode=tdd
 
-# Behavior-Driven Development (from scenarios to implementation)
-/task-work TASK-042 --mode=bdd
-
 # With custom coverage threshold
 /task-work TASK-042 --coverage-threshold=90
 
 # Fix only mode for blocked tasks
 /task-work TASK-042 --fix-only
 ```
+
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use [require-kit](https://github.com/appmilla/require-kit) which provides complete requirements management and BDD generation.
 
 ## Development Modes
 
@@ -41,22 +40,14 @@ Follow Red-Green-Refactor cycle:
 3. **REFACTOR**: Improve code while keeping tests green
 4. Verify coverage and quality gates
 
-### BDD Mode (Behavior-Driven Development)
-Start from user scenarios:
-1. Load linked BDD scenarios (Gherkin)
-2. Generate step definitions
-3. Implement features to satisfy scenarios
-4. Add unit tests for completeness
-5. Verify all scenarios pass
-
 ## Process Flow
 
 ### Step 1: Task Loading and Analysis
 ```yaml
 Load task from: tasks/in_progress/TASK-XXX.md
 Extract:
-  - Requirements (EARS)
-  - BDD scenarios
+  - Requirements (EARS) - if require-kit installed
+  - Gherkin scenarios - if require-kit installed
   - Acceptance criteria
   - Technology stack
 ```
@@ -91,17 +82,6 @@ graph LR
     I --> J[Review]
 ```
 
-#### BDD Mode Flow
-```mermaid
-graph LR
-    A[Load Scenarios] --> B[Step Defs]
-    B --> C[Implementation]
-    C --> D[Run Scenarios]
-    D --> E{Pass?}
-    E -->|Yes| F[Unit Tests]
-    E -->|No| G[Fix]
-    F --> H[Review]
-```
 
 ### Step 3: Test Execution
 
@@ -242,34 +222,6 @@ class FeatureService:
         return Result(success=True, value=processed)
 ```
 
-### BDD Mode Template
-```gherkin
-# Start with scenario
-Feature: User Authentication
-  Scenario: Successful login
-    Given a registered user with email "user@example.com"
-    When they submit valid credentials
-    Then they should be logged in successfully
-    And a session token should be created
-
-# Generate step definitions
-@given('a registered user with email "{email}"')
-def step_registered_user(context, email):
-    context.user = User(email=email, password="hashed")
-    context.db.save(context.user)
-
-@when('they submit valid credentials')
-def step_submit_credentials(context):
-    context.response = auth_service.login(
-        email=context.user.email,
-        password="correct_password"
-    )
-
-@then('they should be logged in successfully')
-def step_verify_login(context):
-    assert context.response.success == True
-    assert context.response.token is not None
-```
 
 ### Standard Mode Template
 ```typescript
@@ -390,10 +342,10 @@ Consider:
 ## Best Practices
 
 1. **Always start with requirements**: Ensure task has clear acceptance criteria
-2. **Choose the right mode**: 
+2. **Choose the right mode**:
    - TDD for complex logic
-   - BDD for user-facing features
    - Standard for straightforward implementations
+   - For BDD workflows, use require-kit package
 3. **Don't skip refactoring**: In TDD mode, always improve after GREEN
 4. **Review test quality**: High coverage doesn't mean good tests
 5. **Document failures**: When blocked, provide clear unblocking steps

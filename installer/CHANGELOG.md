@@ -4,9 +4,19 @@ All notable changes to the AI-Engineer installation system will be documented in
 
 ## [2.0.0] - 2025-01-XX
 
+### Removed
+- **BDD Mode**: Removed `--mode=bdd` flag from `/task-work` command
+  - Rationale: BDD mode was not actively used and added unnecessary complexity
+  - Removed BDD agent (`bdd-generator.md`) from taskwright
+  - Removed BDD instruction files (`bdd-gherkin.md`)
+  - Migration: Use [require-kit](https://github.com/appmilla/require-kit) for full BDD workflow (EARS → Gherkin → Implementation)
+  - Alternative: Use `--mode=tdd` for test-driven development or `--mode=standard` for standard workflow
+  - Note: `supports_bdd()` function preserved in shared code for backward compatibility with require-kit package
+  - Impact: Only Standard and TDD modes remain available in taskwright
+
 ### Added - Unified Task Workflow
 - **Unified `/task-work` Command**: Single command that combines implementation, testing, and verification
-  - Supports three development modes: Standard, TDD, and BDD
+  - Supports two development modes: Standard and TDD
   - Automatic test execution and quality gate enforcement
   - Smart state transitions based on test results
   - Technology stack auto-detection

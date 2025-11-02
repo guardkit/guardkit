@@ -7,12 +7,12 @@ This command supports **graceful degradation** based on installed packages:
 ### Taskwright Only (Core Workflow)
 - Loads task description, acceptance criteria, implementation notes
 - Executes full workflow with architectural review and quality gates
-- No requirements/epic/BDD loading (require-kit features)
+- No requirements/epic loading (require-kit features)
 
 ### Taskwright + Require-Kit (Enhanced Workflow)
 - All core features PLUS:
 - Loads EARS requirements if linked in task frontmatter
-- Loads BDD/Gherkin scenarios if linked
+- Loads Gherkin scenarios if linked (for BDD workflow)
 - Includes epic/feature context for hierarchy
 - Enables requirements-based acceptance criteria enrichment
 
@@ -2333,14 +2333,7 @@ The command supports multiple development modes via `--mode` flag:
 - REFACTOR: Implementation agent improves code quality
 - Best for complex business logic
 
-#### BDD Mode
-```bash
-/task-work TASK-XXX --mode=bdd
-```
-- Starts from Gherkin scenarios
-- BDD generator creates step definitions
-- Implementation agent satisfies scenarios
-- Best for user-facing features
+**Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/appmilla/require-kit) package which provides complete requirements management and BDD generation.
 
 ### Stack-Specific Agent Details
 
