@@ -61,8 +61,8 @@ print_info() {
 # Show available templates
 show_templates() {
     echo "Available templates:"
-    if [ -d "$AGENTICFLOW_HOME/templates" ]; then
-        for template_dir in "$AGENTICFLOW_HOME/templates"/*/; do
+    if [ -d "$AGENTECFLOW_HOME/templates" ]; then
+        for template_dir in "$AGENTECFLOW_HOME/templates"/*/; do
             if [ -d "$template_dir" ]; then
                 local name=$(basename "$template_dir")
                 case "$name" in
@@ -195,11 +195,11 @@ copy_template_files() {
         fi
     fi
     
-    local template_dir="$AGENTICFLOW_HOME/templates/$effective_template"
+    local template_dir="$AGENTECFLOW_HOME/templates/$effective_template"
 
     if [ ! -d "$template_dir" ]; then
         print_warning "Template '$effective_template' not found, using default"
-        template_dir="$AGENTICFLOW_HOME/templates/default"
+        template_dir="$AGENTECFLOW_HOME/templates/default"
         effective_template="default"
     fi
     
@@ -215,9 +215,9 @@ copy_template_files() {
     if [ -d "$template_dir/agents" ] && [ "$(ls -A $template_dir/agents 2>/dev/null)" ]; then
         cp -r "$template_dir/agents/"* .claude/agents/ 2>/dev/null || true
         print_success "Copied template-specific agents"
-    elif [ -d "$AGENTICFLOW_HOME/agents" ] && [ "$(ls -A $AGENTICFLOW_HOME/agents 2>/dev/null)" ]; then
+    elif [ -d "$AGENTECFLOW_HOME/agents" ] && [ "$(ls -A $AGENTECFLOW_HOME/agents 2>/dev/null)" ]; then
         # Copy global agents
-        cp -r "$AGENTICFLOW_HOME/agents/"* .claude/agents/ 2>/dev/null || true
+        cp -r "$AGENTECFLOW_HOME/agents/"* .claude/agents/ 2>/dev/null || true
         print_success "Copied global agents"
     else
         print_warning "No agents found to copy"
@@ -237,8 +237,8 @@ copy_template_files() {
     done 2>/dev/null || true
     
     # Link to global commands
-    if [ -d "$AGENTICFLOW_HOME/commands" ]; then
-        for cmd in "$AGENTICFLOW_HOME/commands"/*.md; do
+    if [ -d "$AGENTECFLOW_HOME/commands" ]; then
+        for cmd in "$AGENTECFLOW_HOME/commands"/*.md; do
             if [ -f "$cmd" ]; then
                 local cmd_name=$(basename "$cmd")
                 # Create symlink or copy if symlink fails
@@ -262,7 +262,7 @@ create_config() {
     cat > .claude/settings.json << EOF
 {
   "version": "1.0.0",
-  "extends": "$AGENTICFLOW_HOME/templates/$TEMPLATE",
+  "extends": "$AGENTECFLOW_HOME/templates/$TEMPLATE",
   "project": {
     "name": "$project_name",
     "template": "$TEMPLATE",
