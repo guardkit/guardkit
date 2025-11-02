@@ -466,7 +466,7 @@ print_next_steps() {
     echo ""
     echo -e "${BOLD}Need Requirements Management?${NC}"
     echo "  For EARS notation, BDD, epics, and portfolio management:"
-    echo "  Install require-kit: ${BLUE}https://github.com/requirekit/require-kit${NC}"
+    echo -e "  Install require-kit: ${BLUE}https://github.com/requirekit/require-kit${NC}"
     echo ""
     echo -e "${BLUE}Ready to start development!${NC}"
 }
