@@ -56,7 +56,7 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 The `/task-work` command executes these phases automatically:
 
 ```
-Phase 1: Requirements Analysis
+Phase 1: Requirements Analysis (require-kit only - skipped in taskwright)
 Phase 2: Implementation Planning (Markdown format)
 Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 Phase 2.7: Complexity Evaluation (0-10 scale)
@@ -67,6 +67,8 @@ Phase 4.5: Test Enforcement Loop (auto-fix up to 3 attempts)
 Phase 5: Code Review
 Phase 5.5: Plan Audit (scope creep detection)
 ```
+
+**Note**: Taskwright starts directly at Phase 2 using task descriptions and acceptance criteria. For formal requirements analysis (EARS, BDD), use [require-kit](https://github.com/appmilla/require-kit).
 
 **Key Decision Points:**
 - **Phase 2.7**: Auto-proceed (1-3) vs checkpoint (7-10)

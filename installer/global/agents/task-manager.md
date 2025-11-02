@@ -79,20 +79,13 @@ def has_force_triggers(task):
 
 ### Sub-Agent Invocation Pattern
 
-**Phase 1: Requirements Analysis**
-```markdown
-Invoke requirements-analyst agent:
+**Phase 1: Requirements Analysis** *(Skipped in Taskwright - Require-Kit Only)*
 
-<AGENT_CONTEXT>
-documentation_level: {determined_level}
-complexity_score: {task.complexity}
-task_id: {task.id}
-stack: {task.stack}
-phase: 1
-</AGENT_CONTEXT>
+Phase 1 is **skipped** in Taskwright's lightweight workflow. Tasks use descriptions and acceptance criteria directly without formal requirements analysis.
 
-Analyze requirements for {task.title}...
-```
+For formal requirements management with EARS notation and BDD generation, use [require-kit](https://github.com/appmilla/require-kit).
+
+**Taskwright workflow proceeds directly to Phase 2 (Implementation Planning).**
 
 **Phase 2.5B: Architectural Review**
 ```markdown

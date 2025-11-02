@@ -907,34 +907,18 @@ Based on detected stack, **MAP** to agents using this table:
 
 **⚠️ CRITICAL: YOU MUST USE THE TASK TOOL. DO NOT ATTEMPT TO DO THE WORK YOURSELF.**
 
-#### Phase 1: Requirements Analysis
+#### Phase 1: Requirements Analysis *(Require-Kit Only)*
 
-**INVOKE** Task tool with documentation context:
-```
-subagent_type: "requirements-analyst"
-description: "Analyze requirements for TASK-XXX"
-prompt: "<AGENT_CONTEXT>
-documentation_level: {documentation_level}
-complexity_score: {task_context.complexity}
-task_id: {task_id}
-stack: {stack}
-phase: 1
-</AGENT_CONTEXT>
+**SKIPPED IN TASKWRIGHT**: Taskwright uses task descriptions and acceptance criteria directly without formal requirements analysis.
 
-Analyze task {task_id} requirements and acceptance criteria.
-Extract key functional requirements, non-functional requirements,
-and testable acceptance criteria for {stack} implementation.
-Identify any gaps or ambiguities that need clarification.
+**Why skipped**: Taskwright is lightweight - no EARS notation or formal BDD generation needed.
 
-DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return structured data only (lists of requirements), no verbose docs
-- standard: Return structured data with brief explanations
-- comprehensive: Generate full requirement documents with rationale and traceability
+**For formal requirements**: Use [require-kit](https://github.com/appmilla/require-kit) which provides:
+- EARS notation requirements analysis
+- BDD/Gherkin scenario generation
+- Full requirements traceability
 
-See installer/global/agents/requirements-analyst.md for full documentation level specifications."
-```
-
-**WAIT** for agent to complete before proceeding.
+**Taskwright workflow**: Proceed directly to Phase 2 (Implementation Planning).
 
 #### Phase 2: Implementation Planning
 
