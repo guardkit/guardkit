@@ -50,60 +50,102 @@
 
 ---
 
+## Implementation Approach: `/task-work` vs Simple Claude Code
+
+### When to Use `/task-work`
+
+**Use `/task-work TASK-XXX` for tasks involving:**
+- Code implementation with testing requirements
+- Multi-file changes requiring quality gates
+- Tasks needing architectural review (Phase 2.5)
+- Tasks requiring compilation checks and test enforcement (Phase 4.5)
+- Complex orchestration or integration work
+- Tasks tracked as part of the epic workflow
+
+### When Simple Claude Code Is Sufficient
+
+**Use direct Claude Code requests for:**
+- Pure documentation writing (no code changes)
+- Single markdown file updates
+- Quick questions or clarifications
+- Reading/analyzing existing code without changes
+
+### Task Classification
+
+**MUST use `/task-work`** (14 tasks):
+- TASK-001A through TASK-013, TASK-015 (all involve code implementation)
+- These require quality gates: compilation checks, test execution, coverage verification
+- Proper state tracking and epic integration
+
+**CAN use simple Claude Code** (1 task):
+- TASK-014: User Documentation
+- Primarily markdown documentation writing
+- However, `/task-work` is still recommended for proper tracking and completion verification
+
+**Recommendation**: Use `/task-work` for ALL 15 tasks to maintain consistent epic tracking and ensure proper review workflow.
+
+---
+
 ## Complete Task List
 
 ### Wave 0: Q&A and Analysis (21 hours)
 
-**TASK-001A: Brownfield Q&A Session** (3h, Complexity 3/10)
+**TASK-001A: Brownfield Q&A Session** (3h, Complexity 3/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Q&A for existing codebases
 - 8 targeted questions
 - Session persistence
 - Feeds into TASK-002
+- **Why `/task-work`**: Code implementation with validation and testing
 
-**TASK-001B: Greenfield Q&A Session** (6h, Complexity 4/10)
+**TASK-001B: Greenfield Q&A Session** (6h, Complexity 4/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED** (895 lines)
 - Q&A for new templates (no codebase)
 - 22 questions across 9 sections
 - Architecture exploration
 - Complete data contracts
 - Ready for implementation
+- **Why `/task-work`**: Complex implementation with quality gates
 
-**TASK-002: AI-Powered Codebase Analysis** (8h, Complexity 6/10)
+**TASK-002: AI-Powered Codebase Analysis** (8h, Complexity 6/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED**
 - Uses `architectural-reviewer` agent
 - Analyzes language, frameworks, architecture pattern
 - Identifies good example files
 - Returns structured JSON analysis
 - **Replaces**: 6 algorithmic tasks (037, 037A, 038, 038A, 039, 039A)
+- **Why `/task-work`**: Most complex task, requires architectural review
 
-**TASK-003: Agent Inventory Manager** (4h, Complexity 4/10)
+**TASK-003: Agent Inventory Manager** (4h, Complexity 4/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Scan multiple agent sources (global, local, template)
 - Priority-based inventory
 - Discover 15+ built-in agents
 - Kept from original approach
+- **Why `/task-work`**: Multi-file implementation with testing
 
-**TASK-004: Agent Generator** (3h, Complexity 3/10)
+**TASK-004: Agent Generator** (3h, Complexity 3/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - AI-powered agent generation
 - Tailored to project patterns
 - Quality scoring
 - Deduplication with existing agents
+- **Why `/task-work`**: Implementation requires test coverage
 
 ---
 
 ### Wave 1: Template Generation (26 hours)
 
-**TASK-005: Manifest Generator** (4h, Complexity 3/10)
+**TASK-005: Manifest Generator** (4h, Complexity 3/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED** (575 lines)
 - Complete ManifestGenerator implementation
 - Language/framework detection
 - Placeholder extraction
 - Full testing strategy
 - Ready for implementation
+- **Why `/task-work`**: Implementation with comprehensive test coverage
 
-**TASK-006: Settings Generator** (3h, Complexity 3/10)
+**TASK-006: Settings Generator** (3h, Complexity 3/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED** (378 lines)
 - Complete SettingsGenerator implementation
 - Language-specific inference (C#, TypeScript, Python, Java, Kotlin)
@@ -111,16 +153,18 @@
 - File organization patterns
 - Ready for implementation
 - **Replaces**: 3 tasks (040, 041, 043)
+- **Why `/task-work`**: Multi-language implementation with validation
 
-**TASK-007: CLAUDE.md Generator** (4h, Complexity 3/10)
+**TASK-007: CLAUDE.md Generator** (4h, Complexity 3/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED** (782 lines)
 - Complete ClaudeMdGenerator implementation
 - 8 content sections (architecture, tech stack, patterns, etc.)
 - Language-specific best practices
 - Architecture-specific content (MVVM, Clean, MVC)
 - Ready for implementation
+- **Why `/task-work`**: Complex generator with quality verification
 
-**TASK-008: Template Generator** (7h, Complexity 5/10)
+**TASK-008: Template Generator** (7h, Complexity 5/10) **→ Use `/task-work`**
 - Status: ✅ **FULLY EXPANDED** (841 lines)
 - Complete TemplateGenerator implementation
 - **AI-assisted placeholder extraction** (not regex-based)
@@ -129,63 +173,72 @@
 - Pattern identification
 - Ready for implementation
 - **Replaces**: Complex regex extraction
+- **Why `/task-work`**: Most complex Wave 1 task, needs architectural review
 
-**TASK-009: Agent Recommender** (4h, Complexity 4/10)
+**TASK-009: Agent Recommender** (4h, Complexity 4/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Use `pattern-advisor` MCP for recommendations
 - Priority-based selection
 - Deduplication logic
 - **Replaces**: Complex scoring algorithm
+- **Why `/task-work`**: Integration with MCP requires testing
 
 ---
 
 ### Wave 2: Commands (10 hours)
 
-**TASK-010: /template-create Command** (6h, Complexity 5/10)
+**TASK-010: /template-create Command** (6h, Complexity 5/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Orchestrate Q&A → AI analysis → template generation
 - Brownfield workflow (existing codebase)
 - Integration with all Wave 0 & Wave 1 tasks
 - Error handling and validation
+- **Why `/task-work`**: Critical integration task, requires full quality gates
 
-**TASK-011: /template-init Command** (4h, Complexity 4/10)
+**TASK-011: /template-init Command** (4h, Complexity 4/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Greenfield workflow (new template)
 - Interactive template creation
 - AI provides intelligent defaults
 - Uses TASK-001B Q&A session
+- **Why `/task-work`**: Command implementation with comprehensive testing
 
 ---
 
 ### Wave 3: Polish (28 hours)
 
-**TASK-012: Template Packaging & Distribution** (6h, Complexity 3/10)
+**TASK-012: Template Packaging & Distribution** (6h, Complexity 3/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Package, version, distribute templates
 - Reference archived tasks 061-064 for implementation
 - Template registry
 - Validation
+- **Why `/task-work`**: Implementation with distribution testing
 
-**TASK-013: Integration Tests** (10h, Complexity 7/10)
+**TASK-013: Integration Tests** (10h, Complexity 7/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - End-to-end tests for both commands
 - Validate AI accuracy on real projects
 - Test multiple languages/frameworks
 - Quality metrics
+- **Why `/task-work`**: Highest complexity task, requires full architectural review
 
-**TASK-014: User Documentation** (8h, Complexity 5/10)
+**TASK-014: User Documentation** (8h, Complexity 5/10) **→ Optional `/task-work`**
 - Status: 📝 Minimal specification
 - Complete user guides
 - Examples and troubleshooting
 - Command reference
 - Architecture documentation
+- **Why optional**: Pure documentation (no code), but `/task-work` recommended for tracking
+- **Alternative**: Can use simple Claude Code requests for individual doc sections
 
-**TASK-015: Example Templates** (4h, Complexity 6/10)
+**TASK-015: Example Templates** (4h, Complexity 6/10) **→ Use `/task-work`**
 - Status: 📝 Minimal specification
 - Create 3-5 example templates
 - Validates template quality
 - Different tech stacks
 - Reference implementations
+- **Why `/task-work`**: Template validation requires testing across stacks
 
 ---
 
@@ -751,7 +804,7 @@ epic001-agent-inventory → TASK-003
 ## Questions & Answers
 
 **Q: Which tasks can I start immediately?**
-A: TASK-001B (greenfield Q&A) is fully specified and has no dependencies. Start there!
+A: TASK-001B (greenfield Q&A) is fully specified and has no dependencies. Start there with `/task-work TASK-001B`.
 
 **Q: What about the brownfield path (TASK-001A)?**
 A: TASK-001A has minimal specification. Expand it before starting, or use TASK-001B as a template.
@@ -771,8 +824,19 @@ A: Tasks 001B, 002, 005-008 have complete implementation code, reducing "figure 
 **Q: Can I use archived task implementations?**
 A: Yes! TASK-003, 004, 012 reference archived tasks for implementation details.
 
-**Q: How does this work with /task-work?**
-A: `/task-work TASK-XXX` handles implementation automatically. Fully specified tasks = faster, more accurate implementation.
+**Q: Should I use `/task-work` or simple Claude Code requests?**
+A: Use `/task-work` for ALL implementation tasks (TASK-001A through TASK-013, TASK-015). Only TASK-014 (pure documentation) can optionally use simple Claude Code, but `/task-work` is still recommended for tracking.
+
+**Q: Why use `/task-work` instead of asking Claude Code directly?**
+A: `/task-work` provides:
+- Automatic quality gates (compilation checks, test enforcement)
+- Architectural review (Phase 2.5)
+- Proper task state tracking and epic integration
+- Test coverage verification (Phase 4.5)
+- Structured review workflow (Phase 5)
+
+**Q: When is it OK to use simple Claude Code requests?**
+A: For quick questions, reading/analyzing code, or writing pure documentation sections. For actual implementation, always use `/task-work`.
 
 **Q: Should I expand remaining tasks before starting?**
 A: Recommended for critical path tasks (TASK-010). Optional for polish tasks (can expand just-in-time).
