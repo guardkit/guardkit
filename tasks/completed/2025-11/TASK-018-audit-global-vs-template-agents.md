@@ -1,11 +1,13 @@
 ---
 id: TASK-018
 title: Audit and Reorganize Global vs Template-Specific Agents
-status: backlog
+status: completed
 created: 2025-11-02T00:00:00Z
+completed: 2025-11-02T16:11:00Z
 priority: high
 complexity: 2
 estimated_hours: 1
+actual_hours: 0.5
 tags: [agents, templates, cleanup, bug-fix]
 epic: null
 feature: installation
