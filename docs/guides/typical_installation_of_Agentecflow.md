@@ -72,8 +72,8 @@ richwoollcott@macos scripts % ./install.sh
     - test-orchestrator
     - test-verifier
 ℹ Creating CLI commands...
-✓ Created agentec-init command
-✓ Created CLI commands (agentecflow, agentec-init, af, ai)
+✓ Created taskwright-init command
+✓ Created CLI commands (agentecflow, taskwright-init, af, ai)
 ℹ Setting up shell integration...
 ℹ Detected zsh shell
 ✓ Shell integration added to /Users/richwoollcott/.zshrc
@@ -102,11 +102,11 @@ Installed Components:
   ⚡ Commands:       17
 
 Available Commands:
-  • agentec-init [template]  - Initialize a project
-  • agentecflow init         - Alternative initialization
+  • taskwright-init [template]  - Initialize a project
+  • taskwright init         - Alternative initialization
   • agentecflow doctor       - Check system health
   • af                       - Short for agenticflow
-  • ai                       - Short for agentec-init
+  • ai                       - Short for taskwright-init
 
 Available Templates:
   • default - Language-agnostic
@@ -120,7 +120,7 @@ Available Templates:
 ⚠ Next Steps:
   1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)
   2. Navigate to your project directory
-  3. Run: agentec-init dotnet-microservice
+  3. Run: taskwright-init dotnet-microservice
 
 📚 Documentation: /Users/richwoollcott/.agentecflow/docs/
 ❓ Check health: agentecflow doctor
@@ -143,14 +143,14 @@ Commands:
   help                Show this help message
 
 Examples:
-  agentecflow init                    # Interactive initialization
-  agentecflow init react              # Initialize with React template
-  agentecflow init dotnet-microservice # Initialize with .NET microservice
+  taskwright init                    # Interactive initialization
+  taskwright init react              # Initialize with React template
+  taskwright init dotnet-microservice # Initialize with .NET microservice
   agentecflow doctor                  # Check installation health
-richwoollcott@macos Desktop % agentec-init --help
+richwoollcott@macos Desktop % taskwright-init --help
 Agentecflow Project Initialization
 
-Usage: agentec-init [template]
+Usage: taskwright-init [template]
 
 Templates:
   default             - Language-agnostic template
@@ -162,9 +162,9 @@ Templates:
   typescript-api      - NestJS TypeScript backend API
 
 Examples:
-  agentec-init                    # Interactive setup
-  agentec-init react              # Initialize with React template
-  agentec-init dotnet-microservice # Initialize with .NET microservice
+  taskwright-init                    # Interactive setup
+  taskwright-init react              # Initialize with React template
+  taskwright-init dotnet-microservice # Initialize with .NET microservice
 ```
 
 ### Restart the session (terminal)
@@ -177,13 +177,13 @@ Examples:
 
   3. Test CLI commands:
   agentecflow --help
-  agentec-init --help
+  taskwright-init --help
 
   4. Test project initialization:
   mkdir test-project && cd test-project
-  agentecflow init react
+  taskwright init react
   # or
-  agentec-init typescript-api
+  taskwright-init typescript-api
 
 
 ### Install Visual Studio Code
@@ -204,13 +204,13 @@ cd test-api
 Run the init command for the project type, in this example a Typescript Api
 
 ```bash
-agentec-init typescript-api
+taskwright-init typescript-api
 ```
 
 You should see output similar to this:
 
 ```bash
-richwoollcott@macos test_api % agentec-init typescript-api
+richwoollcott@macos test_api % taskwright-init typescript-api
 
 ╔════════════════════════════════════════════════════════╗
 ║         Agentecflow Initialization                    ║

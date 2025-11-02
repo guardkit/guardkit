@@ -8,13 +8,13 @@
 curl -sSL https://raw.githubusercontent.com/appmilla/agentic-flow/main/installer/scripts/install.sh | bash
 
 # Initialize projects with enterprise capabilities
-agentecflow init react               # React with TypeScript, Vite, Playwright
-agentecflow init python              # Python with FastAPI, pytest, LangGraph
-agentecflow init dotnet-microservice # .NET microservices with FastEndpoints
-agentecflow init maui                # .NET MAUI mobile with MVVM
-agentecflow init typescript-api      # NestJS TypeScript backend API
-agentecflow init fullstack           # React + Python full-stack
-agentecflow init default             # Language-agnostic template
+taskwright init react               # React with TypeScript, Vite, Playwright
+taskwright init python              # Python with FastAPI, pytest, LangGraph
+taskwright init dotnet-microservice # .NET microservices with FastEndpoints
+taskwright init maui                # .NET MAUI mobile with MVVM
+taskwright init typescript-api      # NestJS TypeScript backend API
+taskwright init fullstack           # React + Python full-stack
+taskwright init default             # Language-agnostic template
 ```
 
 ## 🏢 Enterprise Features (New in v2.0)

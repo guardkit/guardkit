@@ -23,7 +23,7 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize your project (choose a template)
-agentic-init react  # or: python, typescript-api, maui-appshell, default
+taskwright init react  # or: python, typescript-api, maui-appshell, default
 
 # In Claude Code - create and work on a task
 /task-create "Add user login feature"

@@ -3981,7 +3981,7 @@ graph TD
     G -->|No - Quality gates sufficient| E
 
     E --> I{Currently Using?}
-    I -->|New project| J[Initialize: agentec-init]
+    I -->|New project| J[Initialize: taskwright init]
     I -->|Existing project| K[Add to existing workflow]
 
     F --> L{Prototype Working?}
@@ -4544,7 +4544,7 @@ pytest tests/ -v
 
 **A1**: Just two steps:
 1. Run installer: `./installer/scripts/install.sh` (creates global symlinks)
-2. Initialize project: `agentic-init maui-navigationpage` (or any template)
+2. Initialize project: `taskwright init maui-navigationpage` (or any template)
 
 Total setup time: **30 seconds**. No MCP servers required, no complex configuration.
 

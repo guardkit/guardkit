@@ -80,7 +80,7 @@ AppName/
 
 1. **Initialize a .NET Microservice Project**:
 ```bash
-agentecflow init dotnet-microservice
+taskwright init dotnet-microservice
 cd your-service
 dotnet restore
 dotnet build
@@ -88,7 +88,7 @@ dotnet build
 
 2. **Initialize a .NET MAUI Project**:
 ```bash
-agentecflow init maui
+taskwright init maui
 cd your-app
 dotnet restore
 dotnet build

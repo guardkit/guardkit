@@ -41,10 +41,10 @@
 
 ```bash
 # AppShell template
-agentic-init maui-appshell
+taskwright init maui-appshell
 
 # NavigationPage template
-agentic-init maui-navigationpage
+taskwright init maui-navigationpage
 ```
 
 **Learn More**: See "Core Concepts" below for detailed comparison and examples.

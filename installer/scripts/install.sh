@@ -472,11 +472,11 @@ EOF
 create_cli_commands() {
     print_info "Creating CLI commands..."
     
-    # Create agentec-init command (primary command)
-    cat > "$INSTALL_DIR/bin/agentec-init" << 'EOF'
+    # Create taskwright-init command (primary command)
+    cat > "$INSTALL_DIR/bin/taskwright-init" << 'EOF'
 #!/bin/bash
 
-# Agentecflow Project Initialization
+# Taskwright Project Initialization
 # Primary command for initializing projects
 
 AGENTECFLOW_HOME="$HOME/.agentecflow"
@@ -490,9 +490,9 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 print_help() {
-    echo "Agentecflow Project Initialization"
+    echo "Taskwright Project Initialization"
     echo ""
-    echo "Usage: agentec-init [template]"
+    echo "Usage: taskwright-init [template]"
     echo ""
     echo "Templates:"
     echo "  default             - Language-agnostic template"
@@ -504,9 +504,9 @@ print_help() {
     echo "  typescript-api      - NestJS TypeScript backend API"
     echo ""
     echo "Examples:"
-    echo "  agentec-init                    # Interactive setup"
-    echo "  agentec-init react              # Initialize with React template"
-    echo "  agentec-init dotnet-microservice # Initialize with .NET microservice"
+    echo "  taskwright-init                    # Interactive setup"
+    echo "  taskwright-init react              # Initialize with React template"
+    echo "  taskwright-init dotnet-microservice # Initialize with .NET microservice"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -514,9 +514,9 @@ if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     exit 0
 fi
 
-# Check if Agentecflow is installed
+# Check if Taskwright is installed
 if [ ! -d "$AGENTECFLOW_HOME" ]; then
-    echo -e "${RED}Error: Agentecflow not installed at $AGENTECFLOW_HOME${NC}"
+    echo -e "${RED}Error: Taskwright not installed at $AGENTECFLOW_HOME${NC}"
     echo "Please run the installer first"
     exit 1
 fi
@@ -533,15 +533,15 @@ else
 fi
 EOF
 
-    chmod +x "$INSTALL_DIR/bin/agentec-init"
-    print_success "Created agentec-init command"
+    chmod +x "$INSTALL_DIR/bin/taskwright-init"
+    print_success "Created taskwright-init command"
 
-    # Create agentecflow main command
-    cat > "$INSTALL_DIR/bin/agentecflow" << 'EOF'
+    # Create taskwright main command
+    cat > "$INSTALL_DIR/bin/taskwright" << 'EOF'
 #!/bin/bash
 
-# Agentecflow CLI
-# Main command-line interface for Agentecflow
+# Taskwright CLI
+# Main command-line interface for Taskwright
 
 AGENTECFLOW_HOME="$HOME/.agentecflow"
 AGENTECFLOW_VERSION="1.0.0"
@@ -554,21 +554,21 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 print_help() {
-    echo "Agentecflow - AI-Powered Software Engineering Lifecycle System"
+    echo "Taskwright - Lightweight AI-Assisted Development"
     echo ""
-    echo "Usage: agentecflow <command> [options]"
+    echo "Usage: taskwright <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  init [template]     Initialize Agentecflow in current directory"
+    echo "  init [template]     Initialize Taskwright in current directory"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
     echo "  help                Show this help message"
     echo ""
     echo "Examples:"
-    echo "  agentecflow init                    # Interactive initialization"
-    echo "  agentecflow init react              # Initialize with React template"
-    echo "  agentecflow init dotnet-microservice # Initialize with .NET microservice"
-    echo "  agentecflow doctor                  # Check installation health"
+    echo "  taskwright init                    # Interactive initialization"
+    echo "  taskwright init react              # Initialize with React template"
+    echo "  taskwright init dotnet-microservice # Initialize with .NET microservice"
+    echo "  taskwright doctor                  # Check installation health"
 }
 
 # Detect project context by traversing upward
@@ -595,16 +595,16 @@ case "$1" in
     init)
         shift
         export CLAUDE_HOME="$AGENTECFLOW_HOME"
-        exec "$AGENTECFLOW_HOME/bin/agentec-init" "$@"
+        exec "$AGENTECFLOW_HOME/bin/taskwright-init" "$@"
         ;;
     doctor)
-        echo -e "${BLUE}Running Agentecflow diagnostics...${NC}"
+        echo -e "${BLUE}Running Taskwright diagnostics...${NC}"
         echo ""
 
         # Check installation
         echo "Installation:"
         if [ -d "$AGENTECFLOW_HOME" ]; then
-            echo -e "  ${GREEN}✓${NC} Agentecflow home: $AGENTECFLOW_HOME"
+            echo -e "  ${GREEN}✓${NC} Taskwright home: $AGENTECFLOW_HOME"
 
             # Check key directories
             for dir in agents bin cache commands completions docs instructions plugins scripts templates versions; do
@@ -615,7 +615,7 @@ case "$1" in
                 fi
             done
         else
-            echo -e "  ${RED}✗${NC} Agentecflow home not found"
+            echo -e "  ${RED}✗${NC} Taskwright home not found"
         fi
 
         # Check agents
@@ -634,7 +634,7 @@ case "$1" in
         echo ""
         echo "PATH Configuration:"
         if [[ ":$PATH:" == *":$AGENTECFLOW_HOME/bin:"* ]]; then
-            echo -e "  ${GREEN}✓${NC} Agentecflow bin in PATH"
+            echo -e "  ${GREEN}✓${NC} Taskwright bin in PATH"
         else
             echo -e "  ${YELLOW}⚠${NC} Add to PATH: export PATH=\"\$HOME/.agentecflow/bin:\$PATH\""
         fi
@@ -720,11 +720,11 @@ case "$1" in
             echo "    3. Default (CLAUDE_HOME/templates/) [LOWEST PRIORITY]"
         else
             echo -e "  ${BLUE}ℹ${NC} Not in a project directory"
-            echo -e "      Run this command from a project initialized with agentec-init"
+            echo -e "      Run this command from a project initialized with taskwright-init"
         fi
         ;;
     version|--version|-v)
-        echo "Agentecflow version $AGENTECFLOW_VERSION"
+        echo "Taskwright version $AGENTECFLOW_VERSION"
         echo "Installation: $AGENTECFLOW_HOME"
         ;;
     help|--help|-h|"")
@@ -732,19 +732,19 @@ case "$1" in
         ;;
     *)
         echo -e "${RED}Unknown command: $1${NC}"
-        echo "Run 'agentecflow help' for usage information"
+        echo "Run 'taskwright help' for usage information"
         exit 1
         ;;
 esac
 EOF
 
-    chmod +x "$INSTALL_DIR/bin/agentecflow"
+    chmod +x "$INSTALL_DIR/bin/taskwright"
 
     # Create shorthand aliases
-    ln -sf "$INSTALL_DIR/bin/agentecflow" "$INSTALL_DIR/bin/af"
-    ln -sf "$INSTALL_DIR/bin/agentec-init" "$INSTALL_DIR/bin/ai"
+    ln -sf "$INSTALL_DIR/bin/taskwright" "$INSTALL_DIR/bin/tw"
+    ln -sf "$INSTALL_DIR/bin/taskwright-init" "$INSTALL_DIR/bin/twi"
 
-    print_success "Created CLI commands (agentecflow, agentec-init, af, ai)"
+    print_success "Created CLI commands (taskwright, taskwright-init, tw, twi)"
 }
 
 # Setup shell integration
@@ -836,22 +836,24 @@ setup_shell_integration() {
     if [ "$shell_name" = "bash" ]; then
         cat >> "$shell_config" << 'EOF'
 
-# Agentecflow
+# Taskwright
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
+# Note: Config folder stays .agentecflow for methodology compatibility
 
-# Agentecflow completions (bash)
-if [ -f "$HOME/.agentecflow/completions/agentecflow.bash" ]; then
-    source "$HOME/.agentecflow/completions/agentecflow.bash"
+# Taskwright completions (bash)
+if [ -f "$HOME/.agentecflow/completions/taskwright.bash" ]; then
+    source "$HOME/.agentecflow/completions/taskwright.bash"
 fi
 EOF
     else
         # For zsh or other shells, skip bash completions
         cat >> "$shell_config" << 'EOF'
 
-# Agentecflow
+# Taskwright
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
+# Note: Config folder stays .agentecflow for methodology compatibility
 EOF
     fi
     

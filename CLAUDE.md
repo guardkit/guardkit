@@ -168,7 +168,7 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-agentic-init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-microservice|default]
+taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-microservice|default]
 ```
 
 **Available Templates:**
@@ -197,7 +197,7 @@ Fully compatible with [Conductor.build](https://conductor.build) for parallel de
 **Setup:**
 ```bash
 ./installer/scripts/install.sh  # Creates symlinks automatically
-agentecflow doctor              # Verify integration
+taskwright doctor              # Verify integration
 ```
 
 **How It Works:**
