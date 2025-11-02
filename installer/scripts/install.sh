@@ -328,8 +328,8 @@ install_global_files() {
     fi
     
     # Copy the initialization script
-    if [ -f "$INSTALLER_DIR/scripts/init-claude-project.sh" ]; then
-        cp "$INSTALLER_DIR/scripts/init-claude-project.sh" "$INSTALL_DIR/scripts/init-project.sh"
+    if [ -f "$INSTALLER_DIR/scripts/init-project.sh" ]; then
+        cp "$INSTALLER_DIR/scripts/init-project.sh" "$INSTALL_DIR/scripts/init-project.sh"
         chmod +x "$INSTALL_DIR/scripts/init-project.sh"
         print_success "Installed initialization script"
     fi
