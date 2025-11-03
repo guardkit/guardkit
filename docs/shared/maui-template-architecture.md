@@ -321,7 +321,7 @@ maui-appshell/
 
 ### Local Template Structure (Example: MyDrive)
 ```
-.claude/templates/maui-mydrive/
+.claude/templates/maui-custom/
 ├── agents/
 │   ├── maui-engine-specialist.md      # MyDrive Engine pattern
 │   └── [other custom agents]
@@ -346,7 +346,7 @@ Example:
 agentec-init maui-appshell
 
 # Uses local template (if exists in .claude/templates/)
-agentec-init maui-mydrive
+agentec-init maui-custom
 ```
 
 ## Creating Local Templates
@@ -445,15 +445,15 @@ public class GetProducts
 
 ```bash
 # 1. Create local template directory
-mkdir -p .claude/templates/maui-mydrive
+mkdir -p .claude/templates/maui-custom
 
 # 2. Copy current patterns
-cp -r installer/global/templates/maui/* .claude/templates/maui-mydrive/
+cp -r installer/global/templates/maui/* .claude/templates/maui-custom/
 
 # 3. Update manifest to mark as local
-cat > .claude/templates/maui-mydrive/manifest.json << EOF
+cat > .claude/templates/maui-custom/manifest.json << EOF
 {
-  "name": "maui-mydrive",
+  "name": "maui-custom",
   "description": "MyDrive-specific MAUI template with Engine pattern",
   "version": "1.0.0",
   "scope": "local",
@@ -466,7 +466,7 @@ cat > .claude/templates/maui-mydrive/manifest.json << EOF
 EOF
 
 # 4. Commit to source control
-git add .claude/templates/maui-mydrive
+git add .claude/templates/maui-custom
 git commit -m "Add MyDrive-specific MAUI template"
 ```
 

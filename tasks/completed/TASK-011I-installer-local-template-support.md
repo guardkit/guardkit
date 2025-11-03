@@ -362,7 +362,7 @@ copy_smart_template() {
    - Completion shows only global templates
 
 2. **Local Template Override**
-   - Create `.claude/templates/maui-mydrive/`
+   - Create `.claude/templates/maui-custom/`
    - Should use local template over global
    - Doctor shows local template with override indication
 
@@ -394,7 +394,7 @@ agentecflow doctor
 
 # Test 2: Init with local template
 cd /path/to/project-with-local-templates
-agentec-init maui-mydrive
+agentec-init maui-custom
 
 # Test 3: Bash completion
 cd /path/to/project-with-local-templates

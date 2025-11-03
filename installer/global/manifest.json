@@ -54,9 +54,9 @@
       "name": "Full Stack",
       "description": "React frontend with Python backend"
     },
-    "dotnet-microservice": {
-      "name": ".NET Microservice",
-      "description": ".NET 8+ microservice with FastEndpoints, Either monad, and OpenTelemetry"
+    "dotnet-fastendpoints": {
+      "name": ".NET FastEndpoints API",
+      "description": ".NET 8+ API with FastEndpoints, REPR pattern, Either monad, and OpenTelemetry"
     },
     "maui": {
       "name": ".NET MAUI",

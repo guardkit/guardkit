@@ -9,7 +9,7 @@ previous_state: in_review
 state_transition_reason: "Task completed - all acceptance criteria met, quality gates passed"
 priority: high
 duration_days: 0.08
-tags: [maui, template-migration, mydrive, engine-pattern, local-template]
+tags: [maui, template-migration, exampleapp, engine-pattern, local-template]
 epic: null
 feature: null
 requirements: []
@@ -108,7 +108,7 @@ Create a local MAUI template in the MyDrive project that:
 
 **REQ-1**: Create local template directory structure
 ```
-When the local template is created, the system shall create the directory `.claude/templates/maui-mydrive/` in the MyDrive project root with the following structure:
+When the local template is created, the system shall create the directory `.claude/templates/maui-custom/` in the MyDrive project root with the following structure:
 - agents/ (MyDrive-specific agents)
 - src/ (Engine pattern templates)
 - tests/ (test templates)
@@ -131,7 +131,7 @@ When copying templates from global maui template, the system shall preserve all 
 ```
 When creating manifest.json, the system shall specify:
 - scope: "local"
-- stack: "maui-mydrive"
+- stack: "maui-custom"
 - naming_conventions: {"class_suffix": "Engine"}
 - namespace_pattern: "DeCUK.Mobile.MyDrive.{component_type}"
 - preserve_patterns: ["Engine suffix", "DeCUK namespace"]
@@ -140,7 +140,7 @@ When creating manifest.json, the system shall specify:
 **REQ-4**: Update MyDrive settings to reference local template
 ```
 When updating .claude/settings.json, the system shall:
-- Set default_template: "maui-mydrive"
+- Set default_template: "maui-custom"
 - Set template_scope: "local"
 - Preserve all existing MyDrive-specific settings
 ```
@@ -149,8 +149,8 @@ When updating .claude/settings.json, the system shall:
 ```
 When copying agents, the system shall include:
 - engine-pattern-specialist.md (Engine pattern guidance)
-- mydrive-architect.md (MyDrive-specific architecture)
-- maui-mydrive-generator.md (local template generator)
+- exampleapp-architect.md (MyDrive-specific architecture)
+- maui-custom-generator.md (local template generator)
 ```
 
 **REQ-6**: Create comprehensive documentation
@@ -187,7 +187,7 @@ When local template is created, the system shall verify:
 ## Acceptance Criteria
 
 ### Template Structure ✅
-- [ ] Local template directory created at `.claude/templates/maui-mydrive/`
+- [ ] Local template directory created at `.claude/templates/maui-custom/`
 - [ ] All subdirectories present (agents/, src/, tests/, docs/)
 - [ ] manifest.json exists and specifies local scope
 - [ ] README.md provides comprehensive usage guide
@@ -205,14 +205,14 @@ When local template is created, the system shall verify:
 - [ ] No generic MAUI namespaces present
 
 ### Configuration ✅
-- [ ] MyDrive .claude/settings.json updated to reference maui-mydrive template
+- [ ] MyDrive .claude/settings.json updated to reference maui-custom template
 - [ ] manifest.json specifies local scope correctly
 - [ ] manifest.json includes Engine pattern metadata
 
 ### Agent Integration ✅
 - [ ] engine-pattern-specialist.md copied to local template
-- [ ] mydrive-architect.md copied to local template
-- [ ] maui-mydrive-generator.md copied to local template
+- [ ] exampleapp-architect.md copied to local template
+- [ ] maui-custom-generator.md copied to local template
 - [ ] All agents reference local template correctly
 
 ### Documentation ✅
@@ -235,7 +235,7 @@ When local template is created, the system shall verify:
 ## Implementation Plan
 
 ### Phase 1: Create Directory Structure
-1. Create `.claude/templates/maui-mydrive/` directory in MyDrive project
+1. Create `.claude/templates/maui-custom/` directory in MyDrive project
 2. Create subdirectories: `agents/`, `src/`, `tests/`, `docs/`
 3. Verify directory structure matches required layout
 
@@ -251,14 +251,14 @@ When local template is created, the system shall verify:
 4. Document preserve_patterns
 
 ### Phase 4: Update MyDrive Settings
-1. Update `.claude/settings.json` to reference `maui-mydrive` template
+1. Update `.claude/settings.json` to reference `maui-custom` template
 2. Set `template_scope: "local"`
 3. Preserve existing MyDrive-specific settings
 
 ### Phase 5: Copy MyDrive-Specific Agents
 1. Copy `engine-pattern-specialist.md`
-2. Copy `mydrive-architect.md`
-3. Copy `maui-mydrive-generator.md`
+2. Copy `exampleapp-architect.md`
+3. Copy `maui-custom-generator.md`
 4. Update agent references to local template
 
 ### Phase 6: Create Documentation
@@ -296,14 +296,14 @@ Not applicable - this is a template configuration task
 
 3. **Agent Loading Test**
    - Verify engine-pattern-specialist.md is loaded
-   - Verify mydrive-architect.md is loaded
-   - Verify maui-mydrive-generator.md is loaded
+   - Verify exampleapp-architect.md is loaded
+   - Verify maui-custom-generator.md is loaded
 
 ### Validation Tests
 1. **Manifest Validation**
    - Parse manifest.json as valid JSON
    - Verify scope: "local"
-   - Verify stack: "maui-mydrive"
+   - Verify stack: "maui-custom"
    - Verify naming_conventions present
 
 2. **File Integrity Validation**
@@ -312,7 +312,7 @@ Not applicable - this is a template configuration task
    - README.md exists and is complete
 
 3. **Settings Validation**
-   - .claude/settings.json references maui-mydrive template
+   - .claude/settings.json references maui-custom template
    - template_scope is "local"
    - All existing settings preserved
 
@@ -321,16 +321,16 @@ Not applicable - this is a template configuration task
 ### MyDrive Project (DeCUK.Mobile.MyDrive)
 
 **Files to Create**:
-1. `.claude/templates/maui-mydrive/manifest.json` - Local template metadata
-2. `.claude/templates/maui-mydrive/README.md` - Usage documentation
-3. `.claude/templates/maui-mydrive/agents/engine-pattern-specialist.md` - Copy from global
-4. `.claude/templates/maui-mydrive/agents/mydrive-architect.md` - Copy from global
-5. `.claude/templates/maui-mydrive/agents/maui-mydrive-generator.md` - Copy from global
-6. `.claude/templates/maui-mydrive/src/ViewEngine.cs.template` - Copy from global
-7. `.claude/templates/maui-mydrive/src/ViewModelEngine.cs.template` - Copy from global
-8. `.claude/templates/maui-mydrive/src/ButtonEngine.cs.template` - Copy from global
-9. `.claude/templates/maui-mydrive/src/LoginFormEngine.cs.template` - Copy from global
-10. `.claude/templates/maui-mydrive/tests/*.cs.template` - Copy all test templates
+1. `.claude/templates/maui-custom/manifest.json` - Local template metadata
+2. `.claude/templates/maui-custom/README.md` - Usage documentation
+3. `.claude/templates/maui-custom/agents/engine-pattern-specialist.md` - Copy from global
+4. `.claude/templates/maui-custom/agents/exampleapp-architect.md` - Copy from global
+5. `.claude/templates/maui-custom/agents/maui-custom-generator.md` - Copy from global
+6. `.claude/templates/maui-custom/src/ViewEngine.cs.template` - Copy from global
+7. `.claude/templates/maui-custom/src/ViewModelEngine.cs.template` - Copy from global
+8. `.claude/templates/maui-custom/src/ButtonEngine.cs.template` - Copy from global
+9. `.claude/templates/maui-custom/src/LoginFormEngine.cs.template` - Copy from global
+10. `.claude/templates/maui-custom/tests/*.cs.template` - Copy all test templates
 
 **Files to Modify**:
 1. `.claude/settings.json` - Update to reference local template

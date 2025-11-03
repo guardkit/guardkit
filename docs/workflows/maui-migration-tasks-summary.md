@@ -177,17 +177,17 @@ This document summarizes all tasks created for the MAUI template migration from 
 ### Phase 3: Migrate MyDrive to Local Template (2 tasks, 6-8 hours)
 
 #### TASK-011: Create MyDrive Local Template
-**File**: `tasks/backlog/TASK-011-maui-mydrive-local-template.md`
+**File**: `tasks/backlog/TASK-011-maui-custom-local-template.md`
 **Complexity**: 4/10 (Medium-Low)
 **Estimated**: 3-4 hours
 **Status**: BACKLOG
 
 **Deliverables**:
-- `.claude/templates/maui-mydrive/` directory in MyDrive project
+- `.claude/templates/maui-custom/` directory in MyDrive project
 - Copy all Engine-suffixed templates from global maui template
 - manifest.json with local scope and Engine pattern metadata
 - Update MyDrive settings.json to reference local template
-- MyDrive-specific agents (engine-pattern-specialist, mydrive-architect)
+- MyDrive-specific agents (engine-pattern-specialist, exampleapp-architect)
 - Comprehensive README.md documentation
 
 **Key Features**:

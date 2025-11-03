@@ -124,7 +124,7 @@
 - `installer/global/templates/maui-navigationpage/` - ✅ Exists
 
 ### Local Template (Verified)
-- `~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/` - ✅ Functional
+- `~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/` - ✅ Functional
 
 ---
 

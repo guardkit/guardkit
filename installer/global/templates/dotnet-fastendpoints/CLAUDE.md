@@ -1,6 +1,6 @@
-# .NET Microservice Project Context for Claude Code
+# .NET FastEndpoints API Project Context for Claude Code
 
-This is a .NET 8+ microservice project using FastEndpoints with functional error handling via the Either monad pattern from LanguageExt.
+This is a .NET 8+ API project using FastEndpoints with functional error handling via the Either monad pattern from LanguageExt.
 
 ## Technology Stack
 - **Framework**: .NET 8.0+ with FastEndpoints (not traditional ASP.NET Controllers)
@@ -485,7 +485,7 @@ dotnet format                        # Format code
 dotnet analyzers                     # Run analyzers
 ```
 
-## Microservice-Specific Commands
+## FastEndpoints-Specific Commands
 
 ### Endpoint Generation
 Use `/create-endpoint {Feature}{Action}` to generate:

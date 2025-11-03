@@ -601,7 +601,7 @@ Audit all placeholders for consistency:
 - **TASK-011D**: Create maui-domain-specialist-agent (depends on template completion)
 - **TASK-011E**: maui-repository-specialist (depends on template completion)
 - **TASK-011F**: maui-service-specialist-agent (depends on template completion)
-- **TASK-011G**: maui-mydrive-local-template (independent)
+- **TASK-011G**: maui-custom-local-template (independent)
 
 ### 10.4 Post-Completion Tasks
 

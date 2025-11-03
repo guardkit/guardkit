@@ -10,7 +10,7 @@ This document summarizes the findings from TASK-011 implementation and provides 
 
 **Status**: ✅ Completed (95.7% success rate)
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/`
 
 **Test Results**:
 - Tests Passed: 22/23
@@ -19,9 +19,9 @@ This document summarizes the findings from TASK-011 implementation and provides 
 - Files Created: 15
 
 **Template Contents**:
-- **Agents** (3 files): engine-pattern-specialist.md, mydrive-architect.md, maui-mydrive-generator.md
+- **Agents** (3 files): engine-pattern-specialist.md, exampleapp-architect.md, maui-custom-generator.md
 - **Source Templates** (4 files): BaseEngine.cs, FeatureEngine.cs, IFeatureEngine.cs, FeatureViewModelEngine.cs
-- **Test Templates** (3 files): FeatureEngineTests.cs, FeatureViewModelEngineTests.cs, validate-mydrive-template.sh
+- **Test Templates** (3 files): FeatureEngineTests.cs, FeatureViewModelEngineTests.cs, validate-exampleapp-template.sh
 - **Documentation** (4 files): README.md, engine-patterns.md, namespace-conventions.md, migration-guide.md
 - **Configuration** (1 file): manifest.json
 
@@ -47,7 +47,7 @@ This document summarizes the findings from TASK-011 implementation and provides 
 
 A comprehensive setup guide has been created at:
 
-**[docs/guides/maui-mydrive-setup-guide.md](maui-mydrive-setup-guide.md)**
+**[docs/guides/maui-custom-setup-guide.md](maui-custom-setup-guide.md)**
 
 ### What the Setup Guide Covers
 
@@ -92,7 +92,7 @@ A comprehensive setup guide has been created at:
 
 ### Engine Pattern
 
-The maui-mydrive template uses the **Engine pattern** (MyDrive-specific):
+The maui-custom template uses the **Engine pattern** (MyDrive-specific):
 
 ```csharp
 // Engine (Business Logic)
@@ -154,10 +154,10 @@ All templates use the MyDrive namespace hierarchy:
 
 ### Template Priority Resolution
 
-When you run `agentec-init maui-mydrive`, templates are resolved in this order:
+When you run `agentec-init maui-custom`, templates are resolved in this order:
 
-1. **Local** (highest priority): `.claude/templates/maui-mydrive/` ← **Used for MyDrive**
-2. **Global**: `~/.agentecflow/templates/maui-mydrive/` (if exists)
+1. **Local** (highest priority): `.claude/templates/maui-custom/` ← **Used for MyDrive**
+2. **Global**: `~/.agentecflow/templates/maui-custom/` (if exists)
 3. **Default**: `~/.agentecflow/templates/default/` (fallback)
 
 ## Next Steps Before Running agentec-init
@@ -176,29 +176,29 @@ Claude Code Integration:
 
 Local Templates:
   ✓ Found 1 local templates
-    - maui-mydrive (overrides global)
+    - maui-custom (overrides global)
 ```
 
 ### 2. Check Local Template Exists
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
-ls -la .claude/templates/maui-mydrive/
+ls -la .claude/templates/maui-custom/
 ```
 
 **Expected Output**:
 ```
-drwxr-xr-x   7 richardwoollcott  staff    224 Oct 14 14:26 maui-mydrive
+drwxr-xr-x   7 richardwoollcott  staff    224 Oct 14 14:26 maui-custom
 ```
 
 ### 3. Review Setup Guide
 
 ```bash
-cat docs/guides/maui-mydrive-setup-guide.md
+cat docs/guides/maui-custom-setup-guide.md
 ```
 
 Or open in your editor:
-- [MAUI-MyDrive Setup Guide](maui-mydrive-setup-guide.md)
+- [MAUI-MyDrive Setup Guide](maui-custom-setup-guide.md)
 
 ### 4. Verify Settings Configuration
 
@@ -211,10 +211,10 @@ cat .claude/settings.json
 {
   "version": "1.0.0",
   "extends": "/Users/richardwoollcott/.agenticflow/templates/maui",
-  "local_template": ".claude/templates/maui-mydrive",
+  "local_template": ".claude/templates/maui-custom",
   "project": {
     "name": "DeCUK.Mobile.MyDrive",
-    "template": "maui-mydrive"
+    "template": "maui-custom"
   }
 }
 ```
@@ -225,23 +225,23 @@ If the project hasn't been initialized with the local template yet:
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
-agentec-init maui-mydrive
+agentec-init maui-custom
 ```
 
 **Expected Output**:
 ```
-🔄 Initializing project with template: maui-mydrive
-✓ Using local template: maui-mydrive
-✓ Template source: .claude/templates/maui-mydrive
+🔄 Initializing project with template: maui-custom
+✓ Using local template: maui-custom
+✓ Template source: .claude/templates/maui-custom
 ✓ Template validated successfully
 ✓ Configuration created: .claude/settings.json
 ✓ Agents installed (3 MyDrive-specific agents)
 ✓ Template metadata recorded
 
 Template Details:
-  Name: maui-mydrive
+  Name: maui-custom
   Scope: local
-  Source: .claude/templates/maui-mydrive/
+  Source: .claude/templates/maui-custom/
   Extends: maui (global)
   Namespace: DeCUK.Mobile.MyDrive
 
@@ -254,7 +254,7 @@ Template Details:
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
-.claude/templates/maui-mydrive/tests/validate-mydrive-template.sh
+.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
 ```
 
 **Expected Results**:
@@ -274,7 +274,7 @@ cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
 
 After setup, you should see:
 
-✅ **Template Detected**: `agentecflow doctor` shows maui-mydrive template
+✅ **Template Detected**: `agentecflow doctor` shows maui-custom template
 ✅ **Local Priority**: Template resolution shows `[local]` source
 ✅ **Engine Pattern**: Generated code uses Engine suffix
 ✅ **DeCUK Namespace**: Generated code uses DeCUK.Mobile.MyDrive namespace
@@ -285,11 +285,11 @@ After setup, you should see:
 ## Related Documentation
 
 ### Template Documentation
-- **[Setup Guide](maui-mydrive-setup-guide.md)** - Complete step-by-step guide (this document's companion)
-- [Template README](.claude/templates/maui-mydrive/docs/README.md) - Template usage guide
-- [Engine Patterns](.claude/templates/maui-mydrive/docs/engine-patterns.md) - Comprehensive patterns
-- [Namespace Conventions](.claude/templates/maui-mydrive/docs/namespace-conventions.md) - Namespace rules
-- [Migration Guide](.claude/templates/maui-mydrive/docs/migration-guide.md) - UseCase to Engine
+- **[Setup Guide](maui-custom-setup-guide.md)** - Complete step-by-step guide (this document's companion)
+- [Template README](.claude/templates/maui-custom/docs/README.md) - Template usage guide
+- [Engine Patterns](.claude/templates/maui-custom/docs/engine-patterns.md) - Comprehensive patterns
+- [Namespace Conventions](.claude/templates/maui-custom/docs/namespace-conventions.md) - Namespace rules
+- [Migration Guide](.claude/templates/maui-custom/docs/migration-guide.md) - UseCase to Engine
 
 ### Global Documentation
 - [MAUI Template Architecture](../shared/maui-template-architecture.md) - Global vs local templates
@@ -297,7 +297,7 @@ After setup, you should see:
 - [MAUI Template Selection](./maui-template-selection.md) - AppShell vs NavigationPage
 
 ### Implementation Tasks
-- [TASK-011G](../../tasks/completed/TASK-011G-maui-mydrive-local-template.md) - MyDrive template creation
+- [TASK-011G](../../tasks/completed/TASK-011G-maui-custom-local-template.md) - MyDrive template creation
 - [TASK-011I](../../tasks/completed/TASK-011I-installer-local-template-support.md) - Installer support
 - [TASK-011G Test Report](../../tests/TASK-011G-TEST-REPORT.md) - Validation results
 - [TASK-011I Implementation Summary](../../installer/docs/TASK-011I-implementation-summary.md) - Installer changes
@@ -306,11 +306,11 @@ After setup, you should see:
 
 For questions or issues:
 
-1. **Review Complete Setup Guide**: [maui-mydrive-setup-guide.md](maui-mydrive-setup-guide.md)
+1. **Review Complete Setup Guide**: [maui-custom-setup-guide.md](maui-custom-setup-guide.md)
 2. **Template Issues**: Check validation script output
 3. **Pattern Questions**: Consult `engine-pattern-specialist` agent via Claude Code
 4. **Architecture Guidance**: Review [MAUI Template Architecture](../shared/maui-template-architecture.md)
-5. **Migration Help**: See [migration-guide.md](.claude/templates/maui-mydrive/docs/migration-guide.md)
+5. **Migration Help**: See [migration-guide.md](.claude/templates/maui-custom/docs/migration-guide.md)
 
 ## Quick Reference
 
@@ -340,12 +340,12 @@ All generated code must meet:
 
 | Issue | Solution |
 |-------|----------|
-| Template not detected | Check `ls -la .claude/templates/maui-mydrive/` |
-| Wrong namespace | Verify `settings.json` has `"local_template": ".claude/templates/maui-mydrive"` |
+| Template not detected | Check `ls -la .claude/templates/maui-custom/` |
+| Wrong namespace | Verify `settings.json` has `"local_template": ".claude/templates/maui-custom"` |
 | Engine suffix missing | Check `manifest.json` has `"naming_conventions": { "class_suffix": "Engine" }` |
 | Global template used | Run `agentecflow doctor` and verify `[local]` source |
 
-See **[complete setup guide](maui-mydrive-setup-guide.md)** for detailed troubleshooting steps.
+See **[complete setup guide](maui-custom-setup-guide.md)** for detailed troubleshooting steps.
 
 ---
 

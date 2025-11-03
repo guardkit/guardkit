@@ -205,7 +205,7 @@ detect_project_type() {
   if [[ -f "installer/global/manifest.json" ]]; then
     echo "ai-engineer"
   elif [[ -f "DeCUK.Mobile.MyDrive.sln" ]]; then
-    echo "mydrive"
+    echo "exampleapp"
   else
     echo ""
   fi
