@@ -271,13 +271,13 @@ git add -A
 git commit -m "feat: Reorganize completed task files (TASK-016)"
 git push
 
-# Deploy to MyDrive (repeat process)
+# Deploy to ExampleApp (repeat process)
 ```
 
 **End of Day 4 Checkpoint:**
 - ✅ All edge cases handled
 - ✅ Deployed to ai-engineer
-- ✅ Deployed to MyDrive
+- ✅ Deployed to ExampleApp
 - ✅ Documentation complete
 
 ---

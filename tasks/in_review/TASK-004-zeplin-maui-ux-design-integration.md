@@ -10,7 +10,7 @@ priority: high
 tags: [zeplin, maui, ux-design, mcp-integration, exampleapp-app-requirement]
 requirements: []
 bdd_scenarios: []
-business_need: "MyDrive .NET MAUI mobile app requires ability to convert Zeplin designs to MAUI components"
+business_need: "ExampleApp .NET MAUI mobile app requires ability to convert Zeplin designs to MAUI components"
 research_documents:
   - docs/research/ux-design-subagent-recommendations.md
   - docs/architecture/ux-design-subagents-implementation-plan.md
@@ -79,7 +79,7 @@ code_review:
 
 ## Business Context
 
-**Immediate Need**: MyDrive .NET MAUI mobile app requires ability to convert Zeplin designs into production-ready MAUI components.
+**Immediate Need**: ExampleApp .NET MAUI mobile app requires ability to convert Zeplin designs into production-ready MAUI components.
 
 **Scope**: Zeplin-only, .NET MAUI-only integration as parallel track to TASK-002 (Figma + React).
 
@@ -470,7 +470,7 @@ docs/
 1. Run all 83 tests (expect 100% passing)
 2. Fix any compilation errors (should be minimal with copying approach)
 3. Verify end-to-end workflow
-4. Test with 3-5 real Zeplin designs from MyDrive app
+4. Test with 3-5 real Zeplin designs from ExampleApp app
 5. Validate XAML correctness
 
 **Key Time Savers**:
@@ -530,7 +530,7 @@ docs/
 - Figma MCP setup guide patterns
 
 **Enables**:
-- MyDrive app UI implementation from Zeplin designs
+- ExampleApp app UI implementation from Zeplin designs
 - Consistent design-to-code workflow for mobile
 - Reusable patterns for future MAUI projects
 
@@ -569,7 +569,7 @@ docs/
 - MAUI specialist follows same pattern as React specialist
 
 **Business Value**:
-- Immediate: Enables MyDrive app UI development from Zeplin
+- Immediate: Enables ExampleApp app UI development from Zeplin
 - Long-term: Establishes pattern for other design systems + stacks
 
 **This task complements TASK-002** by providing the second critical business need: **Zeplin → MAUI for mobile development**.
@@ -579,7 +579,7 @@ docs/
 **Estimated Effort**: 7-10 hours (1-2 days) ⚡ UPDATED based on TASK-002 actuals
 **Original Estimate**: 3-4 weeks
 **Time Savings**: 90% (reusing validated architecture from TASK-002)
-**Expected ROI**: Immediate (MyDrive app requirement)
+**Expected ROI**: Immediate (ExampleApp app requirement)
 **Priority**: High (business need identified)
 **Complexity**: 5/10 (Reduced - architecture proven, patterns validated, 70% code reusable)
 

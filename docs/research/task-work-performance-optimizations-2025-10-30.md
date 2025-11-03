@@ -2,12 +2,12 @@
 
 **Date**: 2025-10-30
 **Author**: Claude Code (Sonnet 4.5)
-**Context**: MyDrive TASK-001 Repository ErrorOr Refactoring Analysis
+**Context**: ExampleApp TASK-001 Repository ErrorOr Refactoring Analysis
 **Repositories Updated**: ai-engineer, taskwright
 
 ## Executive Summary
 
-This research documents performance optimizations identified during a real-world `/task-work` execution on the MyDrive MAUI project. The task (TASK-001: Refactor Repository ErrorOr Signatures) completed in **35 minutes** with full quality gates, representing **6.8x-13.7x productivity gain** over manual implementation.
+This research documents performance optimizations identified during a real-world `/task-work` execution on the ExampleApp MAUI project. The task (TASK-001: Refactor Repository ErrorOr Signatures) completed in **35 minutes** with full quality gates, representing **6.8x-13.7x productivity gain** over manual implementation.
 
 Analysis identified **2 quick-win optimizations** that reduce execution time by **14% (~5 minutes)** while preserving 100% of quality gates:
 
@@ -15,7 +15,7 @@ Analysis identified **2 quick-win optimizations** that reduce execution time by 
 2. **ErrorOr Test Pattern Guidance** (saves 10-12 min, 60-80k tokens)
 
 Both optimizations have been applied to:
-- ✅ MyDrive project (`DeCUK.Mobile.MyDrive/.claude/agents/`)
+- ✅ ExampleApp project (`YourApp/.claude/agents/`)
 - ✅ AI-Engineer global templates (`ai-engineer/installer/global/templates/`)
 - ✅ Taskwright global templates (`taskwright/installer/global/templates/`)
 - ✅ Taskwright command specifications (`taskwright/installer/global/commands/task-work.md`)
@@ -171,7 +171,7 @@ return Task.FromResult(result);
 ### Solution Applied
 
 **Files Updated**:
-- ✅ `DeCUK.Mobile.MyDrive/.claude/agents/maui-usecase-specialist.md` (lines 967-1072)
+- ✅ `YourApp/.claude/agents/maui-usecase-specialist.md` (lines 967-1072)
 - ✅ `ai-engineer/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
 - ✅ `taskwright/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
 
@@ -389,7 +389,7 @@ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
      ✅ Testing checklist (8 points)
 ```
 
-### MyDrive Project (Already Updated)
+### ExampleApp Project (Already Updated)
 
 **Agents Updated** (1 file):
 ```
@@ -801,14 +801,14 @@ The `/task-work` workflow now delivers **validated world-class AI-assisted devel
 - [Agent Collaboration and Documentation](./AGENT-COLLABORATION-AND-DOCUMENTATION.md)
 - [Task-Work Command Specification](../installer/global/commands/task-work.md)
 
-**MyDrive Project**:
-- [MAUI Usecase Specialist Agent](../../DeCUK.Mobile.MyDrive/.claude/agents/maui-usecase-specialist.md)
-- [TASK-001 Implementation](../../DeCUK.Mobile.MyDrive/docs/tasks/backlog/TASK-001-refactor-repository-erroror-signatures.md)
+**ExampleApp Project**:
+- [MAUI Usecase Specialist Agent](../../YourApp/.claude/agents/maui-usecase-specialist.md)
+- [TASK-001 Implementation](../../YourApp/docs/tasks/backlog/TASK-001-refactor-repository-erroror-signatures.md)
 
 ## Research Metadata
 
 **Analysis Period**: 2025-10-30
-**Task Analyzed**: TASK-001 (MyDrive Repository ErrorOr Refactoring)
+**Task Analyzed**: TASK-001 (ExampleApp Repository ErrorOr Refactoring)
 **First Execution**: 10:07 AM - 10:42 AM (35 minutes, BLOCKED)
 **Second Execution**: 11:00 AM - 11:38 AM (38 minutes, IN_REVIEW) ✅
 **Technology Stack**: .NET MAUI (C#) with ErrorOr pattern

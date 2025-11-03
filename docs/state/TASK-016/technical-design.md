@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document provides a production-ready technical design for implementing a bash-based file migration system to reorganize completed task files into subfolders. The script will migrate 62 files in the ai-engineer project and establish a maintainable structure for both ai-engineer and MyDrive projects.
+This document provides a production-ready technical design for implementing a bash-based file migration system to reorganize completed task files into subfolders. The script will migrate 62 files in the ai-engineer project and establish a maintainable structure for both ai-engineer and ExampleApp projects.
 
 **Key Objectives:**
 - Migrate 54+ task summary files from root to `tasks/completed/TASK-XXX/` subfolders
@@ -24,7 +24,7 @@ This document provides a production-ready technical design for implementing a ba
 migrate-completed-tasks.sh (Main Orchestrator)
 ├── lib/
 │   ├── core.sh                 # Core utilities, logging, error handling
-│   ├── project_detection.sh    # Detect MyDrive vs ai-engineer
+│   ├── project_detection.sh    # Detect ExampleApp vs ai-engineer
 │   ├── file_discovery.sh       # Pattern-based file finding
 │   ├── task_id_parser.sh       # Extract task IDs from filenames
 │   ├── backup_manager.sh       # Backup creation and rollback
@@ -57,7 +57,7 @@ migrate-completed-tasks.sh (Main Orchestrator)
    ├─ Check required commands (git, find, sed, awk)
    └─ Check lock file (prevent concurrent runs)
    ↓
-[Detect Project Type] → [MyDrive | ai-engineer]
+[Detect Project Type] → [ExampleApp | ai-engineer]
    ↓
 [Create Backup] → [Compress current state to .tar.gz]
    ↓
@@ -294,7 +294,7 @@ get_absolute_path() {
 ### 2.3 Project Detection: `lib/project_detection.sh`
 
 **Responsibilities:**
-- Detect if current project is MyDrive or ai-engineer
+- Detect if current project is ExampleApp or ai-engineer
 - Determine project-specific patterns and directories
 
 **Key Functions:**
@@ -304,7 +304,7 @@ get_absolute_path() {
 # Arguments:
 #   None (uses current directory)
 # Returns:
-#   "exampleapp" - MyDrive project
+#   "exampleapp" - ExampleApp project
 #   "ai-engineer" - AI Engineer project
 #   "" - Unknown project
 detect_project_type() {
@@ -318,9 +318,9 @@ detect_project_type() {
     return 0
   fi
 
-  # Check for MyDrive specific markers
-  if [[ -f "DeCUK.Mobile.MyDrive.sln" ]] || \
-     [[ -d "src/DeCUK.Mobile.MyDrive" ]]; then
+  # Check for ExampleApp specific markers
+  if [[ -f "YourApp.sln" ]] || \
+     [[ -d "src/YourApp" ]]; then
     echo "exampleapp"
     return 0
   fi
@@ -383,7 +383,7 @@ EOF
 
 **Responsibilities:**
 - Find task-related files using patterns
-- Support both MyDrive and ai-engineer patterns
+- Support both ExampleApp and ai-engineer patterns
 - Filter out already-migrated files
 
 **Key Functions:**
@@ -1128,7 +1128,7 @@ EOF
 
 # Test cases
 ✓ Detect ai-engineer project correctly
-✓ Detect MyDrive project correctly
+✓ Detect ExampleApp project correctly
 ✓ Extract task IDs: TASK-003, TASK-003B, TASK-003B-4
 ✓ Group files by task ID correctly
 ✓ Filter out already-migrated files
@@ -2005,7 +2005,7 @@ parallel_git_mv() {
 ### 10.3 Performance Success Criteria
 
 - ✅ **Migration completes in <2 minutes** for ai-engineer (62 files)
-- ✅ **Migration completes in <5 minutes** for MyDrive (200+ files)
+- ✅ **Migration completes in <5 minutes** for ExampleApp (200+ files)
 - ✅ **Backup creation in <30 seconds**
 - ✅ **Link validation in <1 minute**
 
@@ -2062,9 +2062,9 @@ git commit -m "feat: Reorganize completed task files into subfolders (TASK-016)"
 git push
 ```
 
-**Step 2: Deploy to MyDrive (larger scope)**
+**Step 2: Deploy to ExampleApp (larger scope)**
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
+cd /Users/richardwoollcott/Projects/appmilla_github/YourApp
 
 # Follow same steps as ai-engineer
 # Expected to migrate 200+ files
@@ -2270,7 +2270,7 @@ This technical design provides a comprehensive blueprint for implementing a prod
 2. Begin Phase A implementation (CLI + Infrastructure)
 3. Implement phases B-G sequentially with testing
 4. Deploy to ai-engineer project first (smaller scope)
-5. Deploy to MyDrive project after validation
+5. Deploy to ExampleApp project after validation
 
 **Estimated Timeline:** 5-6 working days with 25% contingency buffer
 

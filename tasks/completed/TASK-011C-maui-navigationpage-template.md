@@ -54,7 +54,7 @@ plan_review:
 
 ## Business Context
 
-**Problem**: The current MAUI template uses MyDrive-specific patterns and lacks a generic NavigationPage option. Phase 1.3 of the MAUI template migration requires creating a second global template for traditional NavigationPage-based navigation patterns.
+**Problem**: The current MAUI template uses ExampleApp-specific patterns and lacks a generic NavigationPage option. Phase 1.3 of the MAUI template migration requires creating a second global template for traditional NavigationPage-based navigation patterns.
 
 **Solution**: Create a complete maui-navigationpage template directory that provides:
 - Custom NavigationService for type-safe navigation

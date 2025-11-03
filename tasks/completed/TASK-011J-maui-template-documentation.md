@@ -103,7 +103,7 @@ Create comprehensive documentation covering template selection, local template c
 4. **docs/migration/engine-to-domain.md**
    - Migration from Engine pattern to Domain pattern
    - Before/after code examples
-   - MyDrive case study
+   - ExampleApp case study
    - Step-by-step migration process
    - Common pitfalls and solutions
    - Pattern translation guide
@@ -267,7 +267,7 @@ Consider using Mermaid diagrams for:
 This task is **Phase 5** of the MAUI template migration plan:
 - **Phase 1**: ✅ Create Global Templates (completed)
 - **Phase 2**: 🔄 Create Specialized Agents (in progress)
-- **Phase 3**: 📦 Migrate MyDrive to Local Template (pending)
+- **Phase 3**: 📦 Migrate ExampleApp to Local Template (pending)
 - **Phase 4**: 🔧 Update Installer for Local Templates (pending)
 - **Phase 5**: 📚 Documentation (this task)
 
@@ -297,7 +297,7 @@ This task is **Phase 5** of the MAUI template migration plan:
 - Completes Phase 5 of migration plan
 - Enables self-service for template selection and creation
 - Not blocking Phase 1-2 implementation
-- Supports Phase 3-4 (MyDrive migration and installer updates)
+- Supports Phase 3-4 (ExampleApp migration and installer updates)
 - Enhances user experience and adoption
 - Establishes clear patterns for MAUI development
 

@@ -267,7 +267,7 @@ From the provided LoadPage.xaml, all icon instances need correction:
 - Material Design Icons font package for .NET MAUI
 
 **Blocks**:
-- MyDrive app UI implementation (icons currently broken)
+- ExampleApp app UI implementation (icons currently broken)
 
 ## Related Documentation
 
@@ -340,7 +340,7 @@ The example XAML shows consistent use of `&#xABCD;` format for all icons. This s
 ---
 
 **Estimated Effort**: 3 hours
-**Priority**: High (blocks MyDrive app development)
+**Priority**: High (blocks ExampleApp app development)
 **Complexity**: 4/10 (Focused fix, clear root cause, localized change)
 
 ---

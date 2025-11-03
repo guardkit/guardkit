@@ -183,7 +183,7 @@ If you already have the orphaned `fi` error:
 
 ## Related Issues
 
-- Issue initially reported during MAUI-MyDrive template setup
+- Issue initially reported during MAUI Example template setup
 - Affected users upgrading from older Agentecflow versions
 - Impacted both zsh and bash users
 

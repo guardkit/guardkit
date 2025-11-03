@@ -226,7 +226,7 @@ installer/global/templates/maui-appshell/
 After completing this task:
 - Phase 2: Create specialized agents (TASK-012)
 - Phase 3: Create maui-navigationpage template (TASK-013)
-- Phase 4: Migrate MyDrive to local template (TASK-014)
+- Phase 4: Migrate ExampleApp to local template (TASK-014)
 
 ## Success Metrics
 

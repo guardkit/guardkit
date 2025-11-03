@@ -2,16 +2,16 @@
 
   📦 Solution Components Created
 
-  1. Pre-command Hook (/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/hooks/pre-task-work.sh)
+  1. Pre-command Hook (/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/hooks/pre-task-work.sh)
     - Sets environment variables to force subagent usage
     - Displays the orchestration sequence
     - Creates marker files to track invocation
     - Shows clear reminder to use Task tool
-  2. Validation Hook (/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/hooks/validate-subagent-usage.sh)
+  2. Validation Hook (/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/hooks/validate-subagent-usage.sh)
     - Validates that subagents were actually invoked
     - Checks minimum agent count based on mode
     - Provides clear error messages if agents weren't used
-  3. Orchestration Guide (/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/orchestration/task-work-orchestrator.md)
+  3. Orchestration Guide (/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/orchestration/task-work-orchestrator.md)
     - Detailed instructions for invoking each agent
     - Mode-specific sequences (standard/TDD/BDD)
     - Exact Task tool invocation patterns

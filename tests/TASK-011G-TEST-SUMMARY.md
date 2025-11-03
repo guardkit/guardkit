@@ -25,7 +25,7 @@
 - Success criteria evaluation
 
 ### 3. Template Validation Script
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh`
 - Built-in template validation
 - 10 validation functions
 - Bash script (executable)
@@ -51,12 +51,12 @@
 
 ### Phase 4: Engine Pattern Validation (4/4 ✅)
 - Engine suffix naming convention
-- DeCUK.Mobile.MyDrive namespace compliance
+- YourApp namespace compliance
 - BaseEngine inheritance
 - ErrorOr<T> return types
 
 ### Phase 5: Settings Validation (4/4 ✅)
-- MyDrive settings.json validity
+- ExampleApp settings.json validity
 - local_template configuration
 - Project template setting
 - Integration with global template
@@ -90,7 +90,7 @@
 | File existence | 15 files | 15 files | ✅ |
 | manifest.json validity | Valid JSON | Valid JSON | ✅ |
 | Engine suffix patterns | Present | Present | ✅ |
-| Namespace conventions | DeCUK.Mobile.MyDrive | DeCUK.Mobile.MyDrive | ✅ |
+| Namespace conventions | YourApp | YourApp | ✅ |
 | Documentation completeness | 4 docs | 4 docs | ✅ |
 | Settings configuration | local_template set | local_template set | ✅ |
 | Validation script | Executable | Executable | ✅ |
@@ -126,7 +126,7 @@ maui-custom/                                    ✅ Root directory
 ├── manifest.json                                ✅ 243 lines, 18 keys
 ├── agents/                                      ✅ 3 agents
 │   ├── engine-pattern-specialist.md            ✅ Engine expertise
-│   ├── exampleapp-architect.md                    ✅ MyDrive guidance
+│   ├── exampleapp-architect.md                    ✅ ExampleApp guidance
 │   └── maui-custom-generator.md               ✅ Code generation
 ├── src/                                         ✅ 4 templates
 │   ├── BaseEngine.cs                           ✅ Base class (copy as-is)
@@ -151,7 +151,7 @@ maui-custom/                                    ✅ Root directory
 "extends": "maui"
 ```
 - Extends global MAUI template from `~/.agenticflow/templates/maui`
-- Local template adds MyDrive-specific Engine patterns
+- Local template adds ExampleApp-specific Engine patterns
 
 ### 2. Settings Configuration ✅
 ```json
@@ -162,11 +162,11 @@ maui-custom/                                    ✅ Root directory
   }
 }
 ```
-- MyDrive project configured to use local template
+- ExampleApp project configured to use local template
 - Properly linked to template directory
 
 ### 3. Namespace Consistency ✅
-- All templates use `DeCUK.Mobile.MyDrive.*` namespace
+- All templates use `YourApp.*` namespace
 - Consistent with project conventions
 - Proper namespace structure for Engines, ViewModels, Tests
 
@@ -179,12 +179,12 @@ python3 /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_
 
 ### Run Template Validation Script
 ```bash
-bash /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
+bash /Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
 ```
 
 ### Verify Template Files
 ```bash
-ls -la /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom
+ls -la /Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/templates/maui-custom
 ```
 
 ## Success Metrics
@@ -210,7 +210,7 @@ All success criteria met:
 - ✅ Validation script passes (30/32 checks, 2 false positives)
 - ✅ No errors or warnings (excluding false positives)
 
-The MyDrive local template is correctly implemented and ready for use.
+The ExampleApp local template is correctly implemented and ready for use.
 
 ---
 **Generated**: 2025-10-13

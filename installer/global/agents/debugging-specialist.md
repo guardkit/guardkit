@@ -65,7 +65,7 @@ Reproduction Checklist:
 Example Analysis:
 
 ERROR: System.ObjectDisposedException: Cannot access a disposed object.
-STACK: at DeCUK.Mobile.MyDrive.ViewModels.LoadViewModel.ProcessScanAsync()
+STACK: at YourApp.ViewModels.LoadViewModel.ProcessScanAsync()
 
 HYPOTHESIS FORMATION:
 1. What was disposed? → Look for IDisposable objects in LoadViewModel

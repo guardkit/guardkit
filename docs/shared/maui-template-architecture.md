@@ -20,7 +20,7 @@ Two global MAUI templates are available:
 **Location**: `<project>/.claude/templates/`
 
 Projects can define custom templates for organization-specific patterns:
-- MyDrive: Uses `Engine` suffix pattern
+- ExampleApp: Uses `Engine` suffix pattern
 - Other projects: Can define their own naming conventions
 
 ## Architecture Layers
@@ -319,16 +319,16 @@ maui-appshell/
 └── manifest.json                      # Template metadata
 ```
 
-### Local Template Structure (Example: MyDrive)
+### Local Template Structure (Example: ExampleApp)
 ```
 .claude/templates/maui-custom/
 ├── agents/
-│   ├── maui-engine-specialist.md      # MyDrive Engine pattern
+│   ├── maui-engine-specialist.md      # ExampleApp Engine pattern
 │   └── [other custom agents]
 ├── templates/
-│   ├── Engine.cs                      # MyDrive Engine template
+│   ├── Engine.cs                      # ExampleApp Engine template
 │   └── [other custom templates]
-├── CLAUDE.md                          # MyDrive-specific guidance
+├── CLAUDE.md                          # ExampleApp-specific guidance
 └── manifest.json                      # Custom template metadata
 ```
 
@@ -421,9 +421,9 @@ EOF
 
 ### From Engine Pattern to Domain Pattern
 
-**Before** (MyDrive-specific):
+**Before** (ExampleApp-specific):
 ```csharp
-namespace DeCUK.Mobile.MyDrive.Engines;
+namespace YourApp.Engines;
 
 public class GetProductsEngine
 {
@@ -454,20 +454,20 @@ cp -r installer/global/templates/maui/* .claude/templates/maui-custom/
 cat > .claude/templates/maui-custom/manifest.json << EOF
 {
   "name": "maui-custom",
-  "description": "MyDrive-specific MAUI template with Engine pattern",
+  "description": "ExampleApp-specific MAUI template with Engine pattern",
   "version": "1.0.0",
   "scope": "local",
   "base": "maui-appshell",
   "customizations": {
     "domain_pattern": "Engine",
-    "namespace_pattern": "DeCUK.Mobile.MyDrive"
+    "namespace_pattern": "YourApp"
   }
 }
 EOF
 
 # 4. Commit to source control
 git add .claude/templates/maui-custom
-git commit -m "Add MyDrive-specific MAUI template"
+git commit -m "Add ExampleApp-specific MAUI template"
 ```
 
 ## Comparison: Global vs Local Templates

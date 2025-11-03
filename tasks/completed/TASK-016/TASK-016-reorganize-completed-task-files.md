@@ -9,7 +9,7 @@ previous_state: in_review
 state_transition_reason: "Task completed - subfolder organization verified and working"
 priority: medium
 tags: [file-organization, task-management, automation, migration, cleanup]
-projects: [DeCUK.Mobile.MyDrive, ai-engineer]
+projects: [YourApp, ai-engineer]
 completed_phases:
   - phase_1: "Requirements Analysis"
   - phase_2: "Implementation Planning"
@@ -35,9 +35,9 @@ completion_notes: |
 
 ## Problem Statement
 
-Both the **MyDrive** and **ai-engineer** projects are generating multiple files related to each task (task file, implementation summaries, completion details, complexity evaluations, coverage reports, etc.). Currently, these files are scattered across various directories:
+Both the **ExampleApp** and **ai-engineer** projects are generating multiple files related to each task (task file, implementation summaries, completion details, complexity evaluations, coverage reports, etc.). Currently, these files are scattered across various directories:
 
-### MyDrive Project Issues:
+### ExampleApp Project Issues:
 - Task markdown files in `tasks/completed/`
 - Implementation details in `docs/tasks/` and `docs/implementation-notes/`
 - Summary files mixed in `docs/tasks/`
@@ -156,7 +156,7 @@ AND: .gitignore should prevent coverage files from being committed to root
 AND: Project documentation should explain coverage file location
 ```
 
-## Current File Inventory (MyDrive Project)
+## Current File Inventory (ExampleApp Project)
 
 ### Completed Tasks (Currently Flat)
 ```
@@ -278,7 +278,7 @@ docs/archive/
 2. Implement file discovery logic (find all TASK-XXX related files)
 3. Add task ID extraction from filenames
 4. Create backup mechanism (tar.gz archive before migration)
-5. Add project detection (MyDrive vs ai-engineer)
+5. Add project detection (ExampleApp vs ai-engineer)
 
 ### Phase 2: File Association Logic (45 minutes)
 1. Pattern matching for task-related files:
@@ -332,7 +332,7 @@ docs/archive/
 4. Document coverage file location in README or docs/
 
 ### Phase 7: Verification & Testing (30 minutes)
-1. Run migration script on MyDrive project
+1. Run migration script on ExampleApp project
 2. Run migration script on ai-engineer project
 3. Verify all files moved correctly (both projects)
 4. Check no broken links
@@ -344,7 +344,7 @@ docs/archive/
 
 ### Script: `migrate-completed-tasks.sh`
 
-**Location:** `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/migrate-completed-tasks.sh`
+**Location:** `/Users/richardwoollcott/Projects/appmilla_github/YourApp/migrate-completed-tasks.sh`
 
 **Features:**
 ```bash
@@ -368,7 +368,7 @@ docs/archive/
 
 **File Discovery Patterns:**
 ```bash
-# MyDrive Project Patterns:
+# ExampleApp Project Patterns:
 # Pattern 1: Task files in completed folder
 find tasks/completed -maxdepth 1 -name "TASK-*.md"
 
@@ -450,7 +450,7 @@ fi
 ### Migration Script
 1. **`migrate-completed-tasks.sh`**
    - Bash script for one-time migration
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/`
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/YourApp/`
    - Features: Discovery, backup, migration, link updating
 
 ### Updated Commands (AI Engineer Project)
@@ -522,7 +522,7 @@ tasks/completed/
 
 ### Before TASK-016
 
-**MyDrive Project:**
+**ExampleApp Project:**
 ```
 File Organization:
 - Completed tasks: Flat structure (3 files in root)
@@ -542,7 +542,7 @@ File Organization:
 
 ### After TASK-016
 
-**MyDrive Project:**
+**ExampleApp Project:**
 ```
 File Organization:
 - Completed tasks: Subfolder per task (100%)
@@ -578,7 +578,7 @@ File Organization:
 
 ## References
 
-- Current file structure in MyDrive: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive`
+- Current file structure in ExampleApp: `/Users/richardwoollcott/Projects/appmilla_github/YourApp`
 - Example task with subfolder: `tasks/TASK-061/`
 - Task completion command: `installer/global/commands/task-complete.md`
 
@@ -605,7 +605,7 @@ File Organization:
 - 54 task summary files in ai-engineer root → Manual archive
 - 6 coverage files in root → Manual organization
 - 2 analysis files (TASK_*.md) → Manual archive
-- MyDrive historical files → Manual organization
+- ExampleApp historical files → Manual organization
 
 ### Testing Plan
 

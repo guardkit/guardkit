@@ -170,7 +170,7 @@ The CLI script was written as a case statement (not a function) but used `local`
 ## Related Issues
 
 - This fix is related to but separate from the orphaned `fi` issue in `.zshrc`
-- Both were installer script issues discovered during MAUI-MyDrive setup
+- Both were installer script issues discovered during MAUI Example setup
 - Both have been fixed in installer version 2.0.0+
 
 ## Manual Recovery (For Users Already Affected)

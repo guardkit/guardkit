@@ -83,7 +83,7 @@ state_transition_reason: "Automatic transition for task-work execution"
 
 This is Phase 4 of the MAUI Template Migration Plan. The goal is to enable projects to have their own custom templates in `.claude/templates/` that override global templates, allowing:
 
-1. MyDrive project to maintain its Engine pattern locally
+1. ExampleApp project to maintain its Engine pattern locally
 2. New projects to use generic Domain pattern globally
 3. Any project to customize templates without affecting other projects
 
@@ -457,7 +457,7 @@ agentec-init invalid-template  # Should show error and fallback
 - None (standalone task)
 
 ### Enables After Completion
-- MAUI template migration Phase 3 (MyDrive local template)
+- MAUI template migration Phase 3 (ExampleApp local template)
 - Custom template creation for other projects
 - Template experimentation without affecting globals
 
@@ -484,7 +484,7 @@ agentec-init invalid-template  # Should show error and fallback
 ## Priority Justification
 
 **MEDIUM** priority because:
-- Enables Phase 3 of MAUI migration (MyDrive local template)
+- Enables Phase 3 of MAUI migration (ExampleApp local template)
 - Provides valuable project customization capability
 - Not blocking existing functionality (global templates still work)
 - Foundational for template system flexibility

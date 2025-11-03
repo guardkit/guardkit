@@ -360,13 +360,13 @@ maui)
 
 ---
 
-### Test 8: MyDrive Local Template
+### Test 8: ExampleApp Local Template
 
-**Objective**: Verify MyDrive workflow preserved with local template
+**Objective**: Verify ExampleApp workflow preserved with local template
 
 **Test Method**:
 ```python
-exampleapp_path = Path.home() / "Projects" / "appmilla_github" / "DeCUK.Mobile.MyDrive"
+exampleapp_path = Path.home() / "Projects" / "appmilla_github" / "YourApp"
 exampleapp_template = exampleapp_path / ".claude" / "templates" / "maui-custom"
 
 if exampleapp_path.exists():
@@ -377,8 +377,8 @@ if exampleapp_path.exists():
 
 **Findings**:
 
-**MyDrive Project Location**:
-- Path: `~/Projects/appmilla_github/DeCUK.Mobile.MyDrive`
+**ExampleApp Project Location**:
+- Path: `~/Projects/appmilla_github/YourApp`
 - Status: EXISTS
 - Project Type: .NET MAUI (Microsoft.Maui references found)
 
@@ -392,14 +392,14 @@ if exampleapp_path.exists():
   - `templates/` directory (PRESENT)
 
 **Template Characteristics**:
-- Pattern: Engine pattern (MyDrive-specific)
+- Pattern: Engine pattern (ExampleApp-specific)
 - Navigation: Custom navigation logic
-- Agents: MyDrive-customized specialists
+- Agents: ExampleApp-customized specialists
 - Isolation: Fully isolated from global templates
 
 **Critical Verification**:
 ```bash
-$ ls -la ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/
+$ ls -la ~/Projects/appmilla_github/YourApp/.claude/templates/
 total 0
 drwxr-xr-x  5 user  staff  160 Oct 10 14:30 .
 drwxr-xr-x  8 user  staff  256 Oct 10 14:30 ..
@@ -410,11 +410,11 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 ```
 
 **Workflow Preservation**:
-- MyDrive tasks continue working
+- ExampleApp tasks continue working
 - Engine pattern intact
 - No global template dependency
 - Local customizations preserved
-- Zero breaking changes to MyDrive
+- Zero breaking changes to ExampleApp
 
 **Status**: PASS
 
@@ -432,7 +432,7 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 | Script updates | 16 | 16 | 100% | EXCEEDS |
 | Documentation | 6 | 6 | 100% | EXCEEDS |
 | Auto-detection | 4 | 4 | 100% | EXCEEDS |
-| MyDrive integration | 2 | 2 | 100% | EXCEEDS |
+| ExampleApp integration | 2 | 2 | 100% | EXCEEDS |
 
 **Critical Paths Covered**:
 1. Old template deletion flow: 100%
@@ -458,7 +458,7 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 | Script validation | 3 | 3 | 100% | EXCEEDS |
 | Documentation checks | 2 | 2 | 100% | EXCEEDS |
 | Completion updates | 2 | 2 | 100% | EXCEEDS |
-| MyDrive checks | 2 | 2 | 100% | EXCEEDS |
+| ExampleApp checks | 2 | 2 | 100% | EXCEEDS |
 
 **Tested Decision Points**:
 1. Old template exists? → NO (expected)
@@ -467,13 +467,13 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 4. Scripts updated? → YES
 5. Documentation accurate? → YES
 6. Rollback documented? → YES
-7. MyDrive functional? → YES
+7. ExampleApp functional? → YES
 
 **Edge Cases Covered**:
 - Template count mismatch detection
 - Missing new templates detection
 - Incomplete documentation detection
-- MyDrive path non-existent (graceful)
+- ExampleApp path non-existent (graceful)
 
 ---
 
@@ -492,7 +492,7 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 | Test 5 (docs) | 0.2s | <2s | PASS |
 | Test 6 (rollback) | 0.1s | <1s | PASS |
 | Test 7 (init script) | 0.2s | <2s | PASS |
-| Test 8 (MyDrive) | 0.3s | <3s | PASS |
+| Test 8 (ExampleApp) | 0.3s | <3s | PASS |
 
 **Performance Highlights**:
 - Fast execution (2.5s total)
@@ -509,7 +509,7 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 
 | Risk | Severity | Likelihood | Mitigation | Status |
 |------|----------|------------|------------|--------|
-| MyDrive breaks | HIGH | LOW | Local template isolation | MITIGATED |
+| ExampleApp breaks | HIGH | LOW | Local template isolation | MITIGATED |
 | Installation fails | HIGH | LOW | Comprehensive testing | MITIGATED |
 | Script errors | MEDIUM | LOW | Syntax validation | MITIGATED |
 | Missing references | MEDIUM | LOW | Grep + testing | MITIGATED |
@@ -517,7 +517,7 @@ $ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
 
 ### Risk Details
 
-**Risk 1: MyDrive Breaks**
+**Risk 1: ExampleApp Breaks**
 - Mitigation: Local template `.claude/templates/maui-custom/`
 - Verification: Test 8 confirms fully functional
 - Rollback: Checkpoint commit available
@@ -650,7 +650,7 @@ TASK-011H has been **successfully completed** with **zero breaking changes** and
 2. Two new templates (maui-appshell, maui-navigationpage) verified
 3. All installer scripts updated correctly
 4. Documentation comprehensive and accurate
-5. MyDrive workflow preserved via local template
+5. ExampleApp workflow preserved via local template
 6. Rollback procedure documented and verified
 7. Zero breaking changes detected
 8. Test coverage exceeds targets (95%+ line, 90%+ branch)

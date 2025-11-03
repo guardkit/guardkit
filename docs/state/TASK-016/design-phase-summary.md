@@ -124,7 +124,7 @@ migrate-completed-tasks.sh (Main Orchestrator)
 - Lock file mechanism
 
 ### Phase B: File Discovery (2 hours)
-- Project type detection (MyDrive vs ai-engineer)
+- Project type detection (ExampleApp vs ai-engineer)
 - Pattern-based file discovery
 - Task ID extraction (handles TASK-003, TASK-003B, TASK-003B-4)
 - File grouping by task ID
@@ -338,7 +338,7 @@ tests/integration/
    - Validate results
    - Commit and push
 
-2. **Deploy to MyDrive second** (larger scope, 200+ files)
+2. **Deploy to ExampleApp second** (larger scope, 200+ files)
    - Follow same process
    - Monitor for issues
    - Validate comprehensive

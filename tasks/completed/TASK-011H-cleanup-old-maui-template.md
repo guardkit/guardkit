@@ -41,7 +41,7 @@ implementation_summary: |
   - Updated 3 scripts (install.sh, install-global.sh, init-claude-project.sh)
   - Updated 2 documentation files (CLAUDE.md, migration plan)
   - Created comprehensive test suite (8 tests, all passing)
-  - Preserved MyDrive workflow via local template
+  - Preserved ExampleApp workflow via local template
   - Documented rollback procedure with checkpoint commit
 
   Git History:
@@ -51,7 +51,7 @@ implementation_summary: |
 completion_summary: |
   Task completed successfully ahead of schedule (2h 5m vs 2.5h estimate).
   All acceptance criteria met with 100% test coverage.
-  Zero breaking changes, MyDrive workflow fully preserved.
+  Zero breaking changes, ExampleApp workflow fully preserved.
   Ready for merge to main branch.
 previous_state: in_progress
 state_transition_reason: "Automatic transition for task-work execution"
@@ -98,12 +98,12 @@ The MAUI template migration has successfully created two new global templates:
 - `maui-appshell` - AppShell navigation pattern
 - `maui-navigationpage` - NavigationPage pattern
 
-The old global `maui/` template is now obsolete and needs to be removed. This template was MyDrive-specific and is no longer suitable for generic use. MyDrive now uses a local custom template to preserve its Engine pattern.
+The old global `maui/` template is now obsolete and needs to be removed. This template was ExampleApp-specific and is no longer suitable for generic use. ExampleApp now uses a local custom template to preserve its Engine pattern.
 
 **Objectives**:
 1. Remove the old global `maui/` template directory
 2. Update all installer scripts and documentation
-3. Ensure MyDrive continues working with its local template
+3. Ensure ExampleApp continues working with its local template
 4. Verify new projects can use the two new templates
 5. Maintain backward compatibility for existing workflows
 
@@ -120,8 +120,8 @@ This task involves removing the deprecated global MAUI template and ensuring the
 - `installer/global/templates/maui-appshell/`
 - `installer/global/templates/maui-navigationpage/`
 
-**Local Template** (for MyDrive):
-- `.claude/templates/maui-custom/` (in MyDrive project)
+**Local Template** (for ExampleApp):
+- `.claude/templates/maui-custom/` (in ExampleApp project)
 
 ### Changes Required
 
@@ -147,7 +147,7 @@ This task involves removing the deprecated global MAUI template and ensuring the
    - Update template selection guidance
 
 5. **Verification Testing**
-   - Test MyDrive workflow with local template
+   - Test ExampleApp workflow with local template
    - Create test project with `maui-appshell`
    - Create test project with `maui-navigationpage`
    - Run installer tests
@@ -232,7 +232,7 @@ This task involves removing the deprecated global MAUI template and ensuring the
 
 - [ ] **Update Template Discovery**
   - [ ] Ensure local template discovery includes `.claude/templates/*`
-  - [ ] Test that MyDrive's local template is discovered
+  - [ ] Test that ExampleApp's local template is discovered
   - [ ] Verify priority: local templates override global templates
 
 ### Phase 4: Documentation Updates
@@ -261,8 +261,8 @@ This task involves removing the deprecated global MAUI template and ensuring the
 
 ### Phase 5: Comprehensive Verification Testing
 
-- [ ] **MyDrive Workflow Verification**
-  - [ ] Navigate to MyDrive project directory
+- [ ] **ExampleApp Workflow Verification**
+  - [ ] Navigate to ExampleApp project directory
   - [ ] Verify local template exists: `.claude/templates/maui-custom/`
   - [ ] Run a simple task creation command
   - [ ] Verify agents load correctly from local template
@@ -389,8 +389,8 @@ cd /tmp/test-maui-appshell
 agentic-init maui-appshell
 ls -la .claude/
 
-# 6. Test MyDrive (if accessible)
-cd ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive
+# 6. Test ExampleApp (if accessible)
+cd ~/Projects/appmilla_github/YourApp
 ls -la .claude/templates/maui-custom/
 
 # 7. Test completion
@@ -421,7 +421,7 @@ If issues are discovered:
 ### Functional Metrics
 - [ ] Old `maui` template directory deleted
 - [ ] Zero references to old template in codebase
-- [ ] MyDrive works with local template (100% functionality)
+- [ ] ExampleApp works with local template (100% functionality)
 - [ ] New projects work with `maui-appshell` (100% success rate)
 - [ ] New projects work with `maui-navigationpage` (100% success rate)
 - [ ] Installer runs without errors (0 errors)
@@ -441,12 +441,12 @@ If issues are discovered:
 
 ## Risks and Mitigations
 
-### Risk 1: MyDrive Workflow Breaks (Medium Probability, High Impact)
+### Risk 1: ExampleApp Workflow Breaks (Medium Probability, High Impact)
 
-**Risk**: Removing global template breaks MyDrive if local template not working
+**Risk**: Removing global template breaks ExampleApp if local template not working
 
 **Mitigations**:
-- Test MyDrive thoroughly before and after deletion
+- Test ExampleApp thoroughly before and after deletion
 - Verify local template is complete and functional
 - Have rollback plan ready
 - Document local template validation steps
@@ -486,11 +486,11 @@ If issues are discovered:
 ### Prerequisite Tasks
 - ✅ MAUI AppShell template created
 - ✅ MAUI NavigationPage template created
-- ✅ MyDrive local template created (assumed based on migration plan)
+- ✅ ExampleApp local template created (assumed based on migration plan)
 
 ### External Dependencies
 - Access to installer scripts directory
-- Ability to test MyDrive project (if applicable)
+- Ability to test ExampleApp project (if applicable)
 - Ability to create test projects
 - Shell access for testing completion
 
@@ -513,7 +513,7 @@ If issues are discovered:
 2. **Integration Level** (Full Workflow)
    - Test end-to-end installation
    - Test project initialization with new templates
-   - Test MyDrive with local template
+   - Test ExampleApp with local template
 
 3. **System Level** (Complete System)
    - Verify all templates work together
@@ -523,12 +523,12 @@ If issues are discovered:
 4. **User Acceptance Level** (Real Usage)
    - Create actual project with maui-appshell
    - Create actual project with maui-navigationpage
-   - Verify MyDrive team can work normally
+   - Verify ExampleApp team can work normally
 
 ### Test Environment
 
 - Clean test directory for new projects
-- MyDrive project directory (if accessible)
+- ExampleApp project directory (if accessible)
 - Fresh shell session for completion testing
 - Clean agenticflow installation for installer testing
 
@@ -552,7 +552,7 @@ Note: Original estimate was 2-3 hours, but comprehensive testing warrants 4 hour
 2. ✅ Updated installer scripts (3 files)
 3. ✅ Updated completion scripts
 4. ✅ Updated documentation (CLAUDE.md, migration plan)
-5. ✅ Test results for MyDrive workflow
+5. ✅ Test results for ExampleApp workflow
 6. ✅ Test results for new project creation (both templates)
 7. ✅ Verification report
 8. ✅ Updated migration plan with Phase 3.2 completion
@@ -566,11 +566,11 @@ Note: Original estimate was 2-3 hours, but comprehensive testing warrants 4 hour
 
 ## Conclusion
 
-This task completes Phase 3.2 of the MAUI template migration by removing the deprecated global `maui` template and ensuring the system works correctly with the new dual-template approach. The migration preserves MyDrive's custom patterns via local template while providing two clean, generic global templates for new MAUI projects.
+This task completes Phase 3.2 of the MAUI template migration by removing the deprecated global `maui` template and ensuring the system works correctly with the new dual-template approach. The migration preserves ExampleApp's custom patterns via local template while providing two clean, generic global templates for new MAUI projects.
 
 **Key Outcomes**:
 - ✅ Clean separation: global generic templates vs. local custom templates
-- ✅ MyDrive continues working with Engine pattern
+- ✅ ExampleApp continues working with Engine pattern
 - ✅ New projects get Domain pattern with proper separation
 - ✅ No breaking changes for existing workflows
 - ✅ Clear template selection guidance

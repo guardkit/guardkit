@@ -2,11 +2,11 @@
 
 ## Overview
 
-This document summarizes all tasks created for the MAUI template migration from MyDrive-specific Engine pattern to generic Domain pattern with local template support.
+This document summarizes all tasks created for the MAUI template migration from ExampleApp-specific Engine pattern to generic Domain pattern with local template support.
 
 **Total Tasks Created**: 10
 **Total Estimated Effort**: 35-40 hours
-**Migration Strategy**: Option A (Create all templates first, then migrate MyDrive)
+**Migration Strategy**: Option A (Create all templates first, then migrate ExampleApp)
 
 ## Task Breakdown by Phase
 
@@ -174,34 +174,34 @@ This document summarizes all tasks created for the MAUI template migration from 
 
 ---
 
-### Phase 3: Migrate MyDrive to Local Template (2 tasks, 6-8 hours)
+### Phase 3: Migrate ExampleApp to Local Template (2 tasks, 6-8 hours)
 
-#### TASK-011: Create MyDrive Local Template
+#### TASK-011: Create ExampleApp Local Template
 **File**: `tasks/backlog/TASK-011-maui-custom-local-template.md`
 **Complexity**: 4/10 (Medium-Low)
 **Estimated**: 3-4 hours
 **Status**: BACKLOG
 
 **Deliverables**:
-- `.claude/templates/maui-custom/` directory in MyDrive project
+- `.claude/templates/maui-custom/` directory in ExampleApp project
 - Copy all Engine-suffixed templates from global maui template
 - manifest.json with local scope and Engine pattern metadata
-- Update MyDrive settings.json to reference local template
-- MyDrive-specific agents (engine-pattern-specialist, exampleapp-architect)
+- Update ExampleApp settings.json to reference local template
+- ExampleApp-specific agents (engine-pattern-specialist, exampleapp-architect)
 - Comprehensive README.md documentation
 
 **Key Features**:
 - Preserves Engine pattern (GetProductsEngine, CreateOrderEngine)
-- Preserves DeCUK.Mobile.MyDrive namespace
+- Preserves YourApp namespace
 - Preserves Engines/ namespace for domain layer
-- All MyDrive-specific customizations maintained
-- Version controlled with MyDrive project source
+- All ExampleApp-specific customizations maintained
+- Version controlled with ExampleApp project source
 
 **Success Criteria**:
-- MyDrive workflow continues unchanged
+- ExampleApp workflow continues unchanged
 - Engine pattern preserved in local template
 - Local template overrides global template
-- Zero breaking changes for MyDrive team
+- Zero breaking changes for ExampleApp team
 
 ---
 
@@ -216,12 +216,12 @@ This document summarizes all tasks created for the MAUI template migration from 
 - Update installer scripts to remove references
 - Update completion scripts
 - Update documentation
-- Verify MyDrive works with local template
+- Verify ExampleApp works with local template
 - Verify new projects work with new templates
 - Run comprehensive integration tests
 
 **Verification Checklist**:
-- ✅ MyDrive verified working with local template
+- ✅ ExampleApp verified working with local template
 - ✅ Test project created with maui-appshell successfully
 - ✅ Test project created with maui-navigationpage successfully
 - ✅ All installer tests passing
@@ -285,7 +285,7 @@ This document summarizes all tasks created for the MAUI template migration from 
    - Step-by-step local template creation
    - Customization options and inheritance
    - Version control best practices
-   - MyDrive case study
+   - ExampleApp case study
 
 3. **docs/patterns/domain-layer-pattern.md**
    - Domain pattern best practices
@@ -298,7 +298,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 4. **docs/migration/engine-to-domain.md**
    - Migration from Engine to Domain pattern
    - Before/after code examples
-   - MyDrive migration walkthrough
+   - ExampleApp migration walkthrough
    - Step-by-step migration process
    - Common pitfalls and solutions
 
@@ -330,7 +330,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 |-------|-------|-------|------------|
 | Phase 1: Global Templates | 3 | 12-14 | 34% |
 | Phase 2: Specialized Agents | 3 | 12-15 | 36% |
-| Phase 3: MyDrive Migration | 2 | 6-8 | 18% |
+| Phase 3: ExampleApp Migration | 2 | 6-8 | 18% |
 | Phase 4: Installer Updates | 1 | 3-4 | 9% |
 | Phase 5: Documentation | 1 | 4-6 | 13% |
 | **Total** | **10** | **37-47** | **110%** |
@@ -364,7 +364,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 - Day 1: TASK-011 (maui-domain-specialist)
 - Day 2: TASK-011 (maui-repository-specialist)
 - Day 3: TASK-011 (maui-service-specialist)
-- Day 4: TASK-011 (MyDrive local template)
+- Day 4: TASK-011 (ExampleApp local template)
 - Day 5: TASK-011 (Cleanup old template)
 
 **Week 3: Finalization (Phases 4-5)**
@@ -376,7 +376,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| MyDrive workflow breaking | HIGH | Local template isolation, thorough testing |
+| ExampleApp workflow breaking | HIGH | Local template isolation, thorough testing |
 | Agent collaboration issues | MEDIUM | Clear collaboration patterns defined |
 | Template complexity confusion | MEDIUM | Comprehensive documentation, examples |
 | Installer regression | MEDIUM | Extensive testing, backward compatibility |
@@ -387,7 +387,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 ### Technical Success
 - ✅ Two working global MAUI templates (AppShell + NavigationPage)
 - ✅ Three specialized agents (domain, repository, service)
-- ✅ MyDrive continues working with local template
+- ✅ ExampleApp continues working with local template
 - ✅ Installer supports local templates with priority resolution
 - ✅ All tests passing
 - ✅ Zero breaking changes
@@ -410,7 +410,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 
 - **Architecture**: [docs/shared/maui-template-architecture.md](../shared/maui-template-architecture.md)
 - **Migration Plan**: [docs/workflows/maui-template-migration-plan.md](maui-template-migration-plan.md)
-- **MyDrive Project**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive`
+- **ExampleApp Project**: `/Users/richardwoollcott/Projects/appmilla_github/YourApp`
 
 ## Next Steps
 

@@ -2,7 +2,7 @@
 
 ## Test Summary
 - **Date**: 2025-10-13
-- **Task**: TASK-011G - Create MyDrive Local Template from Existing MAUI Template
+- **Task**: TASK-011G - Create ExampleApp Local Template from Existing MAUI Template
 - **Test Suite**: Comprehensive Template Validation
 - **Duration**: ~10 seconds
 - **Result**: ✅ **PASSED** (with 1 false positive)
@@ -39,7 +39,7 @@
 | manifest.json schema validation | ✅ PASS | All 14 required fields present |
 | manifest.json scope is 'local' | ✅ PASS | Scope correctly set |
 | manifest.json stack is 'maui-custom' | ✅ PASS | Stack correctly configured |
-| manifest.json namespace configuration | ✅ PASS | Namespace: DeCUK.Mobile.MyDrive |
+| manifest.json namespace configuration | ✅ PASS | Namespace: YourApp |
 
 **Manifest Schema Verified:**
 ```json
@@ -49,7 +49,7 @@
   "scope": "local",
   "stack": "maui-custom",
   "extends": "maui",
-  "metadata": { "namespace": "DeCUK.Mobile.MyDrive", ... },
+  "metadata": { "namespace": "YourApp", ... },
   "patterns": { "engine": {...}, "viewmodel": {...} },
   "templates": { "src": {...}, "tests": {...} },
   "agents": { ... },
@@ -100,13 +100,13 @@ maui-custom/
 | Test | Result | Details |
 |------|--------|---------|
 | Engine suffix in templates | ✅ PASS | All 3 engine-related templates checked |
-| Namespace in templates | ✅ PASS | All 6 C# files use DeCUK.Mobile.MyDrive namespace |
+| Namespace in templates | ✅ PASS | All 6 C# files use YourApp namespace |
 | BaseEngine inheritance in templates | ✅ PASS | FeatureEngine.cs extends BaseEngine |
 | ErrorOr return types in templates | ✅ PASS | FeatureEngine.cs and IFeatureEngine.cs use ErrorOr<T> |
 
 **Pattern Compliance Verified:**
 - ✅ Engine suffix: `FeatureEngine`, `IFeatureEngine`
-- ✅ Namespace: `DeCUK.Mobile.MyDrive.*`
+- ✅ Namespace: `YourApp.*`
 - ✅ Inheritance: `FeatureEngine : BaseEngine`
 - ✅ Return types: `Task<ErrorOr<T>>`
 
@@ -115,8 +115,8 @@ maui-custom/
 
 | Test | Result | Details |
 |------|--------|---------|
-| MyDrive settings.json exists | ✅ PASS | File exists at project root |
-| MyDrive settings.json is valid JSON | ✅ PASS | Parsed successfully: 7 top-level keys |
+| ExampleApp settings.json exists | ✅ PASS | File exists at project root |
+| ExampleApp settings.json is valid JSON | ✅ PASS | Parsed successfully: 7 top-level keys |
 | settings.json local_template configured | ✅ PASS | local_template: '.claude/templates/maui-custom' |
 | settings.json template is 'maui-custom' | ✅ PASS | project.template: 'maui-custom' |
 
@@ -127,7 +127,7 @@ maui-custom/
   "extends": "/Users/richardwoollcott/.agenticflow/templates/maui",
   "local_template": ".claude/templates/maui-custom",
   "project": {
-    "name": "DeCUK.Mobile.MyDrive",
+    "name": "YourApp",
     "template": "maui-custom"
   }
 }
@@ -183,7 +183,7 @@ The file correctly:
 - ✅ Extends `ViewModelBase<T>` (correct for ViewModels)
 - ✅ Uses `I[FEATURE_NAME]Engine` interface for delegation
 - ✅ Uses `ErrorOr` pattern for result handling
-- ✅ Uses proper DeCUK.Mobile.MyDrive namespace
+- ✅ Uses proper YourApp namespace
 - ✅ Follows MVVM + Engine architectural pattern
 
 **Recommendation**: Update validation script to exclude ViewModel files from BaseEngine inheritance check.
@@ -195,7 +195,7 @@ The file correctly:
 | All files exist (100%) | ✅ PASS | 15/15 files present |
 | manifest.json validates (valid JSON) | ✅ PASS | JSON parsing successful |
 | Engine patterns present in templates | ✅ PASS | All templates contain Engine suffix and patterns |
-| Namespace conventions followed | ✅ PASS | All C# files use DeCUK.Mobile.MyDrive namespace |
+| Namespace conventions followed | ✅ PASS | All C# files use YourApp namespace |
 | Validation script passes | 🟡 PARTIAL | 30/32 checks passed (2 false positives) |
 | No errors or warnings | ✅ PASS | All legitimate checks passed |
 
@@ -245,7 +245,7 @@ This is a **template configuration task** with no executable code to compile:
 
 **Agents (agents/):**
 1. `engine-pattern-specialist.md` - Engine pattern expertise
-2. `exampleapp-architect.md` - MyDrive architectural guidance
+2. `exampleapp-architect.md` - ExampleApp architectural guidance
 3. `maui-custom-generator.md` - Code generation capabilities
 
 ## Recommendations
@@ -267,12 +267,12 @@ This is a **template configuration task** with no executable code to compile:
 
 **VERDICT**: ✅ **ALL TESTS PASSED**
 
-The MyDrive local template implementation is **production-ready** and meets all success criteria:
+The ExampleApp local template implementation is **production-ready** and meets all success criteria:
 
 ✅ **100% file completeness** - All 15 files created successfully
 ✅ **100% configuration validity** - manifest.json and settings.json are valid and correct
 ✅ **100% pattern compliance** - Engine patterns implemented correctly
-✅ **100% namespace compliance** - DeCUK.Mobile.MyDrive namespace used consistently
+✅ **100% namespace compliance** - YourApp namespace used consistently
 ✅ **95.7% validation success rate** - Only 1 false positive identified
 
 The single "failed" test is a **false positive** in the validation script that incorrectly flags a ViewModel for not extending BaseEngine (which is correct behavior). The template implementation itself is completely correct.
@@ -290,9 +290,9 @@ The single "failed" test is a **false positive** in the validation script that i
 - **Documentation**: ✅ Complete
 - **Quality Gates**: ✅ Defined
 
-**The template is ready for immediate use in the MyDrive project.**
+**The template is ready for immediate use in the ExampleApp project.**
 
 ---
 **Test Suite**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_exampleapp_template.py`
-**Template Path**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/`
-**Settings Path**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/settings.json`
+**Template Path**: `/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/templates/maui-custom/`
+**Settings Path**: `/Users/richardwoollcott/Projects/appmilla_github/YourApp/.claude/settings.json`

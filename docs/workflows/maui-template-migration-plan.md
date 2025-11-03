@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the migration from MyDrive-specific MAUI template to a dual-template system:
+This document outlines the migration from ExampleApp-specific MAUI template to a dual-template system:
 - **Global generic templates** for new projects (Domain pattern, verb-based naming)
 - **Local custom templates** for project-specific patterns (Engine pattern, custom naming)
 
@@ -11,7 +11,7 @@ This document outlines the migration from MyDrive-specific MAUI template to a du
 1. ✅ Create two generic global MAUI templates (AppShell + NavigationPage)
 2. ✅ Use Domain pattern with verb-based naming (no UseCase/Engine suffix)
 3. ✅ Separate Repositories (database) from Services (APIs/hardware)
-4. ✅ Preserve MyDrive-specific patterns in local template
+4. ✅ Preserve ExampleApp-specific patterns in local template
 5. ✅ Enable projects to create custom local templates
 6. ✅ Maintain backward compatibility
 
@@ -20,7 +20,7 @@ This document outlines the migration from MyDrive-specific MAUI template to a du
 ### Existing MAUI Template (`installer/global/templates/maui/`)
 
 **Issues**:
-- ❌ MyDrive-specific namespace (`DeCUK.Mobile.MyDrive`)
+- ❌ ExampleApp-specific namespace (`YourApp`)
 - ❌ Uses `Engine` suffix (not standard clean architecture)
 - ❌ Mixed in with global templates
 - ❌ Not suitable for generic use
@@ -81,20 +81,20 @@ maui-navigationpage/
 └── settings.json                       # Template config
 ```
 
-### Local Template (MyDrive)
+### Local Template (ExampleApp)
 
 ```
-MyDrive/.claude/templates/maui-custom/
+ExampleApp/.claude/templates/maui-custom/
 ├── manifest.json                       # Local template metadata
-├── CLAUDE.md                           # MyDrive-specific guidance
+├── CLAUDE.md                           # ExampleApp-specific guidance
 ├── agents/
 │   ├── maui-engine-specialist.md       # Engine pattern specialist
-│   └── [other MyDrive agents]
+│   └── [other ExampleApp agents]
 ├── templates/
-│   ├── Engine.cs                       # MyDrive Engine template
+│   ├── Engine.cs                       # ExampleApp Engine template
 │   ├── EngineTests.cs                  # Engine test template
-│   └── [other MyDrive templates]
-└── settings.json                       # MyDrive template config
+│   └── [other ExampleApp templates]
+└── settings.json                       # ExampleApp template config
 ```
 
 ## Implementation Phases
@@ -179,28 +179,28 @@ expertise:
 - Updated agent orchestration
 - Clear handoff patterns
 
-### Phase 3: Migrate MyDrive to Local Template 📦
+### Phase 3: Migrate ExampleApp to Local Template 📦
 
 **Tasks**:
-1. Create `.claude/templates/maui-custom/` in MyDrive project
+1. Create `.claude/templates/maui-custom/` in ExampleApp project
 2. Copy current `maui/` template to local template
-3. Preserve Engine pattern and DeCUK namespace
+3. Preserve Engine pattern and custom namespace
 4. Update manifest.json with local scope
-5. Update MyDrive's `.claude/settings.json` to reference local template
-6. Test MyDrive workflow with local template
+5. Update ExampleApp's `.claude/settings.json` to reference local template
+6. Test ExampleApp workflow with local template
 
 **Migration Script** (`scripts/migrate-exampleapp-template.sh`):
 ```bash
 #!/bin/bash
-# Migrate MyDrive to use local custom template
+# Migrate ExampleApp to use local custom template
 
 set -e
 
-MYDRIVE_PROJECT="/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive"
+PROJECT_ROOT="/Users/richardwoollcott/Projects/appmilla_github/YourApp"
 SOURCE_TEMPLATE="installer/global/templates/maui"
-LOCAL_TEMPLATE="$MYDRIVE_PROJECT/.claude/templates/maui-custom"
+LOCAL_TEMPLATE="$PROJECT_ROOT/.claude/templates/maui-custom"
 
-echo "Migrating MyDrive to local template..."
+echo "Migrating ExampleApp to local template..."
 
 # 1. Create local template directory
 mkdir -p "$LOCAL_TEMPLATE"/{agents,templates}
@@ -212,39 +212,39 @@ cp -r "$SOURCE_TEMPLATE"/* "$LOCAL_TEMPLATE/"
 cat > "$LOCAL_TEMPLATE/manifest.json" << EOF
 {
   "name": "maui-custom",
-  "description": "MyDrive-specific MAUI template with Engine pattern",
+  "description": "ExampleApp-specific MAUI template with Engine pattern",
   "version": "1.0.0",
   "scope": "local",
   "base": "maui-appshell",
   "customizations": {
     "domain_pattern": "Engine",
-    "namespace_pattern": "DeCUK.Mobile.MyDrive",
+    "namespace_pattern": "YourApp",
     "domain_namespace": "Engines"
   }
 }
 EOF
 
-# 4. Update MyDrive settings.json
-cat > "$MYDRIVE_PROJECT/.claude/settings.json" << EOF
+# 4. Update ExampleApp settings.json
+cat > "$PROJECT_ROOT/.claude/settings.json" << EOF
 {
   "template": "maui-custom",
   "template_priority": ["local", "global"],
   "customizations": {
-    "namespace_root": "DeCUK.Mobile.MyDrive",
+    "namespace_root": "YourApp",
     "domain_namespace": "Engines",
     "domain_suffix": "Engine"
   }
 }
 EOF
 
-echo "✅ MyDrive migrated to local template"
+echo "✅ ExampleApp migrated to local template"
 echo "Location: $LOCAL_TEMPLATE"
 ```
 
 **Deliverables**:
-- MyDrive local template
+- ExampleApp local template
 - Migration script
-- Updated MyDrive .claude configuration
+- Updated ExampleApp .claude configuration
 - Verification tests
 
 ### Phase 4: Update Installer for Local Templates 🔧
@@ -347,7 +347,7 @@ _agentec_init() {
    - Testing strategies
 
 4. **Migration Guide** (`docs/migration/engine-to-domain.md`)
-   - MyDrive example
+   - ExampleApp example
    - Pattern translations
    - Common pitfalls
 
@@ -369,7 +369,7 @@ _agentec_init() {
 - [ ] All agents created and tested
 
 ### Local Template Support
-- [ ] MyDrive local template created
+- [ ] ExampleApp local template created
 - [ ] Local template preserves Engine pattern
 - [ ] Migration script tested
 - [ ] Installer supports local templates
@@ -388,7 +388,7 @@ _agentec_init() {
 ### Testing
 - [ ] Create new project with `maui-appshell`
 - [ ] Create new project with `maui-navigationpage`
-- [ ] Verify MyDrive works with local template
+- [ ] Verify ExampleApp works with local template
 - [ ] Test template priority resolution
 - [ ] Test local template customization
 - [ ] Verify all agents function correctly
@@ -399,7 +399,7 @@ _agentec_init() {
 |-------|----------------|----------|
 | Phase 1: Global Templates | 4 hours | HIGH |
 | Phase 2: Specialized Agents | 3 hours | HIGH |
-| Phase 3: MyDrive Migration | 2 hours | HIGH |
+| Phase 3: ExampleApp Migration | 2 hours | HIGH |
 | Phase 4: Installer Updates | 3 hours | MEDIUM |
 | Phase 5: Documentation | 3 hours | MEDIUM |
 | **Total** | **15 hours** | |
@@ -408,7 +408,7 @@ _agentec_init() {
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Breaking MyDrive workflow | HIGH | Thorough testing, local template isolation |
+| Breaking ExampleApp workflow | HIGH | Thorough testing, local template isolation |
 | Confusion between patterns | MEDIUM | Clear documentation, naming conventions |
 | Installation complexity | LOW | Comprehensive installer updates, fallbacks |
 | Agent orchestration issues | MEDIUM | Updated orchestration patterns, testing |
@@ -416,7 +416,7 @@ _agentec_init() {
 ## Success Criteria
 
 1. ✅ Two working global MAUI templates (AppShell + NavigationPage)
-2. ✅ MyDrive continues working with local template
+2. ✅ ExampleApp continues working with local template
 3. ✅ Clear Domain pattern implementation
 4. ✅ Repository/Service separation
 5. ✅ Comprehensive documentation
@@ -428,7 +428,7 @@ _agentec_init() {
 
 1. **Immediate**: Start Phase 1 (Create global templates)
 2. **Follow-up**: Create specialized agents (Phase 2)
-3. **Then**: Migrate MyDrive (Phase 3)
+3. **Then**: Migrate ExampleApp (Phase 3)
 4. **Finally**: Update installer and docs (Phases 4-5)
 
 ## Questions for Review
@@ -459,16 +459,16 @@ git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templa
 - **Contents**: Pre-deletion state with old template intact
 
 ### Recovery Steps
-1. Identify issue (broken MyDrive workflow, missing template, etc.)
+1. Identify issue (broken ExampleApp workflow, missing template, etc.)
 2. Restore old template using git checkout command above
 3. Revert script changes if needed
-4. Test MyDrive workflow
+4. Test ExampleApp workflow
 5. Document issue for future resolution
 
 ### Verification After Rollback
 - Old `maui` template exists at `installer/global/templates/maui/`
 - Scripts reference old `maui` template in completions
-- MyDrive workflow functions correctly
+- ExampleApp workflow functions correctly
 - New templates (`maui-appshell`, `maui-navigationpage`) still exist
 
 ## Approval

@@ -148,7 +148,7 @@ return Task.FromResult<ErrorOr<IList<T>>>(result);
 
 ## Files Updated
 
-### MyDrive Project
+### ExampleApp Project
 ```
 ✅ .claude/agents/maui-usecase-specialist.md
    Lines 967-1023: New "Production Code Pattern" section added
@@ -334,7 +334,7 @@ This issue highlights the importance of **complete, context-specific documentati
 ```
 
 **Lines Added**: ~50 lines per file
-**Files Updated**: 3 (MyDrive + ai-engineer + taskwright)
+**Files Updated**: 3 (ExampleApp + ai-engineer + taskwright)
 **Impact**: Prevents future incorrect patterns
 
 ---

@@ -164,7 +164,7 @@ dotnet add package PackageName --version X.Y.Z
 dotnet clean && dotnet restore && dotnet build
 
 # Check specific project
-dotnet build DeCUK.Mobile.MyDrive/DeCUK.Mobile.MyDrive.csproj
+dotnet build YourApp/YourApp.csproj
 
 # List missing packages
 dotnet build 2>&1 | grep "CS0246\|CS0234" | awk '{print $4}' | sort -u

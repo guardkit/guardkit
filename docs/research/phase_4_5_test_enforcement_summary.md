@@ -9,7 +9,7 @@
 
 ### User Feedback
 
-> "I've been using this to do task work commands in the MyDrive.net malware app today and it's been working really, really well, really pretty brilliant to be fair. I identified some issues with violations of solid principles etc and we created tasks to address those and implement them and it's worked really, really well. The one exception to that is that sometimes it'll leave, it'll finish and leave the tests even not compiling or with a handful of failing tests and I'd prefer that we just don't stop at that point and we only finish a task work command when everything's compiling on all tests of running and parsing."
+> "I've been using this to do task work commands in the ExampleApp.net malware app today and it's been working really, really well, really pretty brilliant to be fair. I identified some issues with violations of solid principles etc and we created tasks to address those and implement them and it's worked really, really well. The one exception to that is that sometimes it'll leave, it'll finish and leave the tests even not compiling or with a handful of failing tests and I'd prefer that we just don't stop at that point and we only finish a task work command when everything's compiling on all tests of running and parsing."
 
 ### The Gap
 
@@ -142,7 +142,7 @@ SUCCESS CRITERIA:
 - Remaining issues: 3
 
 ❌ Remaining Compilation Errors (1):
-- src/MyDriveService.cs:45 - CS0103: 'InvalidOperation' does not exist
+- src/ExampleAppService.cs:45 - CS0103: 'InvalidOperation' does not exist
 
 ❌ Remaining Test Failures (2):
 - Test_GetDriveInfo_ShouldReturnData: Expected 200, got 401

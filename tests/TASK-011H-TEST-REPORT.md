@@ -13,7 +13,7 @@
 | Template Count | 1 | 1 | 0 | ✅ PASS |
 | Script Updates | 2 | 2 | 0 | ✅ PASS |
 | Documentation | 2 | 2 | 0 | ✅ PASS |
-| MyDrive Workflow | 1 | 1 | 0 | ✅ PASS |
+| ExampleApp Workflow | 1 | 1 | 0 | ✅ PASS |
 | **TOTAL** | **9** | **9** | **0** | **✅ PASS** |
 
 ## Detailed Test Results
@@ -94,20 +94,20 @@ ls installer/global/templates/
 - ✅ Recovery steps documented
 - ✅ Verification checklist included
 
-### 6. MyDrive Workflow ✅
+### 6. ExampleApp Workflow ✅
 **Status**: PASS
 
-**Critical Requirement**: DO NOT break MyDrive workflow
+**Critical Requirement**: DO NOT break ExampleApp workflow
 
-- ✅ MyDrive local template exists: `.claude/templates/maui-custom/`
+- ✅ ExampleApp local template exists: `.claude/templates/maui-custom/`
 - ✅ Local template has manifest.json
 - ✅ Local template preserves Engine pattern
-- ✅ MyDrive project structure unchanged
-- ✅ No impact on existing MyDrive tasks
+- ✅ ExampleApp project structure unchanged
+- ✅ No impact on existing ExampleApp tasks
 
-**MyDrive Local Template Structure**:
+**ExampleApp Local Template Structure**:
 ```
-DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
+YourApp/.claude/templates/maui-custom/
 ├── manifest.json ✅
 ├── CLAUDE.md ✅
 ├── agents/ ✅
@@ -123,7 +123,7 @@ All acceptance criteria from TASK-011H met:
 | Old template deleted | ✅ PASS | Directory removed, 37 files deleted |
 | No references in scripts | ✅ PASS | Completion scripts updated |
 | New templates work | ✅ PASS | Both templates exist and validated |
-| MyDrive workflow preserved | ✅ PASS | Local template unchanged |
+| ExampleApp workflow preserved | ✅ PASS | Local template unchanged |
 | Documentation updated | ✅ PASS | CLAUDE.md and migration plan updated |
 | Rollback procedure | ✅ PASS | Checkpoint commit documented |
 | Template count correct | ✅ PASS | 8 templates (was 8, still 8) |
@@ -147,7 +147,7 @@ git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templa
 
 | Risk | Impact | Likelihood | Mitigation | Status |
 |------|--------|------------|------------|--------|
-| Break MyDrive workflow | HIGH | LOW | Local template isolation | ✅ MITIGATED |
+| Break ExampleApp workflow | HIGH | LOW | Local template isolation | ✅ MITIGATED |
 | Missing template refs | MEDIUM | LOW | Comprehensive grep + tests | ✅ MITIGATED |
 | User confusion | LOW | MEDIUM | Clear docs + completion | ✅ MITIGATED |
 | Installation breaks | HIGH | LOW | Full test suite | ✅ MITIGATED |
@@ -168,7 +168,7 @@ All tests pass, all acceptance criteria met, no breaking changes detected.
 **Key Achievements**:
 1. Old `maui` template cleanly removed
 2. New `maui-appshell` and `maui-navigationpage` templates work correctly
-3. MyDrive workflow preserved via local template
+3. ExampleApp workflow preserved via local template
 4. All scripts and documentation updated
 5. Comprehensive rollback procedure documented
 6. Zero breaking changes for existing workflows

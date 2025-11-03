@@ -7,7 +7,7 @@
 
 ## Overview
 
-Successfully removed the legacy `maui` template from global templates while preserving all functionality through the new `maui-appshell` and `maui-navigationpage` templates. MyDrive workflow completely unaffected due to local template isolation.
+Successfully removed the legacy `maui` template from global templates while preserving all functionality through the new `maui-appshell` and `maui-navigationpage` templates. ExampleApp workflow completely unaffected due to local template isolation.
 
 ## Implementation Phases
 
@@ -17,7 +17,7 @@ Successfully removed the legacy `maui` template from global templates while pres
 - ✅ Created git branch: `task-011h-delete-old-maui-template`
 - ✅ Created checkpoint commit: `8e393d206f1882b462552080ed53fc5c01cc30c0`
 - ✅ Documented current state
-- ✅ Verified MyDrive local template exists
+- ✅ Verified ExampleApp local template exists
 
 ### Phase 2: Script Updates ✅
 **Duration**: 30 minutes
@@ -73,7 +73,7 @@ Successfully removed the legacy `maui` template from global templates while pres
 5. ✅ CLAUDE.md updated correctly
 6. ✅ Migration plan has rollback section
 7. ✅ Init script updated correctly
-8. ✅ MyDrive local template preserved
+8. ✅ ExampleApp local template preserved
 
 **Results**: 8/8 tests passed (100%)
 
@@ -131,10 +131,10 @@ templates/
 **Rationale**: AppShell is the recommended modern navigation pattern
 **Impact**: New projects get best-practice navigation by default
 
-### 2. MyDrive Preservation
+### 2. ExampleApp Preservation
 **Decision**: Use local template at `.claude/templates/maui-custom/`
-**Rationale**: Zero impact on existing MyDrive workflow
-**Impact**: MyDrive unaffected by global template changes
+**Rationale**: Zero impact on existing ExampleApp workflow
+**Impact**: ExampleApp unaffected by global template changes
 
 ### 3. Rollback Strategy
 **Decision**: Git-based rollback with documented checkpoint
@@ -145,7 +145,7 @@ templates/
 
 ### Invariant Testing Pattern
 Verified pre/post-deletion invariants:
-- MyDrive structure unchanged
+- ExampleApp structure unchanged
 - Template count maintained (8 templates)
 - No broken references in scripts
 - All acceptance criteria met
@@ -166,7 +166,7 @@ Verified pre/post-deletion invariants:
 ### Test Coverage
 - ✅ 8/8 tests passing (100%)
 - ✅ All acceptance criteria validated
-- ✅ MyDrive workflow verified
+- ✅ ExampleApp workflow verified
 - ✅ Documentation completeness checked
 
 ### Risk Management
@@ -183,7 +183,7 @@ Verified pre/post-deletion invariants:
 | Update scripts | ✅ | 3 scripts updated |
 | Update docs | ✅ | 2 docs updated |
 | No breakage | ✅ | All tests pass |
-| MyDrive works | ✅ | Local template preserved |
+| ExampleApp works | ✅ | Local template preserved |
 | Rollback ready | ✅ | Checkpoint documented |
 
 ## Lessons Learned
@@ -191,7 +191,7 @@ Verified pre/post-deletion invariants:
 ### What Went Well
 1. Checkpoint commit provided safety net
 2. Comprehensive test suite caught all issues early
-3. Local template isolation prevented MyDrive breakage
+3. Local template isolation prevented ExampleApp breakage
 4. Clear commit messages made history easy to follow
 
 ### Best Practices Applied
@@ -237,7 +237,7 @@ git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templa
 TASK-011H successfully completed with:
 - ✅ Zero breaking changes
 - ✅ All tests passing
-- ✅ MyDrive workflow preserved
+- ✅ ExampleApp workflow preserved
 - ✅ Comprehensive documentation
 - ✅ Clear rollback path
 
