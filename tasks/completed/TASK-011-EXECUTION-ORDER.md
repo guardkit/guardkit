@@ -130,7 +130,7 @@ Creates maui-service-specialist agent:
 ### Phase 3: Migrate MyDrive to Local Template (TASK-011G, H)
 
 #### TASK-011G: Create MyDrive Local Template
-**File**: `TASK-011G-maui-mydrive-local-template.md`
+**File**: `TASK-011G-maui-custom-local-template.md`
 **Complexity**: 4/10 (Medium-Low)
 **Estimated**: 3-4 hours
 **Priority**: HIGH
@@ -138,7 +138,7 @@ Creates maui-service-specialist agent:
 **Execute after TASK-011F**
 
 Creates MyDrive local template:
-- `.claude/templates/maui-mydrive/` in MyDrive project
+- `.claude/templates/maui-custom/` in MyDrive project
 - Preserves Engine pattern and DeCUK namespace
 - MyDrive-specific agents
 - manifest.json with local scope
@@ -302,7 +302,7 @@ After completing all tasks (A through J):
    - maui-service-specialist.md
 
 3. ✅ MyDrive local template preserved
-   - DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
+   - DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
 
 4. ✅ Comprehensive documentation (4 guides)
    - [docs/guides/maui-template-selection.md](docs/guides/maui-template-selection.md)

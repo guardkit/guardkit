@@ -38,16 +38,16 @@
 | manifest.json is valid JSON | ✅ PASS | Parsed successfully: 18 top-level keys |
 | manifest.json schema validation | ✅ PASS | All 14 required fields present |
 | manifest.json scope is 'local' | ✅ PASS | Scope correctly set |
-| manifest.json stack is 'maui-mydrive' | ✅ PASS | Stack correctly configured |
+| manifest.json stack is 'maui-custom' | ✅ PASS | Stack correctly configured |
 | manifest.json namespace configuration | ✅ PASS | Namespace: DeCUK.Mobile.MyDrive |
 
 **Manifest Schema Verified:**
 ```json
 {
-  "name": "maui-mydrive",
+  "name": "maui-custom",
   "version": "1.0.0",
   "scope": "local",
-  "stack": "maui-mydrive",
+  "stack": "maui-custom",
   "extends": "maui",
   "metadata": { "namespace": "DeCUK.Mobile.MyDrive", ... },
   "patterns": { "engine": {...}, "viewmodel": {...} },
@@ -66,18 +66,18 @@
 | Test | Result | Details |
 |------|--------|---------|
 | Source template files exist | ✅ PASS | 4/4 files: BaseEngine.cs, FeatureEngine.cs, IFeatureEngine.cs, FeatureViewModelEngine.cs |
-| Test template files exist | ✅ PASS | 3/3 files: FeatureEngineTests.cs, FeatureViewModelEngineTests.cs, validate-mydrive-template.sh |
+| Test template files exist | ✅ PASS | 3/3 files: FeatureEngineTests.cs, FeatureViewModelEngineTests.cs, validate-exampleapp-template.sh |
 | Documentation files exist | ✅ PASS | 4/4 files: README.md, engine-patterns.md, namespace-conventions.md, migration-guide.md |
-| Agent files exist | ✅ PASS | 3/3 files: engine-pattern-specialist.md, mydrive-architect.md, maui-mydrive-generator.md |
+| Agent files exist | ✅ PASS | 3/3 files: engine-pattern-specialist.md, exampleapp-architect.md, maui-custom-generator.md |
 
 **Template Structure Validated:**
 ```
-maui-mydrive/
+maui-custom/
 ├── manifest.json
 ├── agents/
 │   ├── engine-pattern-specialist.md
-│   ├── mydrive-architect.md
-│   └── maui-mydrive-generator.md
+│   ├── exampleapp-architect.md
+│   └── maui-custom-generator.md
 ├── src/
 │   ├── BaseEngine.cs
 │   ├── FeatureEngine.cs
@@ -86,7 +86,7 @@ maui-mydrive/
 ├── tests/
 │   ├── FeatureEngineTests.cs
 │   ├── FeatureViewModelEngineTests.cs
-│   └── validate-mydrive-template.sh
+│   └── validate-exampleapp-template.sh
 └── docs/
     ├── README.md
     ├── engine-patterns.md
@@ -117,18 +117,18 @@ maui-mydrive/
 |------|--------|---------|
 | MyDrive settings.json exists | ✅ PASS | File exists at project root |
 | MyDrive settings.json is valid JSON | ✅ PASS | Parsed successfully: 7 top-level keys |
-| settings.json local_template configured | ✅ PASS | local_template: '.claude/templates/maui-mydrive' |
-| settings.json template is 'maui-mydrive' | ✅ PASS | project.template: 'maui-mydrive' |
+| settings.json local_template configured | ✅ PASS | local_template: '.claude/templates/maui-custom' |
+| settings.json template is 'maui-custom' | ✅ PASS | project.template: 'maui-custom' |
 
 **Settings Configuration Verified:**
 ```json
 {
   "version": "1.0.0",
   "extends": "/Users/richardwoollcott/.agenticflow/templates/maui",
-  "local_template": ".claude/templates/maui-mydrive",
+  "local_template": ".claude/templates/maui-custom",
   "project": {
     "name": "DeCUK.Mobile.MyDrive",
-    "template": "maui-mydrive"
+    "template": "maui-custom"
   }
 }
 ```
@@ -235,7 +235,7 @@ This is a **template configuration task** with no executable code to compile:
 **Test Templates (tests/):**
 1. `FeatureEngineTests.cs` - xUnit tests for Engine with NSubstitute mocks
 2. `FeatureViewModelEngineTests.cs` - xUnit tests for ViewModel
-3. `validate-mydrive-template.sh` - Validation script (executable)
+3. `validate-exampleapp-template.sh` - Validation script (executable)
 
 **Documentation (docs/):**
 1. `README.md` - Template overview and usage guide
@@ -245,8 +245,8 @@ This is a **template configuration task** with no executable code to compile:
 
 **Agents (agents/):**
 1. `engine-pattern-specialist.md` - Engine pattern expertise
-2. `mydrive-architect.md` - MyDrive architectural guidance
-3. `maui-mydrive-generator.md` - Code generation capabilities
+2. `exampleapp-architect.md` - MyDrive architectural guidance
+3. `maui-custom-generator.md` - Code generation capabilities
 
 ## Recommendations
 
@@ -293,6 +293,6 @@ The single "failed" test is a **false positive** in the validation script that i
 **The template is ready for immediate use in the MyDrive project.**
 
 ---
-**Test Suite**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_mydrive_template.py`
-**Template Path**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/`
+**Test Suite**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_exampleapp_template.py`
+**Template Path**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/`
 **Settings Path**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/settings.json`

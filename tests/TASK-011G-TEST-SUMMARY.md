@@ -12,7 +12,7 @@
 ## Test Artifacts
 
 ### 1. Test Suite Script
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_mydrive_template.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_exampleapp_template.py`
 - Comprehensive Python test suite
 - 23 test cases across 6 validation phases
 - Automated file system, JSON, and pattern validation
@@ -25,7 +25,7 @@
 - Success criteria evaluation
 
 ### 3. Template Validation Script
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/tests/validate-mydrive-template.sh`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh`
 - Built-in template validation
 - 10 validation functions
 - Bash script (executable)
@@ -122,12 +122,12 @@ This approach is **correct** because:
 ## Template Structure Validated
 
 ```
-maui-mydrive/                                    ✅ Root directory
+maui-custom/                                    ✅ Root directory
 ├── manifest.json                                ✅ 243 lines, 18 keys
 ├── agents/                                      ✅ 3 agents
 │   ├── engine-pattern-specialist.md            ✅ Engine expertise
-│   ├── mydrive-architect.md                    ✅ MyDrive guidance
-│   └── maui-mydrive-generator.md               ✅ Code generation
+│   ├── exampleapp-architect.md                    ✅ MyDrive guidance
+│   └── maui-custom-generator.md               ✅ Code generation
 ├── src/                                         ✅ 4 templates
 │   ├── BaseEngine.cs                           ✅ Base class (copy as-is)
 │   ├── FeatureEngine.cs                        ✅ Implementation template
@@ -136,7 +136,7 @@ maui-mydrive/                                    ✅ Root directory
 ├── tests/                                       ✅ 3 files
 │   ├── FeatureEngineTests.cs                   ✅ xUnit test template
 │   ├── FeatureViewModelEngineTests.cs          ✅ xUnit test template
-│   └── validate-mydrive-template.sh            ✅ Validation script
+│   └── validate-exampleapp-template.sh            ✅ Validation script
 └── docs/                                        ✅ 4 documentation files
     ├── README.md                                ✅ Overview and usage
     ├── engine-patterns.md                      ✅ Pattern guide
@@ -156,9 +156,9 @@ maui-mydrive/                                    ✅ Root directory
 ### 2. Settings Configuration ✅
 ```json
 {
-  "local_template": ".claude/templates/maui-mydrive",
+  "local_template": ".claude/templates/maui-custom",
   "project": {
-    "template": "maui-mydrive"
+    "template": "maui-custom"
   }
 }
 ```
@@ -174,17 +174,17 @@ maui-mydrive/                                    ✅ Root directory
 
 ### Run Test Suite
 ```bash
-python3 /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_mydrive_template.py
+python3 /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/test_task_011g_exampleapp_template.py
 ```
 
 ### Run Template Validation Script
 ```bash
-bash /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/tests/validate-mydrive-template.sh
+bash /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
 ```
 
 ### Verify Template Files
 ```bash
-ls -la /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive
+ls -la /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom
 ```
 
 ## Success Metrics

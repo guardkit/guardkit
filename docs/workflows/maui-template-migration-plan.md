@@ -84,7 +84,7 @@ maui-navigationpage/
 ### Local Template (MyDrive)
 
 ```
-MyDrive/.claude/templates/maui-mydrive/
+MyDrive/.claude/templates/maui-custom/
 ├── manifest.json                       # Local template metadata
 ├── CLAUDE.md                           # MyDrive-specific guidance
 ├── agents/
@@ -182,14 +182,14 @@ expertise:
 ### Phase 3: Migrate MyDrive to Local Template 📦
 
 **Tasks**:
-1. Create `.claude/templates/maui-mydrive/` in MyDrive project
+1. Create `.claude/templates/maui-custom/` in MyDrive project
 2. Copy current `maui/` template to local template
 3. Preserve Engine pattern and DeCUK namespace
 4. Update manifest.json with local scope
 5. Update MyDrive's `.claude/settings.json` to reference local template
 6. Test MyDrive workflow with local template
 
-**Migration Script** (`scripts/migrate-mydrive-template.sh`):
+**Migration Script** (`scripts/migrate-exampleapp-template.sh`):
 ```bash
 #!/bin/bash
 # Migrate MyDrive to use local custom template
@@ -198,7 +198,7 @@ set -e
 
 MYDRIVE_PROJECT="/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive"
 SOURCE_TEMPLATE="installer/global/templates/maui"
-LOCAL_TEMPLATE="$MYDRIVE_PROJECT/.claude/templates/maui-mydrive"
+LOCAL_TEMPLATE="$MYDRIVE_PROJECT/.claude/templates/maui-custom"
 
 echo "Migrating MyDrive to local template..."
 
@@ -211,7 +211,7 @@ cp -r "$SOURCE_TEMPLATE"/* "$LOCAL_TEMPLATE/"
 # 3. Create local manifest
 cat > "$LOCAL_TEMPLATE/manifest.json" << EOF
 {
-  "name": "maui-mydrive",
+  "name": "maui-custom",
   "description": "MyDrive-specific MAUI template with Engine pattern",
   "version": "1.0.0",
   "scope": "local",
@@ -227,7 +227,7 @@ EOF
 # 4. Update MyDrive settings.json
 cat > "$MYDRIVE_PROJECT/.claude/settings.json" << EOF
 {
-  "template": "maui-mydrive",
+  "template": "maui-custom",
   "template_priority": ["local", "global"],
   "customizations": {
     "namespace_root": "DeCUK.Mobile.MyDrive",

@@ -99,7 +99,7 @@ ls installer/global/templates/
 
 **Critical Requirement**: DO NOT break MyDrive workflow
 
-- ✅ MyDrive local template exists: `.claude/templates/maui-mydrive/`
+- ✅ MyDrive local template exists: `.claude/templates/maui-custom/`
 - ✅ Local template has manifest.json
 - ✅ Local template preserves Engine pattern
 - ✅ MyDrive project structure unchanged
@@ -107,7 +107,7 @@ ls installer/global/templates/
 
 **MyDrive Local Template Structure**:
 ```
-DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
+DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
 ├── manifest.json ✅
 ├── CLAUDE.md ✅
 ├── agents/ ✅

@@ -132,7 +132,7 @@ templates/
 **Impact**: New projects get best-practice navigation by default
 
 ### 2. MyDrive Preservation
-**Decision**: Use local template at `.claude/templates/maui-mydrive/`
+**Decision**: Use local template at `.claude/templates/maui-custom/`
 **Rationale**: Zero impact on existing MyDrive workflow
 **Impact**: MyDrive unaffected by global template changes
 

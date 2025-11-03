@@ -8,7 +8,7 @@ The MAUI-MyDrive local template is now fully operational and validated. All inst
 
 **Timeline**: 2025-10-18
 **Project**: DeCUK.Mobile.MyDrive
-**Template**: maui-mydrive (local)
+**Template**: maui-custom (local)
 **Validation Status**: ✅ All checks passing
 
 ---
@@ -38,7 +38,7 @@ Local Templates:
   ✓ 1 local templates available
 
   Available local templates:
-    ✓ maui-mydrive (valid)  ← ✅ SUCCESS
+    ✓ maui-custom (valid)  ← ✅ SUCCESS
 
   Template resolution order:
     1. Local (.claude/templates/) [HIGHEST PRIORITY]
@@ -101,8 +101,8 @@ Local Templates:
 
 **Errors**: Template showing as invalid in diagnostics
 ```
-✗ maui-mydrive (missing CLAUDE.md)
-✗ maui-mydrive (missing templates/)
+✗ maui-custom (missing CLAUDE.md)
+✗ maui-custom (missing templates/)
 ```
 
 **Root Causes**:
@@ -119,17 +119,17 @@ Local Templates:
 
 2. **Renamed directory**: `src/` → `templates/`
    ```bash
-   cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive
+   cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom
    mv src templates
    ```
 
 **Final Template Structure**:
 ```
-DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
+DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
 ├── agents/                    # ✅ Present (3 agents)
 │   ├── engine-pattern-specialist.md
-│   ├── maui-mydrive-generator.md
-│   └── mydrive-architect.md
+│   ├── maui-custom-generator.md
+│   └── exampleapp-architect.md
 ├── CLAUDE.md                  # ✅ Created (7,147 bytes) - NEW
 ├── docs/                      # ✅ Present (4 docs)
 │   ├── README.md
@@ -145,10 +145,10 @@ DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
 └── tests/                     # ✅ Present (3 test files)
     ├── FeatureEngineTests.cs
     ├── FeatureViewModelEngineTests.cs
-    └── validate-mydrive-template.sh
+    └── validate-exampleapp-template.sh
 ```
 
-**Documentation**: [maui-mydrive-template-validation-fix.md](../fixes/maui-mydrive-template-validation-fix.md)
+**Documentation**: [maui-custom-template-validation-fix.md](../fixes/maui-custom-template-validation-fix.md)
 
 **Status**: ✅ **RESOLVED** - Template validates successfully
 
@@ -158,20 +158,20 @@ DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
 
 ### Primary Guides
 
-1. **[maui-mydrive-setup-guide.md](maui-mydrive-setup-guide.md)** (16KB)
+1. **[maui-custom-setup-guide.md](maui-custom-setup-guide.md)** (16KB)
    - Complete setup guide with step-by-step instructions
    - Architecture overview and template usage
    - Code examples and namespace conventions
    - Troubleshooting section (updated with validation fixes)
    - Validation procedures and quality gates
 
-2. **[maui-mydrive-setup-summary.md](maui-mydrive-setup-summary.md)** (9KB)
+2. **[maui-custom-setup-summary.md](maui-custom-setup-summary.md)** (9KB)
    - Executive summary of TASK-011 findings
    - Quick reference for template structure
    - Success metrics and validation criteria
    - Links to all related documentation
 
-3. **[maui-mydrive-setup-completion.md](maui-mydrive-setup-completion.md)** (this document)
+3. **[maui-custom-setup-completion.md](maui-custom-setup-completion.md)** (this document)
    - Complete journey from installation to verification
    - All issues resolved with detailed explanations
    - Final validation results
@@ -189,7 +189,7 @@ DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
    - Script improvements for both installed and template versions
    - Ensures future installations work correctly
 
-6. **[maui-mydrive-template-validation-fix.md](../fixes/maui-mydrive-template-validation-fix.md)**
+6. **[maui-custom-template-validation-fix.md](../fixes/maui-custom-template-validation-fix.md)**
    - Documents template structure issues
    - Step-by-step resolution process
    - Expected structure for local templates
@@ -208,7 +208,7 @@ DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
 
 ### Your MyDrive Template is Now Operational
 
-The local maui-mydrive template is fully configured and ready for development:
+The local maui-custom template is fully configured and ready for development:
 
 ```bash
 # Template automatically detected in MyDrive project
@@ -234,7 +234,7 @@ cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
 
 The system will automatically:
 - ✅ Detect MyDrive project context (`.claude` directory)
-- ✅ Use local `.claude/templates/maui-mydrive/` template (highest priority)
+- ✅ Use local `.claude/templates/maui-custom/` template (highest priority)
 - ✅ Generate Engine-pattern code with DeCUK namespaces
 - ✅ Apply MyDrive-specific AI agents
 - ✅ Enforce Engine naming conventions
@@ -247,11 +247,11 @@ When working in the MyDrive project:
 
 ```
 1. Local Template (HIGHEST PRIORITY - USED)
-   Path: .claude/templates/maui-mydrive/
+   Path: .claude/templates/maui-custom/
    Scope: DeCUK.Mobile.MyDrive project only
 
 2. Global Template (FALLBACK - NOT USED)
-   Path: ~/.agentecflow/templates/maui-mydrive/
+   Path: ~/.agentecflow/templates/maui-custom/
    Scope: Available to all projects
 
 3. Default Template (FINAL FALLBACK - NOT USED)
@@ -259,7 +259,7 @@ When working in the MyDrive project:
    Scope: Generic fallback for any project
 ```
 
-**Active Template**: ✅ Local maui-mydrive template
+**Active Template**: ✅ Local maui-custom template
 
 ---
 
@@ -336,7 +336,7 @@ Run template validation regularly:
 ```bash
 # Validate template structure
 cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
-.claude/templates/maui-mydrive/tests/validate-mydrive-template.sh
+.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
 
 # Check diagnostics
 agentecflow doctor
@@ -431,7 +431,7 @@ public partial class RouteViewModel : ViewModelBase
 
 | Issue | Symptom | Solution |
 |-------|---------|----------|
-| Template not detected | `agentecflow doctor` shows 0 local templates | Verify `.claude/templates/maui-mydrive/` exists |
+| Template not detected | `agentecflow doctor` shows 0 local templates | Verify `.claude/templates/maui-custom/` exists |
 | Wrong pattern used | Generated code uses Domain pattern (e.g., `GetProducts`) | Check `agentecflow doctor` shows local template priority |
 | Missing CLAUDE.md | Template marked as invalid | Ensure CLAUDE.md exists at template root |
 | Wrong directory name | Template validation fails | Verify `templates/` directory (not `src/`) |
@@ -446,15 +446,15 @@ cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
 agentecflow doctor
 
 # Validate template structure
-ls -la .claude/templates/maui-mydrive/
+ls -la .claude/templates/maui-custom/
 # Should show: agents/ CLAUDE.md docs/ manifest.json templates/ tests/
 
 # Run validation tests
-.claude/templates/maui-mydrive/tests/validate-mydrive-template.sh
+.claude/templates/maui-custom/tests/validate-exampleapp-template.sh
 
 # Check settings
 cat .claude/settings.json
-# Should reference: "local_template": ".claude/templates/maui-mydrive"
+# Should reference: "local_template": ".claude/templates/maui-custom"
 ```
 
 ---
@@ -462,22 +462,22 @@ cat .claude/settings.json
 ## Related Documentation
 
 ### Setup and Usage
-- **[maui-mydrive-setup-guide.md](maui-mydrive-setup-guide.md)** - Complete setup guide (16KB)
-- **[maui-mydrive-setup-summary.md](maui-mydrive-setup-summary.md)** - Quick reference (9KB)
+- **[maui-custom-setup-guide.md](maui-custom-setup-guide.md)** - Complete setup guide (16KB)
+- **[maui-custom-setup-summary.md](maui-custom-setup-summary.md)** - Quick reference (9KB)
 - **[conductor-user-guide.md](conductor-user-guide.md)** - Parallel development guide
 
 ### Template Documentation
-- **[Engine Patterns](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/docs/engine-patterns.md)** - Comprehensive pattern guide
-- **[Namespace Conventions](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/docs/namespace-conventions.md)** - Namespace rules
-- **[Migration Guide](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/docs/migration-guide.md)** - UseCase to Engine migration
+- **[Engine Patterns](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/docs/engine-patterns.md)** - Comprehensive pattern guide
+- **[Namespace Conventions](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/docs/namespace-conventions.md)** - Namespace rules
+- **[Migration Guide](../../../DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/docs/migration-guide.md)** - UseCase to Engine migration
 
 ### Fix Documentation
 - **[installer-shell-cleanup-fix.md](../fixes/installer-shell-cleanup-fix.md)** - Shell cleanup issue
 - **[agentecflow-cli-script-fix.md](../fixes/agentecflow-cli-script-fix.md)** - CLI script errors
-- **[maui-mydrive-template-validation-fix.md](../fixes/maui-mydrive-template-validation-fix.md)** - Template validation fixes
+- **[maui-custom-template-validation-fix.md](../fixes/maui-custom-template-validation-fix.md)** - Template validation fixes
 
 ### Implementation Tasks
-- **[TASK-011G](../../tasks/completed/TASK-011G-maui-mydrive-local-template.md)** - MyDrive template creation
+- **[TASK-011G](../../tasks/completed/TASK-011G-maui-custom-local-template.md)** - MyDrive template creation
 - **[TASK-011I](../../tasks/completed/TASK-011I-installer-local-template-support.md)** - Installer local template support
 
 ---
@@ -510,7 +510,7 @@ $ cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive
 $ agentecflow doctor
 
 Local Templates:
-  ✓ maui-mydrive (valid)  # ✅ SUCCESS
+  ✓ maui-custom (valid)  # ✅ SUCCESS
 ```
 
 **Status**: ✅ **READY FOR PRODUCTION USE**

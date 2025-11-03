@@ -366,12 +366,12 @@ maui)
 
 **Test Method**:
 ```python
-mydrive_path = Path.home() / "Projects" / "appmilla_github" / "DeCUK.Mobile.MyDrive"
-mydrive_template = mydrive_path / ".claude" / "templates" / "maui-mydrive"
+exampleapp_path = Path.home() / "Projects" / "appmilla_github" / "DeCUK.Mobile.MyDrive"
+exampleapp_template = exampleapp_path / ".claude" / "templates" / "maui-custom"
 
-if mydrive_path.exists():
-    assert mydrive_template.exists()
-    manifest = mydrive_template / "manifest.json"
+if exampleapp_path.exists():
+    assert exampleapp_template.exists()
+    manifest = exampleapp_template / "manifest.json"
     assert manifest.exists()
 ```
 
@@ -383,7 +383,7 @@ if mydrive_path.exists():
 - Project Type: .NET MAUI (Microsoft.Maui references found)
 
 **Local Template Structure**:
-- Location: `.claude/templates/maui-mydrive/`
+- Location: `.claude/templates/maui-custom/`
 - Status: COMPLETE
 - Files verified:
   - `manifest.json` (PRESENT)
@@ -403,10 +403,10 @@ $ ls -la ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/
 total 0
 drwxr-xr-x  5 user  staff  160 Oct 10 14:30 .
 drwxr-xr-x  8 user  staff  256 Oct 10 14:30 ..
-drwxr-xr-x  7 user  staff  224 Oct 10 14:30 maui-mydrive
+drwxr-xr-x  7 user  staff  224 Oct 10 14:30 maui-custom
 
-$ cat ~/Projects/.../maui-mydrive/manifest.json | jq '.name'
-"maui-mydrive"
+$ cat ~/Projects/.../maui-custom/manifest.json | jq '.name'
+"maui-custom"
 ```
 
 **Workflow Preservation**:
@@ -518,7 +518,7 @@ $ cat ~/Projects/.../maui-mydrive/manifest.json | jq '.name'
 ### Risk Details
 
 **Risk 1: MyDrive Breaks**
-- Mitigation: Local template `.claude/templates/maui-mydrive/`
+- Mitigation: Local template `.claude/templates/maui-custom/`
 - Verification: Test 8 confirms fully functional
 - Rollback: Checkpoint commit available
 - Impact: NONE (successfully mitigated)

@@ -7,7 +7,7 @@ updated: 2025-10-09T17:45:00Z
 completed: 2025-10-09T17:45:00Z
 assignee: ai-engineer-agent
 priority: high
-tags: [zeplin, maui, ux-design, mcp-integration, mydrive-app-requirement]
+tags: [zeplin, maui, ux-design, mcp-integration, exampleapp-app-requirement]
 requirements: []
 bdd_scenarios: []
 business_need: "MyDrive .NET MAUI mobile app requires ability to convert Zeplin designs to MAUI components"

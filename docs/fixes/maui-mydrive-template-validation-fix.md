@@ -4,7 +4,7 @@
 
 **Date**: 2025-10-18
 **Severity**: Medium
-**Impact**: Local maui-mydrive template showed as invalid in `agentecflow doctor`
+**Impact**: Local maui-custom template showed as invalid in `agentecflow doctor`
 
 ## Problem Description
 
@@ -16,13 +16,13 @@ Local Templates:
   ✓ 1 local templates available
 
   Available local templates:
-    ✗ maui-mydrive (missing CLAUDE.md)
+    ✗ maui-custom (missing CLAUDE.md)
 ```
 
 Then after fixing CLAUDE.md:
 
 ```bash
-    ✗ maui-mydrive (missing templates/)
+    ✗ maui-custom (missing templates/)
 ```
 
 ### Root Causes
@@ -40,7 +40,7 @@ Then after fixing CLAUDE.md:
 ### What Was Created (TASK-011G)
 
 ```
-.claude/templates/maui-mydrive/
+.claude/templates/maui-custom/
 ├── agents/
 ├── docs/
 │   └── README.md          # Only README in docs/
@@ -55,7 +55,7 @@ Then after fixing CLAUDE.md:
 ### What Was Expected
 
 ```
-.claude/templates/maui-mydrive/
+.claude/templates/maui-custom/
 ├── agents/
 ├── CLAUDE.md              # ✅ Required at root
 ├── docs/
@@ -83,7 +83,7 @@ drwxr-xr-x   templates/     # ✅ Named templates/
 
 ### Fix 1: Created CLAUDE.md at Root
 
-Created `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/CLAUDE.md` with:
+Created `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/CLAUDE.md` with:
 
 - Template overview and purpose
 - Architecture documentation (Engine pattern)
@@ -104,7 +104,7 @@ the Engine pattern and DeCUK namespace conventions.
 
 ## Template Information
 - **Scope**: Local (MyDrive project only)
-- **Stack**: maui-mydrive
+- **Stack**: maui-custom
 - **Base Template**: maui-appshell (global)
 - **Namespace**: DeCUK.Mobile.MyDrive.*
 - **Pattern**: Engine suffix (e.g., AuthenticationEngine, RouteEngine)
@@ -114,7 +114,7 @@ the Engine pattern and DeCUK namespace conventions.
 ### Fix 2: Renamed src/ to templates/
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive
+cd /Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom
 mv src templates
 ```
 
@@ -166,10 +166,10 @@ $ agentecflow doctor
 
 Local Templates:
   ✓ 1 local templates available
-  ✗ maui-mydrive (missing CLAUDE.md)
+  ✗ maui-custom (missing CLAUDE.md)
 
 # After creating CLAUDE.md:
-  ✗ maui-mydrive (missing templates/)
+  ✗ maui-custom (missing templates/)
 ```
 
 ### After Fix
@@ -183,7 +183,7 @@ Local Templates:
   ✓ 1 local templates available
 
   Available local templates:
-    ✓ maui-mydrive (valid)
+    ✓ maui-custom (valid)
 
   Template resolution order:
     1. Local (.claude/templates/) [HIGHEST PRIORITY]
@@ -196,11 +196,11 @@ Local Templates:
 ## Final Template Structure
 
 ```
-DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
+DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
 ├── agents/                              # MyDrive-specific AI agents
 │   ├── engine-pattern-specialist.md
-│   ├── mydrive-architect.md
-│   └── maui-mydrive-generator.md
+│   ├── exampleapp-architect.md
+│   └── maui-custom-generator.md
 ├── CLAUDE.md                            # ✅ Template instructions (NEW)
 ├── docs/                                # Detailed documentation
 │   ├── README.md
@@ -216,12 +216,12 @@ DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
 └── tests/                               # Test templates
     ├── FeatureEngineTests.cs
     ├── FeatureViewModelEngineTests.cs
-    └── validate-mydrive-template.sh
+    └── validate-exampleapp-template.sh
 ```
 
 ## Files Modified
 
-1. **Created**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/CLAUDE.md`
+1. **Created**: `/Users/richardwoollcott/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/CLAUDE.md`
    - 7,147 bytes
    - Comprehensive template documentation
 
@@ -306,8 +306,8 @@ When creating a new local template:
 
 ## Related Documentation
 
-- **Setup Guide**: [docs/guides/maui-mydrive-setup-guide.md](../guides/maui-mydrive-setup-guide.md)
-- **TASK-011G**: [tasks/completed/TASK-011G-maui-mydrive-local-template.md](../../tasks/completed/TASK-011G-maui-mydrive-local-template.md)
+- **Setup Guide**: [docs/guides/maui-custom-setup-guide.md](../guides/maui-custom-setup-guide.md)
+- **TASK-011G**: [tasks/completed/TASK-011G-maui-custom-local-template.md](../../tasks/completed/TASK-011G-maui-custom-local-template.md)
 - **Template Architecture**: [docs/shared/maui-template-architecture.md](../shared/maui-template-architecture.md)
 
 ---

@@ -121,7 +121,7 @@ This task involves removing the deprecated global MAUI template and ensuring the
 - `installer/global/templates/maui-navigationpage/`
 
 **Local Template** (for MyDrive):
-- `.claude/templates/maui-mydrive/` (in MyDrive project)
+- `.claude/templates/maui-custom/` (in MyDrive project)
 
 ### Changes Required
 
@@ -263,7 +263,7 @@ This task involves removing the deprecated global MAUI template and ensuring the
 
 - [ ] **MyDrive Workflow Verification**
   - [ ] Navigate to MyDrive project directory
-  - [ ] Verify local template exists: `.claude/templates/maui-mydrive/`
+  - [ ] Verify local template exists: `.claude/templates/maui-custom/`
   - [ ] Run a simple task creation command
   - [ ] Verify agents load correctly from local template
   - [ ] Test that Engine pattern is preserved
@@ -391,7 +391,7 @@ ls -la .claude/
 
 # 6. Test MyDrive (if accessible)
 cd ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive
-ls -la .claude/templates/maui-mydrive/
+ls -la .claude/templates/maui-custom/
 
 # 7. Test completion
 agentic-init maui-<TAB>  # Should show appshell and navigationpage

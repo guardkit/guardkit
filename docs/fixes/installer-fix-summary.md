@@ -212,7 +212,7 @@ agentecflow doctor
 ## Related Documentation
 
 - **Detailed Fix Documentation**: [installer-shell-cleanup-fix.md](installer-shell-cleanup-fix.md)
-- **MAUI-MyDrive Setup**: [../guides/maui-mydrive-setup-guide.md](../guides/maui-mydrive-setup-guide.md)
+- **MAUI-MyDrive Setup**: [../guides/maui-custom-setup-guide.md](../guides/maui-custom-setup-guide.md)
 - **Installer Script**: `installer/scripts/install.sh`
 
 ---

@@ -304,7 +304,7 @@ get_absolute_path() {
 # Arguments:
 #   None (uses current directory)
 # Returns:
-#   "mydrive" - MyDrive project
+#   "exampleapp" - MyDrive project
 #   "ai-engineer" - AI Engineer project
 #   "" - Unknown project
 detect_project_type() {
@@ -321,7 +321,7 @@ detect_project_type() {
   # Check for MyDrive specific markers
   if [[ -f "DeCUK.Mobile.MyDrive.sln" ]] || \
      [[ -d "src/DeCUK.Mobile.MyDrive" ]]; then
-    echo "mydrive"
+    echo "exampleapp"
     return 0
   fi
 
@@ -332,7 +332,7 @@ detect_project_type() {
 
 # Get project-specific patterns for file discovery
 # Arguments:
-#   $1 - Project type (mydrive|ai-engineer)
+#   $1 - Project type (exampleapp|ai-engineer)
 # Returns:
 #   JSON-like structure with patterns
 get_project_patterns() {
@@ -357,7 +357,7 @@ get_project_patterns() {
 }
 EOF
       ;;
-    mydrive)
+    exampleapp)
       cat <<'EOF'
 {
   "task_files": {
@@ -391,7 +391,7 @@ EOF
 ```bash
 # Discover task files based on project-specific patterns
 # Arguments:
-#   $1 - Project type (mydrive|ai-engineer)
+#   $1 - Project type (exampleapp|ai-engineer)
 # Returns:
 #   Array of discovered file paths (one per line)
 discover_task_files() {
@@ -409,7 +409,7 @@ discover_task_files() {
       done < <(find . -maxdepth 1 -type f \( -name "TASK-*.md" -o -name "TASK_*.md" \))
       ;;
 
-    mydrive)
+    exampleapp)
       # Find task files in completed folder (flat)
       while IFS= read -r file; do
         discovered_files+=("$file")

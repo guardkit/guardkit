@@ -301,7 +301,7 @@ maui) effective_template="maui-appshell" ;;  # Default to AppShell for MAUI proj
 
 **MyDrive Integration**:
 ```
-Location: ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-mydrive/
+Location: ~/Projects/appmilla_github/DeCUK.Mobile.MyDrive/.claude/templates/maui-custom/
 Status:   OPERATIONAL
 Files:    manifest.json present, complete structure verified
 ```
