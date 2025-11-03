@@ -1,5 +1,11 @@
 # Taskwright
 
+![version](https://img.shields.io/badge/version-2.0.0-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
+![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
+![detection](https://img.shields.io/badge/detection-automatic-blueviolet)
+
 **Lightweight AI-assisted development with built-in quality gates.**
 
 Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
