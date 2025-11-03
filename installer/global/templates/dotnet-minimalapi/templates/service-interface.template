@@ -1,0 +1,34 @@
+using ErrorOr;
+
+namespace {{Namespace}}.Application.Services.Interfaces;
+
+/// <summary>
+/// Service interface for {{Feature}} operations
+/// </summary>
+public interface I{{Feature}}Service
+{
+    /// <summary>
+    /// Gets all {{Feature}} items
+    /// </summary>
+    Task<ErrorOr<IEnumerable<{{Feature}}>>> GetAllAsync();
+
+    /// <summary>
+    /// Gets a {{Feature}} by ID
+    /// </summary>
+    Task<ErrorOr<{{Feature}}>> GetByIdAsync(int id);
+
+    /// <summary>
+    /// Creates a new {{Feature}}
+    /// </summary>
+    Task<ErrorOr<{{Feature}}>> CreateAsync(Create{{Feature}}Request request);
+
+    /// <summary>
+    /// Updates an existing {{Feature}}
+    /// </summary>
+    Task<ErrorOr<{{Feature}}>> UpdateAsync(int id, Update{{Feature}}Request request);
+
+    /// <summary>
+    /// Deletes a {{Feature}}
+    /// </summary>
+    Task<ErrorOr<Deleted>> DeleteAsync(int id);
+}

@@ -1,0 +1,54 @@
+namespace {{Namespace}}.Features.{{Feature}};
+
+/// <summary>
+/// Extension methods for configuring {{Feature}} endpoints
+/// </summary>
+public static class {{Feature}}Endpoints
+{
+    public static IEndpointRouteBuilder Map{{Feature}}Endpoints(this IEndpointRouteBuilder app)
+    {
+        var group = app.MapGroup("/api/{{RoutePrefix}}")
+            .WithTags("{{Feature}}")
+            .WithOpenApi()
+            .AddEndpointFilter<ErrorHandlingFilter>();
+
+        // GET /api/{{RoutePrefix}}
+        group.MapGet("/", Get{{Feature}}ListEndpoint.Handle)
+            .WithName("Get{{Feature}}List")
+            .WithSummary("Get all {{Feature}} items")
+            .Produces<IEnumerable<{{Feature}}Response>>(StatusCodes.Status200OK);
+
+        // GET /api/{{RoutePrefix}}/{id}
+        group.MapGet("/{id:int}", Get{{Feature}}ByIdEndpoint.Handle)
+            .WithName("Get{{Feature}}ById")
+            .WithSummary("Get {{Feature}} by ID")
+            .Produces<{{Feature}}Response>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        // POST /api/{{RoutePrefix}}
+        group.MapPost("/", Create{{Feature}}Endpoint.Handle)
+            .WithName("Create{{Feature}}")
+            .WithSummary("Create new {{Feature}}")
+            .AddEndpointFilter<ValidationFilter<Create{{Feature}}Request>>()
+            .Produces<{{Feature}}Response>(StatusCodes.Status201Created)
+            .ProducesValidationProblem();
+
+        // PUT /api/{{RoutePrefix}}/{id}
+        group.MapPut("/{id:int}", Update{{Feature}}Endpoint.Handle)
+            .WithName("Update{{Feature}}")
+            .WithSummary("Update existing {{Feature}}")
+            .AddEndpointFilter<ValidationFilter<Update{{Feature}}Request>>()
+            .Produces<{{Feature}}Response>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound)
+            .ProducesValidationProblem();
+
+        // DELETE /api/{{RoutePrefix}}/{id}
+        group.MapDelete("/{id:int}", Delete{{Feature}}Endpoint.Handle)
+            .WithName("Delete{{Feature}}")
+            .WithSummary("Delete {{Feature}}")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
+        return app;
+    }
+}

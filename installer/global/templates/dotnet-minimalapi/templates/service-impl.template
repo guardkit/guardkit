@@ -1,0 +1,98 @@
+using ErrorOr;
+
+namespace {{Namespace}}.Application.Services.Implementations;
+
+/// <summary>
+/// Service implementation for {{Feature}} operations
+/// </summary>
+public class {{Feature}}Service : I{{Feature}}Service
+{
+    private readonly I{{Feature}}Repository _repository;
+    private readonly ILogger<{{Feature}}Service> _logger;
+
+    public {{Feature}}Service(
+        I{{Feature}}Repository repository,
+        ILogger<{{Feature}}Service> logger)
+    {
+        _repository = repository;
+        _logger = logger;
+    }
+
+    public async Task<ErrorOr<IEnumerable<{{Feature}}>>> GetAllAsync()
+    {
+        _logger.LogInformation("Getting all {{Feature}} items");
+
+        var items = await _repository.GetAllAsync();
+
+        return items.ToList();
+    }
+
+    public async Task<ErrorOr<{{Feature}}>> GetByIdAsync(int id)
+    {
+        _logger.LogInformation("Getting {{Feature}} with ID: {Id}", id);
+
+        var item = await _repository.GetByIdAsync(id);
+
+        if (item is null)
+        {
+            return DomainErrors.{{Feature}}.NotFound(id);
+        }
+
+        return item;
+    }
+
+    public async Task<ErrorOr<{{Feature}}>> CreateAsync(Create{{Feature}}Request request)
+    {
+        _logger.LogInformation("Creating new {{Feature}}");
+
+        var item = {{Feature}}.Create(request);
+
+        if (item.IsError)
+        {
+            return item.Errors;
+        }
+
+        await _repository.AddAsync(item.Value);
+
+        return item.Value;
+    }
+
+    public async Task<ErrorOr<{{Feature}}>> UpdateAsync(int id, Update{{Feature}}Request request)
+    {
+        _logger.LogInformation("Updating {{Feature}} with ID: {Id}", id);
+
+        var existing = await _repository.GetByIdAsync(id);
+
+        if (existing is null)
+        {
+            return DomainErrors.{{Feature}}.NotFound(id);
+        }
+
+        var updated = existing.Update(request);
+
+        if (updated.IsError)
+        {
+            return updated.Errors;
+        }
+
+        await _repository.UpdateAsync(updated.Value);
+
+        return updated.Value;
+    }
+
+    public async Task<ErrorOr<Deleted>> DeleteAsync(int id)
+    {
+        _logger.LogInformation("Deleting {{Feature}} with ID: {Id}", id);
+
+        var existing = await _repository.GetByIdAsync(id);
+
+        if (existing is null)
+        {
+            return DomainErrors.{{Feature}}.NotFound(id);
+        }
+
+        await _repository.DeleteAsync(id);
+
+        return Result.Deleted;
+    }
+}

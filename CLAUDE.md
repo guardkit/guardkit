@@ -180,6 +180,7 @@ taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|d
 - **maui-navigationpage**: .NET MAUI + NavigationPage + MVVM
 - **dotnet-fastendpoints**: .NET + FastEndpoints + REPR pattern
 - **dotnet-aspnetcontroller**: .NET + Controllers + MVC pattern + ErrorOr
+- **dotnet-minimalapi**: .NET 8+ Minimal API + Vertical Slices + Route Groups + Endpoint Filters
 
 **Template Documentation:**
 - [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations

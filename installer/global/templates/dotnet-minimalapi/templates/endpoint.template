@@ -1,0 +1,36 @@
+using ErrorOr;
+using Microsoft.AspNetCore.Http.HttpResults;
+
+namespace {{Namespace}}.Features.{{Feature}};
+
+/// <summary>
+/// {{Description}}
+/// </summary>
+public static class {{EndpointName}}Endpoint
+{
+    /// <summary>
+    /// Handles {{HttpMethod}} {{Route}}
+    /// </summary>
+    public static async Task<Results<Ok<{{ResponseType}}>, NotFound, ProblemHttpResult>> Handle(
+        {{#Parameters}}
+        {{Type}} {{Name}},
+        {{/Parameters}}
+        I{{Service}}Service service,
+        ILogger<{{EndpointName}}Endpoint> logger)
+    {
+        logger.LogInformation("{{LogMessage}}", {{#LogParameters}}{{Name}}{{^IsLast}}, {{/IsLast}}{{/LogParameters}});
+
+        ErrorOr<{{DomainType}}> result = await service.{{MethodName}}Async({{#MethodParameters}}{{Name}}{{^IsLast}}, {{/IsLast}}{{/MethodParameters}});
+
+        return result.Match(
+            {{VariableName}} => TypedResults.Ok({{VariableName}}.ToResponse()),
+            errors => errors[0] switch
+            {
+                { Type: ErrorType.NotFound } => TypedResults.NotFound(),
+                { Type: ErrorType.Validation } => TypedResults.Problem(errors.ToProblemDetails()),
+                { Type: ErrorType.Conflict } => TypedResults.Problem(errors.ToProblemDetails()),
+                _ => TypedResults.Problem(errors.ToProblemDetails())
+            }
+        );
+    }
+}

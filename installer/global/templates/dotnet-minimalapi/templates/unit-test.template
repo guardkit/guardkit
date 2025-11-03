@@ -1,0 +1,79 @@
+using ErrorOr;
+using FluentAssertions;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Xunit;
+
+namespace {{Namespace}}.Tests.Unit.Endpoints;
+
+public class {{EndpointName}}EndpointTests
+{
+    private readonly Mock<I{{Service}}Service> _serviceMock;
+    private readonly Mock<ILogger<{{EndpointName}}Endpoint>> _loggerMock;
+
+    public {{EndpointName}}EndpointTests()
+    {
+        _serviceMock = new Mock<I{{Service}}Service>();
+        _loggerMock = new Mock<ILogger<{{EndpointName}}Endpoint>>();
+    }
+
+    [Fact]
+    public async Task Handle_When{{Scenario}}_ReturnsOk()
+    {
+        // Arrange
+        var {{VariableName}} = new {{DomainType}} { Id = 1, /* ... */ };
+        _serviceMock
+            .Setup(x => x.{{MethodName}}Async(It.IsAny<{{ParameterType}}>()))
+            .ReturnsAsync({{VariableName}});
+
+        // Act
+        var result = await {{EndpointName}}Endpoint.Handle(
+            /* parameters */,
+            _serviceMock.Object,
+            _loggerMock.Object);
+
+        // Assert
+        result.Result.Should().BeOfType<Ok<{{ResponseType}}>>();
+        var okResult = (Ok<{{ResponseType}}>)result.Result;
+        okResult.Value.Should().NotBeNull();
+        okResult.Value.Id.Should().Be({{VariableName}}.Id);
+    }
+
+    [Fact]
+    public async Task Handle_When{{ErrorScenario}}_ReturnsNotFound()
+    {
+        // Arrange
+        _serviceMock
+            .Setup(x => x.{{MethodName}}Async(It.IsAny<{{ParameterType}}>()))
+            .ReturnsAsync(DomainErrors.{{Feature}}.NotFound(1));
+
+        // Act
+        var result = await {{EndpointName}}Endpoint.Handle(
+            /* parameters */,
+            _serviceMock.Object,
+            _loggerMock.Object);
+
+        // Assert
+        result.Result.Should().BeOfType<NotFound>();
+    }
+
+    [Fact]
+    public async Task Handle_WhenValidationError_ReturnsProblem()
+    {
+        // Arrange
+        var validationError = DomainErrors.{{Feature}}.InvalidData("Invalid data");
+        _serviceMock
+            .Setup(x => x.{{MethodName}}Async(It.IsAny<{{ParameterType}}>()))
+            .ReturnsAsync(validationError);
+
+        // Act
+        var result = await {{EndpointName}}Endpoint.Handle(
+            /* parameters */,
+            _serviceMock.Object,
+            _loggerMock.Object);
+
+        // Assert
+        result.Result.Should().BeOfType<ProblemHttpResult>();
+    }
+}

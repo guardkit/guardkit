@@ -1,0 +1,42 @@
+using System.Net;
+
+namespace {{Namespace}}.Filters;
+
+/// <summary>
+/// Global error handling filter for endpoints
+/// </summary>
+public class ErrorHandlingFilter : IEndpointFilter
+{
+    private readonly ILogger<ErrorHandlingFilter> _logger;
+
+    public ErrorHandlingFilter(ILogger<ErrorHandlingFilter> logger)
+    {
+        _logger = logger;
+    }
+
+    public async ValueTask<object?> InvokeAsync(
+        EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
+    {
+        try
+        {
+            return await next(context);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception occurred: {Message}", ex.Message);
+
+            var problemDetails = new ProblemDetails
+            {
+                Status = StatusCodes.Status500InternalServerError,
+                Title = "An error occurred while processing your request",
+                Detail = ex.Message,
+                Instance = context.HttpContext.Request.Path
+            };
+
+            context.HttpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+
+            return TypedResults.Problem(problemDetails);
+        }
+    }
+}
