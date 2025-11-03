@@ -10,7 +10,7 @@ curl -sSL https://raw.githubusercontent.com/appmilla/taskwright/main/installer/s
 # Initialize projects with stack templates
 taskwright init react                  # React + TypeScript + Vite + Playwright
 taskwright init python                 # Python + FastAPI + pytest + LangGraph
-taskwright init dotnet-microservice    # .NET microservices + FastEndpoints
+taskwright init dotnet-fastendpoints   # .NET microservices + FastEndpoints
 taskwright init maui-appshell         # .NET MAUI + AppShell + MVVM
 taskwright init maui-navigationpage   # .NET MAUI + NavigationPage + MVVM
 taskwright init typescript-api        # NestJS TypeScript backend API
@@ -143,7 +143,7 @@ ServiceName.Tests/
 
 **Setup:**
 ```bash
-taskwright init dotnet-microservice
+taskwright init dotnet-fastendpoints
 cd my-project
 dotnet build
 dotnet run
