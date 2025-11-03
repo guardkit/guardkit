@@ -1,18 +1,18 @@
-# Getting Started with AI Engineer v2.0
+# Getting Started with Taskwright
 
-## 🎉 Welcome to the Unified Workflow!
+## Welcome to Lightweight Task Workflow!
 
-AI Engineer v2.0 introduces a revolutionary unified task workflow that combines implementation, testing, and verification into a single command with support for Standard, TDD, and BDD development modes.
+Taskwright is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. Work on individual tasks with automatic architectural review, test enforcement, and quality verification.
 
-## 🚀 Quick Start (3 Minutes!)
+## Quick Start (5 Minutes!)
 
 ### Step 1: Initialize Your Project
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/ai-engineer.git
-cd ai-engineer
-chmod +x .claude/setup.sh
-.claude/setup.sh
+git clone https://github.com/taskwright-dev/taskwright.git
+cd taskwright
+chmod +x installer/scripts/install.sh
+./installer/scripts/install.sh
 ```
 
 ### Step 2: Create Your First Task (in Claude Code)
@@ -20,109 +20,105 @@ chmod +x .claude/setup.sh
 # Create a task
 /task-create "Add user authentication"
 
-# Work on it (THIS DOES EVERYTHING!)
+# Work on it (automatic planning + implementation + testing)
 /task-work TASK-001
 
 # Complete it
 /task-complete TASK-001
 ```
 
-That's it! The `/task-work` command handles implementation, testing, and quality verification automatically.
+That's it! The `/task-work` command handles planning, implementation, architectural review, testing, and quality verification automatically.
 
-## 📚 Documentation Structure
+## Documentation Structure
 
 ```
 docs/guides/
-├── README.md                                    # Index and navigation
-├── AI-ENGINEER-USER-GUIDE.md                   # Complete guide (START HERE!)
-├── MIGRATION-GUIDE.md                          # NEW: v1.0 to v2.0 migration
-├── task-work-practical-example.md              # NEW: Real examples
-├── TASK-WORKFLOW-QUICK-REFERENCE-V2.md         # NEW: Quick command reference
-├── KANBAN-WORKFLOW-GUIDE.md                    # Task management details
-├── COMMAND_USAGE_GUIDE.md                      # All commands reference
+├── README.md                     # Index and navigation
+├── GETTING-STARTED.md           # This guide (START HERE!)
+├── QUICK_REFERENCE.md           # Command reference
+├── taskwright-workflow.md       # Complete workflow guide
+├── mcp-optimization-guide.md    # MCP integration best practices
 └── [other guides...]
 ```
 
-## 🎯 What's New in v2.0
+## What is Taskwright?
 
-### The One Command That Does Everything
-```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd]
+### The Core Features
+
+**Workflow Automation**:
+- Creates implementation plans automatically
+- Performs architectural review (SOLID/DRY/YAGNI)
+- Evaluates task complexity (1-10 scale)
+- Implements code based on approved plans
+- Runs comprehensive test suites
+- Enforces quality gates (100% test pass, ≥80% coverage)
+
+**State Management**:
+```
+BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
+            ↓              ↓
+         BLOCKED        BLOCKED
 ```
 
-This single command replaces the old 7-step process:
-- ✅ Generates implementation
-- ✅ Creates comprehensive tests
-- ✅ Runs tests automatically
-- ✅ Checks quality gates
-- ✅ Updates task state
-- ✅ Provides actionable feedback
+**Technology Support**:
+- React/TypeScript/Next.js with Tailwind + Vitest + Playwright
+- Python/FastAPI with pytest + LangGraph
+- .NET MAUI with xUnit + MVVM
+- TypeScript APIs with NestJS
+- .NET Microservices with FastEndpoints
+- Language-agnostic (default template)
 
-### Three Development Modes
+## The Complete Development Flow
 
-#### Standard Mode (Default)
+### 1. Create a Task
 ```bash
-/task-work TASK-001
-```
-Traditional approach - implementation and tests together.
-
-#### TDD Mode
-```bash
-/task-work TASK-001 --mode=tdd
-```
-Red → Green → Refactor cycle for complex logic.
-
-#### BDD Mode
-```bash
-/task-work TASK-001 --mode=bdd
-```
-From Gherkin scenarios to implementation.
-
-## 🔄 The Complete Development Flow
-
-### 1. Requirements Phase
-```bash
-# Gather requirements interactively
-/gather-requirements
-
-# Formalize into EARS notation
-/formalize-ears
-
-# Generate BDD scenarios
-/generate-bdd
-```
-
-### 2. Task Phase (NEW SIMPLIFIED!)
-```bash
-# Create task
+# Simple task creation
 /task-create "Feature name"
 
-# Link specifications (if needed)
-/task-link-requirements TASK-001 REQ-001
-/task-link-bdd TASK-001 BDD-001
+# With priority
+/task-create "Critical bug fix" priority:critical
 
-# WORK ON IT (one command!)
+# With tags
+/task-create "Add logging" tags:infrastructure,logging
+```
+
+### 2. Work on the Task (One Command!)
+```bash
+# Standard mode (default)
+/task-work TASK-001
+
+# TDD mode (for complex logic)
 /task-work TASK-001 --mode=tdd
 
-# Complete after review
+# Design-first workflow (for complex tasks)
+/task-work TASK-001 --design-only
+# [Review and approve plan]
+/task-work TASK-001 --implement-only
+```
+
+### 3. Complete the Task
+```bash
+# After review
 /task-complete TASK-001
 ```
 
-## ✨ Key Features
+## Key Features Explained
 
 ### Automatic Quality Gates
 | Gate | Threshold | Enforcement |
 |------|-----------|-------------|
+| Compilation | 100% | Required |
 | Tests Pass | 100% | Required |
 | Line Coverage | ≥80% | Required |
 | Branch Coverage | ≥75% | Required |
-| Performance | <30s | Warning |
+| Architectural Review | ≥60/100 | Required |
 
 ### Smart State Management
 ```
 Tests Pass + Coverage Good → IN_REVIEW
-Tests Fail → BLOCKED
+Tests Fail → BLOCKED (auto-fix up to 3 attempts)
 Coverage Low → Stay IN_PROGRESS
+Architectural Issues → Human checkpoint
 ```
 
 ### Clear Feedback
@@ -134,7 +130,7 @@ Status: IN_PROGRESS → IN_REVIEW
 Next: /task-complete TASK-001
 ```
 
-## 💡 Real-World Example
+## Real-World Example
 
 ### Implementing User Authentication with TDD
 
@@ -142,16 +138,13 @@ Next: /task-complete TASK-001
 # 1. Create the task
 /task-create "Implement user authentication" priority:high
 
-# 2. Link requirements (if you have them)
-/task-link-requirements TASK-042 REQ-001 REQ-002 REQ-003
-
-# 3. Work on it with TDD
+# 2. Work on it with TDD
 /task-work TASK-042 --mode=tdd
 
 # Claude's response:
 # 🔴 RED Phase: Creating 8 failing tests...
 #    ❌ All tests failing (expected)
-# 
+#
 # 🟢 GREEN Phase: Implementing code...
 #    ✅ 8/8 tests passing
 #
@@ -161,13 +154,13 @@ Next: /task-complete TASK-001
 # 📊 Coverage: 92%
 # ✅ Task moved to IN_REVIEW
 
-# 4. Complete the task
+# 3. Complete the task
 /task-complete TASK-042
 ```
 
-Total time: ~2 minutes (vs ~10 minutes with old workflow)
+Total time: ~2 minutes (vs ~10 minutes with manual workflow)
 
-## 🔧 Common Scenarios
+## Common Scenarios
 
 ### Scenario 1: Simple Feature
 ```bash
@@ -183,170 +176,142 @@ Total time: ~2 minutes (vs ~10 minutes with old workflow)
 /task-complete TASK-051
 ```
 
-### Scenario 3: User Story
-```bash
-/task-create "User checkout flow"
-/task-link-bdd TASK-052 BDD-001
-/task-work TASK-052 --mode=bdd   # BDD for user features
-/task-complete TASK-052
-```
-
-### Scenario 4: Bug Fix
+### Scenario 3: Bug Fix
 ```bash
 /task-create "Fix login timeout" priority:critical
 /task-work TASK-053               # Quick fix
 /task-complete TASK-053
 ```
 
-## 📊 Migration from v1.0
-
-If you're using the old workflow:
-
-### Old Way (7 commands)
+### Scenario 4: Design-First Workflow
 ```bash
-/task-create
-/task-start
-/task-implement
-/task-test
-/task-review
-/task-complete
+/task-create "Refactor authentication system" priority:high
+/task-work TASK-054 --design-only
+# [Human reviews and approves plan]
+/task-work TASK-054 --implement-only
+/task-complete TASK-054
 ```
 
-### New Way (3 commands)
-```bash
-/task-create
-/task-work      # Does everything!
-/task-complete
-```
-
-See [Migration Guide](MIGRATION-GUIDE.md) for details.
-
-## 🎯 Decision Tree
+## Decision Tree
 
 ```
 Need to implement a task?
     ↓
-Is it user-facing with scenarios?
-    Yes → /task-work --mode=bdd
+Is it complex (multiple files, new patterns)?
+    Yes → /task-work --design-only (review plan first)
     No ↓
 Is it complex business logic?
     Yes → /task-work --mode=tdd
     No → /task-work (standard)
 ```
 
-## 📋 Essential Commands
+## Essential Commands
 
 ### Task Commands
 ```bash
-/task-create "name"        # Create task
-/task-work TASK-XXX       # Implement + test + verify
-/task-complete TASK-XXX   # Mark done
-/task-status              # View board
-```
-
-### Requirements Commands
-```bash
-/gather-requirements      # Interactive Q&A
-/formalize-ears          # Create EARS
-/generate-bdd            # Create scenarios
+/task-create "name" [priority:high|medium|low] [tags:tag1,tag2]
+/task-work TASK-XXX [--mode=standard|tdd] [--design-only|--implement-only]
+/task-complete TASK-XXX
+/task-status [TASK-XXX]
+/task-refine TASK-XXX
 ```
 
 ### Options for task-work
 ```bash
---mode=standard          # Default
---mode=tdd              # Test-driven
---mode=bdd              # Behavior-driven
---fix-only              # Just fix and test
---coverage-threshold=90 # Custom coverage
+--mode=standard          # Default: implementation + tests
+--mode=tdd              # Test-driven development cycle
+--design-only           # Planning only (complex tasks)
+--implement-only        # Implementation only (requires approved plan)
 ```
 
-## 🏆 Best Practices
+## Best Practices
 
-1. **Start with requirements** - Don't skip the specification phase
-2. **Choose the right mode** - TDD for logic, BDD for features
+1. **Keep tasks small** - 1-4 hour chunks work best
+2. **Choose the right mode** - TDD for complex logic, standard for straightforward features
 3. **Trust the process** - Let `/task-work` complete all phases
-4. **Fix immediately** - Use `--fix-only` for quick iterations
-5. **Keep tasks small** - 1-2 hour chunks work best
+4. **Use design-first for complex tasks** - Review plans before implementation
+5. **Review quality gates** - Don't skip architectural review feedback
 
-## 🚦 Quality Standards
+## Quality Standards
 
 All enforced automatically by `/task-work`:
 - ✅ 100% of tasks have tests
 - ✅ ≥80% code coverage
 - ✅ All tests must pass
-- ✅ Performance <30s
+- ✅ Architectural review (SOLID/DRY/YAGNI)
 - ✅ Proper documentation
 
-## 📚 Learning Path
-
-### For New Users
-1. **Read** [User Guide](AI-ENGINEER-USER-GUIDE.md) - Complete overview
-2. **Try** [Practical Examples](task-work-practical-example.md) - Real scenarios
-3. **Reference** [Quick Guide](../../.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md) - Commands
-
-### For Existing Users
-1. **Read** [Migration Guide](MIGRATION-GUIDE.md) - What's changed
-2. **Try** new `/task-work` command - See the difference
-3. **Adopt** development modes - TDD and BDD support
-
-## 🛠 Technology Support
+## Technology Stack Support
 
 Works with all major stacks:
 - **Python**: pytest, FastAPI, LangGraph
-- **TypeScript/React**: Vitest, Playwright
-- **.NET**: xUnit, NUnit, SpecFlow
-- **Java**: JUnit, Cucumber
-- **MAUI**: Platform testing
+- **TypeScript/React**: Vitest, Playwright, Next.js
+- **.NET MAUI**: xUnit, MVVM, platform testing
+- **.NET Microservices**: FastEndpoints, xUnit, FluentValidation
+- **TypeScript API**: NestJS, Jest, TypeORM
 
-## 💡 Key Benefits
+Stack-specific templates available via:
+```bash
+taskwright init react                  # React with TypeScript
+taskwright init python                 # Python with FastAPI
+taskwright init maui-appshell         # .NET MAUI AppShell
+taskwright init maui-navigationpage   # .NET MAUI NavigationPage
+taskwright init typescript-api        # NestJS TypeScript API
+taskwright init dotnet-microservice   # .NET microservices
+taskwright init default               # Language-agnostic
+```
+
+## Key Benefits
 
 ### Developer Experience
-- **70% fewer commands** to remember
+- **Fewer commands** to remember (3-step workflow)
 - **50% faster** task completion
 - **Zero** manual quality checks
 
 ### Code Quality
-- **100%** test coverage enforcement
-- **Automatic** quality gates
-- **Built-in** TDD/BDD support
+- **Automatic** architectural review
+- **100%** test enforcement
+- **Built-in** TDD support
 
 ### Team Collaboration
 - **Clear** task states
 - **Transparent** progress
 - **Consistent** standards
 
-## 🆘 Getting Help
+## Getting Help
 
 ### Quick Help
 ```bash
 /task-work --help           # Command help
-/task-work --examples       # See examples
-/task-work --mode-help=tdd  # Mode details
+/task-status               # View all tasks
 ```
 
 ### Documentation
-- [Complete User Guide](AI-ENGINEER-USER-GUIDE.md)
-- [Migration Guide](MIGRATION-GUIDE.md)
-- [Command Reference](COMMAND_USAGE_GUIDE.md)
-- [Quick Reference](../../.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md)
+- [Quick Reference](QUICK_REFERENCE.md) - Command cheat sheet
+- [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
+- [MCP Optimization Guide](mcp-optimization-guide.md) - Library docs integration
 
 ### Common Issues
 | Problem | Solution |
 |---------|----------|
-| Tests failing | Use `/task-work --fix-only` |
+| Tests failing | `/task-work` auto-fixes (up to 3 attempts) |
 | Wrong mode | Re-run with different `--mode` |
-| Low coverage | Check uncovered lines |
+| Low coverage | Check uncovered lines in test report |
 
-## 🎉 Start Building!
+## Start Building!
 
-You now have everything you need to use AI Engineer v2.0:
+You now have everything you need to use Taskwright:
 
-1. **Create** tasks with clear requirements
+1. **Create** tasks with clear descriptions
 2. **Work** on them with your preferred mode
 3. **Complete** with confidence knowing quality is built-in
 
-The unified workflow ensures every piece of code is tested, verified, and ready for production.
+The workflow ensures every piece of code is tested, reviewed, and ready for production.
+
+> **Need Formal Requirements?**
+> RequireKit adds EARS notation, BDD scenarios, and epic/feature hierarchy.
+> See: https://github.com/requirekit/require-kit
 
 ---
 
-*"Implementation and testing are inseparable" - Start with `/task-create` and let `/task-work` handle the rest!*
+*"Quality without ceremony" - Start with `/task-create` and let `/task-work` handle the rest!*

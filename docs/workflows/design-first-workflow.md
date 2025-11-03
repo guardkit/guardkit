@@ -19,7 +19,7 @@
 # Step 1: Design-only (stops at approval checkpoint)
 /task-work TASK-042 --design-only
 
-# → System executes Phases 1-2.8
+# → System executes Phases 2-2.8
 # → Creates implementation plan
 # → Stops at human checkpoint
 # → Task moves to design_approved state
@@ -49,9 +49,11 @@
 
 **Purpose**: Execute design phases only, stop at approval checkpoint
 
-**Phases Executed**: 1 → 2 → 2.5A → 2.5B → 2.7 → 2.8
+**Phases Executed**: 2 → 2.5A → 2.5B → 2.7 → 2.8
 
-**Phases Skipped**: 3 (Implementation), 4 (Testing), 4.5 (Fix Loop), 5 (Code Review)
+**Phases Skipped**: 1 (RequireKit Only), 3 (Implementation), 4 (Testing), 4.5 (Fix Loop), 5 (Code Review)
+
+> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
 
 **Outcome**: Task moves to `design_approved` state with saved implementation plan
 
@@ -60,7 +62,6 @@
 /task-work TASK-006 --design-only
 
 # System output:
-Phase 1: Requirements Analysis ✅
 Phase 2: Implementation Planning ✅
 Phase 2.5A: Pattern Suggestion ✅
 Phase 2.5B: Architectural Review ✅ (Score: 85/100)
@@ -652,7 +653,7 @@ Design-first workflow is ideal for tasks spanning multiple days or work sessions
 # Lead architect designs solution
 /task-work TASK-042 --design-only
 
-# Phase 1-2.8 execute (design phases only)
+# Phase 2-2.8 execute (design phases only)
 # Architect reviews:
 # - Complexity: 7/10 (complex)
 # - Architectural score: 88/100

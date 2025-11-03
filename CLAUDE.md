@@ -33,7 +33,7 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 
 ### Design-First Workflow (Complex Tasks)
 ```bash
-/task-work TASK-XXX --design-only      # Phases 1-2.8, stops at checkpoint
+/task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
 # [Review and approve implementation plan]
 /task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
 ```
@@ -123,9 +123,9 @@ Converts design system files (Figma, Zeplin) into components with **zero scope c
 Optional flags for complex tasks requiring upfront design approval.
 
 **Flags:**
-- `--design-only`: Phases 1-2.8, stops at checkpoint, saves plan
+- `--design-only`: Phases 2-2.8, stops at checkpoint, saves plan
 - `--implement-only`: Phases 3-5, requires `design_approved` state
-- (default): All phases 1-5 in sequence
+- (default): All phases 2-5.5 in sequence
 
 **Use `--design-only` when:**
 - Complexity ≥7
@@ -331,7 +331,7 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 # Create task
 /task-create "Add user authentication"
 
-# Work on it (Phases 1-5.5 automatic)
+# Work on it (Phases 2-5.5 automatic)
 /task-work TASK-001
 
 # Complete
@@ -355,7 +355,7 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 /task-complete TASK-002
 ```
 
-**See**: [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md)
+**See**: [Taskwright Workflow](docs/guides/taskwright-workflow.md)
 
 ## Iterative Refinement
 
@@ -372,7 +372,7 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 - Architecture changes
 - Major refactoring
 
-**See**: [Iterative Refinement Guide](docs/guides/iterative-refinement-guide.md)
+**See**: [Taskwright Workflow - Iterative Refinement](docs/guides/taskwright-workflow.md#37-iterative-refinement)
 
 ## Markdown Implementation Plans
 
@@ -400,11 +400,12 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 - Want AI assistance with human oversight
 - Small-to-medium projects
 
-### Upgrade to Full Agentecflow When:
-- Need formal requirements management (EARS notation, BDD with require-kit)
-- Multi-epic projects (10+ features)
-- Team size >5 developers
-- Enterprise compliance required
-- PM tool integration needed (Jira, Linear, Azure DevOps, GitHub)
+### Use RequireKit When:
+- Need formal requirements management (EARS notation, BDD scenarios)
+- Need epic/feature hierarchy
+- Need requirements traceability matrices
+- Need PM tool integration (Jira, Linear, Azure DevOps, GitHub)
 
-**Full System**: For complete requirements management, epic/feature hierarchy, and PM tool sync, see the [agentecflow_platform](../agentecflow_platform) repository.
+## Need Requirements Management?
+
+For formal requirements (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.

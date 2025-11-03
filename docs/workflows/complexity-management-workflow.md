@@ -15,7 +15,7 @@
 
 ```bash
 # System automatically evaluates complexity when creating tasks
-/task-create "Implement user authentication" requirements:[REQ-001]
+/task-create "Implement user authentication"
 
 # If complex (≥7), system suggests breakdown:
 # → Accept breakdown: 5 smaller tasks created
@@ -46,13 +46,15 @@ The system evaluates complexity at TWO distinct stages with different purposes:
 
 **Purpose**: Decide if task should be split before implementation begins
 
-**Input**: Task title, description, requirements (EARS notation)
+**Input**: Task title, description, acceptance criteria
 
 **Threshold**: Complexity ≥7 triggers split recommendations
 
+> **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+
 **Example**:
 ```bash
-/task-create "Implement event sourcing for orders" requirements:[REQ-042,REQ-043]
+/task-create "Implement event sourcing for orders"
 
 # System evaluates:
 ESTIMATED COMPLEXITY: 9/10 (Very Complex)

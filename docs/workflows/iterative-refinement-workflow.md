@@ -146,8 +146,9 @@ Need to modify completed task?
 - `"refinement description"`: Brief description of change (1-2 sentences)
 
 **Flags:**
-- `--with-context`: Include epic/feature context (verbose mode)
 - `--dry-run`: Preview changes without applying (coming soon)
+
+> **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
 
 ### Examples
 
@@ -197,20 +198,22 @@ Need to modify completed task?
 # 4. Run tests (ensure behavior unchanged)
 ```
 
-### With Context (Verbose Mode)
+### Multiple Related Tasks
+
+When refinement affects multiple related tasks, review them together:
 
 ```bash
-/task-refine TASK-042 "Add logging" --with-context
+/task-status TASK-040 TASK-041 TASK-042 TASK-043
 
-# Additional context loaded:
-# - Epic: EPIC-001 (User Management)
-# - Feature: FEAT-003 (Authentication)
-# - Related requirements: REQ-001, REQ-002
-# - Related tasks: TASK-040, TASK-041, TASK-043
+# Review related tasks before refining
+# Ensure consistency across related implementations
+/task-refine TASK-042 "Add logging to match TASK-040 pattern"
 
-# Benefit: Better understanding of broader context
-# Use when: Refinement may affect related tasks
+# Benefit: Consistent patterns across related tasks
+# Use when: Refinement may affect related implementations
 ```
+
+> **Note:** For formal feature/epic hierarchies and requirements traceability, see [RequireKit](https://github.com/requirekit/require-kit).
 
 ## Multiple Refinement Cycles
 

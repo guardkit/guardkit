@@ -17,7 +17,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ```bash
 # Install
-git clone https://github.com/yourusername/taskwright.git
+git clone https://github.com/taskwright-dev/taskwright.git
 cd taskwright
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
@@ -72,18 +72,20 @@ Automatic complexity scoring (0-10 scale):
 
 ### Don't Use When:
 - Just want a code editor (use plain Claude Code)
-- Need formal requirements management (see note below)
+- Need formal requirements management (use RequireKit instead)
 - Enterprise compliance workflows required
 - Multi-epic portfolio management (10+ features, 5+ devs)
 
-**Note**: For full requirements management (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see the complete Agentecflow system at [agentecflow_platform](../agentecflow_platform).
+## Need Requirements Management?
+
+For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.
 
 ## Available Commands
 
 ### Core Workflow
 ```bash
 /task-create "Title" [priority:high|medium|low]
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only] [--implement-only]
+/task-work TASK-XXX [--mode=standard|tdd] [--design-only] [--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
 /task-refine TASK-XXX  # Lightweight improvements
@@ -92,12 +94,13 @@ Automatic complexity scoring (0-10 scale):
 ### Development Modes
 - **Standard** (default): Implementation + tests together
 - **TDD**: Test-Driven Development (Red → Green → Refactor)
-- **BDD**: Behavior-Driven Development (requires BDD scenarios)
+
+**Note**: For BDD mode (Behavior-Driven Development with Gherkin scenarios), use [RequireKit](https://github.com/requirekit/require-kit).
 
 ### Design-First Workflow
 ```bash
 # Complex task? Split design and implementation
-/task-work TASK-XXX --design-only      # Phases 1-2.8, stops at checkpoint
+/task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
 # [Review and approve plan]
 /task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
 ```
@@ -197,7 +200,7 @@ BACKLOG
 ## Documentation
 
 ### Getting Started
-- [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md) - Complete workflow guide
+- [Taskwright Workflow](docs/guides/taskwright-workflow.md) - Complete workflow guide
 - [Complexity Management](docs/workflows/complexity-management-workflow.md) - Understanding complexity evaluation
 - [Design-First Workflow](docs/workflows/design-first-workflow.md) - When and how to split design/implementation
 
@@ -222,7 +225,6 @@ BACKLOG
 /task-work TASK-001
 
 # Output:
-# Phase 1: Requirements Analysis ✅
 # Phase 2: Implementation Planning ✅
 # Phase 2.5: Architectural Review (Score: 75/100) ✅
 # Phase 2.7: Complexity Evaluation (3/10 - Simple) ✅
@@ -249,7 +251,7 @@ Total time: ~2 minutes. Zero manual quality checks.
 4. Quality gates pass automatically
 5. Submit PR
 
-See [Contributing Guide](CONTRIBUTING.md) for details.
+All contributions go through the same quality gates as regular development tasks.
 
 ## Conductor Integration
 
@@ -264,10 +266,8 @@ Fully compatible with [Conductor.build](https://conductor.build) for parallel de
 **Setup:**
 ```bash
 ./installer/scripts/install.sh  # Creates symlinks automatically
-agentecflow doctor              # Verify integration
+taskwright doctor              # Verify integration
 ```
-
-See [Conductor Integration](agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md) for details.
 
 ## Testing by Stack
 
@@ -296,7 +296,7 @@ MIT License - See LICENSE file for details
 
 ## Support
 
-- Check [Agentecflow Lite Workflow](docs/guides/agentecflow-lite-workflow.md)
+- Check [Taskwright Workflow](docs/guides/taskwright-workflow.md)
 - Read [Complexity Management](docs/workflows/complexity-management-workflow.md)
 - See [Design-First Workflow](docs/workflows/design-first-workflow.md)
 - Create a GitHub issue

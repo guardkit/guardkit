@@ -1,0 +1,150 @@
+{
+  "task_id": "TASK-024",
+  "title": "Audit core user guides - Remove RequireKit features",
+  "version": 1,
+  "generated_at": "2025-11-03T21:05:00Z",
+  "technology_stack": "default",
+  "architecture": "Three-tier documentation structure",
+  "files": [
+    {
+      "path": "docs/guides/GETTING-STARTED.md",
+      "action": "modify",
+      "purpose": "Focus on 5-minute quickstart with Taskwright-only features",
+      "changes": [
+        "Remove RequireKit-specific workflow references",
+        "Remove EARS notation examples",
+        "Show simple task creation -> work -> complete flow",
+        "Add RequireKit callout at end of Next Steps section"
+      ],
+      "estimated_lines": 650
+    },
+    {
+      "path": "docs/guides/QUICK_REFERENCE.md",
+      "action": "modify",
+      "purpose": "Remove RequireKit command parameters, keep simple Taskwright syntax only",
+      "changes": [
+        "Remove epic, feature, requirements, bdd parameters from syntax tables",
+        "Keep simple parameter examples only (priority, tags)",
+        "Add 'Extended Features' section pointing to RequireKit",
+        "Update command examples to use Taskwright-only syntax"
+      ],
+      "estimated_lines": 700
+    },
+    {
+      "path": "docs/guides/taskwright-workflow.md",
+      "action": "modify",
+      "purpose": "Update workflow diagrams and remove Requirements Analysis phase",
+      "changes": [
+        "Update workflow diagrams to show Taskwright-only states",
+        "Remove Requirements Analysis phase references",
+        "Keep quality gates and test enforcement sections",
+        "Fix GitHub URLs to correct repositories",
+        "Ensure workflow diagrams accurately reflect Taskwright flow"
+      ],
+      "estimated_lines": 650
+    }
+  ],
+  "patterns": [
+    "Documentation cleanup pattern",
+    "Feature flag removal pattern",
+    "Cross-file consistency pattern"
+  ],
+  "dependencies": [],
+  "new_packages": [],
+  "risks": [
+    {
+      "category": "Content Accuracy",
+      "severity": "medium",
+      "description": "Extensive RequireKit contamination across guides; risk of removing too much content or breaking references",
+      "mitigation": "Follow acceptance criteria exactly; use grep to find all RequireKit mentions before editing"
+    },
+    {
+      "category": "Broken References",
+      "severity": "medium",
+      "description": "Cross-references between guides may break if not updated consistently",
+      "mitigation": "Test each guide step-by-step after modifications; verify all internal links"
+    },
+    {
+      "category": "GitHub URL Changes",
+      "severity": "low",
+      "description": "Need to verify correct repository URLs for external links",
+      "mitigation": "Confirm correct GitHub repository URLs before finalizing"
+    }
+  ],
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "title": "Audit GETTING-STARTED.md",
+      "tasks": [
+        "Find all RequireKit references using grep",
+        "Identify BDD, EARS, epic/feature mentions",
+        "Create focused 5-minute quickstart section",
+        "Add RequireKit callout"
+      ],
+      "estimated_minutes": 90
+    },
+    {
+      "phase": 2,
+      "title": "Audit QUICK_REFERENCE.md",
+      "tasks": [
+        "Extract command syntax tables",
+        "Remove epic, feature, requirements, bdd parameters",
+        "Create Extended Features section",
+        "Update all examples"
+      ],
+      "estimated_minutes": 80
+    },
+    {
+      "phase": 3,
+      "title": "Audit taskwright-workflow.md",
+      "tasks": [
+        "Update workflow diagrams (Markdown or Mermaid)",
+        "Remove Requirements Analysis phase",
+        "Fix GitHub URLs",
+        "Verify state transitions"
+      ],
+      "estimated_minutes": 110
+    },
+    {
+      "phase": 4,
+      "title": "Validation & Testing",
+      "tasks": [
+        "Follow each guide step-by-step without RequireKit",
+        "Verify all command examples execute",
+        "Check all links (internal and external)",
+        "Validate code blocks syntax highlighting"
+      ],
+      "estimated_minutes": 100
+    }
+  ],
+  "estimated_total_duration_minutes": 380,
+  "estimated_total_duration_hours": 6.3,
+  "loc_estimate": {
+    "total_lines": 2000,
+    "new_lines": 150,
+    "deleted_lines": 400,
+    "modified_lines": 1450
+  },
+  "quality_gates": [
+    {
+      "gate": "Content Accuracy",
+      "validation": "Manual review against acceptance criteria"
+    },
+    {
+      "gate": "Functional Verification",
+      "validation": "Walk through each guide step-by-step"
+    },
+    {
+      "gate": "Link Verification",
+      "validation": "Check all internal and external links"
+    },
+    {
+      "gate": "Syntax Validation",
+      "validation": "Verify code block syntax highlighting"
+    }
+  ],
+  "test_strategy": "Manual documentation validation",
+  "approval_status": "pending",
+  "approved_by": null,
+  "approved_at": null
+}

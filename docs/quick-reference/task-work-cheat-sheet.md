@@ -14,8 +14,8 @@ The `/task-work` command executes the complete implementation workflow with auto
 ### Available Flags
 | Flag | Purpose | Phases Executed |
 |------|---------|-----------------|
-| (none) | Standard workflow | Phases 1-5.5 (all phases) |
-| `--design-only` | Design approval only | Phases 1-2.8 (stop at checkpoint) |
+| (none) | Standard workflow | Phases 2-5.5 (all phases) |
+| `--design-only` | Design approval only | Phases 2-2.8 (stop at checkpoint) |
 | `--implement-only` | Implementation only | Phases 3-5.5 (use saved plan) |
 | `--micro` | Trivial task fast-track | Phases 1, 3, 4, 4.5, 5 (simplified) |
 
@@ -87,7 +87,7 @@ Auto-detection suggests --micro when task qualifies (10-second timeout).
 /task-work TASK-042
 
 # System executes all phases:
-# - Phases 1-2.8: Planning and design
+# - Phases 2-2.8: Planning and design
 # - Phase 2.8 checkpoint: Auto-proceed (1-3), optional (4-6), mandatory (7-10)
 # - Phases 3-5.5: Implementation, testing, review, audit
 ```

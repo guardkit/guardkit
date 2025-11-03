@@ -494,18 +494,13 @@ cat docs/state/{task_id}/plan_audit.json >> escalation_context.txt
 
 **Step 3: Create Escalation Issue**
 ```bash
-# For Jira users
-/task-sync TASK-XXX --escalate --assignee "senior-dev"
-
-# For Linear users
-linear issue create --title "Escalation: TASK-XXX" \
-  --description "$(cat escalation_context.txt)"
-
 # For GitHub users
 gh issue create --title "Escalation: TASK-XXX" \
   --body "$(cat escalation_context.txt)" \
   --label "escalation,blocked"
 ```
+
+> **Note:** For PM tool synchronization (Jira, Linear, Azure DevOps), see [RequireKit](https://github.com/requirekit/require-kit) which provides automatic issue sync.
 
 **Step 4: Await Resolution**
 - Task remains in BLOCKED state

@@ -23,7 +23,7 @@ This is an AI-powered task workflow system with built-in quality gates that prev
 ## Workflow Overview
 
 1. **Create Task**: Define what needs to be done
-2. **Work on Task**: AI implements with quality gates (Phases 1-5.5)
+2. **Work on Task**: AI implements with quality gates (Phases 2-5.5)
 3. **Review**: Human reviews approved implementation
 4. **Complete**: Archive and track
 

@@ -1,0 +1,80 @@
+{
+  "task_id": "TASK-024",
+  "title": "Audit core user guides - Remove RequireKit features",
+  "calculated_at": "2025-11-03T21:05:00Z",
+  "calculation_method": "ComplexityCalculator v1.0",
+  "total_score": 6,
+  "complexity_level": "medium",
+  "review_mode": "QUICK_OPTIONAL",
+  "review_mode_reasoning": "Complexity score 6 (medium) + no force triggers = QUICK_OPTIONAL mode with 10-second timeout and optional escalation",
+  "factors": {
+    "file_complexity": {
+      "score": 1.5,
+      "max_score": 3,
+      "description": "3 files (within 3-5 range: 1.5 points)",
+      "calculation": "3 files = 1.5 points"
+    },
+    "pattern_familiarity": {
+      "score": 0.5,
+      "max_score": 2,
+      "description": "Documentation cleanup is well-known pattern (0.5 points for all familiar)",
+      "calculation": "All familiar patterns = 0.5 points"
+    },
+    "risk_level": {
+      "score": 1.5,
+      "max_score": 3,
+      "description": "Medium risk: extensive RequireKit contamination, risk of removing too much content or breaking references",
+      "calculation": "Medium risk = 1.5 points"
+    },
+    "dependency_complexity": {
+      "score": 0,
+      "max_score": 2,
+      "description": "Zero new dependencies (documentation task only)",
+      "calculation": "0 new dependencies = 0 points"
+    }
+  },
+  "forced_review_triggers": [],
+  "force_triggers_detected": false,
+  "force_trigger_analysis": {
+    "security_keywords": "none",
+    "breaking_changes": "no (documentation only)",
+    "schema_changes": "no",
+    "database_migrations": "no",
+    "public_api_changes": "no",
+    "user_flag_review": "no",
+    "hotfix_tag": "no"
+  },
+  "estimated_duration": {
+    "hours": 6.3,
+    "minutes": 380,
+    "confidence": "medium",
+    "reasoning": "3 large files with extensive content to audit; includes validation and testing phase"
+  },
+  "effort_indicators": {
+    "lines_of_code": 2000,
+    "files_affected": 3,
+    "new_files": 0,
+    "deleted_files": 0,
+    "modified_files": 3,
+    "estimated_effort_category": "medium (4-8 hours)"
+  },
+  "review_routing": {
+    "auto_proceed": false,
+    "quick_optional": true,
+    "full_required": false,
+    "decision_logic": "Score 6 falls in medium range (4-6) = QUICK_OPTIONAL with timeout option"
+  },
+  "quality_gate_status": {
+    "architectural_review": "optional (not a code task)",
+    "test_coverage": "N/A (documentation task)",
+    "compilation": "N/A (documentation task)",
+    "code_style": "N/A (documentation task)",
+    "documentation_validation": "REQUIRED - manual review required"
+  },
+  "phase_2_7_completion": {
+    "status": "complete",
+    "timestamp": "2025-11-03T21:05:00Z",
+    "next_phase": "Phase 2.8 (Quick Optional Review)",
+    "proceed_to_next": true
+  }
+}

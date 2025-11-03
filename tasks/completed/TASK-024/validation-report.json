@@ -1,0 +1,311 @@
+{
+  "summary": {
+    "total_checks": 20,
+    "passed": 19,
+    "failed": 1,
+    "pass_rate": "95.0%",
+    "critical_errors": 1,
+    "warnings": 0,
+    "status": "FAILED"
+  },
+  "by_category": {
+    "Markdown Syntax": {
+      "passed": 4,
+      "failed": 0,
+      "checks": [
+        {
+          "name": "Code block closure: README.md",
+          "passed": true,
+          "severity": "info",
+          "details": "All code blocks properly closed (12 blocks)"
+        },
+        {
+          "name": "Link format: README.md",
+          "passed": true,
+          "severity": "info",
+          "details": "Found 16 properly formatted links"
+        },
+        {
+          "name": "Code block closure: CLAUDE.md",
+          "passed": true,
+          "severity": "info",
+          "details": "All code blocks properly closed (14 blocks)"
+        },
+        {
+          "name": "Link format: CLAUDE.md",
+          "passed": true,
+          "severity": "info",
+          "details": "Found 13 properly formatted links"
+        }
+      ]
+    },
+    "Link Validation": {
+      "passed": 2,
+      "failed": 1,
+      "checks": [
+        {
+          "name": "Total links found",
+          "passed": true,
+          "severity": "info",
+          "details": "Total: 29, External: 7, Internal: 22"
+        },
+        {
+          "name": "Broken internal links",
+          "passed": false,
+          "severity": "error",
+          "details": "Found 5 broken links: docs/guides/agentecflow-lite-workflow.md in README.md; CONTRIBUTING.md in README.md; docs/guides/agentecflow-lite-workflow.md in README.md; docs/guides/agentecflow-lite-workflow.md in CLAUDE.md; docs/guides/iterative-refinement-guide.md in CLAUDE.md"
+        },
+        {
+          "name": "External URL format",
+          "passed": true,
+          "severity": "info",
+          "details": "All 7 external URLs are properly formatted"
+        }
+      ]
+    },
+    "Command Syntax": {
+      "passed": 2,
+      "failed": 0,
+      "checks": [
+        {
+          "name": "Valid flag values",
+          "passed": true,
+          "severity": "info",
+          "details": "All flag values are valid (--mode=standard|tdd only)"
+        },
+        {
+          "name": "Command structure",
+          "passed": true,
+          "severity": "info",
+          "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'taskwright', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
+        }
+      ]
+    },
+    "Feature Accuracy": {
+      "passed": 3,
+      "failed": 0,
+      "checks": [
+        {
+          "name": "Phase numbering",
+          "passed": true,
+          "severity": "info",
+          "details": "All expected phases documented: [1.0, 2.0, 2.5, 2.7, 2.8, 3.0, 4.0, 4.5, 5.0, 5.5]"
+        },
+        {
+          "name": "RequireKit scope",
+          "passed": true,
+          "severity": "info",
+          "details": "RequireKit properly documented only in upgrade/upgrade path sections"
+        },
+        {
+          "name": "Quality gate thresholds",
+          "passed": true,
+          "severity": "info",
+          "details": "Coverage (80%) and Branch (75%) thresholds consistent"
+        }
+      ]
+    },
+    "Consistency": {
+      "passed": 6,
+      "failed": 0,
+      "checks": [
+        {
+          "name": "Terminology: Architectural Review",
+          "passed": true,
+          "severity": "info",
+          "details": "Found in both files (README: 6, CLAUDE.md: 6 mentions)"
+        },
+        {
+          "name": "Terminology: Test Enforcement",
+          "passed": true,
+          "severity": "info",
+          "details": "Found in both files (README: 8, CLAUDE.md: 11 mentions)"
+        },
+        {
+          "name": "Terminology: Design-First",
+          "passed": true,
+          "severity": "info",
+          "details": "Found in both files (README: 6, CLAUDE.md: 10 mentions)"
+        },
+        {
+          "name": "Project structure documentation",
+          "passed": true,
+          "severity": "info",
+          "details": "Project structure documented in both files"
+        },
+        {
+          "name": "Template documentation",
+          "passed": true,
+          "severity": "info",
+          "details": "Templates documented in both README and CLAUDE.md"
+        },
+        {
+          "name": "Command examples",
+          "passed": true,
+          "severity": "info",
+          "details": "Commands documented in both files (README: 16, CLAUDE.md: 20)"
+        }
+      ]
+    },
+    "Compilation": {
+      "passed": 2,
+      "failed": 0,
+      "checks": [
+        {
+          "name": "Markdown validity: README.md",
+          "passed": true,
+          "severity": "info",
+          "details": "No syntax errors detected"
+        },
+        {
+          "name": "Markdown validity: CLAUDE.md",
+          "passed": true,
+          "severity": "info",
+          "details": "No syntax errors detected"
+        }
+      ]
+    }
+  },
+  "details": [
+    {
+      "category": "Markdown Syntax",
+      "check": "Code block closure: README.md",
+      "passed": true,
+      "severity": "info",
+      "details": "All code blocks properly closed (12 blocks)"
+    },
+    {
+      "category": "Markdown Syntax",
+      "check": "Link format: README.md",
+      "passed": true,
+      "severity": "info",
+      "details": "Found 16 properly formatted links"
+    },
+    {
+      "category": "Markdown Syntax",
+      "check": "Code block closure: CLAUDE.md",
+      "passed": true,
+      "severity": "info",
+      "details": "All code blocks properly closed (14 blocks)"
+    },
+    {
+      "category": "Markdown Syntax",
+      "check": "Link format: CLAUDE.md",
+      "passed": true,
+      "severity": "info",
+      "details": "Found 13 properly formatted links"
+    },
+    {
+      "category": "Link Validation",
+      "check": "Total links found",
+      "passed": true,
+      "severity": "info",
+      "details": "Total: 29, External: 7, Internal: 22"
+    },
+    {
+      "category": "Link Validation",
+      "check": "Broken internal links",
+      "passed": false,
+      "severity": "error",
+      "details": "Found 5 broken links: docs/guides/agentecflow-lite-workflow.md in README.md; CONTRIBUTING.md in README.md; docs/guides/agentecflow-lite-workflow.md in README.md; docs/guides/agentecflow-lite-workflow.md in CLAUDE.md; docs/guides/iterative-refinement-guide.md in CLAUDE.md"
+    },
+    {
+      "category": "Link Validation",
+      "check": "External URL format",
+      "passed": true,
+      "severity": "info",
+      "details": "All 7 external URLs are properly formatted"
+    },
+    {
+      "category": "Command Syntax",
+      "check": "Valid flag values",
+      "passed": true,
+      "severity": "info",
+      "details": "All flag values are valid (--mode=standard|tdd only)"
+    },
+    {
+      "category": "Command Syntax",
+      "check": "Command structure",
+      "passed": true,
+      "severity": "info",
+      "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'taskwright', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
+    },
+    {
+      "category": "Feature Accuracy",
+      "check": "Phase numbering",
+      "passed": true,
+      "severity": "info",
+      "details": "All expected phases documented: [1.0, 2.0, 2.5, 2.7, 2.8, 3.0, 4.0, 4.5, 5.0, 5.5]"
+    },
+    {
+      "category": "Feature Accuracy",
+      "check": "RequireKit scope",
+      "passed": true,
+      "severity": "info",
+      "details": "RequireKit properly documented only in upgrade/upgrade path sections"
+    },
+    {
+      "category": "Feature Accuracy",
+      "check": "Quality gate thresholds",
+      "passed": true,
+      "severity": "info",
+      "details": "Coverage (80%) and Branch (75%) thresholds consistent"
+    },
+    {
+      "category": "Consistency",
+      "check": "Terminology: Architectural Review",
+      "passed": true,
+      "severity": "info",
+      "details": "Found in both files (README: 6, CLAUDE.md: 6 mentions)"
+    },
+    {
+      "category": "Consistency",
+      "check": "Terminology: Test Enforcement",
+      "passed": true,
+      "severity": "info",
+      "details": "Found in both files (README: 8, CLAUDE.md: 11 mentions)"
+    },
+    {
+      "category": "Consistency",
+      "check": "Terminology: Design-First",
+      "passed": true,
+      "severity": "info",
+      "details": "Found in both files (README: 6, CLAUDE.md: 10 mentions)"
+    },
+    {
+      "category": "Consistency",
+      "check": "Project structure documentation",
+      "passed": true,
+      "severity": "info",
+      "details": "Project structure documented in both files"
+    },
+    {
+      "category": "Consistency",
+      "check": "Template documentation",
+      "passed": true,
+      "severity": "info",
+      "details": "Templates documented in both README and CLAUDE.md"
+    },
+    {
+      "category": "Consistency",
+      "check": "Command examples",
+      "passed": true,
+      "severity": "info",
+      "details": "Commands documented in both files (README: 16, CLAUDE.md: 20)"
+    },
+    {
+      "category": "Compilation",
+      "check": "Markdown validity: README.md",
+      "passed": true,
+      "severity": "info",
+      "details": "No syntax errors detected"
+    },
+    {
+      "category": "Compilation",
+      "check": "Markdown validity: CLAUDE.md",
+      "passed": true,
+      "severity": "info",
+      "details": "No syntax errors detected"
+    }
+  ]
+}

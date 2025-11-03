@@ -9,9 +9,11 @@ Design-first workflow splits task execution into separate design approval and im
 ### Workflow Flags
 | Flag | Purpose | Phases | End State |
 |------|---------|--------|-----------|
-| `--design-only` | Design approval | 1-2.8 | DESIGN_APPROVED |
+| `--design-only` | Design approval | 2-2.8 | DESIGN_APPROVED |
 | `--implement-only` | Implementation | 3-5.5 | IN_REVIEW or BLOCKED |
-| (no flags) | Complete workflow | 1-5.5 | IN_REVIEW or BLOCKED |
+| (no flags) | Complete workflow | 2-5.5 | IN_REVIEW or BLOCKED |
+
+> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly.
 
 ### State Machine
 ```
@@ -91,7 +93,7 @@ BACKLOG
 /task-work TASK-042 --design-only
 
 # Output:
-Phase 1-2: Requirements and planning
+Phase 2: Implementation planning
 Phase 2.5B: Architectural review (Score: 85/100)
 Phase 2.7: Complexity (7/10 - Complex)
 Phase 2.8: Human checkpoint
