@@ -246,7 +246,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
@@ -465,7 +465,7 @@ EOF
     fi
 
     # Create stack-agents directory structure even if no agents
-    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
 }
 
 # Create the main CLI executables
@@ -501,13 +501,14 @@ print_help() {
     echo "  maui                 - .NET MAUI mobile app"
     echo "  dotnet-fastendpoints - .NET API with FastEndpoints + REPR pattern"
     echo "  dotnet-aspnetcontroller - .NET API with Controllers + MVC pattern"
+    echo "  dotnet-minimalapi    - .NET Minimal API with vertical slices"
     echo "  fullstack            - React + Python"
     echo "  typescript-api       - NestJS TypeScript backend API"
     echo ""
     echo "Examples:"
     echo "  taskwright-init                    # Interactive setup"
     echo "  taskwright-init react              # Initialize with React template"
-    echo "  taskwright-init dotnet-aspnetcontroller # Initialize with .NET Controllers API"
+    echo "  taskwright-init dotnet-minimalapi  # Initialize with .NET Minimal API"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -568,7 +569,7 @@ print_help() {
     echo "Examples:"
     echo "  taskwright init                    # Interactive initialization"
     echo "  taskwright init react              # Initialize with React template"
-    echo "  taskwright init dotnet-aspnetcontroller # Initialize with .NET Controllers API"
+    echo "  taskwright init dotnet-minimalapi  # Initialize with .NET Minimal API"
     echo "  taskwright doctor                  # Check installation health"
 }
 
@@ -1093,6 +1094,9 @@ print_summary() {
                 dotnet-aspnetcontroller)
                     echo "  • $name - .NET API with Controllers + MVC pattern"
                     ;;
+                dotnet-minimalapi)
+                    echo "  • $name - .NET Minimal API with vertical slices"
+                    ;;
                 fullstack)
                     echo "  • $name - React + Python"
                     ;;
@@ -1118,7 +1122,7 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-aspnetcontroller"
+    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-minimalapi"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"

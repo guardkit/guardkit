@@ -135,6 +135,7 @@ Choose your template during initialization:
 | **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM | Mobile (page-based) |
 | **dotnet-fastendpoints** | .NET + FastEndpoints + REPR pattern | .NET APIs (REPR) |
 | **dotnet-aspnetcontroller** | .NET + Controllers + MVC pattern + ErrorOr | .NET APIs (MVC) |
+| **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (Minimal) |
 | **default** | Language-agnostic | Any other stack |
 
 See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.

@@ -1,0 +1,24 @@
+using ErrorOr;
+
+namespace {{Namespace}}.Domain;
+
+/// <summary>
+/// Domain-specific error definitions
+/// </summary>
+public static class DomainErrors
+{
+    public static class {{Feature}}
+    {
+        public static Error NotFound(int id) => Error.NotFound(
+            "{{Feature}}.NotFound",
+            $"{{Feature}} with ID {id} was not found");
+
+        public static Error AlreadyExists(string identifier) => Error.Conflict(
+            "{{Feature}}.AlreadyExists",
+            $"{{Feature}} with identifier '{identifier}' already exists");
+
+        public static Error InvalidData(string message) => Error.Validation(
+            "{{Feature}}.InvalidData",
+            message);
+    }
+}

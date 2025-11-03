@@ -489,7 +489,38 @@ public class WeatherEndpointTests : IClassFixture<WebApplicationFactory<Program>
 
 ---
 
-## 5. Recommendations
+## 5. Implementation Status
+
+### Completed Templates
+
+- **dotnet-fastendpoints** (TASK-038): ✅ Completed 2025-11-03
+  - Renamed from dotnet-microservice
+  - FastEndpoints + REPR pattern + Either monad
+  - Vertical slice architecture
+
+- **dotnet-aspnetcontroller** (TASK-039): ✅ Completed 2025-11-03
+  - Traditional ASP.NET Core Controllers
+  - MVC pattern + ErrorOr
+  - Layered architecture
+
+- **dotnet-minimalapi** (TASK-040): ✅ Completed 2025-11-03
+  - .NET 8+ Minimal APIs
+  - Vertical slices + Route groups + Endpoint filters
+  - TypedResults + ErrorOr pattern
+
+### Template Comparison Table
+
+| Feature | FastEndpoints | Controllers | Minimal API |
+|---------|--------------|-------------|-------------|
+| Status | ✅ Complete | ✅ Complete | ✅ Complete |
+| Best For | CQRS, DDD | Enterprise | Microservices |
+| Ceremony | Low | Medium | Lowest |
+| Performance | High | Medium | Highest |
+| Organization | Vertical Slices | Layered | Flexible |
+
+---
+
+## 6. Recommendations
 
 ### Template Naming
 
