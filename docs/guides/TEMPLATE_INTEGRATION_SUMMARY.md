@@ -37,16 +37,38 @@ This document summarizes the integration of learnings from production projects i
 - `PATTERNS.md` - New file with detailed implementation patterns
 - Template files for hooks, components, services, and tests
 
-### 3. .NET Microservice Stack (New)
-**Location**: `.claude/stacks/dotnet-microservice/` and `installer/global/templates/dotnet-microservice/`
+### 3. .NET API Stacks (Three Templates)
+
+#### 3a. FastEndpoints Stack
+**Location**: `installer/global/templates/dotnet-fastendpoints/`
 
 **Key Patterns from PLA System**:
-- **Either Monad Pattern** via LanguageExt for functional error handling
+- **ErrorOr Pattern** for functional error handling
 - **FastEndpoints** with REPR pattern (not traditional controllers)
 - **OpenTelemetry** full observability stack
 - **Domain-Driven Design** with clean architecture
 - **Comprehensive Error Types** hierarchy
 - **Outside-In TDD** with integration testing focus
+
+#### 3b. ASP.NET Controller Stack
+**Location**: `installer/global/templates/dotnet-aspnetcontroller/`
+
+**Key Patterns**:
+- **ErrorOr Pattern** for functional error handling
+- **MVC Controllers** with Clean/Onion Architecture
+- **Repository Pattern** (optional)
+- **FluentValidation** for request validation
+- **Comprehensive testing** with xUnit
+
+#### 3c. Minimal API Stack
+**Location**: `installer/global/templates/dotnet-minimalapi/`
+
+**Key Patterns**:
+- **ErrorOr Pattern** for functional error handling
+- **Vertical Slice Architecture** for feature organization
+- **Route Groups** and Endpoint Filters
+- **Highest performance** of the three approaches
+- **TypedResults** for type-safe responses
 
 **Files Created**:
 - `config.json` - Stack configuration
@@ -86,7 +108,7 @@ This document summarizes the integration of learnings from production projects i
 **Updated**: `installer/global/manifest.json`
 
 **Changes**:
-- Added `dotnet-microservice` and `maui` to available stacks
+- Added three .NET API templates (`dotnet-fastendpoints`, `dotnet-aspnetcontroller`, `dotnet-minimalapi`) and `maui` to available stacks
 - Updated stack descriptions with accurate technology listings
 
 ### 3. Documentation
@@ -164,10 +186,16 @@ agentecflow init react
 # Includes error boundaries, SSE hooks, and accessibility patterns
 ```
 
-#### .NET Microservice
+#### .NET API Templates (Three Options)
 ```bash
-agentecflow init dotnet-microservice
-# Creates FastEndpoints structure with Either monad setup
+# FastEndpoints + REPR pattern
+agentecflow init dotnet-fastendpoints
+
+# ASP.NET Controllers + Clean Architecture
+agentecflow init dotnet-aspnetcontroller
+
+# Minimal API + Vertical Slices (highest performance)
+agentecflow init dotnet-minimalapi
 ```
 
 #### .NET MAUI App

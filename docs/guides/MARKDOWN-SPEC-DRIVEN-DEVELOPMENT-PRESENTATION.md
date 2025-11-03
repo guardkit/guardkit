@@ -1280,13 +1280,17 @@ agentecflow doctor
 
 ```bash
 # Choose a stack template
-agentic-init react          # React + TypeScript + Vite + Vitest
+agentic-init react                   # React + TypeScript + Vite + Vitest
 # or
-agentic-init python         # FastAPI + pytest + LangGraph
+agentic-init python                  # FastAPI + pytest + LangGraph
 # or
-agentic-init dotnet-microservice  # .NET + FastEndpoints
+agentic-init dotnet-fastendpoints    # .NET + FastEndpoints + REPR
 # or
-agentic-init maui-appshell  # .NET MAUI mobile
+agentic-init dotnet-aspnetcontroller # .NET + Controllers + MVC
+# or
+agentic-init dotnet-minimalapi       # .NET + Minimal API + Vertical Slices
+# or
+agentic-init maui-appshell          # .NET MAUI mobile
 
 # This creates .claude/ folder with all commands and agents
 ```
@@ -1659,7 +1663,7 @@ cd ai-engineer
 ./installer/scripts/install.sh
 
 # 2. Initialize
-agentic-init react  # or python, dotnet-microservice, maui-appshell
+agentic-init react  # or python, dotnet-fastendpoints, dotnet-aspnetcontroller, dotnet-minimalapi, maui-appshell
 
 # 3. Build your first feature
 /gather-requirements

@@ -452,7 +452,7 @@ Your choice: _
 ```
 --technology <tech>
   Pre-select technology stack
-  Options: react, python, maui, typescript-api, dotnet-microservice
+  Options: react, python, maui, typescript-api, dotnet-fastendpoints, dotnet-aspnetcontroller, dotnet-minimalapi
 
 --from <template>
   Start from existing template

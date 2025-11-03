@@ -511,7 +511,9 @@ context7.get_library_docs(
 | **python** | fastapi, pytest, pydantic, langchain | dependency-injection, testing, validation |
 | **typescript-api** | nestjs, typeorm, jest | dependency-injection, decorators, testing |
 | **maui** | maui, xamarin, xunit | mvvm, data-binding, navigation, testing |
-| **dotnet-microservice** | fastendpoints, fluentvalidation | repr-pattern, validation, testing |
+| **dotnet-fastendpoints** | fastendpoints, fluentvalidation, erroror | repr-pattern, validation, testing |
+| **dotnet-aspnetcontroller** | aspnetcore, fluentvalidation, erroror | controllers, clean-architecture, testing |
+| **dotnet-minimalapi** | aspnetcore, erroror | vertical-slices, route-groups, filters |
 
 **Example (Good vs. Bad)**:
 

@@ -872,7 +872,9 @@ python/
 typescript-api/
 maui-appshell/
 maui-navigationpage/
-dotnet-microservice/
+dotnet-fastendpoints/
+dotnet-aspnetcontroller/
+dotnet-minimalapi/
 fullstack/
 ```
 
@@ -1021,10 +1023,11 @@ grep -r "EARS\|epic.*hierarchy\|requirements.*management" docs/ \
 - Windows WSL (Ubuntu)
 - Windows WSL (Debian)
 
-**Templates** (8):
+**Templates** (10):
 - default, react, python, typescript-api
 - maui-appshell, maui-navigationpage
-- dotnet-microservice, fullstack
+- dotnet-fastendpoints, dotnet-aspnetcontroller, dotnet-minimalapi
+- fullstack
 
 **Test Scenarios**:
 
@@ -1107,10 +1110,11 @@ grep -r "EARS\|epic.*hierarchy\|requirements.*management" docs/ \
 - All task management modules (git state, agents, micro workflow)
 - All supporting modules (metrics, visualization, error messages)
 
-**Templates** (8):
+**Templates** (10):
 - default, react, python, typescript-api
 - maui-appshell, maui-navigationpage
-- dotnet-microservice, fullstack
+- dotnet-fastendpoints, dotnet-aspnetcontroller, dotnet-minimalapi
+- fullstack
 
 **Installer Scripts** (5):
 - install.sh, install-global.sh, init-project.sh

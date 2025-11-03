@@ -257,7 +257,9 @@ taskwright init python                 # Python with FastAPI
 taskwright init maui-appshell         # .NET MAUI AppShell
 taskwright init maui-navigationpage   # .NET MAUI NavigationPage
 taskwright init typescript-api        # NestJS TypeScript API
-taskwright init dotnet-microservice   # .NET microservices
+taskwright init dotnet-fastendpoints   # .NET APIs with FastEndpoints
+taskwright init dotnet-aspnetcontroller # .NET APIs with Controllers
+taskwright init dotnet-minimalapi     # .NET APIs with Minimal API
 taskwright init default               # Language-agnostic
 ```
 
