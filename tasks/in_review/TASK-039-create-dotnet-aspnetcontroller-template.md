@@ -2,9 +2,11 @@
 id: TASK-039
 title: Create dotnet-aspnetcontroller template
 created: 2025-11-03
+updated: 2025-11-03
 priority: medium
-status: backlog
+status: in_review
 tags: [templates, dotnet, aspnet, controllers]
+completed: 2025-11-03
 ---
 
 # TASK-039: Create dotnet-aspnetcontroller template

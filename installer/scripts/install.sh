@@ -246,7 +246,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,fullstack,typescript-api}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
@@ -465,7 +465,7 @@ EOF
     fi
 
     # Create stack-agents directory structure even if no agents
-    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,fullstack,typescript-api}
 }
 
 # Create the main CLI executables
@@ -495,18 +495,19 @@ print_help() {
     echo "Usage: taskwright-init [template]"
     echo ""
     echo "Templates:"
-    echo "  default             - Language-agnostic template"
-    echo "  react               - React with TypeScript"
-    echo "  python              - Python with FastAPI"
-    echo "  maui                - .NET MAUI mobile app"
+    echo "  default              - Language-agnostic template"
+    echo "  react                - React with TypeScript"
+    echo "  python               - Python with FastAPI"
+    echo "  maui                 - .NET MAUI mobile app"
     echo "  dotnet-fastendpoints - .NET API with FastEndpoints + REPR pattern"
-    echo "  fullstack           - React + Python"
-    echo "  typescript-api      - NestJS TypeScript backend API"
+    echo "  dotnet-aspnetcontroller - .NET API with Controllers + MVC pattern"
+    echo "  fullstack            - React + Python"
+    echo "  typescript-api       - NestJS TypeScript backend API"
     echo ""
     echo "Examples:"
     echo "  taskwright-init                    # Interactive setup"
     echo "  taskwright-init react              # Initialize with React template"
-    echo "  taskwright-init dotnet-fastendpoints # Initialize with .NET FastEndpoints API"
+    echo "  taskwright-init dotnet-aspnetcontroller # Initialize with .NET Controllers API"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -567,7 +568,7 @@ print_help() {
     echo "Examples:"
     echo "  taskwright init                    # Interactive initialization"
     echo "  taskwright init react              # Initialize with React template"
-    echo "  taskwright init dotnet-fastendpoints # Initialize with .NET FastEndpoints API"
+    echo "  taskwright init dotnet-aspnetcontroller # Initialize with .NET Controllers API"
     echo "  taskwright doctor                  # Check installation health"
 }
 
@@ -1089,6 +1090,9 @@ print_summary() {
                 dotnet-fastendpoints)
                     echo "  • $name - .NET API with FastEndpoints + REPR pattern"
                     ;;
+                dotnet-aspnetcontroller)
+                    echo "  • $name - .NET API with Controllers + MVC pattern"
+                    ;;
                 fullstack)
                     echo "  • $name - React + Python"
                     ;;
@@ -1114,7 +1118,7 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-fastendpoints"
+    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-aspnetcontroller"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"

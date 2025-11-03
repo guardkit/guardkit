@@ -133,7 +133,8 @@ Choose your template during initialization:
 | **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
 | **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
 | **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM | Mobile (page-based) |
-| **dotnet-fastendpoints** | .NET + FastEndpoints + REPR pattern | .NET APIs |
+| **dotnet-fastendpoints** | .NET + FastEndpoints + REPR pattern | .NET APIs (REPR) |
+| **dotnet-aspnetcontroller** | .NET + Controllers + MVC pattern + ErrorOr | .NET APIs (MVC) |
 | **default** | Language-agnostic | Any other stack |
 
 See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
