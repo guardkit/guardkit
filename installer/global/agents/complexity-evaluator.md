@@ -65,7 +65,7 @@ This phase determines:
 ### Input You Receive
 ```yaml
 task_id: TASK-XXX
-technology_stack: python|react|maui|dotnet-microservice|default
+technology_stack: python|react|maui|dotnet-fastendpoints|default
 implementation_plan_text: |
   [Raw implementation plan from Phase 2]
 architectural_review_score: 82/100  # From Phase 2.5B

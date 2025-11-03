@@ -264,7 +264,7 @@ As the task-manager agent, you MUST use Context7 MCP when:
 | **python** | fastapi, pytest, pydantic, langchain, streamlit | dependency-injection, testing, validation, agents |
 | **typescript-api** | nestjs, typeorm, jest, supertest | dependency-injection, decorators, testing, validation |
 | **maui** | maui, xamarin, xunit, moq | mvvm, data-binding, navigation, testing |
-| **dotnet-microservice** | fastendpoints, fluentvalidation, xunit | repr-pattern, validation, testing |
+| **dotnet-fastendpoints** | fastendpoints, fluentvalidation, xunit | repr-pattern, validation, testing |
 
 ### When to Skip Context7
 
@@ -347,7 +347,7 @@ blocked_reason: reason if blocked
    - react → ReactPlanParser
    - typescript-api → TypeScriptPlanParser
    - maui → DotNetPlanParser
-   - dotnet-microservice → DotNetPlanParser
+   - dotnet-fastendpoints → DotNetPlanParser
    - default → GenericPlanParser
 
 4. Parse plan to extract:

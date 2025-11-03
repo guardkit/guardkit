@@ -1,7 +1,7 @@
 {
-  "name": "dotnet-microservice-stack",
+  "name": "dotnet-fastendpoints-stack",
   "version": "1.0.0",
-  "description": ".NET 8+ microservice with FastEndpoints, Either monad, and OpenTelemetry",
+  "description": ".NET 8+ API with FastEndpoints, REPR pattern, Either monad, and OpenTelemetry",
   "extends": ["base"],
   
   "dependencies": {

@@ -168,7 +168,7 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-microservice|default]
+taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-fastendpoints|default]
 ```
 
 **Available Templates:**
@@ -178,7 +178,7 @@ taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|d
 - **typescript-api**: NestJS + Result patterns + domain modeling
 - **maui-appshell**: .NET MAUI + AppShell + MVVM + ErrorOr
 - **maui-navigationpage**: .NET MAUI + NavigationPage + MVVM
-- **dotnet-microservice**: .NET + FastEndpoints + REPR pattern
+- **dotnet-fastendpoints**: .NET + FastEndpoints + REPR pattern
 
 **Template Documentation:**
 - [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations

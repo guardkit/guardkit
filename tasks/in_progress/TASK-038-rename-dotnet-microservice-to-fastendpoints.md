@@ -3,7 +3,7 @@ id: TASK-038
 title: Rename dotnet-microservice template to dotnet-fastendpoints
 created: 2025-11-03
 priority: medium
-status: backlog
+status: in_progress
 tags: [templates, dotnet, refactoring]
 ---
 
