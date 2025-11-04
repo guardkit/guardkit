@@ -75,8 +75,11 @@ show_templates() {
                     python)
                         echo "  • python - Python with FastAPI"
                         ;;
-                    maui)
-                        echo "  • maui - .NET MAUI mobile app"
+                    maui-appshell)
+                        echo "  • maui-appshell - .NET MAUI with AppShell navigation"
+                        ;;
+                    maui-navigationpage)
+                        echo "  • maui-navigationpage - .NET MAUI with NavigationPage"
                         ;;
                     dotnet-fastendpoints)
                         echo "  • dotnet-fastendpoints - .NET microservice with FastEndpoints"
@@ -191,7 +194,9 @@ copy_template_files() {
     # Auto-select template based on detected type if using default
     if [ "$TEMPLATE" = "default" ] && [ "$detected_type" != "unknown" ]; then
         case "$detected_type" in
-            maui) effective_template="maui" ;;
+            maui) effective_template="maui-appshell" ;; # Default to AppShell for MAUI projects
+            maui-appshell) effective_template="maui-appshell" ;;
+            maui-navigationpage) effective_template="maui-navigationpage" ;;
             dotnet-fastendpoints) effective_template="dotnet-fastendpoints" ;;
             dotnet-aspnetcontroller) effective_template="dotnet-aspnetcontroller" ;;
             dotnet-minimalapi) effective_template="dotnet-minimalapi" ;;
@@ -470,7 +475,7 @@ print_next_steps() {
             echo "     3. /task-complete TASK-001"
             echo ""
             ;;
-        maui-appshell|maui-navigationpage|maui)
+        maui-appshell|maui-navigationpage)
             echo -e "${BOLD}Quick Start for .NET MAUI:${NC}"
             echo "  1. Create your first task: /task-create 'Add main page navigation'"
             echo "  2. Work on it: /task-work TASK-001"
@@ -553,19 +558,33 @@ main() {
             local detected=$(detect_project_type)
             if [ "$detected" != "unknown" ]; then
                 print_info "Detected project type: $detected"
-                read -p "Use matching template? (y/n): " -r
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    case "$detected" in
-                        maui) TEMPLATE="maui" ;;
-                        dotnet-fastendpoints) TEMPLATE="dotnet-fastendpoints" ;;
-                        dotnet-aspnetcontroller) TEMPLATE="dotnet-aspnetcontroller" ;;
-                        dotnet-minimalapi) TEMPLATE="dotnet-minimalapi" ;;
-                        react) TEMPLATE="react" ;;
-                        python) TEMPLATE="python" ;;
-                        *) TEMPLATE="default" ;;
+
+                # Special handling for MAUI - need to choose navigation pattern
+                if [ "$detected" = "maui" ]; then
+                    echo ""
+                    echo "Select .NET MAUI navigation pattern:"
+                    echo "  1) AppShell (recommended, modern navigation with flyout)"
+                    echo "  2) NavigationPage (traditional stack-based navigation)"
+                    read -p "Choose [1/2]: " -r maui_choice
+                    case "$maui_choice" in
+                        1) TEMPLATE="maui-appshell" ;;
+                        2) TEMPLATE="maui-navigationpage" ;;
+                        *) TEMPLATE="maui-appshell" ;; # Default to AppShell
                     esac
                 else
-                    select_template_interactive
+                    read -p "Use matching template? (y/n): " -r
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        case "$detected" in
+                            dotnet-fastendpoints) TEMPLATE="dotnet-fastendpoints" ;;
+                            dotnet-aspnetcontroller) TEMPLATE="dotnet-aspnetcontroller" ;;
+                            dotnet-minimalapi) TEMPLATE="dotnet-minimalapi" ;;
+                            react) TEMPLATE="react" ;;
+                            python) TEMPLATE="python" ;;
+                            *) TEMPLATE="default" ;;
+                        esac
+                    else
+                        select_template_interactive
+                    fi
                 fi
             else
                 select_template_interactive
