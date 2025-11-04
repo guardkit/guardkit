@@ -1,6 +1,6 @@
 # Taskwright
 
-![version](https://img.shields.io/badge/version-2.0.0-blue)
+![version](https://img.shields.io/badge/version-1.0.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 ![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
@@ -12,8 +12,8 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ## What You Get
 
-- **Phase 2.5 - Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
-- **Phase 4.5 - Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
+- **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
+- **Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
 - **Specialized Agents**: Stack-specific AI agents for React, Python, .NET, TypeScript
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
@@ -28,7 +28,14 @@ curl -sSL https://raw.githubusercontent.com/requirekit/taskwright/main/installer
 
 # Initialize your project (choose a template)
 taskwright init react  # or: python, typescript-api, maui-appshell, default
+```
 
+**If using VS Code:** Reload the window to enable slash commands:
+- Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
+- Type `Developer: Reload Window` and press Enter
+- Or close and reopen VS Code
+
+```bash
 # In Claude Code - create and work on a task
 /task-create "Add user login feature"
 /task-work TASK-001  # Does everything: plan, review, implement, test, verify
@@ -48,11 +55,13 @@ cd /path/to/your/project
 taskwright init react
 ```
 
+**If using VS Code:** Reload the window after initialization (see instructions above).
+
 That's it! Three commands from idea to production-ready code.
 
 ## What Makes This Different?
 
-### Phase 2.5: Architectural Review
+### Architectural Review
 Before writing a single line of code, get automated evaluation of:
 - **SOLID Principles** (60/100 minimum score)
 - **DRY Violations** (detect duplication risks)
@@ -60,7 +69,7 @@ Before writing a single line of code, get automated evaluation of:
 
 **Result**: Catches design flaws before implementation, saving 40-50% rework time.
 
-### Phase 4.5: Test Enforcement Loop
+### Test Enforcement Loop
 After implementation, automatic test fixing:
 1. Run all tests
 2. If failures detected → analyze root cause
@@ -70,7 +79,7 @@ After implementation, automatic test fixing:
 
 **Result**: 100% test pass rate before code review. No "we'll fix it later."
 
-### Phase 2.7: Complexity Evaluation
+### Complexity Evaluation
 Automatic complexity scoring (0-10 scale):
 - **1-3 (Simple)**: Auto-proceed, no checkpoint (<4 hours)
 - **4-6 (Medium)**: Quick optional checkpoint (30s timeout)
@@ -372,7 +381,7 @@ npm test -- --coverage
 dotnet test --collect:"XPlat Code Coverage" --logger:"json"
 ```
 
-All handled automatically by Phase 4 and 4.5!
+All handled automatically by `/task-work`!
 
 ## License
 

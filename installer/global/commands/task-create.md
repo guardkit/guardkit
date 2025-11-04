@@ -712,4 +712,49 @@ The streamlined workflow ensures testing is never skipped and reduces command co
 - Task completion triggers epic sync to external tools
 - External tool IDs are preserved throughout the workflow
 - Real-time progress rollup across all hierarchy levels
-- Agentecflow Stage 3 metrics tracked and synchronized
+
+---
+
+## CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE
+
+**After creating the task, you MUST STOP and wait for the user to invoke `/task-work`.**
+
+### What You Should Do:
+1. ✅ Create the task file in `tasks/backlog/TASK-XXX-title.md`
+2. ✅ Display the task details and file location
+3. ✅ Show "Next Steps" with `/task-work TASK-XXX` command
+4. ✅ **STOP HERE - Do not proceed with implementation**
+
+### What You Should NOT Do:
+1. ❌ **DO NOT** start implementing the task
+2. ❌ **DO NOT** write any code
+3. ❌ **DO NOT** create any files beyond the task markdown file
+4. ❌ **DO NOT** use the TodoWrite tool to create implementation todos
+
+### Why This Matters:
+The `/task-work` command provides:
+- **Architectural Review** (Phase 2.5): SOLID/DRY/YAGNI evaluation BEFORE coding
+- **Test Enforcement** (Phase 4.5): Automatic test fixing with 100% pass rate guarantee
+- **Code Review** (Phase 5): Quality verification after implementation
+- **Plan Audit** (Phase 5.5): Scope creep detection
+
+**If you implement directly, you bypass all quality gates and the entire Taskwright workflow!**
+
+### Correct Workflow:
+```bash
+User: /task-create "Add temperature conversion endpoint"
+Claude: ✅ Task Created: TASK-001
+        Next Steps: /task-work TASK-001
+        [STOPS HERE - WAITS FOR USER]
+
+User: /task-work TASK-001
+Claude: [Executes Phases 2-5.5 with all quality gates]
+```
+
+### Exception:
+Only proceed with implementation if the user explicitly says:
+- "Create the task and implement it"
+- "Create and work on the task"
+- "Create the task and start working"
+
+Otherwise, **ALWAYS STOP** after task creation.

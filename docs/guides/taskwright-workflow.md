@@ -1,8 +1,8 @@
 # Taskwright Workflow Guide
 
-**Version**: 2.0.0
-**Last Updated**: 2025-11-03
-**Compatibility**: Claude Code with task-work command v2.0+
+**Version**: 1.0.0
+**Last Updated**: 2025-11-04
+**Compatibility**: Claude Code with task-work command v1.0+
 **Document Type**: Comprehensive Workflow Guide
 
 ---
