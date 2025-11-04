@@ -290,11 +290,31 @@ BACKLOG
 
 ## MCP Integration Best Practices
 
-The system integrates with 4 MCP servers for enhanced capabilities:
-- **context7**: Library documentation (automatically retrieved during implementation)
-- **design-patterns**: Pattern recommendations (Phase 2.5A)
-- **figma-dev-mode**: Figma design extraction (/figma-to-react)
-- **zeplin**: Zeplin design extraction (/zeplin-to-maui)
+The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs are optional** - the system works fine without them and falls back gracefully to training data.
+
+### MCP Types
+
+**Core MCPs** (used automatically during `/task-work`):
+- **context7**: Library documentation (Phases 2, 3, 4 - automatic when task uses libraries)
+- **design-patterns**: Pattern recommendations (Phase 2.5A - automatic during architectural review)
+
+**Design MCPs** (ONLY used for specific commands):
+- **figma-dev-mode**: Figma design extraction (ONLY for `/figma-to-react` command)
+- **zeplin**: Zeplin design extraction (ONLY for `/zeplin-to-maui` command)
+
+**Important**: Design MCPs should only be installed if you're actively using those specific design-to-code commands. They are NOT used during regular `/task-work` execution.
+
+### Setup Guides
+
+**Core MCPs** (recommended for all users):
+- [Context7 MCP Setup](docs/guides/context7-mcp-setup.md) - Up-to-date library documentation
+- [Design Patterns MCP Setup](docs/guides/design-patterns-mcp-setup.md) - Pattern recommendations
+
+**Design MCPs** (only if using design-to-code workflows):
+- [Figma MCP Setup](docs/mcp-setup/figma-mcp-setup.md) - For `/figma-to-react` command only
+- [Zeplin MCP Setup](docs/mcp-setup/zeplin-mcp-setup.md) - For `/zeplin-to-maui` command only
+
+### Performance & Optimization
 
 **Optimization Status**: ✅ All MCPs optimized (4.5-12% context window usage)
 
@@ -304,7 +324,7 @@ The system integrates with 4 MCP servers for enhanced capabilities:
 - figma-dev-mode: Image-based (minimal token impact)
 - zeplin: Design-based (minimal token impact)
 
-**For detailed MCP usage guidelines**: [MCP Optimization Guide](docs/guides/mcp-optimization-guide.md)
+**For detailed usage guidelines**: [MCP Optimization Guide](docs/guides/mcp-optimization-guide.md)
 
 ## Development Best Practices
 

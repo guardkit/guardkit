@@ -78,8 +78,14 @@ show_templates() {
                     maui)
                         echo "  • maui - .NET MAUI mobile app"
                         ;;
-                    dotnet-microservice)
-                        echo "  • dotnet-microservice - .NET microservice with FastEndpoints"
+                    dotnet-fastendpoints)
+                        echo "  • dotnet-fastendpoints - .NET microservice with FastEndpoints"
+                        ;;
+                    dotnet-aspnetcontroller)
+                        echo "  • dotnet-aspnetcontroller - .NET Web API with Controllers"
+                        ;;
+                    dotnet-minimalapi)
+                        echo "  • dotnet-minimalapi - .NET Minimal API"
                         ;;
                     fullstack)
                         echo "  • fullstack - React + Python"
@@ -111,7 +117,7 @@ detect_project_type() {
             echo "maui"
         elif ls *.csproj 2>/dev/null | xargs grep -l "Microsoft.AspNetCore\|FastEndpoints" 2>/dev/null || \
              ls */*.csproj 2>/dev/null | xargs grep -l "Microsoft.AspNetCore\|FastEndpoints" 2>/dev/null; then
-            echo "dotnet-microservice"
+            echo "dotnet-fastendpoints"
         else
             echo "dotnet"
         fi
@@ -186,7 +192,9 @@ copy_template_files() {
     if [ "$TEMPLATE" = "default" ] && [ "$detected_type" != "unknown" ]; then
         case "$detected_type" in
             maui) effective_template="maui" ;;
-            dotnet-microservice) effective_template="dotnet-microservice" ;;
+            dotnet-fastendpoints) effective_template="dotnet-fastendpoints" ;;
+            dotnet-aspnetcontroller) effective_template="dotnet-aspnetcontroller" ;;
+            dotnet-minimalapi) effective_template="dotnet-minimalapi" ;;
             react) effective_template="react" ;;
             python) effective_template="python" ;;
         esac
@@ -403,11 +411,63 @@ print_next_steps() {
     
     # Template-specific instructions (simplified)
     case "$TEMPLATE" in
-        dotnet-microservice)
-            echo -e "${BOLD}Quick Start for .NET Microservice:${NC}"
-            echo "  1. Create your first task: /task-create 'Add health check endpoint'"
-            echo "  2. Work on it: /task-work TASK-001"
-            echo "  3. Complete: /task-complete TASK-001"
+        dotnet-aspnetcontroller)
+            echo -e "${BOLD}Quick Start for .NET Web API (Controllers):${NC}"
+            echo ""
+            echo "  📦 Creating .NET Web API Project:"
+            echo "     dotnet new webapi -n \${ServiceName} --use-controllers"
+            echo ""
+            echo "  ✨ Template Enhancements:"
+            echo "     • ErrorOr pattern for functional error handling"
+            echo "     • Controller-based architecture (traditional MVC)"
+            echo "     • FluentValidation with action filters"
+            echo "     • OpenTelemetry observability"
+            echo ""
+            echo "  🚀 Taskwright Workflow:"
+            echo "     1. /task-create 'Add product endpoints'"
+            echo "     2. /task-work TASK-001"
+            echo "     3. /task-complete TASK-001"
+            echo ""
+            ;;
+        dotnet-minimalapi)
+            echo -e "${BOLD}Quick Start for .NET Minimal API:${NC}"
+            echo ""
+            echo "  📦 Creating .NET Minimal API Project:"
+            echo "     dotnet new web -n \${ServiceName}"
+            echo "     # or"
+            echo "     dotnet new webapi -n \${ServiceName} --use-minimal-apis"
+            echo ""
+            echo "  ✨ Template Enhancements:"
+            echo "     • ErrorOr pattern for functional error handling"
+            echo "     • Vertical slice architecture"
+            echo "     • TypedResults for compile-time safety"
+            echo "     • Endpoint filters for validation"
+            echo ""
+            echo "  🚀 Taskwright Workflow:"
+            echo "     1. /task-create 'Add weather endpoints'"
+            echo "     2. /task-work TASK-001"
+            echo "     3. /task-complete TASK-001"
+            echo ""
+            ;;
+        dotnet-fastendpoints)
+            echo -e "${BOLD}Quick Start for FastEndpoints:${NC}"
+            echo ""
+            echo "  📦 Creating FastEndpoints Project (Optional):"
+            echo "     1. dotnet new webapi -n \${ServiceName}"
+            echo "     2. dotnet add package FastEndpoints"
+            echo ""
+            echo "  💡 Or use template structure directly (FastEndpoints already configured)"
+            echo ""
+            echo "  ✨ Template Enhancements:"
+            echo "     • FastEndpoints with REPR pattern"
+            echo "     • ErrorOr pattern for functional error handling"
+            echo "     • Vertical slice architecture"
+            echo "     • Built-in validation and OpenAPI"
+            echo ""
+            echo "  🚀 Taskwright Workflow:"
+            echo "     1. /task-create 'Add user endpoints'"
+            echo "     2. /task-work TASK-001"
+            echo "     3. /task-complete TASK-001"
             echo ""
             ;;
         maui-appshell|maui-navigationpage|maui)
@@ -491,7 +551,9 @@ main() {
                 if [[ $REPLY =~ ^[Yy]$ ]]; then
                     case "$detected" in
                         maui) TEMPLATE="maui" ;;
-                        dotnet-microservice) TEMPLATE="dotnet-microservice" ;;
+                        dotnet-fastendpoints) TEMPLATE="dotnet-fastendpoints" ;;
+                        dotnet-aspnetcontroller) TEMPLATE="dotnet-aspnetcontroller" ;;
+                        dotnet-minimalapi) TEMPLATE="dotnet-minimalapi" ;;
                         react) TEMPLATE="react" ;;
                         python) TEMPLATE="python" ;;
                         *) TEMPLATE="default" ;;

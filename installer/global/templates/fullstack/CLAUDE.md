@@ -77,9 +77,25 @@ shared/           # Shared types and utilities
 - Integration: All API contracts validated
 - E2E: Critical user journeys tested
 
+## Available Specialists
+
+This template provides specialized AI agents for full-stack development:
+
+**Full-Stack Coordination:**
+- `fullstack-architect` - Orchestrates frontend + backend implementation
+- `architectural-reviewer` - SOLID/DRY/YAGNI compliance review
+
+**Frontend (React) Specialists:**
+- For React-specific questions, consult `react-state-specialist` and `react-testing-specialist` from the React template
+- These agents provide expertise in state management (Context, Zustand, React Query) and testing (Vitest, Playwright)
+
+**Backend (Python) Specialists:**
+- For Python-specific questions, consult `python-api-specialist`, `python-testing-specialist`, and `python-langchain-specialist` from the Python template
+- These agents provide expertise in FastAPI, pytest, SQLAlchemy, and LangChain/LangGraph
+
 ## Commands
 
-All standard Agentic Flow commands work across both stacks:
+All standard Taskwright commands work across both stacks:
 - `/task-work` automatically detects and tests both frontend and backend
 - `/task-status` shows progress across the full stack
 - Quality gates validate both applications before completion

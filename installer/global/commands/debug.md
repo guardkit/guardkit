@@ -49,7 +49,38 @@ Use `/debug` when:
 
 When you run `/debug`, Claude Code will:
 
-### 1. Gather Initial Context (30 seconds)
+### 1. System Status Check (10 seconds)
+
+**MCP Server Status:**
+Claude Code will check the availability of all configured MCP servers:
+
+```
+╔══════════════════════════════════════════════════════╗
+║           MCP SERVER STATUS CHECK                    ║
+╚══════════════════════════════════════════════════════╝
+
+Core MCPs (enhance all workflows):
+  ✅ context7          - Available (v2.1.0)
+  ✅ design-patterns   - Available (243 patterns loaded)
+
+Design MCPs (design-to-code workflows):
+  ✅ figma-dev-mode    - Available
+  ⚠️  zeplin           - Not configured
+
+Status: 3/4 MCPs available (75%)
+Impact: Minimal - all core features functional
+
+Notes:
+  - Zeplin MCP required only for /zeplin-to-maui command
+  - Context7 provides up-to-date library docs (recommended)
+  - System falls back to training data if MCPs unavailable
+
+Setup guides: See CLAUDE.md or docs/guides/ for MCP setup
+```
+
+**System will proceed even if MCPs are unavailable** - they're optional enhancements.
+
+### 2. Gather Initial Context (30 seconds)
 
 **If TASK-XXX provided:**
 - Read task file from `tasks/in_progress/TASK-XXX.md`
@@ -66,7 +97,7 @@ When you run `/debug`, Claude Code will:
 - Identify affected components
 - Formulate initial hypotheses
 
-### 2. Invoke Debugging Specialist
+### 3. Invoke Debugging Specialist
 
 Claude Code will use the Task tool to invoke the debugging-specialist agent:
 
@@ -95,7 +126,7 @@ Output:
 - Updated task documentation"
 ```
 
-### 3. Review Debugging Results
+### 4. Review Debugging Results
 
 The debugging-specialist agent will provide:
 
@@ -122,7 +153,7 @@ The debugging-specialist agent will provide:
 - {Prevention recommendations}
 ```
 
-### 4. Apply Fix (Interactive)
+### 5. Apply Fix (Interactive)
 
 Claude Code will present the proposed fix and ask:
 
@@ -157,7 +188,7 @@ Your choice (A/R/M/S):
 - **Modify**: Discuss alternative fixes or refinements
 - **Skip**: Document findings for manual resolution later
 
-### 5. Post-Fix Verification
+### 6. Post-Fix Verification
 
 **If fix is applied:**
 
@@ -264,35 +295,40 @@ Test Failure Handling:
 ```
 User runs /debug
        ↓
-[1. Gather Context]
+[1. System Status Check]
+   - Check MCP server availability
+   - Display configuration status
+   - Note any missing MCPs
+       ↓
+[2. Gather Context]
    - Read task file
    - Parse error logs
    - Review recent git changes
        ↓
-[2. Invoke debugging-specialist]
+[3. Invoke debugging-specialist]
    - Evidence gathering
    - Hypothesis formation
    - Targeted investigation
    - Root cause identification
    - Propose minimal fix
        ↓
-[3. Present Findings]
+[4. Present Findings]
    - Show root cause analysis
    - Display proposed fix
    - Request user approval
        ↓
-[4. Apply Fix (if approved)]
+[5. Apply Fix (if approved)]
    - Implement code changes
    - Create regression tests
    - Update documentation
        ↓
-[5. Verify Fix]
+[6. Verify Fix]
    - Run test suite
    - Verify build succeeds
    - Check code coverage
    - Manual verification steps
        ↓
-[6. Complete]
+[7. Complete]
    - Update task status
    - Commit changes
    - Generate summary report

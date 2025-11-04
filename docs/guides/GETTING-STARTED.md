@@ -33,12 +33,12 @@ That's it! The `/task-work` command handles planning, implementation, architectu
 
 ```
 docs/guides/
-├── README.md                     # Index and navigation
-├── GETTING-STARTED.md           # This guide (START HERE!)
-├── QUICK_REFERENCE.md           # Command reference
+├── getting-started.md           # This guide (START HERE!)
+├── quick-reference.md           # Command reference
 ├── taskwright-workflow.md       # Complete workflow guide
-├── mcp-optimization-guide.md    # MCP integration best practices
-└── [other guides...]
+├── migration-guide.md           # Migrating from old workflow
+├── creating-local-templates.md  # Template customization
+└── maui-template-selection.md   # MAUI template guide
 ```
 
 ## What is Taskwright?
@@ -289,9 +289,10 @@ taskwright init default               # Language-agnostic
 ```
 
 ### Documentation
-- [Quick Reference](QUICK_REFERENCE.md) - Command cheat sheet
+- [Quick Reference](quick-reference.md) - Command cheat sheet
 - [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
-- [MCP Optimization Guide](mcp-optimization-guide.md) - Library docs integration
+- [Migration Guide](migration-guide.md) - Migrate from old workflow
+- [MCP Optimization](../deep-dives/mcp-integration/mcp-optimization.md) - Library docs integration (Advanced)
 
 ### Common Issues
 | Problem | Solution |

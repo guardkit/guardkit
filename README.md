@@ -21,12 +21,10 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ## 5-Minute Quickstart
 
+### Option 1: Quick Install (Recommended)
 ```bash
-# Install
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
-chmod +x installer/scripts/install.sh
-./installer/scripts/install.sh
+# Direct install
+curl -sSL https://raw.githubusercontent.com/requirekit/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
 taskwright init react  # or: python, typescript-api, maui-appshell, default
@@ -35,6 +33,19 @@ taskwright init react  # or: python, typescript-api, maui-appshell, default
 /task-create "Add user login feature"
 /task-work TASK-001  # Does everything: plan, review, implement, test, verify
 /task-complete TASK-001
+```
+
+### Option 2: Clone Repository
+```bash
+# Clone and install
+git clone https://github.com/requirekit/taskwright.git
+cd taskwright
+chmod +x installer/scripts/install.sh
+./installer/scripts/install.sh
+
+# Initialize your project
+cd /path/to/your/project
+taskwright init react
 ```
 
 That's it! Three commands from idea to production-ready code.
@@ -101,8 +112,6 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 - **Standard** (default): Implementation + tests together
 - **TDD**: Test-Driven Development (Red → Green → Refactor)
 
-**Note**: For BDD mode (Behavior-Driven Development with Gherkin scenarios), use [RequireKit](https://github.com/requirekit/require-kit).
-
 ### Design-First Workflow
 ```bash
 # Complex task? Split design and implementation
@@ -131,11 +140,12 @@ Choose your template during initialization:
 | **react** | React + TypeScript + Next.js + Tailwind + Vitest + Playwright | Web applications |
 | **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
 | **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
+| **dotnet-fastendpoints** | .NET + FastEndpoints + Either monad (LanguageExt) | .NET APIs (functional) |
+| **dotnet-aspnetcontroller** | .NET + ASP.NET Controllers + ErrorOr | .NET APIs (traditional MVC) |
+| **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (lightweight) |
+| **fullstack** | React + TypeScript + Python + FastAPI | Full-stack web apps |
 | **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
-| **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM | Mobile (page-based) |
-| **dotnet-fastendpoints** | .NET + FastEndpoints + REPR pattern | .NET APIs (REPR) |
-| **dotnet-aspnetcontroller** | .NET + Controllers + MVC pattern + ErrorOr | .NET APIs (MVC) |
-| **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (Minimal) |
+| **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM + ErrorOr | Mobile (page-based) |
 | **default** | Language-agnostic | Any other stack |
 
 See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
@@ -204,6 +214,72 @@ BACKLOG
 - ❌ Tests fail → `BLOCKED`
 - ⚠️ Coverage low → Request more tests
 - 🔄 Design approved → `DESIGN_APPROVED`
+
+## Optional: MCP Enhancements
+
+**Model Context Protocol (MCP)** servers enhance Taskwright with specialized capabilities. **All are optional** - system works fine without them.
+
+### Core MCPs (General Development)
+
+These enhance regular `/task-work` execution for all tasks:
+
+| MCP | Purpose | Used During | Setup Time |
+|-----|---------|-------------|------------|
+| **context7** | Up-to-date library docs | Phases 2, 3, 4 (automatic) | 2 min |
+| **design-patterns** | Pattern recommendations | Phase 2.5A (automatic) | 5 min |
+
+**Recommended**: Set up Context7 for the most value. Design Patterns is optional but helpful.
+
+### Design MCPs (Only for Design-to-Code Workflows)
+
+**⚠️ Only set these up if you're using the specific design-to-code commands:**
+
+| MCP | Purpose | Required For | Setup Time |
+|-----|---------|--------------|------------|
+| **figma-dev-mode** | Figma → React code | `/figma-to-react` command only | 10 min |
+| **zeplin** | Zeplin → MAUI code | `/zeplin-to-maui` command only | 10 min |
+
+**Skip these** if you're not converting Figma/Zeplin designs to code. They're not used during regular development.
+
+### Quick Setup (Context7 Recommended)
+
+Context7 provides the most value for day-to-day development:
+
+```bash
+# One command setup
+npx -y @smithery/cli@latest install @upstash/context7-mcp --client claude
+```
+
+Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
+
+### How It Works
+
+**With Context7**:
+```
+/task-work TASK-001
+📚 Fetching latest documentation for React...
+✅ Retrieved React documentation (topic: hooks)
+[Implementation uses latest React 19 patterns]
+```
+
+**Without Context7**:
+```
+/task-work TASK-001
+⚠️ Context7 unavailable, using training data
+[Implementation uses training data patterns - still works!]
+```
+
+### Setup Guides
+
+**Core MCPs** (for general development):
+- [Context7 Setup](docs/guides/context7-mcp-setup.md) - Up-to-date library docs (recommended)
+- [Design Patterns Setup](docs/guides/design-patterns-mcp-setup.md) - Pattern recommendations
+
+**Design MCPs** (only if using design-to-code commands):
+- [Figma Setup](docs/mcp-setup/figma-mcp-setup.md) - For `/figma-to-react` command
+- [Zeplin Setup](docs/mcp-setup/zeplin-mcp-setup.md) - For `/zeplin-to-maui` command
+
+**Performance**: All MCPs optimized, <15% context window usage, <2s query time.
 
 ## Documentation
 

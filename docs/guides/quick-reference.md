@@ -5,7 +5,7 @@
 ### Installation
 ```bash
 # Install globally (one-time)
-curl -sSL https://raw.githubusercontent.com/appmilla/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/requirekit/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize projects with stack templates
 taskwright init react                  # React + TypeScript + Vite + Playwright
@@ -425,9 +425,10 @@ BACKLOG
 
 ## Documentation Links
 
-- [Getting Started Guide](GETTING-STARTED.md) - 5-minute quickstart
+- [Getting Started Guide](getting-started.md) - 5-minute quickstart
 - [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
-- [MCP Optimization Guide](mcp-optimization-guide.md) - Library docs integration
+- [Migration Guide](migration-guide.md) - Migrate from old workflow
+- [MCP Optimization](../deep-dives/mcp-integration/mcp-optimization.md) - Library docs integration (Advanced)
 - [Template Selection](maui-template-selection.md) - MAUI template guide
 - [Domain Layer Pattern](../patterns/domain-layer-pattern.md) - Verb-based operations
 
