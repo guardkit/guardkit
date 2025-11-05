@@ -18,6 +18,8 @@ AGENTECFLOW_VERSION="2.0.0"
 INSTALL_DIR="$HOME/.agentecflow"
 CONFIG_DIR="$HOME/.config/agentecflow"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GITHUB_REPO="https://github.com/taskwright-dev/taskwright"
+GITHUB_BRANCH="main"
 
 # Test mode configuration
 TEST_MODE=false
@@ -56,6 +58,36 @@ print_warning() {
 
 print_info() {
     print_message "$BLUE" "ℹ $1"
+}
+
+# Download repository if running via curl (files not available locally)
+ensure_repository_files() {
+    # Check if we have the required files
+    if [ ! -f "$INSTALLER_DIR/scripts/init-project.sh" ] || [ ! -d "$INSTALLER_DIR/global/templates" ]; then
+        print_info "Running from curl - downloading repository files..."
+
+        # Create temp directory for download
+        local TEMP_DIR=$(mktemp -d)
+        trap "rm -rf $TEMP_DIR" EXIT
+
+        # Download repository as tarball
+        print_info "Downloading from $GITHUB_REPO..."
+        if ! curl -sSL "$GITHUB_REPO/archive/refs/heads/$GITHUB_BRANCH.tar.gz" | tar -xz -C "$TEMP_DIR"; then
+            print_error "Failed to download repository"
+            print_info "Try cloning manually: git clone $GITHUB_REPO"
+            exit 1
+        fi
+
+        # Update INSTALLER_DIR to point to downloaded repo
+        INSTALLER_DIR="$TEMP_DIR/taskwright-$GITHUB_BRANCH/installer"
+
+        if [ ! -d "$INSTALLER_DIR" ]; then
+            print_error "Downloaded repository structure not as expected"
+            exit 1
+        fi
+
+        print_success "Repository files downloaded"
+    fi
 }
 
 # Detect project context by finding .claude/ directory
@@ -1085,8 +1117,11 @@ print_summary() {
                 python)
                     echo "  • $name - Python with FastAPI"
                     ;;
-                maui)
-                    echo "  • $name - .NET MAUI mobile app"
+                maui-appshell)
+                    echo "  • $name - .NET MAUI with AppShell navigation"
+                    ;;
+                maui-navigationpage)
+                    echo "  • $name - .NET MAUI with NavigationPage"
                     ;;
                 dotnet-fastendpoints)
                     echo "  • $name - .NET API with FastEndpoints + REPR pattern"
@@ -1260,6 +1295,9 @@ main() {
 
     print_info "Installing Taskwright to $INSTALL_DIR"
     echo ""
+
+    # Ensure we have repository files (download if running via curl)
+    ensure_repository_files
 
     # Run installation steps
     check_prerequisites
