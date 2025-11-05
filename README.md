@@ -24,7 +24,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 ### Option 1: Quick Install (Recommended)
 ```bash
 # Direct install
-curl -sSL https://raw.githubusercontent.com/requirekit/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
 taskwright init react  # or: python, typescript-api, maui-appshell, default
@@ -53,7 +53,7 @@ taskwright init react  # or: python, typescript-api, maui-appshell, default
 ### Option 2: Clone Repository
 ```bash
 # Clone and install
-git clone https://github.com/requirekit/taskwright.git
+git clone https://github.com/taskwright-dev/taskwright.git
 cd taskwright
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh

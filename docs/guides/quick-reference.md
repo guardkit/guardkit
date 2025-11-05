@@ -5,7 +5,7 @@
 ### Installation
 ```bash
 # Install globally (one-time)
-curl -sSL https://raw.githubusercontent.com/requirekit/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize projects with stack templates
 taskwright init react                  # React + TypeScript + Vite + Playwright
