@@ -35,6 +35,14 @@ taskwright init react  # or: python, typescript-api, maui-appshell, default
 - Type `Developer: Reload Window` and press Enter
 - Or close and reopen VS Code
 
+> **⚠️ Important - Working Directory**
+>
+> Always run `/task-work` from your **project root directory** (where your code lives), not from the Taskwright installation directory. The command uses your current directory to detect the tech stack and create files.
+>
+> ```bash
+> cd /path/to/your/project  # ✅ Navigate to project root first
+> ```
+
 ```bash
 # In Claude Code - create and work on a task
 /task-create "Add user login feature"
@@ -53,6 +61,10 @@ chmod +x installer/scripts/install.sh
 # Initialize your project
 cd /path/to/your/project
 taskwright init react
+
+# IMPORTANT: Stay in your project directory for task work
+/task-create "Add user login feature"
+/task-work TASK-001
 ```
 
 **If using VS Code:** Reload the window after initialization (see instructions above).

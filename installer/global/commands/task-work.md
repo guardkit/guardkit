@@ -18,6 +18,80 @@ This command supports **graceful degradation** based on installed packages:
 
 **Note**: The workflow automatically detects require-kit availability and adjusts Phase 1 loading accordingly. No manual configuration required.
 
+---
+
+## ⚠️ Working Directory Requirement
+
+**CRITICAL**: `/task-work` must be run from your **project root directory** (where code files should be created).
+
+The command uses the current working directory to:
+- Detect project technology stack (e.g., `.csproj` for .NET, `package.json` for Node.js)
+- Create source files in the correct locations
+- Run tests and build commands
+- Generate implementation files
+
+### Verify Your Location
+
+Before running `/task-work`, confirm you're in the correct directory:
+
+```bash
+# ✅ Correct - Run from project root
+cd ~/Projects/weather_demo
+pwd  # Should show: /Users/you/Projects/weather_demo
+ls   # Should show: weather_demo.csproj, Program.cs, Controllers/, tasks/, etc.
+/task-work TASK-001
+
+# ❌ Wrong - Running from RequireKit/Taskwright directory
+cd ~/Projects/require-kit  # Wrong location!
+/task-work TASK-001        # Will create files in wrong place, wrong stack detection
+```
+
+### What Happens If You're in the Wrong Directory?
+
+If you run `/task-work` from the wrong directory:
+- ❌ Files created in wrong location (e.g., in `require-kit/` instead of `weather_demo/`)
+- ❌ Technology stack misdetected (sees RequireKit's Python files instead of your .NET project)
+- ❌ Wrong test commands executed (runs `pytest` instead of `dotnet test`)
+- ❌ Quality gates fail or execute against wrong codebase
+
+### Directory Structure Example
+
+```
+~/Projects/
+├── require-kit/           # RequireKit installation (don't run task-work here!)
+│   ├── requirements.txt
+│   └── ...
+├── taskwright/            # Taskwright repo (don't run task-work here!)
+│   └── ...
+└── weather_demo/          # Your project (run task-work HERE ✅)
+    ├── weather_demo.csproj
+    ├── Program.cs
+    ├── Controllers/
+    └── tasks/
+        └── backlog/TASK-001-*.md
+```
+
+### Integration with RequireKit
+
+When using RequireKit for requirements management:
+1. Create requirements in RequireKit directory: `/req-create`
+2. **Navigate to project directory**: `cd ~/Projects/weather_demo`
+3. Create task linked to requirements: `/task-create "Title" requirements:[REQ-001]`
+4. Work on task **from project directory**: `/task-work TASK-001`
+
+### Quick Directory Validation
+
+Run this before `/task-work` to verify you're in the right place:
+
+```bash
+# Verify you're in project root (should see project files)
+ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>/dev/null || ls *.sln 2>/dev/null
+
+# If you see your project files, you're good to go!
+```
+
+---
+
 ## Command Syntax
 
 ```bash
