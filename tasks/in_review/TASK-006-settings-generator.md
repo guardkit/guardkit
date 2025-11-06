@@ -1,10 +1,9 @@
 ---
 id: TASK-006
 title: Settings Generator from AI Analysis
-status: completed
+status: in_review
 created: 2025-11-01T20:40:00Z
 updated: 2025-11-06T13:00:00Z
-completed: 2025-11-06T13:00:00Z
 priority: medium
 complexity: 3
 estimated_hours: 3
