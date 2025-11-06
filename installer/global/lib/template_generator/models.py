@@ -1,68 +1,111 @@
 """
-Pydantic Data Models for Template Generation
+Data Models for Template Generation
 
-Provides structured data models for template files including CLAUDE.md content.
+Provides Pydantic models for representing templates, template collections,
+and validation results.
 """
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from typing import List, Dict, Optional
+from pydantic import BaseModel, Field, ConfigDict
 
 
-class TemplateClaude(BaseModel):
-    """Generated CLAUDE.md structure
+class CodeTemplate(BaseModel):
+    """Represents a generated code template."""
 
-    Represents the complete structure of a CLAUDE.md file that will guide
-    Claude Code when working with template-generated projects.
-    """
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "schema_version": "1.0.0",
+                "name": "GetProducts.cs.template",
+                "original_path": "src/Domain/Products/GetProducts.cs",
+                "template_path": "templates/Domain/Products/GetProducts.template",
+                "content": "namespace {{ProjectName}}.Domain.{{EntityNamePlural}};",
+                "placeholders": ["ProjectName", "EntityNamePlural", "Verb", "EntityName"],
+                "file_type": "domain_operation",
+                "language": "C#",
+                "purpose": "Domain operation for querying products",
+                "quality_score": 9.0,
+                "patterns": ["Repository pattern", "Result type pattern"]
+            }
+        }
+    )
 
-    schema_version: str = Field(default="1.0.0", description="Data contract version")
+    schema_version: str = Field(default="1.0.0", description="Template schema version")
+    name: str = Field(description="Template file name")
+    original_path: str = Field(description="Path to original example file")
+    template_path: str = Field(description="Relative path where template should be saved")
+    content: str = Field(description="Templated content with placeholders")
+    placeholders: List[str] = Field(default_factory=list, description="List of placeholder names")
+    file_type: Optional[str] = Field(None, description="Type of file (e.g., 'domain_operation')")
+    language: Optional[str] = Field(None, description="Programming language")
+    purpose: Optional[str] = Field(None, description="Purpose of the template")
+    quality_score: Optional[float] = Field(None, ge=0.0, le=10.0, description="Quality score from analysis")
+    patterns: List[str] = Field(default_factory=list, description="Design patterns demonstrated")
+    created_at: datetime = Field(default_factory=datetime.now, description="Timestamp of template creation")
 
-    # Content sections (all in Markdown format)
-    architecture_overview: str = Field(description="Markdown describing architecture patterns and layers")
-    technology_stack: str = Field(description="Markdown describing technology stack and versions")
-    project_structure: str = Field(description="Markdown describing folder structure with explanations")
-    naming_conventions: str = Field(description="Markdown describing naming rules with examples")
-    patterns: str = Field(description="Markdown describing patterns and best practices")
-    examples: str = Field(description="Markdown with code examples demonstrating patterns")
-    quality_standards: str = Field(description="Markdown with quality guidelines and testing requirements")
-    agent_usage: str = Field(description="Markdown describing which agents to use when")
 
-    # Metadata
-    generated_at: str = Field(description="ISO 8601 timestamp")
-    confidence_score: float = Field(ge=0.0, le=1.0, description="AI confidence (0.0-1.0)")
+class TemplateCollection(BaseModel):
+    """Collection of generated templates."""
 
-    def to_markdown(self) -> str:
-        """Convert TemplateClaude to full CLAUDE.md content
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "templates": [],
+                "total_count": 15,
+                "by_type": {
+                    "domain_operation": 8,
+                    "repository": 4,
+                    "entity": 3
+                }
+            }
+        }
+    )
 
-        Returns:
-            Complete CLAUDE.md file content in Markdown format
-        """
-        sections = [
-            "# Claude Code Project Instructions",
-            "",
-            f"**Generated**: {self.generated_at}",
-            f"**Confidence**: {self.confidence_score:.0%}",
-            "",
-            "---",
-            "",
-            self.architecture_overview,
-            "",
-            self.technology_stack,
-            "",
-            self.project_structure,
-            "",
-            self.naming_conventions,
-            "",
-            self.patterns,
-            "",
-            self.examples,
-            "",
-            self.quality_standards,
-            "",
-            self.agent_usage,
-            "",
-            "---",
-            "",
-            f"**Last Updated**: {self.generated_at}",
-        ]
-        return "\n".join(sections)
+    templates: List[CodeTemplate] = Field(default_factory=list, description="List of templates")
+    total_count: int = Field(description="Total number of templates")
+    by_type: Dict[str, int] = Field(default_factory=dict, description="Count by file type")
+    generated_at: datetime = Field(default_factory=datetime.now, description="Collection timestamp")
+
+
+class ValidationResult(BaseModel):
+    """Result of template validation."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "is_valid": True,
+                "errors": [],
+                "warnings": ["No placeholders found in template"]
+            }
+        }
+    )
+
+    is_valid: bool = Field(description="Whether template passed validation")
+    errors: List[str] = Field(default_factory=list, description="Validation errors")
+    warnings: List[str] = Field(default_factory=list, description="Validation warnings")
+
+    @property
+    def has_errors(self) -> bool:
+        """Check if there are any errors."""
+        return len(self.errors) > 0
+
+    @property
+    def has_warnings(self) -> bool:
+        """Check if there are any warnings."""
+        return len(self.warnings) > 0
+
+
+class GenerationError(Exception):
+    """Base exception for template generation errors."""
+    pass
+
+
+class ValidationError(GenerationError):
+    """Error during template validation."""
+    pass
+
+
+class PlaceholderExtractionError(GenerationError):
+    """Error during placeholder extraction."""
+    pass

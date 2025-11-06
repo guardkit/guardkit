@@ -3,9 +3,14 @@ import os
 import sys
 from pathlib import Path
 
-# Add installer/global/lib to Python path
-lib_path = Path(__file__).parent.parent / "installer" / "global" / "lib"
-sys.path.insert(0, str(lib_path))
+# Add installer/global to Python path (to allow "from lib.X import Y")
+global_path = Path(__file__).parent.parent / "installer" / "global"
+sys.path.insert(0, str(global_path))
+
+# Also add lib directory for direct imports (for backward compatibility)
+lib_path = global_path / "lib"
+if str(lib_path) not in sys.path:
+    sys.path.insert(0, str(lib_path))
 
 # Also add commands/lib for plan_modifier imports
 commands_lib_path = Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"
