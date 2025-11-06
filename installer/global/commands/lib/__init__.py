@@ -99,6 +99,12 @@ from .error_messages import (
     format_calculation_error,
 )
 
+# Greenfield Q&A Session (TASK-001B)
+from .greenfield_qa_session import (
+    GreenfieldAnswers,
+    TemplateInitQASession,
+)
+
 __version__ = "1.1.0"
 
 __all__ = [
@@ -177,4 +183,8 @@ __all__ = [
     "format_file_error",
     "format_validation_error",
     "format_calculation_error",
+
+    # Greenfield Q&A Session
+    "GreenfieldAnswers",
+    "TemplateInitQASession",
 ]
