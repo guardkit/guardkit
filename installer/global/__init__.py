@@ -1,0 +1,1 @@
+"""Taskwright global resources package"""

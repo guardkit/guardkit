@@ -1,0 +1,1 @@
+"""Taskwright installer package"""
