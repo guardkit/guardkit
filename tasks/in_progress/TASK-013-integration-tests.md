@@ -1,7 +1,7 @@
 ---
 id: TASK-013
 title: Integration Tests
-status: backlog
+status: in_progress
 created: 2025-11-01T21:00:00Z
 priority: high
 complexity: 7
