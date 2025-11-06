@@ -35,6 +35,8 @@ taskwright init react  # or: python, typescript-api, maui-appshell, default
 - Type `Developer: Reload Window` and press Enter
 - Or close and reopen VS Code
 
+**Using Claude Code Web?** See the [Claude Code Web Setup Guide](docs/guides/claude-code-web-setup.md) for web-specific instructions.
+
 > **⚠️ Important - Working Directory**
 >
 > Always run `/task-work` from your **project root directory** (where your code lives), not from the Taskwright installation directory. The command uses your current directory to detect the tech stack and create files.
@@ -305,6 +307,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 ## Documentation
 
 ### Getting Started
+- [Claude Code Web Setup](docs/guides/claude-code-web-setup.md) - Using Taskwright with Claude Code Web (installation, persistence, multi-repo)
 - [Taskwright Workflow](docs/guides/taskwright-workflow.md) - Complete workflow guide
 - [Complexity Management](docs/workflows/complexity-management-workflow.md) - Understanding complexity evaluation
 - [Design-First Workflow](docs/workflows/design-first-workflow.md) - When and how to split design/implementation

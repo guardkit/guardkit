@@ -15,6 +15,8 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 ```
 
+> **Using Claude Code Web?** See the [Claude Code Web Setup Guide](claude-code-web-setup.md) for detailed web-specific instructions including persistence and multi-repository usage.
+
 ### Step 2: Create Your First Task (in Claude Code)
 ```bash
 # Create a task
@@ -34,6 +36,7 @@ That's it! The `/task-work` command handles planning, implementation, architectu
 ```
 docs/guides/
 ├── getting-started.md           # This guide (START HERE!)
+├── claude-code-web-setup.md     # Claude Code Web setup (installation, persistence)
 ├── quick-reference.md           # Command reference
 ├── taskwright-workflow.md       # Complete workflow guide
 ├── migration-guide.md           # Migrating from old workflow
@@ -289,6 +292,7 @@ taskwright init default               # Language-agnostic
 ```
 
 ### Documentation
+- [Claude Code Web Setup](claude-code-web-setup.md) - Using with Claude Code Web (installation, persistence, multi-repo)
 - [Quick Reference](quick-reference.md) - Command cheat sheet
 - [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
 - [Migration Guide](migration-guide.md) - Migrate from old workflow
