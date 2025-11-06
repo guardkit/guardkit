@@ -1,6 +1,6 @@
 # Taskwright
 
-![version](https://img.shields.io/badge/version-1.0.0-blue)
+![version](https://img.shields.io/badge/version-0.9.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 ![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
