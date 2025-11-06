@@ -224,16 +224,28 @@ copy_template_files() {
         print_success "Copied project context file"
     fi
     
-    # Copy agents - either from template or global
+    # Copy template agents first (take precedence)
     if [ -d "$template_dir/agents" ] && [ "$(ls -A $template_dir/agents 2>/dev/null)" ]; then
         cp -r "$template_dir/agents/"* .claude/agents/ 2>/dev/null || true
         print_success "Copied template-specific agents"
-    elif [ -d "$AGENTECFLOW_HOME/agents" ] && [ "$(ls -A $AGENTECFLOW_HOME/agents 2>/dev/null)" ]; then
-        # Copy global agents
-        cp -r "$AGENTECFLOW_HOME/agents/"* .claude/agents/ 2>/dev/null || true
-        print_success "Copied global agents"
-    else
-        print_warning "No agents found to copy"
+    fi
+
+    # Copy global agents (skip if file exists from template)
+    local global_agent_count=0
+    if [ -d "$AGENTECFLOW_HOME/agents" ] && [ "$(ls -A $AGENTECFLOW_HOME/agents 2>/dev/null)" ]; then
+        for agent_file in "$AGENTECFLOW_HOME/agents"/*.md; do
+            if [ -f "$agent_file" ]; then
+                local agent_name=$(basename "$agent_file")
+                # Only copy if file doesn't already exist (template takes precedence)
+                if [ ! -f ".claude/agents/$agent_name" ]; then
+                    cp "$agent_file" ".claude/agents/$agent_name"
+                    ((global_agent_count++))
+                fi
+            fi
+        done
+        if [ $global_agent_count -gt 0 ]; then
+            print_success "Added $global_agent_count global agent(s)"
+        fi
     fi
     
     # Copy templates
