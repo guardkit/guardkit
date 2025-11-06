@@ -1,12 +1,14 @@
 ---
 id: TASK-005
 title: AI-Guided Manifest Generator
-status: backlog
+status: completed
 created: 2025-11-01T20:35:00Z
-updated: 2025-11-01T23:55:00Z
+updated: 2025-11-06T01:00:00Z
+completed: 2025-11-06T01:00:00Z
 priority: high
 complexity: 3
 estimated_hours: 4
+actual_hours: 3.5
 tags: [template-generation, manifest, ai-assisted]
 epic: EPIC-001
 feature: template-generation
