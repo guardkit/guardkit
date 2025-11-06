@@ -1,12 +1,14 @@
 ---
 id: TASK-008
 title: Template Generator from Example Files
-status: backlog
+status: completed
 created: 2025-11-01T20:45:00Z
-updated: 2025-11-02T00:00:00Z
+updated: 2025-11-06T13:00:00Z
+completed: 2025-11-06T13:00:00Z
 priority: high
 complexity: 5
 estimated_hours: 7
+actual_hours: 6.5
 tags: [template-generation, ai-assisted, placeholder-extraction]
 epic: EPIC-001
 feature: template-generation
