@@ -23,6 +23,14 @@ from installer.global.lib.template_generator.claude_md_generator import ClaudeMd
 from installer.global.lib.template_generator.template_generator import TemplateGenerator
 from installer.global.lib.agent_generator.agent_generator import AIAgentGenerator
 
+# TASK-040: Phase 5.5 Completeness Validation
+import importlib
+_validator_module = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
+_models_module = importlib.import_module('installer.global.lib.template_generator.models')
+CompletenessValidator = _validator_module.CompletenessValidator
+ValidationReport = _models_module.ValidationReport
+TemplateCollection = _models_module.TemplateCollection
+
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +46,9 @@ class OrchestrationConfig:
     save_analysis: bool = False
     no_agents: bool = False
     verbose: bool = False
+    skip_validation: bool = False  # TASK-040: Skip Phase 5.5 validation
+    auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
+    interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
 
 
 @dataclass
@@ -137,6 +148,13 @@ class TemplateCreateOrchestrator:
             templates = self._phase5_template_generation(analysis)
             if not templates:
                 self.warnings.append("No template files generated")
+
+            # ===== Phase 5.5: Completeness Validation (TASK-040) =====
+            if not self.config.skip_validation and templates:
+                templates = self._phase5_5_completeness_validation(
+                    templates=templates,
+                    analysis=analysis
+                )
 
             # Phase 6: Agent Recommendation (reordered - was Phase 7)
             agents = []
@@ -430,6 +448,192 @@ class TemplateCreateOrchestrator:
             self._print_error(f"CLAUDE.md generation failed: {e}")
             logger.exception("CLAUDE.md generation error")
             return None
+
+    def _phase5_5_completeness_validation(
+        self,
+        templates: TemplateCollection,
+        analysis: Any
+    ) -> TemplateCollection:
+        """
+        Phase 5.5: Completeness Validation (TASK-040).
+
+        Validates template completeness and optionally auto-fixes issues.
+
+        Args:
+            templates: TemplateCollection to validate
+            analysis: CodebaseAnalysis for context
+
+        Returns:
+            Updated TemplateCollection (possibly with auto-generated templates)
+        """
+        self._print_phase_header("Phase 5.5: Completeness Validation")
+
+        try:
+            # Create validator
+            validator = CompletenessValidator()
+
+            # Run validation
+            self._print_info("  Validating template completeness...")
+            validation_report = validator.validate(templates, analysis)
+
+            # Display validation report
+            self._print_validation_report(validation_report)
+
+            # Handle validation issues if present
+            if not validation_report.is_complete:
+                if self.config.interactive_validation:
+                    action = self._handle_validation_issues_interactive(validation_report)
+                else:
+                    action = self._handle_validation_issues_noninteractive(validation_report)
+
+                if action == 'auto_fix':
+                    # Auto-generate missing templates
+                    self._print_info("\n  Auto-generating missing templates...")
+                    new_templates = validator.generate_missing_templates(
+                        recommendations=validation_report.recommended_templates,
+                        existing_templates=templates
+                    )
+
+                    if new_templates:
+                        # Add new templates to collection
+                        templates.templates.extend(new_templates)
+                        templates.total_count += len(new_templates)
+
+                        self._print_success_line(f"Generated {len(new_templates)} missing templates")
+                        self._print_info(f"  Updated total: {templates.total_count} templates")
+
+                        # Recalculate FN score
+                        new_score = validator._calculate_false_negative_score(
+                            templates_generated=templates.total_count,
+                            templates_expected=validation_report.templates_expected
+                        )
+                        self._print_success_line(f"False Negative score improved: {validation_report.false_negative_score:.2f} → {new_score:.2f}")
+                    else:
+                        self._print_warning("Could not auto-generate missing templates")
+
+                elif action == 'quit':
+                    self._print_info("\n  Template creation cancelled by user")
+                    sys.exit(0)
+
+                # action == 'continue' means proceed without fixing
+
+            else:
+                self._print_success_line("All templates complete, no issues found")
+
+            return templates
+
+        except Exception as e:
+            self._print_error(f"Validation failed: {e}")
+            logger.exception("Validation error")
+            # Don't fail the entire workflow, just warn
+            self.warnings.append(f"Validation failed: {e}")
+            return templates
+
+    def _print_validation_report(self, report: ValidationReport) -> None:
+        """
+        Display validation report in readable format.
+
+        Args:
+            report: ValidationReport to display
+        """
+        print(f"\n  Templates Generated: {report.templates_generated}")
+        print(f"  Templates Expected: {report.templates_expected}")
+        print(f"  False Negative Score: {report.false_negative_score:.2f}/10")
+
+        if report.is_complete:
+            print(f"  Status: ✅ Complete")
+        else:
+            print(f"  Status: ⚠️  Incomplete ({len(report.issues)} issues)")
+
+        if report.issues:
+            print(f"\n  Issues Found:")
+            for issue in report.issues[:5]:  # Show first 5 issues
+                severity_icon = {
+                    'critical': '🔴',
+                    'high': '🟠',
+                    'medium': '🟡',
+                    'low': '🟢'
+                }.get(issue.severity, '⚪')
+
+                print(f"    {severity_icon} {issue.message}")
+
+            if len(report.issues) > 5:
+                print(f"    ... and {len(report.issues) - 5} more")
+
+        if report.recommended_templates:
+            print(f"\n  Recommendations: {len(report.recommended_templates)} missing templates")
+            auto_generable = sum(1 for rec in report.recommended_templates if rec.can_auto_generate)
+            if auto_generable > 0:
+                print(f"    ({auto_generable} can be auto-generated)")
+
+    def _handle_validation_issues_interactive(
+        self,
+        validation_report: ValidationReport
+    ) -> str:
+        """
+        Handle validation issues in interactive mode.
+
+        Prompts: [A]uto-fix / [C]ontinue / [Q]uit
+
+        Args:
+            validation_report: ValidationReport with issues
+
+        Returns:
+            Action: 'auto_fix', 'continue', or 'quit'
+        """
+        print("\n  Options:")
+        print("    [A] Auto-fix - Generate missing templates automatically")
+        print("    [C] Continue - Proceed without fixing issues")
+        print("    [Q] Quit - Cancel template creation")
+
+        while True:
+            try:
+                choice = input("\n  Your choice (A/C/Q): ").strip().upper()
+
+                if choice == 'A':
+                    return 'auto_fix'
+                elif choice == 'C':
+                    return 'continue'
+                elif choice == 'Q':
+                    return 'quit'
+                else:
+                    print("  Invalid choice. Please enter A, C, or Q.")
+
+            except (EOFError, KeyboardInterrupt):
+                print("\n  Cancelled by user")
+                return 'quit'
+
+    def _handle_validation_issues_noninteractive(
+        self,
+        validation_report: ValidationReport
+    ) -> str:
+        """
+        Handle validation issues in non-interactive mode.
+
+        Default: auto_fix if possible, fail if not
+
+        Args:
+            validation_report: ValidationReport with issues
+
+        Returns:
+            Action: 'auto_fix' or 'continue'
+        """
+        if self.config.auto_fix_templates:
+            # Check if issues can be auto-fixed
+            auto_fixable = any(
+                rec.can_auto_generate
+                for rec in validation_report.recommended_templates
+            )
+
+            if auto_fixable:
+                self._print_info("\n  Non-interactive mode: Auto-fixing completeness issues...")
+                return 'auto_fix'
+            else:
+                self._print_warning("\n  Issues found but cannot auto-fix. Continuing anyway...")
+                return 'continue'
+        else:
+            self._print_warning("\n  Issues found. Auto-fix disabled, continuing...")
+            return 'continue'
 
     def _phase8_package_assembly(
         self,
