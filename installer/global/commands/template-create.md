@@ -68,7 +68,20 @@ Phase 4: Settings Generation (TASK-006)
 ├─ Code style inference
 └─ Generation options
 
-Phase 5: CLAUDE.md Generation (TASK-007)
+Phase 5: Template File Generation (TASK-008) [REORDERED]
+├─ AI-powered placeholder extraction
+├─ Template content generation
+├─ Pattern identification
+├─ Quality scoring
+└─ Validation
+
+Phase 6: Agent Recommendation (TASK-009) [REORDERED]
+├─ Capability needs identification
+├─ Gap analysis vs existing agents
+├─ AI-powered agent generation
+└─ Reusability assessment
+
+Phase 7: CLAUDE.md Generation (TASK-007) [REORDERED]
 ├─ Architecture overview
 ├─ Technology stack documentation
 ├─ Project structure visualization
@@ -76,20 +89,7 @@ Phase 5: CLAUDE.md Generation (TASK-007)
 ├─ Patterns and best practices
 ├─ Code examples
 ├─ Quality standards
-└─ Agent usage guidelines
-
-Phase 6: Template File Generation (TASK-008)
-├─ AI-powered placeholder extraction
-├─ Template content generation
-├─ Pattern identification
-├─ Quality scoring
-└─ Validation
-
-Phase 7: Agent Recommendation (TASK-009)
-├─ Capability needs identification
-├─ Gap analysis vs existing agents
-├─ AI-powered agent generation
-└─ Reusability assessment
+└─ Agent usage (NOW scans actual agents from Phase 6)
 
 Phase 8: Template Package Assembly
 ├─ Directory structure creation
@@ -345,19 +345,7 @@ Generates `settings.json`:
 }
 ```
 
-### CLAUDE.md Generation (Phase 5)
-
-Generates comprehensive project documentation with:
-- Architecture overview with layer descriptions
-- Technology stack with versions
-- Project structure visualization
-- Naming conventions with examples
-- Patterns and best practices
-- Code examples from analysis
-- Quality standards (coverage, SOLID scores)
-- Agent usage guidelines
-
-### Template File Generation (Phase 6)
+### Template File Generation (Phase 5) [REORDERED]
 
 For each example file:
 1. Read original content
@@ -386,7 +374,7 @@ public class {{Verb}}{{EntityNamePlural}}
 }
 ```
 
-### Agent Recommendation (Phase 7)
+### Agent Recommendation (Phase 6) [REORDERED]
 
 Identifies capability needs and generates custom agents:
 
@@ -401,6 +389,24 @@ Identifies capability needs and generates custom agents:
 - Based on actual code examples from codebase
 - Captures project-specific patterns and conventions
 - Marks reusable agents for global library
+
+### CLAUDE.md Generation (Phase 7) [REORDERED]
+
+**CRITICAL CHANGE** (TASK-019A): This phase NOW runs AFTER agents are generated.
+
+Generates comprehensive project documentation with:
+- Architecture overview with layer descriptions
+- Technology stack with versions
+- Project structure visualization
+- Naming conventions with examples
+- Patterns and best practices
+- Code examples from analysis
+- Quality standards (coverage, SOLID scores)
+- **Agent usage** (NOW scans actual agents from Phase 6)
+  - Eliminates AI hallucinations about non-existent agents
+  - Documents only agents that actually exist
+  - Extracts metadata from agent frontmatter
+  - Groups agents by category (domain, ui, testing, etc.)
 
 ## Error Handling
 
@@ -494,12 +500,6 @@ Enter value (default: maui-app-template): dotnet-maui-mvvm
   ✓ 3 layer mappings
   ✓ Code style: C# defaults
 
-📚 Generating CLAUDE.md...
-  ✓ Architecture overview
-  ✓ Technology stack
-  ✓ 3 code examples
-  ✓ Quality standards
-
 🎨 Generating templates...
   ✓ Domain/GetEntity.cs.template
   ✓ Domain/CreateEntity.cs.template
@@ -516,6 +516,13 @@ Enter value (default: maui-app-template): dotnet-maui-mvvm
     ✓ Created (confidence: 85%)
   → Generating: domain-operations-specialist
     ✓ Created (confidence: 90%)
+
+📚 Generating CLAUDE.md...
+  ✓ Architecture overview
+  ✓ Technology stack
+  ✓ 3 code examples
+  ✓ Quality standards
+  ✓ Agent usage (2 agents documented)
 
 ✅ Template package created successfully!
 

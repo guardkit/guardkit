@@ -9,6 +9,7 @@ template-generated projects.
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
+import frontmatter
 
 from ..codebase_analyzer.models import (
     CodebaseAnalysis,
@@ -16,7 +17,7 @@ from ..codebase_analyzer.models import (
     LayerInfo,
     ExampleFile,
 )
-from .models import TemplateClaude
+from .models import TemplateClaude, AgentMetadata
 
 
 class ClaudeMdGenerator:
@@ -26,13 +27,17 @@ class ClaudeMdGenerator:
     that guides Claude Code in maintaining project consistency and quality.
     """
 
-    def __init__(self, analysis: CodebaseAnalysis):
+    def __init__(self, analysis: CodebaseAnalysis, agents: Optional[List] = None):
         """Initialize generator with analysis results
 
         Args:
             analysis: CodebaseAnalysis from TASK-002
+            agents: Optional list of GeneratedAgent objects (from Phase 7)
+                   If provided, will scan and document actual agents
+                   If None, generates generic agent guidance (backward compatible)
         """
         self.analysis = analysis
+        self.agents = agents
 
     def generate(self) -> TemplateClaude:
         """Generate complete CLAUDE.md content from analysis
@@ -701,10 +706,11 @@ class ClaudeMdGenerator:
             ""
         ]
 
-        # Use suggested agents from analysis if available
-        # Note: This would typically come from TASK-004A (AI Agent Generator)
-        # For now, we'll generate generic guidance based on architecture
+        # If agents were provided (Phase 7 executed first), document them
+        if self.agents:
+            return self._generate_dynamic_agent_usage()
 
+        # Fallback: Generate generic guidance (backward compatible)
         usage.extend([
             "## When to Use Agents",
             "",
@@ -716,6 +722,157 @@ class ClaudeMdGenerator:
         ])
 
         return "\n".join(usage)
+
+    def _generate_dynamic_agent_usage(self) -> str:
+        """Generate agent usage section based on actual agents
+
+        Returns:
+            Markdown describing actual agents generated for this template
+        """
+        usage = [
+            "# Agent Usage",
+            "",
+            "This template includes specialized agents tailored to this project's patterns:",
+            ""
+        ]
+
+        # Extract metadata from each agent
+        agent_metadata_list = []
+        for agent in self.agents:
+            metadata = self._extract_agent_metadata(agent)
+            if metadata:
+                agent_metadata_list.append(metadata)
+
+        # Group agents by category
+        by_category = {}
+        for metadata in agent_metadata_list:
+            category = metadata.category.title()
+            if category not in by_category:
+                by_category[category] = []
+            by_category[category].append(metadata)
+
+        # Generate documentation by category
+        for category, agents in sorted(by_category.items()):
+            usage.append(f"## {category} Agents")
+            usage.append("")
+
+            for agent in agents:
+                usage.append(f"### {agent.name}")
+                usage.append(f"**Purpose**: {agent.purpose}")
+                usage.append("")
+
+                if agent.capabilities:
+                    usage.append("**Capabilities**:")
+                    for capability in agent.capabilities[:5]:  # Max 5
+                        usage.append(f"- {capability}")
+                    usage.append("")
+
+                usage.append(f"**When to Use**: {agent.when_to_use}")
+                usage.append("")
+
+        # Add general guidance
+        usage.extend([
+            "## General Guidance",
+            "",
+            "- Use agents when implementing features that match their expertise",
+            "- Agents understand this project's specific patterns and conventions",
+            "- For tasks outside agent specializations, rely on general Claude capabilities",
+            ""
+        ])
+
+        return "\n".join(usage)
+
+    def _extract_agent_metadata(self, agent) -> Optional[AgentMetadata]:
+        """Extract metadata from a GeneratedAgent
+
+        Args:
+            agent: GeneratedAgent object with full_definition
+
+        Returns:
+            AgentMetadata or None if extraction fails
+        """
+        try:
+            # Parse frontmatter from agent markdown
+            post = frontmatter.loads(agent.full_definition)
+            metadata = post.metadata
+
+            # Extract first paragraph from content as purpose
+            content_lines = post.content.strip().split('\n')
+            purpose = metadata.get('description', '')
+
+            # Extract capabilities from content (look for bullet lists)
+            capabilities = []
+            in_capabilities = False
+            for line in content_lines:
+                if '## Capabilities' in line or '## Patterns' in line:
+                    in_capabilities = True
+                    continue
+                elif line.startswith('##'):
+                    in_capabilities = False
+                elif in_capabilities and line.strip().startswith('-'):
+                    capabilities.append(line.strip()[2:].strip())
+
+            # Extract when to use (look for "when to use" or "usage" section)
+            when_to_use = "Use this agent for tasks related to " + purpose.lower()
+            for i, line in enumerate(content_lines):
+                if 'when to use' in line.lower() or 'usage' in line.lower():
+                    # Get next non-empty line
+                    for next_line in content_lines[i+1:]:
+                        if next_line.strip() and not next_line.startswith('#'):
+                            when_to_use = next_line.strip()
+                            break
+                    break
+
+            # Infer category from name and tags
+            category = self._infer_category(agent.name, metadata.get('tags', []))
+
+            return AgentMetadata(
+                name=agent.name,
+                purpose=purpose,
+                capabilities=capabilities[:5],  # Max 5
+                when_to_use=when_to_use,
+                category=category
+            )
+
+        except Exception as e:
+            # If extraction fails, return None (agent will be skipped)
+            return None
+
+    def _infer_category(self, name: str, tags: List[str]) -> str:
+        """Infer agent category from name and tags
+
+        Args:
+            name: Agent name
+            tags: List of tags
+
+        Returns:
+            Category name
+        """
+        name_lower = name.lower()
+        tags_lower = [t.lower() for t in tags]
+
+        # Domain category
+        if 'domain' in name_lower or 'domain' in tags_lower:
+            return 'domain'
+
+        # UI category
+        if any(term in name_lower for term in ['ui', 'view', 'page', 'component']):
+            return 'ui'
+        if any(term in tags_lower for term in ['ui', 'frontend', 'view']):
+            return 'ui'
+
+        # Testing category
+        if 'test' in name_lower or 'test' in tags_lower:
+            return 'testing'
+
+        # Architecture category
+        if any(term in name_lower for term in ['architect', 'review', 'design']):
+            return 'architecture'
+        if 'architecture' in tags_lower:
+            return 'architecture'
+
+        # Default to general
+        return 'general'
 
     def to_markdown(self, claude: TemplateClaude) -> str:
         """Convert TemplateClaude to full CLAUDE.md content

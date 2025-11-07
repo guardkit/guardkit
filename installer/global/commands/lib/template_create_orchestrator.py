@@ -65,10 +65,16 @@ class TemplateCreateOrchestrator:
     2. AI analysis (TASK-002)
     3. Manifest generation (TASK-005)
     4. Settings generation (TASK-006)
-    5. CLAUDE.md generation (TASK-007)
-    6. Template file generation (TASK-008)
-    7. Agent recommendation (TASK-009)
+    5. Template file generation (TASK-008) [REORDERED - was Phase 6]
+    6. Agent recommendation (TASK-009) [REORDERED - was Phase 7]
+    7. CLAUDE.md generation (TASK-007) [REORDERED - was Phase 5]
+       ↑ NOW agents exist and can be documented accurately
     8. Template package assembly
+
+    Phase Reordering (TASK-019A):
+    - Agents are now created BEFORE CLAUDE.md generation
+    - Eliminates AI hallucinations about non-existent agents
+    - CLAUDE.md now scans and documents actual agent files
 
     Usage:
         config = OrchestrationConfig(codebase_path=Path("/path/to/code"))
@@ -127,20 +133,21 @@ class TemplateCreateOrchestrator:
             if not settings:
                 return self._create_error_result("Settings generation failed")
 
-            # Phase 5: CLAUDE.md Generation
-            claude_md = self._phase5_claude_md_generation(analysis)
-            if not claude_md:
-                return self._create_error_result("CLAUDE.md generation failed")
-
-            # Phase 6: Template File Generation
-            templates = self._phase6_template_generation(analysis)
+            # Phase 5: Template File Generation (reordered - was Phase 6)
+            templates = self._phase5_template_generation(analysis)
             if not templates:
                 self.warnings.append("No template files generated")
 
-            # Phase 7: Agent Recommendation
+            # Phase 6: Agent Recommendation (reordered - was Phase 7)
             agents = []
             if not self.config.no_agents:
-                agents = self._phase7_agent_recommendation(analysis)
+                agents = self._phase6_agent_recommendation(analysis)
+
+            # Phase 7: CLAUDE.md Generation (reordered - was Phase 5)
+            # NOW agents exist and can be documented accurately
+            claude_md = self._phase7_claude_md_generation(analysis, agents)
+            if not claude_md:
+                return self._create_error_result("CLAUDE.md generation failed")
 
             # Phase 8: Template Package Assembly
             if self.config.dry_run:
@@ -315,39 +322,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Settings generation error")
             return None
 
-    def _phase5_claude_md_generation(self, analysis: Any) -> Optional[Any]:
+    def _phase5_template_generation(self, analysis: Any) -> Optional[Any]:
         """
-        Phase 5: Generate CLAUDE.md.
-
-        Args:
-            analysis: CodebaseAnalysis from phase 2
-
-        Returns:
-            TemplateClaude or None if failed
-        """
-        self._print_phase_header("Phase 5: CLAUDE.md Generation")
-
-        try:
-            generator = ClaudeMdGenerator(analysis)
-            claude_md = generator.generate()
-
-            example_count = len(analysis.example_files)
-
-            self._print_success_line("Architecture overview")
-            self._print_success_line("Technology stack")
-            self._print_success_line(f"{example_count} code examples")
-            self._print_success_line("Quality standards")
-
-            return claude_md
-
-        except Exception as e:
-            self._print_error(f"CLAUDE.md generation failed: {e}")
-            logger.exception("CLAUDE.md generation error")
-            return None
-
-    def _phase6_template_generation(self, analysis: Any) -> Optional[Any]:
-        """
-        Phase 6: Generate .template files.
+        Phase 5: Generate .template files (reordered - was Phase 6).
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -355,7 +332,7 @@ class TemplateCreateOrchestrator:
         Returns:
             TemplateCollection or None if failed
         """
-        self._print_phase_header("Phase 6: Template File Generation")
+        self._print_phase_header("Phase 5: Template File Generation")
 
         try:
             generator = TemplateGenerator(analysis)
@@ -381,9 +358,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Template generation error")
             return None
 
-    def _phase7_agent_recommendation(self, analysis: Any) -> List[Any]:
+    def _phase6_agent_recommendation(self, analysis: Any) -> List[Any]:
         """
-        Phase 7: Recommend and generate custom agents.
+        Phase 6: Recommend and generate custom agents (reordered - was Phase 7).
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -391,7 +368,7 @@ class TemplateCreateOrchestrator:
         Returns:
             List of GeneratedAgent objects
         """
-        self._print_phase_header("Phase 7: Agent Recommendation")
+        self._print_phase_header("Phase 6: Agent Recommendation")
 
         try:
             # Import agent scanner to get inventory
@@ -413,6 +390,46 @@ class TemplateCreateOrchestrator:
             self._print_warning(f"Agent generation failed: {e}")
             logger.exception("Agent generation error")
             return []
+
+    def _phase7_claude_md_generation(self, analysis: Any, agents: List[Any]) -> Optional[Any]:
+        """
+        Phase 7: Generate CLAUDE.md (reordered - was Phase 5).
+
+        NOW runs AFTER agents are generated, so it can document actual agents
+        instead of hallucinating non-existent ones.
+
+        Args:
+            analysis: CodebaseAnalysis from phase 2
+            agents: List of GeneratedAgent objects from phase 6
+
+        Returns:
+            TemplateClaude or None if failed
+        """
+        self._print_phase_header("Phase 7: CLAUDE.md Generation")
+
+        try:
+            # Pass agents to generator for accurate documentation
+            generator = ClaudeMdGenerator(analysis, agents=agents)
+            claude_md = generator.generate()
+
+            example_count = len(analysis.example_files)
+
+            self._print_success_line("Architecture overview")
+            self._print_success_line("Technology stack")
+            self._print_success_line(f"{example_count} code examples")
+            self._print_success_line("Quality standards")
+
+            if agents:
+                self._print_success_line(f"Agent usage ({len(agents)} agents documented)")
+            else:
+                self._print_success_line("Agent usage (generic guidance)")
+
+            return claude_md
+
+        except Exception as e:
+            self._print_error(f"CLAUDE.md generation failed: {e}")
+            logger.exception("CLAUDE.md generation error")
+            return None
 
     def _phase8_package_assembly(
         self,
