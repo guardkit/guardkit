@@ -58,8 +58,9 @@ class CodebaseAnalyzer:
         prompt_builder: Optional[PromptBuilder] = None,
         response_parser: Optional[ResponseParser] = None,
         serializer: Optional[AnalysisSerializer] = None,
-        max_files: int = 10,
-        use_agent: bool = True
+        max_files: int = 20,  # CHANGED: Increased from 10 to 20 for stratified sampling
+        use_agent: bool = True,
+        use_stratified_sampling: bool = True  # NEW: Enable pattern-aware sampling
     ):
         """
         Initialize codebase analyzer.
@@ -69,14 +70,17 @@ class CodebaseAnalyzer:
             prompt_builder: Prompt construction layer (DIP)
             response_parser: Response parsing layer (DIP)
             serializer: Result serialization layer (DIP)
-            max_files: Maximum number of files to sample
+            max_files: Maximum number of files to sample (default: 20 for stratified sampling)
             use_agent: Whether to attempt agent invocation (False forces heuristics)
+            use_stratified_sampling: Whether to use stratified sampling (default: True)
+                                    Set to False to use original random sampling
         """
         self.agent_invoker = agent_invoker or ArchitecturalReviewerInvoker()
         self.response_parser = response_parser or ResponseParser()
         self.serializer = serializer or AnalysisSerializer()
         self.max_files = max_files
         self.use_agent = use_agent
+        self.use_stratified_sampling = use_stratified_sampling
 
         # Prompt builder is created per-analysis with template context
         self.prompt_builder_class = prompt_builder.__class__ if prompt_builder else PromptBuilder
@@ -114,13 +118,35 @@ class CodebaseAnalyzer:
 
         logger.info(f"Analyzing codebase: {codebase_path}")
 
-        # Step 1: Collect file samples
+        # Step 1: Collect file samples (with stratified sampling option)
         logger.debug("Collecting file samples...")
-        file_collector = FileCollector(codebase_path, max_files=self.max_files)
-        file_samples = file_collector.collect_samples()
-        directory_tree = file_collector.get_directory_tree()
 
-        logger.info(f"Collected {len(file_samples)} file samples")
+        if self.use_stratified_sampling:
+            try:
+                from lib.codebase_analyzer.stratified_sampler import StratifiedSampler
+                logger.info("Using stratified sampling for pattern-aware file selection")
+
+                sampler = StratifiedSampler(codebase_path, max_files=self.max_files)
+                file_samples = sampler.collect_stratified_samples()
+
+                # Still need directory tree, use FileCollector for that
+                file_collector = FileCollector(codebase_path, max_files=0)
+                directory_tree = file_collector.get_directory_tree()
+
+                logger.info(f"Collected {len(file_samples)} stratified samples")
+            except Exception as e:
+                logger.warning(f"Stratified sampling failed: {e}. Falling back to random sampling.")
+                # Fallback to original sampling
+                file_collector = FileCollector(codebase_path, max_files=self.max_files)
+                file_samples = file_collector.collect_samples()
+                directory_tree = file_collector.get_directory_tree()
+                logger.info(f"Collected {len(file_samples)} file samples (fallback)")
+        else:
+            logger.info("Using original random sampling (stratified sampling disabled)")
+            file_collector = FileCollector(codebase_path, max_files=self.max_files)
+            file_samples = file_collector.collect_samples()
+            directory_tree = file_collector.get_directory_tree()
+            logger.info(f"Collected {len(file_samples)} file samples")
 
         # Step 2: Build prompt with template context
         logger.debug("Building analysis prompt...")
