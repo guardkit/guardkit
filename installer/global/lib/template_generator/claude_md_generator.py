@@ -649,6 +649,9 @@ class ClaudeMdGenerator:
         # Language-specific standards
         standards.extend(self._generate_language_quality_standards())
 
+        # Add template validation checklist
+        standards.extend(self._generate_validation_checklist())
+
         return "\n".join(standards)
 
     def _generate_language_quality_standards(self) -> List[str]:
@@ -692,6 +695,53 @@ class ClaudeMdGenerator:
             ])
 
         return standards
+
+    def _generate_validation_checklist(self) -> List[str]:
+        """Generate template validation checklist
+
+        Returns:
+            List of markdown lines for validation checklist
+        """
+        checklist = [
+            "## Template Validation Checklist",
+            "",
+            "Before using this template, verify:",
+            "",
+            "### CRUD Completeness",
+            "- [ ] Create operation (endpoint + handler + validator)",
+            "- [ ] Read operation (GetById + List + handlers)",
+            "- [ ] Update operation (endpoint + handler + validator)",
+            "- [ ] Delete operation (endpoint + handler + validator)",
+            "",
+            "### Layer Symmetry",
+            "- [ ] All UseCases commands have Web endpoints",
+            "- [ ] All Web endpoints have UseCases handlers",
+            "- [ ] Repository interfaces exist for all operations",
+            "",
+        ]
+
+        # Add REPR Pattern section if applicable (FastEndpoints/Web API pattern)
+        arch_style = self.analysis.architecture.architectural_style.lower()
+        if any(term in arch_style for term in ['web', 'api', 'fastendpoints']):
+            checklist.extend([
+                "### REPR Pattern (if using FastEndpoints)",
+                "- [ ] Each endpoint has Request/Response/Validator",
+                "- [ ] Validators use FluentValidation",
+                "- [ ] Routes follow RESTful conventions",
+                "",
+            ])
+
+        checklist.extend([
+            "### Pattern Consistency",
+            "- [ ] All entities follow same operation structure",
+            "- [ ] Naming conventions consistent",
+            "- [ ] Placeholders consistently applied",
+            "",
+            "See documentation for detailed validation checklist.",
+            ""
+        ])
+
+        return checklist
 
     def _generate_agent_usage(self) -> str:
         """Generate agent usage section

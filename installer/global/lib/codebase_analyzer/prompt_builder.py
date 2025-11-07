@@ -140,47 +140,62 @@ class PromptBuilder:
         return "\n".join(lines)
 
     def _build_request_section(self) -> str:
-        """Build the analysis request section."""
-        return """
+        """Build the analysis request section with completeness guidance."""
+        completeness_guidance = """
+## Completeness Analysis Guidance
+
+When analyzing this codebase:
+- Identify ALL CRUD operations for each entity (Create/Read/Update/Delete/List)
+- Note layer symmetry: UseCases operations should have corresponding Web endpoints
+- Recognize patterns that require supporting files (Validators, Specs, Repositories)
+- Recommend complete operation sets, not partial implementations
+- Ensure all operations appear in relevant layers (Domain → Application → Infrastructure → Web)
+
+This analysis will be used to create COMPLETE SCAFFOLDING templates, not just representative samples.
+"""
+
+        return f"""
+{completeness_guidance}
+
 ## Analysis Request
 
 Please analyze this codebase and provide a comprehensive architectural assessment in JSON format:
 
 ```json
-{
-  "technology": {
+{{
+  "technology": {{
     "primary_language": "...",
     "frameworks": ["..."],
     "testing_frameworks": ["..."],
     "build_tools": ["..."],
     "databases": ["..."],
     "infrastructure": ["..."],
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 95.0,
       "reasoning": "Why this confidence level"
-    }
-  },
-  "architecture": {
+    }}
+  }},
+  "architecture": {{
     "patterns": ["Repository", "Factory", "..."],
     "architectural_style": "Clean Architecture|Layered|...",
     "layers": [
-      {
+      {{
         "name": "Domain",
         "description": "Core business logic",
         "typical_files": ["models.py", "entities.py"],
         "dependencies": []
-      }
+      }}
     ],
     "key_abstractions": ["User", "Order", "..."],
     "dependency_flow": "Inward toward domain",
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 90.0,
       "reasoning": "Why this confidence level"
-    }
-  },
-  "quality": {
+    }}
+  }},
+  "quality": {{
     "overall_score": 85.0,
     "solid_compliance": 80.0,
     "dry_compliance": 85.0,
@@ -189,22 +204,22 @@ Please analyze this codebase and provide a comprehensive architectural assessmen
     "code_smells": ["Duplicated validation logic in 3 files"],
     "strengths": ["Clear separation of concerns", "..."],
     "improvements": ["Extract common validation logic", "..."],
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 85.0,
       "reasoning": "Why this confidence level"
-    }
-  },
+    }}
+  }},
   "example_files": [
-    {
+    {{
       "path": "src/domain/user.py",
       "purpose": "User entity with business logic",
       "layer": "Domain",
       "patterns_used": ["Entity", "Value Object"],
       "key_concepts": ["User", "Email", "Password"]
-    }
+    }}
   ]
-}
+}}
 ```
 
 Focus on:
