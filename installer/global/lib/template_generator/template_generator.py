@@ -205,12 +205,43 @@ class TemplateGenerator:
         language: str,
         purpose: Optional[str]
     ) -> str:
-        """Create prompt for AI placeholder extraction."""
+        """Create prompt for AI placeholder extraction with completeness requirements."""
+
+        completeness_requirements = """
+
+**CRITICAL - TEMPLATE COMPLETENESS**:
+
+You are generating SCAFFOLDING for complete features, not just examples.
+
+CRUD Completeness Rule:
+- If any CRUD operation exists, ALL must be generated:
+  ✓ Create (POST)
+  ✓ Read (GET by ID, GET collection)
+  ✓ Update (PUT)
+  ✓ Delete (DELETE)
+
+Layer Symmetry Rule:
+- If UseCases has UpdateEntity → Web must have Update endpoint
+- If Web has Delete endpoint → UseCases must have DeleteEntity
+- Operations must exist in ALL relevant layers
+
+REPR Pattern Completeness:
+- Each endpoint requires:
+  ✓ Endpoint class (e.g., Create.cs)
+  ✓ Request DTO (e.g., CreateEntityRequest.cs)
+  ✓ Response DTO (e.g., CreateEntityResponse.cs) [if non-void]
+  ✓ Validator (e.g., CreateEntityValidator.cs)
+
+Remember: Users need COMPLETE CRUD operations, not representative samples.
+"""
+
         return f"""Convert this {language} file into a reusable template by replacing specific values with placeholders.
 
 **Original File**: {file_path}
 **Purpose**: {purpose or 'Not specified'}
 **Language**: {language}
+
+{completeness_requirements}
 
 **Instructions**:
 1. Identify project-specific values (e.g., class names, namespaces, entity names, verbs)
