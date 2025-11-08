@@ -1,8 +1,9 @@
 ---
 id: TASK-TEST
 title: Test Task for Subfolder Organization
-status: in_progress
+status: completed
 created: 2025-10-17T12:00:00Z
+completed: 2025-01-08T00:00:00Z
 priority: low
 ---
 

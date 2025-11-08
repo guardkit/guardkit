@@ -1,8 +1,9 @@
 ---
 id: TASK-015
 title: Example Templates
-status: backlog
+status: completed
 created: 2025-11-01T21:00:00Z
+completed: 2025-01-08T00:00:00Z
 priority: medium
 complexity: 6
 estimated_hours: 4
