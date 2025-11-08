@@ -19,8 +19,12 @@ Automate template creation from brownfield (existing) codebases by:
 ## Usage
 
 ```bash
-# Interactive mode (default)
+# Interactive mode (default - creates in ~/.agentecflow/templates/)
 /template-create
+
+# Create for team distribution (requires install.sh)
+/template-create --output-location repo
+/template-create -o repo  # Short form
 
 # Analyze specific codebase path
 /template-create --path /path/to/codebase
@@ -28,7 +32,7 @@ Automate template creation from brownfield (existing) codebases by:
 # Skip Q&A and use defaults
 /template-create --skip-qa
 
-# Save to custom output directory
+# Save to custom output directory (DEPRECATED: use --output-location)
 /template-create --output /path/to/output
 
 # Maximum number of template files to generate
@@ -101,10 +105,11 @@ Phase 8: Template Package Assembly
 
 ## Output Structure
 
-Creates complete template package:
+Creates complete template package in one of two locations (TASK-068):
 
+**Personal Use (default):**
 ```
-{output_directory}/{template_name}/
+~/.agentecflow/templates/{template_name}/
 ├── manifest.json                # Template metadata (TASK-005)
 ├── settings.json                # Generation settings (TASK-006)
 ├── CLAUDE.md                    # Project documentation (TASK-007)
@@ -120,6 +125,19 @@ Creates complete template package:
     ├── domain-operations-specialist.md
     └── mvvm-viewmodel-specialist.md
 ```
+✅ Immediately available for `taskwright init {template_name}` without running install.sh
+
+**Distribution (--output-location repo):**
+```
+installer/global/templates/{template_name}/
+├── manifest.json
+├── settings.json
+├── CLAUDE.md
+├── templates/
+└── agents/
+```
+⚠️ Requires running `./installer/scripts/install.sh` before use
+📦 Suitable for version control and team distribution
 
 ## Command Options
 
@@ -129,11 +147,17 @@ None - all options have defaults
 ### Optional Options
 
 ```bash
+--output-location LOC    Where to save template package (TASK-068)
+  -o LOC                 'global' = ~/.agentecflow/templates/ (default, immediate use)
+                         'repo' = installer/global/templates/ (distribution, requires install.sh)
+                         Default: global
+
 --path PATH              Path to codebase to analyze
                          Default: current directory
 
---output PATH            Output directory for template package
-                         Default: ./templates/{template_name}
+--output PATH            DEPRECATED - Output directory for template package
+                         Use --output-location instead
+                         Default: determined by --output-location
 
 --skip-qa                Skip interactive Q&A, use defaults
                          Default: false
@@ -461,7 +485,58 @@ Validates each component before saving:
 
 ## Examples
 
-### Basic Usage
+### Personal Template (Default - Immediate Use)
+```bash
+$ /template-create
+
+# Creates in ~/.agentecflow/templates/
+# Immediately available without install.sh
+
+[... Q&A and generation ...]
+
+✅ Template Package Created Successfully!
+
+📁 Location: ~/.agentecflow/templates/my-template/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── CLAUDE.md (42 KB)
+  ├── templates/ (15 files)
+  └── agents/ (2 agents)
+
+📝 Next Steps:
+   taskwright init my-template
+```
+
+### Team Distribution Template
+```bash
+$ /template-create --output-location repo
+
+# Creates in installer/global/templates/
+# For version control and team distribution
+
+[... Q&A and generation ...]
+
+✅ Template Package Created Successfully!
+
+📁 Location: installer/global/templates/my-template/
+📦 Type: Distribution (requires installation)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── CLAUDE.md (42 KB)
+  ├── templates/ (15 files)
+  └── agents/ (2 agents)
+
+📝 Next Steps:
+   git add installer/global/templates/my-template/
+   git commit -m "Add my-template template"
+   ./installer/scripts/install.sh
+   taskwright init my-template
+```
+
+### Basic Usage (Legacy Example)
 ```bash
 $ /template-create
 
@@ -564,8 +639,9 @@ Components:
 No files written (--dry-run mode)
 ```
 
-### Custom Output Path
+### Custom Output Path (DEPRECATED)
 ```bash
+# DEPRECATED: Use --output-location instead
 $ /template-create --path ~/projects/my-app --output ~/templates/my-template
 
 ✓ Analyzing: ~/projects/my-app
@@ -574,6 +650,10 @@ $ /template-create --path ~/projects/my-app --output ~/templates/my-template
 [... generation ...]
 
 ✅ Template saved to: ~/templates/my-template
+
+# RECOMMENDED: Use --output-location for standard workflows
+$ /template-create --path ~/projects/my-app  # Personal use
+$ /template-create --path ~/projects/my-app -o repo  # Distribution
 ```
 
 ## Integration Points
