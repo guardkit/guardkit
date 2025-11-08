@@ -7,7 +7,7 @@
 **Status**: Backlog
 **Complexity**: 3/10 (Low-Medium)
 **Estimated Effort**: 1 day (6-8 hours)
-**Dependencies**: TASK-043, TASK-044, TASK-045
+**Dependencies**: TASK-043, TASK-044, TASK-045, TASK-068 (Template Location Refactor)
 
 ---
 
@@ -87,51 +87,62 @@ Taskwright provides a 3-level validation system for template quality assurance.
 
 **Level 2: Extended Validation** (Optional)
 ```bash
+# Personal templates (default: ~/.agentecflow/templates/)
 /template-create --validate
+
+# Repository templates (installer/global/templates/)
+/template-create --validate --output-location=repo
 ```
 - All Level 1 checks
 - Placeholder consistency validation
 - Pattern fidelity spot-checks
 - Documentation completeness
-- Detailed quality report
+- Detailed quality report (saved in template directory)
 - Exit code based on score
 - Duration: 2-5 minutes
+- Works with both personal and repository templates
 
 **Level 3: Comprehensive Audit** (On-demand)
 ```bash
-/template-validate <template-path>
+# Personal templates
+/template-validate ~/.agentecflow/templates/my-template
+
+# Repository templates
+/template-validate installer/global/templates/react-typescript
 ```
 - Interactive 16-section audit
 - Section selection
 - Session save/resume
 - Inline issue fixes
 - AI-assisted analysis (sections 8,11,12,13)
-- Comprehensive audit report
+- Comprehensive audit report (saved in template directory)
 - Decision framework
 - Duration: 30-60 minutes (with AI)
+- Works with templates in either location
 
 ### When to Use Each Level
 
 **Use Level 1** (Automatic):
-- Personal templates
+- Personal templates (default location: `~/.agentecflow/templates/`)
 - Quick prototyping
 - Learning template creation
 
 **Use Level 2** (`--validate`):
 - Before sharing with team
-- Pre-deployment QA
+- Pre-deployment QA for repository templates (`--output-location=repo`)
 - CI/CD integration
 - Quality reporting
 
 **Use Level 3** (`/template-validate`):
-- Global template deployment
+- Global template deployment (repository templates)
 - Production-critical templates
 - Comprehensive audit required
 - Development/testing
+- Works with templates in either personal or repository location
 
 ### Quality Reports
 
-Level 2 and 3 generate markdown reports:
+Level 2 and 3 generate markdown reports in the template directory:
 - `validation-report.md` (Level 2)
 - `audit-report.md` (Level 3)
 
@@ -140,6 +151,12 @@ Reports include:
 - Detailed findings
 - Actionable recommendations
 - Production readiness assessment
+
+**Template Locations** (TASK-068):
+- **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
+- **Repository templates**: `installer/global/templates/` (team/public distribution, requires `--output-location=repo` flag)
+
+Validation works with templates in either location.
 
 **See**: [Template Validation Guide](docs/guides/template-validation-guide.md)
 ```
@@ -360,13 +377,13 @@ Run all sections? [Y/n/select]:
 
 ## When to Use Each Level
 
-| Scenario | Level | Why |
-|----------|-------|-----|
-| Personal template | 1 (Auto) | Quick, no ceremony |
-| Team template | 2 (Extended) | Quality report for stakeholders |
-| Global deployment | 3 (Comprehensive) | Thorough validation required |
-| CI/CD integration | 2 (Extended) | Exit codes, reports |
-| Troubleshooting | 3 (Comprehensive) | Deep analysis needed |
+| Scenario | Level | Why | Template Location |
+|----------|-------|-----|-------------------|
+| Personal template | 1 (Auto) | Quick, no ceremony | `~/.agentecflow/templates/` |
+| Team template | 2 (Extended) | Quality report for stakeholders | `installer/global/templates/` (use `--output-location=repo`) |
+| Global deployment | 3 (Comprehensive) | Thorough validation required | `installer/global/templates/` |
+| CI/CD integration | 2 (Extended) | Exit codes, reports | `installer/global/templates/` |
+| Troubleshooting | 3 (Comprehensive) | Deep analysis needed | Either location |
 
 ## Examples
 
@@ -427,7 +444,7 @@ For implementation details and design decisions:
 ## FAQ
 
 **Q: Do I need to use `--validate` every time?**
-A: No. Level 1 automatic validation runs by default. Use `--validate` when you need a quality report or are preparing to share the template.
+A: No. Level 1 automatic validation runs by default. Use `--validate` when you need a quality report or are preparing to share the template with your team (especially for repository templates created with `--output-location=repo`).
 
 **Q: How long does validation take?**
 A:
@@ -455,6 +472,12 @@ A: Yes! Use `--validate` flag and check exit codes:
 
 **Q: What if my template scores low?**
 A: Review the validation report recommendations and use `/template-validate` for deeper analysis.
+
+**Q: Where are templates created by default?**
+A: After TASK-068, templates are created in `~/.agentecflow/templates/` by default for immediate personal use. Use `--output-location=repo` flag to create templates in `installer/global/templates/` for team/public distribution.
+
+**Q: Can I validate templates in either location?**
+A: Yes! Both `/template-create --validate` and `/template-validate` work with templates in either `~/.agentecflow/templates/` (personal) or `installer/global/templates/` (repository) locations.
 ```
 
 ---

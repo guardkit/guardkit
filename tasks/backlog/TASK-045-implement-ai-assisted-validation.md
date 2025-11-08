@@ -7,7 +7,7 @@
 **Status**: Backlog
 **Complexity**: 5/10 (Medium)
 **Estimated Effort**: 2-3 days (16-24 hours)
-**Dependencies**: TASK-044 (Phase 2)
+**Dependencies**: TASK-044 (Phase 2), TASK-068 (Template Location Refactor)
 
 ---
 
@@ -37,6 +37,7 @@ Enhance `/template-validate` command with AI-assisted analysis for manual sectio
 - Generated insights and recommendations
 - Faster comprehensive audits
 - Higher quality analysis
+- Works with templates in both personal (`~/.agentecflow/templates/`) and repository (`installer/global/templates/`) locations
 
 ---
 

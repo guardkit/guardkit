@@ -7,7 +7,7 @@
 **Status**: Backlog
 **Complexity**: 6/10 (Medium)
 **Estimated Effort**: 3-5 days (24-40 hours)
-**Dependencies**: TASK-043 (Phase 1)
+**Dependencies**: TASK-043 (Phase 1), TASK-068 (Template Location Refactor)
 
 ---
 
@@ -114,6 +114,12 @@ Systematic quality validation for:
 # Full audit (all sections)
 /template-validate <template-path>
 
+# Validate personal template (in global location)
+/template-validate ~/.agentecflow/templates/my-template
+
+# Validate repository template (for distribution)
+/template-validate installer/global/templates/react-typescript
+
 # Specific sections only
 /template-validate <template-path> --sections 1,4,7,12
 
@@ -126,6 +132,12 @@ Systematic quality validation for:
 # Non-interactive mode (batch processing)
 /template-validate <template-path> --non-interactive
 ```
+
+**Note**: TASK-068 introduces two template locations:
+- `~/.agentecflow/templates/` - Personal templates (default, immediate use)
+- `installer/global/templates/` - Repository templates (team/public distribution)
+
+The `/template-validate` command works with templates in either location.
 
 ## 16-Section Framework
 

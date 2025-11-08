@@ -317,6 +317,10 @@ class ValidationReportGenerator:
         """
         Generate validation report as markdown.
 
+        The report is generated in the template directory, regardless of
+        whether the template was created in ~/.agentecflow/templates/
+        (personal use) or installer/global/templates/ (repo distribution).
+
         Returns: Path to generated report
         """
 
@@ -520,10 +524,16 @@ echo $?  # 2
 ## Example Usage
 
 ```bash
-# Basic usage
+# Basic usage (default: personal templates in ~/.agentecflow/templates/)
 /template-create --validate
 # → Runs extended validation
-# → Generates validation-report.md
+# → Generates validation-report.md in template directory
+# → Exit code 0 if ≥8/10
+
+# For repository templates (team/public distribution)
+/template-create --validate --output-location=repo
+# → Creates template in installer/global/templates/
+# → Generates validation-report.md in template directory
 # → Exit code 0 if ≥8/10
 
 # With dry run
@@ -536,17 +546,22 @@ echo $?  # 2
 # → Extended validation + detailed logs + analysis JSON
 ```
 
+**Note**: TASK-068 changes default template creation location to `~/.agentecflow/templates/` for immediate use. Use `--output-location=repo` flag for templates intended for repository inclusion and team distribution.
+
 ---
 
 ## Dependencies
 
 **Required**:
 - TASK-040: Phase 5.5 Completeness Validation (Completed)
+- TASK-068: Template Location Refactor (will be implemented first)
 - Python 3.8+
 - Existing template creation infrastructure
 
 **Optional**:
 - None
+
+**Note**: TASK-068 will be implemented BEFORE TASK-043, introducing the `--output-location` flag that allows templates to be created in either `~/.agentecflow/templates/` (default, personal use) or `installer/global/templates/` (repository distribution).
 
 ---
 

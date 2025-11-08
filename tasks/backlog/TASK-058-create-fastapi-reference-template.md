@@ -7,7 +7,7 @@
 **Status**: Backlog
 **Complexity**: 7/10 (Medium-High)
 **Estimated Effort**: 5-7 days
-**Dependencies**: TASK-043 (Extended Validation), TASK-044 (Template Validate), TASK-045 (AI-Assisted Validation), TASK-056 (Audit Complete)
+**Dependencies**: TASK-043 (Extended Validation), TASK-044 (Template Validate), TASK-045 (AI-Assisted Validation), TASK-056 (Audit Complete), TASK-068 (Template Location Refactor)
 
 ---
 
@@ -93,15 +93,18 @@ Use **Read tool** to analyze key files:
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-create --validate
+Use SlashCommand tool to invoke: /template-create --validate --output-location=repo
 ```
+
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The command will:
 1. Run interactive Q&A (answer as specified below)
 2. Analyze the fastapi-best-practices codebase
 3. Generate manifest.json, settings.json, CLAUDE.md, templates/, agents/
-4. Run extended validation (TASK-043)
-5. Generate validation-report.md
+4. Write directly to `installer/global/templates/fastapi-python/` (repo location)
+5. Run extended validation (TASK-043)
+6. Generate validation-report.md
 
 **Q&A Answers**:
 - **Template name**: fastapi-python
@@ -112,14 +115,14 @@ The command will:
 - **Testing**: pytest, pytest-asyncio, httpx
 - **Generate custom agents**: Yes
 
-**Expected Output**: Template created at `./templates/fastapi-python/` with initial validation score of 7-8/10
+**Expected Output**: Template created at `installer/global/templates/fastapi-python/` with initial validation score of 7-8/10
 
 ### Step 3: Review Initial Validation Report
 
 Use **Read tool** to review the validation report:
 
 ```
-Read: ./templates/fastapi-python/validation-report.md
+Read: installer/global/templates/fastapi-python/validation-report.md
 ```
 
 Identify issues in these categories:
@@ -134,7 +137,7 @@ Identify issues in these categories:
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate ./templates/fastapi-python --sections 1-16
+Use SlashCommand tool to invoke: /template-validate installer/global/templates/fastapi-python --sections 1-16
 ```
 
 This runs the 16-section audit framework with AI assistance for sections 8, 11, 12, 13.
@@ -183,7 +186,7 @@ Based on validation findings, use **Edit tool** or **Write tool** to improve the
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate ./templates/fastapi-python --sections 10,11,16
+Use SlashCommand tool to invoke: /template-validate installer/global/templates/fastapi-python --sections 10,11,16
 ```
 
 (Re-run specific sections to verify improvements)
@@ -194,19 +197,16 @@ Use SlashCommand tool to invoke: /template-validate ./templates/fastapi-python -
 - Zero critical issues
 - Recommendation: APPROVE
 
-### Step 7: Move Template to Installer Location
+### Step 7: Verify Template Location
 
 Use **Bash tool**:
 
 ```bash
-# Move to final location
-mv ./templates/fastapi-python installer/global/templates/
-
-# Verify structure
+# Verify structure (template already in repo location)
 ls -la installer/global/templates/fastapi-python/
 ```
 
-### Step 8: Final Validation at Installer Location
+### Step 8: Final Validation
 
 **Execute using SlashCommand tool**:
 
