@@ -10,7 +10,7 @@ TASK-010: /template-create Command Orchestrator
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import json
 import logging
 
@@ -31,6 +31,13 @@ CompletenessValidator = _validator_module.CompletenessValidator
 ValidationReport = _models_module.ValidationReport
 TemplateCollection = _models_module.TemplateCollection
 
+# TASK-043: Phase 5.7 Extended Validation
+_extended_validator_module = importlib.import_module('installer.global.lib.template_generator.extended_validator')
+_report_generator_module = importlib.import_module('installer.global.lib.template_generator.report_generator')
+ExtendedValidator = _extended_validator_module.ExtendedValidator
+ExtendedValidationReport = _extended_validator_module.ExtendedValidationReport
+ValidationReportGenerator = _report_generator_module.ValidationReportGenerator
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +57,7 @@ class OrchestrationConfig:
     skip_validation: bool = False  # TASK-040: Skip Phase 5.5 validation
     auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
     interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
+    validate: bool = False  # TASK-043: Run extended validation and generate quality report
 
 
 @dataclass
@@ -66,6 +74,8 @@ class OrchestrationResult:
     confidence_score: int
     errors: List[str]
     warnings: List[str]
+    validation_report_path: Optional[Path] = None  # TASK-043: Extended validation report
+    exit_code: int = 0  # TASK-043: Exit code based on validation score
 
 
 class TemplateCreateOrchestrator:
@@ -104,6 +114,7 @@ class TemplateCreateOrchestrator:
         self.config = config
         self.errors: List[str] = []
         self.warnings: List[str] = []
+        self.phase_5_5_report: Optional[ValidationReport] = None  # TASK-043: Track Phase 5.5 report
 
         # Configure logging
         if config.verbose:
@@ -184,12 +195,26 @@ class TemplateCreateOrchestrator:
             if not output_path:
                 return self._create_error_result("Package assembly failed")
 
+            # ===== Phase 5.7: Extended Validation (TASK-043) =====
+            # Run after package assembly when all files are in place
+            validation_report_path = None
+            exit_code = 0
+            if self.config.validate and templates:
+                validation_report_path, exit_code = self._phase5_7_extended_validation(
+                    templates=templates,
+                    manifest=manifest,
+                    settings=settings,
+                    claude_md_path=output_path / "CLAUDE.md",
+                    agents=agents,
+                    output_path=output_path
+                )
+
             # Success!
             # TASK-068: Pass location_type to success message
             location_type = "personal" if self.config.output_location == 'global' else "distribution"
             if self.config.output_path:
                 location_type = "custom"
-            self._print_success(output_path, manifest, templates, agents, location_type)
+            self._print_success(output_path, manifest, templates, agents, location_type, validation_report_path)
 
             return OrchestrationResult(
                 success=True,
@@ -202,7 +227,9 @@ class TemplateCreateOrchestrator:
                 agent_count=len(agents),
                 confidence_score=manifest.confidence_score,
                 errors=self.errors,
-                warnings=self.warnings
+                warnings=self.warnings,
+                validation_report_path=validation_report_path,
+                exit_code=exit_code
             )
 
         except KeyboardInterrupt:
@@ -480,6 +507,9 @@ class TemplateCreateOrchestrator:
             # Run validation
             self._print_info("  Validating template completeness...")
             validation_report = validator.validate(templates, analysis)
+
+            # TASK-043: Store Phase 5.5 report for Phase 5.7 extended validation
+            self.phase_5_5_report = validation_report
 
             # Display validation report
             self._print_validation_report(validation_report)
@@ -829,9 +859,10 @@ class TemplateCreateOrchestrator:
         manifest: Any,
         templates: Any,
         agents: List[Any],
-        location_type: str = "personal"
+        location_type: str = "personal",
+        validation_report_path: Optional[Path] = None
     ) -> None:
-        """Print success summary with location-specific messaging (TASK-068)."""
+        """Print success summary with location-specific messaging (TASK-068, TASK-043)."""
         print("\n" + "="*60)
         print("  ✅ Template Package Created Successfully!")
         print("="*60)
@@ -854,7 +885,12 @@ class TemplateCreateOrchestrator:
             print(f"  ├── templates/ ({templates.total_count} files)")
 
         if agents:
-            print(f"  └── agents/ ({len(agents)} agents)")
+            agent_prefix = "├──" if validation_report_path else "└──"
+            print(f"  {agent_prefix} agents/ ({len(agents)} agents)")
+
+        # TASK-043: Show validation report if generated
+        if validation_report_path:
+            print(f"  └── validation-report.md ({self._file_size(validation_report_path)})")
 
         # TASK-068: Location-specific next steps
         print("\n📝 Next Steps:")
@@ -884,6 +920,108 @@ class TemplateCreateOrchestrator:
     def _print_error(self, message: str) -> None:
         """Print error message."""
         print(f"  ❌ {message}")
+
+    def _phase5_7_extended_validation(
+        self,
+        templates: TemplateCollection,
+        manifest: Any,
+        settings: Any,
+        claude_md_path: Path,
+        agents: List[Any],
+        output_path: Path
+    ) -> Tuple[Path, int]:
+        """
+        Phase 5.7: Extended Validation (TASK-043).
+
+        Runs only if --validate flag set.
+        Performs deeper quality checks and generates report.
+
+        Args:
+            templates: TemplateCollection to validate
+            manifest: Template manifest
+            settings: Template settings
+            claude_md_path: Path to CLAUDE.md
+            agents: List of generated agents
+            output_path: Template output directory
+
+        Returns:
+            Tuple of (report_path, exit_code)
+        """
+        self._print_phase_header("Phase 5.7: Extended Validation")
+
+        try:
+            # Create validator
+            validator = ExtendedValidator()
+
+            # Convert manifest and settings to dicts
+            manifest_dict = manifest.to_dict() if hasattr(manifest, 'to_dict') else vars(manifest)
+            settings_dict = settings.to_dict() if hasattr(settings, 'to_dict') else vars(settings)
+
+            # Get agent paths
+            agent_paths = []
+            if agents:
+                agents_dir = output_path / "agents"
+                for agent in agents:
+                    agent_path = agents_dir / f"{agent.name}.md"
+                    if agent_path.exists():
+                        agent_paths.append(agent_path)
+
+            # Run extended validation
+            self._print_info("  Running extended validation checks...")
+            validation_report = validator.validate(
+                templates=templates,
+                manifest=manifest_dict,
+                settings=settings_dict,
+                claude_md_path=claude_md_path,
+                agents=agent_paths,
+                phase_5_5_report=self.phase_5_5_report
+            )
+
+            # Generate report
+            report_generator = ValidationReportGenerator()
+            report_path = report_generator.generate_report(
+                report=validation_report,
+                template_name=manifest_dict['name'],
+                output_path=output_path
+            )
+
+            # Display summary
+            self._print_validation_summary(validation_report)
+            self._print_success_line(f"Validation report: {report_path}")
+
+            return report_path, validation_report.get_exit_code()
+
+        except Exception as e:
+            self._print_error(f"Extended validation failed: {e}")
+            logger.exception("Extended validation error")
+            # Don't fail the entire workflow, just warn
+            self.warnings.append(f"Extended validation failed: {e}")
+            return None, 0
+
+    def _print_validation_summary(self, report: ExtendedValidationReport) -> None:
+        """
+        Display extended validation summary.
+
+        Args:
+            report: ExtendedValidationReport to display
+        """
+        print(f"\n  Overall Score: {report.overall_score:.1f}/10 (Grade: {report.get_grade()})")
+        print(f"  Production Ready: {'✅ Yes' if report.is_production_ready() else '⚠️ No'}")
+        print(f"  Exit Code: {report.get_exit_code()}")
+
+        if report.issues:
+            print(f"\n  Issues: {len(report.issues)}")
+            for issue in report.issues[:3]:
+                print(f"    - {issue}")
+            if len(report.issues) > 3:
+                print(f"    ... and {len(report.issues) - 3} more")
+
+        if report.recommendations:
+            print(f"\n  Recommendations: {len(report.recommendations)}")
+            for rec in report.recommendations[:3]:
+                print(f"    - {rec}")
+            if len(report.recommendations) > 3:
+                print(f"    ... and {len(report.recommendations) - 3} more")
 
 
 # Convenience function for command usage
