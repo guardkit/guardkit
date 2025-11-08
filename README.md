@@ -321,6 +321,16 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 - [MAUI Template Selection](docs/guides/maui-template-selection.md) - AppShell vs NavigationPage
 - [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
 
+### Template Validation
+- [Template Validation Guide](docs/guides/template-validation-guide.md) - 3-level validation system overview
+- [Template Validation Workflows](docs/guides/template-validation-workflows.md) - Common usage patterns
+- [Template Validation AI Assistance](docs/guides/template-validation-ai-assistance.md) - AI-assisted validation features
+
+**Research & Implementation**:
+- [Template Validation Strategy](docs/research/template-validation-strategy.md) - Design decisions and architecture
+- [Template Validation Implementation Guide](docs/research/template-validation-implementation-guide.md) - Developer workflow
+- [Template Validation Tasks Summary](docs/research/template-validation-tasks-summary.md) - Task overview
+
 ## Example Workflow
 
 ### Real-World: User Authentication Feature

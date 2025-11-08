@@ -118,6 +118,95 @@ Converts design system files (Figma, Zeplin) into components with **zero scope c
 
 **See**: [UX Design Integration Workflow](docs/workflows/ux-design-integration-workflow.md)
 
+## Template Validation
+
+Taskwright provides a 3-level validation system for template quality assurance.
+
+### Validation Levels
+
+**Level 1: Automatic Validation** (Always On)
+- Runs during `/template-create` (Phase 5.5)
+- CRUD completeness checks
+- Layer symmetry validation
+- Auto-fix common issues
+- Duration: ~30 seconds
+- **No user action required**
+
+**Level 2: Extended Validation** (Optional)
+```bash
+# Personal templates (default: ~/.agentecflow/templates/)
+/template-create --validate
+
+# Repository templates (installer/global/templates/)
+/template-create --validate --output-location=repo
+```
+- All Level 1 checks
+- Placeholder consistency validation
+- Pattern fidelity spot-checks
+- Documentation completeness
+- Detailed quality report (saved in template directory)
+- Exit code based on score
+- Duration: 2-5 minutes
+- Works with both personal and repository templates
+
+**Level 3: Comprehensive Audit** (On-demand)
+```bash
+# Personal templates
+/template-validate ~/.agentecflow/templates/my-template
+
+# Repository templates
+/template-validate installer/global/templates/react-typescript
+```
+- Interactive 16-section audit
+- Section selection
+- Session save/resume
+- Inline issue fixes
+- AI-assisted analysis (sections 8,11,12,13)
+- Comprehensive audit report (saved in template directory)
+- Decision framework
+- Duration: 30-60 minutes (with AI)
+- Works with templates in either location
+
+### When to Use Each Level
+
+**Use Level 1** (Automatic):
+- Personal templates (default location: `~/.agentecflow/templates/`)
+- Quick prototyping
+- Learning template creation
+
+**Use Level 2** (`--validate`):
+- Before sharing with team
+- Pre-deployment QA for repository templates (`--output-location=repo`)
+- CI/CD integration
+- Quality reporting
+
+**Use Level 3** (`/template-validate`):
+- Global template deployment (repository templates)
+- Production-critical templates
+- Comprehensive audit required
+- Development/testing
+- Works with templates in either personal or repository location
+
+### Quality Reports
+
+Level 2 and 3 generate markdown reports in the template directory:
+- `validation-report.md` (Level 2)
+- `audit-report.md` (Level 3)
+
+Reports include:
+- Quality scores (0-10)
+- Detailed findings
+- Actionable recommendations
+- Production readiness assessment
+
+**Template Locations**:
+- **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
+- **Repository templates**: `installer/global/templates/` (team/public distribution, requires `--output-location=repo` flag)
+
+Validation works with templates in either location.
+
+**See**: [Template Validation Guide](docs/guides/template-validation-guide.md)
+
 ## Design-First Workflow
 
 Optional flags for complex tasks requiring upfront design approval.
