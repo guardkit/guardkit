@@ -79,6 +79,13 @@ Phase 5: Template File Generation (TASK-008) [REORDERED]
 ├─ Quality scoring
 └─ Validation
 
+Phase 5.5: Completeness Validation (TASK-040)
+├─ CRUD operation completeness checks
+├─ Layer symmetry validation
+├─ False negative detection
+├─ Auto-fix recommendations
+└─ Quality gate enforcement
+
 Phase 6: Agent Recommendation (TASK-009) [REORDERED]
 ├─ Capability needs identification
 ├─ Gap analysis vs existing agents
@@ -101,6 +108,16 @@ Phase 8: Template Package Assembly
 ├─ Template files organization
 ├─ Agent files (if generated)
 └─ Validation summary
+
+Phase 5.7: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
+├─ Placeholder consistency validation
+├─ Pattern fidelity spot-checks (5 random templates)
+├─ Documentation completeness verification
+├─ Agent reference validation
+├─ Manifest accuracy checks
+├─ Overall quality score calculation (0-10)
+├─ Validation report generation (validation-report.md)
+└─ Exit code assignment (0/1/2)
 ```
 
 ## Output Structure
@@ -121,9 +138,10 @@ Creates complete template package in one of two locations (TASK-068):
 │   │   └── EntityViewModel.cs.template
 │   └── Views/
 │       └── EntityPage.xaml.template
-└── agents/                      # Custom agents (TASK-009)
-    ├── domain-operations-specialist.md
-    └── mvvm-viewmodel-specialist.md
+├── agents/                      # Custom agents (TASK-009)
+│   ├── domain-operations-specialist.md
+│   └── mvvm-viewmodel-specialist.md
+└── validation-report.md         # Quality report (TASK-043, only with --validate)
 ```
 ✅ Immediately available for `taskwright init {template_name}` without running install.sh
 
@@ -134,7 +152,8 @@ installer/global/templates/{template_name}/
 ├── settings.json
 ├── CLAUDE.md
 ├── templates/
-└── agents/
+├── agents/
+└── validation-report.md         # Only with --validate
 ```
 ⚠️ Requires running `./installer/scripts/install.sh` before use
 📦 Suitable for version control and team distribution
@@ -173,6 +192,25 @@ None - all options have defaults
 
 --no-agents              Skip agent generation phase
                          Default: false (agents are generated)
+
+--validate               Run extended validation and generate quality report (TASK-043)
+                         Default: false (only Phase 5.5 validation runs)
+
+                         When enabled:
+                         - Runs all Phase 5.5 completeness checks
+                         - Adds extended validation checks (Phase 5.7)
+                         - Generates validation-report.md in template directory
+                         - Exit code based on quality score:
+                           0 = Score ≥8/10 (production ready)
+                           1 = Score 6.0-7.9/10 (needs improvement)
+                           2 = Score <6/10 (not ready)
+
+                         Extended checks include:
+                         - Placeholder consistency validation
+                         - Pattern fidelity spot-checks (5 random files)
+                         - Documentation completeness verification
+                         - Agent reference validation
+                         - Manifest accuracy checks
 
 --verbose                Show detailed progress and debugging info
                          Default: false
@@ -535,6 +573,57 @@ $ /template-create --output-location repo
    ./installer/scripts/install.sh
    taskwright init my-template
 ```
+
+### Template with Extended Validation
+```bash
+$ /template-create --validate
+
+# Runs all standard phases PLUS Phase 5.7 Extended Validation
+# Generates detailed quality report
+
+[... Q&A and generation ...]
+
+============================================================
+Phase 5.7: Extended Validation
+------------------------------------------------------------
+  Running extended validation checks...
+
+  Overall Score: 8.7/10 (Grade: A-)
+  Production Ready: ✅ Yes
+  Exit Code: 0
+
+  Recommendations: 2
+    - Standardize placeholder naming conventions across all templates
+    - Enhance CLAUDE.md with more detailed architecture and examples
+
+  ✓ Validation report: ~/.agentecflow/templates/my-template/validation-report.md
+
+============================================================
+
+✅ Template Package Created Successfully!
+
+📁 Location: ~/.agentecflow/templates/my-template/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── CLAUDE.md (42 KB)
+  ├── templates/ (15 files)
+  ├── agents/ (2 agents)
+  └── validation-report.md (12 KB)
+
+📝 Next Steps:
+   taskwright init my-template
+
+# Exit code: 0 (production ready - score ≥8/10)
+$ echo $?
+0
+```
+
+**Quality Score Interpretation:**
+- **8-10 (Grade A/B+)**: Production ready - Exit code 0
+- **6-7.9 (Grade B/C)**: Needs improvement - Exit code 1
+- **<6 (Grade F)**: Not ready - Exit code 2
 
 ### Basic Usage (Legacy Example)
 ```bash
