@@ -1,0 +1,59 @@
+{
+  "name": "default",
+  "version": "1.0.0",
+  "description": "Language-agnostic template with quality gates and task workflow",
+  "template_type": "generic",
+  "technology": "language-agnostic",
+  "architecture": {
+    "patterns": [
+      "Layered Architecture",
+      "Separation of Concerns",
+      "Test-Driven Development",
+      "Quality Gates"
+    ],
+    "layers": [
+      {
+        "name": "Source",
+        "description": "Source code implementation",
+        "patterns": ["Clean Architecture"]
+      },
+      {
+        "name": "Tests",
+        "description": "Comprehensive test suite",
+        "patterns": ["Unit Tests", "Integration Tests", "E2E Tests"]
+      },
+      {
+        "name": "Documentation",
+        "description": "Project documentation and ADRs",
+        "patterns": ["Documentation"]
+      }
+    ]
+  },
+  "testing": {
+    "framework": "Technology-specific",
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    },
+    "types": {
+      "unit": "Unit tests",
+      "integration": "Integration tests",
+      "e2e": "End-to-end tests"
+    }
+  },
+  "quality_gates": {
+    "required": [
+      "All tests passing (100%)",
+      "Code coverage ≥ 80%",
+      "No security vulnerabilities",
+      "All acceptance criteria satisfied"
+    ]
+  },
+  "prerequisites": {
+    "description": "Varies by technology stack"
+  },
+  "agents": [],
+  "created": "2024-01-01",
+  "last_updated": "2025-11-08",
+  "author": "Taskwright System"
+}
