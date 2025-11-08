@@ -4,7 +4,9 @@
 **Type**: Bug Fix / Investigation
 **Epic**: EPIC-001 (AI Template Creation)
 **Created**: 2025-01-07
-**Status**: Backlog
+**Closed**: 2025-01-08
+**Status**: Closed (Won't Fix)
+**Closure Reason**: Template no longer exists; root cause addressed by TASK-042
 
 ## Issue Description
 
@@ -254,3 +256,91 @@ installer/global/templates/ardalis-clean-architecture/
 **Created during**: Template Analysis Task (template-analysis-task.md)
 **Section**: 3.4 Agent Usage Guidelines
 **Overall Template Score**: 9.4/10 (Section 3), 9.7/10 (Sections 1-3 combined)
+
+---
+
+## CLOSURE NOTICE
+
+**Closed Date**: 2025-01-08
+**Status**: Won't Fix
+**Resolution**: Template Obsolete / Root Cause Addressed
+
+### Reason for Closure
+
+This task is being closed without implementation for the following reasons:
+
+#### 1. Template Does Not Exist
+The `ardalis-clean-architecture` template referenced in this task does not exist in the repository:
+```bash
+$ ls installer/global/templates/ | grep ardalis
+# No results
+```
+
+**Context**: This template was a **test artifact** created during TASK-020 (template generation quality analysis) and was never part of the official template set.
+
+#### 2. Not in Official Template Strategy
+The current template strategy (per [template-strategy-decision.md](../../docs/research/template-strategy-decision.md)) focuses on 4 high-quality reference templates:
+- TASK-057: React + TypeScript
+- TASK-058: FastAPI
+- TASK-059: Next.js
+- TASK-062: React + FastAPI Monorepo
+
+The `ardalis-clean-architecture` template was never intended for production distribution.
+
+#### 3. Root Cause Addressed
+**TASK-042 (Enhanced AI Prompting)** - Completed 2025-01-07 - directly addresses the root cause of this bug:
+
+**What TASK-042 Added**:
+- Validation checklist in CLAUDE.md generation (lines 121-154 of TASK-042)
+- Agent validation section ensuring documented agents exist
+- Layer symmetry checks preventing documentation/implementation mismatches
+
+**Preventive Measure**:
+```markdown
+## Template Validation Checklist
+
+**Layer Symmetry**:
+- [ ] All UseCases commands have Web endpoints
+- [ ] All Web endpoints have UseCases handlers
+- [ ] Repository interfaces exist for all operations
+
+**Agent Validation**:
+- [ ] All documented agents exist in agents/ directory
+- [ ] No broken agent references in CLAUDE.md
+```
+
+This validation framework **prevents** the exact type of documentation mismatch identified in TASK-018.
+
+#### 4. Test Templates vs Production Templates
+TASK-041 and TASK-042 improved template generation quality through:
+- Stratified sampling (TASK-041): Better pattern detection during analysis
+- Enhanced AI prompting (TASK-042): Explicit completeness guidance + validation checklists
+
+These improvements ensure future templates (including test templates) won't have this issue.
+
+### Learning Captured
+
+**Bug Pattern**: CLAUDE.md documented `clean-architecture-specialist` agent that didn't exist in `agents/` directory.
+
+**Root Cause**: Phase 5 (CLAUDE.md generation) and Phase 7 (agent generation) were not cross-validated.
+
+**Solution Implemented**: TASK-042 added validation checklist to catch documentation/agent mismatches during generation.
+
+### Related Tasks
+
+- ✅ **TASK-041**: Stratified Sampling (Completed 2025-01-07) - Improves pattern detection
+- ✅ **TASK-042**: Enhanced AI Prompting (Completed 2025-01-07) - Adds validation checklists
+- **TASK-057-062**: Reference template creation - Uses improved generation with TASK-041/042 enhancements
+
+### No Action Required
+
+No implementation or fix is needed because:
+1. Template doesn't exist (no artifact to fix)
+2. Root cause addressed by TASK-042 (preventive measure in place)
+3. Future templates will have validation checklist preventing this issue
+
+---
+
+**Closed By**: Claude Code
+**Approved By**: User
+**Tags**: `closed`, `wont-fix`, `test-artifact`, `root-cause-addressed`, `obsolete`

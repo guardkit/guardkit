@@ -17,42 +17,45 @@ blocks: []
 
 ## Objective
 
-Update `agentic-init` command to discover templates from both local and global locations, with local templates taking precedence. This enables seamless integration with templates created by `/template-create` and `/template-init` commands.
+Update `agentic-init` command to discover templates from both personal and repository locations, with personal templates taking precedence. This enables seamless integration with templates created by `/template-create` and `/template-init` commands.
 
-**Key Principle**: Local templates (user/team-created) override global templates (built-in)
+**Key Principle**: Personal templates (user-created) override repository templates (built-in)
+
+**Note**: Updated for TASK-068 which changed template creation to default to `~/.agentecflow/templates/` for personal use.
 
 ## Context
 
-**From Template Lifecycle Review**:
+**From Template Lifecycle Review & TASK-068**:
 - EPIC-001 adds two template creation commands
-- Templates saved to `installer/local/templates/`
+- TASK-068: Templates default to `~/.agentecflow/templates/` (personal, immediate use)
+- Use `--output-location=repo` flag to create in `installer/global/templates/` (repository, distribution)
 - Existing `agentic-init` only checks `installer/global/templates/`
 - Need to discover both locations with proper priority
 
 **Current Behavior**:
 ```python
-# Only checks global templates
+# Only checks repository templates
 def discover_templates():
     return scan_directory("installer/global/templates/")
 ```
 
 **New Behavior**:
 ```python
-# Check local first, then global
+# Check personal first, then repository
 def discover_templates():
-    local = scan_directory("installer/local/templates/")  # Priority 1
-    global = scan_directory("installer/global/templates/")  # Priority 2
-    return merge_with_priority(local, global)
+    personal = scan_directory("~/.agentecflow/templates/")  # Priority 1
+    repo = scan_directory("installer/global/templates/")  # Priority 2
+    return merge_with_priority(personal, repo)
 ```
 
 ## Acceptance Criteria
 
-- [ ] Discover templates from `installer/local/templates/` (user/team-created)
-- [ ] Discover templates from `installer/global/templates/` (built-in)
-- [ ] Local templates take precedence over global (same name)
-- [ ] Display template source during selection (local vs global)
-- [ ] Handle missing directories gracefully (local may not exist yet)
-- [ ] Backward compatible (existing global templates still work)
+- [ ] Discover templates from `~/.agentecflow/templates/` (personal, user-created)
+- [ ] Discover templates from `installer/global/templates/` (repository, built-in)
+- [ ] Personal templates take precedence over repository templates (same name)
+- [ ] Display template source during selection (personal vs repository)
+- [ ] Handle missing directories gracefully (personal directory may not exist yet)
+- [ ] Backward compatible (existing repository templates still work)
 - [ ] Agent conflict detection (user's custom vs template agents)
 - [ ] Unit tests for discovery logic
 - [ ] Integration tests with both template sources
@@ -72,7 +75,7 @@ class TemplateInfo:
     """Template information"""
     name: str
     version: str
-    source: str  # "local" or "global"
+    source: str  # "personal" or "repository"
     source_path: Path
     description: str
     language: str
@@ -80,47 +83,47 @@ class TemplateInfo:
     architecture: str
 
 class TemplateDiscovery:
-    """Discover templates from local and global sources"""
+    """Discover templates from personal and repository sources"""
 
     def __init__(
         self,
-        local_path: Path = None,
-        global_path: Path = None
+        personal_path: Path = None,
+        repo_path: Path = None
     ):
         """
         Initialize template discovery
 
         Args:
-            local_path: Path to local templates (default: installer/local/templates)
-            global_path: Path to global templates (default: installer/global/templates)
+            personal_path: Path to personal templates (default: ~/.agentecflow/templates)
+            repo_path: Path to repository templates (default: installer/global/templates)
         """
-        self.local_path = local_path or Path("installer/local/templates")
-        self.global_path = global_path or Path("installer/global/templates")
+        self.personal_path = personal_path or Path.home() / ".agentecflow/templates"
+        self.repo_path = repo_path or Path("installer/global/templates")
 
     def discover(self) -> List[TemplateInfo]:
         """
         Discover all available templates
 
         Returns:
-            List of templates (local first, then global)
+            List of templates (personal first, then repository)
         """
         print("📦 Discovering templates...")
 
         templates = []
 
-        # 1. Discover local templates (PRIORITY)
-        local_templates = self._scan_directory(self.local_path, source="local")
-        if local_templates:
-            print(f"  ✓ Found {len(local_templates)} local template(s)")
-            templates.extend(local_templates)
+        # 1. Discover personal templates (PRIORITY)
+        personal_templates = self._scan_directory(self.personal_path, source="personal")
+        if personal_templates:
+            print(f"  ✓ Found {len(personal_templates)} personal template(s)")
+            templates.extend(personal_templates)
 
-        # 2. Discover global templates
-        global_templates = self._scan_directory(self.global_path, source="global")
-        if global_templates:
-            print(f"  ✓ Found {len(global_templates)} global template(s)")
+        # 2. Discover repository templates
+        repo_templates = self._scan_directory(self.repo_path, source="repository")
+        if repo_templates:
+            print(f"  ✓ Found {len(repo_templates)} repository template(s)")
 
-        # 3. Merge with priority (local overrides global)
-        templates.extend(self._filter_duplicates(global_templates, templates))
+        # 3. Merge with priority (personal overrides repository)
+        templates.extend(self._filter_duplicates(repo_templates, templates))
 
         if not templates:
             print("  ⚠️  No templates found")
@@ -140,7 +143,7 @@ class TemplateDiscovery:
 
         Args:
             directory: Directory to scan
-            source: "local" or "global"
+            source: "personal" or "repository"
 
         Returns:
             List of discovered templates
@@ -181,7 +184,7 @@ class TemplateDiscovery:
 
         Args:
             manifest_file: Path to manifest.json
-            source: "local" or "global"
+            source: "personal" or "repository"
 
         Returns:
             TemplateInfo if valid, None otherwise
@@ -215,25 +218,25 @@ class TemplateDiscovery:
 
     def _filter_duplicates(
         self,
-        global_templates: List[TemplateInfo],
-        local_templates: List[TemplateInfo]
+        repo_templates: List[TemplateInfo],
+        personal_templates: List[TemplateInfo]
     ) -> List[TemplateInfo]:
         """
-        Filter global templates that are overridden by local templates
+        Filter repository templates that are overridden by personal templates
 
         Args:
-            global_templates: Templates from global directory
-            local_templates: Templates from local directory (priority)
+            repo_templates: Templates from repository directory
+            personal_templates: Templates from personal directory (priority)
 
         Returns:
-            Global templates not overridden by local
+            Repository templates not overridden by personal
         """
-        local_names = {t.name for t in local_templates}
+        personal_names = {t.name for t in personal_templates}
 
         filtered = []
-        for template in global_templates:
-            if template.name in local_names:
-                print(f"  ℹ️  Skipping global '{template.name}' (local version exists)")
+        for template in repo_templates:
+            if template.name in personal_names:
+                print(f"  ℹ️  Skipping repository '{template.name}' (personal version exists)")
             else:
                 filtered.append(template)
 
@@ -292,13 +295,13 @@ def select_template(templates: List[TemplateInfo]) -> Optional[TemplateInfo]:
     print("="*60)
 
     # Group by source
-    local_templates = [t for t in templates if t.source == "local"]
-    global_templates = [t for t in templates if t.source == "global"]
+    personal_templates = [t for t in templates if t.source == "personal"]
+    repo_templates = [t for t in templates if t.source == "repository"]
 
-    # Display local templates first
-    if local_templates:
-        print("\n🏠 Local Templates (User/Team):")
-        for i, template in enumerate(local_templates, 1):
+    # Display personal templates first
+    if personal_templates:
+        print("\n👤 Personal Templates:")
+        for i, template in enumerate(personal_templates, 1):
             print(f"\n  [{i}] {template.name} (v{template.version})")
             if template.description:
                 print(f"      {template.description}")
@@ -310,11 +313,11 @@ def select_template(templates: List[TemplateInfo]) -> Optional[TemplateInfo]:
             if template.architecture:
                 print(f"      Architecture: {template.architecture}")
 
-    # Display global templates
-    if global_templates:
-        print("\n🌐 Global Templates (Built-in):")
-        start_idx = len(local_templates) + 1
-        for i, template in enumerate(global_templates, start_idx):
+    # Display repository templates
+    if repo_templates:
+        print("\n📦 Repository Templates (Built-in):")
+        start_idx = len(personal_templates) + 1
+        for i, template in enumerate(repo_templates, start_idx):
             print(f"\n  [{i}] {template.name} (v{template.version})")
             if template.description:
                 print(f"      {template.description}")
@@ -457,7 +460,7 @@ def agentic_init(template_name: Optional[str] = None):
     # Step 3: Display template info
     print(f"\n📋 Template: {template.name}")
     print(f"   Version: {template.version}")
-    print(f"   Source: {template.source}")
+    print(f"   Source: {template.source} ({'~/.agentecflow/templates/' if template.source == 'personal' else 'installer/global/templates/'})")
     if template.language:
         print(f"   Language: {template.language}")
     if template.architecture:
@@ -475,15 +478,15 @@ def agentic_init(template_name: Optional[str] = None):
 $ agentic-init
 
 📦 Discovering templates...
-  ✓ Found 2 local template(s)
-  ✓ Found 5 global template(s)
+  ✓ Found 2 personal template(s)
+  ✓ Found 5 repository template(s)
 
 📊 Total: 7 available template(s)
 
 📋 Available Templates:
 ============================================================
 
-🏠 Local Templates (User/Team):
+👤 Personal Templates:
 
   [1] mycompany-maui (v1.0.0)
       Company standard MAUI + MVVM template
@@ -495,7 +498,7 @@ $ agentic-init
       C# + ASP.NET Core 8.0
       Architecture: Clean Architecture
 
-🌐 Global Templates (Built-in):
+📦 Repository Templates (Built-in):
 
   [3] react (v1.0.0)
       React + TypeScript + Vite template
@@ -518,26 +521,26 @@ Select template (number or name) [or 'q' to quit]: 1
 
 📋 Template: mycompany-maui
    Version: 1.0.0
-   Source: local
+   Source: personal (~/.agentecflow/templates/)
    Language: C#
    Architecture: MVVM + AppShell
 
 ✅ Project initialized successfully!
 ```
 
-### Example 2: Local Overrides Global
+### Example 2: Personal Overrides Repository
 
 ```bash
 $ agentic-init
 
 📦 Discovering templates...
-  ✓ Found 1 local template(s)
-  ✓ Found 5 global template(s)
-  ℹ️  Skipping global 'react' (local version exists)
+  ✓ Found 1 personal template(s)
+  ✓ Found 5 repository template(s)
+  ℹ️  Skipping repository 'react' (personal version exists)
 
 📊 Total: 5 available template(s)
 
-# User's local 'react' template takes precedence over global
+# User's personal 'react' template takes precedence over repository
 ```
 
 ### Example 3: Specify Template Name
@@ -546,12 +549,12 @@ $ agentic-init
 $ agentic-init mycompany-maui
 
 📦 Discovering templates...
-  ✓ Found 2 local template(s)
-  ✓ Found 5 global template(s)
+  ✓ Found 2 personal template(s)
+  ✓ Found 5 repository template(s)
 
 📋 Template: mycompany-maui
    Version: 1.0.0
-   Source: local
+   Source: personal (~/.agentecflow/templates/)
 
 ✅ Initialized with mycompany-maui template
 ```
@@ -586,14 +589,14 @@ $ agentic-init mycompany-maui
 ```python
 # tests/test_agentic_init_discovery.py
 
-def test_discover_local_templates():
-    """Test discovery of local templates"""
-    # Create test local templates
-    local_dir = Path("tests/fixtures/local-templates")
-    local_dir.mkdir(parents=True, exist_ok=True)
+def test_discover_personal_templates():
+    """Test discovery of personal templates"""
+    # Create test personal templates
+    personal_dir = Path("tests/fixtures/personal-templates")
+    personal_dir.mkdir(parents=True, exist_ok=True)
 
     # Create test template
-    test_template = local_dir / "test-template"
+    test_template = personal_dir / "test-template"
     test_template.mkdir(exist_ok=True)
 
     manifest = test_template / "manifest.json"
@@ -603,31 +606,31 @@ def test_discover_local_templates():
     }))
 
     # Discover
-    discovery = TemplateDiscovery(local_path=local_dir, global_path=Path("/nonexistent"))
+    discovery = TemplateDiscovery(personal_path=personal_dir, repo_path=Path("/nonexistent"))
     templates = discovery.discover()
 
     assert len(templates) == 1
     assert templates[0].name == "test-template"
-    assert templates[0].source == "local"
+    assert templates[0].source == "personal"
 
-def test_local_overrides_global():
-    """Test that local templates override global"""
-    # Create local and global with same name
+def test_personal_overrides_repository():
+    """Test that personal templates override repository templates"""
+    # Create personal and repository with same name
     # ... setup fixtures
 
-    discovery = TemplateDiscovery(local_path=local_dir, global_path=global_dir)
+    discovery = TemplateDiscovery(personal_path=personal_dir, repo_path=repo_dir)
     templates = discovery.discover()
 
-    # Should only have one "react" (local version)
+    # Should only have one "react" (personal version)
     react_templates = [t for t in templates if t.name == "react"]
     assert len(react_templates) == 1
-    assert react_templates[0].source == "local"
+    assert react_templates[0].source == "personal"
 
 def test_missing_directories():
     """Test graceful handling of missing directories"""
     discovery = TemplateDiscovery(
-        local_path=Path("/nonexistent"),
-        global_path=Path("/nonexistent")
+        personal_path=Path("/nonexistent"),
+        repo_path=Path("/nonexistent")
     )
 
     # Should not crash
@@ -658,9 +661,9 @@ def test_agent_conflict_detection():
 
 ## Definition of Done
 
-- [ ] Template discovery from local and global directories
-- [ ] Local templates take precedence over global
-- [ ] Source indication (local vs global) in UI
+- [ ] Template discovery from personal and repository directories
+- [ ] Personal templates take precedence over repository templates
+- [ ] Source indication (personal vs repository) in UI
 - [ ] Missing directory handling (graceful)
 - [ ] Agent conflict detection and resolution
 - [ ] Backward compatible (existing templates work)
@@ -674,16 +677,25 @@ def test_agent_conflict_detection():
 ## Benefits
 
 - ✅ Enables use of `/template-create` and `/template-init` templates
-- ✅ Local templates override global (user control)
+- ✅ Personal templates override repository templates (user control)
 - ✅ Agent conflict resolution (respects user's custom)
 - ✅ Backward compatible (existing flow unchanged)
-- ✅ Clear UX (shows source: local vs global)
-- ✅ Team-friendly (git-based template sharing works)
+- ✅ Clear UX (shows source: personal vs repository)
+- ✅ Aligns with TASK-068 two-location model (personal + repository)
 
 ---
 
 **Created**: 2025-11-01
+**Updated**: 2025-01-08 (aligned with TASK-068)
 **Status**: ✅ **READY FOR IMPLEMENTATION**
-**Dependencies**: TASK-010 (template-create), TASK-011 (template-init)
+**Dependencies**: TASK-010 (template-create), TASK-011 (template-init), TASK-068 (template location refactor - COMPLETED)
 **Integration**: Minimal changes to existing agentic-init
 **Risk**: LOW (small, focused change)
+
+## TASK-068 Alignment Notes
+
+This task has been updated to reflect the TASK-068 implementation:
+- **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
+- **Repository templates**: `installer/global/templates/` (distribution, requires install.sh)
+- All references to `installer/local/templates/` have been updated to `~/.agentecflow/templates/`
+- Terminology updated from "local/global" to "personal/repository" for clarity
