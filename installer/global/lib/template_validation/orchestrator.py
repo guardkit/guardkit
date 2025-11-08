@@ -191,8 +191,11 @@ class TemplateValidateOrchestrator:
             traceback.print_exc()
             return True  # Continue with next section
 
-        # Store result
+        # Store result in session
         self.session.add_result(section_num, result)
+
+        # Record result in auditor (for Section 11 dependency)
+        self.auditor.record_result(section_num, result)
 
         # Display summary
         score_str = f"{result.score:.1f}/10" if result.score is not None else "N/A"
