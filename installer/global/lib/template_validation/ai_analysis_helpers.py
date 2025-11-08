@@ -380,15 +380,17 @@ def extract_key_insights(ai_response: Dict[str, Any], top_n: int = 5) -> List[st
 
 def should_use_ai_for_section(
     section_num: int,
-    ai_enabled_sections: List[int] = [8, 11, 12]
+    ai_enabled_sections: Optional[List[int]] = None
 ) -> bool:
     """Determine if AI should be used for a given section.
 
     Args:
         section_num: Section number to check
-        ai_enabled_sections: List of sections with AI support
+        ai_enabled_sections: List of sections with AI support (default: [8, 11, 12])
 
     Returns:
         True if AI should be used for this section
     """
+    if ai_enabled_sections is None:
+        ai_enabled_sections = [8, 11, 12]
     return section_num in ai_enabled_sections
