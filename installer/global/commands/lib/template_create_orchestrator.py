@@ -39,7 +39,8 @@ logger = logging.getLogger(__name__)
 class OrchestrationConfig:
     """Configuration for template creation orchestration"""
     codebase_path: Optional[Path] = None
-    output_path: Optional[Path] = None
+    output_path: Optional[Path] = None  # DEPRECATED: Use output_location instead
+    output_location: str = 'global'  # TASK-068: 'global' or 'repo'
     skip_qa: bool = False
     max_templates: Optional[int] = None
     dry_run: bool = False
@@ -184,7 +185,11 @@ class TemplateCreateOrchestrator:
                 return self._create_error_result("Package assembly failed")
 
             # Success!
-            self._print_success(output_path, manifest, templates, agents)
+            # TASK-068: Pass location_type to success message
+            location_type = "personal" if self.config.output_location == 'global' else "distribution"
+            if self.config.output_path:
+                location_type = "custom"
+            self._print_success(output_path, manifest, templates, agents, location_type)
 
             return OrchestrationResult(
                 success=True,
@@ -659,11 +664,19 @@ class TemplateCreateOrchestrator:
         self._print_phase_header("Phase 8: Package Assembly")
 
         try:
-            # Determine output path
+            # TASK-068: Determine output path based on output_location
             if self.config.output_path:
+                # Legacy support: if output_path is explicitly set, use it
                 output_path = self.config.output_path
+                location_type = "custom"
+            elif self.config.output_location == 'repo':
+                # Write to repository location for distribution
+                output_path = Path("installer/global/templates") / manifest.name
+                location_type = "distribution"
             else:
-                output_path = Path("./templates") / manifest.name
+                # Default: Write to global location for immediate use
+                output_path = Path.home() / ".agentecflow" / "templates" / manifest.name
+                location_type = "personal"
 
             output_path.mkdir(parents=True, exist_ok=True)
 
@@ -815,15 +828,25 @@ class TemplateCreateOrchestrator:
         output_path: Path,
         manifest: Any,
         templates: Any,
-        agents: List[Any]
+        agents: List[Any],
+        location_type: str = "personal"
     ) -> None:
-        """Print success summary."""
+        """Print success summary with location-specific messaging (TASK-068)."""
         print("\n" + "="*60)
         print("  ✅ Template Package Created Successfully!")
         print("="*60)
 
-        print(f"\nOutput: {output_path}/")
-        print(f"  ├── manifest.json ({self._file_size(output_path / 'manifest.json')})")
+        print(f"\n📁 Location: {output_path}/")
+
+        # TASK-068: Location-specific messaging
+        if location_type == "personal":
+            print("🎯 Type: Personal use (immediately available)")
+        elif location_type == "distribution":
+            print("📦 Type: Distribution (requires installation)")
+        else:
+            print("🔧 Type: Custom location")
+
+        print(f"\n  ├── manifest.json ({self._file_size(output_path / 'manifest.json')})")
         print(f"  ├── settings.json ({self._file_size(output_path / 'settings.json')})")
         print(f"  ├── CLAUDE.md ({self._file_size(output_path / 'CLAUDE.md')})")
 
@@ -833,10 +856,18 @@ class TemplateCreateOrchestrator:
         if agents:
             print(f"  └── agents/ ({len(agents)} agents)")
 
-        print("\nNext steps:")
-        print(f"1. Review generated files in {output_path}/")
-        print(f"2. Test template with: taskwright init {manifest.name}")
-        print("3. Share template with team or contribute to global library")
+        # TASK-068: Location-specific next steps
+        print("\n📝 Next Steps:")
+        if location_type == "personal":
+            print(f"   taskwright init {manifest.name}")
+        elif location_type == "distribution":
+            print(f"   git add installer/global/templates/{manifest.name}/")
+            print(f"   git commit -m \"Add {manifest.name} template\"")
+            print(f"   ./installer/scripts/install.sh")
+            print(f"   taskwright init {manifest.name}")
+        else:
+            print(f"1. Review generated files in {output_path}/")
+            print(f"2. Test template with: taskwright init {manifest.name}")
 
     def _print_success_line(self, message: str) -> None:
         """Print success line."""
@@ -858,7 +889,8 @@ class TemplateCreateOrchestrator:
 # Convenience function for command usage
 def run_template_create(
     codebase_path: Optional[Path] = None,
-    output_path: Optional[Path] = None,
+    output_path: Optional[Path] = None,  # DEPRECATED: Use output_location instead
+    output_location: str = 'global',  # TASK-068: 'global' or 'repo'
     skip_qa: bool = False,
     max_templates: Optional[int] = None,
     dry_run: bool = False,
@@ -871,7 +903,8 @@ def run_template_create(
 
     Args:
         codebase_path: Path to codebase to analyze
-        output_path: Output directory for template package
+        output_path: DEPRECATED - Output directory for template package (use output_location)
+        output_location: 'global' (default, ~/.agentecflow/templates/) or 'repo' (installer/global/templates/)
         skip_qa: Skip interactive Q&A
         max_templates: Maximum template files to generate
         dry_run: Analyze and show plan without saving
@@ -882,11 +915,18 @@ def run_template_create(
     Returns:
         OrchestrationResult
 
-    Example:
+    Example (personal use):
+        result = run_template_create(
+            codebase_path=Path("~/projects/my-app")
+        )
+        # Creates in ~/.agentecflow/templates/ (immediately available)
+
+    Example (distribution):
         result = run_template_create(
             codebase_path=Path("~/projects/my-app"),
-            output_path=Path("./templates/my-template")
+            output_location='repo'
         )
+        # Creates in installer/global/templates/ (for version control)
 
         if result.success:
             print(f"Template created: {result.output_path}")
@@ -896,6 +936,7 @@ def run_template_create(
     config = OrchestrationConfig(
         codebase_path=codebase_path,
         output_path=output_path,
+        output_location=output_location,
         skip_qa=skip_qa,
         max_templates=max_templates,
         dry_run=dry_run,
