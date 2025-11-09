@@ -249,6 +249,44 @@ installer/global/           # Global resources
 └── templates/             # Stack templates
 ```
 
+## Template Philosophy
+
+Taskwright includes **4 high-quality templates** for learning and evaluation:
+
+### Stack-Specific Reference Templates (9+/10 Quality)
+1. **react-typescript** - Frontend best practices (from Bulletproof React)
+2. **fastapi-python** - Backend API patterns (from FastAPI Best Practices)
+3. **nextjs-fullstack** - Full-stack application (Next.js App Router)
+
+### Language-Agnostic Template (8+/10 Quality)
+4. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
+
+### Why This Approach?
+
+**Templates are learning resources, not production code.**
+
+Each template demonstrates:
+- ✅ How to structure templates for `/template-create`
+- ✅ Stack-specific best practices (or language-agnostic patterns)
+- ✅ Taskwright workflow integration
+- ✅ High quality standards (all score 8+/10)
+
+### For Production: Use `/template-create`
+
+```bash
+# Evaluate Taskwright (reference template)
+taskwright init react-typescript
+
+# Production workflow (recommended)
+cd your-existing-project
+/template-create
+taskwright init your-custom-template
+```
+
+**Why?** Your production code is better than any generic template. Create templates from what you've proven works.
+
+**See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
+
 ## Installation & Setup
 
 ```bash
@@ -257,26 +295,22 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-taskwright init [default|react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-fastendpoints|dotnet-minimalapi|fullstack]
+taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
+
+# View template details
+taskwright init react-typescript --info
 ```
 
-**Available Templates:**
-- **default**: Language-agnostic starter (Go, Rust, Ruby, PHP, etc.)
-- **react**: React + TypeScript + Next.js + Tailwind + Vitest + Playwright
-- **python**: FastAPI + pytest + LangGraph + Pydantic
-- **typescript-api**: NestJS + Result patterns + domain modeling
-- **maui-appshell**: .NET MAUI + AppShell + MVVM + ErrorOr
-- **maui-navigationpage**: .NET MAUI + NavigationPage + MVVM
-- **dotnet-fastendpoints**: .NET + FastEndpoints + REPR pattern
-- **dotnet-minimalapi**: .NET 8+ Minimal API + Vertical Slices + Route Groups + Endpoint Filters
-- **fullstack**: React + Python full-stack
-
-**Note**: As of v2.0, template `dotnet-aspnetcontroller` has been removed and `default` has been reinstated as language-agnostic. See [Template Migration Guide](docs/guides/template-migration.md) for details.
-
 **Template Documentation:**
-- [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations
-- [MAUI Template Selection](docs/guides/maui-template-selection.md) - AppShell vs NavigationPage
+- [react-typescript](installer/global/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
+- [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
+- [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
+- [default](installer/global/templates/default/README.md) - Language-agnostic foundation
+
+**See Also:**
+- [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 4 templates?
 - [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
+- [Template Migration Guide](docs/guides/template-migration.md) - Migrating from old templates
 
 ## Conductor Integration
 
@@ -512,6 +546,8 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 - Need quality enforcement without ceremony
 - Want AI assistance with human oversight
 - Small-to-medium projects
+- **Learning new stack** (use reference templates)
+- **Creating team templates** (use `/template-create`)
 
 ### Use RequireKit When:
 - Need formal requirements management (EARS notation, BDD scenarios)

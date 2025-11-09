@@ -1,0 +1,161 @@
+# Template Philosophy
+
+## Overview
+
+Taskwright's template strategy is simple: **Reference implementations for learning, `/template-create` for production.**
+
+## The 4 Templates
+
+### Stack-Specific Reference Templates
+
+| Template | Purpose | When to Use |
+|----------|---------|-------------|
+| **react-typescript** | Learn frontend best practices | Evaluating Taskwright, learning React patterns |
+| **fastapi-python** | Learn backend API patterns | Evaluating Taskwright, learning FastAPI |
+| **nextjs-fullstack** | Learn full-stack development | Evaluating Taskwright, learning Next.js App Router |
+
+### Language-Agnostic Template
+
+| Template | Purpose | When to Use |
+|----------|---------|-------------|
+| **default** | Language-agnostic foundation | Go/Rust/Ruby/Elixir projects, evaluation, before `/template-create` |
+
+## Why This Approach?
+
+### 1. Your Code > Generic Templates
+
+**Your production codebase**:
+- ✅ Proven to work in production
+- ✅ Matches your team's conventions
+- ✅ Contains your specific patterns
+- ✅ Reflects your architecture decisions
+
+**Generic templates**:
+- ⚠️ May not match your conventions
+- ⚠️ Generic patterns (not your proven ones)
+- ⚠️ Require customization anyway
+
+### 2. Developers Are Opinionated
+
+Every team develops unique:
+- Code organization preferences
+- Naming conventions
+- Architecture patterns
+- Technology choices
+- Quality standards
+
+**Rather than shipping 50 templates trying to cover every opinion, we provide 4 high-quality templates (3 stack-specific + 1 language-agnostic) and tools to create your own.**
+
+### 3. Quality Over Quantity
+
+**Old approach**: 9 templates, unknown quality, high maintenance
+
+**New approach**: 4 templates (3 stack-specific at 9+/10, 1 language-agnostic at 8+/10), low maintenance
+
+### 4. Learning Resource First
+
+Reference templates teach:
+- How to structure templates for `/template-create`
+- What makes a template high quality
+- Stack-specific best practices
+- Taskwright workflow integration
+
+## The Production Workflow
+
+### Step 1: Evaluate with Reference Templates
+
+```bash
+# Try Taskwright quickly
+taskwright init react-typescript
+
+# Explore generated code
+# See Taskwright in action
+```
+
+### Step 2: Create Your Template
+
+```bash
+# Once you're convinced, create from your code
+cd your-production-codebase
+/template-create
+
+# Answer questions about your stack
+# AI generates template automatically
+```
+
+### Step 3: Use Your Template
+
+```bash
+# Now use YOUR patterns, not ours
+taskwright init your-custom-template
+
+# Get YOUR best practices
+# Follow YOUR conventions
+```
+
+## Comparison with Other Tools
+
+| Tool | Approach | Taskwright Difference |
+|------|----------|---------------------|
+| create-react-app | 1 opinionated template | 3 reference examples + create your own |
+| dotnet new | 50+ built-in templates | 3 references + `/template-create` from your code |
+| Yeoman | Community generators | `/template-create` from production code |
+
+**Unique value**: Create templates from your actual production code, not from generic examples.
+
+## When to Use Which Template
+
+### Use react-typescript When:
+- ⏱️ Evaluating Taskwright (< 1 hour)
+- 📚 Learning React + TypeScript best practices
+- 🎓 Training new team members
+- 🔍 Reference for building your own template
+
+### Use fastapi-python When:
+- ⏱️ Evaluating Taskwright for backend
+- 📚 Learning FastAPI best practices
+- 🎓 Training Python developers
+- 🔍 Reference for API architecture
+
+### Use nextjs-fullstack When:
+- ⏱️ Evaluating Taskwright for full-stack
+- 📚 Learning Next.js App Router
+- 🎓 Training full-stack developers
+- 🔍 Reference for modern Next.js
+
+### Use default When:
+- 🌐 Working with Go, Rust, Ruby, Elixir, PHP, or other unsupported languages
+- ⏱️ Quick evaluation without stack commitment
+- 🎯 Learning Taskwright before creating custom template
+- 📝 Need language-agnostic workflow foundation
+
+### Use `/template-create` When:
+- 🚀 Production projects
+- 🏢 Team/organization templates
+- 🎯 Custom stack not covered by references
+- ✅ You have proven production code
+
+## FAQ
+
+**Q: Why don't you ship templates for [my favorite stack]?**
+
+A: We provide stack-specific templates for the most popular stacks (React, FastAPI, Next.js) and a language-agnostic `default` template for everything else. For production, YOUR code is better than any template we could create—use `/template-create` from your codebase.
+
+**Q: Can I modify the reference templates?**
+
+A: Yes, but we recommend using them as references and creating your own with `/template-create` instead.
+
+**Q: What happened to the other templates?**
+
+A: We reduced from 9 to 4 high-quality templates (3 stack-specific at 9+/10 + 1 language-agnostic at 8+/10). The `default` template was temporarily removed but has been reinstated with quality improvements (TASK-060A). Old templates are archived. See [Template Migration Guide](template-migration.md).
+
+**Q: How do I share templates with my team?**
+
+A: Use `/template-create` in your repo, commit to git, team members run `install.sh`. See [Creating Local Templates](creating-local-templates.md).
+
+## Related Documentation
+
+- [Creating Local Templates](creating-local-templates.md) - Create templates from your code
+- [Template Quality Validation](template-quality-validation.md) - Quality standards
+- [Template Migration Guide](template-migration.md) - Migrating from old templates
+- [Template Strategy Decision](../research/template-strategy-decision.md) - Full rationale

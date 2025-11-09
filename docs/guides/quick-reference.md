@@ -8,13 +8,10 @@
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize projects with stack templates
-taskwright init react                  # React + TypeScript + Vite + Playwright
-taskwright init python                 # Python + FastAPI + pytest + LangGraph
-taskwright init dotnet-fastendpoints   # .NET microservices + FastEndpoints
-taskwright init maui-appshell         # .NET MAUI + AppShell + MVVM
-taskwright init maui-navigationpage   # .NET MAUI + NavigationPage + MVVM
-taskwright init typescript-api        # NestJS TypeScript backend API
-taskwright init default               # Language-agnostic template
+taskwright init react-typescript       # React + TypeScript (from Bulletproof React)
+taskwright init fastapi-python         # Python + FastAPI (from best practices)
+taskwright init nextjs-fullstack       # Next.js App Router full-stack
+taskwright init default                # Language-agnostic (Go, Rust, Ruby, etc.)
 ```
 
 ## Core Workflow Commands
@@ -72,145 +69,106 @@ taskwright init default               # Language-agnostic template
 
 ## Available Templates
 
-### React Stack
-**Production Patterns Included:**
-- Error boundaries for resilient error handling
-- SSE hooks for real-time streaming
-- Performance optimization (memoization, debouncing)
-- Accessibility patterns (WCAG 2.1 AA)
-- Advanced testing (visual regression, performance)
-- Security patterns (input sanitization)
+### Stack-Specific Reference Templates (9+/10 Quality)
 
-**Key Files:**
-- `CLAUDE.md` - Complete development context
-- `PATTERNS.md` - Production-tested patterns
-- Templates for hooks, components, services
+These templates are **learning resources** demonstrating best practices. For production, use `/template-create` from your own codebase.
+
+#### react-typescript
+**Source:** [Bulletproof React](https://github.com/alan2207/bulletproof-react) (28.5k stars)
+**Score:** 9.3/10
+**Use For:** Evaluating Taskwright, learning React patterns
+
+**Demonstrates:**
+- Error boundaries, SSE hooks, performance optimization
+- Accessibility patterns (WCAG 2.1 AA)
+- Visual regression testing with Playwright
+- Security patterns (input sanitization)
 
 **Setup:**
 ```bash
-taskwright init react
-cd my-project
+taskwright init react-typescript
+cd react-typescript-app
 npm install
 npm run dev
 ```
 
-### Python Stack
-**Production Patterns Included:**
-- Surgical coding philosophy (minimal changes)
-- Factory pattern throughout
-- LangGraph workflow orchestration
+#### fastapi-python
+**Source:** [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) (12k+ stars)
+**Score:** 9.2/10
+**Use For:** Evaluating Taskwright, learning FastAPI patterns
+
+**Demonstrates:**
+- Factory pattern, LangGraph workflow orchestration
 - SSE streaming with completion events
 - MCP server integration
-- Regression test markers
-
-**Key Files:**
-- `CLAUDE.md` - Surgical coding prompts
-- Templates for endpoints, agents, workflows
-- Comprehensive test templates
+- Comprehensive pytest patterns
 
 **Setup:**
 ```bash
-taskwright init python
-cd my-project
+taskwright init fastapi-python
+cd fastapi-python-app
 python -m venv venv
-source venv/bin/activate  # or: venv\Scripts\activate (Windows)
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-### .NET Microservice Stack
-**Production Patterns Included:**
-- FastEndpoints with REPR pattern
-- Either monad for functional error handling
-- OpenTelemetry observability
-- Domain-driven design structure
-- Health check endpoints
-- Integration testing focus
+#### nextjs-fullstack
+**Source:** Next.js App Router + Production Patterns
+**Score:** 9.4/10
+**Use For:** Evaluating Taskwright, learning Next.js App Router
 
-**Project Structure:**
-```
-ServiceName.API/
-├── Domain/         # Entities and errors
-├── Endpoints/      # FastEndpoints
-├── Services/       # Business logic
-├── Infrastructure/ # Cross-cutting concerns
-└── Validators/     # FluentValidation
-
-ServiceName.Tests/
-├── Unit/          # Service tests
-└── Integration/   # API tests
-```
+**Demonstrates:**
+- Next.js 14+ App Router patterns
+- Server/Client component separation
+- API routes with route handlers
+- Full-stack TypeScript development
 
 **Setup:**
 ```bash
-taskwright init dotnet-fastendpoints
-cd my-project
-dotnet build
-dotnet run
-dotnet test
-```
-
-### .NET MAUI Stack
-**Production Patterns Included:**
-- MVVM with UseCase pattern
-- Functional error handling (Either monad)
-- Outside-In TDD approach
-- Cache-aside pattern
-- Loading scope pattern
-- Navigation service
-
-**Project Structure:**
-```
-AppName/
-├── Core/         # Models and interfaces
-├── UseCases/     # Business logic
-├── Services/     # Infrastructure
-├── ViewModels/   # MVVM
-├── Views/        # XAML pages
-└── Tests/        # Integration tests
-```
-
-**Setup:**
-```bash
-taskwright init maui-appshell  # or maui-navigationpage
-cd my-project
-dotnet build
-dotnet run --framework net8.0-android  # or net8.0-ios, net8.0-maccatalyst
-dotnet test --filter Category=Integration
-```
-
-### TypeScript API Stack
-**Production Patterns Included:**
-- NestJS with modular architecture
-- Result patterns for error handling
-- Domain modeling with TypeScript
-- Comprehensive testing with Jest
-- OpenAPI documentation generation
-- Dependency injection containers
-
-**Project Structure:**
-```
-src/
-├── modules/        # Feature modules
-├── common/         # Shared utilities
-├── database/       # Database configuration
-├── auth/          # Authentication module
-└── config/        # Application configuration
-
-test/
-├── unit/          # Unit tests
-├── integration/   # API tests
-└── e2e/          # End-to-end tests
-```
-
-**Setup:**
-```bash
-taskwright init typescript-api
-cd my-project
+taskwright init nextjs-fullstack
+cd nextjs-fullstack-app
 npm install
-npm run start:dev
-npm run test
+npm run dev
 ```
+
+### Language-Agnostic Template (8+/10 Quality)
+
+#### default
+**Score:** 8.0+/10
+**Use For:** Go, Rust, Ruby, Elixir, PHP, or quick evaluation
+
+**Demonstrates:**
+- Language-agnostic task workflow
+- Taskwright workflow integration
+- Quality gate patterns
+- Starting point before `/template-create`
+
+**Setup:**
+```bash
+taskwright init default
+cd default-app
+# Configure for your stack
+```
+
+### Production Workflow: Create Your Own
+
+**For production projects**, create templates from your proven code:
+
+```bash
+cd your-production-codebase
+/template-create
+
+# Answer questions about your stack
+# AI generates template automatically with:
+# ✅ YOUR patterns and conventions
+# ✅ YOUR proven architecture
+# ✅ YOUR team's best practices
+
+taskwright init your-custom-template
+```
+
+**See:** [Template Philosophy](template-philosophy.md) for detailed explanation.
 
 ## Quality Gates
 
@@ -223,27 +181,19 @@ npm run test
 | Compilation | 100% | Required |
 | Architectural Review | ≥60/100 | Required |
 
-### Stack-Specific Requirements:
+### Reference Template Examples:
 
-**React:**
+**react-typescript:**
 - Render time <100ms
 - Accessibility score 100%
 - Bundle size optimized
 
-**Python:**
+**fastapi-python:**
 - Max 3 files per feature
 - All endpoints use Pydantic
 - SSE streams send completion
 
-**.NET Microservice:**
-- P95 response <200ms
-- All operations return Either
-- OpenTelemetry required
-
-**.NET MAUI:**
-- Page load <500ms
-- ViewModels contain no logic
-- Integration tests required
+**Note:** These are examples from reference templates. Your custom template defines your own quality standards via `/template-create`.
 
 ## Development Workflow
 
