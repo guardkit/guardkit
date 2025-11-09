@@ -1,0 +1,72 @@
+{
+  "name": "typescript-api",
+  "version": "1.0.0",
+  "description": "NestJS TypeScript backend API with Result pattern, domain modeling, and comprehensive testing",
+  "template_type": "technology-stack",
+  "technology": "typescript-nestjs",
+  "architecture": {
+    "patterns": [
+      "Modular Architecture (NestJS)",
+      "Domain-Driven Design (DDD)",
+      "Result/Either Pattern (functional error handling)",
+      "Repository Pattern",
+      "Dependency Injection",
+      "CQRS Pattern"
+    ],
+    "layers": [
+      {
+        "name": "Modules",
+        "description": "NestJS feature modules with controllers and services",
+        "patterns": ["Module Pattern", "Dependency Injection"]
+      },
+      {
+        "name": "Domain",
+        "description": "Domain entities, value objects, and domain errors",
+        "patterns": ["DDD", "Value Objects"]
+      },
+      {
+        "name": "Infrastructure",
+        "description": "Database, external services, configuration",
+        "patterns": ["Repository Pattern", "Adapter Pattern"]
+      },
+      {
+        "name": "Common",
+        "description": "Shared utilities, decorators, guards, filters",
+        "patterns": ["Cross-Cutting Concerns"]
+      }
+    ]
+  },
+  "testing": {
+    "framework": "Jest + NestJS Testing",
+    "e2e": "Supertest",
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    }
+  },
+  "quality_gates": {
+    "required": [
+      "All tests passing",
+      "TypeScript compilation successful",
+      "No linting errors",
+      "API documentation (Swagger)",
+      "Result pattern for error handling"
+    ]
+  },
+  "prerequisites": {
+    "node": "20+",
+    "packages": [
+      "NestJS 10+",
+      "TypeScript 5+",
+      "Jest",
+      "TypeORM/Prisma",
+      "@effect/core or ts-results",
+      "class-validator",
+      "class-transformer"
+    ]
+  },
+  "agents": [],
+  "created": "2024-01-01",
+  "last_updated": "2025-11-08",
+  "author": "Taskwright System"
+}

@@ -1,0 +1,71 @@
+{
+  "name": "dotnet-aspnetcontroller",
+  "version": "1.0.0",
+  "description": ".NET template with ASP.NET Core Controllers, MVC pattern, and ErrorOr functional error handling",
+  "template_type": "technology-stack",
+  "technology": "dotnet-aspnetcore",
+  "architecture": {
+    "patterns": [
+      "MVC Pattern",
+      "ErrorOr Pattern (functional error handling)",
+      "Repository Pattern",
+      "Service Pattern",
+      "Dependency Injection",
+      "RESTful API"
+    ],
+    "layers": [
+      {
+        "name": "Controllers",
+        "description": "ASP.NET Core controllers with action methods",
+        "patterns": ["MVC Pattern", "REST API"]
+      },
+      {
+        "name": "Domain",
+        "description": "Domain operations and business logic",
+        "patterns": ["Domain Model", "ErrorOr Pattern"]
+      },
+      {
+        "name": "Repository",
+        "description": "Data access layer",
+        "patterns": ["Repository Pattern"]
+      },
+      {
+        "name": "Services",
+        "description": "Business services and external integrations",
+        "patterns": ["Service Pattern"]
+      }
+    ]
+  },
+  "testing": {
+    "framework": "xUnit",
+    "mocking": "NSubstitute",
+    "assertions": "FluentAssertions",
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    }
+  },
+  "quality_gates": {
+    "required": [
+      "All tests passing",
+      "ErrorOr used for fallible operations",
+      "Controllers properly routed",
+      "Model validation configured"
+    ]
+  },
+  "prerequisites": {
+    "sdk": ".NET 8.0+",
+    "packages": [
+      "ASP.NET Core",
+      "ErrorOr (2.0+)",
+      "Entity Framework Core (optional)",
+      "xUnit",
+      "NSubstitute",
+      "FluentAssertions"
+    ]
+  },
+  "agents": [],
+  "created": "2024-01-01",
+  "last_updated": "2025-11-08",
+  "author": "Taskwright System"
+}

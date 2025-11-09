@@ -1,0 +1,71 @@
+{
+  "name": "react",
+  "version": "1.0.0",
+  "description": "React + TypeScript + Vite + Tailwind CSS template with Vitest and Playwright",
+  "template_type": "technology-stack",
+  "technology": "react-typescript",
+  "architecture": {
+    "patterns": [
+      "Component-Based Architecture",
+      "Functional Components with Hooks",
+      "Context API for State Management",
+      "Composition over Inheritance",
+      "Accessibility-First Development"
+    ],
+    "layers": [
+      {
+        "name": "Components",
+        "description": "Reusable React components (UI, features, layout)",
+        "patterns": ["Functional Components", "Hooks", "Composition"]
+      },
+      {
+        "name": "Hooks",
+        "description": "Custom React hooks for state and side effects",
+        "patterns": ["Custom Hooks"]
+      },
+      {
+        "name": "Services",
+        "description": "API services and external integrations",
+        "patterns": ["API Client", "Service Layer"]
+      },
+      {
+        "name": "Contexts",
+        "description": "React contexts for global state",
+        "patterns": ["Context API"]
+      }
+    ]
+  },
+  "testing": {
+    "unit": "Vitest + React Testing Library",
+    "e2e": "Playwright",
+    "accessibility": "testing-library + axe-core",
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    }
+  },
+  "quality_gates": {
+    "required": [
+      "All tests passing (100%)",
+      "Code coverage ≥ 80%",
+      "No TypeScript errors",
+      "Accessibility standards met (WCAG 2.1 AA)",
+      "No security vulnerabilities"
+    ]
+  },
+  "prerequisites": {
+    "node": "18+",
+    "packages": [
+      "React 18+",
+      "TypeScript 5+",
+      "Vite 5+",
+      "Tailwind CSS",
+      "Vitest",
+      "Playwright"
+    ]
+  },
+  "agents": [],
+  "created": "2024-01-01",
+  "last_updated": "2025-11-08",
+  "author": "Taskwright System"
+}

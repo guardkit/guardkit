@@ -1,0 +1,75 @@
+{
+  "name": "dotnet-minimalapi",
+  "version": "1.0.0",
+  "description": ".NET 8+ Minimal API template with Vertical Slices, Route Groups, Endpoint Filters, and ErrorOr",
+  "template_type": "technology-stack",
+  "technology": "dotnet-minimalapi",
+  "architecture": {
+    "patterns": [
+      "Vertical Slice Architecture",
+      "Minimal API Pattern",
+      "Route Groups",
+      "Endpoint Filters",
+      "ErrorOr Pattern (functional error handling)",
+      "Repository Pattern",
+      "Dependency Injection"
+    ],
+    "layers": [
+      {
+        "name": "Endpoints",
+        "description": "Minimal API endpoints organized by feature",
+        "patterns": ["Vertical Slices", "Route Groups"]
+      },
+      {
+        "name": "Domain",
+        "description": "Domain operations and business logic",
+        "patterns": ["Domain Model", "ErrorOr Pattern"]
+      },
+      {
+        "name": "Repository",
+        "description": "Data access layer",
+        "patterns": ["Repository Pattern"]
+      },
+      {
+        "name": "Filters",
+        "description": "Endpoint filters for cross-cutting concerns",
+        "patterns": ["Endpoint Filters"]
+      }
+    ]
+  },
+  "testing": {
+    "framework": "xUnit",
+    "mocking": "NSubstitute",
+    "assertions": "FluentAssertions",
+    "integration": "WebApplicationFactory",
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    }
+  },
+  "quality_gates": {
+    "required": [
+      "All tests passing",
+      "ErrorOr used for fallible operations",
+      "Route groups properly organized",
+      "Endpoint filters configured",
+      "OpenAPI documentation"
+    ]
+  },
+  "prerequisites": {
+    "sdk": ".NET 8.0+",
+    "packages": [
+      "ASP.NET Core Minimal API",
+      "ErrorOr (2.0+)",
+      "Entity Framework Core (optional)",
+      "xUnit",
+      "NSubstitute",
+      "FluentAssertions",
+      "Microsoft.AspNetCore.Mvc.Testing"
+    ]
+  },
+  "agents": [],
+  "created": "2024-01-01",
+  "last_updated": "2025-11-08",
+  "author": "Taskwright System"
+}
