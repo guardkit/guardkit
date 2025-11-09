@@ -1,0 +1,144 @@
+"""
+Application Configuration
+
+This module defines application settings using Pydantic BaseSettings.
+Settings are loaded from environment variables or .env file.
+"""
+
+from pydantic import PostgresDsn, field_validator, Field
+from pydantic_settings import BaseSettings
+from typing import List, Optional
+
+
+class Settings(BaseSettings):
+    """
+    Application settings.
+
+    All settings can be overridden via environment variables.
+    Default values are provided for development.
+    """
+
+    # ============================================================================
+    # Application Settings
+    # ============================================================================
+    PROJECT_NAME: str = "{{ProjectName}}"
+    VERSION: str = "1.0.0"
+    API_V1_PREFIX: str = "/api/v1"
+    DEBUG: bool = Field(default=False, description="Enable debug mode")
+    ENVIRONMENT: str = Field(default="development", description="Environment (development, staging, production)")
+
+    # ============================================================================
+    # Database Settings
+    # ============================================================================
+    DATABASE_URL: PostgresDsn = Field(
+        ...,
+        description="PostgreSQL database URL (e.g., postgresql+asyncpg://user:pass@localhost/dbname)"
+    )
+
+    # ============================================================================
+    # Security Settings
+    # ============================================================================
+    SECRET_KEY: str = Field(
+        ...,
+        description="Secret key for JWT token generation (keep secure!)"
+    )
+    ALGORITHM: str = Field(
+        default="HS256",
+        description="Algorithm for JWT token encoding"
+    )
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=30,
+        description="JWT access token expiration time in minutes"
+    )
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
+        default=30,
+        description="JWT refresh token expiration time in days"
+    )
+
+    # ============================================================================
+    # CORS Settings
+    # ============================================================================
+    BACKEND_CORS_ORIGINS: List[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8000"],
+        description="Allowed CORS origins"
+    )
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode='before')
+    @classmethod
+    def assemble_cors_origins(cls, v: str | List[str]) -> List[str]:
+        """
+        Parse CORS origins from string or list.
+
+        Allows setting CORS origins as comma-separated string in .env:
+        BACKEND_CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+        """
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",")]
+        return v
+
+    # ============================================================================
+    # Redis Settings (Optional)
+    # ============================================================================
+    REDIS_URL: Optional[str] = Field(
+        default=None,
+        description="Redis connection URL (optional, for caching/sessions)"
+    )
+
+    # ============================================================================
+    # External Services (Optional)
+    # ============================================================================
+    SENTRY_DSN: Optional[str] = Field(
+        default=None,
+        description="Sentry DSN for error tracking (optional)"
+    )
+
+    SMTP_HOST: Optional[str] = Field(
+        default=None,
+        description="SMTP server host for email sending"
+    )
+    SMTP_PORT: Optional[int] = Field(
+        default=587,
+        description="SMTP server port"
+    )
+    SMTP_USER: Optional[str] = Field(
+        default=None,
+        description="SMTP username"
+    )
+    SMTP_PASSWORD: Optional[str] = Field(
+        default=None,
+        description="SMTP password"
+    )
+    EMAILS_FROM_EMAIL: Optional[str] = Field(
+        default=None,
+        description="Email address to send from"
+    )
+
+    # ============================================================================
+    # Pagination Defaults
+    # ============================================================================
+    DEFAULT_PAGE_SIZE: int = Field(
+        default=50,
+        description="Default number of items per page"
+    )
+    MAX_PAGE_SIZE: int = Field(
+        default=1000,
+        description="Maximum allowed items per page"
+    )
+
+    # ============================================================================
+    # Rate Limiting (if using)
+    # ============================================================================
+    RATE_LIMIT_PER_MINUTE: int = Field(
+        default=60,
+        description="Maximum requests per minute per IP"
+    )
+
+    class Config:
+        """Pydantic configuration."""
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+
+
+# Create singleton settings instance
+settings = Settings()
