@@ -7,15 +7,17 @@
 **Status**: Backlog
 **Complexity**: 5/10 (Medium)
 **Estimated Effort**: 3-4 days
-**Dependencies**: TASK-056 (Audit), TASK-057, TASK-058, TASK-059 (New templates), TASK-060 (Removals)
+**Dependencies**: TASK-056 (Audit), TASK-057, TASK-058, TASK-059 (New templates), TASK-060 (Removals), TASK-060A (Default Reinstatement)
 
 ---
 
 ## Problem Statement
 
-Update all documentation to reflect the new 3-template strategy, reframe templates as "reference implementations" rather than production code, and position `/template-create` as the primary production workflow.
+Update all documentation to reflect the new template strategy (3 stack-specific reference templates + 1 language-agnostic default), reframe templates as "reference implementations" rather than production code, and position `/template-create` as the primary production workflow.
 
 **Goal**: Comprehensive documentation update implementing new template philosophy and messaging strategy.
+
+**Note**: TASK-060A reinstated the `default` template with quality improvements (8.0+/10), providing language-agnostic support for Go/Rust/Ruby/Elixir and evaluation workflows.
 
 ---
 
@@ -26,6 +28,7 @@ Update all documentation to reflect the new 3-template strategy, reframe templat
 - TASK-056: Audit findings
 - TASK-057, TASK-058, TASK-059: New reference templates
 - TASK-060: Template removals
+- TASK-060A: Default template reinstatement (language-agnostic)
 - TASK-021: Template location strategy
 
 **Old Messaging**:
@@ -35,9 +38,10 @@ Update all documentation to reflect the new 3-template strategy, reframe templat
 
 **New Messaging**:
 - Templates as learning resources
-- 3 reference implementations
+- 3 stack-specific reference implementations + 1 language-agnostic default
 - `/template-create` as primary production path
 - Templates demonstrate how to build your own
+- Default template for unsupported languages (Go, Rust, Ruby, etc.)
 
 ---
 
@@ -48,7 +52,7 @@ Update all documentation to reflect new template strategy and messaging.
 
 ### Success Criteria
 - [x] CLAUDE.md updated with new template philosophy
-- [x] README.md updated with 3-template approach
+- [x] README.md updated with 4-template approach (3 stack-specific + 1 default)
 - [x] All guides updated (references, examples, messaging)
 - [x] New "Template Philosophy" guide created
 - [x] Quick start updated
@@ -69,21 +73,25 @@ Update all documentation to reflect new template strategy and messaging.
 ```markdown
 ## Template Philosophy (NEW SECTION)
 
-Taskwright includes **3 reference implementation templates** for learning and evaluation:
+Taskwright includes **4 high-quality templates** for learning and evaluation:
 
+### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
 2. **fastapi-python** - Backend API patterns (from FastAPI Best Practices)
 3. **nextjs-fullstack** - Full-stack application (Next.js App Router)
 
-### Why Only 3 Templates?
+### Language-Agnostic Template (8+/10 Quality)
+4. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
+
+### Why This Approach?
 
 **Templates are learning resources, not production code.**
 
 Each template demonstrates:
 - ✅ How to structure templates for `/template-create`
-- ✅ Stack-specific best practices
+- ✅ Stack-specific best practices (or language-agnostic patterns)
 - ✅ Taskwright workflow integration
-- ✅ Quality standards (all score 9+/10)
+- ✅ High quality standards (all score 8+/10)
 
 ### For Production: Use `/template-create`
 
@@ -164,9 +172,11 @@ taskwright init your-custom-template
 ```markdown
 ## Templates (NEW SECTION)
 
-### Reference Implementation Templates
+### High-Quality Templates
 
-Taskwright ships with **3 high-quality reference templates** created from production-proven codebases:
+Taskwright ships with **4 high-quality templates**: 3 stack-specific reference implementations + 1 language-agnostic default.
+
+#### Stack-Specific Reference Templates (Production-Proven)
 
 | Template | Source | Stars | Focus | Score |
 |----------|--------|-------|-------|-------|
@@ -174,7 +184,13 @@ Taskwright ships with **3 high-quality reference templates** created from produc
 | **fastapi-python** | [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) | 12k+ | Backend API | 9.2/10 |
 | **nextjs-fullstack** | Next.js App Router + Patterns | Official | Full-stack | 9.4/10 |
 
-All templates validated at 9+/10 using comprehensive quality audit.
+#### Language-Agnostic Template
+
+| Template | Purpose | Use For | Score |
+|----------|---------|---------|-------|
+| **default** | Language-agnostic foundation | Go, Rust, Ruby, Elixir, PHP, evaluation | 8.0+/10 |
+
+All templates validated using comprehensive quality audit.
 
 ### Quick Start with Templates
 
@@ -188,17 +204,22 @@ cd your-production-codebase
 taskwright init your-custom-template
 ```
 
-### Why Only 3 Templates?
+### Why These 4 Templates?
 
 **Templates are learning resources, not production code.**
 
 Your production codebase is better than any generic template. Use `/template-create` to generate templates from code you've proven works.
 
-Reference templates demonstrate:
+**Stack-specific templates** (react, fastapi, nextjs) demonstrate:
 - How to structure templates
 - Stack-specific best practices
-- Quality standards to target
+- Quality standards to target (9+/10)
 - Taskwright workflow patterns
+
+**Default template** provides:
+- Language-agnostic foundation for unsupported stacks (Go, Rust, Ruby, etc.)
+- Evaluation workflow without stack commitment
+- Starting point before using `/template-create`
 
 ### Create Your Own Templates
 
@@ -221,8 +242,8 @@ cd your-production-codebase
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
-# Initialize with reference template
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack]
+# Initialize with template
+taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
 
 # Or create custom template
 cd your-project
@@ -262,13 +283,21 @@ cd your-production-codebase
 
 Taskwright's template strategy is simple: **Reference implementations for learning, `/template-create` for production.**
 
-## The 3 Reference Templates
+## The 4 Templates
+
+### Stack-Specific Reference Templates
 
 | Template | Purpose | When to Use |
 |----------|---------|-------------|
 | **react-typescript** | Learn frontend best practices | Evaluating Taskwright, learning React patterns |
 | **fastapi-python** | Learn backend API patterns | Evaluating Taskwright, learning FastAPI |
 | **nextjs-fullstack** | Learn full-stack development | Evaluating Taskwright, learning Next.js App Router |
+
+### Language-Agnostic Template
+
+| Template | Purpose | When to Use |
+|----------|---------|-------------|
+| **default** | Language-agnostic foundation | Go/Rust/Ruby/Elixir projects, evaluation, before `/template-create` |
 
 ## Why This Approach?
 
@@ -294,13 +323,13 @@ Every team develops unique:
 - Technology choices
 - Quality standards
 
-**Rather than shipping 50 templates trying to cover every opinion, we provide 3 excellent examples and tools to create your own.**
+**Rather than shipping 50 templates trying to cover every opinion, we provide 4 high-quality templates (3 stack-specific + 1 language-agnostic) and tools to create your own.**
 
 ### 3. Quality Over Quantity
 
 **Old approach**: 9 templates, unknown quality, high maintenance
 
-**New approach**: 3 templates, all 9+/10 quality, low maintenance
+**New approach**: 4 templates (3 stack-specific at 9+/10, 1 language-agnostic at 8+/10), low maintenance
 
 ### 4. Learning Resource First
 
@@ -373,6 +402,12 @@ taskwright init your-custom-template
 - 🎓 Training full-stack developers
 - 🔍 Reference for modern Next.js
 
+### Use default When:
+- 🌐 Working with Go, Rust, Ruby, Elixir, PHP, or other unsupported languages
+- ⏱️ Quick evaluation without stack commitment
+- 🎯 Learning Taskwright before creating custom template
+- 📝 Need language-agnostic workflow foundation
+
 ### Use `/template-create` When:
 - 🚀 Production projects
 - 🏢 Team/organization templates
@@ -383,7 +418,7 @@ taskwright init your-custom-template
 
 **Q: Why don't you ship templates for [my favorite stack]?**
 
-A: Because YOUR production code is better than any template we could create. Use `/template-create` from your codebase.
+A: We provide stack-specific templates for the most popular stacks (React, FastAPI, Next.js) and a language-agnostic `default` template for everything else. For production, YOUR code is better than any template we could create—use `/template-create` from your codebase.
 
 **Q: Can I modify the reference templates?**
 
@@ -391,7 +426,7 @@ A: Yes, but we recommend using them as references and creating your own with `/t
 
 **Q: What happened to the other templates?**
 
-A: We reduced from 9 to 3 high-quality references. Old templates are archived. See [Template Migration Guide](template-migration.md).
+A: We reduced from 9 to 4 high-quality templates (3 stack-specific at 9+/10 + 1 language-agnostic at 8+/10). The `default` template was temporarily removed but has been reinstated with quality improvements (TASK-060A). Old templates are archived. See [Template Migration Guide](template-migration.md).
 
 **Q: How do I share templates with my team?**
 
@@ -451,19 +486,24 @@ taskwright init your-custom-template
 - Any file with template examples
 
 **Changes**:
-- Replace old template names with: `react-typescript`, `fastapi-python`, `nextjs-fullstack`
+- Replace old template names with: `react-typescript`, `fastapi-python`, `nextjs-fullstack`, `default`
 - Update examples
 - Add note about `/template-create` workflow
+- Clarify when to use `default` (language-agnostic) vs stack-specific templates
 
 ### 6. Update Installer Documentation
 
 **File**: `installer/scripts/install.sh` (comments) or installation guide
 
 ```bash
-# Reference Templates (9+/10 Quality):
+# High-Quality Templates:
+# Stack-Specific (9+/10 Quality):
 # - react-typescript: From Bulletproof React (frontend)
 # - fastapi-python: From FastAPI Best Practices (backend)
 # - nextjs-fullstack: Next.js App Router (full-stack)
+#
+# Language-Agnostic (8+/10 Quality):
+# - default: For Go, Rust, Ruby, Elixir, PHP, and evaluation
 #
 # For production: Use /template-create from your codebase
 ```
@@ -473,12 +513,12 @@ taskwright init your-custom-template
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] CLAUDE.md updated with new template philosophy
-- [ ] README.md updated with 3-template approach
-- [ ] Template Philosophy guide created
-- [ ] Quick start updated
-- [ ] All guides updated (no broken references)
-- [ ] Installation documentation updated
+- [ ] CLAUDE.md updated with new template philosophy (4 templates: 3 stack-specific + 1 default)
+- [ ] README.md updated with 4-template approach
+- [ ] Template Philosophy guide created (includes default template)
+- [ ] Quick start updated (includes default option)
+- [ ] All guides updated (no broken references, includes default)
+- [ ] Installation documentation updated (4 templates documented)
 - [ ] Consistent messaging across all documents
 
 ### Quality Requirements
@@ -601,10 +641,12 @@ Ensure these messages are consistent across ALL documentation:
 - **TASK-058**: fastapi-python template (document features)
 - **TASK-059**: nextjs-fullstack template (document features)
 - **TASK-060**: Template removal (migration guide)
+- **TASK-060A**: Default template reinstatement with quality improvements (8.0+/10)
 - **TASK-021**: Template location strategy (integrate decision)
 
 ---
 
-**Document Status**: Ready for Implementation (after TASK-056, TASK-057, TASK-058, TASK-059, TASK-060)
+**Document Status**: Ready for Implementation (after TASK-056, TASK-057, TASK-058, TASK-059, TASK-060, TASK-060A)
 **Created**: 2025-01-08
+**Updated**: 2025-01-09 (TASK-060A integration)
 **Parent Epic**: Template Strategy Overhaul
