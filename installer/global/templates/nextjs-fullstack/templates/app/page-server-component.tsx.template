@@ -1,0 +1,31 @@
+import { db } from '@/lib/db'
+import { {{EntityName}}List } from '@/components/{{EntityName}}List'
+
+// Server Component - fetches data directly from database
+export default async function {{EntityNamePlural}}Page() {
+  const {{entityNamePlural}} = await db.{{entityName}}.findMany({
+    include: {
+      // Add related data if needed
+    },
+    orderBy: {
+      createdAt: 'desc',
+    },
+  })
+
+  return (
+    <div className="container mx-auto py-8">
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold">{{EntityNamePlural}}</h1>
+        <p className="text-gray-600 mt-2">
+          Manage {{entityNamePlural}} in your application
+        </p>
+      </div>
+
+      <{{EntityName}}List {{entityNamePlural}}={{`{${entityNamePlural}}`}} />
+    </div>
+  )
+}
+
+// Force dynamic rendering (always fetch fresh data)
+export const dynamic = 'force-dynamic'
+export const revalidate = 0

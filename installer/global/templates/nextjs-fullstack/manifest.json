@@ -1,0 +1,120 @@
+{
+  "schema_version": "1.0.0",
+  "name": "nextjs-fullstack",
+  "display_name": "Next.js Full-Stack (App Router)",
+  "description": "Production-ready Next.js 15 full-stack template with React Server Components, Server Actions, Prisma ORM, and comprehensive testing",
+  "version": "1.0.0",
+  "author": "Taskwright",
+  "language": "TypeScript",
+  "language_version": "5.x",
+  "frameworks": [
+    {
+      "name": "Next.js",
+      "version": "15.1.2",
+      "purpose": "full-stack framework"
+    },
+    {
+      "name": "React",
+      "version": "18.2.0",
+      "purpose": "ui library"
+    },
+    {
+      "name": "Prisma",
+      "version": "6.19.0",
+      "purpose": "orm"
+    },
+    {
+      "name": "NextAuth",
+      "version": "4.24.11",
+      "purpose": "authentication"
+    },
+    {
+      "name": "Tailwind CSS",
+      "version": "4.x",
+      "purpose": "styling"
+    },
+    {
+      "name": "Vitest",
+      "version": "4.0.8",
+      "purpose": "unit testing"
+    },
+    {
+      "name": "Playwright",
+      "version": "1.56.1",
+      "purpose": "e2e testing"
+    }
+  ],
+  "architecture": "App Router with React Server Components",
+  "patterns": [
+    "React Server Components (RSC)",
+    "Server Actions",
+    "API Route Handlers",
+    "Database Singleton Pattern",
+    "Progressive Enhancement",
+    "Cache Revalidation",
+    "Route Groups"
+  ],
+  "layers": [
+    "Presentation (UI Components)",
+    "Application (Server Actions, API Routes)",
+    "Data Access (Prisma ORM)",
+    "Data (Database)"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the Next.js project",
+      "required": true,
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+      "example": "my-nextjs-app"
+    },
+    "EntityName": {
+      "name": "{{EntityName}}",
+      "description": "Singular entity name (e.g., User, Product)",
+      "required": false,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "User"
+    },
+    "EntityNamePlural": {
+      "name": "{{EntityNamePlural}}",
+      "description": "Plural entity name (e.g., Users, Products)",
+      "required": false,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "Users"
+    },
+    "entityName": {
+      "name": "{{entityName}}",
+      "description": "Camel case entity name (e.g., user, product)",
+      "required": false,
+      "pattern": "^[a-z][A-Za-z0-9]*$",
+      "example": "user"
+    },
+    "database_url": {
+      "name": "{{database_url}}",
+      "description": "Database connection URL for Prisma",
+      "required": true,
+      "pattern": ".*",
+      "example": "file:./dev.db"
+    }
+  },
+  "tags": [
+    "nextjs",
+    "react",
+    "typescript",
+    "fullstack",
+    "prisma",
+    "server-components",
+    "server-actions",
+    "tailwind"
+  ],
+  "category": "full-stack",
+  "complexity": 7,
+  "created_at": "2025-11-09T18:00:00Z",
+  "source_project": "/tmp/nextjs-reference",
+  "confidence_score": 92,
+  "quality_scores": {
+    "solid": 75,
+    "dry": 80,
+    "yagni": 90
+  }
+}
