@@ -27,7 +27,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
-taskwright init react  # or: python, typescript-api, maui-appshell, default
+taskwright init react  # or: python, typescript-api, maui-appshell, fullstack
 ```
 
 **If using VS Code:** Reload the window to enable slash commands:
