@@ -513,26 +513,26 @@ taskwright init your-custom-template
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] CLAUDE.md updated with new template philosophy (4 templates: 3 stack-specific + 1 default)
-- [ ] README.md updated with 4-template approach
-- [ ] Template Philosophy guide created (includes default template)
-- [ ] Quick start updated (includes default option)
-- [ ] All guides updated (no broken references, includes default)
-- [ ] Installation documentation updated (4 templates documented)
-- [ ] Consistent messaging across all documents
+- [x] CLAUDE.md updated with new template philosophy (4 templates: 3 stack-specific + 1 default)
+- [x] README.md updated with 4-template approach
+- [x] Template Philosophy guide created (includes default template)
+- [x] Quick start updated (includes default option)
+- [x] All guides updated (no broken references, includes default)
+- [x] Installation documentation updated (4 templates documented)
+- [x] Consistent messaging across all documents
 
 ### Quality Requirements
-- [ ] Messaging is clear and consistent
-- [ ] Examples use new template names
-- [ ] `/template-create` positioned as primary production path
-- [ ] Reference templates positioned as learning resources
-- [ ] No contradictions between documents
+- [x] Messaging is clear and consistent
+- [x] Examples use new template names
+- [x] `/template-create` positioned as primary production path
+- [x] Reference templates positioned as learning resources
+- [x] No contradictions between documents
 
 ### Documentation Requirements
-- [ ] Template philosophy explained clearly
-- [ ] Migration path documented (TASK-060)
-- [ ] Production workflow emphasized
-- [ ] Reference template purposes clear
+- [x] Template philosophy explained clearly
+- [x] Migration path documented (TASK-060)
+- [x] Production workflow emphasized
+- [x] Reference template purposes clear
 
 ---
 

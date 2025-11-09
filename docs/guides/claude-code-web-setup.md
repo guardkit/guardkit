@@ -78,7 +78,7 @@ cd /home/user/taskwright
 **Global Components** (`~/.agentecflow/`):
 - **Commands**: 9 slash commands (task-create, task-work, etc.)
 - **Agents**: 55 AI agents (14 global + 41 stack-specific)
-- **Templates**: 9 stack templates (React, Python, .NET, MAUI, etc.)
+- **Templates**: 4 high-quality templates (react-typescript, fastapi-python, nextjs-fullstack, default)
 - **Libraries**: Python modules for complexity evaluation, plan rendering
 - **Documentation**: Methodology instructions and references
 
@@ -99,7 +99,7 @@ cd /home/user/taskwright
 Installed Components:
 - 9 slash commands available
 - 55 AI agents (14 global + 41 stack-specific)
-- 9 project templates
+- 4 high-quality project templates
 - Python dependencies (Jinja2, python-frontmatter)
 
 Commands Available:
@@ -251,7 +251,7 @@ cd /home/user/requirekit
 **Other Projects:**
 ```bash
 cd /home/user/my-web-app
-taskwright init react         # Initialize with React template
+taskwright init react-typescript  # Initialize with React template
 /task-create "Add user auth"  # Create task in this project
 /task-work TASK-001          # Implement in this project
 ```
@@ -687,7 +687,7 @@ cd /home/user/your-project
 /root/.agentecflow/              # Global installation
 ├── agents/                      # 55 AI agents
 ├── commands/                    # 9 slash commands
-├── templates/                   # 9 stack templates
+├── templates/                   # 4 high-quality templates
 └── bin/                        # CLI commands (taskwright, tw)
 
 /root/.claude/                   # Claude Code config
@@ -724,7 +724,7 @@ cd /home/user/your-project
 | **Persistence** | Installation survives session restarts |
 | **Auto-Detection** | RequireKit integration automatic |
 | **Symlinks** | Claude Code reads from ~/.claude/ |
-| **Stack Templates** | 9 templates for different technologies |
+| **Stack Templates** | 4 high-quality reference templates + custom via /template-create |
 
 ### Command Hierarchy
 

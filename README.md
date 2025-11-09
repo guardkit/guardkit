@@ -27,7 +27,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
-taskwright init react  # or: default, python, typescript-api, maui-appshell, fullstack
+taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
 
 **If using VS Code:** Reload the window to enable slash commands:
@@ -62,7 +62,7 @@ chmod +x installer/scripts/install.sh
 
 # Initialize your project
 cd /path/to/your/project
-taskwright init react
+taskwright init react-typescript
 
 # IMPORTANT: Stay in your project directory for task work
 /task-create "Add user login feature"
@@ -109,6 +109,8 @@ Automatic complexity scoring (0-10 scale):
 - Need quality enforcement without ceremony
 - Want AI assistance with human oversight
 - Small-to-medium projects
+- **Learning new stack** (use reference templates)
+- **Creating team templates** (use `/template-create`)
 
 ### Don't Use When:
 - Just want a code editor (use plain Claude Code)
@@ -154,25 +156,73 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 /debug                     # Troubleshoot issues
 ```
 
-## Supported Stacks
+## Templates
 
-Choose your template during initialization:
+Taskwright ships with **4 high-quality templates**: 3 stack-specific reference implementations + 1 language-agnostic default.
 
-| Template | Technologies | Use For |
-|----------|-------------|---------|
-| **default** | Language-agnostic (configure for your stack) | Go, Rust, Ruby, PHP, Kotlin, Swift, etc. |
-| **react** | React + TypeScript + Next.js + Tailwind + Vitest + Playwright | Web applications |
-| **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
-| **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
-| **dotnet-fastendpoints** | .NET + FastEndpoints + Either monad (LanguageExt) | .NET APIs (functional) |
-| **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (lightweight) |
-| **fullstack** | React + TypeScript + Python + FastAPI | Full-stack web apps |
-| **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
-| **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM + ErrorOr | Mobile (page-based) |
+### High-Quality Reference Templates
 
-**Note**: Template `dotnet-aspnetcontroller` was removed in v2.0, and `default` has been reinstated as language-agnostic. See [Template Migration Guide](docs/guides/template-migration.md) for details.
+#### Stack-Specific (Production-Proven)
 
-See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
+| Template | Source | Stars | Focus | Score |
+|----------|--------|-------|-------|-------|
+| **react-typescript** | [Bulletproof React](https://github.com/alan2207/bulletproof-react) | 28.5k | Frontend | 9.3/10 |
+| **fastapi-python** | [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) | 12k+ | Backend API | 9.2/10 |
+| **nextjs-fullstack** | Next.js App Router + Patterns | Official | Full-stack | 9.4/10 |
+
+#### Language-Agnostic Template
+
+| Template | Purpose | Use For | Score |
+|----------|---------|---------|-------|
+| **default** | Language-agnostic foundation | Go, Rust, Ruby, Elixir, PHP, evaluation | 8.0+/10 |
+
+All templates validated using comprehensive quality audit.
+
+### Quick Start with Templates
+
+```bash
+# Try a reference template (evaluation)
+taskwright init react-typescript
+
+# Create your own template (production)
+cd your-production-codebase
+/template-create
+taskwright init your-custom-template
+```
+
+### Why These 4 Templates?
+
+**Templates are learning resources, not production code.**
+
+Your production codebase is better than any generic template. Use `/template-create` to generate templates from code you've proven works.
+
+**Stack-specific templates** (react, fastapi, nextjs) demonstrate:
+- How to structure templates
+- Stack-specific best practices
+- Quality standards to target (9+/10)
+- Taskwright workflow patterns
+
+**Default template** provides:
+- Language-agnostic foundation for unsupported stacks (Go, Rust, Ruby, etc.)
+- Evaluation workflow without stack commitment
+- Starting point before using `/template-create`
+
+### Create Your Own Templates
+
+```bash
+cd your-production-codebase
+/template-create
+
+# Template created with:
+# ✅ Your patterns and conventions
+# ✅ Your proven architecture
+# ✅ Your team's best practices
+# ✅ Quality validation
+```
+
+**See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
+
+**Migration**: [Template Migration Guide](docs/guides/template-migration.md) for migrating from old templates.
 
 ## Quality Gates (Automatic)
 
