@@ -1,0 +1,46 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+
+import { api } from '@/lib/api-client';
+import { MutationConfig } from '@/lib/react-query';
+import { {{EntityName}} } from '@/types/api';
+
+import { get{{EntityNamePlural}}QueryOptions } from './get-{{featureName}}';
+
+export const create{{EntityName}}InputSchema = z.object({
+  title: z.string().min(1, 'Required'),
+  body: z.string().min(1, 'Required'),
+});
+
+export type Create{{EntityName}}Input = z.infer<typeof create{{EntityName}}InputSchema>;
+
+export const create{{EntityName}} = ({
+  data,
+}: {
+  data: Create{{EntityName}}Input;
+}): Promise<{{EntityName}}> => {
+  return api.post(`/{{featureName}}`, data);
+};
+
+type UseCreate{{EntityName}}Options = {
+  mutationConfig?: MutationConfig<typeof create{{EntityName}}>;
+};
+
+export const useCreate{{EntityName}} = ({
+  mutationConfig,
+}: UseCreate{{EntityName}}Options = {}) => {
+  const queryClient = useQueryClient();
+
+  const { onSuccess, ...restConfig } = mutationConfig || {};
+
+  return useMutation({
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({
+        queryKey: get{{EntityNamePlural}}QueryOptions().queryKey,
+      });
+      onSuccess?.(...args);
+    },
+    ...restConfig,
+    mutationFn: create{{EntityName}},
+  });
+};

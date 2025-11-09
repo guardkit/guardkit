@@ -1,0 +1,179 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "component": {
+      "pattern": "{{ComponentName}}",
+      "case_style": "kebab-case-file-pascal-case-export",
+      "suffix": ".tsx",
+      "examples": [
+        "discussions-list.tsx (export: DiscussionsList)",
+        "create-discussion.tsx (export: CreateDiscussion)",
+        "delete-discussion.tsx (export: DeleteDiscussion)"
+      ]
+    },
+    "hook": {
+      "pattern": "use{{HookName}}",
+      "case_style": "camelCase",
+      "prefix": "use",
+      "suffix": ".ts",
+      "examples": [
+        "useDiscussions",
+        "useCreateDiscussion",
+        "useAuthorization"
+      ]
+    },
+    "api": {
+      "pattern": "{{action}}-{{entity}}",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "examples": [
+        "get-discussions.ts",
+        "create-discussion.ts",
+        "delete-discussion.ts"
+      ]
+    },
+    "type": {
+      "pattern": "{{TypeName}}",
+      "case_style": "PascalCase",
+      "suffix": ".ts",
+      "examples": [
+        "Discussion",
+        "CreateDiscussionInput",
+        "UseDiscussionsOptions"
+      ]
+    },
+    "test": {
+      "pattern": "{{filename}}.test",
+      "case_style": "kebab-case",
+      "suffix": ".tsx",
+      "directory": "__tests__",
+      "examples": [
+        "__tests__/discussions.test.tsx",
+        "__tests__/discussion.test.tsx"
+      ]
+    },
+    "e2e-test": {
+      "pattern": "{{feature}}.spec",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "directory": "e2e/tests",
+      "examples": [
+        "e2e/tests/auth.spec.ts",
+        "e2e/tests/profile.spec.ts"
+      ]
+    },
+    "schema": {
+      "pattern": "{{action}}{{Entity}}InputSchema",
+      "case_style": "camelCase",
+      "suffix": "InputSchema",
+      "examples": [
+        "createDiscussionInputSchema",
+        "updateDiscussionInputSchema"
+      ]
+    },
+    "mock-handler": {
+      "pattern": "{{entity}}Handlers",
+      "case_style": "camelCase",
+      "suffix": ".ts",
+      "directory": "testing/mocks/handlers",
+      "examples": [
+        "discussionsHandlers",
+        "commentsHandlers"
+      ]
+    }
+  },
+  "file_organization": {
+    "by_layer": false,
+    "by_feature": true,
+    "test_location": "adjacent",
+    "max_files_per_directory": 20
+  },
+  "layer_mappings": {
+    "features": {
+      "directory": "src/features",
+      "namespace_pattern": "@/features/{{FeatureName}}",
+      "subdirectories": [
+        "api",
+        "components",
+        "__tests__"
+      ],
+      "file_patterns": [
+        "*.ts",
+        "*.tsx"
+      ],
+      "description": "Feature modules with co-located API, components, and tests"
+    },
+    "components": {
+      "directory": "src/components",
+      "namespace_pattern": "@/components/{{ComponentType}}",
+      "subdirectories": [
+        "ui",
+        "layouts"
+      ],
+      "file_patterns": [
+        "*.tsx"
+      ],
+      "description": "Shared UI components and layouts"
+    },
+    "app": {
+      "directory": "src/app",
+      "namespace_pattern": "@/app",
+      "subdirectories": [
+        "routes/app",
+        "routes/auth"
+      ],
+      "file_patterns": [
+        "*.tsx"
+      ],
+      "description": "Application routes and pages"
+    },
+    "lib": {
+      "directory": "src/lib",
+      "namespace_pattern": "@/lib",
+      "file_patterns": [
+        "*.ts",
+        "*.tsx"
+      ],
+      "description": "Shared utilities and libraries"
+    },
+    "testing": {
+      "directory": "src/testing",
+      "namespace_pattern": "@/testing",
+      "subdirectories": [
+        "mocks/handlers"
+      ],
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "Testing utilities and MSW handlers"
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 2,
+    "line_length": 80,
+    "trailing_commas": true,
+    "semicolons": true,
+    "quotes": "single",
+    "arrow_functions": true,
+    "jsx_quotes": "double"
+  },
+  "import_aliases": {
+    "@/": "src/",
+    "@/components": "src/components",
+    "@/features": "src/features",
+    "@/lib": "src/lib",
+    "@/utils": "src/utils",
+    "@/types": "src/types",
+    "@/config": "src/config",
+    "@/testing": "src/testing"
+  },
+  "generation_options": {
+    "include_tests": true,
+    "include_mocks": true,
+    "include_types": true,
+    "include_schemas": true,
+    "generate_query_options": true,
+    "generate_custom_hooks": true
+  }
+}

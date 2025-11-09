@@ -1,0 +1,43 @@
+import { QueryClient, useQueryClient } from '@tanstack/react-query';
+import { LoaderFunctionArgs } from 'react-router';
+
+import { ContentLayout } from '@/components/layouts';
+import { get{{EntityNamePlural}}QueryOptions } from '@/features/{{featureName}}/api/get-{{featureName}}';
+import { Create{{EntityName}} } from '@/features/{{featureName}}/components/create-{{featureName}}';
+import { {{EntityNamePlural}}List } from '@/features/{{featureName}}/components/{{featureName}}-list';
+
+export const clientLoader =
+  (queryClient: QueryClient) =>
+  async ({ request }: LoaderFunctionArgs) => {
+    const url = new URL(request.url);
+
+    const page = Number(url.searchParams.get('page') || 1);
+
+    const query = get{{EntityNamePlural}}QueryOptions({ page });
+
+    return (
+      queryClient.getQueryData(query.queryKey) ??
+      (await queryClient.fetchQuery(query))
+    );
+  };
+
+const {{EntityNamePlural}}Route = () => {
+  const queryClient = useQueryClient();
+  return (
+    <ContentLayout title="{{EntityNamePlural}}">
+      <div className="flex justify-end">
+        <Create{{EntityName}} />
+      </div>
+      <div className="mt-4">
+        <{{EntityNamePlural}}List
+          on{{EntityName}}Prefetch={(id) => {
+            // Prefetch additional data when the user hovers over the link in the list
+            // Example: prefetch comments or related entities
+          }}
+        />
+      </div>
+    </ContentLayout>
+  );
+};
+
+export default {{EntityNamePlural}}Route;
