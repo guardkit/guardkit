@@ -1,0 +1,35 @@
+import { queryOptions, useQuery } from '@tanstack/react-query';
+
+import { api } from '@/lib/api-client';
+import { QueryConfig } from '@/lib/react-query';
+import { {{EntityName}} } from '@/types/api';
+
+export const get{{EntityName}} = ({
+  {{featureName}}Id,
+}: {
+  {{featureName}}Id: string;
+}): Promise<{ data: {{EntityName}} }> => {
+  return api.get(`/{{featureName}}/${{{featureName}}Id}`);
+};
+
+export const get{{EntityName}}QueryOptions = ({{featureName}}Id: string) => {
+  return queryOptions({
+    queryKey: ['{{featureName}}', {{featureName}}Id],
+    queryFn: () => get{{EntityName}}({ {{featureName}}Id }),
+  });
+};
+
+type Use{{EntityName}}Options = {
+  {{featureName}}Id: string;
+  queryConfig?: QueryConfig<typeof get{{EntityName}}QueryOptions>;
+};
+
+export const use{{EntityName}} = ({
+  {{featureName}}Id,
+  queryConfig,
+}: Use{{EntityName}}Options) => {
+  return useQuery({
+    ...get{{EntityName}}QueryOptions({{featureName}}Id),
+    ...queryConfig,
+  });
+};

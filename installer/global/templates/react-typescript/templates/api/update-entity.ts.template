@@ -1,0 +1,48 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { z } from 'zod';
+
+import { api } from '@/lib/api-client';
+import { MutationConfig } from '@/lib/react-query';
+import { {{EntityName}} } from '@/types/api';
+
+import { get{{EntityName}}QueryOptions } from './get-{{featureName}}';
+
+export const update{{EntityName}}InputSchema = z.object({
+  title: z.string().min(1, 'Required'),
+  body: z.string().min(1, 'Required'),
+});
+
+export type Update{{EntityName}}Input = z.infer<typeof update{{EntityName}}InputSchema>;
+
+export const update{{EntityName}} = ({
+  data,
+  {{featureName}}Id,
+}: {
+  data: Update{{EntityName}}Input;
+  {{featureName}}Id: string;
+}): Promise<{{EntityName}}> => {
+  return api.patch(`/{{featureName}}/${{{featureName}}Id}`, data);
+};
+
+type UseUpdate{{EntityName}}Options = {
+  mutationConfig?: MutationConfig<typeof update{{EntityName}}>;
+};
+
+export const useUpdate{{EntityName}} = ({
+  mutationConfig,
+}: UseUpdate{{EntityName}}Options = {}) => {
+  const queryClient = useQueryClient();
+
+  const { onSuccess, ...restConfig } = mutationConfig || {};
+
+  return useMutation({
+    onSuccess: (data, ...args) => {
+      queryClient.refetchQueries({
+        queryKey: get{{EntityName}}QueryOptions(data.id).queryKey,
+      });
+      onSuccess?.(data, ...args);
+    },
+    ...restConfig,
+    mutationFn: update{{EntityName}},
+  });
+};

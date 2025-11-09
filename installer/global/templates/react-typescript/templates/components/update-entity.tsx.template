@@ -1,0 +1,87 @@
+import { Pen } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Form, FormDrawer, Input, Textarea } from '@/components/ui/form';
+import { useNotifications } from '@/components/ui/notifications';
+import { Authorization, ROLES } from '@/lib/authorization';
+
+import { use{{EntityName}} } from '../api/get-{{featureName}}';
+import {
+  update{{EntityName}}InputSchema,
+  useUpdate{{EntityName}},
+} from '../api/update-{{featureName}}';
+
+type Update{{EntityName}}Props = {
+  {{featureName}}Id: string;
+};
+
+export const Update{{EntityName}} = ({ {{featureName}}Id }: Update{{EntityName}}Props) => {
+  const { addNotification } = useNotifications();
+  const {{featureName}}Query = use{{EntityName}}({ {{featureName}}Id });
+  const update{{EntityName}}Mutation = useUpdate{{EntityName}}({
+    mutationConfig: {
+      onSuccess: () => {
+        addNotification({
+          type: 'success',
+          title: '{{EntityName}} Updated',
+        });
+      },
+    },
+  });
+
+  return (
+    <Authorization allowedRoles={[ROLES.ADMIN]}>
+      <FormDrawer
+        isDone={update{{EntityName}}Mutation.isSuccess}
+        triggerButton={
+          <Button icon={<Pen className="size-4" />} size="sm">
+            Update {{EntityName}}
+          </Button>
+        }
+        title="Update {{EntityName}}"
+        submitButton={
+          <Button
+            form="update-{{featureName}}"
+            type="submit"
+            size="sm"
+            isLoading={update{{EntityName}}Mutation.isPending}
+          >
+            Submit
+          </Button>
+        }
+      >
+        <Form
+          id="update-{{featureName}}"
+          onSubmit={(values) => {
+            update{{EntityName}}Mutation.mutate({
+              data: values,
+              {{featureName}}Id,
+            });
+          }}
+          options={{
+            defaultValues: {
+              title: {{featureName}}Query.data?.data.title ?? '',
+              body: {{featureName}}Query.data?.data.body ?? '',
+            },
+          }}
+          schema={update{{EntityName}}InputSchema}
+        >
+          {({ register, formState }) => (
+            <>
+              <Input
+                label="Title"
+                error={formState.errors['title']}
+                registration={register('title')}
+              />
+              <Textarea
+                label="Body"
+                error={formState.errors['body']}
+                registration={register('body')}
+              />
+            </>
+          )}
+        </Form>
+      </FormDrawer>
+    </Authorization>
+  );
+};
