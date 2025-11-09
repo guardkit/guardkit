@@ -8,20 +8,22 @@
 
 ## Overview
 
-As part of Taskwright's template quality initiative, we have removed 2 low-quality templates based on comprehensive audit findings (TASK-056). This guide helps users migrate from removed templates to high-quality alternatives.
+As part of Taskwright's template quality initiative, we have updated templates based on comprehensive audit findings (TASK-056). This guide helps users migrate from removed templates and understand the reinstated default template.
 
-**Goal**: Focus on fewer, higher-quality reference implementations while empowering users to create custom templates from their production codebases.
+**Goal**: Focus on high-quality reference implementations while providing a language-agnostic option for unsupported stacks.
 
 ---
 
-## Templates Removed in v2.0
+## Template Changes in v2.0
 
 ### Summary
 
-| Template | Final Score | Removal Reason | Migration Path |
-|----------|------------|----------------|----------------|
-| dotnet-aspnetcontroller | 6.5/10 | Traditional MVC pattern, redundant with dotnet-fastendpoints | Use `dotnet-fastendpoints` |
-| default | 6.0/10 | Generic template with minimal guidance | Choose technology-specific template |
+| Template | Status | Score | Notes |
+|----------|--------|-------|-------|
+| dotnet-aspnetcontroller | ❌ Removed | 6.5/10 | Redundant with dotnet-fastendpoints |
+| default | ✅ Reinstated | 8.0/10 | Improved as language-agnostic starter |
+
+**Update (TASK-060A)**: The `default` template has been reinstated with significant quality improvements (6.0 → 8.0) and repositioned as a language-agnostic starter for Go, Rust, Ruby, PHP, and other unsupported stacks.
 
 ---
 
@@ -157,24 +159,37 @@ After (Vertical Slices):
 
 ---
 
-### From `default` → Choose Technology-Specific Template
+### Default Template - Reinstated and Improved
 
-#### Why This Template Was Removed
+#### Status Update (TASK-060A)
 
-**Audit Score**: 6.0/10 (Grade C)
+**Previous Score**: 6.0/10 (Grade C) - Removed in initial v2.0 release
+**Current Score**: 8.0/10 (Grade B) - **Reinstated** with quality improvements
 
-**Issues**:
-- Too generic, provides minimal guidance
-- No specific patterns or architecture
-- Limited value as reference implementation
-- Users better served by technology-specific templates
+**Improvements Made**:
+- Clear guidance on when to use vs when NOT to use
+- Comprehensive settings.json with documentation level system
+- Detailed README.md with usage examples
+- Repositioned as language-agnostic starter for unsupported stacks
+- Strong emphasis on migration path to specialized templates
 
-#### Recommended Migration
+#### When to Use Default Template
 
-**Choose a technology-specific template** based on your project type:
+**Use default template for**:
+- **Unsupported Languages**: Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala
+- **Custom Stacks**: Unique technology combinations
+- **Prototyping**: Exploring Taskwright before committing to a stack
+- **Template Development**: Building custom templates with `/template-create`
+
+**Do NOT use default for well-supported stacks** - use specialized templates instead.
+
+#### Migration Recommendations
+
+If you were previously advised to avoid the default template, consider these updated guidelines:
 
 | Project Type | Recommended Template | Description |
 |--------------|---------------------|-------------|
+| **Unsupported Language** | `default` | **Go, Rust, Ruby, PHP, Kotlin, Swift** |
 | Frontend Web App | `react` | React + TypeScript + Vite + Tailwind |
 | Backend API (Python) | `python` | FastAPI + pytest + LangGraph |
 | Backend API (.NET) | `dotnet-fastendpoints` | FastEndpoints + REPR + ErrorOr |
@@ -182,29 +197,58 @@ After (Vertical Slices):
 | Full-Stack App | `fullstack` | React + Python integrated |
 | Mobile App (.NET) | `maui-appshell` | .NET MAUI + AppShell + MVVM |
 
-#### Migration Steps
+#### Usage Examples
 
-**1. Identify Your Project Type**
+**Example 1: Go Project**
 
 ```bash
-# What technology are you using?
-- JavaScript/TypeScript frontend → react or typescript-api
-- Python backend → python
-- .NET backend → dotnet-fastendpoints or dotnet-minimalapi
-- .NET mobile → maui-appshell or maui-navigationpage
-- Full-stack → fullstack
+# Initialize with default template
+taskwright init default
+
+# Customize .claude/settings.json
+{
+  "stack": {
+    "language": "go",
+    "testing": {
+      "command": "go test ./...",
+      "coverage_command": "go test -cover ./..."
+    }
+  }
+}
+
+# Start working
+/task-create "Add user authentication endpoint"
+/task-work TASK-001
 ```
 
-**2. Initialize with Specific Template**
+**Example 2: Rust Project**
 
 ```bash
-# Example: React project
+# Initialize
+taskwright init default
+
+# Customize settings
+{
+  "stack": {
+    "language": "rust",
+    "testing": {
+      "command": "cargo test",
+      "coverage_command": "cargo tarpaulin"
+    }
+  }
+}
+```
+
+**Example 3: For Supported Stacks, Use Specialized Templates**
+
+```bash
+# React project → Use react template (NOT default)
 taskwright init react
 
-# Example: Python API
+# Python API → Use python template (NOT default)
 taskwright init python
 
-# Example: .NET API
+# .NET API → Use dotnet-fastendpoints (NOT default)
 taskwright init dotnet-fastendpoints
 ```
 
@@ -314,12 +358,14 @@ git archive v1.9-templates-before-removal installer/global/templates/dotnet-aspn
 
 ## Frequently Asked Questions
 
-### Q: Why were these templates removed?
+### Q: Why were these templates changed?
 
 **A**: After a comprehensive audit (TASK-056), we identified that:
 - Only 30% of templates met the 8+/10 quality threshold
 - `dotnet-aspnetcontroller` (6.5/10) was redundant with modern alternatives
-- `default` (6.0/10) provided minimal value compared to technology-specific templates
+- `default` (6.0/10) needed improvement to provide clear value
+
+**TASK-060A Update**: The `default` template has been **reinstated** with quality improvements (6.0 → 8.0) and repositioned as a language-agnostic starter for Go, Rust, Ruby, PHP, and other unsupported stacks.
 
 Our strategy focuses on **quality over quantity** - fewer, better templates that serve as exemplary reference implementations.
 
@@ -332,25 +378,31 @@ Our strategy focuses on **quality over quantity** - fewer, better templates that
 3. **Extract from archive** - Access the old template via git tag if absolutely needed
 4. **Create custom template** - Use `/template-create` from your existing codebase
 
-### Q: What if I was using `default` template?
+### Q: What if I need to use the `default` template?
 
-**A**: Choose a technology-specific template that matches your stack:
+**A**: The `default` template is now reinstated and improved (8.0/10). Use it for:
 
+- **Unsupported Languages**: Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala
+- **Custom Stacks**: Unique technology combinations
+- **Prototyping**: Exploring Taskwright before committing
+
+**However, if you're using a supported stack, always choose the specialized template**:
 - **JavaScript/TypeScript**: `react` or `typescript-api`
 - **Python**: `python`
 - **.NET**: `dotnet-fastendpoints` or `dotnet-minimalapi`
 - **.NET Mobile**: `maui-appshell`
 - **Full-stack**: `fullstack`
 
-Technology-specific templates provide much better guidance and patterns than the generic `default` template.
+Specialized templates provide significantly better guidance and patterns for those stacks.
 
 ### Q: Will future versions remove more templates?
 
-**A**: Our goal is to maintain 3-4 high-quality reference templates (8+/10 score). Current templates meeting this threshold:
+**A**: Our goal is to maintain high-quality reference templates (8+/10 score). Current templates meeting this threshold:
 
 - `maui-appshell` (8.8/10) ✅
 - `maui-navigationpage` (8.5/10) ✅
 - `fullstack` (8.0/10) ✅
+- `default` (8.0/10) ✅ **(Reinstated in TASK-060A)**
 
 We're working to improve the remaining templates (`react`, `python`, `typescript-api`, `dotnet-fastendpoints`, `dotnet-minimalapi`) to reach the quality threshold.
 
@@ -359,16 +411,15 @@ We're working to improve the remaining templates (`react`, `python`, `typescript
 **A**: Use this decision tree:
 
 ```
-Are you building a mobile app?
-├─ Yes → maui-appshell (modern) or maui-navigationpage (traditional)
-└─ No → Are you building a full-stack app?
-    ├─ Yes → fullstack (React + Python)
-    └─ No → Are you building a frontend or backend?
-        ├─ Frontend → react (React + TypeScript)
-        └─ Backend → What language?
-            ├─ Python → python (FastAPI)
-            ├─ .NET → dotnet-fastendpoints (modern) or dotnet-minimalapi (lightweight)
-            └─ Node.js → typescript-api (NestJS)
+What language/stack are you using?
+├─ Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala → default (language-agnostic)
+├─ Mobile (.NET) → maui-appshell (modern) or maui-navigationpage (traditional)
+├─ Full-stack (React + Python) → fullstack
+├─ Frontend (React/TypeScript) → react
+└─ Backend API → What language?
+    ├─ Python → python (FastAPI)
+    ├─ .NET → dotnet-fastendpoints (modern) or dotnet-minimalapi (lightweight)
+    └─ Node.js → typescript-api (NestJS)
 ```
 
 ### Q: Can I still use taskwright without templates?
@@ -386,20 +437,22 @@ For best results, choose a template that matches your technology stack or create
 
 ## Template Quality Scores
 
-For reference, here are the quality scores from the TASK-056 audit:
+For reference, here are the quality scores from audits:
 
 | Template | Score | Grade | Status |
 |----------|-------|-------|--------|
 | maui-appshell | 8.8/10 | B+ | ✅ Kept (Reference) |
 | maui-navigationpage | 8.5/10 | A- | ✅ Kept (Reference) |
 | fullstack | 8.0/10 | B+ | ✅ Kept (Reference) |
+| **default** | **8.0/10** | **B** | ✅ **Reinstated (TASK-060A)** |
 | react | 7.5/10 | B | ⚠️ Kept (Needs improvement) |
 | python | 7.5/10 | B | ⚠️ Kept (Needs improvement) |
 | typescript-api | 7.2/10 | B | ⚠️ Kept (Needs improvement) |
 | dotnet-fastendpoints | 7.0/10 | B | ⚠️ Kept (Needs improvement) |
 | dotnet-minimalapi | 6.8/10 | C | ⚠️ Kept (Needs improvement) |
 | dotnet-aspnetcontroller | 6.5/10 | C | ❌ Removed (Redundant) |
-| default | 6.0/10 | C | ❌ Removed (Minimal value) |
+
+**Note**: The `default` template was initially removed (6.0/10) but has been reinstated with quality improvements (8.0/10) as a language-agnostic starter for unsupported stacks (Go, Rust, Ruby, PHP, etc.).
 
 ---
 

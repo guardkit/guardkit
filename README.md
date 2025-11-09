@@ -27,7 +27,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
-taskwright init react  # or: python, typescript-api, maui-appshell, fullstack
+taskwright init react  # or: default, python, typescript-api, maui-appshell, fullstack
 ```
 
 **If using VS Code:** Reload the window to enable slash commands:
@@ -160,6 +160,7 @@ Choose your template during initialization:
 
 | Template | Technologies | Use For |
 |----------|-------------|---------|
+| **default** | Language-agnostic (configure for your stack) | Go, Rust, Ruby, PHP, Kotlin, Swift, etc. |
 | **react** | React + TypeScript + Next.js + Tailwind + Vitest + Playwright | Web applications |
 | **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
 | **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
@@ -169,7 +170,7 @@ Choose your template during initialization:
 | **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
 | **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM + ErrorOr | Mobile (page-based) |
 
-**Note**: Templates `dotnet-aspnetcontroller` and `default` were removed in v2.0. See [Template Migration Guide](docs/guides/template-migration.md) for migration paths.
+**Note**: Template `dotnet-aspnetcontroller` was removed in v2.0, and `default` has been reinstated as language-agnostic. See [Template Migration Guide](docs/guides/template-migration.md) for details.
 
 See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
 
