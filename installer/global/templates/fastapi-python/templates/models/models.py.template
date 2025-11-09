@@ -1,0 +1,48 @@
+"""
+{{FeatureName}} Database Models
+
+This module defines SQLAlchemy ORM models for {{entity_name_plural}}.
+"""
+
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import relationship
+
+from src.db.base import Base
+
+
+class {{EntityName}}(Base):
+    """
+    {{EntityName}} database model.
+
+    Represents {{entity_name_plural}} in the database.
+    """
+    __tablename__ = "{{table_name}}"
+
+    # Primary key
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Core fields
+    name = Column(String(255), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+
+    # Status/flags
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
+
+    # Foreign keys (example - adjust as needed)
+    # owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+
+    # Relationships (example - adjust as needed)
+    # owner = relationship("User", back_populates="{{entity_name_plural}}")
+
+    def __repr__(self) -> str:
+        return f"<{{EntityName}}(id={self.id}, name='{self.name}')>"
