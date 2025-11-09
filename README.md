@@ -164,12 +164,12 @@ Choose your template during initialization:
 | **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
 | **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
 | **dotnet-fastendpoints** | .NET + FastEndpoints + Either monad (LanguageExt) | .NET APIs (functional) |
-| **dotnet-aspnetcontroller** | .NET + ASP.NET Controllers + ErrorOr | .NET APIs (traditional MVC) |
 | **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (lightweight) |
 | **fullstack** | React + TypeScript + Python + FastAPI | Full-stack web apps |
 | **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
 | **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM + ErrorOr | Mobile (page-based) |
-| **default** | Language-agnostic | Any other stack |
+
+**Note**: Templates `dotnet-aspnetcontroller` and `default` were removed in v2.0. See [Template Migration Guide](docs/guides/template-migration.md) for migration paths.
 
 See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
 
