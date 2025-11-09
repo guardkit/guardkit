@@ -278,7 +278,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/templates"/{react,python,maui,dotnet-fastendpoints,dotnet-minimalapi,fullstack,typescript-api}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
@@ -497,7 +497,7 @@ EOF
     fi
 
     # Create stack-agents directory structure even if no agents
-    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/stack-agents"/{react,python,maui,dotnet-fastendpoints,dotnet-minimalapi,fullstack,typescript-api}
 }
 
 # Create the main CLI executables
@@ -527,12 +527,11 @@ print_help() {
     echo "Usage: taskwright-init [template]"
     echo ""
     echo "Templates:"
-    echo "  default              - Language-agnostic template"
     echo "  react                - React with TypeScript"
     echo "  python               - Python with FastAPI"
-    echo "  maui                 - .NET MAUI mobile app"
+    echo "  maui-appshell        - .NET MAUI with AppShell navigation"
+    echo "  maui-navigationpage  - .NET MAUI with NavigationPage"
     echo "  dotnet-fastendpoints - .NET API with FastEndpoints + REPR pattern"
-    echo "  dotnet-aspnetcontroller - .NET API with Controllers + MVC pattern"
     echo "  dotnet-minimalapi    - .NET Minimal API with vertical slices"
     echo "  fullstack            - React + Python"
     echo "  typescript-api       - NestJS TypeScript backend API"
@@ -907,7 +906,7 @@ create_global_config() {
     "installed": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   },
   "defaults": {
-    "template": "default",
+    "template": "react",
     "testing": {
       "coverage_threshold": 80,
       "quality_gates": true
@@ -1046,7 +1045,7 @@ create_version_management() {
     "Quality gates",
     "Test orchestration",
     "10+ core AI agents",
-    "7 project templates",
+    "8 project templates",
     "Agentecflow Stage 1-4 support"
   ]
 }
@@ -1108,9 +1107,6 @@ print_summary() {
         if [ -d "$template" ]; then
             local name=$(basename "$template")
             case "$name" in
-                default)
-                    echo "  • $name - Language-agnostic"
-                    ;;
                 react)
                     echo "  • $name - React with TypeScript"
                     ;;
@@ -1125,9 +1121,6 @@ print_summary() {
                     ;;
                 dotnet-fastendpoints)
                     echo "  • $name - .NET API with FastEndpoints + REPR pattern"
-                    ;;
-                dotnet-aspnetcontroller)
-                    echo "  • $name - .NET API with Controllers + MVC pattern"
                     ;;
                 dotnet-minimalapi)
                     echo "  • $name - .NET Minimal API with vertical slices"
