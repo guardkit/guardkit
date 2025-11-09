@@ -257,19 +257,20 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-fastendpoints|default]
+taskwright init [react|python|typescript-api|maui-appshell|maui-navigationpage|dotnet-fastendpoints|dotnet-minimalapi|fullstack]
 ```
 
 **Available Templates:**
-- **default**: Language-agnostic with quality gates
 - **react**: React + TypeScript + Next.js + Tailwind + Vitest + Playwright
 - **python**: FastAPI + pytest + LangGraph + Pydantic
 - **typescript-api**: NestJS + Result patterns + domain modeling
 - **maui-appshell**: .NET MAUI + AppShell + MVVM + ErrorOr
 - **maui-navigationpage**: .NET MAUI + NavigationPage + MVVM
 - **dotnet-fastendpoints**: .NET + FastEndpoints + REPR pattern
-- **dotnet-aspnetcontroller**: .NET + Controllers + MVC pattern + ErrorOr
 - **dotnet-minimalapi**: .NET 8+ Minimal API + Vertical Slices + Route Groups + Endpoint Filters
+- **fullstack**: React + Python full-stack
+
+**Note**: As of v2.0, templates `dotnet-aspnetcontroller` and `default` have been removed. See [Template Migration Guide](docs/guides/template-migration.md) for migration paths.
 
 **Template Documentation:**
 - [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations

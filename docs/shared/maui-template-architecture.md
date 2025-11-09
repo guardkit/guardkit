@@ -338,7 +338,6 @@ When initializing a project, templates are resolved in this order:
 
 1. **Local project template** (`.claude/templates/<template-name>/`)
 2. **Global template** (`~/.agentecflow/templates/<template-name>/`)
-3. **Fallback to default** (`~/.agentecflow/templates/default/`)
 
 Example:
 ```bash
