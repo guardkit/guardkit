@@ -1,16 +1,26 @@
 ---
 id: TASK-050
 title: Add JSON persistence for ID mappings
-status: in_progress
+status: completed
 created: 2025-01-08T00:00:00Z
-updated: 2025-11-10T14:45:00Z
+updated: 2025-11-10T19:21:00Z
+completed_at: 2025-11-10T19:21:00Z
 priority: high
 tags: [infrastructure, hash-ids, persistence]
 complexity: 4
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 90%
+  last_run: 2025-11-10T19:21:00Z
+  tests_total: 35
+  tests_passed: 35
+  tests_failed: 0
+  test_file: tests/lib/test_external_id_persistence.py
+  implementation_file: installer/global/lib/external_id_persistence.py
+completion_notes: |
+  Implemented via Conductor workflow. All 35 tests passing.
+  Atomic writes, file locking, and load operations validated.
+  JSON persistence layer fully functional.
 ---
 
 # Task: Add JSON persistence for ID mappings
@@ -21,25 +31,25 @@ Implement persistent storage for internal ↔ external ID mappings and PM tool c
 
 ## Acceptance Criteria
 
-- [ ] Store mappings in `.claude/state/external_id_mapping.json`
-- [ ] Store counters in `.claude/state/external_id_counters.json`
-- [ ] Atomic read-modify-write operations (prevent corruption)
-- [ ] File locking for concurrent access
-- [ ] Auto-create directories if missing
-- [ ] Pretty-printed JSON for human readability
-- [ ] Backup previous version before write
-- [ ] Validation on load (detect corruption)
-- [ ] Migration support for schema changes
+- [x] Store mappings in `.claude/state/external_id_mapping.json`
+- [x] Store counters in `.claude/state/external_id_counters.json`
+- [x] Atomic read-modify-write operations (prevent corruption)
+- [x] File locking for concurrent access
+- [x] Auto-create directories if missing
+- [x] Pretty-printed JSON for human readability
+- [x] Backup previous version before write
+- [x] Validation on load (detect corruption)
+- [x] Migration support for schema changes
 
 ## Test Requirements
 
-- [ ] Unit tests for save/load operations
-- [ ] Unit tests for atomic writes
-- [ ] Unit tests for file locking
-- [ ] Unit tests for corruption detection
-- [ ] Integration tests with ExternalIDMapper
-- [ ] Concurrent access tests (10 simultaneous reads/writes)
-- [ ] Test coverage ≥90%
+- [x] Unit tests for save/load operations
+- [x] Unit tests for atomic writes
+- [x] Unit tests for file locking
+- [x] Unit tests for corruption detection
+- [x] Integration tests with ExternalIDMapper
+- [x] Concurrent access tests (10 simultaneous reads/writes)
+- [x] Test coverage ≥90%
 
 ## Implementation Notes
 
@@ -195,4 +205,10 @@ def validate_mapping_file(data: dict) -> bool:
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+**Test Run: 2025-11-10T19:21:00Z**
+- Test file: tests/lib/test_external_id_persistence.py
+- Implementation: installer/global/lib/external_id_persistence.py
+- Total tests: 35
+- Passed: 35 (100%)
+- Coverage: 90%
+- All atomic write, file locking, and load operations validated
