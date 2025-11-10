@@ -1,0 +1,144 @@
+{
+  "schema_version": "1.0.0",
+  "name": "taskwright-python",
+  "display_name": "Python CLI Tool with Orchestrator Pattern",
+  "description": "Production-grade Python CLI template based on Taskwright (16K+ LOC). Features orchestrator pattern, dependency injection, agent-based system, Pydantic models, and markdown command definitions.",
+  "version": "1.0.0",
+  "author": "Taskwright Contributors",
+  "source": "https://github.com/taskwright-dev/taskwright",
+  "language": "Python",
+  "language_version": ">=3.9",
+  "frameworks": [
+    {
+      "name": "Pydantic",
+      "version": ">=2.0.0",
+      "purpose": "data_validation"
+    },
+    {
+      "name": "Jinja2",
+      "version": ">=3.1.0",
+      "purpose": "templating"
+    },
+    {
+      "name": "PyYAML",
+      "version": ">=6.0",
+      "purpose": "configuration"
+    },
+    {
+      "name": "python-frontmatter",
+      "version": ">=1.0.0",
+      "purpose": "markdown_parsing"
+    },
+    {
+      "name": "pathspec",
+      "version": ">=0.11.0",
+      "purpose": "path_matching"
+    },
+    {
+      "name": "pytest",
+      "version": ">=7.4.0",
+      "purpose": "testing"
+    },
+    {
+      "name": "pytest-cov",
+      "version": ">=4.1.0",
+      "purpose": "coverage"
+    }
+  ],
+  "architecture": "Orchestrator with Dependency Injection",
+  "patterns": [
+    "Orchestrator Pattern",
+    "Dependency Injection",
+    "Agent-Based System",
+    "Markdown Command Definitions",
+    "Template Generation System",
+    "Pydantic Data Models",
+    "Factory Pattern",
+    "Strategy Pattern"
+  ],
+  "layers": [
+    "cli",
+    "orchestrator",
+    "agents",
+    "commands",
+    "models",
+    "config",
+    "utils"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Project name in PascalCase (e.g., TaskManager, CodeAnalyzer)",
+      "required": true,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "TaskManager"
+    },
+    "project_name": {
+      "name": "{{project_name}}",
+      "description": "Project name in snake_case for Python modules (e.g., task_manager, code_analyzer)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "task_manager"
+    },
+    "project-name": {
+      "name": "{{project-name}}",
+      "description": "Project name in kebab-case for CLI commands (e.g., task-manager, code-analyzer)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "task-manager"
+    },
+    "ProjectDescription": {
+      "name": "{{ProjectDescription}}",
+      "description": "Brief description of the CLI tool",
+      "required": true,
+      "example": "A command-line task management tool"
+    },
+    "AuthorName": {
+      "name": "{{AuthorName}}",
+      "description": "Author or organization name",
+      "required": false,
+      "default": "Your Name",
+      "example": "Jane Developer"
+    },
+    "AgentName": {
+      "name": "{{AgentName}}",
+      "description": "Name of a specialized agent (e.g., CodeAnalyzer, TestRunner)",
+      "required": false,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "CodeAnalyzer"
+    },
+    "CommandName": {
+      "name": "{{CommandName}}",
+      "description": "Name of a CLI command (kebab-case, e.g., analyze-code, run-tests)",
+      "required": false,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "analyze-code"
+    }
+  },
+  "tags": [
+    "python",
+    "cli",
+    "orchestrator",
+    "dependency-injection",
+    "agent-system",
+    "pydantic",
+    "command-line",
+    "tool"
+  ],
+  "category": "cli-tool",
+  "complexity": 6,
+  "quality_scores": {
+    "solid_compliance": 85,
+    "dry_compliance": 82,
+    "yagni_compliance": 88,
+    "test_coverage": 80,
+    "documentation": 85
+  },
+  "created_at": "2025-01-10T00:00:00Z",
+  "updated_at": "2025-01-10T00:00:00Z",
+  "source_project": "https://github.com/taskwright-dev/taskwright",
+  "confidence_score": 90,
+  "production_ready": true,
+  "learning_resource": true,
+  "reference_implementation": true
+}

@@ -158,7 +158,7 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 
 ## Templates
 
-Taskwright ships with **4 high-quality templates**: 3 stack-specific reference implementations + 1 language-agnostic default.
+Taskwright ships with **6 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
 
 ### High-Quality Reference Templates
 
@@ -169,6 +169,13 @@ Taskwright ships with **4 high-quality templates**: 3 stack-specific reference i
 | **react-typescript** | [Bulletproof React](https://github.com/alan2207/bulletproof-react) | 28.5k | Frontend | 9.3/10 |
 | **fastapi-python** | [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) | 12k+ | Backend API | 9.2/10 |
 | **nextjs-fullstack** | Next.js App Router + Patterns | Official | Full-stack | 9.4/10 |
+
+#### Specialized Templates
+
+| Template | Purpose | Focus | Score |
+|----------|---------|-------|-------|
+| **react-fastapi-monorepo** | Full-stack monorepo | React + FastAPI | 9.2/10 |
+| **taskwright-python** | Python CLI tool | Orchestrator pattern, DI | 8.0+/10 |
 
 #### Language-Agnostic Template
 
@@ -190,7 +197,7 @@ cd your-production-codebase
 taskwright init your-custom-template
 ```
 
-### Why These 4 Templates?
+### Why These 6 Templates?
 
 **Templates are learning resources, not production code.**
 

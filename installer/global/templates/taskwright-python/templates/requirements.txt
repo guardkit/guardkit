@@ -1,0 +1,13 @@
+# Core dependencies
+pydantic>=2.0.0
+jinja2>=3.1.0
+pyyaml>=6.0
+python-frontmatter>=1.0.0
+pathspec>=0.11.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Code quality (optional)
+ruff>=0.1.0

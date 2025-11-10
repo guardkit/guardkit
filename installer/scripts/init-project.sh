@@ -81,6 +81,9 @@ show_templates() {
                     react-fastapi-monorepo)
                         echo "  • react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
                         ;;
+                    taskwright-python)
+                        echo "  • taskwright-python - Python CLI tool with orchestrator pattern (8+/10)"
+                        ;;
                     *)
                         echo "  • $name"
                         ;;
@@ -464,6 +467,13 @@ print_next_steps() {
         react-fastapi-monorepo)
             echo -e "${BOLD}Quick Start for React + FastAPI Monorepo:${NC}"
             echo "  1. Create your first task: /task-create 'Add user feature'"
+            echo "  2. Work on it: /task-work TASK-001"
+            echo "  3. Complete: /task-complete TASK-001"
+            echo ""
+            ;;
+        taskwright-python)
+            echo -e "${BOLD}Quick Start for Python CLI Tool:${NC}"
+            echo "  1. Create your first task: /task-create 'Add analyze command'"
             echo "  2. Work on it: /task-work TASK-001"
             echo "  3. Complete: /task-complete TASK-001"
             echo ""

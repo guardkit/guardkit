@@ -251,15 +251,19 @@ installer/global/           # Global resources
 
 ## Template Philosophy
 
-Taskwright includes **4 high-quality templates** for learning and evaluation:
+Taskwright includes **6 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
 2. **fastapi-python** - Backend API patterns (from FastAPI Best Practices)
 3. **nextjs-fullstack** - Full-stack application (Next.js App Router)
 
+### Specialized Templates (8-9+/10 Quality)
+4. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
+5. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
+
 ### Language-Agnostic Template (8+/10 Quality)
-4. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
+6. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
 
 ### Why This Approach?
 
@@ -305,10 +309,12 @@ taskwright init react-typescript --info
 - [react-typescript](installer/global/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
 - [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
 - [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
+- [react-fastapi-monorepo](installer/global/templates/react-fastapi-monorepo/README.md) - React + FastAPI monorepo (9.2/10)
+- [taskwright-python](installer/global/templates/taskwright-python/README.md) - Python CLI with orchestrator pattern (8+/10)
 - [default](installer/global/templates/default/README.md) - Language-agnostic foundation
 
 **See Also:**
-- [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 4 templates?
+- [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 6 templates?
 - [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
 - [Template Migration Guide](docs/guides/template-migration.md) - Migrating from old templates
 
