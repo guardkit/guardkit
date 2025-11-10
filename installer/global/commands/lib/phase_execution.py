@@ -622,31 +622,21 @@ def _update_task_metadata(task_id: str, report: Any, decision: str) -> None:
         return
 
     try:
-        import yaml
+        from .task_utils import update_task_frontmatter
 
-        with open(task_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Split frontmatter and body
-        parts = content.split('---', 2)
-        if len(parts) >= 3:
-            frontmatter = yaml.safe_load(parts[1])
-            body = parts[2]
-
-            # Add audit metadata
-            frontmatter["plan_audit"] = {
-                "severity": report.severity,
-                "discrepancies_count": len(report.discrepancies),
-                "decision": decision,
-                "audited_at": report.timestamp
-            }
-
-            # Write back
-            with open(task_file, 'w', encoding='utf-8') as f:
-                f.write("---\n")
-                yaml.dump(frontmatter, f, default_flow_style=False)
-                f.write("---")
-                f.write(body)
+        # Use centralized task utility to update frontmatter
+        update_task_frontmatter(
+            task_file,
+            {
+                "plan_audit": {
+                    "severity": report.severity,
+                    "discrepancies_count": len(report.discrepancies),
+                    "decision": decision,
+                    "audited_at": report.timestamp
+                }
+            },
+            preserve_body=True
+        )
 
     except Exception as e:
         print(f"⚠️  Could not update task metadata: {e}")
