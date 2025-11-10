@@ -278,7 +278,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{react,python,maui,dotnet-fastendpoints,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/templates"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
@@ -497,7 +497,7 @@ EOF
     fi
 
     # Create stack-agents directory structure even if no agents
-    mkdir -p "$INSTALL_DIR/stack-agents"/{react,python,maui,dotnet-fastendpoints,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
 }
 
 # Create the main CLI executables
@@ -527,19 +527,16 @@ print_help() {
     echo "Usage: taskwright-init [template]"
     echo ""
     echo "Templates:"
-    echo "  react                - React with TypeScript"
-    echo "  python               - Python with FastAPI"
-    echo "  maui-appshell        - .NET MAUI with AppShell navigation"
-    echo "  maui-navigationpage  - .NET MAUI with NavigationPage"
-    echo "  dotnet-fastendpoints - .NET API with FastEndpoints + REPR pattern"
-    echo "  dotnet-minimalapi    - .NET Minimal API with vertical slices"
-    echo "  fullstack            - React + Python"
-    echo "  typescript-api       - NestJS TypeScript backend API"
+    echo "  default              - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
+    echo "  react-typescript     - React frontend with feature-based architecture (9+/10)"
+    echo "  fastapi-python       - FastAPI backend with layered architecture (9+/10)"
+    echo "  nextjs-fullstack     - Next.js App Router full-stack (9+/10)"
+    echo "  react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
     echo ""
     echo "Examples:"
-    echo "  taskwright-init                    # Interactive setup"
-    echo "  taskwright-init react              # Initialize with React template"
-    echo "  taskwright-init dotnet-minimalapi  # Initialize with .NET Minimal API"
+    echo "  taskwright-init                     # Interactive setup"
+    echo "  taskwright-init react-typescript    # Initialize with React template"
+    echo "  taskwright-init fastapi-python      # Initialize with FastAPI template"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -598,10 +595,10 @@ print_help() {
     echo "  help                Show this help message"
     echo ""
     echo "Examples:"
-    echo "  taskwright init                    # Interactive initialization"
-    echo "  taskwright init react              # Initialize with React template"
-    echo "  taskwright init dotnet-minimalapi  # Initialize with .NET Minimal API"
-    echo "  taskwright doctor                  # Check installation health"
+    echo "  taskwright init                      # Interactive initialization"
+    echo "  taskwright init react-typescript     # Initialize with React template"
+    echo "  taskwright init fastapi-python       # Initialize with FastAPI template"
+    echo "  taskwright doctor                    # Check installation health"
 }
 
 # Detect project context by traversing upward
@@ -1107,29 +1104,20 @@ print_summary() {
         if [ -d "$template" ]; then
             local name=$(basename "$template")
             case "$name" in
-                react)
-                    echo "  • $name - React with TypeScript"
+                default)
+                    echo "  • $name - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
                     ;;
-                python)
-                    echo "  • $name - Python with FastAPI"
+                react-typescript)
+                    echo "  • $name - React frontend with feature-based architecture (9+/10)"
                     ;;
-                maui-appshell)
-                    echo "  • $name - .NET MAUI with AppShell navigation"
+                fastapi-python)
+                    echo "  • $name - FastAPI backend with layered architecture (9+/10)"
                     ;;
-                maui-navigationpage)
-                    echo "  • $name - .NET MAUI with NavigationPage"
+                nextjs-fullstack)
+                    echo "  • $name - Next.js App Router full-stack (9+/10)"
                     ;;
-                dotnet-fastendpoints)
-                    echo "  • $name - .NET API with FastEndpoints + REPR pattern"
-                    ;;
-                dotnet-minimalapi)
-                    echo "  • $name - .NET Minimal API with vertical slices"
-                    ;;
-                fullstack)
-                    echo "  • $name - React + Python"
-                    ;;
-                typescript-api)
-                    echo "  • $name - NestJS TypeScript backend API"
+                react-fastapi-monorepo)
+                    echo "  • $name - React + FastAPI monorepo with type safety (9.2/10)"
                     ;;
                 *)
                     echo "  • $name"
@@ -1150,7 +1138,7 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-minimalapi"
+    echo "  3. Run: taskwright-init [template]  # e.g., react-typescript, fastapi-python, nextjs-fullstack"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"
