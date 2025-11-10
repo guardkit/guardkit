@@ -782,28 +782,14 @@ class QAManager:
             return
 
         try:
-            # Read current task file
-            content = task_path.read_text(encoding="utf-8")
+            from .task_utils import update_task_frontmatter
 
-            # Parse frontmatter and body
-            match = re.match(r'^---\n(.*?)\n---\n(.*)$', content, re.DOTALL)
-
-            if not match:
-                print("⚠️ Could not parse task frontmatter. Q&A session not saved.")
-                return
-
-            frontmatter = yaml.safe_load(match.group(1))
-            body = match.group(2)
-
-            # Add or update qa_session
-            frontmatter["qa_session"] = self.session.to_dict()
-            frontmatter["updated"] = datetime.utcnow().isoformat() + "Z"
-
-            # Rebuild content
-            updated_content = f"---\n{yaml.dump(frontmatter, default_flow_style=False)}---\n{body}"
-
-            # Write back atomically
-            task_path.write_text(updated_content, encoding="utf-8")
+            # Use centralized task utility to update frontmatter
+            update_task_frontmatter(
+                task_path,
+                {"qa_session": self.session.to_dict()},
+                preserve_body=True
+            )
 
             print(f"✅ Q&A session saved to task metadata")
 
