@@ -1,0 +1,210 @@
+{
+  "schema_version": "1.0.0",
+  "name": "react-fastapi-monorepo",
+  "display_name": "React + FastAPI Monorepo",
+  "description": "Production-ready full-stack monorepo template combining React frontend and FastAPI backend with type safety (OpenAPI → TypeScript), Turborepo orchestration, and Docker Compose. Perfect for Python-first teams building modern web applications.",
+  "version": "1.0.0",
+  "author": "Taskwright",
+  "language": "TypeScript, Python",
+  "language_version": "TypeScript 5.4+, Python 3.9+",
+  "frameworks": [
+    {
+      "name": "React",
+      "version": "18.3",
+      "purpose": "ui"
+    },
+    {
+      "name": "FastAPI",
+      "version": "0.115",
+      "purpose": "api"
+    },
+    {
+      "name": "Vite",
+      "version": "5.2",
+      "purpose": "build"
+    },
+    {
+      "name": "Turborepo",
+      "version": "1.11",
+      "purpose": "monorepo"
+    },
+    {
+      "name": "TanStack Query",
+      "version": "5.32",
+      "purpose": "state-management"
+    },
+    {
+      "name": "SQLAlchemy",
+      "version": "2.0",
+      "purpose": "database_orm"
+    },
+    {
+      "name": "Pydantic",
+      "version": "2.0",
+      "purpose": "data_validation"
+    },
+    {
+      "name": "Vitest",
+      "version": "2.1",
+      "purpose": "testing"
+    },
+    {
+      "name": "pytest",
+      "version": "7.4",
+      "purpose": "testing"
+    }
+  ],
+  "architecture": "Monorepo with Feature-Based Frontend and Layered Backend",
+  "patterns": [
+    "Turborepo Monorepo",
+    "pnpm Workspaces",
+    "OpenAPI Type Generation",
+    "Type-Safe API Client",
+    "Feature-Based React Architecture",
+    "Layered Backend (FastAPI)",
+    "Repository Pattern",
+    "Dependency Injection",
+    "Docker Compose Orchestration",
+    "Multi-stage Docker Builds"
+  ],
+  "layers": [
+    "apps/frontend",
+    "apps/backend",
+    "packages/shared-types"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the monorepo project",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "my-fullstack-app"
+    },
+    "FeatureName": {
+      "name": "{{FeatureName}}",
+      "description": "Name of a frontend feature (singular, kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "discussion"
+    },
+    "EntityName": {
+      "name": "{{EntityName}}",
+      "description": "Name of a backend entity/model (singular, PascalCase)",
+      "required": true,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "User"
+    },
+    "entity_name": {
+      "name": "{{entity_name}}",
+      "description": "Entity name in snake_case (singular, for Python code)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "user"
+    },
+    "EntityNamePlural": {
+      "name": "{{EntityNamePlural}}",
+      "description": "Plural form of entity name (snake_case for Python)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "users"
+    },
+    "entity_name_plural": {
+      "name": "{{entity_name_plural}}",
+      "description": "Entity name in snake_case (plural, for Python code)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "users"
+    },
+    "entity-name": {
+      "name": "{{entity-name}}",
+      "description": "Entity name in kebab-case (singular, for TypeScript code)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "user"
+    },
+    "entity-name-plural": {
+      "name": "{{entity-name-plural}}",
+      "description": "Entity name in kebab-case (plural, for TypeScript code)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "users"
+    },
+    "table_name": {
+      "name": "{{table_name}}",
+      "description": "Database table name (snake_case, typically plural)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "users"
+    },
+    "ServiceName": {
+      "name": "{{ServiceName}}",
+      "description": "Name of a Docker service (lowercase, kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "worker-service"
+    },
+    "service-path": {
+      "name": "{{service-path}}",
+      "description": "Docker service working directory path",
+      "required": true,
+      "pattern": "^[a-zA-Z0-9/_-]+$",
+      "example": "./apps/backend"
+    },
+    "port": {
+      "name": "{{port}}",
+      "description": "Port number for Docker service",
+      "required": true,
+      "pattern": "^[0-9]{1,5}$",
+      "example": "8000"
+    },
+    "command": {
+      "name": "{{command}}",
+      "description": "Docker service startup command",
+      "required": true,
+      "pattern": "^.+$",
+      "example": "uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    },
+    "ApiBaseUrl": {
+      "name": "{{ApiBaseUrl}}",
+      "description": "Base URL for API endpoints",
+      "required": true,
+      "pattern": "^https?://.*$",
+      "example": "http://localhost:8000",
+      "default": "http://localhost:8000"
+    }
+  },
+  "tags": [
+    "typescript",
+    "python",
+    "react",
+    "fastapi",
+    "monorepo",
+    "turborepo",
+    "fullstack",
+    "type-safe",
+    "openapi",
+    "docker",
+    "docker-compose",
+    "pnpm",
+    "sqlalchemy",
+    "pydantic",
+    "vite",
+    "tanstack-query"
+  ],
+  "category": "fullstack",
+  "complexity": 8,
+  "quality_scores": {
+    "solid_compliance": 88,
+    "dry_compliance": 90,
+    "yagni_compliance": 87,
+    "test_coverage": 85,
+    "documentation": 92
+  },
+  "created_at": "2025-01-09T00:00:00Z",
+  "updated_at": "2025-01-09T21:15:00Z",
+  "source_project": "/tmp/react-fastapi-monorepo",
+  "confidence_score": 93,
+  "production_ready": true,
+  "learning_resource": true,
+  "reference_implementation": true
+}

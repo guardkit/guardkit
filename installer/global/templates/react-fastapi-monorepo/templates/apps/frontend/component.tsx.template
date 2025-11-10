@@ -1,0 +1,27 @@
+import { use{{EntityName}}s } from '../hooks/use-{{entity-name}}s'
+
+export const {{EntityName}}List = () => {
+  const { data: {{entity-name}}s, isLoading, error } = use{{EntityName}}s()
+
+  if (isLoading) {
+    return <div>Loading {{entity-name}}s...</div>
+  }
+
+  if (error) {
+    return <div>Error loading {{entity-name}}s: {String(error)}</div>
+  }
+
+  return (
+    <div>
+      <h2>{{EntityName}}s</h2>
+      <ul>
+        {{{entity-name}}s?.map(({{entity-name}}) => (
+          <li key={{{entity-name}}.id}>
+            {/* Add {{entity-name}} properties here */}
+            {{{entity-name}}.id}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
