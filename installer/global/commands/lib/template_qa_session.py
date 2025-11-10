@@ -33,7 +33,7 @@ class GreenfieldAnswers:
     This dataclass holds all user responses from the 10 question sections.
     """
 
-    # Section 1: Template Identity
+    # Section 1: Template Identity (required fields)
     template_name: str
     template_purpose: str
 
@@ -62,6 +62,11 @@ class GreenfieldAnswers:
     # Section 7: Dependency Management
     dependency_injection: str
     configuration_approach: str
+
+    # Section 1: Template Identity (optional fields)
+    description: Optional[str] = None
+    version: str = "1.0.0"
+    author: Optional[str] = None
 
     # Section 8: UI/Navigation (optional)
     ui_architecture: Optional[str] = None
@@ -265,6 +270,10 @@ class TemplateQASession:
                     return validator.validate_template_name(response)
                 elif question.validation == "non_empty":
                     return validator.validate_non_empty(response)
+                elif question.validation == "min_length_10":
+                    return validator.validate_text_length(response, min_length=10, field_name="Description")
+                elif question.validation == "version_string":
+                    return validator.validate_version_string(response)
                 else:
                     return response
             except validator.ValidationError as e:
@@ -572,6 +581,9 @@ class TemplateQASession:
             # Section 1
             template_name=self.answers.get("template_name", "my-template"),
             template_purpose=self.answers.get("template_purpose", "quick_start"),
+            description=self.answers.get("description"),
+            version=self.answers.get("version", "1.0.0"),
+            author=self.answers.get("author"),
             # Section 2
             primary_language=self.answers.get("primary_language", "csharp"),
             framework=self.answers.get("framework", "maui"),
