@@ -1,297 +1,328 @@
-# TASK-054 Implementation Plan: Basic Information Section
+# TASK-054 Implementation Plan: Add Prefix Support and Inference
 
-## Overview
-Enhance Section 1 of the Q&A flow to include all required basic information fields as specified in the original task requirements.
+**Task ID:** TASK-054
+**Title:** Add prefix support and inference
+**Status:** in_progress
+**Complexity:** 5/10
+**Estimated Duration:** 3-4 hours
+**Date:** 2025-11-10
 
-## Current State
-- ✅ `template_name` - exists with validation
-- ✅ `template_purpose` - exists (choice field)
-- ❌ `description` - missing (required)
-- ❌ `version` - missing (optional, default: "1.0.0")
-- ❌ `author` - missing (optional)
+## 1. Overview
 
-## Implementation Strategy
-Add missing fields to Section 1 while maintaining backward compatibility with existing `template_purpose` field.
+Implement intelligent prefix support for task IDs, including automatic inference from epic links, tags, and task titles. This enhancement makes hash IDs more organized and human-friendly by grouping related tasks under common prefixes.
 
-## Changes Required
+**Current State:**
+- Basic prefix support exists in `generate_task_id()` (manual specification)
+- Prefix validation is basic (`is_valid_prefix()`)
+- No inference capabilities
+- No prefix registry or mappings
 
-### 1. Update Questions Definition
-**File:** `installer/global/commands/lib/template_qa_questions.py`
+**Target State:**
+- Full prefix inference from epic, tags, and title keywords
+- Comprehensive prefix validation with normalization
+- Prefix registry for consistency
+- Clear user feedback when prefix is inferred
+- User override capability
 
-Add three new questions to `SECTION1_QUESTIONS`:
+## 2. Requirements Analysis
+
+### Acceptance Criteria
+1. ✅ Manual prefix specification via `prefix:` parameter (already exists)
+2. 🔨 Automatic prefix inference from epic (epic:EPIC-001 → E01)
+3. 🔨 Automatic prefix inference from tags (tags:[docs] → DOC)
+4. 🔨 Automatic prefix inference from title keywords
+5. 🔨 Comprehensive prefix validation (2-4 uppercase alphanumeric)
+6. 🔨 Prefix registry for consistency
+7. 🔨 User override of inferred prefix
+8. 🔨 Clear messaging when prefix is inferred
+
+### Test Requirements
+- Unit tests for manual prefix specification
+- Unit tests for epic-based inference
+- Unit tests for tag-based inference
+- Unit tests for title-based inference
+- Unit tests for prefix validation
+- Integration tests with /task-create
+- Test coverage ≥85%
+
+## 3. Technical Design
+
+### 3.1 Architecture
+
+**Pattern:** Function-based with data-driven mappings
+**Location:** `installer/global/lib/id_generator.py`
+**Dependencies:** `re`, `typing` (already imported)
+
+**Design Principles:**
+- **Priority-based inference**: Manual > Epic > Tags > Title > None
+- **Data-driven**: Use dictionaries for extensibility
+- **Fail-safe**: Return None if no inference possible
+- **Validation-first**: Always validate before using prefix
+
+### 3.2 Data Structures
+
+#### Standard Prefix Registry
 ```python
-Question(
-    id="description",
-    section="Template Identity",
-    text="Briefly describe this template's purpose:",
-    type="text",
-    default=None,
-    help_text="What will developers use this template for?",
-    validation="min_length_10"
-),
-Question(
-    id="version",
-    section="Template Identity",
-    text="Initial version:",
-    type="text",
-    default="1.0.0",
-    help_text="Semantic version (e.g., 1.0.0)",
-    validation="version_string"
-),
-Question(
-    id="author",
-    section="Template Identity",
-    text="Author or team name:",
-    type="text",
-    default=None,
-    help_text="Optional: Who maintains this template?"
-)
+STANDARD_PREFIXES: Dict[str, str] = {
+    # Domain-based
+    "DOC": "Documentation",
+    "TEST": "Testing",
+    "FIX": "Bug fixes",
+    "FEAT": "Features",
+    "REFA": "Refactoring",
+
+    # Stack-based
+    "API": "API/Backend",
+    "UI": "User interface",
+    "DB": "Database",
+    "INFR": "Infrastructure",
+}
 ```
 
-### 2. Update GreenfieldAnswers Dataclass
-**File:** `installer/global/commands/lib/template_qa_session.py`
-
-Add new fields to `GreenfieldAnswers`:
+#### Tag-to-Prefix Mapping
 ```python
-@dataclass
-class GreenfieldAnswers:
-    # Section 1: Template Identity
-    template_name: str
-    template_purpose: str
-    description: Optional[str] = None  # NEW
-    version: str = "1.0.0"  # NEW
-    author: Optional[str] = None  # NEW
-    # ... rest of fields
+TAG_PREFIX_MAP: Dict[str, str] = {
+    "docs": "DOC",
+    "documentation": "DOC",
+    "test": "TEST",
+    "testing": "TEST",
+    "bug": "FIX",
+    "bugfix": "FIX",
+    "fix": "FIX",
+    "feature": "FEAT",
+    "api": "API",
+    "backend": "API",
+    "ui": "UI",
+    "frontend": "UI",
+    "database": "DB",
+    "db": "DB",
+    "infra": "INFR",
+    "infrastructure": "INFR",
+}
 ```
 
-### 3. Update Validators
-**File:** `installer/global/commands/lib/template_qa_validator.py`
-
-Add new validation functions:
+#### Title Keyword Patterns
 ```python
-def validate_min_length(text: str, min_length: int) -> str:
-    """Validate text has minimum length"""
-    if len(text.strip()) < min_length:
-        raise ValidationError(f"Must be at least {min_length} characters")
-    return text.strip()
-
-def validate_version_string(version: str) -> str:
-    """Validate version follows semantic versioning"""
-    import re
-    pattern = r'^\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$'
-    if not re.match(pattern, version):
-        raise ValidationError("Version must follow semantic versioning (e.g., 1.0.0)")
-    return version
+TITLE_KEYWORDS: Dict[str, str] = {
+    r"^fix\b": "FIX",
+    r"^bug\b": "FIX",
+    r"\bdocument": "DOC",
+    r"\btest": "TEST",
+    r"\bapi\b": "API",
+    r"\bui\b": "UI",
+    r"\bdatabase\b": "DB",
+}
 ```
 
-### 4. Update Session Question Handling
-**File:** `installer/global/commands/lib/template_qa_session.py`
+### 3.3 Core Functions
 
-Update `_ask_text()` method to handle new validation types:
+#### Function 1: `infer_prefix()`
+**Purpose:** Infer prefix from task context with priority order
+
+**Signature:**
 ```python
-def _ask_text(self, question: questions.Question) -> str:
-    """Ask a text question."""
-    prompt = display.prompt_text(question.text, question.default, question.help_text)
-
-    while True:
-        response = input(prompt).strip()
-
-        # Use default if empty
-        if not response and question.default:
-            response = question.default
-
-        # Validate
-        try:
-            if question.id == "template_name":
-                return validator.validate_template_name(response)
-            elif question.validation == "non_empty":
-                return validator.validate_non_empty(response)
-            elif question.validation == "min_length_10":  # NEW
-                return validator.validate_min_length(response, 10)
-            elif question.validation == "version_string":  # NEW
-                return validator.validate_version_string(response)
-            else:
-                return response
-        except validator.ValidationError as e:
-            display.print_error(str(e))
-            prompt = "Please try again: "
+def infer_prefix(
+    epic: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    title: Optional[str] = None,
+    manual_prefix: Optional[str] = None
+) -> Optional[str]
 ```
 
-### 5. Update _build_result() Method
-**File:** `installer/global/commands/lib/template_qa_session.py`
+**Logic:**
+1. If `manual_prefix` provided → validate and return
+2. If `epic` provided → extract number (EPIC-001 → E01)
+3. If `tags` provided → lookup in TAG_PREFIX_MAP
+4. If `title` provided → match against TITLE_KEYWORDS patterns
+5. Otherwise → return None
 
-Add new fields to result building:
+#### Function 2: `validate_prefix()`
+**Purpose:** Enhanced validation with normalization
+
+**Signature:**
 ```python
-def _build_result(self) -> GreenfieldAnswers:
-    """Build GreenfieldAnswers from collected answers."""
-    return GreenfieldAnswers(
-        # Section 1
-        template_name=self.answers.get("template_name", "my-template"),
-        template_purpose=self.answers.get("template_purpose", "quick_start"),
-        description=self.answers.get("description"),  # NEW
-        version=self.answers.get("version", "1.0.0"),  # NEW
-        author=self.answers.get("author"),  # NEW
-        # Section 2
-        primary_language=self.answers.get("primary_language", "csharp"),
-        # ... rest of fields
-    )
+def validate_prefix(prefix: str) -> str
 ```
 
-## Testing Strategy
+**Logic:**
+1. Check if empty → raise ValueError
+2. Uppercase the prefix
+3. Remove invalid characters (keep only A-Z, 0-9)
+4. Truncate to 4 characters if longer
+5. Check length (2-4) → raise ValueError if too short
+6. Return normalized prefix
 
-### Unit Tests to Add/Update
+#### Function 3: `register_prefix()`
+**Purpose:** Register custom prefix in registry
 
-**File:** `tests/test_template_qa_session.py`
-
-1. Test new field inclusion in GreenfieldAnswers
+**Signature:**
 ```python
-def test_greenfield_answers_with_new_fields():
-    """Test GreenfieldAnswers includes new basic info fields"""
-    answers = GreenfieldAnswers(
-        template_name="test-template",
-        template_purpose="quick_start",
-        description="A test template for demonstration",  # NEW
-        version="1.0.0",  # NEW
-        author="Test Team",  # NEW
-        # ... required fields
-    )
-
-    assert answers.description == "A test template for demonstration"
-    assert answers.version == "1.0.0"
-    assert answers.author == "Test Team"
+def register_prefix(prefix: str, description: str) -> None
 ```
 
-2. Test validation for description
-```python
-def test_description_validation():
-    """Test description must be at least 10 characters"""
-    from template_qa_validator import validate_min_length, ValidationError
+**Logic:**
+1. Validate prefix format
+2. Add to STANDARD_PREFIXES dictionary
 
-    # Valid
-    assert validate_min_length("A valid description", 10) == "A valid description"
+## 4. Implementation Steps
 
-    # Invalid
-    with pytest.raises(ValidationError):
-        validate_min_length("Short", 10)
-```
+### Phase 1: Add Data Structures (30 min)
+1. Add `STANDARD_PREFIXES` dictionary
+2. Add `TAG_PREFIX_MAP` dictionary
+3. Add `TITLE_KEYWORDS` dictionary
+4. Add imports: `from typing import Dict, List`
 
-3. Test version validation
-```python
-def test_version_validation():
-    """Test version follows semantic versioning"""
-    from template_qa_validator import validate_version_string, ValidationError
+**Estimated Lines:** +60 lines
 
-    # Valid
-    assert validate_version_string("1.0.0") == "1.0.0"
-    assert validate_version_string("2.1.3") == "2.1.3"
-    assert validate_version_string("1.0.0-beta.1") == "1.0.0-beta.1"
+### Phase 2: Implement Core Functions (60 min)
+1. Implement `validate_prefix()` function
+2. Implement `infer_prefix()` function
+3. Implement `register_prefix()` function
 
-    # Invalid
-    with pytest.raises(ValidationError):
-        validate_version_string("1.0")
-    with pytest.raises(ValidationError):
-        validate_version_string("v1.0.0")
-```
+**Estimated Lines:** +100 lines
 
-4. Test optional fields
-```python
-def test_optional_fields_default_values():
-    """Test author is optional, version has default"""
-    session = TemplateQASession(skip_qa=True)
-    answers = session.run()
+### Phase 3: Update Existing Functions (15 min)
+1. Enhance `is_valid_prefix()` to use new `validate_prefix()`
+2. Update `__all__` exports
 
-    # Version should have default
-    assert answers.version == "1.0.0"
+**Estimated Lines:** +10 lines (modifications)
 
-    # Author should be None if not provided
-    assert answers.author is None or isinstance(answers.author, str)
-```
+### Phase 4: Add Documentation (15 min)
+1. Update module docstring
+2. Add comprehensive docstrings for new functions
 
-### Integration Tests
+**Estimated Lines:** +80 lines (docstrings)
 
-**File:** `tests/integration/test_qa_workflow.py`
+## 5. Testing Strategy
 
-1. Test complete Section 1 flow with new fields
-```python
-def test_section1_complete_flow(monkeypatch):
-    """Test Section 1 Q&A with all fields"""
-    inputs = [
-        "my-awesome-template",  # template_name
-        "1",  # template_purpose (choice)
-        "A comprehensive template for building awesome applications",  # description
-        "1.0.0",  # version (default)
-        "Engineering Team",  # author
-        # ... other sections
-    ]
+### 5.1 Unit Tests
 
-    input_iter = iter(inputs)
-    monkeypatch.setattr('builtins.input', lambda _: next(input_iter))
+**Test File:** `tests/lib/test_id_generator_prefix_inference.py` (new file)
 
-    session = TemplateQASession()
-    answers = session.run()
+#### Test Suite 1: Prefix Validation
+- test_validate_prefix_uppercase()
+- test_validate_prefix_truncate()
+- test_validate_prefix_invalid_chars()
+- test_validate_prefix_too_short()
+- test_validate_prefix_empty()
 
-    assert answers.template_name == "my-awesome-template"
-    assert answers.description == "A comprehensive template for building awesome applications"
-    assert answers.version == "1.0.0"
-    assert answers.author == "Engineering Team"
-```
+#### Test Suite 2: Epic Inference
+- test_infer_prefix_from_epic()
+- test_infer_prefix_epic_invalid_format()
+- test_infer_prefix_epic_with_padding()
 
-## Files Modified
+#### Test Suite 3: Tag Inference
+- test_infer_prefix_from_tags()
+- test_infer_prefix_multiple_tags()
+- test_infer_prefix_tags_case_insensitive()
 
-1. `installer/global/commands/lib/template_qa_questions.py` - Add 3 new questions
-2. `installer/global/commands/lib/template_qa_session.py` - Update dataclass and methods
-3. `installer/global/commands/lib/template_qa_validator.py` - Add 2 new validators
-4. `tests/test_template_qa_session.py` - Add/update unit tests
-5. `tests/integration/test_qa_workflow.py` - Add integration tests
+#### Test Suite 4: Title Inference
+- test_infer_prefix_from_title()
+- test_infer_prefix_title_no_match()
 
-## Backward Compatibility
+#### Test Suite 5: Priority Order
+- test_infer_prefix_manual_override()
+- test_infer_prefix_epic_over_tags()
+- test_infer_prefix_tags_over_title()
 
-✅ All changes are **additive** - no breaking changes
-✅ Existing code using `template_purpose` continues to work
-✅ New fields are optional except `description` (but has graceful handling)
-✅ Default values provided for `version`
+#### Test Suite 6: Registry Management
+- test_register_prefix()
+- test_register_prefix_validates()
 
-## Acceptance Criteria Verification
+### 5.2 Coverage Goals
 
-From TASK-054:
-- [x] Template name question with validation (min 3 chars, hyphen required) - ✅ Already exists
-- [x] Description question with validation (min 10 chars) - ✅ Will implement
-- [x] Version question with default "1.0.0" - ✅ Will implement
-- [x] Author question (optional) - ✅ Will implement
-- [x] Returns basic_info dict - ✅ Already works, will be enhanced
-- [x] Unit tests passing - ✅ Will implement
+**Target:** ≥85% coverage
 
-## Estimated Implementation Time
+## 6. File Changes Summary
 
-- Update questions: 15 minutes
-- Update dataclass: 10 minutes
-- Update validators: 20 minutes
-- Update session methods: 15 minutes
-- Write unit tests: 45 minutes
-- Write integration tests: 30 minutes
-- Testing and fixes: 45 minutes
+### Modified Files
+1. **installer/global/lib/id_generator.py**
+   - Add 3 new dictionaries
+   - Add 3 new functions
+   - Enhance is_valid_prefix()
+   - Update module docstring and __all__ exports
+   - **Estimated:** +250 lines
 
-**Total: ~3 hours** (matches original estimate)
+### New Files
+1. **tests/lib/test_id_generator_prefix_inference.py**
+   - Unit tests for prefix inference
+   - **Estimated:** ~200 lines
 
-## Complexity Assessment
+**Total New Lines:** ~450 lines
+**Files Modified:** 1
+**Files Created:** 1
 
-**Score: 3/10**
-- Simple additive changes
-- Straightforward validation logic
-- Well-defined requirements
-- No architectural changes
+## 7. Risk Assessment
 
-## Risks
+### Complexity: 5/10 (Medium)
 
-1. **Low Risk:** Breaking existing tests that expect only 2 Section 1 questions
-   - **Mitigation:** Run full test suite and update affected tests
+**Low Risk Areas:**
+- Data structures (dictionaries) - straightforward
+- Validation logic - well-defined rules
+- Registry management - simple dictionary operations
 
-2. **Low Risk:** Existing code assumes specific GreenfieldAnswers structure
-   - **Mitigation:** All new fields are optional except description (which is nullable initially for backward compat)
+**Medium Risk Areas:**
+- Epic parsing regex - must handle various formats
+- Title keyword matching - pattern complexity
+- Priority logic - multiple conditional branches
 
-## Success Metrics
+**Mitigation:**
+- Comprehensive unit tests for regex patterns
+- Test all priority combinations
+- Clear docstrings with examples
 
-- ✅ All TASK-054 acceptance criteria met
-- ✅ Test coverage ≥ 80% for new code
-- ✅ All existing tests pass
-- ✅ No breaking changes to existing functionality
+### Backwards Compatibility
+**Status:** ✅ Fully compatible
+
+- Existing `generate_task_id()` unchanged
+- New functions are additive
+- No breaking changes to API
+
+## 8. Success Criteria
+
+### Functional
+- ✅ All 8 acceptance criteria met
+- ✅ All inference priority levels work correctly
+- ✅ Prefix validation handles all edge cases
+- ✅ Registry management works as expected
+
+### Quality
+- ✅ Test coverage ≥85%
+- ✅ All tests pass (100% pass rate)
+- ✅ No compilation errors
+- ✅ Comprehensive docstrings
+
+## 9. Timeline
+
+| Phase | Task | Duration |
+|-------|------|----------|
+| 1 | Add data structures | 30 min |
+| 2 | Implement core functions | 60 min |
+| 3 | Update existing functions | 15 min |
+| 4 | Add documentation | 15 min |
+| 5 | Write unit tests | 90 min |
+| 6 | Code review & fixes | 30 min |
+
+**Total Estimated Time:** 4 hours
+
+## 10. Design Decisions
+
+1. **Why dictionary-based mappings?**
+   - Easy to extend without code changes
+   - Clear separation of data and logic
+   - Easy to customize per project
+
+2. **Why priority order (manual > epic > tags > title)?**
+   - Manual gives users full control
+   - Epic is most specific context
+   - Tags are explicit categorization
+   - Title is inferred/ambiguous
+
+3. **Why 2-4 character prefixes?**
+   - Balance between readability and uniqueness
+   - Consistent with existing validation
+   - Matches common prefix patterns
+
+---
+
+**Implementation Status:** Ready to begin Phase 1

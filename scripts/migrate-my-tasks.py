@@ -245,24 +245,11 @@ def migrate_file(
         # Read content
         content = file_path.read_text(encoding='utf-8')
 
-        # Split into frontmatter and body
-        frontmatter_match = re.search(r'^(---\n.*?\n---\n)(.*)', content, re.DOTALL | re.MULTILINE)
-        if frontmatter_match:
-            frontmatter = frontmatter_match.group(1)
-            body = frontmatter_match.group(2)
+        # Update frontmatter
+        content = update_frontmatter(content, old_id, new_id)
 
-            # Update frontmatter only
-            frontmatter = update_frontmatter(frontmatter, old_id, new_id)
-
-            # Update cross-references only in body (not frontmatter)
-            body, xref_count = update_cross_references(body, id_mapping)
-
-            # Recombine
-            content = frontmatter + body
-        else:
-            # No frontmatter found, update entire content
-            content = update_frontmatter(content, old_id, new_id)
-            content, xref_count = update_cross_references(content, id_mapping)
+        # Update cross-references
+        content, xref_count = update_cross_references(content, id_mapping)
 
         if not dry_run:
             # Write back
