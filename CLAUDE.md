@@ -261,6 +261,9 @@ Taskwright includes **6 high-quality templates** for learning and evaluation:
 ### Specialized Templates (8-9+/10 Quality)
 4. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
 5. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
+   - **Internal Development**: Based on Taskwright's own 16K LOC codebase (dogfooding)
+   - **Use Case**: CLI tools with complex workflows, understanding Taskwright's architecture
+   - **Not for**: General Python APIs (use fastapi-python instead)
 
 ### Language-Agnostic Template (8+/10 Quality)
 6. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages

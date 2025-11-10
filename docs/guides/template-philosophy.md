@@ -4,7 +4,7 @@
 
 Taskwright's template strategy is simple: **Reference implementations for learning, `/template-create` for production.**
 
-## The 4 Templates
+## The 6 Templates
 
 ### Stack-Specific Reference Templates
 
@@ -13,6 +13,15 @@ Taskwright's template strategy is simple: **Reference implementations for learni
 | **react-typescript** | Learn frontend best practices | Evaluating Taskwright, learning React patterns |
 | **fastapi-python** | Learn backend API patterns | Evaluating Taskwright, learning FastAPI |
 | **nextjs-fullstack** | Learn full-stack development | Evaluating Taskwright, learning Next.js App Router |
+
+### Specialized Templates
+
+| Template | Purpose | When to Use |
+|----------|---------|-------------|
+| **react-fastapi-monorepo** | Learn monorepo patterns | Full-stack monorepo with React + FastAPI, type-safe contracts |
+| **taskwright-python** | Learn Taskwright's architecture | **Internal Development**: CLI tools with orchestrator pattern, understanding Taskwright itself |
+
+**Note on taskwright-python**: This template is created from Taskwright's own codebase (16K LOC) - a dogfooding example. Use it to understand how Taskwright is built or to create similar CLI tools with orchestration. For general Python APIs, use **fastapi-python** instead.
 
 ### Language-Agnostic Template
 
@@ -44,13 +53,13 @@ Every team develops unique:
 - Technology choices
 - Quality standards
 
-**Rather than shipping 50 templates trying to cover every opinion, we provide 4 high-quality templates (3 stack-specific + 1 language-agnostic) and tools to create your own.**
+**Rather than shipping 50 templates trying to cover every opinion, we provide 6 high-quality templates (3 stack-specific + 2 specialized + 1 language-agnostic) and tools to create your own.**
 
 ### 3. Quality Over Quantity
 
 **Old approach**: 9 templates, unknown quality, high maintenance
 
-**New approach**: 4 templates (3 stack-specific at 9+/10, 1 language-agnostic at 8+/10), low maintenance
+**New approach**: 6 templates (3 stack-specific at 9+/10, 2 specialized at 8-9+/10, 1 language-agnostic at 8+/10), low maintenance
 
 ### 4. Learning Resource First
 
@@ -123,6 +132,19 @@ taskwright init your-custom-template
 - 🎓 Training full-stack developers
 - 🔍 Reference for modern Next.js
 
+### Use react-fastapi-monorepo When:
+- ⏱️ Evaluating Taskwright for full-stack monorepo
+- 📚 Learning monorepo patterns with type safety
+- 🎓 Training teams on React + FastAPI integration
+- 🔍 Reference for monorepo architecture
+
+### Use taskwright-python When:
+- 🔍 Understanding Taskwright's internal architecture (dogfooding)
+- 📚 Learning orchestrator pattern + DI + agent systems
+- ⚙️ Building CLI tools with complex orchestration
+- 🎓 Understanding how Taskwright itself is built
+- ❌ **NOT for**: General Python APIs (use fastapi-python instead)
+
 ### Use default When:
 - 🌐 Working with Go, Rust, Ruby, Elixir, PHP, or other unsupported languages
 - ⏱️ Quick evaluation without stack commitment
@@ -147,7 +169,12 @@ A: Yes, but we recommend using them as references and creating your own with `/t
 
 **Q: What happened to the other templates?**
 
-A: We reduced from 9 to 4 high-quality templates (3 stack-specific at 9+/10 + 1 language-agnostic at 8+/10). The `default` template was temporarily removed but has been reinstated with quality improvements (TASK-060A). Old templates are archived. See [Template Migration Guide](template-migration.md).
+A: We reduced from 9 to 6 high-quality templates:
+- **3 stack-specific** at 9+/10 (react-typescript, fastapi-python, nextjs-fullstack)
+- **2 specialized** at 8-9+/10 (react-fastapi-monorepo, taskwright-python)
+- **1 language-agnostic** at 8+/10 (default)
+
+The `default` template was temporarily removed but has been reinstated with quality improvements (TASK-060A). The monorepo template was added in TASK-062. The taskwright-python template (internal development/dogfooding) was added in TASK-066. Old templates are archived. See [Template Migration Guide](template-migration.md).
 
 **Q: How do I share templates with my team?**
 
