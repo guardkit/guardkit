@@ -1,0 +1,63 @@
+{
+  "task_id": "TASK-TMPL-4E89",
+  "total_score": 8,
+  "level": "Complex",
+  "review_mode": "FULL_REQUIRED",
+
+  "breakdown": {
+    "file_complexity": {
+      "score": 2,
+      "max": 3,
+      "rationale": "3 files to modify (1 core + 2 test files)",
+      "files": [
+        "installer/global/lib/agent_generator/agent_generator.py",
+        "tests/unit/lib/agent_generator/test_ai_agent_generator.py",
+        "tests/integration/lib/test_agent_generator_integration.py"
+      ]
+    },
+    "pattern_familiarity": {
+      "score": 2,
+      "max": 2,
+      "rationale": "Using unfamiliar patterns: AI integration, JSON parsing, fallback strategy",
+      "patterns": [
+        "AI-powered analysis (new to this module)",
+        "Strategy pattern with fallback",
+        "JSON response parsing and validation"
+      ]
+    },
+    "risk_assessment": {
+      "score": 2,
+      "max": 3,
+      "rationale": "Medium risk: AI reliability, backward compatibility, JSON parsing errors",
+      "risks": [
+        {
+          "type": "AI Returns Invalid JSON",
+          "level": "medium",
+          "mitigation": "Fallback to hard-coded detection"
+        },
+        {
+          "type": "Backward Compatibility",
+          "level": "low",
+          "mitigation": "Preserved existing method as fallback"
+        }
+      ]
+    },
+    "dependencies": {
+      "score": 2,
+      "max": 2,
+      "rationale": "2+ external dependencies: AI infrastructure, existing orchestrator integration",
+      "external_dependencies": [
+        "ClaudeClient (AI invoker)",
+        "template_create_orchestrator.py"
+      ]
+    }
+  },
+
+  "forced_review_triggers": [],
+
+  "estimated_duration_hours": 8,
+  "estimated_loc": 505,
+
+  "recommendation": "FULL_REQUIRED",
+  "reason": "Complexity score 8/10 requires mandatory human checkpoint (Phase 2.8)"
+}

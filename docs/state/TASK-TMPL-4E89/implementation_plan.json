@@ -1,0 +1,211 @@
+{
+  "task_id": "TASK-TMPL-4E89",
+  "title": "Replace Hard-Coded Agent Detection with AI-Powered Analysis",
+  "complexity": 8,
+  "priority": "high",
+  "estimated_duration_hours": 8,
+  "stack": "default",
+  "language": "python",
+
+  "files_to_create": [],
+
+  "files_to_modify": [
+    {
+      "path": "installer/global/lib/agent_generator/agent_generator.py",
+      "changes": "Add AI-powered agent detection methods",
+      "lines_added": 225,
+      "methods_added": [
+        "_ai_identify_all_agents()",
+        "_build_ai_analysis_prompt()",
+        "_parse_ai_agent_response()",
+        "_create_capability_need_from_spec()",
+        "_fallback_to_hardcoded()"
+      ]
+    },
+    {
+      "path": "tests/unit/lib/agent_generator/test_ai_agent_generator.py",
+      "changes": "Add unit tests for AI agent generation",
+      "lines_added": 200,
+      "methods_added": [
+        "test_ai_identifies_multiple_agents()",
+        "test_ai_returns_valid_json()",
+        "test_fallback_on_invalid_json()",
+        "test_fallback_on_ai_failure()",
+        "test_agent_priority_sorting()",
+        "test_backward_compatibility()"
+      ]
+    },
+    {
+      "path": "tests/integration/lib/test_agent_generator_integration.py",
+      "changes": "Add integration tests for agent generator",
+      "lines_added": 80,
+      "methods_added": [
+        "test_end_to_end_complex_codebase()",
+        "test_orchestrator_integration()"
+      ]
+    }
+  ],
+
+  "external_dependencies": [],
+
+  "estimated_loc": 505,
+
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "name": "Core AI Integration",
+      "duration_hours": 2,
+      "tasks": [
+        "Implement _ai_identify_all_agents() method",
+        "Build comprehensive AI prompt",
+        "Token budget: 3000-5000 tokens"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "JSON Parsing & Validation",
+      "duration_hours": 1,
+      "tasks": [
+        "Implement _parse_ai_agent_response()",
+        "Field validation",
+        "Error handling"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Workflow Integration",
+      "duration_hours": 1,
+      "tasks": [
+        "Refactor _identify_capability_needs() as dispatcher",
+        "Rename existing to _fallback_to_hardcoded()",
+        "Maintain backward compatibility"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Unit Testing",
+      "duration_hours": 2,
+      "tasks": [
+        "8-10 test methods",
+        "Mock AI responses",
+        "Error path coverage"
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "Integration Testing",
+      "duration_hours": 1.5,
+      "tasks": [
+        "End-to-end tests",
+        "Orchestrator integration verification",
+        "Real codebase testing"
+      ]
+    },
+    {
+      "phase": 6,
+      "name": "Documentation & Review",
+      "duration_hours": 0.5,
+      "tasks": [
+        "Update docstrings",
+        "Add inline comments",
+        "Review against acceptance criteria"
+      ]
+    }
+  ],
+
+  "test_strategy": {
+    "unit_tests": {
+      "file": "tests/unit/lib/agent_generator/test_ai_agent_generator.py",
+      "methods": 8,
+      "coverage_target": 85
+    },
+    "integration_tests": {
+      "file": "tests/integration/lib/test_agent_generator_integration.py",
+      "methods": 3,
+      "coverage_target": 80
+    },
+    "manual_tests": [
+      "Complex .NET MAUI template (target: 7+ agents)",
+      "React TypeScript template (target: 5+ agents)",
+      "FastAPI Python template (target: 6+ agents)",
+      "Fallback scenario (invalid AI response)"
+    ]
+  },
+
+  "risks": [
+    {
+      "name": "AI Returns Invalid JSON",
+      "impact": "Medium",
+      "probability": "15-20%",
+      "mitigation": "Robust JSON parsing with try/catch, fallback to hard-coded detection"
+    },
+    {
+      "name": "AI Returns Insufficient Agents",
+      "impact": "Low",
+      "probability": "10%",
+      "mitigation": "Minimum threshold check, combine AI + hard-coded results"
+    },
+    {
+      "name": "Performance Degradation",
+      "impact": "Low",
+      "probability": "5%",
+      "mitigation": "Single AI call, token budget management, async execution"
+    },
+    {
+      "name": "Backward Compatibility Break",
+      "impact": "Low",
+      "probability": "5%",
+      "mitigation": "Preserve existing hard-coded method as fallback"
+    }
+  ],
+
+  "architecture_decisions": [
+    {
+      "id": "ADR-001",
+      "title": "Single AI Call vs Per-Agent Calls",
+      "decision": "Use single AI call for all agents",
+      "rationale": "Performance (1 call vs 7+ calls), better context, token efficiency"
+    },
+    {
+      "id": "ADR-002",
+      "title": "Fallback Strategy",
+      "decision": "Preserve hard-coded detection as fallback",
+      "rationale": "Reliability, backward compatibility, gradual rollout"
+    },
+    {
+      "id": "ADR-003",
+      "title": "JSON Response Format",
+      "decision": "Structured JSON array with validation",
+      "rationale": "Parseability, validation, error handling, integration"
+    }
+  ],
+
+  "success_metrics": {
+    "before": {
+      "detection_method": "Hard-coded (5 IF statements)",
+      "coverage": "14-30%",
+      "example_agent_count": 1,
+      "maintenance": "Manual code changes for each pattern"
+    },
+    "after": {
+      "detection_method": "AI-powered comprehensive analysis",
+      "coverage": "78-100%",
+      "example_agent_count": "7-9",
+      "maintenance": "Zero (self-improving)"
+    },
+    "improvement": {
+      "coverage_increase": "5-7x",
+      "agent_count_increase": "7-9x",
+      "maintenance_reduction": "100%"
+    }
+  },
+
+  "acceptance_criteria": [
+    "New method _ai_identify_all_agents(analysis) created using AI",
+    "AI returns structured JSON array with agent specs",
+    "JSON parsing with error handling and fallback",
+    "Integration maintains backward compatibility",
+    "Complex templates generate 7+ agents (vs current 1-2)",
+    "Unit and integration tests with 80%+ coverage"
+  ]
+}

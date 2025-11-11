@@ -41,24 +41,32 @@ design_metadata:
 ---
 ```
 
-### 3. Template-Based UX Specialists
+### 3. Technology-Agnostic Orchestrators + Stack-Specific UI Specialists
 
-Each template provides its own UX specialist agent:
+**Global Orchestrators** (handle design extraction, delegate to UI specialists):
+
+```
+installer/global/agents/
+├── figma-orchestrator.md       # Figma MCP extraction → delegates to UI specialists
+└── zeplin-orchestrator.md      # Zeplin MCP extraction → delegates to UI specialists
+```
+
+**Stack-Specific UI Specialists** (extend existing agents to handle design contexts):
 
 ```
 installer/global/templates/
 ├── react-typescript/
 │   └── agents/
-│       └── react-ux-specialist.md       # Handles Figma → React
+│       └── react-ui-specialist.md       # Extended to handle design contexts from orchestrators
 ├── nextjs-fullstack/
 │   └── agents/
-│       └── nextjs-ux-specialist.md      # Handles Figma → Next.js
-├── default/  # .NET MAUI, Flutter, SwiftUI
-│   └── agents/
-│       └── maui-ux-specialist.md        # Handles Zeplin → MAUI
-│       └── flutter-ux-specialist.md     # Handles Figma → Flutter
-│       └── swiftui-ux-specialist.md     # Handles Figma → SwiftUI
+│       └── nextjs-ui-specialist.md      # Extended to handle design contexts from orchestrators
 ```
+
+**Future UI Specialists** (created via `/template-create`, not manually):
+- MAUI UI specialist (created when user runs `/template-create` for MAUI projects)
+- Flutter UI specialist (created when user runs `/template-create` for Flutter projects)
+- SwiftUI UI specialist (created when user runs `/template-create` for SwiftUI projects)
 
 ### 4. Workflow Integration
 
@@ -73,15 +81,15 @@ installer/global/templates/
 - Creates prohibition checklist
 
 **Phase 3: Implementation**
-- Task manager detects design URL
-- Invokes stack-specific UX specialist
-- UX specialist executes 6-phase Saga:
-  - Phase 0: MCP Verification
-  - Phase 1: Design Extraction
-  - Phase 2: Boundary Documentation
-  - Phase 3: Component Generation
-  - Phase 4: Visual Regression Testing
-  - Phase 5: Constraint Validation
+- Task manager detects design URL and design source
+- Invokes appropriate orchestrator (figma-orchestrator or zeplin-orchestrator)
+- Orchestrator executes 6-phase Saga:
+  - Phase 0: MCP Verification (design tool MCP available)
+  - Phase 1: Design Extraction (via Figma/Zeplin MCP)
+  - Phase 2: Boundary Documentation (prohibition checklist)
+  - Phase 3: Component Generation (delegates to stack-specific UI specialist)
+  - Phase 4: Visual Regression Testing (delegates to stack-specific UI specialist)
+  - Phase 5: Constraint Validation (orchestrator validates against prohibitions)
 
 **Phase 4: Testing**
 - Includes visual regression tests from Phase 4 of Saga
@@ -111,67 +119,124 @@ def detect_design_source(url: str) -> str:
 ### Stack Detection
 
 Stack detection already works - task-work detects stack from project files:
-- `.csproj` → .NET (uses maui-ux-specialist for Zeplin)
-- `package.json` + React → react-typescript (uses react-ux-specialist for Figma)
-- `pubspec.yaml` → Flutter (uses flutter-ux-specialist for Figma)
+- `.csproj` → .NET MAUI
+- `package.json` + React → react-typescript
+- `pubspec.yaml` → Flutter
 
-### MCP Selection Matrix
+### Orchestrator Selection Matrix
 
-| Stack | Design Tool | MCP Server | Agent |
-|-------|-------------|------------|-------|
-| React/TypeScript | Figma | figma-dev-mode | react-ux-specialist |
-| Next.js | Figma | figma-dev-mode | nextjs-ux-specialist |
-| .NET MAUI | Zeplin | zeplin | maui-ux-specialist |
-| Flutter | Figma | figma-dev-mode | flutter-ux-specialist |
-| SwiftUI | Figma | figma-dev-mode | swiftui-ux-specialist |
-| React Native | Figma/Zeplin | figma-dev-mode/zeplin | react-native-ux-specialist |
+| Design Tool | Orchestrator | MCP Server | Delegates To |
+|-------------|--------------|------------|--------------|
+| Figma | figma-orchestrator | figma-dev-mode | Stack-specific UI specialist (react-ui-specialist, nextjs-ui-specialist, etc.) |
+| Zeplin | zeplin-orchestrator | zeplin | Stack-specific UI specialist (maui-ui-specialist, react-native-ui-specialist, etc.) |
+
+**Routing Logic**:
+```python
+if task.design_url:
+    design_source = task.design_source  # "figma" | "zeplin"
+    stack = detect_stack()  # react-typescript, maui, flutter, etc.
+
+    # Select orchestrator based on design source
+    if design_source == "figma":
+        orchestrator = "figma-orchestrator"
+    elif design_source == "zeplin":
+        orchestrator = "zeplin-orchestrator"
+
+    # Orchestrator handles MCP extraction, then delegates to UI specialist
+    invoke_orchestrator(orchestrator, task, target_specialist=f"{stack}-ui-specialist")
+else:
+    # Standard implementation without design extraction
+    invoke_standard_implementation(task)
+```
 
 ## Agent Architecture
 
-### Shared Design-to-Code Pattern
+### Two-Tier Architecture: Orchestrators + UI Specialists
 
-All UX specialists implement the same interface:
+**Tier 1: Technology-Agnostic Orchestrators**
+- Handle MCP calls (Figma/Zeplin)
+- Extract design elements, styles, metadata
+- Generate prohibition checklists (zero scope creep)
+- Validate constraints after implementation
+- Delegate component generation to UI specialists
+
+**Tier 2: Stack-Specific UI Specialists**
+- Receive design context from orchestrator
+- Generate components in stack-appropriate format
+- Run stack-appropriate visual regression tests
+- Return results to orchestrator for validation
+
+### Orchestrator Pattern (Technology-Agnostic)
 
 ```markdown
 ---
-name: react-ux-specialist
-description: React component generation from Figma designs
+name: figma-orchestrator
+description: Orchestrates Figma design extraction and delegates to UI specialists
 tools: Read, Write, Grep, mcp__figma-dev-mode__*
 mcp_dependencies:
   - figma-dev-mode (required)
-design_sources: [figma]
 ---
 
-# React UX Specialist
+# Figma Orchestrator
 
 ## Mission
-Generate pixel-perfect React components from Figma designs with zero scope creep.
+Extract Figma designs and coordinate with UI specialists for implementation.
 
-## Input Contract
-Receives from task manager:
-- design_url: Figma URL
-- design_source: "figma"
-- task_context: Full task details
-
-## Execution Pattern
+## Execution Pattern (6-Phase Saga)
 1. MCP Verification (figma-dev-mode available)
-2. Design Extraction (via MCP)
-3. Boundary Documentation (zero scope creep)
-4. Component Generation (TypeScript React + Tailwind)
-5. Visual Regression Testing (Playwright)
-6. Constraint Validation
+2. Design Extraction (via Figma MCP)
+3. Boundary Documentation (prohibition checklist)
+4. Component Generation (delegate to UI specialist)
+5. Visual Regression Testing (delegate to UI specialist)
+6. Constraint Validation (verify zero scope creep)
 
-## Output Contract
-Returns to task manager:
+## Delegation
+Passes to UI specialist:
+- designElements: Extracted elements from Figma
+- designConstraints: Prohibition checklist
+- designMetadata: File key, node ID, visual reference
+
+Receives from UI specialist:
 - generated_files: List of file paths
 - visual_fidelity: Similarity score (0.0-1.0)
 - constraint_violations: List of violations (must be empty)
-- test_results: Test execution results
+```
+
+### UI Specialist Pattern (Stack-Specific)
+
+UI specialists are extended to handle design contexts:
+
+```markdown
+# In react-ui-specialist.md (extended)
+
+## Design Context Handling
+
+if task.design_context:
+    # Received from figma-orchestrator or zeplin-orchestrator
+    designElements = task.design_context.elements
+    prohibitions = task.design_context.prohibitions
+    visualReference = task.design_context.visualReference
+
+    # Generate component matching design exactly
+    generate_component(designElements, prohibitions)
+
+    # Run visual regression tests
+    visual_fidelity = run_visual_tests(visualReference)
+
+    # Return to orchestrator for validation
+    return {
+        generated_files: [...]
+        visual_fidelity: 0.97
+        constraint_violations: []
+    }
+else:
+    # Standard UI implementation without design extraction
+    implement_standard_ui(task)
 ```
 
 ### Stack-Specific Customization
 
-Each agent customizes:
+Each UI specialist customizes:
 - **Component format**: React (JSX/TSX), MAUI (XAML), Flutter (Dart), SwiftUI (Swift)
 - **Styling approach**: Tailwind, CSS-in-JS, XAML styling, Flutter themes
 - **Testing strategy**: Playwright, xUnit, Flutter widget tests, XCTest
@@ -184,23 +249,29 @@ Each agent customizes:
 /task-create "Implement login" design:https://figma.com/design/abc?node-id=2-2
 ```
 
-### Phase 2: Create Template UX Specialists
-- react-ux-specialist.md (Figma → React)
-- maui-ux-specialist.md (Zeplin → MAUI)
-- (others as templates are added)
+### Phase 2: Refactor Orchestrators (Technology-Agnostic)
+- Refactor `figma-react-orchestrator.md` → `figma-orchestrator.md` (remove React-specific naming)
+- Refactor `zeplin-maui-orchestrator.md` → `zeplin-orchestrator.md` (remove MAUI-specific naming)
+- Update orchestrators to delegate to any stack's UI specialist
 
-### Phase 3: Update task-work Phase 3
+### Phase 3: Extend UI Specialists (Stack-Specific)
+- Extend `react-ui-specialist` to handle design contexts from orchestrators
+- Extend `nextjs-ui-specialist` to handle design contexts from orchestrators
+- Future specialists (MAUI, Flutter, SwiftUI) created via `/template-create`
+
+### Phase 4: Update task-work Phase 3
 - Detect design_url in task frontmatter
-- Route to appropriate UX specialist based on stack + design source
+- Route to appropriate orchestrator based on design source
+- Orchestrator delegates to stack-specific UI specialist
 
-### Phase 4: Deprecate Standalone Commands
+### Phase 5: Deprecate Standalone Commands
 - Keep `/figma-to-react` and `/zeplin-to-maui` for backward compatibility
 - Add deprecation warnings
 - Update docs to use task workflow
 
-### Phase 5: Remove Standalone Commands (Future)
+### Phase 6: Remove Standalone Commands (Future)
 - Remove deprecated commands after migration period
-- Archive orchestrator agents or move to templates
+- Orchestrators become the only design-to-code entry point
 
 ## Benefits
 
@@ -221,9 +292,12 @@ cd my-react-project
 /task-work TASK-001
 # → Detects React stack
 # → Detects Figma design URL
-# → Invokes react-ux-specialist
+# → Invokes figma-orchestrator
+# → Orchestrator extracts design via Figma MCP
+# → Orchestrator delegates to react-ui-specialist
 # → Generates TypeScript React + Tailwind
 # → Runs Playwright visual tests
+# → Orchestrator validates constraints
 ```
 
 ### .NET MAUI Project
@@ -233,45 +307,195 @@ cd my-maui-app
 /task-work TASK-002
 # → Detects .NET MAUI stack
 # → Detects Zeplin design URL
-# → Invokes maui-ux-specialist
+# → Invokes zeplin-orchestrator
+# → Orchestrator extracts design via Zeplin MCP
+# → Orchestrator delegates to maui-ui-specialist
 # → Generates XAML + C#
 # → Runs xUnit platform tests
+# → Orchestrator validates constraints
 ```
 
-### Flutter Project
+### Flutter Project (Future)
 ```bash
 cd my-flutter-app
 /task-create "Dashboard" design:https://figma.com/design/xyz?node-id=5-10
 /task-work TASK-003
 # → Detects Flutter stack
 # → Detects Figma design URL
-# → Invokes flutter-ux-specialist
+# → Invokes figma-orchestrator
+# → Orchestrator extracts design via Figma MCP
+# → Orchestrator delegates to flutter-ui-specialist (created via /template-create)
 # → Generates Dart widgets
 # → Runs widget golden tests
+# → Orchestrator validates constraints
 ```
 
-## Open Questions
+## Design Decisions
 
-1. **Multiple designs per task?**
-   - Support `design:[url1, url2, url3]` for multi-component tasks?
-   - Or enforce one design URL per task?
+### 1. Multiple designs per task?
+**Decision**: ✅ One design URL per task (keep it simple)
 
-2. **Design updates after implementation?**
-   - How to handle design changes?
-   - `/task-refine` with updated design URL?
-   - Versioning of design URLs?
+**Rationale**:
+- Maintains clear task scope
+- Easier to track design changes
+- Reduces complexity in constraint validation
+- If multiple components needed, create multiple tasks
 
-3. **Mixed design sources?**
-   - Task with both Figma and Zeplin URLs?
-   - Probably reject - one design source per task
+**Example**:
+```bash
+# Instead of:
+/task-create "Login flow" design:[url1, url2, url3]  # ❌ Not supported
 
-4. **Partial implementation?**
-   - What if design URL is optional?
-   - Specialist should gracefully skip if no design URL
+# Do this:
+/task-create "Login form" design:url1     # ✅ TASK-001
+/task-create "Password reset" design:url2 # ✅ TASK-002
+/task-create "Success screen" design:url3 # ✅ TASK-003
+```
 
-5. **Design validation?**
-   - Validate design URL is accessible before task creation?
-   - Or defer until task-work Phase 3?
+### 2. Design updates after implementation?
+**Decision**: ✅ Use `/task-refine` with updated design URL
+
+**Rationale**:
+- Design changes are common in iterative development
+- `/task-refine` already supports lightweight updates
+- Allows re-extraction and visual regression testing
+- Maintains task history and traceability
+
+**Workflow**:
+```bash
+# Initial implementation
+/task-create "Login form" design:https://figma.com/.../v1
+/task-work TASK-001
+/task-complete TASK-001
+
+# Design updated in Figma (v2)
+/task-refine TASK-001 design:https://figma.com/.../v2
+# → Re-extracts design
+# → Regenerates component
+# → Re-runs visual tests
+# → Updates only what changed
+```
+
+**Version tracking**:
+- Task frontmatter stores design URL history
+- Each refinement appends to `design_history` array
+- Visual regression compares against latest design
+
+### 3. Mixed design sources?
+**Decision**: ✅ One design source per task (Figma OR Zeplin, not both)
+
+**Rationale**:
+- Simplifies MCP tool selection
+- Avoids confusion about which design is canonical
+- Reduces validation complexity
+- Clear constraint boundaries
+
+**Validation**:
+```python
+# task-create validates at creation time
+if task has design_url:
+    design_source = detect_design_source(design_url)
+    # Store single source: "figma" | "zeplin" | "sketch"
+    # Reject if multiple sources detected
+```
+
+### 4. Partial implementation?
+**Decision**: ✅ UX specialist gracefully skips if no design URL
+
+**Rationale**:
+- Not all tasks require design extraction
+- UX specialist should be optional enhancement
+- Tasks without design URL follow standard workflow
+- Allows mixed task types in same project
+
+**Behavior**:
+```python
+# In task-work Phase 3
+if task.design_url:
+    # Invoke UX specialist for design-driven implementation
+    invoke_ux_specialist(task, design_url)
+else:
+    # Standard implementation without design extraction
+    invoke_standard_implementation(task)
+```
+
+**UX specialist pattern**:
+```markdown
+# In UX specialist agent
+if not design_url:
+    log("No design URL provided, skipping design extraction")
+    return None  # Task manager continues with standard workflow
+```
+
+### 5. Design validation?
+**Decision**: ✅ Validate design URL accessibility at task creation time
+
+**Rationale**:
+- Fail fast - catch invalid URLs before work begins
+- Better user experience (immediate feedback)
+- Prevents wasted time in task-work Phase 3
+- Validates MCP server availability early
+
+**Validation steps** (during `/task-create`):
+1. **URL format validation**: Check URL matches known design tool patterns
+2. **MCP availability**: Verify required MCP server is installed
+3. **Accessibility check**: Attempt to fetch design metadata (lightweight call)
+4. **Authentication check**: Validate access token has required permissions
+
+**Example validation**:
+```python
+def validate_design_url(url: str) -> ValidationResult:
+    # 1. Detect design source
+    design_source = detect_design_source(url)  # "figma" | "zeplin"
+
+    # 2. Check MCP server availability
+    if design_source == "figma" and not mcp_available("figma-dev-mode"):
+        return ValidationResult(
+            valid=False,
+            error="Figma MCP server not installed",
+            help="Run: npm install -g @figma/mcp-server"
+        )
+
+    # 3. Lightweight accessibility check
+    try:
+        metadata = fetch_design_metadata(url, design_source)
+        return ValidationResult(valid=True, metadata=metadata)
+    except AuthError:
+        return ValidationResult(
+            valid=False,
+            error="Design URL not accessible - authentication failed",
+            help="Check FIGMA_ACCESS_TOKEN in .env"
+        )
+    except NotFoundError:
+        return ValidationResult(
+            valid=False,
+            error="Design URL not found",
+            help="Verify URL is correct and design exists"
+        )
+```
+
+**Task creation flow**:
+```bash
+/task-create "Login form" design:https://figma.com/design/invalid
+
+# Validation fails immediately:
+❌ Design URL validation failed
+
+Error: Design not found
+URL: https://figma.com/design/invalid
+
+Possible causes:
+- URL is incorrect or malformed
+- Design was deleted or moved
+- Access token doesn't have permission to this file
+
+Suggestions:
+1. Verify URL in Figma
+2. Check FIGMA_ACCESS_TOKEN has 'file:read' scope
+3. Ensure design is shared with you
+
+Task creation aborted.
+```
 
 ## Next Steps
 
@@ -289,5 +513,30 @@ cd my-flutter-app
 ## Decision Record
 
 **Date**: 2025-11-11
-**Status**: Proposed
-**Decision**: TBD after user review
+**Status**: ✅ Approved
+**Approved by**: User
+**Implementation Priority**: High
+
+### Key Decisions
+1. ✅ One design URL per task (simple, clear scope)
+2. ✅ Design updates via `/task-refine` (iterative design changes)
+3. ✅ Single design source per task (no mixing Figma + Zeplin)
+4. ✅ UX specialist optional (graceful skip if no design URL)
+5. ✅ Validate design URL at creation time (fail fast)
+
+### Architecture Summary
+- **Approach**: Template-based UX specialists, unified workflow
+- **Integration**: Add `design:URL` parameter to `/task-create`
+- **Routing**: Automatic based on stack detection + design source detection
+- **Quality**: Same zero-scope-creep constraints for all stacks
+- **Migration**: Deprecate standalone commands, move to templates
+
+### Next Actions
+1. ✅ Create implementation tasks (TASK-UX-7F1E, TASK-UX-C3A3)
+2. ⏳ Implement Phase 1: task-create design URL support
+3. ⏳ Implement Phase 2: Refactor orchestrators to be technology-agnostic
+4. ⏳ Implement Phase 3: Extend UI specialists to handle design contexts
+5. ⏳ Implement Phase 4: Update task-work integration
+6. ⏳ Test with real projects
+7. ⏳ Deprecate `/figma-to-react` and `/zeplin-to-maui`
+8. ⏳ Update documentation

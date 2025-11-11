@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Any, Protocol
 import frontmatter
+import json
 
 
 @dataclass
@@ -119,7 +120,259 @@ class AIAgentGenerator:
 
     def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
         """
-        Analyze codebase to identify needed agent capabilities
+        Analyze codebase to identify needed agent capabilities.
+
+        Uses AI-powered analysis by default, with fallback to hard-coded
+        detection if AI fails.
+
+        Args:
+            analysis: Codebase analysis
+
+        Returns:
+            List of capability needs
+        """
+        # Try AI-powered detection first
+        try:
+            needs = self._ai_identify_all_agents(analysis)
+            if needs:  # AI successfully identified agents
+                print(f"  ✓ AI identified {len(needs)} capability needs")
+                return needs
+        except Exception as e:
+            print(f"  ⚠️  AI detection failed: {e}")
+            print("  → Falling back to hard-coded detection")
+
+        # Fallback to hard-coded detection
+        return self._fallback_to_hardcoded(analysis)
+
+    def _ai_identify_all_agents(self, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Use AI to comprehensively analyze codebase and identify ALL agent needs.
+
+        This eliminates hard-coded pattern detection by having AI analyze:
+        - Architecture patterns
+        - Code layers and their patterns
+        - Frameworks and technologies
+        - Quality patterns (ErrorOr, Result, etc.)
+        - Testing frameworks
+
+        Args:
+            analysis: Codebase analysis from TASK-002
+
+        Returns:
+            List of comprehensive capability needs (7-12 for complex projects)
+
+        Raises:
+            Exception: If AI invocation fails or returns invalid JSON
+        """
+        # Build comprehensive prompt for AI analysis
+        prompt = self._build_ai_analysis_prompt(analysis)
+
+        # Invoke AI to analyze codebase and identify all agents
+        response = self.ai_invoker.invoke(
+            agent_name="architectural-reviewer",
+            prompt=prompt
+        )
+
+        # Parse AI response and convert to CapabilityNeed objects
+        needs = self._parse_ai_agent_response(response, analysis)
+
+        return sorted(needs, key=lambda n: n.priority, reverse=True)
+
+    def _build_ai_analysis_prompt(self, analysis: Any) -> str:
+        """
+        Build comprehensive AI prompt for agent identification.
+
+        Token budget: 3000-5000 tokens (phase-appropriate for planning)
+
+        Args:
+            analysis: Codebase analysis
+
+        Returns:
+            Formatted prompt string
+        """
+        # Extract analysis data
+        language = getattr(analysis, 'language', 'Unknown')
+        architecture_pattern = getattr(analysis, 'architecture_pattern', 'Unknown')
+        frameworks = getattr(analysis, 'frameworks', [])
+        patterns = getattr(analysis, 'patterns', [])
+        layers = getattr(analysis, 'layers', [])
+        testing_framework = getattr(analysis, 'testing_framework', None)
+        quality_assessment = getattr(analysis, 'quality_assessment', '')
+
+        # Build layers description
+        layers_desc = []
+        for layer in layers:
+            layer_name = getattr(layer, 'name', str(layer))
+            layer_patterns = getattr(layer, 'patterns', [])
+            layer_dirs = getattr(layer, 'directories', [])
+            layers_desc.append(
+                f"- {layer_name}: {', '.join(layer_patterns)} "
+                f"({len(layer_dirs)} directories)"
+            )
+        layers_text = '\n'.join(layers_desc) if layers_desc else "No layers identified"
+
+        prompt = f"""Analyze this codebase and identify ALL specialized AI agents needed for template creation.
+
+**Project Context:**
+- Language: {language}
+- Architecture: {architecture_pattern}
+- Frameworks: {', '.join(frameworks) if frameworks else 'None'}
+- Patterns Detected: {', '.join(patterns) if patterns else 'None'}
+- Testing Framework: {testing_framework or 'None'}
+- Quality Patterns: {quality_assessment or 'None'}
+
+**Code Layers:**
+{layers_text}
+
+**Requirements:**
+1. Generate an agent for EACH architectural pattern listed (MVVM, Repository, Service, etc.)
+2. Generate an agent for EACH layer (Domain, Application, Infrastructure, etc.)
+3. Generate an agent for EACH major framework (MAUI, React, FastAPI, etc.)
+4. Generate specialist agents for patterns (ErrorOr, CQRS, Mediator, etc.)
+5. Include validation agents if architecture patterns are detected
+6. Include database-specific agents if database frameworks are detected
+7. Include testing agents if testing frameworks are detected
+
+**Output Format (STRICT JSON ARRAY ONLY - NO MARKDOWN WRAPPERS):**
+[
+  {{
+    "name": "repository-pattern-specialist",
+    "description": "Repository pattern with ErrorOr and thread-safety",
+    "reason": "Project uses Repository pattern in Infrastructure layer",
+    "technologies": ["C#", "Repository Pattern", "ErrorOr"],
+    "priority": 9
+  }},
+  {{
+    "name": "engine-pattern-specialist",
+    "description": "Business logic engines with orchestration",
+    "reason": "Project has Application layer with Engines subdirectory",
+    "technologies": ["C#", "Engine Pattern"],
+    "priority": 9
+  }}
+]
+
+**Critical Instructions:**
+- Return ONLY the JSON array, NO markdown code blocks (```json)
+- Include minimum 1 agent per major pattern/layer/framework identified
+- For complex projects (3+ layers, 4+ patterns), return 7-12 agents
+- Priority scale: 10=critical, 7-9=high, 4-6=medium, 1-3=low
+- Use descriptive names with hyphens: "mvvm-viewmodel-specialist"
+
+Return comprehensive JSON array of ALL agents this project needs:"""
+
+        return prompt
+
+    def _parse_ai_agent_response(self, response: str, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Parse AI-generated agent specifications from JSON response.
+
+        Handles various response formats:
+        - Pure JSON array
+        - JSON with markdown wrappers (```json)
+        - Partial JSON with trailing text
+
+        Args:
+            response: AI response containing JSON array
+            analysis: Codebase analysis (for file mapping)
+
+        Returns:
+            List of CapabilityNeed objects
+
+        Raises:
+            json.JSONDecodeError: If response is not valid JSON
+            KeyError: If required fields are missing
+        """
+        # Clean response - remove markdown wrappers if present
+        cleaned = response.strip()
+
+        # Remove ```json wrapper if present
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.split("```json\n", 1)[1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned.split("```\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            cleaned = cleaned.rsplit("```", 1)[0]
+
+        cleaned = cleaned.strip()
+
+        # Parse JSON array
+        try:
+            agents_data = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            # Try to find JSON array in response
+            import re
+            json_match = re.search(r'\[[\s\S]*\]', cleaned)
+            if json_match:
+                agents_data = json.loads(json_match.group(0))
+            else:
+                raise ValueError(f"No valid JSON array found in AI response: {str(e)}")
+
+        if not isinstance(agents_data, list):
+            raise ValueError(f"AI response must be JSON array, got {type(agents_data)}")
+
+        # Convert to CapabilityNeed objects
+        needs = []
+        example_files = getattr(analysis, 'example_files', [])
+
+        for agent_spec in agents_data:
+            need = self._create_capability_need_from_spec(agent_spec, example_files)
+            needs.append(need)
+
+        return needs
+
+    def _create_capability_need_from_spec(
+        self,
+        spec: dict,
+        example_files: List[Path]
+    ) -> CapabilityNeed:
+        """
+        Create CapabilityNeed from AI-generated specification.
+
+        Args:
+            spec: Agent specification dict from AI
+            example_files: Available example files from analysis
+
+        Returns:
+            CapabilityNeed object
+
+        Raises:
+            KeyError: If required fields are missing from spec
+        """
+        # Validate required fields
+        required_fields = ['name', 'description', 'reason', 'technologies']
+        missing = [f for f in required_fields if f not in spec]
+        if missing:
+            raise KeyError(f"Missing required fields in agent spec: {missing}")
+
+        # Map example files to this agent based on technologies
+        agent_files = []
+        technologies = spec['technologies']
+
+        # Simple keyword matching for file relevance
+        for example_file in example_files[:10]:  # Limit to 10 files
+            file_path = example_file if isinstance(example_file, Path) else getattr(example_file, 'path', None)
+            if file_path:
+                file_str = str(file_path).lower()
+                # Check if any technology keyword appears in file path
+                if any(tech.lower().replace(' ', '').replace('-', '') in file_str.replace('_', '').replace('-', '')
+                       for tech in technologies):
+                    agent_files.append(file_path)
+
+        return CapabilityNeed(
+            name=spec['name'],
+            description=spec['description'],
+            reason=spec['reason'],
+            technologies=spec['technologies'],
+            example_files=agent_files,
+            priority=spec.get('priority', 7)  # Default to medium-high priority
+        )
+
+    def _fallback_to_hardcoded(self, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Hard-coded pattern detection (FALLBACK ONLY).
+
+        This is the original implementation preserved as a fallback
+        when AI detection fails. Kept for backward compatibility.
 
         Args:
             analysis: Codebase analysis
