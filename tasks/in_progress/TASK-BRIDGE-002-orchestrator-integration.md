@@ -1,6 +1,6 @@
 # TASK-BRIDGE-002: Integrate Bridge with Template Create Orchestrator
 
-**Status**: backlog
+**Status**: in_progress
 **Priority**: high
 **Estimated Duration**: 2-3 hours
 **Tags**: #bridge #ai-integration #orchestrator #python

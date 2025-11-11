@@ -14,17 +14,32 @@ from typing import Optional, Dict, Any, List, Tuple
 import json
 import logging
 
-# Import component modules
-from installer.global.commands.lib.template_qa_session import TemplateQASession
-from installer.global.lib.codebase_analyzer.ai_analyzer import CodebaseAnalyzer
-from installer.global.lib.template_creation.manifest_generator import ManifestGenerator
-from installer.global.lib.settings_generator.generator import SettingsGenerator
-from installer.global.lib.template_generator.claude_md_generator import ClaudeMdGenerator
-from installer.global.lib.template_generator.template_generator import TemplateGenerator
-from installer.global.lib.agent_generator.agent_generator import AIAgentGenerator
+# Import component modules using importlib to avoid 'global' keyword issue
+import importlib
+_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_codebase_analyzer_module = importlib.import_module('installer.global.lib.codebase_analyzer.ai_analyzer')
+_manifest_gen_module = importlib.import_module('installer.global.lib.template_creation.manifest_generator')
+_settings_gen_module = importlib.import_module('installer.global.lib.settings_generator.generator')
+_claude_md_gen_module = importlib.import_module('installer.global.lib.template_generator.claude_md_generator')
+_template_gen_module = importlib.import_module('installer.global.lib.template_generator.template_generator')
+_agent_gen_module = importlib.import_module('installer.global.lib.agent_generator.agent_generator')
+
+TemplateQASession = _template_qa_module.TemplateQASession
+CodebaseAnalyzer = _codebase_analyzer_module.CodebaseAnalyzer
+ManifestGenerator = _manifest_gen_module.ManifestGenerator
+SettingsGenerator = _settings_gen_module.SettingsGenerator
+ClaudeMdGenerator = _claude_md_gen_module.ClaudeMdGenerator
+TemplateGenerator = _template_gen_module.TemplateGenerator
+AIAgentGenerator = _agent_gen_module.AIAgentGenerator
+
+# TASK-BRIDGE-002: Agent Bridge Integration
+_agent_bridge_invoker_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+_agent_bridge_state_module = importlib.import_module('installer.global.lib.agent_bridge.state_manager')
+AgentBridgeInvoker = _agent_bridge_invoker_module.AgentBridgeInvoker
+StateManager = _agent_bridge_state_module.StateManager
+TemplateCreateState = _agent_bridge_state_module.TemplateCreateState
 
 # TASK-040: Phase 5.5 Completeness Validation
-import importlib
 _validator_module = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
 _models_module = importlib.import_module('installer.global.lib.template_generator.models')
 CompletenessValidator = _validator_module.CompletenessValidator
@@ -58,6 +73,7 @@ class OrchestrationConfig:
     auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
     interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
+    resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
 
 
 @dataclass
@@ -116,121 +132,51 @@ class TemplateCreateOrchestrator:
         self.warnings: List[str] = []
         self.phase_5_5_report: Optional[ValidationReport] = None  # TASK-043: Track Phase 5.5 report
 
+        # TASK-BRIDGE-002: Bridge integration
+        self.state_manager = StateManager()
+        self.agent_invoker = AgentBridgeInvoker(
+            phase=6,
+            phase_name="agent_generation"
+        )
+
+        # Storage for phase results (used for state persistence)
+        self.qa_answers: Optional[Dict[str, Any]] = None
+        self.analysis: Optional[Any] = None
+        self.manifest: Optional[Any] = None
+        self.settings: Optional[Any] = None
+        self.templates: Optional[Any] = None
+        self.agent_inventory: Optional[List[Any]] = None
+        self.agents: Optional[List[Any]] = None
+        self.claude_md: Optional[Any] = None
+
         # Configure logging
         if config.verbose:
             logging.basicConfig(level=logging.DEBUG)
         else:
             logging.basicConfig(level=logging.INFO)
 
+        # If resuming, load state
+        if self.config.resume:
+            self._resume_from_checkpoint()
+
     def run(self) -> OrchestrationResult:
         """
         Execute complete template creation workflow.
+
+        TASK-BRIDGE-002: Modified to support checkpoint-resume pattern.
+        If config.resume is True, skips to Phase 6 (agent generation).
+        Otherwise, executes all phases 1-8 from start.
 
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
         try:
-            self._print_header()
+            # If resuming, skip to Phase 6
+            if self.config.resume:
+                return self._run_from_phase_6()
 
-            # Phase 1: Q&A Session
-            qa_answers = self._phase1_qa_session()
-            if not qa_answers:
-                return self._create_error_result("Q&A session cancelled or failed")
-
-            # Phase 2: AI Analysis
-            analysis = self._phase2_ai_analysis(qa_answers)
-            if not analysis:
-                return self._create_error_result("AI analysis failed")
-
-            # Save analysis if requested
-            if self.config.save_analysis:
-                self._save_analysis_json(analysis)
-
-            # Phase 3: Manifest Generation
-            manifest = self._phase3_manifest_generation(analysis)
-            if not manifest:
-                return self._create_error_result("Manifest generation failed")
-
-            # Phase 4: Settings Generation
-            settings = self._phase4_settings_generation(analysis)
-            if not settings:
-                return self._create_error_result("Settings generation failed")
-
-            # Phase 5: Template File Generation (reordered - was Phase 6)
-            templates = self._phase5_template_generation(analysis)
-            if not templates:
-                self.warnings.append("No template files generated")
-
-            # ===== Phase 5.5: Completeness Validation (TASK-040) =====
-            if not self.config.skip_validation and templates:
-                templates = self._phase5_5_completeness_validation(
-                    templates=templates,
-                    analysis=analysis
-                )
-
-            # Phase 6: Agent Recommendation (reordered - was Phase 7)
-            agents = []
-            if not self.config.no_agents:
-                agents = self._phase6_agent_recommendation(analysis)
-
-            # Phase 7: CLAUDE.md Generation (reordered - was Phase 5)
-            # NOW agents exist and can be documented accurately
-            claude_md = self._phase7_claude_md_generation(analysis, agents)
-            if not claude_md:
-                return self._create_error_result("CLAUDE.md generation failed")
-
-            # Phase 8: Template Package Assembly
-            if self.config.dry_run:
-                self._print_dry_run_summary(manifest, settings, templates, agents)
-                return self._create_dry_run_result(manifest, len(templates.templates if templates else []), len(agents))
-
-            output_path = self._phase8_package_assembly(
-                manifest=manifest,
-                settings=settings,
-                claude_md=claude_md,
-                templates=templates,
-                agents=agents
-            )
-
-            if not output_path:
-                return self._create_error_result("Package assembly failed")
-
-            # ===== Phase 5.7: Extended Validation (TASK-043) =====
-            # Run after package assembly when all files are in place
-            validation_report_path = None
-            exit_code = 0
-            if self.config.validate and templates:
-                validation_report_path, exit_code = self._phase5_7_extended_validation(
-                    templates=templates,
-                    manifest=manifest,
-                    settings=settings,
-                    claude_md_path=output_path / "CLAUDE.md",
-                    agents=agents,
-                    output_path=output_path
-                )
-
-            # Success!
-            # TASK-068: Pass location_type to success message
-            location_type = "personal" if self.config.output_location == 'global' else "distribution"
-            if self.config.output_path:
-                location_type = "custom"
-            self._print_success(output_path, manifest, templates, agents, location_type, validation_report_path)
-
-            return OrchestrationResult(
-                success=True,
-                template_name=manifest.name,
-                output_path=output_path,
-                manifest_path=output_path / "manifest.json",
-                settings_path=output_path / "settings.json",
-                claude_md_path=output_path / "CLAUDE.md",
-                template_count=len(templates.templates) if templates else 0,
-                agent_count=len(agents),
-                confidence_score=manifest.confidence_score,
-                errors=self.errors,
-                warnings=self.warnings,
-                validation_report_path=validation_report_path,
-                exit_code=exit_code
-            )
+            # Normal execution: Phases 1-8
+            return self._run_all_phases()
 
         except KeyboardInterrupt:
             self._print_info("\n\nTemplate creation interrupted.")
@@ -238,6 +184,156 @@ class TemplateCreateOrchestrator:
         except Exception as e:
             logger.exception("Unexpected error in orchestration")
             return self._create_error_result(f"Unexpected error: {e}")
+
+    def _run_all_phases(self) -> OrchestrationResult:
+        """
+        Execute phases 1-8 from start (TASK-BRIDGE-002).
+
+        Saves checkpoint before Phase 6 to enable resume after agent invocation.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        self._print_header()
+
+        # Phase 1: Q&A Session
+        self.qa_answers = self._phase1_qa_session()
+        if not self.qa_answers:
+            return self._create_error_result("Q&A session cancelled or failed")
+
+        # Phase 2: AI Analysis
+        self.analysis = self._phase2_ai_analysis(self.qa_answers)
+        if not self.analysis:
+            return self._create_error_result("AI analysis failed")
+
+        # Save analysis if requested
+        if self.config.save_analysis:
+            self._save_analysis_json(self.analysis)
+
+        # Phase 3: Manifest Generation
+        self.manifest = self._phase3_manifest_generation(self.analysis)
+        if not self.manifest:
+            return self._create_error_result("Manifest generation failed")
+
+        # Phase 4: Settings Generation
+        self.settings = self._phase4_settings_generation(self.analysis)
+        if not self.settings:
+            return self._create_error_result("Settings generation failed")
+
+        # Phase 5: Template File Generation (reordered - was Phase 6)
+        self.templates = self._phase5_template_generation(self.analysis)
+        if not self.templates:
+            self.warnings.append("No template files generated")
+
+        # ===== Phase 5.5: Completeness Validation (TASK-040) =====
+        if not self.config.skip_validation and self.templates:
+            self.templates = self._phase5_5_completeness_validation(
+                templates=self.templates,
+                analysis=self.analysis
+            )
+
+        # IMPORTANT: Save state before Phase 6
+        # (Phase 6 may exit with code 42 to request agent invocation)
+        self._save_checkpoint("templates_generated", phase=5)
+
+        # Phase 6: Agent Recommendation (may exit with code 42)
+        self.agents = []
+        if not self.config.no_agents:
+            self.agents = self._phase6_agent_recommendation(self.analysis)
+
+        # Phase 7-8: Complete workflow
+        return self._complete_workflow()
+
+    def _run_from_phase_6(self) -> OrchestrationResult:
+        """
+        Continue from Phase 6 after agent invocation (TASK-BRIDGE-002).
+
+        State has been restored in __init__, now complete the workflow.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        self._print_header()
+        print("  (Resuming from checkpoint)")
+
+        # Phase 6: Complete agent generation with loaded response
+        self.agents = []
+        if not self.config.no_agents:
+            self.agents = self._phase6_agent_recommendation(self.analysis)
+
+        # Phase 7-8: Complete workflow
+        return self._complete_workflow()
+
+    def _complete_workflow(self) -> OrchestrationResult:
+        """
+        Complete phases 7-8 (TASK-BRIDGE-002).
+
+        Shared by both _run_all_phases and _run_from_phase_6.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        # Phase 7: CLAUDE.md Generation (reordered - was Phase 5)
+        # NOW agents exist and can be documented accurately
+        self.claude_md = self._phase7_claude_md_generation(self.analysis, self.agents)
+        if not self.claude_md:
+            return self._create_error_result("CLAUDE.md generation failed")
+
+        # Phase 8: Template Package Assembly
+        if self.config.dry_run:
+            self._print_dry_run_summary(self.manifest, self.settings, self.templates, self.agents)
+            return self._create_dry_run_result(self.manifest, len(self.templates.templates if self.templates else []), len(self.agents))
+
+        output_path = self._phase8_package_assembly(
+            manifest=self.manifest,
+            settings=self.settings,
+            claude_md=self.claude_md,
+            templates=self.templates,
+            agents=self.agents
+        )
+
+        if not output_path:
+            return self._create_error_result("Package assembly failed")
+
+        # ===== Phase 5.7: Extended Validation (TASK-043) =====
+        # Run after package assembly when all files are in place
+        validation_report_path = None
+        exit_code = 0
+        if self.config.validate and self.templates:
+            validation_report_path, exit_code = self._phase5_7_extended_validation(
+                templates=self.templates,
+                manifest=self.manifest,
+                settings=self.settings,
+                claude_md_path=output_path / "CLAUDE.md",
+                agents=self.agents,
+                output_path=output_path
+            )
+
+        # Cleanup state on success
+        self.state_manager.cleanup()
+
+        # Success!
+        # TASK-068: Pass location_type to success message
+        location_type = "personal" if self.config.output_location == 'global' else "distribution"
+        if self.config.output_path:
+            location_type = "custom"
+        self._print_success(output_path, self.manifest, self.templates, self.agents, location_type, validation_report_path)
+
+        return OrchestrationResult(
+            success=True,
+            template_name=self.manifest.name,
+            output_path=output_path,
+            manifest_path=output_path / "manifest.json",
+            settings_path=output_path / "settings.json",
+            claude_md_path=output_path / "CLAUDE.md",
+            template_count=len(self.templates.templates) if self.templates else 0,
+            agent_count=len(self.agents),
+            confidence_score=self.manifest.confidence_score,
+            errors=self.errors,
+            warnings=self.warnings,
+            validation_report_path=validation_report_path,
+            exit_code=exit_code
+        )
 
     def _phase1_qa_session(self) -> Optional[Dict[str, Any]]:
         """
@@ -412,6 +508,9 @@ class TemplateCreateOrchestrator:
         """
         Phase 6: Recommend and generate custom agents (reordered - was Phase 7).
 
+        TASK-BRIDGE-002: Modified to pass AgentBridgeInvoker to generator.
+        May exit with code 42 if agent invocation needed.
+
         Args:
             analysis: CodebaseAnalysis from phase 2
 
@@ -422,11 +521,18 @@ class TemplateCreateOrchestrator:
 
         try:
             # Import agent scanner to get inventory
-            from installer.global.lib.agent_scanner import scan_agents
+            _agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner')
+            scan_agents = _agent_scanner_module.scan_agents
 
             inventory = scan_agents()
-            generator = AIAgentGenerator(inventory)
 
+            # CRITICAL: Pass AgentBridgeInvoker to generator (TASK-BRIDGE-002)
+            generator = AIAgentGenerator(
+                inventory,
+                ai_invoker=self.agent_invoker  # ← BRIDGE INTEGRATION
+            )
+
+            # This may exit with code 42 if agent invocation needed
             agents = generator.generate(analysis)
 
             if agents:
@@ -435,6 +541,14 @@ class TemplateCreateOrchestrator:
                 self._print_info("  All capabilities covered by existing agents")
 
             return agents
+
+        except SystemExit as e:
+            # Code 42 is expected - re-raise to exit orchestrator
+            if e.code == 42:
+                raise
+            # Other exit codes are errors
+            self._print_error(f"Agent generation exited with code {e.code}")
+            return []
 
         except Exception as e:
             self._print_warning(f"Agent generation failed: {e}")
@@ -756,7 +870,8 @@ class TemplateCreateOrchestrator:
     def _save_analysis_json(self, analysis: Any) -> None:
         """Save analysis to JSON for debugging."""
         try:
-            from installer.global.lib.codebase_analyzer.serializer import AnalysisSerializer
+            _serializer_module = importlib.import_module('installer.global.lib.codebase_analyzer.serializer')
+            AnalysisSerializer = _serializer_module.AnalysisSerializer
 
             serializer = AnalysisSerializer()
             path = serializer.save(analysis, filename="template-create-analysis.json")
@@ -1023,6 +1138,196 @@ class TemplateCreateOrchestrator:
             if len(report.recommendations) > 3:
                 print(f"    ... and {len(report.recommendations) - 3} more")
 
+    # ========== TASK-BRIDGE-002: Checkpoint-Resume Methods ==========
+
+    def _resume_from_checkpoint(self) -> None:
+        """
+        Restore state from checkpoint (TASK-BRIDGE-002).
+
+        Loads saved orchestrator state and agent response (if available).
+        Called during __init__ when config.resume is True.
+        """
+        print("\n🔄 Resuming from checkpoint...")
+
+        # Load state
+        state = self.state_manager.load_state()
+        print(f"  Checkpoint: {state.checkpoint}")
+        print(f"  Phase: {state.phase}")
+
+        # Restore configuration
+        for key, value in state.config.items():
+            if hasattr(self.config, key):
+                # Convert Path strings back to Path objects
+                if key in ('codebase_path', 'output_path') and value is not None:
+                    value = Path(value)
+                setattr(self.config, key, value)
+
+        # Restore phase data
+        phase_data = state.phase_data
+
+        self.qa_answers = phase_data.get("qa_answers")
+
+        # Deserialize analysis (Pydantic model)
+        if "analysis" in phase_data and phase_data["analysis"] is not None:
+            self.analysis = self._deserialize_analysis(phase_data["analysis"])
+
+        # Restore other phase results
+        self.manifest = self._deserialize_manifest(phase_data.get("manifest"))
+        self.settings = self._deserialize_settings(phase_data.get("settings"))
+
+        if "templates" in phase_data and phase_data["templates"]:
+            self.templates = self._deserialize_templates(phase_data["templates"])
+
+        self.agent_inventory = phase_data.get("agent_inventory")
+
+        # Load agent response if available
+        try:
+            response = self.agent_invoker.load_response()
+            print(f"  ✓ Agent response loaded successfully")
+        except FileNotFoundError:
+            print(f"  ⚠️  No agent response found")
+            print(f"  → Will fall back to hard-coded detection")
+        except Exception as e:
+            print(f"  ⚠️  Failed to load agent response: {e}")
+            print(f"  → Will fall back to hard-coded detection")
+
+    def _save_checkpoint(self, checkpoint: str, phase: int) -> None:
+        """
+        Save current state to checkpoint (TASK-BRIDGE-002).
+
+        Called before Phase 6 to enable resume after agent invocation.
+
+        Args:
+            checkpoint: Checkpoint name (e.g., "templates_generated")
+            phase: Current phase number
+        """
+        # Serialize phase data
+        phase_data = {
+            "qa_answers": self.qa_answers,
+            "analysis": self._serialize_analysis(self.analysis),
+            "manifest": self._serialize_manifest(self.manifest),
+            "settings": self._serialize_settings(self.settings),
+            "templates": self._serialize_templates(self.templates),
+            "agent_inventory": self.agent_inventory
+        }
+
+        # Serialize config
+        config_dict = {}
+        for key, value in self.config.__dict__.items():
+            # Convert Path objects to strings for JSON serialization
+            if isinstance(value, Path):
+                config_dict[key] = str(value)
+            else:
+                config_dict[key] = value
+
+        # Save state
+        self.state_manager.save_state(
+            checkpoint=checkpoint,
+            phase=phase,
+            config=config_dict,
+            phase_data=phase_data
+        )
+
+        print(f"  💾 State saved (checkpoint: {checkpoint})")
+
+    def _serialize_analysis(self, analysis: Any) -> Optional[dict]:
+        """Serialize CodebaseAnalysis to dict."""
+        if analysis is None:
+            return None
+        # Use Pydantic's model_dump for serialization
+        if hasattr(analysis, 'model_dump'):
+            return analysis.model_dump(mode='json')
+        elif hasattr(analysis, '__dict__'):
+            return analysis.__dict__
+        return None
+
+    def _deserialize_analysis(self, data: dict) -> Any:
+        """Deserialize dict back to CodebaseAnalysis."""
+        if data is None:
+            return None
+        # Use Pydantic's model_validate for deserialization
+        _models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+        CodebaseAnalysis = _models_module.CodebaseAnalysis
+        try:
+            return CodebaseAnalysis.model_validate(data)
+        except Exception as e:
+            self._print_warning(f"Failed to deserialize analysis: {e}")
+            return None
+
+    def _serialize_manifest(self, manifest: Any) -> Optional[dict]:
+        """Serialize manifest to dict."""
+        if manifest is None:
+            return None
+        if hasattr(manifest, 'to_dict'):
+            return manifest.to_dict()
+        elif hasattr(manifest, '__dict__'):
+            return manifest.__dict__
+        return None
+
+    def _deserialize_manifest(self, data: Optional[dict]) -> Any:
+        """Deserialize dict back to manifest."""
+        if data is None:
+            return None
+        # Return as dict for now, actual class reconstruction happens in phases
+        return type('Manifest', (), data)()
+
+    def _serialize_settings(self, settings: Any) -> Optional[dict]:
+        """Serialize settings to dict."""
+        if settings is None:
+            return None
+        if hasattr(settings, 'to_dict'):
+            return settings.to_dict()
+        elif hasattr(settings, '__dict__'):
+            return settings.__dict__
+        return None
+
+    def _deserialize_settings(self, data: Optional[dict]) -> Any:
+        """Deserialize dict back to settings."""
+        if data is None:
+            return None
+        # Return as dict for now, actual class reconstruction happens in phases
+        return type('Settings', (), data)()
+
+    def _serialize_templates(self, templates: Any) -> Optional[dict]:
+        """Serialize TemplateCollection to dict."""
+        if templates is None:
+            return None
+        if hasattr(templates, '__dict__'):
+            # Serialize TemplateCollection
+            result = {
+                'total_count': getattr(templates, 'total_count', 0),
+                'templates': []
+            }
+            # Serialize individual templates
+            for tmpl in getattr(templates, 'templates', []):
+                tmpl_dict = {}
+                if hasattr(tmpl, '__dict__'):
+                    tmpl_dict = tmpl.__dict__.copy()
+                    # Convert Path objects to strings
+                    for key, value in tmpl_dict.items():
+                        if isinstance(value, Path):
+                            tmpl_dict[key] = str(value)
+                result['templates'].append(tmpl_dict)
+            return result
+        return None
+
+    def _deserialize_templates(self, data: Optional[dict]) -> Any:
+        """Deserialize dict back to TemplateCollection."""
+        if data is None:
+            return None
+        # Return as object with attributes
+        templates_obj = type('TemplateCollection', (), {
+            'total_count': data.get('total_count', 0),
+            'templates': []
+        })()
+
+        # Reconstruct template objects
+        for tmpl_dict in data.get('templates', []):
+            tmpl_obj = type('Template', (), tmpl_dict)()
+            templates_obj.templates.append(tmpl_obj)
+
+        return templates_obj
+
 
 # Convenience function for command usage
 def run_template_create(
@@ -1035,6 +1340,7 @@ def run_template_create(
     save_analysis: bool = False,
     no_agents: bool = False,
     validate: bool = False,
+    resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     verbose: bool = False
 ) -> OrchestrationResult:
     """
@@ -1083,6 +1389,7 @@ def run_template_create(
         save_analysis=save_analysis,
         no_agents=no_agents,
         validate=validate,
+        resume=resume,  # TASK-BRIDGE-002
         verbose=verbose
     )
 
