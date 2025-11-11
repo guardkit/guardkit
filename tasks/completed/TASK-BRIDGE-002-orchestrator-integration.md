@@ -1,8 +1,10 @@
 # TASK-BRIDGE-002: Integrate Bridge with Template Create Orchestrator
 
-**Status**: backlog
+**Status**: completed
 **Priority**: high
 **Estimated Duration**: 2-3 hours
+**Actual Duration**: ~2 hours
+**Completed**: 2025-11-11
 **Tags**: #bridge #ai-integration #orchestrator #python
 
 ---
@@ -26,14 +28,14 @@ The orchestrator currently instantiates `AIAgentGenerator` without an `ai_invoke
 
 ## Acceptance Criteria
 
-- [ ] `template_create_orchestrator.py` modified to support `--resume` flag
-- [ ] Orchestrator creates `AgentBridgeInvoker` instance
-- [ ] Orchestrator passes bridge invoker to `AIAgentGenerator`
-- [ ] State checkpoint saved before Phase 6 (agent generation)
-- [ ] Resume logic implemented to load state and continue from Phase 6
-- [ ] State cleanup on successful completion
-- [ ] All existing tests still pass
-- [ ] New integration tests added and passing
+- [x] `template_create_orchestrator.py` modified to support `--resume` flag
+- [x] Orchestrator creates `AgentBridgeInvoker` instance
+- [x] Orchestrator passes bridge invoker to `AIAgentGenerator`
+- [x] State checkpoint saved before Phase 6 (agent generation)
+- [x] Resume logic implemented to load state and continue from Phase 6
+- [x] State cleanup on successful completion
+- [x] All existing tests still pass
+- [x] New integration tests added and passing (8 tests)
 
 ---
 
