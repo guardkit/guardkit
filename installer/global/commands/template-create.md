@@ -895,3 +895,441 @@ Planned for future iterations:
 - [TASK-010: /template-create Command Orchestrator](../../tasks/backlog/TASK-010-template-create-command.md)
 - [Template Creation Workflow](../../docs/workflows/template-creation-workflow.md)
 - [Architecture Decision: Orchestrator Pattern](../../docs/decisions/orchestrator-pattern.md)
+
+---
+
+## Execution
+
+When user invokes `/template-create [args]`, execute this checkpoint-resume workflow:
+
+### Step 1: Parse Arguments
+
+Extract arguments from user command:
+- `--path PATH`: Codebase path (default: current directory)
+- `--output-location global|repo`: Where to save template (default: global)
+- `--skip-qa`: Skip Q&A session
+- `--dry-run`: Analysis only, don't save
+- `--validate`: Run extended validation
+- `--max-templates N`: Limit template file count
+- `--no-agents`: Skip agent generation
+- `--max-iterations N`: Maximum checkpoint-resume iterations (default: 5)
+
+Build Python command:
+```bash
+python3 -m installer.global.commands.lib.template_create_orchestrator \
+  [--path PATH] \
+  [--output-location LOCATION] \
+  [--skip-qa] \
+  [--dry-run] \
+  [--validate] \
+  [--max-templates N] \
+  [--no-agents]
+```
+
+### Step 2: Checkpoint-Resume Loop
+
+Execute orchestrator in a loop to handle agent invocations:
+
+```python
+import json
+from pathlib import Path
+import time
+from datetime import datetime
+
+# Configuration
+DEFAULT_MAX_ITERATIONS = 5
+ORCHESTRATOR_TIMEOUT_MS = 600000  # 10 minutes
+STALE_FILE_THRESHOLD_SECONDS = 600  # 10 minutes
+DEFAULT_AGENT_TIMEOUT_SECONDS = 120  # 2 minutes
+MAX_REQUEST_SIZE_BYTES = 1024 * 1024  # 1 MB
+MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+max_iterations = DEFAULT_MAX_ITERATIONS  # Configurable via --max-iterations
+iteration = 0
+resume_flag = False
+
+# Exit code messages: (message, should_cleanup, should_break)
+# - message: User-facing message to display
+# - should_cleanup: Whether to remove temporary files
+# - should_break: Whether to exit the loop
+EXIT_MESSAGES = {
+    0: ("✅ Template created successfully!", True, True),
+    1: ("⚠️  Template creation cancelled by user", True, True),
+    2: ("❌ ERROR: Codebase not found or inaccessible", True, True),
+    3: ("❌ ERROR: AI analysis failed", True, True),
+    4: ("❌ ERROR: Component generation failed", True, True),
+    5: ("❌ ERROR: Validation failed", True, True),
+    6: ("❌ ERROR: Save failed (check permissions and disk space)", True, True),
+    130: ("⚠️  Template creation interrupted (Ctrl+C)\n   Session state saved - you can resume later", False, True),
+}
+
+# Build initial command
+cmd_parts = [
+    "python3", "-m",
+    "installer.global.commands.lib.template_create_orchestrator"
+]
+
+# Add user arguments
+if path:
+    cmd_parts.extend(["--path", path])
+if output_location:
+    cmd_parts.extend(["--output-location", output_location])
+if skip_qa:
+    cmd_parts.append("--skip-qa")
+if dry_run:
+    cmd_parts.append("--dry-run")
+if validate:
+    cmd_parts.append("--validate")
+if max_templates:
+    cmd_parts.extend(["--max-templates", str(max_templates)])
+if no_agents:
+    cmd_parts.append("--no-agents")
+
+print("🚀 Starting template creation...\n")
+
+# Execution loop
+while iteration < max_iterations:
+    iteration += 1
+
+    # Add --resume flag if this is a resume run
+    if resume_flag and "--resume" not in cmd_parts:
+        cmd_parts.append("--resume")
+
+    # Run orchestrator
+    cmd = " ".join(cmd_parts)
+    print(f"📍 Iteration {iteration}: Running orchestrator...")
+
+    result = await bash(cmd, timeout=ORCHESTRATOR_TIMEOUT_MS)
+    exit_code = result.exit_code
+
+    # Handle exit code using dispatch pattern
+    if exit_code in EXIT_MESSAGES:
+        message, should_cleanup, should_break = EXIT_MESSAGES[exit_code]
+        print(f"\n{message}")
+        if should_cleanup:
+            cleanup_all_temp_files()
+        if should_break:
+            break
+
+    elif exit_code == 42:
+        # NEED_AGENT - Handle agent invocation
+        print(f"\n🔄 Agent invocation required...\n")
+
+        # Read agent request
+        request_file = Path(".agent-request.json")
+        if not request_file.exists():
+            print("❌ ERROR: Agent request file not found")
+            print("   This is a bug in the orchestrator - please report it.")
+            cleanup_all_temp_files()
+            break
+
+        # Check for stale files
+        try:
+            age_seconds = time.time() - request_file.stat().st_mtime
+            if age_seconds > STALE_FILE_THRESHOLD_SECONDS:
+                print(f"⚠️  Warning: Request file is {age_seconds:.0f}s old (may be stale)")
+        except Exception:
+            pass  # Ignore stat errors
+
+        # Check file size
+        try:
+            request_size = request_file.stat().st_size
+            if request_size > MAX_REQUEST_SIZE_BYTES:
+                print(f"❌ ERROR: Agent request file too large ({request_size} bytes)")
+                print(f"   Maximum allowed: {MAX_REQUEST_SIZE_BYTES} bytes")
+                cleanup_request_file()
+                break
+        except Exception as e:
+            print(f"⚠️  Warning: Could not check request file size: {e}")
+
+        # Parse agent request
+        try:
+            request_data = json.loads(request_file.read_text())
+        except json.JSONDecodeError as e:
+            print(f"❌ ERROR: Malformed agent request file: {e}")
+            cleanup_request_file()
+            break
+        except Exception as e:
+            print(f"❌ ERROR: Failed to read agent request: {e}")
+            cleanup_request_file()
+            break
+
+        # Validate required fields with types
+        required_fields = {
+            "agent_name": str,
+            "prompt": str,
+            "request_id": str,
+            "version": str
+        }
+
+        validation_failed = False
+        for field, expected_type in required_fields.items():
+            if field not in request_data:
+                print(f"❌ ERROR: Missing required field '{field}' in agent request")
+                cleanup_request_file()
+                validation_failed = True
+                break
+            if not isinstance(request_data[field], expected_type):
+                print(f"❌ ERROR: Field '{field}' has wrong type (expected {expected_type.__name__})")
+                cleanup_request_file()
+                validation_failed = True
+                break
+
+        if validation_failed:
+            break
+
+        agent_name = request_data["agent_name"]
+        prompt = request_data["prompt"]
+        request_id = request_data["request_id"]
+
+        # Validate timeout with type checking
+        timeout_seconds = request_data.get("timeout_seconds", DEFAULT_AGENT_TIMEOUT_SECONDS)
+        if not isinstance(timeout_seconds, (int, float)) or timeout_seconds <= 0:
+            print(f"⚠️  Warning: Invalid timeout_seconds, using default ({DEFAULT_AGENT_TIMEOUT_SECONDS}s)")
+            timeout_seconds = DEFAULT_AGENT_TIMEOUT_SECONDS
+
+        print(f"  Agent: {agent_name}")
+        print(f"  Timeout: {timeout_seconds}s")
+        print(f"  Invoking agent...\n")
+
+        # Invoke agent via Task tool
+        start_time = time.time()
+
+        try:
+            agent_response = await invoke_agent_subagent(
+                agent_name=agent_name,
+                prompt=prompt,
+                timeout_seconds=timeout_seconds
+            )
+            status = "success"
+            error_message = None
+            error_type = None
+        except NameError as e:
+            print(f"  ❌ Task tool not available in this environment")
+            agent_response = None
+            status = "error"
+            error_message = "Task tool is not available"
+            error_type = "TaskToolUnavailable"
+        except TimeoutError as e:
+            print(f"  ⚠️  Agent invocation timed out")
+            agent_response = None
+            status = "timeout"
+            error_message = str(e)
+            error_type = "TimeoutError"
+        except Exception as e:
+            print(f"  ⚠️  Agent invocation failed: {e}")
+            agent_response = None
+            status = "error"
+            error_message = str(e)
+            error_type = type(e).__name__
+
+        duration = time.time() - start_time
+
+        # Write response
+        response_data = {
+            "request_id": request_id,
+            "version": "1.0",
+            "status": status,
+            "response": agent_response,
+            "error_message": error_message,
+            "error_type": error_type,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+            "duration_seconds": round(duration, 3),
+            "metadata": {
+                "agent_name": agent_name,
+                "model": "claude-sonnet-4-5"
+            }
+        }
+
+        response_file = Path(".agent-response.json")
+
+        # Check response size before writing
+        response_json = json.dumps(response_data, indent=2)
+        if len(response_json) > MAX_RESPONSE_SIZE_BYTES:
+            print(f"  ❌ ERROR: Agent response too large ({len(response_json)} bytes)")
+            print(f"     Writing minimal error response instead...")
+            # Write minimal error response
+            error_response = {
+                "request_id": request_id,
+                "version": "1.0",
+                "status": "error",
+                "error_type": "ResponseTooLarge",
+                "error_message": f"Agent response exceeded {MAX_RESPONSE_SIZE_BYTES} bytes",
+                "created_at": datetime.utcnow().isoformat() + "Z"
+            }
+            response_json = json.dumps(error_response, indent=2)
+
+        # Write response file
+        try:
+            response_file.write_text(response_json)
+        except Exception as e:
+            print(f"  ❌ Failed to write agent response: {e}")
+            cleanup_all_temp_files()
+            break
+
+        print(f"  ✓ Response written ({duration:.1f}s)")
+
+        # Verify response file exists and is readable
+        if not response_file.exists():
+            print("  ❌ ERROR: Failed to verify response file")
+            cleanup_all_temp_files()
+            break
+
+        try:
+            # Validate we can read it back
+            json.loads(response_file.read_text())
+        except Exception as e:
+            print(f"  ❌ ERROR: Response file corrupted: {e}")
+            cleanup_all_temp_files()
+            break
+
+        # Cleanup request file after successful response write
+        try:
+            request_file.unlink()
+        except Exception as e:
+            print(f"  ⚠️  Warning: Could not delete request file: {e}")
+
+        print(f"  🔄 Resuming orchestrator...\n")
+
+        # Set resume flag for next iteration
+        resume_flag = True
+
+    else:
+        # Unknown exit code
+        print(f"\n❌ ERROR: Unexpected exit code {exit_code}")
+        cleanup_all_temp_files()
+        break
+
+# Check for infinite loop
+if iteration >= max_iterations:
+    print(f"\n❌ ERROR: Maximum iterations ({max_iterations}) reached")
+    print("   This may indicate a bug - please report it")
+    cleanup_all_temp_files()
+
+def cleanup_request_file():
+    """Remove agent request file only"""
+    try:
+        Path(".agent-request.json").unlink(missing_ok=True)
+    except Exception as e:
+        print(f"⚠️  Warning: Could not delete request file: {e}")
+
+def cleanup_response_file():
+    """Remove agent response file only"""
+    try:
+        Path(".agent-response.json").unlink(missing_ok=True)
+    except Exception as e:
+        print(f"⚠️  Warning: Could not delete response file: {e}")
+
+def cleanup_all_temp_files():
+    """Remove all temporary files"""
+    for file in [".agent-request.json", ".agent-response.json", ".template-create-state.json"]:
+        try:
+            Path(file).unlink(missing_ok=True)
+        except Exception as e:
+            print(f"⚠️  Warning: Could not delete {file}: {e}")
+
+async def invoke_agent_subagent(agent_name: str, prompt: str, timeout_seconds: int = 120) -> str:
+    """
+    Invoke agent using Task tool.
+
+    Args:
+        agent_name: Name of agent to invoke
+        prompt: Complete prompt text
+        timeout_seconds: Maximum wait time (currently not enforced by Task tool)
+
+    Returns:
+        Agent response text
+
+    Raises:
+        NameError: If Task tool is not available
+        TimeoutError: If agent exceeds timeout
+        Exception: If agent invocation fails
+    """
+    # Map agent names to subagent types
+    #
+    # To add new agent mappings:
+    # 1. Add entry: "agent-name": "subagent-type"
+    # 2. Ensure subagent type exists in Claude Code agent registry
+    # 3. Test invocation with /template-create
+    #
+    # Common subagent types:
+    # - "software-architect": Architecture and design decisions
+    # - "code-reviewer": Code quality and best practices
+    # - "qa-tester": Testing strategies and coverage
+    # - "general-purpose": General analysis and recommendations
+    agent_mapping = {
+        "architectural-reviewer": "software-architect",
+        "software-architect": "software-architect",
+        "code-reviewer": "code-reviewer",
+        "qa-tester": "qa-tester",
+    }
+
+    # Get mapped subagent type or use direct mapping
+    subagent_type = agent_mapping.get(agent_name)
+    if not subagent_type:
+        print(f"⚠️  Warning: Unknown agent '{agent_name}', using direct mapping")
+        subagent_type = agent_name
+
+    # Invoke via Task tool
+    try:
+        result = await task(
+            subagent_type=subagent_type,
+            description=f"Template analysis: {agent_name}",
+            prompt=prompt
+        )
+        return result
+    except NameError:
+        # Task tool not available
+        raise
+    except Exception as e:
+        # Other errors during invocation
+        raise
+```
+
+### Exit Code Reference
+
+| Code | Meaning | Cleanup | Break |
+|------|---------|---------|-------|
+| 0 | Success | Yes | Yes |
+| 1 | User cancelled | Yes | Yes |
+| 2 | Codebase not found | Yes | Yes |
+| 3 | AI analysis failed | Yes | Yes |
+| 4 | Component generation failed | Yes | Yes |
+| 5 | Validation failed | Yes | Yes |
+| 6 | Save failed | Yes | Yes |
+| 42 | Need agent invocation | No | No (continue loop) |
+| 130 | Interrupted (Ctrl+C) | No | Yes |
+
+### Agent Invocation Flow
+
+```
+1. Orchestrator runs → Exit 42
+2. Command reads .agent-request.json
+3. Command validates request format
+4. Command checks for stale files
+5. Command invokes agent via Task tool
+6. Agent returns response (or times out/errors)
+7. Command writes .agent-response.json
+8. Command deletes .agent-request.json
+9. Command re-runs orchestrator with --resume
+10. Orchestrator reads .agent-response.json
+11. Orchestrator continues or exits with 0/error
+```
+
+### Error Handling Strategy
+
+**File I/O Errors:**
+- Malformed JSON: Print error, cleanup, break
+- Missing files: Print error, cleanup, break
+- Write failures: Print error, cleanup, break
+- Delete failures: Print warning, continue
+
+**Agent Invocation Errors:**
+- Task tool unavailable: Write error response, continue (orchestrator handles)
+- Agent timeout: Write timeout response, continue
+- Agent error: Write error response, continue
+
+**Loop Control:**
+- Maximum iterations: Prevents infinite loops
+- Cleanup on all error exits
+- No cleanup on Ctrl+C (preserves session state)
