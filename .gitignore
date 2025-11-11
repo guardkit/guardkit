@@ -33,6 +33,11 @@ dist/
 downloads/
 eggs/
 .eggs/
+# Test coverage
+.coverage
+coverage.json
+htmlcov/
+.pytest_cache/
 # Virtual environments (exclude entirely)
 venv/
 env/
