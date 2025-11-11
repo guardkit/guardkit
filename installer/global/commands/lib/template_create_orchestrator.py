@@ -1034,6 +1034,7 @@ def run_template_create(
     dry_run: bool = False,
     save_analysis: bool = False,
     no_agents: bool = False,
+    validate: bool = False,
     verbose: bool = False
 ) -> OrchestrationResult:
     """
@@ -1048,6 +1049,7 @@ def run_template_create(
         dry_run: Analyze and show plan without saving
         save_analysis: Save analysis JSON for debugging
         no_agents: Skip agent generation
+        validate: Run extended validation and generate quality report
         verbose: Show detailed progress
 
     Returns:
@@ -1080,6 +1082,7 @@ def run_template_create(
         dry_run=dry_run,
         save_analysis=save_analysis,
         no_agents=no_agents,
+        validate=validate,
         verbose=verbose
     )
 
