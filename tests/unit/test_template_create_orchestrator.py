@@ -982,5 +982,153 @@ def test_keyboard_interrupt_handling(monkeypatch):
     assert "User interrupted" in result.errors
 
 
+# ========== TESTS FOR TASK-FDB2: --name FLAG ==========
+
+def test_validate_template_name_valid():
+    """Test validation of valid template names"""
+    config = OrchestrationConfig()
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Valid names
+    valid_names = [
+        "my-template",
+        "api-123",
+        "react-admin",
+        "dotnet-api-template",
+        "a-b-c"
+    ]
+
+    for name in valid_names:
+        is_valid, error_msg = orchestrator._validate_template_name(name)
+        assert is_valid is True, f"Expected {name} to be valid"
+        assert error_msg == ""
+
+
+def test_validate_template_name_invalid_pattern():
+    """Test validation of invalid template name patterns"""
+    config = OrchestrationConfig()
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Invalid patterns
+    invalid_names = [
+        ("MyTemplate", "Template name must contain only lowercase letters, numbers, and hyphens"),
+        ("my_template", "Template name must contain only lowercase letters, numbers, and hyphens"),
+        ("my template", "Template name must contain only lowercase letters, numbers, and hyphens"),
+        ("my.template", "Template name must contain only lowercase letters, numbers, and hyphens"),
+        ("my@template", "Template name must contain only lowercase letters, numbers, and hyphens"),
+    ]
+
+    for name, expected_error in invalid_names:
+        is_valid, error_msg = orchestrator._validate_template_name(name)
+        assert is_valid is False, f"Expected {name} to be invalid"
+        assert error_msg == expected_error
+
+
+def test_validate_template_name_invalid_length():
+    """Test validation of invalid template name lengths"""
+    config = OrchestrationConfig()
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Too short
+    is_valid, error_msg = orchestrator._validate_template_name("ab")
+    assert is_valid is False
+    assert error_msg == "Template name must be 3-50 characters"
+
+    # Too long
+    is_valid, error_msg = orchestrator._validate_template_name("a" * 51)
+    assert is_valid is False
+    assert error_msg == "Template name must be 3-50 characters"
+
+
+def test_validate_template_name_empty():
+    """Test validation accepts empty name (uses AI generation)"""
+    config = OrchestrationConfig()
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    is_valid, error_msg = orchestrator._validate_template_name("")
+    assert is_valid is True
+    assert error_msg == ""
+
+
+def test_custom_name_override(mock_analysis, monkeypatch):
+    """Test custom template name overrides AI-generated name"""
+    # Setup manifest generator mock
+    mock_manifest = Mock()
+    mock_manifest.name = "ai-generated-name"
+    mock_manifest.language = "Python"
+    mock_manifest.language_version = "3.9"
+    mock_manifest.architecture = "Clean"
+    mock_manifest.complexity = 5
+
+    mock_generator_instance = Mock()
+    mock_generator_instance.generate.return_value = mock_manifest
+    mock_generator_class = Mock(return_value=mock_generator_instance)
+
+    # Patch in orchestrator module
+    patch_orchestrator_class(monkeypatch, 'ManifestGenerator', mock_generator_class)
+
+    config = OrchestrationConfig(custom_name="my-custom-name")
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Execute
+    result = orchestrator._phase2_manifest_generation(mock_analysis)
+
+    # Assert - manifest name should be overridden
+    assert result is not None
+    assert result.name == "my-custom-name"
+
+
+def test_custom_name_override_invalid_name(mock_analysis, monkeypatch):
+    """Test custom template name validation failure"""
+    # Setup manifest generator mock
+    mock_manifest = Mock()
+    mock_manifest.name = "ai-generated-name"
+
+    mock_generator_instance = Mock()
+    mock_generator_instance.generate.return_value = mock_manifest
+    mock_generator_class = Mock(return_value=mock_generator_instance)
+
+    # Patch in orchestrator module
+    patch_orchestrator_class(monkeypatch, 'ManifestGenerator', mock_generator_class)
+
+    # Test with invalid name (uppercase)
+    config = OrchestrationConfig(custom_name="MyInvalidName")
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Execute
+    result = orchestrator._phase2_manifest_generation(mock_analysis)
+
+    # Assert - should return None due to validation failure
+    assert result is None
+
+
+def test_no_custom_name_uses_ai_generated(mock_analysis, monkeypatch):
+    """Test that without custom_name, AI-generated name is used"""
+    # Setup manifest generator mock
+    mock_manifest = Mock()
+    mock_manifest.name = "ai-generated-name"
+    mock_manifest.language = "Python"
+    mock_manifest.language_version = "3.9"
+    mock_manifest.architecture = "Clean"
+    mock_manifest.complexity = 5
+
+    mock_generator_instance = Mock()
+    mock_generator_instance.generate.return_value = mock_manifest
+    mock_generator_class = Mock(return_value=mock_generator_instance)
+
+    # Patch in orchestrator module
+    patch_orchestrator_class(monkeypatch, 'ManifestGenerator', mock_generator_class)
+
+    config = OrchestrationConfig()  # No custom_name
+    orchestrator = TemplateCreateOrchestrator(config)
+
+    # Execute
+    result = orchestrator._phase2_manifest_generation(mock_analysis)
+
+    # Assert - AI-generated name should be preserved
+    assert result is not None
+    assert result.name == "ai-generated-name"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

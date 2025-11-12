@@ -74,6 +74,7 @@ class OrchestrationConfig:
     interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
+    custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
 
 
 @dataclass
@@ -391,9 +392,37 @@ class TemplateCreateOrchestrator:
             logger.exception("Analysis error")
             return None
 
+    def _validate_template_name(self, name: str) -> Tuple[bool, str]:
+        """
+        Validate custom template name (TASK-FDB2).
+
+        Pattern: lowercase letters, numbers, and hyphens only
+        Length: 3-50 characters
+
+        Args:
+            name: Template name to validate
+
+        Returns:
+            (is_valid, error_message) tuple
+        """
+        import re
+
+        if not name:
+            return True, ""  # Empty is valid (use AI generation)
+
+        if len(name) < 3 or len(name) > 50:
+            return False, "Template name must be 3-50 characters"
+
+        if not re.match(r'^[a-z0-9-]+$', name):
+            return False, "Template name must contain only lowercase letters, numbers, and hyphens"
+
+        return True, ""
+
     def _phase2_manifest_generation(self, analysis: Any) -> Optional[Any]:
         """
         Phase 2: Generate manifest.json.
+
+        TASK-FDB2: Supports custom template name override via --name flag.
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -406,6 +435,19 @@ class TemplateCreateOrchestrator:
         try:
             generator = ManifestGenerator(analysis)
             manifest = generator.generate()
+
+            # TASK-FDB2: Override AI-generated name if custom name provided
+            if self.config.custom_name:
+                is_valid, error_msg = self._validate_template_name(self.config.custom_name)
+                if not is_valid:
+                    self._print_error(f"Invalid template name: {error_msg}")
+                    self._print_info(f"  Example valid names: my-api-template, react-admin, dotnet-api")
+                    return None
+
+                manifest.name = self.config.custom_name
+                self._print_info(f"  Using custom template name: {self.config.custom_name}")
+            else:
+                self._print_info(f"  Using AI-generated name: {manifest.name}")
 
             self._print_success_line(f"Template: {manifest.name}")
             self._print_info(f"  Language: {manifest.language} ({manifest.language_version or 'any version'})")
@@ -1379,6 +1421,7 @@ def run_template_create(
     no_agents: bool = False,
     validate: bool = False,
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
+    custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     verbose: bool = False
 ) -> OrchestrationResult:
     """
@@ -1395,6 +1438,7 @@ def run_template_create(
         save_analysis: Save analysis JSON for debugging
         no_agents: Skip agent generation
         validate: Run extended validation and generate quality report
+        custom_name: Custom template name (overrides AI-generated name)
         verbose: Show detailed progress
 
     Returns:
@@ -1439,6 +1483,7 @@ def run_template_create(
         no_agents=no_agents,
         validate=validate,
         resume=resume,  # TASK-BRIDGE-002
+        custom_name=custom_name,  # TASK-FDB2
         verbose=verbose
     )
 
@@ -1451,6 +1496,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Template creation orchestrator")
     parser.add_argument("--path", type=str, help="Codebase path")
+    parser.add_argument("--name", type=str,
+                        help="Custom template name (overrides AI-generated name)")
     parser.add_argument("--output-location", choices=['global', 'repo'], default='global',
                         help="Output location: 'global' (~/.agentecflow/templates/) or 'repo' (installer/global/templates/)")
     parser.add_argument("--skip-qa", action="store_true",
@@ -1482,6 +1529,7 @@ if __name__ == "__main__":
         max_templates=args.max_templates,
         no_agents=args.no_agents,
         resume=args.resume,
+        custom_name=args.name,  # TASK-FDB2
         verbose=args.verbose
     )
 
