@@ -9,6 +9,7 @@ TASK-010: /template-create Command Orchestrator
 
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import json
@@ -1272,7 +1273,14 @@ class TemplateCreateOrchestrator:
         if hasattr(manifest, 'to_dict'):
             return manifest.to_dict()
         elif hasattr(manifest, '__dict__'):
-            return manifest.__dict__
+            manifest_dict = manifest.__dict__.copy()
+            # Convert Path and datetime objects to strings for JSON serialization
+            for key, value in manifest_dict.items():
+                if isinstance(value, Path):
+                    manifest_dict[key] = str(value)
+                elif isinstance(value, datetime):
+                    manifest_dict[key] = value.isoformat()
+            return manifest_dict
         return None
 
     def _deserialize_manifest(self, data: Optional[dict]) -> Any:
@@ -1289,7 +1297,14 @@ class TemplateCreateOrchestrator:
         if hasattr(settings, 'to_dict'):
             return settings.to_dict()
         elif hasattr(settings, '__dict__'):
-            return settings.__dict__
+            settings_dict = settings.__dict__.copy()
+            # Convert Path and datetime objects to strings for JSON serialization
+            for key, value in settings_dict.items():
+                if isinstance(value, Path):
+                    settings_dict[key] = str(value)
+                elif isinstance(value, datetime):
+                    settings_dict[key] = value.isoformat()
+            return settings_dict
         return None
 
     def _deserialize_settings(self, data: Optional[dict]) -> Any:
@@ -1309,15 +1324,26 @@ class TemplateCreateOrchestrator:
                 'total_count': getattr(templates, 'total_count', 0),
                 'templates': []
             }
+
+            # Handle generated_at datetime field if present
+            if hasattr(templates, 'generated_at'):
+                generated_at = getattr(templates, 'generated_at')
+                if isinstance(generated_at, datetime):
+                    result['generated_at'] = generated_at.isoformat()
+                else:
+                    result['generated_at'] = generated_at
+
             # Serialize individual templates
             for tmpl in getattr(templates, 'templates', []):
                 tmpl_dict = {}
                 if hasattr(tmpl, '__dict__'):
                     tmpl_dict = tmpl.__dict__.copy()
-                    # Convert Path objects to strings
+                    # Convert Path and datetime objects to strings for JSON serialization
                     for key, value in tmpl_dict.items():
                         if isinstance(value, Path):
                             tmpl_dict[key] = str(value)
+                        elif isinstance(value, datetime):
+                            tmpl_dict[key] = value.isoformat()
                 result['templates'].append(tmpl_dict)
             return result
         return None

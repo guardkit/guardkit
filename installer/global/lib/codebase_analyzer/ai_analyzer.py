@@ -187,14 +187,25 @@ class CodebaseAnalyzer:
                     template_context=template_context
                 )
 
-                logger.info("Agent analysis completed successfully")
+                # TASK-0CE5: Verify example_files were returned
+                logger.info(f"Agent analysis completed - received {len(analysis.example_files)} example files")
+
+                # Log each example file for debugging
+                for i, example_file in enumerate(analysis.example_files, 1):
+                    logger.debug(f"  Example {i}: {example_file.path} ({example_file.layer}) - {example_file.purpose}")
 
             except AgentInvocationError as e:
                 logger.warning(f"Agent invocation failed: {e}. Falling back to heuristics.")
                 analysis = None  # Will trigger fallback
             except ParseError as e:
-                logger.warning(f"Failed to parse agent response: {e}. Falling back to heuristics.")
-                analysis = None  # Will trigger fallback
+                # TASK-0CE5: If parse error is due to empty example_files, try fallback with file_samples
+                if "empty example_files" in str(e).lower():
+                    logger.error(f"AI did not return example_files: {e}")
+                    logger.info("Attempting fallback: Using file_samples as example_files source")
+                    analysis = None  # Will trigger fallback with file_samples
+                else:
+                    logger.warning(f"Failed to parse agent response: {e}. Falling back to heuristics.")
+                    analysis = None  # Will trigger fallback
         else:
             if not self.use_agent:
                 logger.info("Agent invocation disabled - using heuristics")

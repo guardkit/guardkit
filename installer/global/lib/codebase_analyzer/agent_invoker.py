@@ -474,6 +474,7 @@ class HeuristicAnalyzer:
         Get example files from file_samples if available, otherwise find them.
 
         TASK-769D: Converts file_samples to example_files format if provided.
+        TASK-0CE5: Enhanced to provide richer example file metadata.
 
         Args:
             language: Primary programming language
@@ -481,38 +482,149 @@ class HeuristicAnalyzer:
         Returns:
             List of example file dicts with path, purpose, layer, patterns, concepts
         """
-        # TASK-769D: If file_samples provided, convert to example_files format
+        # TASK-769D & TASK-0CE5: If file_samples provided, convert to example_files format
         if self.file_samples is not None and len(self.file_samples) > 0:
+            logger.info(f"Converting {len(self.file_samples)} file_samples to example_files format (fallback mode)")
             examples = []
-            for sample in self.file_samples[:10]:  # Limit to 10 examples
+            for sample in self.file_samples[:15]:  # Limit to 15 examples (increased from 10)
+                # TASK-0CE5: Infer layer from path
+                path = sample.get("path", sample.get("relative_path", ""))
+                layer = self._infer_layer_from_path(path)
+
+                # TASK-0CE5: Better purpose from category
+                category = sample.get("category", "Source file")
+                purpose = self._infer_purpose_from_category(category, path)
+
                 # Convert from file_sample format to example_file format
                 examples.append({
-                    "path": sample.get("relative_path", ""),
-                    "purpose": sample.get("category", "Source file"),  # Use category as purpose
-                    "layer": None,  # Could be inferred from path
-                    "patterns_used": [],
-                    "key_concepts": []
+                    "path": path,
+                    "purpose": purpose,
+                    "layer": layer,
+                    "patterns_used": [],  # Could be inferred from content
+                    "key_concepts": []     # Could be inferred from content
                 })
+
+            logger.info(f"Converted {len(examples)} example files for template generation")
             return examples
 
         # Fallback: Use original _find_example_files logic
+        logger.warning("No file_samples available - using basic file discovery")
         return self._find_example_files(language)
+
+    def _infer_layer_from_path(self, path: str) -> Optional[str]:
+        """
+        Infer architectural layer from file path.
+
+        TASK-0CE5: Helper for fallback mode to provide better metadata.
+
+        Args:
+            path: File path
+
+        Returns:
+            Layer name or None
+        """
+        path_lower = path.lower()
+
+        # Common layer patterns
+        if any(layer in path_lower for layer in ["domain", "entities", "models"]):
+            return "Domain"
+        elif any(layer in path_lower for layer in ["application", "usecases", "services"]):
+            return "Application"
+        elif any(layer in path_lower for layer in ["infrastructure", "data", "repository", "repositories"]):
+            return "Infrastructure"
+        elif any(layer in path_lower for layer in ["web", "api", "controllers", "routes", "endpoints"]):
+            return "Presentation"
+        elif any(layer in path_lower for layer in ["test", "tests", "spec", "specs"]):
+            return "Testing"
+        elif any(layer in path_lower for layer in ["shared", "common", "core"]):
+            return "Shared"
+
+        return None
+
+    def _infer_purpose_from_category(self, category: str, path: str) -> str:
+        """
+        Infer file purpose from category and path.
+
+        TASK-0CE5: Helper for fallback mode to provide better metadata.
+
+        Args:
+            category: File category from stratified sampling
+            path: File path
+
+        Returns:
+            Human-readable purpose string
+        """
+        # Map categories to purposes
+        category_purposes = {
+            "crud_create": "Create operation for entity",
+            "crud_read": "Read operation for entity",
+            "crud_update": "Update operation for entity",
+            "crud_delete": "Delete operation for entity",
+            "crud_list": "List operation for entity",
+            "validators": "Validation logic",
+            "repositories": "Data access repository",
+            "services": "Business logic service",
+            "controllers": "API controller",
+            "models": "Domain model or entity",
+            "tests": "Test suite",
+            "middleware": "Middleware component",
+            "configuration": "Configuration settings"
+        }
+
+        # Get purpose from category
+        purpose = category_purposes.get(category, "Source file")
+
+        # Enhance with filename if available
+        if path:
+            filename = Path(path).stem
+            purpose = f"{purpose} ({filename})"
+
+        return purpose
 
     def _find_example_files(self, language: str) -> list:
         """Find example files from the codebase."""
         examples = []
 
-        # Find a few representative files
-        if language == "Python":
-            py_files = list(self.codebase_path.rglob("*.py"))[:5]
-            for f in py_files:
-                if "test" not in str(f):
+        # TASK-0CE5: Enhanced to find more diverse examples
+        logger.info(f"Discovering example files for {language} codebase")
+
+        # Find representative files by extension
+        extensions_map = {
+            "Python": [".py"],
+            "TypeScript": [".ts", ".tsx"],
+            "JavaScript": [".js", ".jsx"],
+            "C#": [".cs"],
+            "Java": [".java"],
+            "Go": [".go"],
+            "Rust": [".rs"],
+            "Ruby": [".rb"],
+            "PHP": [".php"]
+        }
+
+        extensions = extensions_map.get(language, [])
+
+        for ext in extensions:
+            # Use get_source_files to exclude build artifacts
+            source_files = get_source_files(self.codebase_path, extensions=[ext])
+
+            # Limit to 15 files
+            for f in source_files[:15]:
+                if "test" not in str(f).lower():
+                    path_str = str(f.relative_to(self.codebase_path))
                     examples.append({
-                        "path": str(f.relative_to(self.codebase_path)),
-                        "purpose": "Python module",
-                        "layer": None,
+                        "path": path_str,
+                        "purpose": f"{language} source file",
+                        "layer": self._infer_layer_from_path(path_str),
                         "patterns_used": [],
                         "key_concepts": []
                     })
 
+                # Stop if we have enough examples
+                if len(examples) >= 15:
+                    break
+
+            if len(examples) >= 15:
+                break
+
+        logger.info(f"Found {len(examples)} example files")
         return examples

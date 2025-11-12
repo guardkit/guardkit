@@ -347,11 +347,20 @@ Please analyze this codebase and provide a comprehensive architectural assessmen
 
 ## Template File Selection Guidelines
 
-**CRITICAL**: The `example_files` section above is for **TEMPLATE GENERATION**.
+**🚨 CRITICAL REQUIREMENT: example_files is MANDATORY 🚨**
+
+The `example_files` section in your JSON response is **NON-NEGOTIABLE**. Without it:
+- Template creation will FAIL completely
+- Users will receive 0 scaffold files
+- The entire analysis becomes useless
+
+**YOU MUST RETURN 10-20 example_files IN YOUR JSON RESPONSE.**
+
 These files will become `.template` files with placeholders like `{{{{ProjectName}}}}`, `{{{{Namespace}}}}`, etc.
 
 **Your Task**: Return 10-20 diverse example files that should become templates.
 - **DO NOT** just return 1 example file - provide 10-20 files covering all layers
+- **DO NOT** omit example_files - it is REQUIRED, not optional
 - **DIVERSITY IS CRITICAL** - Include files from domain, data, service, presentation, testing layers
 - **TEMPLATE-WORTHY FILES** - Focus on files that developers would want as scaffolding:
   * Entities/Models (User, Order, Product)
@@ -398,6 +407,14 @@ For a React project, return example_files like:
 
 **Remember**: These become `.template` files that developers scaffold with `taskwright init`.
 Provide 10-20 diverse, template-worthy files covering all architectural layers.
+
+**VERIFICATION CHECKLIST** before submitting your response:
+- [ ] Did I include the "example_files" array in my JSON response?
+- [ ] Did I include AT LEAST 10 example files (10-20 range)?
+- [ ] Do my example files span multiple layers (Domain, API, Tests, etc.)?
+- [ ] Are my example files from the actual codebase (not made up paths)?
+
+**If you answer NO to any of these, FIX IT before responding.**
 
 Focus on:
 1. **Technology Stack**: Accurate identification of languages, frameworks, and tools
