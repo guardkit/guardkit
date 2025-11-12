@@ -934,6 +934,7 @@ Execute orchestrator in a loop to handle agent invocations:
 import json
 from pathlib import Path
 import time
+import sys
 from datetime import datetime
 
 # Configuration
@@ -947,6 +948,88 @@ MAX_RESPONSE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 max_iterations = DEFAULT_MAX_ITERATIONS  # Configurable via --max-iterations
 iteration = 0
 resume_flag = False
+
+# ============================================================================
+# PYTHONPATH Discovery and Setup
+# ============================================================================
+# Fix for TASK-BRIDGE-005: Set PYTHONPATH so Python can find 'installer' module
+# when running from any directory (not just taskwright directory)
+
+def find_taskwright_path():
+    """
+    Find taskwright installation directory.
+
+    Tries multiple strategies in priority order:
+    1. Follow ~/.agentecflow symlink (if exists and points to taskwright)
+    2. Check standard location: ~/Projects/appmilla_github/taskwright
+    3. Check current directory (fallback for development)
+
+    Returns:
+        Path object pointing to taskwright directory, or None if not found
+    """
+    from pathlib import Path
+
+    # Strategy 1: Follow ~/.agentecflow symlink
+    agentecflow = Path.home() / ".agentecflow"
+    if agentecflow.is_symlink():
+        target = agentecflow.resolve()
+        # Symlink points to taskwright/.agentecflow, go up one level
+        if target.name == ".agentecflow":
+            taskwright_path = target.parent
+            if (taskwright_path / "installer").exists():
+                return taskwright_path
+
+    # Strategy 2: Standard installation location
+    standard_path = Path.home() / "Projects" / "appmilla_github" / "taskwright"
+    if (standard_path / "installer").exists():
+        return standard_path
+
+    # Strategy 3: Current directory (if running from taskwright directory)
+    if Path("installer").exists():
+        return Path.cwd()
+
+    return None
+
+# Discover taskwright installation directory
+taskwright_path = find_taskwright_path()
+
+if taskwright_path is None:
+    print("❌ ERROR: Cannot find taskwright installation directory")
+    print()
+    print("   Searched locations:")
+    print("   - ~/.agentecflow symlink target")
+    print("   - ~/Projects/appmilla_github/taskwright")
+    print("   - Current directory: " + str(Path.cwd()))
+    print()
+    print("   Troubleshooting:")
+    print("   1. Verify taskwright is installed:")
+    print("      ls ~/Projects/appmilla_github/taskwright")
+    print("   2. Check symlink configuration:")
+    print("      ls -la ~/.agentecflow")
+    print("   3. Run install.sh if needed:")
+    print("      ~/Projects/appmilla_github/taskwright/installer/scripts/install.sh")
+    print()
+    print("   Manual workaround:")
+    print("   export PYTHONPATH=\"~/Projects/appmilla_github/taskwright:$PYTHONPATH\"")
+    print("   /template-create --path .")
+    sys.exit(1)
+
+# Set PYTHONPATH to include taskwright directory
+# Preserve existing PYTHONPATH by appending (not replacing)
+import os
+original_pythonpath = os.environ.get("PYTHONPATH", "")
+if original_pythonpath:
+    os.environ["PYTHONPATH"] = f"{taskwright_path}:{original_pythonpath}"
+else:
+    os.environ["PYTHONPATH"] = str(taskwright_path)
+
+print(f"🔍 Taskwright path: {taskwright_path}")
+print(f"🐍 PYTHONPATH: {os.environ['PYTHONPATH']}")
+print()
+
+# ============================================================================
+# End PYTHONPATH Setup
+# ============================================================================
 
 # Exit code messages: (message, should_cleanup, should_break)
 # - message: User-facing message to display
