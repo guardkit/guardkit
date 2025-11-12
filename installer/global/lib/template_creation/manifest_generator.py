@@ -6,13 +6,18 @@ intelligent placeholder detection, framework purpose classification, and
 complexity scoring.
 """
 
+import importlib
 import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from codebase_analyzer.models import CodebaseAnalysis, LayerInfo
+# Import using importlib to avoid 'global' keyword issue in Python 3.14+
+_codebase_models = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+CodebaseAnalysis = _codebase_models.CodebaseAnalysis
+LayerInfo = _codebase_models.LayerInfo
+
 from .models import FrameworkInfo, PlaceholderInfo, TemplateManifest
 
 

@@ -1395,3 +1395,42 @@ def run_template_create(
 
     orchestrator = TemplateCreateOrchestrator(config)
     return orchestrator.run()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Template creation orchestrator")
+    parser.add_argument("--path", type=str, help="Codebase path")
+    parser.add_argument("--output-location", choices=['global', 'repo'], default='global',
+                        help="Output location: 'global' (~/.agentecflow/templates/) or 'repo' (installer/global/templates/)")
+    parser.add_argument("--skip-qa", action="store_true",
+                        help="Skip interactive Q&A session")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Analyze and show plan without saving")
+    parser.add_argument("--validate", action="store_true",
+                        help="Run extended validation and generate quality report")
+    parser.add_argument("--max-templates", type=int,
+                        help="Maximum template files to generate")
+    parser.add_argument("--no-agents", action="store_true",
+                        help="Skip agent generation")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume from checkpoint after agent invocation")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Show detailed progress")
+
+    args = parser.parse_args()
+
+    result = run_template_create(
+        codebase_path=Path(args.path) if args.path else None,
+        output_location=args.output_location,
+        skip_qa=args.skip_qa,
+        dry_run=args.dry_run,
+        validate=args.validate,
+        max_templates=args.max_templates,
+        no_agents=args.no_agents,
+        resume=args.resume,
+        verbose=args.verbose
+    )
+
+    sys.exit(result.exit_code if not result.success else 0)
