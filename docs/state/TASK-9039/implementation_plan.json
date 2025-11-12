@@ -1,0 +1,223 @@
+{
+  "task_id": "TASK-9039",
+  "title": "Remove Q&A from /template-create, Use Smart Defaults",
+  "status": "in_progress",
+  "priority": "high",
+  "created": "2025-11-12T10:00:00Z",
+  "complexity": {
+    "score": 3.5,
+    "level": "SIMPLE",
+    "breakdown": {
+      "file_complexity": {
+        "score": 2.0,
+        "max": 3.0,
+        "details": "5 files (3 modified, 2 created) - manageable"
+      },
+      "pattern_familiarity": {
+        "score": 0.5,
+        "max": 2.0,
+        "details": "Strategy pattern, priority resolution (familiar)"
+      },
+      "risk_level": {
+        "score": 1.0,
+        "max": 3.0,
+        "details": "Backward compatible, detection needs validation"
+      },
+      "dependencies": {
+        "score": 0.0,
+        "max": 2.0,
+        "details": "Stdlib only, no external deps"
+      }
+    }
+  },
+  "review_mode": {
+    "mode": "AUTO_PROCEED",
+    "rationale": "Score 3.5/10 (Simple range: 1-3), no force-review triggers, standard refactoring",
+    "force_triggers": {
+      "user_flag": false,
+      "security_keywords": false,
+      "breaking_changes": false,
+      "schema_changes": false,
+      "hotfix": false
+    }
+  },
+  "architectural_review": {
+    "overall_score": 72,
+    "status": "approved_with_recommendations",
+    "breakdown": {
+      "solid": 35,
+      "dry": 19,
+      "yagni": 18
+    },
+    "critical_issues": [],
+    "recommendations": [
+      "ISP: Split interfaces (detection vs orchestration)",
+      "DIP: Inject dependencies (testability)",
+      "YAGNI: MVP approach (core detection first)"
+    ]
+  },
+  "implementation": {
+    "phases": [
+      {
+        "phase": 1,
+        "name": "Smart Detection Module",
+        "duration_hours": 2,
+        "files_created": [
+          "installer/global/lib/template_create/detector.py"
+        ],
+        "estimated_loc": 200
+      },
+      {
+        "phase": 2,
+        "name": "Refactor Orchestrator",
+        "duration_hours": 2,
+        "files_modified": [
+          "installer/global/lib/template_create/orchestrator.py"
+        ],
+        "estimated_loc": 150
+      },
+      {
+        "phase": 3,
+        "name": "Update Documentation",
+        "duration_hours": 1,
+        "files_modified": [
+          "installer/global/commands/template-create.md"
+        ],
+        "estimated_loc": 0
+      },
+      {
+        "phase": 4,
+        "name": "Comprehensive Testing",
+        "duration_hours": 2,
+        "files_created": [
+          "tests/unit/test_template_create_detector.py"
+        ],
+        "files_modified": [
+          "tests/integration/test_template_create.py"
+        ],
+        "estimated_loc": 470
+      }
+    ],
+    "total_duration_hours": "6-7",
+    "total_estimated_loc": 820
+  },
+  "files": {
+    "to_create": [
+      {
+        "path": "installer/global/lib/template_create/detector.py",
+        "type": "module",
+        "estimated_loc": 200,
+        "purpose": "Language/framework detection with priority resolution"
+      },
+      {
+        "path": "tests/unit/test_template_create_detector.py",
+        "type": "tests",
+        "estimated_loc": 400,
+        "purpose": "Unit tests for detection module"
+      }
+    ],
+    "to_modify": [
+      {
+        "path": "installer/global/lib/template_create/orchestrator.py",
+        "type": "module",
+        "estimated_loc": 150,
+        "purpose": "Remove Q&A, add config resolution"
+      },
+      {
+        "path": "installer/global/commands/template-create.md",
+        "type": "documentation",
+        "estimated_loc": 0,
+        "purpose": "Update usage, document --config flag"
+      },
+      {
+        "path": "tests/integration/test_template_create.py",
+        "type": "tests",
+        "estimated_loc": 70,
+        "purpose": "Add integration tests for non-interactive mode"
+      }
+    ],
+    "total_files": 5
+  },
+  "dependencies": {
+    "external": [],
+    "internal": [
+      "TASK-9037 (exclusions)",
+      "TASK-9038 (/template-qa command)"
+    ]
+  },
+  "risk_assessment": {
+    "level": "low_medium",
+    "score": 1.0,
+    "max": 3.0,
+    "mitigations": [
+      "Comprehensive test suite for detection accuracy",
+      "Priority-based resolution with fallbacks",
+      "Backward compatibility via deprecated flags",
+      "Non-interactive by default for CI/CD"
+    ]
+  },
+  "testing_strategy": {
+    "unit_tests": {
+      "coverage_target": 80,
+      "focus_areas": [
+        "Language detection (all patterns)",
+        "Framework detection (major frameworks)",
+        "Config resolution (priority logic)",
+        "Edge cases (empty projects, conflicts)"
+      ]
+    },
+    "integration_tests": {
+      "scenarios": [
+        "Run without config (smart defaults)",
+        "Run with config file",
+        "Run in CI/CD environment",
+        "Backward compatibility (--skip-qa)"
+      ]
+    },
+    "manual_tests": [
+      "Real projects (Python, TypeScript, C#)",
+      "Detection accuracy verification",
+      "Non-interactive execution confirmation"
+    ]
+  },
+  "success_criteria": {
+    "core_functionality": [
+      "No interactive prompts by default",
+      "Smart detection of language/framework",
+      "Config file support (--config)",
+      "Works in CI/CD (non-interactive)",
+      "Backward compatible (--skip-qa deprecated)"
+    ],
+    "quality_gates": [
+      "All tests pass (100%)",
+      "Coverage ≥80%",
+      "No breaking changes",
+      "Documentation updated"
+    ]
+  },
+  "related_tasks": [
+    {
+      "task_id": "TASK-9037",
+      "title": "Build artifact exclusion",
+      "relationship": "prerequisite",
+      "status": "completed"
+    },
+    {
+      "task_id": "TASK-9038",
+      "title": "/template-qa command",
+      "relationship": "prerequisite",
+      "status": "completed"
+    },
+    {
+      "task_id": "TASK-9040",
+      "title": "Investigate regression",
+      "relationship": "related",
+      "status": "in_review"
+    }
+  ],
+  "notes": {
+    "architecture": "Strategy pattern for detection, priority resolution (config > detect > default), dependency injection",
+    "mvp_approach": "Core languages first (Python, TypeScript, C#), core frameworks (React, FastAPI, Next.js), extensible design",
+    "backward_compatibility": "--skip-qa deprecated but functional with warning message, no breaking changes"
+  }
+}

@@ -1,11 +1,20 @@
 # TASK-9040: Investigate Template-Create Regression (Weekend → Now)
 
-**Status**: backlog
+**Status**: completed
 **Priority**: critical
 **Created**: 2025-11-12T01:00:00Z
-**Updated**: 2025-11-12T01:00:00Z
-**Tags**: #investigation #regression #template-create #forensics
-**Complexity**: 4/10 (Investigation - no coding yet)
+**Updated**: 2025-11-12T12:30:00Z
+**Completed**: 2025-11-12T12:30:00Z
+**Previous State**: backlog → in_progress → completed
+**State Transition**: Investigation complete, root cause confirmed
+**Tags**: #investigation #regression #template-create #forensics #completed
+**Complexity**: 3/10 (Investigation - evidence gathering and root cause confirmation)
+**Investigation Phase**: Complete (all phases)
+**Auto Approved**: true (complexity 3/10)
+**Approved By**: system
+**Review Mode**: auto_proceed
+**Root Cause**: TASK-TMPL-4E89 (Hard-coded agent detection limitation)
+**Outcome**: NOT a regression - Known limitation affecting agent generation
 
 ---
 
