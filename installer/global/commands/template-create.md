@@ -15,13 +15,22 @@ Automate template creation from brownfield (existing) codebases by:
 6. Recommending specialized agents (TASK-009)
 7. Saving complete template package
 
-**Note**: As of TASK-51B2, the command uses AI-native analysis. No Q&A sessions, no detector code - AI analyzes codebases directly and infers all metadata. Use `/template-qa` for interactive customization if needed.
+**Note**: As of TASK-51B2, the command uses AI-native analysis. No Q&A sessions, no detector code - AI analyzes codebases directly and infers all metadata. Use `--name` flag to override AI-generated template names if needed.
 
 ## Usage
 
 ```bash
 # AI-native mode (default - AI analyzes codebase directly)
 /template-create
+
+# With custom template name
+/template-create --name my-custom-template
+
+# Custom name with validation
+/template-create --name my-api-template --validate
+
+# Custom name for team distribution
+/template-create --name company-api-template --output-location repo
 
 # Create for team distribution (requires install.sh)
 /template-create --output-location repo
@@ -161,6 +170,12 @@ None - all options have defaults
 ### Optional Options
 
 ```bash
+--name NAME              Custom template name (overrides AI-generated name)
+                         Pattern: lowercase, numbers, hyphens only (^[a-z0-9-]+$)
+                         Length: 3-50 characters
+                         Examples: my-api-template, react-admin, dotnet-api
+                         Default: AI-generated from codebase analysis
+
 --output-location LOC    Where to save template package (TASK-068)
   -o LOC                 'global' = ~/.agentecflow/templates/ (default, immediate use)
                          'repo' = installer/global/templates/ (distribution, requires install.sh)
@@ -256,7 +271,7 @@ If AI confidence is low (<50%), reasonable defaults are used:
 - Language from most common file extension
 - Architecture from folder structure heuristics
 
-See `/template-qa` command for interactive customization if AI inference is insufficient.
+Use `--name` flag to specify a custom template name if AI-generated name is not suitable.
 
 ## AI Analysis Output (Phase 1 Result)
 

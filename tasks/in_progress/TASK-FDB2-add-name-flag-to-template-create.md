@@ -1,9 +1,9 @@
 ---
 id: TASK-FDB2
 title: Add --name flag to /template-create command
-status: backlog
+status: in_progress
 created: 2025-11-12T21:25:24.930438+00:00
-updated: 2025-11-12T21:25:24.930438+00:00
+updated: 2025-11-12T21:33:45.000000+00:00
 priority: high
 tags: ["template-create", "cli", "enhancement"]
 complexity: 3
