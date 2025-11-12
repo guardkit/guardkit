@@ -899,7 +899,9 @@ Extract arguments from user command:
 
 Build Python command:
 ```bash
-python3 -m installer.global.commands.lib.template_create_orchestrator \
+# Note: Cannot use '-m installer.global...' because 'global' is a reserved keyword
+# Command uses direct file path execution instead (see Step 2 for implementation)
+python3 <taskwright_path>/installer/global/commands/lib/template_create_orchestrator.py \
   [--path PATH] \
   [--output-location LOCATION] \
   [--skip-qa] \
@@ -1080,9 +1082,12 @@ EXIT_MESSAGES = {
 }
 
 # Build initial command
+# CRITICAL: Cannot use '-m installer.global...' because 'global' is a reserved keyword
+# Use direct file path execution instead
+orchestrator_script = taskwright_path / "installer" / "global" / "commands" / "lib" / "template_create_orchestrator.py"
 cmd_parts = [
-    "python3", "-m",
-    "installer.global.commands.lib.template_create_orchestrator"
+    "python3",
+    str(orchestrator_script)
 ]
 
 # Add user arguments

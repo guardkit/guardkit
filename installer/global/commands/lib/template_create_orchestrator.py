@@ -834,9 +834,40 @@ class TemplateCreateOrchestrator:
                 agents_dir = output_path / "agents"
                 agents_dir.mkdir(exist_ok=True)
 
+                # Import markdown formatter for proper YAML frontmatter formatting
+                # Use importlib since 'global' is a Python keyword
+                _markdown_formatter_module = importlib.import_module('installer.global.lib.agent_generator.markdown_formatter')
+                format_agent_markdown = _markdown_formatter_module.format_agent_markdown
+
                 for agent in agents:
                     agent_path = agents_dir / f"{agent.name}.md"
-                    agent_path.write_text(agent.full_definition, encoding='utf-8')
+
+                    # Check if full_definition is already properly formatted markdown
+                    # or if we need to format it from agent attributes
+                    if agent.full_definition and agent.full_definition.strip().startswith('---'):
+                        # Already has YAML frontmatter, use as-is
+                        markdown_content = agent.full_definition
+                    else:
+                        # Need to format as markdown with YAML frontmatter
+                        # Convert GeneratedAgent to dict format expected by formatter
+                        # Handle tags/technologies - ensure it's a list
+                        tags = getattr(agent, 'tags', [])
+                        if not isinstance(tags, list):
+                            try:
+                                tags = list(tags)
+                            except TypeError:
+                                tags = []
+
+                        agent_dict = {
+                            'name': agent.name,
+                            'description': agent.description,
+                            'reason': getattr(agent, 'reason', f"Specialized agent for {agent.name.replace('-', ' ')}"),
+                            'technologies': tags,
+                            'priority': getattr(agent, 'priority', 7)
+                        }
+                        markdown_content = format_agent_markdown(agent_dict)
+
+                    agent_path.write_text(markdown_content, encoding='utf-8')
 
                 self._print_success_line(f"agents/ ({len(agents)} agents)")
 
