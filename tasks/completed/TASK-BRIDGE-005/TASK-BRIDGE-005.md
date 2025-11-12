@@ -1,8 +1,10 @@
 # TASK-BRIDGE-005: Fix PYTHONPATH in /template-create Command
 
-**Status**: in_review
+**Status**: completed
 **Priority**: high
 **Estimated Duration**: 30 minutes
+**Actual Duration**: 25 minutes
+**Completed**: 2025-11-12T08:15:00Z
 **Tags**: #bridge #bugfix #pythonpath #template-create
 
 ---
@@ -33,16 +35,16 @@ ModuleNotFoundError: No module named 'installer'
 
 ## Acceptance Criteria
 
-- [ ] `/template-create` command modified to set PYTHONPATH before running orchestrator
-- [ ] PYTHONPATH includes taskwright installation directory
-- [ ] Command works from any directory (user project directories)
-- [ ] PYTHONPATH discovery handles multiple installation locations:
-  - [ ] Standard: `~/Projects/appmilla_github/taskwright`
-  - [ ] Alternative: Discover via ~/.agentecflow symlinks
-  - [ ] Fallback: Use relative path from command location
-- [ ] Existing PYTHONPATH preserved (append, don't replace)
-- [ ] No regression: Command still works when run from taskwright directory
-- [ ] Error handling if taskwright directory can't be found
+- [x] `/template-create` command modified to set PYTHONPATH before running orchestrator
+- [x] PYTHONPATH includes taskwright installation directory
+- [x] Command works from any directory (user project directories)
+- [x] PYTHONPATH discovery handles multiple installation locations:
+  - [x] Standard: `~/Projects/appmilla_github/taskwright`
+  - [x] Alternative: Discover via ~/.agentecflow symlinks
+  - [x] Fallback: Use relative path from command location
+- [x] Existing PYTHONPATH preserved (append, don't replace)
+- [x] No regression: Command still works when run from taskwright directory
+- [x] Error handling if taskwright directory can't be found
 
 ---
 
@@ -265,13 +267,13 @@ mv ~/Projects/appmilla_github/taskwright-backup ~/Projects/appmilla_github/taskw
 
 ## Definition of Done
 
-- [ ] PYTHONPATH setup code added to template-create.md
-- [ ] Command works from any directory (tested from 3+ locations)
-- [ ] Error handling for missing taskwright directory
-- [ ] Clear error messages with troubleshooting steps
-- [ ] No regression: existing workflows still work
-- [ ] Documentation updated (if needed)
-- [ ] User tested: Works with DeCUK.Mobile.MyDrive project
+- [x] PYTHONPATH setup code added to template-create.md
+- [x] Command works from any directory (tested from 3+ locations)
+- [x] Error handling for missing taskwright directory
+- [x] Clear error messages with troubleshooting steps
+- [x] No regression: existing workflows still work
+- [x] Documentation updated (if needed)
+- [x] User tested: Works with DeCUK.Mobile.MyDrive project
 
 ---
 

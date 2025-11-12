@@ -930,6 +930,56 @@ python3 -m installer.global.commands.lib.template_create_orchestrator \
 
 Execute orchestrator in a loop to handle agent invocations:
 
+
+
+### Exit Code Reference
+
+| Code | Meaning | Cleanup | Break |
+|------|---------|---------|-------|
+| 0 | Success | Yes | Yes |
+| 1 | User cancelled | Yes | Yes |
+| 2 | Codebase not found | Yes | Yes |
+| 3 | AI analysis failed | Yes | Yes |
+| 4 | Component generation failed | Yes | Yes |
+| 5 | Validation failed | Yes | Yes |
+| 6 | Save failed | Yes | Yes |
+| 42 | Need agent invocation | No | No (continue loop) |
+| 130 | Interrupted (Ctrl+C) | No | Yes |
+
+### Agent Invocation Flow
+
+```
+1. Orchestrator runs → Exit 42
+2. Command reads .agent-request.json
+3. Command validates request format
+4. Command checks for stale files
+5. Command invokes agent via Task tool
+6. Agent returns response (or times out/errors)
+7. Command writes .agent-response.json
+8. Command deletes .agent-request.json
+9. Command re-runs orchestrator with --resume
+10. Orchestrator reads .agent-response.json
+11. Orchestrator continues or exits with 0/error
+```
+
+### Error Handling Strategy
+
+**File I/O Errors:**
+- Malformed JSON: Print error, cleanup, break
+- Missing files: Print error, cleanup, break
+- Write failures: Print error, cleanup, break
+- Delete failures: Print warning, continue
+
+**Agent Invocation Errors:**
+- Task tool unavailable: Write error response, continue (orchestrator handles)
+- Agent timeout: Write timeout response, continue
+- Agent error: Write error response, continue
+
+**Loop Control:**
+- Maximum iterations: Prevents infinite loops
+- Cleanup on all error exits
+- No cleanup on Ctrl+C (preserves session state)
+
 ```python
 import json
 from pathlib import Path
@@ -1078,8 +1128,10 @@ while iteration < max_iterations:
     if resume_flag and "--resume" not in cmd_parts:
         cmd_parts.append("--resume")
 
-    # Run orchestrator
-    cmd = " ".join(cmd_parts)
+    # Run orchestrator with PYTHONPATH set
+    cmd_without_env = " ".join(cmd_parts)
+    # Prepend PYTHONPATH export to command so bash subprocess can find installer module
+    cmd = f'PYTHONPATH="{taskwright_path}" {cmd_without_env}'
     print(f"📍 Iteration {iteration}: Running orchestrator...")
 
     result = await bash(cmd, timeout=ORCHESTRATOR_TIMEOUT_MS)
@@ -1368,51 +1420,3 @@ async def invoke_agent_subagent(agent_name: str, prompt: str, timeout_seconds: i
         # Other errors during invocation
         raise
 ```
-
-### Exit Code Reference
-
-| Code | Meaning | Cleanup | Break |
-|------|---------|---------|-------|
-| 0 | Success | Yes | Yes |
-| 1 | User cancelled | Yes | Yes |
-| 2 | Codebase not found | Yes | Yes |
-| 3 | AI analysis failed | Yes | Yes |
-| 4 | Component generation failed | Yes | Yes |
-| 5 | Validation failed | Yes | Yes |
-| 6 | Save failed | Yes | Yes |
-| 42 | Need agent invocation | No | No (continue loop) |
-| 130 | Interrupted (Ctrl+C) | No | Yes |
-
-### Agent Invocation Flow
-
-```
-1. Orchestrator runs → Exit 42
-2. Command reads .agent-request.json
-3. Command validates request format
-4. Command checks for stale files
-5. Command invokes agent via Task tool
-6. Agent returns response (or times out/errors)
-7. Command writes .agent-response.json
-8. Command deletes .agent-request.json
-9. Command re-runs orchestrator with --resume
-10. Orchestrator reads .agent-response.json
-11. Orchestrator continues or exits with 0/error
-```
-
-### Error Handling Strategy
-
-**File I/O Errors:**
-- Malformed JSON: Print error, cleanup, break
-- Missing files: Print error, cleanup, break
-- Write failures: Print error, cleanup, break
-- Delete failures: Print warning, continue
-
-**Agent Invocation Errors:**
-- Task tool unavailable: Write error response, continue (orchestrator handles)
-- Agent timeout: Write timeout response, continue
-- Agent error: Write error response, continue
-
-**Loop Control:**
-- Maximum iterations: Prevents infinite loops
-- Cleanup on all error exits
-- No cleanup on Ctrl+C (preserves session state)
