@@ -14,8 +14,13 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import importlib
 
-from lib.codebase_analyzer.models import CodebaseAnalysis, AnalysisError
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+
+CodebaseAnalysis = _models_module.CodebaseAnalysis
+AnalysisError = _models_module.AnalysisError
 
 
 class AnalysisSerializer:
@@ -68,295 +73,226 @@ class AnalysisSerializer:
             data = analysis.model_dump(mode='json')
 
             # Write to file with pretty printing
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+            with open(output_path, 'w') as f:
+                json.dump(data, f, indent=2)
 
             return output_path
 
-        except (OSError, IOError) as e:
-            raise AnalysisError(f"Failed to save analysis to {output_path}: {e}") from e
         except Exception as e:
-            raise AnalysisError(f"Unexpected error saving analysis: {e}") from e
+            raise AnalysisError(f"Failed to save analysis: {e}") from e
 
     def load(self, filepath: Path) -> CodebaseAnalysis:
         """
         Load analysis from JSON file.
 
         Args:
-            filepath: Path to JSON file
+            filepath: Path to analysis JSON file
 
         Returns:
-            Loaded CodebaseAnalysis object
+            CodebaseAnalysis object
 
         Raises:
-            AnalysisError: If load fails or validation fails
+            AnalysisError: If file not found or invalid
         """
+        filepath = Path(filepath)
+
         if not filepath.exists():
             raise AnalysisError(f"Analysis file not found: {filepath}")
 
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, 'r') as f:
                 data = json.load(f)
 
-            # Parse datetime fields
-            if 'analyzed_at' in data and isinstance(data['analyzed_at'], str):
-                data['analyzed_at'] = datetime.fromisoformat(data['analyzed_at'])
-
-            # Construct analysis from data
+            # Reconstruct CodebaseAnalysis from dict
             analysis = CodebaseAnalysis(**data)
             return analysis
 
         except json.JSONDecodeError as e:
-            raise AnalysisError(f"Invalid JSON in {filepath}: {e}") from e
+            raise AnalysisError(f"Invalid JSON in analysis file: {e}") from e
         except Exception as e:
-            raise AnalysisError(f"Failed to load analysis from {filepath}: {e}") from e
+            raise AnalysisError(f"Failed to load analysis: {e}") from e
 
     def find_latest(self, codebase_name: Optional[str] = None) -> Optional[Path]:
         """
         Find the most recent analysis file.
 
         Args:
-            codebase_name: Optional codebase name to filter by
+            codebase_name: Optional filter by codebase name
 
         Returns:
-            Path to most recent analysis file, or None if none found
+            Path to latest analysis file or None if no analyses found
         """
-        pattern = f"{codebase_name}_*.json" if codebase_name else "*.json"
-        files = list(self.cache_dir.glob(pattern))
-
-        if not files:
+        if not self.cache_dir.exists():
             return None
 
-        # Sort by modification time, most recent first
-        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        return files[0]
+        json_files = list(self.cache_dir.glob("*.json"))
 
-    def list_analyses(self, codebase_name: Optional[str] = None) -> list[Path]:
+        if not json_files:
+            return None
+
+        if codebase_name:
+            json_files = [f for f in json_files if codebase_name in f.name]
+
+        if not json_files:
+            return None
+
+        # Return newest file (by modification time)
+        return max(json_files, key=lambda p: p.stat().st_mtime)
+
+    def export_markdown(self, analysis: CodebaseAnalysis, filepath: Optional[Path] = None) -> Path:
         """
-        List all available analysis files.
+        Export analysis as human-readable markdown.
 
         Args:
-            codebase_name: Optional codebase name to filter by
+            analysis: CodebaseAnalysis to export
+            filepath: Optional output filepath (default: auto-generated)
 
         Returns:
-            List of paths to analysis files, sorted by modification time (newest first)
-        """
-        pattern = f"{codebase_name}_*.json" if codebase_name else "*.json"
-        files = list(self.cache_dir.glob(pattern))
+            Path to exported markdown file
 
-        # Sort by modification time, most recent first
-        files.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-        return files
+        Raises:
+            AnalysisError: If export fails
+        """
+        if filepath is None:
+            codebase_name = Path(analysis.codebase_path).name
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{codebase_name}_{timestamp}_analysis.md"
+            filepath = self.cache_dir / filename
+        else:
+            filepath = Path(filepath)
+
+        try:
+            # Generate markdown content
+            content = self._generate_markdown(analysis)
+
+            # Write to file
+            with open(filepath, 'w') as f:
+                f.write(content)
+
+            return filepath
+
+        except Exception as e:
+            raise AnalysisError(f"Failed to export markdown: {e}") from e
+
+    def list_analyses(self) -> list[Path]:
+        """
+        List all cached analysis files.
+
+        Returns:
+            List of analysis file paths
+        """
+        if not self.cache_dir.exists():
+            return []
+
+        return sorted(
+            self.cache_dir.glob("*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        )
 
     def delete(self, filepath: Path) -> bool:
         """
         Delete an analysis file.
 
         Args:
-            filepath: Path to file to delete
+            filepath: Path to analysis file
 
         Returns:
-            True if deleted, False if file didn't exist
+            True if deleted, False if not found
 
         Raises:
             AnalysisError: If deletion fails
         """
+        filepath = Path(filepath)
+
         if not filepath.exists():
             return False
 
         try:
             filepath.unlink()
             return True
-        except OSError as e:
-            raise AnalysisError(f"Failed to delete {filepath}: {e}") from e
+        except Exception as e:
+            raise AnalysisError(f"Failed to delete analysis: {e}") from e
 
     def get_summary(self, filepath: Path) -> dict:
         """
-        Get summary information about an analysis file without loading the entire file.
+        Get a summary of an analysis file as a dictionary.
 
         Args:
             filepath: Path to analysis file
 
         Returns:
-            Dictionary with summary info: codebase_path, analyzed_at, language, etc.
+            Dictionary with summary info
 
         Raises:
-            AnalysisError: If file cannot be read
+            AnalysisError: If file not found or invalid
         """
+        filepath = Path(filepath)
+
         if not filepath.exists():
             raise AnalysisError(f"Analysis file not found: {filepath}")
 
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(filepath, 'r') as f:
                 data = json.load(f)
 
+            # Extract summary info
             return {
-                "codebase_path": data.get("codebase_path", "Unknown"),
-                "analyzed_at": data.get("analyzed_at", "Unknown"),
-                "primary_language": data.get("technology", {}).get("primary_language", "Unknown"),
-                "architectural_style": data.get("architecture", {}).get("architectural_style", "Unknown"),
-                "overall_score": data.get("quality", {}).get("overall_score", 0),
-                "agent_used": data.get("agent_used", False),
-                "file_size": filepath.stat().st_size,
-                "filepath": str(filepath)
+                "filepath": str(filepath),
+                "codebase_path": data.get('codebase_path'),
+                "primary_language": data.get('technology', {}).get('primary_language'),
+                "frameworks": data.get('technology', {}).get('frameworks', []),
+                "overall_score": data.get('quality', {}).get('overall_score'),
+                "analyzed_at": data.get('analyzed_at'),
             }
 
         except json.JSONDecodeError as e:
-            raise AnalysisError(f"Invalid JSON in {filepath}: {e}") from e
+            raise AnalysisError(f"Invalid JSON in analysis file: {e}") from e
         except Exception as e:
-            raise AnalysisError(f"Failed to read summary from {filepath}: {e}") from e
+            raise AnalysisError(f"Failed to read summary: {e}") from e
 
-    def export_markdown(self, analysis: CodebaseAnalysis, output_path: Path) -> Path:
+    @staticmethod
+    def _generate_markdown(analysis: CodebaseAnalysis) -> str:
         """
-        Export analysis as a markdown report.
+        Generate markdown representation of analysis.
 
         Args:
-            analysis: CodebaseAnalysis to export
-            output_path: Path to output markdown file
+            analysis: CodebaseAnalysis to convert
 
         Returns:
-            Path to created markdown file
-
-        Raises:
-            AnalysisError: If export fails
+            Markdown string
         """
-        try:
-            # Build markdown content
-            markdown = self._build_markdown_report(analysis)
-
-            # Write to file
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(markdown)
-
-            return output_path
-
-        except (OSError, IOError) as e:
-            raise AnalysisError(f"Failed to export markdown to {output_path}: {e}") from e
-
-    def _build_markdown_report(self, analysis: CodebaseAnalysis) -> str:
-        """Build markdown report from analysis."""
         lines = [
-            f"# Codebase Analysis Report",
+            "# Codebase Analysis Report",
             "",
-            f"**Codebase**: `{analysis.codebase_path}`",
-            f"**Analyzed**: {analysis.analyzed_at.strftime('%Y-%m-%d %H:%M:%S')}",
-            f"**Analysis Version**: {analysis.analysis_version}",
-            "",
-            "---",
+            f"**Codebase Path:** {analysis.codebase_path}",
+            f"**Analyzed:** {analysis.analyzed_at.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"**Agent Used:** {'Yes' if analysis.agent_used else 'No'}",
             "",
             "## Technology Stack",
             "",
-            f"**Primary Language**: {analysis.technology.primary_language}",
-            "",
-        ]
-
-        if analysis.technology.frameworks:
-            lines.append(f"**Frameworks**: {', '.join(analysis.technology.frameworks)}")
-        if analysis.technology.testing_frameworks:
-            lines.append(f"**Testing**: {', '.join(analysis.technology.testing_frameworks)}")
-        if analysis.technology.build_tools:
-            lines.append(f"**Build Tools**: {', '.join(analysis.technology.build_tools)}")
-
-        lines.extend([
-            "",
-            f"**Confidence**: {analysis.technology.confidence.level.value} "
-            f"({analysis.technology.confidence.percentage}%)",
+            f"**Primary Language:** {analysis.technology.primary_language}",
+            f"**Frameworks:** {', '.join(analysis.technology.frameworks) if analysis.technology.frameworks else 'None'}",
+            f"**Testing Frameworks:** {', '.join(analysis.technology.testing_frameworks) if analysis.technology.testing_frameworks else 'None'}",
+            f"**Build Tools:** {', '.join(analysis.technology.build_tools) if analysis.technology.build_tools else 'None'}",
+            f"**Confidence:** {analysis.technology.confidence.level.value} ({analysis.technology.confidence.percentage}%)",
             "",
             "## Architecture",
             "",
-            f"**Style**: {analysis.architecture.architectural_style}",
+            f"**Architectural Style:** {analysis.architecture.architectural_style}",
+            f"**Patterns:** {', '.join(analysis.architecture.patterns) if analysis.architecture.patterns else 'None'}",
+            f"**Layers:** {', '.join([l.name for l in analysis.architecture.layers]) if analysis.architecture.layers else 'None'}",
+            f"**Confidence:** {analysis.architecture.confidence.level.value} ({analysis.architecture.confidence.percentage}%)",
             "",
-        ])
-
-        if analysis.architecture.patterns:
-            lines.append(f"**Patterns**: {', '.join(analysis.architecture.patterns)}")
-            lines.append("")
-
-        if analysis.architecture.layers:
-            lines.append("**Layers**:")
-            lines.append("")
-            for layer in analysis.architecture.layers:
-                lines.append(f"- **{layer.name}**: {layer.description}")
-            lines.append("")
-
-        lines.extend([
-            f"**Dependency Flow**: {analysis.architecture.dependency_flow}",
+            "## Quality Metrics",
             "",
-            f"**Confidence**: {analysis.architecture.confidence.level.value} "
-            f"({analysis.architecture.confidence.percentage}%)",
+            f"**Overall Score:** {analysis.quality.overall_score}/100",
+            f"**SOLID Compliance:** {analysis.quality.solid_compliance}%",
+            f"**DRY Compliance:** {analysis.quality.dry_compliance}%",
+            f"**YAGNI Compliance:** {analysis.quality.yagni_compliance}%",
+            f"**Test Coverage:** {analysis.quality.test_coverage if analysis.quality.test_coverage is not None else 'N/A'}%",
+            f"**Confidence:** {analysis.quality.confidence.level.value} ({analysis.quality.confidence.percentage}%)",
             "",
-            "## Quality Assessment",
-            "",
-            f"**Overall Score**: {analysis.quality.overall_score}/100",
-            f"**SOLID Compliance**: {analysis.quality.solid_compliance}/100",
-            f"**DRY Compliance**: {analysis.quality.dry_compliance}/100",
-            f"**YAGNI Compliance**: {analysis.quality.yagni_compliance}/100",
-            "",
-        ])
-
-        if analysis.quality.test_coverage is not None:
-            lines.append(f"**Test Coverage**: {analysis.quality.test_coverage}%")
-            lines.append("")
-
-        if analysis.quality.strengths:
-            lines.append("**Strengths**:")
-            lines.append("")
-            for strength in analysis.quality.strengths:
-                lines.append(f"- {strength}")
-            lines.append("")
-
-        if analysis.quality.improvements:
-            lines.append("**Suggested Improvements**:")
-            lines.append("")
-            for improvement in analysis.quality.improvements:
-                lines.append(f"- {improvement}")
-            lines.append("")
-
-        if analysis.quality.code_smells:
-            lines.append("**Code Smells**:")
-            lines.append("")
-            for smell in analysis.quality.code_smells:
-                lines.append(f"- {smell}")
-            lines.append("")
-
-        lines.extend([
-            f"**Confidence**: {analysis.quality.confidence.level.value} "
-            f"({analysis.quality.confidence.percentage}%)",
-            "",
-        ])
-
-        if analysis.example_files:
-            lines.extend([
-                "## Example Files",
-                "",
-            ])
-            for example in analysis.example_files:
-                lines.append(f"### `{example.path}`")
-                lines.append("")
-                lines.append(f"**Purpose**: {example.purpose}")
-                if example.layer:
-                    lines.append(f"**Layer**: {example.layer}")
-                if example.patterns_used:
-                    lines.append(f"**Patterns**: {', '.join(example.patterns_used)}")
-                lines.append("")
-
-        lines.extend([
-            "---",
-            "",
-            "## Analysis Details",
-            "",
-            f"**Agent Used**: {'Yes' if analysis.agent_used else 'No'}",
-        ])
-
-        if analysis.fallback_reason:
-            lines.append(f"**Fallback Reason**: {analysis.fallback_reason}")
-
-        overall = analysis.overall_confidence
-        lines.extend([
-            "",
-            f"**Overall Confidence**: {overall.level.value} ({overall.percentage}%)",
-            "",
-            f"*{overall.reasoning}*",
-        ])
+        ]
 
         return "\n".join(lines)

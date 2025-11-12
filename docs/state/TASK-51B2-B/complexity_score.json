@@ -1,0 +1,68 @@
+{
+  "task_id": "TASK-51B2-B",
+  "calculated_at": "2025-11-12T14:45:00Z",
+  "version": 1,
+  "total_score": 4,
+  "complexity_level": "medium",
+  "factor_scores": {
+    "file_complexity": {
+      "score": 1.5,
+      "max_score": 3,
+      "rationale": "3 files to modify (3-5 files = 1.5 points)",
+      "details": {
+        "files_to_create": 0,
+        "files_to_modify": 3,
+        "total_files": 3
+      }
+    },
+    "pattern_familiarity": {
+      "score": 0.5,
+      "max_score": 2,
+      "rationale": "AI Prompt Engineering is a familiar pattern in this codebase (low novelty)",
+      "details": {
+        "patterns": [
+          "AI Prompt Engineering",
+          "Template Generation Pattern",
+          "Configuration Tuning"
+        ],
+        "unfamiliar_patterns": 0,
+        "familiar_patterns": 3
+      }
+    },
+    "risk_level": {
+      "score": 0.5,
+      "max_score": 3,
+      "rationale": "Low risk - backward compatible changes, no structural modifications, pure prompt engineering",
+      "details": {
+        "risk_category": "low",
+        "security_concerns": false,
+        "breaking_changes": false,
+        "data_migration": false,
+        "external_dependencies": false
+      }
+    },
+    "dependency_complexity": {
+      "score": 0,
+      "max_score": 2,
+      "rationale": "0 new dependencies (0 points)",
+      "details": {
+        "new_dependencies": 0,
+        "dependency_conflicts": 0
+      }
+    },
+    "estimated_duration": {
+      "hours": 5,
+      "rationale": "Medium complexity, ~5 hours estimated"
+    },
+    "estimated_loc": {
+      "total": 101,
+      "rationale": "~40 lines prompt enhancement, 1 line config change, 60 lines tests"
+    }
+  },
+  "review_mode": "QUICK_OPTIONAL",
+  "review_mode_rationale": "Medium complexity (score 4-6) with no force triggers",
+  "force_review_triggers": [],
+  "auto_approved": false,
+  "confidence": 0.95,
+  "calculation_method": "standard_taskwright_v1"
+}

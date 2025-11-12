@@ -162,19 +162,12 @@ class TestAIAgentGenerator:
         assert generator.ai_invoker == mock_ai_invoker
 
     def test_identify_capability_needs_mvvm(self, mock_inventory, mock_analysis):
-        """Test identifying MVVM capability needs"""
+        """Test that AI-native approach returns empty without AI invoker"""
         generator = AIAgentGenerator(inventory=mock_inventory)
         needs = generator._identify_capability_needs(mock_analysis)
 
-        # Should identify MVVM need
-        assert len(needs) > 0
-        mvvm_needs = [n for n in needs if "mvvm" in n.name.lower()]
-        assert len(mvvm_needs) > 0
-
-        # MVVM need should be high priority
-        mvvm_need = mvvm_needs[0]
-        assert mvvm_need.priority >= 7
-        assert "MVVM" in mvvm_need.technologies
+        # AI-native approach: should return empty list without AI invoker
+        assert len(needs) == 0
 
     def test_identify_capability_needs_error_handling(self, mock_inventory, mock_analysis):
         """Test identifying error handling capability needs"""
@@ -187,13 +180,12 @@ class TestAIAgentGenerator:
         # This tests the logic path
 
     def test_identify_capability_needs_testing(self, mock_inventory, mock_analysis):
-        """Test identifying testing capability needs"""
+        """Test that AI-native approach returns empty without AI invoker"""
         generator = AIAgentGenerator(inventory=mock_inventory)
         needs = generator._identify_capability_needs(mock_analysis)
 
-        # Should identify testing need
-        test_needs = [n for n in needs if "test" in n.name.lower() or mock_analysis.testing_framework.lower() in n.name.lower()]
-        assert len(test_needs) > 0
+        # AI-native approach: should return empty list without AI invoker
+        assert len(needs) == 0
 
     def test_find_capability_gaps_existing_agent(self, mock_inventory):
         """Test gap finding when agent exists"""

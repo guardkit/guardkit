@@ -12,11 +12,20 @@ Following architectural review recommendations:
 """
 
 import json
+import logging
 import subprocess
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Dict, Any, List
+import importlib
 
-from lib.codebase_analyzer.models import AgentInvocationError
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+_exclusions_module = importlib.import_module('lib.codebase_analyzer.exclusions')
+
+AgentInvocationError = _models_module.AgentInvocationError
+get_source_files = _exclusions_module.get_source_files
+
+logger = logging.getLogger(__name__)
 
 
 class AgentCommunicator(Protocol):
@@ -46,12 +55,15 @@ class ArchitecturalReviewerInvoker:
     This class follows SRP by focusing solely on agent communication,
     delegating prompt construction to PromptBuilder and response parsing
     to ResponseParser.
+
+    TASK-769D: Now supports optional bridge_invoker for checkpoint-resume pattern.
     """
 
     def __init__(
         self,
         agent_path: Optional[Path] = None,
-        timeout_seconds: int = 120
+        timeout_seconds: int = 120,
+        bridge_invoker: Optional[any] = None  # TASK-769D: Optional bridge invoker
     ):
         """
         Initialize agent invoker.
@@ -60,6 +72,7 @@ class ArchitecturalReviewerInvoker:
             agent_path: Path to architectural-reviewer.md agent file.
                        Defaults to installer/global/agents/architectural-reviewer.md
             timeout_seconds: Maximum time to wait for agent response
+            bridge_invoker: Optional AgentBridgeInvoker for checkpoint-resume (TASK-769D)
         """
         if agent_path is None:
             # Default to global agents directory
@@ -68,6 +81,7 @@ class ArchitecturalReviewerInvoker:
             self.agent_path = agent_path
 
         self.timeout_seconds = timeout_seconds
+        self.bridge_invoker = bridge_invoker  # TASK-769D: Store bridge invoker
 
     def is_available(self) -> bool:
         """
@@ -82,10 +96,7 @@ class ArchitecturalReviewerInvoker:
         """
         Invoke the architectural-reviewer agent with a prompt.
 
-        This method uses Claude Code's agent invocation mechanism. In the actual
-        implementation, this would communicate with Claude Code's agent system.
-        For now, we simulate this with a subprocess call that would be replaced
-        with the actual agent invocation mechanism.
+        TASK-769D: Now uses AgentBridgeInvoker if provided, otherwise falls back to error.
 
         Args:
             prompt: Analysis prompt with codebase context
@@ -104,22 +115,17 @@ class ArchitecturalReviewerInvoker:
             )
 
         try:
-            # In a real implementation, this would use Claude Code's agent system
-            # For now, we'll return a structured response format that matches
-            # what the architectural-reviewer agent would return
-            #
-            # The actual invocation would look like:
-            # response = claude_code_api.invoke_agent(
-            #     agent_name=agent_name,
-            #     prompt=prompt,
-            #     timeout=self.timeout_seconds
-            # )
-            #
-            # For this implementation, we'll simulate the response structure
-            # and rely on heuristic analysis in the fallback path
+            # TASK-769D: Use bridge invoker if provided
+            if self.bridge_invoker is not None:
+                logger.info("Using AgentBridgeInvoker for checkpoint-resume pattern")
+                response = self.bridge_invoker.invoke(
+                    agent_name=agent_name,
+                    prompt=prompt,
+                    timeout_seconds=self.timeout_seconds
+                )
+                return response
 
-            # Placeholder for actual agent invocation
-            # This will be replaced with real Claude Code agent communication
+            # TASK-769D: No bridge invoker - raise error to trigger fallback
             raise AgentInvocationError(
                 "Agent invocation not yet implemented. Using fallback heuristics."
             )
@@ -182,16 +188,20 @@ class HeuristicAnalyzer:
     Provides basic pattern detection and structure analysis using
     file system inspection and simple heuristics. Not as sophisticated
     as the AI agent, but provides reasonable defaults.
+
+    TASK-769D: Now accepts optional file_samples for better context.
     """
 
-    def __init__(self, codebase_path: Path):
+    def __init__(self, codebase_path: Path, file_samples: Optional[List[Dict[str, Any]]] = None):
         """
         Initialize heuristic analyzer.
 
         Args:
             codebase_path: Path to codebase to analyze
+            file_samples: Optional list of file samples from stratified sampling (TASK-769D)
         """
         self.codebase_path = codebase_path
+        self.file_samples = file_samples  # TASK-769D: Store file samples
 
     def analyze(self) -> dict:
         """
@@ -256,13 +266,13 @@ class HeuristicAnalyzer:
                     "reasoning": "Quality metrics require deep analysis - use agent for accurate results"
                 }
             },
-            "example_files": self._find_example_files(language),
+            "example_files": self._get_example_files(language),
             "agent_used": False,
             "fallback_reason": "Agent not available - using heuristic analysis"
         }
 
     def _detect_language(self) -> str:
-        """Detect primary programming language."""
+        """Detect primary programming language, excluding build artifacts."""
         file_counts = {}
         extensions = {
             ".py": "Python",
@@ -277,7 +287,9 @@ class HeuristicAnalyzer:
         }
 
         for ext, lang in extensions.items():
-            count = len(list(self.codebase_path.rglob(f"*{ext}")))
+            # Use get_source_files to exclude build artifacts
+            source_files = get_source_files(self.codebase_path, extensions=[ext])
+            count = len(source_files)
             if count > 0:
                 file_counts[lang] = count
 
@@ -456,6 +468,35 @@ class HeuristicAnalyzer:
         # For now, return empty or basic guesses
 
         return abstractions
+
+    def _get_example_files(self, language: str) -> list:
+        """
+        Get example files from file_samples if available, otherwise find them.
+
+        TASK-769D: Converts file_samples to example_files format if provided.
+
+        Args:
+            language: Primary programming language
+
+        Returns:
+            List of example file dicts with path, purpose, layer, patterns, concepts
+        """
+        # TASK-769D: If file_samples provided, convert to example_files format
+        if self.file_samples is not None and len(self.file_samples) > 0:
+            examples = []
+            for sample in self.file_samples[:10]:  # Limit to 10 examples
+                # Convert from file_sample format to example_file format
+                examples.append({
+                    "path": sample.get("relative_path", ""),
+                    "purpose": sample.get("category", "Source file"),  # Use category as purpose
+                    "layer": None,  # Could be inferred from path
+                    "patterns_used": [],
+                    "key_concepts": []
+                })
+            return examples
+
+        # Fallback: Use original _find_example_files logic
+        return self._find_example_files(language)
 
     def _find_example_files(self, language: str) -> list:
         """Find example files from the codebase."""

@@ -117,8 +117,8 @@ public class GetProducts
 - Creating templates from proven designs
 
 **Process**:
-1. Q&A session (8 questions, ~3 minutes)
-2. AI analyzes actual code samples
+1. AI analyzes codebase automatically (~30 seconds)
+2. AI infers language, framework, architecture from code
 3. Extracts patterns automatically
 4. Generates template with your conventions
 
@@ -810,7 +810,6 @@ python-fastapi-clean/
 3. **Deep Dive**
    - [Complete /template-create Walkthrough](./template-create-walkthrough.md)
    - [Complete /template-init Walkthrough](./template-init-walkthrough.md)
-   - [Q&A Session Guide](./template-qa-guide.md)
    - [Troubleshooting Guide](./template-troubleshooting.md)
 
 4. **Learn More**

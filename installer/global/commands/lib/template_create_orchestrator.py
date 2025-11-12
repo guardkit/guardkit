@@ -63,7 +63,6 @@ class OrchestrationConfig:
     codebase_path: Optional[Path] = None
     output_path: Optional[Path] = None  # DEPRECATED: Use output_location instead
     output_location: str = 'global'  # TASK-068: 'global' or 'repo'
-    skip_qa: bool = False
     max_templates: Optional[int] = None
     dry_run: bool = False
     save_analysis: bool = False
@@ -171,11 +170,11 @@ class TemplateCreateOrchestrator:
             OrchestrationResult with success status and generated artifacts
         """
         try:
-            # If resuming, skip to Phase 6
+            # If resuming, skip to Phase 5
             if self.config.resume:
-                return self._run_from_phase_6()
+                return self._run_from_phase_5()
 
-            # Normal execution: Phases 1-8
+            # Normal execution: Phases 1-7
             return self._run_all_phases()
 
         except KeyboardInterrupt:
@@ -187,22 +186,23 @@ class TemplateCreateOrchestrator:
 
     def _run_all_phases(self) -> OrchestrationResult:
         """
-        Execute phases 1-8 from start (TASK-BRIDGE-002).
+        Execute phases 1-7 from start (TASK-51B2: AI-native workflow).
 
-        Saves checkpoint before Phase 6 to enable resume after agent invocation.
+        Saves checkpoint before Phase 5 to enable resume after agent invocation.
 
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
         self._print_header()
 
-        # Phase 1: Q&A Session
-        self.qa_answers = self._phase1_qa_session()
-        if not self.qa_answers:
-            return self._create_error_result("Q&A session cancelled or failed")
+        # Get codebase path
+        codebase_path = self.config.codebase_path or Path.cwd()
+        if not codebase_path.exists():
+            return self._create_error_result(f"Codebase path does not exist: {codebase_path}")
 
-        # Phase 2: AI Analysis
-        self.analysis = self._phase2_ai_analysis(self.qa_answers)
+        # Phase 1: AI-Native Codebase Analysis (TASK-51B2)
+        # AI analyzes codebase directly and infers all metadata
+        self.analysis = self._phase1_ai_analysis(codebase_path)
         if not self.analysis:
             return self._create_error_result("AI analysis failed")
 
@@ -210,43 +210,43 @@ class TemplateCreateOrchestrator:
         if self.config.save_analysis:
             self._save_analysis_json(self.analysis)
 
-        # Phase 3: Manifest Generation
-        self.manifest = self._phase3_manifest_generation(self.analysis)
+        # Phase 2: Manifest Generation
+        self.manifest = self._phase2_manifest_generation(self.analysis)
         if not self.manifest:
             return self._create_error_result("Manifest generation failed")
 
-        # Phase 4: Settings Generation
-        self.settings = self._phase4_settings_generation(self.analysis)
+        # Phase 3: Settings Generation
+        self.settings = self._phase3_settings_generation(self.analysis)
         if not self.settings:
             return self._create_error_result("Settings generation failed")
 
-        # Phase 5: Template File Generation (reordered - was Phase 6)
-        self.templates = self._phase5_template_generation(self.analysis)
+        # Phase 4: Template File Generation
+        self.templates = self._phase4_template_generation(self.analysis)
         if not self.templates:
             self.warnings.append("No template files generated")
 
-        # ===== Phase 5.5: Completeness Validation (TASK-040) =====
+        # ===== Phase 4.5: Completeness Validation (TASK-040) =====
         if not self.config.skip_validation and self.templates:
-            self.templates = self._phase5_5_completeness_validation(
+            self.templates = self._phase4_5_completeness_validation(
                 templates=self.templates,
                 analysis=self.analysis
             )
 
-        # IMPORTANT: Save state before Phase 6
-        # (Phase 6 may exit with code 42 to request agent invocation)
-        self._save_checkpoint("templates_generated", phase=5)
+        # IMPORTANT: Save state before Phase 5
+        # (Phase 5 may exit with code 42 to request agent invocation)
+        self._save_checkpoint("templates_generated", phase=4)
 
-        # Phase 6: Agent Recommendation (may exit with code 42)
+        # Phase 5: Agent Recommendation (may exit with code 42)
         self.agents = []
         if not self.config.no_agents:
-            self.agents = self._phase6_agent_recommendation(self.analysis)
+            self.agents = self._phase5_agent_recommendation(self.analysis)
 
-        # Phase 7-8: Complete workflow
+        # Phase 6-7: Complete workflow
         return self._complete_workflow()
 
-    def _run_from_phase_6(self) -> OrchestrationResult:
+    def _run_from_phase_5(self) -> OrchestrationResult:
         """
-        Continue from Phase 6 after agent invocation (TASK-BRIDGE-002).
+        Continue from Phase 5 after agent invocation (TASK-BRIDGE-002).
 
         State has been restored in __init__, now complete the workflow.
 
@@ -256,35 +256,35 @@ class TemplateCreateOrchestrator:
         self._print_header()
         print("  (Resuming from checkpoint)")
 
-        # Phase 6: Complete agent generation with loaded response
+        # Phase 5: Complete agent generation with loaded response
         self.agents = []
         if not self.config.no_agents:
-            self.agents = self._phase6_agent_recommendation(self.analysis)
+            self.agents = self._phase5_agent_recommendation(self.analysis)
 
-        # Phase 7-8: Complete workflow
+        # Phase 6-7: Complete workflow
         return self._complete_workflow()
 
     def _complete_workflow(self) -> OrchestrationResult:
         """
-        Complete phases 7-8 (TASK-BRIDGE-002).
+        Complete phases 6-7 (TASK-BRIDGE-002).
 
-        Shared by both _run_all_phases and _run_from_phase_6.
+        Shared by both _run_all_phases and _run_from_phase_5.
 
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
-        # Phase 7: CLAUDE.md Generation (reordered - was Phase 5)
+        # Phase 6: CLAUDE.md Generation
         # NOW agents exist and can be documented accurately
-        self.claude_md = self._phase7_claude_md_generation(self.analysis, self.agents)
+        self.claude_md = self._phase6_claude_md_generation(self.analysis, self.agents)
         if not self.claude_md:
             return self._create_error_result("CLAUDE.md generation failed")
 
-        # Phase 8: Template Package Assembly
+        # Phase 7: Template Package Assembly
         if self.config.dry_run:
             self._print_dry_run_summary(self.manifest, self.settings, self.templates, self.agents)
             return self._create_dry_run_result(self.manifest, len(self.templates.templates if self.templates else []), len(self.agents))
 
-        output_path = self._phase8_package_assembly(
+        output_path = self._phase7_package_assembly(
             manifest=self.manifest,
             settings=self.settings,
             claude_md=self.claude_md,
@@ -295,12 +295,12 @@ class TemplateCreateOrchestrator:
         if not output_path:
             return self._create_error_result("Package assembly failed")
 
-        # ===== Phase 5.7: Extended Validation (TASK-043) =====
+        # ===== Phase 7.5: Extended Validation (TASK-043) =====
         # Run after package assembly when all files are in place
         validation_report_path = None
         exit_code = 0
         if self.config.validate and self.templates:
-            validation_report_path, exit_code = self._phase5_7_extended_validation(
+            validation_report_path, exit_code = self._phase7_5_extended_validation(
                 templates=self.templates,
                 manifest=self.manifest,
                 settings=self.settings,
@@ -335,71 +335,51 @@ class TemplateCreateOrchestrator:
             exit_code=exit_code
         )
 
-    def _phase1_qa_session(self) -> Optional[Dict[str, Any]]:
+    def _phase1_ai_analysis(self, codebase_path: Path) -> Optional[Any]:
         """
-        Phase 1: Run Q&A session to gather context.
+        Phase 1: AI-Native Codebase Analysis (TASK-51B2).
 
-        Returns:
-            Dictionary with Q&A answers or None if cancelled
-        """
-        self._print_phase_header("Phase 1: Q&A Session")
-
-        try:
-            qa_session = TemplateQASession(skip_qa=self.config.skip_qa)
-            answers = qa_session.run()
-
-            if not answers:
-                self._print_error("Q&A session cancelled")
-                return None
-
-            self._print_success_line("Q&A complete")
-
-            # Convert to dictionary for downstream use
-            return answers.to_dict() if hasattr(answers, 'to_dict') else vars(answers)
-
-        except Exception as e:
-            self._print_error(f"Q&A session failed: {e}")
-            logger.exception("Q&A session error")
-            return None
-
-    def _phase2_ai_analysis(self, qa_answers: Dict[str, Any]) -> Optional[Any]:
-        """
-        Phase 2: Analyze codebase with AI.
+        AI analyzes codebase directly and infers all metadata:
+        - Language (from file extensions, config files)
+        - Framework (from dependencies)
+        - Architecture (from folder structure)
+        - Testing framework (from test files)
+        - Template name (suggested from project)
 
         Args:
-            qa_answers: Answers from Q&A session
+            codebase_path: Path to codebase to analyze
 
         Returns:
             CodebaseAnalysis or None if failed
         """
-        self._print_phase_header("Phase 2: AI Codebase Analysis")
+        self._print_phase_header("Phase 1: AI Codebase Analysis")
 
         try:
-            # Get codebase path from config or Q&A
-            codebase_path = self.config.codebase_path or Path(qa_answers.get('codebase_path', '.'))
-
             if not codebase_path.exists():
                 self._print_error(f"Codebase path does not exist: {codebase_path}")
                 return None
 
-            # Build template context from Q&A
-            template_context = {
-                'name': qa_answers.get('template_name', 'unknown'),
-                'language': qa_answers.get('primary_language', 'unknown'),
-                'framework': qa_answers.get('framework', ''),
-                'architecture': qa_answers.get('architecture_pattern', ''),
-                'purpose': qa_answers.get('template_purpose', '')
-            }
-
-            # Run analyzer
-            analyzer = CodebaseAnalyzer(max_files=10)
+            # AI-native analysis: No template_context needed!
+            # AI will infer language, framework, architecture from codebase
+            # TASK-51B2-B: Increased from 10 to 30 to provide better context for template generation
+            # TASK-769D: Pass AgentBridgeInvoker for checkpoint-resume pattern
+            analyzer = CodebaseAnalyzer(
+                max_files=30,
+                bridge_invoker=self.agent_invoker
+            )
 
             self._print_info(f"  Analyzing: {codebase_path}")
             analysis = analyzer.analyze_codebase(
                 codebase_path=codebase_path,
-                template_context=template_context,
+                template_context=None,  # AI infers everything
                 save_results=False
             )
+
+            # Display what AI inferred
+            if hasattr(analysis, 'metadata'):
+                self._print_info(f"  Language: {getattr(analysis.metadata, 'primary_language', 'unknown')}")
+                self._print_info(f"  Framework: {getattr(analysis.metadata, 'framework', 'unknown')}")
+                self._print_info(f"  Template: {getattr(analysis.metadata, 'template_name', 'unknown')}")
 
             self._print_success_line(f"Analysis complete (confidence: {analysis.overall_confidence.percentage}%)")
 
@@ -410,9 +390,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Analysis error")
             return None
 
-    def _phase3_manifest_generation(self, analysis: Any) -> Optional[Any]:
+    def _phase2_manifest_generation(self, analysis: Any) -> Optional[Any]:
         """
-        Phase 3: Generate manifest.json.
+        Phase 2: Generate manifest.json.
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -438,9 +418,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Manifest generation error")
             return None
 
-    def _phase4_settings_generation(self, analysis: Any) -> Optional[Any]:
+    def _phase3_settings_generation(self, analysis: Any) -> Optional[Any]:
         """
-        Phase 4: Generate settings.json.
+        Phase 3: Generate settings.json.
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -468,9 +448,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Settings generation error")
             return None
 
-    def _phase5_template_generation(self, analysis: Any) -> Optional[Any]:
+    def _phase4_template_generation(self, analysis: Any) -> Optional[Any]:
         """
-        Phase 5: Generate .template files (reordered - was Phase 6).
+        Phase 4: Generate .template files.
 
         Args:
             analysis: CodebaseAnalysis from phase 2
@@ -504,9 +484,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Template generation error")
             return None
 
-    def _phase6_agent_recommendation(self, analysis: Any) -> List[Any]:
+    def _phase5_agent_recommendation(self, analysis: Any) -> List[Any]:
         """
-        Phase 6: Recommend and generate custom agents (reordered - was Phase 7).
+        Phase 5: Recommend and generate custom agents.
 
         TASK-BRIDGE-002: Modified to pass AgentBridgeInvoker to generator.
         May exit with code 42 if agent invocation needed.
@@ -522,9 +502,9 @@ class TemplateCreateOrchestrator:
         try:
             # Import agent scanner to get inventory
             _agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner')
-            scan_agents = _agent_scanner_module.scan_agents
-
-            inventory = scan_agents()
+            MultiSourceAgentScanner = _agent_scanner_module.MultiSourceAgentScanner
+            scanner = MultiSourceAgentScanner()
+            inventory = scanner.scan()
 
             # CRITICAL: Pass AgentBridgeInvoker to generator (TASK-BRIDGE-002)
             generator = AIAgentGenerator(
@@ -555,9 +535,9 @@ class TemplateCreateOrchestrator:
             logger.exception("Agent generation error")
             return []
 
-    def _phase7_claude_md_generation(self, analysis: Any, agents: List[Any]) -> Optional[Any]:
+    def _phase6_claude_md_generation(self, analysis: Any, agents: List[Any]) -> Optional[Any]:
         """
-        Phase 7: Generate CLAUDE.md (reordered - was Phase 5).
+        Phase 6: Generate CLAUDE.md.
 
         NOW runs AFTER agents are generated, so it can document actual agents
         instead of hallucinating non-existent ones.
@@ -595,7 +575,7 @@ class TemplateCreateOrchestrator:
             logger.exception("CLAUDE.md generation error")
             return None
 
-    def _phase5_5_completeness_validation(
+    def _phase4_5_completeness_validation(
         self,
         templates: TemplateCollection,
         analysis: Any
@@ -784,7 +764,7 @@ class TemplateCreateOrchestrator:
             self._print_warning("\n  Issues found. Auto-fix disabled, continuing...")
             return 'continue'
 
-    def _phase8_package_assembly(
+    def _phase7_package_assembly(
         self,
         manifest: Any,
         settings: Any,
@@ -1036,7 +1016,7 @@ class TemplateCreateOrchestrator:
         """Print error message."""
         print(f"  ❌ {message}")
 
-    def _phase5_7_extended_validation(
+    def _phase7_5_extended_validation(
         self,
         templates: TemplateCollection,
         manifest: Any,
@@ -1334,7 +1314,8 @@ def run_template_create(
     codebase_path: Optional[Path] = None,
     output_path: Optional[Path] = None,  # DEPRECATED: Use output_location instead
     output_location: str = 'global',  # TASK-068: 'global' or 'repo'
-    skip_qa: bool = False,
+    skip_qa: bool = False,  # DEPRECATED (TASK-9039): Now always uses smart defaults
+    config_file: Optional[Path] = None,  # TASK-9039: Optional config file path
     max_templates: Optional[int] = None,
     dry_run: bool = False,
     save_analysis: bool = False,
@@ -1350,7 +1331,8 @@ def run_template_create(
         codebase_path: Path to codebase to analyze
         output_path: DEPRECATED - Output directory for template package (use output_location)
         output_location: 'global' (default, ~/.agentecflow/templates/) or 'repo' (installer/global/templates/)
-        skip_qa: Skip interactive Q&A
+        skip_qa: DEPRECATED (TASK-9039) - Now always uses smart defaults
+        config_file: Optional path to config file (TASK-9039)
         max_templates: Maximum template files to generate
         dry_run: Analyze and show plan without saving
         save_analysis: Save analysis JSON for debugging
@@ -1361,11 +1343,19 @@ def run_template_create(
     Returns:
         OrchestrationResult
 
-    Example (personal use):
+    Example (personal use with smart defaults):
         result = run_template_create(
             codebase_path=Path("~/projects/my-app")
         )
         # Creates in ~/.agentecflow/templates/ (immediately available)
+        # Uses smart defaults from project detection
+
+    Example (with config file):
+        result = run_template_create(
+            codebase_path=Path("~/projects/my-app"),
+            config_file=Path(".template-create-config.json")
+        )
+        # Uses config file to override defaults
 
     Example (distribution):
         result = run_template_create(
@@ -1379,11 +1369,13 @@ def run_template_create(
         else:
             print(f"Failed: {result.errors}")
     """
+    # TASK-51B2: skip_qa and config_file removed (AI-native workflow)
+    # skip_qa parameter kept for backward compatibility but ignored
+    # config_file parameter kept for backward compatibility but ignored
     config = OrchestrationConfig(
         codebase_path=codebase_path,
         output_path=output_path,
         output_location=output_location,
-        skip_qa=skip_qa,
         max_templates=max_templates,
         dry_run=dry_run,
         save_analysis=save_analysis,
@@ -1405,7 +1397,9 @@ if __name__ == "__main__":
     parser.add_argument("--output-location", choices=['global', 'repo'], default='global',
                         help="Output location: 'global' (~/.agentecflow/templates/) or 'repo' (installer/global/templates/)")
     parser.add_argument("--skip-qa", action="store_true",
-                        help="Skip interactive Q&A session")
+                        help="DEPRECATED: Now always uses smart defaults")
+    parser.add_argument("--config", type=str,
+                        help="Path to config file (TASK-9039)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Analyze and show plan without saving")
     parser.add_argument("--validate", action="store_true",
@@ -1425,6 +1419,7 @@ if __name__ == "__main__":
         codebase_path=Path(args.path) if args.path else None,
         output_location=args.output_location,
         skip_qa=args.skip_qa,
+        config_file=Path(args.config) if args.config else None,  # TASK-9039
         dry_run=args.dry_run,
         validate=args.validate,
         max_templates=args.max_templates,

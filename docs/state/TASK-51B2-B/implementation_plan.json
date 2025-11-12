@@ -1,0 +1,121 @@
+{
+  "task_id": "TASK-51B2-B",
+  "title": "Fix AI-native template file generation in /template-create",
+  "technology_stack": "python",
+  "generated_at": "2025-11-12T14:45:00Z",
+  "version": 1,
+  "files": {
+    "to_create": [],
+    "to_modify": [
+      {
+        "path": "installer/global/lib/codebase_analyzer/prompt_builder.py",
+        "purpose": "Enhance AI prompt to emphasize template generation purpose and request diverse example files",
+        "estimated_loc": 40,
+        "changes": [
+          "Update example_files JSON schema to show 5-10 diverse examples",
+          "Add 'template_category' and 'why_good_template' fields",
+          "Add 'Template File Selection Guidelines' section to prompt",
+          "Emphasize that example_files will be converted to .template files"
+        ]
+      },
+      {
+        "path": "installer/global/commands/lib/template_create_orchestrator.py",
+        "purpose": "Increase file sampling from 10 to 30 for better AI context",
+        "estimated_loc": 1,
+        "changes": [
+          "Change max_files parameter from 10 to 30 on line 364"
+        ]
+      },
+      {
+        "path": "tests/integration/test_ai_native_template_creation.py",
+        "purpose": "Add integration tests to verify example_files are returned and templates are generated",
+        "estimated_loc": 60,
+        "changes": [
+          "Add test for non-empty example_files array",
+          "Add test for diverse file types in example_files",
+          "Add test for template generation from example_files",
+          "Add test for placeholder inclusion in templates"
+        ]
+      }
+    ]
+  },
+  "patterns": [
+    "AI Prompt Engineering",
+    "Template Generation Pattern",
+    "Configuration Tuning"
+  ],
+  "dependencies": {
+    "new": [],
+    "existing": [
+      "CodebaseAnalyzer",
+      "PromptBuilder",
+      "TemplateGenerator",
+      "ResponseParser"
+    ]
+  },
+  "risks": [
+    {
+      "category": "low",
+      "description": "AI may still return minimal example_files if codebase is too small",
+      "mitigation": "Increased sampling (30 files) and improved prompt should provide better context",
+      "severity": "low"
+    },
+    {
+      "category": "low",
+      "description": "Backward compatibility with existing prompts",
+      "mitigation": "Changes are additive only, no removal of existing prompt structure",
+      "severity": "low"
+    }
+  ],
+  "phases": [
+    {
+      "phase": "Phase 1: Prompt Enhancement",
+      "description": "Update prompt_builder.py to enhance AI instructions for template file selection",
+      "estimated_duration_hours": 1.5,
+      "tasks": [
+        "Update example_files JSON schema with 5-10 examples",
+        "Add template_category and why_good_template fields",
+        "Add Template File Selection Guidelines section",
+        "Emphasize template generation purpose"
+      ]
+    },
+    {
+      "phase": "Phase 2: Sampling Increase",
+      "description": "Increase file sampling limit in template_create_orchestrator.py",
+      "estimated_duration_hours": 0.5,
+      "tasks": [
+        "Change max_files from 10 to 30",
+        "Add comment explaining rationale"
+      ]
+    },
+    {
+      "phase": "Phase 3: Integration Tests",
+      "description": "Add tests to verify template generation works",
+      "estimated_duration_hours": 2,
+      "tasks": [
+        "Test example_files array is non-empty",
+        "Test diverse file types are included",
+        "Test template files are generated",
+        "Test placeholders are present"
+      ]
+    },
+    {
+      "phase": "Phase 4: Manual Testing",
+      "description": "Test with real codebases",
+      "estimated_duration_hours": 1,
+      "tasks": [
+        "Test with React TypeScript project",
+        "Test with FastAPI Python project",
+        "Verify templates work with taskwright init"
+      ]
+    }
+  ],
+  "estimated_total_duration_hours": 5,
+  "estimated_total_loc": 101,
+  "complexity_factors": {
+    "file_count": 3,
+    "new_dependencies": 0,
+    "risk_level": "low",
+    "pattern_familiarity": "high"
+  }
+}

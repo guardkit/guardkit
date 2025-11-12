@@ -18,6 +18,13 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict
+import importlib
+
+# Import using importlib to avoid 'global' keyword issue
+_exclusions_module = importlib.import_module('lib.codebase_analyzer.exclusions')
+
+DEFAULT_EXCLUSIONS = _exclusions_module.DEFAULT_EXCLUSIONS
+get_source_files = _exclusions_module.get_source_files
 
 logger = logging.getLogger(__name__)
 
@@ -502,12 +509,8 @@ class StratifiedSampler:
             self.pattern_detector
         )
 
-        # Files/directories to ignore (same as FileCollector)
-        self.ignore_patterns = {
-            ".git", ".svn", "node_modules", "__pycache__", ".pytest_cache",
-            "venv", "env", ".venv", "dist", "build", "target", ".idea",
-            ".vscode", "*.pyc", "*.pyo", ".DS_Store", "coverage"
-        }
+        # Note: Exclusion patterns are now centralized in DEFAULT_EXCLUSIONS
+        # from the exclusions module
 
     def collect_stratified_samples(self) -> List[Dict[str, str]]:
         """
@@ -555,31 +558,31 @@ class StratifiedSampler:
 
     def _discover_all_files(self) -> List[Path]:
         """
-        Discover all source code files in codebase.
+        Discover all source code files in codebase, excluding build artifacts.
 
         Returns:
             List of file paths
         """
+        source_extensions = [".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".java", ".go", ".rs"]
+
+        # Use get_source_files to automatically exclude build artifacts
         all_files = []
-        source_extensions = {".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".java", ".go", ".rs"}
-
         for ext in source_extensions:
-            for file_path in self.codebase_path.rglob(f"*{ext}"):
-                if self._should_include(file_path):
-                    all_files.append(file_path)
+            files = get_source_files(self.codebase_path, extensions=[ext])
+            all_files.extend(files)
 
-        return all_files
+        # Filter by additional criteria (size, test files, etc.)
+        filtered_files = [f for f in all_files if self._should_include(f)]
+
+        return filtered_files
 
     def _should_include(self, file_path: Path) -> bool:
-        """Check if file should be included in samples."""
-        if self._should_ignore(file_path):
-            return False
+        """
+        Check if file should be included in samples.
 
-        # Only include source code files
-        source_extensions = {".py", ".ts", ".tsx", ".js", ".jsx", ".cs", ".java", ".go", ".rs"}
-        if file_path.suffix not in source_extensions:
-            return False
-
+        Note: Build artifacts are already excluded by get_source_files().
+        This method applies additional filtering criteria.
+        """
         # Skip test files for now (we want production code examples)
         if "test" in file_path.name.lower():
             return False
@@ -592,16 +595,6 @@ class StratifiedSampler:
             return False
 
         return True
-
-    def _should_ignore(self, path: Path) -> bool:
-        """Check if path should be ignored."""
-        path_str = str(path)
-
-        for pattern in self.ignore_patterns:
-            if pattern in path_str:
-                return True
-
-        return False
 
     def _sample_from_categories(
         self,

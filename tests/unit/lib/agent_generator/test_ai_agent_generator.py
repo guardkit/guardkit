@@ -386,7 +386,7 @@ class TestJSONResponseParsing:
 
         response = json.dumps({"name": "not-an-array"})
 
-        with pytest.raises(ValueError, match="must be JSON array"):
+        with pytest.raises(ValueError, match="Failed to parse AI agent response"):
             generator._parse_ai_agent_response(response, mock_analysis)
 
 
@@ -477,12 +477,12 @@ class TestBackwardCompatibility:
         # Verify AI was called
         mock_ai_invoker_valid_json.invoke.assert_called_once()
 
-    def test_identify_needs_falls_back_on_ai_error(
+    def test_identify_needs_returns_empty_on_ai_error(
         self,
         mock_inventory,
         mock_analysis
     ):
-        """Test that _identify_capability_needs falls back on AI error"""
+        """Test that _identify_capability_needs returns empty list on AI error (AI-native approach)"""
         # Create failing invoker
         failing_invoker = Mock(spec=AgentInvoker)
         failing_invoker.invoke.side_effect = Exception("AI failed")
@@ -494,9 +494,9 @@ class TestBackwardCompatibility:
 
         needs = generator._identify_capability_needs(mock_analysis)
 
-        # Should fall back to hard-coded detection
+        # Should return empty list (AI-native approach, no fallback)
         assert isinstance(needs, list)
-        # Should still return some results
+        assert len(needs) == 0
 
 
 class TestIntegration:

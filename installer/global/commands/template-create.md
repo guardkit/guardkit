@@ -7,19 +7,20 @@ Orchestrates complete template creation from existing codebases using AI-powered
 ## Purpose
 
 Automate template creation from brownfield (existing) codebases by:
-1. Running interactive Q&A to gather context (TASK-001)
-2. Analyzing codebase with AI (TASK-002)
-3. Generating manifest.json (TASK-005)
-4. Generating settings.json (TASK-006)
+1. AI-native codebase analysis (TASK-51B2) - AI infers language, framework, architecture directly
+2. Generating manifest.json (TASK-005)
+3. Generating settings.json (TASK-006)
+4. Generating .template files (TASK-008)
 5. Generating CLAUDE.md (TASK-007)
-6. Generating .template files (TASK-008)
-7. Recommending specialized agents (TASK-009)
-8. Saving complete template package
+6. Recommending specialized agents (TASK-009)
+7. Saving complete template package
+
+**Note**: As of TASK-51B2, the command uses AI-native analysis. No Q&A sessions, no detector code - AI analyzes codebases directly and infers all metadata. Use `/template-qa` for interactive customization if needed.
 
 ## Usage
 
 ```bash
-# Interactive mode (default - creates in ~/.agentecflow/templates/)
+# AI-native mode (default - AI analyzes codebase directly)
 /template-create
 
 # Create for team distribution (requires install.sh)
@@ -28,9 +29,6 @@ Automate template creation from brownfield (existing) codebases by:
 
 # Analyze specific codebase path
 /template-create --path /path/to/codebase
-
-# Skip Q&A and use defaults
-/template-create --skip-qa
 
 # Save to custom output directory (DEPRECATED: use --output-location)
 /template-create --output /path/to/output
@@ -47,69 +45,66 @@ Automate template creation from brownfield (existing) codebases by:
 The command orchestrates all template creation phases:
 
 ```
-Phase 1: Q&A Session (TASK-001)
-├─ Interactive questions about codebase
-├─ Codebase path selection
-└─ Context gathering (8 questions)
-
-Phase 2: AI Analysis (TASK-002)
-├─ File collection (max 10 samples)
+Phase 1: AI-Native Codebase Analysis (TASK-51B2)
+├─ File collection (stratified sampling, max 20 samples)
 ├─ Directory tree generation
-├─ AI-powered architecture analysis
-└─ Quality assessment
+├─ AI infers ALL metadata from codebase:
+│  ├─ Primary language (from file extensions, config files)
+│  ├─ Framework (from dependencies: package.json, requirements.txt, *.csproj)
+│  ├─ Architecture pattern (from folder structure)
+│  ├─ Testing framework (from test files)
+│  └─ Template name (suggested from project)
+├─ Architecture analysis (patterns, layers, abstractions)
+└─ Quality assessment (SOLID, DRY, YAGNI)
 
-Phase 3: Manifest Generation (TASK-005)
+Phase 2: Manifest Generation (TASK-005)
 ├─ Template identity (name, version, author)
 ├─ Technology stack detection
 ├─ Framework version inference
 ├─ Placeholder extraction
 └─ Complexity scoring
 
-Phase 4: Settings Generation (TASK-006)
+Phase 3: Settings Generation (TASK-006)
 ├─ Naming conventions extraction
 ├─ File organization patterns
 ├─ Layer mappings
 ├─ Code style inference
 └─ Generation options
 
-Phase 5: Template File Generation (TASK-008) [REORDERED]
+Phase 4: Template File Generation (TASK-008)
 ├─ AI-powered placeholder extraction
 ├─ Template content generation
 ├─ Pattern identification
 ├─ Quality scoring
 └─ Validation
 
-Phase 5.5: Completeness Validation (TASK-040)
+Phase 4.5: Completeness Validation (TASK-040)
 ├─ CRUD operation completeness checks
 ├─ Layer symmetry validation
 ├─ False negative detection
 ├─ Auto-fix recommendations
 └─ Quality gate enforcement
 
-Phase 6: Agent Recommendation (TASK-009) [REORDERED]
+Phase 5: Agent Recommendation (TASK-009)
 ├─ Capability needs identification
 ├─ Gap analysis vs existing agents
 ├─ AI-powered agent generation
 └─ Reusability assessment
 
-Phase 7: CLAUDE.md Generation (TASK-007) [REORDERED]
-├─ Architecture overview
-├─ Technology stack documentation
-├─ Project structure visualization
-├─ Naming conventions guide
-├─ Patterns and best practices
-├─ Code examples
-├─ Quality standards
-└─ Agent usage (NOW scans actual agents from Phase 6)
+Phase 6: CLAUDE.md Generation (TASK-007)
+├─ Template documentation
+├─ Usage instructions
+├─ Best practices
+└─ Agent integration guide
 
-Phase 8: Template Package Assembly
+Phase 7: Package Assembly
 ├─ Directory structure creation
 ├─ File writing (manifest, settings, CLAUDE.md)
 ├─ Template files organization
 ├─ Agent files (if generated)
 └─ Validation summary
 
-Phase 5.7: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
+Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
 ├─ Placeholder consistency validation
 ├─ Pattern fidelity spot-checks (5 random templates)
 ├─ Documentation completeness verification
@@ -178,9 +173,6 @@ None - all options have defaults
                          Use --output-location instead
                          Default: determined by --output-location
 
---skip-qa                Skip interactive Q&A, use defaults
-                         Default: false
-
 --max-templates N        Maximum template files to generate
                          Default: unlimited (all eligible files)
 
@@ -216,73 +208,64 @@ None - all options have defaults
                          Default: false
 ```
 
-## Q&A Session (Phase 1)
+## AI-Native Codebase Analysis (Phase 1) - TASK-51B2
 
-Interactive session with 8 questions:
+AI analyzes codebase directly and infers ALL metadata without Q&A or detector code.
 
-### Section 1: Codebase Location
-```
-Where is the codebase you want to convert to a template?
-  Options:
-  - Current directory
-  - Specify path
-```
+### What AI Infers
 
-### Section 2: Template Identity
-```
-What should this template be called?
-  Validation: 3-50 chars, alphanumeric + hyphens/underscores
-  Default: {inferred from directory name}
-```
+**Language Detection**:
+- Analyzes file extensions: `.py`, `.ts`, `.cs`, `.go`, `.rs`
+- Reads config files: `package.json`, `requirements.txt`, `*.csproj`, `go.mod`, `Cargo.toml`
+- Infers primary language with confidence score
 
-### Section 3: Technology Stack
-```
-Primary language? (auto-detected if possible)
-  Options: C#, TypeScript, Python, Java, Kotlin, Go, Rust, Other
-```
+**Framework Detection**:
+- Analyzes dependencies in:
+  - Python: `requirements.txt`, `pyproject.toml`
+  - TypeScript: `package.json` dependencies
+  - .NET: `*.csproj` PackageReference
+  - Go: `go.mod` require statements
+- Common frameworks: FastAPI, Flask, Django, React, Next.js, Vue, Angular, ASP.NET, Express
 
-### Section 4: Template Purpose
-```
-What is the primary purpose of this template?
-  [1] Start new projects quickly
-  [2] Enforce team standards
-  [3] Prototype/experiment
-  [4] Production-ready scaffold
-```
+**Architecture Pattern**:
+- Analyzes folder structure: `api/`, `models/`, `services/`, `controllers/`, `components/`, `domain/`, `infrastructure/`
+- Identifies: Layered, MVC, MVVM, Clean Architecture, Hexagonal, Microservices
 
-### Section 5: Architecture Pattern
-```
-Primary architecture pattern? (auto-detected if possible)
-  Options: MVVM, Clean, Hexagonal, Layered, MVC, Other
-```
+**Testing Framework**:
+- Analyzes test files and dependencies
+- Python: pytest, unittest
+- TypeScript: Jest, Vitest, Mocha
+- .NET: xUnit, NUnit, MSTest
+- Go: testing package, testify
 
-### Section 6: Example Files
-```
-Include example files in analysis?
-  Options: All matching files, Specific paths, Auto-select best examples
-```
+**Template Name**:
+- Suggests based on language + framework
+- Examples: "fastapi-python", "react-typescript", "nextjs-fullstack"
 
-### Section 7: Agent Preferences
-```
-Generate custom agents for project-specific patterns?
-  [Yes] Generate agents for capabilities not in global library
-  [No] Use only global agents
-```
+### How It Works
 
-### Section 8: Confirmation
-```
-Summary of detected patterns and planned template structure.
-Confirm to proceed with generation?
-```
+1. **Stratified Sampling**: Collects up to 20 representative files from codebase
+2. **AI Prompt**: Requests structured analysis including metadata inference
+3. **No Human Interaction**: AI infers everything from codebase files
+4. **Confidence Scoring**: AI provides confidence level for inferences (90%+ = high)
 
-## AI Analysis (Phase 2)
+### Fallback Behavior
+
+If AI confidence is low (<50%), reasonable defaults are used:
+- Template name from directory name
+- Language from most common file extension
+- Architecture from folder structure heuristics
+
+See `/template-qa` command for interactive customization if AI inference is insufficient.
+
+## AI Analysis Output (Phase 1 Result)
 
 Uses `architectural-reviewer` agent to analyze codebase:
 
 **Input**:
-- File samples (up to 10 representative files)
+- File samples (up to 20 stratified samples)
 - Directory structure tree
-- Q&A context (language, architecture, purpose)
+- NO template context (AI infers everything)
 
 **Output** (`CodebaseAnalysis`):
 ```python

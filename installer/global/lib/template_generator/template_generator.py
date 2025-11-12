@@ -8,15 +8,22 @@ extract placeholders while preserving code structure and patterns.
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 import re
+import importlib
 
-from lib.codebase_analyzer.models import CodebaseAnalysis, ExampleFile
-from lib.template_generator.ai_client import AIClient
-from lib.template_generator.models import (
-    CodeTemplate,
-    TemplateCollection,
-    ValidationResult,
-    PlaceholderExtractionError,
-)
+# Import using importlib to avoid 'global' keyword issue
+_analyzer_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_ai_client_module = importlib.import_module('installer.global.lib.template_generator.ai_client')
+_models_module = importlib.import_module('installer.global.lib.template_generator.models')
+
+CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
+ExampleFile = _analyzer_models_module.ExampleFile
+
+AIClient = _ai_client_module.AIClient
+
+CodeTemplate = _models_module.CodeTemplate
+TemplateCollection = _models_module.TemplateCollection
+ValidationResult = _models_module.ValidationResult
+PlaceholderExtractionError = _models_module.PlaceholderExtractionError
 
 
 class TemplateGenerator:

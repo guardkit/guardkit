@@ -120,29 +120,32 @@ class AIAgentGenerator:
 
     def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
         """
-        Analyze codebase to identify needed agent capabilities.
+        Analyze codebase to identify needed agent capabilities using AI.
 
-        Uses AI-powered analysis by default, with fallback to hard-coded
-        detection if AI fails.
+        AI-Native approach: No hard-coded fallback. If AI analysis fails,
+        return empty list and let user know AI detection is required.
 
         Args:
             analysis: Codebase analysis
 
         Returns:
-            List of capability needs
+            List of capability needs (empty if AI fails)
         """
-        # Try AI-powered detection first
+        # AI-powered detection (AI-native approach - no fallback)
         try:
             needs = self._ai_identify_all_agents(analysis)
             if needs:  # AI successfully identified agents
                 print(f"  ✓ AI identified {len(needs)} capability needs")
                 return needs
+            else:
+                print("  ⚠️  AI returned no capability needs")
+                return []
         except Exception as e:
-            print(f"  ⚠️  AI detection failed: {e}")
-            print("  → Falling back to hard-coded detection")
-
-        # Fallback to hard-coded detection
-        return self._fallback_to_hardcoded(analysis)
+            print(f"  ❌ AI detection failed: {e}")
+            print("  ℹ️  AI-native agent generation requires AI analysis")
+            print("  ℹ️  Please ensure AI invoker is properly configured")
+            # Return empty list instead of falling back to hard-coded
+            return []
 
     def _ai_identify_all_agents(self, analysis: Any) -> List[CapabilityNeed]:
         """
@@ -211,6 +214,22 @@ class AIAgentGenerator:
             )
         layers_text = '\n'.join(layers_desc) if layers_desc else "No layers identified"
 
+        # Calculate expected agent count based on complexity
+        layer_count = len(layers)
+        pattern_count = len(patterns)
+        framework_count = len(frameworks)
+        complexity = layer_count + pattern_count + framework_count
+
+        if complexity >= 10:
+            target_agents = "10-12"
+            complexity_level = "Complex"
+        elif complexity >= 6:
+            target_agents = "7-9"
+            complexity_level = "Medium"
+        else:
+            target_agents = "5-7"
+            complexity_level = "Simple"
+
         prompt = f"""Analyze this codebase and identify ALL specialized AI agents needed for template creation.
 
 **Project Context:**
@@ -220,20 +239,25 @@ class AIAgentGenerator:
 - Patterns Detected: {', '.join(patterns) if patterns else 'None'}
 - Testing Framework: {testing_framework or 'None'}
 - Quality Patterns: {quality_assessment or 'None'}
+- Complexity: {complexity_level} ({layer_count} layers, {pattern_count} patterns, {framework_count} frameworks)
 
 **Code Layers:**
 {layers_text}
 
+**SUCCESS CRITERIA:**
+Your response MUST include {target_agents} agents to ensure comprehensive coverage.
+Each agent should be highly specialized for patterns found in this codebase.
+
 **Requirements:**
 1. Generate an agent for EACH architectural pattern listed (MVVM, Repository, Service, etc.)
-2. Generate an agent for EACH layer (Domain, Application, Infrastructure, etc.)
-3. Generate an agent for EACH major framework (MAUI, React, FastAPI, etc.)
-4. Generate specialist agents for patterns (ErrorOr, CQRS, Mediator, etc.)
-5. Include validation agents if architecture patterns are detected
-6. Include database-specific agents if database frameworks are detected
-7. Include testing agents if testing frameworks are detected
+2. Generate an agent for EACH layer (Domain, Application, Infrastructure, Presentation, etc.)
+3. Generate an agent for EACH major framework (MAUI, React, FastAPI, Next.js, etc.)
+4. Generate specialist agents for design patterns (ErrorOr, CQRS, Mediator, Factory, etc.)
+5. Include validation/testing agents if architecture patterns detected
+6. Include database-specific agents if database frameworks detected
+7. Include testing framework agents (pytest, xUnit, Vitest, Playwright, etc.)
 
-**Output Format (STRICT JSON ARRAY ONLY - NO MARKDOWN WRAPPERS):**
+**STRICT JSON FORMAT (NO MARKDOWN CODE BLOCKS):**
 [
   {{
     "name": "repository-pattern-specialist",
@@ -243,22 +267,31 @@ class AIAgentGenerator:
     "priority": 9
   }},
   {{
-    "name": "engine-pattern-specialist",
-    "description": "Business logic engines with orchestration",
-    "reason": "Project has Application layer with Engines subdirectory",
-    "technologies": ["C#", "Engine Pattern"],
+    "name": "domain-operations-specialist",
+    "description": "Domain operations following DDD principles",
+    "reason": "Project has domain layer with operations subdirectory",
+    "technologies": ["C#", "DDD", "Domain Operations"],
+    "priority": 8
+  }},
+  {{
+    "name": "mvvm-viewmodel-specialist",
+    "description": "MVVM ViewModels with INotifyPropertyChanged",
+    "reason": "Project uses MVVM architecture with ViewModels",
+    "technologies": ["C#", "MVVM", "WPF/MAUI"],
     "priority": 9
   }}
 ]
 
-**Critical Instructions:**
-- Return ONLY the JSON array, NO markdown code blocks (```json)
-- Include minimum 1 agent per major pattern/layer/framework identified
-- For complex projects (3+ layers, 4+ patterns), return 7-12 agents
+**CRITICAL INSTRUCTIONS:**
+- Return ONLY the JSON array (start with [ and end with ])
+- NO markdown wrappers like ```json or ```
+- Include minimum {target_agents} agents for this {complexity_level.lower()} project
+- Each agent must have all required fields: name, description, reason, technologies, priority
 - Priority scale: 10=critical, 7-9=high, 4-6=medium, 1-3=low
-- Use descriptive names with hyphens: "mvvm-viewmodel-specialist"
+- Use descriptive hyphenated names: "mvvm-viewmodel-specialist", "api-endpoint-specialist"
+- Ensure diverse agent types: domain, api, data, ui, testing specialists
 
-Return comprehensive JSON array of ALL agents this project needs:"""
+Return the JSON array now:"""
 
         return prompt
 
@@ -266,10 +299,11 @@ Return comprehensive JSON array of ALL agents this project needs:"""
         """
         Parse AI-generated agent specifications from JSON response.
 
-        Handles various response formats:
-        - Pure JSON array
-        - JSON with markdown wrappers (```json)
-        - Partial JSON with trailing text
+        Implements 4-strategy parsing with diagnostic logging:
+        1. Direct JSON parsing
+        2. Markdown wrapper stripping
+        3. Regex extraction of JSON array
+        4. Graceful failure with detailed error
 
         Args:
             response: AI response containing JSON array
@@ -279,15 +313,27 @@ Return comprehensive JSON array of ALL agents this project needs:"""
             List of CapabilityNeed objects
 
         Raises:
-            json.JSONDecodeError: If response is not valid JSON
-            KeyError: If required fields are missing
+            ValueError: If response cannot be parsed after all strategies
         """
-        # Clean response - remove markdown wrappers if present
-        cleaned = response.strip()
+        import re
+        import logging
 
-        # Remove ```json wrapper if present
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Parsing AI response (length: {len(response)} chars)")
+
+        # Strategy 1: Direct JSON parsing
+        try:
+            agents_data = json.loads(response.strip())
+            if isinstance(agents_data, list):
+                logger.debug(f"Strategy 1 success: Direct JSON parsing ({len(agents_data)} agents)")
+                return self._convert_to_capability_needs(agents_data, analysis)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Strategy 1 failed: {e}")
+
+        # Strategy 2: Strip markdown wrappers
+        cleaned = response.strip()
         if cleaned.startswith("```json"):
-            cleaned = cleaned.split("```json\n", 1)[1]
+            cleaned = cleaned.split("```json\n", 1)[1] if "\n" in cleaned else cleaned[7:]
             cleaned = cleaned.rsplit("```", 1)[0]
         elif cleaned.startswith("```"):
             cleaned = cleaned.split("```\n", 1)[1] if "\n" in cleaned else cleaned[3:]
@@ -295,28 +341,68 @@ Return comprehensive JSON array of ALL agents this project needs:"""
 
         cleaned = cleaned.strip()
 
-        # Parse JSON array
         try:
             agents_data = json.loads(cleaned)
+            if isinstance(agents_data, list):
+                logger.debug(f"Strategy 2 success: Markdown stripped ({len(agents_data)} agents)")
+                return self._convert_to_capability_needs(agents_data, analysis)
         except json.JSONDecodeError as e:
-            # Try to find JSON array in response
-            import re
-            json_match = re.search(r'\[[\s\S]*\]', cleaned)
-            if json_match:
+            logger.debug(f"Strategy 2 failed: {e}")
+
+        # Strategy 3: Regex extraction of JSON array
+        json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', cleaned)
+        if json_match:
+            try:
                 agents_data = json.loads(json_match.group(0))
-            else:
-                raise ValueError(f"No valid JSON array found in AI response: {str(e)}")
+                if isinstance(agents_data, list):
+                    logger.debug(f"Strategy 3 success: Regex extraction ({len(agents_data)} agents)")
+                    return self._convert_to_capability_needs(agents_data, analysis)
+            except json.JSONDecodeError as e:
+                logger.debug(f"Strategy 3 failed: {e}")
 
+        # Strategy 4: Graceful failure with diagnostics
+        logger.error("All parsing strategies failed")
+        logger.error(f"Response preview: {response[:200]}...")
+
+        raise ValueError(
+            f"Failed to parse AI agent response after 4 strategies. "
+            f"Response did not contain valid JSON array. "
+            f"Preview: {response[:200]}..."
+        )
+
+    def _convert_to_capability_needs(
+        self,
+        agents_data: list,
+        analysis: Any
+    ) -> List[CapabilityNeed]:
+        """
+        Convert AI-generated agent specifications to CapabilityNeed objects.
+
+        Args:
+            agents_data: List of agent specification dicts
+            analysis: Codebase analysis (for file mapping)
+
+        Returns:
+            List of CapabilityNeed objects
+
+        Raises:
+            KeyError: If required fields are missing
+            ValueError: If agents_data is not a list
+        """
         if not isinstance(agents_data, list):
-            raise ValueError(f"AI response must be JSON array, got {type(agents_data)}")
+            raise ValueError(f"agents_data must be list, got {type(agents_data)}")
 
-        # Convert to CapabilityNeed objects
         needs = []
         example_files = getattr(analysis, 'example_files', [])
 
-        for agent_spec in agents_data:
-            need = self._create_capability_need_from_spec(agent_spec, example_files)
-            needs.append(need)
+        for i, agent_spec in enumerate(agents_data):
+            try:
+                need = self._create_capability_need_from_spec(agent_spec, example_files)
+                needs.append(need)
+            except (KeyError, ValueError) as e:
+                # Log error but continue processing other agents
+                print(f"    ⚠️  Skipping agent {i+1}: {e}")
+                continue
 
         return needs
 
@@ -369,17 +455,31 @@ Return comprehensive JSON array of ALL agents this project needs:"""
 
     def _fallback_to_hardcoded(self, analysis: Any) -> List[CapabilityNeed]:
         """
-        Hard-coded pattern detection (FALLBACK ONLY).
+        Hard-coded pattern detection (DEPRECATED).
 
-        This is the original implementation preserved as a fallback
-        when AI detection fails. Kept for backward compatibility.
+        DEPRECATED: This method is no longer used. The AI-native approach
+        does not fall back to hard-coded detection. This method is kept
+        for reference only and will be removed in a future version.
+
+        Use _ai_identify_all_agents() with enhanced prompts instead.
 
         Args:
             analysis: Codebase analysis
 
         Returns:
             List of capability needs
+
+        Raises:
+            DeprecationWarning: Always raised when called
         """
+        import warnings
+        warnings.warn(
+            "_fallback_to_hardcoded() is deprecated and should not be used. "
+            "The AI-native approach requires proper AI configuration. "
+            "This method will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         needs = []
 
         # Get example files (handle both list and attribute access)

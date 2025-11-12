@@ -1,0 +1,47 @@
+{
+  "task_id": "TASK-51B2-B",
+  "analyzed_at": "2025-11-12T14:45:00Z",
+  "triggers_detected": [],
+  "trigger_analysis": {
+    "USER_FLAG": {
+      "detected": false,
+      "details": "No --review flag present. --docs=minimal provided but doesn't trigger review"
+    },
+    "SECURITY_KEYWORDS": {
+      "detected": false,
+      "keywords_checked": [
+        "auth",
+        "authentication",
+        "password",
+        "encryption",
+        "token",
+        "session",
+        "oauth",
+        "jwt",
+        "crypto"
+      ],
+      "keywords_found": [],
+      "search_locations": [
+        "task title",
+        "task description",
+        "task tags"
+      ]
+    },
+    "BREAKING_CHANGES": {
+      "detected": false,
+      "details": "No public API modifications or interface changes. Backward compatible prompt enhancements only."
+    },
+    "SCHEMA_CHANGES": {
+      "detected": false,
+      "details": "No database migrations or model changes. Changes are limited to AI prompts and configuration."
+    },
+    "HOTFIX": {
+      "detected": true,
+      "severity": "critical",
+      "details": "Task has 'critical' priority tag, but this is a regression fix, not a production hotfix requiring immediate deployment",
+      "override": "Not forcing review - critical priority refers to bug severity, not production urgency"
+    }
+  },
+  "force_review_required": false,
+  "rationale": "No force-review triggers detected. 'critical' priority refers to regression severity, not production deployment urgency. Changes are backward compatible prompt enhancements."
+}

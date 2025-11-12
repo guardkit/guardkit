@@ -15,19 +15,25 @@ Following architectural review recommendations:
 import logging
 from pathlib import Path
 from typing import Optional, Dict
+import importlib
 
-from lib.codebase_analyzer.models import (
-    CodebaseAnalysis,
-    AgentInvocationError,
-    ParseError,
-)
-from lib.codebase_analyzer.agent_invoker import (
-    ArchitecturalReviewerInvoker,
-    HeuristicAnalyzer,
-)
-from lib.codebase_analyzer.prompt_builder import PromptBuilder, FileCollector
-from lib.codebase_analyzer.response_parser import ResponseParser, FallbackResponseBuilder
-from lib.codebase_analyzer.serializer import AnalysisSerializer
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+_agent_invoker_module = importlib.import_module('lib.codebase_analyzer.agent_invoker')
+_prompt_builder_module = importlib.import_module('lib.codebase_analyzer.prompt_builder')
+_response_parser_module = importlib.import_module('lib.codebase_analyzer.response_parser')
+_serializer_module = importlib.import_module('lib.codebase_analyzer.serializer')
+
+CodebaseAnalysis = _models_module.CodebaseAnalysis
+AgentInvocationError = _models_module.AgentInvocationError
+ParseError = _models_module.ParseError
+ArchitecturalReviewerInvoker = _agent_invoker_module.ArchitecturalReviewerInvoker
+HeuristicAnalyzer = _agent_invoker_module.HeuristicAnalyzer
+PromptBuilder = _prompt_builder_module.PromptBuilder
+FileCollector = _prompt_builder_module.FileCollector
+ResponseParser = _response_parser_module.ResponseParser
+FallbackResponseBuilder = _response_parser_module.FallbackResponseBuilder
+AnalysisSerializer = _serializer_module.AnalysisSerializer
 
 
 logger = logging.getLogger(__name__)
@@ -60,7 +66,8 @@ class CodebaseAnalyzer:
         serializer: Optional[AnalysisSerializer] = None,
         max_files: int = 20,  # CHANGED: Increased from 10 to 20 for stratified sampling
         use_agent: bool = True,
-        use_stratified_sampling: bool = True  # NEW: Enable pattern-aware sampling
+        use_stratified_sampling: bool = True,  # NEW: Enable pattern-aware sampling
+        bridge_invoker: Optional[Any] = None  # TASK-769D: Optional agent bridge invoker
     ):
         """
         Initialize codebase analyzer.
@@ -74,6 +81,7 @@ class CodebaseAnalyzer:
             use_agent: Whether to attempt agent invocation (False forces heuristics)
             use_stratified_sampling: Whether to use stratified sampling (default: True)
                                     Set to False to use original random sampling
+            bridge_invoker: Optional agent bridge invoker for checkpoint-resume pattern (TASK-769D)
         """
         self.agent_invoker = agent_invoker or ArchitecturalReviewerInvoker()
         self.response_parser = response_parser or ResponseParser()
@@ -81,6 +89,7 @@ class CodebaseAnalyzer:
         self.max_files = max_files
         self.use_agent = use_agent
         self.use_stratified_sampling = use_stratified_sampling
+        self.bridge_invoker = bridge_invoker  # TASK-769D: Store bridge invoker
 
         # Prompt builder is created per-analysis with template context
         self.prompt_builder_class = prompt_builder.__class__ if prompt_builder else PromptBuilder
@@ -123,7 +132,8 @@ class CodebaseAnalyzer:
 
         if self.use_stratified_sampling:
             try:
-                from lib.codebase_analyzer.stratified_sampler import StratifiedSampler
+                _stratified_sampler_module = importlib.import_module('lib.codebase_analyzer.stratified_sampler')
+                StratifiedSampler = _stratified_sampler_module.StratifiedSampler
                 logger.info("Using stratified sampling for pattern-aware file selection")
 
                 sampler = StratifiedSampler(codebase_path, max_files=self.max_files)
@@ -194,9 +204,11 @@ class CodebaseAnalyzer:
         # Fallback to heuristic analysis if needed
         if analysis is None:
             logger.info("Performing heuristic analysis...")
+            # TASK-769D: Pass file_samples to fallback analysis
             analysis = self._fallback_analysis(
                 codebase_path=codebase_path,
-                template_context=template_context
+                template_context=template_context,
+                file_samples=file_samples
             )
 
         # Step 5: Validate analysis
@@ -219,7 +231,8 @@ class CodebaseAnalyzer:
     def _fallback_analysis(
         self,
         codebase_path: Path,
-        template_context: Optional[Dict[str, str]]
+        template_context: Optional[Dict[str, str]],
+        file_samples: Optional[list] = None
     ) -> CodebaseAnalysis:
         """
         Perform fallback heuristic analysis when agent is unavailable.
@@ -227,12 +240,14 @@ class CodebaseAnalyzer:
         Args:
             codebase_path: Path to codebase
             template_context: Template context
+            file_samples: Optional file samples for analysis (TASK-769D)
 
         Returns:
             CodebaseAnalysis from heuristics with appropriate confidence scores
         """
         # Use heuristic analyzer
-        heuristic_analyzer = HeuristicAnalyzer(codebase_path)
+        # TASK-769D: Pass file_samples to HeuristicAnalyzer
+        heuristic_analyzer = HeuristicAnalyzer(codebase_path, file_samples=file_samples)
         heuristic_data = heuristic_analyzer.analyze()
 
         # Convert to CodebaseAnalysis

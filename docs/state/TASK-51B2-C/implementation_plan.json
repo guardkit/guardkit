@@ -1,0 +1,110 @@
+{
+  "task_id": "TASK-51B2-C",
+  "title": "Fix AI agent invocation module import errors",
+  "technology_stack": "python",
+  "generated_at": "2025-11-12T15:10:00Z",
+  "version": 1,
+  "files": {
+    "to_modify": [
+      {
+        "path": "installer/global/lib/codebase_analyzer/ai_analyzer.py",
+        "purpose": "Update 5 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 5
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/agent_invoker.py",
+        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 2
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/prompt_builder.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 1
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/response_parser.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 1
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/serializer.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 1
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/stratified_sampler.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 1
+      },
+      {
+        "path": "installer/global/lib/codebase_analyzer/__init__.py",
+        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "estimated_loc": 2
+      }
+    ],
+    "to_create": []
+  },
+  "patterns": [
+    {
+      "name": "Import Path Correction",
+      "description": "Mechanical find-and-replace of relative imports to absolute imports",
+      "familiarity": "very_high",
+      "complexity": "trivial"
+    }
+  ],
+  "dependencies": {
+    "new": [],
+    "existing": [
+      "installer.global.lib.codebase_analyzer (internal)"
+    ]
+  },
+  "risks": [
+    {
+      "area": "Import path changes",
+      "severity": "low",
+      "description": "Mechanical change with existing test coverage",
+      "mitigation": "Verify with existing unit tests and integration tests"
+    }
+  ],
+  "phases": [
+    {
+      "name": "Phase 1: Update imports in each file",
+      "description": "Replace from lib.codebase_analyzer with from installer.global.lib.codebase_analyzer in 7 files",
+      "estimated_time_minutes": 15,
+      "tasks": [
+        "Update ai_analyzer.py imports (5 lines)",
+        "Update agent_invoker.py imports (2 lines)",
+        "Update prompt_builder.py imports (1 line)",
+        "Update response_parser.py imports (1 line)",
+        "Update serializer.py imports (1 line)",
+        "Update stratified_sampler.py imports (1 line)",
+        "Update __init__.py imports (2 lines)"
+      ]
+    },
+    {
+      "name": "Phase 2: Verify syntax and compilation",
+      "description": "Run Python syntax checks and import validation",
+      "estimated_time_minutes": 5,
+      "tasks": [
+        "Run python -m py_compile on each modified file",
+        "Verify no import errors"
+      ]
+    },
+    {
+      "name": "Phase 3: Run existing unit tests",
+      "description": "Execute unit tests to validate import changes",
+      "estimated_time_minutes": 10,
+      "tasks": [
+        "Run pytest tests/unit/test_codebase_analyzer*.py",
+        "Verify all tests pass with new import paths"
+      ]
+    }
+  ],
+  "estimated_duration_minutes": 30,
+  "estimated_loc": 13,
+  "test_strategy": {
+    "unit_tests": "Existing tests validate import changes",
+    "integration_tests": "Manual test from user project directory",
+    "coverage_target": 80
+  }
+}

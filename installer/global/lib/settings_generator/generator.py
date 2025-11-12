@@ -8,18 +8,23 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+import importlib
 
-from lib.codebase_analyzer.models import CodebaseAnalysis, LayerInfo
-from lib.settings_generator.models import (
-    CaseStyle,
-    TestLocation,
-    NamingConvention,
-    FileOrganization,
-    LayerMapping,
-    CodeStyle,
-    TemplateSettings,
-    GenerationError
-)
+# Import using importlib to avoid 'global' keyword issue
+_analyzer_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_models_module = importlib.import_module('installer.global.lib.settings_generator.models')
+
+CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
+LayerInfo = _analyzer_models_module.LayerInfo
+
+CaseStyle = _models_module.CaseStyle
+TestLocation = _models_module.TestLocation
+NamingConvention = _models_module.NamingConvention
+FileOrganization = _models_module.FileOrganization
+LayerMapping = _models_module.LayerMapping
+CodeStyle = _models_module.CodeStyle
+TemplateSettings = _models_module.TemplateSettings
+GenerationError = _models_module.GenerationError
 
 
 class SettingsGenerator:
@@ -233,6 +238,10 @@ class SettingsGenerator:
 
     def _matches_pattern(self, name: str, convention: NamingConvention) -> bool:
         """Check if a name matches a naming convention pattern."""
+        # Guard against empty strings
+        if not name:
+            return False
+
         # Simple heuristic based on case style
         if convention.case_style == CaseStyle.PASCAL_CASE:
             return name[0].isupper() and "_" not in name and "-" not in name

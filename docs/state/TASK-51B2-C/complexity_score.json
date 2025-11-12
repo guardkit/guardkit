@@ -1,0 +1,52 @@
+{
+  "task_id": "TASK-51B2-C",
+  "total_score": 3,
+  "level": "simple",
+  "calculated_at": "2025-11-12T15:10:00Z",
+  "review_mode": "auto_proceed",
+  "factors": {
+    "file_complexity": {
+      "score": 3,
+      "max_score": 3,
+      "details": {
+        "file_count": 7,
+        "files_to_create": 0,
+        "files_to_modify": 7,
+        "scoring": "6-8 files = 2.5 points, rounded up to 3"
+      }
+    },
+    "pattern_familiarity": {
+      "score": 0,
+      "max_score": 2,
+      "details": {
+        "patterns_identified": ["Import Path Correction"],
+        "familiarity_level": "very_high",
+        "scoring": "All familiar patterns = 0 points"
+      }
+    },
+    "risk_level": {
+      "score": 0,
+      "max_score": 3,
+      "details": {
+        "risk_areas": ["Import path changes"],
+        "severity": "low",
+        "scoring": "Low risk with existing test coverage = 0 points"
+      }
+    },
+    "dependency_complexity": {
+      "score": 0,
+      "max_score": 2,
+      "details": {
+        "new_dependencies": 0,
+        "scoring": "0 new dependencies = 0 points"
+      }
+    }
+  },
+  "forced_review_triggers": [],
+  "metadata": {
+    "estimated_duration_minutes": 30,
+    "estimated_loc": 13,
+    "technology_stack": "python",
+    "is_mechanical_change": true
+  }
+}

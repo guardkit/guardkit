@@ -13,20 +13,21 @@ Following architectural review recommendations:
 import json
 import re
 from typing import Dict, Any, Optional
-
 from pydantic import ValidationError
+import importlib
 
-from lib.codebase_analyzer.models import (
-    CodebaseAnalysis,
-    TechnologyInfo,
-    ArchitectureInfo,
-    QualityInfo,
-    ExampleFile,
-    LayerInfo,
-    ConfidenceScore,
-    ParseError,
-    ConfidenceLevel,
-)
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+
+CodebaseAnalysis = _models_module.CodebaseAnalysis
+TechnologyInfo = _models_module.TechnologyInfo
+ArchitectureInfo = _models_module.ArchitectureInfo
+QualityInfo = _models_module.QualityInfo
+ExampleFile = _models_module.ExampleFile
+LayerInfo = _models_module.LayerInfo
+ConfidenceScore = _models_module.ConfidenceScore
+ParseError = _models_module.ParseError
+ConfidenceLevel = _models_module.ConfidenceLevel
 
 
 class ResponseParser:

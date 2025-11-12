@@ -31,6 +31,7 @@ from lib.codebase_analyzer.models import (
     ConfidenceScore,
     ConfidenceLevel,
     ParseError,
+    AnalysisError,
 )
 from lib.codebase_analyzer.prompt_builder import PromptBuilder, FileCollector
 from lib.codebase_analyzer.response_parser import ResponseParser, FallbackResponseBuilder
@@ -319,7 +320,7 @@ Here's the analysis:
 
         parser = ResponseParser()
 
-        with pytest.raises(ParseError):
+        with pytest.raises(ParseError, match="No valid JSON found"):
             parser.parse_analysis_response(
                 response=response,
                 codebase_path="/test",
@@ -453,6 +454,95 @@ class TestAnalysisSerializer:
         assert "Codebase Analysis Report" in content
         assert "Python" in content
         assert "FastAPI" in content
+
+    def test_load_nonexistent_file(self, tmp_path):
+        """Test loading from non-existent file raises error."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+        nonexistent_path = tmp_path / "nonexistent.json"
+
+        with pytest.raises(AnalysisError, match="Analysis file not found"):
+            serializer.load(nonexistent_path)
+
+    def test_save_with_auto_filename(self, tmp_path, sample_analysis):
+        """Test saving with automatically generated filename."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save without filename (should auto-generate)
+        save_path = serializer.save(sample_analysis)
+
+        assert save_path.exists()
+        assert "project" in save_path.name  # Based on codebase_path
+        assert save_path.suffix == ".json"
+
+    def test_list_analyses(self, tmp_path, sample_analysis):
+        """Test listing available analyses."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Initially empty
+        analyses = serializer.list_analyses()
+        assert len(analyses) == 0
+
+        # Save some analyses
+        serializer.save(sample_analysis, filename="analysis_1.json")
+        serializer.save(sample_analysis, filename="analysis_2.json")
+
+        # List should return both
+        analyses = serializer.list_analyses()
+        assert len(analyses) == 2
+
+    def test_delete_analysis(self, tmp_path, sample_analysis):
+        """Test deleting an analysis file."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save and delete
+        save_path = serializer.save(sample_analysis, filename="test.json")
+        result = serializer.delete(save_path)
+
+        assert result is True
+        assert not save_path.exists()
+
+    def test_delete_nonexistent_file(self, tmp_path):
+        """Test deleting non-existent file returns False."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+        nonexistent_path = tmp_path / "nonexistent.json"
+
+        result = serializer.delete(nonexistent_path)
+        assert result is False
+
+    def test_get_summary(self, tmp_path, sample_analysis):
+        """Test getting summary information."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save analysis
+        save_path = serializer.save(sample_analysis, filename="test.json")
+
+        # Get summary
+        summary = serializer.get_summary(save_path)
+
+        assert summary["codebase_path"] == "/test/project"
+        assert summary["primary_language"] == "Python"
+        assert summary["overall_score"] == 80.0
+        assert "filepath" in summary
+
+    def test_find_latest_with_filter(self, tmp_path, sample_analysis):
+        """Test finding latest analysis with codebase name filter."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save analyses for different codebases
+        serializer.save(sample_analysis, filename="project_1.json")
+        serializer.save(sample_analysis, filename="other_1.json")
+
+        # Find latest for specific codebase
+        latest = serializer.find_latest(codebase_name="project")
+        assert latest is not None
+        assert "project" in latest.name
+
+    def test_find_latest_no_results(self, tmp_path):
+        """Test finding latest when no files exist."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        latest = serializer.find_latest()
+        assert latest is None
 
 
 class TestHeuristicAnalyzer:
