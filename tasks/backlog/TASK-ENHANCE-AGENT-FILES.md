@@ -327,6 +327,201 @@ To manually use this agent:
 
 ---
 
+## Example Output Comparison
+
+### Current Agent File (3/10 Quality)
+
+```markdown
+---
+name: realm-repository-specialist
+description: Repository pattern with Realm database
+priority: 7
+technologies:
+  - C#
+  - Repository Pattern
+---
+
+# Realm Repository Specialist
+
+## Purpose
+
+Creates Repository pattern implementations with Realm database integration.
+
+## Why This Agent Exists
+
+Specialized agent for realm repository specialist
+
+## Technologies
+
+- C#
+- Repository Pattern
+- Realm Database
+
+## Usage
+
+This agent is automatically invoked during `/task-work` when working on 
+realm repository specialist implementations.
+```
+
+**Problems with Current Version:**
+- ❌ Generic "Why This Agent Exists" text
+- ❌ No template references
+- ❌ No code examples
+- ❌ No specific "When to Use" scenarios
+- ❌ No best practices
+- ❌ Feels incomplete and low-quality
+
+---
+
+### Target Enhanced File (9/10 Quality)
+
+```markdown
+---
+name: realm-repository-specialist
+description: Repository pattern with Realm database abstraction and data access layers
+priority: 10
+technologies:
+  - C#
+  - Repository Pattern
+  - Realm Database
+  - ErrorOr
+  - Async/Await
+---
+
+# Realm Repository Specialist
+
+## Purpose
+
+Implements repository pattern with Realm database abstraction for mobile-first 
+data access, providing clean separation between business logic and data 
+persistence layers.
+
+## When to Use This Agent
+
+Use this agent when:
+
+1. **Creating Data Access Layers** - Implementing new repositories for entity 
+   persistence with proper abstraction and testability
+   
+2. **Working with Realm Database** - Building offline-first mobile data 
+   architectures with proper error handling
+   
+3. **Repository Refactoring** - Improving or modernizing existing data access 
+   patterns to follow clean architecture principles
+   
+4. **CRUD Operations** - Implementing Create, Read, Update, Delete operations 
+   with ErrorOr pattern for functional error handling
+
+## Related Templates
+
+This template includes repository examples you can reference:
+
+### Primary Examples
+
+**`templates/other/ConfigurationRepository.cs.template`** - Configuration data access
+- **Demonstrates**: Repository interface pattern, Realm integration, async CRUD
+- **Use for**: Application configuration, settings management, feature flags
+- **Key Pattern**: Single-entity repository with typed queries and ErrorOr results
+
+**`templates/other/DriverRepository.cs.template`** - Driver entity repository
+- **Demonstrates**: Entity-specific repository, complex queries, relationship handling
+- **Use for**: Domain entity repositories, business object persistence
+- **Key Pattern**: Rich domain model with repository abstraction
+
+**`templates/other/LoadingRepository.cs.template`** - Loading entity repository
+- **Demonstrates**: Transaction management, bulk operations, error handling
+- **Use for**: High-volume data operations, batch processing
+- **Key Pattern**: ErrorOr integration for functional error handling
+
+## Example Pattern
+
+Here's the repository pattern as implemented in this template:
+
+```csharp
+// From ConfigurationRepository.cs.template
+public interface I{{Namespace}}Repository
+{
+    Task<ErrorOr<{{Entity}}>> GetByIdAsync(string id);
+    Task<ErrorOr<IEnumerable<{{Entity}}>>> GetAllAsync();
+    Task<ErrorOr<{{Entity}}>> CreateAsync({{Entity}} entity);
+    Task<ErrorOr<{{Entity}}>> UpdateAsync({{Entity}} entity);
+    Task<ErrorOr<bool>> DeleteAsync(string id);
+}
+
+public class {{Namespace}}Repository : I{{Namespace}}Repository
+{
+    private readonly Realm _realm;
+    
+    public {{Namespace}}Repository(Realm realm)
+    {
+        _realm = realm;
+    }
+    
+    public async Task<ErrorOr<{{Entity}}>> GetByIdAsync(string id)
+    {
+        // Realm query with error handling
+        // See ConfigurationRepository.cs.template for full implementation
+    }
+}
+```
+
+**Key Features:**
+- Interface for testability and dependency injection
+- Async/await for non-blocking operations
+- ErrorOr pattern for functional error handling
+- Realm database integration
+- Clean separation of concerns
+
+## Best Practices
+
+Based on the patterns in this template:
+
+1. **Interface Segregation** - Always define repository interfaces
+   - Example: `IConfigurationRepository` for testability
+   - Benefit: Easy mocking in tests, DI-friendly
+
+2. **Single Entity Focus** - One repository per aggregate root
+   - Example: ConfigurationRepository handles Configuration only
+   - Benefit: Clear responsibilities, easier to maintain
+
+3. **Async by Default** - All database operations asynchronous
+   - Pattern: `Task<ErrorOr<T>>` return types
+   - Benefit: Non-blocking UI, better performance
+
+4. **ErrorOr Integration** - Functional error handling over exceptions
+   - Pattern: Return `ErrorOr<T>` instead of throwing
+   - Benefit: Explicit error handling, type-safe errors
+
+5. **Transaction Management** - Proper Realm transaction handling
+   - Use `_realm.WriteAsync()` for all modifications
+   - Ensure proper disposal and error handling
+
+## Technologies
+
+- C#
+- Repository Pattern
+- Realm Database
+- ErrorOr
+- Async/Await
+
+## Usage in Taskwright
+
+This agent is automatically invoked during `/task-work` when the task involves 
+data access, persistence, or repository patterns.
+```
+
+**Improvements in Target Version:**
+- ✅ Specific "When to Use" scenarios (4 actionable items)
+- ✅ References 3 actual templates with explanations
+- ✅ Code example from real template
+- ✅ 5 best practices extracted from template patterns
+- ✅ Professional, complete, high-quality
+- ✅ Helps developers understand and use templates
+
+**Quality Jump**: 3/10 → 9/10 (+6 points)
+
+---
+
 ## Implementation Plan
 
 ### Phase 1: Setup and Safety Checks (10 min)
@@ -442,9 +637,24 @@ Identify which templates are most relevant to this agent's expertise.
 4. **Code Content** - Template would be useful for someone learning this agent's domain
 
 **Priority Levels:**
-- "primary" - Perfect example, must include (2-3 templates)
-- "secondary" - Helpful reference, nice to have (1-3 templates)
-- "tertiary" - Tangentially related, optional (0-2 templates)
+- "primary" - Perfect example, MUST include in generated content (2-3 templates)
+  - Agent name/description directly matches template pattern
+  - Template demonstrates core agent functionality
+  - REQUIRED: Content must reference all primary templates
+- "secondary" - Helpful reference, SHOULD include if space allows (1-3 templates)
+  - Template shows related patterns
+  - Useful as additional context
+  - OPTIONAL: May be mentioned in "See Also" section
+- "tertiary" - Tangentially related, MAY mention (0-2 templates)
+  - Loosely connected
+  - Background context only
+  - OPTIONAL: Brief mention only
+
+**Selection Rules:**
+- Aim for 2-3 primary templates per agent
+- If only 1 primary found, that's acceptable
+- If 0 primary found, mark agent as "no enhancement needed"
+- Never mark more than 5 templates as primary (too many)
 
 **Response Format:**
 Return ONLY valid JSON (no markdown, no explanation):
@@ -581,6 +791,14 @@ You are writing documentation for a specialized AI coding agent.
 
 **Your Task:**
 Generate comprehensive documentation sections for this agent file.
+
+**Content Length Guidelines:**
+- **Purpose**: 1-2 sentences (50-100 words)
+- **When to Use**: 3-4 numbered scenarios (150-200 words total)
+- **Related Templates**: 2-3 primary templates with explanations (200-300 words total)
+- **Example Pattern**: Code snippet + explanation (150-250 words total)
+- **Best Practices**: 3-5 practices with examples (200-300 words total)
+- **Total Target**: 750-1050 words for all sections combined
 
 **Required Sections:**
 
