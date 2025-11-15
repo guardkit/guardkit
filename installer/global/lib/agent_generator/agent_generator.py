@@ -600,40 +600,17 @@ Return the JSON array now:"""
         gaps = []
 
         for need in needs:
-            # Check if agent exists
+            # Check if agent exists BY NAME ONLY (no fuzzy matching)
             if self.inventory.has_agent(need.name):
                 agent = self.inventory.find_by_name(need.name)
                 print(f"  ✓ {need.name}: Using existing ({agent.source})")
                 continue
 
-            # Check if capability is covered by similar agent
-            if self._capability_covered(need):
-                print(f"  ✓ {need.description}: Covered by existing agent")
-                continue
-
-            # Gap identified
+            # Gap identified - agent with this exact name doesn't exist
             print(f"  ❌ {need.name}: MISSING (will create)")
             gaps.append(need)
 
         return gaps
-
-    def _capability_covered(self, need: CapabilityNeed) -> bool:
-        """Check if capability is covered by existing agents"""
-
-        # Simple keyword matching for now
-        # Could use AI for semantic similarity later
-
-        for agent in self.inventory.all_agents():
-            # Check tags
-            if any(tech.lower() in [tag.lower() for tag in agent.tags] for tech in need.technologies):
-                # Check description for key terms
-                if any(
-                    keyword in agent.description.lower()
-                    for keyword in ["viewmodel", "mvvm", "navigation", "testing", "domain", "error"]
-                ):
-                    return True
-
-        return False
 
     def _generate_agent(self, gap: CapabilityNeed, analysis: Any) -> Optional[GeneratedAgent]:
         """

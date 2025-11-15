@@ -106,14 +106,17 @@ class TemplateCreateOrchestrator:
     4. Settings generation (TASK-006)
     5. Template file generation (TASK-008) [REORDERED - was Phase 6]
     6. Agent recommendation (TASK-009) [REORDERED - was Phase 7]
-    7. CLAUDE.md generation (TASK-007) [REORDERED - was Phase 5]
-       ↑ NOW agents exist and can be documented accurately
-    8. Template package assembly
+    7. Agent writing (TASK-C7A9) [NEW - extracted from Phase 9]
+       ↑ Agents written to disk BEFORE CLAUDE.md generation
+    8. CLAUDE.md generation (TASK-007) [REORDERED - was Phase 5]
+       ↑ NOW can scan actual agent files from disk
+    9. Template package assembly (TASK-C7A9) [REORDERED - was Phase 8]
 
-    Phase Reordering (TASK-019A):
-    - Agents are now created BEFORE CLAUDE.md generation
+    Phase Reordering (TASK-019A, TASK-C7A9):
+    - Agents are now written to disk BEFORE CLAUDE.md generation
     - Eliminates AI hallucinations about non-existent agents
-    - CLAUDE.md now scans and documents actual agent files
+    - CLAUDE.md can now scan and document actual agent files
+    - Clean separation: agent writing → CLAUDE.md → packaging
 
     Usage:
         config = OrchestrationConfig(codebase_path=Path("/path/to/code"))
@@ -268,41 +271,55 @@ class TemplateCreateOrchestrator:
 
     def _complete_workflow(self) -> OrchestrationResult:
         """
-        Complete phases 6-7 (TASK-BRIDGE-002).
+        Complete phases 6-9 (TASK-C7A9).
 
         Shared by both _run_all_phases and _run_from_phase_5.
 
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
-        # Phase 6: CLAUDE.md Generation
-        # NOW agents exist and can be documented accurately
-        self.claude_md = self._phase6_claude_md_generation(self.analysis, self.agents)
-        if not self.claude_md:
-            return self._create_error_result("CLAUDE.md generation failed")
+        # Determine output path early (needed for Phase 8)
+        if self.config.output_path:
+            output_path = self.config.output_path
+        elif self.config.output_location == 'repo':
+            output_path = Path("installer/global/templates") / self.manifest.name
+        else:
+            output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
 
-        # Phase 7: Template Package Assembly
+        # Phase 7: Agent Writing
         if self.config.dry_run:
             self._print_dry_run_summary(self.manifest, self.settings, self.templates, self.agents)
             return self._create_dry_run_result(self.manifest, len(self.templates.templates if self.templates else []), len(self.agents))
 
-        output_path = self._phase7_package_assembly(
+        if self.agents:
+            agent_paths = self._phase7_write_agents(self.agents, output_path)
+            if not agent_paths:
+                self.warnings.append("Agent writing failed")
+
+        # Phase 8: CLAUDE.md Generation
+        # NOW agents exist and can be documented accurately
+        self.claude_md = self._phase8_claude_md_generation(self.analysis, self.agents, output_path)
+        if not self.claude_md:
+            return self._create_error_result("CLAUDE.md generation failed")
+
+        # Phase 9: Template Package Assembly
+        output_path = self._phase9_package_assembly(
             manifest=self.manifest,
             settings=self.settings,
             claude_md=self.claude_md,
             templates=self.templates,
-            agents=self.agents
+            output_path=output_path
         )
 
         if not output_path:
             return self._create_error_result("Package assembly failed")
 
-        # ===== Phase 7.5: Extended Validation (TASK-043) =====
+        # ===== Phase 9.5: Extended Validation (TASK-043) =====
         # Run after package assembly when all files are in place
         validation_report_path = None
         exit_code = 0
         if self.config.validate and self.templates:
-            validation_report_path, exit_code = self._phase7_5_extended_validation(
+            validation_report_path, exit_code = self._phase9_5_extended_validation(
                 templates=self.templates,
                 manifest=self.manifest,
                 settings=self.settings,
@@ -425,12 +442,12 @@ class TemplateCreateOrchestrator:
         TASK-FDB2: Supports custom template name override via --name flag.
 
         Args:
-            analysis: CodebaseAnalysis from phase 2
+            analysis: CodebaseAnalysis from phase 1
 
         Returns:
             TemplateManifest or None if failed
         """
-        self._print_phase_header("Phase 3: Manifest Generation")
+        self._print_phase_header("Phase 2: Manifest Generation")
 
         try:
             generator = ManifestGenerator(analysis)
@@ -466,12 +483,12 @@ class TemplateCreateOrchestrator:
         Phase 3: Generate settings.json.
 
         Args:
-            analysis: CodebaseAnalysis from phase 2
+            analysis: CodebaseAnalysis from phase 1
 
         Returns:
             TemplateSettings or None if failed
         """
-        self._print_phase_header("Phase 4: Settings Generation")
+        self._print_phase_header("Phase 3: Settings Generation")
 
         try:
             generator = SettingsGenerator(analysis)
@@ -496,12 +513,12 @@ class TemplateCreateOrchestrator:
         Phase 4: Generate .template files.
 
         Args:
-            analysis: CodebaseAnalysis from phase 2
+            analysis: CodebaseAnalysis from phase 1
 
         Returns:
             TemplateCollection or None if failed
         """
-        self._print_phase_header("Phase 5: Template File Generation")
+        self._print_phase_header("Phase 4: Template File Generation")
 
         try:
             generator = TemplateGenerator(analysis)
@@ -535,12 +552,12 @@ class TemplateCreateOrchestrator:
         May exit with code 42 if agent invocation needed.
 
         Args:
-            analysis: CodebaseAnalysis from phase 2
+            analysis: CodebaseAnalysis from phase 1
 
         Returns:
             List of GeneratedAgent objects
         """
-        self._print_phase_header("Phase 6: Agent Recommendation")
+        self._print_phase_header("Phase 5: Agent Recommendation")
 
         try:
             # Import agent scanner to get inventory
@@ -578,25 +595,95 @@ class TemplateCreateOrchestrator:
             logger.exception("Agent generation error")
             return []
 
-    def _phase6_claude_md_generation(self, analysis: Any, agents: List[Any]) -> Optional[Any]:
+    def _phase7_write_agents(self, agents: List[Any], output_path: Path) -> Optional[List[Path]]:
         """
-        Phase 6: Generate CLAUDE.md.
+        Phase 7: Write agent files to disk (TASK-C7A9).
 
-        NOW runs AFTER agents are generated, so it can document actual agents
-        instead of hallucinating non-existent ones.
+        Extracted from _phase9_package_assembly to ensure agents are written
+        before CLAUDE.md generation can scan them.
+
+        Args:
+            agents: List of GeneratedAgent objects
+            output_path: Template output directory
+
+        Returns:
+            List of written agent file paths, or None if failed
+        """
+        self._print_phase_header("Phase 7: Agent Writing")
+
+        try:
+            if not agents:
+                self._print_info("  No agents to write")
+                return []
+
+            agents_dir = output_path / "agents"
+            agents_dir.mkdir(parents=True, exist_ok=True)
+
+            # Import markdown formatter for proper YAML frontmatter formatting
+            _markdown_formatter_module = importlib.import_module('installer.global.lib.agent_generator.markdown_formatter')
+            format_agent_markdown = _markdown_formatter_module.format_agent_markdown
+
+            agent_paths = []
+            for agent in agents:
+                agent_path = agents_dir / f"{agent.name}.md"
+
+                # Check if full_definition is already properly formatted markdown
+                # or if we need to format it from agent attributes
+                if agent.full_definition and agent.full_definition.strip().startswith('---'):
+                    # Already has YAML frontmatter, use as-is
+                    markdown_content = agent.full_definition
+                else:
+                    # Need to format as markdown with YAML frontmatter
+                    # Convert GeneratedAgent to dict format expected by formatter
+                    # Handle tags/technologies - ensure it's a list
+                    tags = getattr(agent, 'tags', [])
+                    if not isinstance(tags, list):
+                        try:
+                            tags = list(tags)
+                        except TypeError:
+                            tags = []
+
+                    agent_dict = {
+                        'name': agent.name,
+                        'description': agent.description,
+                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent.name.replace('-', ' ')}"),
+                        'technologies': tags,
+                        'priority': getattr(agent, 'priority', 7)
+                    }
+                    markdown_content = format_agent_markdown(agent_dict)
+
+                agent_path.write_text(markdown_content, encoding='utf-8')
+                agent_paths.append(agent_path)
+
+            self._print_success_line(f"{len(agents)} agent files written")
+            return agent_paths
+
+        except Exception as e:
+            self._print_error(f"Agent writing failed: {e}")
+            logger.exception("Agent writing error")
+            return None
+
+    def _phase8_claude_md_generation(self, analysis: Any, agents: List[Any], output_path: Path) -> Optional[Any]:
+        """
+        Phase 8: Generate CLAUDE.md (TASK-C7A9).
+
+        NOW runs AFTER agents are written to disk, so it can scan actual agent files
+        instead of working from in-memory objects.
 
         Args:
             analysis: CodebaseAnalysis from phase 2
             agents: List of GeneratedAgent objects from phase 6
+            output_path: Template output directory (for agent scanning)
 
         Returns:
             TemplateClaude or None if failed
         """
-        self._print_phase_header("Phase 7: CLAUDE.md Generation")
+        self._print_phase_header("Phase 8: CLAUDE.md Generation")
 
         try:
-            # Pass agents to generator for accurate documentation
-            generator = ClaudeMdGenerator(analysis, agents=agents)
+            # Pass agents and output_path to generator for accurate documentation
+            # TASK-C7A9: output_path enables scanning actual agent files from disk
+            generator = ClaudeMdGenerator(analysis, agents=agents, output_path=output_path)
             claude_md = generator.generate()
 
             example_count = len(analysis.example_files)
@@ -624,7 +711,7 @@ class TemplateCreateOrchestrator:
         analysis: Any
     ) -> TemplateCollection:
         """
-        Phase 5.5: Completeness Validation (TASK-040).
+        Phase 4.5: Completeness Validation (TASK-040).
 
         Validates template completeness and optionally auto-fixes issues.
 
@@ -635,7 +722,7 @@ class TemplateCreateOrchestrator:
         Returns:
             Updated TemplateCollection (possibly with auto-generated templates)
         """
-        self._print_phase_header("Phase 5.5: Completeness Validation")
+        self._print_phase_header("Phase 4.5: Completeness Validation")
 
         try:
             # Create validator
@@ -645,7 +732,7 @@ class TemplateCreateOrchestrator:
             self._print_info("  Validating template completeness...")
             validation_report = validator.validate(templates, analysis)
 
-            # TASK-043: Store Phase 5.5 report for Phase 5.7 extended validation
+            # TASK-043: Store Phase 4.5 report for Phase 9.5 extended validation
             self.phase_5_5_report = validation_report
 
             # Display validation report
@@ -807,44 +894,34 @@ class TemplateCreateOrchestrator:
             self._print_warning("\n  Issues found. Auto-fix disabled, continuing...")
             return 'continue'
 
-    def _phase7_package_assembly(
+    def _phase9_package_assembly(
         self,
         manifest: Any,
         settings: Any,
         claude_md: Any,
         templates: Any,
-        agents: List[Any]
+        output_path: Path
     ) -> Optional[Path]:
         """
-        Phase 8: Assemble complete template package.
+        Phase 9: Assemble complete template package (TASK-C7A9).
+
+        Agent writing now happens in Phase 7, before CLAUDE.md generation.
 
         Args:
             manifest: TemplateManifest
             settings: TemplateSettings
             claude_md: TemplateClaude
             templates: TemplateCollection
-            agents: List of GeneratedAgent
+            output_path: Template output directory (already determined)
 
         Returns:
             Path to output directory or None if failed
         """
-        self._print_phase_header("Phase 8: Package Assembly")
+        self._print_phase_header("Phase 9: Package Assembly")
 
         try:
-            # TASK-068: Determine output path based on output_location
-            if self.config.output_path:
-                # Legacy support: if output_path is explicitly set, use it
-                output_path = self.config.output_path
-                location_type = "custom"
-            elif self.config.output_location == 'repo':
-                # Write to repository location for distribution
-                output_path = Path("installer/global/templates") / manifest.name
-                location_type = "distribution"
-            else:
-                # Default: Write to global location for immediate use
-                output_path = Path.home() / ".agentecflow" / "templates" / manifest.name
-                location_type = "personal"
-
+            # TASK-C7A9: output_path is now passed as parameter (determined in _complete_workflow)
+            # Ensure directory exists
             output_path.mkdir(parents=True, exist_ok=True)
 
             # Save manifest.json
@@ -872,47 +949,8 @@ class TemplateCreateOrchestrator:
                 template_gen.save_templates(templates, output_path)
                 self._print_success_line(f"templates/ ({templates.total_count} files)")
 
-            # Save agent files
-            if agents:
-                agents_dir = output_path / "agents"
-                agents_dir.mkdir(exist_ok=True)
-
-                # Import markdown formatter for proper YAML frontmatter formatting
-                # Use importlib since 'global' is a Python keyword
-                _markdown_formatter_module = importlib.import_module('installer.global.lib.agent_generator.markdown_formatter')
-                format_agent_markdown = _markdown_formatter_module.format_agent_markdown
-
-                for agent in agents:
-                    agent_path = agents_dir / f"{agent.name}.md"
-
-                    # Check if full_definition is already properly formatted markdown
-                    # or if we need to format it from agent attributes
-                    if agent.full_definition and agent.full_definition.strip().startswith('---'):
-                        # Already has YAML frontmatter, use as-is
-                        markdown_content = agent.full_definition
-                    else:
-                        # Need to format as markdown with YAML frontmatter
-                        # Convert GeneratedAgent to dict format expected by formatter
-                        # Handle tags/technologies - ensure it's a list
-                        tags = getattr(agent, 'tags', [])
-                        if not isinstance(tags, list):
-                            try:
-                                tags = list(tags)
-                            except TypeError:
-                                tags = []
-
-                        agent_dict = {
-                            'name': agent.name,
-                            'description': agent.description,
-                            'reason': getattr(agent, 'reason', f"Specialized agent for {agent.name.replace('-', ' ')}"),
-                            'technologies': tags,
-                            'priority': getattr(agent, 'priority', 7)
-                        }
-                        markdown_content = format_agent_markdown(agent_dict)
-
-                    agent_path.write_text(markdown_content, encoding='utf-8')
-
-                self._print_success_line(f"agents/ ({len(agents)} agents)")
+            # TASK-C7A9: Agent files now written in Phase 7 (before CLAUDE.md generation)
+            # This ensures ClaudeMdGenerator can scan actual agent files from disk
 
             return output_path
 
@@ -1090,7 +1128,7 @@ class TemplateCreateOrchestrator:
         """Print error message."""
         print(f"  ❌ {message}")
 
-    def _phase7_5_extended_validation(
+    def _phase9_5_extended_validation(
         self,
         templates: TemplateCollection,
         manifest: Any,
@@ -1100,7 +1138,7 @@ class TemplateCreateOrchestrator:
         output_path: Path
     ) -> Tuple[Path, int]:
         """
-        Phase 5.7: Extended Validation (TASK-043).
+        Phase 9.5: Extended Validation (TASK-043, TASK-C7A9).
 
         Runs only if --validate flag set.
         Performs deeper quality checks and generates report.
@@ -1116,7 +1154,7 @@ class TemplateCreateOrchestrator:
         Returns:
             Tuple of (report_path, exit_code)
         """
-        self._print_phase_header("Phase 5.7: Extended Validation")
+        self._print_phase_header("Phase 9.5: Extended Validation")
 
         try:
             # Create validator
