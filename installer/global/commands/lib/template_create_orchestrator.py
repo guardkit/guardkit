@@ -54,6 +54,10 @@ ExtendedValidator = _extended_validator_module.ExtendedValidator
 ExtendedValidationReport = _extended_validator_module.ExtendedValidationReport
 ValidationReportGenerator = _report_generator_module.ValidationReportGenerator
 
+# TASK-ENHANCE-AGENT-FILES: Phase 7.5 Agent Enhancement
+_agent_enhancer_module = importlib.import_module('installer.global.lib.template_creation.agent_enhancer')
+AgentEnhancer = _agent_enhancer_module.AgentEnhancer
+
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +157,9 @@ class TemplateCreateOrchestrator:
         self.agents: Optional[List[Any]] = None
         self.claude_md: Optional[Any] = None
 
+        # TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX: Track if templates written to disk
+        self._templates_written_to_disk = False
+
         # Configure logging
         if config.verbose:
             logging.basicConfig(level=logging.DEBUG)
@@ -168,18 +175,27 @@ class TemplateCreateOrchestrator:
         Execute complete template creation workflow.
 
         TASK-BRIDGE-002: Modified to support checkpoint-resume pattern.
-        If config.resume is True, skips to Phase 6 (agent generation).
-        Otherwise, executes all phases 1-8 from start.
+        If config.resume is True, checks phase from state and routes accordingly:
+        - Phase 5: _run_from_phase_5() (agent generation)
+        - Phase 7: _run_from_phase_7() (agent enhancement)
+        Otherwise, executes all phases 1-9.5 from start.
 
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
         try:
-            # If resuming, skip to Phase 5
+            # If resuming, route based on phase number
             if self.config.resume:
-                return self._run_from_phase_5()
+                state = self.state_manager.load_state()
+                phase = state.phase
 
-            # Normal execution: Phases 1-7
+                if phase == 7:
+                    return self._run_from_phase_7()
+                else:
+                    # Default to Phase 5 (backward compatibility)
+                    return self._run_from_phase_5()
+
+            # Normal execution: Phases 1-9.5
             return self._run_all_phases()
 
         except KeyboardInterrupt:
@@ -269,6 +285,38 @@ class TemplateCreateOrchestrator:
         # Phase 6-7: Complete workflow
         return self._complete_workflow()
 
+    def _run_from_phase_7(self) -> OrchestrationResult:
+        """
+        Continue from Phase 7 after agent enhancement (TASK-ENHANCE-AGENT-FILES).
+
+        State has been restored in __init__, now complete Phase 7.5 and beyond.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        self._print_header()
+        print("  (Resuming from checkpoint - Phase 7.5)")
+
+        # Determine output path (needed for Phase 7.5 onwards)
+        if self.config.output_path:
+            output_path = self.config.output_path
+        elif self.config.output_location == 'repo':
+            output_path = Path("installer/global/templates") / self.manifest.name
+        else:
+            output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
+
+        # TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX: Ensure templates on disk before Phase 7.5
+        self._ensure_templates_on_disk(output_path)
+
+        # Phase 7.5: Complete agent enhancement with loaded response
+        if self.agents:
+            enhancement_success = self._phase7_5_enhance_agents(output_path)
+            if not enhancement_success:
+                self.warnings.append("Agent enhancement had issues (workflow continuing)")
+
+        # Phase 8-9.5: Complete workflow from Phase 8 onwards
+        return self._complete_workflow_from_phase_8(output_path)
+
     def _complete_workflow(self) -> OrchestrationResult:
         """
         Complete phases 6-9 (TASK-C7A9).
@@ -293,9 +341,99 @@ class TemplateCreateOrchestrator:
 
         if self.agents:
             agent_paths = self._phase7_write_agents(self.agents, output_path)
-            if not agent_paths:
-                self.warnings.append("Agent writing failed")
 
+            # Debug logging for Phase 7.5 issue investigation
+            logger.debug(f"Phase 7 complete: agent_paths type={type(agent_paths)}, value={agent_paths}")
+            logger.debug(f"Phase 7 complete: {len(self.agents)} agents, returned {len(agent_paths) if agent_paths else 0} paths")
+
+            # CRITICAL FIX: Use explicit None check instead of falsy check
+            # agent_paths can be:
+            # - None (error occurred)
+            # - [] (no agents - should not happen here since self.agents is truthy)
+            # - [Path, Path, ...] (success)
+            if agent_paths is None:
+                self.warnings.append("Agent writing failed")
+                logger.error("Phase 7 failed: agent_paths is None")
+            elif len(agent_paths) == 0:
+                # This shouldn't happen since self.agents is truthy, but handle defensively
+                self.warnings.append("No agent files written despite agents existing")
+                logger.warning(f"Phase 7 warning: {len(self.agents)} agents but 0 paths returned")
+            else:
+                # SUCCESS: agent_paths contains paths to written agent files
+                logger.info(f"Phase 7 success: {len(agent_paths)} agent files written")
+
+                # TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX: Ensure templates on disk before Phase 7.5
+                self._ensure_templates_on_disk(output_path)
+
+                # Save checkpoint before Phase 7.5 (agent enhancement may exit with code 42)
+                self._save_checkpoint("agents_written", phase=7)
+
+                # Phase 7.5: Agent Enhancement (TASK-ENHANCE-AGENT-FILES)
+                # Enhance agents with template references BEFORE CLAUDE.md generation
+                logger.info("Starting Phase 7.5: Agent Enhancement")
+                enhancement_success = self._phase7_5_enhance_agents(output_path)
+                if not enhancement_success:
+                    self.warnings.append("Agent enhancement had issues (workflow continuing)")
+                    logger.warning("Phase 7.5 completed with issues")
+                else:
+                    logger.info("Phase 7.5 completed successfully")
+
+        # Phase 8-9.5: Complete workflow from Phase 8 onwards
+        return self._complete_workflow_from_phase_8(output_path)
+
+    def _ensure_templates_on_disk(self, output_path: Path) -> None:
+        """
+        Ensure templates are written to disk (TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX).
+
+        Phase 7.5 (agent enhancement) scans template files from disk to generate
+        accurate template references. This method ensures templates are written
+        exactly once before Phase 7.5 runs.
+
+        Idempotent: Safe to call multiple times (only writes once).
+
+        Args:
+            output_path: Template output directory
+
+        Note:
+            Uses boolean flag for simplicity (MVP solution). Alternatives considered:
+            - Check filesystem for .template files (fragile, ignores partial writes)
+            - Track per-template write status (overengineering for MVP)
+        """
+        # Idempotent check: only write once
+        if self._templates_written_to_disk:
+            logger.debug("Templates already written to disk, skipping")
+            return
+
+        # Check if we have templates to write
+        if not self.templates or self.templates.total_count == 0:
+            logger.debug("No templates to write to disk")
+            self._templates_written_to_disk = True  # Mark as done even if no templates
+            return
+
+        try:
+            logger.info(f"Writing {self.templates.total_count} templates to disk for Phase 7.5")
+            template_gen = TemplateGenerator(None, None)
+            template_gen.save_templates(self.templates, output_path)
+            self._templates_written_to_disk = True
+            logger.info(f"Successfully wrote {self.templates.total_count} template files")
+        except Exception as e:
+            # Non-fatal: Phase 7.5 can handle missing templates
+            logger.warning(f"Failed to pre-write templates: {e}")
+            # Don't set flag - allow retry on next call
+            # Phase 7.5 will handle gracefully if templates missing
+
+    def _complete_workflow_from_phase_8(self, output_path: Path) -> OrchestrationResult:
+        """
+        Complete phases 8-9.5 (TASK-ENHANCE-AGENT-FILES).
+
+        Shared by _complete_workflow and _run_from_phase_7.
+
+        Args:
+            output_path: Template output directory
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
         # Phase 8: CLAUDE.md Generation
         # NOW agents exist and can be documented accurately
         self.claude_md = self._phase8_claude_md_generation(self.analysis, self.agents, output_path)
@@ -662,6 +800,59 @@ class TemplateCreateOrchestrator:
             self._print_error(f"Agent writing failed: {e}")
             logger.exception("Agent writing error")
             return None
+
+    def _phase7_5_enhance_agents(self, output_path: Path) -> bool:
+        """
+        Phase 7.5: Agent Enhancement (TASK-AGENT-BRIDGE-ENHANCEMENT).
+
+        Enhances agent files with template-specific content using agent bridge pattern.
+        Uses checkpoint-resume pattern similar to Phase 6 (agent generation).
+
+        Args:
+            output_path: Template output directory
+
+        Returns:
+            True if successful, False if issues (but doesn't block workflow)
+        """
+        self._print_phase_header("Phase 7.5: Agent Enhancement")
+
+        try:
+            # Create bridge invoker for agent enhancement
+            enhancement_invoker = AgentBridgeInvoker(
+                phase=7.5,
+                phase_name="agent_enhancement"
+            )
+
+            # Initialize enhancer with bridge
+            enhancer = AgentEnhancer(bridge_invoker=enhancement_invoker)
+
+            # Enhance all agents (may exit with code 42 if agent invocation needed)
+            results = enhancer.enhance_all_agents(output_path)
+
+            # Display results
+            successful = sum(1 for v in results.values() if v)
+            total = len(results)
+
+            if successful > 0:
+                self._print_success_line(f"Enhanced {successful}/{total} agents with template references")
+                return True
+            else:
+                self._print_info("  No agents enhanced (all agents have basic descriptions)")
+                return True  # Not an error, just no enhancement needed
+
+        except SystemExit as e:
+            # Code 42 is expected - re-raise to trigger checkpoint-resume
+            if e.code == 42:
+                raise
+            # Other exit codes are errors
+            self._print_error(f"Agent enhancement exited with code {e.code}")
+            return False
+
+        except Exception as e:
+            self._print_warning(f"Agent enhancement had issues: {e}")
+            logger.exception("Agent enhancement error")
+            # Don't block workflow - enhancement is optional quality improvement
+            return False
 
     def _phase8_claude_md_generation(self, analysis: Any, agents: List[Any], output_path: Path) -> Optional[Any]:
         """
@@ -1272,6 +1463,9 @@ class TemplateCreateOrchestrator:
 
         self.agent_inventory = phase_data.get("agent_inventory")
 
+        if "agents" in phase_data and phase_data["agents"]:
+            self.agents = self._deserialize_agents(phase_data["agents"])
+
         # Load agent response if available
         try:
             response = self.agent_invoker.load_response()
@@ -1300,7 +1494,8 @@ class TemplateCreateOrchestrator:
             "manifest": self._serialize_manifest(self.manifest),
             "settings": self._serialize_settings(self.settings),
             "templates": self._serialize_templates(self.templates),
-            "agent_inventory": self.agent_inventory
+            "agent_inventory": self.agent_inventory,
+            "agents": self._serialize_agents(self.agents)
         }
 
         # Serialize config
@@ -1444,6 +1639,44 @@ class TemplateCreateOrchestrator:
             templates_obj.templates.append(tmpl_obj)
 
         return templates_obj
+
+    def _serialize_agents(self, agents: List[Any]) -> Optional[dict]:
+        """Serialize agents list to dict."""
+        if not agents:
+            return None
+
+        result = {
+            'agents': []
+        }
+
+        # Serialize individual agents
+        for agent in agents:
+            agent_dict = {}
+            if hasattr(agent, '__dict__'):
+                agent_dict = agent.__dict__.copy()
+                # Convert Path and datetime objects to strings for JSON serialization
+                for key, value in agent_dict.items():
+                    if isinstance(value, Path):
+                        agent_dict[key] = str(value)
+                    elif isinstance(value, datetime):
+                        agent_dict[key] = value.isoformat()
+            result['agents'].append(agent_dict)
+
+        return result
+
+    def _deserialize_agents(self, data: Optional[dict]) -> List[Any]:
+        """Deserialize dict back to agents list."""
+        if data is None:
+            return []
+
+        agents_list = []
+
+        # Reconstruct agent objects
+        for agent_dict in data.get('agents', []):
+            agent_obj = type('Agent', (), agent_dict)()
+            agents_list.append(agent_obj)
+
+        return agents_list
 
 
 # Convenience function for command usage
