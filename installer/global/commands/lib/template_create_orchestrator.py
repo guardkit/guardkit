@@ -62,6 +62,46 @@ AgentEnhancer = _agent_enhancer_module.AgentEnhancer
 logger = logging.getLogger(__name__)
 
 
+class WorkflowPhase:
+    """
+    Workflow phase constants for template creation orchestration.
+
+    Architectural Context:
+    - Eliminates magic numbers throughout codebase (DRY principle)
+    - Provides semantic meaning to phase transitions
+    - Enables type-safe phase routing in checkpoint-resume pattern
+    - Supports both integer and float phase numbers for sub-phases
+
+    Phase Flow:
+    1.0  → AI-Native Codebase Analysis
+    2.0  → Manifest Generation
+    3.0  → Settings Generation
+    4.0  → Template File Generation
+    4.5  → Completeness Validation
+    5.0  → Agent Recommendation
+    6.0  → Agent Generation (uses bridge, may exit 42)
+    7.0  → Agent Writing
+    7.5  → Agent Enhancement (uses bridge, may exit 42)
+    8.0  → CLAUDE.md Generation
+    9.0  → Package Assembly
+    9.5  → Extended Validation
+
+    TASK-PHASE-7-5-FIX-FOUNDATION: Foundation quality improvement
+    """
+    PHASE_1 = 1      # AI Analysis
+    PHASE_2 = 2      # Manifest Generation
+    PHASE_3 = 3      # Settings Generation
+    PHASE_4 = 4      # Template Generation
+    PHASE_4_5 = 4.5  # Completeness Validation
+    PHASE_5 = 5      # Agent Recommendation
+    PHASE_6 = 6      # Agent Generation (bridge)
+    PHASE_7 = 7      # Agent Writing
+    PHASE_7_5 = 7.5  # Agent Enhancement (bridge)
+    PHASE_8 = 8      # CLAUDE.md Generation
+    PHASE_9 = 9      # Package Assembly
+    PHASE_9_5 = 9.5  # Extended Validation
+
+
 @dataclass
 class OrchestrationConfig:
     """Configuration for template creation orchestration"""
@@ -143,7 +183,7 @@ class TemplateCreateOrchestrator:
         # TASK-BRIDGE-002: Bridge integration
         self.state_manager = StateManager()
         self.agent_invoker = AgentBridgeInvoker(
-            phase=6,
+            phase=WorkflowPhase.PHASE_6,
             phase_name="agent_generation"
         )
 
@@ -189,8 +229,10 @@ class TemplateCreateOrchestrator:
                 state = self.state_manager.load_state()
                 phase = state.phase
 
-                if phase == 7:
+                if phase == WorkflowPhase.PHASE_7:
                     return self._run_from_phase_7()
+                elif phase == WorkflowPhase.PHASE_7_5:
+                    return self._run_from_phase_7()  # 7.5 resumes same as 7
                 else:
                     # Default to Phase 5 (backward compatibility)
                     return self._run_from_phase_5()
@@ -255,7 +297,7 @@ class TemplateCreateOrchestrator:
 
         # IMPORTANT: Save state before Phase 5
         # (Phase 5 may exit with code 42 to request agent invocation)
-        self._save_checkpoint("templates_generated", phase=4)
+        self._save_checkpoint("templates_generated", phase=WorkflowPhase.PHASE_4)
 
         # Phase 5: Agent Recommendation (may exit with code 42)
         self.agents = []
@@ -298,12 +340,7 @@ class TemplateCreateOrchestrator:
         print("  (Resuming from checkpoint - Phase 7.5)")
 
         # Determine output path (needed for Phase 7.5 onwards)
-        if self.config.output_path:
-            output_path = self.config.output_path
-        elif self.config.output_location == 'repo':
-            output_path = Path("installer/global/templates") / self.manifest.name
-        else:
-            output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
+        output_path = self._get_output_path()
 
         # TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX: Ensure templates on disk before Phase 7.5
         self._ensure_templates_on_disk(output_path)
@@ -327,12 +364,7 @@ class TemplateCreateOrchestrator:
             OrchestrationResult with success status and generated artifacts
         """
         # Determine output path early (needed for Phase 8)
-        if self.config.output_path:
-            output_path = self.config.output_path
-        elif self.config.output_location == 'repo':
-            output_path = Path("installer/global/templates") / self.manifest.name
-        else:
-            output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
+        output_path = self._get_output_path()
 
         # Phase 7: Agent Writing
         if self.config.dry_run:
@@ -366,7 +398,7 @@ class TemplateCreateOrchestrator:
                 self._ensure_templates_on_disk(output_path)
 
                 # Save checkpoint before Phase 7.5 (agent enhancement may exit with code 42)
-                self._save_checkpoint("agents_written", phase=7)
+                self._save_checkpoint("agents_written", phase=WorkflowPhase.PHASE_7)
 
                 # Phase 7.5: Agent Enhancement (TASK-ENHANCE-AGENT-FILES)
                 # Enhance agents with template references BEFORE CLAUDE.md generation
@@ -380,6 +412,38 @@ class TemplateCreateOrchestrator:
 
         # Phase 8-9.5: Complete workflow from Phase 8 onwards
         return self._complete_workflow_from_phase_8(output_path)
+
+    def _get_output_path(self) -> Path:
+        """
+        Determine output path based on configuration (DRY principle).
+
+        Architectural Context:
+        - Centralizes output path logic (was duplicated in 2 places)
+        - Validates manifest exists before path determination
+        - Supports 3 path modes: explicit, repo, global (default)
+
+        Path Priority:
+        1. Explicit path (config.output_path) - highest priority
+        2. Repository location (config.output_location == 'repo')
+        3. Global location (default: ~/.agentecflow/templates/)
+
+        Returns:
+            Path to template output directory
+
+        Raises:
+            ValueError: If manifest not generated yet
+
+        TASK-PHASE-7-5-FIX-FOUNDATION: DRY improvement (+6 SOLID points)
+        """
+        if not self.manifest:
+            raise ValueError("Manifest must be generated before determining output path")
+
+        if self.config.output_path:
+            return self.config.output_path
+        elif self.config.output_location == 'repo':
+            return Path("installer/global/templates") / self.manifest.name
+        else:
+            return Path.home() / ".agentecflow" / "templates" / self.manifest.name
 
     def _ensure_templates_on_disk(self, output_path: Path) -> None:
         """
@@ -410,17 +474,64 @@ class TemplateCreateOrchestrator:
             self._templates_written_to_disk = True  # Mark as done even if no templates
             return
 
-        try:
-            logger.info(f"Writing {self.templates.total_count} templates to disk for Phase 7.5")
-            template_gen = TemplateGenerator(None, None)
-            template_gen.save_templates(self.templates, output_path)
+        logger.info(f"Writing {self.templates.total_count} templates to disk for Phase 7.5")
+        success = self._write_templates_to_disk(self.templates, output_path)
+
+        if success:
             self._templates_written_to_disk = True
             logger.info(f"Successfully wrote {self.templates.total_count} template files")
-        except Exception as e:
+        else:
             # Non-fatal: Phase 7.5 can handle missing templates
-            logger.warning(f"Failed to pre-write templates: {e}")
+            logger.warning("Failed to pre-write templates")
             # Don't set flag - allow retry on next call
             # Phase 7.5 will handle gracefully if templates missing
+
+    def _write_templates_to_disk(self, templates: TemplateCollection, output_path: Path) -> bool:
+        """
+        Write template files to disk (DRY principle).
+
+        Architectural Context:
+        - Centralizes template writing logic (was duplicated in 2 places)
+        - Provides consistent error handling across all template writes
+        - Handles SystemExit propagation for bridge pattern
+        - Returns success/failure for optional error handling
+
+        Used By:
+        - _ensure_templates_on_disk() - Pre-writes for Phase 7.5
+        - _phase9_package_assembly() - Final template writing
+
+        Args:
+            templates: TemplateCollection to write
+            output_path: Template output directory
+
+        Returns:
+            True if successful, False otherwise
+
+        Note:
+            Propagates SystemExit(42) for bridge pattern compatibility.
+            Other exceptions are logged and return False.
+
+        TASK-PHASE-7-5-FIX-FOUNDATION: DRY improvement (+6 SOLID points)
+        """
+        if not templates or templates.total_count == 0:
+            logger.debug("No templates to write")
+            return True
+
+        try:
+            template_gen = TemplateGenerator(None, None)
+            template_gen.save_templates(templates, output_path)
+            logger.info(f"Wrote {templates.total_count} template files to {output_path}")
+            return True
+        except SystemExit as e:
+            # Propagate bridge exit codes (code 42 = agent invocation needed)
+            if e.code == 42:
+                raise
+            # Other SystemExit codes indicate errors
+            logger.error(f"Template writing failed with exit code {e.code}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to write templates: {e}")
+            return False
 
     def _complete_workflow_from_phase_8(self, output_path: Path) -> OrchestrationResult:
         """
@@ -819,7 +930,7 @@ class TemplateCreateOrchestrator:
         try:
             # Create bridge invoker for agent enhancement
             enhancement_invoker = AgentBridgeInvoker(
-                phase=7.5,
+                phase=WorkflowPhase.PHASE_7_5,
                 phase_name="agent_enhancement"
             )
 
@@ -1136,9 +1247,10 @@ class TemplateCreateOrchestrator:
 
             # Save template files
             if templates and templates.total_count > 0:
-                template_gen = TemplateGenerator(None, None)
-                template_gen.save_templates(templates, output_path)
-                self._print_success_line(f"templates/ ({templates.total_count} files)")
+                if self._write_templates_to_disk(templates, output_path):
+                    self._print_success_line(f"templates/ ({templates.total_count} files)")
+                else:
+                    self._print_warning(f"Failed to write {templates.total_count} template files")
 
             # TASK-C7A9: Agent files now written in Phase 7 (before CLAUDE.md generation)
             # This ensures ClaudeMdGenerator can scan actual agent files from disk
@@ -1640,29 +1752,122 @@ class TemplateCreateOrchestrator:
 
         return templates_obj
 
+    def _serialize_value(self, value: Any, visited: Optional[set] = None) -> Any:
+        """
+        Recursively serialize a value for JSON storage with cycle detection (DRY principle).
+
+        Architectural Context:
+        - Centralizes type conversion logic for checkpoint serialization
+        - Handles Path, datetime, Enum, nested structures uniformly
+        - Prevents duplication across multiple serialize_* methods
+        - Supports deep nesting (dicts, lists, objects)
+        - Prevents infinite recursion via cycle detection
+
+        Conversion Rules:
+        - Path → str (for JSON compatibility)
+        - datetime → ISO 8601 string
+        - Enum → value attribute
+        - Object with to_dict() → dict (Pydantic models)
+        - Object with __dict__ → dict (regular classes)
+        - dict → recursively serialize values
+        - list → recursively serialize items
+        - Circular references → string representation
+        - Other → pass through unchanged
+
+        Args:
+            value: Value to serialize
+            visited: Set of object IDs already visited (for cycle detection)
+
+        Returns:
+            JSON-serializable value
+
+        TASK-PHASE-7-5-FIX-FOUNDATION: DRY improvement (+6 SOLID points)
+        """
+        from enum import Enum as EnumType
+
+        # Initialize visited set on first call
+        if visited is None:
+            visited = set()
+
+        # Handle None
+        if value is None:
+            return None
+
+        # Handle primitives (str, int, float, bool) - pass through unchanged
+        if isinstance(value, (str, int, float, bool)):
+            return value
+
+        # Cycle detection for complex objects
+        obj_id = id(value)
+        if obj_id in visited:
+            # Return string representation for circular references
+            logger.debug(f"Circular reference detected for {type(value).__name__}")
+            return f"<circular-ref-{type(value).__name__}>"
+
+        # Add to visited set for complex types (not primitives or collections)
+        if not isinstance(value, (list, dict, tuple, set)):
+            visited.add(obj_id)
+
+        # Handle Path objects
+        if isinstance(value, Path):
+            return str(value)
+
+        # Handle datetime objects
+        if isinstance(value, datetime):
+            return value.isoformat()
+
+        # Handle Enum objects
+        if isinstance(value, EnumType):
+            return value.value
+
+        # Handle objects with to_dict() method (Pydantic models)
+        if hasattr(value, 'to_dict') and callable(getattr(value, 'to_dict')):
+            return self._serialize_value(value.to_dict(), visited)
+
+        # Handle objects with __dict__ attribute (regular classes)
+        if hasattr(value, '__dict__'):
+            result = {}
+            for key, val in value.__dict__.items():
+                result[key] = self._serialize_value(val, visited)
+            return result
+
+        # Handle dictionaries (recursively serialize values)
+        if isinstance(value, dict):
+            result = {}
+            for key, val in value.items():
+                result[key] = self._serialize_value(val, visited)
+            return result
+
+        # Handle lists (recursively serialize items)
+        if isinstance(value, list):
+            return [self._serialize_value(item, visited) for item in value]
+
+        # Handle tuples (convert to list, recursively serialize)
+        if isinstance(value, tuple):
+            return [self._serialize_value(item, visited) for item in value]
+
+        # Handle sets (convert to list, recursively serialize)
+        if isinstance(value, set):
+            return [self._serialize_value(item, visited) for item in value]
+
+        # Fallback: convert to string (don't recurse on unknown types)
+        logger.debug(f"Unknown type {type(value)}, converting to string")
+        return str(value)
+
     def _serialize_agents(self, agents: List[Any]) -> Optional[dict]:
-        """Serialize agents list to dict."""
+        """
+        Serialize agents list to dict.
+
+        Now uses _serialize_value() for consistent type handling.
+
+        TASK-PHASE-7-5-FIX-FOUNDATION: DRY improvement
+        """
         if not agents:
             return None
 
-        result = {
-            'agents': []
+        return {
+            'agents': [self._serialize_value(agent) for agent in agents]
         }
-
-        # Serialize individual agents
-        for agent in agents:
-            agent_dict = {}
-            if hasattr(agent, '__dict__'):
-                agent_dict = agent.__dict__.copy()
-                # Convert Path and datetime objects to strings for JSON serialization
-                for key, value in agent_dict.items():
-                    if isinstance(value, Path):
-                        agent_dict[key] = str(value)
-                    elif isinstance(value, datetime):
-                        agent_dict[key] = value.isoformat()
-            result['agents'].append(agent_dict)
-
-        return result
 
     def _deserialize_agents(self, data: Optional[dict]) -> List[Any]:
         """Deserialize dict back to agents list."""

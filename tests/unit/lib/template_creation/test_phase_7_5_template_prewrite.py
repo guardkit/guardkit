@@ -176,16 +176,11 @@ class TestEnsureTemplatesOnDisk:
         """Should write templates to disk on first call."""
         output_path = Path('/tmp/output')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen_instance = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
 
-            # TemplateGenerator should be instantiated
-            MockGen.assert_called_once_with(None, None)
-
-            # save_templates should be called with correct arguments
-            mock_gen_instance.save_templates.assert_called_once_with(
+            # _write_templates_to_disk should be called with correct arguments
+            mock_write.assert_called_once_with(
                 orchestrator_with_templates.templates,
                 output_path
             )
@@ -197,40 +192,33 @@ class TestEnsureTemplatesOnDisk:
         """Should NOT write templates on second call (idempotent)."""
         output_path = Path('/tmp/output')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen_instance = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             # First call - should write
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
-            assert mock_gen_instance.save_templates.call_count == 1
+            assert mock_write.call_count == 1
 
             # Second call - should skip
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
-            assert mock_gen_instance.save_templates.call_count == 1  # Still only 1
+            assert mock_write.call_count == 1  # Still only 1
 
     def test_multiple_calls_write_only_once(self, orchestrator_with_templates):
         """Should only write once even with multiple calls."""
         output_path = Path('/tmp/output')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen_instance = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             # Call multiple times
             for _ in range(5):
                 orchestrator_with_templates._ensure_templates_on_disk(output_path)
 
             # Should only write once
-            assert mock_gen_instance.save_templates.call_count == 1
+            assert mock_write.call_count == 1
 
     def test_handles_write_error_gracefully(self, orchestrator_with_templates, caplog):
         """Should handle write errors without crashing."""
         caplog.set_level(logging.WARNING)
         output_path = Path('/tmp/output')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen_instance = MockGen.return_value
-            mock_gen_instance.save_templates.side_effect = Exception("Write failed")
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=False) as mock_write:
             # Should not raise exception
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
 
@@ -244,27 +232,25 @@ class TestEnsureTemplatesOnDisk:
         """Should allow retry after error (flag not set)."""
         output_path = Path('/tmp/output')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen_instance = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk') as mock_write:
             # First call fails
-            mock_gen_instance.save_templates.side_effect = Exception("Write failed")
+            mock_write.return_value = False
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
             assert orchestrator_with_templates._templates_written_to_disk is False
 
             # Second call succeeds
-            mock_gen_instance.save_templates.side_effect = None
+            mock_write.return_value = True
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
 
             # Should have been called twice
-            assert mock_gen_instance.save_templates.call_count == 2
+            assert mock_write.call_count == 2
             assert orchestrator_with_templates._templates_written_to_disk is True
 
     def test_logs_template_count_info(self, orchestrator_with_templates, caplog):
         """Should log information about template count."""
         caplog.set_level(logging.INFO)
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator'):
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True):
             orchestrator_with_templates._ensure_templates_on_disk(Path('/tmp/output'))
 
             # Check log messages
@@ -544,15 +530,13 @@ class TestEdgeCases:
 
     def test_concurrent_calls_safety(self, orchestrator_with_templates):
         """Test behavior with rapid sequential calls (basic concurrency check)."""
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             # Simulate rapid calls
             for _ in range(10):
                 orchestrator_with_templates._ensure_templates_on_disk(Path('/tmp/output'))
 
             # Should only write once
-            assert mock_gen.save_templates.call_count == 1
+            assert mock_write.call_count == 1
 
 
 # ========== DRY Improvement Tests ==========
@@ -564,15 +548,12 @@ class TestDRYImprovement:
         """Verify method centralizes template writing logic."""
         output_path = Path('/tmp/test')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             # Call from method
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
 
             # Verify consistent behavior
-            MockGen.assert_called_once_with(None, None)
-            mock_gen.save_templates.assert_called_once_with(
+            mock_write.assert_called_once_with(
                 orchestrator_with_templates.templates,
                 output_path
             )
@@ -581,16 +562,14 @@ class TestDRYImprovement:
         """Verify idempotent behavior is consistent across calls."""
         output_path = Path('/tmp/test')
 
-        with patch('commands.lib.template_create_orchestrator.TemplateGenerator') as MockGen:
-            mock_gen = MockGen.return_value
-
+        with patch.object(orchestrator_with_templates, '_write_templates_to_disk', return_value=True) as mock_write:
             # First call
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
-            first_call_count = mock_gen.save_templates.call_count
+            first_call_count = mock_write.call_count
 
             # Second call
             orchestrator_with_templates._ensure_templates_on_disk(output_path)
-            second_call_count = mock_gen.save_templates.call_count
+            second_call_count = mock_write.call_count
 
             # Verify idempotency
             assert first_call_count == 1
