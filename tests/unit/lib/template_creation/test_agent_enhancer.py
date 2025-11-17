@@ -436,34 +436,57 @@ technologies:
 
 # Second Agent""")
 
-        # Mock responses
-        template_response = json.dumps({
-            "templates": [
+        # Mock batch response (new API) - content must pass validation (≥150 lines + required sections)
+        enhanced_content = """## Purpose
+Agent for development and testing.
+
+## Template References
+- template1.template
+- template2.template
+
+## Best Practices
+- Follow coding standards
+- Write comprehensive tests
+- Document your code
+- Use type hints
+
+## Code Examples
+```python
+def example():
+    pass
+```
+
+## Constraints
+- Must follow project guidelines
+- Must include tests
+""" + "\n" * 150  # Pad to meet 150 line requirement
+
+        batch_response = json.dumps({
+            "enhancements": [
                 {
-                    "path": "templates/sample.template",
-                    "relevance": "Relevant template",
-                    "priority": "primary"
+                    "agent_name": "test-agent",
+                    "status": "enhanced",
+                    "enhanced_content": enhanced_content  # Must use "enhanced_content" key (API contract)
+                },
+                {
+                    "agent_name": "second-agent",
+                    "status": "enhanced",
+                    "enhanced_content": enhanced_content  # Must use "enhanced_content" key (API contract)
                 }
             ]
         })
 
-        content_response = """## Purpose
-Agent for Go development."""
-
-        # Configure mock to respond to multiple calls
-        mock_bridge_invoker.invoke.side_effect = [
-            template_response,  # First agent template discovery
-            content_response,    # First agent content generation
-            template_response,  # Second agent template discovery
-            content_response,    # Second agent content generation
-        ]
+        # Configure mock for single batch invocation
+        mock_bridge_invoker.invoke.return_value = batch_response
 
         # Execute
         results = enhancer.enhance_all_agents(temp_template_dir)
 
-        # Verify results
-        assert 'test-agent' in results
-        assert 'second-agent' in results
+        # Verify results (new API returns summary dict)
+        assert results['status'] == 'success'
+        assert results['enhanced_count'] == 2
+        assert results['total_count'] == 2
+        assert results['success_rate'] == 100
 
     def test_enhance_with_missing_agents_directory(self, mock_bridge_invoker):
         """Test handling of missing agents directory"""
@@ -473,7 +496,75 @@ Agent for Go development."""
             enhancer = AgentEnhancer(mock_bridge_invoker)
             results = enhancer.enhance_all_agents(temp_path)
 
-            assert results == {}
+            # New API returns skip result with metadata
+            assert results['status'] == 'skipped'
+            assert results['enhanced_count'] == 0
+            assert results['total_count'] == 0
+
+
+    def test_enhance_all_agents_returns_structured_dict(self, mock_bridge_invoker, temp_template_dir):
+        """Test that enhance_all_agents returns structured dict (not boolean map) - REGRESSION TEST"""
+        enhancer = AgentEnhancer(mock_bridge_invoker)
+
+        # Mock batch response with valid content (must include all required sections)
+        enhanced_content = """## Purpose
+Agent for development and testing.
+
+## When to Use This Agent
+- Use when developing features
+- Use when testing code
+
+## Template References
+- template1.template
+
+## Best Practices
+- Follow coding standards
+- Write comprehensive tests
+
+## Code Examples
+```python
+def example():
+    pass
+```
+
+## Constraints
+- Must follow guidelines
+""" + "\n" * 150
+
+        batch_response = json.dumps({
+            "enhancements": [
+                {
+                    "agent_name": "test-agent",
+                    "status": "enhanced",
+                    "enhanced_content": enhanced_content
+                }
+            ]
+        })
+
+        mock_bridge_invoker.invoke.return_value = batch_response
+
+        # Execute
+        results = enhancer.enhance_all_agents(temp_template_dir)
+
+        # CRITICAL: Verify results is a structured dict with required keys
+        assert isinstance(results, dict), "Results should be a dict, not a boolean map"
+        assert "status" in results, "Missing 'status' field"
+        assert "enhanced_count" in results, "Missing 'enhanced_count' field"
+        assert "total_count" in results, "Missing 'total_count' field"
+        assert "success_rate" in results, "Missing 'success_rate' field"
+        assert "errors" in results, "Missing 'errors' field"
+
+        # Verify field types
+        assert isinstance(results["status"], str)
+        assert isinstance(results["enhanced_count"], int)
+        assert isinstance(results["total_count"], int)
+        assert isinstance(results["success_rate"], (int, float))
+        assert isinstance(results["errors"], list)
+
+        # Verify values
+        assert results["status"] == "success"
+        assert results["enhanced_count"] == 1
+        assert results["total_count"] == 1
 
 
 class TestNoHardCoding:

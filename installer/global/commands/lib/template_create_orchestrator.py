@@ -54,52 +54,16 @@ ExtendedValidator = _extended_validator_module.ExtendedValidator
 ExtendedValidationReport = _extended_validator_module.ExtendedValidationReport
 ValidationReportGenerator = _report_generator_module.ValidationReportGenerator
 
+# TASK-PHASE-7-5-BATCH-PROCESSING: Import WorkflowPhase from constants to avoid circular import
+_constants_module = importlib.import_module('installer.global.lib.template_creation.constants')
+WorkflowPhase = _constants_module.WorkflowPhase
+
 # TASK-ENHANCE-AGENT-FILES: Phase 7.5 Agent Enhancement
 _agent_enhancer_module = importlib.import_module('installer.global.lib.template_creation.agent_enhancer')
 AgentEnhancer = _agent_enhancer_module.AgentEnhancer
 
 
 logger = logging.getLogger(__name__)
-
-
-class WorkflowPhase:
-    """
-    Workflow phase constants for template creation orchestration.
-
-    Architectural Context:
-    - Eliminates magic numbers throughout codebase (DRY principle)
-    - Provides semantic meaning to phase transitions
-    - Enables type-safe phase routing in checkpoint-resume pattern
-    - Supports both integer and float phase numbers for sub-phases
-
-    Phase Flow:
-    1.0  → AI-Native Codebase Analysis
-    2.0  → Manifest Generation
-    3.0  → Settings Generation
-    4.0  → Template File Generation
-    4.5  → Completeness Validation
-    5.0  → Agent Recommendation
-    6.0  → Agent Generation (uses bridge, may exit 42)
-    7.0  → Agent Writing
-    7.5  → Agent Enhancement (uses bridge, may exit 42)
-    8.0  → CLAUDE.md Generation
-    9.0  → Package Assembly
-    9.5  → Extended Validation
-
-    TASK-PHASE-7-5-FIX-FOUNDATION: Foundation quality improvement
-    """
-    PHASE_1 = 1      # AI Analysis
-    PHASE_2 = 2      # Manifest Generation
-    PHASE_3 = 3      # Settings Generation
-    PHASE_4 = 4      # Template Generation
-    PHASE_4_5 = 4.5  # Completeness Validation
-    PHASE_5 = 5      # Agent Recommendation
-    PHASE_6 = 6      # Agent Generation (bridge)
-    PHASE_7 = 7      # Agent Writing
-    PHASE_7_5 = 7.5  # Agent Enhancement (bridge)
-    PHASE_8 = 8      # CLAUDE.md Generation
-    PHASE_9 = 9      # Package Assembly
-    PHASE_9_5 = 9.5  # Extended Validation
 
 
 @dataclass
@@ -940,16 +904,29 @@ class TemplateCreateOrchestrator:
             # Enhance all agents (may exit with code 42 if agent invocation needed)
             results = enhancer.enhance_all_agents(output_path)
 
-            # Display results
-            successful = sum(1 for v in results.values() if v)
-            total = len(results)
+            # Extract structured fields from batch enhancement result
+            status = results.get("status", "failed")
+            enhanced_count = results.get("enhanced_count", 0)
+            total_count = results.get("total_count", 0)
+            success_rate = results.get("success_rate", 0)
+            errors = results.get("errors", [])
 
-            if successful > 0:
-                self._print_success_line(f"Enhanced {successful}/{total} agents with template references")
+            # Display results based on actual status
+            if status == "success" and enhanced_count > 0:
+                if success_rate == 100.0:
+                    self._print_success_line(f"Enhanced {enhanced_count}/{total_count} agents")
+                else:
+                    self._print_success_line(f"Enhanced {enhanced_count}/{total_count} agents ({success_rate:.0f}%)")
                 return True
-            else:
-                self._print_info("  No agents enhanced (all agents have basic descriptions)")
-                return True  # Not an error, just no enhancement needed
+            elif status == "skipped":
+                reason = results.get("reason", "unknown")
+                self._print_info(f"  Agent enhancement skipped: {reason}")
+                return True
+            else:  # failed or enhanced_count == 0
+                self._print_info("  No agents enhanced (validation failed for all agents)")
+                if errors:
+                    self._display_enhancement_errors(errors)
+                return True  # Don't block workflow
 
         except SystemExit as e:
             # Code 42 is expected - re-raise to trigger checkpoint-resume
@@ -1430,6 +1407,20 @@ class TemplateCreateOrchestrator:
     def _print_error(self, message: str) -> None:
         """Print error message."""
         print(f"  ❌ {message}")
+
+    def _display_enhancement_errors(self, errors: list[str], max_display: int = 3) -> None:
+        """Display enhancement errors with optional limit.
+
+        Args:
+            errors: List of error messages
+            max_display: Maximum number of errors to display (default: 3)
+        """
+        if errors:
+            self._print_warning("  Errors encountered:")
+            for error in errors[:max_display]:
+                self._print_warning(f"    - {error}")
+            if len(errors) > max_display:
+                self._print_warning(f"    ... and {len(errors) - max_display} more")
 
     def _phase9_5_extended_validation(
         self,
