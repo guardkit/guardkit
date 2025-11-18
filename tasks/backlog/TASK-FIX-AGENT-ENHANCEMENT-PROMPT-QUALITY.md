@@ -4,7 +4,8 @@ title: "Fix Agent Enhancement: Explicit Section Requirements with Few-Shot Examp
 status: backlog
 priority: critical
 created: 2025-11-18
-estimated_effort: 2-3 hours
+updated: 2025-11-18
+estimated_effort: 2.5-3 hours
 complexity: 5/10
 tags:
   - enhancement
@@ -12,17 +13,21 @@ tags:
   - agent-enhancement
   - prompt-engineering
   - phase-7-5
-dependencies:
-  - TASK-PHASE-7-5-INCLUDE-TEMPLATE-CODE-SAMPLES (provides relevance-based template selection)
+  - focused-fix
+dependencies: []
 related_tasks:
   - TASK-PHASE-7-5-BATCH-PROCESSING (batch enhancement)
 reviews:
-  - architectural-reviewer: 68/100 (approved with significant recommendations)
-  - code-reviewer: 6.5/10 (conditional approval with required changes)
+  - architectural-reviewer: 72/100 (approved with recommendations)
+  - code-reviewer: 6.5/10 (approved with required changes)
 confidence_assessment:
   current_fix_only: 55%
   with_all_enhancements: 85%
   target: 80%+
+strategic_context: |
+  This is the ONLY broken component in template-create. The 8-phase redesign
+  proposal was rejected (9/10 scope creep). This focused 2.5-3 hour fix
+  addresses the actual problem: poor prompt quality in agent_enhancer.py.
 ---
 
 # Fix Agent Enhancement: Explicit Section Requirements with Few-Shot Examples
@@ -516,3 +521,138 @@ This task builds on TASK-PHASE-7-5-INCLUDE-TEMPLATE-CODE-SAMPLES which provides 
 2. **Prompt quality** (this task): Ensures AI generates high-quality content from those templates
 
 The combination should achieve the target 80%+ pass rate with 7-8/10 quality score.
+
+## Architectural Review Recommendations (72/100)
+
+Based on architectural review:
+
+### Priority 1: Extract Constants for DRY (10 minutes)
+
+```python
+# At top of agent_enhancer.py
+REQUIRED_SECTIONS = [
+    "Template References",
+    "Best Practices",
+    "Code Examples",
+    "Constraints"
+]
+
+QUALITY_THRESHOLDS = {
+    "min_lines": 150,
+    "max_lines": 250,
+    "min_code_blocks": 2,
+}
+
+SECTION_REQUIREMENTS = {
+    "Template References": {"min_chars": 500, "min_code_blocks": 0},
+    "Best Practices": {"min_chars": 400, "min_code_blocks": 2},
+    "Code Examples": {"min_chars": 300, "min_code_blocks": 1},
+    "Constraints": {"min_chars": 150, "min_code_blocks": 0}
+}
+```
+
+### Priority 2: Split Validation for SRP (10 minutes)
+
+```python
+def _validate_enhancement(self, content: str) -> bool:
+    """Orchestrate all validation checks."""
+    return (
+        self._validate_structure(content) and
+        self._validate_content_quality(content)
+    )
+
+def _validate_structure(self, content: str) -> bool:
+    """Validate required sections are present."""
+    for section in REQUIRED_SECTIONS:
+        if section not in content:
+            logger.warning(f"Missing required section: {section}")
+            return False
+    return True
+
+def _validate_content_quality(self, content: str) -> bool:
+    """Validate content quality metrics."""
+    # See implementation in Phase 4 above
+    pass
+```
+
+### Priority 3: Consider Prompt Template Files (Optional)
+
+For future maintainability, consider extracting prompts to:
+```
+installer/global/lib/template_creation/
+    prompts/
+        agent_enhancement_example.md
+        agent_enhancement_negative.md
+```
+
+## Code Review Recommendations (6.5/10)
+
+Based on code review:
+
+### Required Change 1: Expand Few-Shot Example to 220+ Lines
+
+The example must include ALL sections that appear in final output:
+- Purpose
+- When to Use This Agent (4 scenarios)
+- Template References (2-3 with code snippets)
+- Best Practices (3-5 with code examples)
+- Code Examples (complete implementation)
+- Constraints (5-7 bullet points)
+- Technologies
+- Usage in Taskwright
+
+### Required Change 2: Section Content Validation
+
+Add `_extract_section_content()` helper:
+
+```python
+def _extract_section_content(self, content: str, section_name: str) -> str:
+    """Extract content between section header and next section."""
+    import re
+
+    pattern = rf"##\s*{re.escape(section_name)}\s*\n"
+    match = re.search(pattern, content)
+    if not match:
+        return ""
+
+    start = match.end()
+    next_section = re.search(r"\n##\s+", content[start:])
+    end = start + next_section.start() if next_section else len(content)
+
+    return content[start:end]
+```
+
+### Required Change 3: Add Quality Rubric to Prompt
+
+```markdown
+**Quality Scoring (aim for 8+):**
+- 9-10: All sections with deep examples, 200+ lines, 8+ template refs
+- 7-8: All sections with good examples, 150-200 lines, 5-7 template refs
+- 5-6: All sections but sparse content, <150 lines (BORDERLINE)
+- <5: Missing sections or no template references (REJECTED)
+```
+
+### Required Change 4: Reorder Prompt for Attention
+
+Put critical information (examples, guidelines) BEFORE template catalog:
+1. Role and critical instructions
+2. Few-shot example
+3. Negative examples
+4. Section guidelines
+5. Quality rubric
+6. Agent list
+7. Template catalog
+8. Code samples
+9. Output format reminder
+
+## Definition of Done
+
+1. ✅ All acceptance criteria met
+2. ✅ Constants extracted (DRY improvement)
+3. ✅ Validation split (SRP improvement)
+4. ✅ Few-shot example is 220+ lines
+5. ✅ Section content validation implemented
+6. ✅ Unit tests pass
+7. ✅ Manual verification: ≥80% pass rate
+8. ✅ Manual verification: 3 agents score ≥7/10 average
+9. ✅ Code committed and task moved to IN_REVIEW
