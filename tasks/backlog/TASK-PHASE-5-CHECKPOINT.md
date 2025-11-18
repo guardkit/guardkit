@@ -57,7 +57,15 @@ This phase must CREATE agents to fill gaps, not just recommend from a list.
 ```python
 # In template_create_orchestrator.py
 
-from docs.proposals.template_create.AI_PROMPTS_SPECIFICATION import (
+from installer.global.lib.agent_bridge.invoker import (
+    AgentBridgeInvoker,
+    CheckpointRequested
+)
+from installer.global.lib.agent_bridge.state_manager import (
+    StateManager,
+    TemplateCreateState
+)
+from installer.global.lib.template_creation.prompts import (
     PHASE_4_AGENT_CREATION_PROMPT,
     PHASE_4_CONFIDENCE_THRESHOLD
 )
@@ -85,8 +93,8 @@ def _phase5_agent_creation(
     """
     self._print_phase_header("Phase 5: AI Agent Creation")
 
-    # Check if resuming with response
-    if self.checkpoint_manager.has_agent_response():
+    # Check if resuming with response (use existing AgentBridgeInvoker)
+    if self.agent_invoker.has_response():
         self._print_info("  Resuming from checkpoint...")
         return self._complete_phase_5_from_response(analysis)
 
@@ -126,21 +134,31 @@ def _phase5_agent_creation(
         "created_at": datetime.utcnow().isoformat() + "Z"
     }
 
-    # Save checkpoint
-    state = TemplateCreateState(
+    # Save checkpoint using existing StateManager API
+    self.state_manager.save_state(
+        checkpoint="before_agent_creation",
         phase=5,
-        phase_name="agent_creation",
-        checkpoint_name="before_agent_invocation",
-        output_path=str(output_path),
-        project_path=str(self.project_path),
-        template_name=self.template_name,
+        config={
+            "codebase_path": str(self.project_path),
+            "output_location": self.output_location,
+            "template_name": self.template_name,
+            "output_path": str(output_path)
+        },
         phase_data={
             "codebase_analysis": analysis.to_dict(),
             "existing_agents": existing_agents
+        },
+        agent_request_pending={
+            "agent_name": "architectural-reviewer",
+            "request_id": request["request_id"]
         }
     )
 
-    self.checkpoint_manager.save_checkpoint(state, request)
+    # Write request file for agent bridge
+    Path(".agent-request.json").write_text(
+        json.dumps(request, indent=2),
+        encoding="utf-8"
+    )
 
     self._print_info("  📝 Request written to: .agent-request.json")
     self._print_info("  🔄 Checkpoint: Resume after agent responds")
@@ -230,7 +248,7 @@ def _complete_phase_5_from_response(
     Returns:
         AgentCreationResult with existing and created agents
     """
-    response = self.checkpoint_manager.load_agent_response()
+    response = self.agent_invoker.load_response()
 
     if not response or response.get("status") != "success":
         error_msg = response.get("error_message", "Unknown error") if response else "No response"
@@ -335,7 +353,7 @@ def _run_from_phase_5(self) -> OrchestrationResult:
     self._print_info("Resuming from Phase 5 checkpoint...")
 
     # Load state
-    state = self.checkpoint_manager.load_checkpoint()
+    state = self.state_manager.load_state()
     if not state:
         raise OrchestrationError("Failed to load checkpoint state")
 

@@ -57,13 +57,15 @@ Implement checkpoint-resume pattern in Phase 1:
 ```python
 # In template_create_orchestrator.py
 
-from installer.global.lib.agent_bridge.checkpoint_manager import (
-    CheckpointManager,
-    CheckpointRequested,
-    TemplateCreateState,
-    CHECKPOINT_EXIT_CODE
+from installer.global.lib.agent_bridge.invoker import (
+    AgentBridgeInvoker,
+    CheckpointRequested
 )
-from docs.proposals.template_create.AI_PROMPTS_SPECIFICATION import (
+from installer.global.lib.agent_bridge.state_manager import (
+    StateManager,
+    TemplateCreateState
+)
+from installer.global.lib.template_creation.prompts import (
     PHASE_1_ANALYSIS_PROMPT,
     PHASE_1_CONFIDENCE_THRESHOLD
 )
@@ -72,7 +74,8 @@ from docs.proposals.template_create.AI_PROMPTS_SPECIFICATION import (
 class TemplateCreateOrchestrator:
     def __init__(self, ...):
         # ... existing init ...
-        self.checkpoint_manager = CheckpointManager()
+        self.state_manager = StateManager()
+        self.agent_invoker = AgentBridgeInvoker(phase=1, phase_name="codebase_analysis")
 
     def _phase1_ai_analysis(
         self,
@@ -95,7 +98,7 @@ class TemplateCreateOrchestrator:
         self._print_phase_header("Phase 1: AI Codebase Analysis")
 
         # Check if resuming with response
-        if self.checkpoint_manager.has_agent_response():
+        if self.agent_invoker.has_response():
             self._print_info("  Resuming from checkpoint...")
             return self._complete_phase_1_from_response(samples)
 
@@ -128,20 +131,30 @@ class TemplateCreateOrchestrator:
             "created_at": datetime.utcnow().isoformat() + "Z"
         }
 
-        # Save checkpoint
-        state = TemplateCreateState(
+        # Save checkpoint using existing StateManager API
+        self.state_manager.save_state(
+            checkpoint="before_ai_analysis",
             phase=1,
-            phase_name="codebase_analysis",
-            checkpoint_name="before_agent_invocation",
-            output_path=str(output_path),
-            project_path=str(self.project_path),
-            template_name=self.template_name,
+            config={
+                "codebase_path": str(self.project_path),
+                "output_location": self.output_location,
+                "template_name": self.template_name,
+                "output_path": str(output_path)
+            },
             phase_data={
                 "samples": self._serialize_samples(samples)
+            },
+            agent_request_pending={
+                "agent_name": "architectural-reviewer",
+                "request_id": request["request_id"]
             }
         )
 
-        self.checkpoint_manager.save_checkpoint(state, request)
+        # Write request file for agent bridge
+        Path(".agent-request.json").write_text(
+            json.dumps(request, indent=2),
+            encoding="utf-8"
+        )
 
         self._print_info("  📝 Request written to: .agent-request.json")
         self._print_info("  🔄 Checkpoint: Resume after agent responds")

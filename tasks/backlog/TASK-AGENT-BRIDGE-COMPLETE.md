@@ -1,11 +1,11 @@
-# TASK-AGENT-BRIDGE-COMPLETE: Complete Agent Bridge Implementation
+# TASK-INTEGRATE-AGENT-BRIDGE: Integrate Orchestrator with Existing Agent Bridge
 
 **Task ID**: TASK-AGENT-BRIDGE-COMPLETE
-**Title**: Complete Agent Bridge Checkpoint-Resume Implementation
+**Title**: Integrate Orchestrator with Existing AgentBridgeInvoker and StateManager
 **Status**: BACKLOG
 **Priority**: HIGH
-**Complexity**: 6/10 (Medium)
-**Estimated Hours**: 4-6
+**Complexity**: 4/10 (Medium-Low)
+**Estimated Hours**: 2-3
 **Phase**: 2 of 8 (Template-Create Redesign)
 
 ---
@@ -14,18 +14,27 @@
 
 ### Current Issue
 
-The agent bridge infrastructure exists but agent invocation throws "not yet implemented":
+The orchestrator doesn't properly integrate with existing `AgentBridgeInvoker` and `StateManager`:
 
 ```
 Agent invocation failed: Agent invocation not yet implemented.
 Using fallback heuristics.
 ```
 
-This prevents AI-powered analysis in Phases 1, 4, and 7.5, reducing confidence from 90%+ to 68%.
-
 ### Root Cause
 
-The `ArchitecturalReviewerInvoker` in `agent_invoker.py` raises an exception when no bridge invoker is provided, and the orchestrator doesn't properly integrate with the `AgentBridgeInvoker` that exists.
+The `ArchitecturalReviewerInvoker` in `agent_invoker.py` raises an exception when no bridge invoker is provided, and the orchestrator isn't wired to use the existing infrastructure.
+
+### IMPORTANT: Existing Infrastructure
+
+The following infrastructure **already exists and works** - DO NOT RECREATE:
+
+| Component | Location | LOC |
+|-----------|----------|-----|
+| `AgentBridgeInvoker` | `installer/global/lib/agent_bridge/invoker.py` | 266 |
+| `StateManager` | `installer/global/lib/agent_bridge/state_manager.py` | 162 |
+| `TemplateCreateState` | `state_manager.py` (lines 15-37) | 22 |
+| `AgentRequest/Response` | `invoker.py` (lines 33-83) | 50 |
 
 ---
 
@@ -33,205 +42,41 @@ The `ArchitecturalReviewerInvoker` in `agent_invoker.py` raises an exception whe
 
 ### Approach
 
-Complete the agent bridge pattern with:
-1. CheckpointManager for state persistence
-2. Request/response file handling
-3. Proper integration with orchestrator
-4. Mock invoker for testing
+Wire the orchestrator to use existing infrastructure:
+1. Add `CheckpointRequested` exception to existing `invoker.py`
+2. Update orchestrator to import and use `AgentBridgeInvoker`
+3. Update orchestrator to import and use `StateManager`
+4. Create mock invoker for testing (only genuinely new file)
 
-### Files to Create/Modify
+### Files to Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/lib/agent_bridge/checkpoint_manager.py` | CREATE | State persistence |
-| `installer/global/lib/agent_bridge/invoker.py` | MODIFY | Complete integration |
-| `installer/global/lib/codebase_analyzer/agent_invoker.py` | MODIFY | Use bridge invoker |
-| `tests/unit/agent_bridge/test_checkpoint_manager.py` | CREATE | Unit tests |
-| `tests/integration/test_agent_workflow.py` | CREATE | Integration tests |
+| `installer/global/lib/agent_bridge/invoker.py` | MODIFY | Add CheckpointRequested exception |
+| `installer/global/lib/codebase_analyzer/agent_invoker.py` | MODIFY | Use existing bridge invoker |
+| `installer/global/commands/lib/template_create_orchestrator.py` | MODIFY | Wire to existing infrastructure |
+
+### Files to Create
+
+| File | Action | Description |
+|------|--------|-------------|
+| `installer/global/lib/agent_bridge/mock_invoker.py` | CREATE | Mock invoker for testing |
+| `tests/unit/agent_bridge/test_integration.py` | CREATE | Integration tests |
+
+### Files NOT Being Created (Already Exist)
+
+- ~~`checkpoint_manager.py`~~ - Use existing `StateManager`
+- ~~`response_parser.py`~~ - Use existing `invoker.load_response()`
+- ~~`TemplateCreateState`~~ - Already exists in `state_manager.py`
 
 ---
 
 ## Implementation Details
 
-### 1. CheckpointManager
+### 1. Add CheckpointRequested Exception to Existing invoker.py
 
 ```python
-# installer/global/lib/agent_bridge/checkpoint_manager.py
-
-from pathlib import Path
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, List, Optional
-import json
-import logging
-
-logger = logging.getLogger(__name__)
-
-# Exit code for checkpoint
-CHECKPOINT_EXIT_CODE = 42
-
-
-@dataclass
-class CompletedPhase:
-    """Record of a completed phase."""
-    phase: int
-    phase_name: str
-    completed_at: str
-    result_summary: str
-
-
-@dataclass
-class TemplateCreateState:
-    """Checkpoint state for template creation."""
-    phase: int
-    phase_name: str
-    checkpoint_name: str
-    output_path: str
-    version: str = "1.0"
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
-    project_path: Optional[str] = None
-    template_name: Optional[str] = None
-    phase_data: Dict[str, Any] = field(default_factory=dict)
-    completed_phases: List[CompletedPhase] = field(default_factory=list)
-    agent_requests: List[Dict[str, Any]] = field(default_factory=list)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "version": self.version,
-            "phase": self.phase,
-            "phase_name": self.phase_name,
-            "checkpoint_name": self.checkpoint_name,
-            "created_at": self.created_at,
-            "output_path": self.output_path,
-            "project_path": self.project_path,
-            "template_name": self.template_name,
-            "phase_data": self.phase_data,
-            "completed_phases": [
-                {
-                    "phase": p.phase,
-                    "phase_name": p.phase_name,
-                    "completed_at": p.completed_at,
-                    "result_summary": p.result_summary
-                }
-                for p in self.completed_phases
-            ],
-            "agent_requests": self.agent_requests
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TemplateCreateState":
-        completed = [
-            CompletedPhase(
-                phase=p["phase"],
-                phase_name=p["phase_name"],
-                completed_at=p["completed_at"],
-                result_summary=p["result_summary"]
-            )
-            for p in data.get("completed_phases", [])
-        ]
-        return cls(
-            version=data.get("version", "1.0"),
-            phase=data["phase"],
-            phase_name=data["phase_name"],
-            checkpoint_name=data["checkpoint_name"],
-            created_at=data["created_at"],
-            output_path=data["output_path"],
-            project_path=data.get("project_path"),
-            template_name=data.get("template_name"),
-            phase_data=data.get("phase_data", {}),
-            completed_phases=completed,
-            agent_requests=data.get("agent_requests", [])
-        )
-
-
-class CheckpointManager:
-    """Manage checkpoint save/restore for template creation."""
-
-    def __init__(
-        self,
-        state_file: Path = Path(".template-create-state.json"),
-        request_file: Path = Path(".agent-request.json"),
-        response_file: Path = Path(".agent-response.json")
-    ):
-        self.state_file = state_file
-        self.request_file = request_file
-        self.response_file = response_file
-
-    def save_checkpoint(
-        self,
-        state: TemplateCreateState,
-        request: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """
-        Save checkpoint state and optional agent request.
-
-        Args:
-            state: Current checkpoint state
-            request: Optional agent request to write
-        """
-        # Save state
-        with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(state.to_dict(), f, indent=2)
-        logger.info(f"Saved checkpoint: phase={state.phase}, checkpoint={state.checkpoint_name}")
-
-        # Save request if provided
-        if request:
-            with open(self.request_file, 'w', encoding='utf-8') as f:
-                json.dump(request, f, indent=2)
-            logger.info(f"Saved agent request for: {request.get('agent_name')}")
-
-    def load_checkpoint(self) -> Optional[TemplateCreateState]:
-        """
-        Load checkpoint state from disk.
-
-        Returns:
-            TemplateCreateState if exists, None otherwise
-        """
-        if not self.state_file.exists():
-            return None
-
-        try:
-            with open(self.state_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            state = TemplateCreateState.from_dict(data)
-            logger.info(f"Loaded checkpoint: phase={state.phase}")
-            return state
-        except Exception as e:
-            logger.error(f"Failed to load checkpoint: {e}")
-            return None
-
-    def has_agent_response(self) -> bool:
-        """Check if agent response file exists."""
-        return self.response_file.exists()
-
-    def load_agent_response(self) -> Optional[Dict[str, Any]]:
-        """
-        Load agent response from disk.
-
-        Returns:
-            Response dict if exists, None otherwise
-        """
-        if not self.response_file.exists():
-            return None
-
-        try:
-            with open(self.response_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to load agent response: {e}")
-            return None
-
-    def clear_checkpoint(self) -> None:
-        """Remove all checkpoint files."""
-        for filepath in [self.state_file, self.request_file, self.response_file]:
-            if filepath.exists():
-                filepath.unlink()
-                logger.debug(f"Removed: {filepath}")
-
-    def is_resuming(self) -> bool:
-        """Check if we're resuming from a checkpoint."""
-        return self.state_file.exists()
-
+# ADD to installer/global/lib/agent_bridge/invoker.py (after line 265)
 
 class CheckpointRequested(Exception):
     """
@@ -244,29 +89,46 @@ class CheckpointRequested(Exception):
         self,
         agent_name: str,
         phase: int,
-        phase_name: str,
-        checkpoint_name: str = "before_agent_invocation"
+        phase_name: str
     ):
         self.agent_name = agent_name
         self.phase = phase
         self.phase_name = phase_name
-        self.checkpoint_name = checkpoint_name
         super().__init__(
             f"Checkpoint requested for {agent_name} at phase {phase} ({phase_name})"
         )
 ```
 
-### 2. Update Agent Invoker Integration
+### 2. Update __init__.py Exports
 
 ```python
-# In installer/global/lib/codebase_analyzer/agent_invoker.py
+# UPDATE installer/global/lib/agent_bridge/__init__.py
 
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
-from installer.global.lib.agent_bridge.checkpoint_manager import (
-    CheckpointManager,
-    CheckpointRequested,
-    TemplateCreateState
+from .invoker import (
+    AgentBridgeInvoker,
+    AgentRequest,
+    AgentResponse,
+    AgentInvocationError,
+    CheckpointRequested  # Add this export
 )
+from .state_manager import StateManager, TemplateCreateState
+```
+
+### 3. Update ArchitecturalReviewerInvoker to Use Existing Infrastructure
+
+```python
+# MODIFY installer/global/lib/codebase_analyzer/agent_invoker.py
+
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from installer.global.lib.agent_bridge.invoker import (
+    AgentBridgeInvoker,
+    CheckpointRequested
+)
+from installer.global.lib.agent_bridge.state_manager import StateManager
 
 
 class ArchitecturalReviewerInvoker:
@@ -275,10 +137,17 @@ class ArchitecturalReviewerInvoker:
     def __init__(
         self,
         bridge_invoker: Optional[AgentBridgeInvoker] = None,
-        checkpoint_manager: Optional[CheckpointManager] = None
+        state_manager: Optional[StateManager] = None
     ):
+        """
+        Initialize with existing infrastructure.
+
+        Args:
+            bridge_invoker: Existing AgentBridgeInvoker instance
+            state_manager: Existing StateManager instance
+        """
         self.bridge_invoker = bridge_invoker
-        self.checkpoint_manager = checkpoint_manager or CheckpointManager()
+        self.state_manager = state_manager or StateManager()
         self.logger = logging.getLogger(__name__)
 
     def invoke_for_analysis(
@@ -289,6 +158,9 @@ class ArchitecturalReviewerInvoker:
     ) -> Dict[str, Any]:
         """
         Invoke architectural-reviewer for codebase analysis.
+
+        Uses existing AgentBridgeInvoker if available, otherwise
+        raises CheckpointRequested for external invocation.
 
         Args:
             samples: File samples to analyze
@@ -302,24 +174,19 @@ class ArchitecturalReviewerInvoker:
             CheckpointRequested: If agent invocation needs checkpoint
         """
         # Check if we're resuming with a response
-        if self.checkpoint_manager.has_agent_response():
-            response = self.checkpoint_manager.load_agent_response()
-            if response and response.get("status") == "success":
-                self.logger.info("Loaded agent response from checkpoint")
-                return json.loads(response.get("response", "{}"))
+        if self.bridge_invoker and self.bridge_invoker.has_response():
+            response = self.bridge_invoker.load_response()
+            self.logger.info("Loaded agent response from checkpoint")
+            return json.loads(response)
 
         # If we have a bridge invoker, use it directly
         if self.bridge_invoker:
-            from docs.proposals.template_create.AI_PROMPTS_SPECIFICATION import (
-                PHASE_1_ANALYSIS_PROMPT
-            )
-            prompt = PHASE_1_ANALYSIS_PROMPT.format(
-                file_samples=json.dumps(samples, indent=2)
-            )
+            prompt = self._build_analysis_prompt(samples)
             response = self.bridge_invoker.invoke(
                 agent_name="architectural-reviewer",
                 prompt=prompt,
-                timeout_seconds=120
+                timeout_seconds=120,
+                context=context
             )
             return json.loads(response)
 
@@ -327,29 +194,39 @@ class ArchitecturalReviewerInvoker:
         raise CheckpointRequested(
             agent_name="architectural-reviewer",
             phase=phase,
-            phase_name="codebase_analysis" if phase == 1 else "agent_creation",
-            checkpoint_name="before_agent_invocation"
+            phase_name="codebase_analysis" if phase == 1 else "agent_creation"
+        )
+
+    def _build_analysis_prompt(self, samples: List[Dict[str, Any]]) -> str:
+        """Build analysis prompt from samples."""
+        # Import prompt template (created separately)
+        from installer.global.lib.template_creation.prompts import PHASE_1_ANALYSIS_PROMPT
+        return PHASE_1_ANALYSIS_PROMPT.format(
+            file_samples=json.dumps(samples, indent=2)
         )
 ```
 
-### 3. Mock Invoker for Testing
+### 4. Create Mock Invoker for Testing
 
 ```python
-# installer/global/lib/agent_bridge/mock_invoker.py
+# CREATE installer/global/lib/agent_bridge/mock_invoker.py
 
-from typing import Dict, List, Any, Callable
+"""
+Mock Agent Invoker for Testing
+
+Provides canned responses for testing without real AI calls.
+"""
+
 import json
+from typing import Any, Dict, List, Optional
 
-
-class AgentInvocationError(Exception):
-    """Raised when agent invocation fails."""
-    pass
+from .invoker import AgentInvocationError
 
 
 class MockAgentInvoker:
     """Mock agent invoker for testing without real AI calls."""
 
-    def __init__(self, responses: Dict[str, str] = None):
+    def __init__(self, responses: Optional[Dict[str, str]] = None):
         """
         Initialize with canned responses.
 
@@ -372,7 +249,7 @@ class MockAgentInvoker:
         agent_name: str,
         prompt: str,
         timeout_seconds: int = 120,
-        **kwargs
+        context: Optional[Dict] = None
     ) -> str:
         """
         Mock invoke an agent.
@@ -387,7 +264,7 @@ class MockAgentInvoker:
             "agent_name": agent_name,
             "prompt": prompt,
             "timeout_seconds": timeout_seconds,
-            "kwargs": kwargs
+            "context": context or {}
         })
 
         if agent_name in self.responses:
@@ -397,7 +274,7 @@ class MockAgentInvoker:
             f"No mock response configured for agent: {agent_name}"
         )
 
-    def get_invocations(self, agent_name: str = None) -> List[Dict]:
+    def get_invocations(self, agent_name: Optional[str] = None) -> List[Dict]:
         """Get recorded invocations, optionally filtered by agent."""
         if agent_name:
             return [i for i in self.invocations if i["agent_name"] == agent_name]
@@ -406,6 +283,14 @@ class MockAgentInvoker:
     def reset(self) -> None:
         """Reset invocation history."""
         self.invocations = []
+
+    def has_response(self) -> bool:
+        """Check if response file exists (always False for mock)."""
+        return False
+
+    def load_response(self) -> str:
+        """Load response (not applicable for mock)."""
+        raise AgentInvocationError("Mock invoker has no stored response")
 ```
 
 ---
@@ -414,22 +299,22 @@ class MockAgentInvoker:
 
 ### Functional
 
-- [ ] CheckpointManager saves/loads state correctly
-- [ ] Agent request file written before exit code 42
-- [ ] Agent response file parsed on resume
-- [ ] MockAgentInvoker works for testing
-- [ ] ArchitecturalReviewerInvoker integrates with bridge
+- [ ] `CheckpointRequested` exception added to existing `invoker.py`
+- [ ] `ArchitecturalReviewerInvoker` uses existing `AgentBridgeInvoker`
+- [ ] `MockAgentInvoker` works for testing
+- [ ] Existing tests still pass
 
 ### Quality
 
 - [ ] Test coverage >= 90%
-- [ ] All tests passing
 - [ ] No circular imports
+- [ ] Uses existing StateManager API correctly
 
 ### Integration
 
 - [ ] Works with existing orchestrator
-- [ ] Checkpoint files cleaned up after success
+- [ ] Existing checkpoint files compatible
+- [ ] No duplicate infrastructure created
 
 ---
 
@@ -438,100 +323,124 @@ class MockAgentInvoker:
 ### Unit Tests
 
 ```python
-# tests/unit/agent_bridge/test_checkpoint_manager.py
+# tests/unit/agent_bridge/test_integration.py
 
 import pytest
+import json
 from pathlib import Path
-from installer.global.lib.agent_bridge.checkpoint_manager import (
-    CheckpointManager,
-    TemplateCreateState,
-    CompletedPhase
+
+from installer.global.lib.agent_bridge.invoker import (
+    AgentBridgeInvoker,
+    CheckpointRequested
 )
+from installer.global.lib.agent_bridge.state_manager import (
+    StateManager,
+    TemplateCreateState
+)
+from installer.global.lib.agent_bridge.mock_invoker import MockAgentInvoker
 
 
-class TestCheckpointManager:
-    """Tests for CheckpointManager."""
+class TestCheckpointRequested:
+    """Tests for CheckpointRequested exception."""
 
-    def test_save_and_load_state(self, tmp_path):
-        """Test saving and loading checkpoint state."""
-        manager = CheckpointManager(
-            state_file=tmp_path / ".template-create-state.json"
-        )
-
-        state = TemplateCreateState(
-            phase=5,
-            phase_name="agent_creation",
-            checkpoint_name="before_agent_invocation",
-            output_path="/tmp/output"
-        )
-
-        manager.save_checkpoint(state)
-        loaded = manager.load_checkpoint()
-
-        assert loaded is not None
-        assert loaded.phase == 5
-        assert loaded.phase_name == "agent_creation"
-
-    def test_save_with_request(self, tmp_path):
-        """Test saving checkpoint with agent request."""
-        manager = CheckpointManager(
-            state_file=tmp_path / ".template-create-state.json",
-            request_file=tmp_path / ".agent-request.json"
-        )
-
-        state = TemplateCreateState(
+    def test_exception_attributes(self):
+        """Test exception stores correct attributes."""
+        exc = CheckpointRequested(
+            agent_name="architectural-reviewer",
             phase=1,
-            phase_name="codebase_analysis",
-            checkpoint_name="before_agent_invocation",
-            output_path="/tmp/output"
+            phase_name="codebase_analysis"
         )
 
-        request = {
-            "request_id": "test-123",
-            "agent_name": "architectural-reviewer",
-            "prompt": "Analyze this..."
-        }
+        assert exc.agent_name == "architectural-reviewer"
+        assert exc.phase == 1
+        assert exc.phase_name == "codebase_analysis"
 
-        manager.save_checkpoint(state, request)
-
-        assert manager.request_file.exists()
-
-    def test_load_agent_response(self, tmp_path):
-        """Test loading agent response."""
-        manager = CheckpointManager(
-            response_file=tmp_path / ".agent-response.json"
+    def test_exception_message(self):
+        """Test exception has descriptive message."""
+        exc = CheckpointRequested(
+            agent_name="architectural-reviewer",
+            phase=5,
+            phase_name="agent_creation"
         )
 
-        response = {
-            "request_id": "test-123",
-            "status": "success",
-            "response": '{"overall_confidence": 0.92}'
-        }
+        assert "architectural-reviewer" in str(exc)
+        assert "5" in str(exc)
 
-        manager.response_file.write_text(json.dumps(response))
 
-        loaded = manager.load_agent_response()
+class TestMockInvoker:
+    """Tests for MockAgentInvoker."""
 
-        assert loaded is not None
-        assert loaded["status"] == "success"
+    def test_add_and_invoke_response(self):
+        """Test adding and invoking canned response."""
+        mock = MockAgentInvoker()
+        mock.add_response_from_dict("architectural-reviewer", {
+            "technology_stack": {"primary_language": "Python"},
+            "overall_confidence": 0.92
+        })
 
-    def test_clear_checkpoint(self, tmp_path):
-        """Test clearing checkpoint files."""
-        manager = CheckpointManager(
-            state_file=tmp_path / "state.json",
+        response = mock.invoke(
+            agent_name="architectural-reviewer",
+            prompt="Analyze this..."
+        )
+
+        result = json.loads(response)
+        assert result["overall_confidence"] == 0.92
+
+    def test_records_invocations(self):
+        """Test that invocations are recorded."""
+        mock = MockAgentInvoker()
+        mock.add_response("test-agent", '{"result": "ok"}')
+
+        mock.invoke("test-agent", "test prompt", timeout_seconds=60)
+
+        invocations = mock.get_invocations("test-agent")
+        assert len(invocations) == 1
+        assert invocations[0]["prompt"] == "test prompt"
+        assert invocations[0]["timeout_seconds"] == 60
+
+    def test_raises_for_unknown_agent(self):
+        """Test raises error for unconfigured agent."""
+        mock = MockAgentInvoker()
+
+        with pytest.raises(Exception) as exc:
+            mock.invoke("unknown-agent", "prompt")
+
+        assert "No mock response" in str(exc.value)
+
+
+class TestExistingInfrastructure:
+    """Tests verifying existing infrastructure still works."""
+
+    def test_state_manager_save_load(self, tmp_path):
+        """Test StateManager save/load cycle."""
+        manager = StateManager(state_file=tmp_path / "state.json")
+
+        manager.save_state(
+            checkpoint="test_checkpoint",
+            phase=1,
+            config={"codebase_path": "/test"},
+            phase_data={"samples": []}
+        )
+
+        state = manager.load_state()
+
+        assert state.checkpoint == "test_checkpoint"
+        assert state.phase == 1
+        assert state.config["codebase_path"] == "/test"
+
+    def test_bridge_invoker_exits_with_42(self, tmp_path):
+        """Test AgentBridgeInvoker exits with code 42."""
+        invoker = AgentBridgeInvoker(
             request_file=tmp_path / "request.json",
-            response_file=tmp_path / "response.json"
+            response_file=tmp_path / "response.json",
+            phase=1,
+            phase_name="test"
         )
 
-        # Create files
-        for f in [manager.state_file, manager.request_file, manager.response_file]:
-            f.write_text("{}")
-
-        manager.clear_checkpoint()
-
-        assert not manager.state_file.exists()
-        assert not manager.request_file.exists()
-        assert not manager.response_file.exists()
+        # invoke() will call sys.exit(42), so we can't test directly
+        # Instead verify the request file would be written
+        assert not invoker.has_response()
+        assert not invoker.has_pending_request()
 ```
 
 ### Integration Tests
@@ -540,87 +449,102 @@ class TestCheckpointManager:
 # tests/integration/test_agent_workflow.py
 
 import pytest
-from installer.global.lib.agent_bridge.checkpoint_manager import (
-    CheckpointManager,
-    CheckpointRequested,
-    TemplateCreateState
-)
+import json
+from pathlib import Path
+
+from installer.global.lib.agent_bridge.state_manager import StateManager
+from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
 from installer.global.lib.agent_bridge.mock_invoker import MockAgentInvoker
 
 
-class TestAgentWorkflow:
-    """Integration tests for agent invocation workflow."""
+class TestCheckpointResumeCycle:
+    """Integration tests for checkpoint-resume workflow."""
 
-    def test_checkpoint_resume_cycle(self, tmp_path):
-        """Test complete checkpoint-resume cycle."""
-        manager = CheckpointManager(
-            state_file=tmp_path / "state.json",
-            request_file=tmp_path / "request.json",
-            response_file=tmp_path / "response.json"
-        )
+    def test_complete_checkpoint_resume_cycle(self, tmp_path):
+        """Test full checkpoint-resume cycle with existing infrastructure."""
+        state_manager = StateManager(state_file=tmp_path / "state.json")
 
-        # Phase 1: Save checkpoint before agent invocation
-        state = TemplateCreateState(
+        # Phase 1: Save state before agent invocation
+        state_manager.save_state(
+            checkpoint="before_ai_analysis",
             phase=1,
-            phase_name="codebase_analysis",
-            checkpoint_name="before_agent_invocation",
-            output_path=str(tmp_path / "output"),
-            phase_data={"samples": ["file1.py", "file2.py"]}
+            config={
+                "codebase_path": "/test/project",
+                "output_location": "personal"
+            },
+            phase_data={
+                "samples": ["file1.py", "file2.py"]
+            }
         )
 
-        request = {
+        # Simulate external agent writing response
+        response_file = tmp_path / "response.json"
+        response_file.write_text(json.dumps({
             "request_id": "test-123",
-            "agent_name": "architectural-reviewer",
-            "prompt": "Analyze..."
-        }
-
-        manager.save_checkpoint(state, request)
-
-        # Simulate external agent invocation
-        response = {
-            "request_id": "test-123",
+            "version": "1.0",
             "status": "success",
             "response": json.dumps({
                 "technology_stack": {"primary_language": "Python"},
                 "overall_confidence": 0.92
-            })
-        }
-        manager.response_file.write_text(json.dumps(response))
+            }),
+            "error_message": None,
+            "error_type": None,
+            "created_at": "2025-11-18T12:00:00Z",
+            "duration_seconds": 5.2,
+            "metadata": {}
+        }))
 
         # Phase 2: Resume from checkpoint
-        assert manager.is_resuming() is True
-        assert manager.has_agent_response() is True
+        invoker = AgentBridgeInvoker(
+            request_file=tmp_path / "request.json",
+            response_file=response_file,
+            phase=1,
+            phase_name="codebase_analysis"
+        )
 
-        loaded_state = manager.load_checkpoint()
-        loaded_response = manager.load_agent_response()
+        assert state_manager.has_state()
+        assert invoker.has_response()
 
-        assert loaded_state.phase == 1
-        assert loaded_response["status"] == "success"
+        # Load state and response
+        state = state_manager.load_state()
+        response = invoker.load_response()
+        result = json.loads(response)
+
+        assert state.phase == 1
+        assert result["overall_confidence"] == 0.92
 
         # Cleanup
-        manager.clear_checkpoint()
-        assert manager.is_resuming() is False
+        state_manager.cleanup()
+        assert not state_manager.has_state()
 
-    def test_mock_invoker_workflow(self):
-        """Test using mock invoker for direct invocation."""
+    def test_mock_invoker_for_testing(self):
+        """Test using mock invoker for direct testing."""
         mock = MockAgentInvoker()
         mock.add_response_from_dict("architectural-reviewer", {
-            "technology_stack": {"primary_language": "C#"},
+            "technology_stack": {
+                "primary_language": "C#",
+                "frameworks": [
+                    {"name": ".NET MAUI", "version": "8.0", "confidence": 0.95}
+                ]
+            },
             "overall_confidence": 0.95
         })
 
+        # Use mock in place of real invoker
         response = mock.invoke(
             agent_name="architectural-reviewer",
-            prompt="Analyze this codebase..."
+            prompt="Analyze codebase...",
+            timeout_seconds=120
         )
 
         result = json.loads(response)
         assert result["technology_stack"]["primary_language"] == "C#"
         assert result["overall_confidence"] == 0.95
 
-        # Verify invocation recorded
-        invocations = mock.get_invocations("architectural-reviewer")
+        # Verify invocation was recorded
+        invocations = mock.get_invocations()
         assert len(invocations) == 1
+        assert "Analyze codebase" in invocations[0]["prompt"]
 ```
 
 ---
@@ -642,20 +566,34 @@ class TestAgentWorkflow:
 | Metric | Target | Measurement |
 |--------|--------|-------------|
 | Test coverage | >= 90% | pytest --cov |
-| Checkpoint save/load | 100% reliable | Integration tests |
-| Response parsing | 100% accurate | Unit tests |
-| Mock functionality | Complete | All test scenarios pass |
+| Existing tests pass | 100% | pytest |
+| New code added | < 150 LOC | Line count (mock_invoker.py + exception) |
+| Duplicate code | 0 LOC | Code review |
 
 ---
 
 ## Notes
 
-- Exit code 42 signals checkpoint (orchestrator catches and exits)
-- Files are created in project root (not output directory)
-- Cleanup happens on success or explicit clear
+### What This Task Does
+- Adds `CheckpointRequested` exception (20 LOC)
+- Creates `MockAgentInvoker` for testing (100 LOC)
+- Wires existing infrastructure together
+
+### What This Task Does NOT Do
+- ~~Create CheckpointManager~~ - Use existing `StateManager`
+- ~~Create TemplateCreateState~~ - Already exists
+- ~~Create response_parser~~ - Use existing `invoker.load_response()`
+- ~~Duplicate any existing infrastructure~~
+
+### Key Principle
+**REUSE existing infrastructure** that already works:
+- `AgentBridgeInvoker` (266 LOC) - Complete exit code 42 protocol
+- `StateManager` (162 LOC) - Complete state persistence
+- `TemplateCreateState` - Complete dataclass
 
 ---
 
 **Created**: 2025-11-18
+**Updated**: 2025-11-18 (Rewritten to use existing infrastructure)
 **Phase**: 2 of 8 (Template-Create Redesign)
-**Related**: AGENT-BRIDGE-SCHEMAS.md, TASK-AGENT-BRIDGE-ENHANCEMENT
+**Related**: Uses existing installer/global/lib/agent_bridge/
