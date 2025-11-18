@@ -760,7 +760,7 @@ This agent is automatically invoked during `/task-work` when the task involves {
             batch_response = self.bridge_invoker.invoke(
                 agent_name="agent-content-enhancer",
                 prompt=self._build_batch_prompt(batch_request),
-                timeout_seconds=180,  # Longer timeout for batch processing
+                timeout_seconds=240,  # Increased for code sample processing (15-20k tokens)
                 context={
                     "mode": "batch",
                     "phase": WorkflowPhase.PHASE_7_5,
@@ -828,9 +828,31 @@ This agent is automatically invoked during `/task-work` when the task involves {
         # Build compact template catalog
         template_catalog = self._build_template_catalog(all_templates)
 
+        # Collect all agent technologies for relevance-based template selection
+        all_technologies = set()
+        for agent in agents:
+            for tech in agent.get("technologies", []):
+                all_technologies.add(tech.lower())
+
+        # Select templates relevant to the agents' technologies
+        relevant_template_paths = self._select_relevant_templates(
+            template_catalog,
+            all_technologies,
+            max_templates=5
+        )
+
+        # Sample template code for AI context enrichment
+        code_samples = self._sample_template_code(relevant_template_paths)
+
+        logger.info(
+            f"Batch request: {len(agents)} agents, {len(template_catalog)} templates, "
+            f"{len(code_samples)} code samples"
+        )
+
         return {
             "agents": agents,
             "template_catalog": template_catalog,
+            "template_code_samples": code_samples,
             "enhancement_instructions": self._get_enhancement_instructions()
         }
 
@@ -865,6 +887,183 @@ This agent is automatically invoked during `/task-work` when the task involves {
             })
 
         return catalog
+
+    def _select_relevant_templates(
+        self,
+        template_catalog: List[Dict[str, str]],
+        technologies: set,
+        max_templates: int = 5
+    ) -> List[str]:
+        """
+        Select templates most relevant to the given technologies.
+
+        Uses a scoring system based on:
+        1. File extension matching (highest weight: .cs → C#, .py → Python)
+        2. Technology keywords in path (medium weight: 'realm', 'repository')
+        3. Category diversity (ensure different categories are represented)
+
+        Args:
+            template_catalog: List of template metadata dicts with path, category, name
+            technologies: Set of technology keywords (lowercase)
+            max_templates: Maximum number of templates to return
+
+        Returns:
+            List of template paths (relative to template_root), most relevant first
+
+        Example:
+            If technologies = {'c#', 'realm', 'repository'}, prefer:
+            - .cs files (extension match)
+            - Files with 'realm' or 'repository' in path
+        """
+        # Extension to technology mapping
+        EXTENSION_MAP = {
+            '.cs': {'c#', 'csharp', '.net', 'maui', 'realm', 'xamarin'},
+            '.py': {'python', 'fastapi', 'django', 'flask'},
+            '.ts': {'typescript', 'react', 'angular', 'node'},
+            '.tsx': {'typescript', 'react', 'tsx'},
+            '.js': {'javascript', 'node', 'react'},
+            '.jsx': {'javascript', 'react', 'jsx'},
+            '.kt': {'kotlin', 'android'},
+            '.swift': {'swift', 'ios'},
+            '.go': {'go', 'golang'},
+            '.rs': {'rust'},
+            '.rb': {'ruby', 'rails'},
+        }
+
+        scored_templates = []
+
+        for template in template_catalog:
+            path = template["path"]
+            category = template.get("category", "other")
+            score = 0
+
+            # Get file extension
+            ext = Path(path).suffix.lower()
+
+            # Extension match (highest weight: +10)
+            if ext in EXTENSION_MAP:
+                matching_techs = technologies & EXTENSION_MAP[ext]
+                if matching_techs:
+                    score += 10
+                    logger.debug(f"Extension match for {path}: {matching_techs}")
+
+            # Keyword match in path (medium weight: +5 per match)
+            path_lower = path.lower()
+            for tech in technologies:
+                if tech in path_lower:
+                    score += 5
+                    logger.debug(f"Keyword match for {path}: {tech}")
+
+            # Category keyword match (lower weight: +3)
+            if category.lower() in technologies:
+                score += 3
+
+            if score > 0:
+                scored_templates.append({
+                    "path": path,
+                    "score": score,
+                    "category": category
+                })
+
+        # Sort by score (descending)
+        scored_templates.sort(key=lambda x: x["score"], reverse=True)
+
+        # Select templates with category diversity
+        selected = []
+        seen_categories = set()
+
+        # First pass: take highest scoring from each category
+        for template in scored_templates:
+            if template["category"] not in seen_categories:
+                selected.append(template["path"])
+                seen_categories.add(template["category"])
+                if len(selected) >= max_templates:
+                    break
+
+        # Second pass: fill remaining slots with highest scores
+        if len(selected) < max_templates:
+            for template in scored_templates:
+                if template["path"] not in selected:
+                    selected.append(template["path"])
+                    if len(selected) >= max_templates:
+                        break
+
+        # Fallback: if no relevance matches, use first N from catalog
+        if not selected:
+            logger.warning(
+                f"No relevant templates found for technologies: {technologies}. "
+                f"Using first {max_templates} templates as fallback."
+            )
+            selected = [t["path"] for t in template_catalog[:max_templates]]
+        else:
+            logger.info(
+                f"Selected {len(selected)} relevant templates for technologies: "
+                f"{list(technologies)[:5]}{'...' if len(technologies) > 5 else ''}"
+            )
+
+        return selected
+
+    def _sample_template_code(
+        self,
+        template_paths: List[str],
+        max_templates: int = 5,
+        max_lines_per_template: int = 50
+    ) -> Dict[str, str]:
+        """
+        Sample code from templates for AI context enrichment.
+
+        Reads the first N lines from up to M templates to provide actual code
+        examples in the batch enhancement prompt. This helps the AI generate
+        more accurate, template-specific documentation.
+
+        Args:
+            template_paths: List of template file paths (relative to template_root)
+            max_templates: Maximum number of templates to sample (default: 5)
+            max_lines_per_template: Maximum lines to read per template (default: 50)
+
+        Returns:
+            Dict mapping template path to sampled code (empty string if unreadable)
+
+        Error Handling:
+            - Missing files: Log warning, return empty string
+            - Encoding errors: Log warning, return empty string
+            - Other exceptions: Log warning, return empty string
+
+        Token Budget Impact:
+            - ~50 lines × 5 templates = ~250 lines of code
+            - Estimated: 3000-5000 tokens (well within 200k context window)
+        """
+        samples = {}
+
+        for path_str in template_paths[:max_templates]:
+            try:
+                full_path = self.template_root / path_str
+                if not full_path.exists():
+                    logger.warning(f"Template not found for sampling: {path_str}")
+                    samples[path_str] = ""
+                    continue
+
+                # Read and truncate file
+                lines = full_path.read_text(encoding='utf-8').splitlines()
+                if len(lines) > max_lines_per_template:
+                    lines = lines[:max_lines_per_template]
+                    lines.append("... (truncated)")
+
+                samples[path_str] = "\n".join(lines)
+
+                logger.debug(
+                    f"Sampled {len(lines)} lines from {path_str} "
+                    f"({len(samples[path_str])} chars)"
+                )
+
+            except UnicodeDecodeError as e:
+                logger.warning(f"Encoding error reading {path_str}: {e}")
+                samples[path_str] = ""
+            except Exception as e:
+                logger.warning(f"Failed to sample {path_str}: {e}")
+                samples[path_str] = ""
+
+        return samples
 
     def _get_enhancement_instructions(self) -> str:
         """
@@ -927,6 +1126,7 @@ Return JSON with this structure:
         agents = batch_request["agents"]
         template_catalog = batch_request["template_catalog"]
         instructions = batch_request["enhancement_instructions"]
+        code_samples = batch_request.get("template_code_samples", {})
 
         agents_list = "\n".join([
             f"- **{a['name']}**: {a['description']} (Technologies: {', '.join(a['technologies'])})"
@@ -945,6 +1145,14 @@ Return JSON with this structure:
             catalog_text += f"\n**{category.title()}:**\n"
             catalog_text += "\n".join([f"  - {path}" for path in paths])
 
+        # Format code samples for prompt
+        code_samples_text = ""
+        if code_samples:
+            code_samples_text = "\n\n**Template Code Samples (for reference):**\n\n"
+            for path, code in code_samples.items():
+                if code:  # Only include non-empty samples
+                    code_samples_text += f"**{path}:**\n```\n{code}\n```\n\n"
+
         return f"""You are enhancing AI agent documentation files with template-specific content.
 
 **Agents to Enhance ({len(agents)} total):**
@@ -952,14 +1160,20 @@ Return JSON with this structure:
 
 **Available Templates ({len(template_catalog)} total):**
 {catalog_text}
-
+{code_samples_text}
 **Enhancement Instructions:**
 {instructions}
+
+**CRITICAL REQUIREMENT:**
+Base your documentation on the ACTUAL CODE shown in the template samples above.
+Extract specific patterns, interfaces, and implementation details from the code.
+Do NOT generate generic content - reference specific lines, classes, and methods from the samples.
 
 **Important:**
 - Process ALL agents in this batch
 - Ensure each enhancement is 150-250 lines
 - Base content ONLY on templates provided
+- Reference specific code patterns from template samples
 - Return valid JSON with all enhancements
 
 Generate the enhancements now:"""
