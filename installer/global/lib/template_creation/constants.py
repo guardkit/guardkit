@@ -27,10 +27,12 @@ class WorkflowPhase:
     5.0  → Agent Recommendation
     6.0  → Agent Generation (uses bridge, may exit 42)
     7.0  → Agent Writing
-    7.5  → Agent Enhancement (uses bridge, may exit 42)
     8.0  → CLAUDE.md Generation
     9.0  → Package Assembly
     9.5  → Extended Validation
+
+    REMOVED: Phase 7.5 Agent Enhancement (TASK-SIMP-9ABE)
+    See TASK-PHASE-8-INCREMENTAL for incremental enhancement approach.
 
     TASK-PHASE-7-5-FIX-FOUNDATION: Foundation quality improvement
     TASK-PHASE-7-5-BATCH-PROCESSING: Moved to constants.py to fix circular import
@@ -43,7 +45,7 @@ class WorkflowPhase:
     PHASE_5 = 5      # Agent Recommendation
     PHASE_6 = 6      # Agent Generation (bridge)
     PHASE_7 = 7      # Agent Writing
-    PHASE_7_5 = 7.5  # Agent Enhancement (bridge)
+    # REMOVED: PHASE_7_5 (Agent Enhancement) - see TASK-SIMP-9ABE
     PHASE_8 = 8      # CLAUDE.md Generation
     PHASE_9 = 9      # Package Assembly
     PHASE_9_5 = 9.5  # Extended Validation
