@@ -16,7 +16,7 @@ decision_required: true
 
 ## Context
 
-The `/template-create` command has been in active development for 10+ days with persistent, unresolved issues. Despite 20+ attempted fixes in recent sessions, the core problem remains: **AI agents are not generating detailed content for agent specifications**.
+The `/template-create` command has been in active development for 10+ days with persistent, unresolved issues. Despite 70+ attempted fixes in recent sessions, the core problem remains: **AI agents are not generating detailed content for agent specifications**.
 
 ### Goal Statement (from Proposal)
 > "AI-powered template creation - this is the key difference with this system"
