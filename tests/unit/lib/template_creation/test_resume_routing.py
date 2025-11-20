@@ -113,7 +113,7 @@ class TestResumeRouting:
     @pytest.mark.parametrize("phase,expected_handler", [
         (WorkflowPhase.PHASE_5, '_run_from_phase_5'),
         (WorkflowPhase.PHASE_7, '_run_from_phase_7'),
-        (WorkflowPhase.PHASE_7_5, '_run_from_phase_7'),  # Phase 7.5 uses Phase 7 handler
+        # REMOVED: Phase 7.5 test (TASK-SIMP-9ABE)
     ])
     def test_phase_routing(self, mock_orchestrator_no_init, phase, expected_handler):
         """Test routing to correct handler based on phase."""
@@ -206,18 +206,7 @@ class TestPhase7Routing:
 
             assert mock_run.called
 
-    def test_phase_7_5_routes_to_phase_7_handler(self, mock_orchestrator_no_init):
-        """Test Phase 7.5 uses Phase 7 handler."""
-        mock_orchestrator_no_init.config.resume = True
-
-        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7_5)
-
-        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-            mock_run.return_value = Mock(success=True)
-            result = mock_orchestrator_no_init.run()
-
-            # Should call Phase 7 handler
-            assert mock_run.called
+    # REMOVED: test_phase_7_5_routes_to_phase_7_handler (TASK-SIMP-9ABE)
 
     def test_phase_7_with_agent_enhancement(self, mock_orchestrator_no_init):
         """Test Phase 7 continues after agent enhancement."""
@@ -323,27 +312,8 @@ class TestResumeRoutingIntegration:
 class TestResumeRoutingDRY:
     """Test DRY principle in resume routing."""
 
-    def test_phase_7_5_reuses_phase_7_logic(self, mock_orchestrator_no_init):
-        """Test Phase 7.5 reuses Phase 7 handler (no duplication)."""
-        mock_orchestrator_no_init.config.resume = True
-
-        # First test Phase 7
-        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7)
-
-        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-            mock_run.return_value = Mock(success=True)
-            result_7 = mock_orchestrator_no_init.run()
-            phase_7_calls = mock_run.call_count
-
-        # Reset and test Phase 7.5
-        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7_5)
-
-        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run2:
-            mock_run2.return_value = Mock(success=True)
-            result_7_5 = mock_orchestrator_no_init.run()
-
-            # Both should call same handler
-            assert mock_run2.called
+    # REMOVED: test_phase_7_5_reuses_phase_7_logic (TASK-SIMP-9ABE)
+    # Phase 7.5 has been removed entirely
 
     def test_centralizes_phase_routing(self, mock_orchestrator_no_init):
         """Test phase routing is centralized in run() method."""
@@ -361,21 +331,9 @@ class TestResumeRoutingDRY:
 class TestResumeRoutingEdgeCases:
     """Test edge cases in resume routing."""
 
-    def test_handles_floating_point_phase(self, mock_orchestrator_no_init):
-        """Test handles floating point phase numbers."""
-        mock_orchestrator_no_init.config.resume = True
-
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = 7.5  # Float phase
-            mock_state_manager.load_state.return_value = state
-
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result = mock_orchestrator_no_init.run()
-
-                # Should handle float phase
-                mock_run.assert_called()
+    # REMOVED: test_handles_floating_point_phase (TASK-SIMP-9ABE)
+    # Phase 7.5 (float phase) has been removed
+    # Still have Phase 4.5 and 9.5 for float phase support
 
     def test_handles_invalid_phase(self, mock_orchestrator_no_init):
         """Test handles invalid/unknown phase gracefully."""
