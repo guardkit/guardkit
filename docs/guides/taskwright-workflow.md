@@ -197,6 +197,78 @@ All without you writing any code, running any tests, or managing state transitio
 
 ---
 
+## Review vs Implementation Workflows
+
+Taskwright provides two distinct workflows depending on whether you're **building code** or **analyzing/deciding**:
+
+### Implementation Workflow (`/task-work`)
+
+Use for **building** features, fixing bugs, refactoring:
+
+```bash
+/task-create "Add user authentication"
+/task-work TASK-001  # Phases: Planning → Review → Implementation → Testing → Code Review
+/task-complete TASK-001
+```
+
+**Best for:**
+- Feature implementation
+- Bug fixes
+- Refactoring
+- Test creation
+
+### Review Workflow (`/task-review`)
+
+Use for **analysis** and **decision-making** tasks:
+
+```bash
+/task-create "Review authentication architecture" task_type:review
+/task-review TASK-002 --mode=architectural  # Phases: Load Context → Analyze → Report → Decision
+# Optional: /task-work TASK-003 (implement recommendations)
+/task-complete TASK-002
+```
+
+**Best for:**
+- Architectural reviews
+- Code quality assessments
+- Technical decisions ("Should we...?")
+- Technical debt inventory
+- Security audits
+
+### Quick Comparison
+
+| Aspect | `/task-work` | `/task-review` |
+|--------|--------------|----------------|
+| **Purpose** | Build/fix code | Analyze/decide |
+| **Output** | Working code + tests | Analysis report + recommendations |
+| **Phases** | 9 phases (planning → testing) | 5 phases (context → decision) |
+| **Quality Gates** | Tests pass, coverage ≥80% | N/A (review only) |
+| **Duration** | 5min - 4 hours | 15min - 6 hours |
+| **End State** | `IN_REVIEW` or `BLOCKED` | `REVIEW_COMPLETE` |
+
+### How to Choose
+
+**Use `/task-work` if your task title starts with:**
+- "Implement..."
+- "Add..."
+- "Fix..."
+- "Refactor..."
+- "Create..."
+
+**Use `/task-review` if your task title starts with:**
+- "Review..."
+- "Analyze..."
+- "Evaluate..."
+- "Should we..."
+- "Assess..."
+- "Audit..."
+
+**Note:** The system automatically detects review tasks during `/task-create` and suggests the appropriate command.
+
+**See:** [Task Review Workflow Guide](../workflows/task-review-workflow.md) for complete review workflow documentation.
+
+---
+
 # Part 2: CORE WORKFLOW (15 Minutes)
 
 ## The 9 Workflow Phases
@@ -379,7 +451,9 @@ tasks/
 │   └── TASK-XXX.md
 ├── in_progress/          # IN_PROGRESS state
 │   └── TASK-XXX.md
-├── in_review/            # IN_REVIEW state (quality gates passed)
+├── in_review/            # IN_REVIEW state (implementation quality gates passed)
+│   └── TASK-XXX.md
+├── review_complete/      # REVIEW_COMPLETE state (review tasks awaiting decision)
 │   └── TASK-XXX.md
 ├── blocked/              # BLOCKED state (quality gates failed)
 │   └── TASK-XXX.md
@@ -395,6 +469,10 @@ BACKLOG
    │                                         ↓              ↓
    │                                     BLOCKED        BLOCKED
    │
+   ├─ (task-review) ─────────────────→ IN_PROGRESS ──→ REVIEW_COMPLETE ──→ COMPLETED
+   │                                         ↓              ↓                      ↑
+   │                                     BLOCKED     [I]mplement → task-work ─────┘
+   │
    └─ (task-work --design-only) ─→ DESIGN_APPROVED
                                         │
                                         └─ (task-work --implement-only) ─→ IN_PROGRESS ──→ IN_REVIEW
@@ -402,11 +480,20 @@ BACKLOG
                                                                                BLOCKED
 ```
 
-**Automatic Transitions**:
+**Automatic Transitions (Implementation)**:
 - `/task-work` moves BACKLOG → IN_PROGRESS
 - Quality gates determine IN_PROGRESS → IN_REVIEW or BLOCKED
 - `/task-complete` moves IN_REVIEW → COMPLETED
 - `/task-refine` keeps in IN_REVIEW (iterative improvement)
+
+**Automatic Transitions (Review)**:
+- `/task-review` moves BACKLOG → IN_PROGRESS
+- Review completion moves IN_PROGRESS → REVIEW_COMPLETE
+- Decision checkpoint offers:
+  - [A]ccept → COMPLETED
+  - [I]mplement → Creates new task, original stays REVIEW_COMPLETE
+  - [R]evise → Stays REVIEW_COMPLETE, re-runs review
+  - [C]ancel → Back to BACKLOG
 
 **Manual Transitions**:
 - `/task-unblock` moves BLOCKED → IN_PROGRESS (after fixes)

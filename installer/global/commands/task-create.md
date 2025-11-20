@@ -325,9 +325,66 @@ tasks/
         └── TASK-DOC-F9E2-data-export.md
 ```
 
+## Review Task Detection
+
+The system automatically detects when a task is likely a review/analysis task and suggests using `/task-review` instead of `/task-work`.
+
+### Detection Criteria
+
+A task is detected as a review task if any of the following conditions are met:
+
+1. **Explicit task_type field**: `task_type:review` parameter
+2. **Decision required flag**: `decision_required:true` parameter
+3. **Review-related tags**: architecture-review, code-review, decision-point, assessment
+4. **Title keywords**: review, analyze, evaluate, assess, audit, investigation
+
+### Detection Behavior
+
+When a review task is detected, the system displays a suggestion:
+
+```
+=========================================================================
+REVIEW TASK DETECTED
+=========================================================================
+
+Task: Review authentication architecture
+
+This appears to be a review/analysis task.
+
+Suggested workflow:
+  1. Create task: /task-create (current command)
+  2. Execute review: /task-review TASK-XXX
+  3. (Optional) Implement findings: /task-work TASK-YYY
+
+Note: /task-work is for implementation, /task-review is for analysis.
+=========================================================================
+
+Create task? [Y/n]:
+```
+
+### Examples
+
+```bash
+# Explicit review task type
+/task-create "Architectural review of authentication system" task_type:review
+
+# Decision-making task
+/task-create "Should we migrate to microservices?" decision_required:true
+
+# Review tags
+/task-create "Code quality assessment" tags:[code-review,assessment]
+
+# Title-based detection
+/task-create "Evaluate caching strategy options"
+```
+
+**Note**: The suggestion is informational only and doesn't block task creation. Users can still create the task and use `/task-work` if desired, though `/task-review` is recommended for analysis tasks.
+
 ## Integration with Workflow
 
-After creation, use the streamlined workflow:
+After creation, use the appropriate workflow based on task type:
+
+### Implementation Workflow (Standard)
 ```bash
 # 1. Create the task
 /task-create "Implement user authentication" prefix:E01
@@ -340,6 +397,30 @@ After creation, use the streamlined workflow:
 # 3. Complete it (after review)
 /task-complete TASK-E01-B2C4
 # Archives to completed with timestamp
+```
+
+### Review Workflow (Analysis/Decision)
+```bash
+# 1. Create the review task
+/task-create "Architectural review of authentication" task_type:review
+# Output: Created TASK-REV-A3F2
+# System suggests using /task-review
+
+# 2. Execute review
+/task-review TASK-REV-A3F2 --mode=architectural
+# Runs analysis, generates report, presents findings
+
+# 3. Make decision at checkpoint
+# [A]ccept - Approve findings
+# [I]mplement - Create implementation task
+# [R]evise - Request deeper analysis
+# [C]ancel - Discard review
+
+# 4. (Optional) Implement recommendations
+/task-work TASK-IMP-B4D1  # If [I]mplement was chosen
+
+# 5. Complete review task
+/task-complete TASK-REV-A3F2
 ```
 
 ## Batch Creation

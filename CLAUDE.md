@@ -31,6 +31,13 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 /task-refine TASK-XXX
 ```
 
+### Review Workflow (Analysis/Decision Tasks)
+```bash
+/task-create "Title" task_type:review
+/task-review TASK-XXX [--mode=MODE] [--depth=DEPTH]
+/task-complete TASK-XXX
+```
+
 ### Design-First Workflow (Complex Tasks)
 ```bash
 /task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
@@ -94,6 +101,84 @@ Phase 5.5: Plan Audit (scope creep detection)
 - **7-10 (Complex)**: >8 hours, FULL_REQUIRED (mandatory checkpoint)
 
 **See**: [Complexity Management Workflow](docs/workflows/complexity-management-workflow.md)
+
+## Review vs Implementation Workflows
+
+Taskwright supports two distinct command workflows for different task types:
+
+### Implementation Workflow (/task-work)
+Use when **building** features, fixing bugs, or creating code:
+```bash
+/task-create "Add user authentication"
+/task-work TASK-001  # Implements, tests, reviews code
+/task-complete TASK-001
+```
+
+**Phases**: Planning → Architectural Review → Implementation → Testing → Code Review → Plan Audit
+
+### Review Workflow (/task-review)
+Use when **analyzing** architecture, making decisions, or assessing quality:
+```bash
+/task-create "Architectural review of authentication system" task_type:review
+/task-review TASK-002  # Analyzes code, generates report, recommends decision
+# If implementing findings: /task-work TASK-003
+/task-complete TASK-002
+```
+
+**Phases**: Load Context → Execute Analysis → Synthesize Recommendations → Generate Report → Human Decision Checkpoint
+
+### When to Use Each
+
+| Scenario | Command |
+|----------|---------|
+| "Implement feature X" | `/task-work` |
+| "Should we implement X?" | `/task-review` |
+| "Fix bug in X" | `/task-work` |
+| "Review architecture of X" | `/task-review` |
+| "Add tests for X" | `/task-work` |
+| "Assess technical debt in X" | `/task-review` |
+| "Refactor X" | `/task-work` |
+| "Security audit of X" | `/task-review` |
+
+### Review Modes
+
+`/task-review` supports five specialized modes:
+
+1. **architectural** - SOLID/DRY/YAGNI compliance review
+2. **code-quality** - Maintainability and complexity assessment
+3. **decision** - Technical decision analysis with options evaluation
+4. **technical-debt** - Debt inventory and prioritization
+5. **security** - Security audit and vulnerability assessment
+
+### Review Depth Levels
+
+- **quick** (15-30 min) - Initial assessment, sanity checks
+- **standard** (1-2 hours) - Regular reviews, architecture assessments
+- **comprehensive** (4-6 hours) - Security audits, critical decisions
+
+### Example Review Workflow
+
+```bash
+# 1. Create review task (system detects and suggests /task-review)
+/task-create "Review authentication architecture" task_type:review
+
+# 2. Execute architectural review
+/task-review TASK-002 --mode=architectural --depth=standard
+
+# 3. Decision checkpoint (automated)
+#    [A]ccept - Approve findings, move to IN_REVIEW
+#    [R]evise - Request deeper analysis
+#    [I]mplement - Create implementation task based on recommendations
+#    [C]ancel - Discard review
+
+# 4. If [I]mplement chosen, new task created automatically
+/task-work TASK-003  # Implement recommended changes
+
+# 5. Complete review task
+/task-complete TASK-002
+```
+
+**See**: [Task Review Workflow](docs/workflows/task-review-workflow.md) for detailed guidance.
 
 ## UX Design Integration
 
@@ -392,6 +477,10 @@ BACKLOG
    │                            ↓              ↓
    │                        BLOCKED        BLOCKED
    │
+   ├─ (task-review) ─────→ IN_PROGRESS ──→ REVIEW_COMPLETE ──→ COMPLETED
+   │                            ↓              ↓                      ↑
+   │                        BLOCKED     [I]mplement → task-work ─────┘
+   │
    └─ (task-work --design-only) ─→ DESIGN_APPROVED
                                         │
                                         └─ (task-work --implement-only) ─→ IN_PROGRESS ──→ IN_REVIEW
@@ -400,10 +489,21 @@ BACKLOG
 **States:**
 - **BACKLOG**: New task, not started
 - **DESIGN_APPROVED**: Design approved (design-first workflow)
-- **IN_PROGRESS**: Active development
-- **IN_REVIEW**: All quality gates passed
+- **IN_PROGRESS**: Active development or review in progress
+- **IN_REVIEW**: All quality gates passed (implementation tasks)
+- **REVIEW_COMPLETE**: Review finished, awaiting decision (review tasks)
 - **BLOCKED**: Tests failed or quality gates not met
 - **COMPLETED**: Finished and archived
+
+**Review Task Flow:**
+1. Create with `task_type:review` → BACKLOG
+2. Execute `/task-review TASK-XXX` → IN_PROGRESS
+3. Review completes → REVIEW_COMPLETE
+4. Decision checkpoint:
+   - [A]ccept → COMPLETED (archive review)
+   - [I]mplement → Creates new implementation task
+   - [R]evise → Stays in REVIEW_COMPLETE, re-run review
+   - [C]ancel → Back to BACKLOG
 
 ## Core AI Agents
 
