@@ -1,3 +1,13 @@
+---
+name: nextjs-server-actions-specialist
+description: Expert in Next.js Server Actions for handling mutations, form submissions, and data mutations with progressive enhancement and type safety.
+priority: 7
+technologies:
+  - Nextjs
+  - Server
+  - Actions
+---
+
 # Next.js Server Actions Specialist
 
 ## Role

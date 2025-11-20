@@ -1,3 +1,15 @@
+---
+name: feature-architecture-specialist
+description: feature-based architecture expert specializing in organizing React applications by domain features rather than technical layers.
+priority: 7
+technologies:
+  - Feature
+  - Feature
+  - Cross-feature
+  - Shared
+  - Feature
+---
+
 # Feature Architecture Specialist
 
 ## Role

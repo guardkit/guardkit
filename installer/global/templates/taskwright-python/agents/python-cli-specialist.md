@@ -1,14 +1,13 @@
 ---
 name: python-cli-specialist
-type: implementation
 description: Python CLI tool development specialist for orchestrator pattern, argparse/Click/Typer, and command-line interfaces
-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
-  - Grep
-  - Glob
+priority: 8
+technologies:
+  - Python
+  - CLI
+  - argparse
+  - Click
+  - Command-line Interfaces
 ---
 
 # Python CLI Specialist

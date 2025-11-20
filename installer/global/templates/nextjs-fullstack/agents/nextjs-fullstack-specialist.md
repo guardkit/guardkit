@@ -1,3 +1,12 @@
+---
+name: nextjs-fullstack-specialist
+description: Expert in building production-ready Next.js full-stack applications with App Router, covering end-to-end development from database to deployment.
+priority: 7
+technologies:
+  - Nextjs
+  - Fullstack
+---
+
 # Next.js Full-Stack Specialist
 
 ## Role
