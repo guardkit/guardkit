@@ -189,9 +189,12 @@ class TestSerializeValueToDict:
 
     def test_serialize_pydantic_like_object(self, mock_orchestrator):
         """Test object with to_dict() method (Pydantic-like)."""
-        obj = Mock()
-        obj.to_dict = Mock(return_value={"name": "test", "value": 42})
+        # Use a real class instead of Mock to test to_dict() functionality
+        class PydanticLike:
+            def to_dict(self):
+                return {"name": "test", "value": 42}
 
+        obj = PydanticLike()
         result = mock_orchestrator._serialize_value(obj)
 
         # Should call to_dict() and serialize the result
@@ -201,17 +204,58 @@ class TestSerializeValueToDict:
 
     def test_serialize_to_dict_with_nested_path(self, mock_orchestrator):
         """Test to_dict() result containing Path objects."""
-        obj = Mock()
-        obj.to_dict = Mock(return_value={
-            "name": "test",
-            "path": Path("/home/user")
-        })
+        # Use a real class instead of Mock to test to_dict() functionality
+        class PydanticLike:
+            def to_dict(self):
+                return {
+                    "name": "test",
+                    "path": Path("/home/user")
+                }
 
+        obj = PydanticLike()
         result = mock_orchestrator._serialize_value(obj)
 
         # Should recursively serialize Path in nested dict
         assert result["name"] == "test"
         assert result["path"] == "/home/user"
+
+
+# ========== Test Mock Objects ==========
+
+class TestSerializeValueMock:
+    """Test serialization of Mock objects."""
+
+    def test_serialize_mock_object(self, mock_orchestrator):
+        """Test explicit Mock object handling."""
+        mock_obj = Mock(name="test_mock")
+        result = mock_orchestrator._serialize_value(mock_obj)
+
+        assert isinstance(result, str)
+        assert result.startswith("<Mock:")
+        assert "test_mock" in result
+
+    def test_serialize_unnamed_mock(self, mock_orchestrator):
+        """Test Mock object without explicit name."""
+        mock_obj = Mock()
+        result = mock_orchestrator._serialize_value(mock_obj)
+
+        assert isinstance(result, str)
+        assert result.startswith("<Mock:")
+        assert "unnamed" in result
+
+    def test_serialize_dict_with_mock(self, mock_orchestrator):
+        """Test dictionary containing Mock objects."""
+        d = {
+            "name": "test",
+            "mock_value": Mock(name="nested_mock"),
+            "count": 42
+        }
+        result = mock_orchestrator._serialize_value(d)
+
+        assert result["name"] == "test"
+        assert result["count"] == 42
+        assert isinstance(result["mock_value"], str)
+        assert "nested_mock" in result["mock_value"]
 
 
 # ========== Test Objects with __dict__ ==========

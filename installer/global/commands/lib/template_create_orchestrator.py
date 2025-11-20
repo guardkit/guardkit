@@ -1811,6 +1811,15 @@ class TemplateCreateOrchestrator:
         if isinstance(value, EnumType):
             return value.value
 
+        # Handle Mock objects explicitly (BEFORE to_dict check)
+        # NOTE: Mock objects from unittest.mock have complex internal structure
+        # and respond to hasattr() calls, so check for them early.
+        # Return string representation instead of attempting serialization.
+        if type(value).__module__ == 'unittest.mock':
+            # Extract mock name if available for better debugging
+            mock_name = getattr(value, '_mock_name', None) or 'unnamed'
+            return f"<Mock:{mock_name}>"
+
         # Handle objects with to_dict() method (Pydantic models)
         if hasattr(value, 'to_dict') and callable(getattr(value, 'to_dict')):
             return self._serialize_value(value.to_dict(), visited)
@@ -1819,6 +1828,10 @@ class TemplateCreateOrchestrator:
         if hasattr(value, '__dict__'):
             result = {}
             for key, val in value.__dict__.items():
+                # Skip private attributes (start with _)
+                # This avoids Mock framework internals and reduces serialization overhead
+                if key.startswith('_'):
+                    continue
                 result[key] = self._serialize_value(val, visited)
             return result
 

@@ -1,10 +1,10 @@
 ---
 id: TASK-PHASE-7-5-FIX-FOUNDATION-IMPROVEMENTS
 title: "Phase 7.5 Foundation: Code Quality Improvements"
-status: backlog
+status: in_progress
 priority: medium
 created: 2025-11-16
-updated: 2025-11-16
+updated: 2025-11-20
 dependencies:
   - TASK-PHASE-7-5-FIX-FOUNDATION
 tags:
