@@ -122,6 +122,13 @@ Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
 ├─ Overall quality score calculation (0-10)
 ├─ Validation report generation (validation-report.md)
 └─ Exit code assignment (0/1/2)
+
+Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL) [OPTIONAL - only with --create-agent-tasks]
+├─ Creates one task per agent file
+├─ Task metadata includes agent_file, template_dir, template_name, agent_name
+├─ Tasks created in backlog with priority: medium
+├─ Returns task_ids for user to work through
+└─ Tasks can be enhanced individually using /task-work or /agent-enhance
 ```
 
 ## Output Structure
@@ -199,6 +206,22 @@ None - all options have defaults
 
 --no-agents              Skip agent generation phase
                          Default: false (agents are generated)
+
+--create-agent-tasks     Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
+                         Default: false (no tasks created)
+
+                         When enabled:
+                         - Runs Phase 8: Task Creation
+                         - Creates one task per agent file
+                         - Each task can be worked through individually using /task-work
+                         - Provides control over which agents to enhance and when
+                         - Alternative to automated Phase 7.5 enhancement
+
+                         Use when:
+                         - You want granular control over agent enhancement
+                         - You want to prioritize specific agents
+                         - You want to enhance agents at your own pace
+                         - You want to mix automated and manual enhancement
 
 --validate               Run extended validation and generate quality report (TASK-043)
                          Default: false (only Phase 5.5 validation runs)

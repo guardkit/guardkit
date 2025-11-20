@@ -82,6 +82,7 @@ class OrchestrationConfig:
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
+    create_agent_tasks: bool = False  # TASK-PHASE-8-INCREMENTAL: Create individual enhancement tasks for each agent
 
 
 @dataclass
@@ -472,7 +473,7 @@ class TemplateCreateOrchestrator:
 
     def _complete_workflow_from_phase_8(self, output_path: Path) -> OrchestrationResult:
         """
-        Complete phases 8-9.5 (TASK-ENHANCE-AGENT-FILES).
+        Complete phases 8-10.5 (TASK-PHASE-8-INCREMENTAL).
 
         Shared by _complete_workflow and _run_from_phase_7.
 
@@ -482,7 +483,14 @@ class TemplateCreateOrchestrator:
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
-        # Phase 8: CLAUDE.md Generation
+        # Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL) [OPTIONAL]
+        # Creates individual tasks for each agent if --create-agent-tasks flag is set
+        task_result = self._run_phase_8_create_agent_tasks(output_path)
+        if not task_result["success"]:
+            # Non-fatal: Log warning but continue
+            logger.warning(f"Phase 8 agent task creation had issues: {task_result.get('error', 'Unknown error')}")
+
+        # Phase 9: CLAUDE.md Generation (was Phase 8)
         # NOW agents exist and can be documented accurately
         self.claude_md = self._phase8_claude_md_generation(self.analysis, self.agents, output_path)
         if not self.claude_md:
@@ -852,6 +860,162 @@ class TemplateCreateOrchestrator:
     # REMOVED: _phase7_5_enhance_agents() method (TASK-SIMP-9ABE)
     # Phase 7.5 had 0% success rate and has been removed
     # See TASK-PHASE-8-INCREMENTAL for incremental enhancement approach
+
+    def _run_phase_8_create_agent_tasks(
+        self,
+        output_path: Path
+    ) -> Dict[str, Any]:
+        """
+        Phase 8: Create individual agent enhancement tasks (TASK-PHASE-8-INCREMENTAL).
+
+        Only runs if config.create_agent_tasks is True.
+
+        Creates one task per agent file for incremental enhancement.
+        Tasks can be worked through individually using /task-work.
+
+        Args:
+            output_path: Template output directory containing agents/ subdirectory
+
+        Returns:
+            Dict with:
+                - success: bool
+                - tasks_created: int
+                - task_ids: List[str]
+
+        Raises:
+            Exception: If task creation fails (non-fatal - returns success=False instead)
+        """
+        if not self.config.create_agent_tasks:
+            logger.info("Skipping agent task creation (--create-agent-tasks not specified)")
+            return {"success": True, "tasks_created": 0, "task_ids": []}
+
+        # Find agent files in output directory
+        agents_dir = output_path / "agents"
+        if not agents_dir.exists():
+            logger.warning("No agents directory found to create tasks for")
+            return {"success": True, "tasks_created": 0, "task_ids": []}
+
+        agent_files = list(agents_dir.glob("*.md"))
+        if not agent_files:
+            logger.warning("No agent files found to create tasks for")
+            return {"success": True, "tasks_created": 0, "task_ids": []}
+
+        self._print_phase_header("Phase 8: Agent Task Creation")
+        self._print_info(f"Creating enhancement tasks for {len(agent_files)} agents...")
+
+        # Import task creation utilities
+        # Using relative import since we're in the same package
+        try:
+            # FIXME: This import needs to be implemented - placeholder for now
+            # from installer.global.lib.task_management.task_creator import create_task
+            # For now, we'll create a simplified version
+            task_ids = self._create_agent_tasks_simplified(agent_files, output_path)
+
+            if task_ids:
+                self._print_success_line(f"Created {len(task_ids)} agent enhancement tasks")
+                self._print_info("  Work through them with: /task-work <TASK-ID>")
+                self._print_info(f"  Task IDs: {', '.join(task_ids)}")
+
+            return {
+                "success": True,
+                "tasks_created": len(task_ids),
+                "task_ids": task_ids
+            }
+
+        except Exception as e:
+            logger.exception(f"Failed to create agent tasks: {e}")
+            self.warnings.append(f"Agent task creation failed: {e}")
+            return {"success": False, "tasks_created": 0, "task_ids": [], "error": str(e)}
+
+    def _create_agent_tasks_simplified(
+        self,
+        agent_files: List[Path],
+        template_dir: Path
+    ) -> List[str]:
+        """
+        Create tasks for agent enhancement (simplified version).
+
+        This is a temporary implementation until we integrate with the
+        full task management system.
+
+        Args:
+            agent_files: List of agent file paths
+            template_dir: Template output directory
+
+        Returns:
+            List of task IDs created
+        """
+        import datetime
+        from pathlib import Path as PathlibPath
+
+        template_name = template_dir.name
+        task_ids = []
+
+        # Create tasks directory if it doesn't exist
+        tasks_backlog = PathlibPath("tasks/backlog")
+        tasks_backlog.mkdir(parents=True, exist_ok=True)
+
+        for agent_file in agent_files:
+            agent_name = agent_file.stem
+
+            # Generate task ID
+            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+            task_id = f"TASK-AGENT-{agent_name[:8].upper()}-{timestamp}"
+
+            # Create task metadata
+            task_content = f"""# {task_id}: Enhance {agent_name} agent for {template_name} template
+
+**Task ID**: {task_id}
+**Priority**: MEDIUM
+**Status**: BACKLOG
+**Created**: {datetime.datetime.now().isoformat()}
+
+## Description
+
+Enhance the {agent_name} agent with template-specific content:
+- Add related template references
+- Include code examples from templates
+- Document best practices
+- Add anti-patterns to avoid (if applicable)
+
+**Agent File**: {agent_file}
+**Template Directory**: {template_dir}
+
+## Command
+
+```bash
+/agent-enhance {template_name}/{agent_name}
+```
+
+## Acceptance Criteria
+
+- [ ] Agent file enhanced with template-specific sections
+- [ ] Relevant templates identified and documented
+- [ ] Code examples from templates included
+- [ ] Best practices documented
+- [ ] Anti-patterns documented (if applicable)
+
+## Metadata
+
+```json
+{{
+    "type": "agent_enhancement",
+    "agent_file": "{agent_file}",
+    "template_dir": "{template_dir}",
+    "template_name": "{template_name}",
+    "agent_name": "{agent_name}"
+}}
+```
+"""
+
+            # Write task file
+            task_file = tasks_backlog / f"{task_id}.md"
+            task_file.write_text(task_content)
+            task_ids.append(task_id)
+
+            logger.info(f"  ✓ Created {task_id} for {agent_name}")
+
+        return task_ids
 
     def _phase8_claude_md_generation(self, analysis: Any, agents: List[Any], output_path: Path) -> Optional[Any]:
         """
@@ -1811,6 +1975,7 @@ def run_template_create(
     save_analysis: bool = False,
     no_agents: bool = False,
     validate: bool = False,
+    create_agent_tasks: bool = False,  # TASK-PHASE-8-INCREMENTAL: Create individual enhancement tasks
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     verbose: bool = False
@@ -1829,6 +1994,7 @@ def run_template_create(
         save_analysis: Save analysis JSON for debugging
         no_agents: Skip agent generation
         validate: Run extended validation and generate quality report
+        create_agent_tasks: Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
         custom_name: Custom template name (overrides AI-generated name)
         verbose: Show detailed progress
 
@@ -1873,6 +2039,7 @@ def run_template_create(
         save_analysis=save_analysis,
         no_agents=no_agents,
         validate=validate,
+        create_agent_tasks=create_agent_tasks,  # TASK-PHASE-8-INCREMENTAL
         resume=resume,  # TASK-BRIDGE-002
         custom_name=custom_name,  # TASK-FDB2
         verbose=verbose
@@ -1903,6 +2070,8 @@ if __name__ == "__main__":
                         help="Maximum template files to generate")
     parser.add_argument("--no-agents", action="store_true",
                         help="Skip agent generation")
+    parser.add_argument("--create-agent-tasks", action="store_true",
+                        help="Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
@@ -1919,6 +2088,7 @@ if __name__ == "__main__":
         validate=args.validate,
         max_templates=args.max_templates,
         no_agents=args.no_agents,
+        create_agent_tasks=args.create_agent_tasks,
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2
         verbose=args.verbose
