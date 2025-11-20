@@ -82,79 +82,68 @@ def mock_orchestrator_no_init(mock_config):
         return orchestrator
 
 
+# ========== Helper Functions ==========
+
+def setup_mock_state_manager(orchestrator, phase, checkpoint=None):
+    """
+    Configure state manager for resume routing tests.
+
+    Args:
+        orchestrator: Mock orchestrator instance
+        phase: WorkflowPhase constant to resume from
+        checkpoint: Optional checkpoint data
+
+    Returns:
+        Mock state object configured for testing
+    """
+    state = Mock()
+    state.phase = phase
+    if checkpoint:
+        state.checkpoint = checkpoint
+
+    orchestrator.state_manager.load_state.return_value = state
+    return state
+
+
 # ========== Unit Tests: Resume Routing ==========
 
 class TestResumeRouting:
     """Test resume routing logic in run() method."""
 
-    def test_routes_to_run_from_phase_5(self, mock_orchestrator_no_init):
-        """Test routing to _run_from_phase_5 when phase is 5."""
+    @pytest.mark.parametrize("phase,expected_handler", [
+        (WorkflowPhase.PHASE_5, '_run_from_phase_5'),
+        (WorkflowPhase.PHASE_7, '_run_from_phase_7'),
+        (WorkflowPhase.PHASE_7_5, '_run_from_phase_7'),  # Phase 7.5 uses Phase 7 handler
+    ])
+    def test_phase_routing(self, mock_orchestrator_no_init, phase, expected_handler):
+        """Test routing to correct handler based on phase."""
         mock_orchestrator_no_init.config.resume = True
 
-        # Mock state manager
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_5
-            mock_state_manager.load_state.return_value = state
+        # Setup state using helper function
+        setup_mock_state_manager(mock_orchestrator_no_init, phase)
 
-            # Mock the phase handler
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
-                mock_run.return_value = Mock(success=True)
+        # Mock the phase handler
+        with patch.object(mock_orchestrator_no_init, expected_handler) as mock_run:
+            mock_run.return_value = Mock(success=True)
 
-                result = mock_orchestrator_no_init.run()
+            result = mock_orchestrator_no_init.run()
 
-                # Verify _run_from_phase_5 was called
-                mock_run.assert_called_once()
-
-    def test_routes_to_run_from_phase_7(self, mock_orchestrator_no_init):
-        """Test routing to _run_from_phase_7 when phase is 7."""
-        mock_orchestrator_no_init.config.resume = True
-
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7
-            mock_state_manager.load_state.return_value = state
-
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-
-                result = mock_orchestrator_no_init.run()
-
-                mock_run.assert_called_once()
-
-    def test_routes_phase_7_5_to_run_from_phase_7(self, mock_orchestrator_no_init):
-        """Test Phase 7.5 routes to _run_from_phase_7 (same handler)."""
-        mock_orchestrator_no_init.config.resume = True
-
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7_5
-            mock_state_manager.load_state.return_value = state
-
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-
-                result = mock_orchestrator_no_init.run()
-
-                # Should call _run_from_phase_7 for phase 7.5
-                mock_run.assert_called_once()
+            # Verify correct handler was called
+            mock_run.assert_called_once()
 
     def test_defaults_to_phase_5_for_unknown_phase(self, mock_orchestrator_no_init):
         """Test unknown phase defaults to _run_from_phase_5."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = 2  # Unknown phase
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, 2)  # Unknown phase
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
-                mock_run.return_value = Mock(success=True)
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(success=True)
 
-                result = mock_orchestrator_no_init.run()
+            result = mock_orchestrator_no_init.run()
 
-                # Should fall back to _run_from_phase_5
-                mock_run.assert_called_once()
+            # Should fall back to _run_from_phase_5
+            mock_run.assert_called_once()
 
     def test_skips_routing_when_not_resuming(self, mock_orchestrator_no_init):
         """Test routing is skipped when resume is False."""
@@ -178,32 +167,26 @@ class TestPhase5Routing:
         """Test _run_from_phase_5 is called for Phase 5."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_5
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_5)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
 
-                assert mock_run.called
+            assert mock_run.called
 
     def test_phase_5_with_agent_invocation(self, mock_orchestrator_no_init):
         """Test Phase 5 continues after agent invocation."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_5
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_5)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
-                mock_run.return_value = Mock(success=True, errors=[])
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(success=True, errors=[])
+            result = mock_orchestrator_no_init.run()
 
-                # Verify handler was invoked
-                assert mock_run.called
+            # Verify handler was invoked
+            assert mock_run.called
 
 
 # ========== Unit Tests: Phase 7 Routing ==========
@@ -215,48 +198,39 @@ class TestPhase7Routing:
         """Test _run_from_phase_7 is called for Phase 7."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
 
-                assert mock_run.called
+            assert mock_run.called
 
     def test_phase_7_5_routes_to_phase_7_handler(self, mock_orchestrator_no_init):
         """Test Phase 7.5 uses Phase 7 handler."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7_5
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7_5)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
 
-                # Should call Phase 7 handler
-                assert mock_run.called
+            # Should call Phase 7 handler
+            assert mock_run.called
 
     def test_phase_7_with_agent_enhancement(self, mock_orchestrator_no_init):
         """Test Phase 7 continues after agent enhancement."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True, errors=[])
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
+            mock_run.return_value = Mock(success=True, errors=[])
+            result = mock_orchestrator_no_init.run()
 
-                # Verify handler was invoked
-                assert mock_run.called
+            # Verify handler was invoked
+            assert mock_run.called
 
 
 # ========== Unit Tests: Explicit Phase Handlers ==========
@@ -300,20 +274,16 @@ class TestResumeRoutingIntegration:
         """Test state is loaded before routing decision."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_7
-            state.checkpoint = "agents_written"
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7, checkpoint="agents_written")
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
 
-                # State should be loaded first
-                mock_state_manager.load_state.assert_called()
-                # Then phase handler should be called
-                mock_run.assert_called()
+            # State should be loaded first
+            mock_orchestrator_no_init.state_manager.load_state.assert_called()
+            # Then phase handler should be called
+            mock_run.assert_called()
 
     def test_exception_handling_in_run(self, mock_orchestrator_no_init):
         """Test exception handling during resume."""
@@ -331,24 +301,21 @@ class TestResumeRoutingIntegration:
         """Test run() always returns OrchestrationResult."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            state = Mock()
-            state.phase = WorkflowPhase.PHASE_5
-            mock_state_manager.load_state.return_value = state
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_5)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
-                mock_run.return_value = Mock(
-                    success=True,
-                    template_name="test-template",
-                    output_path=Path("/home/user"),
-                    errors=[],
-                    warnings=[]
-                )
-                result = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(
+                success=True,
+                template_name="test-template",
+                output_path=Path("/home/user"),
+                errors=[],
+                warnings=[]
+            )
+            result = mock_orchestrator_no_init.run()
 
-                # Should return a result object
-                assert result is not None
-                assert hasattr(result, 'success')
+            # Should return a result object
+            assert result is not None
+            assert hasattr(result, 'success')
 
 
 # ========== DRY Principle Tests ==========
@@ -360,29 +327,23 @@ class TestResumeRoutingDRY:
         """Test Phase 7.5 reuses Phase 7 handler (no duplication)."""
         mock_orchestrator_no_init.config.resume = True
 
-        with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager:
-            # First test Phase 7
-            state_7 = Mock()
-            state_7.phase = WorkflowPhase.PHASE_7
-            mock_state_manager.load_state.return_value = state_7
+        # First test Phase 7
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7)
 
-            with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
-                mock_run.return_value = Mock(success=True)
-                result_7 = mock_orchestrator_no_init.run()
-                phase_7_calls = mock_run.call_count
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result_7 = mock_orchestrator_no_init.run()
+            phase_7_calls = mock_run.call_count
 
-            # Reset and test Phase 7.5
-            with patch.object(mock_orchestrator_no_init, 'state_manager') as mock_state_manager2:
-                state_7_5 = Mock()
-                state_7_5.phase = WorkflowPhase.PHASE_7_5
-                mock_state_manager2.load_state.return_value = state_7_5
+        # Reset and test Phase 7.5
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_7_5)
 
-                with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run2:
-                    mock_run2.return_value = Mock(success=True)
-                    result_7_5 = mock_orchestrator_no_init.run()
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_7') as mock_run2:
+            mock_run2.return_value = Mock(success=True)
+            result_7_5 = mock_orchestrator_no_init.run()
 
-                    # Both should call same handler
-                    assert mock_run2.called
+            # Both should call same handler
+            assert mock_run2.called
 
     def test_centralizes_phase_routing(self, mock_orchestrator_no_init):
         """Test phase routing is centralized in run() method."""
