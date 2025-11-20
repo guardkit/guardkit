@@ -27,6 +27,123 @@ Add incremental agent enhancement workflow that gives users control over which a
 
 ---
 
+## Architectural Review Clarifications
+
+**ARCHITECTURAL REVIEW NOTE**: This section addresses ambiguities identified during architectural review (Score: 82/100 - APPROVED WITH RECOMMENDATIONS).
+
+### 1. Task Tool API Clarification
+
+**Issue**: AC4.5 states "AI strategy uses direct Task tool invocation" but doesn't clarify:
+- Is this synchronous or asynchronous?
+- What timeout behavior is expected?
+- How are task failures handled?
+
+**Clarification**:
+
+The AI strategy uses **synchronous** Task tool invocation with explicit timeout:
+
+```python
+from anthropic_sdk import task  # Synchronous API
+
+result = task(
+    agent="agent-content-enhancer",
+    prompt=prompt,
+    timeout=300  # 5 minutes - explicit timeout prevents hanging
+)
+```
+
+**Rationale**:
+- **Synchronous**: User runs `/agent-enhance` and waits for result (interactive command)
+- **Timeout**: 5 minutes prevents indefinite hangs; enhancement should be quick
+- **Failure Handling**: Exception propagates to hybrid fallback or error reporting
+
+**Consistency Check**: This matches TASK-PHASE-7.5-SIMPLE which uses the same pattern.
+
+### 2. Import Strategy Rationale
+
+**Issue**: Lines 394-407 use `importlib.import_module()` instead of standard imports. Why dynamic imports?
+
+**Clarification**:
+
+Dynamic imports are used to **defer import errors** until runtime, not load-time:
+
+```python
+# WRONG (load-time error if modules don't exist yet):
+from installer.global.lib.agent_enhancement.prompt_builder import EnhancementPromptBuilder
+
+# CORRECT (runtime error only when enhancer is instantiated):
+import importlib
+_prompt_builder = importlib.import_module(
+    'installer.global.lib.agent_enhancement.prompt_builder'
+)
+EnhancementPromptBuilder = _prompt_builder.EnhancementPromptBuilder
+```
+
+**Rationale**:
+- **Development Workflow**: Shared modules (prompt_builder, parser, applier) are created during this task
+- **Circular Dependencies**: Avoid load-time failures when files reference each other
+- **Gradual Implementation**: Can implement command first, modules later
+
+**Alternative**: Could use standard imports if modules are implemented first (recommended for production).
+
+### 3. Applier Module Specification
+
+**Issue**: AC5.7-5.8 mention `applier.py` and `EnhancementApplier` class but don't specify:
+- What methods does it have?
+- What does `apply()` do vs `generate_diff()`?
+- What's the input/output format?
+
+**Clarification**:
+
+**File**: `installer/global/lib/agent_enhancement/applier.py` (~100 lines)
+
+**Class**: `EnhancementApplier`
+
+**Methods**:
+1. `apply(agent_file: Path, enhancement: dict) -> None`
+   - Modifies agent file in-place with enhancement content
+   - Inserts sections (related_templates, examples, best_practices)
+   - Preserves frontmatter and existing content
+   - Raises `PermissionError` if file not writable
+
+2. `generate_diff(agent_file: Path, enhancement: dict) -> str`
+   - Creates unified diff showing changes
+   - Does NOT modify file
+   - Used for dry-run mode and preview
+   - Returns string in `diff -u` format
+
+**Input Format** (`enhancement` dict):
+```python
+{
+    "sections": ["related_templates", "examples"],
+    "related_templates": "## Related Templates\n\n...",
+    "examples": "## Code Examples\n\n...",
+    "best_practices": "## Best Practices\n\n..."
+}
+```
+
+**Output**: None (apply) or str (generate_diff)
+
+### 4. ValidationError Exception
+
+**Issue**: Line 311, 636, 639 use `ValidationError` but it's not imported or defined.
+
+**Clarification**:
+
+Add `ValidationError` exception class to `enhancer.py`:
+
+```python
+class ValidationError(Exception):
+    """Raised when enhancement data fails validation."""
+    pass
+```
+
+**Location**: Top of `installer/global/lib/agent_enhancement/enhancer.py` (after imports, before dataclasses)
+
+**Usage**: Raised by `_validate_enhancement()` method when enhancement dict is malformed.
+
+---
+
 ## Acceptance Criteria
 
 ### 1. Command Flag Addition
@@ -64,11 +181,12 @@ Add incremental agent enhancement workflow that gives users control over which a
 - [ ] **AC4.2**: `SingleAgentEnhancer` class with `__init__(strategy, dry_run, verbose)`
 - [ ] **AC4.3**: `enhance(agent_file, template_dir)` method returns `EnhancementResult`
 - [ ] **AC4.4**: Three strategies implemented: ai, static, hybrid
-- [ ] **AC4.5**: AI strategy uses direct Task tool invocation
+- [ ] **AC4.5**: AI strategy uses direct Task tool invocation (synchronous, 300s timeout) - see Clarification #1
 - [ ] **AC4.6**: Static strategy uses keyword matching (simple, fast, no AI)
 - [ ] **AC4.7**: Hybrid strategy tries AI, falls back to static on failure
 - [ ] **AC4.8**: Dry-run mode generates diff without applying
 - [ ] **AC4.9**: Verbose mode shows detailed progress
+- [ ] **AC4.10**: `ValidationError` exception class defined at module top - see Clarification #4
 
 ### 5. Shared Modules
 
@@ -79,8 +197,9 @@ Add incremental agent enhancement workflow that gives users control over which a
 - [ ] **AC5.5**: `EnhancementParser` class with `parse()` method
 - [ ] **AC5.6**: Handles markdown-wrapped JSON, bare JSON
 - [ ] **AC5.7**: `applier.py` module created (~100 lines)
-- [ ] **AC5.8**: `EnhancementApplier` class with `apply()` and `generate_diff()` methods
+- [ ] **AC5.8**: `EnhancementApplier` class with `apply(agent_file, enhancement) -> None` and `generate_diff(agent_file, enhancement) -> str` methods - see Clarification #3
 - [ ] **AC5.9**: All shared modules have comprehensive docstrings and type hints
+- [ ] **AC5.10**: Modules imported using `importlib.import_module()` to defer load-time errors - see Clarification #2
 
 ### 6. Task Integration
 
@@ -407,6 +526,17 @@ EnhancementParser = _parser.EnhancementParser
 EnhancementApplier = _applier.EnhancementApplier
 
 logger = logging.getLogger(__name__)
+
+
+class ValidationError(Exception):
+    """Raised when enhancement data fails validation.
+
+    This exception is raised by _validate_enhancement() when the enhancement
+    dict returned by AI or static strategy is malformed or missing required keys.
+
+    See Clarification #4 in Architectural Review Clarifications section.
+    """
+    pass
 
 
 @dataclass
