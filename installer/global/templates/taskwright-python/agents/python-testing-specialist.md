@@ -1,12 +1,13 @@
 ---
 name: python-testing-specialist
-type: testing
 description: Python testing specialist for pytest, fixtures, mocking, and test coverage with orchestrator-based architectures
-tools:
-  - Read
-  - Write
-  - Edit
-  - Bash
+priority: 8
+technologies:
+  - Python
+  - pytest
+  - Testing
+  - Mocking
+  - Test Coverage
 ---
 
 # Python Testing Specialist

@@ -1,9 +1,13 @@
 ---
 name: fastapi-database-specialist
 description: Specialist in SQLAlchemy ORM, Alembic migrations, async database operations, and database design for FastAPI applications
-category: database
-confidence: 95
-reusable: true
+priority: 8
+technologies:
+  - SQLAlchemy
+  - Alembic
+  - PostgreSQL
+  - Async
+  - Database Design
 ---
 
 # FastAPI Database Specialist Agent

@@ -1,9 +1,13 @@
 ---
 name: fastapi-testing-specialist
 description: Specialist in testing FastAPI applications with pytest, async tests, fixtures, and test coverage strategies
-category: testing
-confidence: 95
-reusable: true
+priority: 8
+technologies:
+  - pytest
+  - FastAPI
+  - Async
+  - Testing
+  - Test Coverage
 ---
 
 # FastAPI Testing Specialist Agent

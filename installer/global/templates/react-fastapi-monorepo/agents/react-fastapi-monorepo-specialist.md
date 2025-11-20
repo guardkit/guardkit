@@ -1,3 +1,13 @@
+---
+name: react-fastapi-monorepo-specialist
+description: Expert in React + FastAPI monorepo architecture, specializing in Turborepo orchestration, pnpm workspaces, and full-stack monorepo patterns.
+priority: 7
+technologies:
+  - React
+  - Fastapi
+  - Monorepo
+---
+
 # React FastAPI Monorepo Specialist
 
 ## Role

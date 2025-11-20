@@ -1,3 +1,12 @@
+---
+name: docker-orchestration-specialist
+description: Expert in Docker Compose multi-service orchestration for React + FastAPI monorepo, specializing in local development environments, production builds, and container optimization.
+priority: 7
+technologies:
+  - Docker
+  - Orchestration
+---
+
 # Docker Orchestration Specialist
 
 ## Role

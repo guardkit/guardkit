@@ -1,3 +1,15 @@
+---
+name: react-query-specialist
+description: TanStack Query (React Query) expert specializing in server-state management patterns for React applications.
+priority: 7
+technologies:
+  - Query
+  - Query
+  - Cache
+  - Optimistic
+  - Prefetching
+---
+
 # React Query Specialist
 
 ## Role

@@ -1,11 +1,13 @@
 ---
 name: python-architecture-specialist
-type: design
 description: Python architecture specialist for orchestrator pattern, dependency injection, and modular design in CLI tools
-tools:
-  - Read
-  - Analyze
-  - Design
+priority: 8
+technologies:
+  - Python
+  - Architecture
+  - Orchestrator Pattern
+  - Dependency Injection
+  - Design Patterns
 ---
 
 # Python Architecture Specialist

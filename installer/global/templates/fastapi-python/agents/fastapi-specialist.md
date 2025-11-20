@@ -1,9 +1,13 @@
 ---
 name: fastapi-specialist
 description: Specialist in FastAPI framework patterns, routing, dependency injection, and async programming
-category: api
-confidence: 95
-reusable: true
+priority: 8
+technologies:
+  - FastAPI
+  - Python
+  - Async
+  - Pydantic
+  - API Design
 ---
 
 # FastAPI Specialist Agent

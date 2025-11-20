@@ -1,3 +1,13 @@
+---
+name: nextjs-server-components-specialist
+description: Expert in Next.js App Router and React Server Components patterns, specializing in data fetching, rendering strategies, and Server/Client component composition.
+priority: 7
+technologies:
+  - Nextjs
+  - Server
+  - Components
+---
+
 # Next.js Server Components Specialist
 
 ## Role

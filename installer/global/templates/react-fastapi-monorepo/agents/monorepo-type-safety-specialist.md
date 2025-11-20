@@ -1,3 +1,13 @@
+---
+name: monorepo-type-safety-specialist
+description: Expert in type-safe full-stack development with OpenAPI code generation, specializing in maintaining type consistency between FastAPI backend and React TypeScript frontend.
+priority: 7
+technologies:
+  - Monorepo
+  - Type
+  - Safety
+---
+
 # Monorepo Type Safety Specialist
 
 ## Role
