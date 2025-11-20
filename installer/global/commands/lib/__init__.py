@@ -37,14 +37,15 @@ from .agent_utils import (
 )
 
 # Review modes (TASK-003B-2, TASK-003B-3)
-from .review_modes import (
-    QuickReviewResult,
-    QuickReviewDisplay,
-    QuickReviewHandler,
-    FullReviewResult,
-    FullReviewDisplay,
-    FullReviewHandler,
-)
+# TEMPORARY FIX: Commented out due to missing classes in review_modes package
+# from .review_modes import (
+#     QuickReviewResult,
+#     QuickReviewDisplay,
+#     QuickReviewHandler,
+#     FullReviewResult,
+#     FullReviewDisplay,
+#     FullReviewHandler,
+# )
 
 # Pager display (TASK-003B-3)
 from .pager_display import (
@@ -139,13 +140,13 @@ __all__ = [
     "log_complexity_calculation",
     "extract_task_metadata_from_frontmatter",
 
-    # Review modes
-    "QuickReviewResult",
-    "QuickReviewDisplay",
-    "QuickReviewHandler",
-    "FullReviewResult",
-    "FullReviewDisplay",
-    "FullReviewHandler",
+    # Review modes (TEMPORARY FIX: Commented out)
+    # "QuickReviewResult",
+    # "QuickReviewDisplay",
+    # "QuickReviewHandler",
+    # "FullReviewResult",
+    # "FullReviewDisplay",
+    # "FullReviewHandler",
 
     # Pager display
     "PagerStrategy",

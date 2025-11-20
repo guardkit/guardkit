@@ -345,6 +345,18 @@ install_global_files() {
                 print_success "Installed Jinja2 templates for plan rendering"
             fi
 
+            # Copy review_modes directory (for task-review command)
+            if [ -d "$INSTALLER_DIR/global/commands/lib/review_modes" ]; then
+                cp -r "$INSTALLER_DIR/global/commands/lib/review_modes" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+                print_success "Installed review_modes for task-review command"
+            fi
+
+            # Copy review_templates directory (for task-review command)
+            if [ -d "$INSTALLER_DIR/global/commands/lib/review_templates" ]; then
+                cp -r "$INSTALLER_DIR/global/commands/lib/review_templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+                print_success "Installed review_templates for task-review command"
+            fi
+
             # Count installed Python files
             local python_count=$(ls -1 "$INSTALL_DIR/commands/lib/"*.py 2>/dev/null | wc -l)
             print_success "Installed commands with lib ($python_count Python modules, production only)"
