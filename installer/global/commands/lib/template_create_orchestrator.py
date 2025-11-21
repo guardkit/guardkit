@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 import json
 import logging
+import uuid
 
 # Import component modules using importlib to avoid 'global' keyword issue
 import importlib
@@ -930,6 +931,39 @@ class TemplateCreateOrchestrator:
             self.warnings.append(f"Agent task creation failed: {e}")
             return {"success": False, "tasks_created": 0, "task_ids": [], "error": str(e)}
 
+    def _generate_task_id(self, agent_name: str) -> str:
+        """
+        Generate unique task ID for agent enhancement.
+
+        Uses UUID-based generation to guarantee uniqueness even for agents with
+        similar names. This prevents task ID collisions that could occur with
+        timestamp-based generation.
+
+        Format: TASK-{agent-name-prefix}-{uuid}
+        Example: TASK-REPOSITORY-PA-A3F2B1C8
+
+        Args:
+            agent_name: Full agent name (e.g., 'repository-pattern-specialist')
+
+        Returns:
+            str: Unique task ID with format TASK-{PREFIX}-{UUID}
+
+        Note:
+            - Uses up to 15 chars of agent name for readability
+            - Uses 8 chars of UUID for uniqueness (collision probability: ~1 in 4 billion)
+            - Hyphens in agent name are preserved in prefix
+        """
+        # Use up to 15 chars of agent name for readability
+        # Preserve hyphens for better readability
+        prefix = agent_name[:15].upper()
+
+        # Use 8 chars of UUID for uniqueness
+        # UUID4 provides 122 bits of randomness
+        # 8 hex chars = 32 bits = ~4.3 billion possibilities
+        unique_id = uuid.uuid4().hex[:8].upper()
+
+        return f"TASK-{prefix}-{unique_id}"
+
     def _create_agent_tasks_simplified(
         self,
         agent_files: List[Path],
@@ -961,9 +995,9 @@ class TemplateCreateOrchestrator:
         for agent_file in agent_files:
             agent_name = agent_file.stem
 
-            # Generate task ID
-            timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            task_id = f"TASK-AGENT-{agent_name[:8].upper()}-{timestamp}"
+            # Generate unique task ID using UUID-based method
+            # This prevents collisions from similar agent names or rapid creation
+            task_id = self._generate_task_id(agent_name)
 
             # Create task metadata
             task_content = f"""# {task_id}: Enhance {agent_name} agent for {template_name} template
