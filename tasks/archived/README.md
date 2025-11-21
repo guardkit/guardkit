@@ -197,6 +197,21 @@ Tasks for future phases or optional features not currently prioritized.
 
 **Context**: This task proposes comprehensive integration tests and rollback scripts for the hash-based ID system. However, the system is ALREADY working reliably in production: (1) 234+ hash-based tasks created with zero collisions, (2) 154 existing tests (unit + integration) covering hash generation, PM tool mapping, persistence, (3) test_id_generator.py has 23 tests including 10,000 ID collision test, performance tests, uniqueness tests, (4) test_external_id_mapper.py tests JIRA/Azure DevOps/Linear/GitHub mapping, (5) Production validation proves system works. Missing pieces are edge-case safety features: (1) True parallel concurrent tests (current test is sequential but production has no collision issues), (2) Rollback script (system is stable, no rollbacks needed yet), (3) Cross-reference migration tests (migration not actively used), (4) Conductor.build worktree tests (theoretical concern, no issues in practice). This is 6/10 complexity for 1-2 days work on safety features for a system that's already proven reliable. Only reconsider if: (1) collision issues emerge in production, (2) planning major rollback, (3) implementing large-scale migration, or (4) Conductor.build integration becomes critical requirement.
 
+#### Agent Enhancement Documentation & Testing (5 tasks)
+**Archived**: 2025-11-21
+**Reason**: Agent enhancement working in production. Command spec exists, system validated through actual usage.
+
+**Tasks**:
+- TASK-DOC-4F8A-agent-enhance-command-spec.md (superseded - spec EXISTS at installer/global/commands/agent-enhance.md, 10.6KB)
+- TASK-DOC-F3A3-documentation-suite-agent-enhancement.md (superseded - meta task, sub-tasks handled individually)
+- TASK-DOC-5B3E-phase-7-5-vs-8-comparison.md (future-enhancements - historical comparison, Phase 7.5 removed)
+- TASK-E2E-97EB-end-to-end-validation-agent-enhancement.md (future-enhancements - system working in production)
+- TASK-TEST-87F4-comprehensive-test-suite-agent-enhancement.md (future-enhancements - basic tests exist, agents being generated successfully)
+
+**Status**: Core functionality complete and production-validated
+
+**Context**: The `/agent-enhance` command is implemented and working. Evidence: (1) Command spec exists (installer/global/commands/agent-enhance.md, 10,641 bytes), (2) AI integration complete using anthropic_sdk.task() API (TASK-AI-2B37 completed), (3) Agents being generated in production (net9-maui-mydrive has 8+ agents), (4) Basic tests exist (test_ai_agent_generator.py, test_template_create_agent_documentation.py), (5) Enhancement strategies working (ai/static/hybrid). Archived tasks propose: (1) TASK-DOC-4F8A - command spec that ALREADY EXISTS, (2) TASK-DOC-F3A3 - meta wrapper task, (3) TASK-DOC-5B3E - Phase 7.5 comparison (7.5 removed, comparison is historical), (4) TASK-E2E-97EB - formal E2E validation (system validated through actual production use), (5) TASK-TEST-87F4 - comprehensive test suite (basic tests exist, 4-5 days effort for exhaustive coverage). The only KEPT task is TASK-DOC-1E7B (incremental enhancement workflow guide - legitimate documentation gap). System works reliably without comprehensive test suite. Only reconsider testing tasks if: (1) agent quality issues emerge, (2) enhancement failures occur, (3) compliance requires formal test coverage, or (4) planning major refactoring.
+
 ## When to Review Archived Tasks
 
 - **Learning**: Understand evolution of approaches (why certain designs were rejected)
@@ -226,11 +241,12 @@ Tasks are archived (not deleted) because:
 
 ## Statistics
 
-**Total archived**: 25 tasks
-- Superseded approaches: 16 tasks
-- Future enhancements: 9 tasks
+**Total archived**: 30 tasks
+- Superseded approaches: 18 tasks
+- Future enhancements: 12 tasks
 
 **Archive date**: 2025-11-21
 **Part of**: Backlog cleanup initiative
-- Backlog: 80 → 38 files (52.5% reduction)
+- Backlog: 80 → 31 files (61.25% reduction)
+- Completed (moved): 2 files (TASK-CLEANUP-20251121, TASK-AI-2B37)
 - In Review: 28 → 27 files
