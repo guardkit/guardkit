@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import List, Optional
 import json
 import logging
+import time
 
 # Import shared modules using importlib to avoid module resolution issues
 import importlib
@@ -196,15 +197,15 @@ class SingleAgentEnhancer:
         """Generate enhancement using selected strategy."""
 
         if self.strategy == "ai":
-            return self._ai_enhancement(agent_metadata, templates, template_dir)
+            return self._ai_enhancement_with_retry(agent_metadata, templates, template_dir)
         elif self.strategy == "static":
             return self._static_enhancement(agent_metadata, templates)
         elif self.strategy == "hybrid":
-            # Try AI, fallback to static
+            # Try AI with retry, fallback to static
             try:
-                return self._ai_enhancement(agent_metadata, templates, template_dir)
+                return self._ai_enhancement_with_retry(agent_metadata, templates, template_dir)
             except Exception as e:
-                logger.warning(f"AI enhancement failed, falling back to static: {e}")
+                logger.warning(f"AI enhancement failed after retries, falling back to static: {e}")
                 return self._static_enhancement(agent_metadata, templates)
         else:
             raise ValueError(f"Unknown strategy: {self.strategy}")
@@ -216,11 +217,29 @@ class SingleAgentEnhancer:
         template_dir: Path
     ) -> dict:
         """
-        AI-powered enhancement.
+        AI-powered enhancement using agent-content-enhancer.
 
-        Uses agent-content-enhancer agent via direct Task tool invocation.
-        Synchronous call with 300-second timeout.
+        Uses direct Task tool API (NOT AgentBridgeInvoker) for synchronous invocation.
+        Timeout: 300 seconds. Exceptions propagate to hybrid fallback.
+
+        Args:
+            agent_metadata: Agent metadata from frontmatter
+            templates: List of relevant template files
+            template_dir: Template root directory
+
+        Returns:
+            Enhancement dict with sections and content
+
+        Raises:
+            TimeoutError: If AI invocation exceeds 300s
+            ValidationError: If response structure is invalid
+            Exception: For other AI failures
         """
+        import time
+
+        start_time = time.time()
+        agent_name = agent_metadata.get('name', 'unknown')
+
         # Build prompt using shared prompt builder
         prompt = self.prompt_builder.build(
             agent_metadata,
@@ -228,19 +247,128 @@ class SingleAgentEnhancer:
             template_dir
         )
 
-        # TODO: Implement actual AI invocation via Task tool
-        # For now, return placeholder response
-        logger.warning("AI enhancement not yet fully implemented - using placeholder")
+        if self.verbose:
+            logger.info(f"AI Enhancement Started:")
+            logger.info(f"  Agent: {agent_name}")
+            logger.info(f"  Templates: {len(templates)}")
+            logger.info(f"  Prompt size: {len(prompt)} chars")
 
-        # Placeholder implementation
-        return {
-            "sections": ["related_templates", "examples"],
-            "related_templates": "## Related Templates\n\n" + "\n".join([
-                f"- {t.relative_to(template_dir)}" for t in templates[:5]
-            ]),
-            "examples": "## Code Examples\n\n(AI-generated examples would go here)",
-            "best_practices": ""
-        }
+        try:
+            # DIRECT TASK TOOL INVOCATION (no AgentBridgeInvoker, no sys.exit)
+            from anthropic_sdk import task
+
+            result_text = task(
+                agent="agent-content-enhancer",
+                prompt=prompt,
+                timeout=300  # 5 minutes
+            )
+
+            duration = time.time() - start_time
+
+            if self.verbose:
+                logger.info(f"AI Response Received:")
+                logger.info(f"  Duration: {duration:.2f}s")
+                logger.info(f"  Response size: {len(result_text)} chars")
+
+            # Parse response using shared parser
+            enhancement = self.parser.parse(result_text)
+
+            # Validate enhancement structure
+            self._validate_enhancement(enhancement)
+
+            if self.verbose:
+                sections = enhancement.get('sections', [])
+                logger.info(f"Enhancement Validated:")
+                logger.info(f"  Sections: {', '.join(sections)}")
+
+            return enhancement
+
+        except TimeoutError as e:
+            duration = time.time() - start_time
+            logger.warning(f"AI enhancement timed out after {duration:.2f}s: {e}")
+            raise  # Propagates to retry logic or hybrid fallback
+
+        except json.JSONDecodeError as e:
+            duration = time.time() - start_time
+            logger.error(f"AI response parsing failed after {duration:.2f}s: {e}")
+            logger.error(f"  Invalid response (first 200 chars): {result_text[:200]}")
+            raise ValidationError(f"Invalid JSON response: {e}")
+
+        except ValidationError as e:
+            duration = time.time() - start_time
+            logger.error(f"AI returned invalid enhancement structure after {duration:.2f}s: {e}")
+            raise  # Don't retry validation errors
+
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(f"AI enhancement failed after {duration:.2f}s: {e}")
+            logger.exception("Full traceback:")
+            raise
+
+    def _ai_enhancement_with_retry(
+        self,
+        agent_metadata: dict,
+        templates: List[Path],
+        template_dir: Path,
+        max_retries: int = 2
+    ) -> dict:
+        """
+        AI enhancement with exponential backoff retry logic.
+
+        Retries on transient failures (TimeoutError, network errors).
+        Does NOT retry on ValidationError (permanent failures).
+
+        Args:
+            agent_metadata: Agent metadata from frontmatter
+            templates: List of relevant template files
+            template_dir: Template root directory
+            max_retries: Maximum retry attempts (default: 2)
+
+        Returns:
+            Enhancement dict from successful attempt
+
+        Raises:
+            ValidationError: If AI returns invalid structure (no retry)
+            TimeoutError: If all retry attempts timeout
+            Exception: If all retry attempts fail
+        """
+        import time
+
+        agent_name = agent_metadata.get('name', 'unknown')
+
+        for attempt in range(max_retries + 1):  # 0, 1, 2 = 3 total attempts
+            try:
+                # Log retry attempt
+                if attempt > 0:
+                    backoff_seconds = 2 ** (attempt - 1)  # 1s (2^0), 2s (2^1)
+                    logger.info(f"Retry attempt {attempt}/{max_retries} for {agent_name} after {backoff_seconds}s backoff")
+                    time.sleep(backoff_seconds)
+                else:
+                    logger.info(f"Initial attempt for {agent_name}")
+
+                # Attempt AI enhancement
+                return self._ai_enhancement(agent_metadata, templates, template_dir)
+
+            except ValidationError as e:
+                # Don't retry validation errors (permanent failures)
+                logger.warning(f"Validation error for {agent_name} (no retry): {e}")
+                raise
+
+            except TimeoutError as e:
+                if attempt < max_retries:
+                    logger.warning(f"Attempt {attempt + 1} timed out for {agent_name}: {e}. Retrying...")
+                    continue  # Retry
+                else:
+                    logger.error(f"All {max_retries + 1} attempts timed out for {agent_name}")
+                    raise
+
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(f"Attempt {attempt + 1} failed for {agent_name}: {e}. Retrying...")
+                    continue  # Retry
+                else:
+                    logger.error(f"All {max_retries + 1} attempts failed for {agent_name}: {e}")
+                    raise
 
     def _static_enhancement(
         self,
