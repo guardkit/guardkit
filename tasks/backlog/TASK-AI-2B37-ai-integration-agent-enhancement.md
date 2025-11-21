@@ -14,9 +14,12 @@
 
 Implement AI integration for the agent enhancement workflow, replacing the placeholder AI strategy with actual Claude Code Task tool invocation to the `agent-content-enhancer` agent.
 
+**CRITICAL IMPLEMENTATION NOTE**:
+🚨 **DO NOT USE AgentBridgeInvoker** - This pattern was removed in Phase 7.5 due to 0% success rate. See `docs/reviews/task-ai-2b37-implementation-review.md` for detailed analysis of why AgentBridgeInvoker causes failures.
+
 **Scope**:
 - Connect AI strategy to `agent-content-enhancer` agent
-- Implement synchronous Task tool invocation with 300s timeout
+- Implement synchronous Task tool invocation with 300s timeout (using `anthropic_sdk.task` API)
 - Handle AI response parsing and error cases
 - Implement retry logic for transient failures
 - Integration with hybrid fallback strategy
@@ -26,6 +29,10 @@ Implement AI integration for the agent enhancement workflow, replacing the place
 - Documentation updates (TASK-DOC-XXX)
 - End-to-end testing (TASK-E2E-XXX)
 
+**Required Approach**:
+✅ Use direct `anthropic_sdk.task()` API call (see AC1 implementation below)
+❌ Do NOT use `AgentBridgeInvoker` (exit code 42 pattern causes 100% failure rate)
+
 ---
 
 ## Acceptance Criteria
@@ -33,12 +40,26 @@ Implement AI integration for the agent enhancement workflow, replacing the place
 ### AC1: Task Tool Integration
 
 - [ ] **AC1.1**: Replace placeholder in `_ai_enhancement()` method with actual Task tool invocation
-- [ ] **AC1.2**: Use synchronous API: `from anthropic_sdk import task`
+- [ ] **AC1.2**: Use synchronous API: `from anthropic_sdk import task` (NOT AgentBridgeInvoker)
 - [ ] **AC1.3**: Configure 300-second timeout (5 minutes)
 - [ ] **AC1.4**: Pass `agent="agent-content-enhancer"` parameter
 - [ ] **AC1.5**: Include full prompt with agent metadata and template context
+- [ ] **AC1.6**: Verify NO `sys.exit()` calls in implementation
+- [ ] **AC1.7**: Verify NO `.agent-request.json` or `.agent-response.json` files created
+- [ ] **AC1.8**: Verify NO `AgentBridgeInvoker` imports
 
-**Implementation** (from Architectural Review Clarification #1):
+**CRITICAL REQUIREMENT**:
+🚨 The implementation MUST use `anthropic_sdk.task()` API directly, NOT `AgentBridgeInvoker`.
+
+**Why**: AgentBridgeInvoker uses exit code 42 checkpoint-resume pattern that:
+- Terminates the Python process with `sys.exit(42)`
+- Creates file-based IPC (`.agent-request.json`)
+- Requires orchestrator state persistence
+- Has 0% success rate in Phase 7.5 (removed for this reason)
+
+See `docs/reviews/task-ai-2b37-implementation-review.md` for full analysis.
+
+**Implementation** (OPTION A - Direct API - REQUIRED):
 
 ```python
 def _ai_enhancement(
@@ -220,9 +241,122 @@ def _validate_enhancement(self, enhancement: dict) -> None:
 
 ---
 
+## ⚠️ ANTI-PATTERNS TO AVOID
+
+**DO NOT implement using these patterns** (Phase 7.5 failures):
+
+### ❌ WRONG: Using AgentBridgeInvoker
+
+```python
+# DO NOT DO THIS - This causes 100% failure rate
+from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+
+def _ai_enhancement(...) -> dict:
+    invoker = AgentBridgeInvoker(phase=1, phase_name="agent_enhancement")
+
+    # This exits the process with sys.exit(42) - NEVER RETURNS
+    result = invoker.invoke("agent-content-enhancer", prompt, timeout_seconds=300)
+    # Code after this line NEVER executes
+```
+
+**Why This Fails**:
+1. `invoker.invoke()` calls `sys.exit(42)` and terminates the process
+2. All in-memory state is lost
+3. No orchestrator exists to resume execution
+4. Results in 100% failure rate (Phase 7.5 experience)
+
+### ✅ CORRECT: Using Direct Task API
+
+```python
+# DO THIS - Direct synchronous API call
+from anthropic_sdk import task
+
+def _ai_enhancement(...) -> dict:
+    start_time = time.time()
+
+    try:
+        # Direct API call - blocks until complete, then returns result
+        result_text = task(
+            agent="agent-content-enhancer",
+            prompt=prompt,
+            timeout=300
+        )
+
+        duration = time.time() - start_time
+        logger.info(f"AI response received in {duration:.2f}s")
+
+        enhancement = self.parser.parse(result_text)
+        self._validate_enhancement(enhancement)
+
+        return enhancement
+
+    except TimeoutError as e:
+        logger.warning(f"AI timed out after 300s: {e}")
+        raise  # Propagates to hybrid fallback
+
+    except Exception as e:
+        logger.error(f"AI enhancement failed: {e}")
+        raise  # Propagates to hybrid fallback
+```
+
+**Why This Works**:
+1. `task()` is a synchronous function that blocks and returns a value
+2. No process exit - execution continues normally
+3. Exceptions propagate to hybrid fallback strategy
+4. Simple, testable, maintainable
+
+---
+
 ## Implementation Plan
 
-### Step 1: Remove Placeholder (30 minutes)
+### Step 0: Verify Current Implementation (15 minutes) 🚨 NEW
+
+**IMPORTANT**: If you implemented TASK-AI-2B37 previously, verify it doesn't use AgentBridgeInvoker:
+
+```bash
+# Check for AgentBridgeInvoker usage
+cd installer/global/lib/agent_enhancement
+grep -n "AgentBridgeInvoker" enhancer.py
+
+# Check for sys.exit calls
+grep -n "sys.exit" enhancer.py
+
+# Check for file-based IPC
+grep -n "agent-request" enhancer.py
+grep -n "agent-response" enhancer.py
+```
+
+**If any of the above return matches**: Implementation is WRONG and must be rewritten (see Step 1A).
+
+**If no matches**: Proceed to Step 1.
+
+### Step 1A: Remove Wrong Implementation (30 minutes) 🚨 IF NEEDED
+
+**Only if AgentBridgeInvoker was used** - DELETE these sections:
+
+```python
+# DELETE: AgentBridgeInvoker import (around line 243-246)
+_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+self._AgentBridgeInvoker = _bridge_module.AgentBridgeInvoker
+
+# DELETE: AgentBridgeInvoker instantiation (around line 278-287)
+invoker = self._AgentBridgeInvoker(
+    phase=1,
+    phase_name="agent_enhancement"
+)
+
+# DELETE: invoke() call (around line 289-298)
+result_text = invoker.invoke(
+    agent_name="agent-content-enhancer",
+    prompt=prompt,
+    timeout_seconds=300,
+    context={...}
+)
+```
+
+Then proceed to Step 1 below.
+
+### Step 1: Implement Direct Task API (30 minutes)
 
 **File**: `installer/global/lib/agent_enhancement/enhancer.py`
 
@@ -482,6 +616,108 @@ cat tasks/backlog/TASK-AI-2B37-ai-integration-agent-enhancement.md
 
 ---
 
+## ✅ Pre-Merge Verification Checklist
+
+Before merging your implementation, verify ALL of the following:
+
+### Code Verification
+
+```bash
+cd installer/global/lib/agent_enhancement
+
+# 1. Verify NO AgentBridgeInvoker usage
+grep -n "AgentBridgeInvoker" enhancer.py
+# Expected: No matches
+
+# 2. Verify NO sys.exit calls
+grep -n "sys.exit" enhancer.py
+# Expected: No matches
+
+# 3. Verify NO file-based IPC
+grep -n ".agent-request" enhancer.py
+grep -n ".agent-response" enhancer.py
+# Expected: No matches for both
+
+# 4. Verify anthropic_sdk.task is used
+grep -n "from anthropic_sdk import task" enhancer.py
+# Expected: At least one match
+
+# 5. Verify timeout is set
+grep -n "timeout=300" enhancer.py
+# Expected: At least one match
+```
+
+### Test Verification
+
+```bash
+# 1. Run unit tests
+pytest tests/unit/lib/agent_enhancement/test_enhancer.py -v
+
+# Expected: All tests pass (10/10 or more)
+
+# 2. Verify tests mock anthropic_sdk.task (not AgentBridgeInvoker)
+grep -n "AgentBridgeInvoker" tests/unit/lib/agent_enhancement/test_enhancer.py
+# Expected: No matches
+
+grep -n "anthropic_sdk.task" tests/unit/lib/agent_enhancement/test_enhancer.py
+# Expected: Multiple matches (in patches)
+```
+
+### Integration Verification
+
+```bash
+# 1. Test dry-run (should not crash)
+/agent-enhance test-template/test-agent.md --dry-run --verbose
+echo "Exit code: $?"  # Should be 0, NOT 42
+
+# 2. Check for leftover state files
+ls -la .agent-*.json 2>&1
+# Expected: "No such file or directory"
+
+# 3. Run actual enhancement
+/agent-enhance test-template/test-agent.md --verbose
+# Expected: Success message, no process exit
+```
+
+### Final Checklist
+
+- [ ] No `AgentBridgeInvoker` imports in code
+- [ ] No `sys.exit()` calls in enhancement flow
+- [ ] Uses `anthropic_sdk.task()` API
+- [ ] All unit tests pass
+- [ ] Tests mock correct API (not AgentBridgeInvoker)
+- [ ] Integration test succeeds without exit code 42
+- [ ] No `.agent-request.json` or `.agent-response.json` files created
+- [ ] Error messages are clear and helpful
+- [ ] Logs show AI invocation start/end timestamps
+- [ ] Hybrid fallback works on AI failure
+
+**If ALL items above are checked**: ✅ Safe to merge
+
+**If ANY item fails**: ❌ Review `docs/reviews/task-ai-2b37-implementation-review.md` and fix before merging
+
+---
+
+## 📚 Reference Documents
+
+1. **Implementation Review**: `docs/reviews/task-ai-2b37-implementation-review.md`
+   - Detailed analysis of AgentBridgeInvoker failures
+   - Why Phase 7.5 pattern must be avoided
+   - Step-by-step rewrite instructions
+
+2. **Phase 8 Design Review**: `docs/reviews/phase-8-implementation-review.md`
+   - Phase 8 design principles
+   - Comparison to Phase 7.5
+   - Architectural decisions
+
+3. **Implementation Guide**: `docs/guides/template-create-implementation-guide.md`
+   - Overall roadmap
+   - Task dependencies
+   - Success criteria
+
+---
+
 **Created**: 2025-11-20
+**Updated**: 2025-11-21 (added anti-patterns section and verification checklist)
 **Status**: BACKLOG
-**Ready for Implementation**: YES
+**Ready for Implementation**: YES (with CRITICAL warnings about AgentBridgeInvoker)
