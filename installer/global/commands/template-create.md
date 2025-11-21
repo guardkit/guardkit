@@ -123,12 +123,14 @@ Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
 ├─ Validation report generation (validation-report.md)
 └─ Exit code assignment (0/1/2)
 
-Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL) [OPTIONAL - only with --create-agent-tasks]
+Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95) [OPTIONAL - only with --create-agent-tasks]
 ├─ Creates one task per agent file
 ├─ Task metadata includes agent_file, template_dir, template_name, agent_name
 ├─ Tasks created in backlog with priority: medium
-├─ Returns task_ids for user to work through
-└─ Tasks can be enhanced individually using /task-work or /agent-enhance
+├─ Displays two enhancement options:
+│  ├─ Option A (Recommended): /agent-enhance template-name/agent-name --strategy=hybrid (2-5 minutes per agent)
+│  └─ Option B (Optional): /task-work TASK-AGENT-XXX (30-60 minutes per agent - full workflow)
+└─ Both approaches use the same AI enhancement logic
 ```
 
 ## Output Structure
@@ -207,21 +209,23 @@ None - all options have defaults
 --no-agents              Skip agent generation phase
                          Default: false (agents are generated)
 
---create-agent-tasks     Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
+--create-agent-tasks     Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95)
                          Default: false (no tasks created)
 
                          When enabled:
                          - Runs Phase 8: Task Creation
                          - Creates one task per agent file
-                         - Each task can be worked through individually using /task-work
+                         - Displays two enhancement options:
+                           - Option A (Recommended): /agent-enhance for fast enhancement (2-5 minutes per agent)
+                           - Option B (Optional): /task-work for full workflow with quality gates (30-60 minutes)
+                         - Both approaches use the same AI enhancement logic
                          - Provides control over which agents to enhance and when
-                         - Alternative to automated Phase 7.5 enhancement
 
                          Use when:
                          - You want granular control over agent enhancement
                          - You want to prioritize specific agents
                          - You want to enhance agents at your own pace
-                         - You want to mix automated and manual enhancement
+                         - You need clear guidance on enhancement options
 
 --validate               Run extended validation and generate quality report (TASK-043)
                          Default: false (only Phase 5.5 validation runs)

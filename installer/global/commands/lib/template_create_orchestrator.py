@@ -913,8 +913,11 @@ class TemplateCreateOrchestrator:
 
             if task_ids:
                 self._print_success_line(f"Created {len(task_ids)} agent enhancement tasks")
-                self._print_info("  Work through them with: /task-work <TASK-ID>")
-                self._print_info(f"  Task IDs: {', '.join(task_ids)}")
+
+                # TASK-UX-2F95: Display Option A/B format with /agent-enhance as primary
+                agent_names = [agent_file.stem for agent_file in agent_files]
+                template_name = output_path.name
+                self._print_agent_enhancement_instructions(task_ids, agent_names, template_name)
 
             return {
                 "success": True,
@@ -1482,6 +1485,46 @@ Enhance the {agent_name} agent with template-specific content:
     def _print_error(self, message: str) -> None:
         """Print error message."""
         print(f"  ❌ {message}")
+
+    def _print_agent_enhancement_instructions(
+        self,
+        task_ids: List[str],
+        agent_names: List[str],
+        template_name: str
+    ) -> None:
+        """
+        Print agent enhancement instructions with Option A/B format (TASK-UX-2F95).
+
+        Displays two clear options:
+        - Option A: Fast enhancement using /agent-enhance (2-5 minutes per agent)
+        - Option B: Full workflow using /task-work (30-60 minutes per agent)
+
+        Args:
+            task_ids: List of created task IDs (for Option B)
+            agent_names: List of agent names (for Option A)
+            template_name: Name of the template
+        """
+        print(f"\n{'='*70}")
+        print("AGENT ENHANCEMENT OPTIONS")
+        print(f"{'='*70}\n")
+
+        # Option A: Fast Enhancement (Recommended)
+        print("Option A - Fast Enhancement (Recommended): 2-5 minutes per agent")
+        print("  Use /agent-enhance for direct AI-powered enhancement\n")
+
+        for agent_name in agent_names:
+            print(f"  /agent-enhance {template_name}/{agent_name} --strategy=hybrid")
+
+        # Option B: Full Task Workflow (Optional)
+        print(f"\nOption B - Full Task Workflow (Optional): 30-60 minutes per agent")
+        print("  Use /task-work for complete quality gates\n")
+
+        for task_id in task_ids:
+            print(f"  /task-work {task_id}")
+
+        # Footer note
+        print(f"\nBoth approaches use the same AI enhancement logic.")
+        print(f"{'='*70}\n")
 
     def _display_enhancement_errors(self, errors: list[str], max_display: int = 3) -> None:
         """Display enhancement errors with optional limit.
