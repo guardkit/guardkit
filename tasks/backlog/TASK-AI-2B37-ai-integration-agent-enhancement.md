@@ -360,8 +360,9 @@ Then proceed to Step 1 below.
 
 **File**: `installer/global/lib/agent_enhancement/enhancer.py`
 
-Current placeholder:
+**Find the `_ai_enhancement` method (around line 210-243)**
 
+**Current code (TO REPLACE)**:
 ```python
 def _ai_enhancement(
     self,
@@ -369,7 +370,60 @@ def _ai_enhancement(
     templates: List[Path],
     template_dir: Path
 ) -> dict:
-    """AI-powered enhancement."""
+    """AI-powered enhancement using agent-content-enhancer."""
+
+    # Build prompt
+    prompt = self.prompt_builder.build(
+        agent_metadata,
+        templates,
+        template_dir
+    )
+
+    # TODO: Implement actual AI invocation via Task tool
+    # For now, return placeholder response
+    logger.warning("AI enhancement not yet fully implemented - using placeholder")
+
+    # Placeholder implementation
+    return {
+        "sections": ["related_templates", "examples"],
+        "related_templates": "## Related Templates\n\n...",
+        "examples": "## Code Examples\n\n(AI-generated examples would go here)",
+        "best_practices": ""
+    }
+```
+
+**NEW CODE (COPY THIS EXACTLY)**:
+```python
+def _ai_enhancement(
+    self,
+    agent_metadata: dict,
+    templates: List[Path],
+    template_dir: Path
+) -> dict:
+    """
+    AI-powered enhancement using agent-content-enhancer.
+
+    Uses direct Task tool API (NOT AgentBridgeInvoker) for synchronous invocation.
+    Timeout: 300 seconds. Exceptions propagate to hybrid fallback.
+
+    Args:
+        agent_metadata: Agent metadata from frontmatter
+        templates: List of relevant template files
+        template_dir: Template root directory
+
+    Returns:
+        Enhancement dict with sections and content
+
+    Raises:
+        TimeoutError: If AI invocation exceeds 300s
+        ValidationError: If response structure is invalid
+        Exception: For other AI failures
+    """
+    import time
+    import json
+
+    start_time = time.time()
+    agent_name = agent_metadata.get('name', 'unknown')
 
     # Build prompt using shared prompt builder
     prompt = self.prompt_builder.build(
@@ -378,44 +432,228 @@ def _ai_enhancement(
         template_dir
     )
 
-    # Invoke AI (direct Task tool invocation)
-    from anthropic_sdk import task
-    result = task(
-        agent="agent-content-enhancer",
-        prompt=prompt,
-        timeout=300
-    )
+    if self.verbose:
+        logger.info(f"AI Enhancement Started:")
+        logger.info(f"  Agent: {agent_name}")
+        logger.info(f"  Templates: {len(templates)}")
+        logger.info(f"  Prompt size: {len(prompt)} chars")
 
-    # Parse response using shared parser
-    enhancement = self.parser.parse(result)
+    try:
+        # DIRECT TASK TOOL INVOCATION (no AgentBridgeInvoker, no sys.exit)
+        from anthropic_sdk import task
 
-    return enhancement
+        result_text = task(
+            agent="agent-content-enhancer",
+            prompt=prompt,
+            timeout=300  # 5 minutes
+        )
+
+        duration = time.time() - start_time
+
+        if self.verbose:
+            logger.info(f"AI Response Received:")
+            logger.info(f"  Duration: {duration:.2f}s")
+            logger.info(f"  Response size: {len(result_text)} chars")
+
+        # Parse response using shared parser
+        enhancement = self.parser.parse(result_text)
+
+        # Validate enhancement structure
+        self._validate_enhancement(enhancement)
+
+        if self.verbose:
+            sections = enhancement.get('sections', [])
+            logger.info(f"Enhancement Validated:")
+            logger.info(f"  Sections: {', '.join(sections)}")
+
+        return enhancement
+
+    except TimeoutError as e:
+        duration = time.time() - start_time
+        logger.warning(f"AI enhancement timed out after {duration:.2f}s: {e}")
+        raise  # Propagates to retry logic or hybrid fallback
+
+    except json.JSONDecodeError as e:
+        duration = time.time() - start_time
+        logger.error(f"AI response parsing failed after {duration:.2f}s: {e}")
+        logger.error(f"  Invalid response (first 200 chars): {result_text[:200]}")
+        raise ValidationError(f"Invalid JSON response: {e}")
+
+    except ValidationError as e:
+        duration = time.time() - start_time
+        logger.error(f"AI returned invalid enhancement structure after {duration:.2f}s: {e}")
+        raise  # Don't retry validation errors
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error(f"AI enhancement failed after {duration:.2f}s: {e}")
+        logger.exception("Full traceback:")
+        raise
 ```
 
-Replace with full implementation including error handling and retry logic.
+**CRITICAL**: Make sure you:
+- ✅ Import `from anthropic_sdk import task` (line 50)
+- ✅ Call `task()` function, NOT AgentBridgeInvoker
+- ✅ NO `sys.exit()` anywhere
+- ✅ Include all logging statements
+- ✅ Handle TimeoutError, JSONDecodeError, ValidationError separately
 
 ### Step 2: Implement Retry Logic (1 hour)
 
-Add `_ai_enhancement_with_retry()` method with:
-- Exponential backoff (2s, 4s)
-- Max 2 retries (3 total attempts)
-- Skip retry on ValidationError
-- Detailed logging
+**Add NEW method after `_ai_enhancement` (around line 300)**
+
+**NEW METHOD (COPY THIS EXACTLY)**:
+```python
+def _ai_enhancement_with_retry(
+    self,
+    agent_metadata: dict,
+    templates: List[Path],
+    template_dir: Path,
+    max_retries: int = 2
+) -> dict:
+    """
+    AI enhancement with exponential backoff retry logic.
+
+    Retries on transient failures (TimeoutError, network errors).
+    Does NOT retry on ValidationError (permanent failures).
+
+    Args:
+        agent_metadata: Agent metadata from frontmatter
+        templates: List of relevant template files
+        template_dir: Template root directory
+        max_retries: Maximum retry attempts (default: 2)
+
+    Returns:
+        Enhancement dict from successful attempt
+
+    Raises:
+        ValidationError: If AI returns invalid structure (no retry)
+        TimeoutError: If all retry attempts timeout
+        Exception: If all retry attempts fail
+    """
+    import time
+
+    agent_name = agent_metadata.get('name', 'unknown')
+
+    for attempt in range(max_retries + 1):  # 0, 1, 2 = 3 total attempts
+        try:
+            # Log retry attempt
+            if attempt > 0:
+                backoff_seconds = 2 ** (attempt - 1)  # 1s (2^0), 2s (2^1)
+                logger.info(f"Retry attempt {attempt}/{max_retries} for {agent_name} after {backoff_seconds}s backoff")
+                time.sleep(backoff_seconds)
+            else:
+                logger.info(f"Initial attempt for {agent_name}")
+
+            # Attempt AI enhancement
+            return self._ai_enhancement(agent_metadata, templates, template_dir)
+
+        except ValidationError as e:
+            # Don't retry validation errors (permanent failures)
+            logger.warning(f"Validation error for {agent_name} (no retry): {e}")
+            raise
+
+        except TimeoutError as e:
+            if attempt < max_retries:
+                logger.warning(f"Attempt {attempt + 1} timed out for {agent_name}: {e}. Retrying...")
+                continue  # Retry
+            else:
+                logger.error(f"All {max_retries + 1} attempts timed out for {agent_name}")
+                raise
+
+        except Exception as e:
+            if attempt < max_retries:
+                logger.warning(f"Attempt {attempt + 1} failed for {agent_name}: {e}. Retrying...")
+                continue  # Retry
+            else:
+                logger.error(f"All {max_retries + 1} attempts failed for {agent_name}: {e}")
+                raise
+```
 
 ### Step 3: Update Hybrid Strategy (30 minutes)
 
-Ensure hybrid strategy calls `_ai_enhancement_with_retry()` instead of `_ai_enhancement()`.
+**Find the `_generate_enhancement` method (around line 190-210)**
 
-Add `strategy_used` tracking to EnhancementResult.
+**Current code**:
+```python
+elif self.strategy == "hybrid":
+    # Try AI, fallback to static
+    try:
+        enhancement = self._ai_enhancement(
+            agent_metadata,
+            templates,
+            template_dir
+        )
+        strategy_used = "ai"
+    except Exception as e:
+        logger.warning(f"AI enhancement failed, falling back to static: {e}")
+        enhancement = self._static_enhancement(agent_metadata, templates)
+        strategy_used = "static"
+```
 
-### Step 4: Enhance Error Logging (30 minutes)
+**UPDATE TO (find and replace)**:
+```python
+elif self.strategy == "hybrid":
+    # Try AI with retry, fallback to static
+    try:
+        enhancement = self._ai_enhancement_with_retry(  # ← Changed from _ai_enhancement
+            agent_metadata,
+            templates,
+            template_dir
+        )
+        strategy_used = "ai"
+    except Exception as e:
+        logger.warning(f"AI enhancement failed after retries, falling back to static: {e}")
+        enhancement = self._static_enhancement(agent_metadata, templates)
+        strategy_used = "static"
+```
 
-Add structured logging:
-- AI invocation start/end timestamps
-- Prompt size (character count)
-- Response size
-- Parsing success/failure
-- Retry attempts
+**Also update the "ai" strategy case** (around line 181):
+```python
+if self.strategy == "ai":
+    enhancement = self._ai_enhancement_with_retry(  # ← Changed from _ai_enhancement
+        agent_metadata,
+        templates,
+        template_dir
+    )
+    strategy_used = "ai"
+```
+
+### Step 4: Add Imports at Top of File (5 minutes)
+
+**Find the imports section** (top of `enhancer.py`, around lines 1-20)
+
+**ADD these imports if not present**:
+```python
+import time
+import json
+import logging
+from typing import List, Optional
+from pathlib import Path
+from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
+```
+
+### Step 5: Verify No Breaking Changes (10 minutes)
+
+**Check that EnhancementResult dataclass has strategy_used field** (around line 30-40):
+
+**Should look like this**:
+```python
+@dataclass
+class EnhancementResult:
+    """Result of agent enhancement operation."""
+    success: bool
+    agent_name: str
+    sections: List[str]
+    templates: List[Path]
+    diff: str
+    strategy_used: str = "unknown"  # ← This field should exist
+    error: Optional[str] = None
+```
+
+If `strategy_used` field is missing, ADD it (default value: "unknown")
 
 ### Step 5: Integration Testing (2 hours)
 
@@ -717,7 +955,183 @@ ls -la .agent-*.json 2>&1
 
 ---
 
+## 🚀 Quick Start Checklist (Copy-Paste Guide)
+
+Use this checklist when implementing TASK-AI-2B37 (third time's the charm!):
+
+### Before You Start
+
+```bash
+# 1. Create new branch
+git checkout -b ai-integration-attempt-3
+git branch -D ai-agent-enhancement  # Delete old failed branch
+
+# 2. Verify clean state
+cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+grep -n "AgentBridgeInvoker" installer/global/lib/agent_enhancement/enhancer.py
+# Expected: No output (clean)
+```
+
+### Implementation Steps
+
+**Step 1**: Open `installer/global/lib/agent_enhancement/enhancer.py`
+
+**Step 2**: Find line ~210-243 (the `_ai_enhancement` method with TODO comment)
+
+**Step 3**: **DELETE** the entire method (lines 210-243)
+
+**Step 4**: **COPY-PASTE** the new `_ai_enhancement` method from Step 1 above (lines 397-492 in this task spec)
+
+**Step 5**: Find line ~244 (after the method you just replaced)
+
+**Step 6**: **INSERT** the `_ai_enhancement_with_retry` method from Step 2 above (lines 507-571 in this task spec)
+
+**Step 7**: Find the `_generate_enhancement` method (around line 190-210)
+
+**Step 8**: **FIND AND REPLACE**:
+- Find: `self._ai_enhancement(`
+- Replace with: `self._ai_enhancement_with_retry(`
+- Should appear in 2 places: "ai" strategy and "hybrid" strategy
+
+**Step 9**: Verify imports at top of file include:
+```python
+import time
+import json
+import logging
+```
+
+**Step 10**: Verify `EnhancementResult` dataclass has `strategy_used` field
+
+### Verification (MUST DO)
+
+```bash
+# Run ALL verification commands
+
+cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/agent_enhancement
+
+# 1. NO AgentBridgeInvoker
+grep -n "AgentBridgeInvoker" enhancer.py
+# Expected: No matches ✅
+
+# 2. NO sys.exit
+grep -n "sys.exit" enhancer.py
+# Expected: No matches ✅
+
+# 3. NO file-based IPC
+grep -n "agent-request" enhancer.py
+grep -n "agent-response" enhancer.py
+# Expected: No matches for both ✅
+
+# 4. YES anthropic_sdk.task
+grep -n "from anthropic_sdk import task" enhancer.py
+# Expected: 1 match around line 443 ✅
+
+# 5. YES timeout
+grep -n "timeout=300" enhancer.py
+# Expected: 1 match around line 448 ✅
+
+# 6. NO TODO comments
+grep -n "TODO.*AI" enhancer.py
+# Expected: No matches ✅
+
+# 7. NO placeholder warnings
+grep -n "not yet fully implemented" enhancer.py
+# Expected: No matches ✅
+```
+
+### Success Criteria
+
+All of these MUST be true before committing:
+
+- [ ] Deleted old `_ai_enhancement` method with TODO
+- [ ] Added new `_ai_enhancement` method with direct Task API
+- [ ] Added new `_ai_enhancement_with_retry` method
+- [ ] Updated `_generate_enhancement` to call `_with_retry` version
+- [ ] All 7 verification commands pass ✅
+- [ ] No `AgentBridgeInvoker` anywhere
+- [ ] No `sys.exit()` anywhere
+- [ ] No `.agent-request.json` or `.agent-response.json` references
+- [ ] Uses `anthropic_sdk.task()` API
+- [ ] Has 300-second timeout
+- [ ] Has exponential backoff retry (2^0=1s, 2^1=2s)
+- [ ] Validates enhancement structure
+- [ ] Comprehensive error logging
+
+### Commit and Test
+
+```bash
+# If ALL checks pass:
+git add installer/global/lib/agent_enhancement/enhancer.py
+git commit -m "feat(TASK-AI-2B37): Implement AI integration with direct Task API
+
+- Replace placeholder with anthropic_sdk.task() invocation
+- Add retry logic with exponential backoff (1s, 2s)
+- Update hybrid strategy to use retry version
+- Comprehensive error handling and logging
+- NO AgentBridgeInvoker (Phase 8 compliance)
+
+Acceptance Criteria:
+✅ AC1: Direct Task tool integration
+✅ AC2: Error handling (timeout, parsing, validation)
+✅ AC3: Retry logic (max 2 retries, no retry on ValidationError)
+✅ AC4: Hybrid strategy integration
+✅ AC5: Response format validation
+
+See: docs/reviews/task-ai-2b37-implementation-review.md"
+
+# Push to new branch
+git push origin ai-integration-attempt-3
+
+# Run basic test
+python3 -c "
+from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+print('✅ Import successful - no syntax errors')
+"
+```
+
+### If Something Goes Wrong
+
+**Problem**: Import error or syntax error
+
+**Solution**:
+1. Check you copied the ENTIRE method (opening def to final raise)
+2. Check indentation is consistent (4 spaces)
+3. Check all quotes are matching
+
+**Problem**: "anthropic_sdk not found"
+
+**Solution**: This is expected - the actual Task tool will be available at runtime via Claude Code, not in standalone Python
+
+**Problem**: Still see TODO or placeholder warning
+
+**Solution**: You didn't delete the old method completely. Search for "TODO" and "placeholder" and delete those sections.
+
+---
+
+## 📋 Final Pre-Merge Checklist
+
+Before running `/task-complete TASK-AI-2B37`:
+
+- [ ] All acceptance criteria met (AC1-AC5)
+- [ ] All 7 verification commands pass
+- [ ] Code committed to branch
+- [ ] Implementation matches specification exactly
+- [ ] No AgentBridgeInvoker usage
+- [ ] No sys.exit calls
+- [ ] No file-based IPC
+- [ ] Direct Task API used
+- [ ] Retry logic implemented
+- [ ] Hybrid strategy updated
+- [ ] Error handling comprehensive
+- [ ] Logging detailed
+
+**If ANY item unchecked**: Do NOT complete task - fix issues first
+
+**If ALL items checked**: ✅ Ready to complete!
+
+---
+
 **Created**: 2025-11-20
-**Updated**: 2025-11-21 (added anti-patterns section and verification checklist)
+**Updated**: 2025-11-21 (added comprehensive copy-paste implementation guide)
 **Status**: BACKLOG
-**Ready for Implementation**: YES (with CRITICAL warnings about AgentBridgeInvoker)
+**Ready for Implementation**: YES (with step-by-step code snippets)
