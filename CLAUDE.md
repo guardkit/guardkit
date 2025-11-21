@@ -371,9 +371,11 @@ taskwright init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
-/template-create
+/template-create  # Creates agents + enhancement tasks by default
 taskwright init your-custom-template
 ```
+
+**Default Behavior (TASK-UX-3A8D)**: `/template-create` now creates agent enhancement tasks by default, providing immediate guidance on next steps. Use `--no-create-agent-tasks` to opt out (e.g., CI/CD automation).
 
 **Why?** Your production code is better than any generic template. Create templates from what you've proven works.
 

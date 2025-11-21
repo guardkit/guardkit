@@ -82,7 +82,7 @@ class OrchestrationConfig:
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
-    create_agent_tasks: bool = False  # TASK-PHASE-8-INCREMENTAL: Create individual enhancement tasks for each agent
+    create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
 
 
 @dataclass
@@ -2018,7 +2018,7 @@ def run_template_create(
     save_analysis: bool = False,
     no_agents: bool = False,
     validate: bool = False,
-    create_agent_tasks: bool = False,  # TASK-PHASE-8-INCREMENTAL: Create individual enhancement tasks
+    create_agent_tasks: bool = True,  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     verbose: bool = False
@@ -2113,8 +2113,12 @@ if __name__ == "__main__":
                         help="Maximum template files to generate")
     parser.add_argument("--no-agents", action="store_true",
                         help="Skip agent generation")
-    parser.add_argument("--create-agent-tasks", action="store_true",
-                        help="Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)")
+    parser.add_argument("--create-agent-tasks", action="store_true", default=True,
+                        dest="create_agent_tasks",
+                        help="Create individual enhancement tasks for each agent (default: enabled)")
+    parser.add_argument("--no-create-agent-tasks", action="store_false",
+                        dest="create_agent_tasks",
+                        help="Skip agent task creation (opt-out from default behavior)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",

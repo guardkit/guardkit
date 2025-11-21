@@ -123,7 +123,7 @@ Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
 ├─ Validation report generation (validation-report.md)
 └─ Exit code assignment (0/1/2)
 
-Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95) [OPTIONAL - only with --create-agent-tasks]
+Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A8D) [DEFAULT - skip with --no-create-agent-tasks]
 ├─ Creates one task per agent file
 ├─ Task metadata includes agent_file, template_dir, template_name, agent_name
 ├─ Tasks created in backlog with priority: medium
@@ -209,10 +209,13 @@ None - all options have defaults
 --no-agents              Skip agent generation phase
                          Default: false (agents are generated)
 
---create-agent-tasks     Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95)
-                         Default: false (no tasks created)
+--create-agent-tasks     Create individual enhancement tasks for each agent (default: enabled)
+                         DEPRECATED: Use --no-create-agent-tasks to disable
 
-                         When enabled:
+--no-create-agent-tasks  Skip agent task creation (TASK-UX-3A8D)
+                         Default: false (tasks ARE created by default)
+
+                         By default (when not specified):
                          - Runs Phase 8: Task Creation
                          - Creates one task per agent file
                          - Displays two enhancement options:
@@ -221,11 +224,10 @@ None - all options have defaults
                          - Both approaches use the same AI enhancement logic
                          - Provides control over which agents to enhance and when
 
-                         Use when:
-                         - You want granular control over agent enhancement
-                         - You want to prioritize specific agents
-                         - You want to enhance agents at your own pace
-                         - You need clear guidance on enhancement options
+                         Use --no-create-agent-tasks to skip task creation when:
+                         - You don't plan to enhance agents immediately
+                         - You prefer manual task creation later
+                         - You're creating templates for evaluation only
 
 --validate               Run extended validation and generate quality report (TASK-043)
                          Default: false (only Phase 5.5 validation runs)

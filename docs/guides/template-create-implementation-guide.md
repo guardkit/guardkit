@@ -46,7 +46,7 @@ Transform the template-create workflow from automated agent enhancement (Phase 7
 
 **What's Broken** ❌:
 1. **AI Integration Placeholder**: `_ai_enhancement()` method has TODO placeholder
-2. **Task Creation Non-functional**: `--create-agent-tasks` flag doesn't work
+2. **Task Creation Default**: Agent tasks are created by default (use `--no-create-agent-tasks` to opt-out)
 3. **Test Coverage Missing**: No tests for Phase 8 code
 4. **Agent Files Are Stubs**: No code examples, best practices, or meaningful content
 5. **Documentation Incomplete**: No workflow guides or command documentation
@@ -84,7 +84,7 @@ Transform the template-create workflow from automated agent enhancement (Phase 7
 **Rationale**: Not all agents need enhancement immediately
 
 **Workflows**:
-1. **Automatic Task Creation**: `/template-create --create-agent-tasks`
+1. **Automatic Task Creation**: `/template-create` (enabled by default)
    - Creates one task per agent
    - User enhances agents via `/task-work TASK-XXX`
    - Tracking and progress visibility
@@ -336,7 +336,7 @@ if config.create_agent_tasks:
 **Expected Integration** (not yet implemented):
 ```bash
 # User creates template with task creation
-/template-create --name my-template --create-agent-tasks
+/template-create --name my-template  # Agent tasks created by default
 
 # System creates tasks like:
 # - TASK-001: Enhance mvvm-specialist
@@ -910,7 +910,7 @@ graph TD
 **Test Scenarios**:
 1. **Reference Templates**: react-typescript, fastapi-python, nextjs-fullstack
 2. **All Strategies**: ai, static, hybrid
-3. **Task Workflow**: `--create-agent-tasks` → `/task-work` → `/task-complete`
+3. **Task Workflow**: Default behavior → `/task-work` → `/task-complete`
 4. **Edge Cases**: Timeouts, permission errors, malformed responses
 5. **Performance**: Benchmark all strategies
 
@@ -1054,14 +1054,14 @@ python3 -m cProfile -o profile.stats /agent-enhance template/agent
 ## Incremental Agent Enhancement
 
 After creating a template with `/template-create`, you can optionally enhance
-agents incrementally using the `--create-agent-tasks` flag or `/agent-enhance` command.
+agents incrementally (tasks created by default) or via `/agent-enhance` command.
 
 ### Two Workflows
 
 #### Option 1: Create Agent Tasks During Template Creation
 
 ```bash
-/template-create --name my-template --create-agent-tasks
+/template-create --name my-template  # Agent tasks created by default
 ```
 
 #### Option 2: Manual Enhancement Later
@@ -1110,17 +1110,21 @@ See: [Incremental Agent Enhancement Workflow](docs/workflows/incremental-agent-e
 ```markdown
 ## Incremental Agent Enhancement
 
-### --create-agent-tasks Flag
+### Agent Task Creation (Default Behavior)
 
-Create individual tasks for each agent to enhance incrementally.
+Individual tasks are created by default for each agent to enhance incrementally.
 
 ```bash
-/template-create --name my-template --create-agent-tasks
+# Default behavior (creates agent tasks)
+/template-create --name my-template
+
+# Opt-out of task creation
+/template-create --name my-template --no-create-agent-tasks
 ```
 
 **Behavior**:
 - Creates template with basic agents (Phase 6)
-- Creates TASK-XXX for each agent
+- Creates TASK-XXX for each agent (by default, opt-out with --no-create-agent-tasks)
 - Each task calls `/agent-enhance` for one agent
 - Use `/task-work TASK-XXX` to enhance agents individually
 ```

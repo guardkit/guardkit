@@ -1,283 +1,407 @@
 # TASK-C7A9-REIMPLEMENT: Fix Agent Metadata Not Populated in CLAUDE.md
 
----
-id: TASK-C7A9-REIMPLEMENT
-title: Fix agent metadata not populated in CLAUDE.md
-status: completed
-created: 2025-11-20T17:00:00Z
-updated: 2025-11-20T18:25:06Z
-completed_at: 2025-11-20T18:25:06Z
-priority: HIGH
-complexity: 2/10
-estimated_effort: 30-60 minutes
-actual_duration: 85 minutes
-implementation_time: 60 minutes
-testing_time: 15 minutes
-review_time: 10 minutes
-tags: [bug, template-agents, claude-md, frontmatter, ai-first]
-completion_metrics:
-  files_modified: 15
-  files_created: 2
-  tests_written: 1
-  test_pass_rate: 100
-  validation_complete: true
-  manual_verification_required: true
+**Original Task**: TASK-CLAUDE-MD-AGENTS
+**Original Implementation**: Commit e35f6f3 (2025-11-15)
+**Status**: NEEDS RE-IMPLEMENTATION (lost in rollback)
+**Priority**: HIGH
+**Complexity**: 2/10 (Simple - code already exists, just needs to be reapplied)
+**Estimated Effort**: 30-60 minutes
+
 ---
 
-## Task Completion Report
+## Problem Statement
 
-### Summary
+The CLAUDE.md file in generated templates is missing the "Agent Usage" section entirely. The code to populate this section exists in `claude_md_generator.py` (lines 800-1100), but it's not being called or the agents don't have the required metadata structure.
 
-**Task**: Fix agent metadata not populated in CLAUDE.md
-**Completed**: 2025-11-20T18:25:06Z
-**Duration**: 85 minutes
-**Final Status**: ✅ COMPLETED
+**Current State**: CLAUDE.md has NO agent usage section
+**Desired State**: CLAUDE.md has "Agent Usage" section with Purpose and "When to Use" for each agent
 
-### Problem Statement
+---
 
-Template agent files in `installer/global/templates/*/agents/*.md` lacked YAML frontmatter metadata, preventing the CLAUDE.md generator from populating agent sections with "Purpose" and "When to Use" information.
+## Investigation Findings
 
-**Before**: CLAUDE.md had generic agent guidance without specific metadata
-**After**: CLAUDE.md can read agent frontmatter and populate detailed agent documentation
+### What Exists in the Codebase
+
+✅ **Code EXISTS** in `claude_md_generator.py`:
+- Line 886: `_read_agent_metadata_from_file()` - reads frontmatter from agent files
+- Line 916: `_enhance_agent_info_with_ai()` - generates AI-enhanced descriptions
+- Line 805, 808: Calls to these methods exist
+- Line 1048: Another call to enhancement
+
+✅ **Commit History Shows**:
+- Commit `e35f6f3`: "Enhance agent descriptions in CLAUDE.md with AI-generated guidance" (2025-11-15)
+- Implementation added 361 lines (214 to claude_md_generator.py, 160 tests)
+- Original task: TASK-CLAUDE-MD-AGENTS (exists in `tasks/backlog/`)
+
+### What's Wrong
+
+❌ **Agent Files Don't Have Frontmatter**:
+```markdown
+# Current agent file format (react-query-specialist.md):
+# React Query Specialist
+
+## Role
+You are a TanStack Query (React Query) expert...
+
+## Expertise
+- Query management
+- ...
+```
+
+❌ **Expected format**:
+```markdown
+---
+name: react-query-specialist
+description: TanStack Query expert for server-state management
+priority: 7
+technologies:
+  - React
+  - TanStack Query
+  - TypeScript
+---
+
+# React Query Specialist
+...
+```
 
 ### Root Cause
 
-The CLAUDE.md generator includes AI-enhanced code (`_read_agent_metadata_from_file()` and `_enhance_agent_info_with_ai()`) that expects agents to have YAML frontmatter with:
-- `name`: Agent identifier
-- `description`: One-sentence summary
-- `priority`: Importance level (1-10)
-- `technologies`: List of relevant technologies
+**The agent generation code no longer creates agents with frontmatter metadata**, so the enhancement code (which expects frontmatter) cannot extract the metadata to populate CLAUDE.md.
 
-However, template agent files were either:
-1. Missing frontmatter entirely (9 files)
-2. Using old format with `category`/`type`/`tools` fields (6 files)
+**Two possible issues**:
+1. Agent files are being created without frontmatter (most likely)
+2. The CLAUDE.md generator isn't calling the agent usage methods
+3. Both
 
-This prevented the enhancement code from extracting metadata needed for CLAUDE.md population.
-
-### Solution Implemented
-
-Added standardized YAML frontmatter to all 15 template agent files across 5 templates:
-
-**Frontmatter Format**:
-```yaml
 ---
-name: agent-name
-description: One-sentence summary
-priority: 8
-technologies:
-  - Technology1
-  - Technology2
-  - Technology3
+
+## Solution Approach
+
+### Option 1: Fix Agent Generation to Include Frontmatter ⭐ RECOMMENDED
+
+**Rationale**: The enhancement code already exists and works. We just need agents with proper metadata.
+
+**Steps**:
+1. Find where agents are generated (likely `agent_generator.py`)
+2. Ensure agents are created with frontmatter containing:
+   - `name`: agent file name (without .md)
+   - `description`: one-sentence summary
+   - `priority`: 1-10 importance
+   - `technologies`: list of relevant tech
+3. Test that CLAUDE.md generation picks up the metadata
+
+**Estimated Time**: 30 minutes
+
 ---
+
+### Option 2: Extract Metadata from Agent Content
+
+**Rationale**: If we can't add frontmatter, extract from existing content structure.
+
+**Implementation**:
+```python
+def _extract_metadata_from_content(self, agent_file: Path) -> Dict[str, Any]:
+    """Extract metadata from agent content without frontmatter."""
+    content = agent_file.read_text()
+
+    # Extract from structure
+    metadata = {
+        'name': agent_file.stem,
+        'description': '',
+        'technologies': [],
+        'priority': 5
+    }
+
+    # Parse Role section for description
+    if '## Role' in content:
+        role_section = content.split('## Role')[1].split('##')[0]
+        metadata['description'] = role_section.strip().split('\n')[0]
+
+    # Parse Expertise section for technologies
+    if '## Expertise' in content:
+        expertise = content.split('## Expertise')[1].split('##')[0]
+        techs = [line.strip('- ').strip() for line in expertise.split('\n') if line.strip().startswith('-')]
+        metadata['technologies'] = techs[:5]  # First 5 items
+
+    return metadata
 ```
 
-**Files Updated**:
-- ✅ **nextjs-fullstack** (3 agents): Added frontmatter
-- ✅ **react-typescript** (3 agents): Added frontmatter
-- ✅ **react-fastapi-monorepo** (3 agents): Added frontmatter
-- ✅ **fastapi-python** (3 agents): Converted from old format
-- ✅ **taskwright-python** (3 agents): Converted from old format
+**Estimated Time**: 45 minutes
 
-### Deliverables
+---
 
-**Files Modified**: 15 agent files
-- 9 agents: Added complete frontmatter (was missing)
-- 6 agents: Updated frontmatter format (old → new standard)
+### Option 3: Hybrid Approach
 
-**Utility Scripts Created**: 2 files
-- `add_frontmatter_to_agents.py`: Automated frontmatter addition with metadata extraction
-- `test_agent_metadata.py`: Validation script for frontmatter format
+Modify `_read_agent_metadata_from_file()` to try frontmatter first, then fall back to content parsing.
 
-**Git Commits**: 1
-- Commit `90447f4`: "Fix: Add YAML frontmatter to all template agent files"
+**Estimated Time**: 60 minutes
 
-### Quality Metrics
+---
 
-✅ **Validation**: 15/15 agent files passing validation
-✅ **Format Compliance**: 100% using standardized frontmatter
-✅ **Tests Written**: Validation script with comprehensive checks
-✅ **No Breaking Changes**: Backward compatible with existing workflows
-✅ **Documentation**: Implementation notes in commit message
+## Recommended Implementation Plan
 
-### Technical Details
+### Step 1: Investigate Agent Generation (10 min)
 
-**Investigation Findings**:
-1. CLAUDE.md generator code already exists and works correctly
-2. Agent enhancement (Phase 7.5) preserves frontmatter correctly
-3. Issue was in source template files, not code
+```bash
+# Find where agents are created
+grep -rn "def.*generate.*agent\|class.*AgentGenerator" installer/global/lib
 
-**Implementation Approach**:
-1. Created Python script to extract metadata from agent content structure
-2. Generated YAML frontmatter with required fields
-3. Validated all 15 files have correct format
-4. Committed changes with detailed explanation
+# Check recent agent files
+ls -la ~/.agentecflow/templates/react-typescript/agents/
+cat ~/.agentecflow/templates/react-typescript/agents/react-query-specialist.md | head -30
 
-**Code Quality**:
-- Clean, maintainable Python scripts
-- Comprehensive validation
-- Self-documenting frontmatter format
-- Follows existing patterns
+# Find agent generation code
+find installer/global -name "*agent*gen*.py" -type f
+```
 
-### Testing
+### Step 2: Check If Frontmatter Support Exists (5 min)
 
-**Automated Tests**: ✅
-- Validation script: 15/15 tests passing
-- Frontmatter parsing: Verified for all agents
-- Required fields: Present in all files
-- YAML syntax: Valid for all files
+```python
+# Check if agent_generator.py supports frontmatter
+grep -A20 "def.*write.*agent\|def.*create.*agent" installer/global/lib/agent_generator/agent_generator.py
+```
 
-**Manual Verification** (Required):
+### Step 3: Implement Fix (15 min)
+
+**If frontmatter support exists**:
+- Ensure it's being called with proper metadata
+- Test agent generation creates frontmatter
+
+**If frontmatter support doesn't exist**:
+- Add frontmatter creation to agent generation
+- Use template like:
+  ```python
+  frontmatter = f"""---
+name: {agent_name}
+description: {description}
+priority: {priority}
+technologies: {yaml.dump(technologies)}
+---
+
+"""
+  ```
+
+### Step 4: Verify CLAUDE.md Generation (5 min)
+
 ```bash
 # Regenerate template
-/template-create
+cd ~/Projects/appmilla_github/taskwright
+python installer/scripts/install.py  # or however you regenerate
 
-# Verify CLAUDE.md has populated sections
-cat ~/.agentecflow/templates/{template-name}/CLAUDE.md | grep -A10 "Agent Usage"
+# Check CLAUDE.md
+cat ~/.agentecflow/templates/react-typescript/CLAUDE.md | grep -A10 "Agent Usage"
 
-# Expected: Purpose and When to Use populated for each agent
+# Expected output:
+# # Agent Usage
+#
+# ## react-query-specialist
+# **Purpose**: TanStack Query expert for server-state management
+# **When to Use**: Use this agent when implementing queries, managing cache...
 ```
 
-### Impact
-
-**Immediate**:
-- CLAUDE.md generator can now read agent metadata from files
-- AI enhancement (`_enhance_agent_info_with_ai()`) will work correctly
-- Template generation produces complete agent documentation
-
-**Long-term**:
-- Better developer experience with clear agent documentation
-- Consistent agent metadata across all templates
-- Foundation for future agent enhancements
-
-### Files Changed
-
-```
-installer/global/templates/
-├── fastapi-python/agents/
-│   ├── fastapi-database-specialist.md (updated frontmatter)
-│   ├── fastapi-specialist.md (updated frontmatter)
-│   └── fastapi-testing-specialist.md (updated frontmatter)
-├── nextjs-fullstack/agents/
-│   ├── nextjs-fullstack-specialist.md (added frontmatter)
-│   ├── nextjs-server-actions-specialist.md (added frontmatter)
-│   └── nextjs-server-components-specialist.md (added frontmatter)
-├── react-fastapi-monorepo/agents/
-│   ├── docker-orchestration-specialist.md (added frontmatter)
-│   ├── monorepo-type-safety-specialist.md (added frontmatter)
-│   └── react-fastapi-monorepo-specialist.md (added frontmatter)
-├── react-typescript/agents/
-│   ├── feature-architecture-specialist.md (added frontmatter)
-│   ├── form-validation-specialist.md (added frontmatter)
-│   └── react-query-specialist.md (added frontmatter)
-└── taskwright-python/agents/
-    ├── python-architecture-specialist.md (updated frontmatter)
-    ├── python-cli-specialist.md (updated frontmatter)
-    └── python-testing-specialist.md (updated frontmatter)
-
-Utility Scripts:
-├── add_frontmatter_to_agents.py (created)
-└── test_agent_metadata.py (created)
-```
-
-### Lessons Learned
-
-**What Went Well**:
-- Thorough investigation identified root cause quickly
-- Automated script handled bulk updates efficiently
-- Validation script ensured quality before commit
-- Clear understanding of existing code paths
-
-**Challenges Faced**:
-- Multiple frontmatter formats across different templates
-- Needed to extract metadata from varying content structures
-- Ensuring backward compatibility
-
-**Improvements for Next Time**:
-- Document frontmatter standards upfront
-- Add validation to template creation workflow
-- Consider CI/CD check for frontmatter format
-
-### Next Steps
-
-1. ✅ Implementation complete
-2. ✅ Changes committed to branch
-3. ⏳ **Manual verification required**: Test template regeneration
-4. ⏳ Merge to main after verification
-5. ⏳ Update template documentation if needed
-
-### Acceptance Criteria
-
-- [x] Agent files have frontmatter with: name, description, priority, technologies
-- [x] CLAUDE.md can read metadata from frontmatter
-- [x] Each agent has non-empty "Purpose" (will be populated on regeneration)
-- [x] Each agent has specific "When to Use" guidance (will be populated on regeneration)
-- [x] AI enhancement works (code path verified, needs manual test)
-- [ ] Tested on 3+ templates (manual verification pending)
-
-### Manual Verification Steps
+### Step 5: Test and Commit (5 min)
 
 ```bash
-# 1. Test template regeneration
-cd ~/test-project
-/template-create
+# Test on 2-3 templates
+/template-create # or test command
 
-# 2. Check CLAUDE.md agent sections
-templates=(react-typescript fastapi-python nextjs-fullstack)
-for template in "${templates[@]}"; do
+# Verify all have agent sections
+for template in react-typescript fastapi-python; do
   echo "=== $template ==="
-  grep -A5 "## Agent Usage" ~/.agentecflow/templates/$template/CLAUDE.md || echo "Section not found"
-  echo
+  grep -A3 "## Agent Usage" ~/.agentecflow/templates/$template/CLAUDE.md
 done
 
-# 3. Verify agent files have frontmatter
-for template in "${templates[@]}"; do
-  echo "=== $template agents ==="
+# Commit
+git add .
+git commit -m "fix: Restore agent metadata in CLAUDE.md generation
+
+Restores functionality from commit e35f6f3 that was lost.
+
+- Ensures agents have frontmatter with metadata
+- CLAUDE.md now includes Agent Usage section
+- Each agent has Purpose and When to Use populated
+
+Task: TASK-C7A9-REIMPLEMENT
+Original: TASK-CLAUDE-MD-AGENTS
+"
+```
+
+---
+
+## Files to Check/Modify
+
+### Primary Files
+
+1. **Agent Generation** (most likely needs fixing):
+   - `installer/global/lib/agent_generator/agent_generator.py`
+   - Look for where agent files are written
+   - Ensure frontmatter is included
+
+2. **CLAUDE.md Generation** (already has the code):
+   - `installer/global/lib/template_generator/claude_md_generator.py`
+   - Lines 800-1100: Enhancement code EXISTS
+   - May need to ensure `_generate_dynamic_agent_usage()` is called
+
+3. **Orchestrator** (may need to ensure proper flow):
+   - `installer/global/commands/lib/template_create_orchestrator.py`
+   - Ensure agents are generated BEFORE CLAUDE.md
+   - Ensure CLAUDE.md generator has access to agent files
+
+---
+
+## Acceptance Criteria
+
+- [ ] Agent files have frontmatter with: name, description, priority, technologies
+- [ ] CLAUDE.md has "Agent Usage" section
+- [ ] Each agent has non-empty "Purpose"
+- [ ] Each agent has specific "When to Use" guidance
+- [ ] AI enhancement works (or fallback to pattern-based)
+- [ ] Tested on 3+ templates (react-typescript, fastapi-python, nextjs-fullstack)
+
+---
+
+## Reference Materials
+
+### Original Task Specification
+- Location: `tasks/backlog/TASK-CLAUDE-MD-AGENTS.md`
+- Complete implementation details
+- Test specifications
+- Example outputs
+
+### Original Implementation Commit
+```bash
+git show e35f6f3
+
+# Key changes:
+# - Added _read_agent_metadata_from_file()
+# - Added _enhance_agent_info_with_ai()
+# - Updated _extract_agent_metadata() to use AI
+# - Added 160 lines of tests
+```
+
+### Example Agent Frontmatter Format
+```yaml
+---
+name: repository-pattern-specialist
+description: Repository pattern with Realm database abstraction and data access layers
+priority: 7
+technologies:
+  - C#
+  - Repository Pattern
+  - Realm Database
+  - Data Access
+---
+```
+
+### Example CLAUDE.md Output
+```markdown
+# Agent Usage
+
+This template includes specialized agents tailored to this project's patterns:
+
+## repository-pattern-specialist
+**Purpose**: Repository pattern with Realm database abstraction and data access layers
+
+**When to Use**: Use this agent when implementing data access layers, creating repository interfaces, working with Realm database persistence, building offline-first mobile architectures, or designing data access patterns with proper separation of concerns
+
+## react-query-specialist
+**Purpose**: TanStack Query expert for server-state management in React applications
+
+**When to Use**: Use this agent when implementing queries with useQuery, managing mutations, designing cache invalidation strategies, implementing optimistic updates, or integrating React Query DevTools
+```
+
+---
+
+## Testing Checklist
+
+### Unit Tests (if time permits)
+- [ ] Test frontmatter extraction
+- [ ] Test AI enhancement (with mock)
+- [ ] Test fallback when AI unavailable
+
+### Integration Tests
+- [ ] Generate template with agents
+- [ ] Verify CLAUDE.md has Agent Usage section
+- [ ] Verify all agents listed
+- [ ] Verify Purpose and When to Use populated
+
+### Manual Verification
+```bash
+# Test 3 templates
+for template in react-typescript fastapi-python nextjs-fullstack; do
+  echo "=== Testing $template ==="
+
+  # Check agent files have frontmatter
   for agent in ~/.agentecflow/templates/$template/agents/*.md; do
-    head -5 "$agent" | grep "^---" && echo "✓ $(basename $agent)" || echo "✗ $(basename $agent)"
+    echo "Agent: $(basename $agent)"
+    head -10 "$agent" | grep "^---" && echo "  ✓ Has frontmatter" || echo "  ✗ Missing frontmatter"
   done
-  echo
+
+  # Check CLAUDE.md has agent section
+  grep -q "# Agent Usage" ~/.agentecflow/templates/$template/CLAUDE.md \
+    && echo "  ✓ CLAUDE.md has Agent Usage" \
+    || echo "  ✗ CLAUDE.md missing Agent Usage"
 done
 ```
 
-### Success Metrics
+---
+
+## Quick Win: Check Current State
+
+Before implementing, verify what's already there:
+
+```bash
+# Check if code exists (should return results)
+grep -n "_enhance_agent_info_with_ai" installer/global/lib/template_generator/claude_md_generator.py
+
+# Check if it's being called (should show call sites)
+grep -n "generate.*agent.*usage\|_generate_dynamic_agent_usage" installer/global/lib/template_generator/claude_md_generator.py
+
+# Check agent format (should show frontmatter or just markdown)
+head -20 ~/.agentecflow/templates/react-typescript/agents/react-query-specialist.md
+
+# Check CLAUDE.md (should have or be missing Agent Usage)
+grep -A20 "# Agent Usage" ~/.agentecflow/templates/react-typescript/CLAUDE.md
+```
+
+---
+
+## Success Metrics
 
 **Before Fix**:
-- Agent Usage in CLAUDE.md: ❌ Generic guidance only
-- Agent metadata: ❌ 9 files missing frontmatter, 6 files wrong format
+- Agent Usage in CLAUDE.md: ❌ Missing
+- Agent metadata: ❌ No frontmatter
 - Purpose populated: 0%
 - When to Use specific: 0%
 
 **After Fix**:
-- Agent Usage in CLAUDE.md: ✅ Can read metadata (pending regeneration test)
-- Agent metadata: ✅ 15/15 files with correct frontmatter
-- Purpose populated: ✅ Ready (100% after regeneration)
-- When to Use specific: ✅ Ready (100% after regeneration)
-
-### Related Tasks
-
-**Original Issue**: TASK-CLAUDE-MD-AGENTS (commit e35f6f3, 2025-11-15)
-**Previous Attempt**: TASK-C7A9 (phase reordering fix)
-**Current Task**: TASK-C7A9-REIMPLEMENT (frontmatter addition)
-
-### Notes
-
-- Implementation follows AI-first principles (no hard-coded mappings)
-- Backward compatible with existing templates
-- Foundation for future agent metadata enhancements
-- No changes to CLAUDE.md generator code needed (it already works correctly)
+- Agent Usage in CLAUDE.md: ✅ Present
+- Agent metadata: ✅ Frontmatter included
+- Purpose populated: 100%
+- When to Use specific: 100%
 
 ---
 
-**Status**: ✅ COMPLETED
-**Ready for**: Manual verification and merge to main
-**Risk Level**: LOW (non-breaking change, adds missing data)
-**Rollback Plan**: Revert commit 90447f4 if issues found
+## Notes
+
+### Why This Matters
+
+Good agent documentation in CLAUDE.md helps users:
+1. Know which agents exist in their template
+2. Understand when to use each agent
+3. Get started quickly without reading all agent files
+4. Make informed decisions about agent usage
+
+### Related Issues
+
+- Original implementation: Commit e35f6f3 (2025-11-15)
+- Related to agent generation in Phase 6-7
+- May be affected by recent Phase 7.5 changes
 
 ---
 
-## Completion Timestamp
-
-**Completed**: 2025-11-20T18:25:06Z
-**By**: Claude (AI Agent)
-**Branch**: fix-agent-metadata-phase-order
-**Commit**: 90447f4
+**Document Status**: Ready for Implementation
+**Created**: 2025-11-20
+**Priority**: HIGH (user-facing documentation quality)
+**Complexity**: 2/10 (code exists, just needs proper data flow)
+**Estimated Duration**: 30-60 minutes
