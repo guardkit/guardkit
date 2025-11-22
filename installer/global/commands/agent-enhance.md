@@ -125,6 +125,34 @@ agent_path               Agent path in one of two formats:
 ...
 ```
 
+### Validation Report (Post-GitHub Standards)
+
+When enhancing agents, you'll now receive a validation report showing quality metrics:
+
+```yaml
+✅ Enhanced architectural-reviewer.md
+
+Validation Report:
+  time_to_first_example: 35 lines ✅
+  example_density: 47% ✅
+  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  commands_first: 28 lines ✅
+  specificity_score: 9/10 ✅
+  code_to_text_ratio: 1.3:1 ✅
+  overall_status: PASSED
+  iterations_required: 1
+  warnings: []
+```
+
+**Validation Status**:
+- ✅ = Passed quality threshold
+- ⚠️ = Warning (below target but acceptable)
+- ❌ = Failed (agent quality below minimum)
+
+If validation fails after 3 iterations, you'll receive the best attempt with detailed failure report.
+
+**Reference**: See [GitHub Agent Best Practices Analysis](../../docs/analysis/github-agent-best-practices-analysis.md) for detailed rationale behind these standards.
+
 ### Error Output
 ```
 ✗ Enhancement failed: Agent file not found
