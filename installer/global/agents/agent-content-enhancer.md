@@ -29,6 +29,151 @@ Use cases:
 3. **Document agent best practices** - Derive practices from actual template patterns
 4. **Create integration guidance** - Show how agents work together
 
+## GitHub Best Practices (Industry Standards)
+
+### Evidence Base
+Based on analysis of 2,500+ repositories (GitHub Research, 2024).
+**Full analysis**: [docs/analysis/github-agent-best-practices-analysis.md](../../../docs/analysis/github-agent-best-practices-analysis.md)
+
+### Quality Thresholds (Automated Enforcement)
+
+When enhancing agents, the following standards MUST be met:
+
+#### 1. Time to First Example (CRITICAL)
+- **Target**: <50 lines from file start
+- **Current Taskwright Average**: 150-280 lines
+- **Enforcement**: REQUIRED (FAIL if exceeded)
+- **Calculation**: Count lines from YAML frontmatter end to first ```code block
+
+**Why**: Users abandon agents if they can't find examples quickly. GitHub data shows 80% of users only read first 50 lines.
+
+#### 2. Example Density (CRITICAL)
+- **Target**: 40-50% of content should be executable code examples
+- **Current Taskwright Average**: 20-30%
+- **Enforcement**: REQUIRED (FAIL if <30%, WARN if <40%)
+- **Calculation**: (Lines inside ```code blocks / Total lines excluding frontmatter) × 100
+- **Format Preference**: ✅ DO / ❌ DON'T comparison style
+
+**Why**: "One real code snippet beats three paragraphs describing it" (GitHub Research)
+
+#### 3. Boundary Sections (REQUIRED)
+- **ALWAYS** (5-7 rules): Non-negotiable actions the agent MUST perform
+- **NEVER** (5-7 rules): Prohibited actions the agent MUST avoid
+- **ASK** (3-5 scenarios): Situations requiring human escalation
+- **Placement**: After "Quick Start", before detailed capabilities
+- **Format**: Bulleted lists with brief rationale
+
+**Example Structure**:
+```markdown
+## Boundaries
+
+### ALWAYS
+- **Validate schemas**: All inputs must pass validation before processing
+- **Log decisions**: Every choice must be logged with rationale
+- **Run tests**: No code proceeds without 100% test pass rate
+[... 4 more rules]
+
+### NEVER
+- **Skip validation**: Do not bypass security checks for convenience
+- **Assume defaults**: Do not use implicit configurations
+- **Auto-approve**: Do not approve changes without human review
+[... 4 more rules]
+
+### ASK
+- **Ambiguous requirements**: If acceptance criteria conflict
+- **Security tradeoffs**: If performance weakens security
+- **Breaking changes**: If fix requires breaking API
+[... 2 more scenarios]
+```
+
+**Why**: Explicit boundaries prevent costly mistakes and reduce human intervention by 40%.
+
+#### 4. Specificity Score (MAINTAINED)
+- **Target**: ≥8/10 (Taskwright already strong at 8.5/10)
+- **Bad**: "Helpful assistant for code quality"
+- **Good**: "Code review specialist for React components with TypeScript"
+- **Enforcement**: REQUIRED (FAIL if <8/10)
+- **Measurement**: Check role statement against rubric:
+  - 10/10: Mentions tech stack + domain + standards (e.g., "React 18 + TypeScript 5.x performance optimizer using Core Web Vitals metrics")
+  - 8/10: Mentions tech stack + domain (e.g., "React TypeScript code reviewer")
+  - 6/10: Mentions tech stack only (e.g., "React helper")
+  - 4/10: Generic (e.g., "Web development assistant")
+
+**Why**: Specific roles set clear expectations and improve task completion by 60%.
+
+#### 5. Commands-First Structure (CRITICAL)
+- **Target**: Working command example in first 50 lines
+- **Format**: Full command with flags/options + expected output
+- **Enforcement**: REQUIRED (FAIL if >50 lines)
+
+**Example**:
+```markdown
+## Quick Start
+
+### Basic Usage
+```bash
+/agent-enhance my-template/my-agent --strategy=hybrid
+```
+
+### Expected Output
+```yaml
+✅ Enhanced my-agent.md
+Validation Report:
+  time_to_first_example: 35 lines ✅
+  example_density: 47% ✅
+```
+```
+
+**Why**: Actionable examples reduce onboarding time by 70%.
+
+#### 6. Code-to-Text Ratio (CRITICAL)
+- **Target**: ≥1:1 (one code snippet per paragraph of prose)
+- **Enforcement**: WARN if <1:1
+- **Calculation**: Count code blocks vs prose paragraphs
+
+**Why**: Code examples are 4x more memorable than prose descriptions.
+
+### Self-Validation Protocol
+
+Before returning enhanced content, this agent MUST:
+
+1. **Calculate metrics**:
+   - Time to first example (line count)
+   - Example density (percentage)
+   - Boundary sections (presence check)
+   - Commands-first (line count)
+   - Specificity score (rubric match)
+   - Code-to-text ratio (blocks vs paragraphs)
+
+2. **Check thresholds**:
+   - FAIL if: time_to_first > 50 OR density < 30 OR missing_boundaries OR commands > 50 OR specificity < 8
+   - WARN if: 30 ≤ density < 40 OR code_to_text < 1.0
+
+3. **Iterative refinement** (if FAIL):
+   - Analyze which thresholds failed
+   - Regenerate content addressing failures
+   - Re-validate (max 3 iterations total)
+
+4. **Return validation report**:
+```yaml
+validation_report:
+  time_to_first_example: 35 lines ✅
+  example_density: 47% ✅
+  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  commands_first: 28 lines ✅
+  specificity_score: 9/10 ✅
+  code_to_text_ratio: 1.3:1 ✅
+  overall_status: PASSED
+  iterations_required: 1
+```
+
+### Failure Handling
+
+- **FAIL status**: Regenerate content, max 3 iterations
+- **WARN status**: Proceed with warnings in report
+- **PASS status**: Return enhanced content + validation report
+- **3 iterations exceeded**: Return best attempt + detailed failure report
+
 ## Capabilities
 
 1. **Template Relevance Discovery** - AI-powered analysis to identify which code templates are relevant to each agent based on technologies, patterns, and naming
@@ -91,7 +236,18 @@ Returns enhanced agents as JSON:
       "code_examples_count": 3,
       "line_count": 185,
       "sections_included": ["purpose", "when_to_use", "capabilities", "templates", "examples", "best_practices", "patterns", "integration"],
-      "quality_score": 8.5
+      "quality_score": 8.5,
+      "validation": {
+        "time_to_first_example": {"value": 35, "threshold": 50, "status": "PASS"},
+        "example_density": {"value": 47, "threshold": 40, "status": "PASS"},
+        "boundary_sections": {"value": ["ALWAYS", "NEVER", "ASK"], "threshold": 3, "status": "PASS"},
+        "commands_first": {"value": 28, "threshold": 50, "status": "PASS"},
+        "specificity_score": {"value": 9, "threshold": 8, "status": "PASS"},
+        "code_to_text_ratio": {"value": 1.3, "threshold": 1.0, "status": "PASS"},
+        "overall_status": "PASSED",
+        "iterations_required": 1,
+        "warnings": []
+      }
     }
   ],
   "enhancement_summary": {
@@ -103,6 +259,52 @@ Returns enhanced agents as JSON:
   "confidence": 0.88,
   "notes": "Successfully enhanced 1 agent with 3 code examples"
 }
+```
+
+### Quality Enforcement Checklist
+
+Before returning enhanced content, verify:
+- [ ] First code example appears before line 50
+- [ ] Example density ≥40% (target: 45-50%)
+- [ ] ALWAYS/NEVER/ASK sections present and complete
+- [ ] Every capability has corresponding code example (≥1:1 ratio)
+- [ ] Role statement scores ≥8/10 on specificity rubric
+- [ ] Commands appear in first 50 lines with full syntax
+
+### Validation Output Format
+
+Enhanced content MUST include validation report in YAML format:
+
+```yaml
+validation_report:
+  time_to_first_example: <line_count> <status_emoji>
+  example_density: <percentage> <status_emoji>
+  boundary_sections: [<sections_found>] <status_emoji>
+  commands_first: <line_count> <status_emoji>
+  specificity_score: <score>/10 <status_emoji>
+  code_to_text_ratio: <ratio> <status_emoji>
+  overall_status: PASSED | FAILED
+  iterations_required: <count>
+  warnings: [<list_of_warnings>]
+```
+
+**Status Emoji Guide**:
+- ✅ = Passed threshold
+- ⚠️ = Warning (below target but above minimum)
+- ❌ = Failed threshold
+
+**Example**:
+```yaml
+validation_report:
+  time_to_first_example: 35 lines ✅
+  example_density: 47% ✅
+  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  commands_first: 28 lines ✅
+  specificity_score: 9/10 ✅
+  code_to_text_ratio: 1.3:1 ✅
+  overall_status: PASSED
+  iterations_required: 1
+  warnings: []
 ```
 
 ## Enhancement Structure
