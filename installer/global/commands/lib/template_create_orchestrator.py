@@ -1547,7 +1547,7 @@ Enhance the {agent_name} agent with template-specific content:
         print("  Use /agent-enhance for direct AI-powered enhancement\n")
 
         for agent_name in agent_names:
-            print(f"  /agent-enhance {template_name}/{agent_name} --strategy=hybrid")
+            print(f"  /agent-enhance {template_name}/{agent_name} --hybrid")
 
         # Option B: Full Task Workflow (Optional)
         print(f"\nOption B - Full Task Workflow (Optional): 30-60 minutes per agent")

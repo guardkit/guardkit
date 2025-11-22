@@ -128,7 +128,7 @@ Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A
 ├─ Task metadata includes agent_file, template_dir, template_name, agent_name
 ├─ Tasks created in backlog with priority: medium
 ├─ Displays two enhancement options:
-│  ├─ Option A (Recommended): /agent-enhance template-name/agent-name --strategy=hybrid (2-5 minutes per agent)
+│  ├─ Option A (Recommended): /agent-enhance template-name/agent-name --hybrid (2-5 minutes per agent)
 │  └─ Option B (Optional): /task-work TASK-AGENT-XXX (30-60 minutes per agent - full workflow)
 └─ Both approaches use the same AI enhancement logic
 ```

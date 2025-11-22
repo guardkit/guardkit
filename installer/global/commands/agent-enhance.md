@@ -27,10 +27,10 @@ This command provides granular control over agent enhancement as an alternative 
 /agent-enhance react-typescript/testing-specialist --dry-run
 
 # Use static strategy (keyword matching, no AI)
-/agent-enhance react-typescript/testing-specialist --strategy=static
+/agent-enhance react-typescript/testing-specialist --static
 
 # Use hybrid strategy (AI with fallback to static)
-/agent-enhance react-typescript/testing-specialist --strategy=hybrid
+/agent-enhance react-typescript/testing-specialist --hybrid
 
 # Show detailed progress
 /agent-enhance react-typescript/testing-specialist --verbose
@@ -324,7 +324,7 @@ Solution: Check file permissions or use sudo
 **AI Timeout (AI Strategy)**:
 ```
 Warning: AI enhancement failed, falling back to static: TimeoutError
-Solution: Use --strategy=static for faster (lower quality) results
+Solution: Use --static for faster (lower quality) results
 ```
 
 **Validation Failed**:
