@@ -21,6 +21,61 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def resolve_strategy(args: argparse.Namespace) -> str:
+    """
+    Resolve strategy from boolean flags.
+
+    Precedence:
+    1. Conflicting flags (--hybrid --static) → error
+    2. --static → "static"
+    3. --hybrid → "hybrid"
+    4. Default → "ai"
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        Strategy string: "ai", "hybrid", or "static"
+
+    Raises:
+        SystemExit: If conflicting flags are provided
+    """
+    if args.hybrid and args.static:
+        print("Error: Cannot use both --hybrid and --static flags. Choose one strategy.",
+              file=sys.stderr)
+        print("\nAvailable strategies:", file=sys.stderr)
+        print("  (default)    AI-powered enhancement (best quality)", file=sys.stderr)
+        print("  --hybrid     AI with static fallback (reliable)", file=sys.stderr)
+        print("  --static     Template-based only (fastest)", file=sys.stderr)
+        sys.exit(1)
+
+    if args.static:
+        return "static"
+    elif args.hybrid:
+        return "hybrid"
+    else:
+        return "ai"  # Default
+
+
+def format_success_message(agent_name: str, strategy: str) -> str:
+    """
+    Format success message with strategy information.
+
+    Args:
+        agent_name: Name of the enhanced agent
+        strategy: Strategy used ("ai", "hybrid", "static")
+
+    Returns:
+        Formatted success message
+    """
+    strategy_label = {
+        "ai": "AI strategy",
+        "hybrid": "hybrid strategy (AI with fallback)",
+        "static": "static strategy"
+    }
+    return f"✓ Enhanced {agent_name} using {strategy_label[strategy]}"
+
+
 def main(args: list[str]) -> int:
     """
     Main entry point for /agent-enhance command.
@@ -47,10 +102,14 @@ def main(args: list[str]) -> int:
         help="Show what would be enhanced without applying"
     )
     parser.add_argument(
-        "--strategy",
-        choices=["ai", "static", "hybrid"],
-        default="ai",
-        help="Enhancement strategy (default: ai)"
+        "--hybrid",
+        action="store_true",
+        help="Use AI with fallback to static (production-safe)"
+    )
+    parser.add_argument(
+        "--static",
+        action="store_true",
+        help="Use keyword matching only (fast, offline)"
     )
     parser.add_argument(
         "--verbose",
@@ -59,6 +118,9 @@ def main(args: list[str]) -> int:
     )
 
     parsed_args = parser.parse_args(args)
+
+    # Resolve strategy from flags
+    strategy = resolve_strategy(parsed_args)
 
     # Set log level based on verbose flag
     if parsed_args.verbose:
@@ -94,7 +156,7 @@ def main(args: list[str]) -> int:
 
     # Create enhancer
     enhancer = SingleAgentEnhancer(
-        strategy=parsed_args.strategy,
+        strategy=strategy,
         dry_run=parsed_args.dry_run,
         verbose=parsed_args.verbose
     )
@@ -109,7 +171,7 @@ def main(args: list[str]) -> int:
         )
 
         if result.success:
-            logger.info(f"✓ Enhanced {agent_file.name}")
+            logger.info(format_success_message(agent_file.name, strategy))
             logger.info(f"  Sections added: {len(result.sections)}")
             logger.info(f"  Templates referenced: {len(result.templates)}")
             logger.info(f"  Code examples: {len(result.examples)}")
