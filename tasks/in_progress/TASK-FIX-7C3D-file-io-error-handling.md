@@ -1,7 +1,7 @@
 ---
 task_id: TASK-FIX-7C3D
 title: Create shared file I/O error handling utility
-status: BACKLOG
+status: IN_PROGRESS
 priority: MEDIUM
 complexity: 4
 created: 2025-11-20T21:20:00Z

@@ -29,6 +29,11 @@ from agent_formatting import (
     ValidationReporter,
 )
 
+# TASK-FIX-7C3D: Import file I/O utilities
+import importlib
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_write_file = _file_io_module.safe_write_file
+
 
 def resolve_paths(path_pattern: str) -> list[Path]:
     """
@@ -130,8 +135,10 @@ def process_agent(
                 if args.verbose:
                     print(f'Backup created: {backup_path}')
 
-            # Write formatted content
-            agent_path.write_text(formatted_content, encoding='utf-8')
+            # Write formatted content with error handling (TASK-FIX-7C3D)
+            success, error_msg = safe_write_file(agent_path, formatted_content)
+            if not success:
+                return False, f'Failed to write formatted content: {error_msg}', validation
 
             before_status = validation.metrics_before.get_status()
             after_status = validation.metrics_after.get_status()

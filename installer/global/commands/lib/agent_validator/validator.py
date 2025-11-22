@@ -11,6 +11,12 @@ from datetime import datetime
 import sys
 import os
 
+# TASK-FIX-7C3D: Import file I/O utilities
+# Use importlib to match import style of other modules
+import importlib
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_read_file = _file_io_module.safe_read_file
+
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -74,8 +80,11 @@ class AgentValidator:
         Returns:
             ValidationReport with scores, checks, issues, recommendations
         """
-        # Read file
-        content = agent_file.read_text()
+        # Read file with error handling (TASK-FIX-7C3D)
+        success, content = safe_read_file(agent_file)
+        if not success:
+            # content is error message
+            raise ValueError(f"Cannot read agent file: {content}")
 
         # Run all checks (or filtered subset)
         category_results = {}
