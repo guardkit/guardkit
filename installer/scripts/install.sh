@@ -1268,11 +1268,11 @@ setup_python_bin_symlinks() {
         done < <(find "$COMMANDS_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
     fi
 
-    # Find scripts in commands/lib/ directory
+    # Find scripts in commands/lib/ directory (top-level only, not subdirectories)
     if [ -d "$COMMANDS_LIB_DIR" ]; then
         while IFS= read -r script; do
             python_scripts+=("$script")
-        done < <(find "$COMMANDS_LIB_DIR" -type f -name "*.py" 2>/dev/null)
+        done < <(find "$COMMANDS_LIB_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
     fi
 
     # Check if we found any scripts
