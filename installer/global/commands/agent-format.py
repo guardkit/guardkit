@@ -18,8 +18,23 @@ from glob import glob
 import shutil
 import time
 
-# Add lib directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'lib'))
+# === BEGIN: Repository Root Resolution ===
+# Ensure repository root is in sys.path for installer.* imports
+# This allows the script to work when executed via symlink from any directory
+def _add_repo_to_path():
+    """Add repository root to sys.path if not already present."""
+    script_path = Path(__file__).resolve()
+    # Navigate: commands/ -> global/ -> installer/ -> taskwright/ (4 levels up)
+    repo_root = script_path.parent.parent.parent.parent
+    repo_root_str = str(repo_root)
+    if repo_root_str not in sys.path:
+        sys.path.insert(0, repo_root_str)
+
+_add_repo_to_path()
+# === END: Repository Root Resolution ===
+
+# Add lib directory to path (resolve symlink for correct path)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'lib'))
 
 from agent_formatting import (
     parse_agent,

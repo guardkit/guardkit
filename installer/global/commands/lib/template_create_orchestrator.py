@@ -16,6 +16,20 @@ import json
 import logging
 import uuid
 
+# === BEGIN: Repository Root Resolution ===
+def _add_repo_to_path():
+    """Add repository root to sys.path if not already present."""
+    script_path = Path(__file__).resolve()
+    # Navigate: lib/ -> commands/ -> global/ -> installer/ -> taskwright/ (5 levels up)
+    repo_root = script_path.parent.parent.parent.parent.parent
+    repo_root_str = str(repo_root)
+
+    if repo_root_str not in sys.path:
+        sys.path.insert(0, repo_root_str)
+
+_add_repo_to_path()
+# === END: Repository Root Resolution ===
+
 # Import component modules using importlib to avoid 'global' keyword issue
 import importlib
 _template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')

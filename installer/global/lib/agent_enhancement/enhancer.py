@@ -254,13 +254,19 @@ class SingleAgentEnhancer:
             logger.info(f"  Prompt size: {len(prompt)} chars")
 
         try:
-            # DIRECT TASK TOOL INVOCATION (no AgentBridgeInvoker, no sys.exit)
-            from anthropic_sdk import task
+            # Use AgentBridgeInvoker for Claude Code integration (same pattern as template-create)
+            import importlib
+            _agent_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+            AgentBridgeInvoker = _agent_bridge_module.AgentBridgeInvoker
 
-            result_text = task(
-                agent="agent-content-enhancer",
-                prompt=prompt,
-                timeout=300  # 5 minutes
+            invoker = AgentBridgeInvoker(
+                phase=8,  # Phase 8: Agent Enhancement
+                phase_name="agent_enhancement"
+            )
+
+            result_text = invoker.invoke(
+                agent_name="agent-content-enhancer",
+                prompt=prompt
             )
 
             duration = time.time() - start_time
