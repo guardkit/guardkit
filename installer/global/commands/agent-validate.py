@@ -16,6 +16,11 @@ sys.path.insert(0, str(lib_path))
 from agent_validator import AgentValidator, ValidationConfig
 from agent_validator.formatters import ConsoleFormatter, JSONFormatter, MinimalFormatter
 
+# TASK-FIX-7C3D: Import file I/O utilities
+import importlib
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_write_file = _file_io_module.safe_write_file
+
 
 def main():
     """Main entry point for agent-validate command."""
@@ -106,9 +111,12 @@ def main():
 
         output = formatter.format(report)
 
-        # Write output
+        # Write output with error handling (TASK-FIX-7C3D)
         if args.output_file:
-            args.output_file.write_text(output)
+            success, error_msg = safe_write_file(args.output_file, output)
+            if not success:
+                print(f"Error writing report: {error_msg}", file=sys.stderr)
+                sys.exit(2)
             print(f"Report written to: {args.output_file}")
         else:
             print(output)

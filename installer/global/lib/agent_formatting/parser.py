@@ -10,6 +10,11 @@ from typing import Optional
 import re
 import yaml
 
+# TASK-FIX-7C3D: Import file I/O utilities
+import importlib
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_read_file = _file_io_module.safe_read_file
+
 
 @dataclass
 class CodeBlock:
@@ -206,8 +211,11 @@ def parse_agent(file_path: Path) -> AgentStructure:
     if file_path.suffix != '.md':
         raise ValueError(f"File must be a markdown file (.md): {file_path}")
 
-    # Read file content
-    content = file_path.read_text(encoding='utf-8')
+    # Read file content with error handling (TASK-FIX-7C3D)
+    success, content = safe_read_file(file_path)
+    if not success:
+        # content is error message
+        raise ValueError(f"Cannot read agent file: {content}")
 
     # Parse components
     frontmatter, frontmatter_end = extract_frontmatter(content)

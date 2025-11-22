@@ -41,6 +41,11 @@ AgentBridgeInvoker = _agent_bridge_invoker_module.AgentBridgeInvoker
 StateManager = _agent_bridge_state_module.StateManager
 TemplateCreateState = _agent_bridge_state_module.TemplateCreateState
 
+# TASK-FIX-7C3D: File I/O Error Handling
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_read_file = _file_io_module.safe_read_file
+safe_write_file = _file_io_module.safe_write_file
+
 # TASK-040: Phase 5.5 Completeness Validation
 _validator_module = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
 _models_module = importlib.import_module('installer.global.lib.template_generator.models')
@@ -847,7 +852,11 @@ class TemplateCreateOrchestrator:
                     }
                     markdown_content = format_agent_markdown(agent_dict)
 
-                agent_path.write_text(markdown_content, encoding='utf-8')
+                # TASK-FIX-7C3D: Use safe_write_file for error handling
+                success, error_msg = safe_write_file(agent_path, markdown_content)
+                if not success:
+                    logger.error(f"  ✗ Failed to write {agent_path.name}: {error_msg}")
+                    continue  # Skip this agent, continue with others
                 agent_paths.append(agent_path)
 
             self._print_success_line(f"{len(agents)} agent files written")
@@ -1047,9 +1056,13 @@ Enhance the {agent_name} agent with template-specific content:
 
             # Write task file
             task_file = tasks_backlog / f"{task_id}.md"
-            task_file.write_text(task_content)
-            task_ids.append(task_id)
+            # TASK-FIX-7C3D: Use safe_write_file for error handling
+            success, error_msg = safe_write_file(task_file, task_content)
+            if not success:
+                logger.error(f"  ✗ Failed to create {task_id}: {error_msg}")
+                continue  # Skip this task, continue with others
 
+            task_ids.append(task_id)
             logger.info(f"  ✓ Created {task_id} for {agent_name}")
 
         return task_ids

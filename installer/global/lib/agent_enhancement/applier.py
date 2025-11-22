@@ -11,6 +11,12 @@ from typing import Dict, Any
 import logging
 import difflib
 
+# TASK-FIX-7C3D: Import file I/O utilities
+import importlib
+_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+safe_read_file = _file_io_module.safe_read_file
+safe_write_file = _file_io_module.safe_write_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,20 +44,19 @@ class EnhancementApplier:
         if not agent_file.is_file():
             raise ValueError(f"Path is not a file: {agent_file}")
 
-        # Read current content
-        try:
-            original_content = agent_file.read_text()
-        except PermissionError:
-            raise PermissionError(f"Cannot read agent file: {agent_file}")
+        # Read current content with error handling (TASK-FIX-7C3D)
+        success, original_content = safe_read_file(agent_file)
+        if not success:
+            # original_content contains error message
+            raise PermissionError(f"Cannot read agent file: {original_content}")
 
         # Generate new content with enhancements
         new_content = self._merge_content(original_content, enhancement)
 
-        # Write back to file
-        try:
-            agent_file.write_text(new_content)
-        except PermissionError:
-            raise PermissionError(f"Cannot write to agent file: {agent_file}")
+        # Write back to file with error handling (TASK-FIX-7C3D)
+        success, error_msg = safe_write_file(agent_file, new_content)
+        if not success:
+            raise PermissionError(f"Cannot write to agent file: {error_msg}")
 
     def generate_diff(self, agent_file: Path, enhancement: Dict[str, Any]) -> str:
         """
