@@ -116,7 +116,8 @@ class EnhancementApplier:
         Strategy:
         1. Preserve frontmatter (YAML between ---...---)
         2. Preserve existing content
-        3. Append new sections at the end
+        3. Insert boundaries after "Quick Start", before "Capabilities"
+        4. Append other sections at the end
 
         Args:
             original: Original file content
@@ -145,14 +146,43 @@ class EnhancementApplier:
                     frontmatter_end = i + 1
                     break
 
-        # Build new content
-        new_lines = lines[:frontmatter_end] if frontmatter_end > 0 else lines.copy()
+        # Build new content - preserve all original content
+        new_lines = lines.copy()
 
         # Check if sections already exist (avoid duplicates)
         existing_content = '\n'.join(new_lines)
 
-        # Append enhancement sections
+        # Separate boundaries from other sections for special placement
+        boundaries_content = None
+        other_sections = []
+
         for section_name in sections_to_add:
+            if section_name == "boundaries":
+                boundaries_content = enhancement.get("boundaries", "")
+            else:
+                other_sections.append(section_name)
+
+        # Handle boundaries special placement (after Quick Start, before Capabilities)
+        if boundaries_content and boundaries_content.strip():
+            if "## Boundaries" not in existing_content:
+                insertion_point = self._find_boundaries_insertion_point(new_lines)
+                if insertion_point is not None:
+                    # Insert at specific location
+                    if new_lines[insertion_point - 1].strip():
+                        new_lines.insert(insertion_point, "")
+                    new_lines.insert(insertion_point, boundaries_content.strip())
+                    new_lines.insert(insertion_point, "")
+                else:
+                    # Fallback: append at end
+                    if new_lines and new_lines[-1].strip():
+                        new_lines.append("")
+                    new_lines.append(boundaries_content.strip())
+
+        # Update existing_content for duplicate check
+        existing_content = '\n'.join(new_lines)
+
+        # Append other enhancement sections at the end
+        for section_name in other_sections:
             section_content = enhancement.get(section_name, "")
 
             if section_content and section_content.strip():
@@ -168,6 +198,43 @@ class EnhancementApplier:
                     new_lines.append(section_content.strip())
 
         return '\n'.join(new_lines)
+
+    def _find_boundaries_insertion_point(self, lines: list[str]) -> int | None:
+        """
+        Find the insertion point for boundaries section.
+
+        Looks for "## Capabilities" section and returns index before it.
+        If not found, looks for "## Quick Start" and returns index after it.
+
+        Args:
+            lines: List of content lines
+
+        Returns:
+            Line index for insertion or None if no suitable point found
+        """
+        # First try: Find "## Capabilities" and insert before it
+        for i, line in enumerate(lines):
+            if line.strip().startswith("## Capabilities"):
+                return i
+
+        # Second try: Find "## Quick Start" and insert after its content
+        quick_start_idx = None
+        for i, line in enumerate(lines):
+            if line.strip().startswith("## Quick Start"):
+                quick_start_idx = i
+                break
+
+        if quick_start_idx is not None:
+            # Find next ## section after Quick Start
+            for i in range(quick_start_idx + 1, len(lines)):
+                if lines[i].strip().startswith("## "):
+                    return i
+
+            # If no next section, append at end
+            return len(lines)
+
+        # No suitable insertion point found
+        return None
 
     def remove_sections(
         self,

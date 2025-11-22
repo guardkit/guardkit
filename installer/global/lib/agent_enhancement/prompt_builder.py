@@ -77,25 +77,32 @@ class EnhancementPromptBuilder:
 **Task**: Generate enhancement content for this agent including:
 1. Related templates that this agent should reference
 2. Code examples from the templates that demonstrate best practices
-3. Best practices for using this agent with these templates
+3. Boundaries (ALWAYS/NEVER/ASK framework) for explicit behavior rules
 4. Anti-patterns to avoid (if applicable)
 
 **Output Format**: Return a JSON object with the following structure:
 ```json
 {{
-    "sections": ["related_templates", "examples", "best_practices"],
+    "sections": ["related_templates", "examples", "boundaries"],
     "related_templates": "## Related Templates\\n\\n- template1\\n- template2\\n...",
     "examples": "## Code Examples\\n\\n### Example 1\\n```code```\\n...",
-    "best_practices": "## Best Practices\\n\\n1. Practice 1\\n2. Practice 2\\n..."
+    "boundaries": "## Boundaries\\n\\n### ALWAYS\\n- ✅ Rule 1 (rationale)\\n...\\n\\n### NEVER\\n- ❌ Rule 1 (rationale)\\n...\\n\\n### ASK\\n- ⚠️ Scenario 1 (rationale)\\n..."
 }}
 ```
 
 **Important**:
 - Use markdown formatting for all sections
 - Include actual code snippets in examples
-- Be specific and actionable in best practices
+- Be specific and actionable
 - Only reference templates that are actually relevant to this agent
 - Ensure all JSON is valid and properly escaped
+
+**Boundaries Requirements** (CRITICAL):
+- **ALWAYS section**: 5-7 rules with ✅ prefix (non-negotiable actions)
+- **NEVER section**: 5-7 rules with ❌ prefix (prohibited actions)
+- **ASK section**: 3-5 scenarios with ⚠️ prefix (human escalation points)
+- Format: "[emoji] [action] ([brief rationale])"
+- Example: "✅ Validate schemas (prevent invalid data processing)"
 """
 
         return prompt
