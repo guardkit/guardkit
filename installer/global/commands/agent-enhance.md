@@ -14,54 +14,26 @@ Enhance individual agent files with template-specific content including:
 
 This command provides granular control over agent enhancement as an alternative to fully automated workflows.
 
-## Quick Start
-
-### Choose Your Strategy
-
-**Default (no flags)**: AI-powered enhancement
-- Best quality (code examples, best practices)
-- Takes 2-5 minutes per agent
-- Use when: Quality is priority
-
-**--hybrid flag**: AI with automatic fallback
-- High quality when AI works, basic when it doesn't
-- Production-safe (never fails)
-- Use when: Reliability matters (CI/CD, automation)
-
-**--static flag**: Fast keyword matching
-- Basic quality (template list only)
-- Takes <5 seconds per agent
-- Use when: Need quick results, offline, no AI access
-
-### Decision Tree
-
-```
-Need AI quality? ─── Yes ──> Need fallback? ─── Yes ──> Use --hybrid
-                 │                           └── No ───> Use default (no flags)
-                 │
-                 └── No ──> Use --static
-```
-
-### Examples
+## Usage
 
 ```bash
-# Best quality (default)
+# Enhance agent using template/agent format
 /agent-enhance react-typescript/testing-specialist
 
-# Production-safe (recommended for automation)
-/agent-enhance react-typescript/testing-specialist --hybrid
+# Enhance agent using absolute path
+/agent-enhance /path/to/template/agents/testing-specialist.md
 
-# Fast/offline mode
+# Preview enhancement without applying (dry-run)
+/agent-enhance react-typescript/testing-specialist --dry-run
+
+# Use static strategy (keyword matching, no AI)
 /agent-enhance react-typescript/testing-specialist --static
 
-# Preview enhancement without applying
-/agent-enhance react-typescript/testing-specialist --dry-run
+# Use hybrid strategy (AI with fallback to static)
+/agent-enhance react-typescript/testing-specialist --hybrid
 
 # Show detailed progress
 /agent-enhance react-typescript/testing-specialist --verbose
-
-# Enhance using absolute path
-/agent-enhance /path/to/template/agents/testing-specialist.md
 ```
 
 ## Command Options
@@ -82,15 +54,41 @@ agent_path               Agent path in one of two formats:
 --dry-run                Show enhancement preview without applying changes
                          Default: false
 
---hybrid                 Use AI with fallback to static (production-safe)
-                         Default: false
+--strategy STRATEGY      Enhancement strategy to use
+                         Choices: ai, static, hybrid
+                         Default: ai
 
---static                 Use keyword matching only (fast, offline)
-                         Default: false
+                         Strategies:
+                         - ai: AI-powered enhancement (best quality, 2-5 min)
+                         - static: Keyword matching (fast, <5 sec, lower quality)
+                         - hybrid: AI with fallback to static (recommended for production)
 
 --verbose                Show detailed enhancement process
                          Default: false
 ```
+
+## Enhancement Strategies
+
+### AI Strategy (Default)
+- **Method**: Uses `agent-content-enhancer` agent via Task tool
+- **Quality**: High - Understands context and generates relevant content
+- **Speed**: 2-5 minutes per agent
+- **Use when**: Quality is priority, time is available
+- **Timeout**: 300 seconds (5 minutes)
+
+### Static Strategy
+- **Method**: Simple keyword matching between agent name and template files
+- **Quality**: Basic - Only creates related templates list
+- **Speed**: <5 seconds per agent
+- **Use when**: Need quick results, AI unavailable
+- **Limitations**: No code examples, no best practices
+
+### Hybrid Strategy (Recommended)
+- **Method**: Tries AI first, falls back to static on failure
+- **Quality**: High when AI succeeds, basic when falls back
+- **Speed**: 2-5 minutes (AI) or <5 seconds (fallback)
+- **Use when**: Production environments, need reliability
+- **Fallback triggers**: Timeout, AI error, API unavailable
 
 ## Exit Codes
 
@@ -295,9 +293,9 @@ describe('Button', () => {
 
 ## Best Practices
 
-1. **Use --hybrid for production**: Provides AI quality with static fallback
+1. **Use hybrid strategy for production**: Provides AI quality with static fallback
 2. **Preview first with --dry-run**: Review changes before applying
-3. **Use --verbose for debugging**: See detailed process when issues occur
+3. **Use verbose for debugging**: See detailed process when issues occur
 4. **Batch enhance related agents**: Enhance domain, testing, UI agents together
 5. **Commit after enhancement**: Track agent changes in version control
 
