@@ -379,6 +379,12 @@ taskwright init your-custom-template
 
 **Why?** Your production code is better than any generic template. Create templates from what you've proven works.
 
+**Agent Enhancement Standards (TASK-STND-773D)**: All agents enhanced by `agent-content-enhancer` automatically include ALWAYS/NEVER/ASK boundary sections conforming to GitHub best practices. This ensures:
+- ✅ Clear behavior boundaries (what agents must/must not do)
+- ✅ Explicit escalation points (when to ask humans)
+- ✅ Industry-standard format (5-7 ALWAYS, 5-7 NEVER, 3-5 ASK rules)
+- ✅ Proper placement (after Quick Start, before Capabilities)
+
 **See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
 
 ## Installation & Setup

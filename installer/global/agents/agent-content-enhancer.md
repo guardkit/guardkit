@@ -35,6 +35,11 @@ Use cases:
 Based on analysis of 2,500+ repositories (GitHub Research, 2024).
 **Full analysis**: [docs/analysis/github-agent-best-practices-analysis.md](../../../docs/analysis/github-agent-best-practices-analysis.md)
 
+**IMPORTANT**: This agent MUST generate content conforming to all GitHub best practices, especially:
+- **Boundary Sections** (Critical Gap #4 in analysis) - ALWAYS/NEVER/ASK framework required
+- **Early Command Placement** (Critical Gap #2) - Commands in first 50 lines
+- **Code Examples First** (Critical Gap #3) - Examples before line 50, 40-50% density target
+
 ### Quality Thresholds (Automated Enforcement)
 
 When enhancing agents, the following standards MUST be met:
@@ -140,19 +145,36 @@ Before returning enhanced content, this agent MUST:
 1. **Calculate metrics**:
    - Time to first example (line count)
    - Example density (percentage)
-   - Boundary sections (presence check)
+   - Boundary sections (presence check: ALWAYS, NEVER, ASK all required)
+   - Boundary completeness (rule counts, emoji format, placement)
    - Commands-first (line count)
    - Specificity score (rubric match)
    - Code-to-text ratio (blocks vs paragraphs)
 
 2. **Check thresholds**:
-   - FAIL if: time_to_first > 50 OR density < 30 OR missing_boundaries OR commands > 50 OR specificity < 8
-   - WARN if: 30 ≤ density < 40 OR code_to_text < 1.0
+   - FAIL if:
+     - time_to_first > 50
+     - density < 30
+     - missing_boundaries (any of ALWAYS/NEVER/ASK absent)
+     - boundary_counts_invalid (ALWAYS/NEVER not 5-7, ASK not 3-5)
+     - boundary_emoji_incorrect (missing ✅/❌/⚠️ prefixes)
+     - boundary_placement_wrong (not after "Quick Start", before "Capabilities")
+     - commands > 50
+     - specificity < 8
+   - WARN if:
+     - 30 ≤ density < 40
+     - code_to_text < 1.0
+     - boundary_counts at threshold limits (exactly 5 or 7 for ALWAYS/NEVER, exactly 3 or 5 for ASK)
 
 3. **Iterative refinement** (if FAIL):
    - Analyze which thresholds failed
    - Regenerate content addressing failures
    - Re-validate (max 3 iterations total)
+   - **Boundary-specific fixes**:
+     - If missing sections: Generate ALWAYS/NEVER/ASK from template patterns
+     - If incorrect counts: Add/remove rules to meet 5-7/5-7/3-5 targets
+     - If emoji missing: Add ✅/❌/⚠️ prefixes to all rules
+     - If placement wrong: Move Boundaries section after Quick Start
 
 4. **Return validation report**:
 ```yaml
@@ -160,6 +182,13 @@ validation_report:
   time_to_first_example: 35 lines ✅
   example_density: 47% ✅
   boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  boundary_completeness:
+    always_count: 6 ✅
+    never_count: 6 ✅
+    ask_count: 4 ✅
+    emoji_correct: true ✅
+    format_valid: true ✅
+    placement_correct: true ✅
   commands_first: 28 lines ✅
   specificity_score: 9/10 ✅
   code_to_text_ratio: 1.3:1 ✅
@@ -173,6 +202,7 @@ validation_report:
 - **WARN status**: Proceed with warnings in report
 - **PASS status**: Return enhanced content + validation report
 - **3 iterations exceeded**: Return best attempt + detailed failure report
+- **Boundary validation failures**: Prioritize fixing in iteration 1 (critical for GitHub standards compliance)
 
 ## Capabilities
 
@@ -235,12 +265,20 @@ Returns enhanced agents as JSON:
       ],
       "code_examples_count": 3,
       "line_count": 185,
-      "sections_included": ["purpose", "when_to_use", "capabilities", "templates", "examples", "best_practices", "patterns", "integration"],
+      "sections_included": ["purpose", "when_to_use", "quick_start", "boundaries", "capabilities", "templates", "examples", "patterns", "integration"],
       "quality_score": 8.5,
       "validation": {
         "time_to_first_example": {"value": 35, "threshold": 50, "status": "PASS"},
         "example_density": {"value": 47, "threshold": 40, "status": "PASS"},
         "boundary_sections": {"value": ["ALWAYS", "NEVER", "ASK"], "threshold": 3, "status": "PASS"},
+        "boundary_completeness": {
+          "always_count": {"value": 6, "threshold": "5-7", "status": "PASS"},
+          "never_count": {"value": 6, "threshold": "5-7", "status": "PASS"},
+          "ask_count": {"value": 4, "threshold": "3-5", "status": "PASS"},
+          "emoji_correct": {"value": true, "threshold": true, "status": "PASS"},
+          "format_valid": {"value": true, "threshold": true, "status": "PASS"},
+          "placement_correct": {"value": true, "threshold": true, "status": "PASS"}
+        },
         "commands_first": {"value": 28, "threshold": 50, "status": "PASS"},
         "specificity_score": {"value": 9, "threshold": 8, "status": "PASS"},
         "code_to_text_ratio": {"value": 1.3, "threshold": 1.0, "status": "PASS"},
@@ -266,7 +304,10 @@ Returns enhanced agents as JSON:
 Before returning enhanced content, verify:
 - [ ] First code example appears before line 50
 - [ ] Example density ≥40% (target: 45-50%)
-- [ ] ALWAYS/NEVER/ASK sections present and complete
+- [ ] ALWAYS/NEVER/ASK sections present and complete (all 3 required)
+- [ ] Boundary rule counts correct (5-7 ALWAYS, 5-7 NEVER, 3-5 ASK)
+- [ ] Boundary emoji format correct (✅ ALWAYS, ❌ NEVER, ⚠️ ASK)
+- [ ] Boundaries placed after "Quick Start", before "Capabilities"
 - [ ] Every capability has corresponding code example (≥1:1 ratio)
 - [ ] Role statement scores ≥8/10 on specificity rubric
 - [ ] Commands appear in first 50 lines with full syntax
@@ -280,6 +321,13 @@ validation_report:
   time_to_first_example: <line_count> <status_emoji>
   example_density: <percentage> <status_emoji>
   boundary_sections: [<sections_found>] <status_emoji>
+  boundary_completeness:
+    always_count: <count> <status_emoji>
+    never_count: <count> <status_emoji>
+    ask_count: <count> <status_emoji>
+    emoji_correct: <true|false> <status_emoji>
+    format_valid: <true|false> <status_emoji>
+    placement_correct: <true|false> <status_emoji>
   commands_first: <line_count> <status_emoji>
   specificity_score: <score>/10 <status_emoji>
   code_to_text_ratio: <ratio> <status_emoji>
@@ -293,12 +341,27 @@ validation_report:
 - ⚠️ = Warning (below target but above minimum)
 - ❌ = Failed threshold
 
+**Boundary Validation Criteria**:
+- `always_count`: 5-7 rules (FAIL if <5 or >7)
+- `never_count`: 5-7 rules (FAIL if <5 or >7)
+- `ask_count`: 3-5 scenarios (FAIL if <3 or >5)
+- `emoji_correct`: All rules use correct emoji (✅/❌/⚠️)
+- `format_valid`: Rules follow `[emoji] [action] ([rationale])` format
+- `placement_correct`: Boundaries section after "Quick Start", before "Capabilities"
+
 **Example**:
 ```yaml
 validation_report:
   time_to_first_example: 35 lines ✅
   example_density: 47% ✅
   boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  boundary_completeness:
+    always_count: 6 ✅
+    never_count: 6 ✅
+    ask_count: 4 ✅
+    emoji_correct: true ✅
+    format_valid: true ✅
+    placement_correct: true ✅
   commands_first: 28 lines ✅
   specificity_score: 9/10 ✅
   code_to_text_ratio: 1.3:1 ✅
@@ -327,22 +390,69 @@ What the agent does, when it's useful, what problems it solves.
 ### 3. When to Use (3-4 scenarios)
 Specific scenarios with concrete examples.
 
-### 4. Capabilities (5-7 items)
+### 4. Quick Start (commands in first 50 lines)
+Working command examples with full syntax and expected output.
+
+### 5. Boundaries (ALWAYS/NEVER/ASK)
+Explicit behavior rules conforming to GitHub best practices.
+
+**Structure**:
+- **ALWAYS** (5-7 rules): Non-negotiable actions the agent MUST perform
+- **NEVER** (5-7 rules): Prohibited actions the agent MUST avoid
+- **ASK** (3-5 scenarios): Situations requiring human escalation
+
+**Format**: `[emoji] [imperative verb] [action] ([brief rationale])`
+- ✅ ALWAYS prefix
+- ❌ NEVER prefix
+- ⚠️ ASK prefix
+
+**Placement**: After "Quick Start", before "Capabilities"
+
+**Example**:
+```markdown
+## Boundaries
+
+### ALWAYS
+- ✅ Validate input schemas (prevent processing invalid data)
+- ✅ Run tests before approving code (ensure quality gates pass)
+- ✅ Log decision rationale (maintain audit trail)
+- ✅ Execute in technology-specific test runner (pytest/vitest/dotnet test)
+- ✅ Block on compilation failures (prevent false positive test runs)
+[2-3 more rules]
+
+### NEVER
+- ❌ Never skip validation checks (security risk)
+- ❌ Never assume defaults (explicit configuration required)
+- ❌ Never auto-approve without review (quality gate bypass prohibited)
+- ❌ Never proceed with failing tests (zero tolerance policy)
+- ❌ Never modify production config (requires manual approval)
+[2-3 more rules]
+
+### ASK
+- ⚠️ Coverage 70-79%: Ask if acceptable given task complexity and risk level
+- ⚠️ Breaking changes required: Ask before implementing API changes
+- ⚠️ Security tradeoffs: Ask if performance weakens security posture
+[1-2 more scenarios]
+```
+
+**Rule Derivation Guidance**:
+- **ALWAYS**: Extract from template patterns that appear consistently
+- **NEVER**: Identify anti-patterns and violations from template comments
+- **ASK**: Find conditional logic or decision points in templates
+
+### 6. Capabilities (5-7 items)
 Bullet list of what the agent can do.
 
-### 5. Related Templates (2-3 primary)
+### 7. Related Templates (2-3 primary)
 Links to actual templates with descriptions of what they demonstrate.
 
-### 6. Code Examples (2-3 examples)
-Actual code extracted from templates with explanations.
+### 8. Code Examples (2-3 examples)
+Actual code extracted from templates with explanations. Use DO/DON'T comparison style.
 
-### 7. Best Practices (3-5 practices)
-DO and DON'T guidance derived from template patterns.
-
-### 8. Common Patterns (2-3 patterns)
+### 9. Common Patterns (2-3 patterns)
 Patterns this agent works with, including code examples.
 
-### 9. Integration Points
+### 10. Integration Points
 How this agent coordinates with others.
 
 ## Quality Requirements
@@ -350,10 +460,13 @@ How this agent coordinates with others.
 Each enhanced agent must meet these standards:
 
 - **Minimum 150 lines** - Comprehensive coverage
-- **All 9 sections present** - Complete structure
+- **All 10 sections present** - Complete structure including Boundaries
 - **At least 2 code examples** - From actual templates
 - **At least 2 template references** - With relevance descriptions
 - **Quality score >= 8/10** - High actionability
+- **ALWAYS/NEVER/ASK sections present** - All three boundary sections required
+- **Boundary rule counts** - 5-7 ALWAYS, 5-7 NEVER, 3-5 ASK
+- **Boundary emoji format** - ✅/❌/⚠️ prefixes required
 
 ## Key Principles
 
@@ -373,21 +486,30 @@ Each enhanced agent must meet these standards:
 
 ## Quality Score Interpretation
 
-| Score | Interpretation |
-|-------|----------------|
-| 9-10 | Excellent - immediately actionable |
-| 7-8 | Good - minor improvements possible |
-| 5-6 | Adequate - some gaps in coverage |
-| < 5 | Poor - significant improvements needed |
+| Score | Interpretation | Boundary Clarity Impact |
+|-------|----------------|------------------------|
+| 9-10 | Excellent - immediately actionable | All ALWAYS/NEVER/ASK sections complete with correct counts and format |
+| 7-8 | Good - minor improvements possible | Boundary sections present but may have minor formatting issues |
+| 5-6 | Adequate - some gaps in coverage | Missing one boundary section OR incorrect rule counts |
+| < 5 | Poor - significant improvements needed | Missing multiple boundary sections OR no boundaries at all |
+
+**Note**: Agents scoring <7 due to missing/incomplete boundaries should be regenerated in iterative refinement loop (max 3 iterations).
 
 ## Fallback Behavior
 
 If enhancement fails or confidence is below threshold:
 
-1. Log warning with reason
+1. Log warning with reason (include boundary validation failures if applicable)
 2. Keep original basic agent definitions
 3. Continue workflow
-4. Note in validation report
+4. Note in validation report (include boundary_completeness metrics showing failure)
+
+**Boundary-Specific Failures**:
+- Missing ALWAYS/NEVER/ASK sections → FAIL status, trigger iteration
+- Incorrect rule counts (not 5-7/5-7/3-5) → FAIL status, trigger iteration
+- Missing emoji prefixes (✅/❌/⚠️) → FAIL status, trigger iteration
+- Wrong placement (not after Quick Start) → FAIL status, trigger iteration
+- 3 iterations exhausted → Keep basic agent, log detailed failure report
 
 ## Performance Considerations
 
