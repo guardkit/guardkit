@@ -373,6 +373,17 @@ Solution: This is a bug - please report it
 
 ---
 
+## Command Execution
+
+```bash
+# Execute via symlinked Python script
+python3 ~/.agentecflow/bin/agent-enhance "$@"
+```
+
+**Note**: The command uses an absolute path to a symlinked Python script in `~/.agentecflow/bin/`. This allows the command to work from any directory, including Conductor worktrees. The symlink points to the actual script in the repository, so updates propagate automatically.
+
+---
+
 **Document Status**: READY FOR IMPLEMENTATION
 **Last Updated**: 2025-11-20
 **Related Tasks**: TASK-PHASE-8-INCREMENTAL

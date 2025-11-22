@@ -1237,6 +1237,135 @@ setup_claude_integration() {
     fi
 }
 
+# Create symlinks for Python command scripts in ~/.agentecflow/bin/
+# This allows commands to work from any directory
+setup_python_bin_symlinks() {
+    print_info "Setting up Python command script symlinks..."
+
+    local BIN_DIR="$INSTALL_DIR/bin"
+    local COMMANDS_DIR="$INSTALLER_DIR/global/commands"
+    local COMMANDS_LIB_DIR="$INSTALLER_DIR/global/commands/lib"
+
+    # Create bin directory if it doesn't exist
+    if [ ! -d "$BIN_DIR" ]; then
+        mkdir -p "$BIN_DIR"
+        print_success "Created bin directory: $BIN_DIR"
+    fi
+
+    # Track statistics
+    local symlinks_created=0
+    local symlinks_updated=0
+    local symlinks_skipped=0
+    local errors=0
+
+    # Find all Python command scripts
+    local python_scripts=()
+
+    # Find scripts in commands/ directory (exclude lib/)
+    if [ -d "$COMMANDS_DIR" ]; then
+        while IFS= read -r script; do
+            python_scripts+=("$script")
+        done < <(find "$COMMANDS_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
+    fi
+
+    # Find scripts in commands/lib/ directory
+    if [ -d "$COMMANDS_LIB_DIR" ]; then
+        while IFS= read -r script; do
+            python_scripts+=("$script")
+        done < <(find "$COMMANDS_LIB_DIR" -type f -name "*.py" 2>/dev/null)
+    fi
+
+    # Check if we found any scripts
+    if [ ${#python_scripts[@]} -eq 0 ]; then
+        print_warning "No Python command scripts found"
+        return 0
+    fi
+
+    print_info "Found ${#python_scripts[@]} Python command script(s)"
+
+    # Create symlink for each Python script
+    for script_path in "${python_scripts[@]}"; do
+        local script_file=$(basename "$script_path")
+        local symlink_name="${script_file%.py}"
+
+        # Skip __init__.py files
+        if [ "$script_file" = "__init__.py" ]; then
+            ((symlinks_skipped++))
+            continue
+        fi
+
+        # Skip test files (files starting with test_)
+        if [[ "$script_file" == test_* ]]; then
+            ((symlinks_skipped++))
+            continue
+        fi
+
+        # Convert underscores to hyphens
+        symlink_name="${symlink_name//_/-}"
+
+        local symlink_path="$BIN_DIR/$symlink_name"
+
+        # Check if script is readable
+        if [ ! -r "$script_path" ]; then
+            print_warning "Cannot read script: $script_path (skipping)"
+            ((errors++))
+            continue
+        fi
+
+        # Check for conflicts
+        if [ -L "$symlink_path" ]; then
+            local existing_target=$(readlink "$symlink_path")
+            if [ "$existing_target" != "$script_path" ]; then
+                print_warning "Symlink conflict: $symlink_name"
+                print_warning "  Existing: $existing_target"
+                print_warning "  New: $script_path"
+                print_error "Cannot create symlink due to conflict"
+                ((errors++))
+                continue
+            fi
+        fi
+
+        # Create or update symlink
+        if [ -L "$symlink_path" ]; then
+            local current_target=$(readlink "$symlink_path")
+            if [ "$current_target" = "$script_path" ]; then
+                ((symlinks_skipped++))
+            else
+                ln -sf "$script_path" "$symlink_path"
+                chmod +x "$symlink_path" 2>/dev/null || true
+                ((symlinks_updated++))
+                print_info "  Updated: $symlink_name"
+            fi
+        elif [ -e "$symlink_path" ]; then
+            print_error "Cannot create symlink: $symlink_path exists as regular file"
+            ((errors++))
+        else
+            ln -s "$script_path" "$symlink_path"
+            chmod +x "$symlink_path" 2>/dev/null || true
+            ((symlinks_created++))
+            print_info "  Created: $symlink_name → $(basename $script_path)"
+        fi
+    done
+
+    # Summary
+    echo ""
+    if [ $errors -eq 0 ]; then
+        print_success "Python command symlinks configured successfully"
+        print_info "  Created: $symlinks_created"
+        print_info "  Updated: $symlinks_updated"
+        print_info "  Skipped: $symlinks_skipped"
+        print_info "  Location: $BIN_DIR"
+        print_info "Commands can now be executed from any directory"
+    else
+        print_warning "Python command symlinks configured with errors"
+        print_info "  Created: $symlinks_created"
+        print_info "  Updated: $symlinks_updated"
+        print_info "  Skipped: $symlinks_skipped"
+        print_error "  Errors: $errors"
+        print_warning "Some commands may not work correctly"
+    fi
+}
+
 # Create marker file for bidirectional integration
 create_marker_file() {
     print_info "Creating marker file for package detection..."
@@ -1309,6 +1438,7 @@ main() {
     setup_cache
     create_package_marker
     setup_claude_integration
+    setup_python_bin_symlinks
     create_marker_file
 
     # Print summary

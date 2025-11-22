@@ -396,6 +396,17 @@ taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
 taskwright init react-typescript --info
 ```
 
+**Python Command Scripts**: All Python-based command scripts are symlinked to `~/.agentecflow/bin/` for global accessibility. This allows commands to work from any directory, including Conductor worktrees. The symlinks point to the actual repository scripts, so updates propagate automatically.
+
+**Directory Structure**:
+```
+~/.agentecflow/
+├── bin/              # Python script symlinks
+├── commands/         # Slash command definitions
+├── agents/           # Agent markdown files
+└── templates/        # User templates
+```
+
 **Template Documentation:**
 - [react-typescript](installer/global/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
 - [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
@@ -753,6 +764,40 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 **Agent Definitions:** `installer/global/agents/*.md`
 **Workflow Guides:** `docs/guides/*.md` and `docs/workflows/*.md`
 **Stack Templates:** `installer/global/templates/*/`
+
+## Troubleshooting
+
+### Command Not Found
+
+If a slash command fails with "file not found":
+
+1. **Check symlink exists**:
+   ```bash
+   ls -l ~/.agentecflow/bin/agent-enhance
+   ```
+
+2. **Verify target is valid**:
+   ```bash
+   readlink ~/.agentecflow/bin/agent-enhance
+   ```
+
+3. **Re-run installation**:
+   ```bash
+   cd ~/Projects/appmilla_github/taskwright
+   ./installer/scripts/install.sh
+   ```
+
+### Permission Denied
+
+If you get permission errors:
+
+```bash
+# Make scripts executable
+chmod +x ~/.agentecflow/bin/*
+
+# Or re-run installation
+./installer/scripts/install.sh
+```
 
 ## When to Use Taskwright
 

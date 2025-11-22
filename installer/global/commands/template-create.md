@@ -1583,3 +1583,14 @@ async def invoke_agent_subagent(agent_name: str, prompt: str, timeout_seconds: i
         # Other errors during invocation
         raise
 ```
+
+---
+
+## Command Execution
+
+```bash
+# Execute via symlinked Python script
+python3 ~/.agentecflow/bin/template-create-orchestrator "$@"
+```
+
+**Note**: This command uses the orchestrator pattern with the entry point in `lib/template_create_orchestrator.py`. The symlink is created as `template-create-orchestrator` (underscores converted to hyphens for consistency).

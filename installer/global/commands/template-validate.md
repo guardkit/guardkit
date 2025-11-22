@@ -249,6 +249,17 @@ Both locations follow the same validation criteria.
 
 ---
 
+## Command Execution
+
+```bash
+# Execute via symlinked Python script
+python3 ~/.agentecflow/bin/template-validate-cli "$@"
+```
+
+**Note**: This command uses the CLI pattern with the entry point in `lib/template_validate_cli.py`. The symlink name uses hyphens for consistency with command naming conventions.
+
+---
+
 **Related Documents:**
 - [Template Validation Strategy](../../docs/research/template-validation-strategy.md)
 - [Template Analysis Task](../../docs/testing/template-analysis-task.md)

@@ -1,18 +1,28 @@
 ---
 id: TASK-INST-04CA
 title: Add Python script symlinks to install.sh for global command access
-status: backlog
+status: completed
 created: 2025-11-22T17:00:00Z
-updated: 2025-11-22T17:00:00Z
+updated: 2025-11-22T17:30:00Z
+completed_at: 2025-11-22T17:30:00Z
 priority: high
 tags: [installation, commands, symlinks, bug-fix, infrastructure]
 complexity: 5
 estimated_hours: 2-3
+actual_hours: 0.5
 prefix: INST
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: n/a
+  last_run: 2025-11-22T17:25:00Z
+  tests_passed: manual_verification
+completion_metrics:
+  total_duration: 30_minutes
+  implementation_time: 25_minutes
+  testing_time: 5_minutes
+  symlinks_created: 87
+  conflicts_detected: 2
+  files_modified: 5
 ---
 
 # TASK-INST-04CA: Add Python script symlinks to install.sh for global command access
