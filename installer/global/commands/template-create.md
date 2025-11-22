@@ -123,14 +123,25 @@ Phase 7.5: Extended Validation (TASK-043) [OPTIONAL - only with --validate]
 ├─ Validation report generation (validation-report.md)
 └─ Exit code assignment (0/1/2)
 
-Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A8D) [DEFAULT - skip with --no-create-agent-tasks]
+Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A8D, TASK-DOC-1C5A) [DEFAULT - skip with --no-create-agent-tasks]
 ├─ Creates one task per agent file
 ├─ Task metadata includes agent_file, template_dir, template_name, agent_name
 ├─ Tasks created in backlog with priority: medium
+├─ Displays boundary sections announcement (TASK-DOC-1C5A):
+│  ├─ Explains ALWAYS (5-7), NEVER (5-7), ASK (3-5) format
+│  ├─ Shows emoji prefixes (✅/❌/⚠️)
+│  └─ Expected validation output
 ├─ Displays two enhancement options:
 │  ├─ Option A (Recommended): /agent-enhance template-name/agent-name --hybrid (2-5 minutes per agent)
 │  └─ Option B (Optional): /task-work TASK-AGENT-XXX (30-60 minutes per agent - full workflow)
-└─ Both approaches use the same AI enhancement logic
+└─ Both approaches use the same AI enhancement logic with boundary validation
+
+**Boundary Sections**: Enhanced agents automatically include:
+- ALWAYS (5-7 rules): Non-negotiable actions
+- NEVER (5-7 rules): Prohibited actions
+- ASK (3-5 scenarios): Escalation situations
+
+See [Understanding Boundary Sections](#understanding-boundary-sections) for details.
 ```
 
 ## Output Structure
@@ -479,6 +490,8 @@ Identifies capability needs and generates custom agents:
 - Captures project-specific patterns and conventions
 - Marks reusable agents for global library
 
+**Boundary Sections**: Agents include ALWAYS/NEVER/ASK sections conforming to GitHub best practices (2,500+ repo analysis). See [Understanding Boundary Sections](#understanding-boundary-sections) below.
+
 ### CLAUDE.md Generation (Phase 7) [REORDERED]
 
 **CRITICAL CHANGE** (TASK-019A): This phase NOW runs AFTER agents are generated.
@@ -496,6 +509,124 @@ Generates comprehensive project documentation with:
   - Documents only agents that actually exist
   - Extracts metadata from agent frontmatter
   - Groups agents by category (domain, ui, testing, etc.)
+
+## Understanding Boundary Sections
+
+As of TASK-STND-773D (2025-11-22), all enhanced agents include **ALWAYS/NEVER/ASK boundary sections** conforming to GitHub best practices (analysis of 2,500+ repositories).
+
+### Format Specification
+
+**Structure**:
+- **ALWAYS** (5-7 rules): Non-negotiable actions the agent MUST perform
+- **NEVER** (5-7 rules): Prohibited actions the agent MUST avoid
+- **ASK** (3-5 scenarios): Situations requiring human escalation
+
+**Emoji Format**:
+- ✅ ALWAYS prefix (green checkmark)
+- ❌ NEVER prefix (red X)
+- ⚠️ ASK prefix (warning sign)
+
+**Rule Format**: `[emoji] [action] ([brief rationale])`
+
+### Examples
+
+**Testing Agent** (GitHub-compliant format):
+```markdown
+## Boundaries
+
+### ALWAYS
+- ✅ Run build verification before tests (block if compilation fails)
+- ✅ Execute in technology-specific test runner (pytest/vitest/dotnet test)
+- ✅ Report failures with actionable error messages (aid debugging)
+- ✅ Enforce 100% test pass rate (zero tolerance for failures)
+- ✅ Validate test coverage thresholds (ensure quality gates met)
+
+### NEVER
+- ❌ Never approve code with failing tests (zero tolerance policy)
+- ❌ Never skip compilation check (prevents false positive test runs)
+- ❌ Never modify test code to make tests pass (integrity violation)
+- ❌ Never ignore coverage below threshold (quality gate bypass prohibited)
+- ❌ Never run tests without dependency installation (environment consistency required)
+
+### ASK
+- ⚠️ Coverage 70-79%: Ask if acceptable given task complexity and risk level
+- ⚠️ Performance tests failing: Ask if acceptable for non-production changes
+- ⚠️ Flaky tests detected: Ask if should quarantine or fix immediately
+```
+
+**Repository Agent** (GitHub-compliant format):
+```markdown
+## Boundaries
+
+### ALWAYS
+- ✅ Inject repositories via constructor (enforces DI pattern)
+- ✅ Return ErrorOr<T> for all operations (consistent error handling)
+- ✅ Use async/await for database operations (prevents thread blocking)
+- ✅ Implement IDisposable for database connections (resource cleanup)
+- ✅ Validate input parameters before database access (prevent injection)
+
+### NEVER
+- ❌ Never use `new()` for repository instantiation (breaks testability and DI)
+- ❌ Never expose IQueryable outside repository (violates encapsulation)
+- ❌ Never use raw SQL without parameterization (SQL injection risk)
+- ❌ Never ignore database errors (silent failures prohibited)
+- ❌ Never commit transactions within repository (violates SRP)
+
+### ASK
+- ⚠️ Complex joins across >3 tables: Ask if raw SQL vs EF Core query
+- ⚠️ Caching strategy needed: Ask if in-memory vs distributed cache
+- ⚠️ Soft delete vs hard delete: Ask for data retention policy decision
+```
+
+### DO and DON'T
+
+**✅ DO**:
+- Use specific, actionable verbs ("Validate input", "Run tests", "Log errors")
+- Include brief rationale in parentheses ("(prevents SQL injection)", "(ensures audit trail)")
+- Follow emoji format consistently (✅ ALWAYS, ❌ NEVER, ⚠️ ASK)
+- Maintain rule counts (5-7 ALWAYS, 5-7 NEVER, 3-5 ASK)
+
+**❌ DON'T**:
+- Use vague language ("Handle things properly", "Be careful")
+- Omit rationale ("Validate input" without explaining why)
+- Mix emoji formats (🚫 instead of ❌)
+- Exceed count limits (8+ rules per section becomes overwhelming)
+
+### Validation
+
+Enhanced agents are validated for:
+- **Section Presence**: All three sections (ALWAYS, NEVER, ASK) must exist
+- **Rule Counts**: 5-7 ALWAYS, 5-7 NEVER, 3-5 ASK
+- **Emoji Format**: Correct emoji prefixes (✅/❌/⚠️)
+- **Placement**: Boundaries section after "Quick Start", before "Capabilities"
+
+**Validation Output**:
+```yaml
+validation_report:
+  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  boundary_completeness:
+    always_count: 6 ✅
+    never_count: 6 ✅
+    ask_count: 4 ✅
+    emoji_correct: true ✅
+    format_valid: true ✅
+    placement_correct: true ✅
+  overall_status: PASSED
+```
+
+### Background
+
+**Why Boundary Sections?**
+
+GitHub analysis of 2,500+ repositories identified explicit boundaries as **Critical Gap #4** (0/10 score). Research shows:
+- Boundary clarity prevents mistakes and reduces human intervention by 40%
+- Explicit ALWAYS/NEVER/ASK framework reduces ambiguity in agent behavior
+- Consistent format improves agent discoverability and reusability
+
+**References**:
+- [GitHub Agent Best Practices Analysis](../../docs/analysis/github-agent-best-practices-analysis.md)
+- [agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md) (detailed specification)
+- [TASK-STND-773D](../../tasks/in_progress/TASK-STND-773D-standardize-agent-boundary-sections.md) (implementation task)
 
 ## Error Handling
 

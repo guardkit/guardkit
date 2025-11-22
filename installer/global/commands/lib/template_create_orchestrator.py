@@ -1528,6 +1528,7 @@ Enhance the {agent_name} agent with template-specific content:
     ) -> None:
         """
         Print agent enhancement instructions with Option A/B format (TASK-UX-2F95).
+        Includes boundary sections announcement (TASK-DOC-1C5A).
 
         Displays two clear options:
         - Option A: Fast enhancement using /agent-enhance (2-5 minutes per agent)
@@ -1541,6 +1542,19 @@ Enhance the {agent_name} agent with template-specific content:
         print(f"\n{'='*70}")
         print("AGENT ENHANCEMENT OPTIONS")
         print(f"{'='*70}\n")
+
+        # NEW: Boundary sections feature announcement
+        print("📋 Enhanced Agents Now Include Boundary Sections (GitHub Best Practices)")
+        print("   Automatically generated in all enhanced agents:\n")
+        print("   • ALWAYS (5-7 rules): Non-negotiable actions the agent MUST perform")
+        print("   • NEVER (5-7 rules): Prohibited actions the agent MUST avoid")
+        print("   • ASK (3-5 scenarios): Situations requiring human escalation\n")
+        print("   Format: [emoji] [action] ([brief rationale])")
+        print("   - ✅ ALWAYS prefix")
+        print("   - ❌ NEVER prefix")
+        print("   - ⚠️ ASK prefix\n")
+        print("   📖 See: installer/global/agents/agent-content-enhancer.md for details")
+        print(f"   {'─'*68}\n")
 
         # Option A: Fast Enhancement (Recommended)
         print("Option A - Fast Enhancement (Recommended): 2-5 minutes per agent")
@@ -1556,8 +1570,11 @@ Enhance the {agent_name} agent with template-specific content:
         for task_id in task_ids:
             print(f"  /task-work {task_id}")
 
-        # Footer note
-        print(f"\nBoth approaches use the same AI enhancement logic.")
+        # Enhanced footer note
+        print(f"\nBoth approaches use the same AI enhancement logic with boundary validation.")
+        print(f"\nExpected Validation:")
+        print(f"  ✅ boundary_sections: ['ALWAYS', 'NEVER', 'ASK']")
+        print(f"  ✅ boundary_completeness: always_count=5-7, never_count=5-7, ask_count=3-5")
         print(f"{'='*70}\n")
 
     def _display_enhancement_errors(self, errors: list[str], max_display: int = 3) -> None:

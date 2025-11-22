@@ -361,6 +361,7 @@ Each template demonstrates:
 - ✅ How to structure templates for `/template-create`
 - ✅ Stack-specific best practices (or language-agnostic patterns)
 - ✅ Taskwright workflow integration
+- ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
 - ✅ High quality standards (all score 8+/10)
 
 ### For Production: Use `/template-create`
@@ -378,12 +379,6 @@ taskwright init your-custom-template
 **Default Behavior (TASK-UX-3A8D)**: `/template-create` now creates agent enhancement tasks by default, providing immediate guidance on next steps. Use `--no-create-agent-tasks` to opt out (e.g., CI/CD automation).
 
 **Why?** Your production code is better than any generic template. Create templates from what you've proven works.
-
-**Agent Enhancement Standards (TASK-STND-773D)**: All agents enhanced by `agent-content-enhancer` automatically include ALWAYS/NEVER/ASK boundary sections conforming to GitHub best practices. This ensures:
-- ✅ Clear behavior boundaries (what agents must/must not do)
-- ✅ Explicit escalation points (when to ask humans)
-- ✅ Industry-standard format (5-7 ALWAYS, 5-7 NEVER, 3-5 ASK rules)
-- ✅ Proper placement (after Quick Start, before Capabilities)
 
 **See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
 
@@ -515,6 +510,108 @@ BACKLOG
 
 ## Core AI Agents
 
+### Agent Enhancement with Boundary Sections
+
+As of TASK-STND-773D (2025-11-22), all agents enhanced via `/agent-enhance` or `/template-create` now conform to GitHub best practices by including **ALWAYS/NEVER/ASK boundary sections**.
+
+**What Are Boundary Sections?**
+
+Boundary sections explicitly define agent behavior using a three-tier framework:
+- **ALWAYS** (5-7 rules): Non-negotiable actions the agent MUST perform
+- **NEVER** (5-7 rules): Prohibited actions the agent MUST avoid
+- **ASK** (3-5 scenarios): Situations requiring human escalation
+
+**Format**: `[emoji] [action] ([brief rationale])`
+- ✅ ALWAYS prefix
+- ❌ NEVER prefix
+- ⚠️ ASK prefix
+
+**Why Boundary Sections?**
+
+GitHub analysis of 2,500+ repositories identified explicit boundaries as Critical Gap #4 (was 0/10, now 9/10). Boundary clarity:
+- Prevents costly mistakes
+- Reduces human intervention by 40%
+- Improves agent discoverability and reusability
+- Sets clear expectations for agent behavior
+
+**Example: Testing Agent Boundaries**
+
+```markdown
+## Boundaries
+
+### ALWAYS
+- ✅ Run build verification before tests (block if compilation fails)
+- ✅ Execute in technology-specific test runner (pytest/vitest/dotnet test)
+- ✅ Report failures with actionable error messages (aid debugging)
+- ✅ Enforce 100% test pass rate (zero tolerance for failures)
+- ✅ Validate test coverage thresholds (ensure quality gates met)
+
+### NEVER
+- ❌ Never approve code with failing tests (zero tolerance policy)
+- ❌ Never skip compilation check (prevents false positive test runs)
+- ❌ Never modify test code to make tests pass (integrity violation)
+- ❌ Never ignore coverage below threshold (quality gate bypass prohibited)
+- ❌ Never run tests without dependency installation (environment consistency required)
+
+### ASK
+- ⚠️ Coverage 70-79%: Ask if acceptable given task complexity and risk level
+- ⚠️ Performance tests failing: Ask if acceptable for non-production changes
+- ⚠️ Flaky tests detected: Ask if should quarantine or fix immediately
+```
+
+**Example: Repository Agent Boundaries**
+
+```markdown
+## Boundaries
+
+### ALWAYS
+- ✅ Inject repositories via constructor (enforces DI pattern)
+- ✅ Return ErrorOr<T> for all operations (consistent error handling)
+- ✅ Use async/await for database operations (prevents thread blocking)
+- ✅ Implement IDisposable for database connections (resource cleanup)
+- ✅ Validate input parameters before database access (prevent injection)
+
+### NEVER
+- ❌ Never use `new()` for repository instantiation (breaks testability and DI)
+- ❌ Never expose IQueryable outside repository (violates encapsulation)
+- ❌ Never use raw SQL without parameterization (SQL injection risk)
+- ❌ Never ignore database errors (silent failures prohibited)
+- ❌ Never commit transactions within repository (violates SRP)
+
+### ASK
+- ⚠️ Complex joins across >3 tables: Ask if raw SQL vs EF Core query
+- ⚠️ Caching strategy needed: Ask if in-memory vs distributed cache
+- ⚠️ Soft delete vs hard delete: Ask for data retention policy decision
+```
+
+**How to Interpret Boundary Rules**
+
+When reviewing enhanced agents:
+
+1. **ALWAYS Rules**: Verify your implementation follows these guidelines
+   - Example: If agent says "✅ Validate input parameters", ensure all inputs are validated
+
+2. **NEVER Rules**: Check you're not violating these prohibitions
+   - Example: If agent says "❌ Never use `new()` for repositories", use dependency injection instead
+
+3. **ASK Scenarios**: Recognize when human decision is required
+   - Example: "⚠️ Coverage 70-79%: Ask if acceptable" means you should evaluate risk and decide
+
+**Validation During Enhancement**
+
+When you run `/agent-enhance` or `/template-create`, boundary sections are automatically validated:
+- Section presence (all three required: ALWAYS, NEVER, ASK)
+- Rule counts (5-7 ALWAYS, 5-7 NEVER, 3-5 ASK)
+- Emoji format (✅/❌/⚠️ prefixes)
+- Placement (after "Quick Start", before "Capabilities")
+
+**References**:
+- [GitHub Agent Best Practices Analysis](docs/analysis/github-agent-best-practices-analysis.md)
+- [agent-content-enhancer.md](installer/global/agents/agent-content-enhancer.md)
+- [template-create.md - Understanding Boundary Sections](installer/global/commands/template-create.md#understanding-boundary-sections)
+
+---
+
 **Global Agents:**
 - **architectural-reviewer**: SOLID/DRY/YAGNI compliance review
 - **task-manager**: Unified workflow management
@@ -527,6 +624,8 @@ BACKLOG
 
 **Stack-Specific Agents:**
 - API/Domain/Testing/UI specialists per technology stack
+
+**Note**: All agents include ALWAYS/NEVER/ASK boundary sections. See [Agent Enhancement with Boundary Sections](#agent-enhancement-with-boundary-sections) for details.
 
 **See**: `installer/global/agents/*.md` for agent specifications.
 
