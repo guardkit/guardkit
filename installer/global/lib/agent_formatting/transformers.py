@@ -6,32 +6,31 @@ Applies formatting transformations to improve agent quality metrics.
 
 from typing import Optional
 import re
+import sys
+from pathlib import Path
 
 from .parser import AgentStructure, Section, CodeBlock
 from .metrics import QualityMetrics
+
+# TASK-UX-6581: Import shared boundary utilities from agent_enhancement library
+# Add agent_enhancement to path for cross-library import
+_lib_dir = Path(__file__).resolve().parent.parent
+_agent_enhancement_dir = _lib_dir / "agent_enhancement"
+if str(_agent_enhancement_dir) not in sys.path:
+    sys.path.insert(0, str(_agent_enhancement_dir))
+
+from boundary_utils import (
+    find_boundaries_insertion_point,
+    validate_boundaries_format,
+    generate_generic_boundaries
+)
 
 
 class AgentFormatter:
     """Applies formatting transformations to agent markdown."""
 
-    BOUNDARY_TEMPLATE = """
-## Boundaries
-
-### ALWAYS
-[NEEDS_CONTENT: Add 5-7 non-negotiable rules this agent MUST follow]
-<!-- Example: Validate all inputs before processing -->
-<!-- Example: Run tests before any code changes -->
-
-### NEVER
-[NEEDS_CONTENT: Add 5-7 prohibited actions this agent MUST avoid]
-<!-- Example: Skip security validation for convenience -->
-<!-- Example: Auto-approve changes without human review -->
-
-### ASK
-[NEEDS_CONTENT: Add 3-5 scenarios requiring human escalation]
-<!-- Example: Ambiguous requirements that conflict -->
-<!-- Example: Security tradeoffs affecting performance -->
-"""
+    # TASK-UX-6581: BOUNDARY_TEMPLATE removed - now uses generate_generic_boundaries()
+    # from shared boundary_utils library for GitHub-compliant generic boundaries
 
     QUICK_START_TEMPLATE = """
 ## Quick Start
@@ -119,70 +118,63 @@ class AgentFormatter:
         existing: dict[str, bool],
     ) -> list[str]:
         """
-        Add missing ALWAYS/NEVER/ASK boundary sections.
+        Add missing ALWAYS/NEVER/ASK boundary sections using shared library.
 
-        Inserts after Quick Start section or at beginning of content.
+        TASK-UX-6581: Now generates GitHub-compliant generic boundaries instead of placeholders.
+
+        Uses shared boundary utilities for:
+        - Placement: find_boundaries_insertion_point()
+        - Content: generate_generic_boundaries()
+        - Validation: validate_boundaries_format()
+
+        Inserts after Quick Start section or at optimal location (lines 80-150).
         """
-        # Find insertion point
-        insert_line = agent.frontmatter_end_line
+        # Skip if all boundary sections already exist
+        if all(existing.values()):
+            return lines
 
-        # Look for "Quick Start" or "Capabilities" section
-        for i, line in enumerate(lines):
-            if i < agent.frontmatter_end_line:
-                continue
+        # Step 1: Find insertion point using shared placement logic
+        insert_line = find_boundaries_insertion_point(lines)
 
-            # Insert after Quick Start or before Capabilities
-            if '## Quick Start' in line or '## Capabilities' in line:
-                # Find end of this section (next ## heading or end of file)
-                for j in range(i + 1, len(lines)):
-                    if lines[j].startswith('## '):
-                        insert_line = j
-                        break
-                else:
-                    insert_line = len(lines)
-                break
+        if insert_line is None:
+            insert_line = len(lines)  # Fallback to end
 
-        # Build boundary sections (only add missing ones)
-        boundary_lines = []
+        # Step 2: Generate generic boundary content using shared generator
+        agent_name = agent.frontmatter.get("name", "unknown")
+        agent_description = agent.frontmatter.get("description", "")
 
-        if not any(existing.values()):
-            # Add all sections
-            boundary_lines = self.BOUNDARY_TEMPLATE.strip().split('\n')
-        else:
-            # Add only missing sections
-            if not existing.get('ALWAYS'):
-                boundary_lines.extend(
-                    [
-                        '',
-                        '### ALWAYS',
-                        '[NEEDS_CONTENT: Add 5-7 non-negotiable rules this agent MUST follow]',
-                        '<!-- Example: Validate all inputs before processing -->',
-                        '',
-                    ]
-                )
+        boundaries_content = generate_generic_boundaries(agent_name, agent_description)
 
-            if not existing.get('NEVER'):
-                boundary_lines.extend(
-                    [
-                        '### NEVER',
-                        '[NEEDS_CONTENT: Add 5-7 prohibited actions this agent MUST avoid]',
-                        '<!-- Example: Skip security validation for convenience -->',
-                        '',
-                    ]
-                )
+        # Step 3: Validate generated content using shared validator
+        is_valid, issues = validate_boundaries_format(boundaries_content)
 
-            if not existing.get('ASK'):
-                boundary_lines.extend(
-                    [
-                        '### ASK',
-                        '[NEEDS_CONTENT: Add 3-5 scenarios requiring human escalation]',
-                        '<!-- Example: Ambiguous requirements that conflict -->',
-                        '',
-                    ]
-                )
+        if not is_valid:
+            # Fallback to placeholder if generation failed (should never happen)
+            boundaries_content = """## Boundaries
 
-        if boundary_lines:
-            lines = lines[:insert_line] + [''] + boundary_lines + [''] + lines[insert_line:]
+### ALWAYS
+- ✅ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ✅ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ✅ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ✅ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ✅ [PLACEHOLDER: Generic generation failed - manual intervention required]
+
+### NEVER
+- ❌ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ❌ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ❌ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ❌ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ❌ [PLACEHOLDER: Generic generation failed - manual intervention required]
+
+### ASK
+- ⚠️ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ⚠️ [PLACEHOLDER: Generic generation failed - manual intervention required]
+- ⚠️ [PLACEHOLDER: Generic generation failed - manual intervention required]
+"""
+
+        # Step 4: Insert content
+        boundary_lines = boundaries_content.strip().split('\n')
+        lines = lines[:insert_line] + [''] + boundary_lines + [''] + lines[insert_line:]
 
         return lines
 

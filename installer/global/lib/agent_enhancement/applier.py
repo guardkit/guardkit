@@ -17,6 +17,13 @@ _file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
 safe_read_file = _file_io_module.safe_read_file
 safe_write_file = _file_io_module.safe_write_file
 
+# TASK-UX-6581: Import shared boundary utilities
+# Handle both package import and direct import
+try:
+    from .boundary_utils import find_boundaries_insertion_point
+except ImportError:
+    from boundary_utils import find_boundaries_insertion_point
+
 logger = logging.getLogger(__name__)
 
 
@@ -166,8 +173,9 @@ class EnhancementApplier:
         # Handle boundaries special placement (after Quick Start, before Capabilities)
         if boundaries_content and boundaries_content.strip():
             if "## Boundaries" not in existing_content:
-                # _find_boundaries_insertion_point now NEVER returns None
-                insertion_point = self._find_boundaries_insertion_point(new_lines)
+                # TASK-UX-6581: Use shared boundary utilities
+                # find_boundaries_insertion_point now NEVER returns None
+                insertion_point = find_boundaries_insertion_point(new_lines)
                 # Insert at specific location
                 if new_lines[insertion_point - 1].strip():
                     new_lines.insert(insertion_point, "")
@@ -195,138 +203,9 @@ class EnhancementApplier:
 
         return '\n'.join(new_lines)
 
-    def _find_boundaries_insertion_point(self, lines: list[str]) -> int:
-        """
-        Find insertion point for boundaries section with bulletproof fallback.
-
-        NEVER returns None - always finds suitable insertion point.
-        GitHub recommendation: lines 80-150, before Code Examples.
-
-        Strategy:
-        1. After "## Quick Start" (if exists)
-        2. Before next section after Quick Start
-        3. Fallback to _find_post_description_position (5-tier strategy)
-
-        The fallback method implements:
-        - Priority 3: Before "## Code Examples" (fixes 92% of failures)
-        - Priority 4: Before "## Related Templates" (safety net)
-        - Priority 5: Frontmatter + 50 lines (absolute last resort)
-
-        Args:
-            lines: List of content lines
-
-        Returns:
-            int: Line index for insertion (NEVER None)
-        """
-        # Step 1: Find Quick Start
-        quick_start_idx = None
-        for i, line in enumerate(lines):
-            if line.strip().startswith("## Quick Start"):
-                quick_start_idx = i
-                break
-
-        if quick_start_idx is None:
-            # Fallback: No Quick Start, use 5-tier fallback strategy
-            return self._find_post_description_position(lines)
-
-        # Step 2: Find next ## section after Quick Start
-        for i in range(quick_start_idx + 1, len(lines)):
-            if lines[i].strip().startswith("## "):
-                return i  # Insert before this section
-
-        # Step 3: No next section, insert at reasonable position
-        # Target: ~30 lines after Quick Start (hits 80-150 range)
-        target_line = quick_start_idx + 30
-        return min(target_line, len(lines))
-
-    def _find_post_description_position(self, lines: list[str]) -> int:
-        """
-        Fallback: Find position after description/purpose section.
-
-        Used when "## Quick Start" doesn't exist.
-        Implements 5-tier bulletproof fallback strategy that NEVER returns None.
-
-        Priority Order:
-        1. Before first "content" section (Code Examples, Best Practices, etc.)
-        2. After last "early" section (Purpose, Technologies, etc.)
-        3. Before "## Code Examples" (catches 92% of failures)
-        4. Before "## Related Templates" (safety net)
-        5. Frontmatter + 50 lines (absolute last resort)
-
-        GitHub recommendation: lines 80-150, before Code Examples.
-
-        Args:
-            lines: List of content lines
-
-        Returns:
-            int: Line index for insertion (NEVER None)
-        """
-        # Find end of frontmatter
-        frontmatter_end = 0
-        frontmatter_count = 0
-
-        for i, line in enumerate(lines):
-            if line.strip() == '---':
-                frontmatter_count += 1
-                if frontmatter_count == 2:
-                    frontmatter_end = i + 1
-                    break
-
-        # Find sections after frontmatter to determine best insertion point
-        # We want to insert EARLY, after initial metadata sections but before content
-        early_sections = ["Purpose", "Why This Agent Exists", "Technologies", "Usage", "When to Use"]
-        content_sections = ["Code Examples", "Examples", "Related Templates", "Best Practices", "Capabilities"]
-
-        sections_found = []
-        for i in range(frontmatter_end, min(frontmatter_end + 100, len(lines))):
-            if lines[i].strip().startswith("## "):
-                section_name = lines[i].strip()[3:].strip()
-                sections_found.append((i, section_name))
-
-        # Strategy: Insert before the first "content" section OR after the last "early" section
-        last_early_section_idx = None
-        first_content_section_idx = None
-
-        for idx, name in sections_found:
-            # Check if this is an early section (metadata)
-            if any(early in name for early in early_sections):
-                last_early_section_idx = idx
-            # Check if this is a content section
-            elif any(content in name for content in content_sections):
-                if first_content_section_idx is None:
-                    first_content_section_idx = idx
-                break  # Stop at first content section
-
-        # Priority 1: If we found a content section, insert before it
-        if first_content_section_idx is not None:
-            return first_content_section_idx
-
-        # Priority 2: If we found early sections but no content sections, insert after last early section
-        if last_early_section_idx is not None:
-            # Find next section after last early section
-            for idx, name in sections_found:
-                if idx > last_early_section_idx:
-                    return idx
-
-        # Priority 3: Before "## Code Examples" (NEW - fixes 92% of failures)
-        for i, line in enumerate(lines):
-            if line.strip().startswith("## Code Examples"):
-                return i
-
-        # Priority 4: Before "## Related Templates" (NEW - safety net)
-        for i, line in enumerate(lines):
-            if line.strip().startswith("## Related Templates"):
-                return i
-
-        # Priority 5: Frontmatter + 50 lines (NEW - absolute last resort)
-        insertion_point = min(frontmatter_end + 50, len(lines))
-
-        # Find next section boundary at or after insertion_point
-        for i in range(insertion_point, len(lines)):
-            if lines[i].strip().startswith("## "):
-                return i
-
-        return insertion_point  # Never None
+    # TASK-UX-6581: Removed _find_boundaries_insertion_point() and _find_post_description_position()
+    # These methods have been moved to boundary_utils.py for shared use between
+    # /agent-enhance and /agent-format commands.
 
     def remove_sections(
         self,

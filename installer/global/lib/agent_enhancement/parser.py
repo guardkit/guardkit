@@ -11,6 +11,13 @@ import re
 import logging
 from typing import Dict, Any
 
+# TASK-UX-6581: Import shared boundary utilities
+# Handle both package import and direct import
+try:
+    from .boundary_utils import validate_boundaries_format
+except ImportError:
+    from boundary_utils import validate_boundaries_format
+
 logger = logging.getLogger(__name__)
 
 
@@ -154,6 +161,8 @@ class EnhancementParser:
         """
         Validate boundaries section structure and rule counts.
 
+        TASK-UX-6581: Uses shared boundary_utils.validate_boundaries_format() for validation.
+
         Ensures ALWAYS/NEVER/ASK framework compliance:
         - ALWAYS: 5-7 rules with ✅ prefix
         - NEVER: 5-7 rules with ❌ prefix
@@ -165,97 +174,18 @@ class EnhancementParser:
         Raises:
             ValueError: If boundaries structure is invalid or counts are wrong
         """
-        if not boundaries_content or not boundaries_content.strip():
-            raise ValueError("Boundaries section is empty")
+        is_valid, issues = validate_boundaries_format(boundaries_content)
 
-        # Check for required subsections
-        if "### ALWAYS" not in boundaries_content:
-            raise ValueError("Boundaries section missing '### ALWAYS' subsection")
-        if "### NEVER" not in boundaries_content:
-            raise ValueError("Boundaries section missing '### NEVER' subsection")
-        if "### ASK" not in boundaries_content:
-            raise ValueError("Boundaries section missing '### ASK' subsection")
+        if not is_valid:
+            # Combine issues into single error message
+            raise ValueError("; ".join(issues))
 
-        # Extract sections
-        always_section = self._extract_subsection(boundaries_content, "### ALWAYS", "### NEVER")
-        never_section = self._extract_subsection(boundaries_content, "### NEVER", "### ASK")
-        ask_section = self._extract_subsection(boundaries_content, "### ASK", None)
+        # Log success (matches old behavior)
+        logger.info("Boundaries validation passed via shared utility")
 
-        # Count rules (lines starting with emoji bullets)
-        always_count = self._count_rules(always_section, "✅")
-        never_count = self._count_rules(never_section, "❌")
-        ask_count = self._count_rules(ask_section, "⚠️")
-
-        # Validate counts
-        if not (5 <= always_count <= 7):
-            raise ValueError(
-                f"ALWAYS section must have 5-7 rules, found {always_count}. "
-                f"Each rule should start with '- ✅'"
-            )
-
-        if not (5 <= never_count <= 7):
-            raise ValueError(
-                f"NEVER section must have 5-7 rules, found {never_count}. "
-                f"Each rule should start with '- ❌'"
-            )
-
-        if not (3 <= ask_count <= 5):
-            raise ValueError(
-                f"ASK section must have 3-5 scenarios, found {ask_count}. "
-                f"Each scenario should start with '- ⚠️'"
-            )
-
-        logger.info(
-            f"Boundaries validation passed: ALWAYS={always_count}, "
-            f"NEVER={never_count}, ASK={ask_count}"
-        )
-
-    def _extract_subsection(self, content: str, start_marker: str, end_marker: str | None) -> str:
-        """
-        Extract content between two section markers.
-
-        Args:
-            content: Full markdown content
-            start_marker: Start section header (e.g., "### ALWAYS")
-            end_marker: End section header or None for end of content
-
-        Returns:
-            Extracted subsection content
-        """
-        start_idx = content.find(start_marker)
-        if start_idx == -1:
-            return ""
-
-        # Start after the marker line
-        start_idx = content.find('\n', start_idx) + 1
-
-        if end_marker is None:
-            return content[start_idx:]
-
-        end_idx = content.find(end_marker, start_idx)
-        if end_idx == -1:
-            return content[start_idx:]
-
-        return content[start_idx:end_idx]
-
-    def _count_rules(self, section_content: str, emoji: str) -> int:
-        """
-        Count rules in a section by counting lines with specific emoji prefix.
-
-        Args:
-            section_content: Section markdown content
-            emoji: Expected emoji prefix (✅, ❌, or ⚠️)
-
-        Returns:
-            Number of rules found
-        """
-        count = 0
-        for line in section_content.split('\n'):
-            stripped = line.strip()
-            # Match: "- [emoji] ..." or "-[emoji] ..."
-            if stripped.startswith(f"- {emoji}") or stripped.startswith(f"-{emoji}"):
-                count += 1
-        return count
+    # TASK-UX-6581: Removed _extract_subsection() and _count_rules()
+    # These methods have been moved to boundary_utils.py for shared use between
+    # /agent-enhance and /agent-format commands.
 
     def parse_simple(self, response: str) -> Dict[str, Any]:
         """
