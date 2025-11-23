@@ -245,7 +245,9 @@ class EnhancementApplier:
         Fallback: Find position after description/purpose section.
 
         Used when "## Quick Start" doesn't exist.
-        Targets line 50-80 range.
+        Targets line 50-80 range by inserting after initial sections
+        (Purpose, Technologies, Usage) but before content sections
+        (Code Examples, Best Practices, etc.).
 
         Args:
             lines: List of content lines
@@ -264,18 +266,46 @@ class EnhancementApplier:
                     frontmatter_end = i + 1
                     break
 
-        # Find first ## section after frontmatter
-        for i in range(frontmatter_end, len(lines)):
-            if lines[i].strip().startswith("## "):
-                # Found first section, look for next ##
-                for j in range(i + 1, len(lines)):
-                    if lines[j].strip().startswith("## "):
-                        return j
-                # No next section, but we have at least one section
-                # Return after it (reasonable default)
-                return min(50, len(lines))
+        # Find sections after frontmatter to determine best insertion point
+        # We want to insert EARLY, after initial metadata sections but before content
+        early_sections = ["Purpose", "Why This Agent Exists", "Technologies", "Usage", "When to Use"]
+        content_sections = ["Code Examples", "Examples", "Related Templates", "Best Practices", "Capabilities"]
 
-        # No ## sections found at all - no structure
+        sections_found = []
+        for i in range(frontmatter_end, min(frontmatter_end + 100, len(lines))):
+            if lines[i].strip().startswith("## "):
+                section_name = lines[i].strip()[3:].strip()
+                sections_found.append((i, section_name))
+
+        # Strategy: Insert before the first "content" section OR after the last "early" section
+        last_early_section_idx = None
+        first_content_section_idx = None
+
+        for idx, name in sections_found:
+            # Check if this is an early section (metadata)
+            if any(early in name for early in early_sections):
+                last_early_section_idx = idx
+            # Check if this is a content section
+            elif any(content in name for content in content_sections):
+                if first_content_section_idx is None:
+                    first_content_section_idx = idx
+                break  # Stop at first content section
+
+        # Decision logic:
+        # 1. If we found a content section, insert before it
+        if first_content_section_idx is not None:
+            return first_content_section_idx
+
+        # 2. If we found early sections but no content sections, insert after last early section
+        if last_early_section_idx is not None:
+            # Find next section after last early section
+            for idx, name in sections_found:
+                if idx > last_early_section_idx:
+                    return idx
+            # No section after, insert at reasonable default
+            return min(50, len(lines))
+
+        # 3. No recognizable structure, return None (will append at end)
         return None
 
     def remove_sections(
