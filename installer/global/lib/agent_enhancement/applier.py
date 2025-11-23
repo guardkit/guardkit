@@ -116,8 +116,9 @@ class EnhancementApplier:
         Strategy:
         1. Preserve frontmatter (YAML between ---...---)
         2. Preserve existing content
-        3. Insert boundaries after "Quick Start", before "Capabilities"
-        4. Append other sections at the end
+        3. Insert boundaries after "Quick Start", before next section (targets lines 80-150)
+        4. Fallback to line 50-80 if no Quick Start found
+        5. Append other sections at the end
 
         Args:
             original: Original file content
@@ -201,10 +202,16 @@ class EnhancementApplier:
 
     def _find_boundaries_insertion_point(self, lines: list[str]) -> int | None:
         """
-        Find the insertion point for boundaries section.
+        Find insertion point for boundaries section.
 
-        Looks for "## Capabilities" section and returns index before it.
-        If not found, looks for "## Quick Start" and returns index after it.
+        Target: After "## Quick Start", before "## Code Examples"/"## Capabilities"
+        GitHub recommendation: Lines 80-150 for optimal authority clarity.
+
+        Strategy:
+        1. Find "## Quick Start" section
+        2. Find next ## section after Quick Start
+        3. Insert boundaries before that next section
+        4. Fallback: Insert at line 50-80 if no Quick Start found
 
         Args:
             lines: List of content lines
@@ -212,28 +219,63 @@ class EnhancementApplier:
         Returns:
             Line index for insertion or None if no suitable point found
         """
-        # First try: Find "## Capabilities" and insert before it
-        for i, line in enumerate(lines):
-            if line.strip().startswith("## Capabilities"):
-                return i
-
-        # Second try: Find "## Quick Start" and insert after its content
+        # Step 1: Find Quick Start
         quick_start_idx = None
         for i, line in enumerate(lines):
             if line.strip().startswith("## Quick Start"):
                 quick_start_idx = i
                 break
 
-        if quick_start_idx is not None:
-            # Find next ## section after Quick Start
-            for i in range(quick_start_idx + 1, len(lines)):
-                if lines[i].strip().startswith("## "):
-                    return i
+        if quick_start_idx is None:
+            # Fallback: No Quick Start, insert after description
+            return self._find_post_description_position(lines)
 
-            # If no next section, append at end
-            return len(lines)
+        # Step 2: Find next ## section after Quick Start
+        for i in range(quick_start_idx + 1, len(lines)):
+            if lines[i].strip().startswith("## "):
+                return i  # Insert before this section
 
-        # No suitable insertion point found
+        # Step 3: No next section, insert at reasonable position
+        # Target: ~30 lines after Quick Start (hits 80-150 range)
+        target_line = quick_start_idx + 30
+        return min(target_line, len(lines))
+
+    def _find_post_description_position(self, lines: list[str]) -> int | None:
+        """
+        Fallback: Find position after description/purpose section.
+
+        Used when "## Quick Start" doesn't exist.
+        Targets line 50-80 range.
+
+        Args:
+            lines: List of content lines
+
+        Returns:
+            Line index for insertion or None if no structure found
+        """
+        # Find end of frontmatter
+        frontmatter_end = 0
+        frontmatter_count = 0
+
+        for i, line in enumerate(lines):
+            if line.strip() == '---':
+                frontmatter_count += 1
+                if frontmatter_count == 2:
+                    frontmatter_end = i + 1
+                    break
+
+        # Find first ## section after frontmatter
+        for i in range(frontmatter_end, len(lines)):
+            if lines[i].strip().startswith("## "):
+                # Found first section, look for next ##
+                for j in range(i + 1, len(lines)):
+                    if lines[j].strip().startswith("## "):
+                        return j
+                # No next section, but we have at least one section
+                # Return after it (reasonable default)
+                return min(50, len(lines))
+
+        # No ## sections found at all - no structure
         return None
 
     def remove_sections(
