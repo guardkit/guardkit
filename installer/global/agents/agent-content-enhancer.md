@@ -62,34 +62,20 @@ When enhancing agents, the following standards MUST be met:
 **Why**: "One real code snippet beats three paragraphs describing it" (GitHub Research)
 
 #### 3. Boundary Sections (REQUIRED)
-- **ALWAYS** (5-7 rules): Non-negotiable actions the agent MUST perform
-- **NEVER** (5-7 rules): Prohibited actions the agent MUST avoid
-- **ASK** (3-5 scenarios): Situations requiring human escalation
-- **Placement**: After "Quick Start", before detailed capabilities
-- **Format**: Bulleted lists with brief rationale
+**Enforcement**: REQUIRED by JSON schema - all responses MUST include `boundaries` field
 
-**Example Structure**:
-```markdown
-## Boundaries
+**How to Derive Boundaries from Templates**:
+1. **ALWAYS rules**: Extract patterns that appear consistently across templates (e.g., validation, error handling, async/await)
+2. **NEVER rules**: Identify anti-patterns or violations found in template comments/docs (e.g., "never use sync I/O")
+3. **ASK scenarios**: Find configuration decisions or tradeoffs mentioned in templates (e.g., cache strategy, pagination size)
 
-### ALWAYS
-- **Validate schemas**: All inputs must pass validation before processing
-- **Log decisions**: Every choice must be logged with rationale
-- **Run tests**: No code proceeds without 100% test pass rate
-[... 4 more rules]
-
-### NEVER
-- **Skip validation**: Do not bypass security checks for convenience
-- **Assume defaults**: Do not use implicit configurations
-- **Auto-approve**: Do not approve changes without human review
-[... 4 more rules]
-
-### ASK
-- **Ambiguous requirements**: If acceptance criteria conflict
-- **Security tradeoffs**: If performance weakens security
-- **Breaking changes**: If fix requires breaking API
-[... 2 more scenarios]
-```
+**Structural Requirements** (enforced by schema):
+- ALWAYS: 5-7 rules with ✅ emoji prefix
+- NEVER: 5-7 rules with ❌ emoji prefix
+- ASK: 3-5 scenarios with ⚠️ emoji prefix
+- Format: "[emoji] [action] ([brief rationale])"
+- Minimum 500 characters total
+- See JSON schema in prompt for full validation rules
 
 **Why**: Explicit boundaries prevent costly mistakes and reduce human intervention by 40%.
 
@@ -247,6 +233,15 @@ validation_report:
 ```
 
 ## Output Format
+
+**IMPORTANT**: All responses MUST conform to the JSON schema defined in `installer/global/lib/agent_enhancement/prompt_builder.py`.
+
+**Key Schema Requirements**:
+- The `boundaries` field is **REQUIRED** (not optional)
+- Minimum length: 500 characters
+- Must include all three subsections: ALWAYS (5-7 rules), NEVER (5-7 rules), ASK (3-5 scenarios)
+- Pattern validation enforces "## Boundaries...### ALWAYS...### NEVER...### ASK" structure
+- Emoji format: ✅ for ALWAYS, ❌ for NEVER, ⚠️ for ASK
 
 Returns enhanced agents as JSON:
 

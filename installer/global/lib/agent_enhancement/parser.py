@@ -153,12 +153,14 @@ class EnhancementParser:
         if not isinstance(enhancement["sections"], list):
             raise ValueError("'sections' must be a list")
 
-        # TASK-D70B: Validate boundaries if present (strict validation when included)
-        # Note: Boundaries are RECOMMENDED but parser is lenient (enhancer handles missing boundaries)
+        # TASK-BDRY-E84A: Validate boundaries (REQUIRED by JSON schema as of 2025-11-23)
+        # Note: Boundaries field is REQUIRED by JSON schema in prompt_builder.py
+        # Parser validates structure if present; enhancer._ensure_boundaries provides defense-in-depth fallback
         if "boundaries" in enhancement["sections"]:
             if "boundaries" not in enhancement:
                 raise ValueError(
-                    "Enhancement 'sections' list includes 'boundaries' but 'boundaries' field is missing"
+                    "Enhancement 'sections' list includes 'boundaries' but 'boundaries' field is missing. "
+                    "This violates the JSON schema requirement - check prompt_builder.py schema definition."
                 )
             self._validate_boundaries(enhancement.get("boundaries", ""))
 

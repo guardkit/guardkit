@@ -1,16 +1,16 @@
 ---
 id: TASK-BDRY-E84A
 title: Enforce JSON Schema for Agent Boundaries Generation
-status: backlog
+status: in_review
 created: 2025-11-23T22:26:53.775286
-updated: 2025-11-23T22:26:53.775286
+updated: 2025-11-23T23:15:00.000000
 priority: high
 tags: [ai-enhancement, json-schema, boundaries, quality-improvement]
 complexity: 0
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 86
+  last_run: 2025-11-23T23:15:00.000000
 ---
 
 # Task: Enforce JSON Schema for Agent Boundaries Generation
