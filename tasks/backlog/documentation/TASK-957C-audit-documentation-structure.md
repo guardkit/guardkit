@@ -38,15 +38,27 @@ complexity_evaluation:
 
 ## Context
 
-The Taskwright repository has 28 subdirectories in the docs/ folder, mixing:
+The Taskwright repository has **59 subdirectories** with **325+ markdown files** in the docs/ folder, plus **81 markdown files** in installer/global/, mixing:
 - **User-facing documentation** (guides/, workflows/, patterns/)
 - **Development artifacts** (implementation/, test_reports/, fixes/)
-- **Architecture decisions** (adr/)
+- **Architecture decisions** (adr/, adrs/)
 - **Internal research** (research/, analysis/, deep-dives/)
+- **Command specifications** (installer/global/commands/ - 19 command files)
+- **Agent definitions** (installer/global/agents/)
+- **Template documentation** (installer/global/templates/ - 6 templates)
 
 An external review (ChatGPT) suggested setting up MkDocs + Material for GitHub Pages, but the suggested navigation was too simplistic for our actual structure.
 
 **Goal**: Create a clear plan for organizing docs into user-facing vs internal content, determining what should be prominent in the documentation site.
+
+**UPDATE (2025-11-23)**: Include new features since task creation:
+- `/agent-enhance` command (agent-enhance.md, 12 KB)
+- `/agent-format` command (agent-format.md, 8.4 KB)
+- `/agent-validate` command (agent-validate.md, 85 KB)
+- `/task-review` workflow documentation (task-review.md, 12 KB)
+- Agent boundary sections (ALWAYS/NEVER/ASK) - documented in CLAUDE.md
+- 6 templates (not 3 or 4) - all with comprehensive READMEs
+- MCP integration guides in docs/deep-dives/mcp-integration/
 
 ## Objective
 
@@ -238,23 +250,77 @@ Home (index.md)
 - [ ] Plan identifies which landing pages to create
 - [ ] Plan specifies what to include/exclude from site build
 
+## Critical Findings (2025-11-23)
+
+### Path Mismatches in CLAUDE.md
+
+**URGENT**: CLAUDE.md references files at incorrect paths. These must be fixed:
+
+1. **Context7 MCP Setup**
+   - Referenced: `docs/guides/context7-mcp-setup.md`
+   - Actual: `docs/deep-dives/mcp-integration/context7-setup.md` (17 KB, 728 lines)
+   - **Fix**: Create symlink or update reference
+
+2. **Design Patterns MCP Setup**
+   - Referenced: `docs/guides/design-patterns-mcp-setup.md`
+   - Actual: `docs/deep-dives/mcp-integration/design-patterns-setup.md` (18 KB, 745 lines)
+   - **Fix**: Create symlink or update reference
+
+3. **MCP Optimization Guide**
+   - Referenced: `docs/guides/mcp-optimization-guide.md`
+   - Actual: `docs/deep-dives/mcp-integration/mcp-optimization.md` (34 KB, 1134 lines)
+   - **Fix**: Create symlink or update reference
+
+### Missing Workflow Documentation
+
+4. **Incremental Enhancement Workflow**
+   - Referenced in CLAUDE.md context
+   - Expected: `docs/workflows/incremental-enhancement-workflow.md`
+   - Status: Missing (content exists in agent-enhance.md command spec)
+   - **Fix**: Create dedicated workflow doc or update references
+
+### Key Metrics
+
+- **Total markdown files**: 406 (325 in docs/, 81 in installer/global/)
+- **Total subdirectories**: 59
+- **Command specifications**: 19 files
+- **Templates documented**: 6
+- **Agent definitions**: Multiple in installer/global/agents/
+- **Workflow guides**: 14 documented
+- **Deep-dive guides**: 3+ in mcp-integration/
+
 ## Notes
 
 ### Key Decisions Needed
 
-1. **What to exclude from site build?**
+1. **Fix Path Mismatches** (Priority 1)
+   - Option A: Create symlinks in docs/guides/ → docs/deep-dives/mcp-integration/
+   - Option B: Update CLAUDE.md to reference deep-dives/ paths
+   - Option C: Copy files to docs/guides/ for consistency
+   - **Recommendation**: Option A (symlinks) - maintains single source of truth
+
+2. **What to exclude from site build?**
    - Recommendation: Exclude implementation/, test_reports/, fixes/, research/
    - Keep in repo but use MkDocs exclude pattern
+   - **KEEP**: deep-dives/ (user-facing technical content)
 
-2. **How to handle deep-dives/?**
+3. **How to handle deep-dives/?**
    - User wants deep-dives prominent
    - Include in main navigation or separate "Advanced Topics" section?
+   - **Recommendation**: Main navigation section "Technical Deep Dives"
 
-3. **Versioned docs?**
+4. **New Feature Documentation**
+   - Agent enhancement commands (3 commands)
+   - Task review workflow
+   - Agent boundary sections
+   - Template validation system
+   - **Recommendation**: Dedicated "Agent System" and "Template System" sections
+
+5. **Versioned docs?**
    - User said "keep it simple, no versioning for now"
    - Plan for single version initially
 
-4. **Custom domain?**
+6. **Custom domain?**
    - Decision pending (separate task)
    - Plan should work with both GitHub Pages default and custom domain
 

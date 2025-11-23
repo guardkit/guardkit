@@ -659,8 +659,8 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 ### Setup Guides
 
 **Core MCPs** (recommended for all users):
-- [Context7 MCP Setup](docs/guides/context7-mcp-setup.md) - Up-to-date library documentation
-- [Design Patterns MCP Setup](docs/guides/design-patterns-mcp-setup.md) - Pattern recommendations
+- [Context7 MCP Setup](docs/deep-dives/mcp-integration/context7-setup.md) - Up-to-date library documentation
+- [Design Patterns MCP Setup](docs/deep-dives/mcp-integration/design-patterns-setup.md) - Pattern recommendations
 
 **Design MCPs** (only if using design-to-code workflows):
 - [Figma MCP Setup](docs/mcp-setup/figma-mcp-setup.md) - For `/figma-to-react` command only
@@ -676,7 +676,7 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 - figma-dev-mode: Image-based (minimal token impact)
 - zeplin: Design-based (minimal token impact)
 
-**For detailed usage guidelines**: [MCP Optimization Guide](docs/guides/mcp-optimization-guide.md)
+**For detailed usage guidelines**: [MCP Optimization Guide](docs/deep-dives/mcp-integration/mcp-optimization.md)
 
 ## Development Best Practices
 

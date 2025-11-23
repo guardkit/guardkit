@@ -71,12 +71,17 @@ Create a comprehensive `mkdocs.yml` configuration file at the repository root th
 - [ ] Code copy button
 - [ ] Code annotations support
 
-### Navigation Structure
+### Navigation Structure (UPDATED 2025-11-23)
 - [ ] Implement navigation from TASK-957C plan
 - [ ] Map existing docs to nav structure
 - [ ] Group related content logically
 - [ ] Keep hierarchy max 3 levels deep
 - [ ] Use clear, user-friendly section names
+- [ ] **NEW**: Add "Agent System" section (agent-enhance, agent-format, agent-validate)
+- [ ] **NEW**: Add "Task Review" section (task-review workflow, 5 modes)
+- [ ] **NEW**: Expand "Templates" section (6 templates, not 3)
+- [ ] **CRITICAL**: Fix MCP setup guide paths (docs/deep-dives/mcp-integration/ not docs/guides/)
+- [ ] Include boundary sections documentation
 
 ### Markdown Extensions
 - [ ] Admonition (callouts/notes)
@@ -185,7 +190,7 @@ Create a comprehensive `mkdocs.yml` configuration file at the repository root th
 6. Check code highlighting works
 7. Test on different screen sizes (responsive)
 
-## Example Configuration Structure
+## Example Configuration Structure (UPDATED 2025-11-23)
 
 ```yaml
 # Site Metadata
@@ -222,25 +227,62 @@ markdown_extensions:
   - pymdownx.superfences    # Fenced code blocks
   - attr_list               # Attribute lists
 
-# Navigation Structure (from TASK-957C plan)
+# Navigation Structure (UPDATED for 2025-11-23 features)
 nav:
   - Home: index.md
   - Getting Started:
     - Quickstart: guides/GETTING-STARTED.md
+    - Installation: guides/installation.md
     - Migration Guide: guides/MIGRATION-GUIDE.md
   - Core Concepts:
     - Taskwright Workflow: guides/taskwright-workflow.md
     - Complexity Management: workflows/complexity-management-workflow.md
     - Quality Gates: workflows/quality-gates-workflow.md
-  # ... more from plan
+    - Task States: guides/taskwright-workflow.md#task-states
+  - Advanced Topics:
+    - Design-First Workflow: workflows/design-first-workflow.md
+    - Task Review Workflow: workflows/task-review-workflow.md  # NEW
+    - UX Design Integration: workflows/ux-design-integration-workflow.md
+    - Iterative Refinement: workflows/iterative-refinement-workflow.md
+  - Template System:  # NEW SECTION
+    - Overview: guides/template-philosophy.md
+    - Template Create: commands/template-create.md
+    - Template Validation: guides/template-validation-guide.md
+    - Six Reference Templates:
+      - React TypeScript: templates/react-typescript/README.md
+      - FastAPI Python: templates/fastapi-python/README.md
+      - Next.js Fullstack: templates/nextjs-fullstack/README.md
+      - React FastAPI Monorepo: templates/react-fastapi-monorepo/README.md
+      - Taskwright Python: templates/taskwright-python/README.md
+      - Default (Language-Agnostic): templates/default/README.md
+  - Agent System:  # NEW SECTION
+    - Agent Enhancement: commands/agent-enhance.md
+    - Agent Formatting: commands/agent-format.md
+    - Agent Validation: commands/agent-validate.md
+    - Boundary Sections: guides/agent-boundary-sections.md  # To create
+    - GitHub Best Practices: analysis/github-agent-best-practices-analysis.md
+  - MCP Integration:
+    - Overview: guides/mcp-integration.md
+    - Core MCPs:
+      - Context7 Setup: deep-dives/mcp-integration/context7-setup.md  # CORRECTED PATH
+      - Design Patterns Setup: deep-dives/mcp-integration/design-patterns-setup.md  # CORRECTED PATH
+    - Design MCPs:
+      - Figma Setup: mcp-setup/figma-mcp-setup.md
+      - Zeplin Setup: mcp-setup/zeplin-mcp-setup.md
+    - Optimization: deep-dives/mcp-integration/mcp-optimization.md  # CORRECTED PATH
+  - Technical Deep Dives:  # NEW SECTION
+    - MCP Integration: deep-dives/mcp-integration/
+    - Other Deep Dives: deep-dives/
+  - Troubleshooting: troubleshooting/
+  - Command Reference: commands/
 
 # Exclusions (don't build these)
 exclude_docs: |
   implementation/
   test_reports/
   fixes/
-  research/
-  analysis/
+  research/  # Keep as reference but not in public docs
+  # Note: analysis/ and deep-dives/ are INCLUDED (user-facing technical content)
 ```
 
 ## Success Criteria

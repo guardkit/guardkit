@@ -1,21 +1,46 @@
-# TASK-063: Update Documentation for 4-Template Strategy
+# TASK-063: Update Documentation for 6-Template Strategy
 
 **Created**: 2025-01-08
-**Priority**: High
+**Updated**: 2025-11-23
+**Priority**: ~~High~~ **COMPLETED - CLOSE**
 **Type**: Documentation
 **Parent**: Template Strategy Overhaul
-**Status**: Backlog
+**Status**: ~~Backlog~~ **COMPLETED**
 **Complexity**: 5/10 (Medium)
-**Estimated Effort**: 3-4 days
+**Estimated Effort**: ~~3-4 days~~ **COMPLETED**
 **Dependencies**: TASK-060 (Removals), TASK-061 (Base documentation), TASK-062 (Monorepo template)
 
 ---
 
-## Problem Statement
+## Status Update (2025-11-23)
 
-Update all documentation to reflect the 4-template strategy (adding React + FastAPI Monorepo as 4th template) after initial documentation was created for 3-template approach in TASK-061.
+**COMPLETED** - This task is now obsolete. The documentation has been updated to reflect **6 templates** (not 4):
 
-**Goal**: Comprehensive documentation update adding React + FastAPI Monorepo template to all guides and references.
+1. react-typescript (9.3/10)
+2. fastapi-python (9.2/10)
+3. nextjs-fullstack (9.4/10)
+4. react-fastapi-monorepo (9.1/10)
+5. taskwright-python (8+/10) - NEW: dogfooding template
+6. default (8+/10) - NEW: language-agnostic
+
+**Verification**:
+- ✅ CLAUDE.md references all 6 templates
+- ✅ README.md references all 6 templates
+- ✅ Template Philosophy guide documents all 6 (docs/guides/template-philosophy.md)
+- ✅ All template READMEs exist in installer/global/templates/
+- ✅ Template selection guidance updated
+
+**Completed By**: TASK-074 (November 2025)
+
+**Recommendation**: **CLOSE THIS TASK** - No further action needed.
+
+---
+
+## Original Problem Statement (Historical)
+
+Update all documentation to reflect the ~~4~~6-template strategy (adding React + FastAPI Monorepo as 4th template, plus taskwright-python and default) after initial documentation was created for 3-template approach in TASK-061.
+
+**Goal**: Comprehensive documentation update adding all reference templates to guides and references.
 
 ---
 

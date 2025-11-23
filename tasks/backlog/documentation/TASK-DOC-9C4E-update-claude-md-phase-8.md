@@ -16,13 +16,29 @@ review_source: docs/reviews/phase-8-implementation-review.md
 
 # Update CLAUDE.md with Phase 8 Incremental Enhancement Workflow
 
-## Problem Statement
+## Problem Statement (UPDATED 2025-11-23)
 
-CLAUDE.md does not mention the `/agent-enhance` command or Phase 8 incremental enhancement workflow. Users have no documentation on how to use this feature.
+**STATUS**: PARTIALLY COMPLETE
+
+CLAUDE.md **DOES mention** the `/agent-enhance` command (line 526+) and agent boundary sections (lines 524-620), BUT is missing:
+- `/agent-format` command documentation
+- `/agent-validate` command documentation
+- Complete Phase 8 incremental enhancement workflow
+- Task-based vs direct enhancement comparison
 
 **Review Finding** (Section 6.3, Documentation Gap #1):
-> **CLAUDE.md**: No `/agent-enhance` command mentioned
-> **Impact**: Users don't know feature exists or how to use it
+> **CLAUDE.md**: ~~No `/agent-enhance` command mentioned~~ NOW DOCUMENTED (2025-11-22)
+> **Impact**: ~~Users don't know feature exists or how to use it~~ PARTIALLY ADDRESSED
+
+**Current Coverage in CLAUDE.md**:
+- ✅ Agent Enhancement with Boundary Sections (lines 524-620, 97 lines)
+- ✅ `/agent-enhance` basic mention
+- ✅ ALWAYS/NEVER/ASK framework explained
+- ✅ Examples for Testing Agent and Repository Agent
+- ❌ `/agent-format` not in Essential Commands
+- ❌ `/agent-validate` not in Essential Commands
+- ❌ Phase 8 workflow incomplete
+- ❌ Enhancement strategies not fully documented
 
 ## Current State
 

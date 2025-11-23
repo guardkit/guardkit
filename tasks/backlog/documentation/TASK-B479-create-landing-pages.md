@@ -86,17 +86,33 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
   - Plan Modification
 - [ ] Brief description of when to use each
 
-### Templates Section
-- [ ] Overview of available templates
-- [ ] Link to template selection guide (MAUI)
+### Templates Section (UPDATED 2025-11-23)
+- [ ] Overview of 6 available templates (not 3 or 4)
+- [ ] Include all templates: react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, taskwright-python, default
+- [ ] Link to template selection guide
 - [ ] Link to creating local templates guide
-- [ ] Quick reference table of templates
+- [ ] Quick reference table of templates with quality scores
+
+### Agent System Section (NEW 2025-11-23)
+- [ ] Overview of agent enhancement workflow
+- [ ] Link to `/agent-enhance` command (installer/global/commands/agent-enhance.md)
+- [ ] Link to `/agent-format` command (installer/global/commands/agent-format.md)
+- [ ] Link to `/agent-validate` command (installer/global/commands/agent-validate.md)
+- [ ] Explain agent boundary sections (ALWAYS/NEVER/ASK)
+- [ ] Link to GitHub agent best practices analysis
+
+### Task Review Workflow Section (NEW 2025-11-23)
+- [ ] Overview of `/task-review` command
+- [ ] Explain 5 review modes (architectural, code-quality, decision, technical-debt, security)
+- [ ] When to use `/task-review` vs `/task-work`
+- [ ] Link to task-review-workflow.md
 
 ### MCP Integration Section (if separate section)
 - [ ] Overview of optional MCP enhancements
 - [ ] Core MCPs vs Design MCPs distinction
-- [ ] Link to individual MCP setup guides
+- [ ] Link to individual MCP setup guides (FIX PATHS - see TASK-957C)
 - [ ] When to use each MCP
+- [ ] **CRITICAL**: Fix path references to docs/deep-dives/mcp-integration/
 
 ### Troubleshooting Section
 - [ ] Aggregate troubleshooting content from troubleshooting/ directory
