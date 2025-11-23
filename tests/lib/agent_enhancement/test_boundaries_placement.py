@@ -594,3 +594,319 @@ class TestHelperMethods:
         # Should find second ## section after frontmatter
         # First is "## Purpose" at line 6, second is "## Capabilities" at line 10
         assert insertion_point == 10 or insertion_point <= 50
+
+
+# ============================================================================
+# NEW: PRIORITY 3-5 FALLBACK TESTS (TASK-STND-783B)
+# ============================================================================
+
+class TestPriority3CodeExamplesFallback:
+    """Test Priority 3: Before Code Examples fallback (fixes 92% of failures)."""
+
+    def test_boundaries_before_code_examples_only(self):
+        """Priority 3: File with Code Examples but no Quick Start/Capabilities."""
+        applier = EnhancementApplier()
+
+        lines = [
+            "---",
+            "name: test-agent",
+            "---",
+            "# Agent",
+            "## Purpose",
+            "Description here",
+            "## Code Examples",  # ← Boundaries should insert HERE (line 6)
+            "Example code",
+            "## Related Templates",
+            "Templates"
+        ]
+
+        result = applier._find_boundaries_insertion_point(lines)
+
+        assert result == 6, f"Expected line 6, got {result}"
+        assert result is not None, "Method returned None (BUG)"
+        assert isinstance(result, int), f"Expected int, got {type(result)}"
+
+    def test_boundaries_before_code_examples_integration(self):
+        """Priority 3: Integration test with full content merge."""
+        applier = EnhancementApplier()
+
+        original_content = """---
+name: test-agent
+---
+
+# Test Agent
+
+## Purpose
+
+Agent purpose description.
+
+## Code Examples
+
+Example code here.
+
+## Related Templates
+
+Template references.
+"""
+
+        enhancement = {
+            "sections": ["boundaries"],
+            "boundaries": """## Boundaries
+
+### ALWAYS
+- ✅ Rule 1 (rationale)
+- ✅ Rule 2 (rationale)
+- ✅ Rule 3 (rationale)
+- ✅ Rule 4 (rationale)
+- ✅ Rule 5 (rationale)
+
+### NEVER
+- ❌ Rule 1 (rationale)
+- ❌ Rule 2 (rationale)
+- ❌ Rule 3 (rationale)
+- ❌ Rule 4 (rationale)
+- ❌ Rule 5 (rationale)
+
+### ASK
+- ⚠️ Scenario 1 (rationale)
+- ⚠️ Scenario 2 (rationale)
+- ⚠️ Scenario 3 (rationale)"""
+        }
+
+        result = applier._merge_content(original_content, enhancement)
+        lines = result.split('\n')
+
+        # Find boundaries and code examples positions
+        boundaries_pos = None
+        code_examples_pos = None
+
+        for i, line in enumerate(lines):
+            if line.strip() == "## Boundaries":
+                boundaries_pos = i
+            if line.strip().startswith("## Code Examples"):
+                code_examples_pos = i
+
+        assert boundaries_pos is not None, "Boundaries section not found"
+        assert code_examples_pos is not None, "Code Examples section not found"
+        assert boundaries_pos < code_examples_pos, \
+            f"Boundaries at line {boundaries_pos}, Code Examples at {code_examples_pos} (AFTER - WRONG)"
+
+
+class TestPriority4RelatedTemplatesFallback:
+    """Test Priority 4: Before Related Templates fallback (safety net)."""
+
+    def test_boundaries_before_related_templates_only(self):
+        """Priority 4: File with Related Templates but no Code Examples."""
+        applier = EnhancementApplier()
+
+        lines = [
+            "---",
+            "name: test-agent",
+            "---",
+            "# Agent",
+            "## Purpose",
+            "Description here",
+            "## Related Templates",  # ← Boundaries should insert HERE (line 6)
+            "Template references"
+        ]
+
+        result = applier._find_boundaries_insertion_point(lines)
+
+        assert result == 6, f"Expected line 6, got {result}"
+        assert result is not None, "Method returned None (BUG)"
+
+    def test_boundaries_before_related_templates_integration(self):
+        """Priority 4: Integration test with full content merge."""
+        applier = EnhancementApplier()
+
+        original_content = """---
+name: test-agent
+---
+
+# Test Agent
+
+## Purpose
+
+Agent purpose.
+
+## Related Templates
+
+Template references.
+"""
+
+        enhancement = {
+            "sections": ["boundaries"],
+            "boundaries": """## Boundaries
+
+### ALWAYS
+- ✅ Rule 1 (rationale)
+- ✅ Rule 2 (rationale)
+- ✅ Rule 3 (rationale)
+- ✅ Rule 4 (rationale)
+- ✅ Rule 5 (rationale)
+
+### NEVER
+- ❌ Rule 1 (rationale)
+- ❌ Rule 2 (rationale)
+- ❌ Rule 3 (rationale)
+- ❌ Rule 4 (rationale)
+- ❌ Rule 5 (rationale)
+
+### ASK
+- ⚠️ Scenario 1 (rationale)
+- ⚠️ Scenario 2 (rationale)
+- ⚠️ Scenario 3 (rationale)"""
+        }
+
+        result = applier._merge_content(original_content, enhancement)
+        lines = result.split('\n')
+
+        boundaries_pos = None
+        related_templates_pos = None
+
+        for i, line in enumerate(lines):
+            if line.strip() == "## Boundaries":
+                boundaries_pos = i
+            if line.strip().startswith("## Related Templates"):
+                related_templates_pos = i
+
+        assert boundaries_pos is not None, "Boundaries section not found"
+        assert related_templates_pos is not None, "Related Templates section not found"
+        assert boundaries_pos < related_templates_pos, \
+            f"Boundaries at line {boundaries_pos}, Related Templates at {related_templates_pos} (AFTER - WRONG)"
+
+
+class TestPriority5FrontmatterFallback:
+    """Test Priority 5: Frontmatter + 50 lines fallback (absolute last resort)."""
+
+    def test_boundaries_frontmatter_fallback(self):
+        """Priority 5: File with no standard sections."""
+        applier = EnhancementApplier()
+
+        lines = ["---", "name: test", "---", "# Agent"]
+        lines.extend([f"Content line {i}" for i in range(60)])  # 64 total lines
+
+        result = applier._find_boundaries_insertion_point(lines)
+
+        # Should return frontmatter_end (3) + 50 = 53
+        assert 50 <= result <= 60, f"Expected ~53, got {result}"
+        assert result is not None, "Method returned None (BUG)"
+
+    def test_boundaries_frontmatter_with_section_boundary(self):
+        """Priority 5: Frontmatter + 50 lines finds next section boundary."""
+        applier = EnhancementApplier()
+
+        lines = ["---", "name: test", "---", "# Agent"]
+        lines.extend([f"Content line {i}" for i in range(50)])
+        lines.append("## Random Section")  # Add section at line 54
+        lines.extend([f"More content {i}" for i in range(10)])
+
+        result = applier._find_boundaries_insertion_point(lines)
+
+        # Should find "## Random Section" at line 54
+        assert result == 54, f"Expected line 54 (section boundary), got {result}"
+
+    def test_boundaries_minimal_file_frontmatter_fallback(self):
+        """Priority 5: Minimal file uses frontmatter + 50 lines fallback."""
+        applier = EnhancementApplier()
+
+        original_content = """---
+name: minimal-agent
+---
+
+# Minimal Agent
+
+Just a title and minimal content.
+No sections at all.
+"""
+
+        enhancement = {
+            "sections": ["boundaries"],
+            "boundaries": """## Boundaries
+
+### ALWAYS
+- ✅ Rule 1 (rationale)
+- ✅ Rule 2 (rationale)
+- ✅ Rule 3 (rationale)
+- ✅ Rule 4 (rationale)
+- ✅ Rule 5 (rationale)
+
+### NEVER
+- ❌ Rule 1 (rationale)
+- ❌ Rule 2 (rationale)
+- ❌ Rule 3 (rationale)
+- ❌ Rule 4 (rationale)
+- ❌ Rule 5 (rationale)
+
+### ASK
+- ⚠️ Scenario 1 (rationale)
+- ⚠️ Scenario 2 (rationale)
+- ⚠️ Scenario 3 (rationale)"""
+        }
+
+        result = applier._merge_content(original_content, enhancement)
+
+        # Should have boundaries section
+        assert "## Boundaries" in result, "Boundaries section not added"
+
+        # Boundaries should be near beginning of file (not at end)
+        lines = result.split('\n')
+        boundaries_pos = None
+        for i, line in enumerate(lines):
+            if line.strip() == "## Boundaries":
+                boundaries_pos = i
+                break
+
+        assert boundaries_pos is not None, "Boundaries section not found"
+        assert boundaries_pos < len(lines) - 5, \
+            f"Boundaries at line {boundaries_pos}, appears to be at end of file"
+
+
+class TestNeverReturnsNone:
+    """Test that methods NEVER return None after fix."""
+
+    def test_find_boundaries_insertion_point_never_none(self):
+        """Ensure _find_boundaries_insertion_point always returns int."""
+        applier = EnhancementApplier()
+
+        test_cases = [
+            # Case 1: With Quick Start
+            ["---", "name: test", "---", "# Agent", "## Quick Start", "Content"],
+            # Case 2: With Code Examples only
+            ["---", "name: test", "---", "# Agent", "## Code Examples", "Examples"],
+            # Case 3: With Related Templates only
+            ["---", "name: test", "---", "# Agent", "## Related Templates", "Templates"],
+            # Case 4: Minimal file (frontmatter only)
+            ["---", "name: test", "---", "# Agent", "Content"],
+            # Case 5: Empty file
+            ["---", "name: test", "---"],
+        ]
+
+        for i, lines in enumerate(test_cases):
+            result = applier._find_boundaries_insertion_point(lines)
+            assert result is not None, f"Case {i+1}: Method returned None (BUG)"
+            assert isinstance(result, int), f"Case {i+1}: Expected int, got {type(result)}"
+            assert result >= 0, f"Case {i+1}: Negative index returned"
+            assert result <= len(lines), f"Case {i+1}: Index exceeds file length"
+
+    def test_find_post_description_position_never_none(self):
+        """Ensure _find_post_description_position always returns int."""
+        applier = EnhancementApplier()
+
+        test_cases = [
+            # Case 1: With Purpose section
+            ["---", "name: test", "---", "# Agent", "## Purpose", "Description"],
+            # Case 2: With Code Examples
+            ["---", "name: test", "---", "# Agent", "## Code Examples", "Examples"],
+            # Case 3: Minimal file
+            ["---", "name: test", "---", "# Agent"],
+            # Case 4: Only frontmatter
+            ["---", "name: test", "---"],
+        ]
+
+        for i, lines in enumerate(test_cases):
+            result = applier._find_post_description_position(lines)
+            assert result is not None, f"Case {i+1}: Method returned None (BUG)"
+            assert isinstance(result, int), f"Case {i+1}: Expected int, got {type(result)}"
+            assert result >= 0, f"Case {i+1}: Negative index returned"
+            assert result <= len(lines), f"Case {i+1}: Index exceeds file length"
