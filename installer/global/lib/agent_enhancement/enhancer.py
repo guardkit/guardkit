@@ -282,6 +282,9 @@ class SingleAgentEnhancer:
             # Validate enhancement structure
             self._validate_enhancement(enhancement)
 
+            # TASK-D70B: Ensure boundaries are present (add if missing)
+            enhancement = self._ensure_boundaries(enhancement, agent_metadata)
+
             if self.verbose:
                 sections = enhancement.get('sections', [])
                 logger.info(f"Enhancement Validated:")
@@ -382,8 +385,12 @@ class SingleAgentEnhancer:
         templates: List[Path]
     ) -> dict:
         """Static keyword-based enhancement (Option C from TASK-09E9)."""
+        # TASK-D70B: Import boundary utilities for static strategy
+        from .boundary_utils import generate_generic_boundaries
+
         # Simple keyword matching
         agent_name = agent_metadata.get("name", "unknown")
+        agent_description = agent_metadata.get("description", "")
         keywords = agent_name.lower().split('-')
 
         related_templates = []
@@ -393,14 +400,57 @@ class SingleAgentEnhancer:
             if any(kw in template_name for kw in keywords):
                 related_templates.append(str(template))
 
+        # TASK-D70B: Generate generic boundaries for static strategy
+        boundaries_content = generate_generic_boundaries(agent_name, agent_description)
+
         return {
-            "sections": ["related_templates"],
+            "sections": ["related_templates", "boundaries"],
             "related_templates": "\n\n## Related Templates\n\n" + "\n".join([
                 f"- {t}" for t in related_templates
             ]) if related_templates else "\n\n## Related Templates\n\nNo matching templates found.",
+            "boundaries": boundaries_content,
             "examples": [],
             "best_practices": ""
         }
+
+    def _ensure_boundaries(self, enhancement: dict, agent_metadata: dict) -> dict:
+        """
+        Ensure boundaries section is present in enhancement.
+
+        TASK-D70B: If AI omitted boundaries, generate and add them.
+        This allows hybrid content: AI-generated examples/best_practices + static boundaries.
+
+        Args:
+            enhancement: Enhancement dict from AI (may be missing boundaries)
+            agent_metadata: Agent metadata for generating boundaries
+
+        Returns:
+            Enhancement dict with boundaries guaranteed
+        """
+        # Check if boundaries already present
+        if "boundaries" in enhancement.get("sections", []) and "boundaries" in enhancement:
+            logger.info("Boundaries already present from AI")
+            return enhancement
+
+        # TASK-D70B: Import boundary utilities
+        from .boundary_utils import generate_generic_boundaries
+
+        # Generate static boundaries
+        agent_name = agent_metadata.get("name", "unknown")
+        agent_description = agent_metadata.get("description", "")
+        boundaries_content = generate_generic_boundaries(agent_name, agent_description)
+
+        # Add boundaries to enhancement
+        sections = enhancement.get("sections", [])
+        if "boundaries" not in sections:
+            sections.append("boundaries")
+
+        enhancement["sections"] = sections
+        enhancement["boundaries"] = boundaries_content
+
+        logger.warning(f"AI omitted boundaries - added generic boundaries for {agent_name}")
+
+        return enhancement
 
     def _load_agent_metadata(self, agent_file: Path) -> dict:
         """

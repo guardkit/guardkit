@@ -153,8 +153,13 @@ class EnhancementParser:
         if not isinstance(enhancement["sections"], list):
             raise ValueError("'sections' must be a list")
 
-        # Validate boundaries if present (supports both old and new format)
+        # TASK-D70B: Validate boundaries if present (strict validation when included)
+        # Note: Boundaries are RECOMMENDED but parser is lenient (enhancer handles missing boundaries)
         if "boundaries" in enhancement["sections"]:
+            if "boundaries" not in enhancement:
+                raise ValueError(
+                    "Enhancement 'sections' list includes 'boundaries' but 'boundaries' field is missing"
+                )
             self._validate_boundaries(enhancement.get("boundaries", ""))
 
     def _validate_boundaries(self, boundaries_content: str) -> None:
