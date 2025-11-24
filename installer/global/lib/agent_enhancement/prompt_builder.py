@@ -80,29 +80,58 @@ class EnhancementPromptBuilder:
 3. Boundaries (ALWAYS/NEVER/ASK framework) for explicit behavior rules
 4. Anti-patterns to avoid (if applicable)
 
-**Output Format**: Return a JSON object with the following structure:
+**Output Format**: You MUST return a JSON object conforming to this schema:
+
 ```json
 {{
-    "sections": ["related_templates", "examples", "boundaries"],
-    "related_templates": "## Related Templates\\n\\n- template1\\n- template2\\n...",
-    "examples": "## Code Examples\\n\\n### Example 1\\n```code```\\n...",
-    "boundaries": "## Boundaries\\n\\n### ALWAYS\\n- ✅ Rule 1 (rationale)\\n...\\n\\n### NEVER\\n- ❌ Rule 1 (rationale)\\n...\\n\\n### ASK\\n- ⚠️ Scenario 1 (rationale)\\n..."
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": ["sections", "related_templates", "examples", "boundaries"],
+    "properties": {{
+        "sections": {{
+            "type": "array",
+            "items": {{"type": "string"}},
+            "minItems": 3,
+            "description": "List of section names being provided"
+        }},
+        "related_templates": {{
+            "type": "string",
+            "minLength": 50,
+            "description": "Markdown section listing relevant templates"
+        }},
+        "examples": {{
+            "type": "string",
+            "minLength": 100,
+            "description": "Markdown section with code examples from templates"
+        }},
+        "boundaries": {{
+            "type": "string",
+            "minLength": 500,
+            "pattern": ".*## Boundaries.*### ALWAYS.*### NEVER.*### ASK.*",
+            "description": "Markdown section with ALWAYS/NEVER/ASK framework (REQUIRED)"
+        }}
+    }}
 }}
 ```
 
-**Important**:
-- Use markdown formatting for all sections
-- Include actual code snippets in examples
-- Be specific and actionable
-- Only reference templates that are actually relevant to this agent
-- Ensure all JSON is valid and properly escaped
+**Example Valid Response**:
+```json
+{{
+    "sections": ["related_templates", "examples", "boundaries"],
+    "related_templates": "## Related Templates\\n\\n- templates/api/endpoint.ts.template\\n- templates/api/service.ts.template",
+    "examples": "## Code Examples\\n\\n### Example 1: API Endpoint\\n```typescript\\napp.get('/api/users', async (req, res) => {{...}})\\n```",
+    "boundaries": "## Boundaries\\n\\n### ALWAYS\\n- ✅ Validate input parameters (prevent injection attacks)\\n- ✅ Return typed responses (ensure type safety)\\n- ✅ Handle errors gracefully (improve user experience)\\n- ✅ Log request details (aid debugging)\\n- ✅ Use async/await (prevent callback hell)\\n\\n### NEVER\\n- ❌ Never expose raw database queries (security risk)\\n- ❌ Never return stack traces to client (information leakage)\\n- ❌ Never use synchronous I/O in endpoints (blocks event loop)\\n- ❌ Never skip authentication checks (authorization bypass)\\n- ❌ Never hardcode credentials (credential leakage)\\n\\n### ASK\\n- ⚠️ Rate limiting threshold: Ask if >1000 req/min acceptable\\n- ⚠️ Caching strategy: Ask if Redis vs in-memory for session data\\n- ⚠️ Pagination size: Ask if 50 items/page acceptable for performance"
+}}
+```
 
-**Boundaries Requirements** (CRITICAL):
-- **ALWAYS section**: 5-7 rules with ✅ prefix (non-negotiable actions)
-- **NEVER section**: 5-7 rules with ❌ prefix (prohibited actions)
-- **ASK section**: 3-5 scenarios with ⚠️ prefix (human escalation points)
+**Critical Notes**:
+- The `boundaries` field is **REQUIRED** by schema - responses without it will be rejected
+- Boundaries must include all three subsections (ALWAYS/NEVER/ASK) with minimum counts:
+  - ALWAYS: 5-7 rules with ✅ prefix
+  - NEVER: 5-7 rules with ❌ prefix
+  - ASK: 3-5 scenarios with ⚠️ prefix
 - Format: "[emoji] [action] ([brief rationale])"
-- Example: "✅ Validate schemas (prevent invalid data processing)"
+- Minimum 500 characters ensures substantive content
 """
 
         return prompt

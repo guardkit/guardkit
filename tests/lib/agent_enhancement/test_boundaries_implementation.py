@@ -66,10 +66,11 @@ class TestPromptBuilderBoundaries:
             template_dir=tmp_path
         )
 
-        assert "**Boundaries Requirements**" in prompt
-        assert "**ALWAYS section**: 5-7 rules with ✅ prefix" in prompt
-        assert "**NEVER section**: 5-7 rules with ❌ prefix" in prompt
-        assert "**ASK section**: 3-5 scenarios with ⚠️ prefix" in prompt
+        # TASK-BDRY-E84A: Updated to match JSON schema format
+        assert "**Critical Notes**" in prompt
+        assert "ALWAYS: 5-7 rules with ✅ prefix" in prompt
+        assert "NEVER: 5-7 rules with ❌ prefix" in prompt
+        assert "ASK: 3-5 scenarios with ⚠️ prefix" in prompt
 
     def test_prompt_includes_boundaries_format_example(self, tmp_path):
         """Test prompt includes boundaries format example."""
@@ -84,7 +85,8 @@ class TestPromptBuilderBoundaries:
             template_dir=tmp_path
         )
 
-        assert '✅ Validate schemas (prevent invalid data processing)' in prompt
+        # TASK-BDRY-E84A: Updated to match JSON schema example
+        assert '✅ Validate input parameters (prevent injection attacks)' in prompt
 
     def test_prompt_includes_boundaries_in_json_structure(self, tmp_path):
         """Test prompt shows boundaries in output JSON structure."""
