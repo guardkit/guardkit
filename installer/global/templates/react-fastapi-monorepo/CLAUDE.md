@@ -785,6 +785,21 @@ FIRST_SUPERUSER_PASSWORD=changethis
 - [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices)
 - [@hey-api/openapi-ts](https://github.com/hey-api/openapi-ts)
 
+
+
+## Agent Response Format
+
+When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:
+
+**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)
+
+**Key Requirements**:
+- Field name: `response` (NOT `result`)
+- Data type: JSON-encoded string (NOT object)
+- All 9 required fields must be present
+
+See the specification for complete schema and examples.
+
 ## Notes
 
 - This template combines patterns from `react-typescript` and `fastapi-python` templates

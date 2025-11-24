@@ -700,3 +700,17 @@ CMD ["npm", "start"]
 **Last Updated**: 2025-11-09
 **Confidence Score**: 92/100
 **Quality**: Production Ready
+
+## Agent Response Format
+
+When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:
+
+**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)
+
+**Key Requirements**:
+- Field name: `response` (NOT `result`)
+- Data type: JSON-encoded string (NOT object)
+- All 9 required fields must be present
+
+See the specification for complete schema and examples.
+

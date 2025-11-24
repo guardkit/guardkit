@@ -670,6 +670,21 @@ const apiUrl = env.API_URL;
 - [Tailwind CSS Docs](https://tailwindcss.com/) - Styling
 - [Playwright Docs](https://playwright.dev/) - E2E testing
 
+
+
+## Agent Response Format
+
+When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:
+
+**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)
+
+**Key Requirements**:
+- Field name: `response` (NOT `result`)
+- Data type: JSON-encoded string (NOT object)
+- All 9 required fields must be present
+
+See the specification for complete schema and examples.
+
 ## Notes
 
 - This template prioritizes scalability and maintainability over simplicity

@@ -370,6 +370,7 @@ Solution: This is a bug - please report it
 - [TASK-PHASE-8-INCREMENTAL: Incremental Agent Enhancement Workflow](../../tasks/backlog/TASK-PHASE-8-INCREMENTAL-specification.md)
 - [Template Creation Workflow](../../docs/workflows/template-creation-workflow.md)
 - [Agent Enhancement Best Practices](../../docs/guides/agent-enhancement-best-practices.md)
+- [Agent Response Format Specification](../../docs/reference/agent-response-format.md) - Required format for `.agent-response.json` files (TASK-FIX-267C)
 
 ---
 

@@ -265,10 +265,18 @@ class SingleAgentEnhancer:
                 phase_name="agent_enhancement"
             )
 
-            result_text = invoker.invoke(
-                agent_name="agent-content-enhancer",
-                prompt=prompt
-            )
+            # Check for existing response from previous invocation (checkpoint-resume pattern)
+            if invoker.has_response():
+                # Response file exists - load cached response
+                result_text = invoker.load_response()
+                if self.verbose:
+                    logger.info("  ✓ Loaded agent response from checkpoint")
+            else:
+                # No response yet - invoke agent (will exit with code 42)
+                result_text = invoker.invoke(
+                    agent_name="agent-content-enhancer",
+                    prompt=prompt
+                )
 
             duration = time.time() - start_time
 

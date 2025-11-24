@@ -1,9 +1,9 @@
 ---
 id: TASK-FIX-D4E5
 title: Fix agent-enhance checkpoint-resume infinite loop
-status: backlog
+status: in_review
 created: 2025-11-24T12:15:00Z
-updated: 2025-11-24T12:15:00Z
+updated: 2025-11-24T12:35:00Z
 priority: critical
 tags: [bugfix, agent-enhancement, checkpoint-resume]
 complexity: 3

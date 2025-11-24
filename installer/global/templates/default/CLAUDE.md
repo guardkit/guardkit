@@ -204,3 +204,17 @@ It provides the core workflow without imposing stack-specific constraints, allow
 - Develop in languages not yet supported by built-in templates
 
 When you're ready for more structure, migrate to a specialized template or create your own using `/template-create`.
+
+## Agent Response Format
+
+When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:
+
+**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)
+
+**Key Requirements**:
+- Field name: `response` (NOT `result`)
+- Data type: JSON-encoded string (NOT object)
+- All 9 required fields must be present
+
+See the specification for complete schema and examples.
+

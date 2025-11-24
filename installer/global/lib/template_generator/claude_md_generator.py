@@ -775,6 +775,19 @@ class ClaudeMdGenerator:
             "- Use **testing agents** for test generation",
             "- Use **UI agents** for view/component creation",
             "- Use **architectural agents** for design review",
+            "",
+            "## Agent Response Format",
+            "",
+            "When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:",
+            "",
+            "**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)",
+            "",
+            "**Key Requirements**:",
+            "- Field name: `response` (NOT `result`)",
+            "- Data type: JSON-encoded string (NOT object)",
+            "- All 9 required fields must be present",
+            "",
+            "See the specification for complete schema and examples.",
             ""
         ])
 
@@ -878,6 +891,19 @@ class ClaudeMdGenerator:
             "- Use agents when implementing features that match their expertise",
             "- Agents understand this project's specific patterns and conventions",
             "- For tasks outside agent specializations, rely on general Claude capabilities",
+            "",
+            "## Agent Response Format",
+            "",
+            "When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:",
+            "",
+            "**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)",
+            "",
+            "**Key Requirements**:",
+            "- Field name: `response` (NOT `result`)",
+            "- Data type: JSON-encoded string (NOT object)",
+            "- All 9 required fields must be present",
+            "",
+            "See the specification for complete schema and examples.",
             ""
         ])
 
