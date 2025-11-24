@@ -1,9 +1,11 @@
 ---
 id: TASK-FIX-267C
 title: Fix Claude Code agent-response.json format error
-status: in_review
+status: completed
 created: 2025-11-24T12:45:00Z
-updated: 2025-11-24T15:40:00Z
+updated: 2025-11-24T17:30:00Z
+completed: 2025-11-24T17:30:00Z
+completed_location: tasks/completed/TASK-FIX-267C/
 priority: high
 tags: [bugfix, agent-bridge, checkpoint-resume, format-validation]
 complexity: 2
@@ -22,6 +24,10 @@ implementation:
   files_modified: []
   code_changes: false
   documentation_only: true
+organized_files:
+  - TASK-FIX-267C.md
+  - docs/validation/agent-response-format-test.py (kept in place)
+  - docs/reference/agent-response-format.md (kept in place)
 ---
 
 # TASK-FIX-267C: Fix Claude Code agent-response.json format error
