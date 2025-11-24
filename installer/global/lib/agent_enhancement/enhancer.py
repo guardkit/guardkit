@@ -277,12 +277,53 @@ class SingleAgentEnhancer:
                 logger.info(f"  Response size: {len(result_text)} chars")
 
             # Parse response using shared parser
-            enhancement = self.parser.parse(result_text)
+            # TASK-BDRY-316A: Parser now enforces boundaries requirement
+            # If AI omits boundaries, parser raises ValueError → caught below → workaround triggered
+            try:
+                enhancement = self.parser.parse(result_text)
+            except ValueError as e:
+                # Check if this is a boundaries schema violation
+                if "missing required 'boundaries' field" in str(e):
+                    logger.warning(f"Parser detected missing boundaries (schema violation): {e}")
+                    logger.info("Triggering workaround: will add generic boundaries")
+
+                    # Parse without validation to get partial enhancement
+                    import json
+                    try:
+                        # Extract JSON from response (reuse parser's extraction logic)
+                        json_content = self.parser._extract_json_from_markdown(result_text)
+                        if json_content:
+                            enhancement = json.loads(json_content)
+                        else:
+                            enhancement = json.loads(result_text)
+                    except json.JSONDecodeError:
+                        # Can't parse at all, re-raise original error
+                        raise e
+
+                    # Manually add boundaries using workaround
+                    from .boundary_utils import generate_generic_boundaries
+                    agent_name = agent_metadata.get("name", "unknown")
+                    agent_description = agent_metadata.get("description", "")
+                    boundaries_content = generate_generic_boundaries(agent_name, agent_description)
+
+                    # Add boundaries to enhancement
+                    sections = enhancement.get("sections", [])
+                    if "boundaries" not in sections:
+                        sections.append("boundaries")
+                    enhancement["sections"] = sections
+                    enhancement["boundaries"] = boundaries_content
+
+                    logger.info(f"Workaround applied: added generic boundaries for {agent_name}")
+                else:
+                    # Different ValueError, re-raise
+                    raise
 
             # Validate enhancement structure
             self._validate_enhancement(enhancement)
 
             # TASK-D70B: Ensure boundaries are present (add if missing)
+            # TASK-BDRY-316A: This is now a safety net - should rarely trigger
+            # since parser validation catches missing boundaries earlier
             enhancement = self._ensure_boundaries(enhancement, agent_metadata)
 
             if self.verbose:

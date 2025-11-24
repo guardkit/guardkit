@@ -136,13 +136,16 @@ class EnhancementParser:
 
     def _validate_basic_structure(self, enhancement: Dict[str, Any]) -> None:
         """
-        Validate basic enhancement structure.
+        Validate basic enhancement structure and enforce JSON schema requirements.
+
+        TASK-BDRY-316A: Enforce boundaries requirement from JSON schema.
+        If AI omits boundaries, raise ValueError to trigger workaround in enhancer.
 
         Args:
             enhancement: Parsed enhancement dict
 
         Raises:
-            ValueError: If structure is invalid
+            ValueError: If structure is invalid or boundaries missing/malformed
         """
         if not isinstance(enhancement, dict):
             raise ValueError("Enhancement must be a dictionary")
@@ -153,16 +156,34 @@ class EnhancementParser:
         if not isinstance(enhancement["sections"], list):
             raise ValueError("'sections' must be a list")
 
-        # TASK-BDRY-E84A: Validate boundaries (REQUIRED by JSON schema as of 2025-11-23)
-        # Note: Boundaries field is REQUIRED by JSON schema in prompt_builder.py
-        # Parser validates structure if present; enhancer._ensure_boundaries provides defense-in-depth fallback
-        if "boundaries" in enhancement["sections"]:
-            if "boundaries" not in enhancement:
-                raise ValueError(
-                    "Enhancement 'sections' list includes 'boundaries' but 'boundaries' field is missing. "
-                    "This violates the JSON schema requirement - check prompt_builder.py schema definition."
-                )
-            self._validate_boundaries(enhancement.get("boundaries", ""))
+        # TASK-BDRY-316A: Enforce JSON schema requirement for boundaries
+        # Schema specifies boundaries as REQUIRED field, so we validate:
+        # 1. "boundaries" must be in sections list
+        # 2. "boundaries" field must exist in enhancement dict
+        # 3. Boundaries content must conform to ALWAYS/NEVER/ASK format
+
+        has_boundaries_in_sections = "boundaries" in enhancement["sections"]
+        has_boundaries_field = "boundaries" in enhancement
+
+        # Case 1: Boundaries in sections but field missing → Schema violation
+        if has_boundaries_in_sections and not has_boundaries_field:
+            raise ValueError(
+                "Enhancement 'sections' list includes 'boundaries' but 'boundaries' field is missing. "
+                "This violates the JSON schema requirement - check prompt_builder.py schema definition."
+            )
+
+        # Case 2: Boundaries completely omitted → Schema violation (triggers workaround)
+        if not has_boundaries_in_sections or not has_boundaries_field:
+            logger.warning(
+                "AI response missing required 'boundaries' field (schema violation). "
+                "Enhancer will add generic boundaries as workaround."
+            )
+            raise ValueError(
+                "Enhancement missing required 'boundaries' field per JSON schema"
+            )
+
+        # Case 3: Boundaries present → Validate format
+        self._validate_boundaries(enhancement.get("boundaries", ""))
 
     def _validate_boundaries(self, boundaries_content: str) -> None:
         """

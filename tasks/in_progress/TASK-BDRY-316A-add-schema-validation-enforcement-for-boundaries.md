@@ -1,16 +1,16 @@
 ---
 id: TASK-BDRY-316A
 title: Add Schema Validation Enforcement for Boundaries Generation
-status: backlog
+status: in_progress
 created: 2025-01-24T21:45:00Z
-updated: 2025-01-24T21:45:00Z
+updated: 2025-01-24T21:55:00Z
 priority: high
 tags: [boundaries, schema-validation, ai-enhancement, bugfix]
 complexity: 4
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 63%
+  last_run: 2025-01-24T21:55:00Z
 related_tasks:
   - TASK-BDRY-E84A (parent - added JSON schema to prompt, but no validation)
   - TASK-UX-6581 (shared boundary utilities)
