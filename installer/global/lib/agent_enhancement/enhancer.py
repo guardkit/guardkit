@@ -255,6 +255,7 @@ class SingleAgentEnhancer:
 
         try:
             import json  # Local import required - ensures scope covers all exception handlers (line 341)
+
             # Use AgentBridgeInvoker for Claude Code integration (same pattern as template-create)
             import importlib
             _agent_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
@@ -272,7 +273,10 @@ class SingleAgentEnhancer:
                 if self.verbose:
                     logger.info("  ✓ Loaded agent response from checkpoint")
             else:
-                # No response yet - invoke agent (will exit with code 42)
+                # No response yet - invoke agent
+                # This will write .agent-request.json and exit with code 42
+                # Claude Code will see the exit 42 and invoke the agent-content-enhancer
+                # On re-run, has_response() will return True and we'll load the cached response
                 result_text = invoker.invoke(
                     agent_name="agent-content-enhancer",
                     prompt=prompt
