@@ -134,6 +134,11 @@ def main(args: list[str]) -> int:
         action="store_true",
         help="Show detailed enhancement process"
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from checkpoint after agent invocation"
+    )
 
     parsed_args = parser.parse_args(args)
 
@@ -159,7 +164,7 @@ def main(args: list[str]) -> int:
         logger.error(f"✗ Template directory not found: {template_dir}")
         return 2
 
-    # Import enhancer (lazy import to avoid unnecessary loading)
+    # Import enhancer and orchestrator (lazy import to avoid unnecessary loading)
     try:
         import importlib
         _enhancer_module = importlib.import_module(
@@ -167,6 +172,11 @@ def main(args: list[str]) -> int:
         )
         SingleAgentEnhancer = _enhancer_module.SingleAgentEnhancer
         ValidationError = _enhancer_module.ValidationError
+
+        _orchestrator_module = importlib.import_module(
+            'installer.global.lib.agent_enhancement.orchestrator'
+        )
+        AgentEnhanceOrchestrator = _orchestrator_module.AgentEnhanceOrchestrator
     except ImportError as e:
         logger.error(f"✗ Failed to import enhancement module: {e}")
         logger.error("   This may indicate the shared modules are not yet implemented.")
@@ -179,11 +189,18 @@ def main(args: list[str]) -> int:
         verbose=parsed_args.verbose
     )
 
-    # Enhance agent
+    # Create orchestrator wrapper
+    orchestrator = AgentEnhanceOrchestrator(
+        enhancer=enhancer,
+        resume=parsed_args.resume,
+        verbose=parsed_args.verbose
+    )
+
+    # Enhance agent with orchestrator
     try:
         logger.info(f"Enhancing {agent_file.name}...")
 
-        result = enhancer.enhance(
+        result = orchestrator.run(
             agent_file=agent_file,
             template_dir=template_dir
         )

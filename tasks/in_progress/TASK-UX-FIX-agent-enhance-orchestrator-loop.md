@@ -1,9 +1,9 @@
 ---
 id: TASK-UX-FIX-E42
 title: Implement orchestrator loop in /agent-enhance for automatic checkpoint-resume
-status: backlog
+status: in_progress
 created: 2025-11-24T17:30:00Z
-updated: 2025-11-24T17:30:00Z
+updated: 2025-11-24T18:00:00Z
 priority: high
 tags: [ux-regression, checkpoint-resume, orchestrator, agent-enhance]
 complexity: 5

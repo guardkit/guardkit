@@ -65,6 +65,12 @@ agent_path               Agent path in one of two formats:
 
 --verbose                Show detailed enhancement process
                          Default: false
+
+--resume                 Resume from checkpoint after agent invocation
+                         Use this flag on second run after exit code 42
+                         The orchestrator automatically handles checkpoint-resume
+                         You typically don't need to use this flag manually
+                         Default: false
 ```
 
 ## Enhancement Strategies
@@ -98,6 +104,7 @@ agent_path               Agent path in one of two formats:
 - `3` - Enhancement failed
 - `4` - Validation error (malformed enhancement data)
 - `5` - Permission error (cannot write to agent file)
+- `42` - Agent invocation needed (checkpoint saved for resume)
 
 ## Output Format
 
