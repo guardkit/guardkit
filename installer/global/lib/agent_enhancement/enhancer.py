@@ -288,7 +288,7 @@ class SingleAgentEnhancer:
                     logger.info("Triggering workaround: will add generic boundaries")
 
                     # Parse without validation to get partial enhancement
-                    import json
+                    import json  # noqa: F811 - Required here due to Python scoping rules
                     try:
                         # Extract JSON from response (reuse parser's extraction logic)
                         json_content = self.parser._extract_json_from_markdown(result_text)
