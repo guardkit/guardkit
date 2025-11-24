@@ -254,6 +254,7 @@ class SingleAgentEnhancer:
             logger.info(f"  Prompt size: {len(prompt)} chars")
 
         try:
+            import json  # Local import required - ensures scope covers all exception handlers (line 341)
             # Use AgentBridgeInvoker for Claude Code integration (same pattern as template-create)
             import importlib
             _agent_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
@@ -287,8 +288,7 @@ class SingleAgentEnhancer:
                     logger.warning(f"Parser detected missing boundaries (schema violation): {e}")
                     logger.info("Triggering workaround: will add generic boundaries")
 
-                    # Parse without validation to get partial enhancement
-                    import json  # noqa: F811 - Required here due to Python scoping rules
+                    # Parse without validation to get partial enhancement (using local json import)
                     try:
                         # Extract JSON from response (reuse parser's extraction logic)
                         json_content = self.parser._extract_json_from_markdown(result_text)
