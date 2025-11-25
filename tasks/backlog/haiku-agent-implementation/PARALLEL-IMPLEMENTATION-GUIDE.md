@@ -5,7 +5,7 @@
 This guide provides a wave-based parallel implementation strategy for adding discovery metadata to 30 agents (15 global + 15 template-specific) using Conductor git worktrees for maximum efficiency.
 
 **Timeline**: 3.5-4 days (realistic with checkpoints)
-**Workspaces**: 6 maximum (efficient reuse)
+**Workspaces**: 8 maximum (efficient reuse)
 **Strategy**: 4 waves mixing `/task-work` (complex) and direct Claude Code (simple)
 
 ---
@@ -17,10 +17,10 @@ This guide provides a wave-based parallel implementation strategy for adding dis
 | **Total Tasks** | 14 (HAI-001 through HAI-014) |
 | **Total Effort** | 25-29.5 hours |
 | **Parallel Efficiency** | 17.25-20 hours (35% speedup) |
-| **Workspaces Needed** | 6 concurrent maximum |
+| **Workspaces Needed** | 8 concurrent maximum |
 | **Critical Path** | 8.5 hours (HAI-001 → 005 → 006 → 008) |
 | **Best Case** | 2.2 days |
-| **Realistic** | 3.5 days |
+| **Realistic** | 3.5-4 days |
 | **Conservative** | 4.5 days |
 
 ---
@@ -38,11 +38,11 @@ This guide provides a wave-based parallel implementation strategy for adding dis
 | **HAI-007** | Documentation | Direct | 1.5h | Writing only, no code changes |
 | **HAI-008** | E2E Testing | `/task-work` | 2h | Validation critical, needs quality gates |
 | **HAI-009** | Update 12 Global Agents | Direct + Script | 4-6h | Bulk metadata updates with validation |
-| **HAI-010** | react-typescript | Direct | 1-1.5h | Repetitive metadata updates (3 agents) |
-| **HAI-011** | fastapi-python | Direct | 1-1.5h | Repetitive metadata updates (3 agents) |
-| **HAI-012** | nextjs-fullstack | Direct | 1-1.5h | Repetitive metadata updates (3 agents) |
-| **HAI-013** | react-fastapi-monorepo | Direct | 1-1.5h | Repetitive metadata updates (3 agents) |
-| **HAI-014** | taskwright-python | Direct | 1-1.5h | Repetitive metadata updates (3 agents) |
+| **HAI-010** | react-typescript | Direct | 1-1.5h | 3 template agents metadata updates |
+| **HAI-011** | fastapi-python | Direct | 1-1.5h | 3 template agents metadata updates |
+| **HAI-012** | nextjs-fullstack | Direct | 1-1.5h | 3 template agents metadata updates |
+| **HAI-013** | react-fastapi-monorepo | Direct | 1-1.5h | 3 template agents metadata updates |
+| **HAI-014** | taskwright-python | Direct | 1-1.5h | 3 template agents metadata updates |
 
 ### Why /task-work vs Direct?
 
@@ -62,9 +62,9 @@ This guide provides a wave-based parallel implementation strategy for adding dis
 
 ## Wave-Based Implementation Plan
 
-### Wave 1: Foundation + Agent Creation (Parallel)
+### Wave 1: Foundation + Agent Creation (Sequential → Parallel)
 
-**Duration**: 2.25 hours
+**Duration**: 2.25 hours (1.5h sequential + 2h parallel)
 **Workspaces**: 4 concurrent
 **Checkpoint**: 15 minutes (schema + agent review)
 
@@ -77,21 +77,31 @@ This guide provides a wave-based parallel implementation strategy for adding dis
 
 **Execution**:
 ```bash
-# Step 1: Foundation (WS-Main)
+# Step 1: Foundation (WS-Main) - SEQUENTIAL
 cd ~/Projects/taskwright-main
 /task-work TASK-HAI-001-D668  # Schema design with architectural review
 
-# Step 2: Wait for HAI-001 completion + 15 min checkpoint
+# Step 2: Wait for HAI-001 completion (1.5h)
 
-# Step 3: Agent creation (parallel)
+# Step 3: Agent creation - PARALLEL (all 3 start simultaneously)
 conductor workspace create ws-hai-002 --task "HAI-002 Python Agent"
 conductor workspace create ws-hai-003 --task "HAI-003 React Agent"
 conductor workspace create ws-hai-004 --task "HAI-004 .NET Agent"
 
-# In each workspace (parallel execution):
-# WS-A: Create python-api-specialist.md with metadata from HAI-001 schema
-# WS-B: Create react-state-specialist.md with metadata from HAI-001 schema
-# WS-C: Create dotnet-domain-specialist.md with metadata from HAI-001 schema
+# In WS-A (ws-hai-002):
+cd ws-hai-002
+# Create installer/global/agents/python-api-specialist.md
+# Follow TASK-HAI-002-B47C specifications
+
+# In WS-B (ws-hai-003):
+cd ws-hai-003
+# Create installer/global/agents/react-state-specialist.md
+# Follow TASK-HAI-003-45BB specifications
+
+# In WS-C (ws-hai-004):
+cd ws-hai-004
+# Create installer/global/agents/dotnet-domain-specialist.md
+# Follow TASK-HAI-004-9534 specifications
 ```
 
 **Checkpoint**: Review 3 new agents, validate metadata against schema
@@ -100,50 +110,7 @@ conductor workspace create ws-hai-004 --task "HAI-004 .NET Agent"
 
 ---
 
-### Wave 2: Agent Updates (Parallel)
-
-**Duration**: 6.3 hours
-**Workspaces**: 6 concurrent
-**Checkpoint**: 20 minutes (metadata validation)
-
-| Workspace | Task(s) | Method | Duration | Notes |
-|-----------|---------|--------|----------|-------|
-| **WS-A** | HAI-009 (Batch 1: 4 agents) | Direct | 1.5-2h | architectural-reviewer, code-reviewer, pattern-advisor, complexity-evaluator |
-| **WS-B** | HAI-009 (Batch 2: 4 agents) | Direct | 1.5-2h | test-orchestrator, test-verifier, build-validator, debugging-specialist |
-| **WS-C** | HAI-009 (Batch 3: 4 agents) | Direct | 1.5-2h | database-specialist, devops-specialist, security-specialist, git-workflow-manager |
-| **WS-D** | HAI-010, HAI-011 | Direct | 2-3h | react-typescript (3), fastapi-python (3) |
-| **WS-E** | HAI-012, HAI-013 | Direct | 2-3h | nextjs-fullstack (3), react-fastapi-monorepo (3) |
-| **WS-F** | HAI-014 | Direct | 1-1.5h | taskwright-python (3), agent-content-enhancer, figma, zeplin |
-
-**Execution**:
-```bash
-# Reuse existing workspaces + create new
-conductor workspace reuse ws-hai-002 --task "HAI-009 Batch 1"
-conductor workspace reuse ws-hai-003 --task "HAI-009 Batch 2"
-conductor workspace reuse ws-hai-004 --task "HAI-009 Batch 3"
-conductor workspace create ws-hai-010-011 --task "HAI-010 + HAI-011"
-conductor workspace create ws-hai-012-013 --task "HAI-012 + HAI-013"
-conductor workspace create ws-hai-014 --task "HAI-014"
-
-# In each workspace (parallel execution):
-# Add discovery metadata (stack, phase, capabilities, keywords) to assigned agents
-# Follow schema from HAI-001
-# Validate metadata format
-```
-
-**Validation Script**:
-```bash
-# Run after all Wave 2 updates
-python3 installer/global/commands/lib/validate_agent_metadata.py --all
-```
-
-**Checkpoint**: Validate all 27 agents have correct metadata
-
-**Merge to Main**: After validation passes
-
----
-
-### Wave 3: Discovery System (Sequential)
+### Wave 2: Discovery System (Sequential)
 
 **Duration**: 5 hours
 **Workspaces**: 1 (critical integration)
@@ -151,16 +118,17 @@ python3 installer/global/commands/lib/validate_agent_metadata.py --all
 
 | Workspace | Task | Method | Duration | Dependencies |
 |-----------|------|--------|----------|--------------|
-| **WS-A** | HAI-005 | `/task-work` | 3h | HAI-001, HAI-002/003/004, HAI-009-014 |
-| **WS-A** | HAI-006 | `/task-work` | 2h | HAI-005 (must complete) |
+| **WS-D** | HAI-005 | `/task-work` | 3h | HAI-001, HAI-002/003/004 |
+| **WS-D** | HAI-006 | `/task-work` | 2h | HAI-005 (must complete) |
 
 **Execution**:
 ```bash
-# Reuse WS-A (isolated for sensitive integration)
-conductor workspace reuse ws-hai-002 --task "HAI-005 Discovery"
+# Use dedicated workspace for critical integration
+conductor workspace create ws-hai-005-006 --task "HAI-005 + HAI-006 Discovery"
+cd ws-hai-005-006
 
 # Step 1: Discovery algorithm (3h)
-/task-work TASK-HAI-005-4F78  # With full quality gates
+/task-work TASK-HAI-005-7A2E  # With full quality gates
 
 # Step 2: Critical checkpoint (30 min)
 # - Test discovery algorithm manually
@@ -168,7 +136,7 @@ conductor workspace reuse ws-hai-002 --task "HAI-005 Discovery"
 # - Validate matches expected agents
 
 # Step 3: Integration (2h)
-/task-work TASK-HAI-006-6632  # Integrate with /task-work Phase 3
+/task-work TASK-HAI-006-C391  # Integrate with /task-work Phase 3
 
 # Step 4: Integration testing
 # - Run sample tasks (Python, React, .NET)
@@ -182,40 +150,109 @@ conductor workspace reuse ws-hai-002 --task "HAI-005 Discovery"
 
 ---
 
-### Wave 4: Finalization (Mostly Sequential)
+### Wave 3: Finalization (Parallel)
 
-**Duration**: 3.75 hours
+**Duration**: 2.25 hours (parallel with 75% overlap)
 **Workspaces**: 2 (documentation + testing)
 **Checkpoint**: 15 minutes (final review)
 
 | Workspace | Task | Method | Duration | Dependencies |
 |-----------|------|--------|----------|--------------|
-| **WS-A** | HAI-007 | Direct | 1.5h | All previous waves |
-| **WS-B** | HAI-008 | `/task-work` | 2h | HAI-007 (can overlap 75%) |
+| **WS-E** | HAI-007 | Direct | 1.5h | HAI-001 through HAI-006 |
+| **WS-D** | HAI-008 | `/task-work` | 2h | HAI-007 (can overlap 75%) |
 
 **Execution**:
 ```bash
-# Parallel start, sequential finish
-conductor workspace reuse ws-hai-002 --task "HAI-007 Docs"
-conductor workspace reuse ws-hai-003 --task "HAI-008 E2E Testing"
+# Documentation (WS-E)
+conductor workspace create ws-hai-007 --task "HAI-007 Documentation"
+cd ws-hai-007
+# Update CLAUDE.md
+# Create docs/guides/agent-discovery-guide.md
+# Update docs/deep-dives/model-optimization.md
+# Update README.md
+# Update installer/global/commands/agent-enhance.md
+# Follow TASK-HAI-007-8B1F specifications
 
-# Step 1: Documentation (WS-A, 1.5h)
-# - Update CLAUDE.md
-# - Create docs/guides/agent-discovery.md
-# - Update model-optimization.md
-
-# Step 2: E2E Testing (WS-B, 2h) - can start after 20 min of HAI-007
-/task-work TASK-HAI-008-1537  # Full test suite with quality gates
-
-# Step 3: Final checkpoint (15 min)
-# - Review documentation completeness
-# - Verify all E2E tests pass
-# - Check integration one more time
+# E2E Testing (WS-D, reuse) - can start after 20 min of HAI-007
+conductor workspace reuse ws-hai-005-006 --task "HAI-008 E2E Testing"
+cd ws-hai-005-006
+/task-work TASK-HAI-008-D5C2  # Full test suite with quality gates
 ```
 
-**Checkpoint**: Final review before blog post
+**Checkpoint**: Final review before bulk metadata updates
 
 **Merge to Main**: After all tests pass
+
+---
+
+### Wave 4: Bulk Metadata Updates (Parallel)
+
+**Duration**: 6.3 hours (all parallel)
+**Workspaces**: 6 concurrent
+**Checkpoint**: 20 minutes (metadata validation)
+
+| Workspace | Task | Method | Duration | Notes |
+|-----------|---------|--------|----------|-------|
+| **WS-F** | HAI-009 | Direct + Script | 4-6h | 12 global agents with validation batching |
+| **WS-A** | HAI-010 | Direct | 1-1.5h | react-typescript (3 agents) |
+| **WS-B** | HAI-011 | Direct | 1-1.5h | fastapi-python (3 agents) |
+| **WS-C** | HAI-012 | Direct | 1-1.5h | nextjs-fullstack (3 agents) |
+| **WS-G** | HAI-013 | Direct | 1-1.5h | react-fastapi-monorepo (3 agents) |
+| **WS-H** | HAI-014 | Direct | 1-1.5h | taskwright-python (3 agents) |
+
+**Execution**:
+```bash
+# HAI-009: Global agents (WS-F) - LONGEST TASK
+conductor workspace create ws-hai-009 --task "HAI-009 Global Agents"
+cd ws-hai-009
+# Update 12 global agents following TASK-HAI-009-F3A7 specifications
+# See agent list in task file (database-specialist, devops-specialist, etc.)
+# Use validation script: scripts/validate_agent_metadata.py
+
+# HAI-010: react-typescript (WS-A, reuse)
+conductor workspace reuse ws-hai-002 --task "HAI-010 react-typescript"
+cd ws-hai-002
+# Update 3 agents: feature-architecture-specialist, form-validation-specialist, react-query-specialist
+# Follow TASK-HAI-010-A89D specifications
+
+# HAI-011: fastapi-python (WS-B, reuse)
+conductor workspace reuse ws-hai-003 --task "HAI-011 fastapi-python"
+cd ws-hai-003
+# Update 3 agents: fastapi-specialist, fastapi-database-specialist, fastapi-testing-specialist
+# Follow TASK-HAI-011-B23E specifications
+
+# HAI-012: nextjs-fullstack (WS-C, reuse)
+conductor workspace reuse ws-hai-004 --task "HAI-012 nextjs-fullstack"
+cd ws-hai-004
+# Update 3 agents: nextjs-fullstack-specialist, nextjs-server-components-specialist, nextjs-server-actions-specialist
+# Follow TASK-HAI-012-C5F8 specifications
+
+# HAI-013: react-fastapi-monorepo (WS-G, new)
+conductor workspace create ws-hai-013 --task "HAI-013 react-fastapi-monorepo"
+cd ws-hai-013
+# Update 3 agents: react-fastapi-monorepo-specialist, monorepo-type-safety-specialist, docker-orchestration-specialist
+# Follow TASK-HAI-013-D7A2 specifications
+
+# HAI-014: taskwright-python (WS-H, new)
+conductor workspace create ws-hai-014 --task "HAI-014 taskwright-python"
+cd ws-hai-014
+# Update 3 agents: python-cli-specialist, python-architecture-specialist, python-testing-specialist
+# Follow TASK-HAI-014-E9B6 specifications
+```
+
+**Validation Script**:
+```bash
+# Run after all Wave 4 updates
+python3 scripts/validate_agent_metadata.py --all
+
+# Expected output:
+# ✅ Valid: 30/30
+# Coverage: 100% (15 global + 15 template)
+```
+
+**Checkpoint**: Validate all 30 agents have correct metadata
+
+**Merge to Main**: After validation passes
 
 ---
 
@@ -223,23 +260,25 @@ conductor workspace reuse ws-hai-003 --task "HAI-008 E2E Testing"
 
 ### Workspace Allocation
 
-**6 workspaces with intelligent reuse**:
+**8 workspaces with intelligent reuse**:
 
 | Workspace | Wave 1 | Wave 2 | Wave 3 | Wave 4 | Total Usage |
 |-----------|--------|--------|--------|--------|-------------|
 | **WS-Main** | HAI-001 (1.5h) | - | - | - | 1.5h |
-| **WS-A** | HAI-002 (2h) | HAI-009-B1 (2h) | HAI-005 (3h), HAI-006 (2h) | HAI-007 (1.5h) | 10.5h |
-| **WS-B** | HAI-003 (2h) | HAI-009-B2 (2h) | - | HAI-008 (2h) | 6h |
-| **WS-C** | HAI-004 (2h) | HAI-009-B3 (2h) | - | - | 4h |
-| **WS-D** | - | HAI-010/011 (3h) | - | - | 3h |
-| **WS-E** | - | HAI-012/013 (3h) | - | - | 3h |
-| **WS-F** | - | HAI-014 (1.5h) | - | - | 1.5h |
+| **WS-A** | HAI-002 (2h) | - | - | HAI-010 (1.5h) | 3.5h |
+| **WS-B** | HAI-003 (2h) | - | - | HAI-011 (1.5h) | 3.5h |
+| **WS-C** | HAI-004 (2h) | - | - | HAI-012 (1.5h) | 3.5h |
+| **WS-D** | - | HAI-005 (3h), HAI-006 (2h) | HAI-008 (2h) | - | 7h |
+| **WS-E** | - | - | HAI-007 (1.5h) | - | 1.5h |
+| **WS-F** | - | - | - | HAI-009 (6h) | 6h |
+| **WS-G** | - | - | - | HAI-013 (1.5h) | 1.5h |
+| **WS-H** | - | - | - | HAI-014 (1.5h) | 1.5h |
 
 **Benefits**:
 - **WS-Main**: Isolated for critical schema design
-- **WS-A**: Heavy reuse (4 sequential tasks, 10.5h total)
-- **WS-B/C**: Moderate reuse (3 tasks each)
-- **WS-D/E/F**: Single-wave usage (Wave 2 parallelization)
+- **WS-D**: Critical path (discovery + integration + E2E testing)
+- **WS-A/B/C**: Reused between Wave 1 and Wave 4
+- **WS-F/G/H**: Single-wave usage (Wave 4 parallelization)
 
 ### State Persistence
 
@@ -273,48 +312,25 @@ cat installer/global/agents/{python-api-specialist,react-state-specialist,dotnet
 
 # 3. Validate metadata format
 python3 -c "
-import yaml
+import frontmatter
 for agent in ['python-api-specialist', 'react-state-specialist', 'dotnet-domain-specialist']:
     with open(f'installer/global/agents/{agent}.md') as f:
-        content = f.read()
-        # Check for required fields
-        assert 'stack:' in content
-        assert 'phase:' in content
-        assert 'capabilities:' in content
-        assert 'keywords:' in content
+        data = frontmatter.loads(f.read())
+        assert 'stack' in data.metadata
+        assert 'phase' in data.metadata
+        assert 'capabilities' in data.metadata
+        assert 'keywords' in data.metadata
+        assert len(data.metadata['capabilities']) >= 5
+        assert len(data.metadata['keywords']) >= 5
     print(f'✅ {agent} valid')
 "
 
 # 4. Merge to main if all pass
+git checkout main
 git merge ws-hai-002 ws-hai-003 ws-hai-004
 ```
 
-**After Wave 2** (20 min):
-```bash
-# 1. Run validation script
-python3 installer/global/commands/lib/validate_agent_metadata.py --all
-
-# 2. Check for missing metadata
-python3 -c "
-import glob
-agents = glob.glob('installer/global/agents/*.md')
-for agent in agents:
-    with open(agent) as f:
-        content = f.read()
-        if 'phase:' not in content:
-            print(f'⚠️  Missing metadata: {agent}')
-"
-
-# 3. Spot-check 3 random agents
-cat installer/global/agents/database-specialist.md | head -20
-cat installer/global/templates/react-typescript/agents/form-validation-specialist.md | head -20
-cat installer/global/templates/fastapi-python/agents/fastapi-specialist.md | head -20
-
-# 4. Merge to main if all pass
-git merge <all-wave-2-workspaces>
-```
-
-**After Wave 3** (30 min - CRITICAL):
+**After Wave 2** (30 min - CRITICAL):
 ```bash
 # 1. Test discovery algorithm manually
 python3 -c "
@@ -323,61 +339,91 @@ from installer.global.commands.lib.agent_discovery import discover_agents
 # Test implementation agents
 agents = discover_agents(phase='implementation')
 print(f'Found {len(agents)} implementation agents')
-assert len(agents) >= 10, 'Should find at least 10 implementation agents'
+assert len(agents) >= 3, 'Should find at least 3 implementation agents'
 
 # Test stack filtering
-python_agents = discover_agents(phase='implementation', stack='python')
+python_agents = discover_agents(phase='implementation', stack=['python'])
 print(f'Found {len(python_agents)} Python implementation agents')
-assert len(python_agents) >= 3, 'Should find Python specialists'
+assert len(python_agents) >= 1, 'Should find python-api-specialist'
 
 # Test keyword matching
-form_agents = discover_agents(phase='implementation', keywords=['form', 'validation'])
-print(f'Found {len(form_agents)} form specialists')
-assert len(form_agents) >= 1, 'Should find form-validation-specialist'
+fastapi_agents = discover_agents(phase='implementation', keywords=['fastapi'])
+print(f'Found {len(fastapi_agents)} FastAPI specialists')
+assert len(fastapi_agents) >= 1, 'Should find python-api-specialist'
 
 print('✅ All discovery tests passed')
 "
 
 # 2. Test integration with sample task
-/task-create "Add user endpoint" stack:python
+/task-create "Add user endpoint" priority:medium
+# Manually edit task to add: files: ['src/api/users.py']
 /task-work TASK-XXX  # Observe which agent is selected for Phase 3
 
 # 3. Check fallback behavior
-/task-create "Add feature" stack:rust
-/task-work TASK-YYY  # Should fall back gracefully (no Rust specialist yet)
+/task-create "Add feature" priority:medium
+# Manually edit task to add: files: ['src/main.rs']
+/task-work TASK-YYY  # Should fall back to task-manager (no Rust specialist yet)
 
 # 4. Merge to main if all pass
-git merge ws-hai-002  # Critical: HAI-005 + HAI-006
+git checkout main
+git merge ws-hai-005-006  # Critical: HAI-005 + HAI-006
 ```
 
-**After Wave 4** (15 min):
+**After Wave 3** (15 min):
 ```bash
 # 1. Review documentation completeness
 cat CLAUDE.md | grep -A 20 "Stack-Specific Implementation Agents"
-cat docs/guides/agent-discovery.md
+cat docs/guides/agent-discovery-guide.md
 
 # 2. Check E2E test results
-cat .claude/state/TASK-HAI-008-1537/test-results.json
+/task-status TASK-HAI-008-D5C2 | grep "COMPLETED"
 
-# 3. Final integration test
-/task-create "Complete workflow test" stack:python
-/task-work TASK-ZZZ  # Full workflow with discovery
+# 3. Review E2E test report
+cat tests/integration/haiku-agent-e2e-report.md
 
 # 4. Merge to main
-git merge ws-hai-002 ws-hai-003  # HAI-007 + HAI-008
+git checkout main
+git merge ws-hai-007 ws-hai-005-006  # HAI-007 + HAI-008
 ```
 
-### Merge-to-Main Schedule
+**After Wave 4** (20 min):
+```bash
+# 1. Run validation script
+python3 scripts/validate_agent_metadata.py --all
 
-| Point | Branches | Validation |
-|-------|----------|------------|
-| **After Wave 1** | ws-hai-002/003/004 | Schema + 3 agents validated |
-| **After Wave 2** | 6 workspace branches | 27 agents metadata validated |
-| **After HAI-005** | ws-hai-002 (discovery only) | Discovery algorithm tested manually |
-| **After HAI-006** | ws-hai-002 (integration) | Integration tested with sample tasks |
-| **After Wave 4** | ws-hai-002/003 (docs + tests) | E2E tests pass, docs complete |
+# Expected output:
+# ✅ Valid: 30/30
+# ⚠️  Missing metadata: 0
+# ❌ Incomplete: 0
 
-**Total Merges**: 5 (incremental integration reduces risk)
+# 2. Test discovery finds all agents
+python3 -c "
+from installer.global.commands.lib.agent_discovery import discover_agents
+
+# Count by phase
+impl = discover_agents(phase='implementation')
+review = discover_agents(phase='review')
+testing = discover_agents(phase='testing')
+orchestration = discover_agents(phase='orchestration')
+
+print(f'Implementation: {len(impl)} agents')
+print(f'Review: {len(review)} agents')
+print(f'Testing: {len(testing)} agents')
+print(f'Orchestration: {len(orchestration)} agents')
+
+total = len(impl) + len(review) + len(testing) + len(orchestration)
+print(f'Total: {total} agents with metadata')
+assert total >= 30, 'Should have at least 30 agents'
+"
+
+# 3. Spot-check metadata quality
+git diff main..HEAD installer/global/agents/database-specialist.md | head -30
+git diff main..HEAD installer/global/templates/react-typescript/agents/form-validation-specialist.md | head -30
+
+# 4. Merge to main if all pass
+git checkout main
+git merge ws-hai-009 ws-hai-002 ws-hai-003 ws-hai-004 ws-hai-013 ws-hai-014
+```
 
 ---
 
@@ -396,7 +442,7 @@ git merge ws-hai-002 ws-hai-003  # HAI-007 + HAI-008
 
 | Task | Risk | Mitigation |
 |------|------|------------|
-| **HAI-009** | Inconsistent metadata across 12 agents | Automated validation script |
+| **HAI-009** | Inconsistent metadata across 12 agents | Automated validation script, batching |
 | **HAI-010-014** | Template metadata inconsistencies | Per-template validation + spot-checks |
 
 ### Low-Risk Tasks → Direct Only
@@ -416,23 +462,25 @@ git merge ws-hai-002 ws-hai-003  # HAI-007 + HAI-008
 
 | Wave | Duration | Checkpoints | Total |
 |------|----------|-------------|-------|
-| Wave 1 | 2.25h (parallel) | 0.25h | 2.5h |
-| Wave 2 | 6.3h (parallel) | 0.33h | 6.6h |
-| Wave 3 | 5h (sequential) | 0.5h | 5.5h |
-| Wave 4 | 2.25h (overlap) | 0.25h | 2.5h |
+| Wave 1 | 2.25h (1.5h seq + 2h parallel) | 0.25h | 2.5h |
+| Wave 2 | 5h (sequential) | 0.5h | 5.5h |
+| Wave 3 | 2.25h (parallel 75% overlap) | 0.25h | 2.5h |
+| Wave 4 | 6.3h (parallel) | 0.33h | 6.6h |
 
 **Reality Check**: Assumes zero context switching, perfect workspace management, no unexpected issues.
 
 ### Realistic (With Overhead)
 
-**Total**: 3.5 days (20 hours + overhead)
+**Total**: 3.5-4 days (20 hours + overhead)
 
 | Wave | Duration | Checkpoints | Overhead | Total |
 |------|----------|-------------|----------|-------|
 | Wave 1 | 2.25h | 0.25h | 0.5h (setup) | 3h |
-| Wave 2 | 6.3h | 0.33h | 1h (validation) | 7.6h |
-| Wave 3 | 5h | 0.5h | 1h (integration testing) | 6.5h |
-| Wave 4 | 2.25h | 0.25h | 0.5h (final review) | 3h |
+| Wave 2 | 5h | 0.5h | 1h (integration testing) | 6.5h |
+| Wave 3 | 2.25h | 0.25h | 0.5h (final review) | 3h |
+| Wave 4 | 6.3h | 0.33h | 1h (validation) | 7.6h |
+
+**Total: 20 hours = 2.5 days @ 8h/day, 3.3 days @ 6h/day, 4 days @ 5h/day**
 
 **Overhead includes**:
 - Workspace creation/switching
@@ -448,6 +496,32 @@ git merge ws-hai-002 ws-hai-003  # HAI-007 + HAI-008
 
 ---
 
+## Recommended Timeline
+
+**Day 1**:
+- Morning: Wave 1 (HAI-001 schema design) - 1.5h
+- Afternoon: Wave 1 (HAI-002/003/004 parallel) - 2h + checkpoint - 15min
+- **Total: 3.75h**
+
+**Day 2**:
+- Morning: Wave 2 (HAI-005 discovery algorithm) - 3h
+- Afternoon: Wave 2 (HAI-006 integration) - 2h + checkpoint - 30min
+- **Total: 5.5h**
+
+**Day 3**:
+- Morning: Wave 3 (HAI-007 docs + HAI-008 E2E parallel) - 2.25h + checkpoint - 15min
+- Afternoon: Wave 4 start (HAI-009 global agents) - 3h
+- **Total: 5.4h**
+
+**Day 4**:
+- Morning: Wave 4 continue (HAI-009 finish + HAI-010-014 parallel) - 4h
+- Afternoon: Wave 4 checkpoint + validation + merge - 1h
+- **Total: 5h**
+
+**Grand Total**: 19.65 hours over 4 days = **realistic 3.5-4 day timeline**
+
+---
+
 ## Pre-Execution Checklist
 
 ### Environment Setup
@@ -455,206 +529,28 @@ git merge ws-hai-002 ws-hai-003  # HAI-007 + HAI-008
 - [ ] Conductor installed and configured
 - [ ] Taskwright symlinks verified (`taskwright doctor`)
 - [ ] Git worktree support confirmed
-- [ ] 6 workspace slots available (check Conductor limits)
+- [ ] 8 workspace slots available (check Conductor limits)
 - [ ] Main branch clean (no uncommitted changes)
+- [ ] v0.95.0 tag created (rollback point)
 
 ### Validation Tools Ready
 
-- [ ] Schema validation script: `installer/global/commands/lib/validate_agent_metadata.py`
-- [ ] Agent metadata checker (Python script)
-- [ ] Discovery algorithm test suite (from HAI-005)
+- [ ] Create validation script: `scripts/validate_agent_metadata.py`
+- [ ] Python frontmatter library installed: `pip install python-frontmatter`
+- [ ] Discovery algorithm test suite (will be created in HAI-005)
 
 ### Documentation Access
 
 - [ ] HAI-001 through HAI-014 task files accessible
-- [ ] Schema definition from HAI-001 available
+- [ ] Schema definition from HAI-001 available after Wave 1
 - [ ] Agent template references loaded
-
----
-
-## Execution Commands (Quick Reference)
-
-### Wave 1 Execution
-
-```bash
-# Foundation
-cd ~/Projects/taskwright-main
-/task-work TASK-HAI-001-D668
-
-# After HAI-001 completes + checkpoint
-conductor workspace create ws-hai-002 && cd ws-hai-002
-# Create python-api-specialist.md with metadata
-
-conductor workspace create ws-hai-003 && cd ws-hai-003
-# Create react-state-specialist.md with metadata
-
-conductor workspace create ws-hai-004 && cd ws-hai-004
-# Create dotnet-domain-specialist.md with metadata
-
-# Checkpoint + merge
-# <validation steps from checkpoint workflow>
-git checkout main && git merge ws-hai-002 ws-hai-003 ws-hai-004
-```
-
-### Wave 2 Execution
-
-```bash
-# 6 parallel workspaces
-conductor workspace reuse ws-hai-002 && cd ws-hai-002
-# Update architectural-reviewer, code-reviewer, pattern-advisor, complexity-evaluator
-
-conductor workspace reuse ws-hai-003 && cd ws-hai-003
-# Update test-orchestrator, test-verifier, build-validator, debugging-specialist
-
-conductor workspace reuse ws-hai-004 && cd ws-hai-004
-# Update database-specialist, devops-specialist, security-specialist, git-workflow-manager
-
-conductor workspace create ws-hai-010-011 && cd ws-hai-010-011
-# Update react-typescript (3) + fastapi-python (3)
-
-conductor workspace create ws-hai-012-013 && cd ws-hai-012-013
-# Update nextjs-fullstack (3) + react-fastapi-monorepo (3)
-
-conductor workspace create ws-hai-014 && cd ws-hai-014
-# Update taskwright-python (3) + agent-content-enhancer + figma + zeplin
-
-# Validation + merge
-python3 installer/global/commands/lib/validate_agent_metadata.py --all
-git checkout main && git merge <all 6 workspaces>
-```
-
-### Wave 3 Execution
-
-```bash
-# Critical sequential path
-conductor workspace reuse ws-hai-002 && cd ws-hai-002
-
-# Discovery algorithm
-/task-work TASK-HAI-005-4F78
-
-# Critical checkpoint (30 min manual testing)
-# <manual discovery tests from checkpoint workflow>
-
-# Integration
-/task-work TASK-HAI-006-6632
-
-# Merge
-git checkout main && git merge ws-hai-002
-```
-
-### Wave 4 Execution
-
-```bash
-# Documentation (WS-A)
-conductor workspace reuse ws-hai-002 && cd ws-hai-002
-# Update CLAUDE.md, create docs/guides/agent-discovery.md
-
-# E2E Testing (WS-B, parallel after 20 min)
-conductor workspace reuse ws-hai-003 && cd ws-hai-003
-/task-work TASK-HAI-008-1537
-
-# Final checkpoint + merge
-# <final validation from checkpoint workflow>
-git checkout main && git merge ws-hai-002 ws-hai-003
-```
-
----
-
-## Post-Execution Verification
-
-### Completeness Check
-
-```bash
-# 1. Count agents with metadata
-python3 -c "
-import glob
-agents = glob.glob('installer/global/agents/*.md') + glob.glob('installer/global/templates/*/agents/*.md')
-with_metadata = 0
-for agent in agents:
-    with open(agent) as f:
-        if 'phase:' in f.read():
-            with_metadata += 1
-print(f'✅ {with_metadata}/{len(agents)} agents have discovery metadata')
-assert with_metadata >= 30, 'Should have at least 30 agents with metadata'
-"
-
-# 2. Test discovery for each stack
-python3 -c "
-from installer.global.commands.lib.agent_discovery import discover_agents
-stacks = ['python', 'react', 'dotnet', 'typescript']
-for stack in stacks:
-    agents = discover_agents(phase='implementation', stack=stack)
-    print(f'{stack}: {len(agents)} agents')
-    assert len(agents) >= 2, f'Should find agents for {stack}'
-"
-
-# 3. Verify documentation
-test -f docs/guides/agent-discovery.md && echo "✅ Discovery guide exists"
-grep -q "Stack-Specific Implementation Agents" CLAUDE.md && echo "✅ CLAUDE.md updated"
-
-# 4. Run full E2E test suite
-/task-status TASK-HAI-008-1537 | grep "COMPLETED" && echo "✅ E2E tests passed"
-```
-
-### Performance Validation
-
-```bash
-# Test discovery performance
-python3 -c "
-import time
-from installer.global.commands.lib.agent_discovery import discover_agents
-
-start = time.time()
-agents = discover_agents(phase='implementation')
-duration = time.time() - start
-
-print(f'Discovery time: {duration*1000:.1f}ms')
-print(f'Agents found: {len(agents)}')
-assert duration < 0.1, 'Discovery should be < 100ms'
-"
-```
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: Workspace state conflicts
-```bash
-# Solution: Verify symlinks
-ls -la .claude/state  # Should point to main repo
-./installer/scripts/install.sh  # Recreate symlinks
-```
-
-**Issue**: Discovery returns empty list
-```bash
-# Solution: Check metadata format
-python3 installer/global/commands/lib/validate_agent_metadata.py --debug
-```
-
-**Issue**: Integration tests fail in HAI-006
-```bash
-# Solution: Roll back and debug
-git checkout main
-/task-work TASK-HAI-006-6632 --debug
-```
-
-**Issue**: Merge conflicts between workspaces
-```bash
-# Solution: Sequential merge
-git merge ws-hai-002  # Merge one at a time
-# Resolve conflicts
-git merge ws-hai-003
-# Continue...
-```
 
 ---
 
 ## Success Criteria
 
 ### Functional
-- [ ] 30 agents have discovery metadata (15 global + 15 template)
+- [ ] 30 agents have discovery metadata (3 new + 12 global + 15 template)
 - [ ] Discovery algorithm finds agents by stack/phase/keywords
 - [ ] Phase 3 integration suggests appropriate specialists
 - [ ] Fallback works for unknown stacks
@@ -667,32 +563,12 @@ git merge ws-hai-003
 - [ ] Test coverage ≥80% for discovery algorithm
 
 ### Performance
-- [ ] Discovery query < 100ms
+- [ ] Discovery query < 500ms
 - [ ] No slowdown in /task-work execution
 - [ ] Parallel execution achieved expected speedup
 
 ---
 
-## Recommended Approach
-
-**Best Strategy**: Follow waves sequentially with checkpoints
-
-1. **Wave 1** (Day 1 morning): Foundation + 3 new agents
-2. **Wave 2** (Day 1 afternoon + Day 2): Update 27 existing agents
-3. **Wave 3** (Day 3): Discovery system (critical, sequential)
-4. **Wave 4** (Day 4 morning): Finalization
-5. **Blog Post** (Day 4 afternoon / Day 5): Write with complete implementation
-
-**Why This Works**:
-- Built-in quality gates via `/task-work` where it matters
-- Parallelization where safe (agent metadata updates)
-- Sequential execution for critical integration points
-- Checkpoints prevent compound errors
-- Realistic timeline with buffer
-
-**Total**: 3.5-4 days → Blog post ready with complete story
-
----
-
 **Status**: ✅ Ready to Execute
 **Next Action**: Start Wave 1 (HAI-001 schema design)
+**Rollback**: `git reset --hard v0.95.0` if needed
