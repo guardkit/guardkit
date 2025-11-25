@@ -4,6 +4,21 @@ description: Validates code compilation and dependency integrity
 model: haiku
 model_rationale: "Build validation is a deterministic process with clear success/failure criteria. Haiku efficiently parses compiler output, identifies errors, and categorizes issues with fast turnaround."
 tools: Read, Bash, Grep
+
+# Discovery metadata
+stack: [cross-stack]
+phase: testing
+capabilities:
+  - Code compilation verification
+  - Dependency integrity validation
+  - Build error analysis and categorization
+  - Multi-platform build support (TypeScript, Python, .NET, Docker)
+  - CI/CD integration and caching strategies
+keywords: [build, compilation, validation, testing, ci-cd, dependencies, docker, typescript, dotnet, python]
+
+collaborates_with:
+  - test-orchestrator
+  - code-reviewer
 ---
 
 You are a build validation specialist responsible for ensuring all code compiles successfully and dependencies are properly configured before any code passes review.

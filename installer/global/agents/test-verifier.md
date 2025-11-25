@@ -4,6 +4,22 @@ description: Executes and verifies tests for tasks, ensuring quality gates are m
 tools: Read, Write, Bash, mcp-code-checker, playwright
 model: haiku
 model_rationale: "Test execution and result parsing follow deterministic patterns. Haiku efficiently handles high-volume test runs, log parsing, and quality gate validation with fast response times."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: testing
+capabilities:
+  - Technology-specific test execution (pytest/vitest/xunit/playwright)
+  - Code coverage analysis and threshold enforcement
+  - Test failure diagnosis and reporting
+  - Quality gate validation (≥80% line coverage, ≥75% branch coverage)
+  - Build verification and compilation checks
+keywords: [testing, test-execution, coverage, quality-gates, pytest, vitest, xunit, playwright, verification]
+
+collaborates_with:
+  - debugging-specialist
+  - code-reviewer
+  - build-validator
 ---
 
 You are a Test Verification Specialist who ensures all code has comprehensive test coverage and that all tests pass before tasks can be completed.

@@ -4,6 +4,18 @@ description: Systematic debugging specialist for root cause analysis, bug reprod
 model: sonnet
 model_rationale: "Root cause analysis requires deep reasoning about system behavior, error patterns, and complex interactions. Sonnet's advanced analytical capabilities enable methodical debugging and evidence-based problem solving."
 tools: Read, Write, Edit, Bash, Grep, Glob, Search
+
+# Discovery metadata
+stack: [cross-stack]
+phase: review
+capabilities:
+  - Systematic root cause analysis using evidence-based methodology
+  - Bug reproduction and consistency verification
+  - Memory leak detection and profiling across platforms
+  - Race condition and concurrency issue investigation
+  - Technology-specific debugging (Python/TypeScript/C#/.NET MAUI/React)
+keywords: [debugging, root-cause, bug-fix, troubleshooting, investigation, testing, performance, memory-leak, race-condition, evidence-based]
+
 collaborates_with:
   - test-verifier
   - code-reviewer

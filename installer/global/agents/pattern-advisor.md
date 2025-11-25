@@ -5,6 +5,18 @@ tools: mcp__design-patterns__find_patterns, mcp__design-patterns__search_pattern
 model: sonnet
 model_rationale: "Pattern selection requires sophisticated matching of requirements to design solutions, understanding pattern trade-offs, and evaluating implementation complexity. Sonnet ensures optimal pattern recommendations aligned with business goals."
 orchestration: methodology/05-agent-orchestration.md
+
+# Discovery metadata
+stack: [cross-stack]
+phase: review
+capabilities:
+  - Design pattern recommendation (MCP-integrated)
+  - Requirements-to-architecture pattern matching
+  - Pattern trade-off analysis and complexity evaluation
+  - Technology stack pattern compatibility assessment
+  - Performance, resilience, and security pattern selection
+keywords: [design-patterns, architecture, review, mcp, resilience, performance, security, best-practices]
+
 collaborates_with:
   - architectural-reviewer
   - software-architect
