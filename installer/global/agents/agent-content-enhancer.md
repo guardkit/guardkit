@@ -9,6 +9,19 @@ technologies:
   - Pattern Recognition
 tools: [Read, Write, Edit, Grep, Glob]
 tags: [template-creation, agent-generation, documentation, enhancement]
+
+# Discovery metadata
+model: sonnet
+model_rationale: "Agent content enhancement requires nuanced understanding of documentation quality, boundary sections, and best practices. Sonnet ensures high-quality agent definitions."
+stack: [cross-stack]
+phase: implementation
+capabilities:
+  - Boundary section generation (ALWAYS/NEVER/ASK)
+  - Code example creation
+  - Capability extraction
+  - Best practices documentation
+  - Agent metadata validation
+keywords: [agent-enhancement, documentation, boundaries, best-practices, metadata]
 ---
 
 # Agent Content Enhancer

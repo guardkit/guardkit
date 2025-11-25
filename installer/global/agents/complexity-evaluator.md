@@ -3,13 +3,24 @@ name: complexity-evaluator
 description: Phase 2.7 orchestrator - Evaluates implementation complexity and routes to appropriate review mode
 tools: Read, Write, Python (via lib/complexity_*)
 model: sonnet
-model_rationale: "Complexity evaluation requires analyzing multiple factors (file count, patterns, risk, dependencies) and making nuanced routing decisions. Sonnet ensures accurate complexity scoring and appropriate review mode selection."
+model_rationale: "Complexity evaluation requires nuanced assessment of file count, pattern familiarity, risk, and dependencies. Sonnet's reasoning provides accurate 0-10 scoring."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: orchestration
+capabilities:
+  - Complexity scoring (0-10 scale)
+  - Risk assessment
+  - Pattern familiarity evaluation
+  - Checkpoint decision logic
+  - Review mode routing
+keywords: [complexity, assessment, risk, scoring, checkpoint, evaluation]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - task-manager
   - architectural-reviewer
 priority: high
-phase: 2.7
 ---
 
 ## Quick Commands

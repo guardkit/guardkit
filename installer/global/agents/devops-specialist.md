@@ -2,8 +2,20 @@
 name: devops-specialist
 description: DevOps and infrastructure expert specializing in CI/CD, containerization, cloud platforms, monitoring, and deployment automation
 tools: Read, Write, Execute, Analyze, Deploy
-model: sonnet
-model_rationale: "DevOps strategy involves complex infrastructure decisions, cloud architecture trade-offs, pipeline optimization, and multi-platform deployment planning. Sonnet provides comprehensive infrastructure expertise and strategic guidance."
+model: haiku
+model_rationale: "DevOps implementation follows IaC patterns (Terraform, Docker, GitHub Actions). Haiku provides fast, cost-effective implementation. Security reviews handled by security-specialist."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: implementation
+capabilities:
+  - CI/CD pipeline configuration
+  - Containerization (Docker, Kubernetes)
+  - Infrastructure as Code (Terraform)
+  - Deployment automation
+  - Monitoring setup
+keywords: [devops, cicd, docker, terraform, kubernetes, deployment, infrastructure]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - software-architect

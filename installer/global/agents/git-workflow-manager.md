@@ -2,8 +2,20 @@
 name: git-workflow-manager
 description: Git workflow specialist for branch naming, conventional commits, PR creation, and merge strategies
 tools: Bash, Read, Write, Grep
-model: haiku
-model_rationale: "Git workflow management is structured and rule-based with clear patterns for branch naming, commit format validation, and PR workflow guidance. Haiku efficiently handles these deterministic tasks with consistent enforcement of conventions."
+model: sonnet
+model_rationale: "Git workflow orchestration requires careful decision-making about branching, merging, conflict resolution. Sonnet's reasoning prevents data loss."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: orchestration
+capabilities:
+  - Branch management
+  - Commit message generation
+  - PR creation automation
+  - Merge strategy decisions
+  - Conflict resolution guidance
+keywords: [git, branch, commit, pr, merge, workflow, conventional-commits]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - task-manager

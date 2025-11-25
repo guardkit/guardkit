@@ -2,8 +2,20 @@
 name: database-specialist
 description: Database expert specializing in design, optimization, scaling, migrations, and data architecture across SQL and NoSQL systems
 tools: Read, Write, Execute, Analyze, Optimize
-model: sonnet
-model_rationale: "Database design and optimization require complex analysis of query performance, schema design patterns, scaling strategies, and data modeling trade-offs. Sonnet provides expert-level database architecture guidance."
+model: haiku
+model_rationale: "Database implementation follows established patterns (schemas, migrations, queries). Haiku provides fast, cost-effective implementation at 90% quality. Complex optimization decisions escalated to human review."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: implementation
+capabilities:
+  - Database schema design
+  - Migration scripts
+  - Query optimization
+  - Index strategy
+  - Data modeling patterns
+keywords: [database, schema, migration, query, optimization, sql, nosql]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - software-architect
