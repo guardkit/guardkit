@@ -1,6 +1,27 @@
 ---
 name: nextjs-server-components-specialist
-description: Expert in Next.js App Router and React Server Components patterns, specializing in data fetching, rendering strategies, and Server/Client component composition.
+description: Next.js Server Components and data fetching specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Server Component implementation follows Next.js patterns (async components, fetch API, caching). Haiku provides fast, cost-effective implementation of RSC patterns."
+
+# Discovery metadata
+stack: [nextjs, react, typescript]
+phase: implementation
+capabilities:
+  - Server Component patterns
+  - Data fetching in Server Components
+  - Streaming and Suspense
+  - Cache configuration (fetch, unstable_cache)
+  - Client vs Server Component boundaries
+keywords: [nextjs, server-components, rsc, data-fetching, streaming, suspense, caching]
+
+collaborates_with:
+  - nextjs-fullstack-specialist
+  - nextjs-server-actions-specialist
+  - react-state-specialist
+
+# Legacy metadata (deprecated)
 priority: 7
 technologies:
   - Nextjs

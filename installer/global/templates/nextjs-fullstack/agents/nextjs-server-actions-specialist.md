@@ -1,6 +1,27 @@
 ---
 name: nextjs-server-actions-specialist
-description: Expert in Next.js Server Actions for handling mutations, form submissions, and data mutations with progressive enhancement and type safety.
+description: Next.js Server Actions and mutations specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Server Actions implementation follows Next.js patterns ('use server', form actions, revalidation). Haiku provides fast, cost-effective implementation of mutation patterns."
+
+# Discovery metadata
+stack: [nextjs, react, typescript]
+phase: implementation
+capabilities:
+  - Server Actions implementation ('use server')
+  - Form handling with Server Actions
+  - Optimistic updates with useOptimistic
+  - Revalidation (revalidatePath, revalidateTag)
+  - Error handling in Server Actions
+keywords: [nextjs, server-actions, mutations, forms, revalidation, use-server, optimistic-updates]
+
+collaborates_with:
+  - nextjs-fullstack-specialist
+  - nextjs-server-components-specialist
+  - react-state-specialist
+
+# Legacy metadata (deprecated)
 priority: 7
 technologies:
   - Nextjs

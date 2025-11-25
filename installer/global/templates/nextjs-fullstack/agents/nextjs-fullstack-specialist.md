@@ -1,6 +1,27 @@
 ---
 name: nextjs-fullstack-specialist
-description: Expert in building production-ready Next.js full-stack applications with App Router, covering end-to-end development from database to deployment.
+description: Next.js App Router full-stack specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Next.js full-stack implementation follows App Router patterns (layouts, routing, middleware). Haiku provides fast, cost-effective implementation of Next.js conventions."
+
+# Discovery metadata
+stack: [nextjs, react, typescript]
+phase: implementation
+capabilities:
+  - Next.js App Router structure
+  - File-based routing patterns
+  - Layout and template components
+  - Middleware implementation
+  - API route handlers (Route Handlers)
+keywords: [nextjs, app-router, routing, layouts, middleware, fullstack, route-handlers]
+
+collaborates_with:
+  - nextjs-server-components-specialist
+  - nextjs-server-actions-specialist
+  - react-state-specialist
+
+# Legacy metadata (deprecated)
 priority: 7
 technologies:
   - Nextjs
