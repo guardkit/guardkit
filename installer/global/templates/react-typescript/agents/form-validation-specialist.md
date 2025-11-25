@@ -1,6 +1,24 @@
 ---
 name: form-validation-specialist
-description: React Hook Form and Zod expert specializing in type-safe form validation and state management in React applications.
+description: React form handling and validation specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Form implementation follows React Hook Form patterns with Zod validation. Haiku provides fast, cost-effective implementation of schema-based forms."
+
+# Discovery metadata
+stack: [react, typescript]
+phase: implementation
+capabilities:
+  - React Hook Form integration
+  - Zod schema validation
+  - Form state management
+  - Error handling patterns
+  - Controlled component patterns
+keywords: [react, forms, validation, react-hook-form, zod, form-state]
+
+collaborates_with:
+  - react-state-specialist
+  - feature-architecture-specialist
 priority: 7
 technologies:
   - React
