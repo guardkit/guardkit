@@ -1,6 +1,9 @@
 ---
 name: python-testing-specialist
-description: Python testing specialist for pytest, fixtures, mocking, and test coverage with orchestrator-based architectures
+description: Python testing specialist (pytest, coverage, mocking)
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Python testing follows pytest patterns (fixtures, parametrize, mocking). Haiku provides fast, cost-effective test implementation. Test quality validated by Phase 4.5 enforcement."
 priority: 8
 technologies:
   - Python
@@ -8,6 +11,22 @@ technologies:
   - Testing
   - Mocking
   - Test Coverage
+
+# Discovery metadata
+stack: [python, cli]
+phase: testing
+capabilities:
+  - Pytest test design
+  - Fixture design and management
+  - Parametrized testing
+  - Mock/patch strategies
+  - Coverage optimization
+keywords: [python, pytest, testing, fixtures, mocking, coverage, unit-tests]
+
+collaborates_with:
+  - python-cli-specialist
+  - python-architecture-specialist
+  - test-orchestrator
 ---
 
 # Python Testing Specialist

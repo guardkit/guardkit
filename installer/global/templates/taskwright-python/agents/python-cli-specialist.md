@@ -1,6 +1,9 @@
 ---
 name: python-cli-specialist
-description: Python CLI tool development specialist for orchestrator pattern, argparse/Click/Typer, and command-line interfaces
+description: Python CLI development specialist (Click, Typer, argparse)
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "CLI implementation follows established patterns (Click/Typer commands, argparse). Haiku provides fast, cost-effective implementation of command-line interfaces."
 priority: 8
 technologies:
   - Python
@@ -8,6 +11,22 @@ technologies:
   - argparse
   - Click
   - Command-line Interfaces
+
+# Discovery metadata
+stack: [python, cli]
+phase: implementation
+capabilities:
+  - Click/Typer command structure
+  - Argument parsing and validation
+  - Command group organization
+  - Interactive prompts
+  - Output formatting (rich, colorama)
+keywords: [python, cli, click, typer, argparse, command-line, terminal]
+
+collaborates_with:
+  - python-architecture-specialist
+  - python-testing-specialist
+  - python-api-specialist
 ---
 
 # Python CLI Specialist

@@ -1,7 +1,7 @@
 ---
 id: TASK-HAI-014-E9B6
 title: Update taskwright-python Template Agents with Discovery Metadata
-status: backlog
+status: completed
 priority: medium
 tags: [haiku-agents, metadata, template-agents, python, cli]
 epic: haiku-agent-implementation
@@ -10,7 +10,21 @@ estimated_hours: 1-1.5
 dependencies: [TASK-HAI-001]
 blocks: []
 created: 2025-11-25T13:00:00Z
-updated: 2025-11-25T13:00:00Z
+updated: 2025-11-25T18:45:00Z
+completed: 2025-11-25T18:50:00Z
+previous_state: in_review
+state_transition_reason: "Task completed successfully - all acceptance criteria met"
+completed_location: tasks/completed/TASK-HAI-014-E9B6/
+organized_files:
+  - TASK-HAI-014-E9B6.md
+  - completion-report.md
+completion_metrics:
+  total_duration: 5h 50m
+  implementation_time: ~15m
+  validation_time: ~5m
+  files_modified: 3
+  lines_added: 60
+  acceptance_criteria_met: 10/10
 ---
 
 # Task: Update taskwright-python Template Agents with Discovery Metadata
@@ -209,16 +223,16 @@ print('✅ All 3 taskwright-python agents discoverable')
 
 ## Acceptance Criteria
 
-- [ ] 3 agents updated with discovery metadata
-- [ ] Stack: [python, cli] for all
-- [ ] Phase: implementation (2), testing (1)
-- [ ] Capabilities: Minimum 5 per agent
-- [ ] Keywords: Minimum 5 per agent, distinct CLI/orchestrator specializations
-- [ ] Model: haiku (2), sonnet (1 - architecture specialist)
-- [ ] All existing content preserved
-- [ ] YAML syntax valid
-- [ ] Discovery finds all 3 agents
-- [ ] Specializations distinct from global python-api-specialist
+- [x] 3 agents updated with discovery metadata
+- [x] Stack: [python, cli] for all
+- [x] Phase: implementation (2), testing (1)
+- [x] Capabilities: Minimum 5 per agent
+- [x] Keywords: Minimum 5 per agent, distinct CLI/orchestrator specializations
+- [x] Model: haiku (2), sonnet (1 - architecture specialist)
+- [x] All existing content preserved
+- [x] YAML syntax valid
+- [x] Discovery finds all 3 agents
+- [x] Specializations distinct from global python-api-specialist
 
 ## Testing
 
