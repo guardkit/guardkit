@@ -1,6 +1,9 @@
 ---
 name: python-architecture-specialist
-description: Python architecture specialist for orchestrator pattern, dependency injection, and modular design in CLI tools
+description: Python orchestrator pattern and complex workflow specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: sonnet
+model_rationale: "Orchestrator architecture requires complex workflow coordination, state management, and multi-phase orchestration. Sonnet's reasoning ensures correct phase transitions and error handling patterns."
 priority: 8
 technologies:
   - Python
@@ -8,6 +11,22 @@ technologies:
   - Orchestrator Pattern
   - Dependency Injection
   - Design Patterns
+
+# Discovery metadata
+stack: [python, cli]
+phase: implementation
+capabilities:
+  - Orchestrator pattern implementation
+  - Complex workflow coordination
+  - State management strategies
+  - Phase-based execution patterns
+  - Error recovery and rollback logic
+keywords: [python, orchestrator, workflow, state-management, phases, architecture, coordination]
+
+collaborates_with:
+  - python-cli-specialist
+  - python-testing-specialist
+  - architectural-reviewer
 ---
 
 # Python Architecture Specialist
