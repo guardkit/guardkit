@@ -6,7 +6,7 @@ model: haiku
 model_rationale: "Domain model implementation follows DDD patterns (entities, value objects, aggregates). Haiku provides fast, cost-effective implementation at 90% quality. Architectural quality ensured by upstream architectural-reviewer (Sonnet)."
 
 # Discovery metadata
-stack: [dotnet, csharp]
+stack: [dotnet]
 phase: implementation
 capabilities:
   - Entity design with encapsulation

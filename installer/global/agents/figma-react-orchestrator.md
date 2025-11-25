@@ -3,10 +3,21 @@ name: figma-react-orchestrator
 description: Orchestrates Figma design extraction to React component generation with visual regression testing
 tools: Read, Write, Grep, mcp__figma-dev-mode__get_code, mcp__figma-dev-mode__get_image, mcp__figma-dev-mode__get_variable_defs
 model: sonnet
-model_rationale: "6-phase Saga orchestration with MCP coordination, constraint validation, and visual regression testing requires sophisticated workflow management. Sonnet ensures reliable multi-phase execution with proper error handling and rollback."
+model_rationale: "Figma-to-React orchestration coordinates MCP integration, visual regression testing, and constraint validation. Sonnet's reasoning prevents scope creep."
 mcp_dependencies:
   - figma-dev-mode (required - design extraction)
   - design-patterns (optional - pattern validation)
+
+# Discovery metadata
+stack: [react, typescript]
+phase: orchestration
+capabilities:
+  - Figma design extraction
+  - React component generation
+  - Visual regression testing
+  - Constraint validation (zero scope creep)
+  - Tailwind CSS conversion
+keywords: [figma, react, typescript, tailwind, visual-regression, design-to-code]
 ---
 
 ## Quick Commands

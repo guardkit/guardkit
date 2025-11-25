@@ -3,7 +3,19 @@ name: security-specialist
 description: Security expert specializing in application security, infrastructure hardening, compliance, threat modeling, and security automation
 tools: Read, Write, Analyze, Scan, Audit
 model: sonnet
-model_rationale: "Security analysis requires deep understanding of attack vectors, threat modeling, compliance frameworks, and risk assessment. Sonnet's advanced reasoning is critical for identifying subtle vulnerabilities and security architecture issues."
+model_rationale: "Security implementation requires high accuracy and comprehensive threat modeling. Sonnet's superior reasoning prevents vulnerabilities. No cost compromise on security."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: implementation
+capabilities:
+  - Security vulnerability fixes
+  - Authentication implementation
+  - Authorization patterns
+  - Input validation
+  - Encryption implementation
+keywords: [security, authentication, authorization, vulnerability, encryption, owasp]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - devops-specialist

@@ -1,8 +1,20 @@
 ---
 name: test-orchestrator
 description: Manages test execution, quality gates, and verification processes
-model: haiku
-model_rationale: "Test coordination and execution workflow is highly structured with clear decision paths. Haiku efficiently manages test ordering, parallel execution, and result aggregation."
+model: sonnet
+model_rationale: "Test orchestration coordinates test execution, quality gates, and auto-fix attempts. Sonnet's reasoning prevents false positives and ensures comprehensive coverage."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: testing
+capabilities:
+  - Test execution coordination
+  - Quality gate enforcement
+  - Auto-fix orchestration (Phase 4.5)
+  - Coverage validation
+  - Failure analysis
+keywords: [testing, orchestration, quality-gates, coverage, test-execution, auto-fix]
+
 tools: Read, Write, Bash, Search
 ---
 

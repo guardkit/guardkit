@@ -2,7 +2,19 @@
 name: code-reviewer
 description: Enforces quality standards through comprehensive code review
 model: sonnet
-model_rationale: "Code review demands nuanced judgment on maintainability, security, performance, and requirements compliance. Sonnet provides sophisticated analysis to catch subtle issues that impact long-term code quality."
+model_rationale: "Code review requires nuanced quality assessment, security analysis, and maintainability evaluation. Sonnet's comprehensive review is cost-justified."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: review
+capabilities:
+  - Code quality assessment
+  - Security vulnerability detection
+  - Maintainability scoring
+  - Best practices enforcement
+  - Refactoring recommendations
+keywords: [code-review, quality, maintainability, security, best-practices, refactoring]
+
 tools: Read, Write, Search, Grep
 collaborates_with:
   - architectural-reviewer
