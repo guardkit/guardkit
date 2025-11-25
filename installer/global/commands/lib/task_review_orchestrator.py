@@ -5,12 +5,12 @@ Core orchestrator for /task-review command that provides structured analysis
 and decision-making workflows separate from implementation workflows.
 
 Phase 1: Load Review Context
-Phase 2: Execute Review Analysis (skeleton)
+Phase 2: Execute Review Analysis (with model selection)
 Phase 3: Synthesize Recommendations (skeleton)
 Phase 4: Generate Review Report (skeleton)
 Phase 5: Human Decision Checkpoint (skeleton)
 
-Phases 2-5 are skeleton implementations to be enhanced in subsequent tasks.
+Phases 3-5 are skeleton implementations to be enhanced in subsequent tasks.
 """
 
 import sys
@@ -21,12 +21,32 @@ from datetime import datetime
 # Add current directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Add lib directory to path for model router
+lib_path = Path(__file__).parent.parent / "lib"
+if str(lib_path) not in sys.path:
+    sys.path.insert(0, str(lib_path))
+
 from task_utils import (
     read_task_file,
     update_task_frontmatter,
     parse_task_frontmatter,
     write_task_frontmatter
 )
+
+try:
+    from task_review.model_router import ModelRouter, ReviewMode, ReviewDepth
+except ImportError:
+    # Fallback if module not found
+    class ModelRouter:
+        def get_model_for_review(self, mode, depth="standard"):
+            return "claude-sonnet-4-20250620"
+
+        def get_cost_estimate(self, mode, depth="standard"):
+            class CostInfo:
+                model_id = "claude-sonnet-4-20250620"
+                estimated_cost_usd = 0.27
+                rationale = "Cost estimates unavailable"
+            return CostInfo()
 
 
 # Valid review modes
@@ -260,43 +280,90 @@ def _parse_task_body(body: str) -> Dict[str, Any]:
     return sections
 
 
+def _display_cost_info(cost_info) -> None:
+    """Display cost information to user before starting review."""
+    print(f"\n{'='*70}")
+    print(f"📊 Review Cost Estimate")
+    print(f"{'='*70}")
+    print(f"Model: {cost_info.model_id}")
+    print(f"Estimated tokens: {cost_info.estimated_tokens:,}")
+    print(f"Estimated cost: ${cost_info.estimated_cost_usd:.2f}")
+    print(f"Rationale: {cost_info.rationale}")
+    print(f"{'='*70}\n")
+
+
 def execute_review_analysis(
     task_context: Dict[str, Any],
     mode: str,
-    depth: str
+    depth: str,
+    model_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Phase 2: Execute review analysis (SKELETON).
+    Phase 2: Execute review analysis with optimal model selection.
 
-    Will be enhanced in Phase 2 task to invoke appropriate agents
-    and perform actual analysis.
+    Invokes appropriate review mode with selected Claude model.
 
     Args:
         task_context: Context from Phase 1
         mode: Review mode (architectural, code-quality, etc.)
         depth: Review depth (quick, standard, comprehensive)
+        model_id: Optional Claude model ID to use
 
     Returns:
         Dictionary containing review findings
     """
     print(f"\n{'='*60}")
-    print(f"Phase 2: Execute Review Analysis (SKELETON)")
+    print(f"Phase 2: Execute Review Analysis")
     print(f"{'='*60}")
     print(f"Mode: {mode}")
     print(f"Depth: {depth}")
-    print(f"\n[Skeleton] This phase will be enhanced in future tasks to:")
-    print(f"  - Invoke appropriate review agents based on mode")
-    print(f"  - Perform analysis using specialized prompts")
-    print(f"  - Generate findings with evidence")
-    print(f"  - Score/rate based on review criteria")
+    print(f"Model: {model_id or 'default'}")
 
-    return {
-        "findings": [],
-        "mode": mode,
-        "depth": depth,
-        "score": None,
-        "evidence": []
-    }
+    # Import review mode modules
+    try:
+        review_modes_path = Path(__file__).parent / "review_modes"
+        if str(review_modes_path) not in sys.path:
+            sys.path.insert(0, str(review_modes_path))
+
+        # Map mode to module and execute
+        if mode == "architectural":
+            from architectural_review import execute
+        elif mode == "code-quality":
+            from code_quality_review import execute
+        elif mode == "decision":
+            from decision_analysis import execute
+        elif mode == "technical-debt":
+            from technical_debt_assessment import execute
+        elif mode == "security":
+            from security_audit import execute
+        else:
+            print(f"Warning: Unknown review mode '{mode}', using skeleton")
+            return {
+                "findings": [],
+                "mode": mode,
+                "depth": depth,
+                "score": None,
+                "evidence": []
+            }
+
+        # Execute review mode with model preference
+        print(f"Invoking {mode} review...")
+        results = execute(task_context, depth, model=model_id)
+        print(f"Review complete!")
+
+        return results
+
+    except Exception as e:
+        print(f"Error executing review: {e}")
+        print(f"Falling back to skeleton implementation")
+        return {
+            "findings": [],
+            "mode": mode,
+            "depth": depth,
+            "score": None,
+            "evidence": [],
+            "error": str(e)
+        }
 
 
 def synthesize_recommendations(review_results: Dict[str, Any]) -> Dict[str, Any]:
@@ -517,6 +584,18 @@ def execute_task_review(
         validate_review_depth(depth)
         validate_output_format(output)
 
+        # Phase 0: Model selection and cost transparency
+        model_router = ModelRouter()
+        model_id = model_router.get_model_for_review(mode, depth)
+        cost_info = model_router.get_cost_estimate(mode, depth)
+
+        print(f"\nModel Selection:")
+        print(f"  Selected Model: {model_id}")
+        print(f"  Estimated Cost: ${cost_info.estimated_cost_usd:.2f}")
+
+        # Display cost info to user
+        _display_cost_info(cost_info)
+
         # Phase 1: Load review context (FULL IMPLEMENTATION)
         task_context = load_review_context(task_id)
 
@@ -528,12 +607,13 @@ def execute_task_review(
                 'task_type': 'review',
                 'review_mode': mode,
                 'review_depth': depth,
-                'status': 'in_progress'
+                'status': 'in_progress',
+                'model_used': model_id
             }
         )
 
-        # Phase 2: Execute review analysis (SKELETON)
-        review_results = execute_review_analysis(task_context, mode, depth)
+        # Phase 2: Execute review analysis with model preference
+        review_results = execute_review_analysis(task_context, mode, depth, model_id)
 
         # Phase 3: Synthesize recommendations (SKELETON)
         recommendations = synthesize_recommendations(review_results)
@@ -547,15 +627,26 @@ def execute_task_review(
         # Handle decision
         handle_review_decision(task_id, decision, recommendations)
 
+        # Log model usage
+        model_router.log_model_usage(
+            task_id=task_id,
+            mode=mode,
+            depth=depth,
+            model_id=model_id
+        )
+
         print(f"\n{'='*60}")
         print(f"REVIEW COMPLETE")
         print(f"{'='*60}")
+        print(f"Model Used: {model_id}")
+        print(f"Estimated Cost: ${cost_info.estimated_cost_usd:.2f}")
 
         return {
             "status": "success",
             "review_mode": mode,
             "review_depth": depth,
             "task_id": task_id,
+            "model_used": model_id,
             "report": report,
             "decision": decision
         }

@@ -7,7 +7,7 @@ OWASP Top 10 vulnerabilities, dependency CVEs, and auth/authz issues.
 
 import json
 import re
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 
 try:
     import sys
@@ -26,13 +26,14 @@ except (ImportError, ModuleNotFoundError):
 RiskLevel = Literal["critical", "high", "medium", "low", "info"]
 
 
-def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
+def execute(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute security audit.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth (quick, standard, comprehensive)
+        model: Optional Claude model ID to use
 
     Returns:
         Structured security audit with vulnerabilities and remediation plan
@@ -46,7 +47,8 @@ def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
         agent_name="security-specialist",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "security", "depth": depth}
+        context={"mode": "security", "depth": depth},
+        model=model
     )
 
     # Parse response into structured format

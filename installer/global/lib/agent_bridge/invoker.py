@@ -44,6 +44,7 @@ class AgentRequest:
         timeout_seconds: Maximum wait time for agent response
         created_at: Request timestamp (ISO 8601 format)
         context: Additional context for debugging
+        model: Optional Claude model ID to use (e.g., "claude-opus-4-20250514")
     """
     request_id: str
     version: str
@@ -54,6 +55,7 @@ class AgentRequest:
     timeout_seconds: int
     created_at: str
     context: dict
+    model: Optional[str] = None
 
 
 @dataclass
@@ -132,7 +134,8 @@ class AgentBridgeInvoker:
         agent_name: str,
         prompt: str,
         timeout_seconds: int = 120,
-        context: Optional[dict] = None
+        context: Optional[dict] = None,
+        model: Optional[str] = None
     ) -> str:
         """Request agent invocation via checkpoint-resume pattern.
 
@@ -147,6 +150,7 @@ class AgentBridgeInvoker:
             prompt: Complete prompt text
             timeout_seconds: Maximum wait time for agent response
             context: Optional context for debugging
+            model: Optional Claude model ID (e.g., "claude-opus-4-20250514")
 
         Returns:
             Agent response text (if cached from previous invocation)
@@ -169,7 +173,8 @@ class AgentBridgeInvoker:
             prompt=prompt,
             timeout_seconds=timeout_seconds,
             created_at=datetime.now(timezone.utc).isoformat(),
-            context=context or {}
+            context=context or {},
+            model=model
         )
 
         # Write request file

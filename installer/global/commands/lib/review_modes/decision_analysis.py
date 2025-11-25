@@ -7,7 +7,7 @@ software-architect agent.
 
 import json
 import re
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 
 try:
     import sys
@@ -26,13 +26,14 @@ except (ImportError, ModuleNotFoundError):
 ConfidenceLevel = Literal["low", "medium", "high"]
 
 
-def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
+def execute(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute decision analysis.
 
     Args:
         task_context: Task metadata including options to evaluate
         depth: Analysis depth (quick, standard, comprehensive)
+        model: Optional Claude model ID to use
 
     Returns:
         Structured decision analysis with option scores and recommendation
@@ -52,7 +53,8 @@ def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
         agent_name="software-architect",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "decision", "depth": depth}
+        context={"mode": "decision", "depth": depth},
+        model=model
     )
 
     # Parse response into structured format

@@ -24,13 +24,14 @@ except (ImportError, ModuleNotFoundError):
             return '{"quality_score": 7.5, "complexity_metrics": {}, "code_smells": [], "style_issues": [], "test_coverage": null}'
 
 
-def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
+def execute(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute code quality review.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth (quick, standard, comprehensive)
+        model: Optional Claude model ID to use
 
     Returns:
         Structured review results with quality scores and metrics
@@ -44,7 +45,8 @@ def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
         agent_name="code-reviewer",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "code-quality", "depth": depth}
+        context={"mode": "code-quality", "depth": depth},
+        model=model
     )
 
     # Parse response into structured format

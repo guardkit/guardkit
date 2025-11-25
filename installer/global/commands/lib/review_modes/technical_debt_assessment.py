@@ -7,7 +7,7 @@ architectural-reviewer agents.
 
 import json
 import re
-from typing import Dict, Any, List, Literal
+from typing import Dict, Any, List, Literal, Optional
 
 try:
     import sys
@@ -27,20 +27,21 @@ DebtCategory = Literal["code", "design", "test", "documentation", "infrastructur
 Priority = Literal["high", "medium", "low"]
 
 
-def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
+def execute(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute technical debt assessment.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth (quick, standard, comprehensive)
+        model: Optional Claude model ID to use
 
     Returns:
         Structured debt assessment with prioritized items
     """
     # Run both code review and architectural review
-    code_debt = analyze_code_debt(task_context, depth)
-    design_debt = analyze_design_debt(task_context, depth)
+    code_debt = analyze_code_debt(task_context, depth, model)
+    design_debt = analyze_design_debt(task_context, depth, model)
 
     # Merge and prioritize debt items
     all_debt = merge_debt_items(code_debt, design_debt)
@@ -59,13 +60,14 @@ def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
     }
 
 
-def analyze_code_debt(task_context: Dict[str, Any], depth: str) -> List[Dict[str, Any]]:
+def analyze_code_debt(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Analyze code-level technical debt using code-reviewer agent.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth
+        model: Optional Claude model ID to use
 
     Returns:
         List of code debt items
@@ -119,19 +121,21 @@ Return structured JSON with:
         agent_name="code-reviewer",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "technical-debt", "depth": depth, "analysis": "code"}
+        context={"mode": "technical-debt", "depth": depth, "analysis": "code"},
+        model=model
     )
 
     return parse_debt_response(response)
 
 
-def analyze_design_debt(task_context: Dict[str, Any], depth: str) -> List[Dict[str, Any]]:
+def analyze_design_debt(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     Analyze design-level technical debt using architectural-reviewer agent.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth
+        model: Optional Claude model ID to use
 
     Returns:
         List of design debt items
@@ -185,7 +189,8 @@ Return structured JSON with:
         agent_name="architectural-reviewer",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "technical-debt", "depth": depth, "analysis": "design"}
+        context={"mode": "technical-debt", "depth": depth, "analysis": "design"},
+        model=model
     )
 
     return parse_debt_response(response)
