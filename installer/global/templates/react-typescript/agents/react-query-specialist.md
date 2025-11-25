@@ -1,6 +1,24 @@
 ---
 name: react-query-specialist
-description: TanStack Query (React Query) expert specializing in server-state management patterns for React applications.
+description: TanStack Query (React Query) server state specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "TanStack Query implementation follows established patterns (queries, mutations, cache invalidation). Haiku provides fast, cost-effective implementation of data fetching patterns."
+
+# Discovery metadata
+stack: [react, typescript]
+phase: implementation
+capabilities:
+  - TanStack Query setup and configuration
+  - Query and mutation patterns
+  - Cache invalidation strategies
+  - Optimistic updates
+  - Error and loading state handling
+keywords: [react, tanstack-query, react-query, data-fetching, server-state, caching]
+
+collaborates_with:
+  - react-state-specialist
+  - feature-architecture-specialist
 priority: 7
 technologies:
   - Query

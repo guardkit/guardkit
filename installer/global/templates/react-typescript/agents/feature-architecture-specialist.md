@@ -1,6 +1,25 @@
 ---
 name: feature-architecture-specialist
-description: feature-based architecture expert specializing in organizing React applications by domain features rather than technical layers.
+description: React feature architecture and component organization specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Feature architecture implementation follows established patterns (feature folders, barrel exports, component composition). Haiku provides fast, cost-effective implementation following Bulletproof React patterns."
+
+# Discovery metadata
+stack: [react, typescript]
+phase: implementation
+capabilities:
+  - Feature folder structure design
+  - Component organization patterns
+  - Barrel export management
+  - Feature-based code splitting
+  - Component composition strategies
+keywords: [react, feature-architecture, component-organization, barrel-exports, code-splitting]
+
+collaborates_with:
+  - react-state-specialist
+  - form-validation-specialist
+  - react-query-specialist
 priority: 7
 technologies:
   - Feature
