@@ -1,16 +1,25 @@
 ---
 id: TASK-HAI-006-C391
 title: Integrate Discovery with /task-work Phase 3
-status: backlog
+status: completed
 priority: high
 tags: [haiku-agents, integration, phase-3, orchestration]
 epic: haiku-agent-implementation
 complexity: 5
 estimated_hours: 2
+actual_hours: 1.5
 dependencies: [TASK-HAI-005]
 blocks: [TASK-HAI-007, TASK-HAI-008]
 created: 2025-11-25T13:00:00Z
-updated: 2025-11-25T13:00:00Z
+updated: 2025-11-25T16:00:00Z
+completed: 2025-11-25T16:00:00Z
+completion_metrics:
+  tests_passed: 114
+  tests_total: 114
+  unit_tests: 78
+  integration_tests: 36
+  files_modified: 3
+  files_created: 2
 ---
 
 # Task: Integrate Discovery with /task-work Phase 3

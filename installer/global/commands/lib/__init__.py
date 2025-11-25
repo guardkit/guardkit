@@ -106,6 +106,17 @@ from .greenfield_qa_session import (
     TemplateInitQASession,
 )
 
+# Agent Discovery (TASK-HAI-005)
+from .agent_discovery import (
+    discover_agents,
+    get_agent_by_name,
+    list_discoverable_agents,
+    get_agents_by_stack,
+    validate_discovery_metadata,
+    VALID_STACKS,
+    VALID_PHASES,
+)
+
 __version__ = "1.1.0"
 
 __all__ = [
@@ -188,4 +199,13 @@ __all__ = [
     # Greenfield Q&A Session
     "GreenfieldAnswers",
     "TemplateInitQASession",
+
+    # Agent Discovery
+    "discover_agents",
+    "get_agent_by_name",
+    "list_discoverable_agents",
+    "get_agents_by_stack",
+    "validate_discovery_metadata",
+    "VALID_STACKS",
+    "VALID_PHASES",
 ]
