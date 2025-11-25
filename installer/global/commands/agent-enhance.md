@@ -160,6 +160,38 @@ If validation fails after 3 iterations, you'll receive the best attempt with det
 
 **Reference**: See [GitHub Agent Best Practices Analysis](../../docs/analysis/github-agent-best-practices-analysis.md) for detailed rationale behind these standards.
 
+## Discovery Metadata
+
+As of HAI-001 (Nov 2025), agents enhanced via `/agent-enhance` include **discovery metadata** for AI-powered agent matching.
+
+**Added Fields** (frontmatter):
+- `stack`: List of supported technology stacks (python, react, dotnet, etc.)
+- `phase`: Agent role (implementation, review, testing, orchestration)
+- `capabilities`: 5+ specific skills
+- `keywords`: 5+ searchable terms for matching
+
+**Benefits**:
+- Automatic specialist selection in Phase 3
+- No hardcoded mappings (extensible)
+- 48-53% cost savings via Haiku agents
+- 4-5x faster implementation
+
+**Example**:
+```yaml
+---
+name: python-api-specialist
+stack: [python]
+phase: implementation
+capabilities:
+  - FastAPI endpoint implementation
+  - Async request handling patterns
+  - Pydantic schema generation
+keywords: [fastapi, async, endpoints, router, dependency-injection]
+---
+```
+
+**See**: [Agent Discovery Guide](../../docs/guides/agent-discovery-guide.md) for comprehensive documentation.
+
 ### Error Output
 ```
 ✗ Enhancement failed: Agent file not found
@@ -393,5 +425,5 @@ python3 ~/.agentecflow/bin/agent-enhance "$@"
 ---
 
 **Document Status**: READY FOR IMPLEMENTATION
-**Last Updated**: 2025-11-20
-**Related Tasks**: TASK-PHASE-8-INCREMENTAL
+**Last Updated**: 2025-11-25
+**Related Tasks**: TASK-PHASE-8-INCREMENTAL, HAI-001

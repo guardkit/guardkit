@@ -1,16 +1,18 @@
 ---
 id: TASK-HAI-007-8B1F
 title: Update Documentation for Discovery and Haiku Agents
-status: backlog
+status: completed
 priority: high
 tags: [haiku-agents, documentation, discovery, metadata]
 epic: haiku-agent-implementation
 complexity: 3
 estimated_hours: 1.5
+actual_hours: 0.5
 dependencies: [TASK-HAI-006]
 blocks: [TASK-HAI-008]
 created: 2025-11-25T13:00:00Z
-updated: 2025-11-25T13:00:00Z
+updated: 2025-11-25T16:30:00Z
+completed: 2025-11-25T16:30:00Z
 ---
 
 # Task: Update Documentation for Discovery and Haiku Agents

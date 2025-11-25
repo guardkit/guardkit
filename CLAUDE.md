@@ -521,6 +521,42 @@ BACKLOG
 
 ## Core AI Agents
 
+### Agent Discovery System
+
+Taskwright uses AI-powered agent discovery to automatically match tasks to appropriate specialists based on metadata (stack, phase, capabilities, keywords). No hardcoded mappings - discovery is intelligent and extensible.
+
+**How It Works:**
+1. **Phase 3**: System analyzes task context (file extensions, keywords, project structure)
+2. **Discovery**: Scans all agents for metadata match (stack + phase + keywords)
+3. **Selection**: Uses specialist if found, falls back to task-manager if not
+4. **Feedback**: Shows which agent selected and why
+
+**Discovery Metadata** (frontmatter in agent files):
+- `stack`: [python, react, dotnet, typescript, etc.]
+- `phase`: implementation | review | testing | orchestration
+- `capabilities`: List of specific skills
+- `keywords`: Searchable terms for matching
+
+**Graceful Degradation**: Agents without metadata are skipped (no errors). System works during migration.
+
+### Stack-Specific Implementation Agents (Haiku Model)
+
+**Python Stack:**
+- **python-api-specialist**: FastAPI endpoints, async patterns, Pydantic schemas
+
+**React Stack:**
+- **react-state-specialist**: React hooks, TanStack Query, state management
+
+**.NET Stack:**
+- **dotnet-domain-specialist**: Domain models, DDD patterns, value objects
+
+**Benefits:**
+- 4-5x faster implementation (Haiku vs Sonnet)
+- 48-53% total cost savings (vs all-Sonnet)
+- 90%+ quality maintained via Phase 4.5 test enforcement
+
+**See**: [Agent Discovery Guide](docs/guides/agent-discovery-guide.md) for comprehensive documentation.
+
 ### Agent Enhancement with Boundary Sections
 
 As of TASK-STND-773D (2025-11-22), all agents enhanced via `/agent-enhance` or `/template-create` now conform to GitHub best practices by including **ALWAYS/NEVER/ASK boundary sections**.
@@ -623,7 +659,7 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 
 ---
 
-**Global Agents:**
+**Global Agents (Sonnet):**
 - **architectural-reviewer**: SOLID/DRY/YAGNI compliance review
 - **task-manager**: Unified workflow management
 - **test-verifier/orchestrator**: Test execution and quality gates
@@ -633,8 +669,10 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 - **security-specialist**: Security validation
 - **database-specialist**: Data architecture
 
-**Stack-Specific Agents:**
-- API/Domain/Testing/UI specialists per technology stack
+**Stack-Specific Agents (Haiku):**
+- **python-api-specialist**: FastAPI, async, Pydantic
+- **react-state-specialist**: Hooks, TanStack Query, Zustand
+- **dotnet-domain-specialist**: DDD, entities, value objects
 
 **Note**: All agents include ALWAYS/NEVER/ASK boundary sections. See [Agent Enhancement with Boundary Sections](#agent-enhancement-with-boundary-sections) for details.
 

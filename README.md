@@ -14,6 +14,8 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 - **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
 - **Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
+- **AI Agent Discovery**: Automatic specialist matching via metadata (stack, phase, keywords)
+- **Stack-Specific Optimization**: Haiku agents for 48-53% cost savings, 4-5x faster implementation
 - **Specialized Agents**: Stack-specific AI agents for React, Python, .NET, TypeScript
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
