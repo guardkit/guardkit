@@ -25,13 +25,14 @@ except (ImportError, ModuleNotFoundError):
             return '{"overall_score": 75, "solid_score": 80, "dry_score": 70, "yagni_score": 75, "findings": [], "recommendations": []}'
 
 
-def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
+def execute(task_context: Dict[str, Any], depth: str, model: Optional[str] = None) -> Dict[str, Any]:
     """
     Execute architectural review.
 
     Args:
         task_context: Task metadata including review_scope
         depth: Analysis depth (quick, standard, comprehensive)
+        model: Optional Claude model ID to use
 
     Returns:
         Structured review results with architecture scores
@@ -45,7 +46,8 @@ def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
         agent_name="architectural-reviewer",
         prompt=prompt,
         timeout_seconds=get_timeout_for_depth(depth),
-        context={"mode": "architectural", "depth": depth}
+        context={"mode": "architectural", "depth": depth},
+        model=model
     )
 
     # Parse response into structured format

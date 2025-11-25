@@ -130,6 +130,49 @@ Present findings to user with decision options:
 - **[I]mplement** - Create implementation task based on recommendation
 - **[C]ancel** - Discard review, return task to backlog
 
+## Model Selection Strategy
+
+The `/task-review` command automatically selects the optimal Claude model based on review mode and depth, balancing cost efficiency with quality requirements.
+
+### When Opus 4.5 Is Used
+
+**Opus 4.5** provides superior reasoning for high-value scenarios:
+
+1. **Security reviews** (all depths) - Security breaches cost $100K-$10M, model costs $1-5
+2. **Decision analysis** (standard/comprehensive) - Complex trade-offs require deep reasoning
+3. **Comprehensive architectural reviews** - Thorough SOLID/DRY/YAGNI analysis
+4. **Comprehensive technical debt** - Nuanced effort vs impact prioritization
+
+**Cost**: $0.45-$1.65 per review (67% premium vs Sonnet)
+
+### When Sonnet 4.5 Is Used
+
+**Sonnet 4.5** provides excellent quality for most scenarios:
+
+1. **Quick reviews** (except security) - Speed matters
+2. **Code quality reviews** (all depths) - Metrics are objective
+3. **Standard architectural reviews** - Pattern-based analysis sufficient
+4. **Standard technical debt** - Straightforward prioritization
+
+**Cost**: $0.09-$0.68 per review
+
+### Cost Transparency
+
+Before each review, you'll see:
+```
+======================================================================
+📊 Review Cost Estimate
+======================================================================
+Model: claude-opus-4-20250514
+Estimated tokens: 150,000
+Estimated cost: $1.13
+Rationale: comprehensive depth requires deep analysis,
+           security reviews always use Opus 4.5
+======================================================================
+```
+
+This ensures you always know which model will be used and why.
+
 ## Review Modes (Detailed)
 
 ### Architectural Review Mode
