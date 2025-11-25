@@ -1,6 +1,26 @@
 ---
 name: docker-orchestration-specialist
-description: Expert in Docker Compose multi-service orchestration for React + FastAPI monorepo, specializing in local development environments, production builds, and container optimization.
+description: Docker Compose orchestration for monorepo services specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Docker orchestration follows Compose patterns (multi-service setup, networking, volumes). Haiku provides fast, cost-effective Docker configuration. Security reviews handled by security-specialist."
+
+# Discovery metadata
+stack: [docker, cross-stack]
+phase: implementation
+capabilities:
+  - Docker Compose multi-service setup
+  - Service networking and communication
+  - Volume management
+  - Environment configuration
+  - Development vs production configs
+keywords: [docker, docker-compose, orchestration, containers, multi-service, networking]
+
+collaborates_with:
+  - react-fastapi-monorepo-specialist
+  - devops-specialist
+
+# Legacy fields (kept for compatibility)
 priority: 7
 technologies:
   - Docker
