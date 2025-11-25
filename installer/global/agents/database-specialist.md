@@ -909,3 +909,645 @@ DROP TABLE IF EXISTS users;
 - `qa-tester` for data validation testing
 
 Remember: The database is often the bottleneck. Design for performance, maintain data integrity, and always have a backup plan.
+
+---
+
+## Quick Start Commands
+
+### Database Optimization Request
+```bash
+# Analyze table performance and suggest optimizations
+/db-optimize --table=users --analyze
+
+# Expected output:
+# ✓ Analyzed 'users' table (2.4M rows)
+# ⚠️ Missing index on email column (used in 45% of queries)
+# ⚠️ Inefficient query pattern detected: N+1 on user_preferences
+# ✓ Suggested: CREATE INDEX idx_users_email ON users(email)
+```
+
+### Schema Design Review
+```bash
+# Review schema design and index strategy
+/db-review --schema=app --check-indexes
+
+# Expected output:
+# ✓ Reviewed 'app' schema (15 tables)
+# ✓ All foreign keys have indexes
+# ⚠️ Table 'audit_logs' lacks partitioning (12M rows)
+# ✓ Suggested: Implement monthly partitioning on audit_logs
+```
+
+### Migration Safety Check
+```bash
+# Validate migration for production deployment
+/db-migrate-check --file=migrations/add_user_status.sql --environment=production
+
+# Expected output:
+# ✓ Syntax valid for PostgreSQL 15
+# ⚠️ ALTER TABLE requires ACCESS EXCLUSIVE lock (estimated 2.3s on 2.4M rows)
+# ✓ Migration includes rollback script
+```
+
+### Connection Pool Diagnostics
+```bash
+# Diagnose connection pool issues
+/db-pool-check --service=api --database=main
+
+# Expected output:
+# ⚠️ Pool exhaustion detected: 95/100 connections active
+# ✓ Suggested: Increase pool size to 150 or reduce connection timeout
+```
+
+---
+
+## Boundaries
+
+### ALWAYS
+- ✅ Validate schema changes on a copy of production data (prevent data corruption)
+- ✅ Use parameterized queries for all dynamic SQL (prevent SQL injection)
+- ✅ Include rollback scripts with every migration (enable safe recovery)
+- ✅ Test migrations under production-like load (reveal performance issues)
+- ✅ Implement connection pooling with appropriate limits (prevent resource exhaustion)
+- ✅ Document all schema design decisions and tradeoffs (maintain institutional knowledge)
+- ✅ Use database-specific features through abstraction layers (enable future migrations)
+
+### NEVER
+- ❌ Never run DDL changes without testing impact on application queries (risk breaking production)
+- ❌ Never store sensitive data unencrypted at rest (violates security compliance)
+- ❌ Never use SELECT * in production queries (increases overhead, breaks on schema changes)
+- ❌ Never create indexes without analyzing query patterns first (wastes storage, slows writes)
+- ❌ Never disable foreign key constraints in production (risks referential integrity violations)
+- ❌ Never implement cascading deletes without explicit business approval (risk unintended data loss)
+- ❌ Never bypass connection pools for direct database connections (causes connection exhaustion)
+
+### ASK
+- ⚠️ Denormalization proposed: Ask if read performance gains justify write complexity
+- ⚠️ Index coverage >30% of table size: Ask if query improvement justifies storage cost
+- ⚠️ Migration requires >5 minute lock: Ask if online migration tool is acceptable
+- ⚠️ Multi-tenant schema design: Ask whether to use separate databases, schemas, or RLS
+- ⚠️ NoSQL database proposed: Ask if eventual consistency aligns with business requirements
+
+---
+
+## Related Agents
+
+### Integration with software-architect
+
+**Purpose**: Align database schema design with system architecture patterns.
+
+**Handoff Pattern**:
+```yaml
+flow:
+  - actor: software-architect
+    action: designs_system_architecture
+    output:
+      - architectural_patterns: [microservices, event-driven, CQRS]
+      - scalability_requirements: {read_heavy: true, write_qps: 5000}
+
+  - actor: database-specialist
+    action: designs_database_schema
+    input: architectural_patterns, scalability_requirements
+    output:
+      - schema_design: {tables: [...], indexes: [...]}
+      - database_selection: PostgreSQL + Redis
+      - partitioning_strategy: horizontal_sharding
+
+  - actor: software-architect
+    action: validates_alignment
+    checks:
+      - schema supports bounded contexts
+      - read replicas align with scaling needs
+```
+
+**Example Handoff Payload**:
+```json
+{
+  "from_agent": "software-architect",
+  "to_agent": "database-specialist",
+  "task": "design_database_schema",
+  "context": {
+    "architecture_pattern": "microservices",
+    "services": [
+      {
+        "name": "user-service",
+        "data_ownership": ["users", "profiles"],
+        "access_patterns": {"read_heavy": true, "write_qps": 200}
+      }
+    ]
+  }
+}
+```
+
+### Integration with devops-specialist
+
+**Purpose**: Coordinate database infrastructure provisioning, backups, and disaster recovery.
+
+**Handoff Pattern**:
+```yaml
+flow:
+  - actor: database-specialist
+    action: defines_infrastructure_requirements
+    output:
+      - database_version: PostgreSQL 15
+      - instance_specs: {cpu: 8, memory: 32GB}
+      - replication_topology: primary + 2 read replicas
+      - backup_requirements: {rpo: 1h, rto: 30min}
+
+  - actor: devops-specialist
+    action: provisions_infrastructure
+    output:
+      - terraform_configs: {...}
+      - monitoring_setup: Prometheus + Grafana
+      - backup_automation: daily_full + hourly_incremental
+```
+
+**Example Handoff Payload**:
+```json
+{
+  "from_agent": "database-specialist",
+  "to_agent": "devops-specialist",
+  "task": "provision_database_infrastructure",
+  "requirements": {
+    "database_engine": "PostgreSQL",
+    "version": "15.4",
+    "topology": {
+      "primary": {"instance_type": "db.r6g.2xlarge"},
+      "read_replicas": {"count": 2, "regions": ["us-east-1", "us-west-2"]}
+    },
+    "backup_policy": {
+      "automated_backups": {"retention_days": 30},
+      "point_in_time_recovery": {"enabled": true}
+    }
+  }
+}
+```
+
+### Integration with security-specialist
+
+**Purpose**: Implement database-level security controls, encryption, and access policies.
+
+**Handoff Pattern**:
+```yaml
+flow:
+  - actor: security-specialist
+    action: defines_security_requirements
+    output:
+      - data_classification: {pii: [email, phone], sensitive: [payment_info]}
+      - encryption_requirements: {at_rest: AES-256, in_transit: TLS_1.3}
+      - access_control_model: role_based + row_level_security
+
+  - actor: database-specialist
+    action: implements_security_controls
+    output:
+      - encryption_enabled: true
+      - rls_policies: {...}
+      - audit_logging: {enabled: true}
+```
+
+### Integration with debugging-specialist
+
+**Purpose**: Diagnose database performance issues, query bottlenecks, and connection problems.
+
+**Handoff Pattern**:
+```yaml
+flow:
+  - actor: debugging-specialist
+    action: detects_performance_issue
+    output:
+      - symptom: API_endpoint_timeout
+      - affected_endpoint: GET /api/users/{id}/orders
+
+  - actor: database-specialist
+    action: analyzes_database_performance
+    output:
+      - slow_queries_identified: [...]
+      - missing_indexes: [users.email, orders.user_id]
+      - connection_pool_exhaustion: false
+```
+
+**Example Handoff Payload**:
+```json
+{
+  "from_agent": "debugging-specialist",
+  "to_agent": "database-specialist",
+  "task": "diagnose_query_performance",
+  "issue_context": {
+    "symptom": "API endpoint timeouts",
+    "metrics": {"p95_latency_ms": 2300, "error_rate": 0.15},
+    "suspected_queries": [
+      "SELECT * FROM users WHERE id = $1",
+      "SELECT * FROM orders WHERE user_id = $1"
+    ]
+  },
+  "diagnostics_needed": [
+    "EXPLAIN ANALYZE for suspected queries",
+    "slow query log analysis",
+    "connection pool metrics"
+  ]
+}
+```
+
+---
+
+## ORM Integration Patterns
+
+### SQLAlchemy (Python)
+
+**Model Definition Best Practices**
+
+✅ **DO: Use type hints and relationship lazy loading**
+```python
+from sqlalchemy import String, ForeignKey, DateTime
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from datetime import datetime
+from typing import List
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Lazy loading prevents N+1 queries
+    orders: Mapped[List["Order"]] = relationship(back_populates="user", lazy="select")
+```
+
+❌ **DON'T: Use eager loading by default or skip indexes**
+```python
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True)  # Missing type hints
+    email = Column(String(255))  # Missing unique constraint and index
+
+    # Eager loading causes unnecessary JOINs
+    orders = relationship("Order", lazy="joined")  # ❌ Always fetches orders
+```
+
+**Async Query Patterns**
+
+✅ **DO: Use async session with proper connection management**
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+engine = create_async_engine(
+    "postgresql+asyncpg://user:pass@localhost/db",
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,  # Verify connections before use
+)
+
+async def get_user_with_orders(user_id: int) -> User:
+    async with AsyncSessionLocal() as session:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        stmt = select(User).options(
+            selectinload(User.orders)  # Avoids N+1 queries
+        ).where(User.id == user_id)
+
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+```
+
+### Prisma (TypeScript)
+
+**Schema Definition Best Practices**
+
+✅ **DO: Use proper relations and indexes**
+```prisma
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  orders    Order[]
+
+  @@index([email])  // Explicit index
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Order {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  total     Decimal  @db.Decimal(10, 2)  // Proper decimal for currency
+  status    OrderStatus @default(PENDING)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])  // Composite index
+  @@map("orders")
+}
+```
+
+**Type-Safe Query Patterns**
+
+✅ **DO: Use type-safe queries with proper error handling**
+```typescript
+// Transaction with proper error handling
+async function createOrderWithItems(
+  userId: number,
+  orderData: { total: number; items: Array<{ productId: number; quantity: number }> }
+) {
+  return await prisma.$transaction(async (tx) => {
+    const order = await tx.order.create({
+      data: { userId, total: orderData.total, status: 'PENDING' },
+    })
+
+    await tx.orderItem.createMany({
+      data: orderData.items.map(item => ({
+        orderId: order.id,
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+    })
+
+    return order
+  })
+}
+```
+
+### Entity Framework Core (.NET)
+
+**DbContext Configuration**
+
+✅ **DO: Use Fluent API for complex configurations**
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    modelBuilder.Entity<User>(entity =>
+    {
+        entity.ToTable("users");
+        entity.HasKey(e => e.Id);
+
+        entity.Property(e => e.Email)
+            .IsRequired()
+            .HasMaxLength(255);
+
+        entity.HasIndex(e => e.Email)
+            .IsUnique()
+            .HasDatabaseName("idx_users_email");
+
+        entity.HasMany(e => e.Orders)
+            .WithOne(e => e.User)
+            .HasForeignKey(e => e.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+    });
+}
+```
+
+**Efficient Query Patterns**
+
+✅ **DO: Use AsNoTracking for read-only queries**
+```csharp
+public async Task<User> GetUserWithOrdersAsync(int userId)
+{
+    return await _context.Users
+        .AsNoTracking()  // Disable change tracking for read-only
+        .Include(u => u.Orders.OrderByDescending(o => o.CreatedAt).Take(50))
+        .FirstOrDefaultAsync(u => u.Id == userId);
+}
+
+public async Task<List<UserSummary>> GetUserSummariesAsync()
+{
+    return await _context.Users
+        .AsNoTracking()
+        .Select(u => new UserSummary  // Project only needed fields
+        {
+            Id = u.Id,
+            Email = u.Email,
+            OrderCount = u.Orders.Count(),
+            TotalSpent = u.Orders.Sum(o => o.Total)
+        })
+        .ToListAsync();
+}
+```
+
+### TypeORM (TypeScript)
+
+**Entity Definition**
+
+✅ **DO: Use decorators with proper types and indexes**
+```typescript
+@Entity('users')
+@Index(['email'], { unique: true })
+@Index(['createdAt'])
+export class User {
+  @PrimaryGeneratedColumn()
+  id: number
+
+  @Column({ type: 'varchar', length: 255 })
+  email: string
+
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt: Date
+
+  @OneToMany(() => Order, (order) => order.user, { cascade: false })
+  orders: Order[]
+}
+```
+
+**Transaction Patterns**
+
+✅ **DO: Use query runner with proper error handling**
+```typescript
+async function createOrderWithItems(userId: number, total: number, items: any[]): Promise<Order> {
+  const queryRunner = dataSource.createQueryRunner()
+  await queryRunner.connect()
+  await queryRunner.startTransaction()
+
+  try {
+    const order = await queryRunner.manager.save(Order, { userId, total, status: 'PENDING' })
+
+    const orderItems = items.map(item =>
+      queryRunner.manager.create(OrderItem, { orderId: order.id, ...item })
+    )
+    await queryRunner.manager.save(orderItems)
+
+    await queryRunner.commitTransaction()
+    return order
+  } catch (error) {
+    await queryRunner.rollbackTransaction()
+    throw error
+  } finally {
+    await queryRunner.release()  // Always release connection
+  }
+}
+```
+
+---
+
+## Database Debugging Patterns
+
+### Slow Query Analysis
+
+**PostgreSQL EXPLAIN ANALYZE**
+
+```sql
+-- Analyze query execution plan with actual runtime statistics
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT u.id, u.email, COUNT(o.id) as order_count
+FROM users u
+LEFT JOIN orders o ON u.id = o.user_id
+WHERE u.created_at > '2024-01-01'
+GROUP BY u.id, u.email
+ORDER BY order_count DESC
+LIMIT 100;
+
+-- Key indicators to analyze:
+-- 1. High 'read' in Buffers → Data not in cache, needs index
+-- 2. Seq Scan on large table → Missing index
+-- 3. High actual time vs estimated cost → Statistics outdated
+```
+
+**Query Profiling**
+
+```sql
+-- View current slow queries
+SELECT
+  pid,
+  now() - query_start as duration,
+  state,
+  query
+FROM pg_stat_activity
+WHERE state != 'idle'
+  AND now() - query_start > interval '5 seconds'
+ORDER BY duration DESC;
+
+-- Analyze query statistics (requires pg_stat_statements)
+SELECT
+  query,
+  calls,
+  total_exec_time / 1000 as total_time_seconds,
+  mean_exec_time / 1000 as mean_time_seconds,
+  rows
+FROM pg_stat_statements
+WHERE mean_exec_time > 1000  -- >1s average
+ORDER BY total_exec_time DESC
+LIMIT 20;
+```
+
+### Connection Pool Issues
+
+**Diagnosing Pool Exhaustion**
+
+```sql
+-- Check current connections
+SELECT
+  count(*) as total_connections,
+  count(*) FILTER (WHERE state = 'active') as active,
+  count(*) FILTER (WHERE state = 'idle') as idle,
+  count(*) FILTER (WHERE state = 'idle in transaction') as idle_in_transaction
+FROM pg_stat_activity
+WHERE datname = current_database();
+
+-- Identify long-running connections
+SELECT
+  pid,
+  usename,
+  application_name,
+  state,
+  now() - state_change as state_duration,
+  query
+FROM pg_stat_activity
+WHERE datname = current_database()
+  AND state = 'idle in transaction'
+  AND now() - state_change > interval '5 minutes';
+
+-- Kill problematic connections
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE state = 'idle in transaction'
+  AND now() - state_change > interval '10 minutes';
+```
+
+### Deadlock Detection
+
+**Monitor Lock Waits**
+
+```sql
+-- View blocked queries
+SELECT
+  blocked_locks.pid AS blocked_pid,
+  blocked_activity.query AS blocked_query,
+  blocking_locks.pid AS blocking_pid,
+  blocking_activity.query AS blocking_query
+FROM pg_catalog.pg_locks blocked_locks
+JOIN pg_catalog.pg_stat_activity blocked_activity ON blocked_activity.pid = blocked_locks.pid
+JOIN pg_catalog.pg_locks blocking_locks
+  ON blocking_locks.locktype = blocked_locks.locktype
+  AND blocking_locks.pid != blocked_locks.pid
+JOIN pg_catalog.pg_stat_activity blocking_activity ON blocking_activity.pid = blocking_locks.pid
+WHERE NOT blocked_locks.granted;
+```
+
+**Deadlock Prevention**
+
+✅ **DO: Order operations consistently to prevent circular waits**
+```sql
+BEGIN;
+  -- Lock in consistent order: users first, then orders
+  SELECT * FROM users WHERE id = 1 FOR UPDATE;
+  SELECT * FROM orders WHERE id = 2 FOR UPDATE;
+
+  UPDATE users SET last_order_date = NOW() WHERE id = 1;
+  UPDATE orders SET status = 'COMPLETED' WHERE id = 2;
+COMMIT;
+```
+
+❌ **DON'T: Create circular wait conditions**
+```sql
+-- Transaction 1: UPDATE users WHERE id = 1; UPDATE orders WHERE id = 2;
+-- Transaction 2: UPDATE orders WHERE id = 2; UPDATE users WHERE id = 1;
+-- Result: Circular wait → deadlock
+```
+
+### Replication Lag Monitoring
+
+```sql
+-- Check replication lag on replica
+SELECT
+  now() - pg_last_xact_replay_timestamp() AS replication_lag,
+  pg_is_in_recovery() AS is_replica;
+
+-- On primary: View replica status
+SELECT
+  client_addr,
+  application_name,
+  state,
+  pg_wal_lsn_diff(pg_current_wal_lsn(), replay_lsn) AS lag_bytes,
+  replay_lag
+FROM pg_stat_replication;
+
+-- Alert on high lag (>5 seconds)
+SELECT application_name, client_addr, replay_lag
+FROM pg_stat_replication
+WHERE replay_lag > interval '5 seconds';
+```
+
+**Application-Level Lag Handling**
+
+```typescript
+class DatabaseRouter {
+  private lagThresholdMs: number = 1000  // 1 second
+
+  async query(sql: string, params: any[], options: { consistencyRequired?: boolean } = {}) {
+    if (options.consistencyRequired) {
+      return this.primaryPool.query(sql, params)  // Always use primary
+    }
+
+    const healthyReplica = await this.getHealthyReplica()
+    if (healthyReplica) {
+      return healthyReplica.query(sql, params)
+    }
+
+    // Fallback to primary if all replicas lagging
+    return this.primaryPool.query(sql, params)
+  }
+}

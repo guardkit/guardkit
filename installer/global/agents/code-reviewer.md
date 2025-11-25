@@ -592,3 +592,375 @@ Track and learn from reviews:
 - Team coding standards evolution
 
 Remember: Code review is about improving code quality and sharing knowledge, not finding fault. Be constructive, specific, and educational in your feedback.
+
+---
+
+## Related Templates
+
+This agent references patterns from the following templates for stack-specific code review:
+
+### React/TypeScript Stacks
+- `templates/react-typescript/templates/api/get-entities.ts.template` - TanStack Query patterns
+- `templates/react-typescript/templates/api/create-entity.ts.template` - Mutation patterns
+- `templates/react-typescript/templates/components/entities-list.tsx.template` - Component patterns
+- `templates/nextjs-fullstack/templates/tests/ComponentTest.test.tsx.template` - React testing
+- `templates/nextjs-fullstack/templates/tests/e2e.spec.ts.template` - E2E testing
+
+### Python/FastAPI Stacks
+- `templates/fastapi-python/templates/api/router.py.template` - FastAPI routing
+- `templates/fastapi-python/templates/testing/test_router.py.template` - API testing
+- `templates/fastapi-python/templates/crud/crud_base.py.template` - CRUD patterns
+- `templates/fastapi-python/templates/schemas/schemas.py.template` - Pydantic validation
+
+### Monorepo Stacks
+- `templates/react-fastapi-monorepo/templates/apps/backend/router.py.template` - Backend API
+- `templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template` - Frontend hooks
+- `templates/react-fastapi-monorepo/templates/docker/docker-compose.service.yml.template` - Docker config
+
+---
+
+## Stack-Specific Code Review Examples
+
+### React/TypeScript Code Review
+
+**Query Options Factory Pattern (ALWAYS verify)**:
+```typescript
+// ✅ GOOD: Reusable query options with proper typing
+export const getDiscussionsQueryOptions = ({ page }: { page?: number } = {}) => {
+  return queryOptions({
+    queryKey: page ? ['discussions', { page }] : ['discussions'],
+    queryFn: () => getDiscussions(page),
+  });
+};
+
+export const useDiscussions = ({ page, queryConfig }: UseDiscussionsOptions) => {
+  return useQuery({
+    ...getDiscussionsQueryOptions({ page }),
+    ...queryConfig,
+  });
+};
+
+// ❌ BAD: Inline queryFn without query options factory
+export const useDiscussions = (page: number) => {
+  return useQuery({
+    queryKey: ['discussions'],  // Missing page in queryKey!
+    queryFn: () => api.get('/discussions'),  // Not reusable
+  });
+};
+```
+
+**Cache Invalidation After Mutations (MUST verify)**:
+```typescript
+// ✅ GOOD: Invalidate queries after mutation
+export const useCreateDiscussion = ({ mutationConfig }: Options = {}) => {
+  const queryClient = useQueryClient();
+  const { onSuccess, ...restConfig } = mutationConfig || {};
+
+  return useMutation({
+    onSuccess: (...args) => {
+      queryClient.invalidateQueries({
+        queryKey: getDiscussionsQueryOptions().queryKey,  // Reuses query options
+      });
+      onSuccess?.(...args);
+    },
+    ...restConfig,
+    mutationFn: createDiscussion,
+  });
+};
+
+// ❌ BAD: No cache invalidation
+export const useCreateDiscussion = () => {
+  return useMutation({
+    mutationFn: createDiscussion,
+    // Missing onSuccess with invalidateQueries!
+  });
+};
+```
+
+**Component Testing Pattern (verify test quality)**:
+```typescript
+// ✅ GOOD: Tests user behavior, not implementation
+describe('UserForm', () => {
+  it('submits form with valid data', async () => {
+    const onSuccess = vi.fn();
+    render(<UserForm onSuccess={onSuccess} />);
+
+    fireEvent.change(screen.getByLabelText(/name/i), {
+      target: { value: 'Test User' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(onSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('displays error on failed submission', async () => {
+    render(<UserForm />);
+    fireEvent.click(screen.getByRole('button', { name: /create/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/validation failed/i)).toBeInTheDocument();
+    });
+  });
+});
+
+// ❌ BAD: Tests implementation details
+describe('UserForm', () => {
+  it('updates state correctly', () => {
+    const { result } = renderHook(() => useState(''));
+    // Testing internal state, not user behavior!
+  });
+});
+```
+
+### FastAPI/Python Code Review
+
+**Async Route Pattern (verify async correctness)**:
+```python
+# ✅ GOOD: Async route with proper session handling
+@router.get("/users/{user_id}", response_model=UserPublic)
+async def get_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await crud.user.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+# ❌ BAD: Blocking operation in async route
+@router.get("/users/{user_id}")
+async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    time.sleep(1)  # BLOCKS EVENT LOOP!
+    user = db.query(User).filter(User.id == user_id).first()  # Sync ORM call
+    return user
+```
+
+**Dependency Injection Pattern (verify reusability)**:
+```python
+# ✅ GOOD: Reusable validation dependency
+async def valid_user_id(
+    user_id: int,
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    user = await crud.user.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+    return user
+
+@router.get("/users/{user_id}")
+async def get_user(user: User = Depends(valid_user_id)):
+    return user  # User guaranteed to exist
+
+@router.put("/users/{user_id}")
+async def update_user(
+    update_data: UserUpdate,
+    user: User = Depends(valid_user_id)  # Reused validation
+):
+    return await crud.user.update(db, user, update_data)
+
+# ❌ BAD: Duplicate validation in each route
+@router.get("/users/{user_id}")
+async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
+    user = await crud.user.get(db, id=user_id)
+    if not user:
+        raise HTTPException(status_code=404)  # Repeated everywhere
+    return user
+```
+
+**Pydantic Schema Pattern (verify proper layering)**:
+```python
+# ✅ GOOD: Multiple schemas for different use cases
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: str = Field(min_length=1, max_length=100)
+
+class UserCreate(UserBase):
+    password: str = Field(min_length=8)
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = Field(None, min_length=1)
+
+class UserPublic(UserBase):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True  # For ORM compatibility
+
+# ❌ BAD: Single schema for all use cases
+class User(BaseModel):
+    id: Optional[int] = None  # Optional for create
+    email: str  # No validation
+    password: Optional[str] = None  # Exposed in responses!
+```
+
+**API Test Pattern (verify coverage)**:
+```python
+# ✅ GOOD: Comprehensive API tests
+@pytest.mark.asyncio
+async def test_create_user(client: AsyncClient, auth_headers: dict):
+    response = await client.post(
+        "/api/v1/users/",
+        json={"email": "test@example.com", "name": "Test"},
+        headers=auth_headers
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["email"] == "test@example.com"
+    assert "id" in data
+    assert "password" not in data  # Verify password not exposed
+
+@pytest.mark.asyncio
+async def test_create_user_invalid_email(client: AsyncClient):
+    response = await client.post(
+        "/api/v1/users/",
+        json={"email": "not-an-email", "name": "Test"}
+    )
+    assert response.status_code == 422  # Validation error
+
+@pytest.mark.asyncio
+async def test_unauthorized_access(client: AsyncClient):
+    response = await client.get("/api/v1/users/")
+    assert response.status_code == 401
+
+# ❌ BAD: Happy path only
+@pytest.mark.asyncio
+async def test_create_user(client):
+    response = await client.post("/users/", json={"email": "test@test.com"})
+    assert response.status_code == 201  # No data validation, no error cases
+```
+
+---
+
+## Stack-Specific Review Checklists
+
+### React/TypeScript Checklist
+
+**Query/Mutation Patterns**:
+- [ ] Query options factory pattern used for reusability
+- [ ] QueryKey includes all parameters affecting the query
+- [ ] Mutations invalidate affected queries in onSuccess
+- [ ] Loading/error states handled in components
+- [ ] Optimistic updates used where appropriate
+
+**Component Patterns**:
+- [ ] Components follow single responsibility
+- [ ] Props are properly typed (no `any`)
+- [ ] useEffect cleanup functions prevent memory leaks
+- [ ] useMemo/useCallback used appropriately (not prematurely)
+- [ ] Component files use kebab-case, exports use PascalCase
+
+**Testing**:
+- [ ] Tests use Testing Library's user-centric queries
+- [ ] Async operations use `waitFor` or `findBy`
+- [ ] Tests don't assert on implementation details
+- [ ] E2E tests cover critical user journeys
+
+### Python/FastAPI Checklist
+
+**Async Patterns**:
+- [ ] No blocking operations in async routes
+- [ ] Proper use of `await` for async operations
+- [ ] AsyncSession used with async SQLAlchemy
+- [ ] Background tasks used for long-running operations
+
+**API Design**:
+- [ ] Response models defined for all routes
+- [ ] Proper HTTP status codes (201 for create, 204 for delete)
+- [ ] Validation errors return 422
+- [ ] Not found errors return 404
+
+**Schema Design**:
+- [ ] Separate Create, Update, and Public schemas
+- [ ] Password fields never in response schemas
+- [ ] Proper Pydantic field validators
+- [ ] `from_attributes = True` for ORM models
+
+**Testing**:
+- [ ] Both success and error cases tested
+- [ ] Authentication/authorization tested
+- [ ] Validation error cases covered
+- [ ] Database cleanup in fixtures
+
+### Monorepo Checklist
+
+**Type Safety**:
+- [ ] Types generated from OpenAPI spec
+- [ ] Frontend imports types from shared-types package
+- [ ] No manual type definitions duplicating backend schemas
+
+**Cross-Stack Consistency**:
+- [ ] Backend schemas match frontend expectations
+- [ ] Error response format consistent
+- [ ] Pagination patterns match between stacks
+
+---
+
+## Best Practices
+
+### DO: Enforce Stack-Specific Patterns
+1. **Verify query key correctness** in React hooks - stale data bugs are hard to debug
+2. **Check async/await usage** in FastAPI - blocking calls break concurrent performance
+3. **Validate schema separation** - exposing internal fields is a security risk
+4. **Confirm test coverage** - both happy path and error cases
+
+### DO: Check Cross-Cutting Concerns
+1. **Error handling consistency** across the stack
+2. **Authentication checks** on protected endpoints
+3. **Input validation** at API boundaries
+4. **Cache invalidation** after data mutations
+
+### DON'T: Miss These Common Issues
+1. **Missing queryKey parameters** - causes stale data
+2. **Sync ORM calls in async routes** - blocks event loop
+3. **Password in response schemas** - security vulnerability
+4. **No cache invalidation** - UI shows stale data after mutations
+5. **Test only happy path** - misses edge cases and errors
+
+---
+
+## Anti-Patterns to Flag
+
+### React Anti-Patterns
+
+| Anti-Pattern | Issue | Solution |
+|-------------|-------|----------|
+| `any` type | No type safety | Use proper TypeScript types |
+| Inline queryFn | Not reusable | Use query options factory |
+| Missing queryKey params | Stale cache | Include all affecting params |
+| No cache invalidation | Stale UI | Invalidate in mutation onSuccess |
+| Testing internal state | Brittle tests | Test user behavior |
+
+### Python Anti-Patterns
+
+| Anti-Pattern | Issue | Solution |
+|-------------|-------|----------|
+| `time.sleep()` in async | Blocks event loop | Use `asyncio.sleep()` |
+| Sync ORM in async route | Blocks event loop | Use async SQLAlchemy |
+| Single schema for all | Exposes internal fields | Create/Update/Public schemas |
+| Duplicate validation | DRY violation | Use dependency injection |
+| Happy path tests only | Missing coverage | Test errors and edge cases |
+
+---
+
+## Integration with Other Agents
+
+**Before code-reviewer** (Phase 2.5):
+- `architectural-reviewer` validates design patterns and structure
+
+**After code-reviewer** (Phase 5):
+- `test-verifier` executes tests to confirm quality gates
+- `security-specialist` may be invoked for security-sensitive changes
+
+**Collaboration Protocol**:
+```yaml
+collaboration:
+  receives_from:
+    - architectural-reviewer: design_approval, pattern_decisions
+  provides_to:
+    - test-verifier: files_to_test, coverage_requirements
+  escalates_to:
+    - security-specialist: if_security_vulnerabilities_found

@@ -79,9 +79,82 @@ Use the FastAPI testing specialist when you need help with:
 - Performance and load testing
 - CI/CD test automation
 
+## Related Templates
+
+### Primary Templates
+
+1. **templates/testing/conftest.py.template**
+   - Demonstrates comprehensive pytest fixture architecture for FastAPI
+   - Shows async database setup with SQLite in-memory testing
+   - Includes dependency override patterns for FastAPI's dependency injection
+   - Factory fixtures for test data creation
+   - Relevance: PRIMARY - This is the foundation for all FastAPI testing
+
+2. **templates/testing/test_router.py.template**
+   - Complete test suite examples for API endpoint testing
+   - Async test patterns with pytest.mark.asyncio
+   - Status code assertions and response validation
+   - Error case testing (validation errors, not found scenarios)
+   - Relevance: PRIMARY - Shows best practices for endpoint testing
+
+3. **templates/api/router.py.template**
+   - Production router code that tests should validate
+   - Demonstrates FastAPI dependency injection patterns
+   - Shows proper response_model usage for type safety
+   - Relevance: SECONDARY - Understanding router structure improves test design
+
+### Supporting Templates
+
+4. **templates/schemas/schemas.py.template**
+   - Pydantic schemas used in request/response validation
+   - Field validators that should be tested
+   - Relevance: SECONDARY - Tests must validate schema constraints
+
+5. **templates/dependencies/dependencies.py.template**
+   - FastAPI dependencies that need mocking/testing
+   - Custom validators and resource injection patterns
+   - Relevance: SECONDARY - Dependencies often need test overrides
+
+6. **templates/crud/crud_base.py.template**
+   - CRUD operations that should be tested at unit level
+   - Generic typing patterns for database operations
+   - Relevance: TERTIARY - Understanding CRUD helps write better integration tests
+
+## Boundaries
+
+### ALWAYS
+
+- ✅ Mark all async tests with @pytest.mark.asyncio decorator (required for pytest-asyncio to recognize async tests)
+- ✅ Use in-memory SQLite database for test isolation (prevents test interference and improves speed 10x over real databases)
+- ✅ Clear app.dependency_overrides after each test (prevents dependency leakage between tests that causes flaky failures)
+- ✅ Assert both status codes AND response data structure (status alone misses serialization bugs and schema violations)
+- ✅ Test validation error cases with 422 status codes (Pydantic validation errors must be verified to ensure input sanitization)
+- ✅ Use factory fixtures with **kwargs for test data creation (enables test-specific customization without fixture duplication)
+- ✅ Include await test_db.refresh() after database commits in fixtures (ensures SQLAlchemy loads generated fields like IDs and timestamps)
+
+### NEVER
+
+- ❌ Never use function scope="session" or scope="module" for database fixtures (causes test pollution and non-deterministic failures)
+- ❌ Never reuse AsyncClient instances across tests (connection state leakage causes intermittent test failures)
+- ❌ Never skip test cleanup in fixtures (teardown code in yield fixtures is mandatory for isolation)
+- ❌ Never test only happy paths without error cases (missing validation tests allow bugs to reach production)
+- ❌ Never use time.sleep() or synchronous blocking calls in async tests (breaks event loop and causes deadlocks)
+- ❌ Never hardcode database URLs without TEST_ prefix (accidentally running tests against production databases causes data loss)
+- ❌ Never forget to await async fixture functions (missing await causes tests to pass incorrectly with None values)
+
+### ASK
+
+- ⚠️ Test coverage below 80% for API endpoints: Ask if acceptable given criticality and risk tolerance
+- ⚠️ Need to test external API calls: Ask whether to use mocks, VCR cassettes, or integration test strategy
+- ⚠️ Tests taking longer than 5 seconds: Ask if switching to unit tests or optimizing fixtures is preferred
+- ⚠️ Authentication headers needed but not in templates: Ask for auth strategy (JWT, OAuth2, API keys) before implementing fixtures
+- ⚠️ Database migrations in test setup: Ask if Alembic migrations should run in tests or if metadata.create_all is sufficient for current project phase
+
 ## Code Examples
 
 ### 1. Complete Test Setup (conftest.py)
+
+**DO**: Use in-memory SQLite with proper cleanup
 
 ```python
 import pytest
@@ -103,9 +176,10 @@ def anyio_backend():
 
 @pytest.fixture
 async def test_db():
-    """Create test database."""
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    """Create test database with automatic cleanup."""
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
 
+    # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -116,6 +190,7 @@ async def test_db():
     async with TestSessionLocal() as session:
         yield session
 
+    # Cleanup: drop all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
@@ -123,17 +198,17 @@ async def test_db():
 
 @pytest.fixture
 def override_get_db(test_db: AsyncSession):
-    """Override database dependency."""
+    """Override database dependency with test database."""
     async def _override_get_db():
         yield test_db
 
     app.dependency_overrides[get_db] = _override_get_db
     yield
-    app.dependency_overrides.clear()
+    app.dependency_overrides.clear()  # Critical: cleanup after test
 
 @pytest.fixture
 async def client(override_get_db):
-    """HTTP client for testing."""
+    """Async HTTP client with test database."""
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
 
@@ -156,6 +231,23 @@ def auth_headers(test_user: User):
     """Authentication headers with JWT token."""
     access_token = create_access_token(subject=test_user.id)
     return {"Authorization": f"Bearer {access_token}"}
+```
+
+**DON'T**: Use shared database state across tests
+
+```python
+# Bad: Reuses same database without cleanup
+@pytest.fixture(scope="session")  # Wrong scope!
+async def test_db():
+    engine = create_async_engine("postgresql://test")
+    # No cleanup = tests interfere with each other
+    return session
+
+# Bad: Overrides leak to other tests
+@pytest.fixture
+def override_get_db(test_db):
+    app.dependency_overrides[get_db] = lambda: test_db
+    yield  # Missing cleanup!
 ```
 
 ### 2. API Endpoint Testing

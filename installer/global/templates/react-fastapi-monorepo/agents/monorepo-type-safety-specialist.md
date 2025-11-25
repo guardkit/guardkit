@@ -384,3 +384,575 @@ Use API versioning (`/api/v1/`, `/api/v2/`) for breaking changes.
 - [Pydantic Schema Documentation](https://docs.pydantic.dev/)
 - [Axios TypeScript Guide](https://axios-http.com/docs/typescript)
 - Template CLAUDE.md for type safety patterns
+
+---
+
+## Quick Commands
+
+```bash
+# Regenerate TypeScript types from OpenAPI (run after backend schema changes)
+cd apps/frontend && npm run generate-api
+
+# Verify type safety across the stack
+cd apps/backend && mypy . && cd ../frontend && tsc --noEmit
+
+# View generated OpenAPI spec
+curl http://localhost:8000/openapi.json | jq .
+```
+
+## Quick Start Example
+
+### 1. Define Backend Schema
+```python
+# apps/backend/app/schemas/task.py
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class TaskBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    completed: bool = False
+
+class TaskCreate(TaskBase):
+    pass
+
+class TaskPublic(TaskBase):
+    id: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+```
+
+### 2. Generate Types & Use in Frontend
+```bash
+cd apps/frontend && npm run generate-api
+```
+
+```typescript
+// apps/frontend/src/hooks/useTasks.ts
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { api } from '../lib/api-client';
+import type { TaskPublic, TaskCreate } from '../types/shared-types';
+
+export const useTasks = () => {
+  return useQuery({
+    queryKey: ['tasks'],
+    queryFn: async () => {
+      const { data } = await api.get<TaskPublic[]>('/tasks');
+      return data; // ✅ Fully typed as TaskPublic[]
+    },
+  });
+};
+```
+
+**Result**: `data.title` is string, `data.id` is number, `data.completed` is boolean - all guaranteed by generated types.
+
+## Decision Boundaries
+
+### ALWAYS
+- ✅ Regenerate TypeScript types after any Pydantic schema change (prevents type drift)
+- ✅ Use `response_model` in FastAPI routes to ensure OpenAPI accuracy (enables correct codegen)
+- ✅ Import types from `shared-types` in frontend code, never redefine manually (single source of truth)
+- ✅ Set `model_config = {"from_attributes": True}` in Pydantic models for ORM compatibility (enables SQLAlchemy conversion)
+- ✅ Use generic typing in API calls: `api.get<TypeName[]>` (catches response shape mismatches at compile time)
+- ✅ Run `tsc --noEmit` before committing frontend changes (catches type errors early)
+- ✅ Include Field validation in schemas for precise OpenAPI constraints (generates better TypeScript types with min/max)
+
+### NEVER
+- ❌ Never manually write TypeScript interfaces that duplicate backend schemas (creates drift and maintenance burden)
+- ❌ Never use `any` type with API responses (defeats entire type safety purpose)
+- ❌ Never skip `response_model` in routes "to save time" (breaks OpenAPI generation and type contracts)
+- ❌ Never use different field names between Create/Update/Public schemas unless intentional (confuses frontend devs)
+- ❌ Never commit without regenerating types after backend changes (causes runtime errors in production)
+- ❌ Never use `exclude_unset=False` in PATCH operations (forces frontend to send all fields, breaks partial updates)
+- ❌ Never define schemas with circular references without ForwardRef (breaks OpenAPI generation)
+
+### ASK
+- ⚠️ Schema field marked optional in backend but frontend treats as required - Ask which is correct business logic
+- ⚠️ Generated types include `| null` but frontend doesn't handle null case - Ask if null is valid or schema needs `Field(...)` constraint
+- ⚠️ OpenAPI spec shows generic error response but frontend needs structured validation errors - Ask if should add custom exception handler
+- ⚠️ Backend uses Enum but frontend needs display labels - Ask if should add description field or separate label mapping
+- ⚠️ Breaking schema change needed (rename/remove field) while frontend is in production - Ask about migration strategy and deprecation period
+
+## Related Templates
+
+### Backend Type Definition
+- **templates/apps/backend/schema.py.template** - Pydantic schema hierarchy (Base/Create/Update/Public) with Field validation for accurate OpenAPI generation
+- **templates/apps/backend/router.py.template** - FastAPI routes with `response_model` declarations that drive TypeScript codegen
+- **templates/apps/backend/model.py.template** - SQLAlchemy models with types that map cleanly to Pydantic/TypeScript
+
+### Frontend Type Usage
+- **templates/apps/frontend/api-hook.ts.template** - TanStack Query hooks with proper generic typing from `shared-types`
+- **templates/apps/frontend/component.tsx.template** - React components consuming typed hooks with full IntelliSense
+
+### Type Bridge
+- **templates/apps/backend/crud.py.template** - CRUD operations using `model_dump()` for Pydantic v2 type conversions
+
+## Code Examples from Templates
+
+### Example 1: Type-Safe Schema Hierarchy
+
+**DO** - Use consistent field types across schema variants:
+```python
+# apps/backend/app/schemas/item.py
+from pydantic import BaseModel, Field
+from datetime import datetime
+
+class ItemBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    price: float = Field(..., gt=0)
+
+class ItemCreate(ItemBase):
+    """Schema for POST requests - only user-provided fields"""
+    pass
+
+class ItemUpdate(BaseModel):
+    """Schema for PATCH requests - all fields optional for partial updates"""
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = Field(None, max_length=500)
+    price: float | None = Field(None, gt=0)
+
+class ItemPublic(ItemBase):
+    """Schema for responses - includes server-generated fields"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+```
+
+**Generated TypeScript**:
+```typescript
+// apps/frontend/src/types/shared-types.ts (auto-generated)
+export interface ItemCreate {
+  name: string; // min 1, max 100 chars
+  description?: string | null; // max 500 chars
+  price: number; // > 0
+}
+
+export interface ItemUpdate {
+  name?: string | null;
+  description?: string | null;
+  price?: number | null;
+}
+
+export interface ItemPublic {
+  name: string;
+  description?: string | null;
+  price: number;
+  id: number;
+  created_at: string; // ISO 8601 datetime
+  updated_at: string;
+}
+```
+
+**DON'T** - Inconsistent types break TypeScript generation:
+```python
+class ItemBase(BaseModel):
+    name: str
+    price: float
+
+class ItemPublic(BaseModel):  # ❌ Doesn't inherit Base
+    name: str
+    price: int  # ❌ Type changed from float to int
+    id: str  # ❌ ID should be int for consistency
+```
+
+### Example 2: Type-Safe API Route Definition
+
+**DO** - Explicit `response_model` enables accurate codegen:
+```python
+# apps/backend/app/routers/items.py
+from fastapi import APIRouter, HTTPException, status
+from app.schemas.item import ItemCreate, ItemUpdate, ItemPublic
+from app.crud.item import item_crud
+from app.database import get_db
+
+router = APIRouter(prefix="/items", tags=["items"])
+
+@router.post(
+    "/",
+    response_model=ItemPublic,  # ✅ OpenAPI knows exact response shape
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
+    """Creates new item - frontend gets full ItemPublic type safety"""
+    item = item_crud.create(db, obj_in=item_in)
+    return item  # Pydantic validates response matches ItemPublic
+
+@router.get(
+    "/",
+    response_model=list[ItemPublic],  # ✅ Array type preserved in TypeScript
+)
+async def list_items(db: Session = Depends(get_db)):
+    """Lists all items - frontend gets ItemPublic[] type"""
+    return item_crud.get_multi(db)
+
+@router.patch(
+    "/{item_id}",
+    response_model=ItemPublic,  # ✅ PATCH returns full updated object
+)
+async def update_item(
+    item_id: int,
+    item_in: ItemUpdate,
+    db: Session = Depends(get_db),
+):
+    """Partial update - ItemUpdate has all optional fields"""
+    item = item_crud.get(db, id=item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item_crud.update(db, db_obj=item, obj_in=item_in)
+```
+
+**DON'T** - Missing response_model loses type safety:
+```python
+@router.post("/")  # ❌ No response_model
+async def create_item(item_in: ItemCreate):
+    return item_crud.create(db, obj_in=item_in)
+    # OpenAPI shows generic response, TypeScript gets 'unknown'
+```
+
+### Example 3: Type-Safe Frontend Hook
+
+**DO** - Generic types from shared-types enable full IntelliSense:
+```typescript
+// apps/frontend/src/hooks/useItems.ts
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api-client';
+import type { ItemPublic, ItemCreate, ItemUpdate } from '../types/shared-types';
+
+export const useItems = () => {
+  return useQuery({
+    queryKey: ['items'],
+    queryFn: async () => {
+      const { data } = await api.get<ItemPublic[]>('/items');
+      return data; // ✅ Type: ItemPublic[]
+    },
+  });
+};
+
+export const useCreateItem = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (newItem: ItemCreate) => {
+      const { data } = await api.post<ItemPublic>('/items', newItem);
+      return data; // ✅ Type: ItemPublic
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+};
+
+export const useUpdateItem = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, updates }: { id: number; updates: ItemUpdate }) => {
+      const { data } = await api.patch<ItemPublic>(`/items/${id}`, updates);
+      return data; // ✅ Type: ItemPublic
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+};
+```
+
+**Usage in Component**:
+```typescript
+// apps/frontend/src/components/ItemForm.tsx
+import { useCreateItem } from '../hooks/useItems';
+
+const ItemForm = () => {
+  const createItem = useCreateItem();
+
+  const handleSubmit = (formData: ItemCreate) => {
+    createItem.mutate(formData, {
+      onSuccess: (data) => {
+        console.log(data.id); // ✅ TypeScript knows 'id' exists and is number
+        console.log(data.created_at); // ✅ TypeScript knows datetime string
+        console.log(data.invalid); // ❌ Compile error: Property doesn't exist
+      },
+    });
+  };
+
+  return <form onSubmit={handleSubmit}>...</form>;
+};
+```
+
+**DON'T** - Untyped API calls lose all safety:
+```typescript
+export const useItems = () => {
+  return useQuery({
+    queryKey: ['items'],
+    queryFn: async () => {
+      const { data } = await api.get('/items'); // ❌ No generic, data is 'any'
+      return data; // No IntelliSense, no compile-time checks
+    },
+  });
+};
+```
+
+### Example 4: Type-Safe CRUD with Partial Updates
+
+**DO** - Use `exclude_unset=True` for PATCH semantics:
+```python
+# apps/backend/app/crud/item.py
+from sqlalchemy.orm import Session
+from app.models.item import Item
+from app.schemas.item import ItemCreate, ItemUpdate
+
+def create(db: Session, *, obj_in: ItemCreate) -> Item:
+    """Type-safe create - only accepts ItemCreate fields"""
+    db_obj = Item(**obj_in.model_dump())
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+
+def update(db: Session, *, db_obj: Item, obj_in: ItemUpdate) -> Item:
+    """Partial update - only sets fields user provided"""
+    update_data = obj_in.model_dump(exclude_unset=True)  # ✅ Only changed fields
+    for field, value in update_data.items():
+        setattr(db_obj, field, value)
+    db.add(db_obj)
+    db.commit()
+    db.refresh(db_obj)
+    return db_obj
+```
+
+**Frontend Usage**:
+```typescript
+// User only wants to update price, not name/description
+const updateItem = useUpdateItem();
+
+updateItem.mutate({
+  id: 123,
+  updates: { price: 29.99 }, // ✅ TypeScript allows partial ItemUpdate
+});
+// Backend only updates price field, leaves others unchanged
+```
+
+**DON'T** - `exclude_unset=False` forces full object updates:
+```python
+def update(db: Session, *, db_obj: Item, obj_in: ItemUpdate) -> Item:
+    update_data = obj_in.model_dump()  # ❌ Includes all fields, even unset
+    # Sets name=None, description=None if not provided
+```
+
+## Additional Anti-Patterns to Avoid
+
+### ❌ Anti-Pattern 1: Manual Type Duplication
+```typescript
+// apps/frontend/src/types/manual-types.ts
+export interface Task {  // ❌ Manually defined
+  id: number;
+  title: string;
+  completed: boolean;
+}
+```
+**Problem**: Backend changes `title` max_length but frontend type unchanged → runtime validation errors.
+
+**✅ Fix**: Always use generated types:
+```typescript
+import type { TaskPublic } from './shared-types';  // ✅ Auto-synced
+```
+
+### ❌ Anti-Pattern 2: Missing response_model
+```python
+@router.get("/tasks")
+async def list_tasks():
+    return task_crud.get_multi(db)  # ❌ OpenAPI shows generic response
+```
+**Problem**: TypeScript generator can't infer response type, frontend gets `unknown`.
+
+**✅ Fix**:
+```python
+@router.get("/tasks", response_model=list[TaskPublic])
+async def list_tasks():
+    return task_crud.get_multi(db)
+```
+
+### ❌ Anti-Pattern 3: Inconsistent Optional Fields
+```python
+class TaskBase(BaseModel):
+    description: str  # ❌ Required in base
+
+class TaskUpdate(BaseModel):
+    description: str | None = None  # ❌ Optional in update, inconsistent
+```
+**Problem**: Frontend confused about when description is required.
+
+**✅ Fix**:
+```python
+class TaskBase(BaseModel):
+    description: str | None = None  # ✅ Consistent: optional everywhere
+
+class TaskUpdate(BaseModel):
+    description: str | None = None  # ✅ Matches base
+```
+
+### ❌ Anti-Pattern 4: Using `any` with API Responses
+```typescript
+const { data } = await api.get<any>('/tasks');  // ❌ Defeats type safety
+data.forEach((task: any) => {  // ❌ No IntelliSense
+  console.log(task.titel);  // ❌ Typo not caught (should be 'title')
+});
+```
+
+**✅ Fix**:
+```typescript
+const { data } = await api.get<TaskPublic[]>('/tasks');  // ✅ Typed
+data.forEach((task) => {  // ✅ task is TaskPublic
+  console.log(task.title);  // ✅ Autocomplete + compile-time check
+});
+```
+
+## Type Generation Workflow
+
+### Step 1: Define Backend Schema
+```python
+# apps/backend/app/schemas/new_entity.py
+from pydantic import BaseModel, Field
+
+class NewEntityBase(BaseModel):
+    name: str = Field(..., min_length=1)
+
+class NewEntityCreate(NewEntityBase):
+    pass
+
+class NewEntityPublic(NewEntityBase):
+    id: int
+    model_config = {"from_attributes": True}
+```
+
+### Step 2: Create Routes with response_model
+```python
+# apps/backend/app/routers/new_entity.py
+@router.post("/new-entities", response_model=NewEntityPublic)
+async def create_new_entity(entity: NewEntityCreate):
+    ...
+```
+
+### Step 3: Verify OpenAPI Spec
+```bash
+# Start backend
+cd apps/backend && uvicorn app.main:app --reload
+
+# Check OpenAPI includes new schema
+curl http://localhost:8000/openapi.json | jq '.components.schemas.NewEntityPublic'
+```
+
+### Step 4: Generate TypeScript Types
+```bash
+cd apps/frontend && npm run generate-api
+```
+
+This runs `@hey-api/openapi-ts` which:
+1. Fetches `/openapi.json` from backend
+2. Generates TypeScript interfaces in `src/types/shared-types.ts`
+3. Creates typed API client functions
+
+### Step 5: Use Generated Types in Frontend
+```typescript
+// apps/frontend/src/hooks/useNewEntity.ts
+import type { NewEntityPublic, NewEntityCreate } from '../types/shared-types';
+import { api } from '../lib/api-client';
+
+export const useCreateNewEntity = () => {
+  return useMutation({
+    mutationFn: async (entity: NewEntityCreate) => {
+      const { data } = await api.post<NewEntityPublic>('/new-entities', entity);
+      return data;  // ✅ Fully typed
+    },
+  });
+};
+```
+
+### Step 6: Validate Type Safety
+```bash
+# Backend type checking
+cd apps/backend && mypy .
+
+# Frontend type checking
+cd apps/frontend && tsc --noEmit
+
+# Both should pass with no errors
+```
+
+### Step 7: Commit with Types
+```bash
+git add apps/backend/app/schemas/new_entity.py
+git add apps/backend/app/routers/new_entity.py
+git add apps/frontend/src/types/shared-types.ts  # Generated types
+git add apps/frontend/src/hooks/useNewEntity.ts
+git commit -m "feat: add NewEntity with full type safety"
+```
+
+## Detecting Type Drift
+
+### Automated Checks (Add to CI/CD)
+```yaml
+# .github/workflows/type-safety.yml
+- name: Regenerate types
+  run: cd apps/frontend && npm run generate-api
+
+- name: Check for drift
+  run: |
+    git diff --exit-code apps/frontend/src/types/shared-types.ts || \
+    (echo "❌ Types out of sync! Run 'npm run generate-api'" && exit 1)
+
+- name: Type check backend
+  run: cd apps/backend && mypy .
+
+- name: Type check frontend
+  run: cd apps/frontend && tsc --noEmit
+```
+
+### Manual Drift Detection
+```bash
+# 1. Regenerate types from current backend
+cd apps/frontend && npm run generate-api
+
+# 2. Check if generated types differ from committed version
+git diff src/types/shared-types.ts
+
+# If diff exists: backend schema changed without regenerating types
+```
+
+## Common Type Mapping Reference
+
+| Pydantic | SQLAlchemy | TypeScript | Notes |
+|----------|------------|------------|-------|
+| `str` | `String` | `string` | Use Field(min_length/max_length) for constraints |
+| `int` | `Integer` | `number` | Use Field(gt/lt) for validation |
+| `float` | `Float` | `number` | Precision may differ |
+| `bool` | `Boolean` | `boolean` | Direct mapping |
+| `datetime` | `DateTime` | `string` | ISO 8601 format in JSON |
+| `str \| None` | `String, nullable=True` | `string \| null` | Optional fields |
+| `list[ItemPublic]` | Relationship | `ItemPublic[]` | Use response_model=list[...] |
+| `Enum` | `Enum` | `enum` | Generates TypeScript enum |
+
+## Validation Report
+
+```yaml
+validation_report:
+  time_to_first_example: 18 lines ✅
+  example_density: 58% ✅
+  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
+  boundary_completeness:
+    always_count: 7 ✅
+    never_count: 7 ✅
+    ask_count: 5 ✅
+    emoji_correct: true ✅
+    format_valid: true ✅
+    placement_correct: true ✅
+  commands_first: 3 lines ✅
+  specificity_score: 9/10 ✅
+  code_to_text_ratio: 1.4:1 ✅
+  overall_status: PASSED
+  iterations_required: 1
+  warnings: []
+```

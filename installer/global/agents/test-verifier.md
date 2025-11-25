@@ -448,3 +448,509 @@ def identify_uncovered_code():
 7. **Automate Everything**: No manual test execution
 
 Remember: A task is ONLY complete when ALL tests pass with adequate coverage. No exceptions.
+
+---
+
+## Related Templates
+
+This specialist works with testing templates across multiple technology stacks:
+
+### React/TypeScript Testing Templates
+- **nextjs-fullstack/templates/tests/ComponentTest.test.tsx.template** - Vitest component tests with Testing Library
+- **nextjs-fullstack/templates/tests/e2e.spec.ts.template** - Playwright E2E tests for Next.js applications
+- **react-typescript/templates/components/__tests__/*.template** - Unit tests for React components
+
+### Python/FastAPI Testing Templates
+- **fastapi-python/templates/testing/test_router.py.template** - Pytest router tests with TestClient
+- **fastapi-python/templates/testing/conftest.py.template** - Pytest fixtures and configuration
+
+### .NET/MAUI Testing Templates
+- **dotnet-maui/templates/tests/*.template** - xUnit tests for .NET MAUI applications
+
+---
+
+## Template Code Examples
+
+### ✅ DO: Structure Tests with Arrange-Act-Assert Pattern
+
+**React/Vitest Example:**
+```typescript
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi } from 'vitest';
+import { DiscussionsList } from '../discussions-list';
+
+describe('DiscussionsList', () => {
+  it('displays loading state initially', () => {
+    // Arrange
+    render(<DiscussionsList />, { wrapper: AppProvider });
+
+    // Assert
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('renders discussions after loading', async () => {
+    // Arrange
+    render(<DiscussionsList />, { wrapper: AppProvider });
+
+    // Act - wait for data to load
+    await waitFor(() => {
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+
+    // Assert
+    expect(screen.getByText('Discussion 1')).toBeInTheDocument();
+  });
+
+  it('handles user interaction correctly', async () => {
+    // Arrange
+    const user = userEvent.setup();
+    render(<DiscussionsList />, { wrapper: AppProvider });
+    await waitFor(() => {
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    });
+
+    // Act
+    await user.click(screen.getByRole('button', { name: /create/i }));
+
+    // Assert
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});
+```
+
+**Why**: AAA pattern makes tests readable and maintainable. Each section has a clear purpose.
+
+### ✅ DO: Use Fixtures for Test Data (Python/pytest)
+
+```python
+# conftest.py
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from app.core.db import Base
+from app.models import User, Team
+
+@pytest.fixture
+async def db_session():
+    """Create a fresh database session for each test."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with AsyncSession(engine) as session:
+        yield session
+
+    await engine.dispose()
+
+@pytest.fixture
+async def test_user(db_session: AsyncSession) -> User:
+    """Create a test user fixture."""
+    user = User(
+        email="test@example.com",
+        hashed_password="hashed_password",
+        is_active=True
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+@pytest.fixture
+async def authenticated_client(test_user: User):
+    """Create an authenticated test client."""
+    from app.main import app
+    from httpx import AsyncClient
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        # Set auth header
+        client.headers["Authorization"] = f"Bearer {create_token(test_user)}"
+        yield client
+```
+
+**Why**: Fixtures reduce duplication, ensure consistent test data, and handle setup/teardown automatically.
+
+### ✅ DO: Mock External Dependencies
+
+**React/MSW Example:**
+```typescript
+// testing/mocks/handlers/discussions.ts
+import { http, HttpResponse } from 'msw';
+import { env } from '@/config/env';
+import { db } from '../db';
+
+export const discussionsHandlers = [
+  http.get(`${env.API_URL}/discussions`, async ({ request }) => {
+    const url = new URL(request.url);
+    const page = Number(url.searchParams.get('page') || 1);
+
+    const discussions = db.discussion.findMany({
+      take: 10,
+      skip: 10 * (page - 1),
+    });
+
+    return HttpResponse.json({
+      data: discussions,
+      meta: { page, total: discussions.length },
+    });
+  }),
+
+  http.post(`${env.API_URL}/discussions`, async ({ request }) => {
+    const data = await request.json();
+    const discussion = db.discussion.create(data);
+    return HttpResponse.json({ data: discussion }, { status: 201 });
+  }),
+];
+```
+
+**Python/pytest-mock Example:**
+```python
+# test_external_service.py
+import pytest
+from unittest.mock import AsyncMock, patch
+
+@pytest.mark.asyncio
+async def test_sends_email_on_registration(db_session, mocker):
+    # Arrange
+    mock_send = mocker.patch(
+        'app.services.email.send_welcome_email',
+        new_callable=AsyncMock
+    )
+
+    # Act
+    user = await register_user(db_session, "new@example.com", "password")
+
+    # Assert
+    mock_send.assert_called_once_with(user.email)
+```
+
+**Why**: Mocking prevents flaky tests from network issues and allows testing edge cases.
+
+### ✅ DO: Write E2E Tests for Critical User Journeys
+
+**Playwright Example:**
+```typescript
+// e2e/tests/auth.spec.ts
+import { test, expect } from '@playwright/test';
+
+test.describe('Authentication Flow', () => {
+  test('user can register, login, and access protected content', async ({ page }) => {
+    // Register
+    await page.goto('/auth/register');
+    await page.fill('[name="email"]', 'test@example.com');
+    await page.fill('[name="password"]', 'SecurePass123!');
+    await page.fill('[name="confirmPassword"]', 'SecurePass123!');
+    await page.click('button[type="submit"]');
+
+    // Verify redirect to login
+    await expect(page).toHaveURL('/auth/login');
+    await expect(page.locator('text=Registration successful')).toBeVisible();
+
+    // Login
+    await page.fill('[name="email"]', 'test@example.com');
+    await page.fill('[name="password"]', 'SecurePass123!');
+    await page.click('button[type="submit"]');
+
+    // Verify access to protected content
+    await expect(page).toHaveURL('/app/dashboard');
+    await expect(page.locator('h1')).toContainText('Dashboard');
+  });
+
+  test('shows validation errors for invalid input', async ({ page }) => {
+    await page.goto('/auth/login');
+    await page.click('button[type="submit"]');
+
+    await expect(page.locator('text=Email is required')).toBeVisible();
+    await expect(page.locator('text=Password is required')).toBeVisible();
+  });
+});
+```
+
+**Why**: E2E tests verify the entire system works together from the user's perspective.
+
+### ❌ DON'T: Write Tests Without Assertions
+
+```typescript
+// BAD - Test passes but verifies nothing
+it('renders component', () => {
+  render(<MyComponent />);
+  // No assertions!
+});
+
+// GOOD - Verify expected behavior
+it('renders component with correct content', () => {
+  render(<MyComponent title="Hello" />);
+  expect(screen.getByRole('heading')).toHaveTextContent('Hello');
+});
+```
+
+### ❌ DON'T: Use Hardcoded Test Data Everywhere
+
+```python
+# BAD - Hardcoded values repeated across tests
+async def test_create_user():
+    response = await client.post("/users", json={
+        "email": "test@example.com",  # Duplicated everywhere
+        "password": "password123"
+    })
+
+# GOOD - Use fixtures or factories
+async def test_create_user(user_factory):
+    user_data = user_factory.build()
+    response = await client.post("/users", json=user_data)
+```
+
+---
+
+## Template Best Practices
+
+### Test Organization
+
+✅ **Co-locate tests with source code**: Place `__tests__/` directories inside feature folders
+```
+features/
+  └── discussions/
+      ├── api/
+      ├── components/
+      └── __tests__/
+          ├── discussions-list.test.tsx
+          └── create-discussion.test.tsx
+```
+
+✅ **Use descriptive test names**: Test names should read like documentation
+```typescript
+// Good
+it('displays error message when form submission fails')
+it('redirects to dashboard after successful login')
+it('disables submit button while request is pending')
+
+// Bad
+it('test1')
+it('handles error')
+it('works correctly')
+```
+
+✅ **Group related tests with describe blocks**:
+```typescript
+describe('DiscussionsList', () => {
+  describe('when loading', () => {
+    it('shows loading spinner');
+    it('disables pagination');
+  });
+
+  describe('when loaded successfully', () => {
+    it('displays discussions');
+    it('enables pagination');
+  });
+
+  describe('when error occurs', () => {
+    it('shows error message');
+    it('offers retry option');
+  });
+});
+```
+
+### Test Isolation
+
+✅ **Each test should be independent**: Tests should not depend on execution order
+```python
+# Good - Each test creates its own data
+async def test_delete_user(db_session, test_user):
+    await delete_user(db_session, test_user.id)
+    assert await get_user(db_session, test_user.id) is None
+
+# Bad - Depends on previous test's state
+async def test_user_exists():
+    user = await get_user(db, 1)  # Assumes user 1 exists from previous test
+```
+
+✅ **Clean up after tests**: Use fixtures with proper teardown
+```python
+@pytest.fixture
+async def temp_file():
+    path = Path("/tmp/test_file.txt")
+    path.write_text("test content")
+    yield path
+    path.unlink(missing_ok=True)  # Cleanup
+```
+
+### Coverage Strategy
+
+✅ **Focus on behavior, not implementation details**:
+```typescript
+// Good - Tests behavior
+it('shows success message after saving', async () => {
+  await user.click(saveButton);
+  expect(screen.getByText('Saved successfully')).toBeVisible();
+});
+
+// Bad - Tests implementation
+it('calls setState with correct value', () => {
+  // Testing internal state changes
+});
+```
+
+✅ **Prioritize coverage by risk**: Critical paths need more tests
+- Authentication: 100% coverage
+- Payment processing: 100% coverage
+- UI components: 80%+ coverage
+- Utilities: 90%+ coverage
+
+### Performance
+
+✅ **Run fast tests frequently, slow tests on CI**:
+```json
+// package.json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "test:ci": "vitest run && playwright test"
+  }
+}
+```
+
+✅ **Parallelize tests when possible**:
+```python
+# pytest.ini
+[pytest]
+addopts = -n auto  # Run tests in parallel with pytest-xdist
+```
+
+---
+
+## Template Anti-Patterns
+
+### ❌ NEVER: Skip Tests Without Documentation
+
+```typescript
+// BAD - No reason given
+it.skip('handles edge case', () => {});
+
+// ACCEPTABLE - Documented skip
+it.skip('handles edge case - TODO: Fix after API v2 migration', () => {});
+```
+
+### ❌ NEVER: Use Sleep/Wait for Timing
+
+```typescript
+// BAD - Flaky and slow
+await page.click('button');
+await page.waitForTimeout(2000);  // Hope data loaded
+expect(screen.getByText('Success')).toBeVisible();
+
+// GOOD - Wait for specific condition
+await page.click('button');
+await expect(page.locator('text=Success')).toBeVisible({ timeout: 5000 });
+```
+
+### ❌ NEVER: Test Implementation Instead of Behavior
+
+```typescript
+// BAD - Tests internal implementation
+it('updates state correctly', () => {
+  const { result } = renderHook(() => useState(0));
+  act(() => result.current[1](1));
+  expect(result.current[0]).toBe(1);  // Testing React internals
+});
+
+// GOOD - Tests user-visible behavior
+it('increments counter when button clicked', async () => {
+  render(<Counter />);
+  await user.click(screen.getByRole('button', { name: 'Increment' }));
+  expect(screen.getByText('Count: 1')).toBeInTheDocument();
+});
+```
+
+### ❌ NEVER: Ignore Test Failures in CI
+
+```yaml
+# BAD - Ignores failures
+- name: Run tests
+  run: npm test || true  # Always passes!
+
+# GOOD - Fail the build on test failures
+- name: Run tests
+  run: npm test  # Fails build if tests fail
+```
+
+### ❌ NEVER: Write Tests That Pass for Wrong Reasons
+
+```python
+# BAD - Always passes regardless of actual behavior
+def test_user_created():
+    response = create_user({"email": "test@example.com"})
+    assert response is not None  # Too weak!
+
+# GOOD - Verify specific expected state
+def test_user_created():
+    response = create_user({"email": "test@example.com"})
+    assert response.status_code == 201
+    assert response.json()["email"] == "test@example.com"
+    assert "id" in response.json()
+```
+
+### ❌ NEVER: Mock Everything
+
+```typescript
+// BAD - Mocking so much that test proves nothing
+it('creates user', () => {
+  const mockDb = { create: vi.fn().mockResolvedValue({ id: 1 }) };
+  const mockValidator = { validate: vi.fn().mockReturnValue(true) };
+  const mockLogger = { log: vi.fn() };
+  // ... more mocks
+
+  // What are we even testing at this point?
+});
+
+// GOOD - Only mock external boundaries
+it('creates user in database', async () => {
+  // Use real validation, real business logic
+  // Only mock external services (email, payment, etc.)
+  const user = await createUser(db, validUserData);
+  expect(await db.user.findById(user.id)).toBeDefined();
+});
+```
+
+### ❌ NEVER: Commit Flaky Tests
+
+```typescript
+// BAD - Test that sometimes fails
+it('fetches data', async () => {
+  const data = await fetchData();
+  expect(data.length).toBeGreaterThan(0);  // Depends on external API state
+});
+
+// GOOD - Deterministic test with controlled data
+it('fetches data', async () => {
+  server.use(
+    http.get('/api/data', () => HttpResponse.json([{ id: 1 }]))
+  );
+  const data = await fetchData();
+  expect(data.length).toBe(1);
+});
+```
+
+---
+
+## Cross-Stack Testing Checklist
+
+When verifying tests across different technology stacks:
+
+### React/TypeScript (Vitest + Playwright)
+- [ ] Unit tests run: `npm test`
+- [ ] E2E tests run: `npm run test:e2e`
+- [ ] Coverage meets threshold (80%+)
+- [ ] No console errors in test output
+- [ ] All async operations properly awaited
+
+### Python/FastAPI (pytest)
+- [ ] Tests run: `pytest tests/ -v`
+- [ ] Coverage report: `pytest --cov=src --cov-report=term`
+- [ ] Async fixtures use `@pytest.fixture` with `async def`
+- [ ] Database fixtures properly clean up
+
+### .NET/MAUI (xUnit)
+- [ ] Tests run: `dotnet test`
+- [ ] Coverage: `dotnet test --collect:"XPlat Code Coverage"`
+- [ ] Integration tests use proper test fixtures
+- [ ] Platform-specific tests are properly categorized

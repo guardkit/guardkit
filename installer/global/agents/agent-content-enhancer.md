@@ -530,6 +530,472 @@ If enhancement fails or confidence is below threshold:
 
 This agent is automatically invoked during `/task-work` in template-create Phase 7.5 when enhancing agent documentation files.
 
+## Related Agents
+
+### Primary Integration Partners
+
+The agent-content-enhancer coordinates with several global agents during the template-create workflow:
+
+#### 1. architectural-reviewer
+**Interaction Pattern**: Sequential (Analysis → Enhancement)
+
+```yaml
+Flow:
+  1. architectural-reviewer analyzes template structure
+  2. Produces technology stack analysis + patterns
+  3. agent-content-enhancer receives analysis as context
+  4. Uses analysis to determine template relevance
+```
+
+**What It Provides**:
+- Technology stack details (React 18, TypeScript 5.x, etc.)
+- Architectural patterns detected (Repository, MVC, Hexagonal)
+- Code quality metrics for specificity scoring
+- Best practices extracted from templates
+
+**Example Context Handoff**:
+```json
+{
+  "architectural_analysis": {
+    "technologies": ["React 18", "TypeScript 5.x", "Vite"],
+    "patterns": ["Component Composition", "Custom Hooks"],
+    "best_practices": ["Strict null checks", "Exhaustive deps"]
+  }
+}
+```
+
+#### 2. agent-generator
+**Interaction Pattern**: Sequential (Generation → Enhancement)
+
+```yaml
+Flow:
+  1. agent-generator creates basic 30-line agent stubs
+  2. Outputs basic_agents array with minimal metadata
+  3. agent-content-enhancer receives stubs for expansion
+  4. Transforms each stub into comprehensive 150-250 line docs
+```
+
+**What It Provides**:
+- Agent name and role definition
+- Basic capability list (3-5 items)
+- Tool assignments (Read, Write, Edit, etc.)
+- Technology tags for template matching
+
+**Example Input from agent-generator**:
+```json
+{
+  "basic_agents": [
+    {
+      "name": "component-architect",
+      "description": "React component structure specialist",
+      "tools": ["Read", "Write", "Edit", "Grep"],
+      "basic_content": "# Component Architect\n\nHelps structure React components."
+    }
+  ]
+}
+```
+
+#### 3. code-reviewer
+**Interaction Pattern**: Sequential (Enhancement → Validation)
+
+```yaml
+Flow:
+  1. agent-content-enhancer generates enhanced content
+  2. code-reviewer validates markdown structure
+  3. Checks code examples are syntactically correct
+  4. Verifies template references exist in codebase
+```
+
+**What It Validates**:
+- Markdown syntax correctness (no broken links)
+- Code block syntax highlighting accuracy
+- YAML frontmatter schema compliance
+- Template file paths resolve correctly
+
+#### 4. test-orchestrator
+**Interaction Pattern**: Parallel (Enhancement + Testing)
+
+```yaml
+Flow:
+  1. agent-content-enhancer completes enhancement
+  2. test-orchestrator runs integration tests in parallel
+  3. Validates enhanced agents respond correctly to sample queries
+  4. Reports functional quality metrics
+```
+
+### Coordination Patterns
+
+#### Pattern 1: Sequential Pipeline (Phase 7.5)
+```
+architectural-reviewer → agent-generator → agent-content-enhancer → code-reviewer
+        (Analysis)           (Stubs)            (Enhancement)          (Validation)
+```
+
+#### Pattern 2: Parallel Validation
+```
+agent-content-enhancer → [code-reviewer, test-orchestrator]
+     (Enhancement)           (Syntax Check)  (Functional Check)
+```
+
+#### Pattern 3: Iterative Refinement
+```
+agent-content-enhancer ←→ code-reviewer
+  (Generate v1)              (Fail: missing examples)
+  (Generate v2)              (Pass)
+
+Max 3 iterations before fallback to basic agents
+```
+
+---
+
+## Enhancement Transformation Examples
+
+### Example 1: Repository Pattern Specialist
+
+#### Before (Basic Agent - 32 lines)
+```markdown
+---
+name: repository-pattern-specialist
+description: Repository pattern implementation specialist
+tools: [Read, Write, Edit, Grep]
+tags: [repository, data-access, csharp]
+---
+
+# Repository Pattern Specialist
+
+Helps implement Repository pattern for data access.
+
+## Capabilities
+
+- Create repository classes
+- Implement CRUD operations
+- Add error handling
+
+## When to Use
+
+Use when building data access layer.
+```
+
+#### After (Enhanced Agent - 187 lines)
+```markdown
+---
+name: repository-pattern-specialist
+description: C# Repository pattern specialist with ErrorOr result handling
+tools: [Read, Write, Edit, Grep]
+tags: [repository, data-access, csharp, erroror, crud]
+---
+
+# Repository Pattern Specialist
+
+## Purpose
+
+Specializes in implementing the Repository pattern for C# applications with ErrorOr result handling. Generates type-safe data access layers that abstract database operations, enforce domain boundaries, and provide functional error handling without exceptions.
+
+## Quick Start
+
+### Basic Repository Creation
+```bash
+/invoke repository-pattern-specialist "Create repository for Loading entity with CRUD operations"
+```
+
+### Expected Output
+```csharp
+public interface ILoadingRepository
+{
+    Task<ErrorOr<Loading>> GetByIdAsync(Guid id, CancellationToken ct);
+    Task<ErrorOr<List<Loading>>> GetAllAsync(CancellationToken ct);
+    Task<ErrorOr<Created>> CreateAsync(Loading loading, CancellationToken ct);
+}
+```
+
+## Boundaries
+
+### ALWAYS
+- Return ErrorOr types for all repository methods (type-safe error handling)
+- Include CancellationToken parameters for async operations (enable cancellation)
+- Use async/await for database operations (prevent thread pool starvation)
+
+### NEVER
+- Never expose IQueryable outside repository (breaks encapsulation)
+- Never throw exceptions from repository methods (use ErrorOr result types)
+- Never use SaveChanges() in repository (unit of work responsibility)
+
+### ASK
+- Pagination strategy needed: Ask if Skip/Take, cursor-based, or keyset pagination
+- Caching layer required: Ask if read-heavy workload justifies cache integration
+
+## Code Examples
+
+### DO: Use ErrorOr return types
+```csharp
+public async Task<ErrorOr<Loading>> GetByIdAsync(Guid id, CancellationToken ct)
+{
+    var loading = await _context.Loadings.FindAsync(new object[] { id }, ct);
+    return loading is null
+        ? Error.NotFound("Loading.NotFound", $"Loading {id} not found")
+        : loading;
+}
+```
+
+### DON'T: Throw exceptions or return null
+```csharp
+public Loading GetById(Guid id) // Bad: Sync, nullable return
+{
+    var loading = _context.Loadings.Find(id);
+    if (loading == null)
+        throw new NotFoundException(); // Bad: Exception-based flow
+    return loading;
+}
+```
+```
+
+**Validation Metrics**:
+```yaml
+time_to_first_example: 42 lines
+example_density: 48%
+boundary_sections: [ALWAYS, NEVER, ASK]
+overall_status: PASSED
+```
+
+---
+
+### Example 2: React Component Architect
+
+#### Before (Basic Agent - 28 lines)
+```markdown
+---
+name: component-architect
+description: React component structure specialist
+tools: [Read, Write, Edit, Grep]
+tags: [react, components, typescript]
+---
+
+# Component Architect
+
+Helps structure React components.
+
+## Capabilities
+
+- Create functional components
+- Add props interfaces
+- Structure component files
+
+## When to Use
+
+Use when creating React components.
+```
+
+#### After (Enhanced Agent - 201 lines)
+```markdown
+---
+name: component-architect
+description: React 18 + TypeScript component architect with composition patterns
+tools: [Read, Write, Edit, Grep, Glob]
+tags: [react, components, typescript, hooks, composition]
+---
+
+# Component Architect
+
+## Purpose
+
+Specializes in designing and structuring React 18 functional components with TypeScript, focusing on composition patterns, custom hooks, and performance optimization.
+
+## Quick Start
+
+### Create Basic Component
+```bash
+/invoke component-architect "Create Button component with variants (primary, secondary, danger)"
+```
+
+### Expected Output
+```tsx
+import { ButtonHTMLAttributes, forwardRef } from 'react';
+
+type ButtonVariant = 'primary' | 'secondary' | 'danger';
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  isLoading?: boolean;
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ variant = 'primary', isLoading, children, ...props }, ref) => {
+    return (
+      <button ref={ref} className={styles[variant]} {...props}>
+        {isLoading ? <Spinner /> : children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = 'Button';
+```
+
+## Boundaries
+
+### ALWAYS
+- Use forwardRef for components accepting refs (enables parent ref access)
+- Extend native HTML element props for semantic components (inherit accessibility)
+- Add displayName to components (improves React DevTools debugging)
+
+### NEVER
+- Never use default exports for components (breaks tree-shaking)
+- Never mutate props directly (violates React immutability)
+- Never use index as key in lists (causes reconciliation bugs)
+
+### ASK
+- Component exceeds 200 lines: Ask if should be split into smaller components
+- 5+ useState hooks: Ask if should use useReducer for complex state
+```
+
+**Validation Metrics**:
+```yaml
+time_to_first_example: 38 lines
+example_density: 52%
+boundary_sections: [ALWAYS, NEVER, ASK]
+overall_status: PASSED
+```
+
+---
+
+## Template Integration Patterns
+
+The agent-content-enhancer adapts its enhancement strategy based on template technology stack.
+
+### Pattern 1: React + TypeScript Templates
+
+**Enhancement Strategy**:
+```python
+enhancement_context = {
+    "focus_areas": [
+        "Component composition patterns",
+        "TypeScript prop typing",
+        "React hooks best practices",
+        "Accessibility (ARIA attributes)"
+    ],
+    "code_example_sources": [
+        "templates/components/*.tsx",
+        "templates/hooks/*.ts"
+    ]
+}
+```
+
+### Pattern 2: FastAPI + Python Templates
+
+**Enhancement Strategy**:
+```python
+enhancement_context = {
+    "focus_areas": [
+        "Pydantic schema validation",
+        "Async/await patterns",
+        "Dependency injection",
+        "OpenAPI documentation"
+    ],
+    "code_example_sources": [
+        "templates/routers/*.py",
+        "templates/schemas/*.py"
+    ]
+}
+```
+
+### Pattern 3: Next.js Fullstack Templates
+
+**Enhancement Strategy**:
+```python
+enhancement_context = {
+    "focus_areas": [
+        "Server vs Client Components",
+        "Server Actions patterns",
+        "Route handlers (API routes)",
+        "Prisma Client usage"
+    ],
+    "code_example_sources": [
+        "templates/app/**/*.tsx",
+        "templates/actions/*.ts"
+    ]
+}
+```
+
+### Pattern 4: Monorepo Templates
+
+**Enhancement Strategy**:
+```python
+enhancement_context = {
+    "focus_areas": [
+        "Workspace dependency management",
+        "Shared package patterns",
+        "Turborepo task orchestration",
+        "Code sharing strategies"
+    ],
+    "code_example_sources": [
+        "packages/*/src/**/*",
+        "apps/*/src/**/*"
+    ]
+}
+```
+
+---
+
+## Invocation Examples
+
+### Automatic Invocation (Template Creation Workflow)
+
+The agent-content-enhancer is automatically invoked during Phase 7.5:
+
+```yaml
+# Workflow: /task-work template-create my-react-template
+
+Phase 7: Generate Agent Documentation
+  ├─ 7.1: architectural-reviewer analyzes template structure
+  ├─ 7.2: agent-generator creates basic agent stubs
+  ├─ 7.3: Catalog templates by technology
+  ├─ 7.4: Sample template code (first 50 lines each)
+  └─ 7.5: agent-content-enhancer invoked
+       │
+       ├─ Input: batch_enhancement_request.json
+       ├─ Processing: AI-powered template relevance + code pattern extraction
+       └─ Output: enhanced_agents_response.json
+```
+
+### Slash Command Usage
+
+```bash
+# Enhance all agents in a template
+/agent-enhance my-template/*
+
+# Enhance specific agent
+/agent-enhance my-template/component-architect
+
+# Re-enhance with different strategy
+/agent-enhance my-template/hook-specialist --strategy=code-heavy
+```
+
+**Expected Output**:
+```
+Enhanced component-architect.md
+   - Line count: 187 → 201 (+14 lines)
+   - Example density: 35% → 48% (+13%)
+   - Validation: PASSED
+   - Templates referenced: Button.tsx, Form.tsx, useLocalStorage.ts
+
+Summary:
+  Total agents enhanced: 2
+  Average quality score: 8.7/10
+```
+
+### Debug Mode
+
+```bash
+# Enable verbose logging
+/agent-enhance my-template/api-client --debug
+
+# Output includes:
+# - Template relevance scores with reasoning
+# - Pattern extraction details
+# - Quality validation step-by-step
+# - Iterative refinement attempts (if needed)
+```
+
 ---
 
 *This agent is part of the template-create workflow and should not be invoked directly by users.*

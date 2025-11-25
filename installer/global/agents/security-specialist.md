@@ -1015,3 +1015,698 @@ class SecurityAuditor:
 - `qa-tester` for security testing
 
 Remember: Security is not a feature, it's a requirement. Build security into every layer of the application from the ground up.
+
+---
+
+## Related Templates
+
+This specialist ensures security across all technology stacks:
+
+### FastAPI/Python Security Templates
+- **fastapi-python/templates/core/config.py.template** - Secure configuration with secret management, JWT settings, and CORS configuration
+- **fastapi-python/templates/api/router.py.template** - API endpoints with authentication dependencies
+
+### React/TypeScript Security Patterns
+- **react-typescript/templates/api/*.template** - API client patterns requiring secure token handling
+- **nextjs-fullstack/templates/workflows-ci.yml.template** - CI pipeline with security scanning integration
+
+### Infrastructure Security Templates
+- **react-fastapi-monorepo/templates/docker/docker-compose.service.yml.template** - Container security configuration
+
+---
+
+## Template Code Examples
+
+### ✅ DO: Secure FastAPI Configuration
+
+```python
+# core/config.py - Secure configuration pattern
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings
+from typing import List
+import secrets
+
+class Settings(BaseSettings):
+    # Security Settings - REQUIRED, no defaults for secrets
+    SECRET_KEY: str = Field(
+        ...,  # Required, no default
+        description="Secret key for JWT (min 32 chars, use: secrets.token_urlsafe(32))"
+    )
+
+    ALGORITHM: str = Field(
+        default="HS256",
+        description="JWT algorithm (HS256 for symmetric, RS256 for asymmetric)"
+    )
+
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=15,  # Short-lived access tokens
+        ge=5,
+        le=60,
+        description="Access token expiry (keep short for security)"
+    )
+
+    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(
+        default=7,
+        ge=1,
+        le=30,
+        description="Refresh token expiry"
+    )
+
+    # CORS - Explicit allowlist, no wildcards
+    BACKEND_CORS_ORIGINS: List[str] = Field(
+        default=[],  # Empty by default - must be explicitly configured
+        description="Allowed CORS origins (never use '*' in production)"
+    )
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters")
+        return v
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode='before')
+    @classmethod
+    def validate_cors_origins(cls, v: str | List[str]) -> List[str]:
+        if isinstance(v, str):
+            origins = [origin.strip() for origin in v.split(",")]
+        else:
+            origins = v
+
+        # Block wildcard in production
+        if "*" in origins:
+            raise ValueError("Wildcard CORS origin not allowed")
+        return origins
+
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = True
+```
+
+**Why**: Never hardcode secrets, enforce minimum security requirements, and validate configuration at startup.
+
+### ✅ DO: Implement Secure Authentication Dependencies
+
+```python
+# dependencies/auth.py - Secure authentication pattern
+from fastapi import Depends, HTTPException, status, Request
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from typing import Optional
+import hashlib
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+class SecurityDependencies:
+    """Reusable security dependencies for FastAPI"""
+
+    @staticmethod
+    async def get_current_user(
+        request: Request,
+        token: str = Depends(oauth2_scheme),
+        db: AsyncSession = Depends(get_db)
+    ):
+        """
+        Validate JWT and return current user.
+        Includes rate limiting and suspicious activity detection.
+        """
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+        try:
+            # Decode token with explicit algorithm
+            payload = jwt.decode(
+                token,
+                settings.SECRET_KEY,
+                algorithms=[settings.ALGORITHM]
+            )
+
+            user_id: str = payload.get("sub")
+            token_type: str = payload.get("type")
+            token_version: int = payload.get("ver", 0)
+
+            if user_id is None or token_type != "access":
+                raise credentials_exception
+
+            # Check token expiration explicitly
+            exp = payload.get("exp")
+            if exp and datetime.utcnow().timestamp() > exp:
+                raise credentials_exception
+
+        except JWTError:
+            # Log failed authentication attempt
+            await log_security_event(
+                event="auth_failure",
+                ip=request.client.host,
+                details="Invalid JWT token"
+            )
+            raise credentials_exception
+
+        # Fetch user and validate
+        user = await crud.user.get(db, id=int(user_id))
+        if user is None:
+            raise credentials_exception
+
+        # Check if user's tokens were invalidated
+        if user.token_version > token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked"
+            )
+
+        # Check if user is active
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User account is disabled"
+            )
+
+        return user
+
+    @staticmethod
+    async def require_admin(
+        current_user = Depends(get_current_user)
+    ):
+        """Dependency to require admin privileges"""
+        if not current_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required"
+            )
+        return current_user
+
+    @staticmethod
+    async def rate_limit(
+        request: Request,
+        limit: int = 100,
+        window: int = 60
+    ):
+        """Rate limiting dependency"""
+        client_ip = request.client.host
+        key = f"rate_limit:{client_ip}"
+
+        # Check rate limit (pseudo-code - use Redis in production)
+        current = await redis.incr(key)
+        if current == 1:
+            await redis.expire(key, window)
+
+        if current > limit:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded"
+            )
+```
+
+**Why**: Centralized authentication with proper error handling, token validation, and rate limiting.
+
+### ✅ DO: Secure API Endpoints
+
+```typescript
+// React/TypeScript - Secure API client pattern
+import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+
+class SecureApiClient {
+  private client: AxiosInstance;
+  private refreshPromise: Promise<string> | null = null;
+
+  constructor() {
+    this.client = axios.create({
+      baseURL: process.env.VITE_API_URL,
+      timeout: 10000,
+      withCredentials: true,  // Send cookies
+    });
+
+    // Request interceptor - add auth header
+    this.client.interceptors.request.use((config) => {
+      const token = this.getAccessToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+
+      // Add CSRF token if available
+      const csrfToken = this.getCsrfToken();
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+      }
+
+      return config;
+    });
+
+    // Response interceptor - handle 401 and refresh tokens
+    this.client.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        const originalRequest = error.config;
+
+        // Prevent infinite loops
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          originalRequest._retry = true;
+
+          try {
+            // Use singleton promise to prevent multiple refresh calls
+            if (!this.refreshPromise) {
+              this.refreshPromise = this.refreshToken();
+            }
+
+            const newToken = await this.refreshPromise;
+            this.refreshPromise = null;
+
+            originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            return this.client(originalRequest);
+          } catch (refreshError) {
+            // Refresh failed - clear tokens and redirect to login
+            this.clearTokens();
+            window.location.href = '/auth/login';
+            return Promise.reject(refreshError);
+          }
+        }
+
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  private getAccessToken(): string | null {
+    return localStorage.getItem('access_token');
+  }
+
+  private getCsrfToken(): string | null {
+    // Get CSRF token from cookie or meta tag
+    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || null;
+  }
+
+  private async refreshToken(): Promise<string> {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) {
+      throw new Error('No refresh token');
+    }
+
+    const response = await axios.post(`${process.env.VITE_API_URL}/auth/refresh`, {
+      refresh_token: refreshToken
+    });
+
+    const { access_token } = response.data;
+    localStorage.setItem('access_token', access_token);
+    return access_token;
+  }
+
+  private clearTokens(): void {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+  }
+}
+
+export const api = new SecureApiClient();
+```
+
+**Why**: Secure token storage, automatic refresh, CSRF protection, and proper error handling.
+
+### ✅ DO: Secure Docker Configuration
+
+```yaml
+# docker-compose.yml - Security-hardened configuration
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    # Run as non-root user
+    user: "1000:1000"
+    # Read-only filesystem where possible
+    read_only: true
+    # Temporary directories for runtime
+    tmpfs:
+      - /tmp
+      - /var/run
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          memory: 256M
+    # Network isolation
+    networks:
+      - backend-network
+    # Environment from secrets
+    environment:
+      - DATABASE_URL_FILE=/run/secrets/db_url
+      - SECRET_KEY_FILE=/run/secrets/secret_key
+    secrets:
+      - db_url
+      - secret_key
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  db:
+    image: postgres:16-alpine
+    # Run as postgres user
+    user: postgres
+    # No external access
+    expose:
+      - "5432"
+    # Network isolation
+    networks:
+      - backend-network
+    # Volume with proper permissions
+    volumes:
+      - db-data:/var/lib/postgresql/data:Z
+    # Environment from secrets
+    environment:
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_password
+
+networks:
+  backend-network:
+    driver: bridge
+    internal: true  # No external access
+
+secrets:
+  db_url:
+    file: ./secrets/db_url.txt
+  secret_key:
+    file: ./secrets/secret_key.txt
+  db_password:
+    file: ./secrets/db_password.txt
+
+volumes:
+  db-data:
+```
+
+**Why**: Non-root users, read-only filesystems, network isolation, secrets management, and resource limits.
+
+### ❌ DON'T: Expose Secrets in Configuration
+
+```python
+# BAD - Secrets hardcoded
+SECRET_KEY = "mysecretkey123"  # NEVER DO THIS!
+DATABASE_URL = "postgresql://user:password@localhost/db"  # Password in code!
+
+# BAD - Weak validation
+class Settings(BaseSettings):
+    SECRET_KEY: str = "default-secret"  # Default secret is a vulnerability!
+    DEBUG: bool = True  # Debug mode in production exposes info
+
+# GOOD - Secrets from environment, no defaults for sensitive values
+class Settings(BaseSettings):
+    SECRET_KEY: str = Field(..., min_length=32)  # Required, no default
+    DEBUG: bool = Field(default=False)  # Safe default
+```
+
+### ❌ DON'T: Use Weak Authentication Patterns
+
+```typescript
+// BAD - Storing tokens insecurely
+localStorage.setItem('password', userPassword);  // NEVER store passwords!
+document.cookie = `token=${token}`;  // No HttpOnly, SameSite, Secure flags
+
+// BAD - No token validation
+const token = localStorage.getItem('token');
+fetch('/api/data', { headers: { Authorization: token } });  // No Bearer prefix, no validation
+
+// GOOD - Secure token handling
+// Store only access tokens (short-lived)
+localStorage.setItem('access_token', token);
+
+// Use httpOnly cookies for refresh tokens (set by server)
+// Validate token format before use
+const validateToken = (token: string): boolean => {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  return parts.length === 3;  // JWT has 3 parts
+};
+```
+
+---
+
+## Template Best Practices
+
+### Authentication & Authorization
+
+✅ **Use short-lived access tokens**:
+```python
+ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+    default=15,  # 15 minutes max
+    ge=5,
+    le=60
+)
+```
+
+✅ **Implement token rotation**:
+```python
+# Increment user's token_version to invalidate all existing tokens
+async def logout_all_sessions(db: AsyncSession, user_id: int):
+    user = await crud.user.get(db, id=user_id)
+    user.token_version += 1
+    await db.commit()
+```
+
+✅ **Use bcrypt with high cost factor**:
+```python
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=12  # Minimum 12 rounds
+)
+```
+
+### Input Validation
+
+✅ **Validate all inputs with Pydantic**:
+```python
+from pydantic import BaseModel, EmailStr, Field, field_validator
+import re
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    username: str = Field(
+        min_length=3,
+        max_length=30,
+        pattern=r'^[a-zA-Z0-9_]+$'  # Alphanumeric only
+    )
+    password: str = Field(min_length=12)
+
+    @field_validator('password')
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if not re.search(r'[A-Z]', v):
+            raise ValueError('Password must contain uppercase')
+        if not re.search(r'[a-z]', v):
+            raise ValueError('Password must contain lowercase')
+        if not re.search(r'\d', v):
+            raise ValueError('Password must contain digit')
+        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', v):
+            raise ValueError('Password must contain special character')
+        return v
+```
+
+✅ **Sanitize outputs**:
+```python
+import html
+
+def sanitize_output(data: str) -> str:
+    return html.escape(data, quote=True)
+```
+
+### Security Headers
+
+✅ **Configure security headers in FastAPI**:
+```python
+from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+app = FastAPI()
+
+# Force HTTPS in production
+if settings.ENVIRONMENT == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
+
+# Trusted hosts
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["example.com", "*.example.com"]
+)
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+```
+
+### Logging & Monitoring
+
+✅ **Log security events**:
+```python
+import logging
+from datetime import datetime
+
+security_logger = logging.getLogger("security")
+
+async def log_security_event(
+    event: str,
+    ip: str,
+    user_id: int | None = None,
+    details: str = ""
+):
+    security_logger.warning(
+        f"SECURITY_EVENT: {event}",
+        extra={
+            "timestamp": datetime.utcnow().isoformat(),
+            "event_type": event,
+            "ip_address": ip,
+            "user_id": user_id,
+            "details": details
+        }
+    )
+```
+
+---
+
+## Template Anti-Patterns
+
+### ❌ NEVER: Trust Client Input
+
+```python
+# BAD - Using client-provided user ID
+@router.get("/users/{user_id}/profile")
+async def get_profile(user_id: int):
+    return await crud.user.get(db, id=user_id)  # IDOR vulnerability!
+
+# GOOD - Use authenticated user from token
+@router.get("/users/me/profile")
+async def get_my_profile(
+    current_user = Depends(get_current_user)
+):
+    return current_user  # Always returns authenticated user's data
+```
+
+### ❌ NEVER: Expose Internal Errors
+
+```python
+# BAD - Leaking internal details
+except Exception as e:
+    raise HTTPException(status_code=500, detail=str(e))  # Exposes stack trace!
+
+# GOOD - Generic error message, log details internally
+except Exception as e:
+    logger.error(f"Internal error: {e}", exc_info=True)
+    raise HTTPException(status_code=500, detail="Internal server error")
+```
+
+### ❌ NEVER: Use Wildcard CORS
+
+```python
+# BAD - Allows any origin
+BACKEND_CORS_ORIGINS = ["*"]
+
+# GOOD - Explicit allowlist
+BACKEND_CORS_ORIGINS = [
+    "https://myapp.com",
+    "https://admin.myapp.com"
+]
+```
+
+### ❌ NEVER: Store Sensitive Data in JWT
+
+```python
+# BAD - Sensitive data in token payload
+payload = {
+    "sub": user.id,
+    "email": user.email,
+    "password_hash": user.hashed_password,  # NEVER!
+    "ssn": user.ssn  # NEVER!
+}
+
+# GOOD - Minimal payload
+payload = {
+    "sub": str(user.id),
+    "type": "access",
+    "ver": user.token_version
+}
+```
+
+### ❌ NEVER: Disable Security for Convenience
+
+```python
+# BAD - Disabling security checks
+@router.post("/admin/action")
+async def admin_action():  # No authentication!
+    pass
+
+# BAD - Bypassing validation
+class Config:
+    validate_assignment = False  # Allows invalid data!
+
+# GOOD - Always enforce security
+@router.post("/admin/action")
+async def admin_action(
+    current_user = Depends(require_admin)
+):
+    pass
+```
+
+---
+
+## Cross-Stack Security Checklist
+
+When reviewing security across different technology stacks:
+
+### FastAPI/Python
+- [ ] SECRET_KEY from environment (min 32 chars)
+- [ ] No default values for secrets
+- [ ] bcrypt for password hashing (12+ rounds)
+- [ ] JWT with short expiry (≤15 min access, ≤7 days refresh)
+- [ ] CORS explicitly configured (no wildcards)
+- [ ] Rate limiting implemented
+- [ ] Input validation with Pydantic
+- [ ] Security headers configured
+
+### React/TypeScript
+- [ ] Access tokens in memory/localStorage (short-lived)
+- [ ] Refresh tokens in httpOnly cookies
+- [ ] CSRF protection enabled
+- [ ] No sensitive data in client-side storage
+- [ ] API errors don't expose internals
+- [ ] Content Security Policy headers
+
+### Docker/Infrastructure
+- [ ] Non-root container users
+- [ ] Read-only filesystems where possible
+- [ ] Secrets via Docker secrets/env files
+- [ ] Network isolation between services
+- [ ] Resource limits configured
+- [ ] Health checks enabled
+- [ ] No exposed development ports
+
+### CI/CD Pipeline
+- [ ] Secret scanning enabled (TruffleHog, Gitleaks)
+- [ ] Dependency scanning (OWASP, Snyk)
+- [ ] SAST scanning (Semgrep, CodeQL)
+- [ ] Container scanning (Trivy)
+- [ ] No secrets in build logs

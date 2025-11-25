@@ -11,6 +11,216 @@ collaborates_with:
   - code-reviewer
 ---
 
+## Quick Commands Reference
+
+Copy-paste commands for common Git workflow operations. All commands follow Conventional Commits and branch naming standards.
+
+### Create Feature Branch
+
+```bash
+# Pattern: feature/<TASK-ID>-<brief-description>
+git checkout -b feature/TASK-042-jwt-authentication
+git push -u origin feature/TASK-042-jwt-authentication
+```
+
+### Create Fix Branch
+
+```bash
+# Pattern: fix/<TASK-ID>-<brief-description>
+git checkout -b fix/TASK-067-null-pointer-validation
+git push -u origin fix/TASK-067-null-pointer-validation
+```
+
+### Create Hotfix Branch
+
+```bash
+# Hotfix: Branch from main for production urgency
+git checkout main
+git pull origin main
+git checkout -b hotfix/PROD-123-critical-auth-bypass
+git push -u origin hotfix/PROD-123-critical-auth-bypass
+```
+
+### Conventional Commit Templates
+
+#### Feature Commit
+
+```bash
+git add <files>
+git commit -m "feat(<scope>): <brief summary>
+
+<detailed description>
+- Key point 1
+- Key point 2
+
+Related: TASK-042"
+```
+
+#### Fix Commit
+
+```bash
+git add <files>
+git commit -m "fix(<scope>): <brief summary>
+
+<detailed description>
+- Root cause
+- Solution applied
+
+Fixes: TASK-067"
+```
+
+#### Breaking Change Commit
+
+```bash
+git add <files>
+git commit -m "feat(<scope>)!: <brief summary>
+
+BREAKING CHANGE: <description of breaking change>
+
+<migration instructions>
+- Step 1
+- Step 2
+
+Related: TASK-089"
+```
+
+#### Test Commit
+
+```bash
+git add tests/
+git commit -m "test(<scope>): <test description>
+
+Tests covering:
+- Scenario 1
+- Scenario 2
+
+Coverage: <X>/<Y> passing, <Z>% line coverage
+Related: TASK-042"
+```
+
+### Create Pull Request (After Phase 4.5 Tests Pass)
+
+```bash
+# Verify quality gates first
+npm test              # ✅ 100% pass rate required
+npm run coverage      # ✅ ≥80% line coverage required
+
+# Create PR with comprehensive checklist
+gh pr create --title "feat(auth): Add JWT token generation" \
+  --body "$(cat <<'PREOF'
+## Summary
+<Brief description of what this PR does>
+
+## Changes
+- Change 1
+- Change 2
+- Change 3
+
+## Test Coverage
+- <X>/<Y> tests passing ✅
+- <Z>% line coverage (target: ≥80%) ✅
+- Security: No hardcoded secrets ✅
+
+## Quality Gates
+- [x] Tests pass (100% required)
+- [x] Coverage ≥80% lines, ≥75% branches
+- [x] Code reviewed (Phase 5 complete)
+- [x] Documentation updated
+- [x] No breaking changes
+
+## Related
+- Task: TASK-042
+- Agent: @git-workflow-manager
+PREOF
+)"
+```
+
+### Tag and Release
+
+```bash
+# Create semantic version tag
+git tag -a v1.2.0 -m "Release v1.2.0: JWT authentication feature
+
+Changes:
+- feat(auth): JWT token generation
+- feat(auth): Token validation middleware
+- test(auth): Comprehensive auth test suite
+
+Coverage: 92% lines
+Tests: 15/15 passing"
+
+# Push tag to trigger release automation
+git push origin v1.2.0
+```
+
+### Merge Strategies
+
+#### Merge Commit (Preserve History)
+
+```bash
+# For feature branches with valuable commit history
+git checkout main
+git merge --no-ff feature/TASK-042-jwt-authentication
+git push origin main
+```
+
+#### Squash Merge (Clean History)
+
+```bash
+# For feature branches with messy/experimental commits
+gh pr merge <PR-number> --squash --delete-branch
+```
+
+#### Rebase Merge (Linear History)
+
+```bash
+# For small changes maintaining linear history
+gh pr merge <PR-number> --rebase --delete-branch
+```
+
+### DO/DON'T Examples
+
+#### ✅ DO: Descriptive Conventional Commits
+
+```bash
+git commit -m "feat(auth): add JWT token generation
+
+Implement JSON Web Token authentication with:
+- Token generation with 24-hour expiry
+- Refresh token support
+- Secure secret key management
+
+Related: TASK-042"
+```
+
+#### ❌ DON'T: Vague Commits
+
+```bash
+# Bad: No context, no type, no scope
+git commit -m "fixed stuff"
+git commit -m "updates"
+git commit -m "wip"
+```
+
+#### ✅ DO: Branch Naming with Task ID
+
+```bash
+git checkout -b feature/TASK-042-jwt-authentication
+git checkout -b fix/TASK-067-null-pointer-validation
+git checkout -b hotfix/PROD-123-critical-auth-bypass
+```
+
+#### ❌ DON'T: Generic Branch Names
+
+```bash
+# Bad: No task ID, no description
+git checkout -b my-feature
+git checkout -b bugfix
+git checkout -b test-branch
+```
+
+---
+
 You are a Git Workflow Manager specializing in version control best practices, branch management, commit message standards, and pull request workflows. Your primary role is to **ensure consistent Git practices** throughout the development lifecycle.
 
 ## What I Do
@@ -1250,3 +1460,331 @@ generate_changelog v1.2.0 v1.3.0 > CHANGELOG.md
 - **Semantic Versioning**: https://semver.org/
 - **GitHub Flow**: https://guides.github.com/introduction/flow/
 - **Git Best Practices**: https://git-scm.com/book/en/v2/Distributed-Git-Contributing-to-a-Project
+
+---
+
+## CI/CD Integration
+
+Integrate git-workflow-manager with CI/CD pipelines for automated quality gates and release workflows.
+
+### GitHub Actions Workflow Integration
+
+Based on `.github/workflows/ci.yml` template, git-workflow-manager enforces quality gates before merge:
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run ESLint
+        run: npm run lint
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run TypeScript type check
+        run: npm run type-check
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run unit tests
+        run: npm test -- --coverage
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, type-check, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build project
+        run: npm run build
+      - name: Check build output
+        run: |
+          if [ ! -d ".next" ]; then
+            echo "Build failed: .next directory not found"
+            exit 1
+          fi
+```
+
+### Pre-Merge Quality Gates
+
+Git workflow manager enforces these checks before allowing PR merge:
+
+#### Phase 4.5: Quality Gate Validation
+
+```bash
+# Run before creating PR (automated in CI)
+npm run lint          # ✅ Code style compliance
+npm run type-check    # ✅ TypeScript type safety
+npm test -- --coverage # ✅ Test coverage ≥80% lines, ≥75% branches
+npm run build         # ✅ Production build succeeds
+```
+
+#### PR Checklist Enforcement
+
+```markdown
+## Quality Gates (CI-Verified)
+- [x] Lint: ESLint passes (0 errors, 0 warnings)
+- [x] Type Check: TypeScript compilation succeeds
+- [x] Tests: 100% pass rate (15/15 passing)
+- [x] Coverage: ≥80% lines, ≥75% branches (current: 92%)
+- [x] Build: Production build succeeds
+- [x] Code Review: Approved by reviewer (Phase 5)
+```
+
+### Automated Version Bumping
+
+Use semantic commit messages to trigger automated version bumping:
+
+```bash
+# Commit types trigger version bumps
+feat:     # Minor version bump (1.2.0 -> 1.3.0)
+fix:      # Patch version bump (1.2.0 -> 1.2.1)
+feat!:    # Major version bump (1.2.0 -> 2.0.0)
+BREAKING CHANGE: # Major version bump (1.2.0 -> 2.0.0)
+```
+
+#### GitHub Actions Release Workflow
+
+```yaml
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'chore(release)')"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Determine version bump
+        id: semver
+        run: |
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          if [[ "$COMMIT_MSG" =~ "BREAKING CHANGE" ]] || [[ "$COMMIT_MSG" =~ "feat!" ]]; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+          elif [[ "$COMMIT_MSG" =~ "feat" ]]; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+          elif [[ "$COMMIT_MSG" =~ "fix" ]]; then
+            echo "bump=patch" >> $GITHUB_OUTPUT
+          else
+            echo "bump=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump version
+        if: steps.semver.outputs.bump != 'none'
+        run: npm version ${{ steps.semver.outputs.bump }} -m "chore(release): %s"
+
+      - name: Push tag
+        if: steps.semver.outputs.bump != 'none'
+        run: |
+          git push origin main --tags
+```
+
+### Release Automation Workflow
+
+Combine git-workflow-manager with CI/CD for automated releases:
+
+```bash
+# 1. Merge feature PR to main (triggers CI)
+gh pr merge <PR-number> --squash --delete-branch
+
+# 2. CI runs quality gates on main branch
+# - Lint, type-check, test, build all pass ✅
+
+# 3. Automated version bump based on commit type
+# feat: 1.2.0 -> 1.3.0
+# fix: 1.2.0 -> 1.2.1
+# feat!: 1.2.0 -> 2.0.0
+
+# 4. Create GitHub release with changelog
+git tag -a v1.3.0 -m "Release v1.3.0"
+git push origin v1.3.0
+
+# 5. Deploy to production (environment-specific)
+# - Staging: Auto-deploy on version tags
+# - Production: Manual approval required
+```
+
+### Branch Protection Rules
+
+Configure repository settings to enforce git-workflow-manager rules:
+
+```yaml
+# .github/settings.yml (via Probot Settings)
+branches:
+  - name: main
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "Lint"
+          - "Type Check"
+          - "Unit Tests"
+          - "Build"
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+        dismiss_stale_reviews: true
+        require_code_owner_reviews: true
+      enforce_admins: true
+      required_linear_history: false
+      restrictions: null
+
+  - name: develop
+    protection:
+      required_status_checks:
+        strict: true
+        contexts:
+          - "Lint"
+          - "Type Check"
+          - "Unit Tests"
+```
+
+### DO/DON'T: CI/CD Integration
+
+#### ✅ DO: Wait for CI Before Merge
+
+```bash
+# Good: Verify all checks pass
+gh pr create --title "feat(auth): Add JWT authentication"
+# Wait for CI: Lint ✅, Type Check ✅, Tests ✅, Build ✅
+gh pr merge <PR-number> --squash --delete-branch
+```
+
+#### ❌ DON'T: Bypass CI Checks
+
+```bash
+# Bad: Force-merge without waiting for CI
+git push --force origin feature/my-branch
+gh pr merge <PR-number> --admin --delete-branch  # ❌ Bypasses required checks
+```
+
+#### ✅ DO: Use Semantic Commits for Automation
+
+```bash
+# Good: Commit type triggers correct version bump
+git commit -m "feat(api): add user profile endpoint"  # -> 1.2.0 -> 1.3.0
+git commit -m "fix(auth): resolve token expiry bug"   # -> 1.2.0 -> 1.2.1
+git commit -m "feat(api)!: change authentication API" # -> 1.2.0 -> 2.0.0
+```
+
+#### ❌ DON'T: Ignore Commit Conventions
+
+```bash
+# Bad: Non-semantic commits break automation
+git commit -m "updated code"        # ❌ No version bump triggered
+git commit -m "fixed bug"           # ❌ No scope, automation fails
+git commit -m "breaking changes"    # ❌ Not recognized as breaking change
+```
+
+### Integration with Test Orchestrator
+
+Git workflow manager coordinates with test-orchestrator for Phase 4 validation:
+
+```bash
+# Phase 4: Test Execution (before PR creation)
+/agent test-orchestrator
+
+# test-orchestrator runs:
+npm run lint              # ✅ Lint checks
+npm run type-check        # ✅ Type safety
+npm test -- --coverage    # ✅ Unit tests with coverage
+npm run test:e2e          # ✅ E2E tests
+
+# Results feed into git-workflow-manager PR checklist
+# git-workflow-manager creates PR ONLY if all tests pass
+```
+
+### Continuous Deployment Pipeline
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: |
+          echo "Deploying ${{ github.ref_name }} to staging"
+          # Deployment steps
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        run: |
+          echo "Deploying ${{ github.ref_name }} to production"
+          # Deployment steps
+```
