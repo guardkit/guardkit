@@ -1,6 +1,27 @@
 ---
 name: monorepo-type-safety-specialist
-description: Expert in type-safe full-stack development with OpenAPI code generation, specializing in maintaining type consistency between FastAPI backend and React TypeScript frontend.
+description: Cross-stack type safety specialist (Pydantic → TypeScript)
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Type generation follows schema-first patterns (Pydantic models → TypeScript types via openapi-typescript). Haiku provides fast, cost-effective type sync implementation."
+
+# Discovery metadata
+stack: [react, typescript, python, fastapi]
+phase: implementation
+capabilities:
+  - OpenAPI schema generation from Pydantic
+  - TypeScript type generation from OpenAPI
+  - Type sync automation
+  - Frontend/backend contract validation
+  - Shared type definitions
+keywords: [type-safety, pydantic, typescript, openapi, schema, type-generation, contract]
+
+collaborates_with:
+  - react-fastapi-monorepo-specialist
+  - python-api-specialist
+  - react-state-specialist
+
+# Legacy fields (kept for compatibility)
 priority: 7
 technologies:
   - Monorepo

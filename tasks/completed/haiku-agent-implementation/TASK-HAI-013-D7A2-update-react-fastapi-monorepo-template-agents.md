@@ -1,16 +1,25 @@
 ---
 id: TASK-HAI-013-D7A2
 title: Update react-fastapi-monorepo Template Agents with Discovery Metadata
-status: backlog
+status: completed
 priority: medium
 tags: [haiku-agents, metadata, template-agents, monorepo, react, fastapi]
 epic: haiku-agent-implementation
 complexity: 2
 estimated_hours: 1-1.5
+actual_hours: 0.5
 dependencies: [TASK-HAI-001]
 blocks: []
 created: 2025-11-25T13:00:00Z
-updated: 2025-11-25T13:00:00Z
+updated: 2025-11-25T16:52:00Z
+completed_at: 2025-11-25T16:52:00Z
+completion_metrics:
+  agents_updated: 3
+  validation_passed: true
+  discovery_working: true
+  content_preserved: true
+  yaml_valid: true
+  acceptance_criteria_met: 8/8
 ---
 
 # Task: Update react-fastapi-monorepo Template Agents with Discovery Metadata

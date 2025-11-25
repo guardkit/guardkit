@@ -1,6 +1,28 @@
 ---
 name: react-fastapi-monorepo-specialist
-description: Expert in React + FastAPI monorepo architecture, specializing in Turborepo orchestration, pnpm workspaces, and full-stack monorepo patterns.
+description: React + FastAPI monorepo structure and coordination specialist
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Monorepo coordination follows established patterns (workspace management, shared configs, build orchestration). Haiku provides fast, cost-effective implementation of monorepo conventions."
+
+# Discovery metadata
+stack: [react, typescript, python, fastapi]
+phase: implementation
+capabilities:
+  - Monorepo workspace structure (frontend/backend)
+  - Shared configuration management
+  - Cross-workspace dependencies
+  - Build orchestration
+  - Development environment setup
+keywords: [monorepo, workspace, react, fastapi, full-stack, build-orchestration, shared-config]
+
+collaborates_with:
+  - monorepo-type-safety-specialist
+  - docker-orchestration-specialist
+  - react-state-specialist
+  - python-api-specialist
+
+# Legacy fields (kept for compatibility)
 priority: 7
 technologies:
   - React
