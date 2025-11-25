@@ -1,6 +1,27 @@
 ---
 name: fastapi-database-specialist
-description: Specialist in SQLAlchemy ORM, Alembic migrations, async database operations, and database design for FastAPI applications
+description: FastAPI database integration specialist (SQLAlchemy, Alembic)
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "Database integration follows SQLAlchemy patterns (models, migrations, sessions). Haiku provides fast, cost-effective implementation. Complex query optimization escalated to database-specialist."
+
+# Discovery metadata
+stack: [python, fastapi]
+phase: implementation
+capabilities:
+  - SQLAlchemy model design
+  - Alembic migrations
+  - Database session management
+  - Repository pattern implementation
+  - FastAPI-specific DB integration
+keywords: [fastapi, sqlalchemy, alembic, database, migration, orm, repository]
+
+collaborates_with:
+  - fastapi-specialist
+  - database-specialist
+  - python-api-specialist
+
+# Legacy fields (for backward compatibility)
 priority: 8
 technologies:
   - SQLAlchemy

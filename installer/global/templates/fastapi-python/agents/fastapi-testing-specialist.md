@@ -1,6 +1,27 @@
 ---
 name: fastapi-testing-specialist
-description: Specialist in testing FastAPI applications with pytest, async tests, fixtures, and test coverage strategies
+description: FastAPI testing specialist (pytest, TestClient)
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "FastAPI testing follows pytest patterns with TestClient. Haiku provides fast, cost-effective test implementation. Test quality validated by Phase 4.5 enforcement."
+
+# Discovery metadata
+stack: [python, fastapi]
+phase: testing
+capabilities:
+  - FastAPI TestClient usage
+  - Pytest fixture design for FastAPI
+  - API endpoint testing
+  - Database mocking for tests
+  - Async test patterns
+keywords: [fastapi, pytest, testing, testclient, api-testing, fixtures, async-tests]
+
+collaborates_with:
+  - fastapi-specialist
+  - test-orchestrator
+  - test-verifier
+
+# Legacy fields (for backward compatibility)
 priority: 8
 technologies:
   - pytest

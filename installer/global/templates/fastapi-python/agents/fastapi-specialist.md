@@ -1,6 +1,27 @@
 ---
 name: fastapi-specialist
-description: Specialist in FastAPI framework patterns, routing, dependency injection, and async programming
+description: FastAPI framework specialist for API development
+tools: [Read, Write, Edit, Bash, Grep]
+model: haiku
+model_rationale: "FastAPI implementation follows established patterns (routers, dependencies, middleware). Haiku provides fast, cost-effective implementation following FastAPI best practices."
+
+# Discovery metadata
+stack: [python, fastapi]
+phase: implementation
+capabilities:
+  - FastAPI router organization
+  - Dependency injection patterns
+  - Middleware implementation
+  - Background tasks
+  - WebSocket support
+keywords: [fastapi, python, api, router, middleware, websocket, background-tasks]
+
+collaborates_with:
+  - python-api-specialist
+  - fastapi-database-specialist
+  - fastapi-testing-specialist
+
+# Legacy fields (for backward compatibility)
 priority: 8
 technologies:
   - FastAPI
