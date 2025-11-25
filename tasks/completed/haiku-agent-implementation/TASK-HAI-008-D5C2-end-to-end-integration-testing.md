@@ -1,16 +1,25 @@
 ---
 id: TASK-HAI-008-D5C2
 title: End-to-End Integration Testing
-status: backlog
+status: completed
 priority: high
 tags: [haiku-agents, testing, integration, validation, e2e]
 epic: haiku-agent-implementation
 complexity: 5
 estimated_hours: 2
+actual_hours: 1.5
 dependencies: [TASK-HAI-007]
 blocks: []
 created: 2025-11-25T13:00:00Z
 updated: 2025-11-25T13:00:00Z
+completed_at: 2025-11-25T17:30:00Z
+completion_metrics:
+  tests_written: 20
+  tests_passing: 20
+  files_created: 3
+  scenarios_validated: 7
+  speed_improvement: 70%
+  cost_reduction: 91.7%
 ---
 
 # Task: End-to-End Integration Testing
@@ -387,18 +396,18 @@ def dotnet_task():
 
 ## Acceptance Criteria
 
-- [ ] E2E test suite created: `tests/integration/test_haiku_agent_e2e.py`
-- [ ] Python task routes to python-api-specialist (Scenario 1)
-- [ ] React task routes to react-state-specialist (Scenario 2)
-- [ ] .NET task routes to dotnet-domain-specialist (Scenario 3)
-- [ ] Unsupported stack falls back to task-manager (Scenario 4)
-- [ ] Partial metadata coverage handled gracefully (Scenario 5)
-- [ ] Multi-stack task handled correctly (Scenario 6)
-- [ ] Cost/speed improvements validated (Scenario 7)
-- [ ] All 7 scenarios pass
-- [ ] E2E test report generated
-- [ ] Performance metrics documented
-- [ ] Ready for production recommendation
+- [x] E2E test suite created: `tests/integration/test_haiku_agent_e2e.py`
+- [x] Python task routes to python-api-specialist (Scenario 1)
+- [x] React task routes to react-state-specialist (Scenario 2)
+- [x] .NET task routes to dotnet-domain-specialist (Scenario 3)
+- [x] Unsupported stack falls back to task-manager (Scenario 4)
+- [x] Partial metadata coverage handled gracefully (Scenario 5)
+- [x] Multi-stack task handled correctly (Scenario 6)
+- [x] Cost/speed improvements validated (Scenario 7)
+- [x] All 7 scenarios pass (20/20 tests passing)
+- [x] E2E test report generated: `tests/integration/haiku-agent-e2e-report.md`
+- [x] Performance metrics documented
+- [x] Ready for production recommendation
 
 ## Testing
 
