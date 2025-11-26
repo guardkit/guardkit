@@ -356,311 +356,6 @@ def validate_boundary_sections(boundaries: dict) -> tuple[bool, list]:
     return len(errors) == 0, errors
 
 
-class QualityScorer:
-    """Calculate template quality score from Q&A answers."""
-
-    def __init__(self, session_data: dict, template_path: Path):
-        """
-        Initialize quality scorer.
-
-        Args:
-            session_data: Q&A session answers
-            template_path: Path to generated template
-        """
-        self.session_data = session_data
-        self.template_path = template_path
-
-    def calculate_score(self) -> dict:
-        """
-        Calculate 0-10 quality score from Q&A answers.
-
-        Unlike template-create (codebase analysis), this scores based on:
-        - Architecture pattern clarity
-        - Testing strategy completeness
-        - Error handling approach
-        - Documentation planning
-        - Agent coverage
-        - Technology stack maturity
-
-        Returns:
-            dict with overall score, component scores, grade
-        """
-        scores = {
-            'architecture_clarity': self._score_architecture(),
-            'testing_coverage': self._score_testing(),
-            'error_handling': self._score_error_handling(),
-            'documentation': self._score_documentation(),
-            'agent_coverage': self._score_agents(),
-            'tech_stack_maturity': self._score_tech_stack()
-        }
-
-        overall = sum(scores.values()) / len(scores)
-
-        return {
-            'overall_score': round(overall, 1),
-            'component_scores': scores,
-            'grade': self._calculate_grade(overall),
-            'production_ready': overall >= 7.0
-        }
-
-    def _score_architecture(self) -> float:
-        """Score architecture pattern clarity (0-10)."""
-        pattern = self.session_data.get('architecture_pattern', 'unknown')
-        layer_org = self.session_data.get('layer_organization', 'single')
-
-        # Known pattern: +5
-        score = 5.0 if pattern not in ['unknown', 'simple'] else 2.0
-
-        # Clear architecture patterns get bonus
-        if pattern in ['mvvm', 'clean', 'hexagonal', 'layered']:
-            score += 2.0
-
-        # Layer organization: +3 for multi-project, +1 for single
-        if layer_org in ['by-layer', 'by-feature', 'hybrid']:
-            score += 3.0
-        elif layer_org == 'single':
-            score += 1.0
-
-        return min(10.0, score)
-
-    def _score_testing(self) -> float:
-        """Score testing strategy (0-10)."""
-        test_types = self.session_data.get('testing_scope', [])
-        test_framework = self.session_data.get('unit_testing_framework', 'unknown')
-        test_pattern = self.session_data.get('test_pattern', 'none')
-
-        # Test type coverage: +2 per type (unit, integration, e2e)
-        score = min(6.0, len(test_types) * 2.0)
-
-        # Test framework specified: +2
-        if test_framework not in ['unknown', '']:
-            score += 2.0
-
-        # Test pattern: +2 for AAA or BDD
-        if test_pattern in ['aaa', 'bdd']:
-            score += 2.0
-
-        return min(10.0, score)
-
-    def _score_error_handling(self) -> float:
-        """Score error handling approach (0-10)."""
-        error_strategy = self.session_data.get('error_handling', 'unknown')
-        validation = self.session_data.get('validation_approach', 'minimal')
-
-        # Error handling strategy scores
-        strategies = {
-            'result': 9.0,
-            'exceptions': 7.0,
-            'codes': 6.0,
-            'mixed': 7.5,
-            'minimal': 3.0,
-            'unknown': 2.0
-        }
-
-        score = strategies.get(error_strategy, 5.0)
-
-        # Validation bonus: +1 for good validation
-        if validation in ['fluent', 'annotations']:
-            score = min(10.0, score + 1.0)
-
-        return score
-
-    def _score_documentation(self) -> float:
-        """Score documentation planning (0-10)."""
-        doc_paths = self.session_data.get('documentation_paths')
-        doc_text = self.session_data.get('documentation_text')
-        doc_urls = self.session_data.get('documentation_urls')
-        standard_folders = self.session_data.get('standard_folders', [])
-
-        score = 0.0
-
-        # Has documentation input: +4
-        if doc_paths or doc_text or doc_urls:
-            score += 4.0
-
-        # Includes docs/ folder: +3
-        if 'docs' in standard_folders:
-            score += 3.0
-
-        # Multiple documentation sources: +3
-        sources = sum([bool(doc_paths), bool(doc_text), bool(doc_urls)])
-        if sources >= 2:
-            score += 3.0
-        elif sources == 1:
-            score += 2.0
-
-        return min(10.0, score)
-
-    def _score_agents(self) -> float:
-        """Score agent coverage (0-10)."""
-        agents_dir = self.template_path / "agents"
-        if not agents_dir.exists():
-            return 3.0
-
-        agent_count = len(list(agents_dir.glob("*.md")))
-
-        # Score based on agent count
-        if agent_count >= 6:
-            return 10.0
-        elif agent_count >= 4:
-            return 8.0
-        elif agent_count >= 2:
-            return 6.0
-        elif agent_count >= 1:
-            return 4.0
-        else:
-            return 2.0
-
-    def _score_tech_stack(self) -> float:
-        """Score technology stack maturity (0-10)."""
-        language = self.session_data.get('primary_language', 'unknown')
-        framework = self.session_data.get('framework', 'unknown')
-
-        # Mature stacks: Python, TypeScript, C#, Java
-        mature_languages = {'python', 'typescript', 'csharp', 'java'}
-
-        score = 5.0  # Base score
-
-        if language.lower() in mature_languages:
-            score += 3.0
-
-        if framework not in ['unknown', '']:
-            score += 2.0
-
-        return min(10.0, score)
-
-    def _calculate_grade(self, score: float) -> str:
-        """Calculate letter grade from score."""
-        if score >= 9.5:
-            return 'A+'
-        elif score >= 9.0:
-            return 'A'
-        elif score >= 8.5:
-            return 'A-'
-        elif score >= 8.0:
-            return 'B+'
-        elif score >= 7.5:
-            return 'B'
-        elif score >= 7.0:
-            return 'B-'
-        elif score >= 6.5:
-            return 'C+'
-        elif score >= 6.0:
-            return 'C'
-        elif score >= 5.0:
-            return 'D'
-        else:
-            return 'F'
-
-    def generate_report(self, scores: dict) -> None:
-        """Generate quality-report.md in template directory."""
-        from datetime import datetime
-
-        report = f"""# Template Quality Report
-
-**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-**Template**: {self.template_path.name}
-**Overall Score**: {scores['overall_score']}/10 (Grade: {scores['grade']})
-**Production Ready**: {'✅ Yes' if scores['production_ready'] else '❌ No'}
-
----
-
-## Component Scores
-
-| Component | Score | Status |
-|-----------|-------|--------|
-| Architecture Clarity | {scores['component_scores']['architecture_clarity']:.1f}/10 | {'✅' if scores['component_scores']['architecture_clarity'] >= 7 else '⚠️'} |
-| Testing Coverage | {scores['component_scores']['testing_coverage']:.1f}/10 | {'✅' if scores['component_scores']['testing_coverage'] >= 7 else '⚠️'} |
-| Error Handling | {scores['component_scores']['error_handling']:.1f}/10 | {'✅' if scores['component_scores']['error_handling'] >= 7 else '⚠️'} |
-| Documentation | {scores['component_scores']['documentation']:.1f}/10 | {'✅' if scores['component_scores']['documentation'] >= 7 else '⚠️'} |
-| Agent Coverage | {scores['component_scores']['agent_coverage']:.1f}/10 | {'✅' if scores['component_scores']['agent_coverage'] >= 7 else '⚠️'} |
-| Tech Stack Maturity | {scores['component_scores']['tech_stack_maturity']:.1f}/10 | {'✅' if scores['component_scores']['tech_stack_maturity'] >= 7 else '⚠️'} |
-
----
-
-## Analysis
-
-### Architecture Clarity ({scores['component_scores']['architecture_clarity']:.1f}/10)
-"""
-
-        pattern = self.session_data.get('architecture_pattern', 'unknown')
-        layer_org = self.session_data.get('layer_organization', 'single')
-
-        report += f"- **Pattern**: {pattern}\n"
-        report += f"- **Organization**: {layer_org}\n"
-
-        if scores['component_scores']['architecture_clarity'] < 7:
-            report += "\n**Recommendation**: Consider using well-known pattern (MVVM, Clean, Hexagonal)\n"
-
-        report += f"\n### Testing Coverage ({scores['component_scores']['testing_coverage']:.1f}/10)\n"
-        test_types = self.session_data.get('testing_scope', [])
-        test_framework = self.session_data.get('unit_testing_framework', 'unknown')
-
-        report += f"- **Test Types**: {', '.join(test_types) if test_types else 'None specified'}\n"
-        report += f"- **Test Framework**: {test_framework}\n"
-
-        if scores['component_scores']['testing_coverage'] < 7:
-            report += "\n**Recommendation**: Add unit, integration, and e2e testing\n"
-
-        report += f"\n### Error Handling ({scores['component_scores']['error_handling']:.1f}/10)\n"
-        error_strategy = self.session_data.get('error_handling', 'unknown')
-        validation = self.session_data.get('validation_approach', 'minimal')
-
-        report += f"- **Strategy**: {error_strategy}\n"
-        report += f"- **Validation**: {validation}\n"
-
-        if scores['component_scores']['error_handling'] < 7:
-            report += "\n**Recommendation**: Use Result/Either types for better error handling\n"
-
-        report += f"\n### Documentation ({scores['component_scores']['documentation']:.1f}/10)\n"
-        doc_sources = []
-        if self.session_data.get('documentation_paths'):
-            doc_sources.append('file paths')
-        if self.session_data.get('documentation_text'):
-            doc_sources.append('text input')
-        if self.session_data.get('documentation_urls'):
-            doc_sources.append('URLs')
-
-        report += f"- **Sources**: {', '.join(doc_sources) if doc_sources else 'None provided'}\n"
-
-        if scores['component_scores']['documentation'] < 7:
-            report += "\n**Recommendation**: Provide architecture documentation and coding standards\n"
-
-        report += f"\n### Agent Coverage ({scores['component_scores']['agent_coverage']:.1f}/10)\n"
-        agents_dir = self.template_path / "agents"
-        agent_count = len(list(agents_dir.glob("*.md"))) if agents_dir.exists() else 0
-
-        report += f"- **Agent Count**: {agent_count}\n"
-
-        if scores['component_scores']['agent_coverage'] < 7:
-            report += "\n**Recommendation**: Add more specialized agents for better automation\n"
-
-        report += f"\n### Tech Stack Maturity ({scores['component_scores']['tech_stack_maturity']:.1f}/10)\n"
-        language = self.session_data.get('primary_language', 'unknown')
-        framework = self.session_data.get('framework', 'unknown')
-
-        report += f"- **Language**: {language}\n"
-        report += f"- **Framework**: {framework}\n"
-
-        report += "\n---\n\n## Recommendations\n\n"
-
-        if scores['overall_score'] < 7:
-            report += "⚠️ **Action Required**: Template quality below production threshold (7/10)\n\n"
-
-        # Component-specific recommendations
-        for component, score in scores['component_scores'].items():
-            if score < 7:
-                report += f"- **{component.replace('_', ' ').title()}**: Score {score:.1f}/10 - Needs improvement\n"
-
-        if scores['production_ready']:
-            report += "\n✅ **Template Ready**: Quality meets production standards\n"
-
-        # Write report
-        report_path = self.template_path / "quality-report.md"
-        report_path.write_text(report)
-        print(f"\n📄 Quality report saved: {report_path}")
-
-
 class TemplateInitQASession:
     """
     Interactive Q&A session for /template-init (greenfield).
@@ -677,13 +372,12 @@ class TemplateInitQASession:
         ...     print(f"Template: {answers.template_name}")
     """
 
-    def __init__(self, no_create_agent_tasks: bool = False, output_location: str = 'global'):
+    def __init__(self, no_create_agent_tasks: bool = False):
         """
         Initialize Q&A session.
 
         Args:
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
-            output_location: Where to save template ('global' or 'repo')
         """
         if not INQUIRER_AVAILABLE:
             raise ImportError(
@@ -694,24 +388,32 @@ class TemplateInitQASession:
         self.answers: Optional[GreenfieldAnswers] = None
         self._session_data: dict = {}
         self.no_create_agent_tasks = no_create_agent_tasks
-        self.output_location = output_location
 
-    def run(self) -> Optional[GreenfieldAnswers]:
+    def run(self) -> tuple[Optional[GreenfieldAnswers], int]:
         """
         Run interactive Q&A session for greenfield template creation.
+
+        NOW RETURNS exit code for CI/CD integration.
 
         Executes all 10 sections sequentially, with conditional sections
         based on technology choices. Displays summary and confirms before
         proceeding.
 
         Returns:
-            GreenfieldAnswers: User responses, or None if cancelled
+            Tuple of (answers, exit_code)
+            - answers: Q&A results, or None if cancelled
+            - exit_code: Quality-based exit code
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+              - 130: User cancelled (KeyboardInterrupt)
 
         Example:
             >>> session = TemplateInitQASession()
-            >>> answers = session.run()
-            >>> if answers:
-            ...     print(f"Collected {len(answers.to_dict())} answers")
+            >>> answers, exit_code = session.run()
+            >>> if answers and exit_code == 0:
+            ...     print(f"High quality template with {len(answers.to_dict())} answers")
         """
         print("\n" + "=" * 60)
         print("  /template-init - Greenfield Template Creation")
@@ -766,18 +468,26 @@ class TemplateInitQASession:
 
             if not proceed:
                 print("\nQ&A session cancelled. Run /template-init again to restart.\n")
-                return None
+                return None, 130  # User cancelled
 
-            return self.answers
+            # Calculate exit code based on quality score
+            # NOTE: Using placeholder score until TASK-INIT-006 is implemented
+            quality_score = self._calculate_placeholder_quality_score()
+            exit_code = self._calculate_exit_code(quality_score)
+
+            # Display exit code information
+            self._display_exit_code_info(exit_code, quality_score)
+
+            return self.answers, exit_code
 
         except KeyboardInterrupt:
             print("\n\nQ&A session interrupted. Saving partial session...")
             self._save_partial_session()
-            return None
+            return None, 130  # User cancelled (KeyboardInterrupt)
 
         except Exception as e:
             print(f"\n\nError during Q&A session: {e}")
-            return None
+            return None, 3  # Error exit code
 
     def _section1_identity(self) -> None:
         """Section 1: Template Identity."""
@@ -1463,118 +1173,142 @@ class TemplateInitQASession:
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
 
-    def _get_template_path(self, template_name: str) -> Path:
+    def _calculate_placeholder_quality_score(self) -> float:
         """
-        Get template save path based on output location.
+        Calculate placeholder quality score until TASK-INIT-006 is implemented.
 
-        Port of template-create two-location support (TASK-068).
-
-        Args:
-            template_name: Name of template
+        This is a simplified scoring mechanism that provides reasonable defaults
+        based on Q&A answers. Will be replaced with full QualityScorer from
+        TASK-INIT-006.
 
         Returns:
-            Path to save template
-
-        Example:
-            >>> session = TemplateInitQASession(output_location='repo')
-            >>> path = session._get_template_path('my-template')
-            >>> 'installer/global/templates' in str(path)
-            True
-        """
-        if self.output_location == 'repo':
-            # Repository location for team distribution
-            base_path = Path.cwd() / 'installer' / 'global' / 'templates'
-        else:
-            # Personal location (default)
-            base_path = Path.home() / '.agentecflow' / 'templates'
-
-        return base_path / template_name
-
-    def _display_location_guidance(self, template_path: Path) -> None:
-        """
-        Display location-specific usage guidance.
-
-        Args:
-            template_path: Where template was saved
-        """
-        print("\n" + "=" * 70)
-        print("  Template Saved")
-        print("=" * 70 + "\n")
-
-        if self.output_location == 'repo':
-            print(f"✅ Repository template: {template_path}")
-            print()
-            print("This template is now available for:")
-            print("  • Team distribution (git commit)")
-            print("  • Public sharing")
-            print("  • Global discovery")
-            print()
-            print("Next steps:")
-            print("  1. Review generated template")
-            print("  2. Commit to repository: git add installer/global/templates/")
-            print("  3. Share with team: git push")
-            print()
-            print("Usage:")
-            print(f"  taskwright init {template_path.name}")
-        else:
-            print(f"✅ Personal template: {template_path}")
-            print()
-            print("This template is for:")
-            print("  • Personal use")
-            print("  • Local development")
-            print("  • Experimentation")
-            print()
-            print("To share with team, create repository template:")
-            print(f"  /template-init --output-location=repo")
-            print()
-            print("Usage:")
-            print(f"  taskwright init {template_path.name}")
-
-    def perform_quality_scoring(self, template_path: Path) -> dict:
-        """
-        Perform quality scoring on generated template.
-
-        This method should be called after Phase 4 (Save Template) by the
-        template-init command orchestrator.
-
-        Args:
-            template_path: Path to the generated template directory
-
-        Returns:
-            dict: Quality scores with overall score, component scores, and grade
+            float: Quality score from 0-10
 
         Example:
             >>> session = TemplateInitQASession()
-            >>> # ... run Q&A session ...
-            >>> template_path = Path("~/.agentecflow/templates/my-template")
-            >>> scores = session.perform_quality_scoring(template_path)
-            >>> print(f"Quality: {scores['overall_score']}/10")
+            >>> session._session_data = {
+            ...     'testing_scope': ['unit', 'integration'],
+            ...     'error_handling': 'result',
+            ...     'dependency_injection': 'builtin'
+            ... }
+            >>> score = session._calculate_placeholder_quality_score()
+            >>> 6.0 <= score <= 10.0
+            True
         """
-        if not self._session_data:
-            print("⚠️ No session data available for quality scoring.")
-            return {}
+        score = 5.0  # Base score
 
+        # Bonus for comprehensive testing
+        testing_scope = self._session_data.get('testing_scope', [])
+        if 'unit' in testing_scope:
+            score += 1.0
+        if 'integration' in testing_scope:
+            score += 0.5
+        if len(testing_scope) >= 3:
+            score += 0.5
+
+        # Bonus for error handling strategy
+        error_handling = self._session_data.get('error_handling', '')
+        if error_handling in ['result', 'mixed']:
+            score += 1.0
+        elif error_handling == 'exceptions':
+            score += 0.5
+
+        # Bonus for DI
+        di = self._session_data.get('dependency_injection', '')
+        if di in ['builtin', 'third-party']:
+            score += 0.5
+
+        # Bonus for validation
+        validation = self._session_data.get('validation_approach', '')
+        if validation in ['fluent', 'annotations']:
+            score += 0.5
+
+        # Bonus for architecture pattern
+        architecture = self._session_data.get('architecture_pattern', '')
+        if architecture in ['clean', 'hexagonal', 'mvvm', 'layered']:
+            score += 0.5
+
+        # Bonus for documentation
+        if (self._session_data.get('documentation_paths') or
+            self._session_data.get('documentation_text') or
+            self._session_data.get('documentation_urls')):
+            score += 0.5
+
+        # Cap at 10.0
+        return min(10.0, score)
+
+    def _calculate_exit_code(self, quality_score: float) -> int:
+        """
+        Calculate exit code from quality score.
+
+        Args:
+            quality_score: Quality score from 0-10
+
+        Returns:
+            int: Exit code (0, 1, 2, or 3)
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._calculate_exit_code(9.0)
+            0
+            >>> session._calculate_exit_code(7.0)
+            1
+            >>> session._calculate_exit_code(5.0)
+            2
+        """
+        if quality_score >= 8.0:
+            return 0  # High quality
+        elif quality_score >= 6.0:
+            return 1  # Medium quality
+        else:
+            return 2  # Low quality
+
+    def _display_exit_code_info(self, exit_code: int, score: float) -> None:
+        """
+        Display exit code information for CI/CD awareness.
+
+        Args:
+            exit_code: Calculated exit code (0-3)
+            score: Quality score that determined exit code
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._display_exit_code_info(0, 9.0)
+            # Prints exit code information
+        """
         print("\n" + "=" * 70)
-        print("  Quality Assessment")
+        print("  CI/CD Integration")
         print("=" * 70 + "\n")
 
-        # Create scorer and calculate scores
-        scorer = QualityScorer(self._session_data, template_path)
-        quality_scores = scorer.calculate_score()
-        scorer.generate_report(quality_scores)
+        exit_code_info = {
+            0: ("✅ SUCCESS", "High quality (≥8/10)", "Template ready for production"),
+            1: ("⚠️ WARNING", "Medium quality (6-7.9/10)", "Review recommended before production"),
+            2: ("❌ LOW QUALITY", "Below threshold (<6/10)", "Improvements required"),
+            3: ("🔥 ERROR", "Execution failed", "Check error messages above"),
+            130: ("⚠️ CANCELLED", "User cancelled", "Session interrupted")
+        }
 
-        # Display summary
-        print(f"📊 Quality Score: {quality_scores['overall_score']}/10 (Grade: {quality_scores['grade']})")
-        print(f"   Production Ready: {'✅ Yes' if quality_scores['production_ready'] else '❌ No'}\n")
+        status, reason, action = exit_code_info.get(
+            exit_code,
+            ("UNKNOWN", "Unknown", "Check logs")
+        )
 
-        # Component summary
-        for component, score in quality_scores['component_scores'].items():
-            status = '✅' if score >= 7 else '⚠️'
-            print(f"   {status} {component.replace('_', ' ').title()}: {score:.1f}/10")
+        print(f"Exit Code: {exit_code}")
+        print(f"Status: {status}")
+        print(f"Reason: {reason} (score: {score:.1f}/10)")
+        print(f"Action: {action}\n")
 
+        if exit_code in [0, 1]:
+            print("CI/CD usage:")
+            print("  /template-init && echo 'Template meets quality threshold'")
+        elif exit_code in [2, 3]:
+            print("CI/CD will fail on exit code 2 or 3")
+            print("  /template-init || exit 1")
         print()
-
-        return quality_scores
 
     def _create_agent_enhancement_tasks(
         self,
@@ -1965,11 +1699,53 @@ Use this agent when working on {agent_type}-related tasks in your {technology}/{
         print("  • Critical quality requirements\n")
 
 
+def main() -> None:
+    """
+    Entry point for /template-init command.
+
+    Handles exit code propagation for CI/CD.
+
+    Usage:
+        python -m installer.global.commands.lib.greenfield_qa_session
+
+    Returns exit code based on template quality:
+        0: High quality (≥8/10)
+        1: Medium quality (6-7.9/10)
+        2: Low quality (<6/10)
+        3: Error occurred
+        130: User cancelled (KeyboardInterrupt)
+
+    Example:
+        >>> # In CI/CD pipeline:
+        >>> # python -m installer.global.commands.lib.greenfield_qa_session
+        >>> # Exit code determines pipeline pass/fail
+    """
+    import sys
+
+    session = TemplateInitQASession()
+
+    try:
+        answers, exit_code = session.run()
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Template creation cancelled by user")
+        sys.exit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(3)
+
+
 # Module exports
 __all__ = [
     "GreenfieldAnswers",
     "TemplateInitQASession",
-    "QualityScorer",
     "generate_boundary_sections",
     "validate_boundary_sections",
+    "main",
 ]
+
+
+if __name__ == "__main__":
+    main()
