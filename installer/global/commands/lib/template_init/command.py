@@ -55,7 +55,7 @@ class TemplateInitCommand:
         enable_external_agents: Enable external agent discovery (Phase 1: False)
     """
 
-    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False, validate: bool = False):
+    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False, validate: bool = False, output_location: str = 'global'):
         """Initialize command
 
         Args:
@@ -63,6 +63,7 @@ class TemplateInitCommand:
             enable_external_agents: Enable external agent discovery (default: False)
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
             validate: Run extended validation (Level 2) (default: False)
+            output_location: Where to save template ('global' or 'repo')
         """
         if template_dir is None:
             template_dir = Path("installer/local/templates")
@@ -71,6 +72,7 @@ class TemplateInitCommand:
         self.enable_external_agents = enable_external_agents
         self.no_create_agent_tasks = no_create_agent_tasks
         self.validate = validate
+        self.output_location = output_location
 
     def execute(self) -> bool:
         """Execute /template-init command
@@ -407,8 +409,10 @@ class TemplateInitCommand:
         print("💾 Saving template...")
 
         try:
-            # Create template directory
-            template_path = self.template_dir / template.name
+            # Use new path resolution based on output_location
+            from ..greenfield_qa_session import TemplateInitQASession
+            session = TemplateInitQASession(output_location=self.output_location)
+            template_path = session._get_template_path(template.name)
             template_path.mkdir(parents=True, exist_ok=True)
 
             # Save manifest.json
@@ -457,10 +461,11 @@ class TemplateInitCommand:
 
             print(f"\n✅ Template saved to: {template_path}")
 
+            # Display location-specific guidance
+            session._display_location_guidance(template_path)
+
             # Ensure /template-validate compatibility (TASK-INIT-005)
             try:
-                from ..greenfield_qa_session import TemplateInitQASession
-                session = TemplateInitQASession()
                 session.ensure_validation_compatibility(template_path)
                 session.display_validation_guidance(template_path)
             except Exception as e:
@@ -626,7 +631,7 @@ class TemplateInitCommand:
         print()
 
 
-def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bool = False, validate: bool = False) -> bool:
+def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bool = False, validate: bool = False, output_location: str = 'global') -> bool:
     """Command entry point for /template-init
 
     This is the main entry point called by the CLI when user runs:
@@ -636,6 +641,7 @@ def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bo
         template_dir: Optional custom template directory
         no_create_agent_tasks: Skip agent enhancement task creation (default: False)
         validate: Run extended validation (Level 2) (default: False)
+        output_location: Where to save template ('global' or 'repo')
 
     Returns:
         True if successful, False otherwise
@@ -648,8 +654,11 @@ def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bo
 
         >>> success = template_init(validate=True)
         >>> # Generates validation-report.md with quality scores
+
+        >>> success = template_init(output_location='repo')
+        >>> # Saves template to repository location
     """
-    command = TemplateInitCommand(template_dir=template_dir, no_create_agent_tasks=no_create_agent_tasks, validate=validate)
+    command = TemplateInitCommand(template_dir=template_dir, no_create_agent_tasks=no_create_agent_tasks, validate=validate, output_location=output_location)
     return command.execute()
 
 

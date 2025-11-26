@@ -677,12 +677,13 @@ class TemplateInitQASession:
         ...     print(f"Template: {answers.template_name}")
     """
 
-    def __init__(self, no_create_agent_tasks: bool = False):
+    def __init__(self, no_create_agent_tasks: bool = False, output_location: str = 'global'):
         """
         Initialize Q&A session.
 
         Args:
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
+            output_location: Where to save template ('global' or 'repo')
         """
         if not INQUIRER_AVAILABLE:
             raise ImportError(
@@ -693,6 +694,7 @@ class TemplateInitQASession:
         self.answers: Optional[GreenfieldAnswers] = None
         self._session_data: dict = {}
         self.no_create_agent_tasks = no_create_agent_tasks
+        self.output_location = output_location
 
     def run(self) -> Optional[GreenfieldAnswers]:
         """
@@ -1460,6 +1462,73 @@ class TemplateInitQASession:
         session_file.write_text(json.dumps(self._session_data, indent=2, default=str))
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
+
+    def _get_template_path(self, template_name: str) -> Path:
+        """
+        Get template save path based on output location.
+
+        Port of template-create two-location support (TASK-068).
+
+        Args:
+            template_name: Name of template
+
+        Returns:
+            Path to save template
+
+        Example:
+            >>> session = TemplateInitQASession(output_location='repo')
+            >>> path = session._get_template_path('my-template')
+            >>> 'installer/global/templates' in str(path)
+            True
+        """
+        if self.output_location == 'repo':
+            # Repository location for team distribution
+            base_path = Path.cwd() / 'installer' / 'global' / 'templates'
+        else:
+            # Personal location (default)
+            base_path = Path.home() / '.agentecflow' / 'templates'
+
+        return base_path / template_name
+
+    def _display_location_guidance(self, template_path: Path) -> None:
+        """
+        Display location-specific usage guidance.
+
+        Args:
+            template_path: Where template was saved
+        """
+        print("\n" + "=" * 70)
+        print("  Template Saved")
+        print("=" * 70 + "\n")
+
+        if self.output_location == 'repo':
+            print(f"✅ Repository template: {template_path}")
+            print()
+            print("This template is now available for:")
+            print("  • Team distribution (git commit)")
+            print("  • Public sharing")
+            print("  • Global discovery")
+            print()
+            print("Next steps:")
+            print("  1. Review generated template")
+            print("  2. Commit to repository: git add installer/global/templates/")
+            print("  3. Share with team: git push")
+            print()
+            print("Usage:")
+            print(f"  taskwright init {template_path.name}")
+        else:
+            print(f"✅ Personal template: {template_path}")
+            print()
+            print("This template is for:")
+            print("  • Personal use")
+            print("  • Local development")
+            print("  • Experimentation")
+            print()
+            print("To share with team, create repository template:")
+            print(f"  /template-init --output-location=repo")
+            print()
+            print("Usage:")
+            print(f"  taskwright init {template_path.name}")
 
     def perform_quality_scoring(self, template_path: Path) -> dict:
         """
