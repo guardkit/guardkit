@@ -181,6 +181,181 @@ class GreenfieldAnswers:
         return GreenfieldAnswers(**data)
 
 
+def generate_boundary_sections(agent_type: str, technology: str) -> dict:
+    """
+    Generate ALWAYS/NEVER/ASK boundary sections for agent.
+
+    Reused from template-create's agent enhancement logic (TASK-STND-773D).
+
+    Args:
+        agent_type: Type of agent (testing, repository, api, etc.)
+        technology: Primary technology (python, typescript, csharp)
+
+    Returns:
+        dict with 'always', 'never', 'ask' lists
+
+    Example:
+        >>> boundaries = generate_boundary_sections('testing', 'python')
+        >>> len(boundaries['always'])  # 5-7 rules
+        5
+    """
+    boundaries = {
+        "always": [],  # 5-7 rules
+        "never": [],   # 5-7 rules
+        "ask": []      # 3-5 scenarios
+    }
+
+    # Technology-specific boundaries (port from agent-content-enhancer.md)
+    if agent_type == "testing":
+        boundaries["always"] = [
+            "✅ Run build verification before tests (block if compilation fails)",
+            "✅ Execute in technology-specific test runner (pytest/vitest/dotnet test)",
+            "✅ Report failures with actionable error messages (aid debugging)",
+            "✅ Enforce 100% test pass rate (zero tolerance for failures)",
+            "✅ Validate test coverage thresholds (ensure quality gates met)"
+        ]
+        boundaries["never"] = [
+            "❌ Never approve code with failing tests (zero tolerance policy)",
+            "❌ Never skip compilation check (prevents false positive test runs)",
+            "❌ Never modify test code to make tests pass (integrity violation)",
+            "❌ Never ignore coverage below threshold (quality gate bypass prohibited)",
+            "❌ Never run tests without dependency installation (environment consistency required)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Coverage 70-79%: Ask if acceptable given task complexity and risk level",
+            "⚠️ Performance tests failing: Ask if acceptable for non-production changes",
+            "⚠️ Flaky tests detected: Ask if should quarantine or fix immediately"
+        ]
+    elif agent_type == "repository":
+        boundaries["always"] = [
+            "✅ Inject repositories via constructor (enforces DI pattern)",
+            "✅ Return ErrorOr<T> for all operations (consistent error handling)",
+            "✅ Use async/await for database operations (prevents thread blocking)",
+            "✅ Implement IDisposable for database connections (resource cleanup)",
+            "✅ Validate input parameters before database access (prevent injection)"
+        ]
+        boundaries["never"] = [
+            "❌ Never use `new()` for repository instantiation (breaks testability and DI)",
+            "❌ Never expose IQueryable outside repository (violates encapsulation)",
+            "❌ Never use raw SQL without parameterization (SQL injection risk)",
+            "❌ Never ignore database errors (silent failures prohibited)",
+            "❌ Never commit transactions within repository (violates SRP)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex joins across >3 tables: Ask if raw SQL vs EF Core query",
+            "⚠️ Caching strategy needed: Ask if in-memory vs distributed cache",
+            "⚠️ Soft delete vs hard delete: Ask for data retention policy decision"
+        ]
+    elif agent_type == "api":
+        boundaries["always"] = [
+            "✅ Validate all input parameters (prevent injection and bad data)",
+            "✅ Return consistent response format (successful and error responses)",
+            "✅ Use appropriate HTTP status codes (200/201/400/404/500)",
+            "✅ Implement request/response logging (audit trail and debugging)",
+            "✅ Apply rate limiting for endpoints (prevent abuse)"
+        ]
+        boundaries["never"] = [
+            "❌ Never expose internal errors to clients (security risk)",
+            "❌ Never skip authentication/authorization checks (security violation)",
+            "❌ Never return sensitive data in responses (data leakage)",
+            "❌ Never use GET for state-changing operations (violates REST)",
+            "❌ Never ignore content-type headers (prevents incorrect parsing)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Large payload (>10MB): Ask if streaming vs standard response",
+            "⚠️ Long-running operation (>30s): Ask if async pattern needed",
+            "⚠️ Multiple related endpoints: Ask if batch endpoint makes sense"
+        ]
+    elif agent_type == "service":
+        boundaries["always"] = [
+            "✅ Inject dependencies via constructor (enforce DI pattern)",
+            f"✅ Follow {technology} naming conventions (maintain consistency)",
+            "✅ Validate inputs at service boundary (prevent bad data propagation)",
+            "✅ Return explicit success/failure results (no silent failures)",
+            "✅ Log important operations and errors (enable debugging and audit)"
+        ]
+        boundaries["never"] = [
+            "❌ Never instantiate dependencies with `new()` (breaks DI and testing)",
+            "❌ Never swallow exceptions without logging (silent failures prohibited)",
+            "❌ Never mix business logic with infrastructure (violates separation of concerns)",
+            "❌ Never return null for collections (return empty collections instead)",
+            "❌ Never expose implementation details in interfaces (violates encapsulation)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex business logic: Ask if should be moved to domain model",
+            "⚠️ Multiple database calls: Ask if transaction needed",
+            "⚠️ Caching opportunity: Ask if caching appropriate for this operation"
+        ]
+    else:
+        # Generic boundaries for other agent types
+        boundaries["always"] = [
+            f"✅ Follow {technology} best practices (maintain code quality)",
+            "✅ Validate all inputs (prevent bad data)",
+            "✅ Handle errors gracefully (never crash silently)",
+            "✅ Document public interfaces (enable team collaboration)",
+            "✅ Write unit tests for core logic (ensure correctness)"
+        ]
+        boundaries["never"] = [
+            "❌ Never ignore exceptions (detect issues early)",
+            "❌ Never hardcode configuration (use environment variables)",
+            "❌ Never skip logging (maintain observability)",
+            "❌ Never violate separation of concerns (maintain modularity)",
+            "❌ Never commit secrets or credentials (security risk)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex algorithm: Ask if optimization needed vs readability",
+            "⚠️ External service call: Ask if retry logic needed",
+            "⚠️ Performance concern: Ask if caching appropriate"
+        ]
+
+    return boundaries
+
+
+def validate_boundary_sections(boundaries: dict) -> tuple[bool, list]:
+    """
+    Validate boundary sections meet requirements.
+
+    Reused from template-create validation (TASK-STND-773D).
+
+    Args:
+        boundaries: Dict with 'always', 'never', 'ask' keys
+
+    Returns:
+        (is_valid, error_list)
+
+    Validation rules:
+    - ALWAYS: 5-7 rules with ✅ prefix
+    - NEVER: 5-7 rules with ❌ prefix
+    - ASK: 3-5 scenarios with ⚠️ prefix
+    """
+    errors = []
+
+    # Check counts
+    always_count = len(boundaries.get("always", []))
+    never_count = len(boundaries.get("never", []))
+    ask_count = len(boundaries.get("ask", []))
+
+    if always_count < 5 or always_count > 7:
+        errors.append(f"ALWAYS section must have 5-7 rules (has {always_count})")
+    if never_count < 5 or never_count > 7:
+        errors.append(f"NEVER section must have 5-7 rules (has {never_count})")
+    if ask_count < 3 or ask_count > 5:
+        errors.append(f"ASK section must have 3-5 scenarios (has {ask_count})")
+
+    # Check emoji format
+    for rule in boundaries.get("always", []):
+        if not rule.startswith("✅"):
+            errors.append(f"ALWAYS rule missing ✅ prefix: {rule[:50]}")
+    for rule in boundaries.get("never", []):
+        if not rule.startswith("❌"):
+            errors.append(f"NEVER rule missing ❌ prefix: {rule[:50]}")
+    for scenario in boundaries.get("ask", []):
+        if not scenario.startswith("⚠️"):
+            errors.append(f"ASK scenario missing ⚠️ prefix: {scenario[:50]}")
+
+    return len(errors) == 0, errors
+
+
 class TemplateInitQASession:
     """
     Interactive Q&A session for /template-init (greenfield).
@@ -975,9 +1150,143 @@ class TemplateInitQASession:
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
 
+    def _generate_agent(self, agent_type: str, agent_name: str = "") -> str:
+        """
+        Generate agent markdown with boundary sections.
+
+        This method will be called by Phase 3 agent generation orchestrator.
+        It generates a complete agent definition including ALWAYS/NEVER/ASK boundaries.
+
+        Args:
+            agent_type: Type of agent (testing, repository, api, service, etc.)
+            agent_name: Optional custom name for the agent
+
+        Returns:
+            str: Complete agent markdown content with boundaries
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._session_data = {'primary_language': 'python', 'framework': 'fastapi'}
+            >>> agent_content = session._generate_agent('testing', 'testing-agent')
+            >>> assert '## Boundaries' in agent_content
+        """
+        technology = self._session_data.get('primary_language', 'unknown')
+        framework = self._session_data.get('framework', '')
+
+        # Generate boundary sections
+        boundaries = generate_boundary_sections(agent_type, technology)
+
+        # Validate boundaries
+        is_valid, errors = validate_boundary_sections(boundaries)
+        if not is_valid:
+            print(f"⚠️ Boundary validation warnings for {agent_type}:")
+            for error in errors:
+                print(f"   - {error}")
+
+        # Format boundaries into markdown
+        boundary_section = "\n## Boundaries\n\n"
+        boundary_section += "### ALWAYS\n"
+        for rule in boundaries["always"]:
+            boundary_section += f"- {rule}\n"
+        boundary_section += "\n### NEVER\n"
+        for rule in boundaries["never"]:
+            boundary_section += f"- {rule}\n"
+        boundary_section += "\n### ASK\n"
+        for scenario in boundaries["ask"]:
+            boundary_section += f"- {scenario}\n"
+
+        # Generate base agent content (placeholder - will be implemented by orchestrator)
+        agent_content = self._generate_base_agent_content(agent_type, agent_name, technology, framework)
+
+        # Insert boundary section after Quick Start (or at appropriate location)
+        # Split agent content and insert boundaries
+        if "## Quick Start" in agent_content:
+            # Insert after Quick Start section
+            parts = agent_content.split("## Quick Start", 1)
+            if len(parts) == 2:
+                # Find the end of Quick Start section (next ## heading or end)
+                quick_start_part = parts[1]
+                next_section_idx = quick_start_part.find("\n## ")
+                if next_section_idx > 0:
+                    agent_content = (
+                        parts[0] + "## Quick Start" +
+                        quick_start_part[:next_section_idx] +
+                        boundary_section +
+                        quick_start_part[next_section_idx:]
+                    )
+                else:
+                    agent_content = parts[0] + "## Quick Start" + quick_start_part + boundary_section
+        else:
+            # No Quick Start section, add boundaries after metadata
+            if "---" in agent_content:
+                # Find end of frontmatter
+                parts = agent_content.split("---", 2)
+                if len(parts) >= 3:
+                    agent_content = parts[0] + "---" + parts[1] + "---" + boundary_section + parts[2]
+            else:
+                # Just prepend to content
+                agent_content = boundary_section + "\n" + agent_content
+
+        return agent_content
+
+    def _generate_base_agent_content(
+        self,
+        agent_type: str,
+        agent_name: str,
+        technology: str,
+        framework: str
+    ) -> str:
+        """
+        Generate base agent content without boundaries.
+
+        This is a placeholder that will be enhanced by the full Phase 3 orchestrator.
+        For now, it returns minimal agent structure.
+
+        Args:
+            agent_type: Type of agent
+            agent_name: Name for the agent
+            technology: Primary technology
+            framework: Framework choice
+
+        Returns:
+            str: Base agent markdown content
+        """
+        # Placeholder implementation - will be replaced by full orchestrator
+        name = agent_name or f"{agent_type}-agent"
+
+        content = f"""---
+name: {name}
+type: {agent_type}
+technology: {technology}
+framework: {framework}
+phase: implementation
+---
+
+# {name.title().replace('-', ' ')}
+
+{technology.upper()}/{framework} {agent_type} specialist
+
+## Quick Start
+
+This agent specializes in {agent_type} for {technology} projects using {framework}.
+
+## Capabilities
+
+- Technology-specific {agent_type} implementation
+- Best practices enforcement
+- Quality assurance
+
+## When to Use
+
+Use this agent when working on {agent_type}-related tasks in your {technology}/{framework} project.
+"""
+        return content
+
 
 # Module exports
 __all__ = [
     "GreenfieldAnswers",
     "TemplateInitQASession",
+    "generate_boundary_sections",
+    "validate_boundary_sections",
 ]
