@@ -1,16 +1,18 @@
 ---
 id: TASK-G6D4
 title: "Remove taskwright-python template and document why"
-status: in_review
+status: completed
 created: 2025-11-26T09:55:00Z
-updated: 2025-11-26T12:15:00Z
+updated: 2025-11-26T12:20:00Z
+completed: 2025-11-26T12:20:00Z
 priority: high
 tags: [cleanup, template-removal, simplification]
 complexity: 2
 estimated_hours: 1
-actual_hours: 0.5
+actual_hours: 2.5
 task_type: implementation
 related_tasks: [TASK-D3A1, TASK-BAA5]
+architecture_improvement: +5.25
 ---
 
 # Task: Remove taskwright-python Template and Document Why
@@ -202,13 +204,13 @@ Remove the `taskwright-python` template entirely.
 
 ## Acceptance Criteria
 
-- [ ] Template directory removed: `installer/global/templates/taskwright-python/`
-- [ ] Documentation updated to reference 5 templates (not 6)
-- [ ] Explanation added for why template was removed
-- [ ] CLAUDE.md template philosophy updated
-- [ ] Installation docs clarify: Taskwright uses git-managed .claude/
-- [ ] ADR created documenting decision and rationale
-- [ ] No broken references to taskwright-python template
+- [x] Template directory removed: `installer/global/templates/taskwright-python/`
+- [x] Documentation updated to reference 5 templates (not 6)
+- [x] Explanation added for why template was removed
+- [x] CLAUDE.md template philosophy updated
+- [x] Installation docs clarify: Taskwright uses git-managed .claude/
+- [x] ADR created documenting decision and rationale (ADR 0003)
+- [x] No broken references to taskwright-python template
 
 ## References
 
