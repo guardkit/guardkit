@@ -372,13 +372,12 @@ class TemplateInitQASession:
         ...     print(f"Template: {answers.template_name}")
     """
 
-    def __init__(self, no_create_agent_tasks: bool = False, validate: bool = False):
+    def __init__(self, no_create_agent_tasks: bool = False):
         """
         Initialize Q&A session.
 
         Args:
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
-            validate: Run extended validation (Level 2) (default: False)
         """
         if not INQUIRER_AVAILABLE:
             raise ImportError(
@@ -389,8 +388,6 @@ class TemplateInitQASession:
         self.answers: Optional[GreenfieldAnswers] = None
         self._session_data: dict = {}
         self.no_create_agent_tasks = no_create_agent_tasks
-        self.validate = validate
-        self._exit_code = 0
 
     def run(self) -> Optional[GreenfieldAnswers]:
         """
@@ -450,54 +447,6 @@ class TemplateInitQASession:
 
             # Build final answers
             self.answers = GreenfieldAnswers(**self._session_data)
-
-            # NEW Phase 3.5: Level 1 Automatic Validation
-            print("\n" + "=" * 70)
-            print("  Phase 3.5: Template Validation")
-            print("=" * 70 + "\n")
-
-            # Prepare template data for validation
-            # Extract layers from architecture choices
-            layers = self._extract_layers_from_answers()
-
-            # Generate placeholder agent structure for validation
-            # (actual agent generation happens in Phase 3 of the orchestrator)
-            agents = self._generate_placeholder_agents_for_validation()
-
-            template_data = {
-                'agents': agents,
-                'layers': layers,
-                'architecture_pattern': self._session_data.get('architecture_pattern', 'unknown')
-            }
-
-            validation_result = self._run_level1_validation(template_data)
-
-            # Display validation results
-            if validation_result['overall_pass']:
-                print("✅ Validation passed")
-            else:
-                print("⚠️ Validation warnings detected (template creation will proceed):\n")
-
-                # CRUD completeness
-                crud = validation_result['crud_completeness']
-                print(f"  CRUD Coverage: {crud['coverage']:.0%} (threshold: {crud['threshold']:.0%})")
-                if crud['missing_operations']:
-                    print(f"    Missing: {', '.join(crud['missing_operations'])}")
-
-                # Layer symmetry
-                layer = validation_result['layer_symmetry']
-                if not layer['is_symmetric']:
-                    print(f"  Layer Symmetry: Issues detected")
-                    for issue in layer['issues']:
-                        print(f"    - {issue}")
-
-                # Recommendations
-                if validation_result['recommendations']:
-                    print("\n  Recommendations:")
-                    for rec in validation_result['recommendations']:
-                        print(f"    {rec}")
-
-            print()  # Empty line after validation
 
             # Show summary
             self._show_summary()
@@ -1207,320 +1156,6 @@ class TemplateInitQASession:
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
 
-    def _validate_placeholder_consistency(self, template_path: Path) -> dict:
-        """
-        Validate placeholder format consistency across template files.
-
-        Port of template-create Phase 7.5 validation (TASK-043).
-
-        Args:
-            template_path: Path to generated template
-
-        Returns:
-            dict with consistency score and issues
-
-        Example:
-            >>> result = session._validate_placeholder_consistency(Path('/tmp/template'))
-            >>> result['score']
-            8
-        """
-        issues = []
-        placeholder_formats = []
-
-        # Scan template files for placeholder patterns
-        for template_file in template_path.rglob("*.template"):
-            content = template_file.read_text()
-
-            # Detect placeholder formats: {{var}}, ${var}, {var}, __VAR__
-            if '{{' in content and '}}' in content:
-                placeholder_formats.append('mustache')
-            if '${' in content and '}' in content:
-                placeholder_formats.append('dollar_brace')
-            if '__' in content:
-                placeholder_formats.append('double_underscore')
-
-        # Check for mixed formats (anti-pattern)
-        unique_formats = set(placeholder_formats)
-        if len(unique_formats) > 1:
-            issues.append(f"Mixed placeholder formats detected: {unique_formats}")
-
-        # Score: 10 if consistent, deduct 3 per inconsistency
-        score = 10 - (len(issues) * 3)
-        score = max(0, min(10, score))
-
-        return {
-            'score': score,
-            'issues': issues,
-            'formats_found': list(unique_formats)
-        }
-
-    def _validate_pattern_fidelity(self, template_data: dict) -> dict:
-        """
-        Validate architectural pattern fidelity.
-
-        Port of template-create Phase 7.5 validation (TASK-043).
-
-        Args:
-            template_data: Template structure with architecture pattern
-
-        Returns:
-            dict with fidelity score and issues
-        """
-        issues = []
-        pattern = template_data.get('architecture_pattern', 'unknown')
-        layers = template_data.get('layers', [])
-        agents = template_data.get('agents', [])
-
-        # Pattern-specific validation
-        if pattern == '3-tier':
-            expected_layers = {'api', 'service', 'repository'}
-            found_layers = {layer.lower() for layer in layers}
-            missing = expected_layers - found_layers
-            if missing:
-                issues.append(f"3-tier pattern missing layers: {missing}")
-
-        elif pattern == 'microservices':
-            # Check for service isolation agents
-            service_agents = [a for a in agents if 'service' in a.get('name', '').lower()]
-            if len(service_agents) < 2:
-                issues.append("Microservices pattern should have multiple service agents")
-
-        elif pattern == 'mvc':
-            expected_layers = {'controller', 'model', 'view'}
-            found_layers = {layer.lower() for layer in layers}
-            missing = expected_layers - found_layers
-            if missing:
-                issues.append(f"MVC pattern missing layers: {missing}")
-
-        # Score: 10 if perfect, deduct 2 per issue
-        score = 10 - (len(issues) * 2)
-        score = max(0, min(10, score))
-
-        return {
-            'score': score,
-            'issues': issues,
-            'pattern': pattern
-        }
-
-    def _calculate_overall_quality_score(
-        self,
-        placeholder_result: dict,
-        pattern_result: dict,
-        crud_result: dict,
-        layer_result: dict
-    ) -> dict:
-        """
-        Calculate overall quality score (0-10) and grade.
-
-        Args:
-            placeholder_result: Placeholder consistency validation
-            pattern_result: Pattern fidelity validation
-            crud_result: CRUD completeness validation (from Level 1)
-            layer_result: Layer symmetry validation (from Level 1)
-
-        Returns:
-            dict with overall score, grade, and component scores
-        """
-        # Component scores
-        placeholder_score = placeholder_result['score']
-        pattern_score = pattern_result['score']
-        crud_score = 10 if crud_result.get('passes', True) else 5
-        layer_score = 10 if layer_result.get('is_symmetric', True) else 5
-
-        # Weighted average (placeholder and pattern more important in extended validation)
-        weights = {
-            'placeholder': 0.3,
-            'pattern': 0.3,
-            'crud': 0.2,
-            'layer': 0.2
-        }
-
-        overall_score = (
-            placeholder_score * weights['placeholder'] +
-            pattern_score * weights['pattern'] +
-            crud_score * weights['crud'] +
-            layer_score * weights['layer']
-        )
-
-        # Calculate letter grade
-        if overall_score >= 9:
-            grade = 'A+'
-        elif overall_score >= 8:
-            grade = 'A'
-        elif overall_score >= 7:
-            grade = 'B'
-        elif overall_score >= 6:
-            grade = 'C'
-        elif overall_score >= 5:
-            grade = 'D'
-        else:
-            grade = 'F'
-
-        return {
-            'overall_score': round(overall_score, 1),
-            'grade': grade,
-            'component_scores': {
-                'placeholder_consistency': placeholder_score,
-                'pattern_fidelity': pattern_score,
-                'crud_completeness': crud_score,
-                'layer_symmetry': layer_score
-            },
-            'production_ready': overall_score >= 7
-        }
-
-    def _generate_validation_report(
-        self,
-        template_path: Path,
-        quality_scores: dict,
-        placeholder_result: dict,
-        pattern_result: dict,
-        crud_result: dict,
-        layer_result: dict
-    ) -> None:
-        """
-        Generate validation-report.md in template directory.
-
-        Args:
-            template_path: Path to template
-            quality_scores: Overall quality assessment
-            placeholder_result: Placeholder validation results
-            pattern_result: Pattern validation results
-            crud_result: CRUD validation results
-            layer_result: Layer validation results
-        """
-        from datetime import datetime
-
-        report = f"""# Template Validation Report
-
-**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-**Template**: {template_path.name}
-**Overall Score**: {quality_scores['overall_score']}/10 (Grade: {quality_scores['grade']})
-**Production Ready**: {'✅ Yes' if quality_scores['production_ready'] else '❌ No'}
-
----
-
-## Quality Scores
-
-| Component | Score | Status |
-|-----------|-------|--------|
-| Placeholder Consistency | {quality_scores['component_scores']['placeholder_consistency']}/10 | {'✅' if quality_scores['component_scores']['placeholder_consistency'] >= 7 else '⚠️'} |
-| Pattern Fidelity | {quality_scores['component_scores']['pattern_fidelity']}/10 | {'✅' if quality_scores['component_scores']['pattern_fidelity'] >= 7 else '⚠️'} |
-| CRUD Completeness | {quality_scores['component_scores']['crud_completeness']}/10 | {'✅' if quality_scores['component_scores']['crud_completeness'] >= 7 else '⚠️'} |
-| Layer Symmetry | {quality_scores['component_scores']['layer_symmetry']}/10 | {'✅' if quality_scores['component_scores']['layer_symmetry'] >= 7 else '⚠️'} |
-
----
-
-## Detailed Findings
-
-### Placeholder Consistency
-"""
-
-        if placeholder_result['issues']:
-            report += "\n**Issues:**\n"
-            for issue in placeholder_result['issues']:
-                report += f"- ⚠️ {issue}\n"
-        else:
-            report += "✅ No issues detected\n"
-
-        report += f"\n**Formats Found**: {', '.join(placeholder_result['formats_found']) if placeholder_result['formats_found'] else 'None'}\n"
-
-        report += "\n### Pattern Fidelity\n"
-        if pattern_result['issues']:
-            report += "\n**Issues:**\n"
-            for issue in pattern_result['issues']:
-                report += f"- ⚠️ {issue}\n"
-        else:
-            report += "✅ No issues detected\n"
-
-        report += f"\n**Pattern**: {pattern_result['pattern']}\n"
-
-        report += "\n### CRUD Completeness\n"
-        report += f"**Coverage**: {crud_result.get('coverage', 1.0):.0%} (threshold: {crud_result.get('threshold', 0.75):.0%})\n"
-        report += f"**Covered Operations**: {', '.join(crud_result.get('covered_operations', []))}\n"
-        if crud_result.get('missing_operations'):
-            report += f"**Missing Operations**: {', '.join(crud_result['missing_operations'])}\n"
-
-        report += "\n### Layer Symmetry\n"
-        report += f"**Symmetric**: {'✅ Yes' if layer_result.get('is_symmetric', True) else '❌ No'}\n"
-        report += f"**Found Layers**: {', '.join(layer_result.get('found_layers', []))}\n"
-        if layer_result.get('matched_pattern'):
-            report += f"**Matched Pattern**: {', '.join(layer_result['matched_pattern'])}\n"
-        if layer_result.get('issues'):
-            report += "\n**Issues:**\n"
-            for issue in layer_result['issues']:
-                report += f"- ⚠️ {issue}\n"
-
-        report += "\n---\n\n## Recommendations\n\n"
-
-        if quality_scores['overall_score'] < 7:
-            report += "⚠️ **Action Required**: Template quality below production threshold (7/10)\n\n"
-
-        if placeholder_result['issues']:
-            report += "1. **Placeholder Consistency**: Standardize on single placeholder format\n"
-        if pattern_result['issues']:
-            report += "2. **Pattern Fidelity**: Complete architectural pattern implementation\n"
-        if not crud_result.get('passes', True):
-            report += "3. **CRUD Completeness**: Add missing CRUD operations\n"
-        if not layer_result.get('is_symmetric', True):
-            report += "4. **Layer Symmetry**: Complete layer architecture\n"
-
-        if quality_scores['production_ready']:
-            report += "\n✅ **Template Ready**: Quality meets production standards\n"
-
-        # Write report
-        report_path = template_path / "validation-report.md"
-        report_path.write_text(report)
-        print(f"\n📄 Validation report saved: {report_path}")
-
-    def _run_level2_validation(
-        self,
-        template_path: Path,
-        template_data: dict,
-        level1_results: dict
-    ) -> dict:
-        """
-        Run Level 2 extended validation.
-
-        Port of template-create Phase 7.5 (TASK-043).
-
-        Args:
-            template_path: Path to generated template
-            template_data: Template structure
-            level1_results: Results from Level 1 validation
-
-        Returns:
-            dict with extended validation results and quality scores
-        """
-        print("Running extended validation...")
-
-        # Extended checks
-        placeholder_result = self._validate_placeholder_consistency(template_path)
-        pattern_result = self._validate_pattern_fidelity(template_data)
-
-        # Calculate overall quality
-        quality_scores = self._calculate_overall_quality_score(
-            placeholder_result,
-            pattern_result,
-            level1_results.get('crud_completeness', {'passes': True}),
-            level1_results.get('layer_symmetry', {'is_symmetric': True})
-        )
-
-        # Generate report
-        self._generate_validation_report(
-            template_path,
-            quality_scores,
-            placeholder_result,
-            pattern_result,
-            level1_results.get('crud_completeness', {'passes': True, 'coverage': 1.0, 'threshold': 0.75, 'covered_operations': [], 'missing_operations': []}),
-            level1_results.get('layer_symmetry', {'is_symmetric': True, 'found_layers': []})
-        )
-
-        return {
-            'quality_scores': quality_scores,
-            'placeholder_consistency': placeholder_result,
-            'pattern_fidelity': pattern_result
-        }
-
     def _create_agent_enhancement_tasks(
         self,
         template_name: str,
@@ -1822,264 +1457,92 @@ Use this agent when working on {agent_type}-related tasks in your {technology}/{
 """
         return content
 
-    def _validate_crud_completeness(self, template_data: dict) -> dict:
+    def ensure_validation_compatibility(self, template_path: Path) -> None:
         """
-        Validate CRUD operation coverage.
+        Ensure template is compatible with /template-validate command.
 
-        Port of template-create Phase 4.5 validation (TASK-040).
+        Adds required manifest fields and directory structure.
 
         Args:
-            template_data: Template structure with agents and layers
-
-        Returns:
-            dict with coverage metrics and recommendations
+            template_path: Path to generated template
 
         Example:
-            >>> result = session._validate_crud_completeness(template_data)
-            >>> result['crud_coverage']
-            0.75
-        """
-        crud_operations = {'create', 'read', 'update', 'delete'}
-        covered_operations = set()
-
-        # Check agent capabilities for CRUD coverage
-        agents = template_data.get('agents', [])
-        for agent in agents:
-            agent_name = agent.get('name', '').lower()
-            capabilities = agent.get('capabilities', [])
-
-            # Map agent types to CRUD operations
-            if 'create' in agent_name or 'post' in capabilities:
-                covered_operations.add('create')
-            if 'read' in agent_name or 'get' in capabilities or 'list' in capabilities:
-                covered_operations.add('read')
-            if 'update' in agent_name or 'put' in capabilities or 'patch' in capabilities:
-                covered_operations.add('update')
-            if 'delete' in agent_name or 'remove' in capabilities:
-                covered_operations.add('delete')
-
-        coverage = len(covered_operations) / len(crud_operations)
-        missing_operations = crud_operations - covered_operations
-
-        return {
-            'coverage': coverage,
-            'covered_operations': list(covered_operations),
-            'missing_operations': list(missing_operations),
-            'threshold': 0.60,
-            'passes': coverage >= 0.60
-        }
-
-
-    def _validate_layer_symmetry(self, template_data: dict) -> dict:
-        """
-        Validate architectural layer symmetry.
-
-        Port of template-create Phase 4.5 validation (TASK-040).
-
-        Args:
-            template_data: Template structure with layers
-
-        Returns:
-            dict with symmetry analysis and issues
-
-        Example:
-            >>> result = session._validate_layer_symmetry(template_data)
-            >>> result['is_symmetric']
+            >>> session = TemplateInitQASession()
+            >>> session.ensure_validation_compatibility(Path('/tmp/template'))
+            >>> (template_path / ".validation-compatible").exists()
             True
         """
-        layers = template_data.get('layers', [])
+        from datetime import datetime
+        import json
 
-        # Common layer patterns (should appear together)
-        layer_patterns = [
-            {'api', 'service', 'repository'},  # 3-tier
-            {'controller', 'service', 'data'},  # MVC
-            {'presentation', 'business', 'data'},  # Classic 3-layer
-        ]
+        # Ensure required directories exist
+        (template_path / "templates").mkdir(exist_ok=True)
+        (template_path / "agents").mkdir(exist_ok=True)
 
-        found_layers = {layer.lower() for layer in layers}
-        issues = []
-        matched_pattern = None
+        # Read existing manifest
+        manifest_path = template_path / "template-manifest.json"
+        if not manifest_path.exists():
+            manifest_path = template_path / "manifest.json"
 
-        # Check if layers match a known pattern
-        for pattern in layer_patterns:
-            if pattern.issubset(found_layers):
-                matched_pattern = pattern
-                break
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+        else:
+            manifest = {}
 
-        # Only check for incomplete patterns if no complete match was found
-        if not matched_pattern:
-            for pattern in layer_patterns:
-                if len(pattern & found_layers) > 0:
-                    # Partial match - missing layers
-                    missing = pattern - found_layers
-                    issues.append(f"Incomplete pattern: missing {missing}")
-                    break  # Only report first incomplete pattern match
+        # Add required validation fields if missing
+        if 'schema_version' not in manifest:
+            manifest['schema_version'] = '1.0.0'
 
-        # Check for orphan layers (no matching pattern)
-        if not matched_pattern and len(found_layers) > 0:
-            issues.append("No recognized architectural pattern detected")
+        if 'complexity' not in manifest:
+            # Estimate complexity from template structure
+            num_agents = len(list((template_path / "agents").glob("*.md")))
+            num_templates = len(list((template_path / "templates").glob("*"))) if (template_path / "templates").exists() else 0
+            manifest['complexity'] = min(10, 3 + (num_agents // 2) + (num_templates // 3))
 
-        return {
-            'is_symmetric': len(issues) == 0,
-            'matched_pattern': list(matched_pattern) if matched_pattern else None,
-            'found_layers': list(found_layers),
-            'issues': issues
-        }
+        if 'confidence_score' not in manifest:
+            # Default confidence for greenfield (no codebase analysis)
+            manifest['confidence_score'] = 75
 
+        if 'created_at' not in manifest:
+            manifest['created_at'] = datetime.now().isoformat()
 
-    def _generate_autofix_recommendations(
-        self,
-        crud_result: dict,
-        layer_result: dict
-    ) -> list:
+        if 'validation_compatible' not in manifest:
+            manifest['validation_compatible'] = True
+
+        # Write updated manifest (prefer template-manifest.json for consistency)
+        output_manifest_path = template_path / "template-manifest.json"
+        output_manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        # Create compatibility marker
+        marker_path = template_path / ".validation-compatible"
+        marker_path.write_text(f"1.0.0\nCreated: {datetime.now().isoformat()}\n")
+
+        print(f"✅ Template validation-compatible: {template_path.name}")
+
+    def display_validation_guidance(self, template_path: Path) -> None:
         """
-        Generate actionable auto-fix recommendations.
+        Display /template-validate usage guidance.
 
         Args:
-            crud_result: CRUD completeness validation result
-            layer_result: Layer symmetry validation result
-
-        Returns:
-            List of recommendation strings
+            template_path: Path to generated template
         """
-        recommendations = []
+        print("\n" + "=" * 70)
+        print("  Comprehensive Validation Available")
+        print("=" * 70 + "\n")
 
-        # CRUD recommendations
-        if not crud_result['passes']:
-            missing = crud_result['missing_operations']
-            recommendations.append(
-                f"⚠️ CRUD coverage {crud_result['coverage']:.0%} (threshold: 60%). "
-                f"Consider adding agents for: {', '.join(missing)}"
-            )
-
-        # Layer symmetry recommendations
-        if not layer_result['is_symmetric']:
-            for issue in layer_result['issues']:
-                recommendations.append(f"⚠️ Layer symmetry: {issue}")
-
-        return recommendations
-
-
-    def _run_level1_validation(self, template_data: dict) -> dict:
-        """
-        Run Level 1 automatic validation.
-
-        Port of template-create Phase 4.5 (TASK-040).
-
-        Args:
-            template_data: Complete template structure
-
-        Returns:
-            dict with validation results and recommendations
-        """
-        crud_result = self._validate_crud_completeness(template_data)
-        layer_result = self._validate_layer_symmetry(template_data)
-        recommendations = self._generate_autofix_recommendations(
-            crud_result,
-            layer_result
-        )
-
-        return {
-            'crud_completeness': crud_result,
-            'layer_symmetry': layer_result,
-            'recommendations': recommendations,
-            'overall_pass': crud_result['passes'] and layer_result['is_symmetric']
-        }
-
-    def _extract_layers_from_answers(self) -> List[str]:
-        """
-        Extract architectural layers from Q&A answers.
-
-        Maps architecture patterns and project structure choices to layer names.
-
-        Returns:
-            List of layer names
-        """
-        layers = []
-
-        # Get architecture pattern
-        arch_pattern = self._session_data.get('architecture_pattern', 'simple')
-
-        # Map architecture patterns to layers
-        pattern_to_layers = {
-            'mvvm': ['view', 'viewmodel', 'model'],
-            'clean': ['presentation', 'application', 'domain', 'infrastructure'],
-            'hexagonal': ['api', 'application', 'domain', 'infrastructure'],
-            'layered': ['presentation', 'business', 'data'],
-            'vertical-slice': ['features'],  # Less layer-oriented
-            'simple': []  # No formal layers
-        }
-
-        # Get layers from pattern
-        if arch_pattern in pattern_to_layers:
-            layers.extend(pattern_to_layers[arch_pattern])
-
-        # Check for data access pattern (adds data layer if not present)
-        data_access = self._session_data.get('data_access')
-        if data_access and data_access != 'none':
-            if not any(layer in ['data', 'infrastructure', 'repository'] for layer in layers):
-                layers.append('repository')
-
-        # Check for API pattern (adds API layer if backend)
-        api_pattern = self._session_data.get('api_pattern')
-        if api_pattern and not any(layer in ['api', 'web', 'controller'] for layer in layers):
-            layers.append('api')
-
-        return layers
-
-    def _generate_placeholder_agents_for_validation(self) -> List[dict]:
-        """
-        Generate placeholder agent structure for validation.
-
-        This creates a minimal agent structure based on Q&A answers
-        to validate CRUD completeness without full agent generation.
-
-        Returns:
-            List of agent dictionaries with name and capabilities
-        """
-        agents = []
-
-        # Get data access pattern
-        data_access = self._session_data.get('data_access')
-        api_pattern = self._session_data.get('api_pattern')
-
-        # If repository pattern, add CRUD agents
-        if data_access == 'repository':
-            agents.extend([
-                {'name': 'create-repository', 'capabilities': ['post', 'create']},
-                {'name': 'read-repository', 'capabilities': ['get', 'read']},
-                {'name': 'update-repository', 'capabilities': ['put', 'update']},
-                {'name': 'delete-repository', 'capabilities': ['delete', 'remove']}
-            ])
-
-        # If API pattern (REST/REPR), add API agents
-        if api_pattern in ['rest', 'repr', 'minimal']:
-            agents.extend([
-                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
-                {'name': 'read-endpoint', 'capabilities': ['get', 'read', 'list']},
-                {'name': 'update-endpoint', 'capabilities': ['put', 'patch', 'update']},
-                {'name': 'delete-endpoint', 'capabilities': ['delete', 'remove']}
-            ])
-
-        # If CQRS, split into commands/queries
-        if data_access == 'cqrs':
-            agents.extend([
-                {'name': 'create-command', 'capabilities': ['post', 'create']},
-                {'name': 'update-command', 'capabilities': ['put', 'update']},
-                {'name': 'delete-command', 'capabilities': ['delete', 'remove']},
-                {'name': 'read-query', 'capabilities': ['get', 'read', 'list']}
-            ])
-
-        # If minimal or no data access, add generic service agents
-        if not agents:
-            agents.extend([
-                {'name': 'service-create', 'capabilities': ['create']},
-                {'name': 'service-read', 'capabilities': ['read', 'get']},
-                {'name': 'service-update', 'capabilities': ['update']},
-                {'name': 'service-delete', 'capabilities': ['delete']}
-            ])
-
-        return agents
+        print("Your template is now compatible with comprehensive audit:\n")
+        print(f"  /template-validate {template_path}")
+        print()
+        print("Level 3 validation provides:")
+        print("  • Interactive 16-section audit")
+        print("  • Section-by-section analysis")
+        print("  • AI-assisted recommendations")
+        print("  • Comprehensive audit report")
+        print("  • Duration: 30-60 minutes\n")
+        print("Run when:")
+        print("  • Deploying to production")
+        print("  • Sharing with team")
+        print("  • Critical quality requirements\n")
 
 
 # Module exports

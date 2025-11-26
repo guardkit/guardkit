@@ -457,6 +457,16 @@ class TemplateInitCommand:
 
             print(f"\n✅ Template saved to: {template_path}")
 
+            # Ensure /template-validate compatibility (TASK-INIT-005)
+            try:
+                from ..greenfield_qa_session import TemplateInitQASession
+                session = TemplateInitQASession()
+                session.ensure_validation_compatibility(template_path)
+                session.display_validation_guidance(template_path)
+            except Exception as e:
+                # Non-fatal - just warn if validation compatibility setup fails
+                print(f"⚠️  Warning: Could not set up validation compatibility: {e}")
+
             return template_path
 
         except Exception as e:

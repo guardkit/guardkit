@@ -941,344 +941,184 @@ class TestAgentGeneration:
         assert '## Boundaries' in agent_content
 
 
-class TestLevel1Validation:
-    """Test Level 1 automatic validation (TASK-INIT-003)."""
+class TestValidationCompatibility:
+    """Test validation compatibility features (TASK-INIT-005).
 
-    @pytest.fixture(autouse=True)
-    def mock_inquirer(self):
-        """Mock inquirer availability for all tests in this class."""
-        with patch('greenfield_qa_session.INQUIRER_AVAILABLE', True):
-            yield
+    Note: These tests don't require inquirer as they test standalone methods.
+    """
 
-    def test_validate_crud_completeness_full_coverage(self):
-        """Test CRUD validation with full coverage."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'create-agent', 'capabilities': ['post']},
-                {'name': 'read-agent', 'capabilities': ['get']},
-                {'name': 'update-agent', 'capabilities': ['put']},
-                {'name': 'delete-agent', 'capabilities': ['delete']}
-            ]
+    @pytest.fixture
+    def session(self):
+        """Create a test session, mocking inquirer if not available."""
+        if INQUIRER_AVAILABLE:
+            return TemplateInitQASession()
+        else:
+            # Create minimal mock session for testing
+            class MockSession:
+                def __init__(self):
+                    self._session_data = {}
+                    self.answers = None
+
+                def ensure_validation_compatibility(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    temp_session._session_data = {}
+                    return TemplateInitQASession.ensure_validation_compatibility(temp_session, template_path)
+
+                def display_validation_guidance(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    return TemplateInitQASession.display_validation_guidance(temp_session, template_path)
+
+            return MockSession()
+
+    def test_ensure_validation_compatibility(self, tmp_path, session):
+        """Test validation compatibility setup."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Check marker file
+        marker = template_path / ".validation-compatible"
+        assert marker.exists()
+        assert "1.0.0" in marker.read_text()
+
+        # Check manifest fields
+        manifest_path = template_path / "template-manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text())
+        assert 'schema_version' in manifest
+        assert 'complexity' in manifest
+        assert 'confidence_score' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_required_directories_created(self, tmp_path, session):
+        """Test required directories are created."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
+
+    def test_complexity_estimation(self, tmp_path, session):
+        """Test complexity estimation based on template structure."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create agents directory with some agents
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        for i in range(6):
+            (agents_dir / f"agent-{i}.md").write_text(f"# Agent {i}")
+
+        # Create templates directory with some templates
+        templates_dir = template_path / "templates"
+        templates_dir.mkdir()
+        for i in range(3):
+            (templates_dir / f"template-{i}.txt").write_text(f"Template {i}")
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Complexity should be: 3 + (6 // 2) + (3 // 3) = 3 + 3 + 1 = 7
+        assert manifest['complexity'] == 7
+
+    def test_preserve_existing_manifest_fields(self, tmp_path, session):
+        """Test that existing manifest fields are preserved."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create existing manifest with some fields
+        manifest_path = template_path / "manifest.json"
+        existing_manifest = {
+            'name': 'my-template',
+            'version': '1.0.0',
+            'description': 'Test template',
+            'schema_version': '2.0.0',  # Should be preserved
+            'complexity': 8  # Should be preserved
         }
-
-        result = session._validate_crud_completeness(template_data)
-
-        assert result['coverage'] == 1.0
-        assert result['passes'] is True
-        assert len(result['missing_operations']) == 0
-        assert len(result['covered_operations']) == 4
-
-    def test_validate_crud_completeness_partial(self):
-        """Test CRUD validation with partial coverage."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'read-agent', 'capabilities': ['get']},
-            ]
-        }
-
-        result = session._validate_crud_completeness(template_data)
-
-        assert result['coverage'] == 0.25
-        assert result['passes'] is False
-        assert 'create' in result['missing_operations']
-        assert 'update' in result['missing_operations']
-        assert 'delete' in result['missing_operations']
-        assert 'read' in result['covered_operations']
-
-    def test_validate_crud_completeness_above_threshold(self):
-        """Test CRUD validation passes with 60% coverage."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
-                {'name': 'read-endpoint', 'capabilities': ['get', 'read']},
-                {'name': 'update-endpoint', 'capabilities': ['put', 'update']}
-            ]
-        }
-
-        result = session._validate_crud_completeness(template_data)
-
-        assert result['coverage'] == 0.75
-        assert result['passes'] is True  # Above 60% threshold
-        assert 'delete' in result['missing_operations']
-
-    def test_validate_crud_completeness_below_threshold(self):
-        """Test CRUD validation fails below 60% threshold."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
-                {'name': 'read-endpoint', 'capabilities': ['get', 'read']}
-            ]
-        }
-
-        result = session._validate_crud_completeness(template_data)
-
-        assert result['coverage'] == 0.50
-        assert result['passes'] is False  # Below 60% threshold
-
-    def test_validate_layer_symmetry_3tier(self):
-        """Test layer symmetry validation for 3-tier."""
-        session = TemplateInitQASession()
-        template_data = {
-            'layers': ['api', 'service', 'repository']
-        }
-
-        result = session._validate_layer_symmetry(template_data)
-
-        assert result['is_symmetric'] is True
-        assert set(result['matched_pattern']) == {'api', 'service', 'repository'}
-        assert len(result['issues']) == 0
-
-    def test_validate_layer_symmetry_mvc(self):
-        """Test layer symmetry validation for MVC."""
-        session = TemplateInitQASession()
-        template_data = {
-            'layers': ['controller', 'service', 'data']
-        }
-
-        result = session._validate_layer_symmetry(template_data)
-
-        assert result['is_symmetric'] is True
-        assert set(result['matched_pattern']) == {'controller', 'service', 'data'}
-
-    def test_validate_layer_symmetry_incomplete(self):
-        """Test layer symmetry with incomplete pattern."""
-        session = TemplateInitQASession()
-        template_data = {
-            'layers': ['api', 'service']  # Missing repository
-        }
-
-        result = session._validate_layer_symmetry(template_data)
-
-        assert result['is_symmetric'] is False
-        assert len(result['issues']) > 0
-        assert any('Incomplete pattern' in issue for issue in result['issues'])
-
-    def test_validate_layer_symmetry_no_pattern(self):
-        """Test layer symmetry with no recognized pattern."""
-        session = TemplateInitQASession()
-        template_data = {
-            'layers': ['custom1', 'custom2']
-        }
-
-        result = session._validate_layer_symmetry(template_data)
-
-        assert result['is_symmetric'] is False
-        assert any('No recognized architectural pattern' in issue for issue in result['issues'])
-
-    def test_generate_autofix_recommendations_crud_only(self):
-        """Test recommendation generation for CRUD issues only."""
-        session = TemplateInitQASession()
-
-        crud_result = {
-            'coverage': 0.50,
-            'passes': False,
-            'missing_operations': ['update', 'delete']
-        }
-        layer_result = {
-            'is_symmetric': True,
-            'issues': []
-        }
-
-        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
-
-        assert len(recommendations) == 1
-        assert 'CRUD coverage 50%' in recommendations[0]
-        assert 'update' in recommendations[0]
-        assert 'delete' in recommendations[0]
-
-    def test_generate_autofix_recommendations_layer_only(self):
-        """Test recommendation generation for layer issues only."""
-        session = TemplateInitQASession()
-
-        crud_result = {
-            'coverage': 1.0,
-            'passes': True,
-            'missing_operations': []
-        }
-        layer_result = {
-            'is_symmetric': False,
-            'issues': ['Incomplete pattern: missing repository']
-        }
-
-        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
-
-        assert len(recommendations) == 1
-        assert 'Layer symmetry' in recommendations[0]
-        assert 'Incomplete pattern' in recommendations[0]
-
-    def test_generate_autofix_recommendations_both(self):
-        """Test recommendation generation for both CRUD and layer issues."""
-        session = TemplateInitQASession()
-
-        crud_result = {
-            'coverage': 0.50,
-            'passes': False,
-            'missing_operations': ['update', 'delete']
-        }
-        layer_result = {
-            'is_symmetric': False,
-            'issues': ['No recognized architectural pattern detected']
-        }
-
-        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
-
-        assert len(recommendations) == 2
-        assert any('CRUD coverage' in rec for rec in recommendations)
-        assert any('Layer symmetry' in rec for rec in recommendations)
-
-    def test_run_level1_validation_pass(self):
-        """Test full validation that passes."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'create-agent', 'capabilities': ['post']},
-                {'name': 'read-agent', 'capabilities': ['get']},
-                {'name': 'update-agent', 'capabilities': ['put']},
-                {'name': 'delete-agent', 'capabilities': ['delete']}
-            ],
-            'layers': ['api', 'service', 'repository'],
-            'architecture_pattern': '3-tier'
-        }
-
-        result = session._run_level1_validation(template_data)
-
-        assert result['overall_pass'] is True
-        assert result['crud_completeness']['passes'] is True
-        assert result['layer_symmetry']['is_symmetric'] is True
-        assert len(result['recommendations']) == 0
-
-    def test_run_level1_validation_fail(self):
-        """Test full validation that fails."""
-        session = TemplateInitQASession()
-        template_data = {
-            'agents': [
-                {'name': 'read-agent', 'capabilities': ['get']}
-            ],
-            'layers': ['api', 'service'],  # Incomplete
-            'architecture_pattern': '3-tier'
-        }
-
-        result = session._run_level1_validation(template_data)
-
-        assert result['overall_pass'] is False
-        assert result['crud_completeness']['passes'] is False
-        assert result['layer_symmetry']['is_symmetric'] is False
-        assert len(result['recommendations']) > 0
-
-    def test_extract_layers_from_answers_mvvm(self):
-        """Test layer extraction for MVVM pattern."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'architecture_pattern': 'mvvm'
-        }
-
-        layers = session._extract_layers_from_answers()
-
-        assert 'view' in layers
-        assert 'viewmodel' in layers
-        assert 'model' in layers
-
-    def test_extract_layers_from_answers_clean(self):
-        """Test layer extraction for Clean Architecture."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'architecture_pattern': 'clean'
-        }
-
-        layers = session._extract_layers_from_answers()
-
-        assert 'presentation' in layers
-        assert 'application' in layers
-        assert 'domain' in layers
-        assert 'infrastructure' in layers
-
-    def test_extract_layers_from_answers_with_data_access(self):
-        """Test layer extraction adds repository for data access."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'architecture_pattern': 'simple',
-            'data_access': 'repository'
-        }
-
-        layers = session._extract_layers_from_answers()
-
-        assert 'repository' in layers
-
-    def test_extract_layers_from_answers_with_api(self):
-        """Test layer extraction adds API layer for backend."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'architecture_pattern': 'simple',
-            'api_pattern': 'rest'
-        }
-
-        layers = session._extract_layers_from_answers()
-
-        assert 'api' in layers
-
-    def test_generate_placeholder_agents_for_validation_repository(self):
-        """Test placeholder agent generation for repository pattern."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'data_access': 'repository'
-        }
-
-        agents = session._generate_placeholder_agents_for_validation()
-
-        assert len(agents) >= 4
-        agent_names = [a['name'] for a in agents]
-        assert any('create' in name for name in agent_names)
-        assert any('read' in name for name in agent_names)
-        assert any('update' in name for name in agent_names)
-        assert any('delete' in name for name in agent_names)
-
-    def test_generate_placeholder_agents_for_validation_api(self):
-        """Test placeholder agent generation for REST API."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'api_pattern': 'rest'
-        }
-
-        agents = session._generate_placeholder_agents_for_validation()
-
-        assert len(agents) >= 4
-        # Check capabilities
-        all_capabilities = set()
-        for agent in agents:
-            all_capabilities.update(agent['capabilities'])
-
-        assert 'create' in all_capabilities or 'post' in all_capabilities
-        assert 'read' in all_capabilities or 'get' in all_capabilities
-        assert 'update' in all_capabilities or 'put' in all_capabilities
-        assert 'delete' in all_capabilities or 'remove' in all_capabilities
-
-    def test_generate_placeholder_agents_for_validation_cqrs(self):
-        """Test placeholder agent generation for CQRS pattern."""
-        session = TemplateInitQASession()
-        session._session_data = {
-            'data_access': 'cqrs'
-        }
-
-        agents = session._generate_placeholder_agents_for_validation()
-
-        assert len(agents) >= 4
-        agent_names = [a['name'] for a in agents]
-        assert any('command' in name for name in agent_names)
-        assert any('query' in name for name in agent_names)
-
-    def test_generate_placeholder_agents_for_validation_fallback(self):
-        """Test placeholder agent generation fallback for minimal config."""
-        session = TemplateInitQASession()
-        session._session_data = {}
-
-        agents = session._generate_placeholder_agents_for_validation()
-
-        # Should still generate generic service agents
-        assert len(agents) >= 4
+        manifest_path.write_text(json.dumps(existing_manifest, indent=2))
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Read updated manifest (should be in template-manifest.json)
+        output_manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(output_manifest_path.read_text())
+
+        # Existing fields should be preserved
+        assert manifest['name'] == 'my-template'
+        assert manifest['version'] == '1.0.0'
+        assert manifest['description'] == 'Test template'
+        assert manifest['schema_version'] == '2.0.0'  # Preserved
+        assert manifest['complexity'] == 8  # Preserved
+
+        # New fields should be added
+        assert 'confidence_score' in manifest
+        assert 'created_at' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_confidence_score_default(self, tmp_path, session):
+        """Test default confidence score for greenfield templates."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Greenfield default should be 75
+        assert manifest['confidence_score'] == 75
+
+    def test_display_validation_guidance(self, tmp_path, session, capsys):
+        """Test validation guidance display."""
+        template_path = tmp_path / "my-test-template"
+        template_path.mkdir()
+
+        session.display_validation_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert "Comprehensive Validation Available" in captured.out
+        assert "/template-validate" in captured.out
+        assert "Interactive 16-section audit" in captured.out
+        assert "30-60 minutes" in captured.out
+        assert "Deploying to production" in captured.out
+
+    def test_template_validate_compatibility_integration(self, tmp_path, session):
+        """Test full integration with /template-validate requirements."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+
+        # Generate template structure
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "test.md").write_text("# Test Agent")
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Verify all required fields for /template-validate
+        manifest = json.loads((template_path / "template-manifest.json").read_text())
+        required_fields = ['schema_version', 'complexity', 'confidence_score', 'created_at', 'validation_compatible']
+        for field in required_fields:
+            assert field in manifest, f"Missing required field: {field}"
+
+        # Verify marker exists
+        assert (template_path / ".validation-compatible").exists()
+
+        # Verify required directories
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
 
 
 if __name__ == "__main__":
