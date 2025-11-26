@@ -24,6 +24,8 @@ Stop shipping broken code. Get architectural review before implementation and au
 ## 5-Minute Quickstart
 
 ### Option 1: Quick Install (Recommended)
+
+**macOS / Linux:**
 ```bash
 # Direct install
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
@@ -31,6 +33,20 @@ curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/insta
 # Initialize your project (choose a template)
 taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
+
+**Windows (WSL2):**
+```bash
+# 1. Install WSL2 (if not already installed)
+wsl --install
+
+# 2. Open WSL2 terminal and run installer
+curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+
+# 3. Initialize your project
+taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
+```
+
+> **Note for Windows users**: Taskwright requires bash and runs best on WSL2. Native PowerShell installation is not currently supported.
 
 **If using VS Code:** Reload the window to enable slash commands:
 - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
