@@ -1,22 +1,33 @@
 ---
 id: TASK-INIT-006
 title: "Port quality scoring and reports to /template-init"
-status: in_progress
+status: completed
 created: 2025-11-26T07:30:00Z
-updated: 2025-11-26T07:30:00Z
+updated: 2025-11-26T10:20:00Z
+completed: 2025-11-26T10:20:00Z
 priority: medium
 tags: [template-init, quality, week3, quality-output]
 complexity: 5
 estimated_hours: 6
+actual_hours: 2.5
 parent_review: TASK-5E55
 week: 3
 phase: quality-output
 related_tasks: [TASK-INIT-003, TASK-INIT-004, TASK-INIT-005]
 dependencies: [TASK-INIT-003, TASK-INIT-004, TASK-INIT-005]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 100
+  last_run: 2025-11-26T10:18:51Z
+completion_metrics:
+  total_duration: 2.5 hours
+  implementation_time: 1.5 hours
+  testing_time: 0.5 hours
+  review_time: 0.5 hours
+  files_modified: 1
+  lines_added: 305
+  tests_written: 2
+  final_coverage: 100%
 ---
 
 # Task: Port Quality Scoring and Reports to /template-init
