@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "glob
 from greenfield_qa_session import (
     GreenfieldAnswers,
     TemplateInitQASession,
-    INQUIRER_AVAILABLE
+    INQUIRER_AVAILABLE,
+    generate_boundary_sections,
+    validate_boundary_sections
 )
 
 
@@ -703,6 +705,240 @@ class TestEdgeCases:
 
         answers = GreenfieldAnswers.from_dict(data)
         assert answers.documentation_paths is None
+
+
+class TestBoundarySections:
+    """Test boundary section generation and validation (TASK-INIT-001)."""
+
+    def test_generate_boundary_sections_testing_agent(self):
+        """Test boundary generation for testing agent."""
+        boundaries = generate_boundary_sections('testing', 'python')
+
+        assert 5 <= len(boundaries['always']) <= 7
+        assert 5 <= len(boundaries['never']) <= 7
+        assert 3 <= len(boundaries['ask']) <= 5
+
+        # Check emoji prefixes
+        for rule in boundaries['always']:
+            assert rule.startswith('✅')
+        for rule in boundaries['never']:
+            assert rule.startswith('❌')
+        for scenario in boundaries['ask']:
+            assert scenario.startswith('⚠️')
+
+    def test_generate_boundary_sections_repository_agent(self):
+        """Test boundary generation for repository agent."""
+        boundaries = generate_boundary_sections('repository', 'csharp')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify repository-specific content
+        assert any('DI pattern' in rule for rule in boundaries['always'])
+        assert any('ErrorOr<T>' in rule for rule in boundaries['always'])
+        assert any('SQL injection' in rule for rule in boundaries['never'])
+
+    def test_generate_boundary_sections_api_agent(self):
+        """Test boundary generation for API agent."""
+        boundaries = generate_boundary_sections('api', 'typescript')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify API-specific content
+        assert any('Validate all input' in rule for rule in boundaries['always'])
+        assert any('HTTP status codes' in rule for rule in boundaries['always'])
+        assert any('authentication' in rule for rule in boundaries['never'])
+
+    def test_generate_boundary_sections_service_agent(self):
+        """Test boundary generation for service agent."""
+        boundaries = generate_boundary_sections('service', 'python')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify service-specific content
+        assert any('constructor' in rule for rule in boundaries['always'])
+        assert any('python naming conventions' in rule.lower() for rule in boundaries['always'])
+
+    def test_generate_boundary_sections_generic_agent(self):
+        """Test boundary generation for unknown agent type."""
+        boundaries = generate_boundary_sections('unknown', 'go')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify generic content with technology
+        assert any('go best practices' in rule.lower() for rule in boundaries['always'])
+
+    def test_validate_boundary_sections_valid(self):
+        """Test validation with valid boundaries."""
+        boundaries = {
+            'always': ['✅ Rule ' + str(i) for i in range(5)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert is_valid
+        assert len(errors) == 0
+
+    def test_validate_boundary_sections_invalid_count(self):
+        """Test validation catches count violations."""
+        boundaries = {
+            'always': ['✅ Rule 1', '✅ Rule 2'],  # Too few (need 5-7)
+            'never': ['❌ Rule'] * 10,  # Too many (need 5-7)
+            'ask': []  # Too few (need 3-5)
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert not is_valid
+        assert len(errors) >= 3
+        assert any('ALWAYS' in error for error in errors)
+        assert any('NEVER' in error for error in errors)
+        assert any('ASK' in error for error in errors)
+
+    def test_validate_boundary_sections_missing_emoji(self):
+        """Test validation catches missing emoji prefixes."""
+        boundaries = {
+            'always': ['Rule without emoji'] + ['✅ Rule ' + str(i) for i in range(4)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert not is_valid
+        assert any('missing ✅ prefix' in error for error in errors)
+
+    def test_validate_boundary_sections_edge_cases(self):
+        """Test validation with edge case counts."""
+        # Minimum valid counts
+        boundaries_min = {
+            'always': ['✅ Rule ' + str(i) for i in range(5)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+        is_valid, errors = validate_boundary_sections(boundaries_min)
+        assert is_valid
+
+        # Maximum valid counts
+        boundaries_max = {
+            'always': ['✅ Rule ' + str(i) for i in range(7)],
+            'never': ['❌ Rule ' + str(i) for i in range(7)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(5)]
+        }
+        is_valid, errors = validate_boundary_sections(boundaries_max)
+        assert is_valid
+
+
+@pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+class TestAgentGeneration:
+    """Test agent generation with boundaries (TASK-INIT-001)."""
+
+    def test_generated_agents_include_boundaries(self):
+        """Test that generated agents include valid boundaries."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        agent_content = session._generate_agent('testing', 'testing-agent')
+
+        assert '## Boundaries' in agent_content
+        assert '### ALWAYS' in agent_content
+        assert '### NEVER' in agent_content
+        assert '### ASK' in agent_content
+        assert '✅' in agent_content
+        assert '❌' in agent_content
+        assert '⚠️' in agent_content
+
+    def test_generate_agent_with_different_types(self):
+        """Test agent generation for different agent types."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        for agent_type in ['testing', 'repository', 'api', 'service']:
+            agent_content = session._generate_agent(agent_type)
+            assert '## Boundaries' in agent_content
+            assert f'type: {agent_type}' in agent_content
+
+    def test_generate_agent_boundary_placement(self):
+        """Test boundaries are placed after Quick Start section."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'csharp',
+            'framework': 'maui'
+        }
+
+        agent_content = session._generate_agent('repository')
+
+        # Boundaries should come after Quick Start
+        quick_start_idx = agent_content.find('## Quick Start')
+        boundaries_idx = agent_content.find('## Boundaries')
+
+        assert quick_start_idx > 0
+        assert boundaries_idx > quick_start_idx
+
+    def test_generate_agent_validates_boundaries(self, capsys):
+        """Test agent generation validates boundaries and shows warnings."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        # This should not produce warnings as boundaries are valid
+        agent_content = session._generate_agent('testing')
+
+        captured = capsys.readouterr()
+        # No validation warnings should be printed for valid boundaries
+        assert '⚠️ Boundary validation warnings' not in captured.out
+
+    def test_generate_base_agent_content(self):
+        """Test base agent content generation."""
+        session = TemplateInitQASession()
+
+        content = session._generate_base_agent_content(
+            'testing',
+            'my-testing-agent',
+            'python',
+            'fastapi'
+        )
+
+        assert 'name: my-testing-agent' in content
+        assert 'type: testing' in content
+        assert 'technology: python' in content
+        assert 'framework: fastapi' in content
+        assert '## Quick Start' in content
+
+    def test_integration_with_existing_qa_workflow(self):
+        """Ensure boundary generation doesn't break existing Q&A workflow."""
+        session = TemplateInitQASession()
+
+        # Mock Q&A responses
+        with patch('greenfield_qa_session.inquirer.prompt') as mock_prompt:
+            mock_prompt.return_value = {
+                'template_name': 'test',
+                'template_purpose': 'quick_start'
+            }
+            session._section1_identity()
+
+        assert session._session_data['template_name'] == 'test'
+
+        # Now test agent generation works with this data
+        session._session_data['primary_language'] = 'python'
+        session._session_data['framework'] = 'fastapi'
+
+        agent_content = session._generate_agent('testing')
+        assert '## Boundaries' in agent_content
 
 
 if __name__ == "__main__":
