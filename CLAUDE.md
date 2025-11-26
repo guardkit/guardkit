@@ -336,7 +336,7 @@ installer/global/           # Global resources
 
 ## Template Philosophy
 
-Taskwright includes **6 high-quality templates** for learning and evaluation:
+Taskwright includes **5 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
@@ -345,13 +345,20 @@ Taskwright includes **6 high-quality templates** for learning and evaluation:
 
 ### Specialized Templates (8-9+/10 Quality)
 4. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
-5. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
-   - **Internal Development**: Based on Taskwright's own 16K LOC codebase (dogfooding)
-   - **Use Case**: CLI tools with complex workflows, understanding Taskwright's architecture
-   - **Not for**: General Python APIs (use fastapi-python instead)
 
 ### Language-Agnostic Template (8+/10 Quality)
-6. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
+5. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
+
+### Note on taskwright-python Template (Removed)
+
+The `taskwright-python` template was removed because:
+- **Taskwright's `.claude/` is git-managed** - Template initialization not needed for Taskwright development
+- **User confusion** - Template suggested users should run `taskwright init` on Taskwright repo itself (incorrect)
+- **Better alternatives exist** - Users needing Python CLI templates should use `fastapi-python` or create custom templates via `/template-create`
+
+**For Taskwright development**: The `.claude/` directory is checked into git. Clone the repo and use the configuration as-is.
+
+**For Python CLI projects**: Use `fastapi-python` template or create a custom template based on your architecture.
 
 ### Why This Approach?
 
@@ -412,11 +419,10 @@ taskwright init react-typescript --info
 - [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
 - [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
 - [react-fastapi-monorepo](installer/global/templates/react-fastapi-monorepo/README.md) - React + FastAPI monorepo (9.2/10)
-- [taskwright-python](installer/global/templates/taskwright-python/README.md) - Python CLI with orchestrator pattern (8+/10)
 - [default](installer/global/templates/default/README.md) - Language-agnostic foundation
 
 **See Also:**
-- [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 6 templates?
+- [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 5 templates?
 - [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
 - [Template Migration Guide](docs/guides/template-migration.md) - Migrating from old templates
 

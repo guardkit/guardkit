@@ -1,13 +1,13 @@
 # Taskwright Templates Overview
 
-**Last Updated**: 2025-01-10
-**Template Count**: 6
+**Last Updated**: 2025-11-26
+**Template Count**: 5
 
 ---
 
 ## Summary
 
-Taskwright includes **6 high-quality reference templates** for different use cases, all validated to 8+/10 quality standards.
+Taskwright includes **5 high-quality reference templates** for different use cases, all validated to 8+/10 quality standards.
 
 ---
 
@@ -40,7 +40,7 @@ Templates based on popular open-source projects and best practices:
 
 ---
 
-### Specialized Templates (2 templates)
+### Specialized Templates (1 template)
 
 #### 4. react-fastapi-monorepo (9.2/10)
 - **Source**: Monorepo best practices
@@ -50,25 +50,11 @@ Templates based on popular open-source projects and best practices:
 - **Best For**: Full-stack projects with frontend + backend in single repository
 - **Added**: TASK-062
 
-#### 5. taskwright-python (8+/10) - Internal Development
-- **Source**: Taskwright's own codebase (16K LOC)
-- **Use Case**: CLI tools with orchestration, understanding Taskwright
-- **Patterns**: Orchestrator pattern, dependency injection, agent system
-- **Tech Stack**: Python 3.11+, Click/Typer, Pydantic, pytest
-- **Best For**: CLI tools with complex workflows, learning Taskwright's architecture
-- **Added**: TASK-066
-
-**⚠️ Special Note on taskwright-python**:
-- **Dogfooding**: Created from the tool that creates templates
-- **Internal Development**: Shows patterns used to build Taskwright itself
-- **Educational**: Learn orchestrator + DI + agent systems
-- **NOT for**: General Python APIs (use fastapi-python instead)
-
 ---
 
 ### Universal Templates (1 template)
 
-#### 6. default (8+/10)
+#### 5. default (8+/10)
 - **Source**: Language-agnostic patterns
 - **Use Case**: Any language (Go, Rust, Ruby, Elixir, PHP, etc.)
 - **Patterns**: Universal project structure, adaptable workflows
@@ -88,8 +74,6 @@ Templates based on popular open-source projects and best practices:
 | REST API / Backend | **fastapi-python** |
 | Full-stack web app | **nextjs-fullstack** |
 | Full-stack monorepo | **react-fastapi-monorepo** |
-| CLI tool with orchestration | **taskwright-python** |
-| Understand Taskwright's code | **taskwright-python** |
 | Go / Rust / Ruby / PHP | **default** |
 | Any other language | **default** |
 
@@ -109,7 +93,6 @@ Templates based on popular open-source projects and best practices:
 - ✅ Need layered architecture
 - ✅ Want OpenAPI/Swagger docs
 - ❌ Need frontend (use nextjs-fullstack or monorepo)
-- ❌ Building CLI tools (use taskwright-python)
 
 #### Choose nextjs-fullstack if:
 - ✅ Full-stack application
@@ -126,15 +109,6 @@ Templates based on popular open-source projects and best practices:
 - ✅ Shared code across services
 - ❌ Simple full-stack app (use nextjs-fullstack)
 - ❌ Separate repositories (use individual templates)
-
-#### Choose taskwright-python if:
-- ✅ Building CLI tool with orchestration
-- ✅ Want to understand Taskwright's architecture
-- ✅ Need orchestrator + DI + agent patterns
-- ✅ Learning internal development patterns
-- ❌ Building web APIs (use fastapi-python)
-- ❌ Building web apps (use react-typescript or nextjs-fullstack)
-- ❌ General Python projects (use default)
 
 #### Choose default if:
 - ✅ Using Go, Rust, Ruby, Elixir, PHP
@@ -158,7 +132,6 @@ All templates meet or exceed **8.0/10 quality threshold**.
 | fastapi-python | 9.2/10 | 92% | 88% | 88% | Excellent |
 | nextjs-fullstack | 9.4/10 | 93% | 90% | 82% | Excellent |
 | react-fastapi-monorepo | 9.2/10 | 90% | 87% | 87% | Excellent |
-| taskwright-python | 8.0+/10 | 85% | 82% | 80%+ | Good |
 | default | 8.0+/10 | 80% | 80% | Varies | Good |
 
 ### Quality Criteria
@@ -184,7 +157,8 @@ Quality scores reflect:
 | TASK-060A | 5 | Reinstated `default` with quality improvements |
 | TASK-062 | 5 | Added `react-fastapi-monorepo` (9.2/10) |
 | TASK-066 | 6 | Added `taskwright-python` (8+/10, internal dev) |
-| **Current** | **6** | **Stable, high-quality set** |
+| TASK-G6D4 | 5 | Removed `taskwright-python` (confusion, no valid use case) |
+| **Current** | **5** | **Stable, high-quality set** |
 
 ### Philosophy Evolution
 
@@ -194,11 +168,12 @@ Quality scores reflect:
 - ❌ Inconsistent quality
 - ❌ Trying to cover every stack
 
-**Current Approach** (6 templates):
+**Current Approach** (5 templates):
 - ✅ All high-quality (8+/10)
 - ✅ Low maintenance
 - ✅ Consistent quality
 - ✅ Focus on learning + `/template-create` for production
+- ✅ Clear separation: Taskwright dev (git-managed) vs user projects (template-initialized)
 
 ---
 
@@ -219,7 +194,6 @@ taskwright init react-typescript
 taskwright init fastapi-python
 taskwright init nextjs-fullstack
 taskwright init react-fastapi-monorepo
-taskwright init taskwright-python
 taskwright init default
 ```
 
@@ -258,7 +232,6 @@ Each template includes:
 - [fastapi-python README](../../installer/global/templates/fastapi-python/README.md)
 - [nextjs-fullstack README](../../installer/global/templates/nextjs-fullstack/README.md)
 - [react-fastapi-monorepo README](../../installer/global/templates/react-fastapi-monorepo/README.md)
-- [taskwright-python README](../../installer/global/templates/taskwright-python/README.md)
 - [default README](../../installer/global/templates/default/README.md)
 
 ---
@@ -302,9 +275,9 @@ taskwright init your-custom-template
 
 ## Frequently Asked Questions
 
-### Why only 6 templates?
+### Why only 5 templates?
 
-We focus on **quality over quantity**. These 6 templates demonstrate best practices for the most popular stacks. For production, use `/template-create` from your own proven code.
+We focus on **quality over quantity**. These 5 templates demonstrate best practices for the most popular stacks. For production, use `/template-create` from your own proven code.
 
 ### What if my stack isn't covered?
 
@@ -316,11 +289,18 @@ Yes, but we recommend using them as references and creating your own with `/temp
 
 ### What happened to the other templates?
 
-We reduced from 9 to 6 high-quality templates, removing 5 low-quality templates and adding 2 specialized ones. All templates now meet 8+/10 quality threshold. See [Template Migration Guide](../guides/template-migration.md).
+We reduced from 9 to 5 high-quality templates, removing 5 low-quality templates, adding 1 specialized one (react-fastapi-monorepo), and later removing taskwright-python. All templates now meet 8+/10 quality threshold. See [Template Migration Guide](../guides/template-migration.md).
 
-### What makes taskwright-python special?
+### What happened to taskwright-python?
 
-It's a **dogfooding example** - created from Taskwright's own codebase. Use it to understand how Taskwright itself is built or to create similar CLI tools with orchestration. It's for **internal development learning**, not general Python APIs.
+The `taskwright-python` template was removed (TASK-G6D4) because:
+- Taskwright's `.claude/` directory is git-managed, not template-initialized
+- Created confusion about when to run `taskwright init` on the Taskwright repo (you don't)
+- No valid use case for users - Python CLI projects should use `fastapi-python` or create custom templates via `/template-create`
+
+**For Taskwright development**: Clone the repo; the `.claude/` configuration is checked into git.
+
+**For Python projects**: Use `fastapi-python` template or create a custom template based on your proven code.
 
 ### How do I share templates with my team?
 
@@ -339,9 +319,9 @@ Create templates using `/template-create` in your repository, commit to git, and
 
 ## Summary
 
-**6 high-quality templates**:
+**5 high-quality templates**:
 - **3 production stacks** (React, FastAPI, Next.js) at 9+/10
-- **2 specialized** (Monorepo, Internal Dev) at 8-9+/10
+- **1 specialized** (Monorepo) at 9.2/10
 - **1 universal** (Language-agnostic) at 8+/10
 
 **Philosophy**: Reference templates for learning, `/template-create` for production.

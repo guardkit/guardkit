@@ -1131,9 +1131,6 @@ print_summary() {
                 react-fastapi-monorepo)
                     echo "  • $name - React + FastAPI monorepo with type safety (9.2/10)"
                     ;;
-                taskwright-python)
-                    echo "  • $name - Python CLI tool with orchestrator pattern (8+/10)"
-                    ;;
                 *)
                     echo "  • $name"
                     ;;
