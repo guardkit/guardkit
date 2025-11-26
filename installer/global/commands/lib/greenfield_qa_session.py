@@ -448,6 +448,54 @@ class TemplateInitQASession:
             # Build final answers
             self.answers = GreenfieldAnswers(**self._session_data)
 
+            # NEW Phase 3.5: Level 1 Automatic Validation
+            print("\n" + "=" * 70)
+            print("  Phase 3.5: Template Validation")
+            print("=" * 70 + "\n")
+
+            # Prepare template data for validation
+            # Extract layers from architecture choices
+            layers = self._extract_layers_from_answers()
+
+            # Generate placeholder agent structure for validation
+            # (actual agent generation happens in Phase 3 of the orchestrator)
+            agents = self._generate_placeholder_agents_for_validation()
+
+            template_data = {
+                'agents': agents,
+                'layers': layers,
+                'architecture_pattern': self._session_data.get('architecture_pattern', 'unknown')
+            }
+
+            validation_result = self._run_level1_validation(template_data)
+
+            # Display validation results
+            if validation_result['overall_pass']:
+                print("✅ Validation passed")
+            else:
+                print("⚠️ Validation warnings detected (template creation will proceed):\n")
+
+                # CRUD completeness
+                crud = validation_result['crud_completeness']
+                print(f"  CRUD Coverage: {crud['coverage']:.0%} (threshold: {crud['threshold']:.0%})")
+                if crud['missing_operations']:
+                    print(f"    Missing: {', '.join(crud['missing_operations'])}")
+
+                # Layer symmetry
+                layer = validation_result['layer_symmetry']
+                if not layer['is_symmetric']:
+                    print(f"  Layer Symmetry: Issues detected")
+                    for issue in layer['issues']:
+                        print(f"    - {issue}")
+
+                # Recommendations
+                if validation_result['recommendations']:
+                    print("\n  Recommendations:")
+                    for rec in validation_result['recommendations']:
+                        print(f"    {rec}")
+
+            print()  # Empty line after validation
+
             # Show summary
             self._show_summary()
 
@@ -1456,6 +1504,265 @@ This agent specializes in {agent_type} for {technology} projects using {framewor
 Use this agent when working on {agent_type}-related tasks in your {technology}/{framework} project.
 """
         return content
+
+    def _validate_crud_completeness(self, template_data: dict) -> dict:
+        """
+        Validate CRUD operation coverage.
+
+        Port of template-create Phase 4.5 validation (TASK-040).
+
+        Args:
+            template_data: Template structure with agents and layers
+
+        Returns:
+            dict with coverage metrics and recommendations
+
+        Example:
+            >>> result = session._validate_crud_completeness(template_data)
+            >>> result['crud_coverage']
+            0.75
+        """
+        crud_operations = {'create', 'read', 'update', 'delete'}
+        covered_operations = set()
+
+        # Check agent capabilities for CRUD coverage
+        agents = template_data.get('agents', [])
+        for agent in agents:
+            agent_name = agent.get('name', '').lower()
+            capabilities = agent.get('capabilities', [])
+
+            # Map agent types to CRUD operations
+            if 'create' in agent_name or 'post' in capabilities:
+                covered_operations.add('create')
+            if 'read' in agent_name or 'get' in capabilities or 'list' in capabilities:
+                covered_operations.add('read')
+            if 'update' in agent_name or 'put' in capabilities or 'patch' in capabilities:
+                covered_operations.add('update')
+            if 'delete' in agent_name or 'remove' in capabilities:
+                covered_operations.add('delete')
+
+        coverage = len(covered_operations) / len(crud_operations)
+        missing_operations = crud_operations - covered_operations
+
+        return {
+            'coverage': coverage,
+            'covered_operations': list(covered_operations),
+            'missing_operations': list(missing_operations),
+            'threshold': 0.60,
+            'passes': coverage >= 0.60
+        }
+
+
+    def _validate_layer_symmetry(self, template_data: dict) -> dict:
+        """
+        Validate architectural layer symmetry.
+
+        Port of template-create Phase 4.5 validation (TASK-040).
+
+        Args:
+            template_data: Template structure with layers
+
+        Returns:
+            dict with symmetry analysis and issues
+
+        Example:
+            >>> result = session._validate_layer_symmetry(template_data)
+            >>> result['is_symmetric']
+            True
+        """
+        layers = template_data.get('layers', [])
+
+        # Common layer patterns (should appear together)
+        layer_patterns = [
+            {'api', 'service', 'repository'},  # 3-tier
+            {'controller', 'service', 'data'},  # MVC
+            {'presentation', 'business', 'data'},  # Classic 3-layer
+        ]
+
+        found_layers = {layer.lower() for layer in layers}
+        issues = []
+        matched_pattern = None
+
+        # Check if layers match a known pattern
+        for pattern in layer_patterns:
+            if pattern.issubset(found_layers):
+                matched_pattern = pattern
+                break
+
+        # Only check for incomplete patterns if no complete match was found
+        if not matched_pattern:
+            for pattern in layer_patterns:
+                if len(pattern & found_layers) > 0:
+                    # Partial match - missing layers
+                    missing = pattern - found_layers
+                    issues.append(f"Incomplete pattern: missing {missing}")
+                    break  # Only report first incomplete pattern match
+
+        # Check for orphan layers (no matching pattern)
+        if not matched_pattern and len(found_layers) > 0:
+            issues.append("No recognized architectural pattern detected")
+
+        return {
+            'is_symmetric': len(issues) == 0,
+            'matched_pattern': list(matched_pattern) if matched_pattern else None,
+            'found_layers': list(found_layers),
+            'issues': issues
+        }
+
+
+    def _generate_autofix_recommendations(
+        self,
+        crud_result: dict,
+        layer_result: dict
+    ) -> list:
+        """
+        Generate actionable auto-fix recommendations.
+
+        Args:
+            crud_result: CRUD completeness validation result
+            layer_result: Layer symmetry validation result
+
+        Returns:
+            List of recommendation strings
+        """
+        recommendations = []
+
+        # CRUD recommendations
+        if not crud_result['passes']:
+            missing = crud_result['missing_operations']
+            recommendations.append(
+                f"⚠️ CRUD coverage {crud_result['coverage']:.0%} (threshold: 60%). "
+                f"Consider adding agents for: {', '.join(missing)}"
+            )
+
+        # Layer symmetry recommendations
+        if not layer_result['is_symmetric']:
+            for issue in layer_result['issues']:
+                recommendations.append(f"⚠️ Layer symmetry: {issue}")
+
+        return recommendations
+
+
+    def _run_level1_validation(self, template_data: dict) -> dict:
+        """
+        Run Level 1 automatic validation.
+
+        Port of template-create Phase 4.5 (TASK-040).
+
+        Args:
+            template_data: Complete template structure
+
+        Returns:
+            dict with validation results and recommendations
+        """
+        crud_result = self._validate_crud_completeness(template_data)
+        layer_result = self._validate_layer_symmetry(template_data)
+        recommendations = self._generate_autofix_recommendations(
+            crud_result,
+            layer_result
+        )
+
+        return {
+            'crud_completeness': crud_result,
+            'layer_symmetry': layer_result,
+            'recommendations': recommendations,
+            'overall_pass': crud_result['passes'] and layer_result['is_symmetric']
+        }
+
+    def _extract_layers_from_answers(self) -> List[str]:
+        """
+        Extract architectural layers from Q&A answers.
+
+        Maps architecture patterns and project structure choices to layer names.
+
+        Returns:
+            List of layer names
+        """
+        layers = []
+
+        # Get architecture pattern
+        arch_pattern = self._session_data.get('architecture_pattern', 'simple')
+
+        # Map architecture patterns to layers
+        pattern_to_layers = {
+            'mvvm': ['view', 'viewmodel', 'model'],
+            'clean': ['presentation', 'application', 'domain', 'infrastructure'],
+            'hexagonal': ['api', 'application', 'domain', 'infrastructure'],
+            'layered': ['presentation', 'business', 'data'],
+            'vertical-slice': ['features'],  # Less layer-oriented
+            'simple': []  # No formal layers
+        }
+
+        # Get layers from pattern
+        if arch_pattern in pattern_to_layers:
+            layers.extend(pattern_to_layers[arch_pattern])
+
+        # Check for data access pattern (adds data layer if not present)
+        data_access = self._session_data.get('data_access')
+        if data_access and data_access != 'none':
+            if not any(layer in ['data', 'infrastructure', 'repository'] for layer in layers):
+                layers.append('repository')
+
+        # Check for API pattern (adds API layer if backend)
+        api_pattern = self._session_data.get('api_pattern')
+        if api_pattern and not any(layer in ['api', 'web', 'controller'] for layer in layers):
+            layers.append('api')
+
+        return layers
+
+    def _generate_placeholder_agents_for_validation(self) -> List[dict]:
+        """
+        Generate placeholder agent structure for validation.
+
+        This creates a minimal agent structure based on Q&A answers
+        to validate CRUD completeness without full agent generation.
+
+        Returns:
+            List of agent dictionaries with name and capabilities
+        """
+        agents = []
+
+        # Get data access pattern
+        data_access = self._session_data.get('data_access')
+        api_pattern = self._session_data.get('api_pattern')
+
+        # If repository pattern, add CRUD agents
+        if data_access == 'repository':
+            agents.extend([
+                {'name': 'create-repository', 'capabilities': ['post', 'create']},
+                {'name': 'read-repository', 'capabilities': ['get', 'read']},
+                {'name': 'update-repository', 'capabilities': ['put', 'update']},
+                {'name': 'delete-repository', 'capabilities': ['delete', 'remove']}
+            ])
+
+        # If API pattern (REST/REPR), add API agents
+        if api_pattern in ['rest', 'repr', 'minimal']:
+            agents.extend([
+                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
+                {'name': 'read-endpoint', 'capabilities': ['get', 'read', 'list']},
+                {'name': 'update-endpoint', 'capabilities': ['put', 'patch', 'update']},
+                {'name': 'delete-endpoint', 'capabilities': ['delete', 'remove']}
+            ])
+
+        # If CQRS, split into commands/queries
+        if data_access == 'cqrs':
+            agents.extend([
+                {'name': 'create-command', 'capabilities': ['post', 'create']},
+                {'name': 'update-command', 'capabilities': ['put', 'update']},
+                {'name': 'delete-command', 'capabilities': ['delete', 'remove']},
+                {'name': 'read-query', 'capabilities': ['get', 'read', 'list']}
+            ])
+
+        # If minimal or no data access, add generic service agents
+        if not agents:
+            agents.extend([
+                {'name': 'service-create', 'capabilities': ['create']},
+                {'name': 'service-read', 'capabilities': ['read', 'get']},
+                {'name': 'service-update', 'capabilities': ['update']},
+                {'name': 'service-delete', 'capabilities': ['delete']}
+            ])
+
+        return agents
 
 
 # Module exports

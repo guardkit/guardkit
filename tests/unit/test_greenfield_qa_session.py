@@ -941,5 +941,345 @@ class TestAgentGeneration:
         assert '## Boundaries' in agent_content
 
 
+class TestLevel1Validation:
+    """Test Level 1 automatic validation (TASK-INIT-003)."""
+
+    @pytest.fixture(autouse=True)
+    def mock_inquirer(self):
+        """Mock inquirer availability for all tests in this class."""
+        with patch('greenfield_qa_session.INQUIRER_AVAILABLE', True):
+            yield
+
+    def test_validate_crud_completeness_full_coverage(self):
+        """Test CRUD validation with full coverage."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'create-agent', 'capabilities': ['post']},
+                {'name': 'read-agent', 'capabilities': ['get']},
+                {'name': 'update-agent', 'capabilities': ['put']},
+                {'name': 'delete-agent', 'capabilities': ['delete']}
+            ]
+        }
+
+        result = session._validate_crud_completeness(template_data)
+
+        assert result['coverage'] == 1.0
+        assert result['passes'] is True
+        assert len(result['missing_operations']) == 0
+        assert len(result['covered_operations']) == 4
+
+    def test_validate_crud_completeness_partial(self):
+        """Test CRUD validation with partial coverage."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'read-agent', 'capabilities': ['get']},
+            ]
+        }
+
+        result = session._validate_crud_completeness(template_data)
+
+        assert result['coverage'] == 0.25
+        assert result['passes'] is False
+        assert 'create' in result['missing_operations']
+        assert 'update' in result['missing_operations']
+        assert 'delete' in result['missing_operations']
+        assert 'read' in result['covered_operations']
+
+    def test_validate_crud_completeness_above_threshold(self):
+        """Test CRUD validation passes with 60% coverage."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
+                {'name': 'read-endpoint', 'capabilities': ['get', 'read']},
+                {'name': 'update-endpoint', 'capabilities': ['put', 'update']}
+            ]
+        }
+
+        result = session._validate_crud_completeness(template_data)
+
+        assert result['coverage'] == 0.75
+        assert result['passes'] is True  # Above 60% threshold
+        assert 'delete' in result['missing_operations']
+
+    def test_validate_crud_completeness_below_threshold(self):
+        """Test CRUD validation fails below 60% threshold."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'create-endpoint', 'capabilities': ['post', 'create']},
+                {'name': 'read-endpoint', 'capabilities': ['get', 'read']}
+            ]
+        }
+
+        result = session._validate_crud_completeness(template_data)
+
+        assert result['coverage'] == 0.50
+        assert result['passes'] is False  # Below 60% threshold
+
+    def test_validate_layer_symmetry_3tier(self):
+        """Test layer symmetry validation for 3-tier."""
+        session = TemplateInitQASession()
+        template_data = {
+            'layers': ['api', 'service', 'repository']
+        }
+
+        result = session._validate_layer_symmetry(template_data)
+
+        assert result['is_symmetric'] is True
+        assert set(result['matched_pattern']) == {'api', 'service', 'repository'}
+        assert len(result['issues']) == 0
+
+    def test_validate_layer_symmetry_mvc(self):
+        """Test layer symmetry validation for MVC."""
+        session = TemplateInitQASession()
+        template_data = {
+            'layers': ['controller', 'service', 'data']
+        }
+
+        result = session._validate_layer_symmetry(template_data)
+
+        assert result['is_symmetric'] is True
+        assert set(result['matched_pattern']) == {'controller', 'service', 'data'}
+
+    def test_validate_layer_symmetry_incomplete(self):
+        """Test layer symmetry with incomplete pattern."""
+        session = TemplateInitQASession()
+        template_data = {
+            'layers': ['api', 'service']  # Missing repository
+        }
+
+        result = session._validate_layer_symmetry(template_data)
+
+        assert result['is_symmetric'] is False
+        assert len(result['issues']) > 0
+        assert any('Incomplete pattern' in issue for issue in result['issues'])
+
+    def test_validate_layer_symmetry_no_pattern(self):
+        """Test layer symmetry with no recognized pattern."""
+        session = TemplateInitQASession()
+        template_data = {
+            'layers': ['custom1', 'custom2']
+        }
+
+        result = session._validate_layer_symmetry(template_data)
+
+        assert result['is_symmetric'] is False
+        assert any('No recognized architectural pattern' in issue for issue in result['issues'])
+
+    def test_generate_autofix_recommendations_crud_only(self):
+        """Test recommendation generation for CRUD issues only."""
+        session = TemplateInitQASession()
+
+        crud_result = {
+            'coverage': 0.50,
+            'passes': False,
+            'missing_operations': ['update', 'delete']
+        }
+        layer_result = {
+            'is_symmetric': True,
+            'issues': []
+        }
+
+        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
+
+        assert len(recommendations) == 1
+        assert 'CRUD coverage 50%' in recommendations[0]
+        assert 'update' in recommendations[0]
+        assert 'delete' in recommendations[0]
+
+    def test_generate_autofix_recommendations_layer_only(self):
+        """Test recommendation generation for layer issues only."""
+        session = TemplateInitQASession()
+
+        crud_result = {
+            'coverage': 1.0,
+            'passes': True,
+            'missing_operations': []
+        }
+        layer_result = {
+            'is_symmetric': False,
+            'issues': ['Incomplete pattern: missing repository']
+        }
+
+        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
+
+        assert len(recommendations) == 1
+        assert 'Layer symmetry' in recommendations[0]
+        assert 'Incomplete pattern' in recommendations[0]
+
+    def test_generate_autofix_recommendations_both(self):
+        """Test recommendation generation for both CRUD and layer issues."""
+        session = TemplateInitQASession()
+
+        crud_result = {
+            'coverage': 0.50,
+            'passes': False,
+            'missing_operations': ['update', 'delete']
+        }
+        layer_result = {
+            'is_symmetric': False,
+            'issues': ['No recognized architectural pattern detected']
+        }
+
+        recommendations = session._generate_autofix_recommendations(crud_result, layer_result)
+
+        assert len(recommendations) == 2
+        assert any('CRUD coverage' in rec for rec in recommendations)
+        assert any('Layer symmetry' in rec for rec in recommendations)
+
+    def test_run_level1_validation_pass(self):
+        """Test full validation that passes."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'create-agent', 'capabilities': ['post']},
+                {'name': 'read-agent', 'capabilities': ['get']},
+                {'name': 'update-agent', 'capabilities': ['put']},
+                {'name': 'delete-agent', 'capabilities': ['delete']}
+            ],
+            'layers': ['api', 'service', 'repository'],
+            'architecture_pattern': '3-tier'
+        }
+
+        result = session._run_level1_validation(template_data)
+
+        assert result['overall_pass'] is True
+        assert result['crud_completeness']['passes'] is True
+        assert result['layer_symmetry']['is_symmetric'] is True
+        assert len(result['recommendations']) == 0
+
+    def test_run_level1_validation_fail(self):
+        """Test full validation that fails."""
+        session = TemplateInitQASession()
+        template_data = {
+            'agents': [
+                {'name': 'read-agent', 'capabilities': ['get']}
+            ],
+            'layers': ['api', 'service'],  # Incomplete
+            'architecture_pattern': '3-tier'
+        }
+
+        result = session._run_level1_validation(template_data)
+
+        assert result['overall_pass'] is False
+        assert result['crud_completeness']['passes'] is False
+        assert result['layer_symmetry']['is_symmetric'] is False
+        assert len(result['recommendations']) > 0
+
+    def test_extract_layers_from_answers_mvvm(self):
+        """Test layer extraction for MVVM pattern."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'architecture_pattern': 'mvvm'
+        }
+
+        layers = session._extract_layers_from_answers()
+
+        assert 'view' in layers
+        assert 'viewmodel' in layers
+        assert 'model' in layers
+
+    def test_extract_layers_from_answers_clean(self):
+        """Test layer extraction for Clean Architecture."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'architecture_pattern': 'clean'
+        }
+
+        layers = session._extract_layers_from_answers()
+
+        assert 'presentation' in layers
+        assert 'application' in layers
+        assert 'domain' in layers
+        assert 'infrastructure' in layers
+
+    def test_extract_layers_from_answers_with_data_access(self):
+        """Test layer extraction adds repository for data access."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'architecture_pattern': 'simple',
+            'data_access': 'repository'
+        }
+
+        layers = session._extract_layers_from_answers()
+
+        assert 'repository' in layers
+
+    def test_extract_layers_from_answers_with_api(self):
+        """Test layer extraction adds API layer for backend."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'architecture_pattern': 'simple',
+            'api_pattern': 'rest'
+        }
+
+        layers = session._extract_layers_from_answers()
+
+        assert 'api' in layers
+
+    def test_generate_placeholder_agents_for_validation_repository(self):
+        """Test placeholder agent generation for repository pattern."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'data_access': 'repository'
+        }
+
+        agents = session._generate_placeholder_agents_for_validation()
+
+        assert len(agents) >= 4
+        agent_names = [a['name'] for a in agents]
+        assert any('create' in name for name in agent_names)
+        assert any('read' in name for name in agent_names)
+        assert any('update' in name for name in agent_names)
+        assert any('delete' in name for name in agent_names)
+
+    def test_generate_placeholder_agents_for_validation_api(self):
+        """Test placeholder agent generation for REST API."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'api_pattern': 'rest'
+        }
+
+        agents = session._generate_placeholder_agents_for_validation()
+
+        assert len(agents) >= 4
+        # Check capabilities
+        all_capabilities = set()
+        for agent in agents:
+            all_capabilities.update(agent['capabilities'])
+
+        assert 'create' in all_capabilities or 'post' in all_capabilities
+        assert 'read' in all_capabilities or 'get' in all_capabilities
+        assert 'update' in all_capabilities or 'put' in all_capabilities
+        assert 'delete' in all_capabilities or 'remove' in all_capabilities
+
+    def test_generate_placeholder_agents_for_validation_cqrs(self):
+        """Test placeholder agent generation for CQRS pattern."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'data_access': 'cqrs'
+        }
+
+        agents = session._generate_placeholder_agents_for_validation()
+
+        assert len(agents) >= 4
+        agent_names = [a['name'] for a in agents]
+        assert any('command' in name for name in agent_names)
+        assert any('query' in name for name in agent_names)
+
+    def test_generate_placeholder_agents_for_validation_fallback(self):
+        """Test placeholder agent generation fallback for minimal config."""
+        session = TemplateInitQASession()
+        session._session_data = {}
+
+        agents = session._generate_placeholder_agents_for_validation()
+
+        # Should still generate generic service agents
+        assert len(agents) >= 4
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=greenfield_qa_session", "--cov-report=term-missing"])
