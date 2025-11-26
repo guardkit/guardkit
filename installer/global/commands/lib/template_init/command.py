@@ -55,18 +55,20 @@ class TemplateInitCommand:
         enable_external_agents: Enable external agent discovery (Phase 1: False)
     """
 
-    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False):
+    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False):
         """Initialize command
 
         Args:
             template_dir: Custom template directory (default: installer/local/templates/)
             enable_external_agents: Enable external agent discovery (default: False)
+            no_create_agent_tasks: Skip agent enhancement task creation (default: False)
         """
         if template_dir is None:
             template_dir = Path("installer/local/templates")
 
         self.template_dir = template_dir
         self.enable_external_agents = enable_external_agents
+        self.no_create_agent_tasks = no_create_agent_tasks
 
     def execute(self) -> bool:
         """Execute /template-init command
@@ -91,7 +93,10 @@ class TemplateInitCommand:
             agents = self._phase3_agent_setup(template)
 
             # Phase 4: Save Template
-            self._phase4_save_template(template, agents)
+            template_path = self._phase4_save_template(template, agents)
+
+            # Phase 5: Create Agent Enhancement Tasks
+            self._phase5_create_agent_tasks(template, template_path)
 
             # Success
             self._show_success(template, agents)
@@ -375,12 +380,15 @@ class TemplateInitCommand:
                 + len(getattr(agents, "generated", []))
             )
 
-    def _phase4_save_template(self, template: GreenfieldTemplate, agents: Any) -> None:
+    def _phase4_save_template(self, template: GreenfieldTemplate, agents: Any) -> Path:
         """Phase 4: Save template to disk
 
         Args:
             template: GreenfieldTemplate from Phase 2
             agents: AgentRecommendation from Phase 3
+
+        Returns:
+            Path to saved template directory
 
         Raises:
             TemplateSaveError: If save fails
@@ -442,8 +450,70 @@ class TemplateInitCommand:
 
             print(f"\n✅ Template saved to: {template_path}")
 
+            return template_path
+
         except Exception as e:
             raise TemplateSaveError(f"Failed to save template: {e}") from e
+
+    def _phase5_create_agent_tasks(self, template: GreenfieldTemplate, template_path: Path) -> None:
+        """Phase 5: Create agent enhancement tasks
+
+        Creates one enhancement task per generated agent for incremental improvement.
+
+        Args:
+            template: GreenfieldTemplate from Phase 2
+            template_path: Path to saved template directory
+
+        Raises:
+            AgentSetupError: If task creation fails (non-fatal - just warns)
+        """
+        if self.no_create_agent_tasks:
+            return
+
+        print("\n" + "=" * 60)
+        print("  Phase 5: Agent Enhancement Tasks")
+        print("=" * 60 + "\n")
+
+        try:
+            # Find agent files in template directory
+            agents_dir = template_path / "agents"
+            if not agents_dir.exists():
+                print("⚠️ No agents directory found, skipping task creation")
+                return
+
+            agent_files = list(agents_dir.glob("*.md"))
+            if not agent_files:
+                print("⚠️ No agents generated, skipping task creation")
+                return
+
+            # Import greenfield Q&A session for task creation methods
+            from ..greenfield_qa_session import TemplateInitQASession
+
+            # Create temporary session instance for task creation
+            session = TemplateInitQASession(no_create_agent_tasks=True)
+            # Set template name in session data for task metadata
+            session._session_data = {'template_name': template.name}
+
+            # Create enhancement tasks
+            print(f"📋 Creating enhancement tasks for {len(agent_files)} agents...")
+            task_ids = session._create_agent_enhancement_tasks(
+                template.name,
+                agent_files
+            )
+
+            if task_ids:
+                print(f"  ✓ Created {len(task_ids)} enhancement tasks")
+
+                # Display enhancement options to user
+                session._display_enhancement_options(task_ids, template.name)
+            else:
+                print("⚠️ No enhancement tasks created")
+
+        except Exception as e:
+            print(f"⚠️ Warning: Agent task creation failed: {e}")
+            # Don't fail entire workflow, just warn
+            import traceback
+            traceback.print_exc()
 
     def _show_success(self, template: GreenfieldTemplate, agents: Any) -> None:
         """Display success message
@@ -467,7 +537,7 @@ class TemplateInitCommand:
         print()
 
 
-def template_init(template_dir: Optional[Path] = None) -> bool:
+def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bool = False) -> bool:
     """Command entry point for /template-init
 
     This is the main entry point called by the CLI when user runs:
@@ -475,6 +545,7 @@ def template_init(template_dir: Optional[Path] = None) -> bool:
 
     Args:
         template_dir: Optional custom template directory
+        no_create_agent_tasks: Skip agent enhancement task creation (default: False)
 
     Returns:
         True if successful, False otherwise
@@ -485,7 +556,7 @@ def template_init(template_dir: Optional[Path] = None) -> bool:
         >>> if success:
         ...     print("Template created successfully")
     """
-    command = TemplateInitCommand(template_dir=template_dir)
+    command = TemplateInitCommand(template_dir=template_dir, no_create_agent_tasks=no_create_agent_tasks)
     return command.execute()
 
 
