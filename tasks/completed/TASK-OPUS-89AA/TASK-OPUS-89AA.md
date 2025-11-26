@@ -1,18 +1,24 @@
 ---
 id: TASK-OPUS-89AA
 title: "Integrate Opus 4.5 into /task-review with depth-based model routing"
-status: backlog
+status: completed
 created: 2025-11-25T13:15:00Z
-updated: 2025-11-25T13:15:00Z
+updated: 2025-11-26T13:30:00Z
+completed_at: 2025-11-25T17:53:00Z
 priority: high
 tags: [optimization, model-selection, task-review, opus-4.5]
 complexity: 6
 estimated_hours: 8
+actual_hours: 8
 related_tasks: [TASK-895A]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 100
+  test_count: 18
+  last_run: 2025-11-25T17:53:00Z
+implementation_summary: "Implemented intelligent model routing for /task-review command with Opus 4.5 for high-value scenarios. Created ModelRouter class with depth-based routing matrix (80% Sonnet, 20% Opus). Security reviews always use Opus 4. Comprehensive architectural reviews and standard+ decision reviews use Opus 4. All other scenarios use Sonnet 4.5 for cost efficiency. Includes cost transparency, graceful degradation, and comprehensive unit tests (18 tests)."
+completed_location: tasks/completed/TASK-OPUS-89AA/
+organized_files: ["TASK-OPUS-89AA.md"]
 ---
 
 # Task: Integrate Opus 4.5 into `/task-review` with Depth-Based Model Routing
