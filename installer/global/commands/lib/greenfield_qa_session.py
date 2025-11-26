@@ -389,22 +389,31 @@ class TemplateInitQASession:
         self._session_data: dict = {}
         self.no_create_agent_tasks = no_create_agent_tasks
 
-    def run(self) -> Optional[GreenfieldAnswers]:
+    def run(self) -> tuple[Optional[GreenfieldAnswers], int]:
         """
         Run interactive Q&A session for greenfield template creation.
+
+        NOW RETURNS exit code for CI/CD integration.
 
         Executes all 10 sections sequentially, with conditional sections
         based on technology choices. Displays summary and confirms before
         proceeding.
 
         Returns:
-            GreenfieldAnswers: User responses, or None if cancelled
+            Tuple of (answers, exit_code)
+            - answers: Q&A results, or None if cancelled
+            - exit_code: Quality-based exit code
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+              - 130: User cancelled (KeyboardInterrupt)
 
         Example:
             >>> session = TemplateInitQASession()
-            >>> answers = session.run()
-            >>> if answers:
-            ...     print(f"Collected {len(answers.to_dict())} answers")
+            >>> answers, exit_code = session.run()
+            >>> if answers and exit_code == 0:
+            ...     print(f"High quality template with {len(answers.to_dict())} answers")
         """
         print("\n" + "=" * 60)
         print("  /template-init - Greenfield Template Creation")
@@ -459,18 +468,26 @@ class TemplateInitQASession:
 
             if not proceed:
                 print("\nQ&A session cancelled. Run /template-init again to restart.\n")
-                return None
+                return None, 130  # User cancelled
 
-            return self.answers
+            # Calculate exit code based on quality score
+            # NOTE: Using placeholder score until TASK-INIT-006 is implemented
+            quality_score = self._calculate_placeholder_quality_score()
+            exit_code = self._calculate_exit_code(quality_score)
+
+            # Display exit code information
+            self._display_exit_code_info(exit_code, quality_score)
+
+            return self.answers, exit_code
 
         except KeyboardInterrupt:
             print("\n\nQ&A session interrupted. Saving partial session...")
             self._save_partial_session()
-            return None
+            return None, 130  # User cancelled (KeyboardInterrupt)
 
         except Exception as e:
             print(f"\n\nError during Q&A session: {e}")
-            return None
+            return None, 3  # Error exit code
 
     def _section1_identity(self) -> None:
         """Section 1: Template Identity."""
@@ -1156,6 +1173,143 @@ class TemplateInitQASession:
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
 
+    def _calculate_placeholder_quality_score(self) -> float:
+        """
+        Calculate placeholder quality score until TASK-INIT-006 is implemented.
+
+        This is a simplified scoring mechanism that provides reasonable defaults
+        based on Q&A answers. Will be replaced with full QualityScorer from
+        TASK-INIT-006.
+
+        Returns:
+            float: Quality score from 0-10
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._session_data = {
+            ...     'testing_scope': ['unit', 'integration'],
+            ...     'error_handling': 'result',
+            ...     'dependency_injection': 'builtin'
+            ... }
+            >>> score = session._calculate_placeholder_quality_score()
+            >>> 6.0 <= score <= 10.0
+            True
+        """
+        score = 5.0  # Base score
+
+        # Bonus for comprehensive testing
+        testing_scope = self._session_data.get('testing_scope', [])
+        if 'unit' in testing_scope:
+            score += 1.0
+        if 'integration' in testing_scope:
+            score += 0.5
+        if len(testing_scope) >= 3:
+            score += 0.5
+
+        # Bonus for error handling strategy
+        error_handling = self._session_data.get('error_handling', '')
+        if error_handling in ['result', 'mixed']:
+            score += 1.0
+        elif error_handling == 'exceptions':
+            score += 0.5
+
+        # Bonus for DI
+        di = self._session_data.get('dependency_injection', '')
+        if di in ['builtin', 'third-party']:
+            score += 0.5
+
+        # Bonus for validation
+        validation = self._session_data.get('validation_approach', '')
+        if validation in ['fluent', 'annotations']:
+            score += 0.5
+
+        # Bonus for architecture pattern
+        architecture = self._session_data.get('architecture_pattern', '')
+        if architecture in ['clean', 'hexagonal', 'mvvm', 'layered']:
+            score += 0.5
+
+        # Bonus for documentation
+        if (self._session_data.get('documentation_paths') or
+            self._session_data.get('documentation_text') or
+            self._session_data.get('documentation_urls')):
+            score += 0.5
+
+        # Cap at 10.0
+        return min(10.0, score)
+
+    def _calculate_exit_code(self, quality_score: float) -> int:
+        """
+        Calculate exit code from quality score.
+
+        Args:
+            quality_score: Quality score from 0-10
+
+        Returns:
+            int: Exit code (0, 1, 2, or 3)
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._calculate_exit_code(9.0)
+            0
+            >>> session._calculate_exit_code(7.0)
+            1
+            >>> session._calculate_exit_code(5.0)
+            2
+        """
+        if quality_score >= 8.0:
+            return 0  # High quality
+        elif quality_score >= 6.0:
+            return 1  # Medium quality
+        else:
+            return 2  # Low quality
+
+    def _display_exit_code_info(self, exit_code: int, score: float) -> None:
+        """
+        Display exit code information for CI/CD awareness.
+
+        Args:
+            exit_code: Calculated exit code (0-3)
+            score: Quality score that determined exit code
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._display_exit_code_info(0, 9.0)
+            # Prints exit code information
+        """
+        print("\n" + "=" * 70)
+        print("  CI/CD Integration")
+        print("=" * 70 + "\n")
+
+        exit_code_info = {
+            0: ("✅ SUCCESS", "High quality (≥8/10)", "Template ready for production"),
+            1: ("⚠️ WARNING", "Medium quality (6-7.9/10)", "Review recommended before production"),
+            2: ("❌ LOW QUALITY", "Below threshold (<6/10)", "Improvements required"),
+            3: ("🔥 ERROR", "Execution failed", "Check error messages above"),
+            130: ("⚠️ CANCELLED", "User cancelled", "Session interrupted")
+        }
+
+        status, reason, action = exit_code_info.get(
+            exit_code,
+            ("UNKNOWN", "Unknown", "Check logs")
+        )
+
+        print(f"Exit Code: {exit_code}")
+        print(f"Status: {status}")
+        print(f"Reason: {reason} (score: {score:.1f}/10)")
+        print(f"Action: {action}\n")
+
+        if exit_code in [0, 1]:
+            print("CI/CD usage:")
+            print("  /template-init && echo 'Template meets quality threshold'")
+        elif exit_code in [2, 3]:
+            print("CI/CD will fail on exit code 2 or 3")
+            print("  /template-init || exit 1")
+        print()
+
     def _create_agent_enhancement_tasks(
         self,
         template_name: str,
@@ -1545,10 +1699,53 @@ Use this agent when working on {agent_type}-related tasks in your {technology}/{
         print("  • Critical quality requirements\n")
 
 
+def main() -> None:
+    """
+    Entry point for /template-init command.
+
+    Handles exit code propagation for CI/CD.
+
+    Usage:
+        python -m installer.global.commands.lib.greenfield_qa_session
+
+    Returns exit code based on template quality:
+        0: High quality (≥8/10)
+        1: Medium quality (6-7.9/10)
+        2: Low quality (<6/10)
+        3: Error occurred
+        130: User cancelled (KeyboardInterrupt)
+
+    Example:
+        >>> # In CI/CD pipeline:
+        >>> # python -m installer.global.commands.lib.greenfield_qa_session
+        >>> # Exit code determines pipeline pass/fail
+    """
+    import sys
+
+    session = TemplateInitQASession()
+
+    try:
+        answers, exit_code = session.run()
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Template creation cancelled by user")
+        sys.exit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(3)
+
+
 # Module exports
 __all__ = [
     "GreenfieldAnswers",
     "TemplateInitQASession",
     "generate_boundary_sections",
     "validate_boundary_sections",
+    "main",
 ]
+
+
+if __name__ == "__main__":
+    main()
