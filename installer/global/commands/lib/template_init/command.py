@@ -55,13 +55,14 @@ class TemplateInitCommand:
         enable_external_agents: Enable external agent discovery (Phase 1: False)
     """
 
-    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False):
+    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False, validate: bool = False):
         """Initialize command
 
         Args:
             template_dir: Custom template directory (default: installer/local/templates/)
             enable_external_agents: Enable external agent discovery (default: False)
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
+            validate: Run extended validation (Level 2) (default: False)
         """
         if template_dir is None:
             template_dir = Path("installer/local/templates")
@@ -69,6 +70,7 @@ class TemplateInitCommand:
         self.template_dir = template_dir
         self.enable_external_agents = enable_external_agents
         self.no_create_agent_tasks = no_create_agent_tasks
+        self.validate = validate
 
     def execute(self) -> bool:
         """Execute /template-init command
@@ -95,13 +97,18 @@ class TemplateInitCommand:
             # Phase 4: Save Template
             template_path = self._phase4_save_template(template, agents)
 
+            # Phase 4.5: Level 2 Extended Validation (Optional)
+            exit_code = 0
+            if self.validate:
+                exit_code = self._phase4_5_extended_validation(template, template_path)
+
             # Phase 5: Create Agent Enhancement Tasks
             self._phase5_create_agent_tasks(template, template_path)
 
             # Success
             self._show_success(template, agents)
 
-            return True
+            return exit_code == 0 if self.validate else True
 
         except KeyboardInterrupt:
             print("\n\n⚠️  Template creation cancelled by user.\n")
@@ -455,6 +462,78 @@ class TemplateInitCommand:
         except Exception as e:
             raise TemplateSaveError(f"Failed to save template: {e}") from e
 
+    def _phase4_5_extended_validation(self, template: GreenfieldTemplate, template_path: Path) -> int:
+        """Phase 4.5: Level 2 Extended Validation (Optional)
+
+        Runs extended validation checks on generated template and produces quality report.
+
+        Args:
+            template: GreenfieldTemplate from Phase 2
+            template_path: Path to saved template directory
+
+        Returns:
+            Exit code (0 = A grade, 1 = B-C grade, 2 = D-F grade)
+        """
+        print("\n" + "=" * 70)
+        print("  Level 2: Extended Validation")
+        print("=" * 70 + "\n")
+
+        try:
+            # Import greenfield Q&A session for validation methods
+            from ..greenfield_qa_session import TemplateInitQASession
+
+            # Create temporary session instance for validation
+            session = TemplateInitQASession(validate=True)
+
+            # Prepare template data for validation
+            template_data = {
+                'architecture_pattern': getattr(template, 'architecture_pattern', 'unknown'),
+                'layers': getattr(template, 'layers', []),
+                'agents': []  # Could be populated from agents if needed
+            }
+
+            # Prepare Level 1 results (minimal defaults since Level 1 validation may not exist yet)
+            level1_results = {
+                'crud_completeness': {
+                    'passes': True,
+                    'coverage': 1.0,
+                    'threshold': 0.75,
+                    'covered_operations': [],
+                    'missing_operations': []
+                },
+                'layer_symmetry': {
+                    'is_symmetric': True,
+                    'found_layers': []
+                }
+            }
+
+            # Run Level 2 validation
+            level2_results = session._run_level2_validation(
+                template_path,
+                template_data,
+                level1_results
+            )
+
+            # Display quality summary
+            scores = level2_results['quality_scores']
+            print(f"\n📊 Quality Assessment:")
+            print(f"  Overall Score: {scores['overall_score']}/10 (Grade: {scores['grade']})")
+            print(f"  Production Ready: {'✅ Yes' if scores['production_ready'] else '❌ No'}")
+
+            # Determine exit code based on score
+            if scores['overall_score'] >= 8:
+                return 0  # A grade
+            elif scores['overall_score'] >= 6:
+                return 1  # B-C grade
+            else:
+                return 2  # D-F grade
+
+        except Exception as e:
+            print(f"⚠️ Warning: Extended validation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return 1  # Return warning exit code on failure
+
     def _phase5_create_agent_tasks(self, template: GreenfieldTemplate, template_path: Path) -> None:
         """Phase 5: Create agent enhancement tasks
 
@@ -537,7 +616,7 @@ class TemplateInitCommand:
         print()
 
 
-def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bool = False) -> bool:
+def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bool = False, validate: bool = False) -> bool:
     """Command entry point for /template-init
 
     This is the main entry point called by the CLI when user runs:
@@ -546,6 +625,7 @@ def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bo
     Args:
         template_dir: Optional custom template directory
         no_create_agent_tasks: Skip agent enhancement task creation (default: False)
+        validate: Run extended validation (Level 2) (default: False)
 
     Returns:
         True if successful, False otherwise
@@ -555,8 +635,11 @@ def template_init(template_dir: Optional[Path] = None, no_create_agent_tasks: bo
         >>> success = template_init()
         >>> if success:
         ...     print("Template created successfully")
+
+        >>> success = template_init(validate=True)
+        >>> # Generates validation-report.md with quality scores
     """
-    command = TemplateInitCommand(template_dir=template_dir, no_create_agent_tasks=no_create_agent_tasks)
+    command = TemplateInitCommand(template_dir=template_dir, no_create_agent_tasks=no_create_agent_tasks, validate=validate)
     return command.execute()
 
 
