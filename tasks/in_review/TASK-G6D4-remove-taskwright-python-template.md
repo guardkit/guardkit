@@ -1,13 +1,14 @@
 ---
 id: TASK-G6D4
 title: "Remove taskwright-python template and document why"
-status: backlog
+status: in_review
 created: 2025-11-26T09:55:00Z
-updated: 2025-11-26T09:55:00Z
+updated: 2025-11-26T12:15:00Z
 priority: high
 tags: [cleanup, template-removal, simplification]
 complexity: 2
 estimated_hours: 1
+actual_hours: 0.5
 task_type: implementation
 related_tasks: [TASK-D3A1, TASK-BAA5]
 ---
