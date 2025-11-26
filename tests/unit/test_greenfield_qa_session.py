@@ -1121,5 +1121,91 @@ class TestValidationCompatibility:
         assert (template_path / "agents").exists()
 
 
+class TestTwoLocationOutput:
+    """Test two-location output support (TASK-INIT-007)."""
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_get_template_path_global(self):
+        """Test global location path resolution."""
+        session = TemplateInitQASession(output_location='global')
+        path = session._get_template_path('test-template')
+
+        assert '.agentecflow/templates' in str(path)
+        assert path.name == 'test-template'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_get_template_path_repo(self):
+        """Test repo location path resolution."""
+        session = TemplateInitQASession(output_location='repo')
+        path = session._get_template_path('test-template')
+
+        assert 'installer/global/templates' in str(path)
+        assert path.name == 'test-template'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_default_location_is_global(self):
+        """Test default output location."""
+        session = TemplateInitQASession()
+
+        assert session.output_location == 'global'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_save_to_global_location(self, tmp_path, monkeypatch):
+        """Test template saves to personal location."""
+        session = TemplateInitQASession(output_location='global')
+        session._session_data = {'template_name': 'test'}
+
+        # Mock home directory to use tmp_path
+        def mock_home():
+            return tmp_path
+        monkeypatch.setattr(Path, 'home', mock_home)
+
+        path = session._get_template_path('test')
+
+        assert tmp_path / '.agentecflow' / 'templates' / 'test' == path
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_save_to_repo_location(self, tmp_path, monkeypatch):
+        """Test template saves to repository location."""
+        session = TemplateInitQASession(output_location='repo')
+        session._session_data = {'template_name': 'test'}
+
+        # Mock cwd to use tmp_path
+        def mock_cwd():
+            return tmp_path
+        monkeypatch.setattr(Path, 'cwd', mock_cwd)
+
+        path = session._get_template_path('test')
+
+        assert tmp_path / 'installer' / 'global' / 'templates' / 'test' == path
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_display_location_guidance_global(self, capsys):
+        """Test location guidance display for global location."""
+        session = TemplateInitQASession(output_location='global')
+        template_path = Path.home() / '.agentecflow' / 'templates' / 'test-template'
+
+        session._display_location_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert '✅ Personal template:' in captured.out
+        assert 'Personal use' in captured.out
+        assert 'taskwright init test-template' in captured.out
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_display_location_guidance_repo(self, capsys):
+        """Test location guidance display for repo location."""
+        session = TemplateInitQASession(output_location='repo')
+        template_path = Path.cwd() / 'installer' / 'global' / 'templates' / 'test-template'
+
+        session._display_location_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert '✅ Repository template:' in captured.out
+        assert 'Team distribution' in captured.out
+        assert 'git add installer/global/templates/' in captured.out
+        assert 'taskwright init test-template' in captured.out
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=greenfield_qa_session", "--cov-report=term-missing"])
