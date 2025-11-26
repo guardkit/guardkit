@@ -1,11 +1,15 @@
 ---
 id: TASK-INIT-001
-title: "Port boundary sections to /template-init agent generation"
-status: backlog
-created: 2025-11-26T07:30:00Z
-updated: 2025-11-26T07:30:00Z
+title: Port boundary sections to /template-init agent generation
+status: completed
+created: 2025-11-26 07:30:00+00:00
+updated: '2025-11-26T11:14:13.014360Z'
 priority: high
-tags: [template-init, boundary-sections, week1, critical]
+tags:
+- template-init
+- boundary-sections
+- week1
+- critical
 complexity: 6
 estimated_hours: 8
 parent_review: TASK-5E55
@@ -13,9 +17,10 @@ week: 1
 phase: critical-features
 related_tasks: []
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 100%
+  last_run: '2025-11-26T11:14:13.014361Z'
+completed: '2025-11-26T11:14:13.014249Z'
 ---
 
 # Task: Port Boundary Sections to /template-init Agent Generation
