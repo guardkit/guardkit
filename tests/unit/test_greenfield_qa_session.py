@@ -941,5 +941,185 @@ class TestAgentGeneration:
         assert '## Boundaries' in agent_content
 
 
+class TestValidationCompatibility:
+    """Test validation compatibility features (TASK-INIT-005).
+
+    Note: These tests don't require inquirer as they test standalone methods.
+    """
+
+    @pytest.fixture
+    def session(self):
+        """Create a test session, mocking inquirer if not available."""
+        if INQUIRER_AVAILABLE:
+            return TemplateInitQASession()
+        else:
+            # Create minimal mock session for testing
+            class MockSession:
+                def __init__(self):
+                    self._session_data = {}
+                    self.answers = None
+
+                def ensure_validation_compatibility(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    temp_session._session_data = {}
+                    return TemplateInitQASession.ensure_validation_compatibility(temp_session, template_path)
+
+                def display_validation_guidance(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    return TemplateInitQASession.display_validation_guidance(temp_session, template_path)
+
+            return MockSession()
+
+    def test_ensure_validation_compatibility(self, tmp_path, session):
+        """Test validation compatibility setup."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Check marker file
+        marker = template_path / ".validation-compatible"
+        assert marker.exists()
+        assert "1.0.0" in marker.read_text()
+
+        # Check manifest fields
+        manifest_path = template_path / "template-manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text())
+        assert 'schema_version' in manifest
+        assert 'complexity' in manifest
+        assert 'confidence_score' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_required_directories_created(self, tmp_path, session):
+        """Test required directories are created."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
+
+    def test_complexity_estimation(self, tmp_path, session):
+        """Test complexity estimation based on template structure."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create agents directory with some agents
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        for i in range(6):
+            (agents_dir / f"agent-{i}.md").write_text(f"# Agent {i}")
+
+        # Create templates directory with some templates
+        templates_dir = template_path / "templates"
+        templates_dir.mkdir()
+        for i in range(3):
+            (templates_dir / f"template-{i}.txt").write_text(f"Template {i}")
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Complexity should be: 3 + (6 // 2) + (3 // 3) = 3 + 3 + 1 = 7
+        assert manifest['complexity'] == 7
+
+    def test_preserve_existing_manifest_fields(self, tmp_path, session):
+        """Test that existing manifest fields are preserved."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create existing manifest with some fields
+        manifest_path = template_path / "manifest.json"
+        existing_manifest = {
+            'name': 'my-template',
+            'version': '1.0.0',
+            'description': 'Test template',
+            'schema_version': '2.0.0',  # Should be preserved
+            'complexity': 8  # Should be preserved
+        }
+        manifest_path.write_text(json.dumps(existing_manifest, indent=2))
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Read updated manifest (should be in template-manifest.json)
+        output_manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(output_manifest_path.read_text())
+
+        # Existing fields should be preserved
+        assert manifest['name'] == 'my-template'
+        assert manifest['version'] == '1.0.0'
+        assert manifest['description'] == 'Test template'
+        assert manifest['schema_version'] == '2.0.0'  # Preserved
+        assert manifest['complexity'] == 8  # Preserved
+
+        # New fields should be added
+        assert 'confidence_score' in manifest
+        assert 'created_at' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_confidence_score_default(self, tmp_path, session):
+        """Test default confidence score for greenfield templates."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Greenfield default should be 75
+        assert manifest['confidence_score'] == 75
+
+    def test_display_validation_guidance(self, tmp_path, session, capsys):
+        """Test validation guidance display."""
+        template_path = tmp_path / "my-test-template"
+        template_path.mkdir()
+
+        session.display_validation_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert "Comprehensive Validation Available" in captured.out
+        assert "/template-validate" in captured.out
+        assert "Interactive 16-section audit" in captured.out
+        assert "30-60 minutes" in captured.out
+        assert "Deploying to production" in captured.out
+
+    def test_template_validate_compatibility_integration(self, tmp_path, session):
+        """Test full integration with /template-validate requirements."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+
+        # Generate template structure
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "test.md").write_text("# Test Agent")
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Verify all required fields for /template-validate
+        manifest = json.loads((template_path / "template-manifest.json").read_text())
+        required_fields = ['schema_version', 'complexity', 'confidence_score', 'created_at', 'validation_compatible']
+        for field in required_fields:
+            assert field in manifest, f"Missing required field: {field}"
+
+        # Verify marker exists
+        assert (template_path / ".validation-compatible").exists()
+
+        # Verify required directories
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--cov=greenfield_qa_session", "--cov-report=term-missing"])

@@ -1457,6 +1457,93 @@ Use this agent when working on {agent_type}-related tasks in your {technology}/{
 """
         return content
 
+    def ensure_validation_compatibility(self, template_path: Path) -> None:
+        """
+        Ensure template is compatible with /template-validate command.
+
+        Adds required manifest fields and directory structure.
+
+        Args:
+            template_path: Path to generated template
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session.ensure_validation_compatibility(Path('/tmp/template'))
+            >>> (template_path / ".validation-compatible").exists()
+            True
+        """
+        from datetime import datetime
+        import json
+
+        # Ensure required directories exist
+        (template_path / "templates").mkdir(exist_ok=True)
+        (template_path / "agents").mkdir(exist_ok=True)
+
+        # Read existing manifest
+        manifest_path = template_path / "template-manifest.json"
+        if not manifest_path.exists():
+            manifest_path = template_path / "manifest.json"
+
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+        else:
+            manifest = {}
+
+        # Add required validation fields if missing
+        if 'schema_version' not in manifest:
+            manifest['schema_version'] = '1.0.0'
+
+        if 'complexity' not in manifest:
+            # Estimate complexity from template structure
+            num_agents = len(list((template_path / "agents").glob("*.md")))
+            num_templates = len(list((template_path / "templates").glob("*"))) if (template_path / "templates").exists() else 0
+            manifest['complexity'] = min(10, 3 + (num_agents // 2) + (num_templates // 3))
+
+        if 'confidence_score' not in manifest:
+            # Default confidence for greenfield (no codebase analysis)
+            manifest['confidence_score'] = 75
+
+        if 'created_at' not in manifest:
+            manifest['created_at'] = datetime.now().isoformat()
+
+        if 'validation_compatible' not in manifest:
+            manifest['validation_compatible'] = True
+
+        # Write updated manifest (prefer template-manifest.json for consistency)
+        output_manifest_path = template_path / "template-manifest.json"
+        output_manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        # Create compatibility marker
+        marker_path = template_path / ".validation-compatible"
+        marker_path.write_text(f"1.0.0\nCreated: {datetime.now().isoformat()}\n")
+
+        print(f"✅ Template validation-compatible: {template_path.name}")
+
+    def display_validation_guidance(self, template_path: Path) -> None:
+        """
+        Display /template-validate usage guidance.
+
+        Args:
+            template_path: Path to generated template
+        """
+        print("\n" + "=" * 70)
+        print("  Comprehensive Validation Available")
+        print("=" * 70 + "\n")
+
+        print("Your template is now compatible with comprehensive audit:\n")
+        print(f"  /template-validate {template_path}")
+        print()
+        print("Level 3 validation provides:")
+        print("  • Interactive 16-section audit")
+        print("  • Section-by-section analysis")
+        print("  • AI-assisted recommendations")
+        print("  • Comprehensive audit report")
+        print("  • Duration: 30-60 minutes\n")
+        print("Run when:")
+        print("  • Deploying to production")
+        print("  • Sharing with team")
+        print("  • Critical quality requirements\n")
+
 
 # Module exports
 __all__ = [
