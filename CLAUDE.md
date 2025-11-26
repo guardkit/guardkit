@@ -538,12 +538,31 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
 4. **Feedback**: Shows which agent selected and why
 
 **Discovery Metadata** (frontmatter in agent files):
-- `stack`: [python, react, dotnet, typescript, etc.]
-- `phase`: implementation | review | testing | orchestration
+- `stack`: [python, react, dotnet, typescript, cross-stack, etc.]
+- `phase`: implementation | review | testing | orchestration | debugging
 - `capabilities`: List of specific skills
 - `keywords`: Searchable terms for matching
 
 **Graceful Degradation**: Agents without metadata are skipped (no errors). System works during migration.
+
+**Example: Agent Selection During `/task-work`**
+
+```bash
+/task-work TASK-042  # Task involves Python API implementation
+
+# System analyzes:
+# - Files: *.py (Python detected)
+# - Keywords: "API endpoint", "FastAPI"
+# - Phase: Implementation (Phase 3)
+
+# Discovery matches:
+# - Stack: python ✓
+# - Phase: implementation ✓
+# - Capabilities: api, async-patterns, pydantic ✓
+
+# Selected: python-api-specialist (from template or global)
+# Fallback: task-manager (if no specialist found)
+```
 
 ### Stack-Specific Implementation Agents (Haiku Model)
 
@@ -665,20 +684,31 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 
 ---
 
-**Global Agents (Sonnet):**
-- **architectural-reviewer**: SOLID/DRY/YAGNI compliance review
-- **task-manager**: Unified workflow management
-- **test-verifier/orchestrator**: Test execution and quality gates
-- **code-reviewer**: Code quality enforcement
-- **software-architect**: System design decisions
-- **devops-specialist**: Infrastructure patterns
-- **security-specialist**: Security validation
-- **database-specialist**: Data architecture
+**Orchestration Agents** (cross-stack):
+- **task-manager**: Unified workflow management (phase: orchestration)
 
-**Stack-Specific Agents (Haiku):**
-- **python-api-specialist**: FastAPI, async, Pydantic
-- **react-state-specialist**: Hooks, TanStack Query, Zustand
-- **dotnet-domain-specialist**: DDD, entities, value objects
+**Review Agents** (cross-stack):
+- **architectural-reviewer**: SOLID/DRY/YAGNI compliance review (phase: review)
+- **code-reviewer**: Code quality enforcement (phase: review)
+- **software-architect**: System design decisions (phase: review)
+
+**Testing Agents** (cross-stack):
+- **test-orchestrator**: Test execution and quality gates (phase: testing)
+- **test-verifier**: Test result verification (phase: testing)
+- **qa-tester**: QA and testing workflows (phase: testing)
+
+**Debugging Agents** (cross-stack):
+- **debugging-specialist**: Systematic debugging and root cause analysis (phase: debugging)
+
+**Infrastructure & Data Agents** (cross-stack):
+- **devops-specialist**: Infrastructure patterns and CI/CD (phase: implementation)
+- **security-specialist**: Security validation and audits (phase: review)
+- **database-specialist**: Data architecture and optimization (phase: implementation)
+
+**Stack-Specific Implementation Agents** (Haiku):
+- **python-api-specialist**: FastAPI, async, Pydantic (phase: implementation)
+- **react-state-specialist**: Hooks, TanStack Query, Zustand (phase: implementation)
+- **dotnet-domain-specialist**: DDD, entities, value objects (phase: implementation)
 
 **Note**: All agents include ALWAYS/NEVER/ASK boundary sections. See [Agent Enhancement with Boundary Sections](#agent-enhancement-with-boundary-sections) for details.
 

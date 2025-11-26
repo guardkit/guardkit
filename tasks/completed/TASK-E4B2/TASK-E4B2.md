@@ -1,15 +1,20 @@
 ---
 id: TASK-E4B2
 title: "Enhance Taskwright's .claude agents with discovery metadata and boundary sections"
-status: backlog
+status: completed
 created: 2025-11-26T09:45:00Z
-updated: 2025-11-26T09:45:00Z
+updated: 2025-11-26T12:50:00Z
+completed_at: 2025-11-26T12:50:00Z
 priority: high
 tags: [agent-enhancement, discovery-metadata, boundary-sections, github-best-practices]
 complexity: 4
 estimated_hours: 2
+actual_hours: 2
 task_type: implementation
 related_tasks: [TASK-D3A1, TASK-BAA5]
+implementation_summary: "Added discovery metadata (stack, phase, capabilities, keywords) and boundary sections (ALWAYS/NEVER/ASK) to all 7 Taskwright agents. Initial implementation completed in conductor worktree (commit b6eee8b), with debugging-specialist boundary sections completed in follow-up."
+completed_location: tasks/completed/TASK-E4B2/
+organized_files: ["TASK-E4B2.md"]
 ---
 
 # Task: Enhance Taskwright's .claude Agents with Discovery Metadata and Boundary Sections
