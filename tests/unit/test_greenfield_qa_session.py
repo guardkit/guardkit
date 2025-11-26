@@ -1121,6 +1121,235 @@ class TestValidationCompatibility:
         assert (template_path / "agents").exists()
 
 
+class TestAgentMetadata:
+    """Test agent discovery metadata generation (TASK-INIT-008)."""
+
+    @pytest.fixture
+    def session(self):
+        """Create test session with basic data."""
+        if INQUIRER_AVAILABLE:
+            session = TemplateInitQASession()
+        else:
+            # Mock session for non-inquirer environments
+            class MockSession:
+                def __init__(self):
+                    self._session_data = {}
+
+                def _generate_agent_metadata(self, agent_type):
+                    from greenfield_qa_session import TemplateInitQASession
+                    temp_session = object.__new__(TemplateInitQASession)
+                    temp_session._session_data = self._session_data
+                    return temp_session._generate_agent_metadata(agent_type)
+
+                def _format_agent_with_metadata(self, agent_content, metadata):
+                    from greenfield_qa_session import TemplateInitQASession
+                    temp_session = object.__new__(TemplateInitQASession)
+                    return temp_session._format_agent_with_metadata(agent_content, metadata)
+
+            session = MockSession()
+
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+        return session
+
+    def test_generate_agent_metadata_python_api(self, session):
+        """Test metadata generation for Python API agent."""
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('api')
+
+        assert metadata['stack'] == ['python', 'fastapi']
+        assert metadata['phase'] == 'implementation'
+        assert 'endpoint-implementation' in metadata['capabilities']
+        assert 'api' in metadata['keywords']
+        assert 'python' in metadata['keywords']
+        assert 'fastapi' in metadata['keywords']
+
+    def test_generate_agent_metadata_typescript_testing(self, session):
+        """Test metadata generation for TypeScript testing agent."""
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        metadata = session._generate_agent_metadata('testing')
+
+        assert metadata['stack'] == ['typescript', 'react-nextjs']
+        assert metadata['phase'] == 'implementation'
+        assert 'test-execution' in metadata['capabilities']
+        assert 'testing' in metadata['keywords']
+        assert 'typescript' in metadata['keywords']
+
+    def test_generate_agent_metadata_repository(self, session):
+        """Test metadata generation for repository agent."""
+        session._session_data = {
+            'primary_language': 'csharp',
+            'framework': 'aspnet-core'
+        }
+
+        metadata = session._generate_agent_metadata('repository')
+
+        assert metadata['stack'] == ['csharp', 'aspnet-core']
+        assert 'data-access' in metadata['capabilities']
+        assert 'orm-patterns' in metadata['capabilities']
+        assert 'repository' in metadata['keywords']
+        assert 'database' in metadata['keywords']
+
+    def test_generate_agent_metadata_domain(self, session):
+        """Test metadata generation for domain agent."""
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('domain')
+
+        assert 'business-logic' in metadata['capabilities']
+        assert 'domain-modeling' in metadata['capabilities']
+        assert 'domain' in metadata['keywords']
+        assert 'ddd' in metadata['keywords']
+
+    def test_generate_agent_metadata_service(self, session):
+        """Test metadata generation for service agent."""
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'nestjs'
+        }
+
+        metadata = session._generate_agent_metadata('service')
+
+        assert 'business-orchestration' in metadata['capabilities']
+        assert 'workflow-coordination' in metadata['capabilities']
+        assert 'service' in metadata['keywords']
+        assert 'orchestration' in metadata['keywords']
+
+    def test_generate_agent_metadata_generic(self, session):
+        """Test metadata generation for unknown agent type."""
+        session._session_data = {
+            'primary_language': 'go',
+            'framework': ''
+        }
+
+        metadata = session._generate_agent_metadata('unknown-type')
+
+        assert metadata['stack'] == ['go']
+        assert 'implementation' in metadata['capabilities']
+        assert 'unknown-type' in metadata['keywords']
+        assert 'go' in metadata['keywords']
+
+    def test_generate_agent_metadata_no_framework(self, session):
+        """Test metadata generation when no framework specified."""
+        session._session_data = {
+            'primary_language': 'rust',
+            'framework': ''
+        }
+
+        metadata = session._generate_agent_metadata('api')
+
+        assert metadata['stack'] == ['rust']
+        assert 'rust' in metadata['keywords']
+        # Should not have empty framework in keywords
+
+    def test_format_agent_with_metadata(self, session):
+        """Test frontmatter formatting."""
+        content = "# Test Agent\n\nAgent content"
+        metadata = {
+            'stack': ['python', 'fastapi'],
+            'phase': 'implementation',
+            'capabilities': ['api', 'testing'],
+            'keywords': ['python', 'api']
+        }
+
+        formatted = session._format_agent_with_metadata(content, metadata)
+
+        assert formatted.startswith('---')
+        assert 'stack: [python, fastapi]' in formatted
+        assert 'phase: implementation' in formatted
+        assert 'capabilities: ["api", "testing"]' in formatted
+        assert 'keywords: ["python", "api"]' in formatted
+        assert '# Test Agent' in formatted
+
+    def test_format_agent_with_metadata_empty_stack(self, session):
+        """Test frontmatter formatting with empty stack."""
+        content = "# Test Agent"
+        metadata = {
+            'stack': [],
+            'phase': 'implementation',
+            'capabilities': ['test'],
+            'keywords': ['test']
+        }
+
+        formatted = session._format_agent_with_metadata(content, metadata)
+
+        assert 'stack: []' in formatted
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_generated_agents_include_frontmatter(self):
+        """Test agents have discovery metadata."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        agent_content = session._generate_agent('api', 'api-agent')
+
+        # Check frontmatter present
+        assert agent_content.startswith('---')
+        assert 'stack:' in agent_content
+        assert 'phase:' in agent_content
+        assert 'capabilities:' in agent_content
+        assert 'keywords:' in agent_content
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_metadata_matches_template_create_format(self):
+        """Test frontmatter matches template-create format."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('testing')
+
+        # Should have same fields as template-create
+        assert 'stack' in metadata
+        assert 'phase' in metadata
+        assert 'capabilities' in metadata
+        assert 'keywords' in metadata
+
+        # Stack should be a list
+        assert isinstance(metadata['stack'], list)
+        assert isinstance(metadata['capabilities'], list)
+        assert isinstance(metadata['keywords'], list)
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_agent_with_boundaries_and_metadata(self):
+        """Test agent includes both boundaries and metadata."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        agent_content = session._generate_agent('testing', 'test-agent')
+
+        # Should have frontmatter
+        assert agent_content.startswith('---')
+        assert 'stack: [typescript, react-nextjs]' in agent_content
+
+        # Should have boundaries
+        assert '## Boundaries' in agent_content
+        assert '### ALWAYS' in agent_content
+        assert '### NEVER' in agent_content
+        assert '### ASK' in agent_content
+
+
 class TestTwoLocationOutput:
     """Test two-location output support (TASK-INIT-007)."""
 

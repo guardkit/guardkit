@@ -711,6 +711,135 @@ class TemplateInitQASession:
                                                    for item in answers['standard_folders']]
             self._session_data.update(answers)
 
+    def _generate_agent_metadata(self, agent_type: str) -> dict:
+        """
+        Generate discovery metadata for agent.
+
+        Port of template-create agent metadata generation.
+
+        Args:
+            agent_type: Type of agent (testing, repository, api, etc.)
+
+        Returns:
+            dict with stack, phase, capabilities, keywords
+
+        Example:
+            >>> session._session_data = {'primary_language': 'python', 'framework': 'fastapi'}
+            >>> metadata = session._generate_agent_metadata('api')
+            >>> metadata['stack']
+            ['python', 'fastapi']
+        """
+        # Base metadata from Q&A
+        language = self._session_data.get('primary_language', 'unknown').lower()
+        framework = self._session_data.get('framework', '').lower()
+
+        # Build stack list
+        stack = [language]
+        if framework:
+            stack.append(framework)
+
+        # Agent-type specific metadata
+        capabilities = []
+        keywords = []
+
+        if agent_type == 'testing':
+            capabilities = [
+                'test-execution',
+                'coverage-verification',
+                'build-validation',
+                'quality-gates'
+            ]
+            keywords = ['testing', 'quality', 'verification', 'tdd']
+
+        elif agent_type == 'repository':
+            capabilities = [
+                'data-access',
+                'orm-patterns',
+                'query-optimization',
+                'transaction-management'
+            ]
+            keywords = ['repository', 'data', 'persistence', 'database']
+
+        elif agent_type == 'api':
+            capabilities = [
+                'endpoint-implementation',
+                'request-validation',
+                'response-formatting',
+                'error-handling'
+            ]
+            keywords = ['api', 'endpoints', 'rest', 'http']
+
+        elif agent_type == 'domain':
+            capabilities = [
+                'business-logic',
+                'domain-modeling',
+                'value-objects',
+                'aggregates'
+            ]
+            keywords = ['domain', 'business-logic', 'ddd', 'modeling']
+
+        elif agent_type == 'service':
+            capabilities = [
+                'business-orchestration',
+                'workflow-coordination',
+                'validation',
+                'error-handling'
+            ]
+            keywords = ['service', 'business-logic', 'orchestration']
+
+        else:
+            # Generic agent
+            capabilities = ['implementation', 'code-generation']
+            keywords = [agent_type, language]
+
+        # Add technology-specific keywords
+        keywords.extend([language, framework]) if framework else keywords.append(language)
+
+        return {
+            'stack': stack,
+            'phase': 'implementation',  # Greenfield agents are for implementation
+            'capabilities': capabilities,
+            'keywords': keywords
+        }
+
+    def _format_agent_with_metadata(self, agent_content: str, metadata: dict) -> str:
+        """
+        Add frontmatter to agent markdown.
+
+        Args:
+            agent_content: Raw agent markdown content
+            metadata: Discovery metadata dict
+
+        Returns:
+            Agent content with frontmatter
+
+        Example:
+            >>> content = "# Test Agent\\n\\nAgent content"
+            >>> metadata = {'stack': ['python'], 'phase': 'implementation'}
+            >>> formatted = session._format_agent_with_metadata(content, metadata)
+            >>> '---' in formatted
+            True
+        """
+        # Format stack as YAML array
+        stack_yaml = ', '.join(metadata['stack']) if metadata['stack'] else ''
+
+        # Format capabilities as YAML array
+        capabilities_yaml = ', '.join(f'"{cap}"' for cap in metadata['capabilities'])
+
+        # Format keywords as YAML array
+        keywords_yaml = ', '.join(f'"{kw}"' for kw in metadata['keywords'])
+
+        frontmatter = f"""---
+stack: [{stack_yaml}]
+phase: {metadata['phase']}
+capabilities: [{capabilities_yaml}]
+keywords: [{keywords_yaml}]
+---
+
+"""
+
+        return frontmatter + agent_content
+
     def _section5_testing(self) -> None:
         """Section 5: Testing Strategy."""
         print("\n" + "-" * 60)
@@ -1481,28 +1610,32 @@ Created by: `/template-init` (greenfield)
 
     def _generate_agent(self, agent_type: str, agent_name: str = "") -> str:
         """
-        Generate agent markdown with boundary sections.
+        Generate agent markdown with boundary sections and discovery metadata.
+
+        NOW INCLUDES frontmatter metadata for agent discovery.
 
         This method will be called by Phase 3 agent generation orchestrator.
-        It generates a complete agent definition including ALWAYS/NEVER/ASK boundaries.
+        It generates a complete agent definition including ALWAYS/NEVER/ASK boundaries
+        and discovery metadata (stack, phase, capabilities, keywords).
 
         Args:
             agent_type: Type of agent (testing, repository, api, service, etc.)
             agent_name: Optional custom name for the agent
 
         Returns:
-            str: Complete agent markdown content with boundaries
+            str: Complete agent markdown content with metadata and boundaries
 
         Example:
             >>> session = TemplateInitQASession()
             >>> session._session_data = {'primary_language': 'python', 'framework': 'fastapi'}
             >>> agent_content = session._generate_agent('testing', 'testing-agent')
             >>> assert '## Boundaries' in agent_content
+            >>> assert 'stack:' in agent_content
         """
         technology = self._session_data.get('primary_language', 'unknown')
         framework = self._session_data.get('framework', '')
 
-        # Generate boundary sections
+        # Generate boundary sections (from TASK-INIT-001)
         boundaries = generate_boundary_sections(agent_type, technology)
 
         # Validate boundaries
@@ -1556,7 +1689,13 @@ Created by: `/template-init` (greenfield)
                 # Just prepend to content
                 agent_content = boundary_section + "\n" + agent_content
 
-        return agent_content
+        # Generate discovery metadata
+        metadata = self._generate_agent_metadata(agent_type)
+
+        # Add frontmatter
+        agent_with_metadata = self._format_agent_with_metadata(agent_content, metadata)
+
+        return agent_with_metadata
 
     def _generate_base_agent_content(
         self,
