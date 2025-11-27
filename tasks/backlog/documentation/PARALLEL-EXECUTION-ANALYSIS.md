@@ -8,29 +8,32 @@
 
 ## Executive Summary
 
-**Recommendation**: ✅ **ALL 7 TASKS CAN BE EXECUTED IN PARALLEL**
+**UPDATE (2025-11-27T21:15:00Z)**: TASK-DOC-1E7B archived (already complete)
+
+**Recommendation**: ✅ **ALL 6 REMAINING TASKS CAN BE EXECUTED IN PARALLEL**
 
 - **Method**: Claude Code Direct (no `/task-work` needed)
 - **Parallelization**: 100% (all tasks independent)
 - **Execution Strategy**: 2-wave parallel execution in Conductor worktrees
-- **Total Effort**: ~18-20 hours
+- **Total Effort**: ~15-17 hours (down from 18-20)
 - **Wall Clock Time**: 2-3 days with parallel execution
 
 ---
 
 ## Task Analysis Matrix
 
-| Task ID | Title | Priority | Complexity | Effort | Dependencies | Parallel? | Method | Wave |
-|---------|-------|----------|------------|--------|--------------|-----------|--------|------|
-| **TASK-DOC-9C4E** | Update CLAUDE.md Phase 8 | HIGH | 3/10 | 2h | None | ✅ YES | Claude Direct | Wave 1 |
-| **TASK-DOC-1E7B** | Create workflow guide | HIGH | 4/10 | 3h | None | ✅ YES | Claude Direct | Wave 1 |
-| **TASK-DOC-B8F2** | Clarify template workflow | MEDIUM | 3/10 | 1-2h | None | ✅ YES | Claude Direct | Wave 1 |
-| **TASK-D01D** | Update hash-based ID docs | MEDIUM | 4/10 | 4h | None | ✅ YES | Claude Direct | Wave 2 |
-| **TASK-B479** | Create landing pages | HIGH | 5/10 | 5h | TASK-DOCS-001* | ⚠️ MAYBE | Claude Direct | Wave 2 |
-| **TASK-061A** | Enable GitHub Pages | MEDIUM | 2/10 | 2h | TASK-DOCS-004* | ⚠️ MAYBE | Claude Direct | Wave 2 |
-| **TASK-OPEN-SOURCE** | Create user guide | MEDIUM | 3/10 | 2-3h | None | ✅ YES | Claude Direct | Wave 2 |
+| Task ID | Title | Priority | Complexity | Effort | Dependencies | Parallel? | Method | Wave | Status |
+|---------|-------|----------|------------|--------|--------------|-----------|--------|------|--------|
+| **TASK-DOC-9C4E** | Update CLAUDE.md Phase 8 | HIGH | 3/10 | 2h | None | ✅ YES | Claude Direct | Wave 1 | BACKLOG |
+| ~~**TASK-DOC-1E7B**~~ | ~~Create workflow guide~~ | ~~HIGH~~ | ~~4/10~~ | ~~3h~~ | ~~None~~ | ~~✅ YES~~ | ~~Claude Direct~~ | ~~Wave 1~~ | ✅ **ARCHIVED** |
+| **TASK-DOC-B8F2** | Clarify template workflow | MEDIUM | 3/10 | 1-2h | None | ✅ YES | Claude Direct | Wave 1 | BACKLOG |
+| **TASK-D01D** | Update hash-based ID docs | MEDIUM | 4/10 | 4h | None | ✅ YES | Claude Direct | Wave 2 | BACKLOG |
+| **TASK-B479** | Create landing pages | HIGH | 5/10 | 5h | TASK-DOCS-001* | ⚠️ MAYBE | Claude Direct | Wave 2 | BACKLOG |
+| **TASK-061A** | Enable GitHub Pages | MEDIUM | 2/10 | 2h | TASK-DOCS-004* | ⚠️ MAYBE | Claude Direct | Wave 2 | BACKLOG |
+| ~~**TASK-OPEN-SOURCE**~~ | ~~Create user guide~~ | ~~MEDIUM~~ | ~~3/10~~ | ~~2-3h~~ | ~~None~~ | ~~✅ YES~~ | ~~Claude Direct~~ | ~~Wave 2~~ | ⚠️ **CHECK** |
 
 *Dependencies may already be satisfied - needs verification
+**Note**: TASK-OPEN-SOURCE removed from list (not in backlog - may have been archived or moved)
 
 ---
 
@@ -59,7 +62,9 @@
 
 ## Detailed Task Analysis
 
-### Wave 1: High-Priority Foundation (Parallel - 3 tasks, ~6-7 hours)
+### Wave 1: High-Priority Foundation (Parallel - 2 tasks, ~3-4 hours)
+
+**UPDATE**: TASK-DOC-1E7B removed (already complete)
 
 #### 1. TASK-DOC-9C4E - Update CLAUDE.md Phase 8
 
