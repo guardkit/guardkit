@@ -1,9 +1,9 @@
 ---
 id: TASK-8D3F
 title: Review subagent invocation and enforcement issues from MyDrive conversation
-status: backlog
+status: review_complete
 created: 2025-11-27T07:00:00Z
-updated: 2025-11-27T07:00:00Z
+updated: 2025-11-27T12:45:00Z
 priority: high
 tags: [review, analysis, agent-discovery, quality-gates, protocol-enforcement]
 task_type: review
@@ -13,6 +13,20 @@ feature: null
 requirements: []
 dependencies: []
 complexity: 0
+review_results:
+  mode: architectural
+  depth: standard
+  findings_count: 5
+  recommendations_count: 5
+  decision: accept_all
+  report_path: .claude/reviews/TASK-8D3F-review-report.md
+  completed_at: 2025-11-27T12:45:00Z
+  implementation_tasks:
+    - TASK-ENF1: Add pre-report validation checkpoint
+    - TASK-ENF2: Add agent invocation tracking and logging
+    - TASK-ENF3: Add prominent invocation messages
+    - TASK-ENF4: Add phase gate checkpoints
+    - TASK-ENF5: Update agent selection table
 ---
 
 # Review Task: Subagent Invocation and Enforcement Issues from MyDrive
