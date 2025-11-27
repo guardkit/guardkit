@@ -1,8 +1,11 @@
 # MkDocs Documentation Dependencies
-# Used by: .github/workflows/docs.yml
-# Purpose: Build and deploy documentation to GitHub Pages
-# Last updated: 2025-11-27
+# Required for GitHub Actions workflow (.github/workflows/docs.yml)
 
-mkdocs==1.5.3
-mkdocs-material==9.5.3
-pymdown-extensions==10.5
+# Core documentation builder
+mkdocs>=1.5.3
+
+# Material Design theme
+mkdocs-material>=9.5.0
+
+# Additional Markdown extensions
+pymdown-extensions>=10.7
