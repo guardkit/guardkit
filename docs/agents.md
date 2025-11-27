@@ -135,9 +135,9 @@ When to use /agent-format vs /agent-enhance.
 
 Step-by-step workflow for enhancing agents from 6/10 to 9/10.
 
-### 📊 [GitHub Agent Best Practices Analysis](analysis/github-agent-best-practices-analysis.md)
+### 📊 GitHub Agent Best Practices
 
-Analysis of 2,500+ repositories identifying critical gaps (boundary sections were Gap #4).
+Based on analysis of 2,500+ repositories, boundary sections were identified as Critical Gap #4. All enhanced agents now include ALWAYS/NEVER/ASK boundaries.
 
 ## Commands
 
@@ -151,4 +151,4 @@ Analysis of 2,500+ repositories identifying critical gaps (boundary sections wer
 
 - **Learn Discovery**: [Agent Discovery Guide](guides/agent-discovery-guide.md)
 - **Enhance Agents**: [Incremental Enhancement Workflow](workflows/incremental-enhancement-workflow.md)
-- **Understand Boundaries**: [GitHub Best Practices Analysis](analysis/github-agent-best-practices-analysis.md)
+- **Validate Quality**: Run `/agent-validate` on your agents

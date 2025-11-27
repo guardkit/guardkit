@@ -110,9 +110,6 @@ nav:
       - Figma MCP Setup: mcp-setup/figma-mcp-setup.md
       - Zeplin MCP Setup: mcp-setup/zeplin-mcp-setup.md
 
-  - Analysis:
-      - GitHub Agent Best Practices: analysis/github-agent-best-practices-analysis.md
-
 # ============================================================================
 # Plugins
 # ============================================================================
