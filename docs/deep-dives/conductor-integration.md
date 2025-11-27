@@ -1,4 +1,4 @@
-# Conductor.build User Guide for Agentecflow
+# Conductor.build User Guide for Taskwright
 
 ## Quick Start (2 minutes)
 
@@ -94,14 +94,13 @@ This means **all 22 Agentecflow commands** are available in:
 
 ### Workflow 1: Simple Parallel Development
 
-**Scenario**: You want to work on two features simultaneously
+**Scenario**: You want to work on two tasks simultaneously
 
 ```bash
-# Step 1: In main worktree - Create epic and features
+# Step 1: In main worktree - Create tasks
 cd ~/Projects/my-app
-/epic-create "User Management" export:linear priority:high
-/feature-create "Login API" epic:EPIC-001
-/feature-create "User Profile" epic:EPIC-001
+/task-create "Implement JWT auth" priority:high
+/task-create "Profile CRUD API" priority:high
 
 # Step 2: In Conductor UI - Create worktrees
 # Click "New Worktree" → Name: "login-api" → Branch: "feature/login-api"
@@ -110,67 +109,59 @@ cd ~/Projects/my-app
 # Step 3: Conductor automatically opens Claude Code for each worktree
 
 # In login-api worktree:
-/task-create "Implement JWT auth" epic:EPIC-001 feature:FEAT-001
 /task-work TASK-001 --mode=tdd
 
 # In user-profile worktree (parallel):
-/task-create "Profile CRUD API" epic:EPIC-001 feature:FEAT-002
-/task-work TASK-002 --mode=bdd
+/task-work TASK-002 --mode=standard
 
 # Both Claude instances work simultaneously!
 ```
 
+> **Note:** For epic/feature hierarchy and BDD workflows, see [RequireKit](https://github.com/requirekit/require-kit) which provides formal requirements management.
+
 ### Workflow 2: Team Collaboration Pattern
 
-**Scenario**: Multiple team members working on different parts of an epic
+**Scenario**: Multiple team members working on different tasks
 
 ```bash
 # Team Lead (main worktree):
 cd ~/Projects/team-app
-/epic-create "E-commerce Checkout" export:jira priority:high
-/feature-create "Payment Gateway" epic:EPIC-001
-/feature-create "Order Processing" epic:EPIC-001
-/feature-create "Email Notifications" epic:EPIC-001
+/task-create "Stripe integration" priority:high
+/task-create "Order state machine" priority:high
+/task-create "Email templates" priority:medium
 
 # Developer 1 (Conductor worktree 1):
 # Worktree: payment-gateway
-/task-create "Stripe integration" epic:EPIC-001 feature:FEAT-001
 /task-work TASK-001 --mode=tdd
 
 # Developer 2 (Conductor worktree 2):
 # Worktree: order-processing
-/task-create "Order state machine" epic:EPIC-001 feature:FEAT-002
-/task-work TASK-002 --mode=bdd
+/task-work TASK-002 --mode=standard
 
 # Developer 3 (Conductor worktree 3):
 # Worktree: notifications
-/task-create "Email templates" epic:EPIC-001 feature:FEAT-003
 /task-work TASK-003 --mode=standard
 
 # Each developer works independently, no conflicts!
 ```
 
+> **Note:** For RequireKit users: Use `/epic-create`, `/feature-create` for hierarchical requirements management before creating Taskwright tasks.
+
 ### Workflow 3: Monitoring Progress Across Worktrees
 
-**Scenario**: You want to see the overall progress of your epic across all worktrees
+**Scenario**: You want to see the overall progress of tasks across all worktrees
 
 ```bash
 # From ANY worktree (or main branch):
-/hierarchy-view EPIC-001 --agentecflow
+/task-status
 
-# Output shows all tasks across all worktrees:
-# EPIC-001: E-commerce Checkout [████████░░] 80%
-# ├─ FEAT-001: Payment Gateway [██████████] 100%
-# │  └─ TASK-001: Stripe integration [COMPLETED] ✓ (worktree: payment-gateway)
-# ├─ FEAT-002: Order Processing [████████░░] 80%
-# │  └─ TASK-002: Order state machine [IN_PROGRESS] ⏳ (worktree: order-processing)
-# └─ FEAT-003: Email Notifications [████░░░░░░] 40%
-#    └─ TASK-003: Email templates [IN_PROGRESS] ⏳ (worktree: notifications)
-
-# Sync progress to external PM tool:
-/task-sync TASK-001 --rollup-progress
-/epic-sync EPIC-001 --cascade-sync
+# Output shows all tasks:
+# TASK-001: Stripe integration [COMPLETED] ✓
+# TASK-002: Order state machine [IN_PROGRESS] ⏳
+# TASK-003: Email templates [IN_PROGRESS] ⏳
 ```
+
+> **Note:** For RequireKit users: Use `/hierarchy-view`, `/task-sync`, `/epic-sync` for hierarchical progress tracking and PM tool integration.
 
 ---
 
@@ -205,18 +196,15 @@ wt1, wt2, temp, test
 
 ### 3. Progress Synchronization
 
-**Use `/task-sync` to keep PM tools updated:**
+**Monitor task status:**
 
 ```bash
 # After completing work in a worktree:
-/task-work TASK-001  # Implementation
-/task-sync TASK-001 --rollup-progress  # Sync to Jira/Linear
+/task-work TASK-001        # Implementation
+/task-status TASK-001      # Check status
 ```
 
-**Why this matters:**
-- Team members can see progress in real-time
-- Progress rolls up through Feature → Epic hierarchy
-- External dashboards stay accurate
+> **Note (RequireKit):** For PM tool integration, RequireKit provides `/task-sync` with `--rollup-progress` to sync to Jira/Linear/Azure DevOps with automatic epic/feature rollup.
 
 ### 4. State Management
 
@@ -241,20 +229,27 @@ Agentecflow now provides automatic state file committing via `git_state_helper.p
 - Git root detection ensures proper commit in worktree environments
 - Graceful fallback to manual commit if auto-commit unavailable
 
-### 5. Requirements Management
+### 5. Requirements Management (RequireKit)
 
-**Manage EARS requirements in main worktree only:**
+> **Note:** This section applies to RequireKit users only. Taskwright uses task descriptions directly without formal requirements management.
+
+**For RequireKit users - Manage EARS requirements in main worktree only:**
 
 ```bash
-# ✅ GOOD: Requirements in main worktree
+# ✅ GOOD: Requirements in main worktree (RequireKit)
 cd ~/project (main)
-/gather-requirements
-/formalize-ears
-/generate-bdd
+/gather-requirements  # RequireKit command
+/formalize-ears      # RequireKit command
+/generate-bdd        # RequireKit command
 
 # ❌ AVOID: Creating requirements in feature worktrees
 # (Can cause conflicts when merging)
 ```
+
+**For Taskwright users:**
+- Create tasks in main worktree using `/task-create`
+- Implementation happens in Conductor worktrees
+- No formal requirements management needed
 
 ### 6. Avoiding Merge Conflicts in Parallel Development
 
@@ -634,26 +629,29 @@ git push
 
 ```bash
 # Main Worktree (Architect):
-/epic-create "Microservices Migration"
-/feature-create "API Gateway" epic:EPIC-001
-# Design architecture, create ADRs
+/task-create "API Gateway implementation" priority:high
+# Design architecture, create ADRs, approve implementation plan
 
 # Worktree 1 (Implementation):
 # Implement based on approved architecture
 /task-work TASK-001 --implement-only
 ```
 
-### Pattern 2: TDD + BDD Parallel
+> **Note (RequireKit):** RequireKit users can use `/epic-create` and `/feature-create` for hierarchical planning before task creation.
+
+### Pattern 2: TDD + Standard Parallel
 
 ```bash
 # Worktree 1 (TDD Developer):
 /task-work TASK-001 --mode=tdd
 # Write unit tests, implement business logic
 
-# Worktree 2 (BDD Developer):
-/task-work TASK-002 --mode=bdd
-# Write acceptance tests, implement user flows
+# Worktree 2 (Standard Developer):
+/task-work TASK-002 --mode=standard
+# Implement with automatic test generation
 ```
+
+> **Note (RequireKit):** RequireKit provides `--mode=bdd` for BDD workflows with Gherkin scenarios.
 
 ### Pattern 3: Multi-Stack Development
 
@@ -729,50 +727,40 @@ git worktree remove ../my-app-feature
 
 ### Scenario: Building a SaaS Dashboard
 
-**Team**: 3 developers + 1 architect
-
-**Epic**: EPIC-001: "Customer Analytics Dashboard"
+**Team**: 3 developers
 
 **Setup**:
 ```bash
-# Architect (main worktree):
-/epic-create "Customer Analytics Dashboard" export:jira priority:high
-/feature-create "Data Pipeline" epic:EPIC-001
-/feature-create "Dashboard UI" epic:EPIC-001
-/feature-create "API Endpoints" epic:EPIC-001
-/feature-generate-tasks FEAT-001
-/feature-generate-tasks FEAT-002
-/feature-generate-tasks FEAT-003
+# In main worktree - Create tasks:
+/task-create "Data Pipeline - ETL Implementation" priority:high
+/task-create "Dashboard UI - React Components" priority:high
+/task-create "API Endpoints - FastAPI Routes" priority:high
 ```
 
 **Execution** (in Conductor):
 
-| Worktree | Developer | Feature | Tasks |
-|----------|-----------|---------|-------|
-| main | Architect | Planning | Reviews PRs, manages epic |
-| data-pipeline | Dev 1 | FEAT-001 | TASK-001, TASK-002 (Python ETL) |
-| dashboard-ui | Dev 2 | FEAT-002 | TASK-003, TASK-004 (React components) |
-| api-endpoints | Dev 3 | FEAT-003 | TASK-005, TASK-006 (FastAPI routes) |
+| Worktree | Developer | Tasks |
+|----------|-----------|-------|
+| data-pipeline | Dev 1 | TASK-001, TASK-002 (Python ETL) |
+| dashboard-ui | Dev 2 | TASK-003, TASK-004 (React components) |
+| api-endpoints | Dev 3 | TASK-005, TASK-006 (FastAPI routes) |
 
 **Daily Workflow**:
 ```bash
 # Morning standup (from any worktree):
-/hierarchy-view EPIC-001 --agentecflow
+/task-status  # View all task statuses
 
 # Each dev in their worktree:
 /task-work TASK-XXX --mode=tdd
-/task-sync TASK-XXX --rollup-progress
-
-# End of day (architect in main):
-/epic-status EPIC-001 --detailed
-/epic-sync EPIC-001 --cascade-sync
+/task-status TASK-XXX  # Check status
 ```
 
 **Result**:
 - 3 features developed simultaneously
 - Zero merge conflicts (isolated worktrees)
-- Real-time progress in Jira
 - 3x faster than serial development
+
+> **Note (RequireKit):** For epic/feature hierarchy, PM tool integration, and real-time Jira progress: Use RequireKit's `/epic-create`, `/feature-create`, `/hierarchy-view`, `/task-sync`, `/epic-sync` commands.
 
 ---
 
