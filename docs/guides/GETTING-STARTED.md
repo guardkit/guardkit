@@ -34,14 +34,17 @@ That's it! The `/task-work` command handles planning, implementation, architectu
 ## Documentation Structure
 
 ```
-docs/guides/
-├── getting-started.md           # This guide (START HERE!)
-├── claude-code-web-setup.md     # Claude Code Web setup (installation, persistence)
-├── quick-reference.md           # Command reference
-├── taskwright-workflow.md       # Complete workflow guide
-├── migration-guide.md           # Migrating from old workflow
-├── creating-local-templates.md  # Template customization
-└── maui-template-selection.md   # MAUI template guide
+docs/
+├── guides/
+│   ├── GETTING-STARTED.md         # This guide (START HERE!)
+│   ├── taskwright-workflow.md     # Complete workflow guide
+│   ├── creating-local-templates.md # Template customization
+│   └── template-philosophy.md     # Why these templates?
+├── workflows/
+│   ├── complexity-management-workflow.md
+│   ├── quality-gates-workflow.md
+│   └── task-review-workflow.md
+└── Landing pages: concepts.md, advanced.md, templates.md, agents.md
 ```
 
 ## What is Taskwright?
