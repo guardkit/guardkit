@@ -1,13 +1,20 @@
 ---
 id: TASK-DOC-443B
 title: Document review task detection in task-review.md
-status: backlog
+status: completed
 created: 2025-11-27T02:00:00Z
-updated: 2025-11-27T02:00:00Z
+updated: 2025-11-27T08:10:00Z
+completed_at: 2025-11-27T08:10:00Z
 priority: high
 tags: [documentation, task-review, task-create, detection]
 complexity: 2
 related_to: [TASK-DOC-F3BA]
+completion_metrics:
+  implementation_commit: 7a92d13322c41f3a3d7d8ccf218e14bef0fa1523
+  merge_commit: 9d9f64c4a69fc0846ea6966e805062983cd7029a
+  worktree_branch: RichWoollcott/doc-review-detection
+  lines_added: 103
+  files_modified: 2
 ---
 
 # Task: Document Review Task Detection in task-review.md
