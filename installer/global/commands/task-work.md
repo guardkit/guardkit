@@ -980,6 +980,32 @@ task_context["documentation_level"] = documentation_level
 
 **Agent selection results** are shown in the invocation log after task completion.
 
+### Step 3.5: Initialize Tracking and Validation (NEW - TASK-ENF2, TASK-ENF4)
+
+**INITIALIZE INVOCATION TRACKER AND PHASE GATE VALIDATOR**:
+```python
+from installer.global.commands.lib import (
+    AgentInvocationTracker,
+    add_pending_phases,
+    PhaseGateValidator
+)
+
+# Initialize tracker for execution visibility
+tracker = AgentInvocationTracker()
+add_pending_phases(tracker, workflow_mode="standard")  # or "micro"
+
+# Initialize phase gate validator
+validator = PhaseGateValidator(tracker)
+```
+
+**Purpose**:
+- **Tracker**: Records which agents are invoked, their sources, and execution status
+- **Validator**: Ensures agents are properly invoked before allowing phase progression
+
+**See**:
+- TASK-ENF2: Agent invocation tracking
+- TASK-ENF4: Phase gate validation checkpoints
+
 ### Step 4: INVOKE TASK TOOL FOR EACH PHASE (REQUIRED - DO NOT SKIP)
 
 **⚠️ CRITICAL: YOU MUST USE THE TASK TOOL. DO NOT ATTEMPT TO DO THE WORK YOURSELF.**
@@ -1056,6 +1082,21 @@ Status: Implementation plan generated successfully
 Proceeding to Phase 2.5A...
 ═══════════════════════════════════════════════════════
 ```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+from installer.global.commands.lib import PhaseGateValidator, ValidationError
+
+try:
+    validator.validate_phase_completion("2", "Implementation Planning")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 2 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 2.5A
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 2.5A: Pattern Suggestion (NEW - Recommend design patterns)
 
@@ -1178,6 +1219,19 @@ Status: Architectural review complete
 Proceeding to Phase 2.7...
 ═══════════════════════════════════════════════════════
 ```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("2.5B", "Architectural Review")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 2.5B gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 2.7
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 2.7: Complexity Evaluation (NEW - Auto-proceed mode routing)
 
@@ -1900,6 +1954,19 @@ Proceeding to Phase 4...
 ═══════════════════════════════════════════════════════
 ```
 
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("3", "Implementation")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 3 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 4
+**IF validation fails**: Task moved to BLOCKED, execution stops
+
 #### Phase 4: Testing
 
 **CRITICAL**: Refer to test-orchestrator.md for mandatory compilation verification before testing.
@@ -1975,6 +2042,19 @@ Status: Test suite ready for verification
 Proceeding to Phase 4.5...
 ═══════════════════════════════════════════════════════
 ```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("4", "Testing")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 4 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 4.5
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 4.5: Fix Loop (Ensure All Tests Pass)
 
@@ -2167,6 +2247,19 @@ Status: Code review complete - quality approved
 Proceeding to Phase 5.5...
 ═══════════════════════════════════════════════════════
 ```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("5", "Code Review")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 5 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 5.5
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 5.5: Plan Audit (Hubbard's Step 6)
 

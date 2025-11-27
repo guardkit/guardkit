@@ -1,9 +1,9 @@
 ---
 id: TASK-ENF4
 title: Add phase gate checkpoints to task-work
-status: backlog
+status: in_progress
 created: 2025-11-27T12:50:00Z
-updated: 2025-11-27T12:50:00Z
+updated: 2025-11-27T14:30:00Z
 priority: high
 tags: [enforcement, validation, quality-gates, task-work, agent-invocation]
 task_type: implementation

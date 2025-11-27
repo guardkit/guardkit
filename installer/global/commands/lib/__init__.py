@@ -124,6 +124,12 @@ from .agent_invocation_tracker import (
     add_pending_phases,
 )
 
+# Phase Gate Validator (TASK-ENF4)
+from .phase_gate_validator import (
+    PhaseGateValidator,
+    ValidationError,
+)
+
 __version__ = "1.1.0"
 
 __all__ = [
@@ -220,4 +226,8 @@ __all__ = [
     # Agent Invocation Tracker
     "AgentInvocationTracker",
     "add_pending_phases",
+
+    # Phase Gate Validator
+    "PhaseGateValidator",
+    "ValidationError",
 ]
