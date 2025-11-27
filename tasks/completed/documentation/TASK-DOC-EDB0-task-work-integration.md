@@ -1,13 +1,20 @@
 ---
 id: TASK-DOC-EDB0
 title: Add task-work integration section to task-review.md
-status: backlog
+status: completed
 created: 2025-11-27T02:00:00Z
-updated: 2025-11-27T02:00:00Z
+updated: 2025-11-27T08:15:00Z
+completed_at: 2025-11-27T08:15:00Z
 priority: high
 tags: [documentation, task-review, task-work, workflow]
 complexity: 3
 related_to: [TASK-DOC-F3BA]
+completion_metrics:
+  implementation_commit: 3b0f2a2a3b6b1f6af80dd608fc4d39aa428c30f0
+  merge_commit: 17d9a545b2308e1eac740c9cdd9b971484e24774
+  worktree_branch: RichWoollcott/task-work-integration
+  lines_added: 158
+  files_modified: 2
 ---
 
 # Task: Add /task-work Integration Section to task-review.md
