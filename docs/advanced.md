@@ -37,7 +37,9 @@ Learn when and how to use design-first workflow for critical tasks.
 
 Convert design system files (Figma, Zeplin) into components with zero scope creep.
 
-**Supported:**
+> **Note:** These are early experiments. Generic design URL support is planned (Figma, Zeplin, Sketch) via `design:URL` parameter in `/task-create`, enabling automatic design-to-code conversion for any design tool.
+
+**Current Commands:**
 
 - `/figma-to-react`: Figma → TypeScript React + Tailwind + Playwright
 - `/zeplin-to-maui`: Zeplin → XAML + C# + platform tests
