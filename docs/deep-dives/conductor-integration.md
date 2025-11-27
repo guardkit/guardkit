@@ -827,41 +827,20 @@ Both approaches work perfectly with Agentecflow!
 
 ## Additional Resources
 
-### Documentation
-
-- **Conductor Integration**: [CONDUCTOR-SETUP-COMPLETE.md](../CONDUCTOR-SETUP-COMPLETE.md)
-- **Detailed Research**: [agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md](../../agentecflow_platform/docs/CONDUCTOR-INTEGRATION.md)
-- **Agentecflow Commands**: [CLAUDE.md](../../CLAUDE.md)
-
-### Links
+### External Links
 
 - **Conductor Download**: https://conductor.build
 - **Git Worktree Docs**: https://git-scm.com/docs/git-worktree
-- **Claude Code Docs**: https://docs.claude.com/en/docs/claude-code
+- **Claude Code**: https://claude.ai/code
 
 ### Verification
 
 ```bash
 # Check your installation is Conductor-ready:
-agentecflow doctor
+taskwright doctor
 
 # Should show all green:
 # ✓ Commands symlinked correctly
 # ✓ Agents symlinked correctly
 # ✓ Compatible with Conductor.build for parallel development
 ```
-
----
-
-## Related Documentation
-
-- **TASK-031 Completion Report**: [Complete implementation details](../../tasks/completed/TASK-031/)
-- **Git State Helper**: [Auto-commit implementation](../../installer/global/lib/git_state_helper.py)
-- **Research Summary**: [Agentecflow Lite Positioning](../research/agentecflow-lite-positioning-summary.md)
-- **Honest Assessment**: [SDD vs AI-Engineer Analysis](../research/honest-assessment-sdd-vs-ai-engineer.md)
-
----
-
-**Last Updated**: 2025-10-25
-**Version**: 1.1.0 (TASK-031 Success Story)
-**Status**: Production Ready ✅
