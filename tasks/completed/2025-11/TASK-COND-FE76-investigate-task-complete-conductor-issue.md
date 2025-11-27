@@ -1,11 +1,18 @@
 ---
 id: TASK-COND-FE76
 title: Investigate /task-complete inconsistent behavior in Conductor workspaces
-status: backlog
-created: 2025-11-27T18:10:00Z
-updated: 2025-11-27T19:20:00Z
+status: completed
+created: 2025-11-27 18:10:00+00:00
+updated: '2025-11-27T20:38:20.170718Z'
 priority: critical
-tags: [conductor, task-complete, bug, phase-0, investigation, path-resolution, plan-archival]
+tags:
+- conductor
+- task-complete
+- bug
+- phase-0
+- investigation
+- path-resolution
+- plan-archival
 task_type: implementation
 epic: null
 feature: null
@@ -14,29 +21,50 @@ dependencies: []
 complexity: 5
 effort_estimate: 2-3 hours
 related_to: TASK-ENF-P0-1, TASK-ENF-P0-2, TASK-ENF-P0-4, TASK-ENF2, TASK-ENF3
-notes: |
-  ROOT CAUSE IDENTIFIED (2025-11-27T19:05:00Z):
+notes: 'ROOT CAUSE IDENTIFIED (2025-11-27T19:05:00Z):
+
   - Full paths work consistently (TASK-ENF2, TASK-ENF3, TASK-ENF-P0-3)
+
   - Relative paths fail silently (TASK-ENF-P0-1, P0-2, P0-4)
+
   - Task lookup uses os.getcwd() which returns worktree path in Conductor
+
   - Fix: Resolve paths relative to main repo, not worktree
 
+
   SCOPE EXPANDED (2025-11-27T19:10:00Z):
+
   - Added FR2.5: Archive implementation plans on task completion
+
   - Prevents .claude/task-plans/ clutter
+
   - Plans archived alongside completed tasks for traceability
+
   - Complexity increased back to 5 (additional feature)
+
   - Effort remains 2-3 hours (straightforward addition)
 
+
   SCOPE EXPANDED AGAIN (2025-11-27T19:20:00Z):
+
   - Extended FR2.5: Archive implementation summaries from root directory
+
   - Prevents root directory clutter (TASK-XXX-IMPLEMENTATION-SUMMARY.md files)
+
   - Archives COMPLETION-REPORT.md files as well
+
   - All task documents archived together for complete traceability
+
   - Test cases increased from 6 to 9
+
   - Complexity remains 5 (similar implementation pattern)
+
   - Effort remains 2-3 hours (additional patterns to check)
+
+  '
+completed: '2025-11-27T20:38:20.168553Z'
 ---
+
 
 # TASK-COND-FE76: Investigate /task-complete Inconsistent Behavior in Conductor Workspaces
 
