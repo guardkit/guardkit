@@ -383,6 +383,7 @@ Create task? [Y/n]:
 ### See Also
 
 - [task-review.md - Automatic Review Task Detection](./task-review.md#automatic-review-task-detection) - Full details on how detection works and what happens after task creation
+- [task-review.md - Integration with /task-work](./task-review.md#integration-with-task-work) - Complete review → implementation → verification workflow
 
 ## Integration with Workflow
 
