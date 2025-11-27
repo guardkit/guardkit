@@ -1,9 +1,10 @@
 ---
 id: TASK-ENF5-v2
 title: Document dynamic agent discovery in task-work
-status: in_review
+status: completed
 created: 2025-11-27T17:30:00Z
 updated: 2025-11-27T20:30:00Z
+completed_at: 2025-11-27T20:35:00Z
 priority: high
 tags: [documentation, agent-discovery, task-work, dynamic-discovery]
 task_type: implementation
