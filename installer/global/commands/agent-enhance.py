@@ -211,6 +211,10 @@ def main(args: list[str]) -> int:
             logger.info(f"  Templates referenced: {len(result.templates)}")
             logger.info(f"  Code examples: {len(result.examples)}")
 
+            # TASK-ENF-P0-4: Validate discovery metadata
+            if not parsed_args.dry_run:
+                validate_discovery_metadata_after_enhancement(agent_file)
+
             if parsed_args.dry_run:
                 logger.info("\n[DRY RUN] Changes not applied")
                 print("\n--- Preview ---")
@@ -232,6 +236,47 @@ def main(args: list[str]) -> int:
     except Exception as e:
         logger.exception(f"✗ Unexpected error: {e}")
         return 3
+
+
+def validate_discovery_metadata_after_enhancement(agent_file: Path) -> None:
+    """
+    Validate discovery metadata after agent enhancement (TASK-ENF-P0-4: FR1, FR3).
+
+    Checks enhanced agent for required discovery metadata and reports
+    missing fields. Does not block on missing metadata (graceful degradation).
+
+    Args:
+        agent_file: Path to enhanced agent file
+    """
+    try:
+        # Import validation function
+        import importlib
+        _discovery_module = importlib.import_module(
+            'installer.global.commands.lib.agent_discovery'
+        )
+        _extract_metadata = _discovery_module._extract_metadata
+        validate_discovery_metadata = _discovery_module.validate_discovery_metadata
+    except ImportError as e:
+        logger.debug(f"Agent discovery not available: {e}")
+        return
+
+    # Extract metadata from enhanced agent
+    metadata = _extract_metadata(agent_file, source="local", priority=1)
+
+    if metadata is None:
+        logger.warning(f"⚠️  Could not read metadata from {agent_file.name}")
+        return
+
+    # Validate metadata
+    is_valid, errors = validate_discovery_metadata(metadata)
+
+    if not is_valid:
+        logger.warning(f"\n⚠️  Agent metadata incomplete:")
+        for error in errors:
+            logger.warning(f"    - {error}")
+        logger.info(f"\n💡 Tip: Re-run enhancement with AI strategy for metadata generation")
+    else:
+        logger.info(f"✓ Discovery metadata validated successfully")
 
 
 def resolve_paths(agent_path_str: str) -> Tuple[Path, Path]:

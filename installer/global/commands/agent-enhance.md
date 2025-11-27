@@ -292,6 +292,36 @@ keywords: [fastapi, async, endpoints, router, dependency-injection]
 
 **See**: [Agent Discovery Guide](../../docs/guides/agent-discovery-guide.md) for comprehensive documentation.
 
+### Metadata Validation Output (TASK-ENF-P0-4)
+
+After enhancement, the command validates discovery metadata:
+
+```
+✓ Enhanced testing-specialist.md
+  Sections added: 3
+  Templates referenced: 12
+  Code examples: 5
+✓ Discovery metadata validated successfully
+```
+
+If metadata is incomplete:
+
+```
+✓ Enhanced testing-specialist.md
+  Sections added: 3
+  Templates referenced: 12
+  Code examples: 5
+
+⚠️  Agent metadata incomplete:
+    - Missing required field: stack
+    - Missing required field: capabilities
+    - Missing required field: keywords
+
+💡 Tip: Re-run enhancement with AI strategy for metadata generation
+```
+
+**Note**: Missing metadata is a warning only (graceful degradation). The agent is still enhanced and usable.
+
 ### Error Output
 ```
 ✗ Enhancement failed: Agent file not found
