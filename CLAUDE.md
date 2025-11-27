@@ -42,6 +42,7 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 ```bash
 /agent-format <template>/<agent>     # Format agent to template standards
 /agent-validate <agent-file>         # Validate agent quality
+/agent-enhance <agent-file> <template-dir> [--strategy=ai|static|hybrid] [--dry-run]
 /template-validate <template-path>   # Comprehensive template audit
 ```
 
@@ -299,6 +300,31 @@ Validation works with templates in either location.
 
 **See**: [Template Validation Guide](docs/guides/template-validation-guide.md)
 
+## Template Creation Workflow Phases
+
+The `/template-create` command executes these phases automatically:
+
+```
+Phase 1: Source Analysis
+Phase 2: File Discovery
+Phase 3: Manifest Generation
+Phase 4: Settings Extraction
+Phase 5: CLAUDE.md Generation
+Phase 6: Agent Discovery
+Phase 7: Validation
+Phase 8: Agent Task Creation [OPTIONAL]
+  ├─ Creates one task per agent file
+  ├─ Task metadata includes agent_file, template_dir, template_name
+  ├─ Tasks can be enhanced incrementally using /task-work
+  └─ Alternative: Manual enhancement with /agent-enhance
+```
+
+**Phase 8 Options**:
+1. **Automatic** (with `--create-agent-tasks`): Creates tasks, enhance later
+2. **Manual** (without flag): Use `/agent-enhance` directly per agent
+
+**See**: [Incremental Enhancement Workflow](#incremental-enhancement-workflow)
+
 ## Design-First Workflow
 
 Optional flags for complex tasks requiring upfront design approval.
@@ -315,6 +341,134 @@ Optional flags for complex tasks requiring upfront design approval.
 - Multi-day tasks
 
 **See**: [Design-First Workflow](docs/workflows/design-first-workflow.md)
+
+## Incremental Enhancement Workflow
+
+Phase 8 enables **incremental agent enhancement** - you can improve agent files over time instead of all at once.
+
+### When to Use
+
+**Use Incremental Enhancement**:
+- Template has 5+ agents (too many to enhance at once)
+- Want to prioritize critical agents first
+- Learning template patterns gradually
+- Testing enhancement quality on small subset
+
+**Use Full Enhancement** (during template creation):
+- Template has 1-3 agents (quick to enhance)
+- Need all agents complete immediately
+- One-time template creation
+
+### Workflow Options
+
+#### Option A: Task-Based (Recommended)
+
+```bash
+# 1. Create template with agent tasks
+/template-create --name my-template --create-agent-tasks
+
+# 2. Review created tasks
+/task-status
+
+# Output:
+# BACKLOG:
+#   TASK-AGENT-API-ABC123 - Enhance api-service-specialist
+#   TASK-AGENT-DATABASE-DEF456 - Enhance database-specialist
+#   ...
+
+# 3. Work on high-priority agents first
+/task-work TASK-AGENT-API-ABC123
+
+# 4. Complete when satisfied
+/task-complete TASK-AGENT-API-ABC123
+
+# 5. Repeat for other agents as needed
+```
+
+**Benefits**:
+- Tracked in task system
+- Can prioritize enhancement work
+- Integrated with /task-work workflow
+- Progress visible
+
+#### Option B: Direct Enhancement
+
+```bash
+# 1. Create template (without --create-agent-tasks)
+/template-create --name my-template
+
+# 2. Enhance specific agent
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template
+
+# 3. Review changes (dry-run first)
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template \
+               --dry-run
+
+# 4. Apply if satisfied
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template
+```
+
+**Benefits**:
+- Immediate enhancement
+- No task overhead
+- Quick iteration
+
+### Enhancement Strategies
+
+#### AI Strategy (Recommended)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=ai
+```
+- Uses agent-content-enhancer
+- Analyzes template code
+- Generates examples and best practices
+- **Requires**: AI integration
+
+#### Static Strategy (Fallback)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=static
+```
+- Uses template-based enhancement
+- Extracts patterns from source
+- No AI required
+- Good for offline use
+
+#### Hybrid Strategy (Default)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=hybrid
+```
+- Tries AI first
+- Falls back to static if AI fails
+- Best reliability
+- Recommended for most users
+
+### Best Practices
+
+1. **Start with Critical Agents**
+   - Enhance high-priority agents first (priority >= 9)
+   - Use task system to track priorities
+
+2. **Review Before Applying**
+   - Always use `--dry-run` first
+   - Review generated content
+   - Validate examples compile
+
+3. **Iterate on Quality**
+   - Enhance incrementally
+   - Test agent guidance in practice
+   - Refine based on user feedback
+
+4. **Maintain Consistency**
+   - Use same strategy across agents
+   - Follow same content structure
+   - Keep quality bar consistent
+
+**See Also**:
+- [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
+- [Agent Enhance Command](installer/global/commands/agent-enhance.md)
 
 ## Project Structure
 
@@ -395,6 +549,30 @@ taskwright init your-custom-template
 **Why?** Your production code is better than any generic template. Create templates from what you've proven works.
 
 **See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
+
+## Template Quality Standards
+
+### Agent Content Quality
+
+**Minimum Standards** (enforced by validation):
+- Valid frontmatter with required fields
+- Technologies list populated
+- Priority set (0-10 scale)
+
+**Production Standards** (incremental enhancement goal):
+- 3-5 code examples from template source
+- Best practices section (5-8 practices)
+- Anti-patterns section (3-5 common mistakes)
+- Meaningful "Why This Agent Exists" (not circular)
+- Integration guidance with usage examples
+
+**Enhancement Path**:
+1. Template creation: Generates stub agents (minimum standards)
+2. Phase 8: Creates enhancement tasks (if --create-agent-tasks)
+3. Incremental work: Enhance agents to production standards
+4. Validation: Verify quality with /template-validate
+
+**See**: [Incremental Enhancement Workflow](#incremental-enhancement-workflow)
 
 ## Installation & Setup
 
