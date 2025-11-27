@@ -5,6 +5,7 @@
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 ![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
 ![detection](https://img.shields.io/badge/detection-automatic-blueviolet)
+[![documentation](https://img.shields.io/badge/docs-online-blue)](https://taskwright-dev.github.io/taskwright/)
 
 **Lightweight AI-assisted development with built-in quality gates.**
 
@@ -21,7 +22,24 @@ Stop shipping broken code. Get architectural review before implementation and au
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
 - **Design-First Workflow**: Optional design approval checkpoint for complex tasks (complexity ≥7)
 
+## Documentation
+
+📚 **[View Full Documentation](https://taskwright-dev.github.io/taskwright/)**
+
+Comprehensive guides, workflows, and references:
+
+- **[Quickstart Guide](https://taskwright-dev.github.io/taskwright/guides/GETTING-STARTED/)** - Get up and running in 5 minutes
+- **[Core Concepts](https://taskwright-dev.github.io/taskwright/concepts/)** - Workflow, complexity, quality gates, task states
+- **[Advanced Topics](https://taskwright-dev.github.io/taskwright/advanced/)** - Design-first, UX integration, review workflows
+- **[Templates](https://taskwright-dev.github.io/taskwright/templates/)** - Stack-specific templates and customization
+- **[Agent System](https://taskwright-dev.github.io/taskwright/agents/)** - Discovery, enhancement, and boundary sections
+- **[Task Review](https://taskwright-dev.github.io/taskwright/task-review/)** - Analysis workflows and review modes
+- **[MCP Integration](https://taskwright-dev.github.io/taskwright/mcp-integration/)** - Optional enhancements (context7, design-patterns)
+- **[Troubleshooting](https://taskwright-dev.github.io/taskwright/troubleshooting/)** - Common issues and solutions
+
 ## 5-Minute Quickstart
+
+**📚 Full documentation: https://taskwright-dev.github.io/taskwright/**
 
 ### Option 1: Quick Install (Recommended)
 
