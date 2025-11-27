@@ -507,10 +507,20 @@ Solution: This is a bug - please report it
 
 ## See Also
 
-- [TASK-PHASE-8-INCREMENTAL: Incremental Agent Enhancement Workflow](../../tasks/backlog/TASK-PHASE-8-INCREMENTAL-specification.md)
-- [Template Creation Workflow](../../docs/workflows/template-creation-workflow.md)
+### Command Documentation
+- [Template Create Command](template-create.md) - Complete template creation including Phase 8 agent enhancement
+
+### Workflow Guides
+- [Agent Enhancement Decision Guide](../../../docs/guides/agent-enhancement-decision-guide.md) - Choose between /agent-format and /agent-enhance
+- [Incremental Enhancement Workflow](../../../docs/workflows/incremental-enhancement-workflow.md) - Phase 8 agent enhancement strategies
+
+### Reference Documentation
 - [Agent Enhancement Best Practices](../../docs/guides/agent-enhancement-best-practices.md)
 - [Agent Response Format Specification](../../docs/reference/agent-response-format.md) - Required format for `.agent-response.json` files (TASK-FIX-267C)
+
+### Implementation Tasks
+- [TASK-PHASE-8-INCREMENTAL: Incremental Agent Enhancement Workflow](../../tasks/backlog/TASK-PHASE-8-INCREMENTAL-specification.md)
+- [Template Creation Workflow](../../docs/workflows/template-creation-workflow.md)
 
 ---
 

@@ -1050,6 +1050,14 @@ Planned for future iterations:
 
 ## See Also
 
+### Command Documentation
+- [Agent Enhance Command](agent-enhance.md) - Enhance individual agents with template-specific content
+
+### Workflow Guides
+- [Agent Enhancement Decision Guide](../../../docs/guides/agent-enhancement-decision-guide.md) - Choose between /agent-format and /agent-enhance
+- [Incremental Enhancement Workflow](../../../docs/workflows/incremental-enhancement-workflow.md) - Phase 8 agent enhancement strategies
+
+### Implementation Tasks
 - [TASK-010: /template-create Command Orchestrator](../../tasks/backlog/TASK-010-template-create-command.md)
 - [Template Creation Workflow](../../docs/workflows/template-creation-workflow.md)
 - [Architecture Decision: Orchestrator Pattern](../../docs/decisions/orchestrator-pattern.md)
