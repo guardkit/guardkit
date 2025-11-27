@@ -1,11 +1,13 @@
 ---
 id: TASK-5F8A
 title: Review and improve subagent invocation enforcement in task-work
-status: backlog
+status: completed
 created: 2025-11-27T06:50:00Z
-updated: 2025-11-27T06:50:00Z
+updated: 2025-11-27T20:45:00Z
+completed: 2025-11-27T20:45:00Z
 priority: high
 tags: [quality-gates, agent-discovery, task-work, protocol-enforcement]
+task_type: review
 epic: null
 feature: null
 requirements: []

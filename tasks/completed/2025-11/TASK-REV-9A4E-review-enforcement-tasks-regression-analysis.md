@@ -1,9 +1,10 @@
 ---
 id: TASK-REV-9A4E
 title: Review enforcement tasks for regressions in template/agent workflows
-status: review_complete
+status: completed
 created: 2025-11-27T13:55:00Z
-updated: 2025-11-27T16:30:00Z
+updated: 2025-11-27T20:45:00Z
+completed: 2025-11-27T20:45:00Z
 priority: high
 tags: [review, regression-analysis, template-workflow, agent-discovery]
 task_type: review
@@ -25,9 +26,11 @@ review_results:
   report_path: .claude/reviews/TASK-REV-9A4E-review-report.md
   completed_at: 2025-11-27T16:30:00Z
   follow_up_tasks:
-    - TASK-ENF-P0-1 (Fix agent discovery)
-    - TASK-ENF-P0-2 (Update agent discovery documentation)
-    - TASK-ENF-P0-3 (Update template-init)
+    - TASK-ENF-P0-1 (Fix agent discovery) - COMPLETED
+    - TASK-ENF-P0-2 (Update agent discovery documentation) - COMPLETED
+    - TASK-ENF-P0-3 (Update template-init) - COMPLETED
+    - TASK-ENF-P0-4 (Update agent-enhance) - COMPLETED
+    - TASK-ENF5 (Update agent selection table) - COMPLETED
     - TASK-ENF-P0-4 (Update agent-enhance)
 ---
 
