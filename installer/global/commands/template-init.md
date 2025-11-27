@@ -219,7 +219,59 @@ keywords: [python, api, fastapi, pydantic, async, endpoints]
 - Extensible for new technology stacks
 - Graceful degradation (agents without metadata skipped)
 
-### 7. Exit Codes (TASK-INIT-009)
+### 7. Agent Registration Verification (TASK-ENF-P0-3)
+
+When initializing a project with `taskwright init`, the system verifies that template agents are properly registered for discovery. This ensures agents will be available during `/task-work` execution.
+
+**Verification Steps:**
+1. **Metadata Verification**: Check each agent's frontmatter for required fields (stack, phase, capabilities, keywords)
+2. **Discovery Test**: Run agent discovery to verify agents are findable
+3. **Registration Report**: Display registered agents with their stack and phase information
+
+**Expected Output:**
+```
+============================================================
+  Agent Discovery Verification
+============================================================
+
+🔍 Verifying agent metadata...
+  ✓ react-state-specialist: Valid metadata
+  ✓ test-orchestrator: Valid metadata
+
+🧪 Testing agent discovery...
+  ✅ Agent discovery successful:
+      • react-state-specialist (stack: ['react', 'typescript'])
+      • test-orchestrator (stack: ['cross-stack'])
+
+============================================================
+  Registered Agents
+============================================================
+
+  • react-state-specialist
+    Stack: react, typescript, Phase: implementation
+  • test-orchestrator
+    Stack: cross-stack, Phase: testing
+```
+
+**Missing Metadata Handling:**
+If agents are missing discovery metadata, you'll see warnings with enhancement suggestions:
+
+```
+⚠️  Warning: custom-specialist missing discovery metadata:
+    - Missing required field: stack
+    - Missing required field: keywords
+
+💡 Tip: Enhance agents with:
+   /agent-enhance .claude/agents/custom-specialist.md
+```
+
+**Benefits:**
+- Early detection of metadata issues
+- Confidence that template agents will be discovered
+- Clear visibility into registered agents
+- Graceful degradation (warnings, not errors)
+
+### 8. Exit Codes (TASK-INIT-009)
 
 Quality-based exit codes for CI/CD integration.
 
