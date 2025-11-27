@@ -38,6 +38,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Priority constants for agent source precedence
+# Lower number = higher priority (local overrides global)
+PRIORITY_LOCAL = 1     # .claude/agents/ (highest priority)
+PRIORITY_USER = 2      # ~/.agentecflow/agents/
+PRIORITY_GLOBAL = 3    # installer/global/agents/
+PRIORITY_TEMPLATE = 4  # installer/global/templates/*/agents/ (lowest priority)
+
 # Valid values for validation
 VALID_STACKS = [
     'python', 'react', 'dotnet', 'typescript', 'javascript',
@@ -46,77 +53,102 @@ VALID_STACKS = [
 VALID_PHASES = ['implementation', 'review', 'testing', 'orchestration']
 
 
-def _get_agent_locations() -> List[Path]:
+def _get_agent_locations() -> List[tuple[Path, str, int]]:
     """
-    Get all locations where agents may be stored.
+    Get all locations where agents may be stored with precedence information.
 
     Returns:
-        List of directory paths to scan for agents
+        List of tuples: (directory_path, source_name, priority)
+        Priority: 1=local (highest), 2=user, 3=global, 4=template (lowest)
     """
     locations = []
 
-    # 1. Global user agents (~/.agentecflow/agents/)
-    home = Path.home()
-    global_agents = home / ".agentecflow" / "agents"
-    if global_agents.exists():
-        locations.append(global_agents)
+    # 1. Project-local agents (.claude/agents/) - HIGHEST PRIORITY
+    cwd = Path.cwd()
+    local_agents = cwd / ".claude" / "agents"
+    if local_agents.exists():
+        locations.append((local_agents, "local", PRIORITY_LOCAL))
+    else:
+        logger.debug(".claude/agents/ not found, skipping local agent scan")
 
-    # 2. Global installer agents (installer/global/agents/)
+    # 2. Global user agents (~/.agentecflow/agents/)
+    home = Path.home()
+    user_agents = home / ".agentecflow" / "agents"
+    if user_agents.exists():
+        locations.append((user_agents, "user", PRIORITY_USER))
+
+    # 3. Global installer agents (installer/global/agents/)
     # Find the project root by looking for installer/global/agents
     current = Path(__file__).resolve()
     for parent in current.parents:
         installer_agents = parent / "installer" / "global" / "agents"
         if installer_agents.exists():
-            locations.append(installer_agents)
+            locations.append((installer_agents, "global", PRIORITY_GLOBAL))
 
-            # Also add template agents from templates/*/agents/
+            # 4. Template agents from templates/*/agents/ - LOWEST PRIORITY
             templates_path = parent / "installer" / "global" / "templates"
             if templates_path.exists():
                 for template_dir in templates_path.iterdir():
                     if template_dir.is_dir():
                         template_agents = template_dir / "agents"
                         if template_agents.exists():
-                            locations.append(template_agents)
+                            template_name = template_dir.name
+                            locations.append((template_agents, f"template:{template_name}", PRIORITY_TEMPLATE))
             break
-
-    # 3. Project-local agents (.claude/agents/)
-    cwd = Path.cwd()
-    local_agents = cwd / ".claude" / "agents"
-    if local_agents.exists():
-        locations.append(local_agents)
 
     return locations
 
 
-def _scan_agent_locations() -> List[Path]:
+def _scan_agent_locations() -> List[tuple[Path, str, int]]:
     """
-    Scan all agent locations for markdown files.
+    Scan all agent locations for markdown files with precedence tracking.
 
     Returns:
-        List of paths to agent markdown files
+        List of tuples: (agent_path, source_name, priority)
+        Duplicates removed based on agent name, keeping highest priority source.
     """
-    agent_paths = []
+    # Dictionary to track agents by name: name -> (path, source, priority)
+    agents_by_name = {}
+
     locations = _get_agent_locations()
 
-    for location in locations:
+    for item in locations:
+        # Handle both tuple format (new) and Path format (old/testing)
+        if isinstance(item, tuple):
+            location, source, priority = item
+        else:
+            # Backward compatibility for tests that mock with Path objects
+            location = item
+            source = "unknown"
+            priority = PRIORITY_GLOBAL  # Default priority for legacy format
+
         try:
             pattern = str(location / "*.md")
             matches = glob_module.glob(pattern)
-            agent_paths.extend(Path(m) for m in matches)
+
+            for match_path in matches:
+                path = Path(match_path)
+                # Extract agent name from filename (without .md extension)
+                agent_name = path.stem
+
+                # Only add if not already found, or if this source has higher priority
+                if agent_name not in agents_by_name:
+                    agents_by_name[agent_name] = (path, source, priority)
+                elif priority < agents_by_name[agent_name][2]:
+                    # Lower priority number = higher precedence
+                    old_source = agents_by_name[agent_name][1]
+                    logger.debug(
+                        f"Agent '{agent_name}' found in {source} (priority {priority}), "
+                        f"overriding {old_source} (priority {agents_by_name[agent_name][2]})"
+                    )
+                    agents_by_name[agent_name] = (path, source, priority)
+
         except Exception as e:
             logger.warning(f"Failed to scan agent location {location}: {e}")
             continue
 
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_paths = []
-    for path in agent_paths:
-        resolved = path.resolve()
-        if resolved not in seen:
-            seen.add(resolved)
-            unique_paths.append(path)
-
-    return unique_paths
+    # Return list of (path, source, priority) tuples
+    return list(agents_by_name.values())
 
 
 def _parse_frontmatter_regex(content: str) -> Dict[str, Any]:
@@ -165,12 +197,14 @@ def _parse_frontmatter_regex(content: str) -> Dict[str, Any]:
     return metadata
 
 
-def _extract_metadata(agent_path: Path) -> Optional[Dict[str, Any]]:
+def _extract_metadata(agent_path: Path, source: str = None, priority: int = None) -> Optional[Dict[str, Any]]:
     """
     Extract discovery metadata from agent file.
 
     Args:
         agent_path: Path to agent markdown file
+        source: Source location name (local, user, global, template:name)
+        priority: Priority level (1=highest, 4=lowest)
 
     Returns:
         Dictionary with metadata or None if file can't be read
@@ -192,8 +226,12 @@ def _extract_metadata(agent_path: Path) -> Optional[Dict[str, Any]]:
     else:
         metadata = _parse_frontmatter_regex(content)
 
-    # Add path to metadata
+    # Add path and source to metadata
     metadata['path'] = str(agent_path)
+    if source is not None:
+        metadata['source'] = source
+    if priority is not None:
+        metadata['source_priority'] = priority
 
     return metadata
 
@@ -388,18 +426,18 @@ def discover_agents(
     results = []
     skipped_count = 0
 
-    # Phase 1: Scan all agent locations
+    # Phase 1: Scan all agent locations with precedence tracking
     try:
-        agent_paths = _scan_agent_locations()
-        logger.debug(f"Discovery: Found {len(agent_paths)} agent files to scan")
+        agent_tuples = _scan_agent_locations()
+        logger.debug(f"Discovery: Found {len(agent_tuples)} unique agent files to scan")
     except Exception as e:
         logger.error(f"Failed to scan agent locations: {e}")
         return []  # Graceful degradation
 
     # Phase 2 & 3: Extract metadata and apply filters
-    for path in agent_paths:
+    for path, source, priority in agent_tuples:
         try:
-            metadata = _extract_metadata(path)
+            metadata = _extract_metadata(path, source, priority)
 
             if metadata is None:
                 skipped_count += 1
@@ -432,7 +470,16 @@ def discover_agents(
         f"Discovery: phase={phase}, stack={stack}, "
         f"found {len(results)} agents, skipped {skipped_count}"
     )
-    logger.debug(f"Matched agents: {[r.get('name', 'unknown') for r in results]}")
+
+    # Log selected agent with source information
+    if results:
+        best_match = results[0]
+        agent_name = best_match.get('name', 'unknown')
+        agent_source = best_match.get('source', 'unknown')
+        logger.info(f"Agent selected: {agent_name} (source: {agent_source})")
+        logger.debug(f"All matched agents: {[(r.get('name', 'unknown'), r.get('source', 'unknown')) for r in results]}")
+    else:
+        logger.info("No matching agent found, using task-manager (fallback)")
 
     if skipped_count > 0:
         logger.debug(f"Skipped {skipped_count} agents without metadata or with errors")
@@ -451,14 +498,14 @@ def get_agent_by_name(name: str) -> Optional[Dict[str, Any]]:
         Agent metadata dictionary or None if not found
     """
     try:
-        agent_paths = _scan_agent_locations()
+        agent_tuples = _scan_agent_locations()
     except Exception as e:
         logger.error(f"Failed to scan agent locations: {e}")
         return None
 
-    for path in agent_paths:
+    for path, source, priority in agent_tuples:
         try:
-            metadata = _extract_metadata(path)
+            metadata = _extract_metadata(path, source, priority)
             if metadata and metadata.get('name') == name:
                 return metadata
         except Exception:
@@ -477,14 +524,14 @@ def list_discoverable_agents() -> List[Dict[str, Any]]:
     results = []
 
     try:
-        agent_paths = _scan_agent_locations()
+        agent_tuples = _scan_agent_locations()
     except Exception as e:
         logger.error(f"Failed to scan agent locations: {e}")
         return []
 
-    for path in agent_paths:
+    for path, source, priority in agent_tuples:
         try:
-            metadata = _extract_metadata(path)
+            metadata = _extract_metadata(path, source, priority)
             if metadata and 'phase' in metadata:
                 results.append(metadata)
         except Exception:
@@ -506,16 +553,16 @@ def get_agents_by_stack(stack: str) -> List[Dict[str, Any]]:
     results = []
 
     try:
-        agent_paths = _scan_agent_locations()
+        agent_tuples = _scan_agent_locations()
     except Exception as e:
         logger.error(f"Failed to scan agent locations: {e}")
         return []
 
     stack_lower = stack.lower()
 
-    for path in agent_paths:
+    for path, source, priority in agent_tuples:
         try:
-            metadata = _extract_metadata(path)
+            metadata = _extract_metadata(path, source, priority)
             if metadata is None:
                 continue
 

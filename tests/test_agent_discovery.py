@@ -893,5 +893,247 @@ class TestConstants:
         assert set(VALID_PHASES) == set(expected)
 
 
+# ============================================================================
+# Test: Precedence Rules (TASK-ENF-P0-1)
+# ============================================================================
+
+class TestPrecedenceRules:
+    """Tests for agent source precedence and local agent discovery."""
+
+    def test_local_agents_discovered(self, tmp_path, sample_python_agent_content):
+        """Should discover agents from .claude/agents/ directory."""
+        # Create local agents directory
+        local_agents_dir = tmp_path / ".claude" / "agents"
+        local_agents_dir.mkdir(parents=True)
+        (local_agents_dir / "python-api-specialist.md").write_text(sample_python_agent_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_LOCAL
+            mock_locations.return_value = [(local_agents_dir, "local", PRIORITY_LOCAL)]
+
+            results = discover_agents(phase='implementation', stack=['python'])
+
+            assert len(results) >= 1
+            # Verify local source is recorded
+            python_agent = next((r for r in results if r.get('name') == 'python-api-specialist'), None)
+            assert python_agent is not None
+            assert python_agent.get('source') == 'local'
+            assert python_agent.get('source_priority') == PRIORITY_LOCAL
+
+    def test_local_overrides_global(self, tmp_path, sample_python_agent_content):
+        """Local agents should override global agents with the same name."""
+        # Create both local and global directories with the same agent
+        local_dir = tmp_path / ".claude" / "agents"
+        local_dir.mkdir(parents=True)
+
+        global_dir = tmp_path / "global" / "agents"
+        global_dir.mkdir(parents=True)
+
+        # Write same agent to both locations (with different descriptions to distinguish)
+        local_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: LOCAL VERSION - FastAPI specialist"
+        )
+        global_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: GLOBAL VERSION - FastAPI specialist"
+        )
+
+        (local_dir / "python-api-specialist.md").write_text(local_content)
+        (global_dir / "python-api-specialist.md").write_text(global_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_LOCAL, PRIORITY_GLOBAL
+            mock_locations.return_value = [
+                (local_dir, "local", PRIORITY_LOCAL),
+                (global_dir, "global", PRIORITY_GLOBAL)
+            ]
+
+            results = discover_agents(phase='implementation', stack=['python'])
+
+            # Should only have ONE python-api-specialist (no duplicates)
+            python_agents = [r for r in results if r.get('name') == 'python-api-specialist']
+            assert len(python_agents) == 1
+
+            # Should be the LOCAL version
+            agent = python_agents[0]
+            assert agent.get('source') == 'local'
+            assert agent.get('source_priority') == PRIORITY_LOCAL
+            assert 'LOCAL VERSION' in agent.get('description', '')
+
+    def test_precedence_chain(self, tmp_path, sample_python_agent_content):
+        """Should respect full precedence chain: local > user > global > template."""
+        # Create all four directories
+        local_dir = tmp_path / ".claude" / "agents"
+        local_dir.mkdir(parents=True)
+
+        user_dir = tmp_path / "user" / "agents"
+        user_dir.mkdir(parents=True)
+
+        global_dir = tmp_path / "global" / "agents"
+        global_dir.mkdir(parents=True)
+
+        template_dir = tmp_path / "templates" / "fastapi" / "agents"
+        template_dir.mkdir(parents=True)
+
+        # Write agents with unique descriptions
+        descriptions = {
+            'local': 'LOCAL VERSION',
+            'user': 'USER VERSION',
+            'global': 'GLOBAL VERSION',
+            'template': 'TEMPLATE VERSION'
+        }
+
+        for source, desc in descriptions.items():
+            content = sample_python_agent_content.replace(
+                "description: FastAPI endpoint and Pydantic model implementation specialist",
+                f"description: {desc} - FastAPI specialist"
+            )
+            if source == 'local':
+                (local_dir / "python-api-specialist.md").write_text(content)
+            elif source == 'user':
+                (user_dir / "python-api-specialist.md").write_text(content)
+            elif source == 'global':
+                (global_dir / "python-api-specialist.md").write_text(content)
+            elif source == 'template':
+                (template_dir / "python-api-specialist.md").write_text(content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_LOCAL, PRIORITY_USER, PRIORITY_GLOBAL, PRIORITY_TEMPLATE
+            mock_locations.return_value = [
+                (local_dir, "local", PRIORITY_LOCAL),
+                (user_dir, "user", PRIORITY_USER),
+                (global_dir, "global", PRIORITY_GLOBAL),
+                (template_dir, "template:fastapi", PRIORITY_TEMPLATE)
+            ]
+
+            results = discover_agents(phase='implementation', stack=['python'])
+
+            # Should only have ONE python-api-specialist
+            python_agents = [r for r in results if r.get('name') == 'python-api-specialist']
+            assert len(python_agents) == 1
+
+            # Should be LOCAL version (highest priority)
+            agent = python_agents[0]
+            assert agent.get('source') == 'local'
+            assert 'LOCAL VERSION' in agent.get('description', '')
+
+    def test_missing_local_directory_graceful(self, tmp_path):
+        """Should handle missing .claude/agents/ directory gracefully."""
+        # Only create global directory (no local)
+        global_dir = tmp_path / "global" / "agents"
+        global_dir.mkdir(parents=True)
+
+        # Create a basic agent in global
+        agent_content = """---
+name: test-agent
+description: Test agent
+stack: [python]
+phase: implementation
+capabilities: [test]
+keywords: [test, python, agent]
+---
+"""
+        (global_dir / "test-agent.md").write_text(agent_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_GLOBAL
+            # Only global directory exists (local doesn't)
+            mock_locations.return_value = [(global_dir, "global", PRIORITY_GLOBAL)]
+
+            # Should not raise an error
+            results = discover_agents(phase='implementation')
+
+            assert isinstance(results, list)
+            # Should still find global agent
+            assert len(results) >= 1
+
+    def test_source_logging(self, tmp_path, sample_python_agent_content, caplog):
+        """Should log agent source when selected."""
+        local_dir = tmp_path / ".claude" / "agents"
+        local_dir.mkdir(parents=True)
+        (local_dir / "python-api-specialist.md").write_text(sample_python_agent_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_LOCAL
+            mock_locations.return_value = [(local_dir, "local", PRIORITY_LOCAL)]
+
+            with caplog.at_level(logging.INFO):
+                results = discover_agents(phase='implementation', stack=['python'])
+
+            # Check that source was logged
+            log_messages = ' '.join(record.message for record in caplog.records)
+            assert 'Agent selected' in log_messages
+            assert 'source: local' in log_messages or 'local' in log_messages
+
+    def test_user_overrides_global(self, tmp_path, sample_python_agent_content):
+        """User agents should override global agents."""
+        user_dir = tmp_path / "user" / "agents"
+        user_dir.mkdir(parents=True)
+
+        global_dir = tmp_path / "global" / "agents"
+        global_dir.mkdir(parents=True)
+
+        user_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: USER VERSION"
+        )
+        global_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: GLOBAL VERSION"
+        )
+
+        (user_dir / "python-api-specialist.md").write_text(user_content)
+        (global_dir / "python-api-specialist.md").write_text(global_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_USER, PRIORITY_GLOBAL
+            mock_locations.return_value = [
+                (user_dir, "user", PRIORITY_USER),
+                (global_dir, "global", PRIORITY_GLOBAL)
+            ]
+
+            results = discover_agents(phase='implementation', stack=['python'])
+
+            python_agents = [r for r in results if r.get('name') == 'python-api-specialist']
+            assert len(python_agents) == 1
+            assert python_agents[0].get('source') == 'user'
+            assert 'USER VERSION' in python_agents[0].get('description', '')
+
+    def test_global_overrides_template(self, tmp_path, sample_python_agent_content):
+        """Global agents should override template agents."""
+        global_dir = tmp_path / "global" / "agents"
+        global_dir.mkdir(parents=True)
+
+        template_dir = tmp_path / "templates" / "fastapi" / "agents"
+        template_dir.mkdir(parents=True)
+
+        global_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: GLOBAL VERSION"
+        )
+        template_content = sample_python_agent_content.replace(
+            "description: FastAPI endpoint and Pydantic model implementation specialist",
+            "description: TEMPLATE VERSION"
+        )
+
+        (global_dir / "python-api-specialist.md").write_text(global_content)
+        (template_dir / "python-api-specialist.md").write_text(template_content)
+
+        with patch('agent_discovery._get_agent_locations') as mock_locations:
+            from agent_discovery import PRIORITY_GLOBAL, PRIORITY_TEMPLATE
+            mock_locations.return_value = [
+                (global_dir, "global", PRIORITY_GLOBAL),
+                (template_dir, "template:fastapi", PRIORITY_TEMPLATE)
+            ]
+
+            results = discover_agents(phase='implementation', stack=['python'])
+
+            python_agents = [r for r in results if r.get('name') == 'python-api-specialist']
+            assert len(python_agents) == 1
+            assert python_agents[0].get('source') == 'global'
+            assert 'GLOBAL VERSION' in python_agents[0].get('description', '')
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
