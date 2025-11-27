@@ -1,9 +1,10 @@
 ---
 id: TASK-ENF-P0-4
 title: Update agent-enhance to validate discovery metadata
-status: backlog
+status: completed
 created: 2025-11-27T16:50:00Z
-updated: 2025-11-27T16:50:00Z
+updated: 2025-11-27T18:00:00Z
+completed: 2025-11-27T18:00:00Z
 priority: medium
 tags: [agent-enhance, agent-discovery, phase-0]
 task_type: implementation

@@ -1,9 +1,10 @@
 ---
 id: TASK-ENF-P0-1
 title: Fix agent discovery to scan .claude/agents/ directory
-status: backlog
+status: completed
 created: 2025-11-27T16:35:00Z
-updated: 2025-11-27T16:35:00Z
+updated: 2025-11-27T18:00:00Z
+completed: 2025-11-27T18:00:00Z
 priority: critical
 tags: [agent-discovery, foundation, phase-0, blocking]
 task_type: implementation

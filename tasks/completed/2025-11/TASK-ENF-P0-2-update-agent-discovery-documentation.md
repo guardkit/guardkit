@@ -1,9 +1,10 @@
 ---
 id: TASK-ENF-P0-2
 title: Update agent discovery documentation with local agent scanning
-status: backlog
+status: completed
 created: 2025-11-27T16:40:00Z
-updated: 2025-11-27T16:40:00Z
+updated: 2025-11-27T18:00:00Z
+completed: 2025-11-27T18:00:00Z
 priority: high
 tags: [documentation, agent-discovery, phase-0]
 task_type: implementation
