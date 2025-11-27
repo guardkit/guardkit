@@ -32,6 +32,7 @@ from task_utils import (
     parse_task_frontmatter,
     write_task_frontmatter
 )
+from git_state_helper import get_git_root
 
 try:
     from task_review.model_router import ModelRouter, ReviewMode, ReviewDepth
@@ -127,17 +128,33 @@ def validate_output_format(output: str) -> None:
         )
 
 
-def find_task_file(task_id: str, base_dir: Path = Path("tasks")) -> Optional[Path]:
+def find_task_file(task_id: str, base_dir: Optional[Path] = None) -> Optional[Path]:
     """
-    Find task file by ID across all task directories.
+    Find task file by ID across all task directories (Conductor-aware).
+
+    This function resolves paths relative to the git repository root, ensuring
+    it works correctly in both the main repository and Conductor worktrees.
 
     Args:
         task_id: Task ID (e.g., TASK-XXX)
-        base_dir: Base tasks directory
+        base_dir: Base tasks directory (defaults to git_root/tasks)
 
     Returns:
         Path to task file if found, None otherwise
+
+    Raises:
+        subprocess.CalledProcessError: If not in a git repository
     """
+    # Get git root to ensure we search in the main repo, not worktree
+    if base_dir is None:
+        try:
+            git_root = get_git_root()
+            base_dir = git_root / "tasks"
+        except Exception as e:
+            # Fallback to relative path if not in git repo
+            # (for testing or non-git usage)
+            base_dir = Path("tasks")
+
     # Check all task state directories
     task_dirs = [
         "backlog",
@@ -160,7 +177,7 @@ def find_task_file(task_id: str, base_dir: Path = Path("tasks")) -> Optional[Pat
     return None
 
 
-def load_review_context(task_id: str, base_dir: Path = Path("tasks")) -> Dict[str, Any]:
+def load_review_context(task_id: str, base_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
     Phase 1: Load review context from task file.
 
