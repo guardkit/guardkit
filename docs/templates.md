@@ -111,7 +111,7 @@ cd your-existing-project
 /template-create --no-create-agent-tasks
 ```
 
-**Default Behavior (TASK-UX-3A8D)**: Creates agent enhancement tasks by default, providing immediate guidance on next steps.
+**Default Behavior**: Creates agent enhancement tasks by default, providing immediate guidance on next steps.
 
 ### Template Quality
 
@@ -125,7 +125,7 @@ Templates generated via `/template-create` automatically include:
 
 **Level 1: Automatic** (Always On)
 
-- Runs during `/template-create` (Phase 5.5)
+- Runs during `/template-create`
 - CRUD completeness checks
 - Layer symmetry validation
 - Auto-fix common issues
