@@ -114,5 +114,8 @@ debug-*.md
 /demo_*.py
 /debug-*.py
 
+# MkDocs build artifacts
+site/
+
 # OS generated files
 *.orig
