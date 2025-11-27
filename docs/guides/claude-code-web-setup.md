@@ -456,6 +456,7 @@ cd /home/user/my-web-app
 | `/task-complete` | Mark task as complete and archive | `/task-complete TASK-001` |
 | `/task-status` | View task status and summary | `/task-status TASK-001` |
 | `/task-refine` | Lightweight improvements without re-work | `/task-refine TASK-001` |
+| `/task-review` | Analysis and decision workflows | `/task-review TASK-001 --mode=architectural --depth=standard` |
 
 ### Design Integration Commands
 
