@@ -21,7 +21,7 @@ The Taskwright repository contains **417 markdown files** across **59 subdirecto
 - **Top-level directories**: 42 in docs/, 8 in installer/global/
 - **Command specifications**: 19 files
 - **Agent definitions**: 19 files
-- **Templates**: 6 with comprehensive READMEs
+- **Templates**: 5 with comprehensive READMEs
 - **User-facing guides**: ~50 files
 - **Internal artifacts**: ~200+ files
 
@@ -85,7 +85,7 @@ The Taskwright repository contains **417 markdown files** across **59 subdirecto
 | **docs/** | 1 | Internal | Internal documentation | Exclude |
 | **instructions/** | 4 | Developer | Installation instructions | Include in "Getting Started" |
 | **lib/** | 4 | Developer | Shared library documentation | Include in "Contributing" |
-| **templates/** | 31 | User-Facing | 6 templates with READMEs + agent files | Include in "Templates" |
+| **templates/** | 31 | User-Facing | 5 templates with READMEs + agent files | Include in "Templates" |
 | **utils/** | 0 | Developer | Utility documentation | Include in "Contributing" |
 | **__pycache__/** | 0 | Internal | Python cache | Exclude |
 
@@ -174,7 +174,7 @@ The Taskwright repository contains **417 markdown files** across **59 subdirecto
 - **test-verifier.md** - Test verifier
 - **zeplin-maui-orchestrator.md** - Zeplin orchestrator
 
-#### Templates (6 templates in installer/global/templates/)
+#### Templates (5 templates in installer/global/templates/)
 Each template has:
 - README.md (comprehensive documentation)
 - Multiple agent .md files
@@ -185,8 +185,9 @@ Each template has:
 2. **fastapi-python** (9.0/10 quality) - FastAPI best practices
 3. **nextjs-fullstack** (8.5/10 quality) - Next.js App Router
 4. **react-fastapi-monorepo** (9.2/10 quality) - Full-stack monorepo
-5. **taskwright-python** (8.0/10 quality) - Python CLI patterns
-6. **default** (8.0/10 quality) - Language-agnostic foundation
+5. **default** (8.0/10 quality) - Language-agnostic foundation
+
+**Note**: taskwright-python template was removed (ref: TASK-G6D4) as Taskwright's `.claude/` is git-managed.
 
 #### Reference Documentation
 - **quick-reference/** (5 files) - Quick reference cards
@@ -358,8 +359,9 @@ Each with link to installer/global/templates/{name}/README.md:
 - **fastapi-python** (9.0/10) - FastAPI Best Practices
 - **nextjs-fullstack** (8.5/10) - Next.js App Router
 - **react-fastapi-monorepo** (9.2/10) - Full-stack monorepo
-- **taskwright-python** (8.0/10) - Python CLI patterns
 - **default** (8.0/10) - Language-agnostic
+
+**Note**: taskwright-python removed (TASK-G6D4) - Taskwright uses git-managed `.claude/`
 
 #### Template Commands
 - **/template-create** - Create from codebase
@@ -453,8 +455,9 @@ Each with link to installer/global/templates/{name}/README.md:
 6. **docs/templates/index.md** - Template System section home
    - Template philosophy overview
    - Quality tier explanation (9+/10, 8-9/10)
-   - Link to: All 6 templates + guides
+   - Link to: All 5 templates + guides
    - Length: ~150 lines
+   - **Note**: taskwright-python removed (TASK-G6D4)
 
 7. **docs/advanced/index.md** - Advanced Topics section home
    - MCP integration overview
@@ -777,7 +780,6 @@ nav:
           - fastapi-python: ../installer/global/templates/fastapi-python/README.md
           - nextjs-fullstack: ../installer/global/templates/nextjs-fullstack/README.md
           - react-fastapi-monorepo: ../installer/global/templates/react-fastapi-monorepo/README.md
-          - taskwright-python: ../installer/global/templates/taskwright-python/README.md
           - default: ../installer/global/templates/default/README.md
   - Advanced Topics:
       - advanced/index.md
@@ -957,12 +959,14 @@ Create 13 landing pages in priority order:
 **Recommendation**: Dedicated "Templates" section
 
 **Rationale**:
-- 6 templates with comprehensive docs (31 files)
+- 5 templates with comprehensive docs (~26 files after taskwright-python removal)
 - Template system is core differentiator
 - Multiple related guides (philosophy, creation, validation)
 - Justifies dedicated navigation section
 
 **Action**: Create "Templates" top-level nav section
+
+**Note**: taskwright-python removed (TASK-G6D4) - Taskwright's `.claude/` is git-managed
 
 ### Decision 5: Agent Documentation
 **Recommendation**: Dedicated "Agent System" section
@@ -1103,17 +1107,19 @@ Create 13 landing pages in priority order:
 
 ### Appendix C: Template Documentation Structure
 
-Each of the 6 templates has:
+Each of the 5 templates has:
 - **README.md** (5-15 KB) - Template overview, features, structure
 - **TEMPLATE.md** - Template structure definition
 - **Multiple agent .md files** - Stack-specific agent definitions
 - **Example code** - Sample implementations
 
-**Total template documentation**: 31 markdown files
+**Total template documentation**: ~26 markdown files (after taskwright-python removal)
 
 **Templates by quality score**:
 - 9.0-9.2/10: react-typescript, fastapi-python, react-fastapi-monorepo (3 templates)
-- 8.0-8.5/10: nextjs-fullstack, taskwright-python, default (3 templates)
+- 8.0-8.5/10: nextjs-fullstack, default (2 templates)
+
+**Note**: taskwright-python template removed (TASK-G6D4) - Taskwright's `.claude/` is git-managed, so template initialization is not needed for Taskwright development
 
 ### Appendix D: Command Categories
 

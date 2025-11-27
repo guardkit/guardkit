@@ -268,7 +268,7 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 
 ## Templates
 
-Taskwright ships with **6 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
+Taskwright ships with **5 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
 
 ### High-Quality Reference Templates
 
@@ -285,9 +285,6 @@ Taskwright ships with **6 high-quality templates**: Stack-specific reference imp
 | Template | Purpose | Focus | Score |
 |----------|---------|-------|-------|
 | **react-fastapi-monorepo** | Full-stack monorepo | React + FastAPI | 9.2/10 |
-| **taskwright-python** | Python CLI tool (Internal Development) | Orchestrator pattern, DI, based on Taskwright itself | 8.0+/10 |
-
-**Note on taskwright-python**: This template is created from Taskwright's own codebase (dogfooding). Use it to understand Taskwright's internal architecture or build similar CLI tools with orchestration. For general Python APIs, use **fastapi-python** instead.
 
 #### Language-Agnostic Template
 
@@ -309,7 +306,7 @@ cd your-production-codebase
 taskwright init your-custom-template
 ```
 
-### Why These 6 Templates?
+### Why These 5 Templates?
 
 **Templates are learning resources, not production code.**
 

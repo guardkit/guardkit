@@ -78,7 +78,7 @@ cd /home/user/taskwright
 **Global Components** (`~/.agentecflow/`):
 - **Commands**: 9 slash commands (task-create, task-work, etc.)
 - **Agents**: 55 AI agents (14 global + 41 stack-specific)
-- **Templates**: 6 high-quality templates (react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, taskwright-python, default)
+- **Templates**: 5 high-quality templates (react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, default)
 - **Libraries**: Python modules for complexity evaluation, plan rendering
 - **Documentation**: Methodology instructions and references
 
@@ -688,7 +688,7 @@ cd /home/user/your-project
 /root/.agentecflow/              # Global installation
 ├── agents/                      # 55 AI agents
 ├── commands/                    # 9 slash commands
-├── templates/                   # 6 high-quality templates
+├── templates/                   # 5 high-quality templates
 └── bin/                        # CLI commands (taskwright, tw)
 
 /root/.claude/                   # Claude Code config

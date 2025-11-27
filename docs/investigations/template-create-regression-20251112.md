@@ -76,7 +76,9 @@ Based on git commit history, the following templates were created over the weeke
 | `nextjs-fullstack` | Nov 9, 20:05 | f087c95 | ✅ Complete |
 | `default` | Nov 9, 14:33 | 69b3170 | ✅ Complete |
 | `react-fastapi-monorepo` | Nov 10, 07:12 | ecc4ea8 | ✅ Complete |
-| `taskwright-python` | Nov 10, 09:22 | c8c4b29 | ✅ Complete |
+| `taskwright-python` | Nov 10, 09:22 | c8c4b29 | ✅ Complete (later removed - TASK-G6D4) |
+
+**Note**: taskwright-python was later removed in TASK-G6D4 as Taskwright's `.claude/` directory is git-managed.
 
 **Verification**:
 ```bash
@@ -91,20 +93,20 @@ drwxr-xr-x@ 10 richardwoollcott  staff   320 Nov  9 16:15 react-typescript
 drwxr-xr-x   8 richardwoollcott  staff   256 Nov 10 09:04 taskwright-python
 ```
 
-**Evidence**: All 6 reference templates exist in repository with complete structure (manifest.json, CLAUDE.md, settings.json, validation reports).
+**Evidence**: 5 reference templates exist in repository with complete structure (manifest.json, CLAUDE.md, settings.json, validation reports). taskwright-python was later removed.
 
 #### Template Quality Scores
 
 From manifest files:
 
-| Template | Confidence Score | Complexity |
-|----------|------------------|------------|
-| react-typescript | 92/100 | 7/10 |
-| fastapi-python | Not checked yet | TBD |
-| nextjs-fullstack | Not checked yet | TBD |
-| react-fastapi-monorepo | 9.2/10 (from docs) | 8/10 |
-| default | Not checked yet | TBD |
-| taskwright-python | 8+/10 (from docs) | TBD |
+| Template | Confidence Score | Complexity | Status |
+|----------|------------------|------------|--------|
+| react-typescript | 92/100 | 7/10 | Active |
+| fastapi-python | 9.0/10 | 7/10 | Active |
+| nextjs-fullstack | 8.5/10 | 8/10 | Active |
+| react-fastapi-monorepo | 9.2/10 | 8/10 | Active |
+| default | 8.0/10 | 5/10 | Active |
+| taskwright-python | 8+/10 | TBD | Removed (TASK-G6D4) |
 
 **Evidence**: Templates were successfully created with high-quality output.
 
@@ -218,9 +220,10 @@ drwxr-xr-x@  8 richardwoollcott  staff  256 Nov 12 08:46 taskwright-python
 ```
 
 **Key Observations**:
-1. ✅ All 6 reference templates copied to personal directory (Nov 12, 08:46)
-2. ✅ Additional template created: `java-standard-structure-template` (Nov 12, 08:48)
-3. ✅ Timestamps show **recent activity** - templates are being used **today**
+1. ✅ All 5 active reference templates copied to personal directory (Nov 12, 08:46)
+2. ✅ taskwright-python present (later removed from repository in TASK-G6D4)
+3. ✅ Additional template created: `java-standard-structure-template` (Nov 12, 08:48)
+4. ✅ Timestamps show **recent activity** - templates are being used **today**
 
 **java-standard-structure-template manifest**:
 ```json

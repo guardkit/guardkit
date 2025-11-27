@@ -86,9 +86,9 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
   - Plan Modification
 - [ ] Brief description of when to use each
 
-### Templates Section (UPDATED 2025-11-23)
-- [ ] Overview of 6 available templates (not 3 or 4)
-- [ ] Include all templates: react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, taskwright-python, default
+### Templates Section (UPDATED 2025-11-27)
+- [ ] Overview of 5 available templates (not 3, 4, or 6)
+- [ ] Include all templates: react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, default
 - [ ] Link to template selection guide
 - [ ] Link to creating local templates guide
 - [ ] Quick reference table of templates with quality scores

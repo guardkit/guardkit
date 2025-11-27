@@ -14,10 +14,12 @@ Batch format agent documentation files to meet GitHub best practices for documen
 
 **Use Cases:**
 1. Format 15 global agents to meet GitHub standards (20-35 hours manual → 7.5 minutes automated)
-2. Format 10+ template agents across 6 templates
+2. Format 10+ template agents across 5 templates
 3. Quick structural cleanup of user-created agents
 4. Pre-distribution formatting for team agents
 5. CI/CD quality gates for agent documentation
+
+**Note**: Template count updated to 5 (taskwright-python removed in TASK-G6D4).
 
 ## Usage
 

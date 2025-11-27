@@ -54,7 +54,6 @@ Update each template's CLAUDE.md file:
 - `installer/global/templates/fastapi-python/CLAUDE.md`
 - `installer/global/templates/nextjs-fullstack/CLAUDE.md`
 - `installer/global/templates/react-fastapi-monorepo/CLAUDE.md`
-- `installer/global/templates/taskwright-python/CLAUDE.md`
 - `installer/global/templates/default/CLAUDE.md`
 
 Add section (suggested location: near MCP Integration or Agent sections):

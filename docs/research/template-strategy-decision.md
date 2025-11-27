@@ -8,15 +8,17 @@
 
 ## Executive Summary
 
-**Decision**: Keep built-in templates but reduce from 9 to 4 high-quality **reference implementations**. Reframe these as learning resources and demonstrations, with `/template-create` as the primary production path.
+**Decision**: Keep built-in templates but reduce from 9 to 5 high-quality **reference implementations**. Reframe these as learning resources and demonstrations, with `/template-create` as the primary production path.
 
 **Updated Decision (2025-01-08)**: Added 4th template (React + FastAPI Monorepo) based on additional research showing strong industry adoption and genuine use case differentiation.
+
+**Final Update (2025-11-27)**: Removed taskwright-python template (TASK-G6D4) - Taskwright's `.claude/` is git-managed, so template initialization is not needed for Taskwright development. Final count: 5 reference templates.
 
 **Rationale**: All major scaffolding tools (create-react-app, dotnet new, Vite) ship with default templates despite developers being highly opinionated. Built-in templates serve 6 critical functions beyond code generation.
 
 **Impact**:
-- Reduced maintenance burden (9 → 4 templates, 56% reduction)
-- Higher quality through validation (9+/10 score required)
+- Reduced maintenance burden (9 → 5 templates, 44% reduction)
+- Higher quality through validation (8+/10 score required, 9+/10 for top-tier)
 - Clearer value proposition (reference + customization)
 - Better adoption path (quick start → customize)
 - Serves both JavaScript and Python full-stack ecosystems
@@ -155,17 +157,19 @@ Telling users "just template your own code" assumes they already know these patt
 
 ## Strategic Options Evaluated
 
-### Option A: Minimal Exemplar Set (3 templates) ⭐ RECOMMENDED
+### Option A: Reference Exemplar Set (5 templates) ⭐ RECOMMENDED (AS IMPLEMENTED)
 
 **Templates**:
 1. **Frontend**: React + TypeScript
 2. **Backend**: Python FastAPI
-3. **Full-stack**: Next.js
+3. **Full-stack (JS)**: Next.js
+4. **Full-stack (Python)**: React + FastAPI Monorepo
+5. **Language-agnostic**: Default template
 
 **Rationale**:
-- Covers 3 major paradigms
+- Covers 5 major paradigms and ecosystems
 - Provides demonstration value
-- Reduces maintenance burden 67% (9 → 3)
+- Reduces maintenance burden 44% (9 → 5)
 - Forces users to `/template-create` for customization (which is the real value)
 
 **Framework Selection Evidence** (2025 adoption data):
@@ -206,7 +210,7 @@ Telling users "just template your own code" assumes they already know these patt
 
 ### Final Template Set
 
-**Four reference implementation templates**:
+**Five reference implementation templates**:
 
 #### 1. Frontend: React + TypeScript
 
@@ -268,7 +272,7 @@ Telling users "just template your own code" assumes they already know these patt
 ```markdown
 # Built-in Templates: Learning Resources, Not Production Code
 
-Taskwright includes four reference implementation templates for three purposes:
+Taskwright includes five reference implementation templates for three purposes:
 
 1. **Learning**: See how to structure templates for `/template-create`
 2. **Evaluation**: Try Taskwright in <5 minutes
@@ -284,6 +288,7 @@ Taskwright includes four reference implementation templates for three purposes:
 | **fastapi-python** | Backend API for multiple frontends |
 | **nextjs-fullstack** | JavaScript/TypeScript full-stack web app |
 | **react-fastapi-monorepo** | Python full-stack (ML, data, Python teams) |
+| **default** | Language-agnostic (Go, Rust, Ruby, Elixir, PHP, etc.) |
 ```
 
 ---
@@ -302,7 +307,7 @@ Taskwright includes four reference implementation templates for three purposes:
 
 **Duration**: 3-5 days (once TASK-044 complete)
 
-### Phase 2: Create New Reference Templates (TASK-057, TASK-058, TASK-059, TASK-062)
+### Phase 2: Create New Reference Templates (TASK-057, TASK-058, TASK-059, TASK-062, TASK-DEFAULT)
 
 **TASK-057: Create React + TypeScript Reference Template**
 - Source: bulletproof-react repository
@@ -334,6 +339,12 @@ Taskwright includes four reference implementation templates for three purposes:
 - Achieve 9+/10 score
 - Duration: 3-5 days
 - **Depends on**: TASK-057 and TASK-058 completion
+
+**TASK-DEFAULT: Maintain Default Template**
+- Source: Taskwright's generic patterns
+- Validate language-agnostic approach
+- Achieve 8+/10 score
+- Duration: 1-2 days
 
 ### Phase 3: Remove Low-Quality Templates (TASK-060)
 
@@ -527,11 +538,13 @@ cd nextjs-reference
 ```markdown
 ## Template Philosophy
 
-Taskwright includes **3 reference implementation templates** for learning and evaluation:
+Taskwright includes **5 reference implementation templates** for learning and evaluation:
 
 1. **react-typescript** - Frontend best practices
 2. **fastapi-python** - Backend API patterns
-3. **nextjs-fullstack** - Full-stack application
+3. **nextjs-fullstack** - Full-stack application (JavaScript)
+4. **react-fastapi-monorepo** - Full-stack application (Python)
+5. **default** - Language-agnostic foundation
 
 These templates demonstrate:
 - How to structure templates for `/template-create`
@@ -557,13 +570,15 @@ taskwright init your-custom-template
 ```markdown
 ## Templates
 
-Taskwright ships with 3 **reference implementation templates** created from production-proven codebases:
+Taskwright ships with 5 **reference implementation templates** created from production-proven codebases:
 
 - **react-typescript**: From [Bulletproof React](https://github.com/alan2207/bulletproof-react) (28.5k stars)
 - **fastapi-python**: From [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) (12k+ stars)
 - **nextjs-fullstack**: Next.js App Router with production patterns
+- **react-fastapi-monorepo**: Full-stack Python with type-safe integration
+- **default**: Language-agnostic foundation for Go, Rust, Ruby, Elixir, PHP, etc.
 
-Each template scores 9+/10 on our comprehensive quality audit.
+Each template scores 8+/10 on our comprehensive quality audit (with top 3 scoring 9+/10).
 
 ### Create Your Own Templates
 
@@ -581,20 +596,21 @@ See [Creating Local Templates](docs/guides/creating-local-templates.md) for deta
 
 **Keep built-in templates, but pivot strategy**:
 
-1. ✅ Reduce from 9 to 3 high-quality reference templates
+1. ✅ Reduce from 9 to 5 high-quality reference templates
 2. ✅ Create from production-proven exemplar repositories
-3. ✅ Validate all templates (9+/10 required)
+3. ✅ Validate all templates (8+/10 minimum, 9+/10 for top tier)
 4. ✅ Reframe as "learning resources" not "production code"
 5. ✅ Make `/template-create` the hero feature
 6. ✅ Solve template location strategy (TASK-021)
 7. ✅ Foundation for community template gallery
 
 **Result**:
-- Reduced maintenance (67% fewer templates)
-- Higher quality (9+/10 validated)
+- Reduced maintenance (44% fewer templates, from 9 to 5)
+- Higher quality (8-9.2/10 validated)
 - Clearer value prop (reference + customization)
 - Better adoption path (quick demo → production customization)
 - Unique differentiation (`/template-create` from real codebases)
+- Removed taskwright-python (TASK-G6D4) - not needed for Taskwright development
 
 ---
 

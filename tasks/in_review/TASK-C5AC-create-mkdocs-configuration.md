@@ -270,12 +270,11 @@ nav:
     - Overview: guides/template-philosophy.md
     - Template Create: commands/template-create.md
     - Template Validation: guides/template-validation-guide.md
-    - Six Reference Templates:
+    - Five Reference Templates:
       - React TypeScript: templates/react-typescript/README.md
       - FastAPI Python: templates/fastapi-python/README.md
       - Next.js Fullstack: templates/nextjs-fullstack/README.md
       - React FastAPI Monorepo: templates/react-fastapi-monorepo/README.md
-      - Taskwright Python: templates/taskwright-python/README.md
       - Default (Language-Agnostic): templates/default/README.md
   - Agent System:  # NEW SECTION
     - Agent Enhancement: commands/agent-enhance.md

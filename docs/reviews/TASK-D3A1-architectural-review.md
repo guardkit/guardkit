@@ -45,11 +45,13 @@ Current Implementation (Post TASK-C2F8):
 
 | Problem | Severity | Impact |
 |---------|----------|--------|
-| **Agent Duplication** | CRITICAL | 6 templates × 5 agents = 30 copies to maintain |
+| **Agent Duplication** | CRITICAL | 5 templates × 5 agents = 25 copies to maintain |
 | **Version Drift** | HIGH | Updates to global agents don't propagate |
 | **Self-Modification** | HIGH | Taskwright can overwrite its own config |
-| **Maintenance Burden** | HIGH | Every agent change requires 6 template updates |
+| **Maintenance Burden** | HIGH | Every agent change requires 5 template updates |
 | **Conceptual Confusion** | MEDIUM | Templates mixing infrastructure with domain |
+
+**Note**: Count updated to 5 templates after taskwright-python removal (TASK-G6D4)
 
 ### 1.3 Root Cause Analysis
 

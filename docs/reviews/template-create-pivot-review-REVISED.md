@@ -474,11 +474,13 @@ Recommendation: Verify user has fix deployed, re-run /template-create
 ### Evidence Summary
 
 **No Regression Occurred**:
-1. ✅ Template creation worked over weekend (6 templates created)
+1. ✅ Template creation worked over weekend (5 active templates created, taskwright-python later removed)
 2. ✅ Templates still exist and are intact (verified Nov 12)
 3. ✅ Recent changes were **fixes**, not regressions
 4. ✅ Template creation still working (java template created 08:48 Nov 12)
 5. ✅ TASK-TMPL-4E89 fix completed 2025-01-11
+
+**Note**: taskwright-python removed in TASK-G6D4 - Taskwright's `.claude/` is git-managed
 
 **Known Issues** (not regressions):
 1. TASK-9037: Build artifact counting (affects language detection)

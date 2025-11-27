@@ -19,12 +19,14 @@ related_tasks: [TASK-C2F8, TASK-BAA5]
 
 During TASK-C2F8 implementation, a fundamental architectural question arose: **Should cross-stack agents be duplicated into every template, or sourced from a single global location?**
 
-**Current confusion**:
+**Update (2025-11-27)**: taskwright-python template has been removed (TASK-G6D4) as Taskwright's `.claude/` directory is git-managed and should not use template initialization. This review task remains relevant for understanding the architectural decision.
+
+**Original confusion**:
 1. TASK-C2F8 "fixed" the issue by copying 5 cross-stack agents into `taskwright-python` template
-2. This creates duplication - same agents now exist in:
+2. This created duplication - same agents existed in:
    - `installer/global/agents/` (source of truth)
    - `installer/global/templates/taskwright-python/agents/` (duplicate)
-3. This pattern would need to repeat for EVERY template (react-typescript, fastapi-python, etc.)
+3. This pattern would have needed to repeat for EVERY template (react-typescript, fastapi-python, etc.)
 
 **Fundamental question**: Is this duplication the right design?
 
@@ -33,17 +35,18 @@ During TASK-C2F8 implementation, a fundamental architectural question arose: **S
 ### Scenario A: Taskwright Repo Itself
 - `.claude/` directory is checked into git
 - Users clone repo and get pre-configured agents
-- **Question**: Should `taskwright init taskwright-python` even be run on Taskwright repo?
-- **TASK-BAA5 Issue**: Running init on Taskwright caused agent deletion (the problem we're trying to fix)
+- **Resolution (TASK-G6D4)**: `taskwright init` should NOT be run on Taskwright repo
+- **TASK-BAA5 Issue**: Running init on Taskwright caused agent deletion (the problem that led to removal)
 
 ### Scenario B: User's Python CLI Project
 - User has their own Python CLI project (NOT Taskwright)
-- Runs `taskwright init taskwright-python` to set up agents
-- Needs:
-  - Python-specific agents (python-testing-specialist, python-cli-specialist, python-architecture-specialist)
-  - Cross-stack agents (architectural-reviewer, code-reviewer, task-manager, test-orchestrator, test-verifier)
+- **Resolution (TASK-G6D4)**: User should use `fastapi-python` template or `/template-create` for custom templates
+- **Rationale**: taskwright-python was specific to Taskwright's architecture, not general Python CLI projects
+- For Python CLI projects, better options:
+  - Use `fastapi-python` template as foundation
+  - Create custom template via `/template-create` based on their architecture
 
-### Current Template Structure
+### Historical Template Structure (taskwright-python - Now Removed)
 
 **Before TASK-C2F8**:
 ```
@@ -53,7 +56,7 @@ installer/global/templates/taskwright-python/agents/
 └── python-testing-specialist.md
 ```
 
-**After TASK-C2F8** (questionable fix):
+**After TASK-C2F8** (temporary fix, later removed):
 ```
 installer/global/templates/taskwright-python/agents/
 ├── architectural-reviewer.md          ← DUPLICATED from global
@@ -65,6 +68,10 @@ installer/global/templates/taskwright-python/agents/
 ├── test-orchestrator.md               ← DUPLICATED from global
 └── test-verifier.md                   ← DUPLICATED from global
 ```
+
+**After TASK-G6D4** (final resolution):
+- Template removed entirely
+- Taskwright's `.claude/` managed via git
 
 ## Review Objectives
 
@@ -94,11 +101,10 @@ installer/global/templates/taskwright-python/agents/
 - **Implication**: Running `taskwright init` would overwrite checked-in configuration
 - **Decision needed**: Is this intended behavior or a misuse case?
 
-**Question 2**: Is `taskwright-python` template intended for:
-- A) Taskwright development (this repo)
-- B) User projects following Taskwright's architecture
-- C) Both
-- D) Something else
+**Question 2 - RESOLVED**: taskwright-python template was intended for Taskwright development, but this was the wrong approach:
+- **Decision (TASK-G6D4)**: Template removed
+- **Rationale**: Taskwright's `.claude/` is git-managed, not template-initialized
+- **For users**: Use `fastapi-python` or `/template-create` instead
 
 ### 3. Init Script Behavior
 

@@ -31,7 +31,7 @@ review_results:
 
 ## Problem Statement
 
-The `/template-create` command currently uses a complex AI-orchestration implementation with 8 phases, multiple agent invocations, checkpoint-resume mechanisms, and intricate state management. Meanwhile, we successfully created 5 high-quality built-in templates (fastapi-python, nextjs-fullstack, react-fastapi-monorepo, react-typescript, taskwright-python) using a simpler task-based workflow.
+The `/template-create` command currently uses a complex AI-orchestration implementation with 8 phases, multiple agent invocations, checkpoint-resume mechanisms, and intricate state management. Meanwhile, we successfully created 4 high-quality built-in templates (fastapi-python, nextjs-fullstack, react-fastapi-monorepo, react-typescript) using a simpler task-based workflow.
 
 **Proposed Pivot**: Replace the current `/template-create` implementation with a new command (or refactored approach) that creates a task replicating the process we used to build the built-in templates. This would leverage the proven `/task-work` workflow instead of custom orchestration logic.
 
@@ -92,7 +92,7 @@ The `/template-create` command currently uses a complex AI-orchestration impleme
    - Result: 9.2/10 quality score
    - Duration: ~8 hours (estimated 3-5 days)
 
-5. **Additional templates**: taskwright-python, default
+5. **Additional template**: default
 
 ### Proposed Approach
 

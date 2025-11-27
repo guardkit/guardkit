@@ -28,9 +28,10 @@ After comprehensive analysis of two major architectural reviews:
 
 **1. Template Extraction (Phases 1-5)**
 - Status: ✅ Working well
-- Evidence: 6 templates created at 9+/10 quality in <1 day each
-- Examples: react-typescript (9.5/10), nextjs-fullstack (9.2/10)
+- Evidence: 5 templates created at 8-9.2/10 quality in <1 day each
+- Examples: react-typescript (9.0/10), nextjs-fullstack (8.5/10), react-fastapi-monorepo (9.2/10)
 - Time Savings: 88-94% (5-10 days estimated → 1 hour to 1 day actual)
+- **Note**: taskwright-python later removed (TASK-G6D4) - not needed for Taskwright development
 
 **2. AI-Powered Agent Detection (TASK-TMPL-4E89)**
 - Status: ✅ Fixed and working

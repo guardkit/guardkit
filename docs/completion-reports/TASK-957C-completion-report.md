@@ -61,7 +61,7 @@
 - **User-Facing**: 172 files (41%) - include in MkDocs
 - **Developer**: 49 files (12%) - accessible in site
 - **Internal**: 230 files (55%) - exclude from site
-- **Templates**: 57 files (14%) - 6 templates with docs
+- **Templates**: ~52 files (12%) - 5 templates with docs (taskwright-python removed)
 
 ### Gap Analysis
 - **Missing landing pages**: 13 identified
@@ -121,7 +121,7 @@
 - **Deep dives**: 8 technical deep dives (17-34 KB)
 - **Commands**: 19 command specifications (8-85 KB)
 - **Agents**: 19+ agent definitions
-- **Templates**: 6 templates with comprehensive READMEs
+- **Templates**: 5 templates with comprehensive READMEs (taskwright-python removed)
 
 ### Largest Directories
 1. **research/** - 83 files (exclude from site)
@@ -156,7 +156,7 @@ Note: CLAUDE.md already has correct paths ✅
 
 ### Decision 4: Dedicated Template Section
 **Chosen**: "Templates" top-level nav section
-**Rationale**: 6 templates, 31 files, core differentiator
+**Rationale**: 5 templates, ~26 files (taskwright-python removed), core differentiator
 
 ### Decision 5: Dedicated Agent Section
 **Chosen**: "Agent System" top-level nav section
