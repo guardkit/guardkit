@@ -591,7 +591,7 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
 
 ### Agent Enhancement with Boundary Sections
 
-As of TASK-STND-773D (2025-11-22), all agents enhanced via `/agent-enhance` or `/template-create` now conform to GitHub best practices by including **ALWAYS/NEVER/ASK boundary sections**.
+All agents enhanced via `/agent-enhance` or `/template-create` now conform to GitHub best practices by including **ALWAYS/NEVER/ASK boundary sections**.
 
 **What Are Boundary Sections?**
 
