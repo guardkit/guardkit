@@ -26,6 +26,105 @@ The `/task-review` command provides a dedicated workflow for analysis and decisi
 - Refactoring
 - Test creation
 
+## Automatic Review Task Detection
+
+When creating tasks with `/task-create`, the system automatically detects review/analysis tasks and suggests using `/task-review` instead of `/task-work`.
+
+### Detection Criteria
+
+A task is detected as a review task if **any** of the following conditions are met:
+
+1. **Explicit task_type field**: `task_type:review` parameter
+2. **Decision required flag**: `decision_required:true` parameter
+3. **Review-related tags**: `architecture-review`, `code-review`, `decision-point`, `assessment`
+4. **Title keywords**: `review`, `analyze`, `evaluate`, `assess`, `audit`, `investigation`
+
+### Suggestion Behavior
+
+When a review task is detected during `/task-create`, you'll see:
+
+```
+=========================================================================
+REVIEW TASK DETECTED
+=========================================================================
+
+Task: Review authentication architecture
+
+This appears to be a review/analysis task.
+
+Suggested workflow:
+  1. Create task: /task-create (current command)
+  2. Execute review: /task-review TASK-XXX
+  3. (Optional) Implement findings: /task-work TASK-YYY
+
+Note: /task-work is for implementation, /task-review is for analysis.
+=========================================================================
+
+Create task? [Y/n]:
+```
+
+**Important**: The suggestion is **informational only** and doesn't block task creation. You can still create the task and use `/task-work` if desired, though `/task-review` is recommended for analysis tasks.
+
+### Detection Examples
+
+**Example 1: Explicit task_type**
+```bash
+/task-create "Architectural review of authentication system" task_type:review
+# ✅ Detected: Explicit task_type field
+```
+
+**Example 2: Decision required flag**
+```bash
+/task-create "Should we migrate to microservices?" decision_required:true
+# ✅ Detected: Decision flag indicates review/analysis needed
+```
+
+**Example 3: Review tags**
+```bash
+/task-create "Code quality assessment" tags:[code-review,assessment]
+# ✅ Detected: Tags indicate review task
+```
+
+**Example 4: Title keywords**
+```bash
+/task-create "Evaluate caching strategy options"
+# ✅ Detected: "Evaluate" keyword in title
+```
+
+**Example 5: Not a review task**
+```bash
+/task-create "Implement user authentication"
+# ❌ Not detected: Implementation task, no review indicators
+# Suggestion not shown, proceeds normally
+```
+
+### Why Detection Helps
+
+1. **Command Selection**: Helps you choose `/task-review` vs `/task-work`
+2. **Workflow Efficiency**: Review tasks skip implementation phases
+3. **Better Reports**: Review mode generates structured analysis reports
+4. **Decision Support**: Review tasks include decision checkpoints ([A]ccept/[R]evise/[I]mplement/[C]ancel)
+
+### Overriding Detection
+
+If you want to use `/task-work` for a task that was detected as review:
+
+```bash
+# Task detected as review, but you want implementation workflow
+/task-create "Review authentication architecture"
+# [Suggestion shown]
+# Choose Y to create task
+
+# Use /task-work instead of /task-review
+/task-work TASK-XXX
+# Works fine, detection is only a suggestion
+```
+
+### See Also
+
+- [task-create.md - Review Task Detection](./task-create.md#review-task-detection)
+- [CLAUDE.md - Review Workflow](../../CLAUDE.md#review-vs-implementation-workflows)
+
 ## Examples
 
 ```bash

@@ -380,6 +380,10 @@ Create task? [Y/n]:
 
 **Note**: The suggestion is informational only and doesn't block task creation. Users can still create the task and use `/task-work` if desired, though `/task-review` is recommended for analysis tasks.
 
+### See Also
+
+- [task-review.md - Automatic Review Task Detection](./task-review.md#automatic-review-task-detection) - Full details on how detection works and what happens after task creation
+
 ## Integration with Workflow
 
 After creation, use the appropriate workflow based on task type:
