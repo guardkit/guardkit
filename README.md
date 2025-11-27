@@ -11,6 +11,32 @@
 
 Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
 
+## Spec-Oriented Development (SOD)
+
+Taskwright provides **Spec-Oriented Development** out of the box:
+
+✅ **Task descriptions as lightweight specifications**
+- Acceptance criteria instead of formal requirements (EARS)
+- Quick start, minimal ceremony
+- Perfect for solo developers and small teams
+
+✅ **Optional Upgrade to Spec-Driven Development (SDD)**
+- For teams needing formal requirements management, combine Taskwright with [RequireKit](https://github.com/requirekit/require-kit)
+- EARS notation requirements
+- BDD scenarios (Gherkin)
+- Epic/feature hierarchy
+- PM tool integration (Jira, Linear, GitHub)
+- Requirements traceability matrices
+
+### Why "Spec-Oriented" vs "Spec-Driven"?
+
+| | Spec-Oriented (Taskwright) | Spec-Driven (Spec-Kit, Kiro, Tessl) |
+|---|---|---|
+| **Specs** | Task descriptions + acceptance criteria | Formal specifications (EARS, extensive docs) |
+| **Ceremony** | Minimal (1-2 minute task creation) | Heavy (30+ minute spec authoring) |
+| **Target** | Solo devs, small teams | Large teams, regulated industries |
+| **Flexibility** | Agile, iterative | Structured, plan-heavy |
+
 ## What You Get
 
 - **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
@@ -21,6 +47,51 @@ Stop shipping broken code. Get architectural review before implementation and au
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
 - **Design-First Workflow**: Optional design approval checkpoint for complex tasks (complexity ≥7)
+
+## Quality Gates & Human Oversight
+
+**AI does heavy lifting. Humans make decisions.**
+
+### Human-in-the-Loop Checkpoints
+- **Phase 2.5: Architectural Review** - SOLID/DRY/YAGNI scoring (60/100 minimum)
+- **Phase 2.8: Complexity Checkpoint** - Tasks ≥7 complexity require approval before implementation
+- **Phase 4.5: Test Enforcement** - Auto-fix up to 3 attempts, block if tests fail
+- **Phase 5.5: Plan Audit** - Detect scope creep (file count, LOC variance ±20%, duration ±30%)
+
+### Complexity Evaluation (Upfront Task Sizing)
+- **0-10 Scale** - Automatic complexity scoring before work begins
+- **Auto-Split Recommendations** - Tasks ≥7 complexity flagged for breakdown
+- **Prevents Oversized Tasks** - Blocks 8+ hour tasks from entering backlog
+
+### Plan Audit (Scope Creep Detection)
+- **File Count Matching** - Verify implementation matches plan
+- **LOC Variance Tracking** - Flag ±20% deviations for review
+- **Duration Variance Tracking** - Flag ±30% deviations for retrospective
+
+## Parallel Task Development
+
+**Work on multiple tasks simultaneously without context switching chaos.**
+
+Taskwright integrates seamlessly with [Conductor.build](https://conductor.build) for parallel development:
+
+### How It Works
+- **Multiple Worktrees** - Work on 3-5 tasks in parallel, each in isolated git worktree
+- **State Preservation** - 100% state sync across worktrees (no manual intervention)
+- **Zero Context Switching** - Each worktree maintains its own implementation context
+- **Automatic Sync** - All commands available in every worktree, state updates propagate automatically
+
+### Benefits
+- **Blocked on one task? Switch to another** - No waiting for CI, reviews, or external dependencies
+- **Parallel experimentation** - Try different approaches simultaneously, keep the best
+- **Team collaboration** - Different team members work on different tasks without merge conflicts
+- **Faster iteration** - 3-5x productivity boost when multiple tasks are in flight
+
+### Competitive Advantage
+- **Linear/Jira**: Sequential task switching (lose context on every switch)
+- **GitHub Projects**: No parallel workspace support
+- **Taskwright + Conductor**: True parallel development with state preservation
+
+**Setup**: One command - `./installer/scripts/install.sh` creates symlinks automatically
 
 ## Documentation
 
@@ -109,50 +180,53 @@ taskwright init react-typescript
 
 That's it! Three commands from idea to production-ready code.
 
-## What Makes This Different?
+## What Makes Taskwright Different?
 
-### Architectural Review
-Before writing a single line of code, get automated evaluation of:
-- **SOLID Principles** (60/100 minimum score)
-- **DRY Violations** (detect duplication risks)
-- **YAGNI Compliance** (flag over-engineering)
+1. **AI-Assisted with Human Oversight** ⚖️
+   - Not fully automated (AI writes code)
+   - Not fully manual (human reviews quality gates)
+   - **Balanced**: AI does heavy lifting, humans make decisions
 
-**Result**: Catches design flaws before implementation, saving 40-50% rework time.
+2. **Quality Gates Built-In** 🛡️
+   - Architectural review (Phase 2.5)
+   - Test enforcement (Phase 4.5)
+   - Plan audit (Phase 5.5)
+   - **Competitor gap**: Linear lacks mandatory quality gates
 
-### Test Enforcement Loop
-After implementation, automatic test fixing:
-1. Run all tests
-2. If failures detected → analyze root cause
-3. Auto-fix code (up to 3 attempts)
-4. Re-run tests
-5. Block task if all attempts fail (zero tolerance for failing tests)
+3. **Complexity Awareness** 🧠
+   - Upfront task sizing (0-10 scale)
+   - Auto-split recommendations (≥7 complexity)
+   - **Prevents oversized tasks proactively** (competitors react, we prevent)
 
-**Result**: 100% test pass rate before code review. No "we'll fix it later."
+4. **Parallel Development Support** 🚀
+   - Conductor.build integration
+   - Work on 3-5 tasks simultaneously
+   - 100% state preservation across worktrees
+   - **Competitor gap**: Linear/Jira require sequential context switching
 
-### Complexity Evaluation
-Automatic complexity scoring (0-10 scale):
-- **1-3 (Simple)**: Auto-proceed, no checkpoint (<4 hours)
-- **4-6 (Medium)**: Quick optional checkpoint (30s timeout)
-- **7-10 (Complex)**: Mandatory design approval (>8 hours)
+5. **Spectrum of Formality** 📊
+   - Lightweight: Taskwright alone (SOD)
+   - Full-featured: Taskwright + RequireKit (SDD)
+   - **Right amount of process for your team size**
 
-**Result**: Right level of oversight for task complexity.
+6. **Zero Vendor Lock-In** 🔓
+   - Markdown files (human-readable, git-friendly)
+   - Self-hosted (no SaaS required)
+   - **Competitor gap**: Linear is proprietary platform
 
-## When to Use Taskwright
+## Who Should Use Taskwright?
 
-### Use When:
-- Individual tasks or small features (1-8 hours)
-- Solo dev or small teams (1-3 developers)
-- Need quality enforcement without ceremony
-- Want AI assistance with human oversight
-- Small-to-medium projects
-- **Learning new stack** (use reference templates)
-- **Creating team templates** (use `/template-create`)
+| Audience | Use Case | Solution | Specs? | Parallel? |
+|----------|----------|----------|--------|-----------|
+| **Solo Developers** | Quick prototyping, personal projects | Taskwright (SOD) | Task descriptions | Optional (Conductor) |
+| **Small Teams (2-5)** | Agile development, startup MVPs | Taskwright (SOD) | Task descriptions | Recommended (Conductor) |
+| **Medium Teams (5-20)** | Structured development, traceability | Taskwright + RequireKit (SDD) | EARS + Gherkin | Recommended (Conductor) |
+| **Large Teams (20+)** | Regulated industries, compliance | Taskwright + RequireKit (SDD) | EARS + Gherkin + PM sync | Essential (Conductor) |
 
-### Don't Use When:
-- Just want a code editor (use plain Claude Code)
-- Need formal requirements management (use RequireKit instead)
-- Enterprise compliance workflows required
-- Multi-epic portfolio management (10+ features, 5+ devs)
+### Migration Path
+- ✅ Start with Taskwright (SOD) - "Zero ceremony, get moving fast"
+- ✅ Add Conductor when parallelizing - "Work on multiple tasks simultaneously"
+- ✅ Add RequireKit when needed (SDD) - "Team grew? Need compliance? Upgrade seamlessly"
 
 ## Need Requirements Management?
 
