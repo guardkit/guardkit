@@ -106,15 +106,22 @@ from .greenfield_qa_session import (
     TemplateInitQASession,
 )
 
-# Agent Discovery (TASK-HAI-005)
+# Agent Discovery (TASK-HAI-005, TASK-ENF2)
 from .agent_discovery import (
     discover_agents,
+    discover_agent_with_source,
     get_agent_by_name,
     list_discoverable_agents,
     get_agents_by_stack,
     validate_discovery_metadata,
     VALID_STACKS,
     VALID_PHASES,
+)
+
+# Agent Invocation Tracker (TASK-ENF2)
+from .agent_invocation_tracker import (
+    AgentInvocationTracker,
+    add_pending_phases,
 )
 
 __version__ = "1.1.0"
@@ -202,10 +209,15 @@ __all__ = [
 
     # Agent Discovery
     "discover_agents",
+    "discover_agent_with_source",
     "get_agent_by_name",
     "list_discoverable_agents",
     "get_agents_by_stack",
     "validate_discovery_metadata",
     "VALID_STACKS",
     "VALID_PHASES",
+
+    # Agent Invocation Tracker
+    "AgentInvocationTracker",
+    "add_pending_phases",
 ]

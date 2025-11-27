@@ -634,3 +634,51 @@ def validate_discovery_metadata(metadata: Dict[str, Any]) -> tuple[bool, List[st
         errors.append("Field 'keywords' should have at most 15 items")
 
     return (len(errors) == 0, errors)
+
+
+def discover_agent_with_source(
+    phase: str,
+    stack: Optional[List[str]] = None,
+    keywords: Optional[List[str]] = None
+) -> tuple[str, str]:
+    """
+    Discover agent and return both name and source.
+
+    This is a convenience wrapper around discover_agents() that returns
+    just the agent name and source path for the best match, with fallback
+    to task-manager if no match is found.
+
+    Args:
+        phase: Required phase filter (implementation, review, testing, orchestration)
+        stack: Optional stack filter list (python, react, dotnet, etc.)
+        keywords: Optional keyword list for capability matching
+
+    Returns:
+        Tuple[agent_name, agent_source] where source is one of:
+        - "local" (from .claude/agents/)
+        - "user" (from ~/.agentecflow/agents/)
+        - "global" (from installer/global/agents/)
+        - "template:name" (from installer/global/templates/*/agents/)
+
+    Example:
+        >>> agent_name, source = discover_agent_with_source(
+        ...     phase='implementation',
+        ...     stack=['python'],
+        ...     keywords=['fastapi', 'async']
+        ... )
+        >>> print(f"Selected: {agent_name} from {source}")
+        Selected: python-api-specialist from local
+    """
+    # Discover agents using existing function
+    results = discover_agents(phase, stack, keywords)
+
+    # If we have results, return the best match
+    if results:
+        best_match = results[0]
+        agent_name = best_match.get('name', 'task-manager')
+        agent_source = best_match.get('source', 'global')
+        return (agent_name, agent_source)
+
+    # Fallback to task-manager
+    logger.info("No matching agent found, using task-manager (fallback)")
+    return ("task-manager", "global")
