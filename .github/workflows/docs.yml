@@ -31,7 +31,6 @@ on:
 # Environment configuration for reuse across jobs
 env:
   PYTHON_VERSION: '3.12'
-  ARTIFACTS_RETENTION_DAYS: 1  # Short-lived staging artifacts
 
 # Explicit permission grants (least privilege principle)
 # Contents: read source code
@@ -109,22 +108,16 @@ jobs:
         # Deploy job never runs (requires successful build)
 
       # --------
-      # Step 5: Upload build artifacts to GitHub Actions storage
+      # Step 5: Upload Pages artifact for deployment
       # --------
-      # Name: github-pages (matched by deploy job download step)
+      # Uses special upload-pages-artifact action (required for deploy-pages@v4)
+      # This creates the correct artifact format for GitHub Pages deployment
       # Path: site/ (MkDocs output directory)
-      # Retention: 1 day (temporary staging, auto-cleanup)
-      # Rationale: Decouple build from deploy
-      #           - Build can be retried independently
-      #           - Deploy can be retried independently
-      #           - Faster overall when artifacts retained
-      #           - 1-day retention sufficient for troubleshooting
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+      # Note: This is different from upload-artifact - it's Pages-specific
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          name: github-pages
           path: site/
-          retention-days: ${{ env.ARTIFACTS_RETENTION_DAYS }}
 
   # ============================================================================
   # DEPLOY JOB: Publish documentation to GitHub Pages
@@ -147,28 +140,11 @@ jobs:
 
     steps:
       # --------
-      # Step 1: Configure GitHub Pages for artifact deployment
-      # --------
-      # Sets up Pages environment and artifact staging area
-      # Required before download-artifact step
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v4
-
-      # --------
-      # Step 2: Download build artifacts
-      # --------
-      # Name: github-pages (matches upload-artifact name)
-      # Restores site/ directory into current directory
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: github-pages
-
-      # --------
-      # Step 3: Deploy to GitHub Pages
+      # Step 1: Deploy to GitHub Pages
       # --------
       # Modern approach: Uses GitHub's built-in Pages deployment
-      # Alternative (deprecated): gh-pages branch approach
+      # Automatically uses the artifact uploaded by upload-pages-artifact
+      # No need to download artifact - deploy-pages@v4 handles it
       # Benefits:
       # - No custom branch management
       # - Automatic Pages refresh
