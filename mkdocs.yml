@@ -66,45 +66,52 @@ nav:
   - Home: index.md
 
   - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quickstart.md
-      - Core Concepts: getting-started/core-concepts.md
+      - Quick Start: guides/GETTING-STARTED.md
+      - Taskwright Workflow: guides/taskwright-workflow.md
+
+  - Core Concepts: concepts.md
+
+  - Advanced Topics: advanced.md
+
+  - Templates: templates.md
+
+  - Agent System: agents.md
+
+  - Task Review: task-review.md
+
+  - MCP Integration: mcp-integration.md
+
+  - Troubleshooting: troubleshooting.md
+
+  - Guides:
+      - Taskwright Workflow: guides/taskwright-workflow.md
+      - Agent Discovery: guides/agent-discovery-guide.md
+      - Agent Enhancement Decision: guides/agent-enhancement-decision-guide.md
+      - Creating Local Templates: guides/creating-local-templates.md
+      - Template Philosophy: guides/template-philosophy.md
+      - Template Validation: guides/template-validation-guide.md
 
   - Workflows:
-      - Task Work: docs/workflows/task-work-workflow.md
-      - Task Review: docs/workflows/task-review-workflow.md
-      - Design-First: docs/workflows/design-first-workflow.md
-      - UX Design Integration: docs/workflows/ux-design-integration-workflow.md
-      - Template Validation: docs/workflows/template-validation-workflow.md
-      - Agent System:
-          - Agent Enhancement: docs/guides/agent-enhancement-guide.md
-          - Agent Discovery: docs/guides/agent-discovery-guide.md
-      - Complexity Management: docs/workflows/complexity-management-workflow.md
+      - Complexity Management: workflows/complexity-management-workflow.md
+      - Design-First Workflow: workflows/design-first-workflow.md
+      - Incremental Enhancement: workflows/incremental-enhancement-workflow.md
+      - Quality Gates: workflows/quality-gates-workflow.md
+      - Task Review Workflow: workflows/task-review-workflow.md
+      - UX Design Integration: workflows/ux-design-integration-workflow.md
 
-  - Templates:
-      - Overview: docs/guides/template-philosophy.md
-      - React TypeScript: installer/global/templates/react-typescript/README.md
-      - FastAPI Python: installer/global/templates/fastapi-python/README.md
-      - Next.js Full-Stack: installer/global/templates/nextjs-fullstack/README.md
-      - React-FastAPI Monorepo: installer/global/templates/react-fastapi-monorepo/README.md
-      - Taskwright Python: installer/global/templates/taskwright-python/README.md
-      - Default Template: installer/global/templates/default/README.md
-      - Creating Custom Templates: docs/guides/creating-local-templates.md
-
-  - Advanced Topics:
+  - Deep Dives:
+      - Conductor Integration: deep-dives/conductor-integration.md
       - MCP Integration:
-          - Overview: docs/deep-dives/mcp-integration/mcp-optimization.md
-          - Context7 Setup: docs/deep-dives/mcp-integration/context7-setup.md
-          - Design Patterns Setup: docs/deep-dives/mcp-integration/design-patterns-setup.md
-          - Figma MCP Setup: docs/mcp-setup/figma-mcp-setup.md
-          - Zeplin MCP Setup: docs/mcp-setup/zeplin-mcp-setup.md
-      - Conductor Integration: docs/guides/conductor-integration-guide.md
-      - Template Validation: docs/guides/template-validation-guide.md
+          - Context7 Setup: deep-dives/mcp-integration/context7-setup.md
+          - Design Patterns Setup: deep-dives/mcp-integration/design-patterns-setup.md
+          - MCP Optimization: deep-dives/mcp-integration/mcp-optimization.md
 
-  - Reference:
-      - Commands: reference/commands.md
-      - Agents: reference/agents.md
-      - Configuration: reference/configuration.md
+  - MCP Setup:
+      - Figma MCP Setup: mcp-setup/figma-mcp-setup.md
+      - Zeplin MCP Setup: mcp-setup/zeplin-mcp-setup.md
+
+  - Analysis:
+      - GitHub Agent Best Practices: analysis/github-agent-best-practices-analysis.md
 
 # ============================================================================
 # Plugins
