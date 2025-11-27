@@ -1,9 +1,9 @@
 ---
 id: TASK-DOC-0801
 title: Update CLAUDE.md with missing commands
-status: backlog
+status: in_progress
 created: 2025-11-27T02:00:00Z
-updated: 2025-11-27T02:00:00Z
+updated: 2025-11-27T07:45:00Z
 priority: high
 tags: [documentation, claude-md, commands]
 complexity: 2
