@@ -100,6 +100,13 @@ Phase 5: Agent Recommendation (TASK-009)
 ├─ AI-powered agent generation
 └─ Reusability assessment
 
+Phase 5.5: Agent Formatting (Automatic)
+├─ Runs /agent-format on all generated agents
+├─ Adds boundary section templates (ALWAYS/NEVER/ASK)
+├─ Ensures structural consistency
+├─ Quality: 6/10 (structural, not domain-specific)
+└─ Sets foundation for Phase 8 enhancement
+
 Phase 6: CLAUDE.md Generation (TASK-007)
 ├─ Template documentation
 ├─ Usage instructions
@@ -491,6 +498,51 @@ Identifies capability needs and generates custom agents:
 - Marks reusable agents for global library
 
 **Boundary Sections**: Agents include ALWAYS/NEVER/ASK sections conforming to GitHub best practices (2,500+ repo analysis). See [Understanding Boundary Sections](#understanding-boundary-sections) below.
+
+### Agent Formatting (Phase 5.5) [AUTOMATIC]
+
+**Runs automatically after agent generation**, before CLAUDE.md generation.
+
+During template creation, `/template-create` automatically runs `/agent-format` on all generated agents:
+
+**Why `/agent-format` (not `/agent-enhance`)?**
+
+1. **Speed**: Completes in <1 minute for all agents
+2. **No AI Cost**: Template creation is free (no Claude API calls)
+3. **Reusability**: Generic boundaries work for ANY project
+4. **Progressive Enhancement**: Users can upgrade to 9/10 later
+
+**Result**: All template agents ship with:
+- ✅ GitHub-compliant boundaries (6/10 quality)
+- ✅ Proper placement (lines 80-150)
+- ✅ ALWAYS/NEVER/ASK framework
+- ✅ Role-specific content (testing/architecture/etc.)
+
+### Quality Tier System
+
+Templates use a **two-tier quality approach**:
+
+| Tier | Quality | How | When |
+|------|---------|-----|------|
+| **Template** | 6/10 | `/agent-format` (auto) | Template creation |
+| **Project** | 9/10 | `/agent-enhance` (manual) | After project init |
+
+### For Template Users
+
+When you initialize a project from a template:
+```bash
+taskwright init react-typescript
+# All agents have generic boundaries (6/10)
+
+# Optional: Upgrade to domain-specific (9/10)
+/agent-enhance .claude/agents/api-specialist.md
+```
+
+This approach ensures:
+- ✅ Templates are fast to create
+- ✅ Users get immediate value (6/10 > 0/10)
+- ✅ Users can enhance when needed
+- ✅ No forced AI costs during template creation
 
 ### CLAUDE.md Generation (Phase 7) [REORDERED]
 
