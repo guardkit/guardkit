@@ -519,11 +519,11 @@ COMPLEXITY FACTORS:
 ⚠️  RECOMMENDATION: Consider splitting this task
 
 SUGGESTED BREAKDOWN:
-1. TASK-001.2.01: Design Event Sourcing architecture (Complexity: 5/10)
-2. TASK-001.2.02: Implement EventStore infrastructure (Complexity: 6/10)
-3. TASK-001.2.03: Implement Order aggregate with events (Complexity: 5/10)
-4. TASK-001.2.04: Implement CQRS handlers (Complexity: 5/10)
-5. TASK-001.2.05: Testing and integration (Complexity: 6/10)
+1. TASK-k3m7.1: Design Event Sourcing architecture (Complexity: 5/10)
+2. TASK-k3m7.2: Implement EventStore infrastructure (Complexity: 6/10)
+3. TASK-k3m7.3: Implement Order aggregate with events (Complexity: 5/10)
+4. TASK-k3m7.4: Implement CQRS handlers (Complexity: 5/10)
+5. TASK-k3m7.5: Testing and integration (Complexity: 6/10)
 
 OPTIONS:
 1. [C]reate - Create this task as-is (complexity 9/10)
@@ -550,7 +550,7 @@ Tasks store complexity evaluation results in frontmatter:
 
 ```yaml
 ---
-id: TASK-001.2.05
+id: TASK-k3m7.5
 complexity_evaluation:
   score: 7
   level: "complex"
@@ -658,11 +658,11 @@ Next Steps:
 ❌ Task creation failed
 
 A task with this title already exists:
-- TASK-015: Add user authentication (in_progress)
+- TASK-p9r3: Add user authentication (in_progress)
 
 Suggestions:
 - Use a more specific title
-- Check if you meant to update TASK-015
+- Check if you meant to update TASK-p9r3
 ```
 
 ### Invalid Requirements
@@ -741,18 +741,19 @@ The streamlined workflow ensures testing is never skipped and reduces command co
 ```bash
 # 1. Create task with full hierarchy context
 /task-create "User login implementation" epic:EPIC-001 feature:FEAT-003 requirements:[REQ-001]
+# Created: TASK-s4t8
 
 # 2. Begin implementation with context awareness
-/task-work TASK-001 --with-context
+/task-work TASK-s4t8 --with-context
 
 # 3. Monitor progress with hierarchy visibility
-/task-status TASK-001 --hierarchy
+/task-status TASK-s4t8 --hierarchy
 
 # 4. Sync progress to PM tools and rollup to feature/epic
-/task-sync TASK-001 --rollup-progress
+/task-sync TASK-s4t8 --rollup-progress
 
 # 5. Complete with validation and automatic rollup
-/task-complete TASK-001
+/task-complete TASK-s4t8
 ```
 
 ### Quality Gates and Progress Tracking
@@ -776,9 +777,10 @@ The streamlined workflow ensures testing is never skipped and reduces command co
 
 # Create tasks for features (enhanced with Phase 3 capabilities)
 /task-create "Implement login" epic:EPIC-001 feature:FEAT-001 --track-progress
+# Created: TASK-u7v2
 
 # Work on task (automatically updates epic progress)
-/task-work TASK-001 --sync-progress
+/task-work TASK-u7v2 --sync-progress
 
 # Progress is visible in epic status with full hierarchy
 /epic-status EPIC-001 --hierarchy
@@ -821,11 +823,11 @@ The `/task-work` command provides:
 ### Correct Workflow:
 ```bash
 User: /task-create "Add temperature conversion endpoint"
-Claude: ✅ Task Created: TASK-001
-        Next Steps: /task-work TASK-001
+Claude: ✅ Task Created: TASK-w3x9
+        Next Steps: /task-work TASK-w3x9
         [STOPS HERE - WAITS FOR USER]
 
-User: /task-work TASK-001
+User: /task-work TASK-w3x9
 Claude: [Executes Phases 2-5.5 with all quality gates]
 ```
 

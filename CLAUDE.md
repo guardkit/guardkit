@@ -65,6 +65,112 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 
 **See**: `installer/global/commands/*.md` for complete command specifications.
 
+## Hash-Based Task IDs
+
+Taskwright uses hash-based task IDs to prevent duplicates and support concurrent creation:
+
+### Format
+- **Simple**: `TASK-{hash}` (e.g., `TASK-a3f8`)
+- **With prefix**: `TASK-{prefix}-{hash}` (e.g., `TASK-E01-b2c4`, `TASK-FIX-a3f8`)
+- **With subtask**: `TASK-{prefix}-{hash}.{number}` (e.g., `TASK-E01-b2c4.1`)
+
+### Benefits
+- ✅ **Zero duplicates** - Mathematically guaranteed unique IDs
+- ✅ **Concurrent creation** - Safe for parallel development across worktrees
+- ✅ **Conductor.build compatible** - No ID collisions in parallel workflows
+- ✅ **PM tool integration** - Automatic mapping to JIRA, Azure DevOps, Linear, GitHub
+
+### Common Prefixes
+- `E{number}`: Epic-related tasks (E01, E02, E03)
+- `DOC`: Documentation tasks
+- `FIX`: Bug fixes
+- `TEST`: Test-related tasks
+- Custom prefixes: Any 2-4 uppercase alphanumeric characters
+
+### Examples
+
+```bash
+# Simple hash-based ID
+/task-create "Fix login bug"
+# Created: TASK-a3f8
+
+# With prefix
+/task-create "Fix login bug" prefix:FIX
+# Created: TASK-FIX-a3f8
+
+# Epic-related task
+/task-create "Implement user authentication" prefix:E01
+# Created: TASK-E01-b2c4
+
+# Subtask
+/task-create "Add unit tests for auth" parent:TASK-E01-b2c4
+# Created: TASK-E01-b2c4.1
+```
+
+### PM Tool Integration
+
+Taskwright automatically maps internal hash IDs to external sequential IDs:
+
+**Internal ID**: `TASK-E01-b2c4`
+
+**External IDs** (automatic):
+- JIRA: `PROJ-456`
+- Azure DevOps: `#1234`
+- Linear: `TEAM-789`
+- GitHub: `#234`
+
+This mapping is:
+- ✅ Automatic when tasks are exported
+- ✅ Bidirectional (internal ↔ external)
+- ✅ Persistent across sessions
+- ✅ Transparent to users
+
+### For Developers
+
+If you're implementing the hash-based ID system:
+- **Implementation Guide**: [Implementation Tasks Summary](docs/research/implementation-tasks-summary.md) - Wave-based execution plan
+- **Parallel Development**: [Conductor.build Workflow](docs/guides/hash-id-parallel-development.md) - 20-33% faster completion
+- **PM Tool Integration**: [External ID Mapping](docs/guides/hash-id-pm-tools.md) - Integration patterns
+- **Technical Details**: [Strategy Analysis](docs/research/task-id-strategy-analysis.md) - Architecture and design decisions
+- **Decision Rationale**: [Decision Guide](docs/research/task-id-decision-guide.md) - Why hash-based IDs?
+
+### Migration Note
+
+**Existing tasks with old sequential IDs?** Run the personal migration script:
+
+```bash
+# Preview changes
+python3 scripts/migrate-my-tasks.py --dry-run
+
+# Execute migration
+python3 scripts/migrate-my-tasks.py --execute
+
+# Rollback if needed
+bash .claude/state/rollback-migration.sh
+```
+
+Old IDs are preserved in the `legacy_id` field. See script source for details.
+
+### FAQ
+
+**Q: Why hash-based instead of sequential?**
+A: Prevents duplicates in concurrent and distributed workflows. Critical for Conductor.build support and parallel development.
+
+**Q: Will users hate typing TASK-a3f8?**
+A: Users rarely type IDs manually. Shell completion, copy/paste, and IDE integration handle this automatically.
+
+**Q: How do PM tools handle hash IDs?**
+A: They don't see them! Taskwright maps internal hash IDs to external sequential IDs automatically (see PM Tool Integration above).
+
+**Q: Can I still use sequential IDs?**
+A: No. Hash-based IDs are mandatory to prevent duplicates and enable parallel development.
+
+**Q: How long are the IDs?**
+A: 4-6 characters for the hash, plus optional 2-4 char prefix. Total: 9-15 characters (e.g., `TASK-FIX-a3f8`).
+
+**Q: What about parallel development?**
+A: Hash-based IDs enable safe concurrent task creation across multiple Conductor.build worktrees with zero collision risk. See [Parallel Development Guide](docs/guides/hash-id-parallel-development.md).
+
 ## Task Workflow Phases
 
 The `/task-work` command executes these phases automatically:
@@ -117,8 +223,9 @@ Taskwright supports two distinct command workflows for different task types:
 Use when **building** features, fixing bugs, or creating code:
 ```bash
 /task-create "Add user authentication"
-/task-work TASK-001  # Implements, tests, reviews code
-/task-complete TASK-001
+# Created: TASK-a3f8
+/task-work TASK-a3f8  # Implements, tests, reviews code
+/task-complete TASK-a3f8
 ```
 
 **Phases**: Planning → Architectural Review → Implementation → Testing → Code Review → Plan Audit
@@ -127,9 +234,10 @@ Use when **building** features, fixing bugs, or creating code:
 Use when **analyzing** architecture, making decisions, or assessing quality:
 ```bash
 /task-create "Architectural review of authentication system" task_type:review
-/task-review TASK-002  # Analyzes code, generates report, recommends decision
-# If implementing findings: /task-work TASK-003
-/task-complete TASK-002
+# Created: TASK-b2c4
+/task-review TASK-b2c4  # Analyzes code, generates report, recommends decision
+# If implementing findings: /task-work TASK-c5d7
+/task-complete TASK-b2c4
 ```
 
 **Phases**: Load Context → Execute Analysis → Synthesize Recommendations → Generate Report → Human Decision Checkpoint
@@ -168,9 +276,10 @@ Use when **analyzing** architecture, making decisions, or assessing quality:
 ```bash
 # 1. Create review task (system detects and suggests /task-review)
 /task-create "Review authentication architecture" task_type:review
+# Created: TASK-d4e9
 
 # 2. Execute architectural review
-/task-review TASK-002 --mode=architectural --depth=standard
+/task-review TASK-d4e9 --mode=architectural --depth=standard
 
 # 3. Decision checkpoint (automated)
 #    [A]ccept - Approve findings, move to IN_REVIEW
@@ -179,10 +288,10 @@ Use when **analyzing** architecture, making decisions, or assessing quality:
 #    [C]ancel - Discard review
 
 # 4. If [I]mplement chosen, new task created automatically
-/task-work TASK-003  # Implement recommended changes
+/task-work TASK-f7g2  # Implement recommended changes (auto-created)
 
 # 5. Complete review task
-/task-complete TASK-002
+/task-complete TASK-d4e9
 ```
 
 **See**: [Task Review Workflow](docs/workflows/task-review-workflow.md) for detailed guidance.
@@ -555,7 +664,7 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
 **Example: Agent Selection During `/task-work`**
 
 ```bash
-/task-work TASK-042  # Task involves Python API implementation
+/task-work TASK-h8j3  # Task involves Python API implementation
 
 # System analyzes:
 # - Files: *.py (Python detected)
@@ -785,29 +894,31 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 ```bash
 # Create task
 /task-create "Add user authentication"
+# Created: TASK-k3m7
 
 # Work on it (Phases 2-5.5 automatic)
-/task-work TASK-001
+/task-work TASK-k3m7
 
 # Complete
-/task-complete TASK-001
+/task-complete TASK-k3m7
 ```
 
 **Complex Task Workflow (Design-First):**
 ```bash
 # Create complex task
 /task-create "Refactor authentication system" priority:high
+# Created: TASK-n6p2
 
 # Design phase only
-/task-work TASK-002 --design-only
+/task-work TASK-n6p2 --design-only
 
 # [Human reviews and approves plan]
 
 # Implementation phase
-/task-work TASK-002 --implement-only
+/task-work TASK-n6p2 --implement-only
 
 # Complete
-/task-complete TASK-002
+/task-complete TASK-n6p2
 ```
 
 **See**: [Taskwright Workflow](docs/guides/taskwright-workflow.md)
