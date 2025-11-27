@@ -540,9 +540,9 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
 
 **How It Works:**
 1. **Phase 3**: System analyzes task context (file extensions, keywords, project structure)
-2. **Discovery**: Scans all agents for metadata match (stack + phase + keywords)
+2. **Discovery**: Scans agents with precedence (local > user > global > template)
 3. **Selection**: Uses specialist if found, falls back to task-manager if not
-4. **Feedback**: Shows which agent selected and why
+4. **Feedback**: Shows which agent selected and source (local/user/global)
 
 **Discovery Metadata** (frontmatter in agent files):
 - `stack`: [python, react, dotnet, typescript, cross-stack, etc.]
@@ -567,7 +567,7 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
 # - Phase: implementation ✓
 # - Capabilities: api, async-patterns, pydantic ✓
 
-# Selected: python-api-specialist (from template or global)
+# Selected: python-api-specialist (source: local)
 # Fallback: task-manager (if no specialist found)
 ```
 

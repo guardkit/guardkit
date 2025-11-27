@@ -13,10 +13,11 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
    - Keywords in title/description (fastapi, hooks, entity, etc.)
    - Project structure (package.json, requirements.txt, *.csproj)
 
-2. **Agent Scanning**: Find all agents with metadata
-   - Global agents: `installer/global/agents/*.md`
-   - Template agents: `installer/global/templates/*/agents/*.md`
+2. **Agent Scanning**: Find all agents with metadata (in precedence order)
+   - **Local agents**: `.claude/agents/*.md` *(Highest priority)*
    - User agents: `~/.agentecflow/agents/*.md`
+   - Global agents: `installer/global/agents/*.md`
+   - Template agents: `installer/global/templates/*/agents/*.md` *(Lowest priority)*
 
 3. **Metadata Matching**: Filter and rank
    - Phase match: Required (implementation/review/testing/orchestration)
@@ -43,6 +44,61 @@ Phase 3: Implementation
 
 Using python-api-specialist for implementation (Haiku model)
 └─ Specialized in: FastAPI endpoints, async patterns, Pydantic schemas
+```
+
+## Agent Sources and Precedence
+
+### Discovery Order
+
+The agent discovery system scans 4 sources in priority order:
+
+1. **Local** (`.claude/agents/`)  - **Highest Priority**
+   - Created by `taskwright init <template>`
+   - Project-specific customizations
+   - **Always takes precedence** over all other sources
+
+2. **User** (`~/.agentecflow/agents/`)
+   - Personal agent library across all projects
+   - Cross-project customizations
+   - Overrides global and template agents
+
+3. **Global** (`installer/global/agents/`)
+   - System default agent definitions
+   - Canonical implementation
+   - Fallback when local/user agents missing
+
+4. **Template** (`installer/global/templates/*/agents/`)
+   - Source definitions before initialization
+   - Rarely invoked (templates copy to local on init)
+   - Lowest priority
+
+### Precedence Rule
+
+**When duplicate agent names exist**: Local > User > Global > Template
+
+The first agent found (highest priority) is used, and duplicates from lower priority sources are ignored.
+
+### Precedence Examples
+
+**Example 1: Local overrides global**
+```
+Local:  .claude/agents/python-api-specialist.md (custom version)
+Global: installer/global/agents/python-api-specialist.md (default)
+Result: Uses local version
+```
+
+**Example 2: User overrides global**
+```
+User:   ~/.agentecflow/agents/react-state-specialist.md (custom)
+Global: installer/global/agents/react-state-specialist.md (default)
+Result: Uses user version
+```
+
+**Example 3: Fallback to global**
+```
+Local:  (not found)
+Global: installer/global/agents/dotnet-domain-specialist.md
+Result: Uses global version
 ```
 
 ## Discovery Metadata Schema
@@ -157,6 +213,34 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 ## Troubleshooting
 
+### "Template agents not found after initialization"
+
+**Symptom**: Agent not discovered after `taskwright init <template>`
+
+**Possible causes**:
+1. `.claude/agents/` directory missing or empty
+2. Template initialization failed
+3. Agent files not copied correctly
+
+**Solutions**:
+- Verify `.claude/agents/` directory exists: `ls .claude/agents/`
+- Re-run template init: `taskwright init <template>`
+- Check template has agents: `ls installer/global/templates/<template>/agents/`
+
+### "Wrong agent selected (global instead of local)"
+
+**Symptom**: Global agent used despite local customization
+
+**Possible causes**:
+1. Local agent has different filename than expected
+2. Local agent missing required metadata (stack, phase)
+3. Local agent metadata doesn't match task criteria
+
+**Solutions**:
+- Verify local agent filename matches global: `ls .claude/agents/`
+- Check frontmatter has `stack`, `phase`, `capabilities`, `keywords`
+- Use `/agent-enhance .claude/agents/<agent>.md` to fix metadata
+
 ### "No specialist found, using task-manager"
 
 **Possible causes**:
@@ -219,6 +303,6 @@ print(agents[0]['name'])  # Highest ranked agent
 
 ---
 
-**Last Updated**: 2025-11-25
-**Document Version**: 1.0
-**Related Epic**: haiku-agent-implementation
+**Last Updated**: 2025-11-27
+**Document Version**: 1.1
+**Related Tasks**: TASK-HAI-005-7A2E, TASK-ENF-P0-1, TASK-ENF-P0-2
