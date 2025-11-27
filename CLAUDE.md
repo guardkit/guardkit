@@ -38,6 +38,13 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 /task-complete TASK-XXX
 ```
 
+### Agent & Template Management
+```bash
+/agent-format <template>/<agent>     # Format agent to template standards
+/agent-validate <agent-file>         # Validate agent quality
+/template-validate <template-path>   # Comprehensive template audit
+```
+
 ### Design-First Workflow (Complex Tasks)
 ```bash
 /task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
