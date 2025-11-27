@@ -2391,6 +2391,116 @@ def determine_next_state(phase_45_results, coverage_results):
   → Notify that manual intervention required
   → **MUST NOT move to IN_REVIEW**
 
+### Step 6.5: Validate Agent Invocations (CRITICAL - Prevent False Reporting)
+
+🚨 **MANDATORY CHECKPOINT - DO NOT SKIP** 🚨
+
+**Purpose**: Verify that all required agents were actually invoked via the Task tool before generating completion reports. This prevents false reporting where agents are listed as "used" when they were never called.
+
+**CRITICAL**: This validation MUST run before Step 7 (report generation). If validation fails, task MUST be moved to BLOCKED state and report generation MUST be skipped.
+
+**VALIDATE** using the agent invocation tracker:
+
+```python
+from installer.global.commands.lib.agent_invocation_validator import (
+    validate_agent_invocations,
+    ValidationError
+)
+from installer.global.commands.lib.task_utils import move_task_to_blocked
+
+try:
+    # Validate that all required agents were invoked
+    validate_agent_invocations(tracker, workflow_mode)
+    print("✅ Validation Passed: All required agents invoked\n")
+except ValidationError as e:
+    # Display detailed error message
+    print(str(e))
+    print("\n" + "=" * 55)
+    print("BLOCKING TASK DUE TO PROTOCOL VIOLATION")
+    print("=" * 55 + "\n")
+
+    # Move task to BLOCKED state
+    move_task_to_blocked(
+        task_id,
+        reason="Agent invocation protocol violation - required agents not invoked"
+    )
+
+    # Exit without generating completion report
+    exit(1)
+```
+
+**Workflow Mode Phase Counts**:
+- `standard`: 5 phases (Planning, Arch Review, Implementation, Testing, Code Review)
+- `micro`: 3 phases (Implementation, Testing, Quick Review)
+- `design-only`: 3 phases (Planning, Arch Review, Complexity)
+- `implement-only`: 3 phases (Implementation, Testing, Code Review)
+
+**Expected Behavior**:
+
+✅ **VALIDATION PASSES** (all phases completed):
+- Displays: "✅ Validation Passed: All required agents invoked"
+- Proceeds to Step 7 (Generate Report)
+- Task moves to IN_REVIEW state (if quality gates passed)
+
+❌ **VALIDATION FAILS** (missing phases):
+- Displays detailed error showing:
+  - Expected vs actual invocation count
+  - List of missing phases with descriptions
+  - Full agent invocations log
+- Moves task to BLOCKED state with reason
+- Exits WITHOUT generating completion report
+- Human must review why phases were skipped
+
+**Example Error Output** (missing phases):
+
+```
+═══════════════════════════════════════════════════════
+❌ PROTOCOL VIOLATION: Agent invocation incomplete
+═══════════════════════════════════════════════════════
+
+Expected: 5 agent invocations
+Actual: 3 completed invocations
+
+Missing phases:
+  - Phase 3 (Implementation)
+  - Phase 4 (Testing)
+
+Cannot generate completion report until all agents are invoked.
+Review the AGENT INVOCATIONS LOG above to see which phases were skipped.
+
+AGENT INVOCATIONS LOG:
+✅ Phase 2 (Planning): python-api-specialist (completed in 45s)
+✅ Phase 2.5B (Arch Review): architectural-reviewer (completed in 30s)
+❌ Phase 3: SKIPPED (Not invoked)
+❌ Phase 4: SKIPPED (Not invoked)
+✅ Phase 5 (Review): code-reviewer (completed in 20s)
+
+TASK WILL BE MOVED TO BLOCKED STATE
+Reason: Protocol violation - required agents not invoked
+═══════════════════════════════════════════════════════
+```
+
+**IMPORTANT NOTES**:
+
+1. **This is the ONLY checkpoint that prevents false reporting**
+   - If this step is skipped, completion reports can be generated even when agents weren't invoked
+   - This violates the core principle of agent invocation enforcement
+
+2. **Validation is workflow-aware**
+   - Different workflow modes have different expected phase counts
+   - Micro workflows skip Phase 2 and 2.5B (only 3 phases)
+   - Design-only workflows only run Phases 2, 2.5B, 2.7
+
+3. **BLOCKED state requires human review**
+   - When validation fails, task goes to BLOCKED
+   - Human must investigate why phases were skipped
+   - Common causes: direct implementation without agent invocation, manual testing bypass
+
+4. **No exceptions or overrides**
+   - Validation cannot be bypassed
+   - If workflow needs different phase count, update `get_expected_phases()` function
+   - Do NOT skip this step under any circumstances
+
 ### Step 7: Generate Report (REQUIRED)
 
 **OUTPUT** comprehensive report based on outcome:

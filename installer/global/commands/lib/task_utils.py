@@ -287,3 +287,89 @@ def validate_external_ids(external_ids: Dict[str, Any]) -> Dict[str, str]:
             validated[tool] = str(value)
 
     return validated
+
+
+def move_task_to_blocked(
+    task_id: str,
+    reason: str,
+    tasks_dir: Path = None
+) -> bool:
+    """
+    Move task to BLOCKED state with specified reason.
+
+    This function is used when validation fails or quality gates are not met.
+    It moves the task file to the blocked directory and updates the frontmatter
+    with the blocked_reason field.
+
+    Args:
+        task_id: Task identifier (e.g., 'TASK-001')
+        reason: Human-readable reason for blocking
+        tasks_dir: Optional custom tasks directory (defaults to ./tasks)
+
+    Returns:
+        bool: True if task was successfully moved to BLOCKED state
+
+    Raises:
+        FileNotFoundError: If task file cannot be found
+        ValueError: If task_id format is invalid
+
+    Example:
+        >>> move_task_to_blocked(
+        ...     'TASK-001',
+        ...     'Agent invocation protocol violation - Phase 3 skipped'
+        ... )
+        True
+    """
+    import shutil
+    from pathlib import Path
+
+    # Default to ./tasks directory
+    if tasks_dir is None:
+        tasks_dir = Path.cwd() / 'tasks'
+
+    # Find current task file
+    task_file = None
+    for state_dir in ['in_progress', 'in_review', 'backlog', 'design_approved']:
+        search_dir = tasks_dir / state_dir
+        if not search_dir.exists():
+            continue
+
+        # Look for task file (may be in subdirectories)
+        for file_path in search_dir.rglob(f'{task_id}.md'):
+            task_file = file_path
+            break
+
+        if task_file:
+            break
+
+    if not task_file:
+        raise FileNotFoundError(
+            f"Task file for {task_id} not found in any state directory"
+        )
+
+    # Update frontmatter
+    update_task_frontmatter(
+        task_file,
+        {
+            'status': 'blocked',
+            'blocked_reason': reason
+        },
+        preserve_body=True
+    )
+
+    # Move to blocked directory
+    blocked_dir = tasks_dir / 'blocked'
+    blocked_dir.mkdir(exist_ok=True)
+
+    # Preserve directory structure if task was in a subdirectory
+    relative_path = task_file.relative_to(task_file.parent.parent)
+    dest_path = blocked_dir / relative_path.name
+
+    # Move the file
+    shutil.move(str(task_file), str(dest_path))
+
+    print(f"\n✅ Task {task_id} moved to BLOCKED state")
+    print(f"Reason: {reason}")
+    print(f"Location: {dest_path}")
+
+    return True
