@@ -211,6 +211,30 @@ Is it complex business logic?
     No → /task-work (standard)
 ```
 
+## Common Workflows
+
+Beyond the basic `/task-work` command, these specialized workflows handle specific scenarios:
+
+**Trivial Tasks (typos, doc updates)**:
+```bash
+/task-work TASK-XXX --micro    # 3-5 min vs 15+ min, skips planning/review
+```
+Auto-detected for simple tasks. [Details: task-work.md](../../installer/global/commands/task-work.md#flag---micro)
+
+**Iterative Refinement (minor tweaks)**:
+```bash
+/task-refine TASK-XXX          # Quick fixes after code review
+```
+For small adjustments without full re-work. [Details: Taskwright Workflow](taskwright-workflow.md#37-iterative-refinement)
+
+**Analysis & Reviews (decisions, audits)**:
+```bash
+/task-review TASK-XXX --mode=architectural --depth=standard
+```
+For architectural reviews, security audits, technical decisions (no implementation). [Details: Task Review Workflow](../workflows/task-review-workflow.md)
+
+> **Pro tip:** Start with `/task-work` for implementation. Use these specialized commands as you encounter specific needs.
+
 ## Essential Commands
 
 ### Task Commands
