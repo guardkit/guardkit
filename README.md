@@ -39,6 +39,8 @@ Taskwright provides **Spec-Oriented Development** out of the box:
 
 ## What You Get
 
+- **Hash-Based Task IDs**: Collision-free IDs enable concurrent creation and parallel development (Conductor.build compatible)
+- **PM Tool Integration**: Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs
 - **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
 - **Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
 - **AI Agent Discovery**: Automatic specialist matching via metadata (stack, phase, keywords)
@@ -155,8 +157,9 @@ taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, defaul
 ```bash
 # In Claude Code - create and work on a task
 /task-create "Add user login feature"
-/task-work TASK-001  # Does everything: plan, review, implement, test, verify
-/task-complete TASK-001
+# Created: TASK-h8j3
+/task-work TASK-h8j3  # Does everything: plan, review, implement, test, verify
+/task-complete TASK-h8j3
 ```
 
 ### Option 2: Clone Repository
@@ -173,7 +176,8 @@ taskwright init react-typescript
 
 # IMPORTANT: Stay in your project directory for task work
 /task-create "Add user login feature"
-/task-work TASK-001
+# Created: TASK-k2m9
+/task-work TASK-k2m9
 ```
 
 **If using VS Code:** Reload the window after initialization (see instructions above).
@@ -446,7 +450,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 
 **With Context7**:
 ```
-/task-work TASK-001
+/task-work TASK-n7p4
 📚 Fetching latest documentation for React...
 ✅ Retrieved React documentation (topic: hooks)
 [Implementation uses latest React 19 patterns]
@@ -454,7 +458,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 
 **Without Context7**:
 ```
-/task-work TASK-001
+/task-work TASK-n7p4
 ⚠️ Context7 unavailable, using training data
 [Implementation uses training data patterns - still works!]
 ```
@@ -505,9 +509,10 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 ```bash
 # 1. Create task
 /task-create "Add JWT-based user authentication"
+# Created: TASK-p9r3
 
 # 2. Work on it (automatic phases)
-/task-work TASK-001
+/task-work TASK-p9r3
 
 # Output:
 # Phase 2: Implementation Planning ✅
@@ -523,7 +528,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 # Task moved to IN_REVIEW
 
 # 3. Complete
-/task-complete TASK-001
+/task-complete TASK-p9r3
 ```
 
 Total time: ~2 minutes. Zero manual quality checks.

@@ -20,6 +20,27 @@ The complete workflow from task creation to completion, including all phases and
 
 **Start here** to understand the end-to-end process.
 
+## 🔑 Hash-Based Task IDs
+
+Taskwright uses collision-free hash-based task IDs to enable parallel development and concurrent task creation.
+
+**Format:**
+
+- Simple: `TASK-a3f8`
+- With prefix: `TASK-E01-b2c4`, `TASK-FIX-a3f8`
+- With subtask: `TASK-E01-b2c4.1`
+
+**Benefits:**
+
+- ✅ **Zero duplicates** - Mathematically guaranteed unique IDs
+- ✅ **Concurrent creation** - Safe for parallel development across Conductor.build worktrees
+- ✅ **PM tool integration** - Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs
+
+**Learn More:**
+
+- [Hash-Based ID Parallel Development](guides/hash-id-parallel-development.md) - 20-33% faster completion with Conductor.build
+- [Hash-Based IDs and PM Tools](guides/hash-id-pm-tools.md) - Bidirectional ID mapping
+
 ## 📊 [Complexity Management](workflows/complexity-management-workflow.md)
 
 How Taskwright evaluates task complexity and decides when to require human review.
