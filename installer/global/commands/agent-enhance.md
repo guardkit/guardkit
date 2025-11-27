@@ -96,6 +96,106 @@ agent_path               Agent path in one of two formats:
 - **Use when**: Production environments, need reliability
 - **Fallback triggers**: Timeout, AI error, API unavailable
 
+## Relationship with /agent-format
+
+Taskwright uses a **two-tier enhancement system** to balance speed, quality, and flexibility.
+
+### Two-Tier Enhancement System
+
+**Tier 1: Template-Level Formatting** (`/agent-format`):
+- **Quality**: 6/10 (structural consistency)
+- **Method**: Pattern-based transformations (no AI)
+- **Duration**: <1 second per agent
+- **Purpose**: Ensure all agents meet GitHub structural best practices
+- **When**: Automatically during `/template-create` Phase 5.5
+- **Output**: Consistent structure, boundary section templates, `[NEEDS_CONTENT]` markers
+
+**Tier 2: Project-Level Enhancement** (`/agent-enhance`):
+- **Quality**: 9/10 (AI-powered, template-specific)
+- **Method**: AI-generated content with context from templates
+- **Duration**: 2-5 minutes per agent
+- **Purpose**: Add template-specific examples, best practices, and domain guidance
+- **When**: After `/template-create` via enhancement tasks or manual invocation
+- **Output**: Code examples from templates, related templates list, boundary rules
+
+### When to Use Each Command
+
+| Scenario | Command | Rationale |
+|----------|---------|-----------|
+| Creating template from codebase | `/agent-format` | Automatic in `/template-create` Phase 5.5, ensures consistent structure |
+| Enhancing template agents with examples | `/agent-enhance` | Adds code examples, best practices extracted from your templates |
+| Quick agent structure fixes | `/agent-format` | Fast structural corrections without AI dependency |
+| Adding template-specific guidance | `/agent-enhance` | AI analyzes templates for relevant, contextual content |
+| Formatting any agent file | `/agent-format` | Works on global, template, or user agents without template context |
+| CI/CD quality checks | `/agent-format` | Deterministic validation, batch processing support |
+
+### Workflow Integration
+
+```bash
+# Step 1: Create template (uses /agent-format automatically in Phase 5.5)
+/template-create --path ~/my-project
+
+# Phase 5.5 runs /agent-format on all agents:
+# - Adds boundary section templates (ALWAYS/NEVER/ASK)
+# - Ensures structural consistency
+# - Adds [NEEDS_CONTENT] markers
+# - Quality: 6/10 (structure only)
+
+# Step 2: Enhance agents with template-specific content
+# Option A: Use enhancement tasks (created with --create-agent-tasks, default)
+/task-work TASK-AGENT-XXX  # Works through each agent enhancement
+
+# Option B: Enhance agents manually
+/agent-enhance my-template/api-specialist --hybrid
+/agent-enhance my-template/testing-specialist --hybrid
+
+# Result: Agents now have:
+# - Structural consistency (from /agent-format)
+# - Template-specific examples (from /agent-enhance)
+# - Best practices from your codebase
+# - Quality: 9/10
+```
+
+### Quality Comparison
+
+| Aspect | `/agent-format` (6/10) | `/agent-enhance` (9/10) |
+|--------|------------------------|-------------------------|
+| **Structure** | ✅ GitHub best practices | ✅ Preserved from format |
+| **Boundaries** | ✅ Template sections added | ✅ Filled with specific rules |
+| **Examples** | ❌ `[NEEDS_CONTENT]` markers | ✅ Real code from templates |
+| **Best Practices** | ❌ Generic guidance | ✅ Template-specific patterns |
+| **Related Templates** | ❌ Not included | ✅ Intelligent matching |
+| **Speed** | ⚡ <1 second | 🐢 2-5 minutes |
+| **AI Dependency** | ❌ None (pattern-based) | ✅ Required (or static fallback) |
+| **Template Context** | ❌ Not required | ✅ Required |
+
+### Why Two Tiers?
+
+**Tier 1 (Format)** provides:
+- Fast, deterministic baseline quality
+- Structural consistency across all agents
+- No AI dependency (works in CI/CD, offline)
+- 100% content preservation
+- Clear markers for human/AI enhancement
+
+**Tier 2 (Enhance)** provides:
+- Template-specific domain knowledge
+- Real code examples from your codebase
+- Intelligent template matching
+- Best practices extraction
+- Filled boundary rules
+
+**Both quality levels are intentional**:
+- Format ensures every agent meets minimum standards (6/10)
+- Enhance adds project-specific depth where needed (9/10)
+- Two-tier approach balances speed, cost, and quality
+
+### Cross-References
+
+- [/agent-format Command](agent-format.md) - Pattern-based formatting (Tier 1)
+- [/template-create Phase 5.5](template-create.md#phase-55-agent-formatting) - Automatic formatting during template creation
+- [/template-create Phase 8](template-create.md#phase-8-agent-enhancement-tasks) - Enhancement task creation (optional)
+
 ## Exit Codes
 
 - `0` - Success (agent enhanced)
@@ -382,6 +482,7 @@ Solution: This is a bug - please report it
 
 ## Related Commands
 
+- `/agent-format` - Pattern-based agent formatting (Tier 1, structural consistency)
 - `/template-create --create-agent-tasks` - Creates enhancement tasks for all agents
 - `/task-work TASK-ID` - Works through agent enhancement tasks
 - `/template-validate` - Validates template quality including agents
