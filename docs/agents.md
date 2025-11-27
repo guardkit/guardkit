@@ -90,7 +90,7 @@ Fast, cost-effective agents for implementation:
 
 ### Agent Boundary Sections
 
-As of TASK-STND-773D (2025-11-22), all enhanced agents include **ALWAYS/NEVER/ASK boundary sections** (GitHub best practices, Critical Gap #4 fixed).
+All enhanced agents include **ALWAYS/NEVER/ASK boundary sections** (GitHub best practices, Critical Gap #4 fixed).
 
 **Format:**
 
@@ -137,7 +137,7 @@ Step-by-step workflow for enhancing agents from 6/10 to 9/10.
 
 ### 📊 GitHub Agent Best Practices
 
-Based on analysis of 2,500+ repositories, boundary sections were identified as Critical Gap #4. All enhanced agents now include ALWAYS/NEVER/ASK boundaries.
+Based on [analysis of 2,500+ repositories](https://github.blog/ai-and-ml/github-copilot/how-to-write-a-great-agents-md-lessons-from-over-2500-repositories/), boundary sections were identified as Critical Gap #4. All enhanced agents now include ALWAYS/NEVER/ASK boundaries.
 
 ## Commands
 
