@@ -996,6 +996,23 @@ Based on detected stack, **MAP** to agents using this table:
 
 #### Phase 2: Implementation Planning
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_planning_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 2 (Implementation Planning)
+Model: Sonnet (Deep understanding of architecture and design patterns)
+Stack: {detected_stack}
+Specialization:
+  - Architecture design and pattern selection
+  - Technology-specific implementation strategy
+  - Complexity and risk assessment
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "{selected_planning_agent_from_table}"
@@ -1021,6 +1038,21 @@ Output: Implementation plan matching documentation level expectations."
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_planning_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_2_duration_seconds}s
+Files to create: {planned_file_count}
+Architecture patterns identified: {pattern_count}
+Risk factors: {risk_level}
+Status: Implementation plan generated successfully
+
+Proceeding to Phase 2.5A...
+═══════════════════════════════════════════════════════
+```
 
 #### Phase 2.5A: Pattern Suggestion (NEW - Recommend design patterns)
 
@@ -1073,6 +1105,23 @@ Based on task requirements and constraints:
 
 #### Phase 2.5B: Architectural Review (Catch design issues early)
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: architectural-reviewer
+═══════════════════════════════════════════════════════
+Phase: 2.5B (Architectural Review)
+Model: Sonnet (Expert-level architecture analysis)
+Stack: {detected_stack}
+Specialization:
+  - SOLID principles verification
+  - Design pattern validation
+  - Risk and complexity assessment
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "architectural-reviewer"
@@ -1110,6 +1159,22 @@ See installer/global/agents/architectural-reviewer.md for documentation level sp
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: architectural-reviewer
+═══════════════════════════════════════════════════════
+Duration: {phase_25b_duration_seconds}s
+SOLID Score: {solid_score}/100
+DRY Score: {dry_score}/100
+YAGNI Score: {yagni_score}/100
+Overall Recommendation: {recommendation}
+Status: Architectural review complete
+
+Proceeding to Phase 2.7...
+═══════════════════════════════════════════════════════
+```
 
 #### Phase 2.7: Complexity Evaluation (NEW - Auto-proceed mode routing)
 
@@ -1787,6 +1852,23 @@ else:  # workflow_mode == "standard"
 
 #### Phase 3: Implementation
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_implementation_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 3 (Implementation)
+Model: Haiku (Fast implementation, Sonnet for complexity ≥7)
+Stack: {detected_stack}
+Specialization:
+  - Production-quality code generation
+  - {stack}-specific patterns and conventions
+  - Test-driven development support
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool:
 ```
 subagent_type: "{selected_implementation_agent_from_table}"
@@ -1800,9 +1882,41 @@ prompt: "Implement TASK-XXX following {stack} best practices and planned archite
 
 **WAIT** for agent to complete before proceeding.
 
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_implementation_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_3_duration_seconds}s
+Files created/modified: {implementation_file_count}
+Lines of code: {loc_added}
+Error handling: {error_handling_status}
+Status: Implementation complete - ready for testing
+
+Proceeding to Phase 4...
+═══════════════════════════════════════════════════════
+```
+
 #### Phase 4: Testing
 
 **CRITICAL**: Refer to test-orchestrator.md for mandatory compilation verification before testing.
+
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_testing_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 4 (Testing)
+Model: Haiku (Fast test execution)
+Stack: {detected_stack}
+Specialization:
+  - Comprehensive test suite generation
+  - Coverage analysis and reporting
+  - {stack}-specific testing frameworks
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
 
 **INVOKE** Task tool with documentation context:
 ```
@@ -1842,6 +1956,22 @@ Cross-reference: installer/global/agents/test-orchestrator.md (MANDATORY RULE #1
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_testing_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_4_duration_seconds}s
+Tests executed: {test_count}
+Line coverage: {line_coverage}%
+Branch coverage: {branch_coverage}%
+Test status: {test_status}
+Status: Test suite ready for verification
+
+Proceeding to Phase 4.5...
+═══════════════════════════════════════════════════════
+```
 
 #### Phase 4.5: Fix Loop (Ensure All Tests Pass)
 
@@ -1975,6 +2105,23 @@ attempt = 1
 
 **ONLY EXECUTE IF Phase 4.5 succeeded (all tests passing)**
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: code-reviewer
+═══════════════════════════════════════════════════════
+Phase: 5 (Code Review)
+Model: Sonnet (Expert code quality assessment)
+Stack: {detected_stack}
+Specialization:
+  - Code quality and best practices verification
+  - Test coverage validation
+  - Documentation and error handling review
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "code-reviewer"
@@ -2002,6 +2149,21 @@ See installer/global/agents/code-reviewer.md for documentation level specificati
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: code-reviewer
+═══════════════════════════════════════════════════════
+Duration: {phase_5_duration_seconds}s
+Code quality score: {code_quality_score}/100
+Issues found: {issues_found_count}
+Recommendations: {recommendations_count}
+Status: Code review complete - quality approved
+
+Proceeding to Phase 5.5...
+═══════════════════════════════════════════════════════
+```
 
 #### Phase 5.5: Plan Audit (Hubbard's Step 6)
 
