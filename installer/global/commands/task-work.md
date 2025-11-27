@@ -961,21 +961,24 @@ task_context["documentation_level"] = documentation_level
 
 **PROCEED** to Step 3 (Select Agents)
 
-### Step 3: Select Agents for Stack (REQUIRED - 5 seconds)
+### Step 3: Agent Discovery (Automatic)
 
-Based on detected stack, **MAP** to agents using this table:
+**Agent selection is DYNAMIC** based on metadata matching. The system:
 
-| Stack | Analysis | Planning | Arch Review | Implementation | Testing | Review |
-|-------|----------|----------|-------------|----------------|---------|--------|
-| **maui** | requirements-analyst | maui-usecase-specialist | architectural-reviewer | maui-usecase-specialist | dotnet-testing-specialist | code-reviewer |
-| **react** | requirements-analyst | react-state-specialist | architectural-reviewer | react-state-specialist | react-testing-specialist | code-reviewer |
-| **python** | requirements-analyst | python-api-specialist | architectural-reviewer | python-api-specialist | python-testing-specialist | code-reviewer |
-| **python-mcp** | requirements-analyst | python-mcp-specialist | architectural-reviewer | python-mcp-specialist | python-testing-specialist | code-reviewer |
-| **typescript-api** | requirements-analyst | nestjs-api-specialist | architectural-reviewer | typescript-domain-specialist | nodejs-testing-specialist | code-reviewer |
-| **dotnet-microservice** | requirements-analyst | dotnet-api-specialist | architectural-reviewer | dotnet-domain-specialist | dotnet-testing-specialist | code-reviewer |
-| **default** | requirements-analyst | software-architect | architectural-reviewer | task-manager | test-verifier | code-reviewer |
+1. Analyzes task context (stack, phase, keywords from description)
+2. Scans all agent sources (Local > User > Global > Template)
+3. Returns best match based on metadata (stack, phase, capabilities, keywords)
 
-**DISPLAY**: "🤖 Selected agents: [list agent names]"
+**No action required** - Discovery happens automatically during each phase.
+
+**See**: [Agent Discovery System](#agent-discovery-system) for complete details on:
+- Discovery sources and precedence
+- Metadata requirements
+- Template override behavior
+- Source indicators (📁 📦 🌐)
+- Troubleshooting
+
+**Agent selection results** are shown in the invocation log after task completion.
 
 ### Step 4: INVOKE TASK TOOL FOR EACH PHASE (REQUIRED - DO NOT SKIP)
 
@@ -2555,7 +2558,204 @@ The command supports multiple development modes via `--mode` flag:
 
 **Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/requirekit/require-kit) package which provides complete requirements management and BDD generation.
 
-### Stack-Specific Agent Details
+### Agent Discovery System
+
+**Dynamic Metadata-Based Matching**
+
+Agents are selected dynamically based on metadata matching, NOT from static tables. The system:
+
+1. Analyzes task context (stack, phase, keywords from description)
+2. Scans all agent sources for metadata matches
+3. Returns best match based on:
+   - Stack compatibility (python, react, dotnet, etc.)
+   - Phase alignment (implementation, review, testing, orchestration, debugging)
+   - Keyword relevance (capabilities match task requirements)
+
+**No Hardcoded Mappings**: Agent selection is intelligent and extensible - adding new agents automatically makes them discoverable.
+
+#### Discovery Sources and Precedence
+
+Agents are discovered from 4 sources in priority order:
+
+1. **Local** (`.claude/agents/`) - Highest priority
+   - Template agents copied during initialization
+   - Project-specific customizations
+   - **Always takes precedence** over global agents with same name
+
+2. **User** (`~/.agentecflow/agents/`)
+   - Personal agent customizations
+   - Available across all projects
+   - Overrides global agents with same name
+
+3. **Global** (`installer/global/agents/`)
+   - Built-in Taskwright agents
+   - Shared across all users
+   - Overridden by local/user agents
+
+4. **Template** (`installer/global/templates/*/agents/`) - Lowest priority
+   - Template-provided agents (before initialization)
+   - Only used if agent not found in higher-priority sources
+   - Replaced by local agents after `taskwright init`
+
+**Precedence Rule**: Local > User > Global > Template
+
+#### Template Override Behavior
+
+When you run `taskwright init <template>`:
+- Template agents copied to `.claude/agents/` (local)
+- Local agents now **override** global agents with same name
+- Enables template customization without modifying global agents
+
+**Example**:
+```bash
+# Before initialization
+/task-work TASK-001  # Uses global python-api-specialist
+
+# After initialization
+taskwright init fastapi-python
+# Template's python-api-specialist copied to .claude/agents/
+
+/task-work TASK-002  # Now uses LOCAL python-api-specialist 📁 (not global 🌐)
+```
+
+#### Metadata Requirements for Discovery
+
+For an agent to be discoverable, it must have:
+
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `stack` | array | ✅ Yes | Technology stack(s) the agent supports |
+| `phase` | string | ✅ Yes | Workflow phase (implementation, review, testing, etc.) |
+| `capabilities` | array | ✅ Yes | Specific skills and domains |
+| `keywords` | array | ✅ Yes | Searchable terms for matching |
+
+**Agents without metadata**: Skipped during discovery (graceful degradation).
+
+#### Fallback Behavior
+
+If no specialist agent is found:
+- System falls back to `task-manager` (cross-stack orchestrator)
+- Task-manager handles the task generically
+- User notified about fallback in invocation log
+
+#### Agent Source Indicators
+
+During task execution, the invocation log shows which agent was selected and its source:
+
+```
+═══════════════════════════════════════════════════════
+AGENT INVOCATIONS LOG
+═══════════════════════════════════════════════════════
+✅ Phase 2 (Planning): python-api-specialist 📁 (source: local, completed in 45s)
+✅ Phase 2.5B (Arch Review): architectural-reviewer 🌐 (source: global, completed in 30s)
+✅ Phase 3 (Implementation): python-api-specialist 📁 (source: local, completed in 120s)
+✅ Phase 4 (Testing): task-manager 🌐 (source: global, completed in 60s)
+✅ Phase 5 (Review): code-reviewer 🌐 (source: global, completed in 25s)
+═══════════════════════════════════════════════════════
+```
+
+**Source Icons**:
+- 📁 **Local** - Agent from `.claude/agents/` (template or custom)
+- 👤 **User** - Agent from `~/.agentecflow/agents/` (personal)
+- 🌐 **Global** - Agent from `installer/global/agents/` (built-in)
+- 📦 **Template** - Agent from `installer/global/templates/*/agents/` (before init)
+
+**Why Source Matters**:
+- **Local agents override global** - Verify template customizations working
+- **Precedence debugging** - Understand which agent was selected when duplicates exist
+- **Troubleshooting** - If wrong agent selected, check source and metadata
+
+#### Agent Discovery Examples
+
+##### Example 1: Python API Implementation
+
+**Task Context**:
+- Stack: Python
+- Files: `*.py`
+- Keywords: "FastAPI endpoint", "async", "Pydantic schema"
+
+**Discovery Process**:
+1. Detect stack: `python` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Extract keywords: `api`, `async`, `pydantic`
+4. Scan agents:
+   - Local `.claude/agents/python-api-specialist.md` ✅ Match
+   - Metadata: `stack: [python, fastapi]`, `phase: implementation`, `keywords: [api, async, pydantic]`
+5. **Selected**: `python-api-specialist 📁 (source: local)`
+
+##### Example 2: React State Management
+
+**Task Context**:
+- Stack: React
+- Files: `*.tsx`
+- Keywords: "hooks", "state", "TanStack Query"
+
+**Discovery Process**:
+1. Detect stack: `react` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Extract keywords: `hooks`, `state`, `query`
+4. Scan agents:
+   - Local `.claude/agents/react-state-specialist.md` ✅ Match
+   - Metadata: `stack: [react, typescript]`, `phase: implementation`, `keywords: [hooks, state, query]`
+5. **Selected**: `react-state-specialist 📁 (source: local)`
+
+##### Example 3: Architectural Review (Cross-Stack)
+
+**Task Context**:
+- Stack: Any
+- Phase: Architectural Review (Phase 2.5B)
+
+**Discovery Process**:
+1. Phase: `review` (architectural)
+2. Scan agents:
+   - Global `installer/global/agents/architectural-reviewer.md` ✅ Match
+   - Metadata: `stack: [cross-stack]`, `phase: review`, `keywords: [solid, dry, yagni, architecture]`
+3. **Selected**: `architectural-reviewer 🌐 (source: global)`
+
+##### Example 4: Fallback to Task-Manager
+
+**Task Context**:
+- Stack: Go
+- Files: `*.go`
+- Keywords: "service", "handler"
+
+**Discovery Process**:
+1. Detect stack: `go` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Scan agents:
+   - No agents with `stack: [go]` found
+4. **Fallback**: `task-manager 🌐 (source: global)`
+5. **Note**: User notified that task-manager used (no Go specialist available)
+
+**Fix**: Create go-specialist agent with appropriate metadata, or use cross-stack task-manager.
+
+#### Troubleshooting Agent Discovery
+
+**Issue**: "Expected agent not selected"
+
+**Debug Steps**:
+1. Check agent has required metadata (stack, phase, capabilities, keywords)
+2. Verify stack matches task technology (check file extensions)
+3. Check agent source in invocation log (📁 local, 👤 user, 🌐 global, 📦 template)
+4. Verify precedence isn't causing unexpected override
+
+**Issue**: "Task-manager used instead of specialist"
+
+**Causes**:
+- No specialist agent exists for the stack
+- Agent metadata doesn't match task context
+- Agent missing required metadata fields
+
+**Fix**: Run `/agent-enhance` to add/validate discovery metadata.
+
+### Stack-Specific Agent Details (Examples Only)
+
+**Note**: The agents listed below are examples from global/template sources. Actual agent selection is **dynamic** based on metadata matching (see [Agent Discovery System](#agent-discovery-system)). Local agents override these examples after template initialization.
+
+**To view available agents**: Run `/agent-list` or check:
+- Local: `.claude/agents/`
+- User: `~/.agentecflow/agents/`
+- Global: `installer/global/agents/`
 
 #### MAUI Stack Agents
 - **maui-usecase-specialist**: UseCase pattern with Either monad
