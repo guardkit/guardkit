@@ -1,22 +1,32 @@
 ---
 id: TASK-BDD-001
 title: Investigate task-work mode implementation mechanism
-status: backlog
+status: completed
 created: 2025-11-28T15:27:39.493246+00:00
-updated: 2025-11-28T15:27:39.493246+00:00
+updated: 2025-11-28T19:45:00.000000+00:00
+completed: 2025-11-28T19:45:00.000000+00:00
 priority: high
 tags: [bdd-restoration, investigation, research, wave1]
 complexity: 2
 task_type: research
 estimated_effort: 30 minutes
+actual_effort: 45 minutes
 wave: 1
 parallel: true
 implementation_method: claude-code-direct
 parent_epic: bdd-restoration
 test_results:
-  status: pending
+  status: not_applicable
   coverage: null
   last_run: null
+  note: "Research task - no tests required"
+completion_metrics:
+  total_duration: 45 minutes
+  research_time: 45 minutes
+  deliverables_created: 1
+  code_references_documented: 15+
+  integration_points_identified: 5
+  questions_answered: 5
 ---
 
 # Task: Investigate task-work mode implementation mechanism
@@ -72,39 +82,39 @@ This is pure research - no code changes in this task.
 
 ### Research Deliverables
 
-- [ ] **Document where mode flag is parsed**
-  - File path and line numbers
-  - Mechanism (spec-driven vs script-driven)
-  - How flags reach workflow logic
+- [x] **Document where mode flag is parsed** ✅
+  - File path and line numbers: `task-work.md:2743-2762`
+  - Mechanism: Spec-driven (markdown-based, no Python script)
+  - How flags reach workflow logic: Claude Code reads spec as prompt context
 
-- [ ] **Map TDD mode workflow**
-  - Phase-by-phase execution differences
-  - Agent selection logic
-  - State transitions specific to TDD
+- [x] **Map TDD mode workflow** ✅
+  - Phase-by-phase execution differences: RED-GREEN-REFACTOR cycle documented
+  - Agent selection logic: Metadata-based discovery (stack, phase, capabilities)
+  - State transitions: TDD splits Phase 3 into sub-phases
 
-- [ ] **Identify integration points**
-  - Where to add BDD validation
-  - Where to load scenarios
-  - Where to invoke bdd-generator
-  - Where to run BDD tests
+- [x] **Identify integration points** ✅
+  - Where to add BDD validation: Phase 1 (lines 400-600)
+  - Where to load scenarios: Phase 1 (lines 600-800)
+  - Where to invoke bdd-generator: NEW Phase 3-BDD (lines 1750-1800)
+  - Where to run BDD tests: Phase 4 (existing, lines 1970-2057)
 
-- [ ] **Create architecture diagram**
-  - Mode flag → validation → routing → execution
-  - Show TDD path (existing)
-  - Show where BDD path should go
+- [x] **Create architecture diagram** ✅
+  - Mode flag → validation → routing → execution: Text diagram created
+  - Show TDD path (existing): Documented in findings
+  - Show where BDD path should go: Complete flow with integration points
 
-- [ ] **Document findings**
-  - Create `TASK-BDD-001-investigation-findings.md`
-  - Include code references with line numbers
-  - Include integration point recommendations
+- [x] **Document findings** ✅
+  - Created `TASK-BDD-001-investigation-findings.md` (31KB, comprehensive)
+  - Includes 15+ code references with line numbers
+  - Includes 5 integration point recommendations with rationale
 
 ### Questions to Answer
 
-- [ ] Is task-work a pure slash command (prompt-based)?
-- [ ] Or is there Python orchestration code?
-- [ ] Where does `--mode=tdd` actually affect behavior?
-- [ ] How do we add `--mode=bdd` in the same pattern?
-- [ ] Where should we call `supports_bdd()`?
+- [x] Is task-work a pure slash command (prompt-based)? ✅ **YES** - No Python orchestration
+- [x] Or is there Python orchestration code? ✅ **NO** - Pure markdown specification
+- [x] Where does `--mode=tdd` actually affect behavior? ✅ task-manager agent interpretation
+- [x] How do we add `--mode=bdd` in the same pattern? ✅ Document in spec + agent routing
+- [x] Where should we call `supports_bdd()`? ✅ Phase 1 validation (lines 400-600)
 
 ## Investigation Approach
 
@@ -207,11 +217,47 @@ Based on findings, document:
 
 ## Success Criteria
 
-- [ ] Clear understanding of mode implementation
-- [ ] Specific file paths and line numbers identified
-- [ ] Integration points documented with rationale
-- [ ] Architecture diagram showing BDD path
-- [ ] Ready for TASK-BDD-003 implementation
+- [x] Clear understanding of mode implementation ✅
+- [x] Specific file paths and line numbers identified ✅
+- [x] Integration points documented with rationale ✅
+- [x] Architecture diagram showing BDD path ✅
+- [x] Ready for TASK-BDD-003 implementation ✅
+
+## Completion Summary
+
+**Status**: ✅ **COMPLETED**
+
+**Deliverables**:
+- Comprehensive investigation findings document (31KB)
+- 15+ code references with specific line numbers
+- 5 integration points identified with implementation guidance
+- Text-based architecture diagram showing BDD workflow
+- Answers to all 5 research questions
+- Actionable recommendations for TASK-BDD-003
+
+**Key Findings**:
+1. task-work is a pure slash command (prompt-based, no Python orchestration)
+2. Mode flags are documented in task-work.md specification
+3. Workflow routing handled by task-manager agent
+4. BDD integration follows TDD pattern (validation → loading → generation → testing)
+5. `supports_bdd()` already exists in feature_detection.py
+
+**Impact**:
+- Unblocks TASK-BDD-003 (flag implementation)
+- Unblocks TASK-BDD-004 (workflow routing)
+- Provides clear integration strategy for Wave 2 tasks
+- Documents exact file locations and line numbers for implementation
+
+**Lessons Learned**:
+- Taskwright's architecture is elegantly simple (markdown-driven)
+- Agent discovery system is metadata-based (highly extensible)
+- Feature detection library is shared with require-kit (sync needed)
+- Quality gates automatically apply to all modes (no special handling)
+
+**Next Steps**:
+1. TASK-BDD-003: Implement `--mode=bdd` flag using documented pattern
+2. TASK-BDD-004: Add workflow routing logic to task-manager agent
+3. Wave 2 tasks can proceed with clear integration points
 
 ## Related Tasks
 
