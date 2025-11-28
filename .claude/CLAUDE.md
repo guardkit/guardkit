@@ -39,3 +39,72 @@ The system will detect your project's technology stack and apply appropriate tes
 ## Getting Started
 
 Run `/task-create "Your task"` to begin a new task, then use `/task-work TASK-XXX` to implement it with automatic quality gates.
+
+## Development Mode Selection
+
+TaskWright supports three development modes:
+
+### Standard Mode (Default)
+```bash
+/task-work TASK-042
+```
+Use for straightforward implementations, CRUD features, simple UI components.
+
+### TDD Mode
+```bash
+/task-work TASK-042 --mode=tdd
+```
+Use for complex business logic, algorithms, features with clear test cases.
+
+### BDD Mode (Agentic Systems)
+```bash
+/task-work TASK-042 --mode=bdd
+```
+
+**Use BDD for agentic orchestration systems**:
+- Requires RequireKit installation
+- Delegates to bdd-generator agent
+- EARS → Gherkin → Implementation workflow
+- Full requirements traceability
+
+**When to use**:
+```python
+# Example: LangGraph state routing
+if building_state_machine or safety_critical or formal_spec_needed:
+    use_bdd_mode = True
+else:
+    use_standard_or_tdd = True
+```
+
+**Plugin Discovery**:
+```python
+from lib.feature_detection import supports_bdd
+
+if supports_bdd():  # Checks ~/.agentecflow/require-kit.marker
+    # RequireKit available, BDD mode enabled
+    execute_bdd_workflow()
+else:
+    # RequireKit not installed
+    show_installation_guidance()
+```
+
+**BDD Workflow**:
+1. Create requirements in RequireKit (EARS notation)
+2. Generate Gherkin scenarios (`/generate-bdd REQ-001`)
+3. Link scenarios in task frontmatter (`bdd_scenarios: [BDD-001]`)
+4. Execute BDD mode (`/task-work TASK-042 --mode=bdd`)
+5. BDD tests run as quality gate (100% pass required)
+
+**Example Use Cases**:
+- LangGraph state machines with complexity-based routing
+- Multi-agent coordination workflows
+- Quality gate orchestration with approval checkpoints
+- Safety-critical authentication/authorization logic
+
+**Not for**:
+- CRUD features
+- Simple UI components
+- Bug fixes
+- General refactoring
+
+See [BDD Workflow for Agentic Systems](../docs/guides/bdd-workflow-for-agentic-systems.md) for complete guide.
