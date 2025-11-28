@@ -1,9 +1,9 @@
 ---
 id: TASK-BDD-003
 title: Restore --mode=bdd flag with RequireKit detection
-status: in_progress
+status: in_review
 created: 2025-11-28T15:27:39.493246+00:00
-updated: 2025-11-28T15:27:39.493246+00:00
+updated: 2025-11-28T21:45:00.000000+00:00
 priority: high
 tags: [bdd-restoration, implementation, wave2]
 complexity: 4
@@ -306,9 +306,119 @@ if mode == "bdd" and not supports_bdd():
 **Blocks**: TASK-BDD-004 (workflow routing needs this)
 **Wave**: 2 (sequential implementation)
 
+## Implementation Summary
+
+### Completed Changes
+
+#### 1. Command Syntax Update ✅
+- **File**: `installer/global/commands/task-work.md:98`
+- **Change**: Added `--mode=standard|tdd|bdd` to command syntax
+- **Status**: Complete
+
+#### 2. BDD Mode Documentation ✅
+- **File**: `installer/global/commands/task-work.md:2762-2851`
+- **Added**: Complete BDD mode section with:
+  - Purpose and prerequisites
+  - Use cases (agentic systems, safety-critical workflows)
+  - Workflow phases (1-5)
+  - Error handling for RequireKit not installed
+  - Error handling for missing bdd_scenarios
+  - BDD framework detection (pytest-bdd, SpecFlow, Cucumber.js, Cucumber)
+  - Link to workflow guide
+- **Status**: Complete
+
+#### 3. Feature Detection Validation ✅
+- **File**: `installer/global/lib/feature_detection.py:106-113`
+- **Verified**: `supports_bdd()` function exists and checks marker file
+- **Status**: Complete (no changes needed)
+
+#### 4. Test Suite ✅
+- **File**: `tests/integration/test_bdd_mode_validation.py`
+- **Created**: 20 comprehensive tests covering:
+  - Marker file detection (with/without RequireKit)
+  - Task frontmatter validation (bdd_scenarios field)
+  - Error message structure validation
+  - Mode flag parsing (standard, tdd, bdd)
+  - Integration tests for complete BDD flow
+  - Regression tests (standard/TDD modes unaffected)
+- **Results**: 20/20 tests passing ✅
+- **Coverage**: feature_detection.py 27% (covers supports_bdd path)
+- **Status**: Complete
+
+### Test Results
+
+```
+============================= test session starts ==============================
+platform darwin -- Python 3.14.0, pytest-8.4.2, pluggy-1.6.0
+collected 20 items
+
+tests/integration/test_bdd_mode_validation.py::TestBDDModeValidation::test_supports_bdd_with_marker_file PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeValidation::test_supports_bdd_without_marker_file PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeValidation::test_is_require_kit_installed_with_marker PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeValidation::test_is_require_kit_installed_without_marker PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeValidation::test_marker_file_location PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeErrorMessages::test_requirekit_not_installed_error_message PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeErrorMessages::test_no_scenarios_linked_error_message PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeTaskFrontmatter::test_valid_frontmatter_with_scenarios PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeTaskFrontmatter::test_frontmatter_without_scenarios_field PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeTaskFrontmatter::test_frontmatter_with_empty_scenarios PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeIntegration::test_bdd_mode_detection_flow PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeIntegration::test_bdd_mode_failure_no_marker PASSED
+tests/integration/test_bdd_mode_validation.py::TestBDDModeIntegration::test_bdd_mode_failure_no_scenarios PASSED
+tests/integration/test_bdd_mode_validation.py::TestModeValidation::test_valid_modes PASSED
+tests/integration/test_bdd_mode_validation.py::TestModeValidation::test_invalid_mode PASSED
+tests/integration/test_bdd_mode_validation.py::TestModeValidation::test_mode_default_value PASSED
+tests/integration/test_bdd_mode_validation.py::TestModeValidation::test_mode_tdd_value PASSED
+tests/integration/test_bdd_mode_validation.py::TestModeValidation::test_mode_bdd_value PASSED
+tests/integration/test_bdd_mode_validation.py::TestRegressionPreservation::test_standard_mode_unaffected PASSED
+tests/integration/test_bdd_mode_validation.py::TestRegressionPreservation::test_tdd_mode_unaffected PASSED
+
+============================== 20 passed in 1.19s ==============================
+```
+
+### Quality Gates
+
+- ✅ All tests passing (20/20)
+- ✅ Documentation complete and accurate
+- ✅ Error messages match specification
+- ✅ Standard/TDD modes unaffected (regression tests pass)
+- ✅ Feature detection validated
+- ✅ Marker file pattern confirmed
+
+### Implementation Notes
+
+This implementation follows the **pure slash command pattern** discovered in TASK-BDD-001:
+- No Python orchestration scripts required
+- All logic documented in `task-work.md` specification
+- Validation using existing `supports_bdd()` function
+- Marker file detection at `~/.agentecflow/require-kit.marker`
+- Consistent with TDD mode pattern
+
+### Next Steps
+
+**Ready for**: TASK-BDD-004 (workflow routing to bdd-generator agent)
+
+**Blocks**: TASK-BDD-004 requires this task to be complete before implementing workflow routing logic.
+
+### Files Changed
+
+1. `installer/global/commands/task-work.md` - Command syntax and BDD documentation
+2. `tests/integration/test_bdd_mode_validation.py` - Comprehensive test suite (NEW)
+3. `tasks/in_progress/TASK-BDD-003-restore-mode-flag.md` - Task status update
+
+### Git Commit
+
+```
+commit 812f666
+feat(bdd): Restore --mode=bdd flag with RequireKit detection
+
+Implements TASK-BDD-003: Add BDD mode flag to task-work command with proper
+RequireKit detection using marker file pattern.
+```
+
 ## References
 
 - [Implementation Guide](./IMPLEMENTATION-GUIDE.md)
 - [BDD Restoration Guide](../../../docs/research/restoring-bdd-feature.md) (Phase 2, lines 80-137)
 - [Feature Detection](../../../installer/global/lib/feature_detection.py)
-- TASK-BDD-001 findings (once available)
+- [TASK-BDD-001 Investigation Findings](../../completed/TASK-BDD-001/TASK-BDD-001-investigation-findings.md)
