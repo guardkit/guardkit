@@ -1,9 +1,9 @@
 ---
 id: TASK-BDD-002
 title: Create BDD workflow documentation for agentic systems
-status: backlog
+status: in_progress
 created: 2025-11-28T15:27:39.493246+00:00
-updated: 2025-11-28T15:27:39.493246+00:00
+updated: 2025-11-28T19:45:00.000000+00:00
 priority: high
 tags: [bdd-restoration, documentation, wave1]
 complexity: 2

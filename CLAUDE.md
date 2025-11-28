@@ -297,6 +297,152 @@ Use when **analyzing** architecture, making decisions, or assessing quality:
 
 **See**: [Task Review Workflow](docs/workflows/task-review-workflow.md) for detailed guidance.
 
+## BDD Workflow (Agentic Systems)
+
+For formal agentic orchestration systems, TaskWright integrates with RequireKit for BDD workflow.
+
+### When to Use BDD Mode
+
+**Use for**:
+- **LangGraph state machines** - Precise behavior specs for state transitions and routing
+- **Multi-agent coordination** - Complex interactions between agents
+- **Safety-critical workflows** - Quality gates, approval checkpoints, auth/security
+- **Formal behavior specifications** - Compliance, audit trails, regulatory requirements
+
+**Don't use for**:
+- General CRUD features
+- Simple UI components
+- Bug fixes and refactoring
+- Prototyping and exploration
+
+### Prerequisites
+
+**Required**: RequireKit + TaskWright installed
+
+```bash
+# Install RequireKit
+cd ~/Projects/require-kit
+./installer/scripts/install.sh
+
+# Verify installation
+ls ~/.agentecflow/require-kit.marker
+```
+
+### Complete Workflow
+
+```bash
+# 1. In RequireKit: Create requirements
+cd ~/Projects/require-kit
+/req-create "System behavior"
+/formalize-ears REQ-001
+/generate-bdd REQ-001
+
+# 2. In TaskWright: Implement from scenarios
+cd ~/Projects/your-project
+/task-create "Implement behavior" requirements:[REQ-001]
+
+# Edit task frontmatter to link scenarios:
+# bdd_scenarios: [BDD-001]
+
+# 3. Execute BDD workflow
+/task-work TASK-042 --mode=bdd
+```
+
+### What Happens in BDD Mode
+
+1. **Checks RequireKit installed** - Verifies `~/.agentecflow/require-kit.marker` exists
+2. **Loads Gherkin scenarios** - Reads scenarios from task `bdd_scenarios` frontmatter field
+3. **Routes to bdd-generator agent** - Specialized agent for BDD implementation
+4. **Generates step definitions** - Creates pytest-bdd/Cucumber/SpecFlow step functions
+5. **Implements to pass scenarios** - Writes code that makes all scenarios pass
+6. **Runs BDD tests as quality gate** - 100% BDD test pass rate required
+
+### Example: LangGraph Orchestration
+
+```python
+# EARS Requirement (RequireKit)
+REQ-ORCH-001: Phase 2.8 Complexity Routing
+WHEN task complexity_score ≥ 7, system SHALL invoke FULL_REQUIRED checkpoint.
+WHEN task complexity_score is 4-6, system SHALL invoke QUICK_OPTIONAL checkpoint.
+WHEN task complexity_score is 1-3, system SHALL proceed automatically.
+
+# Gherkin Scenario (Generated)
+Scenario: High complexity triggers mandatory review
+  Given a task with complexity score 8
+  When the workflow reaches Phase 2.8
+  Then the system should invoke FULL_REQUIRED checkpoint
+  And the workflow should interrupt with full plan display
+
+# Implementation (TaskWright BDD mode)
+def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_review", "full_review"]:
+    """Route based on complexity score to appropriate approval path."""
+    score = state.complexity_score
+    if score >= 7:
+        return "full_review"
+    elif score >= 4:
+        return "quick_review"
+    else:
+        return "auto_proceed"
+
+# BDD Test (pytest-bdd)
+@scenario('complexity-routing.feature', 'High complexity triggers mandatory review')
+def test_high_complexity_mandatory_review():
+    pass
+
+@given('a task with complexity score 8')
+def task_high_complexity(context):
+    context.state = TaskWrightState(complexity_score=8)
+
+@when('the workflow reaches Phase 2.8')
+def reach_phase_28(context):
+    context.result = complexity_router(context.state)
+
+@then('the system should invoke FULL_REQUIRED checkpoint')
+def verify_full_required(context):
+    assert context.result == "full_review"
+```
+
+### Benefits for Agentic Systems
+
+✅ **State transition correctness** - All routing paths tested with boundary cases
+✅ **Interrupt point validation** - LangGraph `interrupt()` semantics clearly specified
+✅ **Approval logic verification** - Decision options and timeouts tested
+✅ **Traceability** - REQ-ORCH-001 → Gherkin → Code → Tests
+✅ **Living documentation** - Gherkin scenarios document orchestration logic
+✅ **Regression protection** - Changes to routing logic are immediately caught
+
+### Error Scenarios
+
+**RequireKit Not Installed**:
+```bash
+/task-work TASK-042 --mode=bdd
+
+ERROR: BDD mode requires RequireKit installation
+
+  Repository: https://github.com/requirekit/require-kit
+  Installation:
+    cd ~/Projects/require-kit
+    ./installer/scripts/install.sh
+
+  Alternative modes:
+    /task-work TASK-042 --mode=tdd      # Test-first development
+    /task-work TASK-042 --mode=standard # Default workflow
+```
+
+**No BDD Scenarios Linked**:
+```bash
+ERROR: BDD mode requires linked Gherkin scenarios
+
+  Add to task frontmatter:
+    bdd_scenarios: [BDD-001, BDD-002]
+
+  Or generate scenarios in RequireKit:
+    cd ~/Projects/require-kit
+    /generate-bdd REQ-XXX
+```
+
+**See**: [BDD Workflow for Agentic Systems](docs/guides/bdd-workflow-for-agentic-systems.md)
+
 ## UX Design Integration
 
 Converts design system files (Figma, Zeplin) into components with **zero scope creep**.
