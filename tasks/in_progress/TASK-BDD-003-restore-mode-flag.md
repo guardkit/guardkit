@@ -1,7 +1,7 @@
 ---
 id: TASK-BDD-003
 title: Restore --mode=bdd flag with RequireKit detection
-status: backlog
+status: in_progress
 created: 2025-11-28T15:27:39.493246+00:00
 updated: 2025-11-28T15:27:39.493246+00:00
 priority: high
