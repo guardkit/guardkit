@@ -95,7 +95,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
 ```
 
 ## Documentation Level Control (NEW - TASK-036)
@@ -2759,7 +2759,96 @@ The command supports multiple development modes via `--mode` flag:
 - REFACTOR: Implementation agent improves code quality
 - Best for complex business logic
 
-**Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/requirekit/require-kit) package which provides complete requirements management and BDD generation.
+#### BDD Mode (Requires RequireKit)
+
+```bash
+/task-work TASK-XXX --mode=bdd
+```
+
+**Purpose**: Behavior-Driven Development workflow for formal agentic systems
+
+**Prerequisites**:
+- RequireKit installed (checks `~/.agentecflow/require-kit.marker`)
+- Task has `bdd_scenarios: [BDD-001, BDD-002]` in frontmatter
+
+**Use for**:
+- ✅ Agentic orchestration systems (LangGraph, state machines)
+- ✅ Safety-critical workflows (quality gates, approval checkpoints)
+- ✅ Complex behavior requirements (multi-agent coordination)
+- ✅ Formal specifications (compliance, audit, traceability)
+- ❌ NOT for general CRUD features or simple implementations
+
+**Workflow**:
+1. **Phase 1**: Validates RequireKit installation via marker file
+2. **Phase 1**: Loads Gherkin scenarios from task frontmatter
+3. **Phase 2**: Includes scenarios in planning context
+4. **Phase 3**: Routes to RequireKit's bdd-generator agent
+5. **Phase 3**: Generates step definitions for detected framework
+6. **Phase 3**: Implements code to pass scenarios
+7. **Phase 4**: Runs BDD tests (pytest-bdd, SpecFlow, Cucumber.js, etc.)
+8. **Phase 4.5**: Fix loop for failing BDD tests (max 3 attempts)
+9. **Phase 5**: Standard code review
+
+**Error Handling**:
+
+If RequireKit not installed:
+```bash
+/task-work TASK-042 --mode=bdd
+
+ERROR: BDD mode requires RequireKit installation
+
+  RequireKit provides EARS → Gherkin → Implementation workflow for
+  formal behavior specifications.
+
+  Repository:
+    https://github.com/requirekit/require-kit
+
+  Installation:
+    cd ~/Projects/require-kit
+    ./installer/scripts/install.sh
+
+  Verification:
+    ls ~/.agentecflow/require-kit.marker  # Should exist
+
+  Alternative modes:
+    /task-work TASK-042 --mode=tdd      # Test-first development
+    /task-work TASK-042 --mode=standard # Default workflow
+
+  BDD mode is designed for agentic systems, not general features.
+  See: docs/guides/bdd-workflow-for-agentic-systems.md
+```
+
+If bdd_scenarios not linked:
+```bash
+/task-work TASK-042 --mode=bdd
+
+ERROR: BDD mode requires linked Gherkin scenarios
+
+  Task frontmatter must include bdd_scenarios field:
+
+    ---
+    id: TASK-042
+    title: Implement complexity routing
+    bdd_scenarios: [BDD-ORCH-001, BDD-ORCH-002]  ← Add this
+    ---
+
+  Generate scenarios in RequireKit:
+    cd ~/Projects/require-kit
+    /formalize-ears REQ-XXX
+    /generate-bdd REQ-XXX
+
+  Or use alternative modes:
+    /task-work TASK-042 --mode=tdd
+    /task-work TASK-042 --mode=standard
+```
+
+**BDD Framework Detection**:
+- Python project → pytest-bdd
+- .NET project → SpecFlow
+- TypeScript/JavaScript → Cucumber.js
+- Ruby → Cucumber
+
+**See**: [BDD Workflow Guide](../../docs/guides/bdd-workflow-for-agentic-systems.md)
 
 ### Agent Discovery System
 
