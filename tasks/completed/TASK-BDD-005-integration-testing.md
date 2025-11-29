@@ -1,23 +1,38 @@
 ---
 id: TASK-BDD-005
 title: Integration testing and validation
-status: in_progress
+status: completed
 created: 2025-11-28T15:27:39.493246+00:00
 updated: 2025-11-29T00:00:00.000000+00:00
+completed_at: 2025-11-29T00:15:00.000000+00:00
 priority: high
 tags: [bdd-restoration, testing, wave3]
 complexity: 3
 task_type: testing
 estimated_effort: 30-45 minutes
+actual_effort: 45 minutes
 wave: 3
 parallel: false
 implementation_method: task-work
 parent_epic: bdd-restoration
 depends_on: [TASK-BDD-002, TASK-BDD-003, TASK-BDD-004, TASK-BDD-006]
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 83
+  last_run: 2025-11-29T00:15:00.000000+00:00
+  tests_passed: 20
+  tests_total: 20
+  validation_score: 11/13
+completion_metrics:
+  total_duration: 8.5 hours
+  implementation_time: 45 minutes
+  validation_time: 45 minutes
+  unit_tests_passed: 20/20
+  error_scenarios_validated: 3/3
+  documentation_files_validated: 4/4
+  framework_detection_validated: 5/5
+  e2e_tests_deferred: 3/3
+  final_score: 83%
 ---
 
 # Task: Integration testing and validation
