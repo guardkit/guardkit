@@ -833,6 +833,130 @@ else:
     task_context["feature"] = None
 ```
 
+**IF BDD MODE**: Load Gherkin scenarios from RequireKit:
+```python
+# Check if BDD mode is active
+if mode == "bdd":
+    # RequireKit already validated in TASK-BDD-003
+    # bdd_scenarios field already loaded above
+
+    if not task_context["bdd_scenarios"]:
+        print("""
+ERROR: BDD mode requires linked Gherkin scenarios
+
+  Task frontmatter must include bdd_scenarios field:
+
+    ---
+    id: {task_id}
+    title: {title}
+    bdd_scenarios: [BDD-001, BDD-002]  ← Add this
+    ---
+
+  Generate scenarios in RequireKit:
+    cd ~/Projects/require-kit
+    /formalize-ears REQ-XXX
+    /generate-bdd REQ-XXX
+
+  Or use alternative modes:
+    /task-work {task_id} --mode=tdd
+    /task-work {task_id} --mode=standard
+        """)
+        sys.exit(1)
+
+    # Load Gherkin scenario content from RequireKit
+    scenarios = []
+    requirekit_path = Path.home() / "Projects" / "require-kit"
+
+    for scenario_id in task_context["bdd_scenarios"]:
+        # Find scenario file in RequireKit
+        scenario_file = requirekit_path / "docs" / "bdd" / f"{scenario_id}.feature"
+
+        if not scenario_file.exists():
+            print(f"""
+ERROR: Scenario {scenario_id} not found at {scenario_file}
+
+  Generate scenario in RequireKit:
+    cd {requirekit_path}
+    /generate-bdd REQ-XXX
+
+  Verify scenarios exist:
+    ls {requirekit_path}/docs/bdd/{scenario_id}.feature
+            """)
+            sys.exit(1)
+
+        # Read Gherkin content
+        with open(scenario_file) as f:
+            scenario_content = f.read()
+
+        scenarios.append({
+            "id": scenario_id,
+            "file": str(scenario_file),
+            "content": scenario_content
+        })
+
+    # Add scenarios to task context
+    task_context["gherkin_scenarios"] = scenarios
+
+    # Detect BDD framework for this project
+    task_context["bdd_framework"] = detect_bdd_framework(Path.cwd())
+
+    # Display loaded scenarios
+    print(f"\n✅ Loaded {len(scenarios)} BDD scenarios from RequireKit:")
+    for s in scenarios:
+        print(f"   • {s['id']}")
+    print(f"   Framework: {task_context['bdd_framework']}\n")
+```
+
+**BDD FRAMEWORK DETECTION FUNCTION**:
+```python
+def detect_bdd_framework(project_path: Path) -> str:
+    """
+    Detect BDD testing framework based on project files.
+
+    Args:
+        project_path: Path to project root directory
+
+    Returns:
+        Framework name (pytest-bdd, specflow, cucumber-js, cucumber)
+    """
+    # Python - check requirements.txt
+    if (project_path / "requirements.txt").exists():
+        with open(project_path / "requirements.txt") as f:
+            if "pytest-bdd" in f.read():
+                return "pytest-bdd"
+
+    # Python - check pyproject.toml
+    if (project_path / "pyproject.toml").exists():
+        with open(project_path / "pyproject.toml") as f:
+            if "pytest-bdd" in f.read():
+                return "pytest-bdd"
+
+    # .NET - check .csproj files
+    csproj_files = list(project_path.glob("*.csproj"))
+    if csproj_files:
+        with open(csproj_files[0]) as f:
+            if "SpecFlow" in f.read():
+                return "specflow"
+
+    # TypeScript/JavaScript - check package.json
+    if (project_path / "package.json").exists():
+        with open(project_path / "package.json") as f:
+            import json
+            pkg = json.load(f)
+            dev_deps = pkg.get("devDependencies", {})
+            if "@cucumber/cucumber" in dev_deps:
+                return "cucumber-js"
+
+    # Ruby - check Gemfile
+    if (project_path / "Gemfile").exists():
+        with open(project_path / "Gemfile") as f:
+            if "cucumber" in f.read():
+                return "cucumber"
+
+    # Default fallback
+    return "pytest-bdd"
+```
+
 **VALIDATE** essential fields exist:
 - `title`: Must be present
 - `acceptance_criteria`: At least one criterion required
@@ -1057,6 +1181,21 @@ phase: 2
 Design {stack} implementation approach for {task_id}.
 Include architecture decisions, pattern selection, and component structure.
 Consider {stack}-specific best practices and testing strategies.
+
+{if mode == 'bdd':}
+BDD MODE CONTEXT:
+- BDD Scenarios loaded: {len(task_context.get('gherkin_scenarios', []))} scenarios
+- Framework: {task_context.get('bdd_framework')}
+- Scenarios:
+{for scenario in task_context.get('gherkin_scenarios', []):}
+  • {scenario['id']}: {scenario['content'][:200]}...
+{endfor}
+
+Implementation plan should:
+1. Account for step definitions matching these scenarios
+2. Structure code to facilitate BDD testing
+3. Map Given/When/Then steps to implementation components
+{endif}
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
 - minimal: Return plan as structured data (file list, phases, estimates)
@@ -1907,6 +2046,101 @@ else:  # workflow_mode == "standard"
     # This is the existing behavior (backward compatible)
 ```
 
+#### Phase 3-BDD: BDD Test Generation (BDD Mode Only)
+
+**IF mode == 'bdd'**:
+
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: bdd-generator
+═══════════════════════════════════════════════════════
+Phase: 3-BDD (BDD Test Generation)
+Model: Sonnet (Gherkin parsing and test mapping require reasoning)
+Mode: BDD (Scenario-driven development)
+Specialization:
+  - Gherkin scenario parsing (Feature/Scenario/Given/When/Then)
+  - BDD framework-specific step definitions
+  - Test code generation from scenarios
+  - {bdd_framework} integration
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
+**INVOKE** Task tool:
+```
+subagent_type: "bdd-generator"
+description: "Generate BDD tests for TASK-XXX from Gherkin scenarios"
+prompt: "Generate BDD acceptance tests for TASK-{task_id}.
+
+LOADED SCENARIOS:
+{for scenario in task_context['gherkin_scenarios']:}
+Scenario ID: {scenario['id']}
+File: {scenario['file']}
+Content:
+{scenario['content']}
+
+{endfor}
+
+BDD FRAMEWORK: {task_context['bdd_framework']}
+PROJECT STACK: {detected_stack}
+
+REQUIREMENTS:
+1. Parse all Gherkin scenarios (Feature/Scenario/Given/When/Then)
+2. Generate step definitions for {task_context['bdd_framework']}
+   - Python: pytest-bdd step definitions in tests/step_defs/
+   - JavaScript/TypeScript: Cucumber.js step definitions
+   - .NET: SpecFlow step definitions with C# bindings
+   - Ruby: Cucumber step definitions
+3. Create test files that execute scenarios
+4. Map Given/When/Then steps to test implementation
+5. Generate FAILING tests initially (BDD RED phase)
+6. Set up BDD test configuration (if needed)
+
+OUTPUT:
+- Step definition files matching {task_context['bdd_framework']} conventions
+- Test runner configuration (pytest.ini, cucumber.js config, etc.)
+- Feature file integration (if copying to project)
+- Test data/fixtures as needed
+- Documentation showing scenario → step → code mapping
+
+The implementation in next phase (Phase 3) will make these tests pass."
+```
+
+**WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: bdd-generator
+═══════════════════════════════════════════════════════
+Duration: {phase_3_bdd_duration_seconds}s
+Step definitions created: {step_def_count}
+Scenarios mapped: {len(task_context['gherkin_scenarios'])}
+Framework: {task_context['bdd_framework']}
+Status: BDD tests generated (RED phase) - ready for implementation
+
+Proceeding to Phase 3...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION**:
+```python
+try:
+    validator.validate_phase_completion("3-BDD", "BDD Test Generation")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 3-BDD gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 3
+**IF validation fails**: Task moved to BLOCKED, execution stops
+
+**ELSE** (standard or TDD mode):
+Skip Phase 3-BDD, proceed directly to Phase 3
+
 #### Phase 3: Implementation
 
 **DISPLAY INVOCATION MESSAGE**:
@@ -1934,6 +2168,13 @@ prompt: "Implement TASK-XXX following {stack} best practices and planned archite
          Use patterns identified in planning phase.
          Create production-quality code with proper error handling.
          Follow {stack}-specific conventions and patterns.
+         {if mode == 'bdd':}
+         BDD MODE: Implement code to make BDD test step definitions PASS.
+         - Focus on making Given/When/Then scenarios pass
+         - Follow scenario requirements precisely
+         - Implement step definition logic
+         - The BDD tests were generated in Phase 3-BDD
+         {endif}
          Prepare codebase for comprehensive testing."
 ```
 
@@ -2004,6 +2245,18 @@ Create comprehensive test suite for {task_id} implementation.
 Include: unit tests, integration tests, edge cases.
 Target: 80%+ line coverage, 75%+ branch coverage.
 Use {stack}-specific testing frameworks and patterns.
+
+{if mode == 'bdd':}
+BDD MODE: Execute BDD tests generated in Phase 3-BDD
+- Run BDD scenarios using {task_context.get('bdd_framework')}
+- Test commands:
+  * Python: pytest tests/ -v --gherkin-terminal-reporter (pytest-bdd)
+  * TypeScript/JS: npm run test:bdd or npx cucumber-js (Cucumber.js)
+  * .NET: dotnet test --filter Category=BDD (SpecFlow)
+  * Ruby: cucumber features/ (Cucumber)
+- BDD tests MUST pass 100% (part of Phase 4.5 enforcement)
+- Also run standard unit tests for complete coverage
+{endif}
 
 🚨 MANDATORY COMPILATION CHECK (See test-orchestrator.md):
 1. MUST verify code COMPILES/BUILDS successfully BEFORE running tests
