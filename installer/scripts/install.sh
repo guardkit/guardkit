@@ -1165,31 +1165,15 @@ print_summary() {
     echo -e "${BLUE}🔗 Conductor: https://conductor.build${NC}"
 }
 
-# Create marker file for taskwright installation
+# Create marker file for taskwright installation (DEPRECATED - using create_marker_file instead)
+# This function is kept for reference but should not be called
 create_package_marker() {
-    print_info "Creating package marker file..."
+    print_info "Skipping legacy marker creation (using JSON marker instead)..."
 
-    # Create taskwright.marker file
-    cat > "$INSTALL_DIR/taskwright.marker" << EOF
-{
-  "package": "taskwright",
-  "version": "$AGENTECFLOW_VERSION",
-  "installed": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "provides": [
-    "task-management",
-    "quality-gates",
-    "architectural-review",
-    "test-enforcement"
-  ]
-}
-EOF
-
-    # Also create manifest for compatibility
+    # Only create manifest for compatibility
     if [ -f "$INSTALLER_DIR/global/manifest.json" ]; then
         cp "$INSTALLER_DIR/global/manifest.json" "$INSTALL_DIR/taskwright.manifest.json"
-        print_success "Package marker and manifest created"
-    else
-        print_success "Package marker created"
+        print_success "Package manifest created"
     fi
 }
 
@@ -1248,6 +1232,14 @@ create_marker_file() {
     local marker_file="$INSTALL_DIR/taskwright.marker.json"
     local install_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+    # Determine repository root (parent of installer/)
+    local repo_root
+    if [ -d "$INSTALLER_DIR" ]; then
+        repo_root="$(cd "$INSTALLER_DIR/.." && pwd)"
+    else
+        repo_root="$PWD"  # Fallback to current directory
+    fi
+
     # Create marker file from template with substitution
     cat > "$marker_file" << EOF
 {
@@ -1255,6 +1247,7 @@ create_marker_file() {
   "version": "$AGENTECFLOW_VERSION",
   "installed": "$install_date",
   "install_location": "$INSTALL_DIR",
+  "repo_path": "$repo_root",
   "provides": [
     "task_management",
     "quality_gates",
@@ -1269,13 +1262,14 @@ create_marker_file() {
   ],
   "integration_model": "bidirectional_optional",
   "description": "Task execution and quality gates for Agentecflow",
-  "homepage": "https://github.com/your-org/taskwright"
+  "homepage": "https://github.com/taskwright-dev/taskwright"
 }
 EOF
 
     if [ -f "$marker_file" ]; then
         print_success "Marker file created: $marker_file"
         print_info "  Package: taskwright (standalone + optional require-kit integration)"
+        print_info "  Repository: $repo_root"
         print_info "  Model: Bidirectional optional integration"
 
         # Check if require-kit is also installed
