@@ -1,0 +1,14 @@
+  {{ServiceName}}:
+    build:
+      context: ./apps/{{service-path}}
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "{{port}}:{{port}}"
+    environment:
+      # Add your environment variables here
+      - NODE_ENV=development
+    volumes:
+      - ./apps/{{service-path}}:/app
+      - /app/node_modules
+    command: {{command}}

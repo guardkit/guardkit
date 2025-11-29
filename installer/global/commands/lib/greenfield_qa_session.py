@@ -181,6 +181,181 @@ class GreenfieldAnswers:
         return GreenfieldAnswers(**data)
 
 
+def generate_boundary_sections(agent_type: str, technology: str) -> dict:
+    """
+    Generate ALWAYS/NEVER/ASK boundary sections for agent.
+
+    Reused from template-create's agent enhancement logic (TASK-STND-773D).
+
+    Args:
+        agent_type: Type of agent (testing, repository, api, etc.)
+        technology: Primary technology (python, typescript, csharp)
+
+    Returns:
+        dict with 'always', 'never', 'ask' lists
+
+    Example:
+        >>> boundaries = generate_boundary_sections('testing', 'python')
+        >>> len(boundaries['always'])  # 5-7 rules
+        5
+    """
+    boundaries = {
+        "always": [],  # 5-7 rules
+        "never": [],   # 5-7 rules
+        "ask": []      # 3-5 scenarios
+    }
+
+    # Technology-specific boundaries (port from agent-content-enhancer.md)
+    if agent_type == "testing":
+        boundaries["always"] = [
+            "✅ Run build verification before tests (block if compilation fails)",
+            "✅ Execute in technology-specific test runner (pytest/vitest/dotnet test)",
+            "✅ Report failures with actionable error messages (aid debugging)",
+            "✅ Enforce 100% test pass rate (zero tolerance for failures)",
+            "✅ Validate test coverage thresholds (ensure quality gates met)"
+        ]
+        boundaries["never"] = [
+            "❌ Never approve code with failing tests (zero tolerance policy)",
+            "❌ Never skip compilation check (prevents false positive test runs)",
+            "❌ Never modify test code to make tests pass (integrity violation)",
+            "❌ Never ignore coverage below threshold (quality gate bypass prohibited)",
+            "❌ Never run tests without dependency installation (environment consistency required)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Coverage 70-79%: Ask if acceptable given task complexity and risk level",
+            "⚠️ Performance tests failing: Ask if acceptable for non-production changes",
+            "⚠️ Flaky tests detected: Ask if should quarantine or fix immediately"
+        ]
+    elif agent_type == "repository":
+        boundaries["always"] = [
+            "✅ Inject repositories via constructor (enforces DI pattern)",
+            "✅ Return ErrorOr<T> for all operations (consistent error handling)",
+            "✅ Use async/await for database operations (prevents thread blocking)",
+            "✅ Implement IDisposable for database connections (resource cleanup)",
+            "✅ Validate input parameters before database access (prevent injection)"
+        ]
+        boundaries["never"] = [
+            "❌ Never use `new()` for repository instantiation (breaks testability and DI)",
+            "❌ Never expose IQueryable outside repository (violates encapsulation)",
+            "❌ Never use raw SQL without parameterization (SQL injection risk)",
+            "❌ Never ignore database errors (silent failures prohibited)",
+            "❌ Never commit transactions within repository (violates SRP)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex joins across >3 tables: Ask if raw SQL vs EF Core query",
+            "⚠️ Caching strategy needed: Ask if in-memory vs distributed cache",
+            "⚠️ Soft delete vs hard delete: Ask for data retention policy decision"
+        ]
+    elif agent_type == "api":
+        boundaries["always"] = [
+            "✅ Validate all input parameters (prevent injection and bad data)",
+            "✅ Return consistent response format (successful and error responses)",
+            "✅ Use appropriate HTTP status codes (200/201/400/404/500)",
+            "✅ Implement request/response logging (audit trail and debugging)",
+            "✅ Apply rate limiting for endpoints (prevent abuse)"
+        ]
+        boundaries["never"] = [
+            "❌ Never expose internal errors to clients (security risk)",
+            "❌ Never skip authentication/authorization checks (security violation)",
+            "❌ Never return sensitive data in responses (data leakage)",
+            "❌ Never use GET for state-changing operations (violates REST)",
+            "❌ Never ignore content-type headers (prevents incorrect parsing)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Large payload (>10MB): Ask if streaming vs standard response",
+            "⚠️ Long-running operation (>30s): Ask if async pattern needed",
+            "⚠️ Multiple related endpoints: Ask if batch endpoint makes sense"
+        ]
+    elif agent_type == "service":
+        boundaries["always"] = [
+            "✅ Inject dependencies via constructor (enforce DI pattern)",
+            f"✅ Follow {technology} naming conventions (maintain consistency)",
+            "✅ Validate inputs at service boundary (prevent bad data propagation)",
+            "✅ Return explicit success/failure results (no silent failures)",
+            "✅ Log important operations and errors (enable debugging and audit)"
+        ]
+        boundaries["never"] = [
+            "❌ Never instantiate dependencies with `new()` (breaks DI and testing)",
+            "❌ Never swallow exceptions without logging (silent failures prohibited)",
+            "❌ Never mix business logic with infrastructure (violates separation of concerns)",
+            "❌ Never return null for collections (return empty collections instead)",
+            "❌ Never expose implementation details in interfaces (violates encapsulation)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex business logic: Ask if should be moved to domain model",
+            "⚠️ Multiple database calls: Ask if transaction needed",
+            "⚠️ Caching opportunity: Ask if caching appropriate for this operation"
+        ]
+    else:
+        # Generic boundaries for other agent types
+        boundaries["always"] = [
+            f"✅ Follow {technology} best practices (maintain code quality)",
+            "✅ Validate all inputs (prevent bad data)",
+            "✅ Handle errors gracefully (never crash silently)",
+            "✅ Document public interfaces (enable team collaboration)",
+            "✅ Write unit tests for core logic (ensure correctness)"
+        ]
+        boundaries["never"] = [
+            "❌ Never ignore exceptions (detect issues early)",
+            "❌ Never hardcode configuration (use environment variables)",
+            "❌ Never skip logging (maintain observability)",
+            "❌ Never violate separation of concerns (maintain modularity)",
+            "❌ Never commit secrets or credentials (security risk)"
+        ]
+        boundaries["ask"] = [
+            "⚠️ Complex algorithm: Ask if optimization needed vs readability",
+            "⚠️ External service call: Ask if retry logic needed",
+            "⚠️ Performance concern: Ask if caching appropriate"
+        ]
+
+    return boundaries
+
+
+def validate_boundary_sections(boundaries: dict) -> tuple[bool, list]:
+    """
+    Validate boundary sections meet requirements.
+
+    Reused from template-create validation (TASK-STND-773D).
+
+    Args:
+        boundaries: Dict with 'always', 'never', 'ask' keys
+
+    Returns:
+        (is_valid, error_list)
+
+    Validation rules:
+    - ALWAYS: 5-7 rules with ✅ prefix
+    - NEVER: 5-7 rules with ❌ prefix
+    - ASK: 3-5 scenarios with ⚠️ prefix
+    """
+    errors = []
+
+    # Check counts
+    always_count = len(boundaries.get("always", []))
+    never_count = len(boundaries.get("never", []))
+    ask_count = len(boundaries.get("ask", []))
+
+    if always_count < 5 or always_count > 7:
+        errors.append(f"ALWAYS section must have 5-7 rules (has {always_count})")
+    if never_count < 5 or never_count > 7:
+        errors.append(f"NEVER section must have 5-7 rules (has {never_count})")
+    if ask_count < 3 or ask_count > 5:
+        errors.append(f"ASK section must have 3-5 scenarios (has {ask_count})")
+
+    # Check emoji format
+    for rule in boundaries.get("always", []):
+        if not rule.startswith("✅"):
+            errors.append(f"ALWAYS rule missing ✅ prefix: {rule[:50]}")
+    for rule in boundaries.get("never", []):
+        if not rule.startswith("❌"):
+            errors.append(f"NEVER rule missing ❌ prefix: {rule[:50]}")
+    for scenario in boundaries.get("ask", []):
+        if not scenario.startswith("⚠️"):
+            errors.append(f"ASK scenario missing ⚠️ prefix: {scenario[:50]}")
+
+    return len(errors) == 0, errors
+
+
 class TemplateInitQASession:
     """
     Interactive Q&A session for /template-init (greenfield).
@@ -197,8 +372,13 @@ class TemplateInitQASession:
         ...     print(f"Template: {answers.template_name}")
     """
 
-    def __init__(self):
-        """Initialize Q&A session."""
+    def __init__(self, no_create_agent_tasks: bool = False):
+        """
+        Initialize Q&A session.
+
+        Args:
+            no_create_agent_tasks: Skip agent enhancement task creation (default: False)
+        """
         if not INQUIRER_AVAILABLE:
             raise ImportError(
                 "inquirer library not installed. "
@@ -207,23 +387,33 @@ class TemplateInitQASession:
 
         self.answers: Optional[GreenfieldAnswers] = None
         self._session_data: dict = {}
+        self.no_create_agent_tasks = no_create_agent_tasks
 
-    def run(self) -> Optional[GreenfieldAnswers]:
+    def run(self) -> tuple[Optional[GreenfieldAnswers], int]:
         """
         Run interactive Q&A session for greenfield template creation.
+
+        NOW RETURNS exit code for CI/CD integration.
 
         Executes all 10 sections sequentially, with conditional sections
         based on technology choices. Displays summary and confirms before
         proceeding.
 
         Returns:
-            GreenfieldAnswers: User responses, or None if cancelled
+            Tuple of (answers, exit_code)
+            - answers: Q&A results, or None if cancelled
+            - exit_code: Quality-based exit code
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+              - 130: User cancelled (KeyboardInterrupt)
 
         Example:
             >>> session = TemplateInitQASession()
-            >>> answers = session.run()
-            >>> if answers:
-            ...     print(f"Collected {len(answers.to_dict())} answers")
+            >>> answers, exit_code = session.run()
+            >>> if answers and exit_code == 0:
+            ...     print(f"High quality template with {len(answers.to_dict())} answers")
         """
         print("\n" + "=" * 60)
         print("  /template-init - Greenfield Template Creation")
@@ -278,18 +468,26 @@ class TemplateInitQASession:
 
             if not proceed:
                 print("\nQ&A session cancelled. Run /template-init again to restart.\n")
-                return None
+                return None, 130  # User cancelled
 
-            return self.answers
+            # Calculate exit code based on quality score
+            # NOTE: Using placeholder score until TASK-INIT-006 is implemented
+            quality_score = self._calculate_placeholder_quality_score()
+            exit_code = self._calculate_exit_code(quality_score)
+
+            # Display exit code information
+            self._display_exit_code_info(exit_code, quality_score)
+
+            return self.answers, exit_code
 
         except KeyboardInterrupt:
             print("\n\nQ&A session interrupted. Saving partial session...")
             self._save_partial_session()
-            return None
+            return None, 130  # User cancelled (KeyboardInterrupt)
 
         except Exception as e:
             print(f"\n\nError during Q&A session: {e}")
-            return None
+            return None, 3  # Error exit code
 
     def _section1_identity(self) -> None:
         """Section 1: Template Identity."""
@@ -512,6 +710,135 @@ class TemplateInitQASession:
                     answers['standard_folders'] = [item[1] if isinstance(item, tuple) else item
                                                    for item in answers['standard_folders']]
             self._session_data.update(answers)
+
+    def _generate_agent_metadata(self, agent_type: str) -> dict:
+        """
+        Generate discovery metadata for agent.
+
+        Port of template-create agent metadata generation.
+
+        Args:
+            agent_type: Type of agent (testing, repository, api, etc.)
+
+        Returns:
+            dict with stack, phase, capabilities, keywords
+
+        Example:
+            >>> session._session_data = {'primary_language': 'python', 'framework': 'fastapi'}
+            >>> metadata = session._generate_agent_metadata('api')
+            >>> metadata['stack']
+            ['python', 'fastapi']
+        """
+        # Base metadata from Q&A
+        language = self._session_data.get('primary_language', 'unknown').lower()
+        framework = self._session_data.get('framework', '').lower()
+
+        # Build stack list
+        stack = [language]
+        if framework:
+            stack.append(framework)
+
+        # Agent-type specific metadata
+        capabilities = []
+        keywords = []
+
+        if agent_type == 'testing':
+            capabilities = [
+                'test-execution',
+                'coverage-verification',
+                'build-validation',
+                'quality-gates'
+            ]
+            keywords = ['testing', 'quality', 'verification', 'tdd']
+
+        elif agent_type == 'repository':
+            capabilities = [
+                'data-access',
+                'orm-patterns',
+                'query-optimization',
+                'transaction-management'
+            ]
+            keywords = ['repository', 'data', 'persistence', 'database']
+
+        elif agent_type == 'api':
+            capabilities = [
+                'endpoint-implementation',
+                'request-validation',
+                'response-formatting',
+                'error-handling'
+            ]
+            keywords = ['api', 'endpoints', 'rest', 'http']
+
+        elif agent_type == 'domain':
+            capabilities = [
+                'business-logic',
+                'domain-modeling',
+                'value-objects',
+                'aggregates'
+            ]
+            keywords = ['domain', 'business-logic', 'ddd', 'modeling']
+
+        elif agent_type == 'service':
+            capabilities = [
+                'business-orchestration',
+                'workflow-coordination',
+                'validation',
+                'error-handling'
+            ]
+            keywords = ['service', 'business-logic', 'orchestration']
+
+        else:
+            # Generic agent
+            capabilities = ['implementation', 'code-generation']
+            keywords = [agent_type, language]
+
+        # Add technology-specific keywords
+        keywords.extend([language, framework]) if framework else keywords.append(language)
+
+        return {
+            'stack': stack,
+            'phase': 'implementation',  # Greenfield agents are for implementation
+            'capabilities': capabilities,
+            'keywords': keywords
+        }
+
+    def _format_agent_with_metadata(self, agent_content: str, metadata: dict) -> str:
+        """
+        Add frontmatter to agent markdown.
+
+        Args:
+            agent_content: Raw agent markdown content
+            metadata: Discovery metadata dict
+
+        Returns:
+            Agent content with frontmatter
+
+        Example:
+            >>> content = "# Test Agent\\n\\nAgent content"
+            >>> metadata = {'stack': ['python'], 'phase': 'implementation'}
+            >>> formatted = session._format_agent_with_metadata(content, metadata)
+            >>> '---' in formatted
+            True
+        """
+        # Format stack as YAML array
+        stack_yaml = ', '.join(metadata['stack']) if metadata['stack'] else ''
+
+        # Format capabilities as YAML array
+        capabilities_yaml = ', '.join(f'"{cap}"' for cap in metadata['capabilities'])
+
+        # Format keywords as YAML array
+        keywords_yaml = ', '.join(f'"{kw}"' for kw in metadata['keywords'])
+
+        frontmatter = f"""---
+stack: [{stack_yaml}]
+phase: {metadata['phase']}
+capabilities: [{capabilities_yaml}]
+keywords: [{keywords_yaml}]
+---
+
+"""
+
+        return frontmatter + agent_content
 
     def _section5_testing(self) -> None:
         """Section 5: Testing Strategy."""
@@ -975,9 +1302,589 @@ class TemplateInitQASession:
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")
 
+    def _calculate_placeholder_quality_score(self) -> float:
+        """
+        Calculate placeholder quality score until TASK-INIT-006 is implemented.
+
+        This is a simplified scoring mechanism that provides reasonable defaults
+        based on Q&A answers. Will be replaced with full QualityScorer from
+        TASK-INIT-006.
+
+        Returns:
+            float: Quality score from 0-10
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._session_data = {
+            ...     'testing_scope': ['unit', 'integration'],
+            ...     'error_handling': 'result',
+            ...     'dependency_injection': 'builtin'
+            ... }
+            >>> score = session._calculate_placeholder_quality_score()
+            >>> 6.0 <= score <= 10.0
+            True
+        """
+        score = 5.0  # Base score
+
+        # Bonus for comprehensive testing
+        testing_scope = self._session_data.get('testing_scope', [])
+        if 'unit' in testing_scope:
+            score += 1.0
+        if 'integration' in testing_scope:
+            score += 0.5
+        if len(testing_scope) >= 3:
+            score += 0.5
+
+        # Bonus for error handling strategy
+        error_handling = self._session_data.get('error_handling', '')
+        if error_handling in ['result', 'mixed']:
+            score += 1.0
+        elif error_handling == 'exceptions':
+            score += 0.5
+
+        # Bonus for DI
+        di = self._session_data.get('dependency_injection', '')
+        if di in ['builtin', 'third-party']:
+            score += 0.5
+
+        # Bonus for validation
+        validation = self._session_data.get('validation_approach', '')
+        if validation in ['fluent', 'annotations']:
+            score += 0.5
+
+        # Bonus for architecture pattern
+        architecture = self._session_data.get('architecture_pattern', '')
+        if architecture in ['clean', 'hexagonal', 'mvvm', 'layered']:
+            score += 0.5
+
+        # Bonus for documentation
+        if (self._session_data.get('documentation_paths') or
+            self._session_data.get('documentation_text') or
+            self._session_data.get('documentation_urls')):
+            score += 0.5
+
+        # Cap at 10.0
+        return min(10.0, score)
+
+    def _calculate_exit_code(self, quality_score: float) -> int:
+        """
+        Calculate exit code from quality score.
+
+        Args:
+            quality_score: Quality score from 0-10
+
+        Returns:
+            int: Exit code (0, 1, 2, or 3)
+              - 0: High quality (≥8/10)
+              - 1: Medium quality (6-7.9/10)
+              - 2: Low quality (<6/10)
+              - 3: Error occurred
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._calculate_exit_code(9.0)
+            0
+            >>> session._calculate_exit_code(7.0)
+            1
+            >>> session._calculate_exit_code(5.0)
+            2
+        """
+        if quality_score >= 8.0:
+            return 0  # High quality
+        elif quality_score >= 6.0:
+            return 1  # Medium quality
+        else:
+            return 2  # Low quality
+
+    def _display_exit_code_info(self, exit_code: int, score: float) -> None:
+        """
+        Display exit code information for CI/CD awareness.
+
+        Args:
+            exit_code: Calculated exit code (0-3)
+            score: Quality score that determined exit code
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._display_exit_code_info(0, 9.0)
+            # Prints exit code information
+        """
+        print("\n" + "=" * 70)
+        print("  CI/CD Integration")
+        print("=" * 70 + "\n")
+
+        exit_code_info = {
+            0: ("✅ SUCCESS", "High quality (≥8/10)", "Template ready for production"),
+            1: ("⚠️ WARNING", "Medium quality (6-7.9/10)", "Review recommended before production"),
+            2: ("❌ LOW QUALITY", "Below threshold (<6/10)", "Improvements required"),
+            3: ("🔥 ERROR", "Execution failed", "Check error messages above"),
+            130: ("⚠️ CANCELLED", "User cancelled", "Session interrupted")
+        }
+
+        status, reason, action = exit_code_info.get(
+            exit_code,
+            ("UNKNOWN", "Unknown", "Check logs")
+        )
+
+        print(f"Exit Code: {exit_code}")
+        print(f"Status: {status}")
+        print(f"Reason: {reason} (score: {score:.1f}/10)")
+        print(f"Action: {action}\n")
+
+        if exit_code in [0, 1]:
+            print("CI/CD usage:")
+            print("  /template-init && echo 'Template meets quality threshold'")
+        elif exit_code in [2, 3]:
+            print("CI/CD will fail on exit code 2 or 3")
+            print("  /template-init || exit 1")
+        print()
+
+    def _create_agent_enhancement_tasks(
+        self,
+        template_name: str,
+        agent_files: List[Path]
+    ) -> List[str]:
+        """
+        Create enhancement tasks for generated agents.
+
+        Port of template-create's Phase 8 task creation (TASK-UX-3A8D).
+
+        Args:
+            template_name: Name of the created template
+            agent_files: List of generated agent file paths
+
+        Returns:
+            List of created task IDs
+
+        Example:
+            >>> agent_files = [Path('agents/test-agent.md')]
+            >>> task_ids = session._create_agent_enhancement_tasks('my-template', agent_files)
+            >>> len(task_ids)
+            1
+        """
+        import uuid
+        from datetime import datetime
+
+        task_ids = []
+        tasks_dir = Path("tasks/backlog")
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        for agent_file in agent_files:
+            agent_name = agent_file.stem
+
+            # Generate task ID (UUID-based for uniqueness)
+            # Uses up to 15 chars of agent name + 8 chars of UUID
+            prefix = agent_name[:15].upper()
+            unique_id = uuid.uuid4().hex[:8].upper()
+            task_id = f"TASK-{prefix}-{unique_id}"
+
+            # Get primary language for technology-specific guidance
+            primary_language = self._session_data.get('primary_language', 'technology')
+
+            # Create task file content (markdown format)
+            task_content = f"""---
+id: {task_id}
+title: "Enhance {agent_name} agent with boundary sections"
+status: backlog
+created: {datetime.now().isoformat()}Z
+updated: {datetime.now().isoformat()}Z
+priority: medium
+tags: [agent-enhancement, {template_name}, template-init]
+complexity: 3
+estimated_hours: 1
+metadata:
+  agent_file: {str(agent_file)}
+  template_name: {template_name}
+  agent_name: {agent_name}
+  created_by: template-init
+  enhancement_type: boundary-sections
+test_results:
+  status: pending
+  coverage: null
+  last_run: null
+---
+
+# Task: Enhance {agent_name} Agent with Boundary Sections
+
+## Description
+
+Enhance the `{agent_name}` agent generated by `/template-init` to include comprehensive ALWAYS/NEVER/ASK boundary sections with technology-specific rules.
+
+## Acceptance Criteria
+
+- [ ] Agent includes 5-7 ALWAYS rules with ✅ prefix
+- [ ] Agent includes 5-7 NEVER rules with ❌ prefix
+- [ ] Agent includes 3-5 ASK scenarios with ⚠️ prefix
+- [ ] All rules have brief rationales in parentheses
+- [ ] Boundaries are {primary_language}-specific
+- [ ] Rules are actionable and specific
+
+## Enhancement Options
+
+**Option A (Recommended - Fast)**:
+```bash
+/agent-enhance {template_name}/{agent_name} --hybrid
+```
+Duration: 2-5 minutes per agent
+
+**Option B (Optional - Full Workflow)**:
+```bash
+/task-work {task_id}
+```
+Duration: 30-60 minutes with full quality gates
+
+Both options use the same AI enhancement logic with boundary validation.
+
+## Agent File Location
+
+`{agent_file}`
+
+## Template
+
+Template: `{template_name}`
+Created by: `/template-init` (greenfield)
+"""
+
+            # Save task file
+            task_file = tasks_dir / f"{task_id}.md"
+            task_file.write_text(task_content)
+            task_ids.append(task_id)
+
+        return task_ids
+
+    def _display_enhancement_options(self, task_ids: List[str], template_name: str) -> None:
+        """
+        Display enhancement options to user.
+
+        Port of template-create's enhancement guidance (TASK-DOC-1C5A).
+
+        Args:
+            task_ids: List of created task IDs
+            template_name: Name of the template
+        """
+        print("\n" + "=" * 70)
+        print("  Agent Enhancement Tasks Created")
+        print("=" * 70 + "\n")
+
+        print(f"📋 Created {len(task_ids)} enhancement task(s):")
+        for task_id in task_ids[:5]:  # Show first 5
+            print(f"   - {task_id}")
+        if len(task_ids) > 5:
+            print(f"   ... and {len(task_ids) - 5} more")
+
+        print("\n" + "=" * 70)
+        print("  Boundary Sections Information")
+        print("=" * 70 + "\n")
+
+        print("Enhanced agents will include:")
+        print("  • ALWAYS (5-7 rules): Non-negotiable actions")
+        print("  • NEVER (5-7 rules): Prohibited actions")
+        print("  • ASK (3-5 scenarios): Escalation situations")
+        print()
+        print("Format: [emoji] [action] ([brief rationale])")
+        print("  ✅ ALWAYS prefix (green checkmark)")
+        print("  ❌ NEVER prefix (red X)")
+        print("  ⚠️ ASK prefix (warning sign)")
+        print()
+        print("Example:")
+        print("  ✅ Run build verification before tests (block if compilation fails)")
+        print("  ❌ Never approve code with failing tests (zero tolerance policy)")
+        print("  ⚠️ Coverage 70-79%: Ask if acceptable given task complexity")
+
+        print("\n" + "=" * 70)
+        print("  Enhancement Options")
+        print("=" * 70 + "\n")
+
+        print("Option A (Recommended - Fast):")
+        print(f"  /agent-enhance {template_name}/<agent-name> --hybrid")
+        print("  Duration: 2-5 minutes per agent")
+        print("  Uses AI to generate technology-specific boundaries")
+        print()
+        print("Option B (Optional - Full Workflow):")
+        print("  /task-work <task-id>")
+        print("  Duration: 30-60 minutes per agent")
+        print("  Full task workflow with quality gates")
+        print()
+        print("Both options use the same AI enhancement logic.")
+        print("Choose based on how much time you have available.\n")
+
+    def _generate_agent(self, agent_type: str, agent_name: str = "") -> str:
+        """
+        Generate agent markdown with boundary sections and discovery metadata.
+
+        NOW INCLUDES frontmatter metadata for agent discovery.
+
+        This method will be called by Phase 3 agent generation orchestrator.
+        It generates a complete agent definition including ALWAYS/NEVER/ASK boundaries
+        and discovery metadata (stack, phase, capabilities, keywords).
+
+        Args:
+            agent_type: Type of agent (testing, repository, api, service, etc.)
+            agent_name: Optional custom name for the agent
+
+        Returns:
+            str: Complete agent markdown content with metadata and boundaries
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session._session_data = {'primary_language': 'python', 'framework': 'fastapi'}
+            >>> agent_content = session._generate_agent('testing', 'testing-agent')
+            >>> assert '## Boundaries' in agent_content
+            >>> assert 'stack:' in agent_content
+        """
+        technology = self._session_data.get('primary_language', 'unknown')
+        framework = self._session_data.get('framework', '')
+
+        # Generate boundary sections (from TASK-INIT-001)
+        boundaries = generate_boundary_sections(agent_type, technology)
+
+        # Validate boundaries
+        is_valid, errors = validate_boundary_sections(boundaries)
+        if not is_valid:
+            print(f"⚠️ Boundary validation warnings for {agent_type}:")
+            for error in errors:
+                print(f"   - {error}")
+
+        # Format boundaries into markdown
+        boundary_section = "\n## Boundaries\n\n"
+        boundary_section += "### ALWAYS\n"
+        for rule in boundaries["always"]:
+            boundary_section += f"- {rule}\n"
+        boundary_section += "\n### NEVER\n"
+        for rule in boundaries["never"]:
+            boundary_section += f"- {rule}\n"
+        boundary_section += "\n### ASK\n"
+        for scenario in boundaries["ask"]:
+            boundary_section += f"- {scenario}\n"
+
+        # Generate base agent content (placeholder - will be implemented by orchestrator)
+        agent_content = self._generate_base_agent_content(agent_type, agent_name, technology, framework)
+
+        # Insert boundary section after Quick Start (or at appropriate location)
+        # Split agent content and insert boundaries
+        if "## Quick Start" in agent_content:
+            # Insert after Quick Start section
+            parts = agent_content.split("## Quick Start", 1)
+            if len(parts) == 2:
+                # Find the end of Quick Start section (next ## heading or end)
+                quick_start_part = parts[1]
+                next_section_idx = quick_start_part.find("\n## ")
+                if next_section_idx > 0:
+                    agent_content = (
+                        parts[0] + "## Quick Start" +
+                        quick_start_part[:next_section_idx] +
+                        boundary_section +
+                        quick_start_part[next_section_idx:]
+                    )
+                else:
+                    agent_content = parts[0] + "## Quick Start" + quick_start_part + boundary_section
+        else:
+            # No Quick Start section, add boundaries after metadata
+            if "---" in agent_content:
+                # Find end of frontmatter
+                parts = agent_content.split("---", 2)
+                if len(parts) >= 3:
+                    agent_content = parts[0] + "---" + parts[1] + "---" + boundary_section + parts[2]
+            else:
+                # Just prepend to content
+                agent_content = boundary_section + "\n" + agent_content
+
+        # Generate discovery metadata
+        metadata = self._generate_agent_metadata(agent_type)
+
+        # Add frontmatter
+        agent_with_metadata = self._format_agent_with_metadata(agent_content, metadata)
+
+        return agent_with_metadata
+
+    def _generate_base_agent_content(
+        self,
+        agent_type: str,
+        agent_name: str,
+        technology: str,
+        framework: str
+    ) -> str:
+        """
+        Generate base agent content without boundaries.
+
+        This is a placeholder that will be enhanced by the full Phase 3 orchestrator.
+        For now, it returns minimal agent structure.
+
+        Args:
+            agent_type: Type of agent
+            agent_name: Name for the agent
+            technology: Primary technology
+            framework: Framework choice
+
+        Returns:
+            str: Base agent markdown content
+        """
+        # Placeholder implementation - will be replaced by full orchestrator
+        name = agent_name or f"{agent_type}-agent"
+
+        content = f"""---
+name: {name}
+type: {agent_type}
+technology: {technology}
+framework: {framework}
+phase: implementation
+---
+
+# {name.title().replace('-', ' ')}
+
+{technology.upper()}/{framework} {agent_type} specialist
+
+## Quick Start
+
+This agent specializes in {agent_type} for {technology} projects using {framework}.
+
+## Capabilities
+
+- Technology-specific {agent_type} implementation
+- Best practices enforcement
+- Quality assurance
+
+## When to Use
+
+Use this agent when working on {agent_type}-related tasks in your {technology}/{framework} project.
+"""
+        return content
+
+    def ensure_validation_compatibility(self, template_path: Path) -> None:
+        """
+        Ensure template is compatible with /template-validate command.
+
+        Adds required manifest fields and directory structure.
+
+        Args:
+            template_path: Path to generated template
+
+        Example:
+            >>> session = TemplateInitQASession()
+            >>> session.ensure_validation_compatibility(Path('/tmp/template'))
+            >>> (template_path / ".validation-compatible").exists()
+            True
+        """
+        from datetime import datetime
+        import json
+
+        # Ensure required directories exist
+        (template_path / "templates").mkdir(exist_ok=True)
+        (template_path / "agents").mkdir(exist_ok=True)
+
+        # Read existing manifest
+        manifest_path = template_path / "template-manifest.json"
+        if not manifest_path.exists():
+            manifest_path = template_path / "manifest.json"
+
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+        else:
+            manifest = {}
+
+        # Add required validation fields if missing
+        if 'schema_version' not in manifest:
+            manifest['schema_version'] = '1.0.0'
+
+        if 'complexity' not in manifest:
+            # Estimate complexity from template structure
+            num_agents = len(list((template_path / "agents").glob("*.md")))
+            num_templates = len(list((template_path / "templates").glob("*"))) if (template_path / "templates").exists() else 0
+            manifest['complexity'] = min(10, 3 + (num_agents // 2) + (num_templates // 3))
+
+        if 'confidence_score' not in manifest:
+            # Default confidence for greenfield (no codebase analysis)
+            manifest['confidence_score'] = 75
+
+        if 'created_at' not in manifest:
+            manifest['created_at'] = datetime.now().isoformat()
+
+        if 'validation_compatible' not in manifest:
+            manifest['validation_compatible'] = True
+
+        # Write updated manifest (prefer template-manifest.json for consistency)
+        output_manifest_path = template_path / "template-manifest.json"
+        output_manifest_path.write_text(json.dumps(manifest, indent=2))
+
+        # Create compatibility marker
+        marker_path = template_path / ".validation-compatible"
+        marker_path.write_text(f"1.0.0\nCreated: {datetime.now().isoformat()}\n")
+
+        print(f"✅ Template validation-compatible: {template_path.name}")
+
+    def display_validation_guidance(self, template_path: Path) -> None:
+        """
+        Display /template-validate usage guidance.
+
+        Args:
+            template_path: Path to generated template
+        """
+        print("\n" + "=" * 70)
+        print("  Comprehensive Validation Available")
+        print("=" * 70 + "\n")
+
+        print("Your template is now compatible with comprehensive audit:\n")
+        print(f"  /template-validate {template_path}")
+        print()
+        print("Level 3 validation provides:")
+        print("  • Interactive 16-section audit")
+        print("  • Section-by-section analysis")
+        print("  • AI-assisted recommendations")
+        print("  • Comprehensive audit report")
+        print("  • Duration: 30-60 minutes\n")
+        print("Run when:")
+        print("  • Deploying to production")
+        print("  • Sharing with team")
+        print("  • Critical quality requirements\n")
+
+
+def main() -> None:
+    """
+    Entry point for /template-init command.
+
+    Handles exit code propagation for CI/CD.
+
+    Usage:
+        python -m installer.global.commands.lib.greenfield_qa_session
+
+    Returns exit code based on template quality:
+        0: High quality (≥8/10)
+        1: Medium quality (6-7.9/10)
+        2: Low quality (<6/10)
+        3: Error occurred
+        130: User cancelled (KeyboardInterrupt)
+
+    Example:
+        >>> # In CI/CD pipeline:
+        >>> # python -m installer.global.commands.lib.greenfield_qa_session
+        >>> # Exit code determines pipeline pass/fail
+    """
+    import sys
+
+    session = TemplateInitQASession()
+
+    try:
+        answers, exit_code = session.run()
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        print("\n\n⚠️ Template creation cancelled by user")
+        sys.exit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(3)
+
 
 # Module exports
 __all__ = [
     "GreenfieldAnswers",
     "TemplateInitQASession",
+    "generate_boundary_sections",
+    "validate_boundary_sections",
+    "main",
 ]
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,190 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "module": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "suffix": ".py",
+      "examples": ["users", "products", "auth"],
+      "description": "Module/package names use snake_case"
+    },
+    "class": {
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "suffix": ".py",
+      "examples": ["User", "Product", "OrderService"],
+      "description": "Class names use PascalCase"
+    },
+    "function": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "examples": ["get_user", "create_order", "update_product"],
+      "description": "Function names use snake_case"
+    },
+    "router": {
+      "pattern": "router.py",
+      "case_style": "snake_case",
+      "examples": ["router.py"],
+      "description": "Router files are always named 'router.py' per module"
+    },
+    "schema": {
+      "pattern": "{{Name}}{{Type}}",
+      "case_style": "PascalCase",
+      "suffix": ".py",
+      "examples": ["UserCreate", "UserUpdate", "UserInDB", "UserPublic"],
+      "description": "Pydantic schemas use PascalCase with type suffix"
+    },
+    "model": {
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "suffix": ".py",
+      "examples": ["User", "Product", "Order"],
+      "description": "SQLAlchemy models use PascalCase, singular"
+    },
+    "crud": {
+      "pattern": "{{entity}}",
+      "case_style": "snake_case",
+      "examples": ["user", "product", "order"],
+      "description": "CRUD instances use snake_case, lowercase"
+    },
+    "dependency": {
+      "pattern": "get_{{resource}}",
+      "case_style": "snake_case",
+      "examples": ["get_db", "get_current_user", "get_settings"],
+      "description": "Dependency functions use get_ prefix"
+    },
+    "test_file": {
+      "pattern": "test_{{feature}}.py",
+      "case_style": "snake_case",
+      "prefix": "test_",
+      "examples": ["test_users.py", "test_auth.py", "test_products.py"],
+      "description": "Test files use test_ prefix"
+    },
+    "test_function": {
+      "pattern": "test_{{action}}_{{entity}}",
+      "case_style": "snake_case",
+      "prefix": "test_",
+      "examples": ["test_create_user", "test_get_product", "test_update_order"],
+      "description": "Test functions describe the action being tested"
+    }
+  },
+  "file_organization": {
+    "by_layer": false,
+    "by_feature": true,
+    "structure": "Netflix Dispatch-inspired",
+    "test_location": "separate",
+    "max_files_per_directory": 10,
+    "description": "Organize by feature/domain, each feature has its own subdirectory with router, schemas, models, etc."
+  },
+  "layer_mappings": {
+    "api": {
+      "directory": "src/{{feature}}/router.py",
+      "description": "API routes and endpoints for each feature",
+      "file_patterns": ["router.py"],
+      "responsibilities": ["HTTP endpoints", "Request validation", "Response formatting"]
+    },
+    "core": {
+      "directory": "src/core",
+      "description": "Global configuration, security, logging",
+      "file_patterns": ["config.py", "security.py", "logging.py"],
+      "responsibilities": ["App configuration", "Authentication/Authorization", "Logging setup"]
+    },
+    "crud": {
+      "directory": "src/{{feature}}/crud.py",
+      "description": "Database CRUD operations",
+      "file_patterns": ["crud.py"],
+      "responsibilities": ["Database queries", "Create/Read/Update/Delete operations"]
+    },
+    "db": {
+      "directory": "src/db",
+      "description": "Database connection and base classes",
+      "file_patterns": ["base.py", "session.py"],
+      "responsibilities": ["DB connection management", "Session handling", "Migrations"]
+    },
+    "models": {
+      "directory": "src/{{feature}}/models.py",
+      "description": "SQLAlchemy ORM models",
+      "file_patterns": ["models.py"],
+      "responsibilities": ["Database table definitions", "Relationships", "Constraints"]
+    },
+    "schemas": {
+      "directory": "src/{{feature}}/schemas.py",
+      "description": "Pydantic validation schemas",
+      "file_patterns": ["schemas.py"],
+      "responsibilities": ["Request/Response validation", "Data serialization", "Type hints"]
+    },
+    "services": {
+      "directory": "src/{{feature}}/service.py",
+      "description": "Business logic layer",
+      "file_patterns": ["service.py"],
+      "responsibilities": ["Business rules", "Complex operations", "Orchestration"]
+    },
+    "dependencies": {
+      "directory": "src/{{feature}}/dependencies.py",
+      "description": "FastAPI dependency injection",
+      "file_patterns": ["dependencies.py"],
+      "responsibilities": ["Reusable dependencies", "Authentication checks", "Resource injection"]
+    },
+    "tests": {
+      "directory": "tests/{{feature}}",
+      "description": "Test files organized by feature",
+      "file_patterns": ["test_*.py", "conftest.py"],
+      "responsibilities": ["Unit tests", "Integration tests", "Fixtures"]
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 4,
+    "line_length": 120,
+    "trailing_commas": true,
+    "quote_style": "double",
+    "async_preferred": true,
+    "type_hints": "required",
+    "docstrings": "google_style",
+    "linter": "ruff",
+    "formatter": "ruff",
+    "description": "Follow PEP 8 with modern Python best practices"
+  },
+  "dependencies": {
+    "package_manager": "pip",
+    "requirements_structure": "split",
+    "requirements_files": {
+      "base.txt": "Core dependencies for production",
+      "dev.txt": "Development and testing dependencies",
+      "prod.txt": "Production-specific dependencies"
+    },
+    "virtual_env": "required",
+    "python_version": ">=3.9"
+  },
+  "database": {
+    "orm": "SQLAlchemy",
+    "migration_tool": "Alembic",
+    "async_driver": "asyncpg",
+    "session_management": "dependency_injection",
+    "naming_convention": {
+      "ix": "ix_%(column_0_label)s",
+      "uq": "uq_%(table_name)s_%(column_0_name)s",
+      "ck": "ck_%(table_name)s_%(constraint_name)s",
+      "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+      "pk": "pk_%(table_name)s"
+    }
+  },
+  "testing": {
+    "framework": "pytest",
+    "async_support": "pytest-asyncio",
+    "http_client": "httpx",
+    "coverage_minimum": 80,
+    "test_structure": "mirror_src",
+    "fixtures_location": "conftest.py",
+    "test_database": "separate"
+  },
+  "api_conventions": {
+    "versioning": "url_path",
+    "version_prefix": "/api/{{version}}",
+    "response_format": "json",
+    "error_handling": "HTTPException",
+    "status_codes": "standard_rest",
+    "pagination": "limit_offset",
+    "filtering": "query_parameters"
+  }
+}

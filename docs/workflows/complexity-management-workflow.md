@@ -22,7 +22,7 @@
 # → Reject breakdown: Single complex task created
 
 # During implementation, complexity determines review mode
-/task-work TASK-001
+/task-work TASK-h8j3
 # → Simple (1-3): Auto-proceeds to implementation
 # → Medium (4-6): 30-second optional checkpoint
 # → Complex (7-10): Mandatory human review

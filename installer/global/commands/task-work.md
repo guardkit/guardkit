@@ -95,7 +95,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
 ```
 
 ## Documentation Level Control (NEW - TASK-036)
@@ -833,6 +833,130 @@ else:
     task_context["feature"] = None
 ```
 
+**IF BDD MODE**: Load Gherkin scenarios from RequireKit:
+```python
+# Check if BDD mode is active
+if mode == "bdd":
+    # RequireKit already validated in TASK-BDD-003
+    # bdd_scenarios field already loaded above
+
+    if not task_context["bdd_scenarios"]:
+        print("""
+ERROR: BDD mode requires linked Gherkin scenarios
+
+  Task frontmatter must include bdd_scenarios field:
+
+    ---
+    id: {task_id}
+    title: {title}
+    bdd_scenarios: [BDD-001, BDD-002]  ← Add this
+    ---
+
+  Generate scenarios in RequireKit:
+    cd ~/Projects/require-kit
+    /formalize-ears REQ-XXX
+    /generate-bdd REQ-XXX
+
+  Or use alternative modes:
+    /task-work {task_id} --mode=tdd
+    /task-work {task_id} --mode=standard
+        """)
+        sys.exit(1)
+
+    # Load Gherkin scenario content from RequireKit
+    scenarios = []
+    requirekit_path = Path.home() / "Projects" / "require-kit"
+
+    for scenario_id in task_context["bdd_scenarios"]:
+        # Find scenario file in RequireKit
+        scenario_file = requirekit_path / "docs" / "bdd" / f"{scenario_id}.feature"
+
+        if not scenario_file.exists():
+            print(f"""
+ERROR: Scenario {scenario_id} not found at {scenario_file}
+
+  Generate scenario in RequireKit:
+    cd {requirekit_path}
+    /generate-bdd REQ-XXX
+
+  Verify scenarios exist:
+    ls {requirekit_path}/docs/bdd/{scenario_id}.feature
+            """)
+            sys.exit(1)
+
+        # Read Gherkin content
+        with open(scenario_file) as f:
+            scenario_content = f.read()
+
+        scenarios.append({
+            "id": scenario_id,
+            "file": str(scenario_file),
+            "content": scenario_content
+        })
+
+    # Add scenarios to task context
+    task_context["gherkin_scenarios"] = scenarios
+
+    # Detect BDD framework for this project
+    task_context["bdd_framework"] = detect_bdd_framework(Path.cwd())
+
+    # Display loaded scenarios
+    print(f"\n✅ Loaded {len(scenarios)} BDD scenarios from RequireKit:")
+    for s in scenarios:
+        print(f"   • {s['id']}")
+    print(f"   Framework: {task_context['bdd_framework']}\n")
+```
+
+**BDD FRAMEWORK DETECTION FUNCTION**:
+```python
+def detect_bdd_framework(project_path: Path) -> str:
+    """
+    Detect BDD testing framework based on project files.
+
+    Args:
+        project_path: Path to project root directory
+
+    Returns:
+        Framework name (pytest-bdd, specflow, cucumber-js, cucumber)
+    """
+    # Python - check requirements.txt
+    if (project_path / "requirements.txt").exists():
+        with open(project_path / "requirements.txt") as f:
+            if "pytest-bdd" in f.read():
+                return "pytest-bdd"
+
+    # Python - check pyproject.toml
+    if (project_path / "pyproject.toml").exists():
+        with open(project_path / "pyproject.toml") as f:
+            if "pytest-bdd" in f.read():
+                return "pytest-bdd"
+
+    # .NET - check .csproj files
+    csproj_files = list(project_path.glob("*.csproj"))
+    if csproj_files:
+        with open(csproj_files[0]) as f:
+            if "SpecFlow" in f.read():
+                return "specflow"
+
+    # TypeScript/JavaScript - check package.json
+    if (project_path / "package.json").exists():
+        with open(project_path / "package.json") as f:
+            import json
+            pkg = json.load(f)
+            dev_deps = pkg.get("devDependencies", {})
+            if "@cucumber/cucumber" in dev_deps:
+                return "cucumber-js"
+
+    # Ruby - check Gemfile
+    if (project_path / "Gemfile").exists():
+        with open(project_path / "Gemfile") as f:
+            if "cucumber" in f.read():
+                return "cucumber"
+
+    # Default fallback
+    return "pytest-bdd"
+```
+
 **VALIDATE** essential fields exist:
 - `title`: Must be present
 - `acceptance_criteria`: At least one criterion required
@@ -961,21 +1085,50 @@ task_context["documentation_level"] = documentation_level
 
 **PROCEED** to Step 3 (Select Agents)
 
-### Step 3: Select Agents for Stack (REQUIRED - 5 seconds)
+### Step 3: Agent Discovery (Automatic)
 
-Based on detected stack, **MAP** to agents using this table:
+**Agent selection is DYNAMIC** based on metadata matching. The system:
 
-| Stack | Analysis | Planning | Arch Review | Implementation | Testing | Review |
-|-------|----------|----------|-------------|----------------|---------|--------|
-| **maui** | requirements-analyst | maui-usecase-specialist | architectural-reviewer | maui-usecase-specialist | dotnet-testing-specialist | code-reviewer |
-| **react** | requirements-analyst | react-state-specialist | architectural-reviewer | react-state-specialist | react-testing-specialist | code-reviewer |
-| **python** | requirements-analyst | python-api-specialist | architectural-reviewer | python-api-specialist | python-testing-specialist | code-reviewer |
-| **python-mcp** | requirements-analyst | python-mcp-specialist | architectural-reviewer | python-mcp-specialist | python-testing-specialist | code-reviewer |
-| **typescript-api** | requirements-analyst | nestjs-api-specialist | architectural-reviewer | typescript-domain-specialist | nodejs-testing-specialist | code-reviewer |
-| **dotnet-microservice** | requirements-analyst | dotnet-api-specialist | architectural-reviewer | dotnet-domain-specialist | dotnet-testing-specialist | code-reviewer |
-| **default** | requirements-analyst | software-architect | architectural-reviewer | task-manager | test-verifier | code-reviewer |
+1. Analyzes task context (stack, phase, keywords from description)
+2. Scans all agent sources (Local > User > Global > Template)
+3. Returns best match based on metadata (stack, phase, capabilities, keywords)
 
-**DISPLAY**: "🤖 Selected agents: [list agent names]"
+**No action required** - Discovery happens automatically during each phase.
+
+**See**: [Agent Discovery System](#agent-discovery-system) for complete details on:
+- Discovery sources and precedence
+- Metadata requirements
+- Template override behavior
+- Source indicators (📁 📦 🌐)
+- Troubleshooting
+
+**Agent selection results** are shown in the invocation log after task completion.
+
+### Step 3.5: Initialize Tracking and Validation (NEW - TASK-ENF2, TASK-ENF4)
+
+**INITIALIZE INVOCATION TRACKER AND PHASE GATE VALIDATOR**:
+```python
+from installer.global.commands.lib import (
+    AgentInvocationTracker,
+    add_pending_phases,
+    PhaseGateValidator
+)
+
+# Initialize tracker for execution visibility
+tracker = AgentInvocationTracker()
+add_pending_phases(tracker, workflow_mode="standard")  # or "micro"
+
+# Initialize phase gate validator
+validator = PhaseGateValidator(tracker)
+```
+
+**Purpose**:
+- **Tracker**: Records which agents are invoked, their sources, and execution status
+- **Validator**: Ensures agents are properly invoked before allowing phase progression
+
+**See**:
+- TASK-ENF2: Agent invocation tracking
+- TASK-ENF4: Phase gate validation checkpoints
 
 ### Step 4: INVOKE TASK TOOL FOR EACH PHASE (REQUIRED - DO NOT SKIP)
 
@@ -996,6 +1149,23 @@ Based on detected stack, **MAP** to agents using this table:
 
 #### Phase 2: Implementation Planning
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_planning_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 2 (Implementation Planning)
+Model: Sonnet (Deep understanding of architecture and design patterns)
+Stack: {detected_stack}
+Specialization:
+  - Architecture design and pattern selection
+  - Technology-specific implementation strategy
+  - Complexity and risk assessment
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "{selected_planning_agent_from_table}"
@@ -1012,6 +1182,21 @@ Design {stack} implementation approach for {task_id}.
 Include architecture decisions, pattern selection, and component structure.
 Consider {stack}-specific best practices and testing strategies.
 
+{if mode == 'bdd':}
+BDD MODE CONTEXT:
+- BDD Scenarios loaded: {len(task_context.get('gherkin_scenarios', []))} scenarios
+- Framework: {task_context.get('bdd_framework')}
+- Scenarios:
+{for scenario in task_context.get('gherkin_scenarios', []):}
+  • {scenario['id']}: {scenario['content'][:200]}...
+{endfor}
+
+Implementation plan should:
+1. Account for step definitions matching these scenarios
+2. Structure code to facilitate BDD testing
+3. Map Given/When/Then steps to implementation components
+{endif}
+
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
 - minimal: Return plan as structured data (file list, phases, estimates)
 - standard: Return plan with brief architecture notes and key decisions
@@ -1021,6 +1206,36 @@ Output: Implementation plan matching documentation level expectations."
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_planning_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_2_duration_seconds}s
+Files to create: {planned_file_count}
+Architecture patterns identified: {pattern_count}
+Risk factors: {risk_level}
+Status: Implementation plan generated successfully
+
+Proceeding to Phase 2.5A...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+from installer.global.commands.lib import PhaseGateValidator, ValidationError
+
+try:
+    validator.validate_phase_completion("2", "Implementation Planning")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 2 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 2.5A
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 2.5A: Pattern Suggestion (NEW - Recommend design patterns)
 
@@ -1073,6 +1288,23 @@ Based on task requirements and constraints:
 
 #### Phase 2.5B: Architectural Review (Catch design issues early)
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: architectural-reviewer
+═══════════════════════════════════════════════════════
+Phase: 2.5B (Architectural Review)
+Model: Sonnet (Expert-level architecture analysis)
+Stack: {detected_stack}
+Specialization:
+  - SOLID principles verification
+  - Design pattern validation
+  - Risk and complexity assessment
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "architectural-reviewer"
@@ -1110,6 +1342,35 @@ See installer/global/agents/architectural-reviewer.md for documentation level sp
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: architectural-reviewer
+═══════════════════════════════════════════════════════
+Duration: {phase_25b_duration_seconds}s
+SOLID Score: {solid_score}/100
+DRY Score: {dry_score}/100
+YAGNI Score: {yagni_score}/100
+Overall Recommendation: {recommendation}
+Status: Architectural review complete
+
+Proceeding to Phase 2.7...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("2.5B", "Architectural Review")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 2.5B gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 2.7
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 2.7: Complexity Evaluation (NEW - Auto-proceed mode routing)
 
@@ -1785,7 +2046,119 @@ else:  # workflow_mode == "standard"
     # This is the existing behavior (backward compatible)
 ```
 
+#### Phase 3-BDD: BDD Test Generation (BDD Mode Only)
+
+**IF mode == 'bdd'**:
+
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: bdd-generator
+═══════════════════════════════════════════════════════
+Phase: 3-BDD (BDD Test Generation)
+Model: Sonnet (Gherkin parsing and test mapping require reasoning)
+Mode: BDD (Scenario-driven development)
+Specialization:
+  - Gherkin scenario parsing (Feature/Scenario/Given/When/Then)
+  - BDD framework-specific step definitions
+  - Test code generation from scenarios
+  - {bdd_framework} integration
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
+**INVOKE** Task tool:
+```
+subagent_type: "bdd-generator"
+description: "Generate BDD tests for TASK-XXX from Gherkin scenarios"
+prompt: "Generate BDD acceptance tests for TASK-{task_id}.
+
+LOADED SCENARIOS:
+{for scenario in task_context['gherkin_scenarios']:}
+Scenario ID: {scenario['id']}
+File: {scenario['file']}
+Content:
+{scenario['content']}
+
+{endfor}
+
+BDD FRAMEWORK: {task_context['bdd_framework']}
+PROJECT STACK: {detected_stack}
+
+REQUIREMENTS:
+1. Parse all Gherkin scenarios (Feature/Scenario/Given/When/Then)
+2. Generate step definitions for {task_context['bdd_framework']}
+   - Python: pytest-bdd step definitions in tests/step_defs/
+   - JavaScript/TypeScript: Cucumber.js step definitions
+   - .NET: SpecFlow step definitions with C# bindings
+   - Ruby: Cucumber step definitions
+3. Create test files that execute scenarios
+4. Map Given/When/Then steps to test implementation
+5. Generate FAILING tests initially (BDD RED phase)
+6. Set up BDD test configuration (if needed)
+
+OUTPUT:
+- Step definition files matching {task_context['bdd_framework']} conventions
+- Test runner configuration (pytest.ini, cucumber.js config, etc.)
+- Feature file integration (if copying to project)
+- Test data/fixtures as needed
+- Documentation showing scenario → step → code mapping
+
+The implementation in next phase (Phase 3) will make these tests pass."
+```
+
+**WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: bdd-generator
+═══════════════════════════════════════════════════════
+Duration: {phase_3_bdd_duration_seconds}s
+Step definitions created: {step_def_count}
+Scenarios mapped: {len(task_context['gherkin_scenarios'])}
+Framework: {task_context['bdd_framework']}
+Status: BDD tests generated (RED phase) - ready for implementation
+
+Proceeding to Phase 3...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION**:
+```python
+try:
+    validator.validate_phase_completion("3-BDD", "BDD Test Generation")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 3-BDD gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 3
+**IF validation fails**: Task moved to BLOCKED, execution stops
+
+**ELSE** (standard or TDD mode):
+Skip Phase 3-BDD, proceed directly to Phase 3
+
 #### Phase 3: Implementation
+
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_implementation_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 3 (Implementation)
+Model: Haiku (Fast implementation, Sonnet for complexity ≥7)
+Stack: {detected_stack}
+Specialization:
+  - Production-quality code generation
+  - {stack}-specific patterns and conventions
+  - Test-driven development support
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
 
 **INVOKE** Task tool:
 ```
@@ -1795,14 +2168,66 @@ prompt: "Implement TASK-XXX following {stack} best practices and planned archite
          Use patterns identified in planning phase.
          Create production-quality code with proper error handling.
          Follow {stack}-specific conventions and patterns.
+         {if mode == 'bdd':}
+         BDD MODE: Implement code to make BDD test step definitions PASS.
+         - Focus on making Given/When/Then scenarios pass
+         - Follow scenario requirements precisely
+         - Implement step definition logic
+         - The BDD tests were generated in Phase 3-BDD
+         {endif}
          Prepare codebase for comprehensive testing."
 ```
 
 **WAIT** for agent to complete before proceeding.
 
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_implementation_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_3_duration_seconds}s
+Files created/modified: {implementation_file_count}
+Lines of code: {loc_added}
+Error handling: {error_handling_status}
+Status: Implementation complete - ready for testing
+
+Proceeding to Phase 4...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("3", "Implementation")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 3 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 4
+**IF validation fails**: Task moved to BLOCKED, execution stops
+
 #### Phase 4: Testing
 
 **CRITICAL**: Refer to test-orchestrator.md for mandatory compilation verification before testing.
+
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: {selected_testing_agent_from_table}
+═══════════════════════════════════════════════════════
+Phase: 4 (Testing)
+Model: Haiku (Fast test execution)
+Stack: {detected_stack}
+Specialization:
+  - Comprehensive test suite generation
+  - Coverage analysis and reporting
+  - {stack}-specific testing frameworks
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
 
 **INVOKE** Task tool with documentation context:
 ```
@@ -1820,6 +2245,18 @@ Create comprehensive test suite for {task_id} implementation.
 Include: unit tests, integration tests, edge cases.
 Target: 80%+ line coverage, 75%+ branch coverage.
 Use {stack}-specific testing frameworks and patterns.
+
+{if mode == 'bdd':}
+BDD MODE: Execute BDD tests generated in Phase 3-BDD
+- Run BDD scenarios using {task_context.get('bdd_framework')}
+- Test commands:
+  * Python: pytest tests/ -v --gherkin-terminal-reporter (pytest-bdd)
+  * TypeScript/JS: npm run test:bdd or npx cucumber-js (Cucumber.js)
+  * .NET: dotnet test --filter Category=BDD (SpecFlow)
+  * Ruby: cucumber features/ (Cucumber)
+- BDD tests MUST pass 100% (part of Phase 4.5 enforcement)
+- Also run standard unit tests for complete coverage
+{endif}
 
 🚨 MANDATORY COMPILATION CHECK (See test-orchestrator.md):
 1. MUST verify code COMPILES/BUILDS successfully BEFORE running tests
@@ -1842,6 +2279,35 @@ Cross-reference: installer/global/agents/test-orchestrator.md (MANDATORY RULE #1
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: {selected_testing_agent_from_table}
+═══════════════════════════════════════════════════════
+Duration: {phase_4_duration_seconds}s
+Tests executed: {test_count}
+Line coverage: {line_coverage}%
+Branch coverage: {branch_coverage}%
+Test status: {test_status}
+Status: Test suite ready for verification
+
+Proceeding to Phase 4.5...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("4", "Testing")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 4 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 4.5
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 4.5: Fix Loop (Ensure All Tests Pass)
 
@@ -1975,6 +2441,23 @@ attempt = 1
 
 **ONLY EXECUTE IF Phase 4.5 succeeded (all tests passing)**
 
+**DISPLAY INVOCATION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+🤖 INVOKING AGENT: code-reviewer
+═══════════════════════════════════════════════════════
+Phase: 5 (Code Review)
+Model: Sonnet (Expert code quality assessment)
+Stack: {detected_stack}
+Specialization:
+  - Code quality and best practices verification
+  - Test coverage validation
+  - Documentation and error handling review
+
+Starting agent execution...
+═══════════════════════════════════════════════════════
+```
+
 **INVOKE** Task tool with documentation context:
 ```
 subagent_type: "code-reviewer"
@@ -2002,6 +2485,34 @@ See installer/global/agents/code-reviewer.md for documentation level specificati
 ```
 
 **WAIT** for agent to complete before proceeding.
+
+**DISPLAY COMPLETION MESSAGE**:
+```
+═══════════════════════════════════════════════════════
+✅ AGENT COMPLETED: code-reviewer
+═══════════════════════════════════════════════════════
+Duration: {phase_5_duration_seconds}s
+Code quality score: {code_quality_score}/100
+Issues found: {issues_found_count}
+Recommendations: {recommendations_count}
+Status: Code review complete - quality approved
+
+Proceeding to Phase 5.5...
+═══════════════════════════════════════════════════════
+```
+
+**PHASE GATE VALIDATION** (NEW - TASK-ENF4):
+```python
+try:
+    validator.validate_phase_completion("5", "Code Review")
+except ValidationError as e:
+    print(str(e))
+    move_task_to_blocked(task_id, reason="Phase 5 gate violation - agent not invoked")
+    exit(1)
+```
+
+**IF validation passes**: Proceed to Phase 5.5
+**IF validation fails**: Task moved to BLOCKED, execution stops
 
 #### Phase 5.5: Plan Audit (Hubbard's Step 6)
 
@@ -2226,6 +2737,116 @@ def determine_next_state(phase_45_results, coverage_results):
   → Notify that manual intervention required
   → **MUST NOT move to IN_REVIEW**
 
+### Step 6.5: Validate Agent Invocations (CRITICAL - Prevent False Reporting)
+
+🚨 **MANDATORY CHECKPOINT - DO NOT SKIP** 🚨
+
+**Purpose**: Verify that all required agents were actually invoked via the Task tool before generating completion reports. This prevents false reporting where agents are listed as "used" when they were never called.
+
+**CRITICAL**: This validation MUST run before Step 7 (report generation). If validation fails, task MUST be moved to BLOCKED state and report generation MUST be skipped.
+
+**VALIDATE** using the agent invocation tracker:
+
+```python
+from installer.global.commands.lib.agent_invocation_validator import (
+    validate_agent_invocations,
+    ValidationError
+)
+from installer.global.commands.lib.task_utils import move_task_to_blocked
+
+try:
+    # Validate that all required agents were invoked
+    validate_agent_invocations(tracker, workflow_mode)
+    print("✅ Validation Passed: All required agents invoked\n")
+except ValidationError as e:
+    # Display detailed error message
+    print(str(e))
+    print("\n" + "=" * 55)
+    print("BLOCKING TASK DUE TO PROTOCOL VIOLATION")
+    print("=" * 55 + "\n")
+
+    # Move task to BLOCKED state
+    move_task_to_blocked(
+        task_id,
+        reason="Agent invocation protocol violation - required agents not invoked"
+    )
+
+    # Exit without generating completion report
+    exit(1)
+```
+
+**Workflow Mode Phase Counts**:
+- `standard`: 5 phases (Planning, Arch Review, Implementation, Testing, Code Review)
+- `micro`: 3 phases (Implementation, Testing, Quick Review)
+- `design-only`: 3 phases (Planning, Arch Review, Complexity)
+- `implement-only`: 3 phases (Implementation, Testing, Code Review)
+
+**Expected Behavior**:
+
+✅ **VALIDATION PASSES** (all phases completed):
+- Displays: "✅ Validation Passed: All required agents invoked"
+- Proceeds to Step 7 (Generate Report)
+- Task moves to IN_REVIEW state (if quality gates passed)
+
+❌ **VALIDATION FAILS** (missing phases):
+- Displays detailed error showing:
+  - Expected vs actual invocation count
+  - List of missing phases with descriptions
+  - Full agent invocations log
+- Moves task to BLOCKED state with reason
+- Exits WITHOUT generating completion report
+- Human must review why phases were skipped
+
+**Example Error Output** (missing phases):
+
+```
+═══════════════════════════════════════════════════════
+❌ PROTOCOL VIOLATION: Agent invocation incomplete
+═══════════════════════════════════════════════════════
+
+Expected: 5 agent invocations
+Actual: 3 completed invocations
+
+Missing phases:
+  - Phase 3 (Implementation)
+  - Phase 4 (Testing)
+
+Cannot generate completion report until all agents are invoked.
+Review the AGENT INVOCATIONS LOG above to see which phases were skipped.
+
+AGENT INVOCATIONS LOG:
+✅ Phase 2 (Planning): python-api-specialist (completed in 45s)
+✅ Phase 2.5B (Arch Review): architectural-reviewer (completed in 30s)
+❌ Phase 3: SKIPPED (Not invoked)
+❌ Phase 4: SKIPPED (Not invoked)
+✅ Phase 5 (Review): code-reviewer (completed in 20s)
+
+TASK WILL BE MOVED TO BLOCKED STATE
+Reason: Protocol violation - required agents not invoked
+═══════════════════════════════════════════════════════
+```
+
+**IMPORTANT NOTES**:
+
+1. **This is the ONLY checkpoint that prevents false reporting**
+   - If this step is skipped, completion reports can be generated even when agents weren't invoked
+   - This violates the core principle of agent invocation enforcement
+
+2. **Validation is workflow-aware**
+   - Different workflow modes have different expected phase counts
+   - Micro workflows skip Phase 2 and 2.5B (only 3 phases)
+   - Design-only workflows only run Phases 2, 2.5B, 2.7
+
+3. **BLOCKED state requires human review**
+   - When validation fails, task goes to BLOCKED
+   - Human must investigate why phases were skipped
+   - Common causes: direct implementation without agent invocation, manual testing bypass
+
+4. **No exceptions or overrides**
+   - Validation cannot be bypassed
+   - If workflow needs different phase count, update `get_expected_phases()` function
+   - Do NOT skip this step under any circumstances
+
 ### Step 7: Generate Report (REQUIRED)
 
 **OUTPUT** comprehensive report based on outcome:
@@ -2391,9 +3012,295 @@ The command supports multiple development modes via `--mode` flag:
 - REFACTOR: Implementation agent improves code quality
 - Best for complex business logic
 
-**Note:** For BDD workflows (EARS → Gherkin → Implementation), use the [require-kit](https://github.com/requirekit/require-kit) package which provides complete requirements management and BDD generation.
+#### BDD Mode (Requires RequireKit)
 
-### Stack-Specific Agent Details
+```bash
+/task-work TASK-XXX --mode=bdd
+```
+
+**Purpose**: Behavior-Driven Development workflow for formal agentic systems
+
+**Prerequisites**:
+- RequireKit installed (checks `~/.agentecflow/require-kit.marker`)
+- Task has `bdd_scenarios: [BDD-001, BDD-002]` in frontmatter
+
+**Use for**:
+- ✅ Agentic orchestration systems (LangGraph, state machines)
+- ✅ Safety-critical workflows (quality gates, approval checkpoints)
+- ✅ Complex behavior requirements (multi-agent coordination)
+- ✅ Formal specifications (compliance, audit, traceability)
+- ❌ NOT for general CRUD features or simple implementations
+
+**Workflow**:
+1. **Phase 1**: Validates RequireKit installation via marker file
+2. **Phase 1**: Loads Gherkin scenarios from task frontmatter
+3. **Phase 2**: Includes scenarios in planning context
+4. **Phase 3**: Routes to RequireKit's bdd-generator agent
+5. **Phase 3**: Generates step definitions for detected framework
+6. **Phase 3**: Implements code to pass scenarios
+7. **Phase 4**: Runs BDD tests (pytest-bdd, SpecFlow, Cucumber.js, etc.)
+8. **Phase 4.5**: Fix loop for failing BDD tests (max 3 attempts)
+9. **Phase 5**: Standard code review
+
+**Error Handling**:
+
+If RequireKit not installed:
+```bash
+/task-work TASK-042 --mode=bdd
+
+ERROR: BDD mode requires RequireKit installation
+
+  RequireKit provides EARS → Gherkin → Implementation workflow for
+  formal behavior specifications.
+
+  Repository:
+    https://github.com/requirekit/require-kit
+
+  Installation:
+    cd ~/Projects/require-kit
+    ./installer/scripts/install.sh
+
+  Verification:
+    ls ~/.agentecflow/require-kit.marker  # Should exist
+
+  Alternative modes:
+    /task-work TASK-042 --mode=tdd      # Test-first development
+    /task-work TASK-042 --mode=standard # Default workflow
+
+  BDD mode is designed for agentic systems, not general features.
+  See: docs/guides/bdd-workflow-for-agentic-systems.md
+```
+
+If bdd_scenarios not linked:
+```bash
+/task-work TASK-042 --mode=bdd
+
+ERROR: BDD mode requires linked Gherkin scenarios
+
+  Task frontmatter must include bdd_scenarios field:
+
+    ---
+    id: TASK-042
+    title: Implement complexity routing
+    bdd_scenarios: [BDD-ORCH-001, BDD-ORCH-002]  ← Add this
+    ---
+
+  Generate scenarios in RequireKit:
+    cd ~/Projects/require-kit
+    /formalize-ears REQ-XXX
+    /generate-bdd REQ-XXX
+
+  Or use alternative modes:
+    /task-work TASK-042 --mode=tdd
+    /task-work TASK-042 --mode=standard
+```
+
+**BDD Framework Detection**:
+- Python project → pytest-bdd
+- .NET project → SpecFlow
+- TypeScript/JavaScript → Cucumber.js
+- Ruby → Cucumber
+
+**See**: [BDD Workflow Guide](../../docs/guides/bdd-workflow-for-agentic-systems.md)
+
+### Agent Discovery System
+
+**Dynamic Metadata-Based Matching**
+
+Agents are selected dynamically based on metadata matching, NOT from static tables. The system:
+
+1. Analyzes task context (stack, phase, keywords from description)
+2. Scans all agent sources for metadata matches
+3. Returns best match based on:
+   - Stack compatibility (python, react, dotnet, etc.)
+   - Phase alignment (implementation, review, testing, orchestration, debugging)
+   - Keyword relevance (capabilities match task requirements)
+
+**No Hardcoded Mappings**: Agent selection is intelligent and extensible - adding new agents automatically makes them discoverable.
+
+#### Discovery Sources and Precedence
+
+Agents are discovered from 4 sources in priority order:
+
+1. **Local** (`.claude/agents/`) - Highest priority
+   - Template agents copied during initialization
+   - Project-specific customizations
+   - **Always takes precedence** over global agents with same name
+
+2. **User** (`~/.agentecflow/agents/`)
+   - Personal agent customizations
+   - Available across all projects
+   - Overrides global agents with same name
+
+3. **Global** (`installer/global/agents/`)
+   - Built-in Taskwright agents
+   - Shared across all users
+   - Overridden by local/user agents
+
+4. **Template** (`installer/global/templates/*/agents/`) - Lowest priority
+   - Template-provided agents (before initialization)
+   - Only used if agent not found in higher-priority sources
+   - Replaced by local agents after `taskwright init`
+
+**Precedence Rule**: Local > User > Global > Template
+
+#### Template Override Behavior
+
+When you run `taskwright init <template>`:
+- Template agents copied to `.claude/agents/` (local)
+- Local agents now **override** global agents with same name
+- Enables template customization without modifying global agents
+
+**Example**:
+```bash
+# Before initialization
+/task-work TASK-001  # Uses global python-api-specialist
+
+# After initialization
+taskwright init fastapi-python
+# Template's python-api-specialist copied to .claude/agents/
+
+/task-work TASK-002  # Now uses LOCAL python-api-specialist 📁 (not global 🌐)
+```
+
+#### Metadata Requirements for Discovery
+
+For an agent to be discoverable, it must have:
+
+| Field | Type | Required | Purpose |
+|-------|------|----------|---------|
+| `stack` | array | ✅ Yes | Technology stack(s) the agent supports |
+| `phase` | string | ✅ Yes | Workflow phase (implementation, review, testing, etc.) |
+| `capabilities` | array | ✅ Yes | Specific skills and domains |
+| `keywords` | array | ✅ Yes | Searchable terms for matching |
+
+**Agents without metadata**: Skipped during discovery (graceful degradation).
+
+#### Fallback Behavior
+
+If no specialist agent is found:
+- System falls back to `task-manager` (cross-stack orchestrator)
+- Task-manager handles the task generically
+- User notified about fallback in invocation log
+
+#### Agent Source Indicators
+
+During task execution, the invocation log shows which agent was selected and its source:
+
+```
+═══════════════════════════════════════════════════════
+AGENT INVOCATIONS LOG
+═══════════════════════════════════════════════════════
+✅ Phase 2 (Planning): python-api-specialist 📁 (source: local, completed in 45s)
+✅ Phase 2.5B (Arch Review): architectural-reviewer 🌐 (source: global, completed in 30s)
+✅ Phase 3 (Implementation): python-api-specialist 📁 (source: local, completed in 120s)
+✅ Phase 4 (Testing): task-manager 🌐 (source: global, completed in 60s)
+✅ Phase 5 (Review): code-reviewer 🌐 (source: global, completed in 25s)
+═══════════════════════════════════════════════════════
+```
+
+**Source Icons**:
+- 📁 **Local** - Agent from `.claude/agents/` (template or custom)
+- 👤 **User** - Agent from `~/.agentecflow/agents/` (personal)
+- 🌐 **Global** - Agent from `installer/global/agents/` (built-in)
+- 📦 **Template** - Agent from `installer/global/templates/*/agents/` (before init)
+
+**Why Source Matters**:
+- **Local agents override global** - Verify template customizations working
+- **Precedence debugging** - Understand which agent was selected when duplicates exist
+- **Troubleshooting** - If wrong agent selected, check source and metadata
+
+#### Agent Discovery Examples
+
+##### Example 1: Python API Implementation
+
+**Task Context**:
+- Stack: Python
+- Files: `*.py`
+- Keywords: "FastAPI endpoint", "async", "Pydantic schema"
+
+**Discovery Process**:
+1. Detect stack: `python` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Extract keywords: `api`, `async`, `pydantic`
+4. Scan agents:
+   - Local `.claude/agents/python-api-specialist.md` ✅ Match
+   - Metadata: `stack: [python, fastapi]`, `phase: implementation`, `keywords: [api, async, pydantic]`
+5. **Selected**: `python-api-specialist 📁 (source: local)`
+
+##### Example 2: React State Management
+
+**Task Context**:
+- Stack: React
+- Files: `*.tsx`
+- Keywords: "hooks", "state", "TanStack Query"
+
+**Discovery Process**:
+1. Detect stack: `react` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Extract keywords: `hooks`, `state`, `query`
+4. Scan agents:
+   - Local `.claude/agents/react-state-specialist.md` ✅ Match
+   - Metadata: `stack: [react, typescript]`, `phase: implementation`, `keywords: [hooks, state, query]`
+5. **Selected**: `react-state-specialist 📁 (source: local)`
+
+##### Example 3: Architectural Review (Cross-Stack)
+
+**Task Context**:
+- Stack: Any
+- Phase: Architectural Review (Phase 2.5B)
+
+**Discovery Process**:
+1. Phase: `review` (architectural)
+2. Scan agents:
+   - Global `installer/global/agents/architectural-reviewer.md` ✅ Match
+   - Metadata: `stack: [cross-stack]`, `phase: review`, `keywords: [solid, dry, yagni, architecture]`
+3. **Selected**: `architectural-reviewer 🌐 (source: global)`
+
+##### Example 4: Fallback to Task-Manager
+
+**Task Context**:
+- Stack: Go
+- Files: `*.go`
+- Keywords: "service", "handler"
+
+**Discovery Process**:
+1. Detect stack: `go` (from file extensions)
+2. Detect phase: `implementation` (Phase 3)
+3. Scan agents:
+   - No agents with `stack: [go]` found
+4. **Fallback**: `task-manager 🌐 (source: global)`
+5. **Note**: User notified that task-manager used (no Go specialist available)
+
+**Fix**: Create go-specialist agent with appropriate metadata, or use cross-stack task-manager.
+
+#### Troubleshooting Agent Discovery
+
+**Issue**: "Expected agent not selected"
+
+**Debug Steps**:
+1. Check agent has required metadata (stack, phase, capabilities, keywords)
+2. Verify stack matches task technology (check file extensions)
+3. Check agent source in invocation log (📁 local, 👤 user, 🌐 global, 📦 template)
+4. Verify precedence isn't causing unexpected override
+
+**Issue**: "Task-manager used instead of specialist"
+
+**Causes**:
+- No specialist agent exists for the stack
+- Agent metadata doesn't match task context
+- Agent missing required metadata fields
+
+**Fix**: Run `/agent-enhance` to add/validate discovery metadata.
+
+### Stack-Specific Agent Details (Examples Only)
+
+**Note**: The agents listed below are examples from global/template sources. Actual agent selection is **dynamic** based on metadata matching (see [Agent Discovery System](#agent-discovery-system)). Local agents override these examples after template initialization.
+
+**To view available agents**: Run `/agent-list` or check:
+- Local: `.claude/agents/`
+- User: `~/.agentecflow/agents/`
+- Global: `installer/global/agents/`
 
 #### MAUI Stack Agents
 - **maui-usecase-specialist**: UseCase pattern with Either monad

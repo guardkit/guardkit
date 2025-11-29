@@ -31,6 +31,7 @@ from lib.codebase_analyzer.models import (
     ConfidenceScore,
     ConfidenceLevel,
     ParseError,
+    AnalysisError,
 )
 from lib.codebase_analyzer.prompt_builder import PromptBuilder, FileCollector
 from lib.codebase_analyzer.response_parser import ResponseParser, FallbackResponseBuilder
@@ -295,7 +296,15 @@ Here's the analysis:
     "improvements": ["Add more tests"],
     "confidence": {"level": "medium", "percentage": 75.0}
   },
-  "example_files": []
+  "example_files": [
+    {
+      "path": "src/main.py",
+      "purpose": "Main entry point",
+      "layer": "Presentation",
+      "patterns_used": [],
+      "key_concepts": []
+    }
+  ]
 }
 ```
 """
@@ -312,6 +321,7 @@ Here's the analysis:
         assert analysis.architecture.architectural_style == "Clean Architecture"
         assert analysis.quality.overall_score == 80.0
         assert analysis.agent_used is True
+        assert len(analysis.example_files) == 1  # TASK-0CE5: Verify example_files
 
     def test_parse_analysis_response_invalid_json(self):
         """Test parsing with invalid JSON raises ParseError."""
@@ -319,12 +329,124 @@ Here's the analysis:
 
         parser = ResponseParser()
 
-        with pytest.raises(ParseError):
+        with pytest.raises(ParseError, match="No valid JSON found"):
             parser.parse_analysis_response(
                 response=response,
                 codebase_path="/test",
                 template_context=None
             )
+
+    def test_parse_analysis_response_empty_example_files(self):
+        """Test parsing response with empty example_files raises ParseError (TASK-0CE5)."""
+        response = """
+```json
+{
+  "technology": {
+    "primary_language": "Python",
+    "frameworks": ["FastAPI"],
+    "testing_frameworks": ["pytest"],
+    "build_tools": ["pip"],
+    "databases": [],
+    "infrastructure": [],
+    "confidence": {"level": "high", "percentage": 90.0}
+  },
+  "architecture": {
+    "patterns": ["Repository"],
+    "architectural_style": "Clean Architecture",
+    "layers": [],
+    "key_abstractions": ["User"],
+    "dependency_flow": "Inward",
+    "confidence": {"level": "medium", "percentage": 85.0}
+  },
+  "quality": {
+    "overall_score": 80.0,
+    "solid_compliance": 75.0,
+    "dry_compliance": 80.0,
+    "yagni_compliance": 85.0,
+    "code_smells": [],
+    "strengths": ["Clear structure"],
+    "improvements": ["Add more tests"],
+    "confidence": {"level": "medium", "percentage": 75.0}
+  },
+  "example_files": []
+}
+```
+"""
+
+        parser = ResponseParser()
+
+        # Should raise ParseError due to empty example_files
+        with pytest.raises(ParseError, match="empty example_files"):
+            parser.parse_analysis_response(
+                response=response,
+                codebase_path="/test",
+                template_context=None
+            )
+
+    def test_parse_analysis_response_with_valid_example_files(self):
+        """Test parsing response with valid example_files succeeds (TASK-0CE5)."""
+        response = """
+```json
+{
+  "technology": {
+    "primary_language": "Python",
+    "frameworks": ["FastAPI"],
+    "testing_frameworks": ["pytest"],
+    "build_tools": ["pip"],
+    "databases": [],
+    "infrastructure": [],
+    "confidence": {"level": "high", "percentage": 90.0}
+  },
+  "architecture": {
+    "patterns": ["Repository"],
+    "architectural_style": "Clean Architecture",
+    "layers": [],
+    "key_abstractions": ["User"],
+    "dependency_flow": "Inward",
+    "confidence": {"level": "medium", "percentage": 85.0}
+  },
+  "quality": {
+    "overall_score": 80.0,
+    "solid_compliance": 75.0,
+    "dry_compliance": 80.0,
+    "yagni_compliance": 85.0,
+    "code_smells": [],
+    "strengths": ["Clear structure"],
+    "improvements": ["Add more tests"],
+    "confidence": {"level": "medium", "percentage": 75.0}
+  },
+  "example_files": [
+    {
+      "path": "src/domain/user.py",
+      "purpose": "User entity",
+      "layer": "Domain",
+      "patterns_used": ["Entity"],
+      "key_concepts": ["User"]
+    },
+    {
+      "path": "src/api/routes.py",
+      "purpose": "API routes",
+      "layer": "Presentation",
+      "patterns_used": ["REST"],
+      "key_concepts": ["Routes"]
+    }
+  ]
+}
+```
+"""
+
+        parser = ResponseParser()
+        analysis = parser.parse_analysis_response(
+            response=response,
+            codebase_path="/test",
+            template_context=None
+        )
+
+        # Should successfully parse with example_files
+        assert len(analysis.example_files) == 2
+        assert analysis.example_files[0].path == "src/domain/user.py"
+        assert analysis.example_files[1].path == "src/api/routes.py"
+        assert analysis.agent_used is True
 
     def test_validate_analysis(self):
         """Test analysis validation."""
@@ -454,6 +576,95 @@ class TestAnalysisSerializer:
         assert "Python" in content
         assert "FastAPI" in content
 
+    def test_load_nonexistent_file(self, tmp_path):
+        """Test loading from non-existent file raises error."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+        nonexistent_path = tmp_path / "nonexistent.json"
+
+        with pytest.raises(AnalysisError, match="Analysis file not found"):
+            serializer.load(nonexistent_path)
+
+    def test_save_with_auto_filename(self, tmp_path, sample_analysis):
+        """Test saving with automatically generated filename."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save without filename (should auto-generate)
+        save_path = serializer.save(sample_analysis)
+
+        assert save_path.exists()
+        assert "project" in save_path.name  # Based on codebase_path
+        assert save_path.suffix == ".json"
+
+    def test_list_analyses(self, tmp_path, sample_analysis):
+        """Test listing available analyses."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Initially empty
+        analyses = serializer.list_analyses()
+        assert len(analyses) == 0
+
+        # Save some analyses
+        serializer.save(sample_analysis, filename="analysis_1.json")
+        serializer.save(sample_analysis, filename="analysis_2.json")
+
+        # List should return both
+        analyses = serializer.list_analyses()
+        assert len(analyses) == 2
+
+    def test_delete_analysis(self, tmp_path, sample_analysis):
+        """Test deleting an analysis file."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save and delete
+        save_path = serializer.save(sample_analysis, filename="test.json")
+        result = serializer.delete(save_path)
+
+        assert result is True
+        assert not save_path.exists()
+
+    def test_delete_nonexistent_file(self, tmp_path):
+        """Test deleting non-existent file returns False."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+        nonexistent_path = tmp_path / "nonexistent.json"
+
+        result = serializer.delete(nonexistent_path)
+        assert result is False
+
+    def test_get_summary(self, tmp_path, sample_analysis):
+        """Test getting summary information."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save analysis
+        save_path = serializer.save(sample_analysis, filename="test.json")
+
+        # Get summary
+        summary = serializer.get_summary(save_path)
+
+        assert summary["codebase_path"] == "/test/project"
+        assert summary["primary_language"] == "Python"
+        assert summary["overall_score"] == 80.0
+        assert "filepath" in summary
+
+    def test_find_latest_with_filter(self, tmp_path, sample_analysis):
+        """Test finding latest analysis with codebase name filter."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        # Save analyses for different codebases
+        serializer.save(sample_analysis, filename="project_1.json")
+        serializer.save(sample_analysis, filename="other_1.json")
+
+        # Find latest for specific codebase
+        latest = serializer.find_latest(codebase_name="project")
+        assert latest is not None
+        assert "project" in latest.name
+
+    def test_find_latest_no_results(self, tmp_path):
+        """Test finding latest when no files exist."""
+        serializer = AnalysisSerializer(cache_dir=tmp_path)
+
+        latest = serializer.find_latest()
+        assert latest is None
+
 
 class TestHeuristicAnalyzer:
     """Test heuristic fallback analyzer."""
@@ -501,13 +712,71 @@ class TestHeuristicAnalyzer:
         assert "FastAPI" in result["technology"]["frameworks"]
         assert result["agent_used"] is False
 
+    def test_heuristic_analysis_with_file_samples(self, python_codebase):
+        """Test heuristic analysis uses file_samples as fallback for example_files (TASK-0CE5)."""
+        # Create file samples
+        file_samples = [
+            {
+                "path": "src/main.py",
+                "relative_path": "src/main.py",
+                "category": "crud_read",
+                "content": "from fastapi import FastAPI"
+            },
+            {
+                "path": "src/repository.py",
+                "relative_path": "src/repository.py",
+                "category": "repositories",
+                "content": "class UserRepository: pass"
+            }
+        ]
+
+        analyzer = HeuristicAnalyzer(python_codebase, file_samples=file_samples)
+        result = analyzer.analyze()
+
+        # Should have example_files from file_samples
+        assert "example_files" in result
+        assert len(result["example_files"]) == 2
+        assert result["example_files"][0]["path"] == "src/main.py"
+        assert result["example_files"][1]["path"] == "src/repository.py"
+        # Should have purpose from category
+        assert "Read operation" in result["example_files"][0]["purpose"]
+        assert "repository" in result["example_files"][1]["purpose"]
+
+    def test_heuristic_infer_layer_from_path(self, python_codebase):
+        """Test layer inference from file path (TASK-0CE5)."""
+        analyzer = HeuristicAnalyzer(python_codebase)
+
+        # Test various path patterns
+        assert analyzer._infer_layer_from_path("src/domain/user.py") == "Domain"
+        assert analyzer._infer_layer_from_path("src/application/services/user_service.py") == "Application"
+        assert analyzer._infer_layer_from_path("src/infrastructure/repositories/user_repo.py") == "Infrastructure"
+        assert analyzer._infer_layer_from_path("src/api/routes/users.py") == "Presentation"
+        assert analyzer._infer_layer_from_path("tests/test_user.py") == "Testing"
+        assert analyzer._infer_layer_from_path("src/shared/utils.py") == "Shared"
+        assert analyzer._infer_layer_from_path("src/unknown.py") is None
+
+    def test_heuristic_infer_purpose_from_category(self, python_codebase):
+        """Test purpose inference from category (TASK-0CE5)."""
+        analyzer = HeuristicAnalyzer(python_codebase)
+
+        # Test various categories
+        purpose1 = analyzer._infer_purpose_from_category("crud_create", "src/user.py")
+        assert "Create operation" in purpose1
+        assert "user" in purpose1
+
+        purpose2 = analyzer._infer_purpose_from_category("repositories", "src/repo.py")
+        assert "Data access repository" in purpose2
+
+        purpose3 = analyzer._infer_purpose_from_category("validators", "src/val.py")
+        assert "Validation logic" in purpose3
+
 
 class TestCodebaseAnalyzer:
     """Test main analyzer orchestrator."""
 
     @pytest.fixture
     def mock_agent_invoker(self):
-        """Create mock agent invoker."""
+        """Create mock agent invoker (TASK-0CE5: Added example_files)."""
         mock = Mock(spec=ArchitecturalReviewerInvoker)
         mock.is_available.return_value = True
         mock.invoke_agent.return_value = """
@@ -540,7 +809,15 @@ class TestCodebaseAnalyzer:
     "improvements": ["Add more tests"],
     "confidence": {"level": "medium", "percentage": 75.0}
   },
-  "example_files": []
+  "example_files": [
+    {
+      "path": "src/main.py",
+      "purpose": "Main entry point",
+      "layer": "Presentation",
+      "patterns_used": [],
+      "key_concepts": []
+    }
+  ]
 }
 ```
 """

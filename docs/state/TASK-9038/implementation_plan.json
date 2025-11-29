@@ -1,0 +1,313 @@
+{
+  "task_id": "TASK-9038",
+  "title": "Create /template-qa Command for Optional Customization",
+  "status": "Phase 2.7 - Complexity Evaluation",
+  "created": "2025-11-12T09:30:00Z",
+  "estimated_duration_hours": "5-6",
+  "estimated_loc": 970,
+
+  "summary": {
+    "description": "Create a new optional command /template-qa that runs an interactive Q&A session to customize template generation. This separates the Q&A functionality from /template-create, making it optional for advanced users while keeping the default workflow simple.",
+    "key_principle": "90% of users will just run /template-create with smart defaults. Only 10% who need customization will use /template-qa first."
+  },
+
+  "files_to_create": [
+    {
+      "path": "installer/global/commands/template-qa.md",
+      "loc": 150,
+      "purpose": "Command specification and documentation",
+      "dependencies": []
+    },
+    {
+      "path": "installer/global/lib/template_qa_orchestrator.py",
+      "loc": 400,
+      "purpose": "Core Q&A logic, config persistence, validation",
+      "dependencies": [
+        "template_create_orchestrator.py (extraction source)",
+        "json (stdlib)",
+        "pathlib (stdlib)",
+        "typing (stdlib)"
+      ]
+    },
+    {
+      "path": "installer/global/lib/template_config_handler.py",
+      "loc": 200,
+      "purpose": "Config file I/O, validation, schema management",
+      "dependencies": [
+        "json (stdlib)",
+        "pathlib (stdlib)",
+        "typing (stdlib)"
+      ]
+    }
+  ],
+
+  "files_to_modify": [
+    {
+      "path": "installer/global/lib/template_create_orchestrator.py",
+      "current_loc": 800,
+      "changes_description": "Extract Q&A logic (~200 lines removed), add config file loading support (~20 lines added)",
+      "net_change_loc": -180,
+      "purpose": "Simplify by delegating Q&A to new command"
+    },
+    {
+      "path": "TBD (command registry)",
+      "changes_description": "Add /template-qa to available commands",
+      "net_change_loc": 20
+    }
+  ],
+
+  "implementation_phases": [
+    {
+      "phase": 1,
+      "name": "Config Handler",
+      "duration_hours": 2,
+      "files": ["template_config_handler.py"],
+      "tasks": [
+        "Config schema definition (30 min)",
+        "Config I/O operations (45 min)",
+        "Validation logic (45 min)"
+      ],
+      "deliverable": "Reusable config handler module"
+    },
+    {
+      "phase": 2,
+      "name": "Q&A Orchestrator",
+      "duration_hours": 2,
+      "files": ["template_qa_orchestrator.py"],
+      "tasks": [
+        "Extract Q&A logic (60 min)",
+        "Add config persistence (30 min)",
+        "Improve prompts (30 min)"
+      ],
+      "deliverable": "Standalone Q&A orchestrator"
+    },
+    {
+      "phase": 3,
+      "name": "Command Specification",
+      "duration_hours": 1,
+      "files": ["installer/global/commands/template-qa.md"],
+      "tasks": [
+        "Command documentation (30 min)",
+        "Integration examples (30 min)"
+      ],
+      "deliverable": "Complete command spec"
+    },
+    {
+      "phase": 4,
+      "name": "Template Create Integration",
+      "duration_hours": 1,
+      "files": ["installer/global/lib/template_create_orchestrator.py"],
+      "tasks": [
+        "Remove Q&A logic (30 min)",
+        "Update command flow (30 min)"
+      ],
+      "deliverable": "Simplified /template-create"
+    },
+    {
+      "phase": 5,
+      "name": "Testing",
+      "duration_hours": 1,
+      "test_coverage": [
+        "Config handler tests (20 min)",
+        "Q&A orchestrator tests (20 min)",
+        "Integration tests (20 min)"
+      ],
+      "deliverable": "Comprehensive test suite"
+    }
+  ],
+
+  "architecture_patterns": [
+    {
+      "pattern": "Command Pattern",
+      "description": "Separate command (/template-qa) from orchestration"
+    },
+    {
+      "pattern": "Config Persistence Pattern",
+      "description": "JSON config file with schema validation"
+    },
+    {
+      "pattern": "Builder Pattern",
+      "description": "Q&A builds config incrementally with resume capability"
+    }
+  ],
+
+  "risk_assessment": {
+    "low_risk_factors": [
+      "No external dependencies (standard library only)",
+      "Extracted logic (code already exists, just reorganizing)",
+      "Backward compatible (doesn't break existing /template-create)",
+      "Clear interfaces (config file format is well-defined)"
+    ],
+    "medium_risk_factors": [
+      "Integration testing (need to verify both commands work together)",
+      "User experience (prompts must be clear and helpful)",
+      "Resume logic (must handle partial config files correctly)"
+    ],
+    "high_risk_factors": [],
+    "mitigation_strategies": [
+      "Integration testing: Test both commands in isolation and together",
+      "User testing: Review prompts with target users",
+      "Validation: Comprehensive schema validation before saving"
+    ]
+  },
+
+  "dependencies": {
+    "internal": [
+      "template_create_orchestrator.py (source of extracted logic)",
+      "Command registry/index system"
+    ],
+    "external": [],
+    "optional_enhancements": [
+      "jsonschema (JSON schema validation library)",
+      "rich (terminal formatting library)"
+    ]
+  },
+
+  "success_criteria": {
+    "functional": [
+      "/template-qa command runs interactive Q&A",
+      "Saves answers to .template-create-config.json",
+      "--resume flag loads and edits existing config",
+      "/template-create --config uses saved config",
+      "/template-create works without config (smart defaults)"
+    ],
+    "quality": [
+      "100% test coverage for config handler",
+      "Integration tests pass",
+      "Clear, helpful prompts (user feedback)",
+      "Documentation complete and accurate"
+    ],
+    "non_functional": [
+      "No breaking changes to /template-create",
+      "Config file is human-readable JSON",
+      "Validation errors are clear and actionable"
+    ]
+  },
+
+  "loc_breakdown": {
+    "new_code": 770,
+    "modified_code": -180,
+    "net_change": 590,
+    "details": [
+      {"component": "Command spec", "new": 150, "modified": 0, "net": 150},
+      {"component": "Q&A orchestrator", "new": 400, "modified": 0, "net": 400},
+      {"component": "Config handler", "new": 200, "modified": 0, "net": 200},
+      {"component": "Template create", "new": 0, "modified": -180, "net": -180},
+      {"component": "Command index", "new": 20, "modified": 0, "net": 20}
+    ],
+    "note": "Original estimate of ~970 LOC included ~200 lines of tests not counted here"
+  },
+
+  "architectural_review": {
+    "overall_score": 78,
+    "status": "Approved with recommendations",
+    "solid": {
+      "score": 40,
+      "max": 50,
+      "srp": {"score": 10, "max": 10, "status": "excellent"},
+      "ocp": {"score": 8, "max": 10, "status": "good"},
+      "lsp": {"score": 9, "max": 10, "status": "excellent"},
+      "isp": {"score": 8, "max": 10, "status": "good"},
+      "dip": {"score": 5, "max": 10, "status": "needs_improvement", "recommendation": "Inject dependencies"}
+    },
+    "dry": {
+      "score": 20,
+      "max": 25,
+      "note": "Some duplication possible between Q&A and template-create"
+    },
+    "yagni": {
+      "score": 18,
+      "max": 25,
+      "question": "Could this be a flag instead of standalone command?",
+      "decision": "Standalone command is clearer for 90/10 use case split"
+    },
+    "critical_issues": [],
+    "recommendations": [
+      "Consider dependency injection for config handler",
+      "Ensure Q&A prompts are thoroughly user-tested",
+      "Monitor for duplication between old and new code"
+    ]
+  },
+
+  "complexity_evaluation": {
+    "file_complexity": {
+      "score": 2,
+      "max": 3,
+      "rationale": "3 new files + 2 modified files = 5 total files (medium complexity)",
+      "details": {
+        "files_to_create": 3,
+        "files_to_modify": 2,
+        "total_files": 5
+      }
+    },
+    "pattern_familiarity": {
+      "score": 1,
+      "max": 2,
+      "rationale": "Standard patterns (Command, Builder, Config) - familiar territory",
+      "patterns": [
+        "Command Pattern (familiar)",
+        "Config Persistence (familiar)",
+        "Builder Pattern (familiar)"
+      ]
+    },
+    "risk_level": {
+      "score": 1,
+      "max": 3,
+      "rationale": "Low risk - extracted logic, no external deps, backward compatible",
+      "assessment": "low",
+      "factors": {
+        "integration_risk": "low (backward compatible)",
+        "breaking_changes": "none",
+        "external_dependencies": "none",
+        "code_extraction": "low (existing tested code)"
+      }
+    },
+    "dependency_complexity": {
+      "score": 0,
+      "max": 2,
+      "rationale": "Zero external dependencies - standard library only",
+      "details": {
+        "external_dependencies": 0,
+        "internal_dependencies": 1,
+        "total": 0
+      }
+    },
+    "total_score": 4,
+    "max_score": 10,
+    "complexity_level": "medium",
+    "review_mode": "QUICK_OPTIONAL",
+    "review_mode_description": "Score 4-6: Optional checkpoint with 10-second timeout"
+  },
+
+  "force_review_triggers": {
+    "user_flag_review": false,
+    "security_keywords": false,
+    "breaking_changes": false,
+    "schema_changes": false,
+    "hotfix": false,
+    "any_triggers": false
+  },
+
+  "routing_decision": {
+    "review_mode": "QUICK_OPTIONAL",
+    "action": "Offer optional checkpoint with 10s timeout",
+    "rationale": "Complexity score 4/10 falls in medium range (4-6). No force-review triggers detected. User can proceed automatically or review the plan.",
+    "options": {
+      "auto_proceed": "After 10s timeout, proceed to Phase 3 (Implementation)",
+      "review": "User can interrupt to review plan before implementation"
+    }
+  },
+
+  "related_tasks": [
+    {
+      "task_id": "TASK-9037",
+      "title": "Fix build artifact exclusion",
+      "relationship": "independent"
+    },
+    {
+      "task_id": "TASK-9039",
+      "title": "Remove Q&A from /template-create",
+      "relationship": "depends on TASK-9038"
+    }
+  ]
+}

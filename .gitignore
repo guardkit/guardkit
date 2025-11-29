@@ -33,6 +33,16 @@ dist/
 downloads/
 eggs/
 .eggs/
+# Test coverage
+.coverage
+coverage/
+coverage*.json
+coverage_*.json
+test_coverage*.json
+htmlcov/
+.pytest_cache/
+.hypothesis/
+.tox/
 # Virtual environments (exclude entirely)
 venv/
 env/
@@ -66,9 +76,46 @@ obj/
 # Temporary files
 *.tmp
 *.temp
+temp/
+tmp/
+
+# Logs and debug files
 *.log
-.cache/
-.temp/
+*debug*.log
+*DEBUG*.md
+debug-*.md
+*-debug.md
+
+# Backup directories
+*.backup/
+*.backup.*
+.*.backup.*
+
+# Session and state files (moved to .claude/state/)
+.template-create-state.json
+.template-init-session.json
+/*-session.json
+/*-state.json
+/*.session.json
+/*.state.json
+
+# Archived documents (keep structure but ignore temp/session files in root)
+/root-files-inventory.txt
+/categorized-inventory.txt
+
+# Temporary test files in root
+/test_*.py
+/test_*.txt
+/validate_*.py
+
+# Temporary Python scripts in root
+/add_frontmatter_to_agents.py
+/complexity_evaluation_*.py
+/demo_*.py
+/debug-*.py
+
+# MkDocs build artifacts
+site/
 
 # OS generated files
 *.orig

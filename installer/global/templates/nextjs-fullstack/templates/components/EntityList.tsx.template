@@ -1,0 +1,85 @@
+'use client'
+
+import { useState } from 'react'
+import { {{EntityName}}Form } from './{{EntityName}}Form'
+import { delete{{EntityName}} } from '@/app/actions/{{entityNamePlural}}'
+import { useRouter } from 'next/navigation'
+
+type {{EntityName}} = {
+  id: string
+  // Add your entity fields here
+  createdAt: Date
+}
+
+export function {{EntityName}}List({ {{entityNamePlural}} }: { {{entityNamePlural}}: {{EntityName}}[] }) {
+  const router = useRouter()
+  const [isCreating, setIsCreating] = useState(false)
+
+  async function handleDelete(id: string) {
+    if (confirm('Are you sure you want to delete this {{entityName}}?')) {
+      const result = await delete{{EntityName}}(id)
+      if (result.success) {
+        router.refresh()
+      } else {
+        alert(result.error)
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold">
+          {{{entityNamePlural}}.length} {{{entityNamePlural}}.length === 1 ? '{{EntityName}}' : '{{EntityNamePlural}}'}
+        </h2>
+        <button
+          onClick={() => setIsCreating(!isCreating)}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          {isCreating ? 'Cancel' : 'Add {{EntityName}}'}
+        </button>
+      </div>
+
+      {isCreating && (
+        <div className="border border-gray-200 rounded-lg p-6">
+          <h3 className="text-lg font-medium mb-4">Create New {{EntityName}}</h3>
+          <{{EntityName}}Form onSuccess={() => {
+            setIsCreating(false)
+            router.refresh()
+          }} />
+        </div>
+      )}
+
+      <div className="grid gap-4">
+        {{{entityNamePlural}}.map(({{entityName}}) => (
+          <div
+            key={{`={${entityName}.id}`}}
+            className="border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow"
+          >
+            <div className="flex justify-between items-start">
+              <div>
+                {/* Display your entity fields here */}
+                <h3 className="text-lg font-semibold">{{EntityName}} #{{{entityName}}.id}</h3>
+                <p className="text-sm text-gray-400 mt-2">
+                  Created: {new Date({{entityName}}.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDelete({{entityName}}.id)}
+                className="px-3 py-1 text-red-600 hover:bg-red-50 rounded"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+
+        {{{entityNamePlural}}.length === 0 && (
+          <div className="text-center py-12 text-gray-500">
+            No {{entityNamePlural}} found. Create your first {{entityName}} to get started.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

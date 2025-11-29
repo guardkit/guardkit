@@ -109,3 +109,197 @@ class ValidationError(GenerationError):
 class PlaceholderExtractionError(GenerationError):
     """Error during placeholder extraction."""
     pass
+
+
+class TemplateClaude(BaseModel):
+    """Generated CLAUDE.md structure"""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "schema_version": "1.0.0",
+                "architecture_overview": "# Architecture Overview\n\nMVVM pattern...",
+                "technology_stack": "# Technology Stack\n\n- C#...",
+                "project_structure": "# Project Structure\n\n```\nsrc/\n```",
+                "naming_conventions": "# Naming Conventions\n\n...",
+                "patterns": "# Patterns\n\n...",
+                "examples": "# Examples\n\n...",
+                "quality_standards": "# Quality Standards\n\n...",
+                "agent_usage": "# Agent Usage\n\n...",
+                "generated_at": "2024-01-15T10:30:00Z",
+                "confidence_score": 0.87
+            }
+        }
+    )
+
+    schema_version: str = Field(default="1.0.0", description="Template schema version")
+    architecture_overview: str = Field(description="Markdown describing architecture")
+    technology_stack: str = Field(description="Markdown describing tech stack")
+    project_structure: str = Field(description="Markdown describing folder structure")
+    naming_conventions: str = Field(description="Markdown describing naming rules")
+    patterns: str = Field(description="Markdown describing patterns to follow")
+    examples: str = Field(description="Markdown with code examples")
+    quality_standards: str = Field(description="Markdown with quality guidelines")
+    agent_usage: str = Field(description="Markdown describing which agents to use when")
+    generated_at: str = Field(description="ISO 8601 timestamp")
+    confidence_score: float = Field(ge=0.0, le=1.0, description="Confidence score 0-1")
+
+    def to_markdown(self) -> str:
+        """Convert to complete CLAUDE.md content"""
+        sections = [
+            self.architecture_overview,
+            self.technology_stack,
+            self.project_structure,
+            self.naming_conventions,
+            self.patterns,
+            self.examples,
+            self.quality_standards,
+            self.agent_usage
+        ]
+        return "\n\n".join(sections)
+
+
+class AgentMetadata(BaseModel):
+    """Metadata extracted from an agent definition file"""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "domain-operations-specialist",
+                "purpose": "Create domain operations following verb-entity pattern",
+                "capabilities": [
+                    "Generate domain operation classes",
+                    "Apply ErrorOr pattern",
+                    "Follow SOLID principles"
+                ],
+                "when_to_use": "When creating or modifying domain operations",
+                "category": "domain"
+            }
+        }
+    )
+
+    name: str = Field(description="Agent name (filename without .md)")
+    purpose: str = Field(description="Primary purpose of the agent")
+    capabilities: List[str] = Field(default_factory=list, description="What the agent can do")
+    when_to_use: str = Field(description="Guidance on when to use this agent")
+    category: str = Field(description="Category: domain, ui, testing, architecture, etc.")
+
+
+# ===== Phase 5.5 Completeness Validation Models (TASK-040) =====
+
+class CompletenessIssue(BaseModel):
+    """Represents a completeness validation issue"""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "severity": "high",
+                "type": "incomplete_crud",
+                "message": "Product entity missing Update operation",
+                "entity": "Product",
+                "operation": "Update",
+                "layer": "UseCases",
+                "missing_files": ["UseCases/Products/UpdateProduct.cs"]
+            }
+        }
+    )
+
+    severity: str = Field(description="Issue severity: 'critical', 'high', 'medium', 'low'")
+    type: str = Field(description="Issue type: 'incomplete_crud', 'layer_asymmetry', 'pattern_inconsistency'")
+    message: str = Field(description="Human-readable issue description")
+    entity: Optional[str] = Field(None, description="Entity name if applicable")
+    operation: Optional[str] = Field(None, description="Operation name if applicable (Create, Read, Update, Delete, List)")
+    layer: Optional[str] = Field(None, description="Layer name if applicable (Domain, UseCases, Web, Infrastructure)")
+    missing_files: List[str] = Field(default_factory=list, description="List of missing file paths")
+
+    def to_dict(self) -> Dict[str, any]:
+        """Convert to dictionary for serialization"""
+        return {
+            'severity': self.severity,
+            'type': self.type,
+            'message': self.message,
+            'entity': self.entity,
+            'operation': self.operation,
+            'layer': self.layer,
+            'missing_files': self.missing_files
+        }
+
+
+class TemplateRecommendation(BaseModel):
+    """Recommendation for missing template"""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "file_path": "UseCases/Products/UpdateProduct.cs",
+                "reason": "Update operation missing for Product entity",
+                "can_auto_generate": True,
+                "reference_template": "UseCases/Products/CreateProduct.cs",
+                "estimated_confidence": 0.85
+            }
+        }
+    )
+
+    file_path: str = Field(description="Recommended template file path")
+    reason: str = Field(description="Why this template is recommended")
+    can_auto_generate: bool = Field(description="Whether template can be auto-generated")
+    reference_template: Optional[str] = Field(None, description="Reference template for auto-generation")
+    estimated_confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Confidence score 0-1")
+
+    def to_dict(self) -> Dict[str, any]:
+        """Convert to dictionary for serialization"""
+        return {
+            'file_path': self.file_path,
+            'reason': self.reason,
+            'can_auto_generate': self.can_auto_generate,
+            'reference_template': self.reference_template,
+            'estimated_confidence': self.estimated_confidence
+        }
+
+
+class ValidationReport(BaseModel):
+    """Complete validation report with issues and recommendations"""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "is_complete": False,
+                "issues": [],
+                "recommended_templates": [],
+                "false_negative_score": 7.88,
+                "templates_generated": 26,
+                "templates_expected": 33,
+                "validation_timestamp": "2025-01-07T10:30:00Z"
+            }
+        }
+    )
+
+    is_complete: bool = Field(description="Whether template collection is complete")
+    issues: List[CompletenessIssue] = Field(default_factory=list, description="List of completeness issues")
+    recommended_templates: List[TemplateRecommendation] = Field(default_factory=list, description="Recommended templates to add")
+    false_negative_score: float = Field(ge=0.0, le=10.0, description="False negative score 0-10")
+    templates_generated: int = Field(description="Number of templates generated")
+    templates_expected: int = Field(description="Number of templates expected")
+    validation_timestamp: str = Field(description="ISO 8601 timestamp of validation")
+
+    def to_dict(self) -> Dict[str, any]:
+        """Convert to dictionary for serialization"""
+        return {
+            'is_complete': self.is_complete,
+            'issues': [issue.to_dict() for issue in self.issues],
+            'recommended_templates': [rec.to_dict() for rec in self.recommended_templates],
+            'false_negative_score': self.false_negative_score,
+            'templates_generated': self.templates_generated,
+            'templates_expected': self.templates_expected,
+            'validation_timestamp': self.validation_timestamp
+        }
+
+    @property
+    def has_critical_issues(self) -> bool:
+        """Check if there are any critical issues"""
+        return any(issue.severity == 'critical' for issue in self.issues)
+
+    @property
+    def has_high_severity_issues(self) -> bool:
+        """Check if there are high severity issues"""
+        return any(issue.severity in ['critical', 'high'] for issue in self.issues)

@@ -34,14 +34,17 @@ That's it! The `/task-work` command handles planning, implementation, architectu
 ## Documentation Structure
 
 ```
-docs/guides/
-├── getting-started.md           # This guide (START HERE!)
-├── claude-code-web-setup.md     # Claude Code Web setup (installation, persistence)
-├── quick-reference.md           # Command reference
-├── taskwright-workflow.md       # Complete workflow guide
-├── migration-guide.md           # Migrating from old workflow
-├── creating-local-templates.md  # Template customization
-└── maui-template-selection.md   # MAUI template guide
+docs/
+├── guides/
+│   ├── GETTING-STARTED.md         # This guide (START HERE!)
+│   ├── taskwright-workflow.md     # Complete workflow guide
+│   ├── creating-local-templates.md # Template customization
+│   └── template-philosophy.md     # Why these templates?
+├── workflows/
+│   ├── complexity-management-workflow.md
+│   ├── quality-gates-workflow.md
+│   └── task-review-workflow.md
+└── Landing pages: concepts.md, advanced.md, templates.md, agents.md
 ```
 
 ## What is Taskwright?
@@ -63,13 +66,13 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
          BLOCKED        BLOCKED
 ```
 
-**Technology Support**:
-- React/TypeScript/Next.js with Tailwind + Vitest + Playwright
-- Python/FastAPI with pytest + LangGraph
-- .NET MAUI with xUnit + MVVM
-- TypeScript APIs with NestJS
-- .NET Microservices with FastEndpoints
-- Language-agnostic (default template)
+**Available Templates** (4 high-quality):
+- **react-typescript**: React + TypeScript (from Bulletproof React, 9.3/10)
+- **fastapi-python**: FastAPI + pytest (from best practices, 9.2/10)
+- **nextjs-fullstack**: Next.js App Router (full-stack, 9.4/10)
+- **default**: Language-agnostic (Go, Rust, Ruby, etc., 8.0+/10)
+
+**For Production**: Use `/template-create` from your own codebase
 
 ## The Complete Development Flow
 
@@ -208,6 +211,30 @@ Is it complex business logic?
     No → /task-work (standard)
 ```
 
+## Common Workflows
+
+Beyond the basic `/task-work` command, these specialized workflows handle specific scenarios:
+
+**Trivial Tasks (typos, doc updates)**:
+```bash
+/task-work TASK-XXX --micro    # 3-5 min vs 15+ min, skips planning/review
+```
+Auto-detected for simple tasks. [Details: task-work.md](../../installer/global/commands/task-work.md#flag---micro)
+
+**Iterative Refinement (minor tweaks)**:
+```bash
+/task-refine TASK-XXX          # Quick fixes after code review
+```
+For small adjustments without full re-work. [Details: Taskwright Workflow](taskwright-workflow.md#37-iterative-refinement)
+
+**Analysis & Reviews (decisions, audits)**:
+```bash
+/task-review TASK-XXX --mode=architectural --depth=standard
+```
+For architectural reviews, security audits, technical decisions (no implementation). [Details: Task Review Workflow](../workflows/task-review-workflow.md)
+
+> **Pro tip:** Start with `/task-work` for implementation. Use these specialized commands as you encounter specific needs.
+
 ## Essential Commands
 
 ### Task Commands
@@ -246,24 +273,28 @@ All enforced automatically by `/task-work`:
 
 ## Technology Stack Support
 
-Works with all major stacks:
-- **Python**: pytest, FastAPI, LangGraph
-- **TypeScript/React**: Vitest, Playwright, Next.js
-- **.NET MAUI**: xUnit, MVVM, platform testing
-- **.NET Microservices**: FastEndpoints, xUnit, FluentValidation
-- **TypeScript API**: NestJS, Jest, TypeORM
+**Reference templates** demonstrate patterns for:
+- **react-typescript**: Vitest, Playwright, React Testing Library
+- **fastapi-python**: pytest, FastAPI Test Client, Pydantic validation
+- **nextjs-fullstack**: Vitest, Playwright, Next.js testing patterns
+- **default**: Language-agnostic (configure for your stack)
 
-Stack-specific templates available via:
+**Your custom template** can use any stack via `/template-create`.
+
+Reference templates for learning and evaluation:
 ```bash
-taskwright init react                  # React with TypeScript
-taskwright init python                 # Python with FastAPI
-taskwright init maui-appshell         # .NET MAUI AppShell
-taskwright init maui-navigationpage   # .NET MAUI NavigationPage
-taskwright init typescript-api        # NestJS TypeScript API
-taskwright init dotnet-fastendpoints   # .NET APIs with FastEndpoints
-taskwright init dotnet-aspnetcontroller # .NET APIs with Controllers
-taskwright init dotnet-minimalapi     # .NET APIs with Minimal API
-taskwright init default               # Language-agnostic
+# Stack-specific reference templates (9+/10 quality)
+taskwright init react-typescript       # React + TypeScript (from Bulletproof React)
+taskwright init fastapi-python         # FastAPI + pytest (from best practices)
+taskwright init nextjs-fullstack       # Next.js App Router (full-stack)
+
+# Language-agnostic template (8+/10 quality)
+taskwright init default                # Go, Rust, Ruby, Elixir, PHP, etc.
+
+# For production: Create from your codebase
+cd your-production-codebase
+/template-create
+taskwright init your-custom-template
 ```
 
 ## Key Benefits

@@ -1,0 +1,66 @@
+{
+  "task_id": "TASK-062",
+  "total_score": 7,
+  "complexity_level": "high",
+  "review_mode": "FULL_REQUIRED",
+  "calculated_at": "2025-01-09T20:15:00Z",
+  "factor_scores": {
+    "file_complexity": {
+      "score": 3.0,
+      "max_score": 3.0,
+      "details": {
+        "total_files": 38,
+        "new_files": 38,
+        "modified_files": 0,
+        "range": "9+ files",
+        "justification": "38 files across multiple technologies (React frontend, FastAPI backend, Docker, template files). Maximum file complexity score."
+      }
+    },
+    "pattern_familiarity": {
+      "score": 1.5,
+      "max_score": 2.0,
+      "details": {
+        "patterns_identified": 6,
+        "high_familiarity": ["Repository Pattern", "Dependency Injection"],
+        "medium_familiarity": ["Monorepo Architecture", "Docker Compose Orchestration", "Multi-stage Docker Builds"],
+        "low_familiarity": ["Type Generation (OpenAPI → TypeScript)"],
+        "justification": "Mix of familiar patterns (Repository, DI) and new patterns (Type Generation, Monorepo). Score: 1.5/2.0"
+      }
+    },
+    "risk_level": {
+      "score": 1.5,
+      "max_score": 3.0,
+      "details": {
+        "total_risks": 5,
+        "high_risk": 0,
+        "medium_risk": 4,
+        "low_risk": 1,
+        "primary_risks": [
+          "Type generation synchronization (OpenAPI ↔ TypeScript)",
+          "Monorepo tooling learning curve (Turborepo, pnpm)",
+          "Template validation score (must achieve 9+/10)",
+          "Database migration management in containers"
+        ],
+        "justification": "4 medium risks, 1 low risk. No high-severity risks. Score: 1.5/3.0"
+      }
+    },
+    "dependency_complexity": {
+      "score": 1.0,
+      "max_score": 2.0,
+      "details": {
+        "total_dependencies": 12,
+        "new_dependencies": 3,
+        "new_dependency_list": ["turborepo", "pnpm", "@hey-api/openapi-ts"],
+        "familiar_dependencies": ["react", "vite", "fastapi", "sqlalchemy", "pydantic", "pytest", "vitest", "docker", "docker-compose"],
+        "justification": "3 new dependencies (Turborepo, pnpm, @hey-api/openapi-ts) requiring learning. Score: 1.0/2.0"
+      }
+    }
+  },
+  "forced_review_triggers": [],
+  "auto_proceed": false,
+  "reasoning": "Score: 7/10 (High Complexity) - FULL_REQUIRED review mode\n\nBreakdown:\n- File Complexity: 3.0/3.0 (38 files across React, FastAPI, Docker, template structure)\n- Pattern Familiarity: 1.5/2.0 (Mix of familiar patterns and new monorepo/type-gen patterns)\n- Risk Level: 1.5/3.0 (4 medium risks: type sync, tooling, validation, migrations)\n- Dependency Complexity: 1.0/2.0 (3 new dependencies: Turborepo, pnpm, type generation)\n\nThis task requires mandatory comprehensive human checkpoint (Phase 2.8) due to high complexity (≥7/10).",
+  "estimated_duration_hours": 9.5,
+  "estimated_effort_days": "3-5 days",
+  "confidence": "high",
+  "version": 1
+}

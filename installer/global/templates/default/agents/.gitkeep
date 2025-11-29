@@ -1,0 +1,10 @@
+# Placeholder for custom agents
+
+Add stack-specific agents to this directory.
+
+Example:
+- go-api-specialist.md
+- rust-systems-specialist.md
+- ruby-rails-specialist.md
+
+See CLAUDE.md for guidance on creating agents.

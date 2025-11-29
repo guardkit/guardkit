@@ -5,30 +5,139 @@
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 ![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
 ![detection](https://img.shields.io/badge/detection-automatic-blueviolet)
+[![documentation](https://img.shields.io/badge/docs-online-blue)](https://taskwright-dev.github.io/taskwright/)
 
 **Lightweight AI-assisted development with built-in quality gates.**
 
 Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
 
+## Spec-Oriented Development (SOD)
+
+Taskwright provides **Spec-Oriented Development** out of the box:
+
+✅ **Task descriptions as lightweight specifications**
+- Acceptance criteria instead of formal requirements (EARS)
+- Quick start, minimal ceremony
+- Perfect for solo developers and small teams
+
+✅ **Optional Upgrade to Spec-Driven Development (SDD)**
+- For teams needing formal requirements management, combine Taskwright with [RequireKit](https://github.com/requirekit/require-kit)
+- EARS notation requirements
+- BDD scenarios (Gherkin)
+- Epic/feature hierarchy
+- PM tool integration (Jira, Linear, GitHub)
+- Requirements traceability matrices
+
+### Why "Spec-Oriented" vs "Spec-Driven"?
+
+| | Spec-Oriented (Taskwright) | Spec-Driven (Spec-Kit, Kiro, Tessl) |
+|---|---|---|
+| **Specs** | Task descriptions + acceptance criteria | Formal specifications (EARS, extensive docs) |
+| **Ceremony** | Minimal (1-2 minute task creation) | Heavy (30+ minute spec authoring) |
+| **Target** | Solo devs, small teams | Large teams, regulated industries |
+| **Flexibility** | Agile, iterative | Structured, plan-heavy |
+
 ## What You Get
 
+- **Hash-Based Task IDs**: Collision-free IDs enable concurrent creation and parallel development (Conductor.build compatible)
+- **PM Tool Integration**: Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs
 - **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
 - **Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
+- **AI Agent Discovery**: Automatic specialist matching via metadata (stack, phase, keywords)
+- **Stack-Specific Optimization**: Haiku agents for 48-53% cost savings, 4-5x faster implementation
 - **Specialized Agents**: Stack-specific AI agents for React, Python, .NET, TypeScript
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
 - **Design-First Workflow**: Optional design approval checkpoint for complex tasks (complexity ≥7)
 
+## Quality Gates & Human Oversight
+
+**AI does heavy lifting. Humans make decisions.**
+
+### Human-in-the-Loop Checkpoints
+- **Phase 2.5: Architectural Review** - SOLID/DRY/YAGNI scoring (60/100 minimum)
+- **Phase 2.8: Complexity Checkpoint** - Tasks ≥7 complexity require approval before implementation
+- **Phase 4.5: Test Enforcement** - Auto-fix up to 3 attempts, block if tests fail
+- **Phase 5.5: Plan Audit** - Detect scope creep (file count, LOC variance ±20%, duration ±30%)
+
+### Complexity Evaluation (Upfront Task Sizing)
+- **0-10 Scale** - Automatic complexity scoring before work begins
+- **Auto-Split Recommendations** - Tasks ≥7 complexity flagged for breakdown
+- **Prevents Oversized Tasks** - Blocks 8+ hour tasks from entering backlog
+
+### Plan Audit (Scope Creep Detection)
+- **File Count Matching** - Verify implementation matches plan
+- **LOC Variance Tracking** - Flag ±20% deviations for review
+- **Duration Variance Tracking** - Flag ±30% deviations for retrospective
+
+## Parallel Task Development
+
+**Work on multiple tasks simultaneously without context switching chaos.**
+
+Taskwright integrates seamlessly with [Conductor.build](https://conductor.build) for parallel development:
+
+### How It Works
+- **Multiple Worktrees** - Work on 3-5 tasks in parallel, each in isolated git worktree
+- **State Preservation** - 100% state sync across worktrees (no manual intervention)
+- **Zero Context Switching** - Each worktree maintains its own implementation context
+- **Automatic Sync** - All commands available in every worktree, state updates propagate automatically
+
+### Benefits
+- **Blocked on one task? Switch to another** - No waiting for CI, reviews, or external dependencies
+- **Parallel experimentation** - Try different approaches simultaneously, keep the best
+- **Team collaboration** - Different team members work on different tasks without merge conflicts
+- **Faster iteration** - 3-5x productivity boost when multiple tasks are in flight
+
+### Competitive Advantage
+- **Linear/Jira**: Sequential task switching (lose context on every switch)
+- **GitHub Projects**: No parallel workspace support
+- **Taskwright + Conductor**: True parallel development with state preservation
+
+**Setup**: One command - `./installer/scripts/install.sh` creates symlinks automatically
+
+## Documentation
+
+📚 **[View Full Documentation](https://taskwright-dev.github.io/taskwright/)**
+
+Comprehensive guides, workflows, and references:
+
+- **[Quickstart Guide](https://taskwright-dev.github.io/taskwright/guides/GETTING-STARTED/)** - Get up and running in 5 minutes
+- **[Core Concepts](https://taskwright-dev.github.io/taskwright/concepts/)** - Workflow, complexity, quality gates, task states
+- **[Advanced Topics](https://taskwright-dev.github.io/taskwright/advanced/)** - Design-first, UX integration, review workflows
+- **[Templates](https://taskwright-dev.github.io/taskwright/templates/)** - Stack-specific templates and customization
+- **[Agent System](https://taskwright-dev.github.io/taskwright/agents/)** - Discovery, enhancement, and boundary sections
+- **[Task Review](https://taskwright-dev.github.io/taskwright/task-review/)** - Analysis workflows and review modes
+- **[MCP Integration](https://taskwright-dev.github.io/taskwright/mcp-integration/)** - Optional enhancements (context7, design-patterns)
+- **[Troubleshooting](https://taskwright-dev.github.io/taskwright/troubleshooting/)** - Common issues and solutions
+
 ## 5-Minute Quickstart
 
+**📚 Full documentation: https://taskwright-dev.github.io/taskwright/**
+
 ### Option 1: Quick Install (Recommended)
+
+**macOS / Linux:**
 ```bash
 # Direct install
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
-taskwright init react  # or: python, typescript-api, maui-appshell, default
+taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
+
+**Windows (WSL2):**
+```bash
+# 1. Install WSL2 (if not already installed)
+wsl --install
+
+# 2. Open WSL2 terminal and run installer
+curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+
+# 3. Initialize your project
+taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
+```
+
+> **Note for Windows users**: Taskwright requires bash and runs best on WSL2. Native PowerShell installation is not currently supported.
 
 **If using VS Code:** Reload the window to enable slash commands:
 - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
@@ -48,8 +157,9 @@ taskwright init react  # or: python, typescript-api, maui-appshell, default
 ```bash
 # In Claude Code - create and work on a task
 /task-create "Add user login feature"
-/task-work TASK-001  # Does everything: plan, review, implement, test, verify
-/task-complete TASK-001
+# Created: TASK-h8j3
+/task-work TASK-h8j3  # Does everything: plan, review, implement, test, verify
+/task-complete TASK-h8j3
 ```
 
 ### Option 2: Clone Repository
@@ -62,59 +172,65 @@ chmod +x installer/scripts/install.sh
 
 # Initialize your project
 cd /path/to/your/project
-taskwright init react
+taskwright init react-typescript
 
 # IMPORTANT: Stay in your project directory for task work
 /task-create "Add user login feature"
-/task-work TASK-001
+# Created: TASK-k2m9
+/task-work TASK-k2m9
 ```
 
 **If using VS Code:** Reload the window after initialization (see instructions above).
 
 That's it! Three commands from idea to production-ready code.
 
-## What Makes This Different?
+## What Makes Taskwright Different?
 
-### Architectural Review
-Before writing a single line of code, get automated evaluation of:
-- **SOLID Principles** (60/100 minimum score)
-- **DRY Violations** (detect duplication risks)
-- **YAGNI Compliance** (flag over-engineering)
+1. **AI-Assisted with Human Oversight** ⚖️
+   - Not fully automated (AI writes code)
+   - Not fully manual (human reviews quality gates)
+   - **Balanced**: AI does heavy lifting, humans make decisions
 
-**Result**: Catches design flaws before implementation, saving 40-50% rework time.
+2. **Quality Gates Built-In** 🛡️
+   - Architectural review (Phase 2.5)
+   - Test enforcement (Phase 4.5)
+   - Plan audit (Phase 5.5)
+   - **Competitor gap**: Linear lacks mandatory quality gates
 
-### Test Enforcement Loop
-After implementation, automatic test fixing:
-1. Run all tests
-2. If failures detected → analyze root cause
-3. Auto-fix code (up to 3 attempts)
-4. Re-run tests
-5. Block task if all attempts fail (zero tolerance for failing tests)
+3. **Complexity Awareness** 🧠
+   - Upfront task sizing (0-10 scale)
+   - Auto-split recommendations (≥7 complexity)
+   - **Prevents oversized tasks proactively** (competitors react, we prevent)
 
-**Result**: 100% test pass rate before code review. No "we'll fix it later."
+4. **Parallel Development Support** 🚀
+   - Conductor.build integration
+   - Work on 3-5 tasks simultaneously
+   - 100% state preservation across worktrees
+   - **Competitor gap**: Linear/Jira require sequential context switching
 
-### Complexity Evaluation
-Automatic complexity scoring (0-10 scale):
-- **1-3 (Simple)**: Auto-proceed, no checkpoint (<4 hours)
-- **4-6 (Medium)**: Quick optional checkpoint (30s timeout)
-- **7-10 (Complex)**: Mandatory design approval (>8 hours)
+5. **Spectrum of Formality** 📊
+   - Lightweight: Taskwright alone (SOD)
+   - Full-featured: Taskwright + RequireKit (SDD)
+   - **Right amount of process for your team size**
 
-**Result**: Right level of oversight for task complexity.
+6. **Zero Vendor Lock-In** 🔓
+   - Markdown files (human-readable, git-friendly)
+   - Self-hosted (no SaaS required)
+   - **Competitor gap**: Linear is proprietary platform
 
-## When to Use Taskwright
+## Who Should Use Taskwright?
 
-### Use When:
-- Individual tasks or small features (1-8 hours)
-- Solo dev or small teams (1-3 developers)
-- Need quality enforcement without ceremony
-- Want AI assistance with human oversight
-- Small-to-medium projects
+| Audience | Use Case | Solution | Specs? | Parallel? |
+|----------|----------|----------|--------|-----------|
+| **Solo Developers** | Quick prototyping, personal projects | Taskwright (SOD) | Task descriptions | Optional (Conductor) |
+| **Small Teams (2-5)** | Agile development, startup MVPs | Taskwright (SOD) | Task descriptions | Recommended (Conductor) |
+| **Medium Teams (5-20)** | Structured development, traceability | Taskwright + RequireKit (SDD) | EARS + Gherkin | Recommended (Conductor) |
+| **Large Teams (20+)** | Regulated industries, compliance | Taskwright + RequireKit (SDD) | EARS + Gherkin + PM sync | Essential (Conductor) |
 
-### Don't Use When:
-- Just want a code editor (use plain Claude Code)
-- Need formal requirements management (use RequireKit instead)
-- Enterprise compliance workflows required
-- Multi-epic portfolio management (10+ features, 5+ devs)
+### Migration Path
+- ✅ Start with Taskwright (SOD) - "Zero ceremony, get moving fast"
+- ✅ Add Conductor when parallelizing - "Work on multiple tasks simultaneously"
+- ✅ Add RequireKit when needed (SDD) - "Team grew? Need compliance? Upgrade seamlessly"
 
 ## Need Requirements Management?
 
@@ -154,24 +270,79 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 /debug                     # Troubleshoot issues
 ```
 
-## Supported Stacks
+## Templates
 
-Choose your template during initialization:
+Taskwright ships with **5 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
 
-| Template | Technologies | Use For |
-|----------|-------------|---------|
-| **react** | React + TypeScript + Next.js + Tailwind + Vitest + Playwright | Web applications |
-| **python** | FastAPI + pytest + LangGraph + Pydantic | Python APIs |
-| **typescript-api** | NestJS + Result patterns + domain modeling | TypeScript APIs |
-| **dotnet-fastendpoints** | .NET + FastEndpoints + Either monad (LanguageExt) | .NET APIs (functional) |
-| **dotnet-aspnetcontroller** | .NET + ASP.NET Controllers + ErrorOr | .NET APIs (traditional MVC) |
-| **dotnet-minimalapi** | .NET + Minimal APIs + Vertical Slices + ErrorOr | .NET APIs (lightweight) |
-| **fullstack** | React + TypeScript + Python + FastAPI | Full-stack web apps |
-| **maui-appshell** | .NET MAUI + AppShell + MVVM + ErrorOr | Mobile (tab-based) |
-| **maui-navigationpage** | .NET MAUI + NavigationPage + MVVM + ErrorOr | Mobile (page-based) |
-| **default** | Language-agnostic | Any other stack |
+### High-Quality Reference Templates
 
-See [Creating Local Templates](docs/guides/creating-local-templates.md) for custom team templates.
+#### Stack-Specific (Production-Proven)
+
+| Template | Source | Stars | Focus | Score |
+|----------|--------|-------|-------|-------|
+| **react-typescript** | [Bulletproof React](https://github.com/alan2207/bulletproof-react) | 28.5k | Frontend | 9.3/10 |
+| **fastapi-python** | [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) | 12k+ | Backend API | 9.2/10 |
+| **nextjs-fullstack** | Next.js App Router + Patterns | Official | Full-stack | 9.4/10 |
+
+#### Specialized Templates
+
+| Template | Purpose | Focus | Score |
+|----------|---------|-------|-------|
+| **react-fastapi-monorepo** | Full-stack monorepo | React + FastAPI | 9.2/10 |
+
+#### Language-Agnostic Template
+
+| Template | Purpose | Use For | Score |
+|----------|---------|---------|-------|
+| **default** | Language-agnostic foundation | Go, Rust, Ruby, Elixir, PHP, evaluation | 8.0+/10 |
+
+All templates validated using comprehensive quality audit.
+
+### Quick Start with Templates
+
+```bash
+# Try a reference template (evaluation)
+taskwright init react-typescript
+
+# Create your own template (production)
+cd your-production-codebase
+/template-create
+taskwright init your-custom-template
+```
+
+### Why These 5 Templates?
+
+**Templates are learning resources, not production code.**
+
+Your production codebase is better than any generic template. Use `/template-create` to generate templates from code you've proven works.
+
+**Stack-specific templates** (react, fastapi, nextjs) demonstrate:
+- How to structure templates
+- Stack-specific best practices
+- Quality standards to target (9+/10)
+- Taskwright workflow patterns
+
+**Default template** provides:
+- Language-agnostic foundation for unsupported stacks (Go, Rust, Ruby, etc.)
+- Evaluation workflow without stack commitment
+- Starting point before using `/template-create`
+
+### Create Your Own Templates
+
+```bash
+cd your-production-codebase
+/template-create
+
+# Template created with:
+# ✅ Your patterns and conventions
+# ✅ Your proven architecture
+# ✅ Your team's best practices
+# ✅ Quality validation
+```
+
+**See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
+
+**Migration**: [Template Migration Guide](docs/guides/template-migration.md) for migrating from old templates.
 
 ## Quality Gates (Automatic)
 
@@ -279,7 +450,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 
 **With Context7**:
 ```
-/task-work TASK-001
+/task-work TASK-n7p4
 📚 Fetching latest documentation for React...
 ✅ Retrieved React documentation (topic: hooks)
 [Implementation uses latest React 19 patterns]
@@ -287,7 +458,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 
 **Without Context7**:
 ```
-/task-work TASK-001
+/task-work TASK-n7p4
 ⚠️ Context7 unavailable, using training data
 [Implementation uses training data patterns - still works!]
 ```
@@ -321,6 +492,16 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 - [MAUI Template Selection](docs/guides/maui-template-selection.md) - AppShell vs NavigationPage
 - [Creating Local Templates](docs/guides/creating-local-templates.md) - Team-specific templates
 
+### Template Validation
+- [Template Validation Guide](docs/guides/template-validation-guide.md) - 3-level validation system overview
+- [Template Validation Workflows](docs/guides/template-validation-workflows.md) - Common usage patterns
+- [Template Validation AI Assistance](docs/guides/template-validation-ai-assistance.md) - AI-assisted validation features
+
+**Research & Implementation**:
+- [Template Validation Strategy](docs/research/template-validation-strategy.md) - Design decisions and architecture
+- [Template Validation Implementation Guide](docs/research/template-validation-implementation-guide.md) - Developer workflow
+- [Template Validation Tasks Summary](docs/research/template-validation-tasks-summary.md) - Task overview
+
 ## Example Workflow
 
 ### Real-World: User Authentication Feature
@@ -328,9 +509,10 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 ```bash
 # 1. Create task
 /task-create "Add JWT-based user authentication"
+# Created: TASK-p9r3
 
 # 2. Work on it (automatic phases)
-/task-work TASK-001
+/task-work TASK-p9r3
 
 # Output:
 # Phase 2: Implementation Planning ✅
@@ -346,7 +528,7 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 # Task moved to IN_REVIEW
 
 # 3. Complete
-/task-complete TASK-001
+/task-complete TASK-p9r3
 ```
 
 Total time: ~2 minutes. Zero manual quality checks.

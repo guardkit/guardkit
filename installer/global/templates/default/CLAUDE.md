@@ -1,157 +1,220 @@
-# Project Context for Claude Code
+# Taskwright - Default Template
 
-This project uses the AI Engineer v2.0 system with the unified task workflow for streamlined development.
+## When to Use This Template
 
-## Project Overview
-[Describe your project here]
+The **default** template is a **language-agnostic** starting point for projects that don't fit Taskwright's specialized templates. Use this template if:
 
-## Architecture
-[Describe your system architecture]
+1. **Language Not Yet Supported**: Working with Go, Rust, Ruby, PHP, Kotlin, Swift, etc.
+2. **Custom Tech Stack**: Unique combination of technologies not covered by existing templates
+3. **Learning/Prototyping**: Exploring Taskwright's workflow before committing to a specific stack
+4. **Template Development**: Building a custom template using `/template-create`
 
-## Key Technologies
-- [List main technologies]
+## When NOT to Use This Template
 
-## Development Workflow - Simplified Task System
+**DO NOT use the default template if** you're working with these well-supported stacks:
 
-### The Streamlined Workflow
-We use a unified task workflow that combines implementation and testing into an inseparable process:
+- **React/TypeScript** → Use `react` template
+- **Python/FastAPI** → Use `python` template
+- **TypeScript/NestJS** → Use `typescript-api` template
+- **.NET MAUI** → Use `maui-appshell` or `maui-navigationpage` template
+- **.NET API** → Use `dotnet-fastendpoints` or `dotnet-minimalapi` template
+- **Full-Stack (React + Python)** → Use `fullstack` template
 
-```bash
-# 1. Create Task
-/task-create "Feature description"
-/task-create "Add authentication" priority:high
+**Why?** Specialized templates provide:
+- Stack-specific quality gates
+- Technology-appropriate testing frameworks
+- Pre-configured agents and workflows
+- Optimized for language/framework best practices
 
-# 2. Work on Task (Implementation + Testing Combined)
-/task-work TASK-XXX [--mode=standard|tdd|bdd]
+## What This Template Provides
 
-# 3. Complete Task
-/task-complete TASK-XXX
+### Minimal Structure
+```
+.claude/                    # Configuration
+├── agents/                # (Empty - add your own)
+├── commands/              # (Symlinked from global)
+├── templates/             # (Empty - add your own)
+└── settings.json          # Documentation level configuration
+
+tasks/                      # Task management
+├── backlog/
+├── in_progress/
+├── in_review/
+├── blocked/
+└── completed/
+
+docs/                       # Documentation
+├── guides/                # (Created as needed)
+└── state/                 # (Created as needed)
 ```
 
-### Development Modes
+### Core Taskwright Workflow
+All core commands are available via global symlinks:
+```bash
+/task-create "Feature description"
+/task-work TASK-XXX
+/task-complete TASK-XXX
+/task-status
+```
 
-#### Standard Mode (Default)
-- Implementation and tests created together
-- Suitable for straightforward features
-- Tests run automatically after implementation
+### Documentation Level System
+The template includes `settings.json` with documentation level configuration:
+- **Minimal** (complexity 1-3): Quick summaries, embedded results
+- **Standard** (complexity 4-10): Full reports, comprehensive coverage
+- **Comprehensive** (complexity 7-10 or triggers): Standalone documents, enhanced analysis
 
-#### TDD Mode
-- Red-Green-Refactor cycle
-- Tests written first, then implementation
-- Best for complex business logic
+## Getting Started
 
-#### BDD Mode
-- Start from Gherkin scenarios
-- Generate step definitions
-- Best for user-facing features
+### 1. Initialize with Default Template
+```bash
+taskwright init default
+```
 
-### Quality Gates (Automatic)
-Every task must pass these gates before completion:
-- ✅ All tests passing (100%)
-- ✅ Code coverage ≥ 80%
-- ✅ Performance benchmarks met
-- ✅ No security vulnerabilities
-- ✅ All acceptance criteria satisfied
+### 2. Customize for Your Stack
+Add stack-specific configuration:
 
-## Core Task Commands
+**For testing:**
+- Add test commands to `.claude/settings.json` (if needed)
+- Configure test runners for your language
 
-### Task Management (Unified Workflow)
-- `/task-create` - Create new task
-- `/task-work` - Implement and test (unified command)
-- `/task-complete` - Finalize task after review
+**For agents:**
+- Add stack-specific agents to `.claude/agents/` (optional)
+- Use `/template-create` for systematic agent generation
 
-### State Management
-- `/task-status` - View task board
-- `/update-state` - Update sprint progress
+**For templates:**
+- Add code templates to `.claude/templates/` (optional)
+
+### 3. Start Working
+```bash
+/task-create "Your first task"
+/task-work TASK-001
+```
+
+## Customization Path
+
+### Quick Customization
+For simple projects, add minimal configuration:
+
+```json
+// .claude/settings.json (extend the default)
+{
+  "documentation": { ... },
+  "stack": {
+    "language": "go",
+    "testing": {
+      "command": "go test ./...",
+      "coverage_command": "go test -cover ./..."
+    }
+  }
+}
+```
+
+### Full Template Creation
+For reusable templates, use `/template-create`:
+
+```bash
+# Interactive template creation
+/template-create
+
+# Follow prompts to create a complete template with:
+# - Agents
+# - Commands
+# - File templates
+# - Configuration
+# - Testing infrastructure
+```
+
+See [Creating Local Templates](../../../docs/guides/creating-local-templates.md) for details.
+
+## Core Taskwright Workflow
+
+The default template includes the complete Taskwright workflow:
+
+### Phase Execution
+```
+Phase 1: Requirements Analysis (skipped in Taskwright)
+Phase 2: Implementation Planning
+Phase 2.5: Architectural Review
+Phase 2.7: Complexity Evaluation
+Phase 2.8: Human Checkpoint (if needed)
+Phase 3: Implementation
+Phase 4: Testing
+Phase 4.5: Test Enforcement
+Phase 5: Code Review
+Phase 5.5: Plan Audit
+```
+
+### Quality Gates
+- **Compilation**: 100% (language-dependent)
+- **Tests Pass**: 100% (enforced)
+- **Coverage**: ≥80% (recommended)
+- **Architecture**: ≥60/100
+- **Plan Compliance**: 0 violations
+
+## Migration to Specialized Template
+
+When your project matures or you add team members, migrate to a specialized template:
+
+1. **Identify your stack**: React, Python, .NET, etc.
+2. **Generate new template**: Use `/template-create` or use existing template
+3. **Preserve state**: Copy `.claude/state/`, `tasks/`, `docs/`
+4. **Reinitialize**: `taskwright init <specialized-template>`
+
+See [Template Migration Guide](../../../docs/guides/template-migration.md) for details.
 
 ## Project Standards
 
 ### Code Quality
-- **Minimum 80% test coverage** (enforced automatically)
-- **All tests must pass** (enforced by /task-work)
-- **TDD/BDD practices** supported natively
-- **Quality gates** prevent low-quality code
+- **Test coverage** recommended but not enforced (language-dependent)
+- **Quality gates** active for all phases
+- **Test execution** verified in Phase 4
 
 ### Documentation
 - **ADRs** for architectural decisions
-- **Automatic test reports** from /task-work
+- **Task tracking** in markdown
+- **Implementation plans** in `.claude/task-plans/`
 
 ### Testing Philosophy
-**"Implementation and testing are inseparable"** - Every implementation includes tests, enforced by the unified workflow.
-
-## Project Structure
-
-```
-.
-├── .claude/          # AI Engineer configuration
-│   ├── agents/       # AI specialists
-│   ├── commands/     # Available commands
-│   ├── templates/    # File templates
-│   └── settings.json # Project settings
-├── docs/            # All documentation
-│   ├── adr/         # Architecture decisions
-│   └── state/       # Progress tracking
-├── tasks/           # Task management
-│   ├── backlog/     # Not started
-│   ├── in_progress/ # Active work
-│   ├── in_review/   # Pending review
-│   ├── blocked/     # Failed quality gates
-│   └── completed/   # Archived tasks
-├── src/             # Source code
-└── tests/           # Test suites
-    ├── unit/        # Unit tests
-    ├── integration/ # Integration tests
-    └── e2e/         # End-to-end tests
-```
-
-## Quick Start
-
-### Starting a New Feature
-```bash
-# 1. Create task
-/task-create "Implement user login" priority:high
-
-# 2. Work on task with your preferred mode
-/task-work TASK-001 --mode=tdd
-
-# 3. Complete after review
-/task-complete TASK-001
-```
-
-### Working on Existing Task
-```bash
-# View available tasks
-/task-status
-
-# Work on a task (auto-detects technology stack)
-/task-work TASK-042
-
-# If tests fail, fix and retry
-/task-work TASK-042 --fix-only
-
-# Complete when all quality gates pass
-/task-complete TASK-042
-```
+**"Implementation and testing are inseparable"** - Every implementation should include tests, though specific frameworks are stack-dependent.
 
 ## Best Practices
 
-1. **Choose the right mode**: TDD for logic, BDD for features, Standard for simple tasks
-2. **Let quality gates guide you**: They ensure consistent quality
-3. **Trust the workflow**: Implementation and testing together prevent bugs
-4. **Document decisions**: Use ADRs for important choices
-
-## Why the Unified Workflow?
-
-The streamlined workflow delivers:
-- **Simple task creation** - no complex hierarchies required
-- **100% test guarantee** - testing is automatic, not optional
-- **Faster delivery** - from idea to completed task
-- **Zero manual errors** - quality gates and state management are automatic
-- **Development flexibility** - choose Standard, TDD, or BDD mode based on needs
+1. **Use specialized templates when possible** - Better tooling and quality gates
+2. **Add stack-specific configuration early** - Don't delay customization
+3. **Create reusable templates** - Use `/template-create` for repeated patterns
+4. **Leverage documentation levels** - Adjust detail based on task complexity
+5. **Migrate when ready** - Don't stay on default longer than needed
 
 ## Support and Documentation
 
-- **User Guide**: `docs/guides/AI-ENGINEER-USER-GUIDE.md`
-- **Quick Reference**: `.claude/TASK-WORKFLOW-QUICK-REFERENCE-V2.md`
+- **User Guide**: See root `CLAUDE.md` for complete Taskwright documentation
+- **Template Guide**: [Creating Local Templates](../../../docs/guides/creating-local-templates.md)
+- **Migration Guide**: [Template Migration Guide](../../../docs/guides/template-migration.md)
 
-Remember: **"Implementation and testing are inseparable"** - this is the core philosophy of the unified workflow.
+## Philosophy
+
+The default template embodies Taskwright's philosophy:
+
+**"Start simple, scale as needed"**
+
+It provides the core workflow without imposing stack-specific constraints, allowing you to:
+- Explore Taskwright with any language
+- Build custom templates for specialized stacks
+- Prototype quickly before committing to structure
+- Develop in languages not yet supported by built-in templates
+
+When you're ready for more structure, migrate to a specialized template or create your own using `/template-create`.
+
+## Agent Response Format
+
+When generating `.agent-response.json` files (checkpoint-resume pattern), use the format specification:
+
+**Reference**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) (TASK-FIX-267C)
+
+**Key Requirements**:
+- Field name: `response` (NOT `result`)
+- Data type: JSON-encoded string (NOT object)
+- All 9 required fields must be present
+
+See the specification for complete schema and examples.
+

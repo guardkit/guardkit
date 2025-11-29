@@ -1,0 +1,418 @@
+{
+  "task_id": "TASK-062",
+  "title": "Create React + FastAPI Monorepo Reference Template",
+  "technology_stack": "react-typescript,fastapi-python,turborepo",
+  "estimated_duration_hours": 9.5,
+  "files_to_create": [
+    {
+      "path": "/tmp/react-fastapi-monorepo/package.json",
+      "purpose": "Root monorepo package.json with Turborepo scripts"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/turbo.json",
+      "purpose": "Turborepo pipeline configuration for build/dev/test tasks"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/docker-compose.yml",
+      "purpose": "Docker Compose orchestration for PostgreSQL, backend, frontend"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/package.json",
+      "purpose": "Frontend app package.json with React + Vite + TypeScript"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/vite.config.ts",
+      "purpose": "Vite configuration for React development"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/tsconfig.json",
+      "purpose": "TypeScript configuration for frontend"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/src/App.tsx",
+      "purpose": "Main React application component"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/src/hooks/useUsers.ts",
+      "purpose": "Type-safe API hook using generated types"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/frontend/Dockerfile",
+      "purpose": "Multi-stage Dockerfile for frontend production build"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/pyproject.toml",
+      "purpose": "Backend Python dependencies with Poetry"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/main.py",
+      "purpose": "FastAPI application entry point with OpenAPI generation"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/api/routes/users.py",
+      "purpose": "User CRUD API routes"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/schemas/user.py",
+      "purpose": "Pydantic schemas for User entity"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/crud/user.py",
+      "purpose": "User CRUD operations with SQLAlchemy"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/models/user.py",
+      "purpose": "SQLAlchemy User model"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/app/db/session.py",
+      "purpose": "Database session configuration"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/Dockerfile",
+      "purpose": "Multi-stage Dockerfile for backend production"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/apps/backend/tests/test_users.py",
+      "purpose": "pytest tests for user API endpoints"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/packages/shared-types/package.json",
+      "purpose": "Shared types package with OpenAPI type generation"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/packages/shared-types/tsconfig.json",
+      "purpose": "TypeScript configuration for shared types"
+    },
+    {
+      "path": "/tmp/react-fastapi-monorepo/packages/shared-types/src/client.ts",
+      "purpose": "Type-safe API client using @hey-api/openapi-ts"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/manifest.json",
+      "purpose": "Template metadata and configuration"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/settings.json",
+      "purpose": "Naming conventions and placeholder definitions"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/CLAUDE.md",
+      "purpose": "AI guidance for monorepo patterns and architecture"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/README.md",
+      "purpose": "Human-readable template documentation"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/component.tsx.template",
+      "purpose": "React component template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template",
+      "purpose": "Type-safe API hook template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/test.test.tsx.template",
+      "purpose": "Frontend test template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/router.py.template",
+      "purpose": "FastAPI router template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/schema.py.template",
+      "purpose": "Pydantic schema template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/crud.py.template",
+      "purpose": "CRUD operations template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/test.py.template",
+      "purpose": "Backend test template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/docker-compose.yml.template",
+      "purpose": "Docker Compose template for new services"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/frontend.Dockerfile.template",
+      "purpose": "Frontend Dockerfile template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/backend.Dockerfile.template",
+      "purpose": "Backend Dockerfile template"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/agents/react-fastapi-monorepo-specialist.md",
+      "purpose": "Monorepo architecture specialist agent"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/agents/monorepo-type-safety-specialist.md",
+      "purpose": "Type generation and safety specialist agent"
+    },
+    {
+      "path": "installer/global/templates/react-fastapi-monorepo/agents/docker-orchestration-specialist.md",
+      "purpose": "Docker Compose and containerization specialist agent"
+    }
+  ],
+  "files_to_modify": [],
+  "total_file_count": 38,
+  "new_file_count": 38,
+  "modified_file_count": 0,
+  "patterns": [
+    {
+      "name": "Monorepo Architecture",
+      "category": "Architectural",
+      "familiarity": "medium",
+      "description": "Turborepo-based monorepo with multiple apps and shared packages"
+    },
+    {
+      "name": "Type Generation",
+      "category": "Code Generation",
+      "familiarity": "low",
+      "description": "OpenAPI → TypeScript type generation for type-safe API client"
+    },
+    {
+      "name": "Repository Pattern",
+      "category": "Data Access",
+      "familiarity": "high",
+      "description": "CRUD operations with SQLAlchemy"
+    },
+    {
+      "name": "Dependency Injection",
+      "category": "Design",
+      "familiarity": "high",
+      "description": "FastAPI dependency injection for database sessions"
+    },
+    {
+      "name": "Docker Compose Orchestration",
+      "category": "Infrastructure",
+      "familiarity": "medium",
+      "description": "Multi-service local development environment"
+    },
+    {
+      "name": "Multi-stage Docker Builds",
+      "category": "Infrastructure",
+      "familiarity": "medium",
+      "description": "Optimized production container images"
+    }
+  ],
+  "dependencies": [
+    {
+      "name": "turborepo",
+      "type": "build_tool",
+      "version": "latest",
+      "purpose": "Monorepo task orchestration and caching"
+    },
+    {
+      "name": "pnpm",
+      "type": "package_manager",
+      "version": "latest",
+      "purpose": "Workspace-aware package manager"
+    },
+    {
+      "name": "@hey-api/openapi-ts",
+      "type": "library",
+      "version": "latest",
+      "purpose": "OpenAPI → TypeScript type generation"
+    },
+    {
+      "name": "react",
+      "type": "framework",
+      "version": "18.x",
+      "purpose": "Frontend UI framework"
+    },
+    {
+      "name": "vite",
+      "type": "build_tool",
+      "version": "5.x",
+      "purpose": "Frontend build tool and dev server"
+    },
+    {
+      "name": "fastapi",
+      "type": "framework",
+      "version": "0.115.x",
+      "purpose": "Backend API framework"
+    },
+    {
+      "name": "sqlalchemy",
+      "type": "library",
+      "version": "2.x",
+      "purpose": "Database ORM"
+    },
+    {
+      "name": "pydantic",
+      "type": "library",
+      "version": "2.x",
+      "purpose": "Data validation and schema generation"
+    },
+    {
+      "name": "pytest",
+      "type": "testing",
+      "version": "latest",
+      "purpose": "Backend testing framework"
+    },
+    {
+      "name": "vitest",
+      "type": "testing",
+      "version": "latest",
+      "purpose": "Frontend testing framework"
+    },
+    {
+      "name": "docker",
+      "type": "infrastructure",
+      "version": "latest",
+      "purpose": "Container runtime"
+    },
+    {
+      "name": "docker-compose",
+      "type": "infrastructure",
+      "version": "latest",
+      "purpose": "Multi-container orchestration"
+    }
+  ],
+  "risks": [
+    {
+      "area": "Type Generation Sync",
+      "severity": "medium",
+      "description": "OpenAPI spec must stay in sync with TypeScript types",
+      "mitigation": "Automated type generation script, CI validation, clear workflow documentation"
+    },
+    {
+      "area": "Monorepo Tooling Learning Curve",
+      "severity": "medium",
+      "description": "Turborepo and pnpm workspaces may be unfamiliar to developers",
+      "mitigation": "Comprehensive documentation, working examples, clear setup guide"
+    },
+    {
+      "area": "Docker Permissions",
+      "severity": "low",
+      "description": "File ownership issues between host and container",
+      "mitigation": "User ID mapping in Dockerfiles, troubleshooting guide"
+    },
+    {
+      "area": "Database Migration Management",
+      "severity": "medium",
+      "description": "Alembic migrations in containerized environment",
+      "mitigation": "Migration scripts in Docker Compose, clear migration workflow"
+    },
+    {
+      "area": "Template Validation Score",
+      "severity": "medium",
+      "description": "Must achieve 9+/10 validation score",
+      "mitigation": "Iterative improvement loop, leverage existing TASK-057 and TASK-058 quality"
+    }
+  ],
+  "phases": [
+    {
+      "number": 1,
+      "name": "Study Reference Repositories",
+      "description": "Clone and analyze FastAPI template and Turborepo examples",
+      "estimated_hours": 1.0,
+      "tasks": [
+        "Clone tiangolo/full-stack-fastapi-template",
+        "Clone sinanbekar/monorepo-turborepo-python",
+        "Study monorepo structure patterns",
+        "Review Docker Compose setup",
+        "Understand type generation workflow"
+      ]
+    },
+    {
+      "number": 2,
+      "name": "Foundation Setup",
+      "description": "Create monorepo structure with Turborepo and pnpm workspaces",
+      "estimated_hours": 1.0,
+      "tasks": [
+        "Initialize Turborepo",
+        "Configure pnpm workspaces",
+        "Create apps/ and packages/ directories",
+        "Setup root package.json with scripts"
+      ]
+    },
+    {
+      "number": 3,
+      "name": "Frontend Integration",
+      "description": "Integrate React frontend from react-typescript template",
+      "estimated_hours": 1.5,
+      "tasks": [
+        "Copy patterns from TASK-057 react-typescript template",
+        "Setup Vite + React + TypeScript in apps/frontend",
+        "Configure API client to use shared types",
+        "Create example components and hooks"
+      ]
+    },
+    {
+      "number": 4,
+      "name": "Backend Integration",
+      "description": "Integrate FastAPI backend from fastapi-python template",
+      "estimated_hours": 1.5,
+      "tasks": [
+        "Copy patterns from TASK-058 fastapi-python template",
+        "Setup FastAPI + SQLAlchemy in apps/backend",
+        "Create User CRUD endpoints",
+        "Configure OpenAPI generation",
+        "Setup database connection and models"
+      ]
+    },
+    {
+      "number": 5,
+      "name": "Type Safety Layer",
+      "description": "Setup OpenAPI → TypeScript type generation",
+      "estimated_hours": 1.0,
+      "tasks": [
+        "Create packages/shared-types package",
+        "Install @hey-api/openapi-ts",
+        "Configure type generation script",
+        "Test type generation workflow",
+        "Document synchronization process"
+      ]
+    },
+    {
+      "number": 6,
+      "name": "Docker Orchestration",
+      "description": "Setup Docker Compose for local development",
+      "estimated_hours": 1.0,
+      "tasks": [
+        "Create multi-stage Dockerfiles for frontend and backend",
+        "Configure docker-compose.yml with PostgreSQL, backend, frontend",
+        "Setup volume mounts for development",
+        "Configure environment variables",
+        "Test Docker Compose startup"
+      ]
+    },
+    {
+      "number": 7,
+      "name": "Template Creation",
+      "description": "Generate template using /template-create with validation",
+      "estimated_hours": 2.0,
+      "tasks": [
+        "Run /template-create --skip-qa --validate --output-location=repo",
+        "Review initial validation report",
+        "Run /template-validate for comprehensive audit",
+        "Iterate improvements based on findings",
+        "Achieve 9+/10 validation score"
+      ]
+    },
+    {
+      "number": 8,
+      "name": "Testing and Verification",
+      "description": "Test template initialization and functionality",
+      "estimated_hours": 1.5,
+      "tasks": [
+        "Initialize monorepo from template",
+        "Test Docker Compose startup",
+        "Verify type generation",
+        "Test builds (frontend + backend)",
+        "Verify development mode",
+        "Test type safety in frontend"
+      ]
+    }
+  ],
+  "estimated_loc": 2500,
+  "estimated_test_loc": 500,
+  "test_strategy": "Backend: pytest with FastAPI TestClient, Frontend: Vitest with React Testing Library, Integration: Docker Compose validation",
+  "version": 1,
+  "generated_at": "2025-01-09T20:15:00Z"
+}

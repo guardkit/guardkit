@@ -37,14 +37,15 @@ from .agent_utils import (
 )
 
 # Review modes (TASK-003B-2, TASK-003B-3)
-from .review_modes import (
-    QuickReviewResult,
-    QuickReviewDisplay,
-    QuickReviewHandler,
-    FullReviewResult,
-    FullReviewDisplay,
-    FullReviewHandler,
-)
+# TEMPORARY FIX: Commented out due to missing classes in review_modes package
+# from .review_modes import (
+#     QuickReviewResult,
+#     QuickReviewDisplay,
+#     QuickReviewHandler,
+#     FullReviewResult,
+#     FullReviewDisplay,
+#     FullReviewHandler,
+# )
 
 # Pager display (TASK-003B-3)
 from .pager_display import (
@@ -105,6 +106,30 @@ from .greenfield_qa_session import (
     TemplateInitQASession,
 )
 
+# Agent Discovery (TASK-HAI-005, TASK-ENF2)
+from .agent_discovery import (
+    discover_agents,
+    discover_agent_with_source,
+    get_agent_by_name,
+    list_discoverable_agents,
+    get_agents_by_stack,
+    validate_discovery_metadata,
+    VALID_STACKS,
+    VALID_PHASES,
+)
+
+# Agent Invocation Tracker (TASK-ENF2)
+from .agent_invocation_tracker import (
+    AgentInvocationTracker,
+    add_pending_phases,
+)
+
+# Phase Gate Validator (TASK-ENF4)
+from .phase_gate_validator import (
+    PhaseGateValidator,
+    ValidationError,
+)
+
 __version__ = "1.1.0"
 
 __all__ = [
@@ -139,13 +164,13 @@ __all__ = [
     "log_complexity_calculation",
     "extract_task_metadata_from_frontmatter",
 
-    # Review modes
-    "QuickReviewResult",
-    "QuickReviewDisplay",
-    "QuickReviewHandler",
-    "FullReviewResult",
-    "FullReviewDisplay",
-    "FullReviewHandler",
+    # Review modes (TEMPORARY FIX: Commented out)
+    # "QuickReviewResult",
+    # "QuickReviewDisplay",
+    # "QuickReviewHandler",
+    # "FullReviewResult",
+    # "FullReviewDisplay",
+    # "FullReviewHandler",
 
     # Pager display
     "PagerStrategy",
@@ -187,4 +212,22 @@ __all__ = [
     # Greenfield Q&A Session
     "GreenfieldAnswers",
     "TemplateInitQASession",
+
+    # Agent Discovery
+    "discover_agents",
+    "discover_agent_with_source",
+    "get_agent_by_name",
+    "list_discoverable_agents",
+    "get_agents_by_stack",
+    "validate_discovery_metadata",
+    "VALID_STACKS",
+    "VALID_PHASES",
+
+    # Agent Invocation Tracker
+    "AgentInvocationTracker",
+    "add_pending_phases",
+
+    # Phase Gate Validator
+    "PhaseGateValidator",
+    "ValidationError",
 ]

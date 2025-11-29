@@ -203,9 +203,38 @@ git checkout -b experiment/haiku-code-reviewer
 
 ## Stack-Specific Agent Configuration
 
+### Implementation Status
+
+**Completed** (as of Nov 2025):
+- ✅ python-api-specialist (Haiku) - FastAPI, async, Pydantic
+- ✅ react-state-specialist (Haiku) - Hooks, TanStack Query, Zustand
+- ✅ dotnet-domain-specialist (Haiku) - DDD, entities, value objects
+
+**Discovery System**:
+- AI-powered matching via metadata (stack, phase, capabilities, keywords)
+- Graceful degradation: works with agents with/without metadata
+- Fallback: task-manager if no specialist found
+- Context analysis: detects stack from file extensions, project structure, keywords
+
+**Cost Impact**:
+| Scenario | Cost per Task | vs Baseline | vs Current |
+|----------|---------------|-------------|------------|
+| All-Sonnet (baseline) | $0.45 | - | +50% |
+| Current (33% Haiku) | $0.30 | -33% | - |
+| **Target (70% Haiku)** | **$0.20** | **-48%** | **-33%** |
+
+**Performance Impact**:
+- Phase 3 speed: 4-5x faster with Haiku (code generation)
+- Overall task time: 40-50% faster completion
+- Quality: Maintained at 90%+ via Phase 4.5 test enforcement
+
+**Future Expansion**:
+- Go, Rust, Java specialists (as demand grows)
+- Existing agent migration (optional, via `/agent-enhance`)
+
 ### Stack-Specific Implementation Agents
 
-Stack-specific agents (e.g., `python-api-specialist`, `react-component-generator`) should generally use **Haiku** for code generation:
+Stack-specific agents (e.g., `python-api-specialist`, `react-state-specialist`) use **Haiku** for code generation:
 
 **Reasoning**:
 - Code generation follows stack-specific patterns and templates
@@ -215,9 +244,16 @@ Stack-specific agents (e.g., `python-api-specialist`, `react-component-generator
 
 **Example Configuration**:
 ```yaml
-name: react-component-generator
+name: python-api-specialist
 model: haiku
-model_rationale: "React component generation follows established patterns (hooks, props, TypeScript). Architectural quality ensured by upstream architectural-reviewer (Sonnet). Haiku provides fast, cost-effective code generation."
+model_rationale: "FastAPI endpoint generation follows established patterns. Architectural quality ensured by upstream architectural-reviewer (Sonnet). Haiku provides fast, cost-effective code generation."
+stack: [python]
+phase: implementation
+capabilities:
+  - FastAPI endpoint implementation
+  - Async request handling patterns
+  - Pydantic schema generation
+keywords: [fastapi, async, endpoints, router, dependency-injection]
 ```
 
 ### When Stack-Specific Agents Need Sonnet
@@ -309,6 +345,8 @@ The optimized model configuration balances **quality, cost, and performance** ac
 
 ---
 
-**Last Updated**: 2025-10-17
-**Configuration Version**: 1.0
-**Total Agents**: 17 (11 Sonnet, 5 Haiku, 1 stack-specific)
+**Last Updated**: 2025-11-25
+**Configuration Version**: 1.1
+**Total Agents**: 20 (11 Sonnet, 8 Haiku, 1 stack-specific)
+
+**See Also**: [Agent Discovery Guide](../guides/agent-discovery-guide.md) for how specialists are automatically selected.

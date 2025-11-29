@@ -18,7 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "glob
 from greenfield_qa_session import (
     GreenfieldAnswers,
     TemplateInitQASession,
-    INQUIRER_AVAILABLE
+    INQUIRER_AVAILABLE,
+    generate_boundary_sections,
+    validate_boundary_sections
 )
 
 
@@ -703,6 +705,735 @@ class TestEdgeCases:
 
         answers = GreenfieldAnswers.from_dict(data)
         assert answers.documentation_paths is None
+
+
+class TestBoundarySections:
+    """Test boundary section generation and validation (TASK-INIT-001)."""
+
+    def test_generate_boundary_sections_testing_agent(self):
+        """Test boundary generation for testing agent."""
+        boundaries = generate_boundary_sections('testing', 'python')
+
+        assert 5 <= len(boundaries['always']) <= 7
+        assert 5 <= len(boundaries['never']) <= 7
+        assert 3 <= len(boundaries['ask']) <= 5
+
+        # Check emoji prefixes
+        for rule in boundaries['always']:
+            assert rule.startswith('✅')
+        for rule in boundaries['never']:
+            assert rule.startswith('❌')
+        for scenario in boundaries['ask']:
+            assert scenario.startswith('⚠️')
+
+    def test_generate_boundary_sections_repository_agent(self):
+        """Test boundary generation for repository agent."""
+        boundaries = generate_boundary_sections('repository', 'csharp')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify repository-specific content
+        assert any('DI pattern' in rule for rule in boundaries['always'])
+        assert any('ErrorOr<T>' in rule for rule in boundaries['always'])
+        assert any('SQL injection' in rule for rule in boundaries['never'])
+
+    def test_generate_boundary_sections_api_agent(self):
+        """Test boundary generation for API agent."""
+        boundaries = generate_boundary_sections('api', 'typescript')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify API-specific content
+        assert any('Validate all input' in rule for rule in boundaries['always'])
+        assert any('HTTP status codes' in rule for rule in boundaries['always'])
+        assert any('authentication' in rule for rule in boundaries['never'])
+
+    def test_generate_boundary_sections_service_agent(self):
+        """Test boundary generation for service agent."""
+        boundaries = generate_boundary_sections('service', 'python')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify service-specific content
+        assert any('constructor' in rule for rule in boundaries['always'])
+        assert any('python naming conventions' in rule.lower() for rule in boundaries['always'])
+
+    def test_generate_boundary_sections_generic_agent(self):
+        """Test boundary generation for unknown agent type."""
+        boundaries = generate_boundary_sections('unknown', 'go')
+
+        assert len(boundaries['always']) == 5
+        assert len(boundaries['never']) == 5
+        assert len(boundaries['ask']) == 3
+
+        # Verify generic content with technology
+        assert any('go best practices' in rule.lower() for rule in boundaries['always'])
+
+    def test_validate_boundary_sections_valid(self):
+        """Test validation with valid boundaries."""
+        boundaries = {
+            'always': ['✅ Rule ' + str(i) for i in range(5)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert is_valid
+        assert len(errors) == 0
+
+    def test_validate_boundary_sections_invalid_count(self):
+        """Test validation catches count violations."""
+        boundaries = {
+            'always': ['✅ Rule 1', '✅ Rule 2'],  # Too few (need 5-7)
+            'never': ['❌ Rule'] * 10,  # Too many (need 5-7)
+            'ask': []  # Too few (need 3-5)
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert not is_valid
+        assert len(errors) >= 3
+        assert any('ALWAYS' in error for error in errors)
+        assert any('NEVER' in error for error in errors)
+        assert any('ASK' in error for error in errors)
+
+    def test_validate_boundary_sections_missing_emoji(self):
+        """Test validation catches missing emoji prefixes."""
+        boundaries = {
+            'always': ['Rule without emoji'] + ['✅ Rule ' + str(i) for i in range(4)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+
+        is_valid, errors = validate_boundary_sections(boundaries)
+        assert not is_valid
+        assert any('missing ✅ prefix' in error for error in errors)
+
+    def test_validate_boundary_sections_edge_cases(self):
+        """Test validation with edge case counts."""
+        # Minimum valid counts
+        boundaries_min = {
+            'always': ['✅ Rule ' + str(i) for i in range(5)],
+            'never': ['❌ Rule ' + str(i) for i in range(5)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(3)]
+        }
+        is_valid, errors = validate_boundary_sections(boundaries_min)
+        assert is_valid
+
+        # Maximum valid counts
+        boundaries_max = {
+            'always': ['✅ Rule ' + str(i) for i in range(7)],
+            'never': ['❌ Rule ' + str(i) for i in range(7)],
+            'ask': ['⚠️ Scenario ' + str(i) for i in range(5)]
+        }
+        is_valid, errors = validate_boundary_sections(boundaries_max)
+        assert is_valid
+
+
+@pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+class TestAgentGeneration:
+    """Test agent generation with boundaries (TASK-INIT-001)."""
+
+    def test_generated_agents_include_boundaries(self):
+        """Test that generated agents include valid boundaries."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        agent_content = session._generate_agent('testing', 'testing-agent')
+
+        assert '## Boundaries' in agent_content
+        assert '### ALWAYS' in agent_content
+        assert '### NEVER' in agent_content
+        assert '### ASK' in agent_content
+        assert '✅' in agent_content
+        assert '❌' in agent_content
+        assert '⚠️' in agent_content
+
+    def test_generate_agent_with_different_types(self):
+        """Test agent generation for different agent types."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        for agent_type in ['testing', 'repository', 'api', 'service']:
+            agent_content = session._generate_agent(agent_type)
+            assert '## Boundaries' in agent_content
+            assert f'type: {agent_type}' in agent_content
+
+    def test_generate_agent_boundary_placement(self):
+        """Test boundaries are placed after Quick Start section."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'csharp',
+            'framework': 'maui'
+        }
+
+        agent_content = session._generate_agent('repository')
+
+        # Boundaries should come after Quick Start
+        quick_start_idx = agent_content.find('## Quick Start')
+        boundaries_idx = agent_content.find('## Boundaries')
+
+        assert quick_start_idx > 0
+        assert boundaries_idx > quick_start_idx
+
+    def test_generate_agent_validates_boundaries(self, capsys):
+        """Test agent generation validates boundaries and shows warnings."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        # This should not produce warnings as boundaries are valid
+        agent_content = session._generate_agent('testing')
+
+        captured = capsys.readouterr()
+        # No validation warnings should be printed for valid boundaries
+        assert '⚠️ Boundary validation warnings' not in captured.out
+
+    def test_generate_base_agent_content(self):
+        """Test base agent content generation."""
+        session = TemplateInitQASession()
+
+        content = session._generate_base_agent_content(
+            'testing',
+            'my-testing-agent',
+            'python',
+            'fastapi'
+        )
+
+        assert 'name: my-testing-agent' in content
+        assert 'type: testing' in content
+        assert 'technology: python' in content
+        assert 'framework: fastapi' in content
+        assert '## Quick Start' in content
+
+    def test_integration_with_existing_qa_workflow(self):
+        """Ensure boundary generation doesn't break existing Q&A workflow."""
+        session = TemplateInitQASession()
+
+        # Mock Q&A responses
+        with patch('greenfield_qa_session.inquirer.prompt') as mock_prompt:
+            mock_prompt.return_value = {
+                'template_name': 'test',
+                'template_purpose': 'quick_start'
+            }
+            session._section1_identity()
+
+        assert session._session_data['template_name'] == 'test'
+
+        # Now test agent generation works with this data
+        session._session_data['primary_language'] = 'python'
+        session._session_data['framework'] = 'fastapi'
+
+        agent_content = session._generate_agent('testing')
+        assert '## Boundaries' in agent_content
+
+
+class TestValidationCompatibility:
+    """Test validation compatibility features (TASK-INIT-005).
+
+    Note: These tests don't require inquirer as they test standalone methods.
+    """
+
+    @pytest.fixture
+    def session(self):
+        """Create a test session, mocking inquirer if not available."""
+        if INQUIRER_AVAILABLE:
+            return TemplateInitQASession()
+        else:
+            # Create minimal mock session for testing
+            class MockSession:
+                def __init__(self):
+                    self._session_data = {}
+                    self.answers = None
+
+                def ensure_validation_compatibility(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    temp_session._session_data = {}
+                    return TemplateInitQASession.ensure_validation_compatibility(temp_session, template_path)
+
+                def display_validation_guidance(self, template_path):
+                    """Import and call the actual method."""
+                    from greenfield_qa_session import TemplateInitQASession
+                    # Use class method directly
+                    temp_session = object.__new__(TemplateInitQASession)
+                    return TemplateInitQASession.display_validation_guidance(temp_session, template_path)
+
+            return MockSession()
+
+    def test_ensure_validation_compatibility(self, tmp_path, session):
+        """Test validation compatibility setup."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Check marker file
+        marker = template_path / ".validation-compatible"
+        assert marker.exists()
+        assert "1.0.0" in marker.read_text()
+
+        # Check manifest fields
+        manifest_path = template_path / "template-manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text())
+        assert 'schema_version' in manifest
+        assert 'complexity' in manifest
+        assert 'confidence_score' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_required_directories_created(self, tmp_path, session):
+        """Test required directories are created."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
+
+    def test_complexity_estimation(self, tmp_path, session):
+        """Test complexity estimation based on template structure."""
+
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create agents directory with some agents
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        for i in range(6):
+            (agents_dir / f"agent-{i}.md").write_text(f"# Agent {i}")
+
+        # Create templates directory with some templates
+        templates_dir = template_path / "templates"
+        templates_dir.mkdir()
+        for i in range(3):
+            (templates_dir / f"template-{i}.txt").write_text(f"Template {i}")
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Complexity should be: 3 + (6 // 2) + (3 // 3) = 3 + 3 + 1 = 7
+        assert manifest['complexity'] == 7
+
+    def test_preserve_existing_manifest_fields(self, tmp_path, session):
+        """Test that existing manifest fields are preserved."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        # Create existing manifest with some fields
+        manifest_path = template_path / "manifest.json"
+        existing_manifest = {
+            'name': 'my-template',
+            'version': '1.0.0',
+            'description': 'Test template',
+            'schema_version': '2.0.0',  # Should be preserved
+            'complexity': 8  # Should be preserved
+        }
+        manifest_path.write_text(json.dumps(existing_manifest, indent=2))
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Read updated manifest (should be in template-manifest.json)
+        output_manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(output_manifest_path.read_text())
+
+        # Existing fields should be preserved
+        assert manifest['name'] == 'my-template'
+        assert manifest['version'] == '1.0.0'
+        assert manifest['description'] == 'Test template'
+        assert manifest['schema_version'] == '2.0.0'  # Preserved
+        assert manifest['complexity'] == 8  # Preserved
+
+        # New fields should be added
+        assert 'confidence_score' in manifest
+        assert 'created_at' in manifest
+        assert manifest['validation_compatible'] is True
+
+    def test_confidence_score_default(self, tmp_path, session):
+        """Test default confidence score for greenfield templates."""
+        template_path = tmp_path / "template"
+        template_path.mkdir()
+
+        session.ensure_validation_compatibility(template_path)
+
+        manifest_path = template_path / "template-manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+
+        # Greenfield default should be 75
+        assert manifest['confidence_score'] == 75
+
+    def test_display_validation_guidance(self, tmp_path, session, capsys):
+        """Test validation guidance display."""
+        template_path = tmp_path / "my-test-template"
+        template_path.mkdir()
+
+        session.display_validation_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert "Comprehensive Validation Available" in captured.out
+        assert "/template-validate" in captured.out
+        assert "Interactive 16-section audit" in captured.out
+        assert "30-60 minutes" in captured.out
+        assert "Deploying to production" in captured.out
+
+    def test_template_validate_compatibility_integration(self, tmp_path, session):
+        """Test full integration with /template-validate requirements."""
+        template_path = tmp_path / "test-template"
+        template_path.mkdir()
+
+        # Generate template structure
+        agents_dir = template_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "test.md").write_text("# Test Agent")
+
+        session.ensure_validation_compatibility(template_path)
+
+        # Verify all required fields for /template-validate
+        manifest = json.loads((template_path / "template-manifest.json").read_text())
+        required_fields = ['schema_version', 'complexity', 'confidence_score', 'created_at', 'validation_compatible']
+        for field in required_fields:
+            assert field in manifest, f"Missing required field: {field}"
+
+        # Verify marker exists
+        assert (template_path / ".validation-compatible").exists()
+
+        # Verify required directories
+        assert (template_path / "templates").exists()
+        assert (template_path / "agents").exists()
+
+
+class TestAgentMetadata:
+    """Test agent discovery metadata generation (TASK-INIT-008)."""
+
+    @pytest.fixture
+    def session(self):
+        """Create test session with basic data."""
+        if INQUIRER_AVAILABLE:
+            session = TemplateInitQASession()
+        else:
+            # Mock session for non-inquirer environments
+            class MockSession:
+                def __init__(self):
+                    self._session_data = {}
+
+                def _generate_agent_metadata(self, agent_type):
+                    from greenfield_qa_session import TemplateInitQASession
+                    temp_session = object.__new__(TemplateInitQASession)
+                    temp_session._session_data = self._session_data
+                    return temp_session._generate_agent_metadata(agent_type)
+
+                def _format_agent_with_metadata(self, agent_content, metadata):
+                    from greenfield_qa_session import TemplateInitQASession
+                    temp_session = object.__new__(TemplateInitQASession)
+                    return temp_session._format_agent_with_metadata(agent_content, metadata)
+
+            session = MockSession()
+
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+        return session
+
+    def test_generate_agent_metadata_python_api(self, session):
+        """Test metadata generation for Python API agent."""
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('api')
+
+        assert metadata['stack'] == ['python', 'fastapi']
+        assert metadata['phase'] == 'implementation'
+        assert 'endpoint-implementation' in metadata['capabilities']
+        assert 'api' in metadata['keywords']
+        assert 'python' in metadata['keywords']
+        assert 'fastapi' in metadata['keywords']
+
+    def test_generate_agent_metadata_typescript_testing(self, session):
+        """Test metadata generation for TypeScript testing agent."""
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        metadata = session._generate_agent_metadata('testing')
+
+        assert metadata['stack'] == ['typescript', 'react-nextjs']
+        assert metadata['phase'] == 'implementation'
+        assert 'test-execution' in metadata['capabilities']
+        assert 'testing' in metadata['keywords']
+        assert 'typescript' in metadata['keywords']
+
+    def test_generate_agent_metadata_repository(self, session):
+        """Test metadata generation for repository agent."""
+        session._session_data = {
+            'primary_language': 'csharp',
+            'framework': 'aspnet-core'
+        }
+
+        metadata = session._generate_agent_metadata('repository')
+
+        assert metadata['stack'] == ['csharp', 'aspnet-core']
+        assert 'data-access' in metadata['capabilities']
+        assert 'orm-patterns' in metadata['capabilities']
+        assert 'repository' in metadata['keywords']
+        assert 'database' in metadata['keywords']
+
+    def test_generate_agent_metadata_domain(self, session):
+        """Test metadata generation for domain agent."""
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('domain')
+
+        assert 'business-logic' in metadata['capabilities']
+        assert 'domain-modeling' in metadata['capabilities']
+        assert 'domain' in metadata['keywords']
+        assert 'ddd' in metadata['keywords']
+
+    def test_generate_agent_metadata_service(self, session):
+        """Test metadata generation for service agent."""
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'nestjs'
+        }
+
+        metadata = session._generate_agent_metadata('service')
+
+        assert 'business-orchestration' in metadata['capabilities']
+        assert 'workflow-coordination' in metadata['capabilities']
+        assert 'service' in metadata['keywords']
+        assert 'orchestration' in metadata['keywords']
+
+    def test_generate_agent_metadata_generic(self, session):
+        """Test metadata generation for unknown agent type."""
+        session._session_data = {
+            'primary_language': 'go',
+            'framework': ''
+        }
+
+        metadata = session._generate_agent_metadata('unknown-type')
+
+        assert metadata['stack'] == ['go']
+        assert 'implementation' in metadata['capabilities']
+        assert 'unknown-type' in metadata['keywords']
+        assert 'go' in metadata['keywords']
+
+    def test_generate_agent_metadata_no_framework(self, session):
+        """Test metadata generation when no framework specified."""
+        session._session_data = {
+            'primary_language': 'rust',
+            'framework': ''
+        }
+
+        metadata = session._generate_agent_metadata('api')
+
+        assert metadata['stack'] == ['rust']
+        assert 'rust' in metadata['keywords']
+        # Should not have empty framework in keywords
+
+    def test_format_agent_with_metadata(self, session):
+        """Test frontmatter formatting."""
+        content = "# Test Agent\n\nAgent content"
+        metadata = {
+            'stack': ['python', 'fastapi'],
+            'phase': 'implementation',
+            'capabilities': ['api', 'testing'],
+            'keywords': ['python', 'api']
+        }
+
+        formatted = session._format_agent_with_metadata(content, metadata)
+
+        assert formatted.startswith('---')
+        assert 'stack: [python, fastapi]' in formatted
+        assert 'phase: implementation' in formatted
+        assert 'capabilities: ["api", "testing"]' in formatted
+        assert 'keywords: ["python", "api"]' in formatted
+        assert '# Test Agent' in formatted
+
+    def test_format_agent_with_metadata_empty_stack(self, session):
+        """Test frontmatter formatting with empty stack."""
+        content = "# Test Agent"
+        metadata = {
+            'stack': [],
+            'phase': 'implementation',
+            'capabilities': ['test'],
+            'keywords': ['test']
+        }
+
+        formatted = session._format_agent_with_metadata(content, metadata)
+
+        assert 'stack: []' in formatted
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_generated_agents_include_frontmatter(self):
+        """Test agents have discovery metadata."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        agent_content = session._generate_agent('api', 'api-agent')
+
+        # Check frontmatter present
+        assert agent_content.startswith('---')
+        assert 'stack:' in agent_content
+        assert 'phase:' in agent_content
+        assert 'capabilities:' in agent_content
+        assert 'keywords:' in agent_content
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_metadata_matches_template_create_format(self):
+        """Test frontmatter matches template-create format."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'python',
+            'framework': 'fastapi'
+        }
+
+        metadata = session._generate_agent_metadata('testing')
+
+        # Should have same fields as template-create
+        assert 'stack' in metadata
+        assert 'phase' in metadata
+        assert 'capabilities' in metadata
+        assert 'keywords' in metadata
+
+        # Stack should be a list
+        assert isinstance(metadata['stack'], list)
+        assert isinstance(metadata['capabilities'], list)
+        assert isinstance(metadata['keywords'], list)
+
+    @pytest.mark.skipif(not INQUIRER_AVAILABLE, reason="inquirer not installed")
+    def test_agent_with_boundaries_and_metadata(self):
+        """Test agent includes both boundaries and metadata."""
+        session = TemplateInitQASession()
+        session._session_data = {
+            'primary_language': 'typescript',
+            'framework': 'react-nextjs'
+        }
+
+        agent_content = session._generate_agent('testing', 'test-agent')
+
+        # Should have frontmatter
+        assert agent_content.startswith('---')
+        assert 'stack: [typescript, react-nextjs]' in agent_content
+
+        # Should have boundaries
+        assert '## Boundaries' in agent_content
+        assert '### ALWAYS' in agent_content
+        assert '### NEVER' in agent_content
+        assert '### ASK' in agent_content
+
+
+class TestTwoLocationOutput:
+    """Test two-location output support (TASK-INIT-007)."""
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_get_template_path_global(self):
+        """Test global location path resolution."""
+        session = TemplateInitQASession(output_location='global')
+        path = session._get_template_path('test-template')
+
+        assert '.agentecflow/templates' in str(path)
+        assert path.name == 'test-template'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_get_template_path_repo(self):
+        """Test repo location path resolution."""
+        session = TemplateInitQASession(output_location='repo')
+        path = session._get_template_path('test-template')
+
+        assert 'installer/global/templates' in str(path)
+        assert path.name == 'test-template'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_default_location_is_global(self):
+        """Test default output location."""
+        session = TemplateInitQASession()
+
+        assert session.output_location == 'global'
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_save_to_global_location(self, tmp_path, monkeypatch):
+        """Test template saves to personal location."""
+        session = TemplateInitQASession(output_location='global')
+        session._session_data = {'template_name': 'test'}
+
+        # Mock home directory to use tmp_path
+        def mock_home():
+            return tmp_path
+        monkeypatch.setattr(Path, 'home', mock_home)
+
+        path = session._get_template_path('test')
+
+        assert tmp_path / '.agentecflow' / 'templates' / 'test' == path
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_save_to_repo_location(self, tmp_path, monkeypatch):
+        """Test template saves to repository location."""
+        session = TemplateInitQASession(output_location='repo')
+        session._session_data = {'template_name': 'test'}
+
+        # Mock cwd to use tmp_path
+        def mock_cwd():
+            return tmp_path
+        monkeypatch.setattr(Path, 'cwd', mock_cwd)
+
+        path = session._get_template_path('test')
+
+        assert tmp_path / 'installer' / 'global' / 'templates' / 'test' == path
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_display_location_guidance_global(self, capsys):
+        """Test location guidance display for global location."""
+        session = TemplateInitQASession(output_location='global')
+        template_path = Path.home() / '.agentecflow' / 'templates' / 'test-template'
+
+        session._display_location_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert '✅ Personal template:' in captured.out
+        assert 'Personal use' in captured.out
+        assert 'taskwright init test-template' in captured.out
+
+    @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
+    def test_display_location_guidance_repo(self, capsys):
+        """Test location guidance display for repo location."""
+        session = TemplateInitQASession(output_location='repo')
+        template_path = Path.cwd() / 'installer' / 'global' / 'templates' / 'test-template'
+
+        session._display_location_guidance(template_path)
+
+        captured = capsys.readouterr()
+        assert '✅ Repository template:' in captured.out
+        assert 'Team distribution' in captured.out
+        assert 'git add installer/global/templates/' in captured.out
+        assert 'taskwright init test-template' in captured.out
 
 
 if __name__ == "__main__":

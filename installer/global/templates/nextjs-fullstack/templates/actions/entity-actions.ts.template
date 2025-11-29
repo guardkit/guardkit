@@ -1,0 +1,107 @@
+'use server'
+
+import { db } from '@/lib/db'
+import { revalidatePath } from 'next/cache'
+// Optional: Add Zod for validation
+// import { z } from 'zod'
+// const {{entityName}}Schema = z.object({
+//   name: z.string().min(2).max(100),
+//   // Add more fields as needed
+// })
+
+export async function get{{EntityNamePlural}}() {
+  try {
+    const {{entityNamePlural}} = await db.{{entityName}}.findMany({
+      include: {
+        // Add related data if needed
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    })
+    return { success: true, data: {{entityNamePlural}} }
+  } catch (_error) {
+    return { success: false, error: 'Failed to fetch {{entityNamePlural}}' }
+  }
+}
+
+export async function get{{EntityName}}ById(id: string) {
+  try {
+    const {{entityName}} = await db.{{entityName}}.findUnique({
+      where: { id },
+      include: {
+        // Add related data if needed
+      },
+    })
+    if (!{{entityName}}) {
+      return { success: false, error: '{{EntityName}} not found' }
+    }
+    return { success: true, data: {{entityName}} }
+  } catch (_error) {
+    return { success: false, error: 'Failed to fetch {{entityName}}' }
+  }
+}
+
+export async function create{{EntityName}}(formData: FormData) {
+  try {
+    // Extract and validate form data
+    const name = formData.get('name') as string | null
+
+    // Basic validation
+    if (!name) {
+      return { success: false, error: 'Name is required' }
+    }
+
+    // Optional: Use Zod for schema validation
+    // const rawData = { name: formData.get('name') }
+    // const result = {{entityName}}Schema.safeParse(rawData)
+    // if (!result.success) {
+    //   return { success: false, error: result.error.issues[0].message }
+    // }
+
+    const {{entityName}} = await db.{{entityName}}.create({
+      data: {
+        name,
+        // Add more fields as needed
+      },
+    })
+
+    revalidatePath('/{{entityNamePlural}}')
+    return { success: true, data: {{entityName}} }
+  } catch (_error) {
+    return { success: false, error: 'Failed to create {{entityName}}' }
+  }
+}
+
+export async function update{{EntityName}}(id: string, formData: FormData) {
+  try {
+    const name = formData.get('name') as string | null
+
+    const {{entityName}} = await db.{{entityName}}.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        // Add more fields as needed
+      },
+    })
+
+    revalidatePath('/{{entityNamePlural}}')
+    revalidatePath(`/{{entityNamePlural}}/${id}`)
+    return { success: true, data: {{entityName}} }
+  } catch (_error) {
+    return { success: false, error: 'Failed to update {{entityName}}' }
+  }
+}
+
+export async function delete{{EntityName}}(id: string) {
+  try {
+    await db.{{entityName}}.delete({
+      where: { id },
+    })
+
+    revalidatePath('/{{entityNamePlural}}')
+    return { success: true }
+  } catch (_error) {
+    return { success: false, error: 'Failed to delete {{entityName}}' }
+  }
+}

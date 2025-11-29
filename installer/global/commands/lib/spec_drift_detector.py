@@ -136,29 +136,27 @@ class SpecDriftDetector:
 
     def _parse_task_file(self, file_path: Path) -> Dict:
         """Parse task markdown file and extract frontmatter."""
-        with open(file_path, 'r') as f:
-            content = f.read()
+        from .task_utils import read_task_file
 
-        # Extract YAML frontmatter
-        frontmatter_match = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
-        if not frontmatter_match:
+        try:
+            # Use centralized task utility for consistent parsing
+            frontmatter, body = read_task_file(file_path)
+
+            # Extract implementation files from content
+            impl_section = re.search(
+                r'## Implementation Files\n(.*?)(?=\n##|\Z)',
+                body,
+                re.DOTALL
+            )
+
+            if impl_section:
+                # Extract file paths from markdown list
+                files = re.findall(r'- `([^`]+)`', impl_section.group(1))
+                frontmatter['implementation_files'] = files
+
+            return frontmatter
+        except Exception:
             return {}
-
-        frontmatter = yaml.safe_load(frontmatter_match.group(1))
-
-        # Extract implementation files from content
-        impl_section = re.search(
-            r'## Implementation Files\n(.*?)(?=\n##|\Z)',
-            content,
-            re.DOTALL
-        )
-
-        if impl_section:
-            # Extract file paths from markdown list
-            files = re.findall(r'- `([^`]+)`', impl_section.group(1))
-            frontmatter['implementation_files'] = files
-
-        return frontmatter
 
     def _load_requirements(self, task_data: Dict) -> List[Requirement]:
         """

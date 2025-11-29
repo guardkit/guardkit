@@ -12,11 +12,20 @@ Following architectural review recommendations:
 """
 
 import json
+import logging
 import subprocess
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Dict, Any, List
+import importlib
 
-from lib.codebase_analyzer.models import AgentInvocationError
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+_exclusions_module = importlib.import_module('lib.codebase_analyzer.exclusions')
+
+AgentInvocationError = _models_module.AgentInvocationError
+get_source_files = _exclusions_module.get_source_files
+
+logger = logging.getLogger(__name__)
 
 
 class AgentCommunicator(Protocol):
@@ -46,12 +55,15 @@ class ArchitecturalReviewerInvoker:
     This class follows SRP by focusing solely on agent communication,
     delegating prompt construction to PromptBuilder and response parsing
     to ResponseParser.
+
+    TASK-769D: Now supports optional bridge_invoker for checkpoint-resume pattern.
     """
 
     def __init__(
         self,
         agent_path: Optional[Path] = None,
-        timeout_seconds: int = 120
+        timeout_seconds: int = 120,
+        bridge_invoker: Optional[any] = None  # TASK-769D: Optional bridge invoker
     ):
         """
         Initialize agent invoker.
@@ -60,6 +72,7 @@ class ArchitecturalReviewerInvoker:
             agent_path: Path to architectural-reviewer.md agent file.
                        Defaults to installer/global/agents/architectural-reviewer.md
             timeout_seconds: Maximum time to wait for agent response
+            bridge_invoker: Optional AgentBridgeInvoker for checkpoint-resume (TASK-769D)
         """
         if agent_path is None:
             # Default to global agents directory
@@ -68,6 +81,7 @@ class ArchitecturalReviewerInvoker:
             self.agent_path = agent_path
 
         self.timeout_seconds = timeout_seconds
+        self.bridge_invoker = bridge_invoker  # TASK-769D: Store bridge invoker
 
     def is_available(self) -> bool:
         """
@@ -82,10 +96,7 @@ class ArchitecturalReviewerInvoker:
         """
         Invoke the architectural-reviewer agent with a prompt.
 
-        This method uses Claude Code's agent invocation mechanism. In the actual
-        implementation, this would communicate with Claude Code's agent system.
-        For now, we simulate this with a subprocess call that would be replaced
-        with the actual agent invocation mechanism.
+        TASK-769D: Now uses AgentBridgeInvoker if provided, otherwise falls back to error.
 
         Args:
             prompt: Analysis prompt with codebase context
@@ -104,22 +115,17 @@ class ArchitecturalReviewerInvoker:
             )
 
         try:
-            # In a real implementation, this would use Claude Code's agent system
-            # For now, we'll return a structured response format that matches
-            # what the architectural-reviewer agent would return
-            #
-            # The actual invocation would look like:
-            # response = claude_code_api.invoke_agent(
-            #     agent_name=agent_name,
-            #     prompt=prompt,
-            #     timeout=self.timeout_seconds
-            # )
-            #
-            # For this implementation, we'll simulate the response structure
-            # and rely on heuristic analysis in the fallback path
+            # TASK-769D: Use bridge invoker if provided
+            if self.bridge_invoker is not None:
+                logger.info("Using AgentBridgeInvoker for checkpoint-resume pattern")
+                response = self.bridge_invoker.invoke(
+                    agent_name=agent_name,
+                    prompt=prompt,
+                    timeout_seconds=self.timeout_seconds
+                )
+                return response
 
-            # Placeholder for actual agent invocation
-            # This will be replaced with real Claude Code agent communication
+            # TASK-769D: No bridge invoker - raise error to trigger fallback
             raise AgentInvocationError(
                 "Agent invocation not yet implemented. Using fallback heuristics."
             )
@@ -182,16 +188,20 @@ class HeuristicAnalyzer:
     Provides basic pattern detection and structure analysis using
     file system inspection and simple heuristics. Not as sophisticated
     as the AI agent, but provides reasonable defaults.
+
+    TASK-769D: Now accepts optional file_samples for better context.
     """
 
-    def __init__(self, codebase_path: Path):
+    def __init__(self, codebase_path: Path, file_samples: Optional[List[Dict[str, Any]]] = None):
         """
         Initialize heuristic analyzer.
 
         Args:
             codebase_path: Path to codebase to analyze
+            file_samples: Optional list of file samples from stratified sampling (TASK-769D)
         """
         self.codebase_path = codebase_path
+        self.file_samples = file_samples  # TASK-769D: Store file samples
 
     def analyze(self) -> dict:
         """
@@ -256,13 +266,13 @@ class HeuristicAnalyzer:
                     "reasoning": "Quality metrics require deep analysis - use agent for accurate results"
                 }
             },
-            "example_files": self._find_example_files(language),
+            "example_files": self._get_example_files(language),
             "agent_used": False,
             "fallback_reason": "Agent not available - using heuristic analysis"
         }
 
     def _detect_language(self) -> str:
-        """Detect primary programming language."""
+        """Detect primary programming language, excluding build artifacts."""
         file_counts = {}
         extensions = {
             ".py": "Python",
@@ -277,7 +287,9 @@ class HeuristicAnalyzer:
         }
 
         for ext, lang in extensions.items():
-            count = len(list(self.codebase_path.rglob(f"*{ext}")))
+            # Use get_source_files to exclude build artifacts
+            source_files = get_source_files(self.codebase_path, extensions=[ext])
+            count = len(source_files)
             if count > 0:
                 file_counts[lang] = count
 
@@ -457,21 +469,162 @@ class HeuristicAnalyzer:
 
         return abstractions
 
+    def _get_example_files(self, language: str) -> list:
+        """
+        Get example files from file_samples if available, otherwise find them.
+
+        TASK-769D: Converts file_samples to example_files format if provided.
+        TASK-0CE5: Enhanced to provide richer example file metadata.
+
+        Args:
+            language: Primary programming language
+
+        Returns:
+            List of example file dicts with path, purpose, layer, patterns, concepts
+        """
+        # TASK-769D & TASK-0CE5: If file_samples provided, convert to example_files format
+        if self.file_samples is not None and len(self.file_samples) > 0:
+            logger.info(f"Converting {len(self.file_samples)} file_samples to example_files format (fallback mode)")
+            examples = []
+            for sample in self.file_samples[:15]:  # Limit to 15 examples (increased from 10)
+                # TASK-0CE5: Infer layer from path
+                path = sample.get("path", sample.get("relative_path", ""))
+                layer = self._infer_layer_from_path(path)
+
+                # TASK-0CE5: Better purpose from category
+                category = sample.get("category", "Source file")
+                purpose = self._infer_purpose_from_category(category, path)
+
+                # Convert from file_sample format to example_file format
+                examples.append({
+                    "path": path,
+                    "purpose": purpose,
+                    "layer": layer,
+                    "patterns_used": [],  # Could be inferred from content
+                    "key_concepts": []     # Could be inferred from content
+                })
+
+            logger.info(f"Converted {len(examples)} example files for template generation")
+            return examples
+
+        # Fallback: Use original _find_example_files logic
+        logger.warning("No file_samples available - using basic file discovery")
+        return self._find_example_files(language)
+
+    def _infer_layer_from_path(self, path: str) -> Optional[str]:
+        """
+        Infer architectural layer from file path.
+
+        TASK-0CE5: Helper for fallback mode to provide better metadata.
+
+        Args:
+            path: File path
+
+        Returns:
+            Layer name or None
+        """
+        path_lower = path.lower()
+
+        # Common layer patterns
+        if any(layer in path_lower for layer in ["domain", "entities", "models"]):
+            return "Domain"
+        elif any(layer in path_lower for layer in ["application", "usecases", "services"]):
+            return "Application"
+        elif any(layer in path_lower for layer in ["infrastructure", "data", "repository", "repositories"]):
+            return "Infrastructure"
+        elif any(layer in path_lower for layer in ["web", "api", "controllers", "routes", "endpoints"]):
+            return "Presentation"
+        elif any(layer in path_lower for layer in ["test", "tests", "spec", "specs"]):
+            return "Testing"
+        elif any(layer in path_lower for layer in ["shared", "common", "core"]):
+            return "Shared"
+
+        return None
+
+    def _infer_purpose_from_category(self, category: str, path: str) -> str:
+        """
+        Infer file purpose from category and path.
+
+        TASK-0CE5: Helper for fallback mode to provide better metadata.
+
+        Args:
+            category: File category from stratified sampling
+            path: File path
+
+        Returns:
+            Human-readable purpose string
+        """
+        # Map categories to purposes
+        category_purposes = {
+            "crud_create": "Create operation for entity",
+            "crud_read": "Read operation for entity",
+            "crud_update": "Update operation for entity",
+            "crud_delete": "Delete operation for entity",
+            "crud_list": "List operation for entity",
+            "validators": "Validation logic",
+            "repositories": "Data access repository",
+            "services": "Business logic service",
+            "controllers": "API controller",
+            "models": "Domain model or entity",
+            "tests": "Test suite",
+            "middleware": "Middleware component",
+            "configuration": "Configuration settings"
+        }
+
+        # Get purpose from category
+        purpose = category_purposes.get(category, "Source file")
+
+        # Enhance with filename if available
+        if path:
+            filename = Path(path).stem
+            purpose = f"{purpose} ({filename})"
+
+        return purpose
+
     def _find_example_files(self, language: str) -> list:
         """Find example files from the codebase."""
         examples = []
 
-        # Find a few representative files
-        if language == "Python":
-            py_files = list(self.codebase_path.rglob("*.py"))[:5]
-            for f in py_files:
-                if "test" not in str(f):
+        # TASK-0CE5: Enhanced to find more diverse examples
+        logger.info(f"Discovering example files for {language} codebase")
+
+        # Find representative files by extension
+        extensions_map = {
+            "Python": [".py"],
+            "TypeScript": [".ts", ".tsx"],
+            "JavaScript": [".js", ".jsx"],
+            "C#": [".cs"],
+            "Java": [".java"],
+            "Go": [".go"],
+            "Rust": [".rs"],
+            "Ruby": [".rb"],
+            "PHP": [".php"]
+        }
+
+        extensions = extensions_map.get(language, [])
+
+        for ext in extensions:
+            # Use get_source_files to exclude build artifacts
+            source_files = get_source_files(self.codebase_path, extensions=[ext])
+
+            # Limit to 15 files
+            for f in source_files[:15]:
+                if "test" not in str(f).lower():
+                    path_str = str(f.relative_to(self.codebase_path))
                     examples.append({
-                        "path": str(f.relative_to(self.codebase_path)),
-                        "purpose": "Python module",
-                        "layer": None,
+                        "path": path_str,
+                        "purpose": f"{language} source file",
+                        "layer": self._infer_layer_from_path(path_str),
                         "patterns_used": [],
                         "key_concepts": []
                     })
 
+                # Stop if we have enough examples
+                if len(examples) >= 15:
+                    break
+
+            if len(examples) >= 15:
+                break
+
+        logger.info(f"Found {len(examples)} example files")
         return examples

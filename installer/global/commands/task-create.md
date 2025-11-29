@@ -59,7 +59,7 @@ Creates a markdown file with metadata. The fields included depend on which packa
 ### Core Fields (Taskwright)
 ```markdown
 ---
-id: TASK-XXX
+id: TASK-A3F2
 title: Add user authentication
 status: backlog
 created: 2024-01-15T10:00:00Z
@@ -77,7 +77,7 @@ test_results:
 ### Extended Fields (Taskwright + Require-Kit)
 ```markdown
 ---
-id: TASK-XXX
+id: TASK-E01-B2C4
 title: Add user authentication
 status: backlog
 created: 2024-01-15T10:00:00Z
@@ -199,121 +199,112 @@ The task will include:
 
 ## Task ID Generation
 
-### Automatic Sequential Numbering (Duplication Prevention)
+### Hash-Based ID Generation (Collision-Free)
 
-**CRITICAL**: Task IDs MUST be unique within an epic. The system automatically generates the next available ID.
+**CRITICAL**: Task IDs MUST be unique. The system uses SHA-256 hashing to generate collision-free IDs.
 
-```bash
-# REQUIRED LOGIC: Get highest task number for SPECIFIC FEATURE
-get_max_task_number_for_feature() {
-    epic_id=$1      # e.g., EPIC-001
-    feature_id=$2   # e.g., FEAT-001.2
+```python
+from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 
-    # Validate feature_id provided
-    if [ -z "$feature_id" ]; then
-        echo "ERROR: Feature ID required" >&2
-        return 1
-    fi
+# Parse prefix from command args (optional)
+prefix = None
+for arg in args:
+    if arg.startswith('prefix:'):
+        prefix = arg.split(':', 1)[1].strip()
+        break
 
-    # Extract numbers
-    epic_num=$(echo $epic_id | sed 's/EPIC-//')                     # 001
-    feature_num=$(echo $feature_id | sed 's/FEAT-[0-9]*\.\([0-9]*\)/\1/')  # 2
+# Generate hash-based ID
+task_id = generate_task_id(prefix=prefix)
 
-    # Search ALL task directories for THIS FEATURE ONLY
-    existing_tasks=$(find docs/tasks -type f -name "TASK-${epic_num}.${feature_num}.*.md" 2>/dev/null)
+# Validate format (redundant but safe)
+if not validate_task_id(task_id):
+    raise ValueError(f"Generated invalid task ID: {task_id}")
 
-    if [ -z "$existing_tasks" ]; then
-        echo "0"
-        return
-    fi
-
-    # Extract task numbers and find maximum
-    max_num=$(echo "$existing_tasks" | \
-        sed -n "s/.*TASK-${epic_num}\.${feature_num}\.\([0-9]\+\).*/\1/p" | \
-        sort -n | tail -1)
-
-    echo "${max_num:-0}"
-}
-
-# Auto-generate next feature-hierarchical task ID
-generate_task_id() {
-    epic_id=$1
-    feature_id=$2
-
-    # Validate both epic and feature provided
-    if [ -z "$epic_id" ] || [ -z "$feature_id" ]; then
-        echo "❌ ERROR: Both epic and feature IDs required"
-        echo "   Usage: /task-create \"Title\" epic:EPIC-XXX feature:FEAT-XXX.Y"
-        return 1
-    fi
-
-    epic_num=$(echo $epic_id | sed 's/EPIC-//')
-    feature_num=$(echo $feature_id | sed 's/FEAT-[0-9]*\.\([0-9]*\)/\1/')
-
-    max_num=$(get_max_task_number_for_feature $epic_id $feature_id)
-    next_num=$((max_num + 1))
-
-    # Zero-padded for proper sorting (01, 02, ..., 99)
-    # Format: TASK-001.2.05 (Epic 001, Feature 2, Task 05)
-    printf "TASK-%s.%s.%02d" "$epic_num" "$feature_num" "$next_num"
-}
-
-# Validate before creating file
-validate_task_id() {
-    task_id=$1
-
-    # Check all task directories for conflicts
-    conflicts=$(find docs/tasks -type f -name "${task_id}-*.md" 2>/dev/null)
-
-    if [ -n "$conflicts" ]; then
-        echo "❌ ERROR: Duplicate task ID: $task_id"
-        echo "   Existing file: $conflicts"
-        return 1
-    fi
-
-    return 0
-}
+# Pre-creation duplicate check (should never fail with hash IDs)
+duplicate_path = check_duplicate(task_id)
+if duplicate_path:
+    raise ValueError(f"Duplicate task ID: {task_id}\nExisting: {duplicate_path}")
 ```
 
 ### Task ID Pattern
-- **Format**: `TASK-{epic_num}.{feature_num}.{task_num}`
-- **Epic Number**: Extracted from linked epic (EPIC-001 → 001)
-- **Feature Number**: Extracted from linked feature (FEAT-001.2 → 2)
-- **Task Number**: Auto-incremented from highest existing IN THAT FEATURE
-- **Zero-Padded**: 2 digits (01, 02, ..., 99)
-- **Unique**: Validated across ALL task directories
-- **Never Reused**: Even if task is deleted or completed
+
+**Format**: `TASK-{hash}` or `TASK-{prefix}-{hash}`
+
+- **Hash**: 4-6 character uppercase hexadecimal (SHA-256 based)
+- **Prefix**: Optional 2-4 character uppercase alphanumeric namespace
+- **Length Scaling**: Automatically adjusts based on task count
+  - 0-499 tasks: 4 characters (e.g., `TASK-A3F2`)
+  - 500-1,499 tasks: 5 characters (e.g., `TASK-A3F2D`)
+  - 1,500+ tasks: 6 characters (e.g., `TASK-A3F2D7`)
+- **Collision Risk**: <0.01% even at 5,000 tasks
+- **Unique**: Cryptographically guaranteed uniqueness
 
 ### Examples
+
 ```bash
-# First task in FEAT-001.2
-/task-create "Setup EARS parser" epic:EPIC-001 feature:FEAT-001.2
-# Generated: TASK-001.2.01
+# Simple task (no prefix)
+/task-create "Fix login bug"
+# Generated: TASK-A3F8
 
-# Second task in same feature (system finds TASK-001.2.01 exists)
-/task-create "Add requirement validation" epic:EPIC-001 feature:FEAT-001.2
-# Generated: TASK-001.2.02
+# With epic prefix
+/task-create "Add authentication" prefix:E01
+# Generated: TASK-E01-B2C4
 
-# Task in different feature of same epic
-/task-create "Design database schema" epic:EPIC-001 feature:FEAT-001.3
-# Generated: TASK-001.3.01 (separate sequence per feature)
+# With domain prefix
+/task-create "Update installation guide" prefix:DOC
+# Generated: TASK-DOC-F1A3
 
-# Task in different epic
-/task-create "Deploy backend" epic:EPIC-002 feature:FEAT-002.1
-# Generated: TASK-002.1.01
+# With feature prefix
+/task-create "Implement password reset" prefix:AUTH
+# Generated: TASK-AUTH-D7E2
 
-# ERROR: Feature required
-/task-create "Some task" epic:EPIC-001
-# ❌ ERROR: Feature ID required for task creation
-#    Usage: /task-create "Title" epic:EPIC-001 feature:FEAT-001.X
+# Multiple tasks (each gets unique hash)
+/task-create "Task 1"  # TASK-A3F2
+/task-create "Task 2"  # TASK-B7D1
+/task-create "Task 3"  # TASK-C4E5
 ```
 
+### Prefix Parameter
+
+**Syntax**: `prefix:{VALUE}`
+
+**Valid Prefixes**:
+- 2-4 uppercase alphanumeric characters
+- Examples: `E01`, `DOC`, `AUTH`, `FIX`, `FEAT`
+- Invalid: `e01` (lowercase), `X` (too short), `EXTRA` (too long)
+
+**Use Cases**:
+- **Epic Namespacing**: `prefix:E01`, `prefix:E02`
+- **Domain Grouping**: `prefix:DOC`, `prefix:TEST`, `prefix:INFRA`
+- **Type Categorization**: `prefix:FIX`, `prefix:FEAT`, `prefix:REFAC`
+
 ### Duplication Prevention
-- ✅ Checks backlog, active, in_progress, blocked, completed directories
-- ✅ Finds highest task number automatically
-- ✅ Validates no duplicate before file creation
-- ✅ Clear error message if duplicate detected
-- ✅ Sequential numbering ensures no conflicts
+
+✅ **Collision Detection**:
+- SHA-256 cryptographic hashing ensures uniqueness
+- Pre-creation validation checks all task directories
+- Automatic collision resolution (max 10 attempts)
+- Clear error messages if duplicate detected
+
+✅ **Directory Scanning**:
+- Checks: `backlog/`, `in_progress/`, `in_review/`, `blocked/`, `completed/`
+- O(1) lookup with cached registry (5-second TTL)
+- Thread-safe with lock protection
+
+✅ **Error Handling**:
+```
+❌ ERROR: Duplicate task ID: TASK-A3F2
+   Existing file: tasks/backlog/TASK-A3F2-fix-login.md
+```
+
+### Backward Compatibility
+
+**Reading Old Format Tasks**: ✅ Fully supported
+- Can read: `TASK-001`, `TASK-004A`, `TASK-030B-1`
+- Old IDs stored in `legacy_id` frontmatter field if needed
+- New tasks always use hash format
+
+**Migration**: No migration required - old and new formats coexist
 
 ## File Organization
 
@@ -321,34 +312,120 @@ Tasks are organized by status:
 ```
 tasks/
 ├── backlog/
-│   ├── TASK-001-add-login.md
-│   └── TASK-002-reset-password.md
+│   ├── TASK-A3F2-add-login.md
+│   └── TASK-B7D1-reset-password.md
 ├── in_progress/
-│   └── TASK-003-user-profile.md
+│   └── TASK-C4E5-user-profile.md
 ├── in_review/
-│   └── TASK-004-notifications.md
+│   └── TASK-E01-D2F8-notifications.md
 ├── blocked/
-│   └── TASK-005-oauth-integration.md
+│   └── TASK-AUTH-A1B3-oauth-integration.md
 └── completed/
     └── 2024-01/
-        └── TASK-006-data-export.md
+        └── TASK-DOC-F9E2-data-export.md
 ```
+
+## Review Task Detection
+
+The system automatically detects when a task is likely a review/analysis task and suggests using `/task-review` instead of `/task-work`.
+
+### Detection Criteria
+
+A task is detected as a review task if any of the following conditions are met:
+
+1. **Explicit task_type field**: `task_type:review` parameter
+2. **Decision required flag**: `decision_required:true` parameter
+3. **Review-related tags**: architecture-review, code-review, decision-point, assessment
+4. **Title keywords**: review, analyze, evaluate, assess, audit, investigation
+
+### Detection Behavior
+
+When a review task is detected, the system displays a suggestion:
+
+```
+=========================================================================
+REVIEW TASK DETECTED
+=========================================================================
+
+Task: Review authentication architecture
+
+This appears to be a review/analysis task.
+
+Suggested workflow:
+  1. Create task: /task-create (current command)
+  2. Execute review: /task-review TASK-XXX
+  3. (Optional) Implement findings: /task-work TASK-YYY
+
+Note: /task-work is for implementation, /task-review is for analysis.
+=========================================================================
+
+Create task? [Y/n]:
+```
+
+### Examples
+
+```bash
+# Explicit review task type
+/task-create "Architectural review of authentication system" task_type:review
+
+# Decision-making task
+/task-create "Should we migrate to microservices?" decision_required:true
+
+# Review tags
+/task-create "Code quality assessment" tags:[code-review,assessment]
+
+# Title-based detection
+/task-create "Evaluate caching strategy options"
+```
+
+**Note**: The suggestion is informational only and doesn't block task creation. Users can still create the task and use `/task-work` if desired, though `/task-review` is recommended for analysis tasks.
+
+### See Also
+
+- [task-review.md - Automatic Review Task Detection](./task-review.md#automatic-review-task-detection) - Full details on how detection works and what happens after task creation
+- [task-review.md - Integration with /task-work](./task-review.md#integration-with-task-work) - Complete review → implementation → verification workflow
 
 ## Integration with Workflow
 
-After creation, use the streamlined workflow:
+After creation, use the appropriate workflow based on task type:
+
+### Implementation Workflow (Standard)
 ```bash
 # 1. Create the task
-/task-create "Implement user authentication"
-# Output: Created TASK-042
+/task-create "Implement user authentication" prefix:E01
+# Output: Created TASK-E01-B2C4
 
 # 2. Work on it (implementation + testing)
-/task-work TASK-042 [--mode=standard|tdd|bdd]
+/task-work TASK-E01-B2C4 [--mode=standard|tdd|bdd]
 # Automatically moves to appropriate state based on test results
 
 # 3. Complete it (after review)
-/task-complete TASK-042
+/task-complete TASK-E01-B2C4
 # Archives to completed with timestamp
+```
+
+### Review Workflow (Analysis/Decision)
+```bash
+# 1. Create the review task
+/task-create "Architectural review of authentication" task_type:review
+# Output: Created TASK-REV-A3F2
+# System suggests using /task-review
+
+# 2. Execute review
+/task-review TASK-REV-A3F2 --mode=architectural
+# Runs analysis, generates report, presents findings
+
+# 3. Make decision at checkpoint
+# [A]ccept - Approve findings
+# [I]mplement - Create implementation task
+# [R]evise - Request deeper analysis
+# [C]ancel - Discard review
+
+# 4. (Optional) Implement recommendations
+/task-work TASK-IMP-B4D1  # If [I]mplement was chosen
+
+# 5. Complete review task
+/task-complete TASK-REV-A3F2
 ```
 
 ## Batch Creation
@@ -442,11 +519,11 @@ COMPLEXITY FACTORS:
 ⚠️  RECOMMENDATION: Consider splitting this task
 
 SUGGESTED BREAKDOWN:
-1. TASK-001.2.01: Design Event Sourcing architecture (Complexity: 5/10)
-2. TASK-001.2.02: Implement EventStore infrastructure (Complexity: 6/10)
-3. TASK-001.2.03: Implement Order aggregate with events (Complexity: 5/10)
-4. TASK-001.2.04: Implement CQRS handlers (Complexity: 5/10)
-5. TASK-001.2.05: Testing and integration (Complexity: 6/10)
+1. TASK-k3m7.1: Design Event Sourcing architecture (Complexity: 5/10)
+2. TASK-k3m7.2: Implement EventStore infrastructure (Complexity: 6/10)
+3. TASK-k3m7.3: Implement Order aggregate with events (Complexity: 5/10)
+4. TASK-k3m7.4: Implement CQRS handlers (Complexity: 5/10)
+5. TASK-k3m7.5: Testing and integration (Complexity: 6/10)
 
 OPTIONS:
 1. [C]reate - Create this task as-is (complexity 9/10)
@@ -473,7 +550,7 @@ Tasks store complexity evaluation results in frontmatter:
 
 ```yaml
 ---
-id: TASK-001.2.05
+id: TASK-k3m7.5
 complexity_evaluation:
   score: 7
   level: "complex"
@@ -529,10 +606,11 @@ Tasks are validated before creation:
 
 ### Success
 ```
-✅ Task Created: TASK-042
+✅ Task Created: TASK-E01-B2C4
 
 📋 Task Details
 Title: Add user authentication
+ID Format: Hash-based with prefix (E01)
 Priority: high
 Status: backlog
 Tags: [auth, security]
@@ -550,19 +628,19 @@ Linear Initiative: PROJECT-456
 Task Export: Will be created in linked tools
 
 📁 File Location
-tasks/backlog/TASK-042-add-user-authentication.md
+tasks/backlog/TASK-E01-B2C4-add-user-authentication.md
 
 Next Steps:
 1. Review task details
-2. When ready: /task-work TASK-042
-3. Track progress: /task-status TASK-042 --hierarchy
-4. Auto-sync to PM tools: /task-sync TASK-042
-5. Complete task: /task-complete TASK-042
+2. When ready: /task-work TASK-E01-B2C4
+3. Track progress: /task-status TASK-E01-B2C4 --hierarchy
+4. Auto-sync to PM tools: /task-sync TASK-E01-B2C4
+5. Complete task: /task-complete TASK-E01-B2C4
 ```
 
 ### With Warnings
 ```
-✅ Task Created: TASK-042
+✅ Task Created: TASK-A3F2
 
 ⚠️ Warnings:
 - REQ-003 not found, skipped
@@ -580,11 +658,11 @@ Next Steps:
 ❌ Task creation failed
 
 A task with this title already exists:
-- TASK-015: Add user authentication (in_progress)
+- TASK-p9r3: Add user authentication (in_progress)
 
 Suggestions:
 - Use a more specific title
-- Check if you meant to update TASK-015
+- Check if you meant to update TASK-p9r3
 ```
 
 ### Invalid Requirements
@@ -663,18 +741,19 @@ The streamlined workflow ensures testing is never skipped and reduces command co
 ```bash
 # 1. Create task with full hierarchy context
 /task-create "User login implementation" epic:EPIC-001 feature:FEAT-003 requirements:[REQ-001]
+# Created: TASK-s4t8
 
 # 2. Begin implementation with context awareness
-/task-work TASK-001 --with-context
+/task-work TASK-s4t8 --with-context
 
 # 3. Monitor progress with hierarchy visibility
-/task-status TASK-001 --hierarchy
+/task-status TASK-s4t8 --hierarchy
 
 # 4. Sync progress to PM tools and rollup to feature/epic
-/task-sync TASK-001 --rollup-progress
+/task-sync TASK-s4t8 --rollup-progress
 
 # 5. Complete with validation and automatic rollup
-/task-complete TASK-001
+/task-complete TASK-s4t8
 ```
 
 ### Quality Gates and Progress Tracking
@@ -698,9 +777,10 @@ The streamlined workflow ensures testing is never skipped and reduces command co
 
 # Create tasks for features (enhanced with Phase 3 capabilities)
 /task-create "Implement login" epic:EPIC-001 feature:FEAT-001 --track-progress
+# Created: TASK-u7v2
 
 # Work on task (automatically updates epic progress)
-/task-work TASK-001 --sync-progress
+/task-work TASK-u7v2 --sync-progress
 
 # Progress is visible in epic status with full hierarchy
 /epic-status EPIC-001 --hierarchy
@@ -743,11 +823,11 @@ The `/task-work` command provides:
 ### Correct Workflow:
 ```bash
 User: /task-create "Add temperature conversion endpoint"
-Claude: ✅ Task Created: TASK-001
-        Next Steps: /task-work TASK-001
+Claude: ✅ Task Created: TASK-w3x9
+        Next Steps: /task-work TASK-w3x9
         [STOPS HERE - WAITS FOR USER]
 
-User: /task-work TASK-001
+User: /task-work TASK-w3x9
 Claude: [Executes Phases 2-5.5 with all quality gates]
 ```
 

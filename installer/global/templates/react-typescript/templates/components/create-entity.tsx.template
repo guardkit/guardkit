@@ -1,0 +1,73 @@
+import { Plus } from 'lucide-react';
+
+import { Button } from '@/components/ui/button';
+import { Form, FormDrawer, Input, Textarea } from '@/components/ui/form';
+import { useNotifications } from '@/components/ui/notifications';
+import { Authorization, ROLES } from '@/lib/authorization';
+
+import {
+  create{{EntityName}}InputSchema,
+  useCreate{{EntityName}},
+} from '../api/create-{{featureName}}';
+
+export const Create{{EntityName}} = () => {
+  const { addNotification } = useNotifications();
+  const create{{EntityName}}Mutation = useCreate{{EntityName}}({
+    mutationConfig: {
+      onSuccess: () => {
+        addNotification({
+          type: 'success',
+          title: '{{EntityName}} Created',
+        });
+      },
+    },
+  });
+
+  return (
+    <Authorization allowedRoles={[ROLES.ADMIN]}>
+      <FormDrawer
+        isDone={create{{EntityName}}Mutation.isSuccess}
+        triggerButton={
+          <Button size="sm" icon={<Plus className="size-4" />}>
+            Create {{EntityName}}
+          </Button>
+        }
+        title="Create {{EntityName}}"
+        submitButton={
+          <Button
+            form="create-{{featureName}}"
+            type="submit"
+            size="sm"
+            isLoading={create{{EntityName}}Mutation.isPending}
+          >
+            Submit
+          </Button>
+        }
+      >
+        <Form
+          id="create-{{featureName}}"
+          onSubmit={(values) => {
+            create{{EntityName}}Mutation.mutate({ data: values });
+          }}
+          schema={create{{EntityName}}InputSchema}
+        >
+          {({ register, formState }) => (
+            <>
+              <Input
+                label="Title"
+                error={formState.errors['title']}
+                registration={register('title')}
+              />
+
+              <Textarea
+                label="Body"
+                error={formState.errors['body']}
+                registration={register('body')}
+              />
+            </>
+          )}
+        </Form>
+      </FormDrawer>
+    </Authorization>
+  );
+};

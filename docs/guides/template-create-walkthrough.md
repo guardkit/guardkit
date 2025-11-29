@@ -10,13 +10,12 @@
 
 1. [Overview](#overview)
 2. [Prerequisites](#prerequisites)
-3. [Phase 1: Q&A Session](#phase-1-qa-session)
-4. [Phase 2: AI Analysis](#phase-2-ai-analysis)
-5. [Phase 3: Template Generation](#phase-3-template-generation)
-6. [Phase 4: Review & Test](#phase-4-review--test)
-7. [Phase 5: Customization](#phase-5-customization)
-8. [Real-World Examples](#real-world-examples)
-9. [Tips & Best Practices](#tips--best-practices)
+3. [Phase 1: AI-Native Codebase Analysis](#phase-1-ai-native-codebase-analysis)
+4. [Phase 2: Template Generation](#phase-2-template-generation)
+5. [Phase 3: Review & Test](#phase-3-review--test)
+6. [Phase 4: Customization](#phase-4-customization)
+7. [Real-World Examples](#real-world-examples)
+8. [Tips & Best Practices](#tips--best-practices)
 
 ---
 
@@ -63,17 +62,14 @@ OUTPUT: Reusable template
 ### Command Options
 
 ```bash
-# Interactive mode (recommended)
+# AI-native mode (default - AI analyzes codebase automatically)
 /template-create
 
 # Analyze specific path
 /template-create --path /path/to/codebase
 
-# Skip Q&A (use defaults)
-/template-create --skip-qa
-
-# Custom output location
-/template-create --output /custom/path
+# Create for team distribution (requires install.sh)
+/template-create --output-location repo
 
 # Limit template files generated
 /template-create --max-templates 20
@@ -157,11 +153,11 @@ tree -L 2 src/
 
 ---
 
-## Phase 1: Q&A Session
+## Phase 1: AI-Native Codebase Analysis
 
-Duration: ~3-5 minutes (8 questions)
+Duration: ~10-30 seconds (fully automatic)
 
-### Starting the Session
+### Starting AI Analysis
 
 ```bash
 cd /path/to/your/codebase
@@ -171,236 +167,39 @@ cd /path/to/your/codebase
 Output:
 ```
 ============================================================
-  Template Creation - Brownfield Q&A
+  Template Creation - AI-Native Analysis
 ============================================================
 
 This will analyze your codebase and create a reusable template.
-Estimated time: 5-10 minutes
-Press Ctrl+C at any time to save progress and exit.
+AI will automatically infer language, framework, and architecture.
+Estimated time: 30-60 seconds
 
-Starting Q&A session...
+Starting AI analysis...
 ```
 
-### Question 1: Codebase Location
+**What Happens (Automatically)**:
+
+The AI analyzes your codebase directly without asking questions, inferring ALL metadata:
+
+1. **Primary Language** - Detected from file extensions (.py, .ts, .cs, etc.) and config files (package.json, requirements.txt, *.csproj)
+2. **Framework** - Detected from dependencies in config files
+3. **Architecture Pattern** - Detected from folder structure (ViewModels/, Domain/, etc.)
+4. **Testing Framework** - Detected from test files and dependencies
+5. **Template Name** - Suggested from project directory name
+
+### Example AI Analysis Output
 
 ```
-------------------------------------------------------------
-  Section 1: Codebase Location
-------------------------------------------------------------
+🔍 Analyzing codebase...
 
-Where is the codebase you want to convert to a template?
-  [1] Current directory (./)
-  [2] Specify path
+Detected Configuration:
+  • Language: C# (net8.0)
+  • Framework: .NET MAUI 8.0
+  • Architecture: MVVM
+  • Testing: xUnit 2.6.0
+  • Template Name: my-maui-app
 
-Enter number (default: 1):
-```
-
-**Tips**:
-- Option 1: Use if already in project directory
-- Option 2: Specify absolute or relative path
-
-**Example Responses**:
-```bash
-# Already in correct directory
-Enter: 1
-
-# Need to specify path
-Enter: 2
-Path: /Users/me/projects/my-app
-```
-
-### Question 2: Template Name
-
-```
-------------------------------------------------------------
-  Section 2: Template Identity
-------------------------------------------------------------
-
-What should this template be called?
-  Validation: 3-50 chars, alphanumeric + hyphens/underscores
-  (Detected from directory: my-maui-app)
-
-Enter value (default: my-maui-app):
-```
-
-**Naming Guidelines**:
-- Use descriptive names: `mycompany-maui-mvvm`
-- Include technology: `dotnet-webapi-clean`
-- Add purpose: `mobile-appshell-template`
-- Avoid generic names: `template1`, `my-template`
-
-**Good Examples**:
-- `acme-maui-appshell` - Company + tech + pattern
-- `python-fastapi-microservice` - Stack + architecture
-- `react-nextjs-dashboard` - Framework + purpose
-
-**Bad Examples**:
-- `template` - Too generic
-- `my-template-v2-final` - Unclear versioning
-- `Template123` - No description
-
-### Question 3: Primary Language
-
-```
-Primary language? (auto-detected if possible)
-  [1] C#
-  [2] TypeScript
-  [3] Python
-  [4] Java
-  [5] Kotlin
-  [6] Go
-  [7] Rust
-  [8] Other
-
-Detected: C# (based on .csproj files)
-Enter number (default: 1):
-```
-
-**Detection Method**:
-- Looks for config files (.csproj, package.json, setup.py)
-- Analyzes file extensions
-- Checks build files
-
-**If Detection Wrong**:
-Simply enter correct number - your choice overrides detection.
-
-### Question 4: Template Purpose
-
-```
-What is the primary purpose of this template?
-  [1] Start new projects quickly [DEFAULT]
-  [2] Enforce team standards
-  [3] Prototype/experiment
-  [4] Production-ready scaffold
-
-Enter number (default: 1):
-```
-
-**Purpose Guide**:
-
-| Choice | Best For | Quality Focus |
-|--------|----------|---------------|
-| **1. Quick Start** | Rapid prototyping | Speed over rigor |
-| **2. Team Standards** | Consistency | Company patterns |
-| **3. Prototype** | Experiments | Flexibility |
-| **4. Production** | Enterprise apps | Complete quality gates |
-
-**Recommendation**: Choose **2 (Team Standards)** for most internal templates.
-
-### Question 5: Architecture Pattern
-
-```
-Primary architecture pattern? (auto-detected if possible)
-  [1] MVVM
-  [2] Clean Architecture
-  [3] Hexagonal
-  [4] Layered
-  [5] MVC
-  [6] Vertical Slice
-  [7] Simple (no formal architecture)
-  [8] Other
-
-Detected: MVVM (based on ViewModels/ directory)
-Enter number (default: 1):
-```
-
-**Detection Method**:
-- Scans directory names (ViewModels, Domain, Infrastructure)
-- Analyzes file organization
-- Checks namespace patterns
-
-**Architecture Decision Guide**:
-
-```
-Mobile/Desktop App?
-├─ MVVM (most common)
-└─ MVC (traditional)
-
-Backend API?
-├─ Clean Architecture (enterprise)
-├─ Hexagonal (ports & adapters)
-├─ Vertical Slice (feature-focused)
-└─ Layered (traditional)
-
-Microservice?
-└─ Hexagonal or Clean
-
-Simple Tool/Script?
-└─ Simple (no formal architecture)
-```
-
-### Question 6: Example Files
-
-```
-Include example files in analysis?
-  [1] All matching files (thorough but slow)
-  [2] Specific paths (manual selection)
-  [3] Auto-select best examples (recommended)
-
-Enter number (default: 3):
-```
-
-**Option Comparison**:
-
-| Option | Files Analyzed | Duration | Best For |
-|--------|---------------|----------|----------|
-| **1. All** | All matching | 2-5 min | Small codebases (<50 files) |
-| **2. Specific** | Your selection | 1-2 min | Know best examples |
-| **3. Auto** | AI-selected 10 | 30-60 sec | Most cases (recommended) |
-
-**Recommendation**: Use option **3 (Auto)** - AI picks diverse, representative examples.
-
-**If choosing Option 2 (Specific)**:
-```
-Enter file paths (one per line, empty line when done):
-Path: src/Domain/Products/GetProducts.cs
-Path: src/Domain/Products/CreateProduct.cs
-Path: src/ViewModels/ProductsViewModel.cs
-Path: src/Views/ProductsPage.xaml
-Path:
-```
-
-### Question 7: Agent Preferences
-
-```
-Generate custom agents for project-specific patterns?
-  [1] Yes - Generate agents for capabilities not in global library
-  [2] No - Use only global agents
-
-Enter number (default: 1):
-```
-
-**What Are Custom Agents?**
-
-AI specialists tuned to YOUR specific patterns:
-- `mycompany-domain-specialist` - Your domain patterns
-- `mycompany-viewmodel-specialist` - Your MVVM approach
-- `mycompany-testing-specialist` - Your test patterns
-
-**When to Generate**:
-- ✅ Have unique patterns (custom logging, security)
-- ✅ Company-specific conventions
-- ✅ Non-standard architectures
-- ❌ Using standard patterns (global agents sufficient)
-
-**Recommendation**:
-- Choose **Yes (1)** for company templates
-- Choose **No (2)** for learning/prototyping
-
-### Question 8: Confirmation
-
-```
-------------------------------------------------------------
-  Summary of Detected Patterns
-------------------------------------------------------------
-
-Template Name: mycompany-maui-template
-Language: C# (net8.0)
-Framework: .NET MAUI 8.0
-Architecture: MVVM
-Purpose: Enforce team standards
-
-Detected Patterns:
+Found Patterns:
   ✓ Domain operations (verb-based naming)
   ✓ Repository pattern
   ✓ ErrorOr error handling
@@ -413,53 +212,31 @@ Detected Layers:
   ✓ ViewModels (presentation logic)
   ✓ Views (UI)
 
-Example Files Selected:
-  1. src/Domain/Products/GetProducts.cs
-  2. src/Domain/Products/CreateProduct.cs
-  3. src/Domain/Orders/GetOrders.cs
-  4. src/Data/Repositories/ProductRepository.cs
-  5. src/ViewModels/ProductsViewModel.cs
-  6. src/ViewModels/OrdersViewModel.cs
-  7. src/Views/ProductsPage.xaml
-  8. src/Views/ProductsPage.xaml.cs
-  9. tests/Domain/GetProductsTests.cs
-  10. tests/ViewModels/ProductsViewModelTests.cs
+Confidence: 87%
 
-Confirm and proceed with generation? (Y/n):
+Proceeding to template generation...
 ```
 
-**What to Check**:
-- ✅ Language/framework correct?
-- ✅ Architecture matches your design?
-- ✅ Patterns captured accurately?
-- ✅ Example files representative?
-
-**If Something Wrong**:
-- Enter `n` to cancel
-- Fix codebase or naming
-- Re-run command
-
-**If Everything Looks Good**:
-- Enter `Y` to proceed
+**No User Input Required** - AI infers everything automatically!
 
 ---
 
-## Phase 2: AI Analysis
+## Phase 2: Template Generation
 
-Duration: 10-30 seconds
+Duration: 5-15 seconds
 
 ### What Happens
 
-The AI analyzes your codebase to extract intelligent patterns.
+Using the AI analysis from Phase 1, the system now generates all template components.
 
 ```
-✅ Q&A complete
+✅ AI analysis complete
 
 ============================================================
-  Phase 2: AI Codebase Analysis
+  Phase 2: Template Component Generation
 ============================================================
 
-🔍 Analyzing codebase...
+📝 Generating template files...
 ```
 
 ### Step 1: File Collection
@@ -592,348 +369,7 @@ Confidence Score: 87%
 
 ---
 
-## Phase 3: Template Generation
-
-Duration: 5-15 seconds
-
-### Component 1: Manifest Generation
-
-```
-============================================================
-  Phase 3: Template Component Generation
-============================================================
-
-📝 Generating manifest.json...
-```
-
-**What Gets Generated**:
-
-```json
-{
-  "schema_version": "1.0.0",
-  "name": "mycompany-maui-template",
-  "display_name": "MyCompany .NET MAUI Template",
-  "description": "Company-standard MAUI template with MVVM, Domain pattern, and ErrorOr",
-  "version": "1.0.0",
-  "author": "Your Name",
-  "language": "C#",
-  "language_version": "net8.0",
-  "frameworks": [
-    {
-      "name": ".NET MAUI",
-      "version": "8.0.0",
-      "purpose": "ui"
-    },
-    {
-      "name": "xUnit",
-      "version": "2.6.0",
-      "purpose": "testing"
-    }
-  ],
-  "architecture": "MVVM",
-  "patterns": [
-    "Domain operations (verb-based)",
-    "Repository pattern",
-    "ErrorOr error handling",
-    "Dependency injection"
-  ],
-  "layers": [
-    {
-      "name": "Domain",
-      "purpose": "Business logic",
-      "patterns": ["Domain operations", "ErrorOr"]
-    },
-    {
-      "name": "Data",
-      "purpose": "Data access",
-      "patterns": ["Repository pattern"]
-    },
-    {
-      "name": "ViewModels",
-      "purpose": "Presentation logic",
-      "patterns": ["MVVM", "CommunityToolkit.Mvvm"]
-    },
-    {
-      "name": "Views",
-      "purpose": "User interface",
-      "patterns": ["XAML", "Code-behind"]
-    }
-  ],
-  "placeholders": {
-    "ProjectName": {
-      "name": "{{ProjectName}}",
-      "description": "Root project name",
-      "required": true,
-      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
-      "example": "ShoppingApp"
-    },
-    "Entity": {
-      "name": "{{EntityName}}",
-      "description": "Entity/model name (singular)",
-      "required": true,
-      "pattern": "^[A-Z][A-Za-z0-9]*$",
-      "example": "Product"
-    }
-  },
-  "tags": ["csharp", "maui", "mvvm", "mobile", "company-standard"],
-  "category": "mobile",
-  "complexity": 6,
-  "created_at": "2025-11-06T10:30:00Z",
-  "source_project": "/Users/me/projects/my-maui-app",
-  "confidence_score": 87
-}
-```
-
-Output:
-```
-  ✓ Template metadata complete
-  ✓ 8 placeholders defined
-  ✓ 4 layers documented
-  ✓ 4 patterns captured
-  ✓ Complexity score: 6/10
-```
-
-### Component 2: Settings Generation
-
-```
-⚙️  Generating settings.json...
-```
-
-**What Gets Generated**:
-
-```json
-{
-  "schema_version": "1.0.0",
-  "naming_conventions": {
-    "domain_operations": {
-      "pattern": "{{Verb}}{{EntityNamePlural}}",
-      "case_style": "PascalCase",
-      "examples": ["GetProducts", "CreateProduct", "UpdateOrder"]
-    },
-    "repositories": {
-      "interface_pattern": "I{{EntityName}}Repository",
-      "implementation_pattern": "{{EntityName}}Repository",
-      "case_style": "PascalCase"
-    },
-    "viewmodels": {
-      "pattern": "{{FeatureName}}ViewModel",
-      "case_style": "PascalCase"
-    },
-    "views": {
-      "pattern": "{{FeatureName}}Page",
-      "case_style": "PascalCase"
-    },
-    "tests": {
-      "pattern": "{{ClassName}}Tests",
-      "case_style": "PascalCase"
-    }
-  },
-  "prohibited_suffixes": [
-    "UseCase",
-    "Engine",
-    "Handler",
-    "Processor"
-  ],
-  "file_organization": {
-    "by_layer": true,
-    "by_feature": false,
-    "test_location": "separate"
-  },
-  "layer_mappings": {
-    "Domain": {
-      "directory": "src/Domain",
-      "namespace_pattern": "{{ProjectName}}.Domain.{{SubPath}}",
-      "file_patterns": ["*.cs", "!*Tests.cs"]
-    },
-    "Data": {
-      "directory": "src/Data",
-      "namespace_pattern": "{{ProjectName}}.Data.{{SubPath}}"
-    },
-    "ViewModels": {
-      "directory": "src/ViewModels",
-      "namespace_pattern": "{{ProjectName}}.ViewModels"
-    },
-    "Views": {
-      "directory": "src/Views",
-      "namespace_pattern": "{{ProjectName}}.Views"
-    }
-  },
-  "code_style": {
-    "indentation": "spaces",
-    "indent_size": 4,
-    "line_length": 120,
-    "trailing_commas": false,
-    "brace_style": "new_line"
-  }
-}
-```
-
-Output:
-```
-  ✓ 5 naming conventions captured
-  ✓ 4 layer mappings defined
-  ✓ Code style: C# defaults
-  ✓ File organization rules set
-```
-
-### Component 3: CLAUDE.md Generation
-
-```
-📚 Generating CLAUDE.md...
-```
-
-Creates comprehensive AI guidance document with:
-
-1. **Architecture Overview** (from analysis)
-2. **Technology Stack** (detected frameworks)
-3. **Project Structure** (directory tree)
-4. **Naming Conventions** (with examples)
-5. **Patterns & Best Practices** (from code analysis)
-6. **Code Examples** (from your actual files)
-7. **Quality Standards** (coverage, SOLID scores)
-8. **Agent Usage Guidelines** (when to use which agent)
-
-Output:
-```
-  ✓ Architecture section (15 lines)
-  ✓ Technology stack (8 frameworks)
-  ✓ Project structure visualization
-  ✓ 5 naming convention examples
-  ✓ 4 pattern descriptions
-  ✓ 3 code examples (from your files)
-  ✓ Quality standards (80% coverage, 85 SOLID)
-  ✓ Agent guidelines
-
-  Total: 487 lines
-```
-
-### Component 4: Template Files Generation
-
-```
-🎨 Generating template files...
-```
-
-For each example file, AI:
-1. Reads original content
-2. Identifies specific values (names, types, etc.)
-3. Replaces with intelligent placeholders
-4. Preserves structure and patterns
-5. Validates template quality
-
-**Example Transformation**:
-
-```csharp
-// BEFORE (GetProducts.cs):
-namespace MyApp.Domain.Products;
-
-public class GetProducts
-{
-    private readonly IProductRepository _repository;
-
-    public GetProducts(IProductRepository repository)
-    {
-        _repository = repository;
-    }
-
-    public async Task<ErrorOr<List<Product>>> ExecuteAsync()
-    {
-        return await _repository.GetAllAsync();
-    }
-}
-
-// AFTER (GetEntity.cs.template):
-namespace {{ProjectName}}.Domain.{{EntityNamePlural}};
-
-public class {{Verb}}{{EntityNamePlural}}
-{
-    private readonly I{{EntityName}}Repository _repository;
-
-    public {{Verb}}{{EntityNamePlural}}(I{{EntityName}}Repository repository)
-    {
-        _repository = repository;
-    }
-
-    public async Task<ErrorOr<List<{{EntityName}}>>> ExecuteAsync()
-    {
-        return await _repository.GetAllAsync();
-    }
-}
-```
-
-Output:
-```
-  Processing files:
-  ✓ Domain/GetEntity.cs.template (from GetProducts.cs)
-  ✓ Domain/CreateEntity.cs.template (from CreateProduct.cs)
-  ✓ Data/EntityRepository.cs.template (from ProductRepository.cs)
-  ✓ Data/IEntityRepository.cs.template (from IProductRepository.cs)
-  ✓ ViewModels/EntityViewModel.cs.template (from ProductsViewModel.cs)
-  ✓ Views/EntityPage.xaml.template (from ProductsPage.xaml)
-  ✓ Views/EntityPage.xaml.cs.template (from ProductsPage.xaml.cs)
-  ✓ Tests/Domain/GetEntityTests.cs.template (from GetProductsTests.cs)
-
-  Total: 15 template files generated
-  Quality score: 92/100 (High confidence placeholders)
-```
-
-### Component 5: Agent Generation
-
-```
-🤖 Determining agent needs...
-  ✓ Analyzed capability requirements
-  ✓ Compared against global agent library
-  ✓ Identified 3 capability needs
-  ✓ Found 2 gaps to fill
-
-💡 Creating project-specific agents...
-```
-
-**Gap Analysis**:
-
-```
-Capabilities Needed:
-  1. MVVM ViewModel patterns → Global: mvvm-specialist ✓
-  2. Domain operations (verb-based) → Gap found! ✗
-  3. ErrorOr error handling → Global: error-pattern-specialist ✓
-  4. Repository pattern → Global: repository-specialist ✓
-  5. Company logging standards → Gap found! ✗
-```
-
-**Agent Generation**:
-
-```
-  → Generating: mycompany-domain-specialist
-    Based on: GetProducts.cs, CreateProduct.cs, UpdateOrder.cs
-    Expertise: Verb-based domain operations with ErrorOr
-    ✓ Created (confidence: 90%)
-
-  → Generating: mycompany-logging-specialist
-    Based on: Logger usage patterns across all layers
-    Expertise: Company logging standards and practices
-    ✓ Created (confidence: 85%)
-```
-
-Output:
-```
-  Total agents: 7
-    • 5 from global library (reused)
-    • 2 generated (project-specific)
-
-  Global agents:
-    • architectural-reviewer
-    • test-verifier
-    • code-reviewer
-    • mvvm-specialist
-    • error-pattern-specialist
-
-  Generated agents:
-    • mycompany-domain-specialist
-    • mycompany-logging-specialist
-```
-
----
-
-## Phase 4: Review & Test
+## Phase 3: Review & Test
 
 ### Final Output Summary
 
@@ -1098,7 +534,7 @@ Test run successful.
 
 ---
 
-## Phase 5: Customization
+## Phase 4: Customization
 
 ### When to Customize
 
@@ -1480,11 +916,11 @@ HealthcareAPI/
 
 1. **Faster Analysis**
    ```bash
-   # Use --skip-qa for repeated runs
-   /template-create --skip-qa --output /tmp/test
-
-   # Limit files analyzed
+   # Limit files analyzed for faster processing
    /template-create --max-templates 10
+
+   # Test with specific path
+   /template-create --path /path/to/codebase --dry-run
    ```
 
 2. **Debug Issues**
@@ -1518,7 +954,6 @@ HealthcareAPI/
 
 - **Command Reference**: [template-create.md](../../installer/global/commands/template-create.md)
 - **Greenfield Guide**: [template-init-walkthrough.md](./template-init-walkthrough.md)
-- **Q&A Details**: [template-qa-guide.md](./template-qa-guide.md)
 - **Troubleshooting**: [template-troubleshooting.md](./template-troubleshooting.md)
 - **Customization**: [creating-local-templates.md](./creating-local-templates.md)
 

@@ -1,0 +1,146 @@
+{
+  "schema_version": "1.0.0",
+  "name": "react-typescript",
+  "display_name": "React TypeScript",
+  "description": "Production-ready React template with TypeScript, Vite, TanStack Query, and feature-based architecture. Based on Bulletproof React (28.5k+ stars).",
+  "version": "1.0.0",
+  "author": "Taskwright",
+  "language": "TypeScript",
+  "language_version": "5.4+",
+  "frameworks": [
+    {
+      "name": "React",
+      "version": "18.3",
+      "purpose": "ui"
+    },
+    {
+      "name": "Vite",
+      "version": "5.2",
+      "purpose": "build"
+    },
+    {
+      "name": "TanStack Query",
+      "version": "5.32",
+      "purpose": "state-management"
+    },
+    {
+      "name": "React Router",
+      "version": "7.0",
+      "purpose": "routing"
+    },
+    {
+      "name": "Tailwind CSS",
+      "version": "3.4",
+      "purpose": "styling"
+    },
+    {
+      "name": "Radix UI",
+      "version": "1.x",
+      "purpose": "ui-components"
+    },
+    {
+      "name": "Vitest",
+      "version": "2.1",
+      "purpose": "testing"
+    },
+    {
+      "name": "Playwright",
+      "version": "1.43",
+      "purpose": "e2e-testing"
+    },
+    {
+      "name": "MSW",
+      "version": "2.2",
+      "purpose": "api-mocking"
+    },
+    {
+      "name": "React Hook Form",
+      "version": "7.51",
+      "purpose": "forms"
+    },
+    {
+      "name": "Zod",
+      "version": "3.23",
+      "purpose": "validation"
+    }
+  ],
+  "architecture": "Feature-Based",
+  "patterns": [
+    "Feature folders",
+    "Query Options pattern",
+    "Custom hooks",
+    "Component composition",
+    "Authorization policies",
+    "Form validation with Zod",
+    "MSW handlers for testing",
+    "Path aliases"
+  ],
+  "layers": [
+    "features",
+    "components",
+    "app"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project",
+      "required": true,
+      "pattern": "^[A-Za-z][A-Za-z0-9-]*$",
+      "example": "my-app"
+    },
+    "FeatureName": {
+      "name": "{{FeatureName}}",
+      "description": "Name of the feature (singular, kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "discussion"
+    },
+    "FeatureNamePlural": {
+      "name": "{{FeatureNamePlural}}",
+      "description": "Plural form of feature name (kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "discussions"
+    },
+    "EntityName": {
+      "name": "{{EntityName}}",
+      "description": "Name of the entity (singular, PascalCase)",
+      "required": true,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "Discussion"
+    },
+    "EntityNamePlural": {
+      "name": "{{EntityNamePlural}}",
+      "description": "Plural form of entity name (PascalCase)",
+      "required": true,
+      "pattern": "^[A-Z][A-Za-z0-9]*$",
+      "example": "Discussions"
+    },
+    "ApiBaseUrl": {
+      "name": "{{ApiBaseUrl}}",
+      "description": "Base URL for API endpoints",
+      "required": true,
+      "pattern": "^https?://.*$",
+      "example": "http://localhost:3000/api",
+      "default": "http://localhost:3000/api"
+    }
+  },
+  "tags": [
+    "typescript",
+    "react",
+    "vite",
+    "tanstack-query",
+    "tailwind",
+    "vitest",
+    "playwright",
+    "msw",
+    "radix-ui",
+    "react-router",
+    "feature-based"
+  ],
+  "category": "frontend",
+  "complexity": 7,
+  "created_at": "2025-11-09T00:00:00Z",
+  "source_project": "/tmp/bulletproof-react/apps/react-vite",
+  "confidence_score": 92
+}

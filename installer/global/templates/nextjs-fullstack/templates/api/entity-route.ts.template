@@ -1,0 +1,51 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+
+export const dynamic = 'force-dynamic'
+
+export async function GET(_request: NextRequest) {
+  try {
+    const {{entityNamePlural}} = await db.{{entityName}}.findMany({
+      include: {
+        // Add related data if needed
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    })
+
+    return NextResponse.json({ {{entityNamePlural}} }, { status: 200 })
+  } catch (_error) {
+    return NextResponse.json(
+      { error: 'Failed to fetch {{entityNamePlural}}' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+
+    if (!body.name) {
+      return NextResponse.json(
+        { error: 'Name is required' },
+        { status: 400 }
+      )
+    }
+
+    const {{entityName}} = await db.{{entityName}}.create({
+      data: {
+        name: body.name,
+        // Add more fields as needed
+      },
+    })
+
+    return NextResponse.json({ {{entityName}} }, { status: 201 })
+  } catch (_error) {
+    return NextResponse.json(
+      { error: 'Failed to create {{entityName}}' },
+      { status: 500 }
+    )
+  }
+}

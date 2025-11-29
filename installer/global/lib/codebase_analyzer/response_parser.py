@@ -12,21 +12,25 @@ Following architectural review recommendations:
 
 import json
 import re
+import logging
 from typing import Dict, Any, Optional
-
 from pydantic import ValidationError
+import importlib
 
-from lib.codebase_analyzer.models import (
-    CodebaseAnalysis,
-    TechnologyInfo,
-    ArchitectureInfo,
-    QualityInfo,
-    ExampleFile,
-    LayerInfo,
-    ConfidenceScore,
-    ParseError,
-    ConfidenceLevel,
-)
+# Import using importlib to avoid 'global' keyword issue
+_models_module = importlib.import_module('lib.codebase_analyzer.models')
+
+CodebaseAnalysis = _models_module.CodebaseAnalysis
+TechnologyInfo = _models_module.TechnologyInfo
+ArchitectureInfo = _models_module.ArchitectureInfo
+QualityInfo = _models_module.QualityInfo
+ExampleFile = _models_module.ExampleFile
+LayerInfo = _models_module.LayerInfo
+ConfidenceScore = _models_module.ConfidenceScore
+ParseError = _models_module.ParseError
+ConfidenceLevel = _models_module.ConfidenceLevel
+
+logger = logging.getLogger(__name__)
 
 
 class ResponseParser:
@@ -40,7 +44,8 @@ class ResponseParser:
         self,
         response: str,
         codebase_path: str,
-        template_context: Optional[Dict[str, str]] = None
+        template_context: Optional[Dict[str, str]] = None,
+        validate_example_files: bool = True  # TASK-0CE5: Optional validation
     ) -> CodebaseAnalysis:
         """
         Parse agent response into CodebaseAnalysis model.
@@ -49,6 +54,7 @@ class ResponseParser:
             response: Raw response from agent (may contain markdown/text)
             codebase_path: Path to analyzed codebase
             template_context: Template context from TASK-001
+            validate_example_files: Whether to validate example_files are present (TASK-0CE5)
 
         Returns:
             Validated CodebaseAnalysis object
@@ -64,7 +70,12 @@ class ResponseParser:
 
         # Validate and construct models
         try:
-            analysis = self._build_analysis(json_data, codebase_path, template_context)
+            analysis = self._build_analysis(
+                json_data,
+                codebase_path,
+                template_context,
+                validate_example_files=validate_example_files
+            )
             return analysis
         except ValidationError as e:
             raise ParseError(f"Invalid response structure: {e}") from e
@@ -95,13 +106,17 @@ class ResponseParser:
         if matches:
             for match in matches:
                 try:
-                    return json.loads(match)
+                    json_data = json.loads(match)
+                    logger.debug(f"Extracted JSON from code block. Keys: {list(json_data.keys())}")
+                    return json_data
                 except json.JSONDecodeError:
                     continue
 
         # Try parsing the entire response as JSON
         try:
-            return json.loads(response)
+            json_data = json.loads(response)
+            logger.debug(f"Extracted JSON from raw response. Keys: {list(json_data.keys())}")
+            return json_data
         except json.JSONDecodeError:
             pass
 
@@ -111,17 +126,21 @@ class ResponseParser:
 
         for match in matches:
             try:
-                return json.loads(match)
+                json_data = json.loads(match)
+                logger.debug(f"Extracted JSON via regex. Keys: {list(json_data.keys())}")
+                return json_data
             except json.JSONDecodeError:
                 continue
 
+        logger.warning("Failed to extract JSON from agent response")
         return None
 
     def _build_analysis(
         self,
         data: Dict[str, Any],
         codebase_path: str,
-        template_context: Optional[Dict[str, str]]
+        template_context: Optional[Dict[str, str]],
+        validate_example_files: bool = True  # TASK-0CE5
     ) -> CodebaseAnalysis:
         """
         Build CodebaseAnalysis from parsed JSON data.
@@ -173,7 +192,30 @@ class ResponseParser:
 
         # Parse example files
         example_files_data = data.get("example_files", [])
+
+        # TASK-0CE5: Log what we received
+        logger.debug(f"example_files present in response: {'example_files' in data}")
+        if 'example_files' in data:
+            logger.debug(f"example_files count: {len(example_files_data)}")
+        else:
+            logger.warning("AI response missing 'example_files' key - will default to empty list")
+
+        # TASK-0CE5: Validate example_files is not empty (only if validation enabled)
+        if validate_example_files and not example_files_data:
+            logger.error("AI returned empty example_files - template generation will fail!")
+            logger.error("This indicates:")
+            logger.error("  1. AI did not follow the prompt instructions")
+            logger.error("  2. AI did not understand the example_files requirement")
+            logger.error("  3. Prompt may need strengthening")
+            raise ParseError(
+                "AI analysis returned empty example_files. "
+                "Cannot generate templates without example files. "
+                "The AI must include 10-20 example_files in the JSON response. "
+                "This is a critical requirement for template generation."
+            )
+
         example_files = [self._parse_example_file(f) for f in example_files_data]
+        logger.info(f"Successfully parsed {len(example_files)} example files from AI response")
 
         # Build final analysis
         analysis = CodebaseAnalysis(
@@ -313,7 +355,13 @@ class FallbackResponseBuilder:
         parser = ResponseParser()
 
         # Build analysis from heuristic data
-        analysis = parser._build_analysis(heuristic_data, codebase_path, template_context)
+        # TASK-0CE5: Don't validate example_files for fallback (it may be empty initially)
+        analysis = parser._build_analysis(
+            heuristic_data,
+            codebase_path,
+            template_context,
+            validate_example_files=False
+        )
 
         # Mark as fallback
         analysis.agent_used = False

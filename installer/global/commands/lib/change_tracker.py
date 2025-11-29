@@ -18,9 +18,15 @@ Example:
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+# Python 3.9 compatibility: UTC is not available in datetime module until 3.11
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 
 class ChangeType(Enum):

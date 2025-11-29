@@ -12,6 +12,13 @@ Following architectural review recommendations:
 
 from pathlib import Path
 from typing import Dict, List, Optional
+import importlib
+
+# Import using importlib to avoid 'global' keyword issue
+_exclusions_module = importlib.import_module('lib.codebase_analyzer.exclusions')
+
+DEFAULT_EXCLUSIONS = _exclusions_module.DEFAULT_EXCLUSIONS
+should_exclude_path = _exclusions_module.should_exclude_path
 
 
 class PromptBuilder:
@@ -140,47 +147,115 @@ class PromptBuilder:
         return "\n".join(lines)
 
     def _build_request_section(self) -> str:
-        """Build the analysis request section."""
-        return """
+        """Build the analysis request section with completeness guidance."""
+        completeness_guidance = """
+## Completeness Analysis Guidance
+
+When analyzing this codebase:
+- Identify ALL CRUD operations for each entity (Create/Read/Update/Delete/List)
+- Note layer symmetry: UseCases operations should have corresponding Web endpoints
+- Recognize patterns that require supporting files (Validators, Specs, Repositories)
+- Recommend complete operation sets, not partial implementations
+- Ensure all operations appear in relevant layers (Domain → Application → Infrastructure → Web)
+
+This analysis will be used to create COMPLETE SCAFFOLDING templates, not just representative samples.
+"""
+
+        # TASK-51B2: Add AI-native metadata inference guidance when no template_context provided
+        metadata_inference_guidance = ""
+        if not self.template_context:
+            metadata_inference_guidance = """
+## AI-Native Metadata Inference (TASK-51B2)
+
+**IMPORTANT**: No template context was provided. You must infer ALL template metadata directly from the codebase:
+
+1. **Template Name**: Suggest based on language + framework (e.g., "fastapi-python", "react-typescript", "nextjs-fullstack")
+2. **Primary Language**: Analyze file extensions (.py, .ts, .cs, .go, .rs) and config files
+   - Python: setup.py, pyproject.toml, requirements.txt, Pipfile
+   - TypeScript: package.json, tsconfig.json
+   - .NET: *.csproj, *.sln
+   - Go: go.mod, go.sum
+   - Rust: Cargo.toml
+
+3. **Framework**: Analyze dependencies and imports
+   - Python: Read requirements.txt, pyproject.toml dependencies
+   - TypeScript: Read package.json dependencies
+   - .NET: Read *.csproj PackageReference elements
+   - Go: Read go.mod require statements
+   - Common frameworks: FastAPI, Flask, Django, React, Next.js, Vue, Angular, ASP.NET, Express
+
+4. **Architecture Pattern**: Analyze folder structure and code organization
+   - Look for: api/, models/, services/, controllers/, views/, components/, domain/, infrastructure/
+   - Identify: Layered, MVC, MVVM, Clean Architecture, Hexagonal, Microservices, N-Tier
+
+5. **Testing Framework**: Analyze test files and dependencies
+   - Python: pytest, unittest, nose
+   - TypeScript: Jest, Vitest, Mocha, Jasmine
+   - .NET: xUnit, NUnit, MSTest
+   - Go: testing package, testify
+
+**Include these inferred values** in the JSON response under a new "metadata" section:
+```json
+{
+  "metadata": {
+    "template_name": "fastapi-python",
+    "template_type": "Backend API",
+    "primary_language": "Python",
+    "framework": "FastAPI",
+    "framework_version": "0.104.0",
+    "architecture_pattern": "Layered (API routes + CRUD + models)",
+    "testing_framework": "pytest",
+    "confidence_score": 95
+  }
+}
+```
+
+**Do NOT ask questions. Do NOT use external detection code. Infer everything from the codebase itself.**
+"""
+
+        return f"""
+{completeness_guidance}
+{metadata_inference_guidance}
+
 ## Analysis Request
 
 Please analyze this codebase and provide a comprehensive architectural assessment in JSON format:
 
 ```json
-{
-  "technology": {
+{{
+  "technology": {{
     "primary_language": "...",
     "frameworks": ["..."],
     "testing_frameworks": ["..."],
     "build_tools": ["..."],
     "databases": ["..."],
     "infrastructure": ["..."],
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 95.0,
       "reasoning": "Why this confidence level"
-    }
-  },
-  "architecture": {
+    }}
+  }},
+  "architecture": {{
     "patterns": ["Repository", "Factory", "..."],
     "architectural_style": "Clean Architecture|Layered|...",
     "layers": [
-      {
+      {{
         "name": "Domain",
         "description": "Core business logic",
         "typical_files": ["models.py", "entities.py"],
         "dependencies": []
-      }
+      }}
     ],
     "key_abstractions": ["User", "Order", "..."],
     "dependency_flow": "Inward toward domain",
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 90.0,
       "reasoning": "Why this confidence level"
-    }
-  },
-  "quality": {
+    }}
+  }},
+  "quality": {{
     "overall_score": 85.0,
     "solid_compliance": 80.0,
     "dry_compliance": 85.0,
@@ -189,23 +264,157 @@ Please analyze this codebase and provide a comprehensive architectural assessmen
     "code_smells": ["Duplicated validation logic in 3 files"],
     "strengths": ["Clear separation of concerns", "..."],
     "improvements": ["Extract common validation logic", "..."],
-    "confidence": {
+    "confidence": {{
       "level": "high|medium|low|uncertain",
       "percentage": 85.0,
       "reasoning": "Why this confidence level"
-    }
-  },
+    }}
+  }},
   "example_files": [
-    {
+    {{
       "path": "src/domain/user.py",
       "purpose": "User entity with business logic",
       "layer": "Domain",
       "patterns_used": ["Entity", "Value Object"],
       "key_concepts": ["User", "Email", "Password"]
-    }
+    }},
+    {{
+      "path": "src/application/create_user_usecase.py",
+      "purpose": "Create user use case orchestrating business logic",
+      "layer": "Application",
+      "patterns_used": ["Use Case", "Command"],
+      "key_concepts": ["Validation", "Repository", "Events"]
+    }},
+    {{
+      "path": "src/infrastructure/repositories/user_repository.py",
+      "purpose": "User repository implementing data access",
+      "layer": "Infrastructure",
+      "patterns_used": ["Repository", "Data Mapper"],
+      "key_concepts": ["Database", "ORM", "Queries"]
+    }},
+    {{
+      "path": "src/web/api/routes/users.py",
+      "purpose": "User API endpoints and request handling",
+      "layer": "Presentation",
+      "patterns_used": ["REST", "Controller"],
+      "key_concepts": ["Routes", "Validation", "DTOs"]
+    }},
+    {{
+      "path": "src/domain/validators/email_validator.py",
+      "purpose": "Email validation business rule",
+      "layer": "Domain",
+      "patterns_used": ["Value Object", "Validator"],
+      "key_concepts": ["Validation", "Business Rules"]
+    }},
+    {{
+      "path": "tests/unit/domain/test_user.py",
+      "purpose": "Unit tests for User entity",
+      "layer": "Testing",
+      "patterns_used": ["Unit Test", "Fixture"],
+      "key_concepts": ["Assertions", "Test Cases"]
+    }},
+    {{
+      "path": "src/infrastructure/database/models.py",
+      "purpose": "ORM models for database mapping",
+      "layer": "Infrastructure",
+      "patterns_used": ["ORM", "Data Model"],
+      "key_concepts": ["Schema", "Relationships"]
+    }},
+    {{
+      "path": "src/shared/exceptions.py",
+      "purpose": "Custom domain exceptions",
+      "layer": "Domain",
+      "patterns_used": ["Exception Hierarchy"],
+      "key_concepts": ["Error Handling", "Domain Errors"]
+    }},
+    {{
+      "path": "src/application/dtos/user_dto.py",
+      "purpose": "Data transfer objects for user operations",
+      "layer": "Application",
+      "patterns_used": ["DTO", "Serialization"],
+      "key_concepts": ["Data Transfer", "Validation"]
+    }},
+    {{
+      "path": "src/web/middleware/authentication.py",
+      "purpose": "Authentication middleware",
+      "layer": "Presentation",
+      "patterns_used": ["Middleware", "Decorator"],
+      "key_concepts": ["Auth", "Security", "JWT"]
+    }}
   ]
-}
+}}
 ```
+
+## Template File Selection Guidelines
+
+**🚨 CRITICAL REQUIREMENT: example_files is MANDATORY 🚨**
+
+The `example_files` section in your JSON response is **NON-NEGOTIABLE**. Without it:
+- Template creation will FAIL completely
+- Users will receive 0 scaffold files
+- The entire analysis becomes useless
+
+**YOU MUST RETURN 10-20 example_files IN YOUR JSON RESPONSE.**
+
+These files will become `.template` files with placeholders like `{{{{ProjectName}}}}`, `{{{{Namespace}}}}`, etc.
+
+**Your Task**: Return 10-20 diverse example files that should become templates.
+- **DO NOT** just return 1 example file - provide 10-20 files covering all layers
+- **DO NOT** omit example_files - it is REQUIRED, not optional
+- **DIVERSITY IS CRITICAL** - Include files from domain, data, service, presentation, testing layers
+- **TEMPLATE-WORTHY FILES** - Focus on files that developers would want as scaffolding:
+  * Entities/Models (User, Order, Product)
+  * Repositories (data access patterns)
+  * Services/Use Cases (business logic orchestration)
+  * Controllers/Routes (API endpoints)
+  * Views/Components (UI elements)
+  * Validators (business rules)
+  * DTOs/Requests/Responses (data transfer)
+  * Tests (unit, integration)
+  * Middleware/Filters (cross-cutting concerns)
+  * Configuration files (settings, dependency injection)
+
+**What makes a good template file?**
+1. **Representative** - Shows typical pattern for that layer
+2. **Reusable** - Developer would want this as starting point
+3. **Complete** - Demonstrates full pattern (CRUD operations, validation, error handling)
+4. **Diverse** - Covers different architectural layers
+
+**Example Response Strategy**:
+For a FastAPI project, return example_files like:
+- `app/domain/entities/user.py` (Domain entity)
+- `app/domain/validators/email_validator.py` (Domain validation)
+- `app/application/use_cases/create_user.py` (Application use case)
+- `app/application/dtos/user_dto.py` (Data transfer object)
+- `app/infrastructure/repositories/user_repository.py` (Repository)
+- `app/infrastructure/database/models.py` (ORM models)
+- `app/api/routes/users.py` (API routes)
+- `app/api/middleware/auth.py` (Middleware)
+- `tests/unit/test_user_entity.py` (Unit test)
+- `tests/integration/test_user_api.py` (Integration test)
+
+For a React project, return example_files like:
+- `src/components/Button/Button.tsx` (Component)
+- `src/components/Form/Form.tsx` (Form component)
+- `src/hooks/useAuth.ts` (Custom hook)
+- `src/hooks/useFetch.ts` (Data fetching hook)
+- `src/services/api.ts` (API service)
+- `src/utils/validation.ts` (Validation utilities)
+- `src/store/userSlice.ts` (State management)
+- `src/types/user.ts` (TypeScript types)
+- `src/__tests__/Button.test.tsx` (Component test)
+- `src/__tests__/hooks.test.ts` (Hook test)
+
+**Remember**: These become `.template` files that developers scaffold with `taskwright init`.
+Provide 10-20 diverse, template-worthy files covering all architectural layers.
+
+**VERIFICATION CHECKLIST** before submitting your response:
+- [ ] Did I include the "example_files" array in my JSON response?
+- [ ] Did I include AT LEAST 10 example files (10-20 range)?
+- [ ] Do my example files span multiple layers (Domain, API, Tests, etc.)?
+- [ ] Are my example files from the actual codebase (not made up paths)?
+
+**If you answer NO to any of these, FIX IT before responding.**
 
 Focus on:
 1. **Technology Stack**: Accurate identification of languages, frameworks, and tools
@@ -298,12 +507,8 @@ class FileCollector:
         self.codebase_path = Path(codebase_path)
         self.max_files = max_files
 
-        # Files/directories to ignore
-        self.ignore_patterns = {
-            ".git", ".svn", "node_modules", "__pycache__", ".pytest_cache",
-            "venv", "env", ".venv", "dist", "build", "target", ".idea",
-            ".vscode", "*.pyc", "*.pyo", ".DS_Store", "coverage"
-        }
+        # Note: Exclusion patterns are now centralized in DEFAULT_EXCLUSIONS
+        # from the exclusions module
 
     def collect_samples(self) -> List[Dict[str, str]]:
         """
@@ -430,14 +635,8 @@ class FileCollector:
         return True
 
     def _should_ignore(self, path: Path) -> bool:
-        """Check if path should be ignored."""
-        path_str = str(path)
-
-        for pattern in self.ignore_patterns:
-            if pattern in path_str:
-                return True
-
-        return False
+        """Check if path should be ignored using centralized exclusion patterns."""
+        return should_exclude_path(path)
 
     def _read_file_safely(self, file_path: Path, max_lines: int = 100) -> Optional[str]:
         """

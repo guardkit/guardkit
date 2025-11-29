@@ -9,11 +9,18 @@ a stub for future integration.
 """
 
 from typing import List
+import importlib
 
-from lib.agent_orchestration.agent_orchestration import DiscoveredAgent
-from lib.agent_scanner.agent_scanner import AgentInventory
-from lib.agent_generator.agent_generator import GeneratedAgent
-from lib.codebase_analyzer.models import CodebaseAnalysis
+# Import using importlib to avoid 'global' keyword issue
+_agent_orchestration_module = importlib.import_module('installer.global.lib.agent_orchestration.agent_orchestration')
+_agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner.agent_scanner')
+_agent_generator_module = importlib.import_module('installer.global.lib.agent_generator.agent_generator')
+_analyzer_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+
+DiscoveredAgent = _agent_orchestration_module.DiscoveredAgent
+AgentInventory = _agent_scanner_module.AgentInventory
+GeneratedAgent = _agent_generator_module.GeneratedAgent
+CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
 
 
 def suggest_external_agents(

@@ -1,0 +1,156 @@
+# GitHub Actions Workflow: Build and Deploy MkDocs Documentation
+# Task: TASK-DFFA
+# Status: Production-Ready
+# Purpose: Automated documentation builds and deployment to GitHub Pages
+#
+# Triggers:
+# - Push to main branch with changes to: docs/, mkdocs.yml, or this workflow
+# - Manual workflow_dispatch for on-demand deployments
+#
+# Architecture: Modern GitHub Pages deployment using actions/deploy-pages@v4
+# No gh-pages branch approach - simpler, more maintainable
+#
+# Security: OIDC-based authentication (zero long-lived secrets)
+# Permissions: contents:read, pages:write, id-token:write (least privilege)
+
+name: Build and Deploy MkDocs
+
+on:
+  # Automatically trigger on documentation changes
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs.yml
+
+  # Allow manual triggering from Actions tab
+  # Useful for: re-deploying specific versions, recovering from failures
+  workflow_dispatch:
+
+# Environment configuration for reuse across jobs
+env:
+  PYTHON_VERSION: '3.12'
+
+# Explicit permission grants (least privilege principle)
+# Contents: read source code
+# Pages: publish to GitHub Pages
+# ID-Token: OIDC token generation for secure deployment (no PATs)
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Concurrency control: Prevent simultaneous deployments
+# Group: 'pages' (singular deployment context)
+# Cancel in-progress: Newer pushes cancel older runs
+# Reduces race conditions and unnecessary Pages updates
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # BUILD JOB: Compile MkDocs documentation
+  # ============================================================================
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    steps:
+      # --------
+      # Step 1: Checkout repository code
+      # --------
+      # Standard checkout (no custom fetch depth needed for static builds)
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # --------
+      # Step 2: Setup Python environment with dependency caching
+      # --------
+      # Version: Python 3.12 (latest stable for better performance)
+      # Cache: pip packages using docs/requirements.txt as key
+      # Benefit: 60-80% faster builds when dependencies unchanged
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          # Cache key based on requirements.txt hash
+          # If requirements.txt unchanged, pip packages restored from cache
+          cache-dependency-path: docs/requirements.txt
+
+      # --------
+      # Step 3: Upgrade pip and install MkDocs dependencies
+      # --------
+      # Dependencies:
+      # - mkdocs: Core documentation builder
+      # - mkdocs-material: Professional Material Design theme
+      # - pymdown-extensions: Additional Markdown features (code tabs, emoji, etc.)
+      - name: Install MkDocs dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r docs/requirements.txt
+
+      # --------
+      # Step 4: Build documentation
+      # --------
+      # Note: Not using --strict mode because:
+      # - Many internal docs reference files outside the public site
+      #   (installer/, CLAUDE.md, tasks/, etc.)
+      # - These are intentionally excluded from public documentation
+      # - Warnings about these links are expected and harmless
+      # - Actual errors (missing nav files) still cause failure
+      # Result: site/ directory with complete static HTML site
+      # Time: 2-5 seconds (MkDocs is single-threaded)
+      - name: Build MkDocs documentation
+        run: mkdocs build
+        # If this step fails, workflow stops (build job fails)
+        # Deploy job never runs (requires successful build)
+
+      # --------
+      # Step 5: Upload Pages artifact for deployment
+      # --------
+      # Uses special upload-pages-artifact action (required for deploy-pages@v4)
+      # This creates the correct artifact format for GitHub Pages deployment
+      # Path: site/ (MkDocs output directory)
+      # Note: This is different from upload-artifact - it's Pages-specific
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  # ============================================================================
+  # DEPLOY JOB: Publish documentation to GitHub Pages
+  # ============================================================================
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    # Only run after successful build
+    # If build fails, this job is skipped
+
+    runs-on: ubuntu-latest
+
+    # Environment configuration
+    # Name: github-pages (creates named environment in repo)
+    # URL: Displayed in Actions UI and PR deployments
+    # Visible in: Settings > Environments > github-pages
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      # --------
+      # Step 1: Deploy to GitHub Pages
+      # --------
+      # Modern approach: Uses GitHub's built-in Pages deployment
+      # Automatically uses the artifact uploaded by upload-pages-artifact
+      # No need to download artifact - deploy-pages@v4 handles it
+      # Benefits:
+      # - No custom branch management
+      # - Automatic Pages refresh
+      # - Better security (OIDC, no PATs)
+      # - Simpler rollback (just re-run workflow)
+      # ID: deployment (allows referencing output for environment URL)
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        id: deployment

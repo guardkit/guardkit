@@ -2,8 +2,20 @@
 name: devops-specialist
 description: DevOps and infrastructure expert specializing in CI/CD, containerization, cloud platforms, monitoring, and deployment automation
 tools: Read, Write, Execute, Analyze, Deploy
-model: sonnet
-model_rationale: "DevOps strategy involves complex infrastructure decisions, cloud architecture trade-offs, pipeline optimization, and multi-platform deployment planning. Sonnet provides comprehensive infrastructure expertise and strategic guidance."
+model: haiku
+model_rationale: "DevOps implementation follows IaC patterns (Terraform, Docker, GitHub Actions). Haiku provides fast, cost-effective implementation. Security reviews handled by security-specialist."
+
+# Discovery metadata
+stack: [cross-stack]
+phase: implementation
+capabilities:
+  - CI/CD pipeline configuration
+  - Containerization (Docker, Kubernetes)
+  - Infrastructure as Code (Terraform)
+  - Deployment automation
+  - Monitoring setup
+keywords: [devops, cicd, docker, terraform, kubernetes, deployment, infrastructure]
+
 orchestration: methodology/05-agent-orchestration.md
 collaborates_with:
   - software-architect
@@ -934,3 +946,1413 @@ spec:
 - `qa-tester` for test automation
 
 Remember: Automate everything, monitor continuously, and always be prepared for failure. Infrastructure should be reproducible, scalable, and secure.
+
+---
+
+## Related Templates
+
+This agent leverages the following DevOps templates from the codebase:
+
+### Primary Templates
+
+1. **nextjs-fullstack/templates/workflows-ci.yml.template**
+   - **Relevance**: Complete GitHub Actions CI/CD pipeline for Next.js applications
+   - **Patterns**: Multi-stage jobs (lint, type-check, test, build), dependency caching, parallel execution
+   - **Technologies**: GitHub Actions, Node.js, pnpm, TypeScript
+   - **Use Cases**: Automated testing, build validation, deployment preparation
+
+2. **react-fastapi-monorepo/templates/docker/docker-compose.service.yml.template**
+   - **Relevance**: Production-ready Docker Compose service configuration
+   - **Patterns**: Health checks, resource limits, restart policies, networking
+   - **Technologies**: Docker Compose, containerization
+   - **Use Cases**: Local development, service orchestration, multi-container deployments
+
+### How to Use These Templates
+
+```bash
+# Generate GitHub Actions workflow
+/task-work --template=nextjs-fullstack --mode=ci-workflow
+
+# Generate Docker Compose configuration
+/task-work --template=react-fastapi-monorepo --mode=docker-services
+```
+
+---
+
+## Template Code Examples
+
+### GitHub Actions CI/CD
+
+#### ✅ DO: Parallel Job Execution with Dependency Caching
+
+```yaml
+# Based on: nextjs-fullstack/templates/workflows-ci.yml.template
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Install dependencies once, cache for all jobs
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+  # Run linting in parallel with type-checking
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run Prettier
+        run: pnpm format:check
+
+  type-check:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: TypeScript type checking
+        run: pnpm type-check
+
+  test:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Run tests
+        run: pnpm test:ci
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/coverage-final.json
+
+  build:
+    needs: [lint, type-check, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Build application
+        run: pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-output
+          path: .next/
+          retention-days: 7
+```
+
+**Why this works**:
+- **Parallel execution**: lint, type-check, and test run simultaneously after setup
+- **Dependency caching**: node_modules cached and restored across jobs (3-5x faster builds)
+- **Build artifacts**: .next/ output saved for deployment stage
+- **Fail-fast**: Build only runs if all quality checks pass
+
+#### ❌ DON'T: Serial Job Execution Without Caching
+
+```yaml
+# Anti-pattern: Everything runs sequentially, no caching
+name: Slow CI Pipeline
+
+on: [push]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install for linting (5-10 minutes)
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Lint
+        run: pnpm lint
+
+      # Install AGAIN for type-checking (5-10 minutes)
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Type check
+        run: pnpm type-check
+
+      # Install AGAIN for testing (5-10 minutes)
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Test
+        run: pnpm test
+
+      # Install AGAIN for building (5-10 minutes)
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm build
+```
+
+**Why this fails**:
+- **15-40 minutes wasted**: Installing dependencies 4 times instead of once
+- **No parallelization**: Lint, type-check, test could run simultaneously
+- **No caching**: Every run downloads packages from scratch
+- **Single point of failure**: One step fails, whole pipeline restarts from beginning
+
+---
+
+### Docker Compose Service Configuration
+
+#### ✅ DO: Production-Ready Service with Health Checks
+
+```yaml
+# Based on: react-fastapi-monorepo/templates/docker/docker-compose.service.yml.template
+version: '3.8'
+
+services:
+  api:
+    image: my-api:latest
+    container_name: api-service
+    restart: unless-stopped
+
+    # Resource limits prevent runaway containers
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+    # Health check ensures service is actually ready
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+    # Use secrets for sensitive data
+    secrets:
+      - db_password
+      - api_key
+
+    networks:
+      - backend
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+    # Non-root user for security
+    user: "1000:1000"
+
+    volumes:
+      - ./logs:/app/logs:rw
+      - app-data:/app/data:rw
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-db
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_DB=${POSTGRES_DB}
+
+    secrets:
+      - db_password
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+    networks:
+      - backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    restart: unless-stopped
+
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres-data:
+    driver: local
+  app-data:
+    driver: local
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  api_key:
+    file: ./secrets/api_key.txt
+```
+
+**Why this works**:
+- **Health checks**: Services won't receive traffic until actually ready
+- **Resource limits**: Prevents one container from consuming all host resources
+- **Secrets management**: Sensitive data never in environment variables or code
+- **Dependency ordering**: API waits for postgres to be healthy, not just started
+- **Non-root user**: Reduces attack surface if container is compromised
+- **Restart policies**: Automatic recovery from crashes
+
+#### ❌ DON'T: Insecure Service Configuration
+
+```yaml
+# Anti-pattern: Multiple security and reliability issues
+version: '3.8'
+
+services:
+  api:
+    image: my-api:latest
+    restart: "no"  # Won't recover from crashes
+
+    # No resource limits - can consume all host memory
+
+    # No health check - traffic routed even if service is broken
+
+    environment:
+      # Hardcoded secrets in plain text
+      - DATABASE_URL=postgres://admin:password123@postgres:5432/mydb
+      - API_KEY=secret-key-12345
+      - AWS_SECRET_KEY=AKIAIOSFODNN7EXAMPLE
+
+    # Running as root user (security risk)
+
+    depends_on:
+      # Just checks if container started, not if postgres is ready
+      - postgres
+
+  postgres:
+    image: postgres:16-alpine
+    # No restart policy - manual intervention needed after crash
+
+    environment:
+      # Plain text password
+      - POSTGRES_PASSWORD=password123
+
+    # No volume - data lost on container restart
+```
+
+**Why this fails**:
+- **Hardcoded secrets**: Credentials visible in logs, process lists, container inspect
+- **No health checks**: Load balancer sends traffic to broken services
+- **No resource limits**: One container can OOM-kill the entire host
+- **Root user**: If compromised, attacker has full container privileges
+- **No restart policy**: Manual intervention needed for every crash
+- **No data persistence**: Database data lost on container restart
+
+---
+
+### Multi-Stage Docker Builds
+
+#### ✅ DO: Optimized Multi-Stage Build with Layer Caching
+
+```dockerfile
+# Stage 1: Base image with dependencies
+FROM node:20-alpine AS base
+WORKDIR /app
+
+# Install dependencies in separate layer for caching
+COPY package.json pnpm-lock.yaml ./
+RUN corepack enable pnpm && \
+    pnpm install --frozen-lockfile --prod=false
+
+# Stage 2: Build the application
+FROM base AS builder
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Build with production optimizations
+RUN pnpm build && \
+    pnpm prune --prod
+
+# Stage 3: Production runtime
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
+# Copy only production artifacts
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
+CMD ["node", "server.js"]
+```
+
+**Why this works**:
+- **Multi-stage**: Final image only contains production runtime (90% smaller)
+- **Layer caching**: Dependencies cached separately from source code
+- **Non-root user**: Security best practice
+- **Health check**: Container orchestration can detect failures
+- **Production-only deps**: Development dependencies excluded from final image
+
+#### ❌ DON'T: Single-Stage Build with Security Issues
+
+```dockerfile
+# Anti-pattern: Everything in one stage, running as root
+FROM node:20
+
+WORKDIR /app
+
+# Copy everything (including .git, node_modules, .env)
+COPY . .
+
+# Install all dependencies including devDependencies
+RUN npm install
+
+# Build application
+RUN npm run build
+
+# Running as root user
+# No health check
+# Image contains source code, tests, build tools, secrets
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+
+**Why this fails**:
+- **500MB+ larger image**: Contains dev dependencies, source code, build tools
+- **Security risks**: Running as root, may include secrets in .env files
+- **No layer caching**: Entire rebuild on any file change
+- **Slower deployments**: Larger images take longer to push/pull
+- **No health check**: No way to detect service failures
+
+---
+
+### CI/CD Pipeline for Monorepos
+
+#### ✅ DO: Selective Job Execution with Path Filters
+
+```yaml
+# Optimized monorepo CI - only test changed services
+name: Monorepo CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      shared: ${{ steps.filter.outputs.shared }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: filter
+        with:
+          filters: |
+            api:
+              - 'services/api/**'
+              - 'packages/shared/**'
+            web:
+              - 'apps/web/**'
+              - 'packages/shared/**'
+            shared:
+              - 'packages/shared/**'
+
+  test-api:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd services/api
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run API tests
+        run: |
+          cd services/api
+          pytest --cov=. --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          flags: api
+
+  test-web:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: |
+          cd apps/web
+          pnpm install --frozen-lockfile
+
+      - name: Run web tests
+        run: |
+          cd apps/web
+          pnpm test:ci
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          flags: web
+
+  build-images:
+    needs: [test-api, test-web]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, web]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./services/${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+```
+
+**Why this works**:
+- **Path filtering**: Only tests services that changed (saves 70% CI time)
+- **Parallel execution**: API and web tests run simultaneously
+- **Build caching**: Docker layer cache persisted in GitHub Actions cache
+- **Matrix builds**: Multiple services built in parallel
+- **Conditional execution**: Skips unnecessary jobs
+
+---
+
+### Secret Management
+
+#### ✅ DO: Secure Secret Handling with External Vault
+
+```yaml
+# GitHub Actions with HashiCorp Vault integration
+name: Secure Deployment
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Authenticate with Vault using OIDC (no long-lived secrets)
+      - name: Import secrets from Vault
+        uses: hashicorp/vault-action@v2
+        with:
+          url: https://vault.example.com
+          method: jwt
+          role: github-actions
+          secrets: |
+            secret/data/production/db password | DB_PASSWORD ;
+            secret/data/production/api key | API_KEY ;
+            secret/data/production/aws access_key | AWS_ACCESS_KEY_ID ;
+            secret/data/production/aws secret_key | AWS_SECRET_ACCESS_KEY
+
+      - name: Deploy to production
+        run: |
+          # Secrets available as environment variables
+          # Never echoed or logged
+          ./deploy.sh
+        env:
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+          API_KEY: ${{ env.API_KEY }}
+
+      # Secrets automatically masked in logs
+      - name: Verify deployment
+        run: |
+          echo "Deployment completed"
+          # This would show: "Password: ***" in logs
+          echo "Password: $DB_PASSWORD"
+```
+
+**Dockerfile with secret mounting**:
+```dockerfile
+# Use BuildKit secret mounts (never stored in layers)
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml ./
+
+# Mount secret during build, not stored in image
+RUN --mount=type=secret,id=npmrc,dst=/root/.npmrc \
+    corepack enable pnpm && \
+    pnpm install --frozen-lockfile
+
+COPY . .
+
+RUN pnpm build
+
+# Final image contains no secrets
+```
+
+**Build with secrets**:
+```bash
+# Secret provided at build time, not in Dockerfile
+docker buildx build \
+  --secret id=npmrc,src=$HOME/.npmrc \
+  -t my-app:latest .
+```
+
+**Why this works**:
+- **OIDC authentication**: No long-lived credentials in GitHub
+- **Secret rotation**: Vault secrets can be rotated without code changes
+- **Automatic masking**: GitHub Actions masks secrets in logs
+- **BuildKit mounts**: Secrets never stored in Docker image layers
+- **Audit trail**: Vault logs all secret access
+
+---
+
+### Kubernetes Deployment Strategies
+
+#### ✅ DO: Blue-Green Deployment with Health Checks
+
+```yaml
+# Blue-Green deployment for zero-downtime updates
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-app
+  namespace: production
+spec:
+  selector:
+    app: my-app
+    version: blue  # Switch to 'green' for cutover
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: LoadBalancer
+
+---
+# Blue deployment (current production)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-app-blue
+  namespace: production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-app
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: blue
+    spec:
+      containers:
+      - name: app
+        image: my-app:v1.5.0
+        ports:
+        - containerPort: 8080
+
+        # Liveness probe - restart if unhealthy
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness probe - remove from service if not ready
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 2
+
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        env:
+        - name: DB_HOST
+          valueFrom:
+            secretKeyRef:
+              name: database-config
+              key: host
+
+        # Graceful shutdown
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 15"]
+```
+
+**Deployment script**:
+```bash
+#!/bin/bash
+set -e
+
+# Deploy green environment
+kubectl apply -f deployment-green.yaml
+
+# Wait for green to be healthy
+kubectl wait --for=condition=available --timeout=300s \
+  deployment/my-app-green -n production
+
+# Run smoke tests against green
+./smoke-tests.sh http://my-app-green.production.svc.cluster.local
+
+# Switch traffic to green
+kubectl patch service my-app -n production \
+  -p '{"spec":{"selector":{"version":"green"}}}'
+
+echo "Traffic switched to green. Monitor for 15 minutes."
+echo "To rollback: kubectl patch service my-app -n production -p '{\"spec\":{\"selector\":{\"version\":\"blue\"}}}'"
+```
+
+**Why this works**:
+- **Zero downtime**: New version deployed alongside old version
+- **Instant rollback**: Switch service selector back to blue if issues found
+- **Health checks**: Traffic only sent to healthy pods
+- **Resource limits**: Prevents runaway pods from affecting cluster
+- **Graceful shutdown**: 15-second sleep allows in-flight requests to complete
+
+---
+
+### Terraform Infrastructure as Code
+
+#### ✅ DO: Modular Infrastructure with Remote State
+
+```hcl
+# terraform/main.tf
+terraform {
+  required_version = ">= 1.5.0"
+
+  backend "s3" {
+    bucket         = "my-terraform-state"
+    key            = "production/terraform.tfstate"
+    region         = "us-west-2"
+    encrypt        = true
+    dynamodb_table = "terraform-locks"
+
+    # State versioning enabled for rollback
+  }
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+
+  default_tags {
+    tags = {
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+      Project     = "my-app"
+    }
+  }
+}
+
+# Use modules for reusability
+module "vpc" {
+  source = "./modules/vpc"
+
+  environment         = var.environment
+  vpc_cidr            = var.vpc_cidr
+  availability_zones  = var.availability_zones
+  enable_nat_gateway  = true
+  enable_vpn_gateway  = false
+}
+
+module "eks_cluster" {
+  source = "./modules/eks"
+
+  cluster_name       = "${var.environment}-cluster"
+  cluster_version    = "1.28"
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnet_ids
+  node_groups        = var.node_groups
+
+  depends_on = [module.vpc]
+}
+
+module "rds_database" {
+  source = "./modules/rds"
+
+  identifier          = "${var.environment}-postgres"
+  engine              = "postgres"
+  engine_version      = "16.1"
+  instance_class      = var.db_instance_class
+  allocated_storage   = var.db_allocated_storage
+
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.database_subnet_ids
+
+  backup_retention_period = 7
+  backup_window          = "03:00-04:00"
+  maintenance_window     = "Mon:04:00-Mon:05:00"
+
+  # Secrets stored in AWS Secrets Manager
+  master_username = "dbadmin"
+  master_password = data.aws_secretsmanager_secret_version.db_password.secret_string
+
+  deletion_protection = var.environment == "production" ? true : false
+
+  depends_on = [module.vpc]
+}
+
+# Output for other systems
+output "eks_cluster_endpoint" {
+  value       = module.eks_cluster.cluster_endpoint
+  description = "EKS cluster API endpoint"
+  sensitive   = true
+}
+
+output "rds_endpoint" {
+  value       = module.rds_database.endpoint
+  description = "RDS database endpoint"
+  sensitive   = true
+}
+```
+
+**CI/CD integration**:
+```yaml
+# .github/workflows/terraform.yml
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - 'terraform/**'
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/github-actions
+          aws-region: us-west-2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.7
+
+      - name: Terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        id: plan
+        run: terraform plan -no-color -out=tfplan
+
+      - name: Post plan to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `#### Terraform Plan 📖
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\`
+            `;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve tfplan
+```
+
+**Why this works**:
+- **Remote state**: Team can collaborate, state locked during changes
+- **Modular design**: VPC, EKS, RDS modules reusable across environments
+- **Version control**: Infrastructure changes tracked in Git
+- **Plan before apply**: Review changes in PR before production
+- **Environment protection**: Production has deletion protection
+
+---
+
+## Template Best Practices
+
+### CI/CD Pipeline Design
+
+1. **Parallel Job Execution**
+   - Run independent checks (lint, type-check, test) simultaneously
+   - Use `needs` to define dependencies between jobs
+   - Reduces total pipeline time by 50-70%
+
+2. **Dependency Caching**
+   - Cache `node_modules`, pip packages, Docker layers
+   - Use lock file hashes as cache keys (`pnpm-lock.yaml`, `requirements.txt`)
+   - First job installs dependencies, subsequent jobs restore from cache
+
+3. **Artifact Management**
+   - Upload build artifacts (binaries, Docker images, test reports)
+   - Retention policies: 7 days for branches, 90 days for releases
+   - Use artifacts between jobs to avoid rebuilding
+
+4. **Fail-Fast with Quality Gates**
+   - Build only runs if lint, type-check, and test pass
+   - Use branch protection rules to enforce status checks
+   - Prevent broken code from reaching production
+
+5. **Matrix Builds**
+   - Test across multiple Node/Python versions
+   - Build for multiple architectures (amd64, arm64)
+   - Parallel execution with `strategy.matrix`
+
+### Docker Image Optimization
+
+1. **Multi-Stage Builds**
+   - Build stage: Install all dependencies, compile code
+   - Runtime stage: Only copy production artifacts
+   - Results in 10x smaller images (500MB → 50MB)
+
+2. **Layer Caching**
+   - Copy dependency files first, then source code
+   - Dependencies cached until `package.json` changes
+   - Source changes don't invalidate dependency layers
+
+3. **BuildKit Features**
+   - `--mount=type=cache` for package manager caches
+   - `--mount=type=secret` for credentials (never in layers)
+   - `--platform` for multi-architecture builds
+
+4. **Base Image Selection**
+   - Use Alpine Linux for smallest images (5MB base)
+   - Use Distroless for security (no shell, no package manager)
+   - Pin specific versions, not `latest`
+
+5. **Security Scanning**
+   - Scan images with Trivy, Snyk, or Grype
+   - Fail builds on critical/high vulnerabilities
+   - Scan both base images and final artifacts
+
+### Secret Management
+
+1. **Never Commit Secrets**
+   - Use `.gitignore` for `.env`, `secrets/`, `*.key`
+   - Scan commits with GitGuardian or TruffleHog
+   - Rotate any accidentally committed secrets immediately
+
+2. **External Secret Storage**
+   - HashiCorp Vault, AWS Secrets Manager, Azure Key Vault
+   - Secrets rotated independently of code deployments
+   - Audit logs for all secret access
+
+3. **GitHub Actions Best Practices**
+   - Use OIDC for cloud provider authentication (no keys)
+   - Store secrets in GitHub Secrets (encrypted at rest)
+   - Use `environment` with protection rules for production
+
+4. **Docker Secret Handling**
+   - Use BuildKit secret mounts (`--secret id=...`)
+   - Use Docker Compose secrets (file-based)
+   - Never use `ENV` for secrets (visible in `docker inspect`)
+
+5. **Kubernetes Secrets**
+   - Use External Secrets Operator to sync from Vault
+   - Encrypt secrets at rest (KMS integration)
+   - Use RBAC to restrict secret access
+
+### Infrastructure as Code
+
+1. **State Management**
+   - Always use remote state (S3, Terraform Cloud, Azure Blob)
+   - Enable state locking (DynamoDB, Consul)
+   - Version state files for rollback capability
+
+2. **Modular Design**
+   - Create reusable modules for VPC, EKS, RDS, etc.
+   - Test modules independently
+   - Publish internal modules to registry
+
+3. **Environment Separation**
+   - Separate state files per environment
+   - Use workspaces or separate directories
+   - Never share infrastructure between dev/prod
+
+4. **Change Review Process**
+   - `terraform plan` on every PR
+   - Manual approval required for `apply`
+   - Slack/Teams notifications for infrastructure changes
+
+5. **Drift Detection**
+   - Run `terraform plan` on schedule (daily)
+   - Alert on drift (manual changes outside Terraform)
+   - Auto-remediate or require manual review
+
+### Monitoring and Observability
+
+1. **Health Checks Everywhere**
+   - HTTP endpoints: `/health`, `/ready`
+   - Container health checks in Dockerfile
+   - Kubernetes liveness and readiness probes
+
+2. **Structured Logging**
+   - JSON logs with consistent fields (timestamp, level, request_id)
+   - Centralize logs (CloudWatch, Datadog, Splunk)
+   - Set up log-based alerts (error rate, latency spikes)
+
+3. **Metrics Collection**
+   - Prometheus for scraping application metrics
+   - Expose metrics at `/metrics` endpoint
+   - Dashboard in Grafana for visualization
+
+4. **Distributed Tracing**
+   - Instrument code with OpenTelemetry
+   - Send traces to Jaeger, Zipkin, or Datadog
+   - Correlate logs, metrics, and traces with request ID
+
+5. **Alerting Strategy**
+   - SLO-based alerts (error rate, latency, availability)
+   - Tiered severity: critical (page), high (ticket), low (aggregate)
+   - Runbooks linked from alert descriptions
+
+---
+
+## Template Anti-Patterns
+
+### ❌ Running Tests Serially
+
+**Problem**: Tests run one after another, wasting time
+
+```yaml
+# Anti-pattern
+jobs:
+  test:
+    steps:
+      - run: npm run lint
+      - run: npm run type-check
+      - run: npm run test
+      - run: npm run build
+```
+
+**Solution**: Use parallel jobs
+```yaml
+jobs:
+  lint:
+    steps:
+      - run: npm run lint
+
+  type-check:
+    steps:
+      - run: npm run type-check
+
+  test:
+    steps:
+      - run: npm run test
+```
+
+**Impact**: 15-minute pipeline → 5-minute pipeline
+
+---
+
+### ❌ No Dependency Caching
+
+**Problem**: Installing dependencies from scratch every time
+
+```yaml
+# Anti-pattern
+- run: npm install
+- run: npm test
+```
+
+**Solution**: Cache dependencies
+```yaml
+- uses: actions/cache@v3
+  with:
+    path: node_modules
+    key: ${{ hashFiles('package-lock.json') }}
+- run: npm install
+- run: npm test
+```
+
+**Impact**: 5-minute installs → 30-second cache restore
+
+---
+
+### ❌ Hardcoded Secrets
+
+**Problem**: Credentials in code, config files, or environment variables
+
+```yaml
+# Anti-pattern
+env:
+  DATABASE_URL: postgres://admin:password123@db:5432/mydb
+  API_KEY: sk_live_abc123
+```
+
+**Solution**: Use secret management
+```yaml
+env:
+  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+  API_KEY: ${{ secrets.API_KEY }}
+```
+
+**Impact**: Prevents credential leaks, enables rotation
+
+---
+
+### ❌ Running Containers as Root
+
+**Problem**: Security vulnerability if container is compromised
+
+```dockerfile
+# Anti-pattern
+FROM node:20
+COPY . /app
+CMD ["node", "server.js"]
+```
+
+**Solution**: Create and use non-root user
+```dockerfile
+FROM node:20
+RUN adduser --system --uid 1001 nodejs
+USER nodejs
+COPY --chown=nodejs:nodejs . /app
+CMD ["node", "server.js"]
+```
+
+**Impact**: Limits damage from container escape or exploit
+
+---
+
+### ❌ Missing Health Checks
+
+**Problem**: Load balancer sends traffic to broken services
+
+```yaml
+# Anti-pattern
+services:
+  api:
+    image: my-api:latest
+    ports:
+      - "8000:8000"
+```
+
+**Solution**: Add health checks
+```yaml
+services:
+  api:
+    image: my-api:latest
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+**Impact**: Prevents 503 errors during deployments
+
+---
+
+### ❌ No Rollback Strategy
+
+**Problem**: Can't quickly revert broken deployments
+
+```bash
+# Anti-pattern
+kubectl set image deployment/my-app app=my-app:latest
+```
+
+**Solution**: Blue-green or canary deployments
+```bash
+# Deploy to green environment
+kubectl apply -f deployment-green.yaml
+kubectl wait --for=condition=available deployment/my-app-green
+
+# Switch traffic
+kubectl patch service my-app -p '{"spec":{"selector":{"version":"green"}}}'
+
+# Rollback if needed
+kubectl patch service my-app -p '{"spec":{"selector":{"version":"blue"}}}'
+```
+
+**Impact**: 30-minute outages → instant rollback
+
+---
+
+### ❌ Single-Stage Docker Builds
+
+**Problem**: Final image contains build tools, source code, dev dependencies
+
+```dockerfile
+# Anti-pattern
+FROM node:20
+COPY . .
+RUN npm install && npm run build
+CMD ["npm", "start"]
+```
+
+**Solution**: Multi-stage build
+```dockerfile
+FROM node:20 AS builder
+COPY . .
+RUN npm install && npm run build
+
+FROM node:20-alpine
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+CMD ["node", "dist/server.js"]
+```
+
+**Impact**: 800MB image → 80MB image (10x smaller)
+
+---
+
+### ❌ Using `latest` Tag
+
+**Problem**: Unpredictable deployments, can't rollback
+
+```yaml
+# Anti-pattern
+image: my-app:latest
+```
+
+**Solution**: Use semantic versioning or commit SHA
+```yaml
+image: my-app:v1.5.0
+# or
+image: my-app:sha-a3f2c1d
+```
+
+**Impact**: Reproducible deployments, clear rollback targets
+
+---
+
+### ❌ No Resource Limits
+
+**Problem**: One container can consume all host resources
+
+```yaml
+# Anti-pattern
+services:
+  api:
+    image: my-api:latest
+```
+
+**Solution**: Set resource limits
+```yaml
+services:
+  api:
+    image: my-api:latest
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+```
+
+**Impact**: Prevents OOM crashes, predictable performance
+
+---
+
+### ❌ Monolithic CI/CD Files
+
+**Problem**: 1000+ line workflow file, hard to maintain
+
+```yaml
+# Anti-pattern: everything in one file
+name: Monolithic Pipeline
+jobs:
+  all:
+    steps:
+      - run: lint
+      - run: test-api
+      - run: test-web
+      - run: test-mobile
+      - run: build-api
+      - run: build-web
+      - run: deploy
+```
+
+**Solution**: Split by responsibility
+```yaml
+# .github/workflows/ci.yml
+name: CI
+jobs:
+  lint: ...
+  test: ...
+
+# .github/workflows/deploy.yml
+name: Deploy
+jobs:
+  deploy: ...
+```
+
+**Impact**: Easier to maintain, reusable workflows

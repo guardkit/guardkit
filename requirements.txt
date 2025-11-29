@@ -1,6 +1,16 @@
 # Python dependencies for AI Engineer project
 pydantic>=2.0.0
+pydantic[email]>=2.5.0
 Jinja2>=3.1.0
 python-frontmatter>=1.0.0
 pyyaml>=6.0.0
 pathspec>=0.11.0
+
+# FastAPI dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0
+httpx==0.25.1

@@ -1,0 +1,100 @@
+"""
+{{FeatureName}} Pydantic Schemas
+
+This module defines Pydantic models for request/response validation and serialization.
+"""
+
+from pydantic import BaseModel, Field, field_validator
+from datetime import datetime
+from typing import Optional
+
+
+class {{EntityName}}Base(BaseModel):
+    """
+    Base {{EntityName}} schema with shared fields.
+    """
+    name: str = Field(
+        min_length=1,
+        max_length=255,
+        description="Name of the {{entity_name}}"
+    )
+    description: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Description of the {{entity_name}}"
+    )
+
+    @field_validator('name')
+    @classmethod
+    def name_must_not_be_empty(cls, v: str) -> str:
+        """Validate that name is not just whitespace."""
+        if not v.strip():
+            raise ValueError('Name cannot be empty or whitespace')
+        return v.strip()
+
+
+class {{EntityName}}Create({{EntityName}}Base):
+    """
+    Schema for creating a new {{entity_name}}.
+
+    All fields from Base are required for creation.
+    Add any additional creation-specific fields here.
+    """
+    pass
+
+
+class {{EntityName}}Update(BaseModel):
+    """
+    Schema for updating an existing {{entity_name}}.
+
+    All fields are optional - only provided fields will be updated.
+    """
+    name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="Updated name"
+    )
+    description: Optional[str] = Field(
+        None,
+        max_length=1000,
+        description="Updated description"
+    )
+
+    @field_validator('name')
+    @classmethod
+    def name_must_not_be_empty(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that name is not just whitespace if provided."""
+        if v is not None and not v.strip():
+            raise ValueError('Name cannot be empty or whitespace')
+        return v.strip() if v is not None else None
+
+
+class {{EntityName}}InDB({{EntityName}}Base):
+    """
+    Schema representing {{entity_name}} as stored in database.
+
+    Includes database-generated fields like id, timestamps, etc.
+    Used internally - not exposed in API responses.
+    """
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True  # Enables ORM mode for SQLAlchemy compatibility
+
+
+class {{EntityName}}Public({{EntityName}}Base):
+    """
+    Schema for public {{entity_name}} responses.
+
+    This is what gets returned from API endpoints.
+    Should not include sensitive fields (passwords, internal IDs, etc.)
+    """
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True  # Enables ORM mode for SQLAlchemy compatibility

@@ -1,0 +1,92 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router';
+
+import { Link } from '@/components/ui/link';
+import { Spinner } from '@/components/ui/spinner';
+import { Table } from '@/components/ui/table';
+import { paths } from '@/config/paths';
+import { formatDate } from '@/utils/format';
+
+import { get{{EntityName}}QueryOptions } from '../api/get-{{featureName}}';
+import { use{{EntityNamePlural}} } from '../api/get-{{featureName}}';
+
+import { Delete{{EntityName}} } from './delete-{{featureName}}';
+
+export type {{EntityNamePlural}}ListProps = {
+  on{{EntityName}}Prefetch?: (id: string) => void;
+};
+
+export const {{EntityNamePlural}}List = ({
+  on{{EntityName}}Prefetch,
+}: {{EntityNamePlural}}ListProps) => {
+  const [searchParams] = useSearchParams();
+
+  const {{featureName}}Query = use{{EntityNamePlural}}({
+    page: +(searchParams.get('page') || 1),
+  });
+  const queryClient = useQueryClient();
+
+  if ({{featureName}}Query.isLoading) {
+    return (
+      <div className="flex h-48 w-full items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  const {{featureName}} = {{featureName}}Query.data?.data;
+  const meta = {{featureName}}Query.data?.meta;
+
+  if (!{{featureName}}) return null;
+
+  return (
+    <Table
+      data={ {{featureName}} }
+      columns={[
+        {
+          title: 'Title',
+          field: 'title',
+        },
+        {
+          title: 'Created At',
+          field: 'createdAt',
+          Cell({ entry: { createdAt } }) {
+            return <span>{formatDate(createdAt)}</span>;
+          },
+        },
+        {
+          title: '',
+          field: 'id',
+          Cell({ entry: { id } }) {
+            return (
+              <Link
+                onMouseEnter={() => {
+                  // Prefetch the {{featureName}} data when the user hovers over the link
+                  queryClient.prefetchQuery(get{{EntityName}}QueryOptions(id));
+                  on{{EntityName}}Prefetch?.(id);
+                }}
+                to={paths.app.{{featureName}}.getHref(id)}
+              >
+                View
+              </Link>
+            );
+          },
+        },
+        {
+          title: '',
+          field: 'id',
+          Cell({ entry: { id } }) {
+            return <Delete{{EntityName}} id={id} />;
+          },
+        },
+      ]}
+      pagination={
+        meta && {
+          totalPages: meta.totalPages,
+          currentPage: meta.page,
+          rootUrl: '',
+        }
+      }
+    />
+  );
+};

@@ -1,0 +1,270 @@
+# Agent Discovery Metadata Schema
+# Version: 1.0
+# Purpose: Enable AI-powered agent selection for Phase 3 implementation tasks
+# Status: ACTIVE
+
+schema_version: "1.0"
+schema_name: "agent-discovery-metadata"
+
+# REQUIRED DISCOVERY FIELDS
+# These fields enable AI-powered agent matching for phase-specific tasks
+
+stack:
+  type: array
+  required: true
+  min_items: 1
+  description: "Technology stacks this agent supports"
+  allowed_values:
+    - python
+    - react
+    - dotnet
+    - typescript
+    - javascript
+    - go
+    - rust
+    - java
+    - ruby
+    - php
+    - cross-stack  # Special value for agents working across all stacks
+  examples:
+    - [python]  # Python-specific agent
+    - [react, typescript]  # React + TypeScript agent
+    - [dotnet]  # .NET-specific agent
+    - [cross-stack]  # Works across all technology stacks
+  notes: |
+    - Use specific stack names when agent is technology-specific
+    - Use [cross-stack] only for truly stack-agnostic agents
+    - Multiple stacks allowed (e.g., React + TypeScript)
+
+phase:
+  type: string
+  required: true
+  description: "Primary workflow phase where agent operates"
+  allowed_values:
+    - implementation  # Phase 3: Code generation and implementation
+    - review          # Phase 5: Code review and quality assessment
+    - testing         # Phase 4: Test execution and verification
+    - orchestration   # Phase coordination (e.g., task-manager)
+  examples:
+    - implementation  # For API, domain, UI specialists
+    - review          # For code-reviewer, architectural-reviewer
+    - testing         # For test-verifier, test-orchestrator
+    - orchestration   # For task-manager, workflow coordinators
+  notes: |
+    - Single value only (not an array)
+    - Choose PRIMARY phase where agent provides most value
+    - If agent spans multiple phases, choose most prominent
+
+capabilities:
+  type: array
+  required: true
+  min_items: 1
+  max_items: 10
+  item_type: string
+  description: "Specific capabilities and patterns agent implements"
+  format: "Descriptive phrases (2-5 words)"
+  examples:
+    python_api:
+      - FastAPI endpoint implementation
+      - Async request handling
+      - Dependency injection patterns
+      - Pydantic schema integration
+    react_state:
+      - React hooks implementation
+      - State management patterns
+      - TanStack Query integration
+      - Component composition
+    dotnet_domain:
+      - Domain entity modeling
+      - Value object patterns
+      - Repository pattern implementation
+      - Entity validation logic
+  notes: |
+    - Use descriptive phrases, not single words
+    - Focus on specific technical capabilities
+    - Keep list focused (1-10 items)
+    - Avoid generic terms like "coding" or "development"
+
+keywords:
+  type: array
+  required: true
+  min_items: 3
+  max_items: 15
+  item_type: string
+  description: "Keywords for AI-powered semantic matching"
+  format: "Lowercase, hyphenated for multi-word terms"
+  examples:
+    python_api:
+      - fastapi
+      - async
+      - endpoints
+      - router
+      - dependency-injection
+      - pydantic
+      - validation
+      - middleware
+    react_state:
+      - react
+      - hooks
+      - state
+      - zustand
+      - tanstack-query
+      - context
+      - reducer
+      - memoization
+    dotnet_domain:
+      - entity
+      - domain
+      - repository
+      - ddd
+      - value-object
+      - aggregate
+      - domain-events
+  notes: |
+    - Lowercase only
+    - Use hyphens for multi-word terms (e.g., dependency-injection)
+    - Include framework names, patterns, technologies
+    - Supports AI semantic matching beyond exact stack names
+    - More keywords = better discoverability
+
+# EXISTING FIELDS (PRESERVED FOR BACKWARD COMPATIBILITY)
+# These fields remain unchanged to support existing agents
+
+existing_fields:
+  name:
+    type: string
+    required: true
+    description: "Agent identifier (e.g., python-api-specialist)"
+
+  description:
+    type: string
+    required: true
+    description: "Human-readable agent description"
+
+  tools:
+    type: array
+    required: false
+    item_type: string
+    description: "Tools available to agent (e.g., Read, Write, Edit)"
+
+  model:
+    type: string
+    required: false
+    allowed_values: [sonnet, haiku, opus]
+    description: "Preferred Claude model for agent"
+
+  model_rationale:
+    type: string
+    required: false
+    description: "Explanation for model selection"
+
+  orchestration:
+    type: string
+    required: false
+    description: "Orchestration pattern (if applicable)"
+
+  collaborates_with:
+    type: array
+    required: false
+    item_type: string
+    description: "List of agent names this agent collaborates with"
+
+# VALIDATION RULES
+
+validation_rules:
+  stack:
+    - "Must be non-empty array"
+    - "All values must be from allowed_values list"
+    - "cross-stack cannot be combined with specific stacks"
+
+  phase:
+    - "Must be single string value (not array)"
+    - "Must be one of: implementation, review, testing, orchestration"
+
+  capabilities:
+    - "Must have 1-10 items"
+    - "Each item should be descriptive phrase (2-5 words)"
+    - "Avoid single-word entries"
+
+  keywords:
+    - "Must have 3-15 items"
+    - "All lowercase"
+    - "Use hyphens for multi-word terms"
+    - "No special characters except hyphens"
+
+# MIGRATION STRATEGY
+
+migration:
+  opt_in: true
+  description: "Discovery metadata is OPT-IN only"
+  backward_compatible: true
+  notes: |
+    - Agents WITHOUT metadata continue to work (manual invocation)
+    - Only agents WITH metadata are discoverable for phase-specific tasks
+    - No impact to existing 15+ agents enhanced Nov 25, 2025
+    - Add metadata incrementally as needed
+
+# EXAMPLES: Complete Agent Frontmatter
+
+examples:
+  python_api_specialist:
+    name: python-api-specialist
+    description: FastAPI implementation specialist for Phase 3 development
+    tools: [Read, Write, Edit, Bash, Grep]
+    model: haiku
+    model_rationale: "API endpoint implementation follows deterministic patterns. Haiku efficiently generates clean, testable FastAPI code."
+    stack: [python]
+    phase: implementation
+    capabilities:
+      - FastAPI endpoint implementation
+      - Async request handling
+      - Dependency injection patterns
+      - Pydantic schema integration
+    keywords: [fastapi, async, endpoints, router, dependency-injection, pydantic]
+    collaborates_with:
+      - python-testing-specialist
+      - database-specialist
+
+  react_state_specialist:
+    name: react-state-specialist
+    description: React state management specialist for Phase 3 development
+    tools: [Read, Write, Edit, Bash, Grep]
+    model: haiku
+    model_rationale: "State management follows established patterns. Haiku handles hooks, context, and Zustand efficiently."
+    stack: [react, typescript]
+    phase: implementation
+    capabilities:
+      - React hooks implementation
+      - State management patterns
+      - TanStack Query integration
+      - Component composition
+    keywords: [react, hooks, state, zustand, tanstack-query, context, typescript]
+    collaborates_with:
+      - react-testing-specialist
+      - ui-specialist
+
+  dotnet_domain_specialist:
+    name: dotnet-domain-specialist
+    description: .NET domain modeling specialist for Phase 3 development
+    tools: [Read, Write, Edit, Bash, Grep]
+    model: haiku
+    model_rationale: "Domain entities follow DDD patterns. Haiku generates clean domain models with value objects efficiently."
+    stack: [dotnet]
+    phase: implementation
+    capabilities:
+      - Domain entity modeling
+      - Value object patterns
+      - Repository pattern implementation
+      - Entity validation logic
+    keywords: [entity, domain, repository, ddd, value-object, csharp, dotnet]
+    collaborates_with:
+      - dotnet-testing-specialist
+      - database-specialist
+
+# VERSION HISTORY
+
+version_history:
+  - version: "1.0"
+    date: "2025-11-25"
+    changes: "Initial schema release with 4 discovery fields"
+    notes: "Supports Python, React, .NET agent implementation for Phase 3"

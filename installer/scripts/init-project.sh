@@ -67,31 +67,19 @@ show_templates() {
                 local name=$(basename "$template_dir")
                 case "$name" in
                     default)
-                        echo "  • default - Language-agnostic"
+                        echo "  • default - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
                         ;;
-                    react)
-                        echo "  • react - React with TypeScript"
+                    react-typescript)
+                        echo "  • react-typescript - React frontend with feature-based architecture (9+/10)"
                         ;;
-                    python)
-                        echo "  • python - Python with FastAPI"
+                    fastapi-python)
+                        echo "  • fastapi-python - FastAPI backend with layered architecture (9+/10)"
                         ;;
-                    maui-appshell)
-                        echo "  • maui-appshell - .NET MAUI with AppShell navigation"
+                    nextjs-fullstack)
+                        echo "  • nextjs-fullstack - Next.js App Router full-stack (9+/10)"
                         ;;
-                    maui-navigationpage)
-                        echo "  • maui-navigationpage - .NET MAUI with NavigationPage"
-                        ;;
-                    dotnet-fastendpoints)
-                        echo "  • dotnet-fastendpoints - .NET microservice with FastEndpoints"
-                        ;;
-                    dotnet-aspnetcontroller)
-                        echo "  • dotnet-aspnetcontroller - .NET Web API with Controllers"
-                        ;;
-                    dotnet-minimalapi)
-                        echo "  • dotnet-minimalapi - .NET Minimal API"
-                        ;;
-                    fullstack)
-                        echo "  • fullstack - React + Python"
+                    react-fastapi-monorepo)
+                        echo "  • react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
                         ;;
                     *)
                         echo "  • $name"
@@ -114,16 +102,7 @@ select_template_interactive() {
 detect_project_type() {
     # Check for .csproj files
     if ls *.csproj 2>/dev/null | grep -q . || ls */*.csproj 2>/dev/null | grep -q .; then
-        # Check if it's a MAUI project
-        if ls *.csproj 2>/dev/null | xargs grep -l "Microsoft.Maui" 2>/dev/null || \
-           ls */*.csproj 2>/dev/null | xargs grep -l "Microsoft.Maui" 2>/dev/null; then
-            echo "maui"
-        elif ls *.csproj 2>/dev/null | xargs grep -l "Microsoft.AspNetCore\|FastEndpoints" 2>/dev/null || \
-             ls */*.csproj 2>/dev/null | xargs grep -l "Microsoft.AspNetCore\|FastEndpoints" 2>/dev/null; then
-            echo "dotnet-fastendpoints"
-        else
-            echo "dotnet"
-        fi
+        echo "dotnet"
     elif [ -f "package.json" ]; then
         if grep -q "react" package.json; then
             echo "react"
@@ -170,7 +149,7 @@ create_project_structure() {
     # Handle test directory based on project type
     local detected_type=$(detect_project_type)
     case "$detected_type" in
-        maui|dotnet*)
+        dotnet)
             print_info "Tests will be managed within .NET solution structure"
             ;;
         *)
@@ -194,14 +173,9 @@ copy_template_files() {
     # Auto-select template based on detected type if using default
     if [ "$TEMPLATE" = "default" ] && [ "$detected_type" != "unknown" ]; then
         case "$detected_type" in
-            maui) effective_template="maui-appshell" ;; # Default to AppShell for MAUI projects
-            maui-appshell) effective_template="maui-appshell" ;;
-            maui-navigationpage) effective_template="maui-navigationpage" ;;
-            dotnet-fastendpoints) effective_template="dotnet-fastendpoints" ;;
-            dotnet-aspnetcontroller) effective_template="dotnet-aspnetcontroller" ;;
-            dotnet-minimalapi) effective_template="dotnet-minimalapi" ;;
-            react) effective_template="react" ;;
-            python) effective_template="python" ;;
+            react) effective_template="react-typescript" ;;
+            python) effective_template="fastapi-python" ;;
+            node) effective_template="nextjs-fullstack" ;;
         esac
         if [ "$effective_template" != "default" ]; then
             print_info "Auto-selected template: $effective_template (detected $detected_type project)"
@@ -466,51 +440,30 @@ print_next_steps() {
             echo "     3. /task-complete TASK-001"
             echo ""
             ;;
-        dotnet-fastendpoints)
-            echo -e "${BOLD}Quick Start for FastEndpoints:${NC}"
-            echo ""
-            echo "  📦 Creating FastEndpoints Project:"
-            echo "     1. dotnet new webapi -n YourServiceName"
-            echo "     2. dotnet add package FastEndpoints"
-            echo ""
-            echo "  💡 Or use template structure directly (FastEndpoints already configured)"
-            echo ""
-            echo "  ✨ Taskwright provides:"
-            echo "     • Either monad pattern for functional error handling"
-            echo "     • FastEndpoints best practices and examples"
-            echo "     • Specialized AI agents for .NET development"
-            echo "     • Testing patterns and quality gates"
-            echo ""
-            echo "  🚀 Taskwright Workflow:"
-            echo "     1. /task-create 'Add user endpoints'"
-            echo "     2. /task-work TASK-001"
-            echo "     3. /task-complete TASK-001"
-            echo ""
-            ;;
-        maui-appshell|maui-navigationpage)
-            echo -e "${BOLD}Quick Start for .NET MAUI:${NC}"
-            echo "  1. Create your first task: /task-create 'Add main page navigation'"
-            echo "  2. Work on it: /task-work TASK-001"
-            echo "  3. Complete: /task-complete TASK-001"
-            echo ""
-            ;;
-        react)
-            echo -e "${BOLD}Quick Start for React:${NC}"
+        react-typescript)
+            echo -e "${BOLD}Quick Start for React TypeScript:${NC}"
             echo "  1. Create your first task: /task-create 'Add user dashboard component'"
             echo "  2. Work on it: /task-work TASK-001"
             echo "  3. Complete: /task-complete TASK-001"
             echo ""
             ;;
-        python)
-            echo -e "${BOLD}Quick Start for Python:${NC}"
+        fastapi-python)
+            echo -e "${BOLD}Quick Start for FastAPI Python:${NC}"
             echo "  1. Create your first task: /task-create 'Add API endpoint'"
             echo "  2. Work on it: /task-work TASK-001"
             echo "  3. Complete: /task-complete TASK-001"
             echo ""
             ;;
-        typescript-api)
-            echo -e "${BOLD}Quick Start for TypeScript API:${NC}"
-            echo "  1. Create your first task: /task-create 'Add user endpoint'"
+        nextjs-fullstack)
+            echo -e "${BOLD}Quick Start for Next.js Full-Stack:${NC}"
+            echo "  1. Create your first task: /task-create 'Add user page'"
+            echo "  2. Work on it: /task-work TASK-001"
+            echo "  3. Complete: /task-complete TASK-001"
+            echo ""
+            ;;
+        react-fastapi-monorepo)
+            echo -e "${BOLD}Quick Start for React + FastAPI Monorepo:${NC}"
+            echo "  1. Create your first task: /task-create 'Add user feature'"
             echo "  2. Work on it: /task-work TASK-001"
             echo "  3. Complete: /task-complete TASK-001"
             echo ""
@@ -571,32 +524,16 @@ main() {
             if [ "$detected" != "unknown" ]; then
                 print_info "Detected project type: $detected"
 
-                # Special handling for MAUI - need to choose navigation pattern
-                if [ "$detected" = "maui" ]; then
-                    echo ""
-                    echo "Select .NET MAUI navigation pattern:"
-                    echo "  1) AppShell (recommended, modern navigation with flyout)"
-                    echo "  2) NavigationPage (traditional stack-based navigation)"
-                    read -p "Choose [1/2]: " -r maui_choice
-                    case "$maui_choice" in
-                        1) TEMPLATE="maui-appshell" ;;
-                        2) TEMPLATE="maui-navigationpage" ;;
-                        *) TEMPLATE="maui-appshell" ;; # Default to AppShell
+                read -p "Use matching template? (y/n): " -r
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    case "$detected" in
+                        react) TEMPLATE="react-typescript" ;;
+                        python) TEMPLATE="fastapi-python" ;;
+                        node) TEMPLATE="nextjs-fullstack" ;;
+                        *) TEMPLATE="default" ;;
                     esac
                 else
-                    read -p "Use matching template? (y/n): " -r
-                    if [[ $REPLY =~ ^[Yy]$ ]]; then
-                        case "$detected" in
-                            dotnet-fastendpoints) TEMPLATE="dotnet-fastendpoints" ;;
-                            dotnet-aspnetcontroller) TEMPLATE="dotnet-aspnetcontroller" ;;
-                            dotnet-minimalapi) TEMPLATE="dotnet-minimalapi" ;;
-                            react) TEMPLATE="react" ;;
-                            python) TEMPLATE="python" ;;
-                            *) TEMPLATE="default" ;;
-                        esac
-                    else
-                        select_template_interactive
-                    fi
+                    select_template_interactive
                 fi
             else
                 select_template_interactive

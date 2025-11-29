@@ -8,15 +8,25 @@ extract placeholders while preserving code structure and patterns.
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 import re
+import importlib
 
-from lib.codebase_analyzer.models import CodebaseAnalysis, ExampleFile
-from lib.template_generator.ai_client import AIClient
-from lib.template_generator.models import (
-    CodeTemplate,
-    TemplateCollection,
-    ValidationResult,
-    PlaceholderExtractionError,
-)
+# Import using importlib to avoid 'global' keyword issue
+_analyzer_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_ai_client_module = importlib.import_module('installer.global.lib.template_generator.ai_client')
+_models_module = importlib.import_module('installer.global.lib.template_generator.models')
+_path_resolver_module = importlib.import_module('installer.global.lib.template_generator.path_resolver')
+
+CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
+ExampleFile = _analyzer_models_module.ExampleFile
+
+AIClient = _ai_client_module.AIClient
+
+CodeTemplate = _models_module.CodeTemplate
+TemplateCollection = _models_module.TemplateCollection
+ValidationResult = _models_module.ValidationResult
+PlaceholderExtractionError = _models_module.PlaceholderExtractionError
+
+TemplatePathResolver = _path_resolver_module.TemplatePathResolver
 
 
 class TemplateGenerator:
@@ -33,6 +43,7 @@ class TemplateGenerator:
         self.analysis = analysis
         self.ai_client = ai_client or AIClient()
         self.generated_templates: List[CodeTemplate] = []
+        self.path_resolver = TemplatePathResolver()
 
     def generate(self, max_templates: Optional[int] = None) -> TemplateCollection:
         """
@@ -74,6 +85,17 @@ class TemplateGenerator:
 
         # Deduplicate templates
         templates = self._deduplicate_templates(templates)
+
+        # Print classification summary
+        print("\n" + self.path_resolver.get_classification_summary())
+
+        # Print warnings if there are any
+        if self.path_resolver.warnings:
+            print(f"\n⚠️  Classification warnings ({len(self.path_resolver.warnings)}):")
+            for warning in self.path_resolver.warnings[:5]:
+                print(f"  {warning}")
+            if len(self.path_resolver.warnings) > 5:
+                print(f"  ... and {len(self.path_resolver.warnings) - 5} more")
 
         return TemplateCollection(
             templates=templates,
@@ -205,12 +227,43 @@ class TemplateGenerator:
         language: str,
         purpose: Optional[str]
     ) -> str:
-        """Create prompt for AI placeholder extraction."""
+        """Create prompt for AI placeholder extraction with completeness requirements."""
+
+        completeness_requirements = """
+
+**CRITICAL - TEMPLATE COMPLETENESS**:
+
+You are generating SCAFFOLDING for complete features, not just examples.
+
+CRUD Completeness Rule:
+- If any CRUD operation exists, ALL must be generated:
+  ✓ Create (POST)
+  ✓ Read (GET by ID, GET collection)
+  ✓ Update (PUT)
+  ✓ Delete (DELETE)
+
+Layer Symmetry Rule:
+- If UseCases has UpdateEntity → Web must have Update endpoint
+- If Web has Delete endpoint → UseCases must have DeleteEntity
+- Operations must exist in ALL relevant layers
+
+REPR Pattern Completeness:
+- Each endpoint requires:
+  ✓ Endpoint class (e.g., Create.cs)
+  ✓ Request DTO (e.g., CreateEntityRequest.cs)
+  ✓ Response DTO (e.g., CreateEntityResponse.cs) [if non-void]
+  ✓ Validator (e.g., CreateEntityValidator.cs)
+
+Remember: Users need COMPLETE CRUD operations, not representative samples.
+"""
+
         return f"""Convert this {language} file into a reusable template by replacing specific values with placeholders.
 
 **Original File**: {file_path}
 **Purpose**: {purpose or 'Not specified'}
 **Language**: {language}
+
+{completeness_requirements}
 
 **Instructions**:
 1. Identify project-specific values (e.g., class names, namespaces, entity names, verbs)
@@ -355,32 +408,18 @@ PLACEHOLDERS: Namespace, EntityNamePlural, Verb, EntityName
         """
         Infer where to save template in template directory structure.
 
+        Uses the path resolver with Strategy pattern:
+        1. LayerClassificationStrategy - AI-provided layer info (PRIMARY)
+        2. PatternClassificationStrategy - filename pattern inference (FALLBACK)
+        3. Fallback to templates/other/ when classification fails
+
         Args:
             example_file: Example file
 
         Returns:
             Relative path within templates/ directory
         """
-        original_path = Path(example_file.path)
-
-        # Try to match with layers
-        for layer in self.analysis.architecture.layers:
-            layer_path = Path(layer.name)  # Layer name like "Domain", "Application"
-
-            # Check if example file path contains layer name
-            if layer.name.lower() in example_file.path.lower():
-                # Use layer name as top-level directory
-                # Keep the relative structure under the layer
-                template_name = original_path.stem + '.template'
-                return f"templates/{layer.name}/{original_path.parent.name}/{template_name}"
-
-        # Fallback: Use file type if available
-        if hasattr(example_file, 'file_type') and example_file.file_type:
-            file_type = example_file.file_type
-            return f"templates/{file_type}/{original_path.name}.template"
-
-        # Final fallback: Use "other" directory
-        return f"templates/other/{original_path.name}.template"
+        return self.path_resolver.resolve(example_file, self.analysis)
 
     def _create_template_name(self, example_file: ExampleFile) -> str:
         """Create template file name."""

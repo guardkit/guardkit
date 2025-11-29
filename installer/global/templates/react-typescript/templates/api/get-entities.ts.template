@@ -1,0 +1,42 @@
+import { queryOptions, useQuery } from '@tanstack/react-query';
+
+import { api } from '@/lib/api-client';
+import { QueryConfig } from '@/lib/react-query';
+import { {{EntityName}}, Meta } from '@/types/api';
+
+export const get{{EntityNamePlural}} = (
+  page = 1,
+): Promise<{
+  data: {{EntityName}}[];
+  meta: Meta;
+}> => {
+  return api.get(`/{{featureName}}`, {
+    params: {
+      page,
+    },
+  });
+};
+
+export const get{{EntityNamePlural}}QueryOptions = ({
+  page,
+}: { page?: number } = {}) => {
+  return queryOptions({
+    queryKey: page ? ['{{featureName}}', { page }] : ['{{featureName}}'],
+    queryFn: () => get{{EntityNamePlural}}(page),
+  });
+};
+
+type Use{{EntityNamePlural}}Options = {
+  page?: number;
+  queryConfig?: QueryConfig<typeof get{{EntityNamePlural}}QueryOptions>;
+};
+
+export const use{{EntityNamePlural}} = ({
+  queryConfig,
+  page,
+}: Use{{EntityNamePlural}}Options) => {
+  return useQuery({
+    ...get{{EntityNamePlural}}QueryOptions({ page }),
+    ...queryConfig,
+  });
+};

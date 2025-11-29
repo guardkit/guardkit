@@ -1,0 +1,43 @@
+{
+  "naming_conventions": {
+    "frontend": {
+      "components": "kebab-case.tsx (export: PascalCase)",
+      "hooks": "use-hook-name.ts or useHookName.ts",
+      "features": "singular, lowercase, kebab-case",
+      "api_files": "{action}-{entity}.ts"
+    },
+    "backend": {
+      "modules": "snake_case",
+      "classes": "PascalCase",
+      "functions": "snake_case",
+      "files": "snake_case.py",
+      "models": "PascalCase (singular)",
+      "schemas": "PascalCase with suffix (UserCreate, UserUpdate)",
+      "api_routes": "plural, kebab-case"
+    },
+    "shared": {
+      "packages": "kebab-case",
+      "docker_services": "lowercase, kebab-case"
+    }
+  },
+  "directory_structure": {
+    "apps/frontend": "React application with TypeScript, Vite, TanStack Query",
+    "apps/backend": "FastAPI application with SQLAlchemy, Pydantic",
+    "packages/shared-types": "Generated TypeScript types from OpenAPI"
+  },
+  "file_patterns": {
+    "frontend_component": "apps/frontend/src/features/{feature}/components/{component}.tsx",
+    "frontend_hook": "apps/frontend/src/features/{feature}/hooks/{hook}.ts",
+    "frontend_api": "apps/frontend/src/features/{feature}/api/{action}-{entity}.ts",
+    "backend_router": "apps/backend/app/api/routes/{entity}.py",
+    "backend_schema": "apps/backend/app/schemas/{entity}.py",
+    "backend_model": "apps/backend/app/models/{entity}.py",
+    "backend_crud": "apps/backend/app/crud/{entity}.py",
+    "docker_service": "docker-compose.yml (add service definition)"
+  },
+  "code_generation": {
+    "type_generation_command": "pnpm generate-types",
+    "type_generation_source": "http://localhost:8000/openapi.json",
+    "type_generation_output": "packages/shared-types/src/generated/"
+  }
+}

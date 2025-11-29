@@ -50,6 +50,32 @@ SECTION1_QUESTIONS = [
         ],
         default="quick_start"
     ),
+    Question(
+        id="description",
+        section="Template Identity",
+        text="Briefly describe this template's purpose:",
+        type="text",
+        default=None,
+        help_text="What will developers use this template for?",
+        validation="min_length_10"
+    ),
+    Question(
+        id="version",
+        section="Template Identity",
+        text="Initial version:",
+        type="text",
+        default="1.0.0",
+        help_text="Semantic version (e.g., 1.0.0)",
+        validation="version_string"
+    ),
+    Question(
+        id="author",
+        section="Template Identity",
+        text="Author or team name:",
+        type="text",
+        default=None,
+        help_text="Optional: Who maintains this template?"
+    ),
 ]
 
 # Section 2: Technology Stack

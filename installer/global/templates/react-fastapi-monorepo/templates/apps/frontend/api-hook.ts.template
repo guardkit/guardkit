@@ -1,0 +1,58 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { api, {{EntityName}}, {{EntityName}}Create } from 'shared-types'
+
+// Query hook for fetching {{entity-name}}s
+export function use{{EntityName}}s() {
+  return useQuery({
+    queryKey: ['{{entity-name-plural}}'],
+    queryFn: async () => {
+      const response = await api.get<{{EntityName}}[]>('/{{entity-name-plural}}')
+      return response.data
+    },
+  })
+}
+
+// Mutation hook for creating {{entity-name}}
+export function useCreate{{EntityName}}() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (data: {{EntityName}}Create) => {
+      const response = await api.post<{{EntityName}}>('/{{entity-name-plural}}', data)
+      return response.data
+    },
+    onSuccess: () => {
+      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ['{{entity-name-plural}}'] })
+    },
+  })
+}
+
+// Mutation hook for updating {{entity-name}}
+export function useUpdate{{EntityName}}() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<{{EntityName}}Create> }) => {
+      const response = await api.put<{{EntityName}}>(`/{{entity-name-plural}}/${id}`, data)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['{{entity-name-plural}}'] })
+    },
+  })
+}
+
+// Mutation hook for deleting {{entity-name}}
+export function useDelete{{EntityName}}() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/{{entity-name-plural}}/${id}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['{{entity-name-plural}}'] })
+    },
+  })
+}

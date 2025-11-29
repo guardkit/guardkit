@@ -1,0 +1,10 @@
+# Placeholder for code templates
+
+Add code templates for your stack to this directory.
+
+Example:
+- http-handler.go.template
+- service.rs.template
+- controller.rb.template
+
+See CLAUDE.md for guidance on creating templates.

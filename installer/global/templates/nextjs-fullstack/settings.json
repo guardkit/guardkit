@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "component": {
+      "pattern": "{{ComponentName}}",
+      "case_style": "PascalCase",
+      "suffix": ".tsx",
+      "examples": ["UserList", "UserForm", "DashboardLayout"]
+    },
+    "page": {
+      "pattern": "page",
+      "case_style": "lowercase",
+      "suffix": ".tsx",
+      "examples": ["page.tsx", "(dashboard)/users/page.tsx"]
+    },
+    "server_action": {
+      "pattern": "{{actionName}}",
+      "case_style": "camelCase",
+      "suffix": ".ts",
+      "location": "app/actions/",
+      "examples": ["createUser", "deletePost", "updateProfile"]
+    },
+    "api_route": {
+      "pattern": "route",
+      "case_style": "lowercase",
+      "suffix": ".ts",
+      "location": "app/api/",
+      "examples": ["app/api/users/route.ts", "app/api/posts/route.ts"]
+    },
+    "lib_file": {
+      "pattern": "{{name}}",
+      "case_style": "camelCase",
+      "suffix": ".ts",
+      "location": "src/lib/",
+      "examples": ["db.ts", "auth.ts", "utils.ts"]
+    },
+    "test_file": {
+      "pattern": "{{ComponentName}}.test",
+      "case_style": "PascalCase",
+      "suffix": ".tsx",
+      "examples": ["UserForm.test.tsx", "UserList.test.tsx"]
+    },
+    "e2e_test": {
+      "pattern": "{{feature}}.spec",
+      "case_style": "lowercase",
+      "suffix": ".ts",
+      "location": "e2e/",
+      "examples": ["users.spec.ts", "auth.spec.ts"]
+    }
+  },
+  "file_organization": {
+    "by_layer": true,
+    "by_feature": true,
+    "test_location": "adjacent",
+    "max_files_per_directory": 20,
+    "route_groups": true
+  },
+  "layer_mappings": {
+    "app": {
+      "directory": "src/app",
+      "description": "Next.js App Router pages, layouts, and routing",
+      "file_patterns": ["page.tsx", "layout.tsx", "loading.tsx", "error.tsx", "not-found.tsx"]
+    },
+    "components": {
+      "directory": "src/components",
+      "description": "Reusable React components (mostly client components)",
+      "file_patterns": ["*.tsx", "!*.test.tsx"]
+    },
+    "actions": {
+      "directory": "src/app/actions",
+      "description": "Server Actions for mutations",
+      "file_patterns": ["*.ts"]
+    },
+    "api": {
+      "directory": "src/app/api",
+      "description": "API Route Handlers for external clients",
+      "file_patterns": ["route.ts", "[...catchall]/route.ts"]
+    },
+    "lib": {
+      "directory": "src/lib",
+      "description": "Shared utilities, database client, auth config",
+      "file_patterns": ["*.ts"]
+    },
+    "types": {
+      "directory": "src/types",
+      "description": "TypeScript type definitions and declarations",
+      "file_patterns": ["*.d.ts", "*.ts"]
+    },
+    "tests": {
+      "directory": "src/",
+      "description": "Unit and integration tests (adjacent to source files)",
+      "file_patterns": ["*.test.tsx", "*.test.ts"]
+    },
+    "e2e": {
+      "directory": "e2e",
+      "description": "Playwright end-to-end tests",
+      "file_patterns": ["*.spec.ts"]
+    },
+    "prisma": {
+      "directory": "prisma",
+      "description": "Prisma schema and migrations",
+      "file_patterns": ["schema.prisma", "migrations/*"]
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 2,
+    "line_length": 100,
+    "trailing_commas": true,
+    "semicolons": false,
+    "quotes": "single",
+    "jsx_quotes": "double"
+  },
+  "next_js_specific": {
+    "app_router": true,
+    "server_components_default": true,
+    "client_directive": "'use client'",
+    "server_directive": "'use server'",
+    "dynamic_route_segments": "[id]",
+    "catch_all_segments": "[...slug]",
+    "route_groups": "(group-name)",
+    "parallel_routes": "@slot-name",
+    "intercepting_routes": "(.)segment"
+  },
+  "prisma_conventions": {
+    "model_naming": "PascalCase",
+    "field_naming": "camelCase",
+    "relation_naming": "camelCase",
+    "id_field": "id",
+    "timestamp_fields": ["createdAt", "updatedAt"]
+  },
+  "testing_conventions": {
+    "unit_framework": "Vitest",
+    "e2e_framework": "Playwright",
+    "test_file_suffix": ".test.tsx",
+    "e2e_file_suffix": ".spec.ts",
+    "mock_pattern": "vi.mock()",
+    "coverage_threshold": {
+      "lines": 80,
+      "functions": 80,
+      "branches": 75,
+      "statements": 80
+    }
+  }
+}

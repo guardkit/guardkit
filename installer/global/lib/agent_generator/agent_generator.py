@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Any, Protocol
 import frontmatter
+import json
 
 
 @dataclass
@@ -119,14 +120,366 @@ class AIAgentGenerator:
 
     def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
         """
-        Analyze codebase to identify needed agent capabilities
+        Analyze codebase to identify needed agent capabilities using AI.
+
+        AI-Native approach: No hard-coded fallback. If AI analysis fails,
+        return empty list and let user know AI detection is required.
+
+        Args:
+            analysis: Codebase analysis
+
+        Returns:
+            List of capability needs (empty if AI fails)
+        """
+        # AI-powered detection (AI-native approach - no fallback)
+        try:
+            needs = self._ai_identify_all_agents(analysis)
+            if needs:  # AI successfully identified agents
+                print(f"  ✓ AI identified {len(needs)} capability needs")
+                return needs
+            else:
+                print("  ⚠️  AI returned no capability needs")
+                return []
+        except Exception as e:
+            print(f"  ❌ AI detection failed: {e}")
+            print("  ℹ️  AI-native agent generation requires AI analysis")
+            print("  ℹ️  Please ensure AI invoker is properly configured")
+            # Return empty list instead of falling back to hard-coded
+            return []
+
+    def _ai_identify_all_agents(self, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Use AI to comprehensively analyze codebase and identify ALL agent needs.
+
+        This eliminates hard-coded pattern detection by having AI analyze:
+        - Architecture patterns
+        - Code layers and their patterns
+        - Frameworks and technologies
+        - Quality patterns (ErrorOr, Result, etc.)
+        - Testing frameworks
+
+        Args:
+            analysis: Codebase analysis from TASK-002
+
+        Returns:
+            List of comprehensive capability needs (7-12 for complex projects)
+
+        Raises:
+            Exception: If AI invocation fails or returns invalid JSON
+        """
+        # Build comprehensive prompt for AI analysis
+        prompt = self._build_ai_analysis_prompt(analysis)
+
+        # Invoke AI to analyze codebase and identify all agents
+        response = self.ai_invoker.invoke(
+            agent_name="architectural-reviewer",
+            prompt=prompt
+        )
+
+        # Parse AI response and convert to CapabilityNeed objects
+        needs = self._parse_ai_agent_response(response, analysis)
+
+        return sorted(needs, key=lambda n: n.priority, reverse=True)
+
+    def _build_ai_analysis_prompt(self, analysis: Any) -> str:
+        """
+        Build comprehensive AI prompt for agent identification.
+
+        Token budget: 3000-5000 tokens (phase-appropriate for planning)
+
+        Args:
+            analysis: Codebase analysis
+
+        Returns:
+            Formatted prompt string
+        """
+        # Extract analysis data
+        language = getattr(analysis, 'language', 'Unknown')
+        architecture_pattern = getattr(analysis, 'architecture_pattern', 'Unknown')
+        frameworks = getattr(analysis, 'frameworks', [])
+        patterns = getattr(analysis, 'patterns', [])
+        layers = getattr(analysis, 'layers', [])
+        testing_framework = getattr(analysis, 'testing_framework', None)
+        quality_assessment = getattr(analysis, 'quality_assessment', '')
+
+        # Build layers description
+        layers_desc = []
+        for layer in layers:
+            layer_name = getattr(layer, 'name', str(layer))
+            layer_patterns = getattr(layer, 'patterns', [])
+            layer_dirs = getattr(layer, 'directories', [])
+            layers_desc.append(
+                f"- {layer_name}: {', '.join(layer_patterns)} "
+                f"({len(layer_dirs)} directories)"
+            )
+        layers_text = '\n'.join(layers_desc) if layers_desc else "No layers identified"
+
+        # Calculate expected agent count based on complexity
+        layer_count = len(layers)
+        pattern_count = len(patterns)
+        framework_count = len(frameworks)
+        complexity = layer_count + pattern_count + framework_count
+
+        if complexity >= 10:
+            target_agents = "10-12"
+            complexity_level = "Complex"
+        elif complexity >= 6:
+            target_agents = "7-9"
+            complexity_level = "Medium"
+        else:
+            target_agents = "5-7"
+            complexity_level = "Simple"
+
+        prompt = f"""Analyze this codebase and identify ALL specialized AI agents needed for template creation.
+
+**Project Context:**
+- Language: {language}
+- Architecture: {architecture_pattern}
+- Frameworks: {', '.join(frameworks) if frameworks else 'None'}
+- Patterns Detected: {', '.join(patterns) if patterns else 'None'}
+- Testing Framework: {testing_framework or 'None'}
+- Quality Patterns: {quality_assessment or 'None'}
+- Complexity: {complexity_level} ({layer_count} layers, {pattern_count} patterns, {framework_count} frameworks)
+
+**Code Layers:**
+{layers_text}
+
+**SUCCESS CRITERIA:**
+Your response MUST include {target_agents} agents to ensure comprehensive coverage.
+Each agent should be highly specialized for patterns found in this codebase.
+
+**Requirements:**
+1. Generate an agent for EACH architectural pattern listed (MVVM, Repository, Service, etc.)
+2. Generate an agent for EACH layer (Domain, Application, Infrastructure, Presentation, etc.)
+3. Generate an agent for EACH major framework (MAUI, React, FastAPI, Next.js, etc.)
+4. Generate specialist agents for design patterns (ErrorOr, CQRS, Mediator, Factory, etc.)
+5. Include validation/testing agents if architecture patterns detected
+6. Include database-specific agents if database frameworks detected
+7. Include testing framework agents (pytest, xUnit, Vitest, Playwright, etc.)
+
+**STRICT JSON FORMAT (NO MARKDOWN CODE BLOCKS):**
+[
+  {{
+    "name": "repository-pattern-specialist",
+    "description": "Repository pattern with ErrorOr and thread-safety",
+    "reason": "Project uses Repository pattern in Infrastructure layer",
+    "technologies": ["C#", "Repository Pattern", "ErrorOr"],
+    "priority": 9
+  }},
+  {{
+    "name": "domain-operations-specialist",
+    "description": "Domain operations following DDD principles",
+    "reason": "Project has domain layer with operations subdirectory",
+    "technologies": ["C#", "DDD", "Domain Operations"],
+    "priority": 8
+  }},
+  {{
+    "name": "mvvm-viewmodel-specialist",
+    "description": "MVVM ViewModels with INotifyPropertyChanged",
+    "reason": "Project uses MVVM architecture with ViewModels",
+    "technologies": ["C#", "MVVM", "WPF/MAUI"],
+    "priority": 9
+  }}
+]
+
+**CRITICAL INSTRUCTIONS:**
+- Return ONLY the JSON array (start with [ and end with ])
+- NO markdown wrappers like ```json or ```
+- Include minimum {target_agents} agents for this {complexity_level.lower()} project
+- Each agent must have all required fields: name, description, reason, technologies, priority
+- Priority scale: 10=critical, 7-9=high, 4-6=medium, 1-3=low
+- Use descriptive hyphenated names: "mvvm-viewmodel-specialist", "api-endpoint-specialist"
+- Ensure diverse agent types: domain, api, data, ui, testing specialists
+
+Return the JSON array now:"""
+
+        return prompt
+
+    def _parse_ai_agent_response(self, response: str, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Parse AI-generated agent specifications from JSON response.
+
+        Implements 4-strategy parsing with diagnostic logging:
+        1. Direct JSON parsing
+        2. Markdown wrapper stripping
+        3. Regex extraction of JSON array
+        4. Graceful failure with detailed error
+
+        Args:
+            response: AI response containing JSON array
+            analysis: Codebase analysis (for file mapping)
+
+        Returns:
+            List of CapabilityNeed objects
+
+        Raises:
+            ValueError: If response cannot be parsed after all strategies
+        """
+        import re
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Parsing AI response (length: {len(response)} chars)")
+
+        # Strategy 1: Direct JSON parsing
+        try:
+            agents_data = json.loads(response.strip())
+            if isinstance(agents_data, list):
+                logger.debug(f"Strategy 1 success: Direct JSON parsing ({len(agents_data)} agents)")
+                return self._convert_to_capability_needs(agents_data, analysis)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Strategy 1 failed: {e}")
+
+        # Strategy 2: Strip markdown wrappers
+        cleaned = response.strip()
+        if cleaned.startswith("```json"):
+            cleaned = cleaned.split("```json\n", 1)[1] if "\n" in cleaned else cleaned[7:]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        elif cleaned.startswith("```"):
+            cleaned = cleaned.split("```\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+            cleaned = cleaned.rsplit("```", 1)[0]
+
+        cleaned = cleaned.strip()
+
+        try:
+            agents_data = json.loads(cleaned)
+            if isinstance(agents_data, list):
+                logger.debug(f"Strategy 2 success: Markdown stripped ({len(agents_data)} agents)")
+                return self._convert_to_capability_needs(agents_data, analysis)
+        except json.JSONDecodeError as e:
+            logger.debug(f"Strategy 2 failed: {e}")
+
+        # Strategy 3: Regex extraction of JSON array
+        json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', cleaned)
+        if json_match:
+            try:
+                agents_data = json.loads(json_match.group(0))
+                if isinstance(agents_data, list):
+                    logger.debug(f"Strategy 3 success: Regex extraction ({len(agents_data)} agents)")
+                    return self._convert_to_capability_needs(agents_data, analysis)
+            except json.JSONDecodeError as e:
+                logger.debug(f"Strategy 3 failed: {e}")
+
+        # Strategy 4: Graceful failure with diagnostics
+        logger.error("All parsing strategies failed")
+        logger.error(f"Response preview: {response[:200]}...")
+
+        raise ValueError(
+            f"Failed to parse AI agent response after 4 strategies. "
+            f"Response did not contain valid JSON array. "
+            f"Preview: {response[:200]}..."
+        )
+
+    def _convert_to_capability_needs(
+        self,
+        agents_data: list,
+        analysis: Any
+    ) -> List[CapabilityNeed]:
+        """
+        Convert AI-generated agent specifications to CapabilityNeed objects.
+
+        Args:
+            agents_data: List of agent specification dicts
+            analysis: Codebase analysis (for file mapping)
+
+        Returns:
+            List of CapabilityNeed objects
+
+        Raises:
+            KeyError: If required fields are missing
+            ValueError: If agents_data is not a list
+        """
+        if not isinstance(agents_data, list):
+            raise ValueError(f"agents_data must be list, got {type(agents_data)}")
+
+        needs = []
+        example_files = getattr(analysis, 'example_files', [])
+
+        for i, agent_spec in enumerate(agents_data):
+            try:
+                need = self._create_capability_need_from_spec(agent_spec, example_files)
+                needs.append(need)
+            except (KeyError, ValueError) as e:
+                # Log error but continue processing other agents
+                print(f"    ⚠️  Skipping agent {i+1}: {e}")
+                continue
+
+        return needs
+
+    def _create_capability_need_from_spec(
+        self,
+        spec: dict,
+        example_files: List[Path]
+    ) -> CapabilityNeed:
+        """
+        Create CapabilityNeed from AI-generated specification.
+
+        Args:
+            spec: Agent specification dict from AI
+            example_files: Available example files from analysis
+
+        Returns:
+            CapabilityNeed object
+
+        Raises:
+            KeyError: If required fields are missing from spec
+        """
+        # Validate required fields
+        required_fields = ['name', 'description', 'reason', 'technologies']
+        missing = [f for f in required_fields if f not in spec]
+        if missing:
+            raise KeyError(f"Missing required fields in agent spec: {missing}")
+
+        # Map example files to this agent based on technologies
+        agent_files = []
+        technologies = spec['technologies']
+
+        # Simple keyword matching for file relevance
+        for example_file in example_files[:10]:  # Limit to 10 files
+            file_path = example_file if isinstance(example_file, Path) else getattr(example_file, 'path', None)
+            if file_path:
+                file_str = str(file_path).lower()
+                # Check if any technology keyword appears in file path
+                if any(tech.lower().replace(' ', '').replace('-', '') in file_str.replace('_', '').replace('-', '')
+                       for tech in technologies):
+                    agent_files.append(file_path)
+
+        return CapabilityNeed(
+            name=spec['name'],
+            description=spec['description'],
+            reason=spec['reason'],
+            technologies=spec['technologies'],
+            example_files=agent_files,
+            priority=spec.get('priority', 7)  # Default to medium-high priority
+        )
+
+    def _fallback_to_hardcoded(self, analysis: Any) -> List[CapabilityNeed]:
+        """
+        Hard-coded pattern detection (DEPRECATED).
+
+        DEPRECATED: This method is no longer used. The AI-native approach
+        does not fall back to hard-coded detection. This method is kept
+        for reference only and will be removed in a future version.
+
+        Use _ai_identify_all_agents() with enhanced prompts instead.
 
         Args:
             analysis: Codebase analysis
 
         Returns:
             List of capability needs
+
+        Raises:
+            DeprecationWarning: Always raised when called
         """
+        import warnings
+        warnings.warn(
+            "_fallback_to_hardcoded() is deprecated and should not be used. "
+            "The AI-native approach requires proper AI configuration. "
+            "This method will be removed in a future version.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         needs = []
 
         # Get example files (handle both list and attribute access)
@@ -247,40 +600,17 @@ class AIAgentGenerator:
         gaps = []
 
         for need in needs:
-            # Check if agent exists
+            # Check if agent exists BY NAME ONLY (no fuzzy matching)
             if self.inventory.has_agent(need.name):
                 agent = self.inventory.find_by_name(need.name)
                 print(f"  ✓ {need.name}: Using existing ({agent.source})")
                 continue
 
-            # Check if capability is covered by similar agent
-            if self._capability_covered(need):
-                print(f"  ✓ {need.description}: Covered by existing agent")
-                continue
-
-            # Gap identified
+            # Gap identified - agent with this exact name doesn't exist
             print(f"  ❌ {need.name}: MISSING (will create)")
             gaps.append(need)
 
         return gaps
-
-    def _capability_covered(self, need: CapabilityNeed) -> bool:
-        """Check if capability is covered by existing agents"""
-
-        # Simple keyword matching for now
-        # Could use AI for semantic similarity later
-
-        for agent in self.inventory.all_agents():
-            # Check tags
-            if any(tech.lower() in [tag.lower() for tag in agent.tags] for tech in need.technologies):
-                # Check description for key terms
-                if any(
-                    keyword in agent.description.lower()
-                    for keyword in ["viewmodel", "mvvm", "navigation", "testing", "domain", "error"]
-                ):
-                    return True
-
-        return False
 
     def _generate_agent(self, gap: CapabilityNeed, analysis: Any) -> Optional[GeneratedAgent]:
         """

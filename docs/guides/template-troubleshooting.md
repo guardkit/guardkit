@@ -9,7 +9,7 @@
 ## Table of Contents
 
 1. [Command Execution Issues](#command-execution-issues)
-2. [Q&A Session Problems](#qa-session-problems)
+2. [Q&A Session Problems (template-init only)](#qa-session-problems)
 3. [AI Analysis Failures](#ai-analysis-failures)
 4. [Template Generation Issues](#template-generation-issues)
 5. [Template Usage Problems](#template-usage-problems)
@@ -114,6 +114,8 @@ source ~/.zshrc
 ---
 
 ## Q&A Session Problems
+
+**Note**: Q&A sessions apply to `/template-init` only. `/template-create` uses AI-native analysis without Q&A as of TASK-51B2.
 
 ### Problem: Session Hangs on Question
 
@@ -956,7 +958,6 @@ rm .template-create-session.json
 
 - **Main Guide**: [template-commands-getting-started.md](./template-commands-getting-started.md)
 - **Walkthroughs**: [template-create-walkthrough.md](./template-create-walkthrough.md)
-- **Q&A Guide**: [template-qa-guide.md](./template-qa-guide.md)
 - **Report Issues**: [GitHub Issues](https://github.com/taskwright/taskwright/issues)
 
 ---

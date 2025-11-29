@@ -19,9 +19,15 @@ Example:
 """
 
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
+
+# Python 3.9 compatibility: UTC is not available in datetime module until 3.11
+try:
+    from datetime import UTC
+except ImportError:
+    UTC = timezone.utc
 
 try:
     from .change_tracker import ChangeTracker

@@ -225,7 +225,8 @@ class TestTemplateGenerator:
         generator = TemplateGenerator(analysis)
         template_path = generator._infer_template_path(example_file)
 
-        assert "templates/Domain/" in template_path
+        # New implementation uses lowercase for consistency
+        assert "templates/domain/" in template_path
         assert ".template" in template_path
 
     def test_infer_template_path_fallback(self):

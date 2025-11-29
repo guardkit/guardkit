@@ -1,0 +1,87 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from app.db.session import get_db
+from app.schemas.{{entity_name}} import {{EntityName}}Public, {{EntityName}}Create, {{EntityName}}Update
+from app.crud import {{entity_name}} as crud_{{entity_name}}
+
+router = APIRouter()
+
+
+@router.get("/", response_model=List[{{EntityName}}Public])
+def list_{{entity_name_plural}}(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve multiple {{entity_name_plural}} with pagination.
+    """
+    {{entity_name_plural}} = crud_{{entity_name}}.get_{{entity_name_plural}}(db, skip=skip, limit=limit)
+    return {{entity_name_plural}}
+
+
+@router.get("/{{{entity_name}}_id}", response_model={{EntityName}}Public)
+def get_{{entity_name}}(
+    {{entity_name}}_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific {{entity_name}} by ID.
+    """
+    {{entity_name}} = crud_{{entity_name}}.get_{{entity_name}}(db, {{entity_name}}_id={{entity_name}}_id)
+    if not {{entity_name}}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{{EntityName}} with id {{{entity_name}}_id} not found"
+        )
+    return {{entity_name}}
+
+
+@router.post("/", response_model={{EntityName}}Public, status_code=status.HTTP_201_CREATED)
+def create_{{entity_name}}(
+    {{entity_name}}_in: {{EntityName}}Create,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new {{entity_name}}.
+    """
+    {{entity_name}} = crud_{{entity_name}}.create_{{entity_name}}(db, {{entity_name}}_in={{entity_name}}_in)
+    return {{entity_name}}
+
+
+@router.put("/{{{entity_name}}_id}", response_model={{EntityName}}Public)
+def update_{{entity_name}}(
+    {{entity_name}}_id: int,
+    {{entity_name}}_in: {{EntityName}}Update,
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing {{entity_name}}.
+    """
+    {{entity_name}} = crud_{{entity_name}}.get_{{entity_name}}(db, {{entity_name}}_id={{entity_name}}_id)
+    if not {{entity_name}}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{{EntityName}} with id {{{entity_name}}_id} not found"
+        )
+
+    updated_{{entity_name}} = crud_{{entity_name}}.update_{{entity_name}}(db, {{entity_name}}={{entity_name}}, {{entity_name}}_in={{entity_name}}_in)
+    return updated_{{entity_name}}
+
+
+@router.delete("/{{{entity_name}}_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_{{entity_name}}(
+    {{entity_name}}_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a {{entity_name}}.
+    """
+    {{entity_name}} = crud_{{entity_name}}.delete_{{entity_name}}(db, {{entity_name}}_id={{entity_name}}_id)
+    if not {{entity_name}}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{{EntityName}} with id {{{entity_name}}_id} not found"
+        )
+    return None

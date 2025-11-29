@@ -687,3 +687,163 @@ def test_end_to_end_clean_arch_generation(basic_codebase_analysis, tmp_path):
     assert "Python" in content
     assert "Domain" in content
     assert "PEP 8" in content
+
+
+# ===== TASK-CLAUDE-MD-AGENTS: Test AI Enhancement Methods =====
+
+def test_enhance_agent_info_with_ai_fallback():
+    """Test AI enhancement with fallback when AI is not available"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    # Create minimal analysis
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            frameworks=[],
+            testing_frameworks=[],
+            build_tools=[],
+            databases=[],
+            infrastructure=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            strengths=[],
+            improvements=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[],
+        overall_confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    # Test with repository agent metadata
+    agent_metadata = {
+        'name': 'repository-pattern-specialist',
+        'description': 'Repository pattern with Realm database abstraction and data access layers',
+        'technologies': ['C#', 'Repository Pattern', 'Realm Database', 'Data Access'],
+        'tools': ['Read', 'Write', 'Edit'],
+        'priority': 7
+    }
+
+    # Call enhancement method (will use fallback since AI is not configured)
+    result = generator._enhance_agent_info_with_ai(agent_metadata)
+
+    # Verify result structure
+    assert 'purpose' in result
+    assert 'when_to_use' in result
+
+    # Verify purpose matches description
+    assert result['purpose'] == agent_metadata['description']
+
+    # Verify when_to_use has meaningful content
+    assert 'Use this agent when' in result['when_to_use']
+    assert len(result['when_to_use']) > 20  # Should be more than just generic text
+
+
+def test_enhance_agent_info_different_types():
+    """Test AI enhancement fallback for different agent types"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    # Create minimal analysis
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            frameworks=[],
+            testing_frameworks=[],
+            build_tools=[],
+            databases=[],
+            infrastructure=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            strengths=[],
+            improvements=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[],
+        overall_confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    # Test different agent types
+    test_cases = [
+        {
+            'name': 'ui-testing-specialist',
+            'description': 'UI testing with Playwright and visual regression',
+            'expected_keyword': 'test'
+        },
+        {
+            'name': 'api-endpoint-specialist',
+            'description': 'API endpoint creation and routing',
+            'expected_keyword': 'API'
+        },
+        {
+            'name': 'domain-operations-specialist',
+            'description': 'Domain business logic operations',
+            'expected_keyword': 'business logic'
+        }
+    ]
+
+    for test_case in test_cases:
+        agent_metadata = {
+            'name': test_case['name'],
+            'description': test_case['description'],
+            'technologies': [],
+            'tools': [],
+            'priority': 5
+        }
+
+        result = generator._enhance_agent_info_with_ai(agent_metadata)
+
+        # Verify structure
+        assert 'purpose' in result
+        assert 'when_to_use' in result
+
+        # Verify purpose
+        assert result['purpose'] == test_case['description']
+
+        # Verify when_to_use is specific to agent type
+        when_to_use_lower = result['when_to_use'].lower()
+        assert len(result['when_to_use']) > 30  # Should be detailed

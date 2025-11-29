@@ -278,7 +278,7 @@ create_directories() {
     mkdir -p "$INSTALL_DIR/instructions"/{core,stacks}
     
     # Create sub-directories for templates
-    mkdir -p "$INSTALL_DIR/templates"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/templates"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
     
     # Create versions structure
     mkdir -p "$INSTALL_DIR/versions/$AGENTICFLOW_VERSION"
@@ -343,6 +343,18 @@ install_global_files() {
             if [ -d "$INSTALLER_DIR/global/commands/lib/templates" ]; then
                 cp -r "$INSTALLER_DIR/global/commands/lib/templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
                 print_success "Installed Jinja2 templates for plan rendering"
+            fi
+
+            # Copy review_modes directory (for task-review command)
+            if [ -d "$INSTALLER_DIR/global/commands/lib/review_modes" ]; then
+                cp -r "$INSTALLER_DIR/global/commands/lib/review_modes" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+                print_success "Installed review_modes for task-review command"
+            fi
+
+            # Copy review_templates directory (for task-review command)
+            if [ -d "$INSTALLER_DIR/global/commands/lib/review_templates" ]; then
+                cp -r "$INSTALLER_DIR/global/commands/lib/review_templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+                print_success "Installed review_templates for task-review command"
             fi
 
             # Count installed Python files
@@ -497,7 +509,7 @@ EOF
     fi
 
     # Create stack-agents directory structure even if no agents
-    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react,python,maui,dotnet-fastendpoints,dotnet-aspnetcontroller,dotnet-minimalapi,fullstack,typescript-api}
+    mkdir -p "$INSTALL_DIR/stack-agents"/{default,react-typescript,fastapi-python,nextjs-fullstack,react-fastapi-monorepo}
 }
 
 # Create the main CLI executables
@@ -527,20 +539,16 @@ print_help() {
     echo "Usage: taskwright-init [template]"
     echo ""
     echo "Templates:"
-    echo "  default              - Language-agnostic template"
-    echo "  react                - React with TypeScript"
-    echo "  python               - Python with FastAPI"
-    echo "  maui                 - .NET MAUI mobile app"
-    echo "  dotnet-fastendpoints - .NET API with FastEndpoints + REPR pattern"
-    echo "  dotnet-aspnetcontroller - .NET API with Controllers + MVC pattern"
-    echo "  dotnet-minimalapi    - .NET Minimal API with vertical slices"
-    echo "  fullstack            - React + Python"
-    echo "  typescript-api       - NestJS TypeScript backend API"
+    echo "  default              - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
+    echo "  react-typescript     - React frontend with feature-based architecture (9+/10)"
+    echo "  fastapi-python       - FastAPI backend with layered architecture (9+/10)"
+    echo "  nextjs-fullstack     - Next.js App Router full-stack (9+/10)"
+    echo "  react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
     echo ""
     echo "Examples:"
-    echo "  taskwright-init                    # Interactive setup"
-    echo "  taskwright-init react              # Initialize with React template"
-    echo "  taskwright-init dotnet-minimalapi  # Initialize with .NET Minimal API"
+    echo "  taskwright-init                     # Interactive setup"
+    echo "  taskwright-init react-typescript    # Initialize with React template"
+    echo "  taskwright-init fastapi-python      # Initialize with FastAPI template"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -599,10 +607,10 @@ print_help() {
     echo "  help                Show this help message"
     echo ""
     echo "Examples:"
-    echo "  taskwright init                    # Interactive initialization"
-    echo "  taskwright init react              # Initialize with React template"
-    echo "  taskwright init dotnet-minimalapi  # Initialize with .NET Minimal API"
-    echo "  taskwright doctor                  # Check installation health"
+    echo "  taskwright init                      # Interactive initialization"
+    echo "  taskwright init react-typescript     # Initialize with React template"
+    echo "  taskwright init fastapi-python       # Initialize with FastAPI template"
+    echo "  taskwright doctor                    # Check installation health"
 }
 
 # Detect project context by traversing upward
@@ -907,7 +915,7 @@ create_global_config() {
     "installed": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   },
   "defaults": {
-    "template": "default",
+    "template": "react",
     "testing": {
       "coverage_threshold": 80,
       "quality_gates": true
@@ -1046,7 +1054,7 @@ create_version_management() {
     "Quality gates",
     "Test orchestration",
     "10+ core AI agents",
-    "7 project templates",
+    "8 project templates",
     "Agentecflow Stage 1-4 support"
   ]
 }
@@ -1109,34 +1117,19 @@ print_summary() {
             local name=$(basename "$template")
             case "$name" in
                 default)
-                    echo "  • $name - Language-agnostic"
+                    echo "  • $name - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
                     ;;
-                react)
-                    echo "  • $name - React with TypeScript"
+                react-typescript)
+                    echo "  • $name - React frontend with feature-based architecture (9+/10)"
                     ;;
-                python)
-                    echo "  • $name - Python with FastAPI"
+                fastapi-python)
+                    echo "  • $name - FastAPI backend with layered architecture (9+/10)"
                     ;;
-                maui-appshell)
-                    echo "  • $name - .NET MAUI with AppShell navigation"
+                nextjs-fullstack)
+                    echo "  • $name - Next.js App Router full-stack (9+/10)"
                     ;;
-                maui-navigationpage)
-                    echo "  • $name - .NET MAUI with NavigationPage"
-                    ;;
-                dotnet-fastendpoints)
-                    echo "  • $name - .NET API with FastEndpoints + REPR pattern"
-                    ;;
-                dotnet-aspnetcontroller)
-                    echo "  • $name - .NET API with Controllers + MVC pattern"
-                    ;;
-                dotnet-minimalapi)
-                    echo "  • $name - .NET Minimal API with vertical slices"
-                    ;;
-                fullstack)
-                    echo "  • $name - React + Python"
-                    ;;
-                typescript-api)
-                    echo "  • $name - NestJS TypeScript backend API"
+                react-fastapi-monorepo)
+                    echo "  • $name - React + FastAPI monorepo with type safety (9.2/10)"
                     ;;
                 *)
                     echo "  • $name"
@@ -1157,7 +1150,7 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: taskwright-init [template]  # e.g., react, python, dotnet-minimalapi"
+    echo "  3. Run: taskwright-init [template]  # e.g., react-typescript, fastapi-python, nextjs-fullstack"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"
@@ -1222,6 +1215,135 @@ setup_claude_integration() {
     else
         print_error "Failed to create symlinks for Claude Code integration"
         print_warning "Commands and agents may not be available in Claude Code"
+    fi
+}
+
+# Create symlinks for Python command scripts in ~/.agentecflow/bin/
+# This allows commands to work from any directory
+setup_python_bin_symlinks() {
+    print_info "Setting up Python command script symlinks..."
+
+    local BIN_DIR="$INSTALL_DIR/bin"
+    local COMMANDS_DIR="$INSTALLER_DIR/global/commands"
+    local COMMANDS_LIB_DIR="$INSTALLER_DIR/global/commands/lib"
+
+    # Create bin directory if it doesn't exist
+    if [ ! -d "$BIN_DIR" ]; then
+        mkdir -p "$BIN_DIR"
+        print_success "Created bin directory: $BIN_DIR"
+    fi
+
+    # Track statistics
+    local symlinks_created=0
+    local symlinks_updated=0
+    local symlinks_skipped=0
+    local errors=0
+
+    # Find all Python command scripts
+    local python_scripts=()
+
+    # Find scripts in commands/ directory (exclude lib/)
+    if [ -d "$COMMANDS_DIR" ]; then
+        while IFS= read -r script; do
+            python_scripts+=("$script")
+        done < <(find "$COMMANDS_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
+    fi
+
+    # Find scripts in commands/lib/ directory (top-level only, not subdirectories)
+    if [ -d "$COMMANDS_LIB_DIR" ]; then
+        while IFS= read -r script; do
+            python_scripts+=("$script")
+        done < <(find "$COMMANDS_LIB_DIR" -maxdepth 1 -type f -name "*.py" 2>/dev/null)
+    fi
+
+    # Check if we found any scripts
+    if [ ${#python_scripts[@]} -eq 0 ]; then
+        print_warning "No Python command scripts found"
+        return 0
+    fi
+
+    print_info "Found ${#python_scripts[@]} Python command script(s)"
+
+    # Create symlink for each Python script
+    for script_path in "${python_scripts[@]}"; do
+        local script_file=$(basename "$script_path")
+        local symlink_name="${script_file%.py}"
+
+        # Skip __init__.py files
+        if [ "$script_file" = "__init__.py" ]; then
+            ((symlinks_skipped++))
+            continue
+        fi
+
+        # Skip test files (files starting with test_)
+        if [[ "$script_file" == test_* ]]; then
+            ((symlinks_skipped++))
+            continue
+        fi
+
+        # Convert underscores to hyphens
+        symlink_name="${symlink_name//_/-}"
+
+        local symlink_path="$BIN_DIR/$symlink_name"
+
+        # Check if script is readable
+        if [ ! -r "$script_path" ]; then
+            print_warning "Cannot read script: $script_path (skipping)"
+            ((errors++))
+            continue
+        fi
+
+        # Check for conflicts
+        if [ -L "$symlink_path" ]; then
+            local existing_target=$(readlink "$symlink_path")
+            if [ "$existing_target" != "$script_path" ]; then
+                print_warning "Symlink conflict: $symlink_name"
+                print_warning "  Existing: $existing_target"
+                print_warning "  New: $script_path"
+                print_error "Cannot create symlink due to conflict"
+                ((errors++))
+                continue
+            fi
+        fi
+
+        # Create or update symlink
+        if [ -L "$symlink_path" ]; then
+            local current_target=$(readlink "$symlink_path")
+            if [ "$current_target" = "$script_path" ]; then
+                ((symlinks_skipped++))
+            else
+                ln -sf "$script_path" "$symlink_path"
+                chmod +x "$symlink_path" 2>/dev/null || true
+                ((symlinks_updated++))
+                print_info "  Updated: $symlink_name"
+            fi
+        elif [ -e "$symlink_path" ]; then
+            print_error "Cannot create symlink: $symlink_path exists as regular file"
+            ((errors++))
+        else
+            ln -s "$script_path" "$symlink_path"
+            chmod +x "$symlink_path" 2>/dev/null || true
+            ((symlinks_created++))
+            print_info "  Created: $symlink_name → $(basename $script_path)"
+        fi
+    done
+
+    # Summary
+    echo ""
+    if [ $errors -eq 0 ]; then
+        print_success "Python command symlinks configured successfully"
+        print_info "  Created: $symlinks_created"
+        print_info "  Updated: $symlinks_updated"
+        print_info "  Skipped: $symlinks_skipped"
+        print_info "  Location: $BIN_DIR"
+        print_info "Commands can now be executed from any directory"
+    else
+        print_warning "Python command symlinks configured with errors"
+        print_info "  Created: $symlinks_created"
+        print_info "  Updated: $symlinks_updated"
+        print_info "  Skipped: $symlinks_skipped"
+        print_error "  Errors: $errors"
+        print_warning "Some commands may not work correctly"
     fi
 }
 
@@ -1307,6 +1429,7 @@ main() {
     setup_cache
     create_package_marker
     setup_claude_integration
+    setup_python_bin_symlinks
     create_marker_file
 
     # Print summary

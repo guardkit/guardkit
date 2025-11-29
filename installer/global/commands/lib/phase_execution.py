@@ -2,20 +2,40 @@
 Phase Execution Module - Orchestrates task-work phase execution with design-first workflow support.
 
 Part of TASK-006: Add Design-First Workflow Flags to task-work Command.
+Updated: TASK-HAI-006: Integrate AI discovery for Phase 3 specialist selection.
 
 This module provides the main entry point for executing task-work phases in different modes:
 - Standard mode (default): Executes all phases in sequence
 - Design-only mode (--design-only): Executes design phases only, stops at approval
 - Implement-only mode (--implement-only): Executes implementation phases using saved design
 
+Phase 3 now uses AI-powered discovery to select specialist agents based on task context.
+
 Author: Claude (Anthropic)
 Created: 2025-10-11
+Updated: 2025-11-25 (TASK-HAI-006: AI discovery integration)
 """
 
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
 import json
+import glob as glob_module
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
+# Optional import of agent discovery module
+# This allows the module to work even if agent_discovery is unavailable
+# and enables proper mocking in tests
+try:
+    from .agent_discovery import discover_agents as _discover_agents
+    DISCOVERY_AVAILABLE = True
+except ImportError:
+    _discover_agents = None
+    DISCOVERY_AVAILABLE = False
+    logger.debug("Agent discovery module not available at module load time")
 
 
 class PhaseExecutionError(Exception):
@@ -439,6 +459,297 @@ def _display_implementation_start_context(
     print()
 
 
+# ============================================================================
+# Phase 3: AI-Powered Specialist Discovery (TASK-HAI-006)
+# ============================================================================
+
+def analyze_task_context(
+    task_id: str,
+    plan: Dict[str, Any],
+    task_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, List[str]]:
+    """
+    Analyze task to extract stack and keywords for agent discovery.
+
+    Detection strategies:
+    1. File extensions in plan (implementation_plan['files'])
+    2. Keywords in task title/description
+    3. Existing project structure (package.json, requirements.txt, *.csproj)
+
+    Args:
+        task_id: Task identifier
+        plan: Implementation plan dictionary
+        task_context: Optional task context with title/description
+
+    Returns:
+        Dictionary with 'stack' and 'keywords' lists
+
+    Example:
+        >>> plan = {'implementation_plan': {'files': ['src/api/users.py']}}
+        >>> context = analyze_task_context('TASK-001', plan)
+        >>> print(context)
+        {'stack': ['python'], 'keywords': []}
+    """
+    context: Dict[str, List[str]] = {'stack': [], 'keywords': []}
+
+    # Strategy 1: File extensions from plan
+    files = plan.get('implementation_plan', {}).get('files', [])
+    if not files:
+        # Try alternative plan structure
+        files = plan.get('files', [])
+        if not files:
+            files = plan.get('files_to_create', [])
+
+    for file in files:
+        file_lower = str(file).lower()
+        if file_lower.endswith(('.py', '.pyi')):
+            context['stack'].append('python')
+        elif file_lower.endswith(('.tsx', '.jsx')):
+            context['stack'].extend(['react', 'typescript'])
+        elif file_lower.endswith('.ts'):
+            context['stack'].append('typescript')
+        elif file_lower.endswith('.js'):
+            context['stack'].append('javascript')
+        elif file_lower.endswith('.cs'):
+            context['stack'].extend(['dotnet', 'csharp'])
+        elif file_lower.endswith('.go'):
+            context['stack'].append('go')
+        elif file_lower.endswith('.rs'):
+            context['stack'].append('rust')
+        elif file_lower.endswith('.rb'):
+            context['stack'].append('ruby')
+        elif file_lower.endswith('.java'):
+            context['stack'].append('java')
+        elif file_lower.endswith('.php'):
+            context['stack'].append('php')
+
+    # Strategy 2: Keywords from task context
+    if task_context:
+        description = str(task_context.get('description', '')).lower()
+        title = str(task_context.get('title', '')).lower()
+        text = f"{title} {description}"
+
+        # Keyword patterns for different domains
+        keyword_patterns = {
+            'fastapi': ['fastapi', 'fast api'],
+            'api': ['api', 'endpoint', 'rest', 'graphql'],
+            'async': ['async', 'await', 'asyncio'],
+            'react': ['react', 'component', 'jsx', 'tsx'],
+            'hooks': ['hook', 'usestate', 'useeffect'],
+            'state': ['state', 'zustand', 'redux', 'context'],
+            'domain': ['domain', 'entity', 'aggregate', 'value object', 'ddd'],
+            'repository': ['repository', 'data access', 'persistence'],
+            'testing': ['test', 'pytest', 'jest', 'vitest'],
+            'database': ['database', 'sql', 'mongodb', 'postgres'],
+        }
+
+        for keyword, patterns in keyword_patterns.items():
+            if any(p in text for p in patterns):
+                context['keywords'].append(keyword)
+
+    # Strategy 3: Project structure detection
+    try:
+        # Check for package.json (Node/React)
+        if os.path.exists('package.json'):
+            try:
+                with open('package.json', 'r') as f:
+                    pkg = json.load(f)
+                    deps = pkg.get('dependencies', {})
+                    dev_deps = pkg.get('devDependencies', {})
+                    all_deps = {**deps, **dev_deps}
+
+                    if 'react' in all_deps:
+                        context['stack'].append('react')
+                    if 'typescript' in all_deps:
+                        context['stack'].append('typescript')
+                    if 'next' in all_deps:
+                        context['stack'].append('nextjs')
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Check for requirements.txt (Python)
+        if os.path.exists('requirements.txt'):
+            try:
+                with open('requirements.txt', 'r') as f:
+                    requirements = f.read().lower()
+                    if 'fastapi' in requirements:
+                        context['stack'].append('python')
+                        context['keywords'].append('fastapi')
+                    elif 'django' in requirements:
+                        context['stack'].append('python')
+                        context['keywords'].append('django')
+                    elif 'flask' in requirements:
+                        context['stack'].append('python')
+                        context['keywords'].append('flask')
+            except IOError:
+                pass
+
+        # Check for pyproject.toml (Python)
+        if os.path.exists('pyproject.toml'):
+            context['stack'].append('python')
+
+        # Check for .csproj files (.NET)
+        if glob_module.glob('*.csproj') or glob_module.glob('**/*.csproj', recursive=True):
+            context['stack'].extend(['dotnet', 'csharp'])
+
+        # Check for go.mod (Go)
+        if os.path.exists('go.mod'):
+            context['stack'].append('go')
+
+        # Check for Cargo.toml (Rust)
+        if os.path.exists('Cargo.toml'):
+            context['stack'].append('rust')
+
+    except Exception as e:
+        logger.debug(f"Project structure detection error: {e}")
+
+    # Deduplicate while preserving order
+    context['stack'] = list(dict.fromkeys(context['stack']))
+    context['keywords'] = list(dict.fromkeys(context['keywords']))
+
+    logger.debug(f"Context analysis for {task_id}: stack={context['stack']}, keywords={context['keywords']}")
+
+    return context
+
+
+def execute_phase_3(
+    task_id: str,
+    plan: Dict[str, Any],
+    task_context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Phase 3: Implementation with AI-powered specialist discovery.
+
+    This function:
+    1. Analyzes task context to detect stack and keywords
+    2. Uses discover_agents() to find matching specialists
+    3. Selects the best specialist (highest relevance) or falls back to task-manager
+    4. Returns metadata about the selected agent
+
+    Args:
+        task_id: Task identifier
+        plan: Implementation plan dictionary
+        task_context: Optional task context with title/description
+
+    Returns:
+        Dictionary with phase 3 execution results:
+        {
+            "success": bool,
+            "agent_used": str,           # Agent name
+            "agent_path": str,           # Path to agent file
+            "discovery_method": str,     # "ai-metadata" or "fallback"
+            "context_detected": dict,    # Detected stack/keywords
+            "specialists_found": int,    # Number of matching specialists
+            "relevance_score": int       # Score of selected agent (if specialist)
+        }
+
+    Example:
+        >>> result = execute_phase_3("TASK-001", python_plan)
+        >>> print(result['agent_used'])
+        'python-api-specialist'
+        >>> print(result['discovery_method'])
+        'ai-metadata'
+    """
+    # Check if discovery module is available (imported at module level)
+    if not DISCOVERY_AVAILABLE or _discover_agents is None:
+        logger.warning("Agent discovery module not available, using fallback")
+        return _fallback_phase_3_result(task_id)
+
+    # Step 1: Analyze task context
+    print(f"\nPhase 3: Implementation")
+    print("└─ Analyzing task context...")
+
+    context = analyze_task_context(task_id, plan, task_context)
+    stack = context.get('stack', [])
+    keywords = context.get('keywords', [])
+
+    print(f"   ├─ Detected stack: {stack if stack else '(none)'}")
+    print(f"   ├─ Keywords: {keywords if keywords else '(none)'}")
+
+    # Step 2: Discover specialists
+    try:
+        specialists = _discover_agents(
+            phase='implementation',
+            stack=stack if stack else None,
+            keywords=keywords if keywords else None
+        )
+    except Exception as e:
+        logger.warning(f"Discovery failed: {e}")
+        specialists = []
+
+    print(f"   └─ Discovery found {len(specialists)} specialist(s)")
+
+    # Step 3: Select agent
+    if specialists:
+        agent = specialists[0]  # Highest relevance (pre-sorted)
+        agent_name = agent.get('name', 'unknown')
+        agent_path = agent.get('path', '')
+        relevance_score = agent.get('relevance_score', 0)
+        agent_stack = agent.get('stack', [])
+        agent_capabilities = agent.get('capabilities', [])[:3]  # First 3
+
+        print(f"\nUsing {agent_name} for implementation (Haiku model)")
+        print(f"└─ Specialized in: {', '.join(agent_capabilities)}")
+
+        logger.info(f"Phase 3: Selected specialist {agent_name} (score: {relevance_score})")
+
+        return {
+            "success": True,
+            "agent_used": agent_name,
+            "agent_path": agent_path,
+            "discovery_method": "ai-metadata",
+            "context_detected": context,
+            "specialists_found": len(specialists),
+            "relevance_score": relevance_score,
+            "agent_model": agent.get('model', 'haiku'),
+            "agent_stack": agent_stack
+        }
+    else:
+        # Fallback to task-manager
+        print(f"\nUsing task-manager for implementation (Sonnet model)")
+        print("└─ General-purpose implementation agent")
+
+        logger.info(f"Phase 3: No specialist found, using task-manager (fallback)")
+
+        return {
+            "success": True,
+            "agent_used": "task-manager",
+            "agent_path": "installer/global/agents/task-manager.md",
+            "discovery_method": "fallback",
+            "context_detected": context,
+            "specialists_found": 0,
+            "relevance_score": 0,
+            "agent_model": "sonnet",
+            "agent_stack": ["cross-stack"]
+        }
+
+
+def _fallback_phase_3_result(task_id: str) -> Dict[str, Any]:
+    """
+    Generate fallback result when discovery module is unavailable.
+
+    Args:
+        task_id: Task identifier
+
+    Returns:
+        Fallback result using task-manager
+    """
+    logger.warning(f"Phase 3: Discovery unavailable for {task_id}, using task-manager")
+
+    return {
+        "success": True,
+        "agent_used": "task-manager",
+        "agent_path": "installer/global/agents/task-manager.md",
+        "discovery_method": "fallback",
+        "context_detected": {"stack": [], "keywords": []},
+        "specialists_found": 0,
+        "relevance_score": 0,
+        "agent_model": "sonnet",
+        "agent_stack": ["cross-stack"],
+        "note": "Discovery module unavailable"
+    }
+
+
 def execute_phase_5_5_plan_audit(
     task_id: str,
     task_context: Dict[str, Any]
@@ -622,31 +933,21 @@ def _update_task_metadata(task_id: str, report: Any, decision: str) -> None:
         return
 
     try:
-        import yaml
+        from .task_utils import update_task_frontmatter
 
-        with open(task_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # Split frontmatter and body
-        parts = content.split('---', 2)
-        if len(parts) >= 3:
-            frontmatter = yaml.safe_load(parts[1])
-            body = parts[2]
-
-            # Add audit metadata
-            frontmatter["plan_audit"] = {
-                "severity": report.severity,
-                "discrepancies_count": len(report.discrepancies),
-                "decision": decision,
-                "audited_at": report.timestamp
-            }
-
-            # Write back
-            with open(task_file, 'w', encoding='utf-8') as f:
-                f.write("---\n")
-                yaml.dump(frontmatter, f, default_flow_style=False)
-                f.write("---")
-                f.write(body)
+        # Use centralized task utility to update frontmatter
+        update_task_frontmatter(
+            task_file,
+            {
+                "plan_audit": {
+                    "severity": report.severity,
+                    "discrepancies_count": len(report.discrepancies),
+                    "decision": decision,
+                    "audited_at": report.timestamp
+                }
+            },
+            preserve_body=True
+        )
 
     except Exception as e:
         print(f"⚠️  Could not update task metadata: {e}")
@@ -691,6 +992,8 @@ __all__ = [
     "execute_design_phases",
     "execute_implementation_phases",
     "execute_standard_phases",
+    "execute_phase_3",
+    "analyze_task_context",
     "execute_phase_5_5_plan_audit",
     "prompt_with_timeout",
     "handle_audit_decision",

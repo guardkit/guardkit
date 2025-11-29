@@ -1,14 +1,36 @@
 {
+  "template": {
+    "name": "default",
+    "version": "2.0.0",
+    "description": "Language-agnostic Taskwright template for unsupported stacks",
+    "author": "Taskwright Team",
+    "created": "2025-11-09"
+  },
   "documentation": {
     "enabled": true,
     "default_level": "auto",
+    "description": "Documentation level system controls output detail based on task complexity",
     "complexity_thresholds": {
       "minimal_max": 3,
-      "standard_max": 10
+      "standard_max": 10,
+      "description": "Complexity score ranges: 1-3 (minimal), 4-10 (standard), 7-10+ (comprehensive)"
     },
     "force_comprehensive": {
-      "keywords": ["security", "authentication", "compliance", "breaking change"],
-      "triggers": ["security_changes", "compliance_required", "breaking_changes"]
+      "keywords": [
+        "security",
+        "authentication",
+        "compliance",
+        "breaking change",
+        "migration",
+        "refactor"
+      ],
+      "triggers": [
+        "security_changes",
+        "compliance_required",
+        "breaking_changes",
+        "data_migration"
+      ],
+      "description": "Keywords/triggers that force comprehensive documentation regardless of complexity"
     },
     "output_format": {
       "minimal": {
@@ -16,14 +38,18 @@
         "plan": "required",
         "architecture_guide": "skip",
         "test_reports": "embedded",
-        "code_review": "embedded"
+        "code_review": "embedded",
+        "plan_audit": "embedded",
+        "description": "Quick summaries with embedded results. Best for simple tasks (1-3 complexity)."
       },
       "standard": {
         "summary": "required",
         "plan": "required",
         "architecture_guide": "embedded",
         "test_reports": "embedded",
-        "code_review": "embedded"
+        "code_review": "embedded",
+        "plan_audit": "embedded",
+        "description": "Full reports with comprehensive coverage. Default for most tasks (4-10 complexity)."
       },
       "comprehensive": {
         "summary": "required",
@@ -31,52 +57,216 @@
         "architecture_guide": "standalone",
         "test_reports": "standalone",
         "code_review": "standalone",
-        "supporting_docs": "all"
+        "plan_audit": "standalone",
+        "supporting_docs": "all",
+        "description": "Standalone documents with enhanced analysis. For complex/critical tasks (7-10 complexity or force triggers)."
       }
     },
     "agent_behavior": {
       "architectural_reviewer": {
         "minimal": "json_scores",
         "standard": "embedded_summary",
-        "comprehensive": "standalone_guide"
+        "comprehensive": "standalone_guide",
+        "description": "Phase 2.5 - SOLID/DRY/YAGNI analysis"
       },
       "test_orchestrator": {
         "minimal": "json_results",
         "standard": "full_report",
-        "comprehensive": "enhanced_report_with_supporting_docs"
+        "comprehensive": "enhanced_report_with_supporting_docs",
+        "description": "Phase 4 - Test execution and quality gates"
       },
       "code_reviewer": {
         "minimal": "json_findings",
         "standard": "full_report",
-        "comprehensive": "detailed_report_with_metrics"
+        "comprehensive": "detailed_report_with_metrics",
+        "description": "Phase 5 - Code quality enforcement"
       },
       "test_verifier": {
         "minimal": "json_status",
         "standard": "full_verification_report",
-        "comprehensive": "enhanced_with_failure_analysis"
+        "comprehensive": "enhanced_with_failure_analysis",
+        "description": "Phase 4.5 - Test enforcement loop"
       },
       "task_manager": {
         "minimal": "quick_summary",
         "standard": "full_summary",
-        "comprehensive": "comprehensive_report_with_links"
+        "comprehensive": "comprehensive_report_with_links",
+        "description": "Orchestration - Final task summary"
       }
     },
     "performance_targets": {
       "minimal": {
         "duration_minutes": "8-12",
         "token_estimate": "100-150k",
-        "files_generated": 2
+        "files_generated": 2,
+        "description": "Fast execution with essential outputs only"
       },
       "standard": {
         "duration_minutes": "12-18",
         "token_estimate": "150-250k",
-        "files_generated": "2-5"
+        "files_generated": "2-5",
+        "description": "Balanced execution with comprehensive embedded reports"
       },
       "comprehensive": {
         "duration_minutes": "36+",
         "token_estimate": "500k+",
-        "files_generated": "13+"
+        "files_generated": "13+",
+        "description": "Thorough execution with all standalone documentation"
       }
     }
+  },
+  "stack": {
+    "language": "generic",
+    "framework": "none",
+    "description": "Language-agnostic configuration. Customize for your specific stack.",
+    "testing": {
+      "enabled": true,
+      "command": null,
+      "coverage_command": null,
+      "min_coverage": 80,
+      "description": "Add stack-specific test commands here (e.g., 'pytest', 'go test', 'cargo test')"
+    },
+    "linting": {
+      "enabled": false,
+      "command": null,
+      "description": "Add linter configuration for your language (e.g., 'eslint', 'pylint', 'golangci-lint')"
+    },
+    "formatting": {
+      "enabled": false,
+      "command": null,
+      "description": "Add formatter configuration (e.g., 'prettier', 'black', 'gofmt')"
+    }
+  },
+  "quality_gates": {
+    "compilation": {
+      "enabled": true,
+      "threshold": 100,
+      "blocking": true,
+      "description": "Must compile successfully (language-dependent)"
+    },
+    "tests": {
+      "enabled": true,
+      "pass_rate": 100,
+      "blocking": true,
+      "auto_fix_attempts": 3,
+      "description": "All tests must pass (Phase 4.5 enforcement)"
+    },
+    "coverage": {
+      "enabled": true,
+      "line_coverage": 80,
+      "branch_coverage": 75,
+      "blocking": false,
+      "description": "Coverage thresholds (recommended but not blocking by default)"
+    },
+    "architecture": {
+      "enabled": true,
+      "min_score": 60,
+      "blocking": false,
+      "description": "Architectural review score (Phase 2.5)"
+    },
+    "plan_audit": {
+      "enabled": true,
+      "max_violations": 0,
+      "blocking": false,
+      "description": "Plan compliance check (Phase 5.5)"
+    }
+  },
+  "workflow": {
+    "phases": {
+      "1": {
+        "name": "Requirements Analysis",
+        "enabled": false,
+        "description": "Skipped in Taskwright (use require-kit for formal requirements)"
+      },
+      "2": {
+        "name": "Implementation Planning",
+        "enabled": true,
+        "description": "Generate markdown implementation plan"
+      },
+      "2.5": {
+        "name": "Architectural Review",
+        "enabled": true,
+        "description": "SOLID/DRY/YAGNI compliance check"
+      },
+      "2.7": {
+        "name": "Complexity Evaluation",
+        "enabled": true,
+        "description": "Calculate complexity score (0-10) and determine review mode"
+      },
+      "2.8": {
+        "name": "Human Checkpoint",
+        "enabled": true,
+        "conditional": "complexity >= 7 or force triggers",
+        "description": "Mandatory review for complex/critical tasks"
+      },
+      "3": {
+        "name": "Implementation",
+        "enabled": true,
+        "description": "Write code based on approved plan"
+      },
+      "4": {
+        "name": "Testing",
+        "enabled": true,
+        "description": "Run tests and collect coverage"
+      },
+      "4.5": {
+        "name": "Test Enforcement",
+        "enabled": true,
+        "description": "Auto-fix failed tests (up to 3 attempts)"
+      },
+      "5": {
+        "name": "Code Review",
+        "enabled": true,
+        "description": "Quality analysis and recommendations"
+      },
+      "5.5": {
+        "name": "Plan Audit",
+        "enabled": true,
+        "description": "Detect scope creep and variance"
+      }
+    },
+    "design_first": {
+      "enabled": true,
+      "design_only_flag": "--design-only",
+      "implement_only_flag": "--implement-only",
+      "description": "Support for split design/implementation workflow"
+    },
+    "micro_task": {
+      "enabled": true,
+      "auto_detect": true,
+      "flag": "--micro",
+      "description": "Streamlined workflow for trivial tasks"
+    }
+  },
+  "customization": {
+    "agents": {
+      "path": ".claude/agents",
+      "description": "Add stack-specific agents here (optional)"
+    },
+    "templates": {
+      "path": ".claude/templates",
+      "description": "Add code templates here (optional)"
+    },
+    "commands": {
+      "path": ".claude/commands",
+      "symlinked": true,
+      "description": "Commands are symlinked from global installation"
+    }
+  },
+  "migration": {
+    "from_template": null,
+    "to_specialized_template": true,
+    "preserve_state": [
+      ".claude/state/",
+      "tasks/",
+      "docs/"
+    ],
+    "description": "Migrate to specialized template when project matures"
+  },
+  "notes": {
+    "language_agnostic": "This template is intentionally language-agnostic. Add stack-specific configuration in the 'stack' section.",
+    "use_specialized": "For React, Python, .NET, etc., use specialized templates instead of default.",
+    "template_create": "Use /template-create to build custom templates for repeated patterns.",
+    "quality_first": "Quality gates are enabled by default. Adjust thresholds as needed for your stack."
   }
 }
