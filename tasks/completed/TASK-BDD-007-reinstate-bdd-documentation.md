@@ -1,22 +1,24 @@
 ---
 id: TASK-BDD-007
 title: Reinstate and update BDD documentation with agentic systems focus
-status: backlog
+status: completed
 created: 2025-11-28T15:27:39.493246+00:00
-updated: 2025-11-28T15:27:39.493246+00:00
+updated: 2025-11-29T10:45:00.000000+00:00
+completed: 2025-11-29T10:45:00.000000+00:00
 priority: high
 tags: [bdd-restoration, documentation, wave1]
 complexity: 2
 task_type: documentation
 estimated_effort: 30 minutes
+actual_effort: 25 minutes
 wave: 1
 parallel: true
 implementation_method: claude-code-direct
 parent_epic: bdd-restoration
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2025-11-29T10:45:00.000000+00:00
 ---
 
 # Task: Reinstate and update BDD documentation with agentic systems focus
