@@ -1,9 +1,9 @@
 ---
 id: TASK-FIX-7EA8
 title: Add post-installation validation and simplify installation model (Priority 2)
-status: backlog
+status: in_review
 created: 2025-11-29T19:40:00Z
-updated: 2025-11-29T19:40:00Z
+updated: 2025-11-29T20:45:00Z
 priority: high
 tags: [installation, validation, quality-gates, pre-launch]
 complexity: 3
