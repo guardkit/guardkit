@@ -394,7 +394,7 @@ def get_mapper(persistence: Optional['ExternalIDPersistence'] = None) -> Externa
         Global ExternalIDMapper instance
 
     Example:
-        >>> from installer.global.lib.external_id_mapper import get_mapper
+        >>> from lib.external_id_mapper import get_mapper
         >>> mapper = get_mapper()  # Uses default persistence
         >>> external_id = mapper.map_to_external("TASK-E01-b2c4", "jira", "PROJ")
     """

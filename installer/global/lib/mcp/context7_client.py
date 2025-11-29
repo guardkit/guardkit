@@ -9,7 +9,7 @@ planning phases (500-1000 tokens) and detailed documentation during
 implementation phases (3500-5000 tokens), reducing token usage by 50-70%.
 
 Example:
-    >>> from installer.global.lib.mcp import Context7Client, DetailLevel
+    >>> from lib.mcp import Context7Client, DetailLevel
     >>> client = Context7Client()
     >>>
     >>> # Phase 2: Planning - get summary

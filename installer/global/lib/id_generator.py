@@ -9,7 +9,7 @@ This module eliminates the duplicate ID problem (e.g., TASK-003 appearing twice)
 by using cryptographic hashing instead of sequential numbering.
 
 Basic Usage:
-    from installer.global.lib.id_generator import generate_task_id
+    from lib.id_generator import generate_task_id
 
     # Simple ID
     task_id = generate_task_id()  # Returns: TASK-A3F2
@@ -22,7 +22,7 @@ Basic Usage:
     task_id = generate_task_id(existing_ids=existing)
 
 Prefix Inference:
-    from installer.global.lib.id_generator import infer_prefix, generate_task_id
+    from lib.id_generator import infer_prefix, generate_task_id
 
     # Infer from epic
     prefix = infer_prefix(epic="EPIC-001")  # Returns: "E01"
@@ -45,7 +45,7 @@ Prefix Inference:
     )  # Returns: "CUST" (manual wins)
 
 Prefix Validation:
-    from installer.global.lib.id_generator import validate_prefix
+    from lib.id_generator import validate_prefix
 
     # Normalize and validate
     prefix = validate_prefix("documentation")  # Returns: "DOCU"
