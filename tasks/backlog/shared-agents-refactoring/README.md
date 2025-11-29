@@ -1,215 +1,169 @@
-# Shared Agents Refactoring - Implementation Tasks
+# Shared Agents Refactoring - Lean Implementation
 
-**Parent Task**: TASK-ARCH-DC05 (Architectural Review)
-**Review Score**: 82/100 (Grade: B+ - APPROVE WITH MODIFICATIONS)
-**Total Tasks**: 38 tasks (5 Phase 0 tasks created, 33 remaining planned)
-**Estimated Duration**: 7 days (with parallel execution)
+**Approach**: Minimal Viable Implementation
+**Total Tasks**: 6 tasks
+**Estimated Duration**: 1-2 days
+**Philosophy**: Ship fast, fix issues if they arise
 
 ---
 
 ## Quick Start
 
-### Phase 0 Tasks (Created ✅ - Start Here)
-
-Critical prerequisite tasks that must complete before implementation:
-
-1. **[TASK-SHA-000](./TASK-SHA-000-verify-agent-duplication.md)** - Verify agent duplication
-   - **Priority**: Critical
-   - **Effort**: 2 hours
-   - **Status**: ✅ Created, ready to execute
-
-2. **[TASK-SHA-001](./TASK-SHA-001-implement-conflict-detection.md)** - Implement conflict detection
-   - **Priority**: Critical
-   - **Effort**: 4 hours
-   - **Status**: ✅ Created, ready to execute
-
-3. **TASK-SHA-002** - Define integration test cases
-   - **Priority**: Critical
-   - **Effort**: 4 hours
-   - **Status**: ✅ Created, ready to execute
-
-4. **TASK-SHA-003** - Document rollback procedures
-   - **Priority**: Critical
-   - **Effort**: 3 hours
-   - **Status**: 🔄 Creating next
-
-5. **TASK-SHA-004** - Add checksum validation
-   - **Priority**: High
-   - **Effort**: 2 hours
-   - **Status**: 🔄 Creating next
-
-### How to Execute Phase 0
+Execute tasks in order:
 
 ```bash
-# Start with verification (MUST be first)
-/task-work TASK-SHA-000
-
-# After verification, others can run in parallel
+# 1. Verify what we're migrating (MUST BE FIRST)
 /task-work TASK-SHA-001
+
+# 2. Create shared-agents repo with verified agents
 /task-work TASK-SHA-002
-/task-work TASK-SHA-003
-/task-work TASK-SHA-004
+
+# 3 & 4. Update both installers (can run in parallel)
+/task-work TASK-SHA-003  # TaskWright
+/task-work TASK-SHA-004  # RequireKit
+
+# 5. Test everything works
+/task-work TASK-SHA-005
+
+# 6. Update docs and ship
+/task-work TASK-SHA-006
 ```
 
+**Total time**: ~9 hours (1-2 days)
+
 ---
 
-## Directory Structure
+## The 6 Tasks
 
-```
-shared-agents-refactoring/
-├── README.md                           # This file
-├── TASK-INDEX.md                       # Complete task listing
-├── IMPLEMENTATION-PLAN.md              # Detailed implementation guide
-│
-├── Phase 0 Tasks (Created ✅)
-│   ├── TASK-SHA-000-verify-agent-duplication.md
-│   ├── TASK-SHA-001-implement-conflict-detection.md
-│   ├── TASK-SHA-002-define-integration-test-cases.md
-│   ├── TASK-SHA-003-document-rollback-procedures.md  (creating)
-│   └── TASK-SHA-004-add-checksum-validation.md       (creating)
-│
-└── Phase 1-5 Tasks (Planned 📋)
-    └── (Will be created after Phase 0 completion)
+### TASK-SHA-001: Verify Agent Duplication ⭐ CRITICAL
+**Effort**: 1 hour
+**Why**: Ensures we only migrate agents that exist in both repos
+
+**Quick version**:
+```bash
+# Compare agent files
+comm -12 <(ls taskwright/installer/global/agents/*.md | xargs basename -a | sort) \
+         <(ls ../require-kit/.claude/agents/*.md | xargs basename -a | sort)
 ```
 
----
+### TASK-SHA-002: Create Shared Agents Repository
+**Effort**: 2 hours
+**Depends on**: TASK-SHA-001
 
-## Key Documents
+1. Create `taskwright-dev/shared-agents` repo
+2. Copy verified agents
+3. Create simple manifest.json
+4. Release v1.0.0
 
-### Review Documents
-- **Architectural Review**: [.claude/reviews/TASK-ARCH-DC05-shared-agents-architectural-review.md](../../../.claude/reviews/TASK-ARCH-DC05-shared-agents-architectural-review.md)
-- **Risk Mitigation Plan**: [.claude/reviews/TASK-ARCH-DC05-risk-mitigation-plan.md](../../../.claude/reviews/TASK-ARCH-DC05-risk-mitigation-plan.md)
+### TASK-SHA-003: Update TaskWright Installer
+**Effort**: 2 hours
+**Depends on**: TASK-SHA-002
 
-### Implementation Documents
-- **Implementation Plan**: [IMPLEMENTATION-PLAN.md](./IMPLEMENTATION-PLAN.md)
-- **Task Index**: [TASK-INDEX.md](./TASK-INDEX.md)
-- **Test Plan**: [tests/integration/shared-agents/TEST-PLAN.md](../../../tests/integration/shared-agents/TEST-PLAN.md)
+1. Add version pinning file
+2. Add install function (curl + tar)
+3. Remove duplicate agents
+4. Test
 
-### Source Documents
-- **Original Proposal**: [docs/proposals/shared-agents-architecture-proposal.md](../../../docs/proposals/shared-agents-architecture-proposal.md)
-- **Parent Task**: [TASK-ARCH-DC05-review-shared-agents-architecture-proposal.md](../TASK-ARCH-DC05-review-shared-agents-architecture-proposal.md)
+### TASK-SHA-004: Update RequireKit Installer
+**Effort**: 2 hours
+**Depends on**: TASK-SHA-002
+**Can parallelize**: With TASK-SHA-003
 
----
+Same as TASK-SHA-003, but for RequireKit.
 
-## Phase Overview
+### TASK-SHA-005: Test Both Tools
+**Effort**: 1 hour
+**Depends on**: TASK-SHA-003 + TASK-SHA-004
 
-### Phase 0: Prerequisites (Current Phase)
-**Duration**: 2 days
-**Status**: 5 tasks created ✅
-**Goal**: Address critical gaps before migration
+1. Test TaskWright alone
+2. Test RequireKit alone
+3. Test both together
+4. Verify no duplication
 
-### Phase 1: Create Shared Agents Repository
-**Duration**: 1 day
-**Status**: Planned (5 tasks)
-**Dependencies**: Phase 0 complete
+### TASK-SHA-006: Update Documentation
+**Effort**: 1 hour
+**Depends on**: TASK-SHA-005
 
-### Phase 2: Update TaskWright
-**Duration**: 2 days
-**Status**: Planned (7 tasks)
-**Dependencies**: Phase 1 complete
-**Can parallelize**: With Phase 3
-
-### Phase 3: Update RequireKit
-**Duration**: 2 days
-**Status**: Planned (7 tasks)
-**Dependencies**: Phase 1 complete
-**Can parallelize**: With Phase 2
-
-### Phase 4: Integration Testing
-**Duration**: 2 days
-**Status**: Planned (7 tasks)
-**Dependencies**: Phase 2 AND Phase 3 complete
-
-### Phase 5: Documentation & Release
-**Duration**: 2 days
-**Status**: Planned (7 tasks)
-**Dependencies**: Phase 4 complete
+Update READMEs and CHANGELOGs in all three repos.
 
 ---
 
-## Critical Findings from Architectural Review
+## What We're NOT Doing
 
-### Strengths (What's Good)
-- ✅ Outstanding DIP compliance (11/10)
-- ✅ Eliminates DRY violation
-- ✅ Strong SOLID principles (50/50)
-- ✅ Clear migration path
-- ✅ Future-ready architecture
+Intentionally skipping these (from the over-engineered approach):
 
-### Critical Modifications Required
-1. ⚠️ **Agent classification error** (TASK-SHA-000 addresses this)
-2. ⚠️ **Conflict detection missing** (TASK-SHA-001 addresses this)
-3. ⚠️ **Testing strategy incomplete** (TASK-SHA-002 addresses this)
-4. ⚠️ **Rollback procedures missing** (TASK-SHA-003 addresses this)
-5. ⚠️ **Checksum validation needed** (TASK-SHA-004 addresses this)
+❌ Conflict detection for local customizations
+❌ Elaborate test plans
+❌ Detailed rollback procedures
+❌ Checksum validation
+❌ Offline fallback mechanisms
+❌ Extensive CI/CD workflows
+❌ Comprehensive error handling
 
----
-
-## Risk Summary
-
-| Risk | Severity | Mitigation Task |
-|------|----------|----------------|
-| Agent classification error | High | TASK-SHA-000 |
-| Breaking changes to users | High | TASK-SHA-001 |
-| CI/CD pipeline failures | High | TASK-SHA-P4-006 |
-| Version conflicts | Medium | TASK-SHA-P4-002 |
-| Installer bugs | Medium | TASK-SHA-P4-001 to P4-007 |
-
-**All high-severity risks have mitigation tasks in Phase 0.**
+**Rationale**: These are "nice to haves" that add complexity. We can add them later if needed.
 
 ---
 
 ## Success Criteria
 
-### Phase 0 Success Criteria
-- [ ] All high-severity risks mitigated
-- [ ] Verified agent duplication list created
-- [ ] Conflict detection implemented and tested
-- [ ] Rollback procedures documented and tested
-- [ ] Checksum validation implemented
+**Must achieve**:
+- ✅ Agents moved to shared-agents repo
+- ✅ Both tools use shared-agents
+- ✅ No duplication (DRY achieved)
+- ✅ No regression in functionality
 
-### Overall Success Criteria
-- [ ] Zero data loss incidents
-- [ ] Zero breaking changes to existing users
-- [ ] CI/CD reliability ≥99%
-- [ ] All 38 tasks completed
-- [ ] Architectural quality score maintained (≥80/100)
+**That's it!** Simple and effective.
+
+---
+
+## Risk Acceptance
+
+We're accepting these small risks:
+
+1. **User customizations**: May be overwritten (low probability - most users don't customize agents)
+2. **Download failures**: GitHub is reliable, but if it fails, user re-runs installer
+3. **Version conflicts**: Simple version pinning should suffice
+
+**If issues arise**: We handle them with quick hotfixes.
 
 ---
 
 ## Timeline
 
-| Phase | Optimistic | With Buffer | Status |
-|-------|-----------|-------------|--------|
-| Phase 0 | 2 days | 2.5 days | 🔄 Current |
-| Phase 1 | 1 day | 1.5 days | 📋 Planned |
-| Phase 2+3 | 2 days | 2.5 days | 📋 Planned |
-| Phase 4 | 2 days | 2.5 days | 📋 Planned |
-| Phase 5 | 2 days | 2 days | 📋 Planned |
-| **Total** | **7 days** | **11 days** | - |
+| Phase | Tasks | Duration |
+|-------|-------|----------|
+| Preparation | TASK-SHA-001 | 1 hour |
+| Setup | TASK-SHA-002 | 2 hours |
+| Integration | TASK-SHA-003 + 004 (parallel) | 2 hours |
+| Validation | TASK-SHA-005 | 1 hour |
+| Documentation | TASK-SHA-006 | 1 hour |
+| **Total** | **6 tasks** | **7-9 hours** |
+
+**Calendar time**: 1-2 days (with breaks and context switching)
 
 ---
 
-## Next Steps
+## Documents
 
-1. ✅ **Review Phase 0 tasks** (5 tasks created)
-2. 🔄 **Execute TASK-SHA-000** (verification - MUST BE FIRST)
-3. 🔄 **Execute remaining Phase 0 tasks** (can parallelize TASK-SHA-001 to 004)
-4. ⏸️ **Phase Gate Review** (after Phase 0 completion)
-5. 📋 **Create Phase 1 tasks** (after Phase 0 approval)
-6. 📋 **Execute Phase 1-5** (following implementation plan)
+- **[IMPLEMENTATION-PLAN-LEAN.md](./IMPLEMENTATION-PLAN-LEAN.md)** - Detailed task breakdown
+- **[TASK-SHA-001](./TASK-SHA-001-verify-duplication.md)** - Verification
+- **[TASK-SHA-002](./TASK-SHA-002-create-shared-repo.md)** - Create repo
+- **[TASK-SHA-003](./TASK-SHA-003-update-taskwright.md)** - Update TaskWright
+- **[TASK-SHA-004](./TASK-SHA-004-update-requirekit.md)** - Update RequireKit
+- **[TASK-SHA-005](./TASK-SHA-005-test-both-tools.md)** - Testing
+- **[TASK-SHA-006](./TASK-SHA-006-update-documentation.md)** - Documentation
 
----
-
-## Questions?
-
-- **Implementation details**: See [IMPLEMENTATION-PLAN.md](./IMPLEMENTATION-PLAN.md)
-- **Task listing**: See [TASK-INDEX.md](./TASK-INDEX.md)
-- **Testing approach**: See [TEST-PLAN.md](../../../tests/integration/shared-agents/TEST-PLAN.md)
-- **Risk management**: See [risk-mitigation-plan.md](../../../.claude/reviews/TASK-ARCH-DC05-risk-mitigation-plan.md)
+**Archived** (over-engineered approach):
+- `archive/` - Contains the original 38-task plan for reference
 
 ---
 
-**Last Updated**: 2025-11-28T20:30:00Z
-**Status**: Phase 0 tasks created, ready for execution
-**Next Review**: After Phase 0 completion
+## Philosophy
+
+> Perfect is the enemy of good. Ship fast, iterate based on real feedback.
+
+This lean approach gets us 90% of the value with 10% of the effort. We can always enhance later if needed.
+
+---
+
+**Ready to start?** Run `/task-work TASK-SHA-001` 🚀

@@ -16,9 +16,9 @@
 |---------|-------|----------|--------|--------|
 | TASK-SHA-000 | Verify agent duplication | Critical | 2h | ✅ Created |
 | TASK-SHA-001 | Implement conflict detection | Critical | 4h | ✅ Created |
-| TASK-SHA-002 | Define integration test cases | Critical | 4h | 🔄 Creating |
-| TASK-SHA-003 | Document rollback procedures | Critical | 3h | 🔄 Creating |
-| TASK-SHA-004 | Add checksum validation | High | 2h | 🔄 Creating |
+| TASK-SHA-002 | Define integration test cases | Critical | 4h | ✅ Created |
+| TASK-SHA-003 | Document rollback procedures | Critical | 3h | ✅ Created |
+| TASK-SHA-004 | Add checksum validation | High | 2h | ✅ Created |
 
 **Phase Gate**: All Phase 0 tasks must complete before Phase 1
 
