@@ -1536,7 +1536,7 @@ main() {
     install_completions
     create_version_management
     setup_cache
-    create_package_marker
+    # create_package_marker  # DEPRECATED - using create_marker_file instead
     setup_claude_integration
     setup_python_bin_symlinks
     create_marker_file
