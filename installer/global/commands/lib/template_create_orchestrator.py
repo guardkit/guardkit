@@ -931,7 +931,7 @@ class TemplateCreateOrchestrator:
         # Using relative import since we're in the same package
         try:
             # FIXME: This import needs to be implemented - placeholder for now
-            # from installer.global.lib.task_management.task_creator import create_task
+            # from lib.task_management.task_creator import create_task
             # For now, we'll create a simplified version
             task_ids = self._create_agent_tasks_simplified(agent_files, output_path)
 

@@ -204,65 +204,7 @@ The task will include:
 **CRITICAL**: Task IDs MUST be unique. The system uses SHA-256 hashing to generate collision-free IDs.
 
 ```python
-# === BEGIN: Repository Root Resolution ===
-# Add taskwright repo to sys.path to find installer.global.lib modules
-# This works whether running from taskwright repo or user project directory
-import sys
-from pathlib import Path
-
-def _find_taskwright_repo():
-    """
-    Find taskwright repository root by looking for marker file.
-    Search order:
-    1. ~/.agentecflow/taskwright.marker.json (contains repo path)
-    2. Common locations (~/Projects/appmilla_github/taskwright, ~/Projects/taskwright)
-    """
-    # Check marker file first (most reliable)
-    marker_json = Path.home() / ".agentecflow" / "taskwright.marker.json"
-    if marker_json.exists():
-        import json
-        try:
-            with open(marker_json) as f:
-                data = json.load(f)
-                repo_path = Path(data.get("repo_path", ""))
-                if repo_path.exists():
-                    return repo_path
-        except (json.JSONDecodeError, KeyError, OSError):
-            pass
-
-    # Fallback: Check common locations
-    common_paths = [
-        Path.home() / "Projects" / "appmilla_github" / "taskwright",
-        Path.home() / "Projects" / "taskwright",
-        Path.cwd(),  # Current directory (if running from repo)
-    ]
-
-    for path in common_paths:
-        # Verify it's the taskwright repo
-        if (path / "installer" / "global" / "lib" / "id_generator.py").exists():
-            return path
-
-    return None
-
-taskwright_repo = _find_taskwright_repo()
-if not taskwright_repo:
-    print("ERROR: Cannot locate taskwright repository")
-    print("  Searched:")
-    print("    - ~/.agentecflow/taskwright.marker.json")
-    print("    - ~/Projects/appmilla_github/taskwright")
-    print("    - ~/Projects/taskwright")
-    print("  Installation may be incomplete. Try reinstalling:")
-    print("    cd ~/Projects/appmilla_github/taskwright")
-    print("    ./installer/scripts/install.sh")
-    sys.exit(1)
-
-# Add to sys.path if not already there
-taskwright_repo_str = str(taskwright_repo)
-if taskwright_repo_str not in sys.path:
-    sys.path.insert(0, taskwright_repo_str)
-# === END: Repository Root Resolution ===
-
-from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
+from lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 
 # Parse prefix from command args (optional)
 prefix = None

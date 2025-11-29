@@ -29,7 +29,7 @@ class DetailLevel(Enum):
             - Default mode for backward compatibility
 
     Example:
-        >>> from installer.global.lib.mcp import DetailLevel
+        >>> from lib.mcp import DetailLevel
         >>> level = DetailLevel.SUMMARY
         >>> level.value
         'summary'

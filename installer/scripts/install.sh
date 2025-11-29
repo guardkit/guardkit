@@ -348,6 +348,40 @@ install_global_files() {
         print_success "Installed project templates"
     fi
     
+    # Copy Python libraries from installer/global/lib (for imports like 'from lib.id_generator')
+    if [ -d "$INSTALLER_DIR/global/lib" ]; then
+        mkdir -p "$INSTALL_DIR/commands/lib"
+
+        # Copy Python production files only (exclude test_*, cache, coverage)
+        find "$INSTALLER_DIR/global/lib" \
+            -maxdepth 1 \
+            -type f \
+            -name "*.py" \
+            ! -name "test_*" \
+            ! -name "*_test.py" \
+            -exec cp {} "$INSTALL_DIR/commands/lib/" \; 2>/dev/null || true
+
+        # Copy subdirectories (like mcp/) with their Python files
+        for subdir in "$INSTALLER_DIR/global/lib"/*/ ; do
+            if [ -d "$subdir" ]; then
+                subdir_name=$(basename "$subdir")
+                # Skip test directories and cache
+                if [[ ! "$subdir_name" =~ ^(tests?|__pycache__|\.pytest_cache)$ ]]; then
+                    mkdir -p "$INSTALL_DIR/commands/lib/$subdir_name"
+                    find "$subdir" \
+                        -type f \
+                        -name "*.py" \
+                        ! -name "test_*" \
+                        ! -name "*_test.py" \
+                        -exec cp {} "$INSTALL_DIR/commands/lib/$subdir_name/" \; 2>/dev/null || true
+                fi
+            fi
+        done
+
+        local global_lib_count=$(find "$INSTALL_DIR/commands/lib" -name "*.py" 2>/dev/null | wc -l)
+        print_success "Installed global Python libraries ($global_lib_count modules)"
+    fi
+
     # Copy commands
     if [ -d "$INSTALLER_DIR/global/commands" ]; then
         # Copy markdown command files

@@ -441,7 +441,7 @@ def get_persistence(state_dir: Path = None) -> ExternalIDPersistence:
         ExternalIDPersistence instance
 
     Example:
-        >>> from installer.global.lib.external_id_persistence import get_persistence
+        >>> from lib.external_id_persistence import get_persistence
         >>> persistence = get_persistence()
         >>> persistence.save_mappings({...})
     """
