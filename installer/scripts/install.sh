@@ -20,6 +20,7 @@ CONFIG_DIR="$HOME/.config/agentecflow"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GITHUB_REPO="https://github.com/taskwright-dev/taskwright"
 GITHUB_BRANCH="main"
+INSTALL_METHOD="git-clone"  # Default, updated if running via curl
 
 # Test mode configuration
 TEST_MODE=false
@@ -65,6 +66,7 @@ ensure_repository_files() {
     # Check if we have the required files
     if [ ! -f "$INSTALLER_DIR/scripts/init-project.sh" ] || [ ! -d "$INSTALLER_DIR/global/templates" ]; then
         print_info "Running from curl - cloning repository permanently..."
+        INSTALL_METHOD="curl"
 
         # Determine permanent location for repository
         # Use ~/Projects/taskwright or ~/taskwright if ~/Projects doesn't exist
@@ -1150,6 +1152,41 @@ EOF
     print_success "Cache directories created"
 }
 
+# Validate installation
+validate_installation() {
+    print_info "Validating installation..."
+
+    # Test Python imports work
+    python3 << 'EOF'
+import sys
+import os
+
+# Change to installed commands directory
+os.chdir(os.path.expanduser("~/.agentecflow/commands"))
+
+# Test critical imports
+try:
+    from lib.id_generator import generate_task_id, validate_task_id
+    print("✅ Python imports validated successfully")
+except ImportError as e:
+    print(f"❌ ERROR: Python import validation failed")
+    print(f"   {e}")
+    print("")
+    print("   This is a bug in the installation script.")
+    print("   Please report this issue with the error message above.")
+    sys.exit(1)
+EOF
+
+    if [ $? -ne 0 ]; then
+        echo ""
+        print_error "Installation validation failed"
+        print_error "Installation incomplete - please report this issue"
+        exit 1
+    fi
+
+    print_success "Installation validated successfully"
+}
+
 # Final summary
 print_summary() {
     echo ""
@@ -1440,7 +1477,8 @@ create_marker_file() {
   "version": "$AGENTECFLOW_VERSION",
   "installed": "$install_date",
   "install_location": "$INSTALL_DIR",
-  "repo_path": "$repo_root",
+  "install_method": "$INSTALL_METHOD",
+  "python_lib_path": "$INSTALL_DIR/commands/lib",
   "provides": [
     "task_management",
     "quality_gates",
@@ -1462,7 +1500,7 @@ EOF
     if [ -f "$marker_file" ]; then
         print_success "Marker file created: $marker_file"
         print_info "  Package: taskwright (standalone + optional require-kit integration)"
-        print_info "  Repository: $repo_root"
+        print_info "  Install method: $INSTALL_METHOD"
         print_info "  Model: Bidirectional optional integration"
 
         # Check if require-kit is also installed
@@ -1502,6 +1540,9 @@ main() {
     setup_claude_integration
     setup_python_bin_symlinks
     create_marker_file
+
+    # Validate installation
+    validate_installation
 
     # Print summary
     print_summary
