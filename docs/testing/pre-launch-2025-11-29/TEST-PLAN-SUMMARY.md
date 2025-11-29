@@ -5,6 +5,42 @@
 
 ---
 
+## ⚠️ Bugs Discovered During Testing
+
+### Bug 1: BDD Mode Validation (HIGH Priority)
+
+**Step 3.1 of FOCUSED plan identified a critical bug**:
+
+**Issue**: BDD mode (`/task-work TASK-XXX --mode=bdd`) doesn't validate RequireKit before execution. It shows a warning but continues with standard workflow instead of stopping.
+
+**Severity**: HIGH - Blocks BDD mode functionality entirely
+
+**Details**: See [BUG-BDD-MODE-VALIDATION.md](./BUG-BDD-MODE-VALIDATION.md)
+
+**Status**: Bug documented, fix required before public launch
+
+### Bug 2: Task-Create Import Error (HIGH Priority) ✅ FIXED
+
+**Fresh VM installation identified regression**:
+
+**Issue**: `/task-create` failed with "No module named 'id_generator'" because curl installation deleted repository files after install.
+
+**Severity**: HIGH - Task creation completely broken on fresh installations
+
+**Details**: See [BUG-TASK-CREATE-ID-GENERATOR-IMPORT.md](./BUG-TASK-CREATE-ID-GENERATOR-IMPORT.md)
+
+**Status**: ✅ FIXED - Curl install now clones repository permanently
+
+**Changes**:
+1. Curl install now clones repo to `~/Projects/taskwright` (permanent)
+2. Marker file includes `repo_path` field
+3. task-create.md includes repository path resolution
+4. Works with git clone OR tarball download
+
+**Architecture**: See [CURL-INSTALL-ARCHITECTURE.md](./CURL-INSTALL-ARCHITECTURE.md)
+
+---
+
 ## Quick Decision Guide
 
 ### Use FOCUSED Plan (Recommended)

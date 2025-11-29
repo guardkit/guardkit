@@ -86,7 +86,10 @@ cd require-kit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
-# Verify marker file
+# Verify RequireKit installation
+bash ~/Projects/taskwright/docs/testing/pre-launch-2025-11-29/check-requirekit.sh
+
+# Or manually check marker file
 ls ~/.agentecflow/require-kit.marker
 ```
 
@@ -198,7 +201,11 @@ For general features, use standard or TDD modes.
 - [ ] Error explains when to use BDD
 - [ ] Message is clear and actionable
 
-**Screenshot**: Error message
+**BUG DISCOVERED**: ⚠️ This test failed - BDD mode detected RequireKit was not available but **continued execution** instead of stopping. See [BUG-BDD-MODE-VALIDATION.md](./BUG-BDD-MODE-VALIDATION.md) for full analysis and fix.
+
+**Root Cause**: `--mode` flag is not parsed in Step 0 of task-work.md, so BDD validation never happens.
+
+**Screenshot**: Error message (or bug evidence if test fails again)
 
 ```bash
 # Restore marker file

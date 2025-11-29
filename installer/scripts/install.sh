@@ -64,29 +64,64 @@ print_info() {
 ensure_repository_files() {
     # Check if we have the required files
     if [ ! -f "$INSTALLER_DIR/scripts/init-project.sh" ] || [ ! -d "$INSTALLER_DIR/global/templates" ]; then
-        print_info "Running from curl - downloading repository files..."
+        print_info "Running from curl - cloning repository permanently..."
 
-        # Create temp directory for download
-        local TEMP_DIR=$(mktemp -d)
-        trap "rm -rf $TEMP_DIR" EXIT
-
-        # Download repository as tarball
-        print_info "Downloading from $GITHUB_REPO..."
-        if ! curl -sSL "$GITHUB_REPO/archive/refs/heads/$GITHUB_BRANCH.tar.gz" | tar -xz -C "$TEMP_DIR"; then
-            print_error "Failed to download repository"
-            print_info "Try cloning manually: git clone $GITHUB_REPO"
-            exit 1
+        # Determine permanent location for repository
+        # Use ~/Projects/taskwright or ~/taskwright if ~/Projects doesn't exist
+        local REPO_DEST
+        if [ -d "$HOME/Projects" ]; then
+            REPO_DEST="$HOME/Projects/taskwright"
+        else
+            REPO_DEST="$HOME/taskwright"
         fi
 
-        # Update INSTALLER_DIR to point to downloaded repo
-        INSTALLER_DIR="$TEMP_DIR/taskwright-$GITHUB_BRANCH/installer"
+        # Check if git is available for cloning
+        if command -v git &> /dev/null; then
+            # Git available - clone repository
+            print_info "Cloning repository to $REPO_DEST..."
+
+            # Remove existing directory if present
+            if [ -d "$REPO_DEST" ]; then
+                print_warning "Repository already exists at $REPO_DEST"
+                print_info "Updating existing repository..."
+                cd "$REPO_DEST" && git pull
+            else
+                # Clone fresh
+                if ! git clone "$GITHUB_REPO" "$REPO_DEST"; then
+                    print_error "Failed to clone repository"
+                    print_info "Try cloning manually: git clone $GITHUB_REPO $REPO_DEST"
+                    exit 1
+                fi
+            fi
+
+            # Update INSTALLER_DIR to point to cloned repo
+            INSTALLER_DIR="$REPO_DEST/installer"
+            print_success "Repository cloned to $REPO_DEST"
+        else
+            # Git not available - fall back to tarball download (PERMANENT location)
+            print_warning "git not found - downloading tarball instead"
+            print_info "Installing git is recommended for easier updates"
+
+            # Create permanent directory
+            mkdir -p "$REPO_DEST"
+
+            # Download and extract
+            print_info "Downloading from $GITHUB_REPO to $REPO_DEST..."
+            if ! curl -sSL "$GITHUB_REPO/archive/refs/heads/$GITHUB_BRANCH.tar.gz" | tar -xz -C "$REPO_DEST" --strip-components=1; then
+                print_error "Failed to download repository"
+                print_info "Try installing git and cloning: git clone $GITHUB_REPO $REPO_DEST"
+                exit 1
+            fi
+
+            # Update INSTALLER_DIR to point to downloaded repo
+            INSTALLER_DIR="$REPO_DEST/installer"
+            print_success "Repository downloaded to $REPO_DEST"
+        fi
 
         if [ ! -d "$INSTALLER_DIR" ]; then
             print_error "Downloaded repository structure not as expected"
             exit 1
         fi
-
-        print_success "Repository files downloaded"
     fi
 }
 
@@ -1370,6 +1405,16 @@ create_marker_file() {
     local marker_file="$INSTALL_DIR/taskwright.marker.json"
     local install_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+    # Determine repository root (parent of installer/)
+    # INSTALLER_DIR is set at top of script (line 20)
+    # Navigate from installer/ to repo root
+    local repo_root
+    if [ -d "$INSTALLER_DIR" ]; then
+        repo_root="$(cd "$INSTALLER_DIR/.." && pwd)"
+    else
+        repo_root="$PWD"  # Fallback to current directory
+    fi
+
     # Create marker file from template with substitution
     cat > "$marker_file" << EOF
 {
@@ -1377,6 +1422,7 @@ create_marker_file() {
   "version": "$AGENTECFLOW_VERSION",
   "installed": "$install_date",
   "install_location": "$INSTALL_DIR",
+  "repo_path": "$repo_root",
   "provides": [
     "task_management",
     "quality_gates",
