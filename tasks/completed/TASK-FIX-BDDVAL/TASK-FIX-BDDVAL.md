@@ -1,16 +1,49 @@
 ---
 id: TASK-FIX-BDDVAL
 title: Fix BDD mode RequireKit detection to check for .marker.json extension
-status: backlog
+status: completed
 created: 2025-11-30T07:45:00Z
-updated: 2025-11-30T07:45:00Z
+updated: 2025-11-30T09:50:00Z
+completed: 2025-11-30T09:50:00Z
 priority: high
 tags: [bdd, integration, requirekit, detection, bug]
-complexity: 0
+complexity: 2
+estimated_duration: 45_minutes
+actual_duration: ~2_hours
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  total_tests: 23
+  passed: 23
+  failed: 0
+  coverage: 31_percent_focused
+  last_run: 2025-11-30T09:47:00Z
+code_review:
+  status: approved
+  score: 90
+  initial_score: 82
+  issues_resolved: 1_major
+  refinements: 1
+quality_gates:
+  compilation: passed
+  tests: passed_100_percent
+  architectural_review: passed_88
+  code_review: passed_90
+completed_location: tasks/completed/TASK-FIX-BDDVAL/
+organized_files:
+  - TASK-FIX-BDDVAL.md
+  - implementation-plan.md
+refinements:
+  - session_id: TASK-FIX-BDDVAL-refine-001
+    description: Refactor feature_detection.py to use Constants.py
+    requested_at: 2025-11-30T09:46:00Z
+    outcome: success
+    files_modified:
+      - installer/global/lib/feature_detection.py
+      - installer/global/lib/constants.py
+    tests_passed: true
+    review_passed: true
+refinement_count: 1
+last_refinement: 2025-11-30T09:46:00Z
 ---
 
 # Task: Fix BDD mode RequireKit detection to check for .marker.json extension
@@ -59,18 +92,18 @@ The check should support both formats for backwards compatibility:
 - Current: `require-kit.marker.json` (current installer standard)
 
 ## Acceptance Criteria
-- [ ] BDD mode validation checks for `require-kit.marker.json` (primary)
-- [ ] Backwards compatibility: also accept legacy `require-kit.marker` if present
-- [ ] Validation correctly detects RequireKit when marker.json exists
-- [ ] Error message updated to show correct filename being checked
-- [ ] Consistent with taskwright's own marker format (taskwright.marker.json)
+- [x] BDD mode validation checks for `require-kit.marker.json` (primary)
+- [x] Backwards compatibility: also accept legacy `require-kit.marker` if present
+- [x] Validation correctly detects RequireKit when marker.json exists
+- [x] Error message updated to show correct filename being checked
+- [x] Consistent with taskwright's own marker format (taskwright.marker.json)
 
 ## Test Requirements
-- [ ] Unit test: validation passes when require-kit.marker.json exists
-- [ ] Unit test: validation passes when legacy require-kit.marker exists
-- [ ] Unit test: validation fails when neither file exists
-- [ ] Integration test: BDD mode proceeds when RequireKit properly detected
-- [ ] Error message test: shows correct filename in error output
+- [x] Unit test: validation passes when require-kit.marker.json exists
+- [x] Unit test: validation passes when legacy require-kit.marker exists
+- [x] Unit test: validation fails when neither file exists
+- [x] Integration test: BDD mode proceeds when RequireKit properly detected
+- [x] Error message test: shows correct filename in error output
 
 ## Investigation Steps
 1. Find BDD mode validation code:

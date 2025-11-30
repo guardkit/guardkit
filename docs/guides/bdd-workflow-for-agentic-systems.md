@@ -66,7 +66,7 @@ If your feature doesn't meet these criteria, use Standard or TDD mode instead.
 
 3. **Verify RequireKit Installation**:
    ```bash
-   ls ~/.agentecflow/require-kit.marker
+   ls ~/.agentecflow/require-kit.marker.json  # Or require-kit.marker (legacy)
    # Should show the marker file if properly installed
    ```
 
@@ -670,7 +670,7 @@ Execute the BDD workflow in TaskWright:
 
 **What the BDD workflow does**:
 
-1. **Verifies RequireKit installed**: Checks `~/.agentecflow/require-kit.marker`
+1. **Verifies RequireKit installed**: Checks `~/.agentecflow/require-kit.marker.json` (or legacy `require-kit.marker`)
 2. **Loads scenarios**: Reads Gherkin from `bdd_scenarios` frontmatter field
 3. **Routes to specialist**: Uses `bdd-generator` agent (not standard implementation)
 4. **Generates step definitions**: Creates pytest-bdd step functions
@@ -735,10 +735,10 @@ cd ~/Projects/require-kit
 ./installer/scripts/install.sh
 
 # Verify installation
-ls ~/.agentecflow/require-kit.marker
+ls ~/.agentecflow/require-kit.marker.json  # Or require-kit.marker (legacy)
 
 # Should output:
-# /Users/you/.agentecflow/require-kit.marker
+# /Users/you/.agentecflow/require-kit.marker.json
 
 # Retry BDD workflow
 cd ~/Projects/your-project

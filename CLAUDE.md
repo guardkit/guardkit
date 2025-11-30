@@ -325,7 +325,7 @@ cd ~/Projects/require-kit
 ./installer/scripts/install.sh
 
 # Verify installation
-ls ~/.agentecflow/require-kit.marker
+ls ~/.agentecflow/require-kit.marker.json  # Or require-kit.marker (legacy)
 ```
 
 ### Complete Workflow
@@ -350,7 +350,7 @@ cd ~/Projects/your-project
 
 ### What Happens in BDD Mode
 
-1. **Checks RequireKit installed** - Verifies `~/.agentecflow/require-kit.marker` exists
+1. **Checks RequireKit installed** - Verifies `~/.agentecflow/require-kit.marker.json` exists (or legacy `require-kit.marker`)
 2. **Loads Gherkin scenarios** - Reads scenarios from task `bdd_scenarios` frontmatter field
 3. **Routes to bdd-generator agent** - Specialized agent for BDD implementation
 4. **Generates step definitions** - Creates pytest-bdd/Cucumber/SpecFlow step functions

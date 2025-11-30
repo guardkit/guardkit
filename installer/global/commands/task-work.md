@@ -3021,7 +3021,7 @@ The command supports multiple development modes via `--mode` flag:
 **Purpose**: Behavior-Driven Development workflow for formal agentic systems
 
 **Prerequisites**:
-- RequireKit installed (checks `~/.agentecflow/require-kit.marker`)
+- RequireKit installed (checks `~/.agentecflow/require-kit.marker.json` or legacy `require-kit.marker`)
 - Task has `bdd_scenarios: [BDD-001, BDD-002]` in frontmatter
 
 **Use for**:
@@ -3061,7 +3061,7 @@ ERROR: BDD mode requires RequireKit installation
     ./installer/scripts/install.sh
 
   Verification:
-    ls ~/.agentecflow/require-kit.marker  # Should exist
+    ls ~/.agentecflow/require-kit.marker.json  # Should exist (or require-kit.marker for legacy)
 
   Alternative modes:
     /task-work TASK-042 --mode=tdd      # Test-first development

@@ -43,9 +43,18 @@ class TestBDDModeValidation:
         with patch.object(Path, "home", return_value=temp_agentecflow_dir.parent):
             return FeatureDetector()
 
-    def test_supports_bdd_with_marker_file(self, feature_detection, temp_agentecflow_dir):
-        """Test supports_bdd() returns True when marker file exists."""
-        # Create marker file
+    def test_supports_bdd_with_marker_file_json(self, feature_detection, temp_agentecflow_dir):
+        """Test supports_bdd() returns True when JSON marker file exists."""
+        # Create JSON marker file (current format)
+        marker_file = temp_agentecflow_dir / "require-kit.marker.json"
+        marker_file.touch()
+
+        # Verify detection
+        assert feature_detection.supports_bdd() is True
+
+    def test_supports_bdd_with_marker_file_legacy(self, feature_detection, temp_agentecflow_dir):
+        """Test supports_bdd() returns True when legacy marker file exists."""
+        # Create legacy marker file (backwards compatibility)
         marker_file = temp_agentecflow_dir / "require-kit.marker"
         marker_file.touch()
 
@@ -57,9 +66,18 @@ class TestBDDModeValidation:
         # Verify detection (no marker file created)
         assert feature_detection.supports_bdd() is False
 
-    def test_is_require_kit_installed_with_marker(self, feature_detection, temp_agentecflow_dir):
-        """Test is_require_kit_installed() returns True when marker exists."""
-        # Create marker file
+    def test_is_require_kit_installed_with_json_marker(self, feature_detection, temp_agentecflow_dir):
+        """Test is_require_kit_installed() returns True when JSON marker exists."""
+        # Create JSON marker file (current format)
+        marker_file = temp_agentecflow_dir / "require-kit.marker.json"
+        marker_file.touch()
+
+        # Verify detection
+        assert feature_detection.is_require_kit_installed() is True
+
+    def test_is_require_kit_installed_with_legacy_marker(self, feature_detection, temp_agentecflow_dir):
+        """Test is_require_kit_installed() returns True when legacy marker exists."""
+        # Create legacy marker file (backwards compatibility)
         marker_file = temp_agentecflow_dir / "require-kit.marker"
         marker_file.touch()
 
@@ -71,11 +89,22 @@ class TestBDDModeValidation:
         # Verify detection (no marker file created)
         assert feature_detection.is_require_kit_installed() is False
 
-    def test_marker_file_location(self, feature_detection, temp_agentecflow_dir):
-        """Test marker file is checked in correct location."""
+    def test_marker_file_location_json(self, feature_detection, temp_agentecflow_dir):
+        """Test JSON marker file is checked in correct location."""
+        expected_path = temp_agentecflow_dir / "require-kit.marker.json"
+
+        # Create JSON marker file
+        expected_path.touch()
+
+        # Verify correct path is used
+        assert feature_detection.is_require_kit_installed() is True
+        assert expected_path.exists()
+
+    def test_marker_file_location_legacy(self, feature_detection, temp_agentecflow_dir):
+        """Test legacy marker file is checked in correct location."""
         expected_path = temp_agentecflow_dir / "require-kit.marker"
 
-        # Create marker file
+        # Create legacy marker file
         expected_path.touch()
 
         # Verify correct path is used
@@ -97,7 +126,7 @@ class TestBDDModeErrorMessages:
             "cd ~/Projects/require-kit",
             "./installer/scripts/install.sh",
             "Verification:",
-            "ls ~/.agentecflow/require-kit.marker",
+            "ls ~/.agentecflow/require-kit.marker.json",
             "Alternative modes:",
             "/task-work TASK-042 --mode=tdd",
             "/task-work TASK-042 --mode=standard",
@@ -204,9 +233,9 @@ class TestBDDModeIntegration:
             yield agentecflow_dir
 
     def test_bdd_mode_detection_flow(self, temp_agentecflow_dir):
-        """Test complete BDD mode detection flow."""
-        # Setup: Create marker file
-        marker_file = temp_agentecflow_dir / "require-kit.marker"
+        """Test complete BDD mode detection flow with JSON marker."""
+        # Setup: Create JSON marker file
+        marker_file = temp_agentecflow_dir / "require-kit.marker.json"
         marker_file.touch()
 
         # Simulate mode detection
@@ -246,8 +275,8 @@ class TestBDDModeIntegration:
 
     def test_bdd_mode_failure_no_scenarios(self, temp_agentecflow_dir):
         """Test BDD mode fails when bdd_scenarios field is missing."""
-        # Setup: Create marker file
-        marker_file = temp_agentecflow_dir / "require-kit.marker"
+        # Setup: Create JSON marker file
+        marker_file = temp_agentecflow_dir / "require-kit.marker.json"
         marker_file.touch()
 
         # Simulate mode detection

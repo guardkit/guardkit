@@ -52,6 +52,13 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import json
 
+# Import constants - handle both package and standalone module imports
+try:
+    from .constants import RequireKitConfig
+except ImportError:
+    # Fallback for when imported as standalone module (e.g., in tests)
+    from constants import RequireKitConfig
+
 
 class FeatureDetector:
     """Detects installed Agentecflow packages and available features."""
@@ -73,13 +80,11 @@ class FeatureDetector:
 
     def is_require_kit_installed(self) -> bool:
         """Check if require-kit is installed."""
-        # Check for JSON marker file (new format)
-        marker_json = self.agentecflow_home / "require-kit.marker.json"
-        if marker_json.exists():
-            return True
-        # Fallback to old format for backwards compatibility
-        marker_old = self.agentecflow_home / "require-kit.marker"
-        return marker_old.exists()
+        # Use centralized marker configuration
+        for marker_path in RequireKitConfig.marker_paths(self.agentecflow_home):
+            if marker_path.exists():
+                return True
+        return False
 
     def supports_requirements(self) -> bool:
         """
