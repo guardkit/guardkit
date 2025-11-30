@@ -118,7 +118,7 @@ Comprehensive guides, workflows, and references:
 
 **macOS / Linux:**
 ```bash
-# Direct install
+# Install Taskwright
 curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
