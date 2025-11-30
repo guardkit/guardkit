@@ -574,6 +574,51 @@ elif "--docs=standard" in user_input:
     docs_flag = "standard"
 elif "--docs=comprehensive" in user_input:
     docs_flag = "comprehensive"
+
+# Parse mode flag (TASK-BDD-FIX1)
+mode = "standard"  # Default mode
+if "--mode=tdd" in user_input:
+    mode = "tdd"
+elif "--mode=bdd" in user_input:
+    mode = "bdd"
+elif "--mode=standard" in user_input:
+    mode = "standard"
+elif "--mode=" in user_input:
+    # Invalid mode specified
+    invalid_mode = user_input.split("--mode=")[1].split()[0]
+    print(f"""
+❌ Error: Invalid mode '{invalid_mode}'
+
+Valid modes:
+  --mode=standard  # Default workflow (implementation + tests together)
+  --mode=tdd       # Test-driven development (red → green → refactor)
+  --mode=bdd       # Behavior-driven development (Gherkin scenarios)
+
+Example:
+  /task-work TASK-XXX --mode=tdd
+    """)
+    exit(1)
+```
+
+**VALIDATE** BDD mode requirements (TASK-BDD-FIX1):
+```python
+if mode == "bdd":
+    from installer.global.commands.lib.feature_detection import supports_bdd
+
+    if not supports_bdd():
+        print("""
+❌ ERROR: BDD mode requires RequireKit installation
+
+  Repository: https://github.com/requirekit/require-kit
+  Installation:
+    cd ~/Projects/require-kit
+    ./installer/scripts/install.sh
+
+  Alternative modes:
+    /task-work {task_id} --mode=tdd      # Test-first development
+    /task-work {task_id} --mode=standard # Default workflow
+        """)
+        exit(1)
 ```
 
 **VALIDATE** flag mutual exclusivity:
@@ -596,6 +641,14 @@ except FlagConflictError as e:
 
 **DISPLAY** active flags (if any):
 ```python
+# TASK-BDD-FIX1: Display active mode
+mode_display = {
+    "standard": "STANDARD (implementation + tests together)",
+    "tdd": "TDD (test-driven development: red → green → refactor)",
+    "bdd": "BDD (behavior-driven: Gherkin scenarios → implementation)"
+}
+print(f"🎯 Development Mode: {mode_display[mode]}\n")
+
 if design_only:
     print("🎨 Workflow Mode: DESIGN-ONLY (Phases 1-2.8)")
     print("   Task will stop at design approval checkpoint\n")
@@ -837,7 +890,7 @@ else:
 ```python
 # Check if BDD mode is active
 if mode == "bdd":
-    # RequireKit already validated in TASK-BDD-003
+    # RequireKit already validated in Step 0 (TASK-BDD-FIX1)
     # bdd_scenarios field already loaded above
 
     if not task_context["bdd_scenarios"]:
