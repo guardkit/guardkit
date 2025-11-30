@@ -29,12 +29,16 @@ Created: 2025-11-30
 
 import json
 import pytest
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+# Add installer/global/commands to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands"))
+
 # Import the module under test
-from installer.global.commands.lib import feature_detection
+from lib import feature_detection
 
 
 class TestSupportsBDD:
