@@ -32,13 +32,13 @@ _add_repo_to_path()
 
 # Import component modules using importlib to avoid 'global' keyword issue
 import importlib
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
-_codebase_analyzer_module = importlib.import_module('installer.global.lib.codebase_analyzer.ai_analyzer')
-_manifest_gen_module = importlib.import_module('installer.global.lib.template_creation.manifest_generator')
-_settings_gen_module = importlib.import_module('installer.global.lib.settings_generator.generator')
-_claude_md_gen_module = importlib.import_module('installer.global.lib.template_generator.claude_md_generator')
-_template_gen_module = importlib.import_module('installer.global.lib.template_generator.template_generator')
-_agent_gen_module = importlib.import_module('installer.global.lib.agent_generator.agent_generator')
+_template_qa_module = importlib.import_module('lib.template_qa_session')
+_codebase_analyzer_module = importlib.import_module('lib.codebase_analyzer.ai_analyzer')
+_manifest_gen_module = importlib.import_module('lib.template_creation.manifest_generator')
+_settings_gen_module = importlib.import_module('lib.settings_generator.generator')
+_claude_md_gen_module = importlib.import_module('lib.template_generator.claude_md_generator')
+_template_gen_module = importlib.import_module('lib.template_generator.template_generator')
+_agent_gen_module = importlib.import_module('lib.agent_generator.agent_generator')
 
 TemplateQASession = _template_qa_module.TemplateQASession
 CodebaseAnalyzer = _codebase_analyzer_module.CodebaseAnalyzer
@@ -49,38 +49,38 @@ TemplateGenerator = _template_gen_module.TemplateGenerator
 AIAgentGenerator = _agent_gen_module.AIAgentGenerator
 
 # TASK-BRIDGE-002: Agent Bridge Integration
-_agent_bridge_invoker_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
-_agent_bridge_state_module = importlib.import_module('installer.global.lib.agent_bridge.state_manager')
+_agent_bridge_invoker_module = importlib.import_module('lib.agent_bridge.invoker')
+_agent_bridge_state_module = importlib.import_module('lib.agent_bridge.state_manager')
 AgentBridgeInvoker = _agent_bridge_invoker_module.AgentBridgeInvoker
 StateManager = _agent_bridge_state_module.StateManager
 TemplateCreateState = _agent_bridge_state_module.TemplateCreateState
 
 # TASK-FIX-7C3D: File I/O Error Handling
-_file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
+_file_io_module = importlib.import_module('lib.utils.file_io')
 safe_read_file = _file_io_module.safe_read_file
 safe_write_file = _file_io_module.safe_write_file
 
 # TASK-IMP-REVERT-V097: Orchestrator Error Detection and Messaging
-_error_messages_module = importlib.import_module('installer.global.commands.lib.orchestrator_error_messages')
+_error_messages_module = importlib.import_module('lib.orchestrator_error_messages')
 detect_orchestrator_failure = _error_messages_module.detect_orchestrator_failure
 display_orchestrator_failure = _error_messages_module.display_orchestrator_failure
 
 # TASK-040: Phase 5.5 Completeness Validation
-_validator_module = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
-_models_module = importlib.import_module('installer.global.lib.template_generator.models')
+_validator_module = importlib.import_module('lib.template_generator.completeness_validator')
+_models_module = importlib.import_module('lib.template_generator.models')
 CompletenessValidator = _validator_module.CompletenessValidator
 ValidationReport = _models_module.ValidationReport
 TemplateCollection = _models_module.TemplateCollection
 
 # TASK-043: Phase 5.7 Extended Validation
-_extended_validator_module = importlib.import_module('installer.global.lib.template_generator.extended_validator')
-_report_generator_module = importlib.import_module('installer.global.lib.template_generator.report_generator')
+_extended_validator_module = importlib.import_module('lib.template_generator.extended_validator')
+_report_generator_module = importlib.import_module('lib.template_generator.report_generator')
 ExtendedValidator = _extended_validator_module.ExtendedValidator
 ExtendedValidationReport = _extended_validator_module.ExtendedValidationReport
 ValidationReportGenerator = _report_generator_module.ValidationReportGenerator
 
 # TASK-PHASE-7-5-BATCH-PROCESSING: Import WorkflowPhase from constants to avoid circular import
-_constants_module = importlib.import_module('installer.global.lib.template_creation.constants')
+_constants_module = importlib.import_module('lib.template_creation.constants')
 WorkflowPhase = _constants_module.WorkflowPhase
 
 # REMOVED: Phase 7.5 Agent Enhancement (TASK-SIMP-9ABE)
@@ -793,7 +793,7 @@ class TemplateCreateOrchestrator:
 
         try:
             # Import agent scanner to get inventory
-            _agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner')
+            _agent_scanner_module = importlib.import_module('lib.agent_scanner')
             MultiSourceAgentScanner = _agent_scanner_module.MultiSourceAgentScanner
             scanner = MultiSourceAgentScanner()
             inventory = scanner.scan()
@@ -852,7 +852,7 @@ class TemplateCreateOrchestrator:
             agents_dir.mkdir(parents=True, exist_ok=True)
 
             # Import markdown formatter for proper YAML frontmatter formatting
-            _markdown_formatter_module = importlib.import_module('installer.global.lib.agent_generator.markdown_formatter')
+            _markdown_formatter_module = importlib.import_module('lib.agent_generator.markdown_formatter')
             format_agent_markdown = _markdown_formatter_module.format_agent_markdown
 
             agent_paths = []
@@ -1399,7 +1399,7 @@ Enhance the {agent_name} agent with template-specific content:
     def _save_analysis_json(self, analysis: Any) -> None:
         """Save analysis to JSON for debugging."""
         try:
-            _serializer_module = importlib.import_module('installer.global.lib.codebase_analyzer.serializer')
+            _serializer_module = importlib.import_module('lib.codebase_analyzer.serializer')
             AnalysisSerializer = _serializer_module.AnalysisSerializer
 
             serializer = AnalysisSerializer()
@@ -1850,7 +1850,7 @@ Enhance the {agent_name} agent with template-specific content:
         if data is None:
             return None
         # Use Pydantic's model_validate for deserialization
-        _models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+        _models_module = importlib.import_module('lib.codebase_analyzer.models')
         CodebaseAnalysis = _models_module.CodebaseAnalysis
         try:
             return CodebaseAnalysis.model_validate(data)
