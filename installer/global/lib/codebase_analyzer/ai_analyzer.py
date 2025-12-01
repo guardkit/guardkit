@@ -14,7 +14,7 @@ Following architectural review recommendations:
 
 import logging
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 import importlib
 
 # Import using importlib to avoid 'global' keyword issue
