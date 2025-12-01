@@ -1,6 +1,21 @@
 # LangGraph-Native Orchestration for TaskWright: Technical Architecture
 
-**LangGraph provides an excellent architectural fit for TaskWright's 7-phase workflow**, offering native support for human-in-the-loop checkpoints, complexity-based routing, and long-running workflow persistence. The framework's `interrupt()` function maps directly to TaskWright's approval gates, while `StateGraph` naturally models the phase-to-phase transitions. Key quick wins include a **2-3 day implementation** of the core Phase 2→Phase 5 flow with SQLite persistence, enabling design-first workflows to persist across days between design approval and implementation.
+**LangGraph provides an excellent architectural fit for TaskWright's 7-phase workflow**, offering native support for human-in-the-loop checkpoints, complexity-based routing, and long-running workflow persistence. The framework's `interrupt()` function maps directly to TaskWright's approval gates, while `StateGraph` naturally models the phase-to-phase transitions.
+
+---
+
+## Critical Clarification: This Is a Reimplementation
+
+**Important**: LangGraph cannot call Claude Code slash commands like `/task-work` or `/task-create`. Those are Claude Code UI constructs that trigger Claude to read markdown command files - they are not executable CLI commands.
+
+This means the LangGraph orchestrator must be a **reimplementation** of TaskWright's workflow logic in Python, calling the Anthropic API directly for AI operations. This is more work than wrapping existing commands, but provides:
+
+- **Cleaner architecture** - Explicit state management, testable nodes
+- **Better deployability** - Runs independently of Claude Code
+- **CI/CD compatibility** - Can be automated in pipelines
+- **Coexistence** - Both versions can work with the same task files
+
+**Revised effort estimate**: 3-4 weeks for production-ready implementation (not 2-3 days as initially suggested).
 
 ---
 
@@ -673,19 +688,34 @@ class TaskWrightState(TypedDict):
 
 ---
 
-## Quick Wins Versus Building from Scratch
+## Realistic Effort Estimates (Revised)
 
-| Approach | Timeline | Scope | Effort |
-|----------|----------|-------|--------|
-| **Quick win: Core workflow** | 2-3 days | Phase 2→2.8→3→4→5 linear flow with SQLite persistence | Low |
-| **Quick win: Design-first** | +1 day | Add `--design-only` / `--implement-only` checkpoint pattern | Low |
-| **Quick win: Complexity routing** | +1 day | Conditional edges for AUTO/QUICK/FULL approval levels | Low |
-| **Medium: Test retry loop** | +2 days | Phase 4.5 enforcement with max attempts counter | Medium |
-| **Medium: Agent selection** | +3 days | Supervisor routing to stack-specific specialists | Medium |
-| **Advanced: GOAP planning** | +5 days | Goal-oriented task sequencing for complex features | High |
-| **Advanced: Multi-agent swarm** | +1 week | Parallel specialist agents with blackboard coordination | High |
+Given that this is a **reimplementation** rather than a wrapper around existing slash commands:
 
-**Recommended starting point:** Implement the core 5-node graph (plan → arch_review → complexity → checkpoint → implement) with SQLite persistence. This delivers the design-first workflow with human approval in under a week, providing a foundation to layer on test loops and agent specialization.
+| Component | Effort | Description |
+|-----------|--------|-------------|
+| **Core StateGraph** | 3-5 days | Node definitions, edges, state schema |
+| **Anthropic API Integration** | 2-3 days | LLM calls for planning, implementation, review |
+| **Checkpoint/Resume** | 2-3 days | SqliteSaver integration, design-first workflow |
+| **Complexity Routing** | 1-2 days | Conditional edges for approval levels |
+| **Test Enforcement Loop** | 2-3 days | Retry logic, test execution, result parsing |
+| **Agent Selection** | 2-3 days | Stack detection, agent matching, context injection |
+| **CLI Integration** | 2-3 days | Click commands, progress display, interrupt handling |
+| **Testing & Polish** | 3-5 days | Unit tests, integration tests, documentation |
+
+**Total: 3-4 weeks** for a production-ready implementation.
+
+### Why Not Faster?
+
+The original "quick win" estimates assumed wrapping existing slash commands. Since that's not possible, we must:
+
+1. **Reimplement phase logic** - Read command `.md` files as specs, implement in Python
+2. **Call Anthropic API directly** - Handle prompts, responses, tool use
+3. **Manage file I/O** - Read/write task files, agent specs, implementation plans
+4. **Handle test execution** - Subprocess pytest/vitest/dotnet test, parse results
+5. **Build CLI interface** - Progress display, interrupt handling, resume logic
+
+**Recommended starting point:** Use RequireKit to spec out the requirements properly, then implement using TaskWright's existing workflow. This ensures the reimplementation matches the original behavior.
 
 ---
 
@@ -713,9 +743,10 @@ The LangGraph architecture enables TaskWright to maintain its lightweight CLI-fi
 ## Related Documents
 
 - [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
-- [TaskWright Integration with Claude-Flow Orchestration: Feasibility Analysis](./TaskWright_Integration_with_Claude-Flow_Orchestration_Feasibility_Analysis.md)
+- [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
 
 *Generated: November 2025*
+*Updated: December 2025 - Added clarification that this is a reimplementation, not a wrapper. Revised effort estimates from 2-3 days to 3-4 weeks.*
 *Context: Technical architecture for adding LangGraph-based agent orchestration to TaskWright*
