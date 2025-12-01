@@ -6,12 +6,15 @@ Uses exit code 42 to signal agent request, enabling checkpoint-resume pattern.
 """
 
 import json
+import logging
 import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class AgentInvoker(Protocol):
@@ -195,22 +198,46 @@ class AgentBridgeInvoker:
         """Load agent response from file (called during --resume).
 
         Returns:
-            Agent response text
+            Agent response text (guaranteed to be str per contract)
 
         Raises:
             FileNotFoundError: If response file doesn't exist
             AgentInvocationError: If response indicates error or timeout
-            ValueError: If response file contains malformed JSON
+            ValueError: If response file contains malformed JSON or invalid type
         """
         if not self.response_file.exists():
             raise FileNotFoundError(
                 f"Agent response file not found: {self.response_file}\n"
-                "This should only be called during --resume after agent invocation."
+                "Cannot resume - agent invocation may not have completed."
             )
 
         # Parse response
         try:
             response_data = json.loads(self.response_file.read_text(encoding="utf-8"))
+
+            # TASK-FIX-AGENT-RESPONSE-FORMAT: Validate response field type (defensive)
+            if "response" in response_data and response_data["response"] is not None:
+                response_value = response_data["response"]
+
+                # If response is dict, serialize to string (fix contract violation)
+                if isinstance(response_value, dict):
+                    logger.warning(
+                        "Agent returned dict response, expected string. "
+                        "Serializing to markdown-wrapped JSON for parser compatibility. "
+                        "(AgentResponse contract: response field must be str)"
+                    )
+                    # Serialize to markdown-wrapped JSON
+                    json_str = json.dumps(response_value, indent=2)
+                    markdown_wrapped = f"```json\n{json_str}\n```"
+                    response_data["response"] = markdown_wrapped
+
+                elif not isinstance(response_value, str):
+                    raise ValueError(
+                        f"Invalid response type: expected str or dict, "
+                        f"got {type(response_value).__name__}. "
+                        f"AgentResponse contract requires response field to be str."
+                    )
+
             response = AgentResponse(**response_data)
         except json.JSONDecodeError as e:
             raise ValueError(f"Malformed response file: {e}")

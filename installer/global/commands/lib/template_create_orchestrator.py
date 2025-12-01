@@ -60,6 +60,11 @@ _file_io_module = importlib.import_module('installer.global.lib.utils.file_io')
 safe_read_file = _file_io_module.safe_read_file
 safe_write_file = _file_io_module.safe_write_file
 
+# TASK-IMP-REVERT-V097: Orchestrator Error Detection and Messaging
+_error_messages_module = importlib.import_module('installer.global.commands.lib.orchestrator_error_messages')
+detect_orchestrator_failure = _error_messages_module.detect_orchestrator_failure
+display_orchestrator_failure = _error_messages_module.display_orchestrator_failure
+
 # TASK-040: Phase 5.5 Completeness Validation
 _validator_module = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
 _models_module = importlib.import_module('installer.global.lib.template_generator.models')
@@ -204,10 +209,23 @@ class TemplateCreateOrchestrator:
         - Phase 7: _run_from_phase_7() (agent enhancement)
         Otherwise, executes all phases 1-9.5 from start.
 
+        TASK-IMP-REVERT-V097: Added pre-flight dependency check before execution.
+
         Returns:
             OrchestrationResult with success status and generated artifacts
         """
         try:
+            # TASK-IMP-REVERT-V097: Pre-flight check - verify dependencies before running
+            # Only check on initial run, not on resume (dependencies already validated)
+            if not self.config.resume:
+                can_run, error_type, details = detect_orchestrator_failure()
+                if not can_run:
+                    display_orchestrator_failure(error_type, details)
+                    return self._create_error_result(
+                        error=f"Orchestrator unavailable: {error_type}",
+                        error_details=details
+                    )
+
             # If resuming, route based on phase number
             if self.config.resume:
                 state = self.state_manager.load_state()
