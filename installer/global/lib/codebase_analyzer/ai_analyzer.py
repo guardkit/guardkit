@@ -83,7 +83,8 @@ class CodebaseAnalyzer:
                                     Set to False to use original random sampling
             bridge_invoker: Optional agent bridge invoker for checkpoint-resume pattern (TASK-769D)
         """
-        self.agent_invoker = agent_invoker or ArchitecturalReviewerInvoker()
+        # TASK-769D: Pass bridge_invoker to ArchitecturalReviewerInvoker so it can use checkpoint-resume
+        self.agent_invoker = agent_invoker or ArchitecturalReviewerInvoker(bridge_invoker=bridge_invoker)
         self.response_parser = response_parser or ResponseParser()
         self.serializer = serializer or AnalysisSerializer()
         self.max_files = max_files
