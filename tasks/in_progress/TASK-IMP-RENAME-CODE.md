@@ -1,7 +1,7 @@
 ---
 id: TASK-IMP-RENAME-CODE
 title: "Update Python Code and Templates for GuardKit Rename"
-status: backlog
+status: in_progress
 task_type: implementation
 created: 2025-12-03T10:35:00Z
 updated: 2025-12-03T10:35:00Z
@@ -85,14 +85,14 @@ Part of the GuardKit → GuardKit rename initiative. This task updates Python co
 
 ## Acceptance Criteria
 
-- [ ] All Python code references updated
-- [ ] All command specs updated
-- [ ] All template manifests updated
-- [ ] All template READMEs updated
-- [ ] Agent files updated
-- [ ] Solution file renamed
-- [ ] No "guardkit" in installer/global/**/* (except marker file history)
-- [ ] Python imports still work correctly
+- [x] All Python code references updated
+- [x] All command specs updated
+- [x] All template manifests updated
+- [x] All template READMEs updated
+- [x] Agent files updated
+- [x] Solution file renamed (N/A - no .sln file in this worktree)
+- [x] No "taskwright" in installer/global/**/* (verified)
+- [x] Python imports still work correctly (tested)
 
 ## Testing
 

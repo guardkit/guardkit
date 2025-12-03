@@ -220,7 +220,7 @@ cp -r {template_name} /path/to/your/project/.claude/templates/
 
 # Initialize project
 cd /path/to/your/project
-taskwright init {template_name}
+guardkit init {template_name}
 ```
 
 ### Method 2: From Package (.tar.gz)
@@ -236,7 +236,7 @@ cp -r {template_name} /path/to/your/project/.claude/templates/
 
 # Initialize project
 cd /path/to/your/project
-taskwright init {template_name}
+guardkit init {template_name}
 ```
 
 ### Method 3: From Git Repository
@@ -252,7 +252,7 @@ cp -r <repo-path>/{template_name} /path/to/your/project/.claude/templates/
 
 # Initialize project
 cd /path/to/your/project
-taskwright init {template_name}
+guardkit init {template_name}
 ```
 
 ## Usage
@@ -260,7 +260,7 @@ taskwright init {template_name}
 After installation, initialize a new project:
 
 ```bash
-taskwright init {template_name}
+guardkit init {template_name}
 ```
 
 This will:
@@ -443,13 +443,13 @@ cp -r /path/to/shared/location/{template_name} ~/.claude/templates/
 
 ```bash
 # Login to registry
-taskwright registry login
+guardkit registry login
 
 # Publish template
-taskwright registry publish {template_name}
+guardkit registry publish {template_name}
 
 # Team members install
-taskwright registry install {template_name}
+guardkit registry install {template_name}
 ```
 
 ### Update Template
@@ -459,7 +459,7 @@ taskwright registry install {template_name}
 # Update changelog
 
 # Publish new version
-taskwright registry publish {template_name} --version {version}
+guardkit registry publish {template_name} --version {version}
 ```
 ''' if include_registry else ''}
 
@@ -473,7 +473,7 @@ mkdir test-project
 cd test-project
 
 # Initialize with template
-taskwright init {template_name}
+guardkit init {template_name}
 
 # Verify structure
 ls -la
@@ -482,7 +482,7 @@ ls -la
 ls -la .claude/agents/
 
 # Run validation
-taskwright doctor
+guardkit doctor
 ```
 
 ## Version Management
@@ -650,13 +650,13 @@ echo "Testing template initialization (dry run)..."
 TEMP_DIR=$(mktemp -d)
 cd "$TEMP_DIR"
 
-if command -v taskwright &> /dev/null; then
-    echo "✓ taskwright command available"
-    # Note: Actual dry-run would need to be implemented in taskwright
+if command -v guardkit &> /dev/null; then
+    echo "✓ guardkit command available"
+    # Note: Actual dry-run would need to be implemented in guardkit
     echo "  (Skipping actual initialization test)"
 else
-    echo "⚠ taskwright command not found"
-    echo "  Install taskwright to test initialization"
+    echo "⚠ guardkit command not found"
+    echo "  Install guardkit to test initialization"
 fi
 
 # Cleanup
@@ -669,7 +669,7 @@ echo "✓ Verification Complete"
 echo "========================================"
 echo ""
 echo "Template {template_name} is properly installed."
-echo "You can now use it with: taskwright init {template_name}"
+echo "You can now use it with: guardkit init {template_name}"
 """
 
         # Save if output path provided
