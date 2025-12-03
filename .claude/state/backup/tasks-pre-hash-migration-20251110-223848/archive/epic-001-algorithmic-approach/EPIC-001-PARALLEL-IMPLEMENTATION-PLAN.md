@@ -234,7 +234,7 @@ This balances parallelization with coordination overhead.
 
 ```bash
 # Setup Conductor worktrees for EPIC-001
-cd /path/to/taskwright
+cd /path/to/guardkit
 
 # Wave 0 (pick 4 most important)
 conductor worktree create epic001-wave0-lang-mapping TASK-037A
@@ -331,7 +331,7 @@ Total: 5-6 weeks (220 hours with parallelization)
 
 ### Conductor State Persistence (Already Solved)
 
-From taskwright's Conductor integration:
+From guardkit's Conductor integration:
 
 ```bash
 # State is automatically synchronized via symlinks
@@ -576,7 +576,7 @@ git checkout epic001-wave0-local-agents
 
 ```bash
 # 1. Setup Conductor (if not already)
-cd /path/to/taskwright
+cd /path/to/guardkit
 
 # 2. Create worktrees for Wave 0
 conductor worktree create epic001-w0-lang TASK-037A

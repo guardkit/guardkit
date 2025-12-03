@@ -99,7 +99,7 @@ Use **Read tool** to analyze key files:
 Use SlashCommand tool to invoke: /template-create --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The command will:
 1. Run interactive Q&A (answer as specified below)
@@ -234,7 +234,7 @@ Use **Bash tool** to test the template:
 
 # Test template initialization in clean directory
 cd /tmp/test-fastapi-app
-taskwright init fastapi-python
+guardkit init fastapi-python
 
 # Verify generated project runs and tests pass
 cd /tmp/test-fastapi-app
@@ -440,7 +440,7 @@ async def test_create_user(client: AsyncClient):
 ### Generated Project Tests
 ```bash
 # Initialize project from template
-taskwright init fastapi-python --output /tmp/test-fastapi-app
+guardkit init fastapi-python --output /tmp/test-fastapi-app
 
 # Setup environment
 cd /tmp/test-fastapi-app

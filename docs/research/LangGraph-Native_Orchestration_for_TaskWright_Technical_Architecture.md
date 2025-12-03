@@ -5,7 +5,7 @@
 This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
 TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 
@@ -320,7 +320,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from pathlib import Path
 
 class TaskWrightCLI:
-    def __init__(self, db_path: Path = Path(".taskwright/workflows.db")):
+    def __init__(self, db_path: Path = Path(".guardkit/workflows.db")):
         db_path.parent.mkdir(exist_ok=True)
         self.checkpointer = SqliteSaver.from_conn_string(str(db_path))
         self.graph = self._build_graph()
@@ -583,8 +583,8 @@ def cli():
 def plan(task_id: str, design_only: bool, implement_only: bool):
     """Plan and optionally implement a task."""
     
-    with SqliteSaver.from_conn_string(".taskwright/db.sqlite") as checkpointer:
-        graph = build_taskwright_graph(checkpointer)
+    with SqliteSaver.from_conn_string(".guardkit/db.sqlite") as checkpointer:
+        graph = build_guardkit_graph(checkpointer)
         config = {"configurable": {"thread_id": task_id}}
         
         if implement_only:
@@ -753,7 +753,7 @@ The original "quick win" estimates assumed wrapping existing slash commands. Sin
 ### For CLI-First Tools Like TaskWright
 
 1. **Use SqliteSaver** for single-user local persistence—workflows survive CLI restarts and can resume days later
-2. **Store thread_id in project config** (e.g., `.taskwright/current_task.json`) for seamless `--resume` behavior
+2. **Store thread_id in project config** (e.g., `.guardkit/current_task.json`) for seamless `--resume` behavior
 3. **Implement streaming** for long operations using `graph.stream(stream_mode="updates")` to show progress
 4. **Add retry policies** to LLM nodes to handle transient API failures gracefully
 5. **Test with InMemorySaver + FakeListLLM** for deterministic, fast unit tests

@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Perform comprehensive quality audit of all existing Taskwright templates using the `/template-validate` command (implemented in TASK-044). Generate individual audit reports for each template, create comparative analysis, and produce template removal plan to inform the 3-template strategy decision.
+Perform comprehensive quality audit of all existing GuardKit templates using the `/template-validate` command (implemented in TASK-044). Generate individual audit reports for each template, create comparative analysis, and produce template removal plan to inform the 3-template strategy decision.
 
 ---
 

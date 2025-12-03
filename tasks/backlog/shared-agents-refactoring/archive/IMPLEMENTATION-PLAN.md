@@ -49,11 +49,11 @@ This implementation plan provides a detailed task breakdown for migrating univer
 # scripts/verify-agent-duplication.sh
 
 # Compare agents between repos
-TASKWRIGHT_AGENTS="installer/global/agents"
+GUARDKIT_AGENTS="installer/global/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
 # For each agent in TaskWright
-for agent in $TASKWRIGHT_AGENTS/*.md; do
+for agent in $GUARDKIT_AGENTS/*.md; do
     basename=$(basename "$agent")
     requirekit_agent="$REQUIREKIT_AGENTS/$basename"
 
@@ -289,10 +289,10 @@ validate_checksum() {
 
 ### TASK-SHA-P1-001: Create Repository Structure
 
-**Description**: Initialize `taskwright-dev/shared-agents` repository with directory structure.
+**Description**: Initialize `guardkit/shared-agents` repository with directory structure.
 
 **Acceptance Criteria**:
-- [ ] Repository created on GitHub: `taskwright-dev/shared-agents`
+- [ ] Repository created on GitHub: `guardkit/shared-agents`
 - [ ] Directory structure created:
   ```
   shared-agents/
@@ -349,7 +349,7 @@ VERIFIED_AGENTS=(
 )
 
 for agent in "${VERIFIED_AGENTS[@]}"; do
-    cp "taskwright/installer/global/agents/$agent" "shared-agents/agents/"
+    cp "guardkit/installer/global/agents/$agent" "shared-agents/agents/"
     echo "✅ Migrated: $agent"
 done
 ```
@@ -901,7 +901,7 @@ AGENT_SOURCES = [
 
 **Acceptance Criteria**:
 - [ ] `shared-agents/README.md` updated
-- [ ] `taskwright/README.md` updated
+- [ ] `guardkit/README.md` updated
 - [ ] `require-kit/README.md` updated
 - [ ] All READMEs reference shared-agents architecture
 - [ ] Installation instructions accurate
@@ -953,7 +953,7 @@ AGENT_SOURCES = [
 
 **Acceptance Criteria**:
 - [ ] `shared-agents/CHANGELOG.md` updated
-- [ ] `taskwright/CHANGELOG.md` updated
+- [ ] `guardkit/CHANGELOG.md` updated
 - [ ] `require-kit/CHANGELOG.md` updated
 - [ ] Changes categorized (Added, Changed, Deprecated, Removed, Fixed)
 - [ ] Version numbers correct

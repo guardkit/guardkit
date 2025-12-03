@@ -203,14 +203,14 @@ All tasks are straightforward implementations with detailed specifications, so *
 ### Setup (One-Time)
 
 ```bash
-# Ensure Taskwright is installed
+# Ensure GuardKit is installed
 ./installer/scripts/install.sh
 
 # Verify symlinks are set up
-taskwright doctor
+guardkit doctor
 
 # Main repository is your "coordination branch"
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 ```
 
@@ -220,11 +220,11 @@ git checkout main
 
 ```bash
 # Create worktree for Task 3
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create task-init-003 --base=main
 
 # Switch to worktree (Conductor auto-switches)
-cd ~/conductor-workspaces/taskwright-task-init-003
+cd ~/conductor-workspaces/guardkit-task-init-003
 
 # Implement feature
 /task-work TASK-INIT-003
@@ -245,10 +245,10 @@ conductor delete task-init-003
 **Developer 2: Level 2 Validation** (parallel)
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create task-init-004 --base=main
 
-cd ~/conductor-workspaces/taskwright-task-init-004
+cd ~/conductor-workspaces/guardkit-task-init-004
 /task-work TASK-INIT-004
 
 git add .
@@ -264,10 +264,10 @@ conductor delete task-init-004
 **Developer 3: Level 3 Integration** (parallel)
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create task-init-005 --base=main
 
-cd ~/conductor-workspaces/taskwright-task-init-005
+cd ~/conductor-workspaces/guardkit-task-init-005
 /task-work TASK-INIT-005
 
 git add .
@@ -325,7 +325,7 @@ git push --force-with-lease origin your-branch
 
 ### State Persistence
 
-Taskwright state is **automatically shared** across worktrees via symlinks:
+GuardKit state is **automatically shared** across worktrees via symlinks:
 
 - Task files: `tasks/*` (git-tracked, shared via commits)
 - Todo lists: `.claude/state/*` (symlinked to main repo)
@@ -360,7 +360,7 @@ Taskwright state is **automatically shared** across worktrees via symlinks:
 Follow standard workflow without Conductor:
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Week 1
 /task-work TASK-INIT-001
@@ -595,4 +595,4 @@ A: No, Conductor is optional. Solo developers can work sequentially in main bran
 A: Week 1 (001→002) and Week 5 (010, 011). All other weeks can be parallelized.
 
 **Q: How do I verify state persistence in Conductor?**
-A: Task files are git-tracked, todo lists are symlinked, commands/agents are global. Run `taskwright doctor` to verify symlinks.
+A: Task files are git-tracked, todo lists are symlinked, commands/agents are global. Run `guardkit doctor` to verify symlinks.

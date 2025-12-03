@@ -23,11 +23,11 @@ brew install python@3.11
 ```bash
 mkdir -p ~/Projects
 cd ~/Projects
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
-taskwright --version  # Verify
+guardkit --version  # Verify
 ```
 
 ### Install RequireKit
@@ -47,7 +47,7 @@ cd ~/Projects/test-api-service
 git init
 git config user.name "Test User"
 git config user.email "test@example.com"
-taskwright init fastapi-python
+guardkit init fastapi-python
 ```
 
 **Q&A Answers**:

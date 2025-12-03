@@ -17,9 +17,9 @@ blocks: [TASK-050]
 
 ## Objective
 
-Implement local agent scanner to discover and catalog existing taskwright agents from `installer/global/agents/` directory, ensuring these battle-tested agents are prioritized in template creation.
+Implement local agent scanner to discover and catalog existing guardkit agents from `installer/global/agents/` directory, ensuring these battle-tested agents are prioritized in template creation.
 
-**Problem:** 15 existing taskwright agents are ignored by current design
+**Problem:** 15 existing guardkit agents are ignored by current design
 **Solution:** Local-first agent discovery with bonus scoring
 
 ## Acceptance Criteria
@@ -453,7 +453,7 @@ def test_cache_functionality():
 
 ## Impact
 
-Enables reuse of existing taskwright agents:
+Enables reuse of existing guardkit agents:
 - 15+ battle-tested agents discovered automatically
 - Local-first approach (priority bonus)
 - Better template quality out-of-the-box

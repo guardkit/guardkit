@@ -230,12 +230,12 @@ All agents receive consistent `<AGENT_CONTEXT>` blocks with documentation_level 
 
 1. ✅ **Time Reduction**: 50-78% faster for simple tasks (8-12 min vs 36 min)
 2. ✅ **Token Reduction**: 50-67% fewer tokens for simple tasks (100-150k vs 500k+)
-3. ✅ **Feature Parity**: Taskwright matches ai-engineer's documentation control
+3. ✅ **Feature Parity**: GuardKit matches ai-engineer's documentation control
 4. ✅ **Workflow Efficiency**: Users can choose appropriate documentation level
 
 ### Long-Term Benefits
 
-1. ✅ **Taskwright Development**: Fast iteration with minimal documentation overhead
+1. ✅ **GuardKit Development**: Fast iteration with minimal documentation overhead
 2. ✅ **Require-kit Development**: Same benefits during split and setup
 3. ✅ **Learnings for ai-engineer**: Refined approach can be backported (67% reduction proven)
 4. ✅ **User Experience**: Faster feedback loop for simple tasks
@@ -271,11 +271,11 @@ Total: 3 files, 590 lines added
 - [x] Backward compatible (no breaking changes)
 - [x] Documentation is clear, concise, and non-redundant
 - [x] Implementation summary created
-- [x] Ready for use in taskwright and require-kit development
+- [x] Ready for use in guardkit and require-kit development
 
 ## Next Steps
 
-1. ✅ **Use in taskwright development**: Test minimal mode on simple tasks
+1. ✅ **Use in guardkit development**: Test minimal mode on simple tasks
 2. ✅ **Monitor effectiveness**: Track time/token savings
 3. 🔄 **Gather feedback**: Identify if user guide is needed
 4. 🔄 **Refine templates**: Update based on actual usage

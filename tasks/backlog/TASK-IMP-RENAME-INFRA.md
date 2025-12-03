@@ -16,7 +16,7 @@ dependencies: [TASK-IMP-RENAME-PREP]
 
 ## Context
 
-Part of the Taskwright → GuardKit rename initiative. This task updates the critical infrastructure files.
+Part of the GuardKit → GuardKit rename initiative. This task updates the critical infrastructure files.
 
 **Parent Review**: TASK-REV-803B
 **GitHub Rename**: ✅ Complete (https://github.com/guardkit/guardkit)
@@ -26,39 +26,39 @@ Part of the Taskwright → GuardKit rename initiative. This task updates the cri
 ### 1. Update `installer/scripts/install.sh`
 
 **Current References (63 occurrences)**:
-- Line 21: `GITHUB_REPO="https://github.com/taskwright-dev/taskwright"`
-- Line 42: ASCII art header "Taskwright Installation System"
-- Lines 591-860: CLI command creation (`taskwright`, `taskwright-init`)
+- Line 21: `GITHUB_REPO="https://github.com/guardkit/guardkit"`
+- Line 42: ASCII art header "GuardKit Installation System"
+- Lines 591-860: CLI command creation (`guardkit`, `guardkit-init`)
 - Shell integration references
 
 **Changes Required**:
 - Update GitHub URL to `https://github.com/guardkit/guardkit`
 - Update branding to "GuardKit Installation System"
 - Rename CLI commands:
-  - `taskwright` → `guardkit`
-  - `taskwright-init` → `guardkit-init`
-  - `tw` → `gk`
-  - `twi` → `gki`
+  - `guardkit` → `guardkit`
+  - `guardkit-init` → `guardkit-init`
+  - `gk` → `gk`
+  - `gki` → `gki`
 - Update all help text and messages
 
 ### 2. Rename Marker Files
 
 | Current | New |
 |---------|-----|
-| `installer/global/templates/taskwright.marker.json` | `installer/global/templates/guardkit.marker.json` |
-| Runtime: `~/.agentecflow/taskwright.marker.json` | Runtime: `~/.agentecflow/guardkit.marker.json` |
+| `installer/global/templates/guardkit.marker.json` | `installer/global/templates/guardkit.marker.json` |
+| Runtime: `~/.agentecflow/guardkit.marker.json` | Runtime: `~/.agentecflow/guardkit.marker.json` |
 
 **Content Changes**:
 ```json
 {
-  "package": "guardkit",  // was "taskwright"
+  "package": "guardkit",  // was "guardkit"
   "homepage": "https://github.com/guardkit/guardkit"
 }
 ```
 
 ### 3. Update `installer/scripts/init-project.sh`
 
-- Update all Taskwright references
+- Update all GuardKit references
 - Update help text
 - Update error messages
 
@@ -76,7 +76,7 @@ Files with marker detection:
 - [ ] `init-project.sh` updated with new branding
 - [ ] Detection logic updated to find `guardkit.marker.json`
 - [ ] Fresh installation works with new URLs
-- [ ] No "taskwright" references in installer/* (except historical comments)
+- [ ] No "guardkit" references in installer/* (except historical comments)
 
 ## Testing
 
@@ -97,7 +97,7 @@ cat ~/.agentecflow/guardkit.marker.json
 
 - `installer/scripts/install.sh` (63 occurrences)
 - `installer/scripts/init-project.sh` (16 occurrences)
-- `installer/global/templates/taskwright.marker.json` → rename
+- `installer/global/templates/guardkit.marker.json` → rename
 - `installer/global/commands/lib/feature_detection.py`
 - `installer/global/commands/lib/distribution_helpers.py`
 

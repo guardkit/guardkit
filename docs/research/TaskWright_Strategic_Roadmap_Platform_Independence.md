@@ -6,7 +6,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    TASKWRIGHT STRATEGIC ROADMAP                              │
+│                    GUARDKIT STRATEGIC ROADMAP                              │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   PHASE 1: Get It Working (Current)                                         │
@@ -268,7 +268,7 @@ This is the right way to approach it.
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) - Phase 1 specification
 - [LangGraph-Native Workflow Automation](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md) - Phase 2 architecture
-- [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) - Positioning clarity
+- [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) - Positioning clarity
 
 ---
 

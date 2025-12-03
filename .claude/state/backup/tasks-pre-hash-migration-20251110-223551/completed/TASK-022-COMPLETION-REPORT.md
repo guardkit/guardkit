@@ -21,13 +21,13 @@ This blocked ALL task execution for every user.
 
 ## Root Cause
 
-TASK-003 removed the `requirements-analyst` agent as part of the taskwright/require-kit split, but the `task-manager.md` agent still tried to invoke it in Phase 1.
+TASK-003 removed the `requirements-analyst` agent as part of the guardkit/require-kit split, but the `task-manager.md` agent still tried to invoke it in Phase 1.
 
 ## Solution Implemented
 
 ### 1. Removed Requirements-Analyst References
 - Removed from task-manager.md sub-agent invocation list
-- Updated Requirements/BDD integration sections to clarify taskwright vs require-kit
+- Updated Requirements/BDD integration sections to clarify guardkit vs require-kit
 - Deleted leftover agent files in .claude/agents and templates
 
 ### 2. Added Empty Project Handling
@@ -66,7 +66,7 @@ TASK-003 removed the `requirements-analyst` agent as part of the taskwright/requ
 - [x] Workflow proceeds directly to Phase 2
 - [x] No errors about missing requirements-analyst agent
 - [x] Empty projects handle test execution gracefully
-- [x] Clear distinction between taskwright and require-kit workflows
+- [x] Clear distinction between guardkit and require-kit workflows
 
 ### Code Quality
 - All changes are documentation/configuration only
@@ -87,7 +87,7 @@ TASK-003 removed the `requirements-analyst` agent as part of the taskwright/requ
 - ✅ Skips Phase 1 gracefully
 - ✅ Proceeds directly to Phase 2 (Implementation Planning)
 - ✅ Empty projects handled with clear success messages
-- ✅ Clean separation between taskwright and require-kit workflows
+- ✅ Clean separation between guardkit and require-kit workflows
 
 ## Technical Details
 
@@ -102,7 +102,7 @@ Phase 1: Requirements Analysis
 
 **New Flow (Fixed)**:
 ```
-Phase 1: Requirements Analysis (SKIPPED for taskwright)
+Phase 1: Requirements Analysis (SKIPPED for guardkit)
   → Check if require-kit installed
   → If yes: Load EARS requirements
   → If no: Skip to Phase 2 ✅
@@ -142,7 +142,7 @@ Phase 2: Implementation Planning
 
 ### Improvements for Next Time
 - When removing agents, do a comprehensive grep search for all references
-- Document the distinction between taskwright and require-kit more prominently
+- Document the distinction between guardkit and require-kit more prominently
 - Consider adding automated checks to prevent orphaned agent references
 
 ## Post-Completion Actions
@@ -194,9 +194,9 @@ Phase 2: Implementation Planning
 
 ## Conclusion
 
-TASK-022 is **COMPLETE** and ready for merge. This was a critical bug fix that unblocks all task execution for taskwright users. The implementation was clean, well-documented, and completed efficiently in 50% of the estimated time.
+TASK-022 is **COMPLETE** and ready for merge. This was a critical bug fix that unblocks all task execution for guardkit users. The implementation was clean, well-documented, and completed efficiently in 50% of the estimated time.
 
-The fix reinforces the clean separation between taskwright (lightweight, no formal requirements) and require-kit (full requirements management with EARS/BDD), which is a key architectural decision for the system.
+The fix reinforces the clean separation between guardkit (lightweight, no formal requirements) and require-kit (full requirements management with EARS/BDD), which is a key architectural decision for the system.
 
 ---
 

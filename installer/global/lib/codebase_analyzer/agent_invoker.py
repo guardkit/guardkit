@@ -111,7 +111,7 @@ class ArchitecturalReviewerInvoker:
         if not self.is_available():
             raise AgentInvocationError(
                 f"Agent not available at {self.agent_path}. "
-                "Ensure Taskwright is properly installed."
+                "Ensure GuardKit is properly installed."
             )
 
         try:

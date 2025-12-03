@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Taskwright - Lightweight AI-Assisted Development
+## GuardKit - Lightweight AI-Assisted Development
 
-This is the **Taskwright** project - a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
+This is the **GuardKit** project - a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 **Core Features:**
 - **Quality Gates**: Architectural review (Phase 2.5) and test enforcement (Phase 4.5)
@@ -68,7 +68,7 @@ This is the **Taskwright** project - a lightweight, pragmatic task workflow syst
 
 ## Hash-Based Task IDs
 
-Taskwright uses hash-based task IDs to prevent duplicates and support concurrent creation:
+GuardKit uses hash-based task IDs to prevent duplicates and support concurrent creation:
 
 ### Format
 - **Simple**: `TASK-{hash}` (e.g., `TASK-a3f8`)
@@ -110,7 +110,7 @@ Taskwright uses hash-based task IDs to prevent duplicates and support concurrent
 
 ### PM Tool Integration
 
-Taskwright automatically maps internal hash IDs to external sequential IDs:
+GuardKit automatically maps internal hash IDs to external sequential IDs:
 
 **Internal ID**: `TASK-E01-b2c4`
 
@@ -161,7 +161,7 @@ A: Prevents duplicates in concurrent and distributed workflows. Critical for Con
 A: Users rarely type IDs manually. Shell completion, copy/paste, and IDE integration handle this automatically.
 
 **Q: How do PM tools handle hash IDs?**
-A: They don't see them! Taskwright maps internal hash IDs to external sequential IDs automatically (see PM Tool Integration above).
+A: They don't see them! GuardKit maps internal hash IDs to external sequential IDs automatically (see PM Tool Integration above).
 
 **Q: Can I still use sequential IDs?**
 A: No. Hash-based IDs are mandatory to prevent duplicates and enable parallel development.
@@ -177,7 +177,7 @@ A: Hash-based IDs enable safe concurrent task creation across multiple Conductor
 The `/task-work` command executes these phases automatically:
 
 ```
-Phase 1: Requirements Analysis (require-kit only - skipped in taskwright)
+Phase 1: Requirements Analysis (require-kit only - skipped in guardkit)
 Phase 2: Implementation Planning (Markdown format)
 Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 Phase 2.7: Complexity Evaluation (0-10 scale)
@@ -189,7 +189,7 @@ Phase 5: Code Review
 Phase 5.5: Plan Audit (scope creep detection)
 ```
 
-**Note**: Taskwright starts directly at Phase 2 using task descriptions and acceptance criteria. For formal requirements analysis (EARS, BDD), use [require-kit](https://github.com/requirekit/require-kit).
+**Note**: GuardKit starts directly at Phase 2 using task descriptions and acceptance criteria. For formal requirements analysis (EARS, BDD), use [require-kit](https://github.com/requirekit/require-kit).
 
 **Key Decision Points:**
 - **Phase 2.7**: Auto-proceed (1-3) vs checkpoint (7-10)
@@ -218,7 +218,7 @@ Phase 5.5: Plan Audit (scope creep detection)
 
 ## Review vs Implementation Workflows
 
-Taskwright supports two distinct command workflows for different task types:
+GuardKit supports two distinct command workflows for different task types:
 
 ### Implementation Workflow (/task-work)
 Use when **building** features, fixing bugs, or creating code:
@@ -299,7 +299,7 @@ Use when **analyzing** architecture, making decisions, or assessing quality:
 
 ## BDD Workflow (Agentic Systems)
 
-For formal agentic orchestration systems, TaskWright integrates with RequireKit for BDD workflow.
+For formal agentic orchestration systems, GuardKit integrates with RequireKit for BDD workflow.
 
 ### When to Use BDD Mode
 
@@ -317,7 +317,7 @@ For formal agentic orchestration systems, TaskWright integrates with RequireKit 
 
 ### Prerequisites
 
-**Required**: RequireKit + TaskWright installed
+**Required**: RequireKit + GuardKit installed
 
 ```bash
 # Install RequireKit
@@ -337,7 +337,7 @@ cd ~/Projects/require-kit
 /formalize-ears REQ-001
 /generate-bdd REQ-001
 
-# 2. In TaskWright: Implement from scenarios
+# 2. In GuardKit: Implement from scenarios
 cd ~/Projects/your-project
 /task-create "Implement behavior" requirements:[REQ-001]
 
@@ -373,8 +373,8 @@ Scenario: High complexity triggers mandatory review
   Then the system should invoke FULL_REQUIRED checkpoint
   And the workflow should interrupt with full plan display
 
-# Implementation (TaskWright BDD mode)
-def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_review", "full_review"]:
+# Implementation (GuardKit BDD mode)
+def complexity_router(state: GuardKitState) -> Literal["auto_proceed", "quick_review", "full_review"]:
     """Route based on complexity score to appropriate approval path."""
     score = state.complexity_score
     if score >= 7:
@@ -391,7 +391,7 @@ def test_high_complexity_mandatory_review():
 
 @given('a task with complexity score 8')
 def task_high_complexity(context):
-    context.state = TaskWrightState(complexity_score=8)
+    context.state = GuardKitState(complexity_score=8)
 
 @when('the workflow reaches Phase 2.8')
 def reach_phase_28(context):
@@ -468,7 +468,7 @@ Converts design system files (Figma, Zeplin) into components with **zero scope c
 
 ## Template Validation
 
-Taskwright provides a 3-level validation system for template quality assurance.
+GuardKit provides a 3-level validation system for template quality assurance.
 
 ### Validation Levels
 
@@ -752,7 +752,7 @@ installer/global/           # Global resources
 
 ## Template Philosophy
 
-Taskwright includes **5 high-quality templates** for learning and evaluation:
+GuardKit includes **5 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
@@ -765,14 +765,14 @@ Taskwright includes **5 high-quality templates** for learning and evaluation:
 ### Language-Agnostic Template (8+/10 Quality)
 5. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
 
-### Note on taskwright-python Template (Removed)
+### Note on guardkit-python Template (Removed)
 
-The `taskwright-python` template was removed because:
-- **Taskwright's `.claude/` is git-managed** - Template initialization not needed for Taskwright development
-- **User confusion** - Template suggested users should run `taskwright init` on Taskwright repo itself (incorrect)
+The `guardkit-python` template was removed because:
+- **GuardKit's `.claude/` is git-managed** - Template initialization not needed for GuardKit development
+- **User confusion** - Template suggested users should run `guardkit init` on GuardKit repo itself (incorrect)
 - **Better alternatives exist** - Users needing Python CLI templates should use `fastapi-python` or create custom templates via `/template-create`
 
-**For Taskwright development**: The `.claude/` directory is checked into git. Clone the repo and use the configuration as-is.
+**For GuardKit development**: The `.claude/` directory is checked into git. Clone the repo and use the configuration as-is.
 
 **For Python CLI projects**: Use `fastapi-python` template or create a custom template based on your architecture.
 
@@ -783,20 +783,20 @@ The `taskwright-python` template was removed because:
 Each template demonstrates:
 - ✅ How to structure templates for `/template-create`
 - ✅ Stack-specific best practices (or language-agnostic patterns)
-- ✅ Taskwright workflow integration
+- ✅ GuardKit workflow integration
 - ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
 - ✅ High quality standards (all score 8+/10)
 
 ### For Production: Use `/template-create`
 
 ```bash
-# Evaluate Taskwright (reference template)
-taskwright init react-typescript
+# Evaluate GuardKit (reference template)
+guardkit init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
 /template-create  # Creates agents + enhancement tasks by default
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **Default Behavior (TASK-UX-3A8D)**: `/template-create` now creates agent enhancement tasks by default, providing immediate guidance on next steps. Use `--no-create-agent-tasks` to opt out (e.g., CI/CD automation).
@@ -837,10 +837,10 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
+guardkit init [react-typescript|fastapi-python|nextjs-fullstack|default]
 
 # View template details
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 ```
 
 **Python Command Scripts**: All Python-based command scripts are symlinked to `~/.agentecflow/bin/` for global accessibility. This allows commands to work from any directory, including Conductor worktrees. The symlinks point to the actual repository scripts, so updates propagate automatically.
@@ -878,7 +878,7 @@ Fully compatible with [Conductor.build](https://conductor.build) for parallel de
 **Setup:**
 ```bash
 ./installer/scripts/install.sh  # Creates symlinks automatically
-taskwright doctor              # Verify integration
+guardkit doctor              # Verify integration
 ```
 
 **How It Works:**
@@ -969,7 +969,7 @@ BACKLOG
 
 ### Agent Discovery System
 
-Taskwright uses AI-powered agent discovery to automatically match tasks to appropriate specialists based on metadata (stack, phase, capabilities, keywords). No hardcoded mappings - discovery is intelligent and extensible.
+GuardKit uses AI-powered agent discovery to automatically match tasks to appropriate specialists based on metadata (stack, phase, capabilities, keywords). No hardcoded mappings - discovery is intelligent and extensible.
 
 **How It Works:**
 1. **Phase 3**: System analyzes task context (file extensions, keywords, project structure)
@@ -1245,7 +1245,7 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 /task-complete TASK-n6p2
 ```
 
-**See**: [Taskwright Workflow](docs/guides/taskwright-workflow.md)
+**See**: [GuardKit Workflow](docs/guides/guardkit-workflow.md)
 
 ## Iterative Refinement
 
@@ -1262,7 +1262,7 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 - Architecture changes
 - Major refactoring
 
-**See**: [Taskwright Workflow - Iterative Refinement](docs/guides/taskwright-workflow.md#37-iterative-refinement)
+**See**: [GuardKit Workflow - Iterative Refinement](docs/guides/guardkit-workflow.md#37-iterative-refinement)
 
 ## Markdown Implementation Plans
 
@@ -1299,7 +1299,7 @@ If a slash command fails with "file not found":
 
 3. **Re-run installation**:
    ```bash
-   cd ~/Projects/appmilla_github/taskwright
+   cd ~/Projects/appmilla_github/guardkit
    ./installer/scripts/install.sh
    ```
 
@@ -1315,7 +1315,7 @@ chmod +x ~/.agentecflow/bin/*
 ./installer/scripts/install.sh
 ```
 
-## When to Use Taskwright
+## When to Use GuardKit
 
 ### Use When:
 - Individual tasks or small features (1-8 hours)
@@ -1334,4 +1334,4 @@ chmod +x ~/.agentecflow/bin/*
 
 ## Need Requirements Management?
 
-For formal requirements (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.
+For formal requirements (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.

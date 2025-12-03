@@ -297,7 +297,7 @@ class DocumentationValidator:
         # Also check for invalid flags like --mode=bdd
         bdd_pattern = r"--mode=bdd"
         if re.search(bdd_pattern, content, re.IGNORECASE):
-            invalid_flags.append("--mode=bdd (not valid in Taskwright)")
+            invalid_flags.append("--mode=bdd (not valid in GuardKit)")
 
         if invalid_flags:
             self.results.append(
@@ -689,7 +689,7 @@ class DocumentationValidator:
 
 def main():
     """Run the validation suite."""
-    project_root = "/Users/richardwoollcott/Projects/appmilla_github/taskwright"
+    project_root = "/Users/richardwoollcott/Projects/appmilla_github/guardkit"
 
     validator = DocumentationValidator(project_root)
     report = validator.validate_all()

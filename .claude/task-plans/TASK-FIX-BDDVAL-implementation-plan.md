@@ -56,7 +56,7 @@ The issue is in **documentation and error messages** that reference the wrong fi
 ## Files to Modify
 
 ### 1. CLAUDE.md (Documentation)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
 
 **Changes needed**:
 - Line 328: Update verification command
@@ -75,7 +75,7 @@ ls ~/.agentecflow/require-kit.marker.json  # Should exist
 ---
 
 ### 2. installer/global/commands/task-work.md (Error Messages)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/task-work.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/task-work.md`
 
 **Changes needed**:
 - Line 3024: Update BDD mode prerequisites documentation
@@ -94,7 +94,7 @@ ls ~/.agentecflow/require-kit.marker.json  # Should exist
 ---
 
 ### 3. tests/integration/test_bdd_mode_validation.py (Test Suite)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/integration/test_bdd_mode_validation.py`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/integration/test_bdd_mode_validation.py`
 
 **Changes needed**:
 1. **Add test for .marker.json format** (primary)
@@ -160,7 +160,7 @@ def test_requirekit_not_installed_error_message(self):
 ---
 
 ### 4. .claude/CLAUDE.md (Project Instructions)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/CLAUDE.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/CLAUDE.md`
 
 **Search for references** to `require-kit.marker` and update to `require-kit.marker.json`.
 
@@ -172,7 +172,7 @@ def test_requirekit_not_installed_error_message(self):
 ---
 
 ### 5. docs/testing/pre-launch-2025-11-29/BUG-BDD-MODE-VALIDATION.md
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/testing/pre-launch-2025-11-29/BUG-BDD-MODE-VALIDATION.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/testing/pre-launch-2025-11-29/BUG-BDD-MODE-VALIDATION.md`
 
 **Changes needed**:
 - Update all references to `require-kit.marker` → `require-kit.marker.json`
@@ -322,7 +322,7 @@ def test_requirekit_not_installed_error_message(self):
 
 **Cross-repository coordination**:
 - RequireKit creates `require-kit.marker.json` (already correct)
-- Taskwright detects `require-kit.marker.json` (already correct in code)
+- GuardKit detects `require-kit.marker.json` (already correct in code)
 - Only documentation needs updating
 
 ---
@@ -396,7 +396,7 @@ def test_requirekit_not_installed_error_message(self):
 
 The bug occurred because:
 1. RequireKit installer was updated to use JSON markers (`require-kit.marker.json`)
-2. Taskwright's `feature_detection.py` was correctly updated to detect JSON markers
+2. GuardKit's `feature_detection.py` was correctly updated to detect JSON markers
 3. **Documentation was not updated** to reflect the new filename
 4. Tests only covered the legacy format
 

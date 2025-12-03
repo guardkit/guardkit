@@ -61,7 +61,7 @@ plan_audit:
 **Expected behavior**:
 - AI analyzes codebase and identifies representative files for templates
 - Phase 4 extracts and converts these files to .template files with placeholders
-- Generated templates ready to use with `taskwright init`
+- Generated templates ready to use with `guardkit init`
 
 **Root Cause**: The AI agent prompt is not sufficiently emphasizing that `example_files` should include files suitable for template generation, or the AI is not returning them.
 
@@ -125,7 +125,7 @@ From `prompt_builder.py` lines 268-276:
 - [ ] Phase 4 generates appropriate number of .template files (10-20+ for typical codebase)
 - [ ] Generated templates include placeholders ({{ProjectName}}, {{Namespace}}, etc.)
 - [ ] Integration test verifies template file generation
-- [ ] Manual test confirms templates work with `taskwright init`
+- [ ] Manual test confirms templates work with `guardkit init`
 
 ## Implementation Notes
 
@@ -279,7 +279,7 @@ cd example-react-project
 cd example-fastapi-project
 /template-create --validate
 # Verify: Template generation phase shows "15 template files generated"
-# Verify: Templates work with `taskwright init test-template`
+# Verify: Templates work with `guardkit init test-template`
 
 # Test 3: .NET MAUI codebase
 cd example-maui-project
@@ -350,7 +350,7 @@ Quality Score: 9.8/10 (Grade A+)
 ✅ AI returns 10-20 example files in analysis
 ✅ Phase 4 generates corresponding .template files
 ✅ Templates include proper placeholders
-✅ Templates work with `taskwright init`
+✅ Templates work with `guardkit init`
 ✅ Integration tests pass
 ✅ No regression in metadata generation
 ✅ Maintains AI-native approach (no hard-coded patterns)

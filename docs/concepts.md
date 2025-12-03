@@ -1,8 +1,8 @@
 # Core Concepts
 
-Understand the fundamentals of Taskwright's workflow and quality gates.
+Understand the fundamentals of GuardKit's workflow and quality gates.
 
-## 🔄 [Taskwright Workflow](guides/taskwright-workflow.md)
+## 🔄 [GuardKit Workflow](guides/guardkit-workflow.md)
 
 The complete workflow from task creation to completion, including all phases and quality gates.
 
@@ -22,7 +22,7 @@ The complete workflow from task creation to completion, including all phases and
 
 ## 🔑 Hash-Based Task IDs
 
-Taskwright uses collision-free hash-based task IDs to enable parallel development and concurrent task creation.
+GuardKit uses collision-free hash-based task IDs to enable parallel development and concurrent task creation.
 
 **Format:**
 
@@ -43,7 +43,7 @@ Taskwright uses collision-free hash-based task IDs to enable parallel developmen
 
 ## 📊 [Complexity Management](workflows/complexity-management-workflow.md)
 
-How Taskwright evaluates task complexity and decides when to require human review.
+How GuardKit evaluates task complexity and decides when to require human review.
 
 **Complexity Scoring (0-10):**
 
@@ -75,7 +75,7 @@ Automatic enforcement of compilation, testing, coverage, and architectural stand
 
 **Phase 4.5 Test Enforcement** ensures no broken code reaches production.
 
-## 📋 [Task States & Transitions](guides/taskwright-workflow.md#task-states)
+## 📋 [Task States & Transitions](guides/guardkit-workflow.md#task-states)
 
 How tasks move through backlog, in_progress, in_review, blocked, and completed states.
 
@@ -105,7 +105,7 @@ BACKLOG
 - **BLOCKED**: Tests failed or quality gates not met
 - **COMPLETED**: Finished and archived
 
-## 🎯 [Development Modes](guides/taskwright-workflow.md#development-modes)
+## 🎯 [Development Modes](guides/guardkit-workflow.md#development-modes)
 
 Standard vs TDD mode for different types of tasks.
 
@@ -120,7 +120,7 @@ Learn when to use each mode for optimal productivity.
 
 ## 🤖 [Agent Discovery](guides/agent-discovery-guide.md)
 
-How Taskwright automatically matches tasks to specialized AI agents.
+How GuardKit automatically matches tasks to specialized AI agents.
 
 **Discovery Process:**
 

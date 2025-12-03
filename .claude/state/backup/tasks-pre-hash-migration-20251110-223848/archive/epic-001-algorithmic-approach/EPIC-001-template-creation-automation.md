@@ -96,7 +96,7 @@ End-to-end testing and comprehensive documentation.
 - Adoption rate: 50% of teams create custom template within 1 month
 
 ### Qualitative
-- "Easy to get started with taskwright"
+- "Easy to get started with guardkit"
 - Developers discover valuable agents
 - Templates accurately reflect conventions
 - Reduced support requests
@@ -185,7 +185,7 @@ Final QA, release notes, community announcement.
 
 ## Notes
 
-This epic represents a transformational feature for taskwright adoption. The AI-powered approach differentiates us from other template systems and leverages community agent resources effectively.
+This epic represents a transformational feature for guardkit adoption. The AI-powered approach differentiates us from other template systems and leverages community agent resources effectively.
 
 **Key Innovation**: First system to combine automatic pattern extraction with multi-source agent discovery.
 

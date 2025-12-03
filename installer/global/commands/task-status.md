@@ -6,7 +6,7 @@ Display comprehensive task status with epic/feature hierarchy context, progress 
 
 This command supports **graceful degradation** based on installed packages:
 
-### Taskwright Only (Core Filters)
+### GuardKit Only (Core Filters)
 ```bash
 /task-status --status in_progress    # Filter by status
 /task-status --assignee "John"       # Filter by assignee
@@ -15,7 +15,7 @@ This command supports **graceful degradation** based on installed packages:
 
 Available filters: `--status`, `--assignee`, `--priority`, `--tags`
 
-### Taskwright + Require-Kit (Extended Filters)
+### GuardKit + Require-Kit (Extended Filters)
 ```bash
 /task-status --epic EPIC-001         # Filter by epic (requires require-kit)
 /task-status --feature FEAT-003      # Filter by feature (requires require-kit)

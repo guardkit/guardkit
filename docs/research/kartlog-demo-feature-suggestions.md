@@ -37,7 +37,7 @@ KartLog is an excellent candidate for TaskWright demonstrations because:
 
 ### Fork Structure
 ```
-taskwright-dev/kartlog-demos/
+guardkit/kartlog-demos/
 ├── README.md              # Overview explaining the demo purpose
 ├── DEMO.md                # Exact prompts/commands used with TaskWright
 ├── main branch            # Production-ready with all features implemented
@@ -262,7 +262,7 @@ For maximum impact on LinkedIn "show me the code" skeptics:
 
 > Real features, real code quality, no AI slop.
 
-This repository demonstrates [TaskWright](https://github.com/taskwright-dev/taskwright) 
+This repository demonstrates [TaskWright](https://github.com/guardkit/guardkit) 
 implementing production-ready features in an existing Svelte + Firebase codebase.
 
 ## What This Proves
@@ -278,7 +278,7 @@ TaskWright isn't just for greenfield projects. This demo shows:
 
 ```bash
 # Clone and checkout starter branch
-git clone https://github.com/taskwright-dev/kartlog-demos
+git clone https://github.com/guardkit/kartlog-demos
 cd kartlog-demos
 git checkout starter
 
@@ -286,8 +286,8 @@ git checkout starter
 npm install && npm run dev
 
 # Now use TaskWright to implement features
-taskwright task-create "Add weather conditions to session tracking"
-taskwright task-work TASK-001
+guardkit task-create "Add weather conditions to session tracking"
+guardkit task-work TASK-001
 ```
 
 ## Features Implemented
@@ -383,7 +383,7 @@ This demo complements the existing backlog:
 
 ## Next Steps
 
-1. **Fork kartlog** to `taskwright-dev` org
+1. **Fork kartlog** to `guardkit` org
 2. **Create starter branch** from current main
 3. **Implement Weather Conditions** as first feature
 4. **Document prompts** used in DEMO.md

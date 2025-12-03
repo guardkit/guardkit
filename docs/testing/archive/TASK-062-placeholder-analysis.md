@@ -396,7 +396,7 @@ After changes, verify:
 
 Test that template engine can render all placeholders:
 ```bash
-# Simulate: taskwright init react-fastapi-monorepo
+# Simulate: guardkit init react-fastapi-monorepo
 # Verify: All 14 placeholders are prompted
 # Verify: All template files render correctly
 ```
@@ -416,7 +416,7 @@ Update CLAUDE.md with:
 
 1. **Template Initialization**:
    ```bash
-   $ taskwright init react-fastapi-monorepo
+   $ guardkit init react-fastapi-monorepo
    # Users won't be prompted for {{entity_name}}, {{port}}, etc.
    # Generated code will have literal {{placeholder}} strings
    ```
@@ -440,7 +440,7 @@ Update CLAUDE.md with:
 
 1. **Template Initialization** (works correctly):
    ```bash
-   $ taskwright init react-fastapi-monorepo
+   $ guardkit init react-fastapi-monorepo
    ? Enter project name: my-api
    ? Enter entity name: Product
    ? Enter database table name: products

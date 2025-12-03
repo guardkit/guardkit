@@ -90,7 +90,7 @@ Remove deprecated template directories and update installer to only install the 
 - [x] Deprecated stack agents removed (11 stacks → 5 stacks)
 - [x] Agent count updated (62 agents → correct count for 5 stacks)
 - [x] No references to deprecated templates in installer output
-- [x] `taskwright doctor` validates 5 templates
+- [x] `guardkit doctor` validates 5 templates
 - [x] Documentation consistency maintained
 
 ---
@@ -125,7 +125,7 @@ Remove deprecated template directories and update installer to only install the 
 Use **Bash tool**:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Remove deprecated template directories
 rm -rf installer/global/templates/documentation
@@ -149,7 +149,7 @@ ls -1 installer/global/templates/
 # nextjs-fullstack
 # react-fastapi-monorepo
 # react-typescript
-# taskwright.marker.json
+# guardkit.marker.json
 ```
 
 ### Step 3: Remove Deprecated Stack Agents
@@ -236,7 +236,7 @@ Available Templates:
   • react-typescript - React frontend with feature-based architecture (9+/10)
 ```
 
-### Step 7: Update `taskwright doctor` Command
+### Step 7: Update `guardkit doctor` Command
 
 Use **Read tool** and **Edit tool** to update the doctor command if it validates template count:
 
@@ -307,8 +307,8 @@ git status
 - [ ] Installer lists only 5 templates with descriptions
 - [ ] Agent count correct (~33 agents: 14 global + 19 stack)
 - [ ] No deprecated template names in installer output
-- [ ] `taskwright doctor` validates 5 templates
-- [ ] `taskwright-init` lists only 5 templates
+- [ ] `guardkit doctor` validates 5 templates
+- [ ] `guardkit-init` lists only 5 templates
 
 ### Quality Requirements
 - [ ] All 5 templates install correctly
@@ -324,25 +324,25 @@ git status
 ### Template Installation Tests
 ```bash
 # Test each core template
-cd /tmp/test-taskwright
+cd /tmp/test-guardkit
 
-taskwright-init default
+guardkit-init default
 # Expected: Initializes successfully
 
-taskwright-init fastapi-python
+guardkit-init fastapi-python
 # Expected: Initializes successfully
 
-taskwright-init nextjs-fullstack
+guardkit-init nextjs-fullstack
 # Expected: Initializes successfully
 
-taskwright-init react-fastapi-monorepo
+guardkit-init react-fastapi-monorepo
 # Expected: Initializes successfully
 
-taskwright-init react-typescript
+guardkit-init react-typescript
 # Expected: Initializes successfully
 
 # Test deprecated template (should fail)
-taskwright-init fullstack
+guardkit-init fullstack
 # Expected: Error - template not found
 ```
 
@@ -350,7 +350,7 @@ taskwright-init fullstack
 ```bash
 # Verify agents load for each template
 cd /tmp/test-default-template
-taskwright-init default
+guardkit-init default
 
 # Check .claude/agents/ directory
 ls -la .claude/agents/
@@ -359,7 +359,7 @@ ls -la .claude/agents/
 
 ### Doctor Command Test
 ```bash
-taskwright doctor
+guardkit doctor
 # Expected: Reports 5 templates, no errors
 ```
 
@@ -410,7 +410,7 @@ taskwright doctor
 
 ```
 ╔════════════════════════════════════════════════════════╗
-║         Taskwright Installation System                 ║
+║         GuardKit Installation System                 ║
 ║         Version: 2.0.0                  ║
 ╚════════════════════════════════════════════════════════╝
 
@@ -456,7 +456,7 @@ Available Templates:
 
 ...
 
-✅ Taskwright installation complete!
+✅ GuardKit installation complete!
 ```
 
 ---

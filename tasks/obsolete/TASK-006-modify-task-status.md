@@ -65,7 +65,7 @@ Simplify task-status.md by removing epic/feature/requirements filtering and visu
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-status.md installer/global/commands/task-status.md.backup
 ```
 

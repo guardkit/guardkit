@@ -45,8 +45,8 @@ We will implement a **build-time composition** strategy with a dedicated shared-
 
 ```
 GitHub Organizations:
-├── taskwright-dev/
-│   ├── taskwright           # Main tool with stack-specific agents
+├── guardkit/
+│   ├── guardkit           # Main tool with stack-specific agents
 │   └── shared-agents        # Universal agents (source of truth)
 │
 └── requirekit/
@@ -56,7 +56,7 @@ GitHub Organizations:
 ### Shared Agents Repository Structure
 
 ```
-taskwright-dev/shared-agents/
+guardkit/shared-agents/
 ├── agents/
 │   ├── requirements-analyst.md
 │   ├── bdd-generator.md
@@ -155,7 +155,7 @@ install_shared_agents() {
     local version_file="$SCRIPT_DIR/../shared-agents-version.txt"
     local version=$(cat "$version_file" 2>/dev/null || echo "v1.0.0")
     local target_dir="$PROJECT_ROOT/.claude/agents/universal"
-    local download_url="https://github.com/taskwright-dev/shared-agents/releases/download/$version/shared-agents.tar.gz"
+    local download_url="https://github.com/guardkit/shared-agents/releases/download/$version/shared-agents.tar.gz"
     
     echo "📦 Installing shared agents $version..."
     
@@ -189,7 +189,7 @@ install_shared_agents() {
     local version_file="$SCRIPT_DIR/../shared-agents-version.txt"
     local version=$(cat "$version_file" 2>/dev/null || echo "v1.0.0")
     local target_dir="$PROJECT_ROOT/.claude/agents/universal"
-    local download_url="https://github.com/taskwright-dev/shared-agents/releases/download/$version/shared-agents.tar.gz"
+    local download_url="https://github.com/guardkit/shared-agents/releases/download/$version/shared-agents.tar.gz"
     
     echo "📦 Installing shared agents $version..."
     
@@ -285,7 +285,7 @@ install_shared_agents
 
 ### Phase 1: Create Shared Agents Repository (Day 1)
 
-- [ ] Create `taskwright-dev/shared-agents` repository
+- [ ] Create `guardkit/shared-agents` repository
 - [ ] Move universal agents from TaskWright to shared-agents
 - [ ] Create `manifest.json` with agent metadata
 - [ ] Create `version.txt` with initial version (v1.0.0)

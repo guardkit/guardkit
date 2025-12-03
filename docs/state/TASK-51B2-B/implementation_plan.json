@@ -106,7 +106,7 @@
       "tasks": [
         "Test with React TypeScript project",
         "Test with FastAPI Python project",
-        "Verify templates work with taskwright init"
+        "Verify templates work with guardkit init"
       ]
     }
   ],

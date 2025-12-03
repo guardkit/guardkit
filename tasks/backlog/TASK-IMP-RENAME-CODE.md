@@ -16,7 +16,7 @@ dependencies: [TASK-IMP-RENAME-INFRA]
 
 ## Context
 
-Part of the Taskwright → GuardKit rename initiative. This task updates Python code, templates, and related files.
+Part of the GuardKit → GuardKit rename initiative. This task updates Python code, templates, and related files.
 
 **Parent Review**: TASK-REV-803B
 **GitHub Rename**: ✅ Complete (https://github.com/guardkit/guardkit)
@@ -81,7 +81,7 @@ Part of the Taskwright → GuardKit rename initiative. This task updates Python 
 
 | Current | New |
 |---------|-----|
-| `taskwright.sln` | `guardkit.sln` |
+| `guardkit.sln` | `guardkit.sln` |
 
 ## Acceptance Criteria
 
@@ -91,7 +91,7 @@ Part of the Taskwright → GuardKit rename initiative. This task updates Python 
 - [ ] All template READMEs updated
 - [ ] Agent files updated
 - [ ] Solution file renamed
-- [ ] No "taskwright" in installer/global/**/* (except marker file history)
+- [ ] No "guardkit" in installer/global/**/* (except marker file history)
 - [ ] Python imports still work correctly
 
 ## Testing
@@ -105,7 +105,7 @@ python3 -c "from lib.distribution_helpers import *; print('OK')"
 python3 -c "from lib.agent_discovery import *; print('OK')"
 
 # Verify no remaining references
-grep -ri "taskwright" installer/global/ --include="*.py" --include="*.md" --include="*.json"
+grep -ri "guardkit" installer/global/ --include="*.py" --include="*.md" --include="*.json"
 ```
 
 ## Estimated Effort

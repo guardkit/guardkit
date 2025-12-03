@@ -1,6 +1,6 @@
 ================================================================================
                   TASK-037 VERIFICATION COMPLETE
-                Remove BDD Mode from Taskwright
+                Remove BDD Mode from GuardKit
 ================================================================================
 
 VERIFICATION TIMESTAMP: 2025-11-02
@@ -222,7 +222,7 @@ TASK-037 IMPLEMENTATION: VERIFIED COMPLETE AND READY FOR CLOSURE
                     FINAL STATUS
 ================================================================================
 
-Task: TASK-037 - Remove BDD Mode from Taskwright
+Task: TASK-037 - Remove BDD Mode from GuardKit
 Implementation Status: COMPLETE
 Verification Status: COMPLETE
 Test Status: PASS (100% of acceptance criteria met)

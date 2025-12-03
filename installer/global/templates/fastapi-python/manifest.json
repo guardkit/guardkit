@@ -4,7 +4,7 @@
   "display_name": "Python FastAPI Backend",
   "description": "Production-ready FastAPI template based on best practices from 12k+ star repository. Features Netflix Dispatch-inspired structure, dependency injection, async patterns, and comprehensive testing.",
   "version": "1.0.0",
-  "author": "Taskwright",
+  "author": "GuardKit",
   "source": "https://github.com/zhanymkanov/fastapi-best-practices",
   "language": "Python",
   "language_version": ">=3.9",

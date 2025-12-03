@@ -177,7 +177,7 @@ class SubagentsCcScraper:
         self.cache_file = self.CACHE_DIR / "subagents_cc.json"
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Taskwright Template Creator (github.com/taskwright)'
+            'User-Agent': 'GuardKit Template Creator (github.com/guardkit)'
         })
         self.logger = logging.getLogger(__name__)
 

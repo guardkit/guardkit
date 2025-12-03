@@ -47,10 +47,10 @@ For Windows users, we now recommend using WSL2 (Windows Subsystem for Linux) wit
 wsl --install
 
 # 2. Open WSL2 terminal and run bash installer
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
 # 3. Initialize your project
-taskwright init react-typescript
+guardkit init react-typescript
 ```
 
 See main README.md for complete WSL2 setup instructions.

@@ -61,7 +61,7 @@ Convert design system files (Figma, Zeplin) into components with zero scope cree
 
 Prevent scope creep during design-to-code conversion.
 
-## 🔄 [Iterative Refinement](guides/taskwright-workflow.md#iterative-refinement)
+## 🔄 [Iterative Refinement](guides/guardkit-workflow.md#iterative-refinement)
 
 Lightweight improvements without full re-work using `/task-refine`.
 
@@ -136,7 +136,7 @@ Analysis and decision-making workflows separate from implementation.
 
 Use `/task-review` for analysis, `/task-work` for implementation.
 
-## 🏗️ [Conductor Integration](guides/taskwright-workflow.md#conductor-integration)
+## 🏗️ [Conductor Integration](guides/guardkit-workflow.md#conductor-integration)
 
 Parallel development with Conductor.build and git worktrees.
 
@@ -144,7 +144,7 @@ Parallel development with Conductor.build and git worktrees.
 
 ```bash
 ./installer/scripts/install.sh  # Creates symlinks automatically
-taskwright doctor              # Verify integration
+guardkit doctor              # Verify integration
 ```
 
 **State Persistence:** ✅

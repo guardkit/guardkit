@@ -3,7 +3,7 @@
 **Date**: 2025-10-30
 **Author**: Claude Code (Sonnet 4.5)
 **Context**: ExampleApp TASK-001 Repository ErrorOr Refactoring Analysis
-**Repositories Updated**: ai-engineer, taskwright
+**Repositories Updated**: ai-engineer, guardkit
 
 ## Executive Summary
 
@@ -17,8 +17,8 @@ Analysis identified **2 quick-win optimizations** that reduce execution time by 
 Both optimizations have been applied to:
 - ✅ ExampleApp project (`YourApp/.claude/agents/`)
 - ✅ AI-Engineer global templates (`ai-engineer/installer/global/templates/`)
-- ✅ Taskwright global templates (`taskwright/installer/global/templates/`)
-- ✅ Taskwright command specifications (`taskwright/installer/global/commands/task-work.md`)
+- ✅ GuardKit global templates (`guardkit/installer/global/templates/`)
+- ✅ GuardKit command specifications (`guardkit/installer/global/commands/task-work.md`)
 
 ## Task Context: TASK-001 Analysis
 
@@ -88,7 +88,7 @@ Example query:
 
 **Files Updated**:
 - ✅ `ai-engineer/installer/global/commands/task-work.md`
-- ✅ `taskwright/installer/global/commands/task-work.md`
+- ✅ `guardkit/installer/global/commands/task-work.md`
 
 **After**:
 ```markdown
@@ -173,7 +173,7 @@ return Task.FromResult(result);
 **Files Updated**:
 - ✅ `YourApp/.claude/agents/maui-usecase-specialist.md` (lines 967-1072)
 - ✅ `ai-engineer/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
-- ✅ `taskwright/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
+- ✅ `guardkit/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
 
 **Content Added**: Comprehensive "Testing ErrorOr Patterns" section (106 lines):
 
@@ -366,7 +366,7 @@ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
      ✅ Testing checklist (8 points)
 ```
 
-### Taskwright Repository
+### GuardKit Repository
 
 **Commands Updated** (1 file):
 ```
@@ -412,7 +412,7 @@ docs/optimization/task-work-performance-optimizations.md
      ✅ Recommendations (immediate/short-term/long-term)
 ```
 
-**Taskwright Repository** (this file):
+**GuardKit Repository** (this file):
 ```
 docs/research/task-work-performance-optimizations-2025-10-30.md
   └─ Research document with:
@@ -451,9 +451,9 @@ cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer
 /opt/homebrew/bin/pytest tests/ -v --tb=short
 ```
 
-**Taskwright**:
+**GuardKit**:
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 /opt/homebrew/bin/pytest tests/ -v --tb=short
 ```
 
@@ -465,7 +465,7 @@ cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
 1. ✅ Apply Design Patterns MCP optimization to task-work.md
 2. ✅ Add ErrorOr testing guidance to MAUI usecase specialists
 3. ✅ Propagate to ai-engineer global templates
-4. ✅ Propagate to taskwright global templates
+4. ✅ Propagate to guardkit global templates
 5. ✅ Document research findings
 
 ### Short-Term (Recommended for Next Sprint)
@@ -483,8 +483,8 @@ cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
 # Files to update:
 ai-engineer/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
 ai-engineer/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md
-taskwright/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
-taskwright/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md
+guardkit/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
+guardkit/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md
 
 # Add same "Testing ErrorOr Patterns" section
 # Estimated effort: 30 minutes
@@ -546,9 +546,9 @@ taskwright/installer/global/templates/dotnet-microservice/agents/dotnet-api-spec
    - Complete working examples (copy-paste ready)
 
 4. **Multi-Repository Rollout**
-   - Simultaneous updates to ai-engineer and taskwright
+   - Simultaneous updates to ai-engineer and guardkit
    - Consistent documentation across repositories
-   - Future-proofing the transition to taskwright
+   - Future-proofing the transition to guardkit
 
 ### Areas for Future Investigation
 
@@ -766,7 +766,7 @@ This research demonstrates that **empirical analysis of real task executions** y
 - ✅ **5% token reduction** (434k → 412.7k) despite running more phases
 - ✅ **100% fix loop elimination** (3 attempts → 0 attempts) ⭐
 - ✅ **100% quality gate preservation** (all checkpoints maintained)
-- ✅ **Multi-repository rollout** (ai-engineer + taskwright)
+- ✅ **Multi-repository rollout** (ai-engineer + guardkit)
 - ✅ **Production-ready output** (BLOCKED → IN_REVIEW state)
 
 **Productivity Gains (VALIDATED)**:
@@ -796,7 +796,7 @@ The `/task-work` workflow now delivers **validated world-class AI-assisted devel
 - [Agentecflow Lite Workflow](../../ai-engineer/docs/guides/agentecflow-lite-workflow.md)
 - [Task-Work Command Specification](../../ai-engineer/installer/global/commands/task-work.md)
 
-**Taskwright Repository**:
+**GuardKit Repository**:
 - [Agentecflow Lite Positioning](./agentecflow-lite-positioning-summary.md)
 - [Agent Collaboration and Documentation](./AGENT-COLLABORATION-AND-DOCUMENTATION.md)
 - [Task-Work Command Specification](../installer/global/commands/task-work.md)

@@ -63,7 +63,7 @@ def detect_orchestrator_failure() -> Tuple[bool, Optional[str], Optional[Dict[st
             'generic',
             {
                 'error_message': f'Orchestrator not found at {orchestrator_path}',
-                'solution': 'Reinstall Taskwright to restore orchestrator file'
+                'solution': 'Reinstall GuardKit to restore orchestrator file'
             }
         )
 
@@ -204,7 +204,7 @@ Note: This is a fallback mode. Template will be created successfully
       but some orchestrator features may be unavailable.
 
 Please report this issue:
-  https://github.com/anthropics/taskwright/issues
+  https://github.com/anthropics/guardkit/issues
 {separator}
 """
 

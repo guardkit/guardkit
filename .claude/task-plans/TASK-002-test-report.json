@@ -38,7 +38,7 @@
         "Markdown export",
         "TypeScript React analysis",
         ".NET API analysis",
-        "Taskwright codebase analysis",
+        "GuardKit codebase analysis",
         "Performance test",
         "Convenience function"
       ]

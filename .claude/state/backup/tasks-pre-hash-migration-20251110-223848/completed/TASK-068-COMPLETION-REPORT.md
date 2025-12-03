@@ -232,7 +232,7 @@ else:
 
 ### Long-term (Future Iterations)
 1. **Config Option**: Consider adding user-level default preference
-2. **Auto-Detection**: Consider auto-selecting repo location when in taskwright repo
+2. **Auto-Detection**: Consider auto-selecting repo location when in guardkit repo
 3. **Analytics**: Track usage of global vs repo locations
 4. **Force Flag**: Consider adding `--force` to skip overwrite confirmations
 

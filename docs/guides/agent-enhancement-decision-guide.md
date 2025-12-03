@@ -2,7 +2,7 @@
 
 ## Overview
 
-When creating or improving agent templates in Taskwright, you'll face two key decisions:
+When creating or improving agent templates in GuardKit, you'll face two key decisions:
 
 1. **Format vs Enhance**: Should you use `/agent-format` or `/agent-enhance`?
 2. **Hybrid vs Task-Work**: Should you use the hybrid strategy or full workflow?

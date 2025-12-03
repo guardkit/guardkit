@@ -213,7 +213,7 @@ Ensure the symlink is created correctly and discoverable:
 
 ```bash
 # In install.sh
-ln -sf "$TASKWRIGHT_PATH/installer/global/commands/lib/template_create_orchestrator.py" \
+ln -sf "$GUARDKIT_PATH/installer/global/commands/lib/template_create_orchestrator.py" \
        "$HOME/.agentecflow/bin/template-create-orchestrator"
 ```
 
@@ -238,7 +238,7 @@ ln -sf "$TASKWRIGHT_PATH/installer/global/commands/lib/template_create_orchestra
 
 **From User**: "I am trying to prepare for public release and these regressions are a big problem"
 
-This is a critical path issue. The template-create command is a core feature of Taskwright and must work correctly before public release. Adhoc fixes have already caused regressions - thorough investigation is required before any changes.
+This is a critical path issue. The template-create command is a core feature of GuardKit and must work correctly before public release. Adhoc fixes have already caused regressions - thorough investigation is required before any changes.
 
 ## Next Steps
 

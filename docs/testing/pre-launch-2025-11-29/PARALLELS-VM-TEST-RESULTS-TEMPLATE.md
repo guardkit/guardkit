@@ -36,11 +36,11 @@
 
 **Checklist**:
 - [ ] Installation completed without errors
-- [ ] `taskwright --version` works
+- [ ] `guardkit --version` works
 - [ ] `~/.agentecflow/` directory created
 - [ ] Symlinks in `~/.agentecflow/bin/` working
 
-**Screenshot**: `screenshots/1.1-taskwright-install.png`
+**Screenshot**: `screenshots/1.1-guardkit-install.png`
 
 **Notes**:
 ```

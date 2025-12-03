@@ -35,7 +35,7 @@ With 5 high-quality core templates now available, we need to:
 5. **default** - Language-agnostic foundation (8+/10)
 
 **Demo Objectives**:
-- Show how easy it is to start a new project with Taskwright templates
+- Show how easy it is to start a new project with GuardKit templates
 - Demonstrate the quality and structure of each template
 - Highlight template-specific features and patterns
 - Document common workflows for new users
@@ -75,8 +75,8 @@ Test and document all 5 core templates through initialization, validation, and r
 **Create Test Workspace**:
 ```bash
 # Create demo workspace
-mkdir -p ~/taskwright-demos/core-templates
-cd ~/taskwright-demos/core-templates
+mkdir -p ~/guardkit-demos/core-templates
+cd ~/guardkit-demos/core-templates
 
 # Create subdirectories for each template
 mkdir react-typescript-demo
@@ -90,8 +90,8 @@ mkdir default-demo
 
 **Initialize Template**:
 ```bash
-cd ~/taskwright-demos/core-templates/react-typescript-demo
-taskwright init react-typescript
+cd ~/guardkit-demos/core-templates/react-typescript-demo
+guardkit init react-typescript
 
 # Expected prompts:
 # ProjectName: TaskDashboard
@@ -139,8 +139,8 @@ npm test -- --coverage
 
 **Initialize Template**:
 ```bash
-cd ~/taskwright-demos/core-templates/fastapi-python-demo
-taskwright init fastapi-python
+cd ~/guardkit-demos/core-templates/fastapi-python-demo
+guardkit init fastapi-python
 
 # Expected prompts:
 # ProjectName: TaskAPI
@@ -183,8 +183,8 @@ pytest tests/ -v --cov=src --cov-report=term
 
 **Initialize Template**:
 ```bash
-cd ~/taskwright-demos/core-templates/nextjs-fullstack-demo
-taskwright init nextjs-fullstack
+cd ~/guardkit-demos/core-templates/nextjs-fullstack-demo
+guardkit init nextjs-fullstack
 
 # Expected prompts:
 # ProjectName: TaskManager
@@ -226,8 +226,8 @@ curl http://localhost:3000/api/health
 
 **Initialize Template**:
 ```bash
-cd ~/taskwright-demos/core-templates/react-fastapi-monorepo-demo
-taskwright init react-fastapi-monorepo
+cd ~/guardkit-demos/core-templates/react-fastapi-monorepo-demo
+guardkit init react-fastapi-monorepo
 
 # Expected prompts:
 # ProjectName: TaskWorkspace
@@ -273,8 +273,8 @@ pytest tests/ -v --cov=src
 
 **Initialize Template (Go Example)**:
 ```bash
-cd ~/taskwright-demos/core-templates/default-demo
-taskwright init default
+cd ~/guardkit-demos/core-templates/default-demo
+guardkit init default
 
 # Expected prompts:
 # ProjectName: TaskCLI
@@ -318,7 +318,7 @@ go test ./... -v -cover
    # Getting Started with {Template Name}
 
    ## Introduction
-   - What is Taskwright?
+   - What is GuardKit?
    - Why use templates?
    - What this template provides
 
@@ -327,7 +327,7 @@ go test ./... -v -cover
    - Tools needed
 
    ## Step-by-Step Guide
-   1. Install Taskwright
+   1. Install GuardKit
    2. Initialize template
    3. Explore project structure
    4. Run development server
@@ -355,7 +355,7 @@ go test ./... -v -cover
 
    ## Opening (0:00-0:30)
    - Hook: "Want to build a production-ready {type} in under 5 minutes?"
-   - Introduce Taskwright
+   - Introduce GuardKit
    - What we'll cover
 
    ## Demo (0:30-4:00)
@@ -421,18 +421,18 @@ go test ./... -v -cover
 
 **Setup Demo Repo**:
 ```bash
-# Create GitHub repo: taskwright-template-demos
-mkdir ~/taskwright-template-demos
-cd ~/taskwright-template-demos
+# Create GitHub repo: guardkit-template-demos
+mkdir ~/guardkit-template-demos
+cd ~/guardkit-template-demos
 
 # Copy all demo projects
-cp -r ~/taskwright-demos/core-templates/* .
+cp -r ~/guardkit-demos/core-templates/* .
 
 # Add README
 cat > README.md << 'EOF'
-# Taskwright Template Demos
+# GuardKit Template Demos
 
-Example projects demonstrating Taskwright's core templates.
+Example projects demonstrating GuardKit's core templates.
 
 ## Templates Demonstrated
 
@@ -452,7 +452,7 @@ EOF
 # Initialize git
 git init
 git add .
-git commit -m "Add Taskwright template demos"
+git commit -m "Add GuardKit template demos"
 ```
 
 ---
@@ -498,7 +498,7 @@ git commit -m "Add Taskwright template demos"
 3. **Screenshots** (30+ images organized by template)
 4. **Template Comparison Matrix** (`docs/templates/template-comparison.md`)
 5. **Issues Log** (`docs/testing/template-testing-issues.md`)
-6. **Demo Repository** (GitHub: taskwright-template-demos)
+6. **Demo Repository** (GitHub: guardkit-template-demos)
 7. **User Experience Report** (`docs/testing/template-ux-report.md`)
 
 ---
@@ -525,7 +525,7 @@ git commit -m "Add Taskwright template demos"
 
 - **TASK-070**: Demo/Test - Create Custom Template from Existing Codebase
 - **TASK-071**: Demo/Test - Greenfield Project with Template Creation
-- **TASK-072**: Demo/Test - End-to-End Taskwright Workflow
+- **TASK-072**: Demo/Test - End-to-End GuardKit Workflow
 - **TASK-060-062**: Template creation tasks
 - **TASK-065**: Clean installer
 

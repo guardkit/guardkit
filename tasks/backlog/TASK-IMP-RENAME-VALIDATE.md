@@ -16,7 +16,7 @@ dependencies: [TASK-IMP-RENAME-DOCS, TASK-IMP-RENAME-CODE]
 
 ## Context
 
-Part of the Taskwright → GuardKit rename initiative. This is the final validation phase.
+Part of the GuardKit → GuardKit rename initiative. This is the final validation phase.
 
 **Parent Review**: TASK-REV-803B
 **GitHub Rename**: ✅ Complete (https://github.com/guardkit/guardkit)
@@ -25,14 +25,14 @@ Part of the Taskwright → GuardKit rename initiative. This is the final validat
 
 ### 1. Reference Validation
 
-Run comprehensive search for remaining "taskwright" references:
+Run comprehensive search for remaining "guardkit" references:
 
 ```bash
 # Critical files (must be zero)
-grep -ri "taskwright" CLAUDE.md README.md installer/scripts/install.sh
+grep -ri "guardkit" CLAUDE.md README.md installer/scripts/install.sh
 
 # All files (review each match)
-grep -ri "taskwright" . --include="*.py" --include="*.md" --include="*.sh" --include="*.json" \
+grep -ri "guardkit" . --include="*.py" --include="*.md" --include="*.sh" --include="*.json" \
   | grep -v "tasks/completed" \
   | grep -v "tasks/archived" \
   | grep -v ".claude/reviews" \
@@ -82,7 +82,7 @@ cat ~/.agentecflow/guardkit.marker.json
 # }
 
 # Verify old marker doesn't exist
-ls ~/.agentecflow/taskwright.marker.json  # Should fail
+ls ~/.agentecflow/guardkit.marker.json  # Should fail
 ```
 
 ### 5. Test Suite Execution
@@ -113,11 +113,11 @@ mkdocs build
 In Claude Code:
 - `/task-create "Test task"`
 - `/task-status`
-- Verify no "taskwright" appears in output
+- Verify no "guardkit" appears in output
 
 ## Acceptance Criteria
 
-- [ ] Zero "taskwright" references in critical files
+- [ ] Zero "guardkit" references in critical files
 - [ ] Fresh installation works from new GitHub URL
 - [ ] All CLI commands work (`guardkit`, `gk`, `guardkit-init`, `gki`)
 - [ ] Marker file created correctly
@@ -128,9 +128,9 @@ In Claude Code:
 ## Validation Checklist
 
 ### Critical Files (Must Pass)
-- [ ] `installer/scripts/install.sh` - No taskwright
-- [ ] `CLAUDE.md` - No taskwright
-- [ ] `README.md` - No taskwright
+- [ ] `installer/scripts/install.sh` - No guardkit
+- [ ] `CLAUDE.md` - No guardkit
+- [ ] `README.md` - No guardkit
 - [ ] `~/.agentecflow/guardkit.marker.json` - Exists and correct
 
 ### Functional Tests (Must Pass)

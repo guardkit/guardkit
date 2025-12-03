@@ -434,7 +434,7 @@ If deployment fails, check:
 
 ## Complete Working Example
 
-See [Taskwright's docs.yml](https://github.com/taskwright-dev/taskwright/blob/main/.github/workflows/docs.yml) for a complete, production-ready workflow that handles all these issues correctly.
+See [GuardKit's docs.yml](https://github.com/guardkit/guardkit/blob/main/.github/workflows/docs.yml) for a complete, production-ready workflow that handles all these issues correctly.
 
 **Key features:**
 - Modern Actions-based deployment

@@ -56,7 +56,7 @@ The reported 35 failures have been resolved through two key fixes:
 #### Fix #1: RecursionError Resolution (20 failures)
 **Problem**: The `visited` parameter in `_serialize_value()` was not threaded through recursive calls.
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py` (lines 1755-1855)
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py` (lines 1755-1855)
 
 **Solution Applied**:
 ```python
@@ -83,7 +83,7 @@ def _serialize_value(self, value: Any, visited: Optional[set] = None) -> Any:
 #### Fix #2: AttributeError Resolution (15 failures)
 **Problem**: Test fixture `mock_orchestrator_no_init` was missing required attributes `state_manager` and `agent_invoker`.
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/unit/lib/template_creation/test_resume_routing.py` (lines 70-82)
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/lib/template_creation/test_resume_routing.py` (lines 70-82)
 
 **Solution Applied**:
 ```python

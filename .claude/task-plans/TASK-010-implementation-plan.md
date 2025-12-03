@@ -8,27 +8,27 @@
 
 ## Overview
 
-Update manifest.json and configuration files to reflect taskwright's focus on task workflow with quality gates, removing any remaining requirements management references.
+Update manifest.json and configuration files to reflect guardkit's focus on task workflow with quality gates, removing any remaining requirements management references.
 
 ## Analysis
 
 ### Current State
 
 1. **installer/global/manifest.json**: Already correctly updated with:
-   - Name: "taskwright" ✓
+   - Name: "guardkit" ✓
    - Correct capabilities (no requirements-engineering or bdd-generation) ✓
    - Includes architectural-review and test-enforcement ✓
 
 2. **Template settings**: Checked two MAUI template settings files - both are clean and focused on their specific stack configurations (no requirements-related paths)
 
 3. **.claude/settings.json**: Contains legacy references that should be cleaned:
-   - Name: "ai-engineer-sdlc" (should align with taskwright)
+   - Name: "ai-engineer-sdlc" (should align with guardkit)
    - Features section references requirements and epics/features hierarchy
    - Description mentions "Software Engineering Lifecycle System"
 
 ### Required Changes
 
-Only `.claude/settings.json` needs updating to align with taskwright branding and remove requirements-related configuration.
+Only `.claude/settings.json` needs updating to align with guardkit branding and remove requirements-related configuration.
 
 ## Implementation Plan
 
@@ -43,7 +43,7 @@ Only `.claude/settings.json` needs updating to align with taskwright branding an
 **Changes Required**:
 
 1. **Update metadata** (lines 2-4):
-   - Change name from "ai-engineer-sdlc" to "taskwright"
+   - Change name from "ai-engineer-sdlc" to "guardkit"
    - Update description to emphasize task workflow + quality gates
 
 2. **Clean features section** (lines 5-19):
@@ -54,7 +54,7 @@ Only `.claude/settings.json` needs updating to align with taskwright branding an
 **Proposed Updated Structure**:
 ```json
 {
-  "name": "taskwright",
+  "name": "guardkit",
   "version": "1.0.0",
   "description": "Lightweight task workflow with quality gates and architectural review",
   "features": {
@@ -94,7 +94,7 @@ Only `.claude/settings.json` needs updating to align with taskwright branding an
    ```
 
 2. **Verify Changes**:
-   - Name is "taskwright"
+   - Name is "guardkit"
    - No requirements-engineering references
    - No epics/features hierarchy references
    - Quality gates configuration intact
@@ -114,7 +114,7 @@ Only `.claude/settings.json` needs updating to align with taskwright branding an
 
 ## Success Criteria
 
-- [ ] .claude/settings.json updated with taskwright branding
+- [ ] .claude/settings.json updated with guardkit branding
 - [ ] No requirements-related configuration remains
 - [ ] All JSON files have valid syntax
 - [ ] Testing and quality gate configuration preserved

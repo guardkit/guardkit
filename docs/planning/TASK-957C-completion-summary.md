@@ -52,7 +52,7 @@ Includes exact line numbers, before/after examples, and verification steps.
 - 8 deep-dives (MCP integration, architecture, patterns)
 - 19 commands (task-*, template-*, agent-*, figma-*, zeplin-*)
 - 19+ agents (task-manager, architectural-reviewer, specialists)
-- 26 template files (5 templates with comprehensive READMEs, taskwright-python removed)
+- 26 template files (5 templates with comprehensive READMEs, guardkit-python removed)
 - 13 reference/troubleshooting files
 
 **Developer** (include but less prominent):

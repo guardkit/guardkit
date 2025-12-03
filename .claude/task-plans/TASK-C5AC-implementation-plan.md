@@ -15,7 +15,7 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
 ## Files to Create/Modify
 
 ### 1. `mkdocs.yml` (CREATE)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/mkdocs.yml`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/mkdocs.yml`
 
 **Purpose**: Main MkDocs configuration file
 
@@ -29,7 +29,7 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
 - Exclusion patterns
 
 ### 2. `.gitignore` (MODIFY - if needed)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.gitignore`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.gitignore`
 
 **Purpose**: Ensure MkDocs build artifacts are ignored
 
@@ -42,7 +42,7 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
 
 **Actions**:
 1. Read the documentation organization plan from TASK-957C:
-   - File: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/planning/documentation-organization-plan.md`
+   - File: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/planning/documentation-organization-plan.md`
 2. Verify navigation structure alignment
 3. Confirm all referenced files exist in expected locations
 
@@ -53,11 +53,11 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
 1. Create `mkdocs.yml` at repository root
 2. Add site metadata:
    ```yaml
-   site_name: Taskwright
+   site_name: GuardKit
    site_description: AI-assisted development with built-in quality gates
-   site_url: https://taskwright-dev.github.io/taskwright/
-   repo_url: https://github.com/taskwright-dev/taskwright
-   repo_name: taskwright-dev/taskwright
+   site_url: https://guardkit.github.io/guardkit/
+   repo_url: https://github.com/guardkit/guardkit
+   repo_name: guardkit/guardkit
    ```
 3. Configure edit URI for GitHub edit links:
    ```yaml
@@ -133,7 +133,7 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
          - FastAPI Python: installer/global/templates/fastapi-python/README.md
          - Next.js Full-Stack: installer/global/templates/nextjs-fullstack/README.md
          - React-FastAPI Monorepo: installer/global/templates/react-fastapi-monorepo/README.md
-         - Taskwright Python: installer/global/templates/taskwright-python/README.md
+         - GuardKit Python: installer/global/templates/guardkit-python/README.md
          - Default Template: installer/global/templates/default/README.md
          - Creating Custom Templates: docs/guides/creating-local-templates.md
      - Advanced Topics:
@@ -247,12 +247,12 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
    extra:
      social:
        - icon: fontawesome/brands/github
-         link: https://github.com/taskwright-dev/taskwright
+         link: https://github.com/guardkit/guardkit
    ```
 
 2. Add copyright notice:
    ```yaml
-   copyright: Copyright &copy; 2024 Taskwright
+   copyright: Copyright &copy; 2024 GuardKit
    ```
 
 ## Testing Strategy
@@ -409,7 +409,7 @@ All files referenced in navigation must exist. Key files to verify:
 - `installer/global/templates/fastapi-python/README.md`
 - `installer/global/templates/nextjs-fullstack/README.md`
 - `installer/global/templates/react-fastapi-monorepo/README.md`
-- `installer/global/templates/taskwright-python/README.md`
+- `installer/global/templates/guardkit-python/README.md`
 - `installer/global/templates/default/README.md`
 
 ### Python Dependencies

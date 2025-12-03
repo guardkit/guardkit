@@ -160,7 +160,7 @@
 **Files to Update**:
 1. CLAUDE.md
 2. installer/global/commands/task-create.md
-3. docs/guides/taskwright-workflow.md
+3. docs/guides/guardkit-workflow.md
 4. docs/guides/quick-reference.md
 5. README.md
 6. docs/workflows/*.md (multiple)

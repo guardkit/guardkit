@@ -147,12 +147,12 @@ As part of our template quality initiative, the following templates have been re
 **If you used template-a**:
 ```bash
 # Option 1: Use new react-typescript template
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Option 2: Create custom template from your existing code
 cd your-existing-project-using-template-a
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **Differences to be aware of**:
@@ -168,7 +168,7 @@ cd your-production-codebase
 /template-create
 
 # Use your custom template
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ### Accessing Archived Templates
@@ -200,7 +200,7 @@ Questions about migration? [Link to issues or discussions]
 
 ## Templates
 
-Taskwright includes 3 reference implementation templates:
+GuardKit includes 3 reference implementation templates:
 
 1. **react-typescript** - Frontend development
 2. **fastapi-python** - Backend API development

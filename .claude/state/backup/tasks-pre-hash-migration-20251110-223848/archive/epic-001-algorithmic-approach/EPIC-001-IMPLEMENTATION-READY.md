@@ -51,7 +51,7 @@ All recommended enhancements from the comprehensive review have been implemented
 
 ✅ **TASK-048B: Local Agent Scanner** (4h, Complexity 4/10)
 - Scans `installer/global/agents/` directory
-- Discovers 15+ existing taskwright agents
+- Discovers 15+ existing guardkit agents
 - Parses agent metadata (tools, technologies, specializations)
 - Caching with 5-minute TTL
 - Priority bonus (+20 points) for local agents
@@ -166,7 +166,7 @@ All recommended enhancements from the comprehensive review have been implemented
 
 | Source | Agents | Status |
 |--------|--------|--------|
-| Taskwright Built-in | 15+ | ❌ **IGNORED** |
+| GuardKit Built-in | 15+ | ❌ **IGNORED** |
 | User Custom Agents | ? | ❌ **IGNORED** |
 | Subagents.cc | ~100 | ✅ Included |
 | wshobson/agents | ~50 | ✅ Included |
@@ -179,7 +179,7 @@ All recommended enhancements from the comprehensive review have been implemented
 
 | Source | Agents | Priority | Bonus | Status |
 |--------|--------|----------|-------|--------|
-| **Taskwright Built-in** | **15+** | **100** | **+20** | ✅ **PRIORITIZED** |
+| **GuardKit Built-in** | **15+** | **100** | **+20** | ✅ **PRIORITIZED** |
 | **User Custom Agents** | **?** | **90** | **+15** | ✅ **SUPPORTED** |
 | Subagents.cc | ~100 | 70 | +5 | ✅ Included |
 | wshobson/agents | ~50 | 65 | +3 | ✅ Included |
@@ -205,7 +205,7 @@ All recommended enhancements from the comprehensive review have been implemented
 
 ### Agent Integration ✅
 
-1. **Local-First Discovery**: Reuses 15+ existing taskwright agents
+1. **Local-First Discovery**: Reuses 15+ existing guardkit agents
 2. **Priority Bonuses**: Local agents ranked higher (+20 points)
 3. **Configurable Sources**: Add unlimited company-internal repositories
 4. **Authentication Support**: Private repos with token auth

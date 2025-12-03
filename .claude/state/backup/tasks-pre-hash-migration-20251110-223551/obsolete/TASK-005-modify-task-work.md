@@ -78,7 +78,7 @@ Simplify task-work.md by removing EARS requirements loading, BDD scenario valida
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-work.md installer/global/commands/task-work.md.backup
 ```
 

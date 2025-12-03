@@ -2,12 +2,12 @@
 
 ## Overview
 
-taskwright and require-kit implement a **bidirectional optional integration model** where both packages work independently with optional mutual enhancement when installed together.
+guardkit and require-kit implement a **bidirectional optional integration model** where both packages work independently with optional mutual enhancement when installed together.
 
 ## Architecture Principles
 
 ### 1. Independence
-- **taskwright** works standalone: Task execution, quality gates, architectural review, test enforcement
+- **guardkit** works standalone: Task execution, quality gates, architectural review, test enforcement
 - **require-kit** works standalone: Requirements engineering (EARS), BDD generation, epic/feature hierarchy
 - Neither package hard-depends on the other
 
@@ -23,11 +23,11 @@ taskwright and require-kit implement a **bidirectional optional integration mode
 
 ## Installation Scenarios
 
-### Scenario 1: taskwright Only
+### Scenario 1: guardkit Only
 
 **Installation:**
 ```bash
-cd taskwright && ./installer/scripts/install.sh
+cd guardkit && ./installer/scripts/install.sh
 ```
 
 **Capabilities:**
@@ -57,9 +57,9 @@ cd require-kit && ./installer/scripts/install.sh
 - ✅ BDD/Gherkin scenario generation
 - ✅ PM tool export (Jira, Linear, GitHub, Azure DevOps)
 - ✅ Requirements validation and traceability
-- ❌ Task execution workflow (install taskwright for this)
-- ❌ Architectural review (install taskwright for this)
-- ❌ Quality gates and testing (install taskwright for this)
+- ❌ Task execution workflow (install guardkit for this)
+- ❌ Architectural review (install guardkit for this)
+- ❌ Quality gates and testing (install guardkit for this)
 
 **Use Case:** Business analysts, product managers, requirements specification teams
 
@@ -67,7 +67,7 @@ cd require-kit && ./installer/scripts/install.sh
 
 **Installation:**
 ```bash
-cd taskwright && ./installer/scripts/install.sh
+cd guardkit && ./installer/scripts/install.sh
 cd require-kit && ./installer/scripts/install.sh
 ```
 
@@ -87,10 +87,10 @@ cd require-kit && ./installer/scripts/install.sh
 
 Both packages create marker files in `~/.agentecflow/` upon installation:
 
-**taskwright.marker.json:**
+**guardkit.marker.json:**
 ```json
 {
-  "package": "taskwright",
+  "package": "guardkit",
   "version": "1.0.0",
   "provides": ["task_management", "quality_gates", "architectural_review"],
   "optional_integration": ["require-kit"],
@@ -104,7 +104,7 @@ Both packages create marker files in `~/.agentecflow/` upon installation:
   "package": "require-kit",
   "version": "1.0.0",
   "provides": ["requirements_engineering", "epic_management", "bdd_generation"],
-  "optional_integration": ["taskwright"],
+  "optional_integration": ["guardkit"],
   "integration_model": "bidirectional_optional"
 }
 ```
@@ -113,7 +113,7 @@ Both packages create marker files in `~/.agentecflow/` upon installation:
 
 **Library:** `installer/global/lib/feature_detection.py` (duplicated in both repos)
 
-**Usage in taskwright commands:**
+**Usage in guardkit commands:**
 ```python
 from installer.global.lib.feature_detection import supports_requirements
 
@@ -193,10 +193,10 @@ Title: User login implementation
 
 ### Path 1: Monolithic to Modular
 
-**Starting point:** Current taskwright with all features bundled
+**Starting point:** Current guardkit with all features bundled
 
 **Steps:**
-1. Split into taskwright (tasks) + require-kit (requirements)
+1. Split into guardkit (tasks) + require-kit (requirements)
 2. Both packages install to `~/.agentecflow/`
 3. Install scripts create marker files
 4. Commands detect features and adapt
@@ -205,10 +205,10 @@ Title: User login implementation
 
 ### Path 2: Adding Capabilities
 
-**Scenario A: Start with taskwright, add requirements later**
+**Scenario A: Start with guardkit, add requirements later**
 ```bash
 # Day 1: Rapid development with tasks only
-cd taskwright && ./installer/scripts/install.sh
+cd guardkit && ./installer/scripts/install.sh
 /task-create "Feature X" && /task-work TASK-001
 
 # Day 30: Add requirements management when team scales
@@ -224,7 +224,7 @@ cd require-kit && ./installer/scripts/install.sh
 /gather-requirements && /formalize-ears && /epic-create "Platform"
 
 # Day 15: Begin implementation
-cd taskwright && ./installer/scripts/install.sh
+cd guardkit && ./installer/scripts/install.sh
 /task-work TASK-001  # Now has full requirements context
 ```
 
@@ -238,13 +238,13 @@ cd taskwright && ./installer/scripts/install.sh
 
 ### For Maintenance
 1. **Clear Separation**: Each package has single responsibility
-2. **Independent Versioning**: Update taskwright without touching require-kit
+2. **Independent Versioning**: Update guardkit without touching require-kit
 3. **Easier Testing**: Test standalone mode and integrated mode separately
 4. **Reduced Coupling**: Changes in one package don't break the other
 
 ### For Teams
-1. **Role-Based Access**: BAs use require-kit, devs use taskwright, or both
-2. **Scalable**: Start with 1 developer (taskwright only), scale to enterprise (both)
+1. **Role-Based Access**: BAs use require-kit, devs use guardkit, or both
+2. **Scalable**: Start with 1 developer (guardkit only), scale to enterprise (both)
 3. **No Training Overhead**: Learn features incrementally
 4. **Organizational Fit**: Adapt to team structure and workflow
 
@@ -252,9 +252,9 @@ cd taskwright && ./installer/scripts/install.sh
 
 ### ❌ Hard Dependency
 ```
-require-kit ──[requires]──> taskwright
+require-kit ──[requires]──> guardkit
 ```
-**Problem:** Can't use require-kit without taskwright (unnecessary coupling)
+**Problem:** Can't use require-kit without guardkit (unnecessary coupling)
 
 ### ❌ Monolithic Bundle
 ```
@@ -273,13 +273,13 @@ else:
 
 ## Implementation Checklist
 
-### taskwright ✅
+### guardkit ✅
 - [x] `lib/feature_detection.py` - Detection library
 - [x] `spec_drift_detector.py` - Graceful degradation for requirements
 - [x] `task-work.md` Phase 1 - Conditional requirements display
 - [x] `task-work.md` Step 3 - Conditional agent selection
 - [x] `task-create.md` - Help text shows integration options separately
-- [x] `templates/taskwright.marker.json` - Marker file template
+- [x] `templates/guardkit.marker.json` - Marker file template
 - [x] `docs/architecture/bidirectional-integration.md` - This document
 
 ### require-kit ✅ (Already Implemented)
@@ -291,7 +291,7 @@ else:
 ## Next Steps
 
 1. **Update Installation Scripts**: Ensure marker files are created correctly
-2. **Test Matrix**: Verify all 3 scenarios (taskwright only, require-kit only, both)
+2. **Test Matrix**: Verify all 3 scenarios (guardkit only, require-kit only, both)
 3. **Documentation**: Update README files for both packages
 4. **User Communication**: Announce bidirectional integration model
 5. **Migration Guide**: Help existing users understand the new architecture

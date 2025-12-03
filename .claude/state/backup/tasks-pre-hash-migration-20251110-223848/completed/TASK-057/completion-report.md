@@ -98,7 +98,7 @@
 - Comprehensive testing examples
 - Clear architectural guidance
 
-### For Taskwright
+### For GuardKit
 - First reference template achieving 9.5/10 quality score
 - Demonstrates template creation workflow
 - Sets quality standards for future templates

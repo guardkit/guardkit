@@ -504,7 +504,7 @@ When Phase 7.5 invokes agent enhancement:
 1. **Python orchestrator** runs in codebase directory: `/Users/.../DeCUK.Mobile.MyDrive/`
 2. Writes `.agent-request.json` with `response_file_path: /Users/.../DeCUK.Mobile.MyDrive/.agent-response.json`
 3. Exits with code 42
-4. **Claude Code** (command handler) runs in its own working directory (likely taskwright repo or temp dir)
+4. **Claude Code** (command handler) runs in its own working directory (likely guardkit repo or temp dir)
 5. Reads request, invokes agent, writes response using **relative path** `.agent-response.json`
 6. Response written to Claude Code's CWD, NOT the codebase directory
 7. Orchestrator resumes, looks for response at absolute path, **finds nothing**

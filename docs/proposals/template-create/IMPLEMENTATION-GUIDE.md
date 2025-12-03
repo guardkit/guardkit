@@ -47,7 +47,7 @@ Wave 4: Documentation (Depends on Wave 3)
 conductor workspace create artifact-filter
 
 # In the worktree
-cd ~/conductor/taskwright-artifact-filter
+cd ~/conductor/guardkit-artifact-filter
 /task-work TASK-ARTIFACT-FILTER
 ```
 
@@ -67,7 +67,7 @@ cd ~/conductor/taskwright-artifact-filter
 conductor workspace create agent-bridge
 
 # In the worktree
-cd ~/conductor/taskwright-agent-bridge
+cd ~/conductor/guardkit-agent-bridge
 /task-work TASK-AGENT-BRIDGE-COMPLETE
 ```
 
@@ -104,7 +104,7 @@ All three tasks can run in parallel because they each implement checkpoint-resum
 ```bash
 conductor workspace create phase-1-checkpoint
 
-cd ~/conductor/taskwright-phase-1-checkpoint
+cd ~/conductor/guardkit-phase-1-checkpoint
 /task-work TASK-PHASE-1-CHECKPOINT
 ```
 
@@ -122,7 +122,7 @@ cd ~/conductor/taskwright-phase-1-checkpoint
 ```bash
 conductor workspace create phase-5-checkpoint
 
-cd ~/conductor/taskwright-phase-5-checkpoint
+cd ~/conductor/guardkit-phase-5-checkpoint
 /task-work TASK-PHASE-5-CHECKPOINT
 ```
 
@@ -141,7 +141,7 @@ cd ~/conductor/taskwright-phase-5-checkpoint
 ```bash
 conductor workspace create phase-7-5-checkpoint
 
-cd ~/conductor/taskwright-phase-7-5-checkpoint
+cd ~/conductor/guardkit-phase-7-5-checkpoint
 /task-work TASK-PHASE-7-5-CHECKPOINT
 ```
 
@@ -181,7 +181,7 @@ These tasks must run sequentially because Phase 7 integrates all previous work.
 ```bash
 conductor workspace create integration
 
-cd ~/conductor/taskwright-integration
+cd ~/conductor/guardkit-integration
 /task-work TASK-REMOVE-DETECTOR
 ```
 
@@ -239,7 +239,7 @@ Before moving to Wave 4:
 ```bash
 conductor workspace create documentation
 
-cd ~/conductor/taskwright-documentation
+cd ~/conductor/guardkit-documentation
 
 # Option 1: Use /task-work for consistency
 /task-work TASK-OPEN-SOURCE-DOCUMENTATION
@@ -348,7 +348,7 @@ git checkout main && git pull
 
 # Create feature branch in worktree
 conductor workspace create <name>
-cd ~/conductor/taskwright-<name>
+cd ~/conductor/guardkit-<name>
 git checkout -b feature/<task-name>
 
 # Verify task file exists

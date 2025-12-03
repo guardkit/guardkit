@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Rename Script: Taskwright -> GuardKit
+Rename Script: GuardKit -> GuardKit
 
 Performs bulk text replacement across the codebase with case handling.
 Preserves git history by using git mv for file renames.
 
 Usage:
-    python3 scripts/rename-taskwright-to-guardkit.py [--dry-run] [--verbose]
+    python3 scripts/rename-guardkit-to-guardkit.py [--dry-run] [--verbose]
 
 Options:
     --dry-run   Preview changes without modifying files
@@ -49,17 +49,17 @@ class ChangeReport:
 # Replacement patterns in order of specificity (most specific first)
 REPLACEMENTS = [
     # GitHub URLs and organization names (most specific)
-    ('taskwright-dev/taskwright', 'guardkit/guardkit'),
-    ('taskwright-dev', 'guardkit'),
+    ('guardkit/guardkit', 'guardkit/guardkit'),
+    ('guardkit', 'guardkit'),
 
     # CLI aliases with word boundaries
     (r'\btwi\b', 'gki'),
     (r'\btw\b', 'gk'),
 
     # Case variations (order matters: longer/specific first)
-    ('TASKWRIGHT', 'GUARDKIT'),
-    ('Taskwright', 'GuardKit'),
-    ('taskwright', 'guardkit'),
+    ('GUARDKIT', 'GUARDKIT'),
+    ('GuardKit', 'GuardKit'),
+    ('guardkit', 'guardkit'),
 ]
 
 # Files and directories to exclude
@@ -92,10 +92,10 @@ BINARY_EXTENSIONS = {
 
 # File rename patterns
 FILE_RENAMES = [
-    ('taskwright.sln', 'guardkit.sln'),
-    ('taskwright.marker.json', 'guardkit.marker.json'),
-    ('taskwright-workflow.md', 'guardkit-workflow.md'),
-    ('taskwright-vs-requirekit.md', 'guardkit-vs-requirekit.md'),
+    ('guardkit.sln', 'guardkit.sln'),
+    ('guardkit.marker.json', 'guardkit.marker.json'),
+    ('guardkit-workflow.md', 'guardkit-workflow.md'),
+    ('guardkit-vs-requirekit.md', 'guardkit-vs-requirekit.md'),
 ]
 
 
@@ -293,13 +293,13 @@ def generate_report(report: ChangeReport, output_path: Path, dry_run: bool):
 
 | Original | Replacement |
 |----------|-------------|
-| `taskwright-dev/taskwright` | `guardkit/guardkit` |
-| `taskwright-dev` | `guardkit` |
+| `guardkit/guardkit` | `guardkit/guardkit` |
+| `guardkit` | `guardkit` |
 | `\\btwi\\b` | `gki` |
 | `\\btw\\b` | `gk` |
-| `TASKWRIGHT` | `GUARDKIT` |
-| `Taskwright` | `GuardKit` |
-| `taskwright` | `guardkit` |
+| `GUARDKIT` | `GUARDKIT` |
+| `GuardKit` | `GuardKit` |
+| `guardkit` | `guardkit` |
 
 ## Files Modified
 
@@ -346,7 +346,7 @@ def generate_report(report: ChangeReport, output_path: Path, dry_run: bool):
 1. Review changes: `git diff`
 2. Run validation: `./scripts/validate-rename.sh`
 3. Test installation: `./installer/scripts/install.sh`
-4. Commit changes: `git add -A && git commit -m "Rename Taskwright to GuardKit"`
+4. Commit changes: `git add -A && git commit -m "Rename GuardKit to GuardKit"`
 
 ## Rollback
 
@@ -362,7 +362,7 @@ git checkout backup/pre-guardkit-rename-YYYYMMDD-HHMMSS
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Rename Taskwright to GuardKit across the codebase'
+        description='Rename GuardKit to GuardKit across the codebase'
     )
     parser.add_argument(
         '--dry-run',
@@ -460,12 +460,12 @@ def main():
 
     if args.dry_run:
         print("To apply changes, run without --dry-run:")
-        print("  python3 scripts/rename-taskwright-to-guardkit.py")
+        print("  python3 scripts/rename-guardkit-to-guardkit.py")
     else:
         print("Next steps:")
         print("  1. Review changes: git diff")
         print("  2. Run validation: ./scripts/validate-rename.sh")
-        print("  3. Commit changes: git add -A && git commit -m 'Rename Taskwright to GuardKit'")
+        print("  3. Commit changes: git add -A && git commit -m 'Rename GuardKit to GuardKit'")
     print()
 
     # Exit with error code if there were errors

@@ -1,17 +1,17 @@
 # Phase 1 Requirements Analysis - Clarification and Decision Summary
 
 **Date**: 2025-11-03
-**Context**: Documentation audit for Taskwright/RequireKit separation
+**Context**: Documentation audit for GuardKit/RequireKit separation
 **Related Tasks**: TASK-022 (completed), TASK-023, TASK-024, TASK-025 (backlog)
 
 ## Executive Summary
 
-There has been confusion about "Phase 1" in Taskwright due to two different concepts using the same name:
+There has been confusion about "Phase 1" in GuardKit due to two different concepts using the same name:
 
 1. **"Phase 1: Requirements Analysis"** - A RequireKit-only feature (EARS, BDD) that was correctly removed
-2. **"Phase 1: Load Task Context"** - Actual Taskwright implementation (file operations) that still exists
+2. **"Phase 1: Load Task Context"** - Actual GuardKit implementation (file operations) that still exists
 
-**Decision**: Keep the current implementation (Phase 1 is task loading only). Fix documentation to eliminate confusion about requirements analysis being part of Taskwright core.
+**Decision**: Keep the current implementation (Phase 1 is task loading only). Fix documentation to eliminate confusion about requirements analysis being part of GuardKit core.
 
 ## The Two "Phase 1" Concepts
 
@@ -24,17 +24,17 @@ There has been confusion about "Phase 1" in Taskwright due to two different conc
 - Created formal requirements documentation
 
 **Status:**
-- **Removed in TASK-003** (taskwright/require-kit split)
+- **Removed in TASK-003** (guardkit/require-kit split)
 - **Fixed in TASK-022** (removed broken references)
-- **Never coming back** to Taskwright core
+- **Never coming back** to GuardKit core
 
 **Why removed:**
-- Contradicts Taskwright's lightweight positioning
+- Contradicts GuardKit's lightweight positioning
 - Adds unnecessary complexity for simple task workflows
 - Task descriptions + acceptance criteria are sufficient
 - Formal requirements belong in RequireKit
 
-### Phase 1B: Load Task Context (Taskwright core) ✅
+### Phase 1B: Load Task Context (GuardKit core) ✅
 
 **What it does:**
 - Parse and validate task ID
@@ -88,7 +88,7 @@ Phase 1: Requirements Analysis
 
 1. **Removed Requirements-Analyst References**
    - Deleted invocation from task-manager.md
-   - Updated integration sections to clarify Taskwright vs RequireKit
+   - Updated integration sections to clarify GuardKit vs RequireKit
    - Cleaned up leftover agent files
 
 2. **Documentation Alignment**
@@ -118,23 +118,23 @@ Phase 1: Requirements Analysis
 ✅ `/task-work` command works correctly
 ✅ Workflow proceeds directly from task loading → Phase 2 Planning
 ✅ No errors about missing agents
-✅ Clear distinction between Taskwright and RequireKit workflows
+✅ Clear distinction between GuardKit and RequireKit workflows
 
 ## Should We Bring Back Requirements-Analyst?
 
 ### Question Posed
 
-"Should we bring in the requirements-analyst subagent and rename/refine it for Taskwright?"
+"Should we bring in the requirements-analyst subagent and rename/refine it for GuardKit?"
 
 ### Recommendation: NO ❌
 
 **Reasons:**
 
 #### 1. Already Solved Correctly
-TASK-022 made the right architectural decision. The fix aligns with Taskwright's core value proposition.
+TASK-022 made the right architectural decision. The fix aligns with GuardKit's core value proposition.
 
 #### 2. Contradicts Positioning
-Taskwright is **intentionally lightweight**:
+GuardKit is **intentionally lightweight**:
 - No formal requirements gathering
 - No EARS notation
 - No BDD generation
@@ -143,7 +143,7 @@ Taskwright is **intentionally lightweight**:
 Adding requirements-analyst would undo this positioning.
 
 #### 3. Task Descriptions Suffice
-For Taskwright workflows, we have:
+For GuardKit workflows, we have:
 ```yaml
 ---
 title: Add user authentication
@@ -156,14 +156,14 @@ description: Implement JWT-based authentication
 - [ ] Failed attempts are rate-limited
 ```
 
-This is **sufficient** for Taskwright's use case.
+This is **sufficient** for GuardKit's use case.
 
 #### 4. RequireKit Integration Available
 Users who need formal requirements can:
 - Install RequireKit separately
 - Use EARS notation for requirements
 - Generate BDD scenarios
-- Link requirements to Taskwright tasks
+- Link requirements to GuardKit tasks
 
 **Best of both worlds**: Lightweight core + optional power features.
 
@@ -175,7 +175,7 @@ Once we add basic requirements analysis, users will ask for:
 - Epic/feature hierarchy
 - PM tool synchronization
 
-This leads us right back to rebuilding RequireKit inside Taskwright.
+This leads us right back to rebuilding RequireKit inside GuardKit.
 
 ### What We SHOULD Do Instead
 
@@ -184,7 +184,7 @@ The real issue is **documentation confusion**, not missing functionality.
 **Solution**: Complete documentation audit tasks (TASK-023, 024, 025) to:
 
 1. **Remove confusing references**
-   - Strike "Phase 1: Requirements Analysis" from Taskwright docs
+   - Strike "Phase 1: Requirements Analysis" from GuardKit docs
    - Clarify "Phase 1: Load Task Context" is just file operations
    - Make phase separation crystal clear
 
@@ -204,7 +204,7 @@ The real issue is **documentation confusion**, not missing functionality.
 Remove Phase 1 numbering entirely, start from Phase 1 with planning:
 
 ```
-Taskwright Phases:
+GuardKit Phases:
 ├─ Phase 1: Implementation Planning
 ├─ Phase 1.5: Architectural Review (SOLID/DRY/YAGNI)
 ├─ Phase 1.7: Complexity Evaluation (0-10 scale)
@@ -229,7 +229,7 @@ Taskwright Phases:
 
 ### Option B: Keep Numbering, Clarify Separation (Recommended) ⭐
 
-Keep current numbering, explicitly show RequireKit vs Taskwright phases:
+Keep current numbering, explicitly show RequireKit vs GuardKit phases:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -244,7 +244,7 @@ Keep current numbering, explicitly show RequireKit vs Taskwright phases:
               │
               ↓ (optional link)
 ┌─────────────────────────────────────────┐
-│ Taskwright Core Workflow                │
+│ GuardKit Core Workflow                │
 ├─────────────────────────────────────────┤
 │ Phase 1: Load Task Context (internal)   │
 │   - File operations                     │
@@ -278,7 +278,7 @@ Keep current numbering, explicitly show RequireKit vs Taskwright phases:
 
 **Rationale:**
 1. Backward compatibility with existing documentation
-2. Clear product separation (Taskwright vs RequireKit)
+2. Clear product separation (GuardKit vs RequireKit)
 3. Shows integration story naturally
 4. Minimal documentation changes needed
 5. Phase numbers in existing task files remain accurate
@@ -352,10 +352,10 @@ cd require-kit
 /bdd-generate REQ-001
 /epic-create "User Management" export:jira
 
-# Link requirements to Taskwright task
+# Link requirements to GuardKit task
 /task-create "Implement login" requirements:[REQ-001] epic:EPIC-001
 
-# Taskwright workflow continues as normal
+# GuardKit workflow continues as normal
 /task-work TASK-001  # Phases 2-5.5 only
 ```
 
@@ -370,7 +370,7 @@ RequireKit Phase 1: Requirements Analysis
          │
          ↓ (linked via task frontmatter)
          │
-Taskwright Phase 2+: Implementation
+GuardKit Phase 2+: Implementation
 ├─ Reads requirements from linked REQ files
 ├─ Uses acceptance criteria from EARS
 ├─ Validates against BDD scenarios
@@ -395,7 +395,7 @@ external_ids:
 ---
 ```
 
-Without RequireKit (Taskwright only):
+Without RequireKit (GuardKit only):
 ```yaml
 ---
 id: TASK-001
@@ -411,7 +411,7 @@ tags: [auth, security]
 - [ ] Failed attempts are rate-limited
 ```
 
-Both formats work fine in Taskwright. RequireKit fields are optional.
+Both formats work fine in GuardKit. RequireKit fields are optional.
 
 ## Documentation Changes Needed
 
@@ -424,9 +424,9 @@ The following documentation audit tasks (already created) will fix the confusion
 - Fix GitHub URLs
 
 ### TASK-024: Core User Guides
-- Update GETTING-STARTED.md to show Taskwright-only workflow
+- Update GETTING-STARTED.md to show GuardKit-only workflow
 - Remove BDD mode references from QUICK_REFERENCE.md
-- Clarify taskwright-workflow.md phases
+- Clarify guardkit-workflow.md phases
 
 ### TASK-025: Workflow and Quick-Reference Docs
 - Update 14 workflow files to remove Phase 1 references
@@ -436,7 +436,7 @@ The following documentation audit tasks (already created) will fix the confusion
 
 ## Key Messaging for Documentation
 
-### What Taskwright IS
+### What GuardKit IS
 
 ✅ Lightweight task workflow with quality gates
 ✅ Architectural review before implementation (Phase 2.5)
@@ -446,7 +446,7 @@ The following documentation audit tasks (already created) will fix the confusion
 ✅ Stack-specific templates and AI agents
 ✅ MCP integration (Context7, design-patterns, Figma, Zeplin)
 
-### What Taskwright is NOT
+### What GuardKit is NOT
 
 ❌ Requirements management system (that's RequireKit)
 ❌ EARS notation processor (that's RequireKit)
@@ -462,7 +462,7 @@ Use this messaging pattern in docs:
 ```markdown
 ## Need Formal Requirements Management?
 
-Taskwright uses task descriptions and acceptance criteria for lightweight workflows.
+GuardKit uses task descriptions and acceptance criteria for lightweight workflows.
 
 For formal requirements management, install [RequireKit](https://github.com/requirekit/require-kit):
 - EARS notation requirements
@@ -471,7 +471,7 @@ For formal requirements management, install [RequireKit](https://github.com/requ
 - Requirements traceability
 - PM tool synchronization (Jira, Linear, Azure DevOps)
 
-RequireKit integrates seamlessly with Taskwright - requirements link to tasks automatically.
+RequireKit integrates seamlessly with GuardKit - requirements link to tasks automatically.
 ```
 
 ## Agent Architecture (Post-TASK-022)
@@ -505,11 +505,11 @@ Example: dotnet-microservice stack
 
 ## Testing Scenarios
 
-### Scenario 1: Taskwright Only (Current Implementation)
+### Scenario 1: GuardKit Only (Current Implementation)
 
 ```bash
 # Initialize project
-taskwright-init dotnet-microservice
+guardkit-init dotnet-microservice
 
 # Create task
 /task-create "Add health check endpoint" priority:high
@@ -522,11 +522,11 @@ taskwright-init dotnet-microservice
 
 **Result**: ✅ Works correctly (post-TASK-022)
 
-### Scenario 2: Taskwright + RequireKit Integration
+### Scenario 2: GuardKit + RequireKit Integration
 
 ```bash
 # Install both systems
-./taskwright/installer/scripts/install.sh
+./guardkit/installer/scripts/install.sh
 ./require-kit/installer/scripts/install.sh
 
 # Create requirement in RequireKit
@@ -535,7 +535,7 @@ taskwright-init dotnet-microservice
 # Create task linked to requirement
 /task-create "Add health check endpoint" requirements:[REQ-001]
 
-# Work on task (Taskwright Phases 2-5.5)
+# Work on task (GuardKit Phases 2-5.5)
 /task-work TASK-001
 
 # Expected: Acceptance criteria pulled from REQ-001
@@ -558,7 +558,7 @@ taskwright-init dotnet-microservice
 
 ### Summary
 
-1. **Two Phase 1 concepts existed** - one for requirements (RequireKit), one for task loading (Taskwright)
+1. **Two Phase 1 concepts existed** - one for requirements (RequireKit), one for task loading (GuardKit)
 2. **TASK-022 correctly removed** the requirements-analyst invocation
 3. **Current implementation is right** - no code changes needed
 4. **Documentation needs fixing** - complete TASK-023, 024, 025
@@ -566,7 +566,7 @@ taskwright-init dotnet-microservice
 
 ### No Further Agent Changes Needed
 
-The `requirements-analyst` agent should **NOT** be brought back to Taskwright. Users needing formal requirements should use RequireKit.
+The `requirements-analyst` agent should **NOT** be brought back to GuardKit. Users needing formal requirements should use RequireKit.
 
 ### Path Forward
 
@@ -580,14 +580,14 @@ The `requirements-analyst` agent should **NOT** be brought back to Taskwright. U
 
 After documentation audit:
 - ✅ No confusion about "Phase 1: Requirements Analysis"
-- ✅ Clear separation between Taskwright and RequireKit features
+- ✅ Clear separation between GuardKit and RequireKit features
 - ✅ Users understand when to use each tool
 - ✅ Integration story is clear and compelling
-- ✅ All command examples work with Taskwright-only installation
+- ✅ All command examples work with GuardKit-only installation
 
 ## References
 
-- **TASK-003**: Initial removal of requirements agents (taskwright/require-kit split)
+- **TASK-003**: Initial removal of requirements agents (guardkit/require-kit split)
 - **TASK-022**: Fix broken task-manager references (completed 2025-11-02)
 - **TASK-023**: Audit README.md and CLAUDE.md (backlog)
 - **TASK-024**: Audit core user guides (backlog)
@@ -597,7 +597,7 @@ After documentation audit:
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2025-11-02 | Remove requirements-analyst from Taskwright | Contradicts lightweight positioning |
+| 2025-11-02 | Remove requirements-analyst from GuardKit | Contradicts lightweight positioning |
 | 2025-11-02 | Skip Phase 1 in task-work workflow | Task descriptions + acceptance criteria sufficient |
 | 2025-11-03 | Do NOT bring back requirements-analyst | Would undo correct architectural decision |
 | 2025-11-03 | Use Option B for phase numbering | Backward compatibility + clear separation |
@@ -605,6 +605,6 @@ After documentation audit:
 
 ---
 
-**Document Owner**: Taskwright Documentation Team
+**Document Owner**: GuardKit Documentation Team
 **Last Updated**: 2025-11-03
 **Status**: Final Decision - No Code Changes Needed

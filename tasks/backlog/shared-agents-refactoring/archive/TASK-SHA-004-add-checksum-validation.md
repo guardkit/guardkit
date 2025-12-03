@@ -86,8 +86,8 @@ jobs:
             Download and verify:
             ```bash
             VERSION=${{ github.ref_name }}
-            curl -sL "https://github.com/taskwright-dev/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o shared-agents.tar.gz
-            curl -sL "https://github.com/taskwright-dev/shared-agents/releases/download/$VERSION/shared-agents.tar.gz.sha256" -o shared-agents.tar.gz.sha256
+            curl -sL "https://github.com/guardkit/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o shared-agents.tar.gz
+            curl -sL "https://github.com/guardkit/shared-agents/releases/download/$VERSION/shared-agents.tar.gz.sha256" -o shared-agents.tar.gz.sha256
 
             # Verify checksum
             sha256sum -c shared-agents.tar.gz.sha256
@@ -156,7 +156,7 @@ install_shared_agents() {
     local version_file="$SCRIPT_DIR/../shared-agents-version.txt"
     local version=$(cat "$version_file" 2>/dev/null || echo "v1.0.0")
     local target_dir="$PROJECT_ROOT/.claude/agents/universal"
-    local base_url="https://github.com/taskwright-dev/shared-agents/releases/download/$version"
+    local base_url="https://github.com/guardkit/shared-agents/releases/download/$version"
     local archive_url="$base_url/shared-agents.tar.gz"
     local checksum_url="$base_url/shared-agents.tar.gz.sha256"
 
@@ -318,8 +318,8 @@ You can manually verify downloads:
 ```bash
 # Download release
 VERSION="v1.0.0"
-curl -sL "https://github.com/taskwright-dev/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o shared-agents.tar.gz
-curl -sL "https://github.com/taskwright-dev/shared-agents/releases/download/$VERSION/shared-agents.tar.gz.sha256" -o shared-agents.tar.gz.sha256
+curl -sL "https://github.com/guardkit/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o shared-agents.tar.gz
+curl -sL "https://github.com/guardkit/shared-agents/releases/download/$VERSION/shared-agents.tar.gz.sha256" -o shared-agents.tar.gz.sha256
 
 # Verify checksum
 sha256sum -c shared-agents.tar.gz.sha256
@@ -357,8 +357,8 @@ If checksum file is missing (e.g., old release):
 
 ## Support
 
-Security issues: security@taskwright.dev
-General issues: https://github.com/taskwright-dev/shared-agents/issues
+Security issues: security@guardkit.dev
+General issues: https://github.com/guardkit/shared-agents/issues
 ```
 
 ## Test Requirements

@@ -1,4 +1,4 @@
-# TASK-066: Create Taskwright Python Template
+# TASK-066: Create GuardKit Python Template
 
 **Created**: 2025-01-10
 **Completed**: 2025-01-10
@@ -15,7 +15,7 @@
 
 ## Problem Statement
 
-Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a high-quality Python CLI tool with proven architectural patterns, but there's no template based on it. Creating a `taskwright-python` template would provide developers with a reference implementation for:
+GuardKit itself (16,254 LOC, 70 Python files, 129 test files) represents a high-quality Python CLI tool with proven architectural patterns, but there's no template based on it. Creating a `guardkit-python` template would provide developers with a reference implementation for:
 
 - **Orchestrator pattern** with dependency injection
 - **Pydantic models** for type-safe data structures
@@ -26,7 +26,7 @@ Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a hig
 
 **Current State**: 5 templates exist, but none specifically for Python CLI tools with orchestrator patterns.
 
-**Desired State**: A 6th template (`taskwright-python`) that demonstrates production-grade Python CLI architecture based on Taskwright's own codebase.
+**Desired State**: A 6th template (`guardkit-python`) that demonstrates production-grade Python CLI architecture based on GuardKit's own codebase.
 
 ---
 
@@ -37,7 +37,7 @@ Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a hig
 - High-quality reference implementations (8+/10 quality score)
 - Users create custom templates from their own codebases via `/template-create`
 
-**Why Taskwright as a Template?**
+**Why GuardKit as a Template?**
 1. **Real Production Tool**: 16K LOC used in production, not a toy example
 2. **Proven Patterns**: Orchestrator + DI + Pydantic models + agent system
 3. **Unique Features**: Markdown commands, template generation, quality gates
@@ -45,7 +45,7 @@ Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a hig
 5. **Minimal Dependencies**: Only 5 core libraries (Pydantic, Jinja2, PyYAML, pathspec, frontmatter)
 
 **Comparison to python-blueprint**:
-- Taskwright: 16,254 LOC, real-world complexity, unique patterns
+- GuardKit: 16,254 LOC, real-world complexity, unique patterns
 - python-blueprint: Simple examples (factorial calculator), educational only
 
 **Related Tasks**:
@@ -58,10 +58,10 @@ Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a hig
 ## Objectives
 
 ### Primary Objective
-Create a high-quality Python CLI template based on the Taskwright codebase using `/template-create`, achieving 8+/10 quality score.
+Create a high-quality Python CLI template based on the GuardKit codebase using `/template-create`, achieving 8+/10 quality score.
 
 ### Success Criteria
-- [ ] Template created at `installer/global/templates/taskwright-python/`
+- [ ] Template created at `installer/global/templates/guardkit-python/`
 - [ ] Template validated with `/template-validate` (8+/10 quality score)
 - [ ] Manifest.json includes all required placeholders (ProjectName, project-name, etc.)
 - [ ] CLAUDE.md provides clear Python CLI guidance
@@ -83,7 +83,7 @@ Create a high-quality Python CLI template based on the Taskwright codebase using
 Use **Bash tool**:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Backup .claude directory
 mv .claude .claude.backup
@@ -105,17 +105,17 @@ Use **SlashCommand tool**:
 
 **Expected Interactive Prompts** (answer these during execution):
 
-1. **Template name?** → `taskwright-python`
-2. **Template description?** → `Python CLI tool with orchestrator pattern, dependency injection, and agent-based system (based on Taskwright)`
+1. **Template name?** → `guardkit-python`
+2. **Template description?** → `Python CLI tool with orchestrator pattern, dependency injection, and agent-based system (based on GuardKit)`
 3. **Technology stack?** → `python`
-4. **Author?** → `Taskwright Contributors`
+4. **Author?** → `GuardKit Contributors`
 5. **Version?** → `1.0.0`
 
 **What this does**:
-- Analyzes current Taskwright codebase structure
+- Analyzes current GuardKit codebase structure
 - Identifies Python patterns (orchestrator, DI, Pydantic)
 - Generates `manifest.json` with placeholders
-- Creates template files in `installer/global/templates/taskwright-python/`
+- Creates template files in `installer/global/templates/guardkit-python/`
 - Generates `CLAUDE.md` with Python CLI guidance
 - Creates `README.md` with template usage
 - Runs Level 2 validation (`--validate` flag)
@@ -123,7 +123,7 @@ Use **SlashCommand tool**:
 
 **Expected Output Location**:
 ```
-installer/global/templates/taskwright-python/
+installer/global/templates/guardkit-python/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md
@@ -155,7 +155,7 @@ Use **Read tool** to examine the generated validation report:
 
 ```bash
 # Read validation report
-cat installer/global/templates/taskwright-python/validation-report.md
+cat installer/global/templates/guardkit-python/validation-report.md
 ```
 
 **Check for**:
@@ -172,7 +172,7 @@ cat installer/global/templates/taskwright-python/validation-report.md
 If validation score <8.0/10, use **SlashCommand tool** to run Level 3 audit:
 
 ```bash
-/template-validate installer/global/templates/taskwright-python
+/template-validate installer/global/templates/guardkit-python
 ```
 
 **Interactive Audit Sections**:
@@ -205,7 +205,7 @@ Use **Read tool** and **Edit tool** to review and enhance the generated manifest
 
 ```bash
 # Read generated manifest
-cat installer/global/templates/taskwright-python/manifest.json
+cat installer/global/templates/guardkit-python/manifest.json
 ```
 
 **Required Placeholders** (verify these exist):
@@ -223,7 +223,7 @@ Use **Edit tool** to add missing placeholders or improve descriptions:
 
 ```json
 {
-  "name": "taskwright-python",
+  "name": "guardkit-python",
   "description": "Python CLI tool with orchestrator pattern, dependency injection, and agent-based system",
   "version": "1.0.0",
   "stack": "python",
@@ -259,7 +259,7 @@ Use **Edit tool** to add missing placeholders or improve descriptions:
 Use **Read tool** to review the generated CLAUDE.md:
 
 ```bash
-cat installer/global/templates/taskwright-python/CLAUDE.md
+cat installer/global/templates/guardkit-python/CLAUDE.md
 ```
 
 **Expected Content**:
@@ -273,12 +273,12 @@ cat installer/global/templates/taskwright-python/CLAUDE.md
 
 **Enhancement** (if needed):
 
-Use **Edit tool** to add Taskwright-specific guidance:
+Use **Edit tool** to add GuardKit-specific guidance:
 
 ```markdown
 # Python CLI Tool with Orchestrator Pattern
 
-This template demonstrates a production-grade Python CLI tool based on Taskwright's architecture.
+This template demonstrates a production-grade Python CLI tool based on GuardKit's architecture.
 
 ## Architecture Overview
 
@@ -310,7 +310,7 @@ class Orchestrator:
 Use **Bash tool** to create stack agent directory:
 
 ```bash
-mkdir -p installer/global/agents/stacks/taskwright-python
+mkdir -p installer/global/agents/stacks/guardkit-python
 ```
 
 Use **Write tool** to create stack-specific agents:
@@ -318,7 +318,7 @@ Use **Write tool** to create stack-specific agents:
 **Agent 1: Python CLI Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-cli-specialist.md
+# File: installer/global/agents/stacks/guardkit-python/python-cli-specialist.md
 ```
 
 ```markdown
@@ -368,7 +368,7 @@ You are a Python CLI development specialist focused on building production-grade
 **Agent 2: Python Testing Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-testing-specialist.md
+# File: installer/global/agents/stacks/guardkit-python/python-testing-specialist.md
 ```
 
 ```markdown
@@ -417,7 +417,7 @@ You are a Python testing specialist focused on comprehensive test coverage using
 **Agent 3: Python Architecture Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-architecture-specialist.md
+# File: installer/global/agents/stacks/guardkit-python/python-architecture-specialist.md
 ```
 
 ```markdown
@@ -482,7 +482,7 @@ Available Templates:
   • nextjs-fullstack - Next.js full-stack (9+/10)
   • react-fastapi-monorepo - React + FastAPI monorepo (9.2/10)
   • react-typescript - React frontend patterns (9+/10)
-  • taskwright-python - Python CLI with orchestrator pattern (8+/10)
+  • guardkit-python - Python CLI with orchestrator pattern (8+/10)
 ```
 
 **Update template count** (around line 448):
@@ -497,12 +497,12 @@ Available Templates:
 
 Use **Edit tool** to update `installer/scripts/init-project.sh`:
 
-**Add taskwright-python to template list** (around line 68-87):
+**Add guardkit-python to template list** (around line 68-87):
 
 ```bash
 # Add new case:
-taskwright-python)
-    echo "  📋 Template:    taskwright-python"
+guardkit-python)
+    echo "  📋 Template:    guardkit-python"
     echo "  📝 Type:        Python CLI tool"
     echo "  🎯 Use Case:    CLI tools with orchestrator pattern"
     echo "  ⭐ Quality:     8+/10"
@@ -517,13 +517,13 @@ Use **Edit tool** to update `CLAUDE.md`:
 
 ```markdown
 # Old:
-Taskwright includes **5 high-quality templates**
+GuardKit includes **5 high-quality templates**
 
 # New:
-Taskwright includes **6 high-quality templates**
+GuardKit includes **6 high-quality templates**
 ```
 
-**Add taskwright-python to template list**:
+**Add guardkit-python to template list**:
 
 ```markdown
 ### Stack-Specific Reference Templates (9+/10 Quality)
@@ -536,7 +536,7 @@ Taskwright includes **6 high-quality templates**
 
 ### Specialized Templates (8-9+/10 Quality)
 5. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
-6. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
+6. **guardkit-python** - Python CLI with orchestrator pattern (8+/10)
 ```
 
 Use **Edit tool** to update `README.md`:
@@ -546,13 +546,13 @@ Use **Edit tool** to update `README.md`:
 ```markdown
 # Templates
 
-Taskwright provides **6 high-quality reference templates**:
+GuardKit provides **6 high-quality reference templates**:
 
 1. **react-typescript** - React frontend (9+/10)
 2. **fastapi-python** - Python backend (9+/10)
 3. **nextjs-fullstack** - Next.js full-stack (9+/10)
 4. **react-fastapi-monorepo** - Monorepo (9.2/10)
-5. **taskwright-python** - Python CLI tool (8+/10)
+5. **guardkit-python** - Python CLI tool (8+/10)
 6. **default** - Language-agnostic (8+/10)
 ```
 
@@ -562,11 +562,11 @@ Use **Bash tool** to test the new template:
 
 ```bash
 # Create test directory
-mkdir -p /tmp/test-taskwright-python-template
-cd /tmp/test-taskwright-python-template
+mkdir -p /tmp/test-guardkit-python-template
+cd /tmp/test-guardkit-python-template
 
 # Initialize with new template
-taskwright-init taskwright-python
+guardkit-init guardkit-python
 
 # Expected prompts:
 # ProjectName (PascalCase): TaskManager
@@ -626,10 +626,10 @@ pytest tests/ -v --cov=src --cov-report=term
 Use **Bash tool**:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
-git add installer/global/templates/taskwright-python/
-git add installer/global/agents/stacks/taskwright-python/
+git add installer/global/templates/guardkit-python/
+git add installer/global/agents/stacks/guardkit-python/
 git add installer/scripts/install.sh
 git add installer/scripts/init-project.sh
 git add CLAUDE.md
@@ -648,13 +648,13 @@ git status
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] Template created at `installer/global/templates/taskwright-python/`
+- [ ] Template created at `installer/global/templates/guardkit-python/`
 - [ ] Validation report shows quality score ≥8.0/10
 - [ ] Manifest.json includes all required Python CLI placeholders
 - [ ] CLAUDE.md provides Python CLI architecture guidance
 - [ ] README.md explains template usage and patterns
 - [ ] 3 stack agents created (CLI, Testing, Architecture specialists)
-- [ ] Template initializes correctly with `taskwright-init taskwright-python`
+- [ ] Template initializes correctly with `guardkit-init guardkit-python`
 - [ ] Generated project has valid Python structure (src/, tests/, requirements.txt)
 - [ ] Installer shows "Templates: 6" and lists all 6 templates
 - [ ] Documentation updated to reflect 6 templates
@@ -681,15 +681,15 @@ git status
 # Expected: Quality score ≥8.0/10
 
 # Test 2: Level 3 comprehensive audit
-/template-validate installer/global/templates/taskwright-python
+/template-validate installer/global/templates/guardkit-python
 # Expected: Score ≥8.0/10, no critical issues
 ```
 
 ### Template Initialization Tests
 ```bash
 # Test 3: Initialize template
-cd /tmp/test-taskwright-python
-taskwright-init taskwright-python
+cd /tmp/test-guardkit-python
+guardkit-init guardkit-python
 # Expected: Initializes successfully with all prompts
 
 # Test 4: Verify structure
@@ -714,7 +714,7 @@ pytest tests/ -v --cov=src
 ```bash
 # Test 7: Verify installer output
 ./installer/scripts/install.sh | grep -A 10 "Available Templates"
-# Expected: Shows 6 templates including taskwright-python
+# Expected: Shows 6 templates including guardkit-python
 
 # Test 8: Verify template count
 ./installer/scripts/install.sh | grep "Templates:"
@@ -726,26 +726,26 @@ pytest tests/ -v --cov=src
 ## Files to Create/Modify
 
 ### Template Files (CREATE)
-- `installer/global/templates/taskwright-python/manifest.json`
-- `installer/global/templates/taskwright-python/settings.json`
-- `installer/global/templates/taskwright-python/CLAUDE.md`
-- `installer/global/templates/taskwright-python/README.md`
-- `installer/global/templates/taskwright-python/validation-report.md`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/__init__.py`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/orchestrator.py`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/di_container.py`
-- `installer/global/templates/taskwright-python/templates/tests/conftest.py`
-- `installer/global/templates/taskwright-python/templates/requirements.txt`
-- `installer/global/templates/taskwright-python/templates/pytest.ini`
+- `installer/global/templates/guardkit-python/manifest.json`
+- `installer/global/templates/guardkit-python/settings.json`
+- `installer/global/templates/guardkit-python/CLAUDE.md`
+- `installer/global/templates/guardkit-python/README.md`
+- `installer/global/templates/guardkit-python/validation-report.md`
+- `installer/global/templates/guardkit-python/templates/src/{{project_name}}/__init__.py`
+- `installer/global/templates/guardkit-python/templates/src/{{project_name}}/orchestrator.py`
+- `installer/global/templates/guardkit-python/templates/src/{{project_name}}/di_container.py`
+- `installer/global/templates/guardkit-python/templates/tests/conftest.py`
+- `installer/global/templates/guardkit-python/templates/requirements.txt`
+- `installer/global/templates/guardkit-python/templates/pytest.ini`
 
 ### Stack Agents (CREATE)
-- `installer/global/agents/stacks/taskwright-python/python-cli-specialist.md`
-- `installer/global/agents/stacks/taskwright-python/python-testing-specialist.md`
-- `installer/global/agents/stacks/taskwright-python/python-architecture-specialist.md`
+- `installer/global/agents/stacks/guardkit-python/python-cli-specialist.md`
+- `installer/global/agents/stacks/guardkit-python/python-testing-specialist.md`
+- `installer/global/agents/stacks/guardkit-python/python-architecture-specialist.md`
 
 ### Installer Scripts (MODIFY)
 - `installer/scripts/install.sh` - Add template to list, update count to 6
-- `installer/scripts/init-project.sh` - Add taskwright-python case
+- `installer/scripts/init-project.sh` - Add guardkit-python case
 
 ### Documentation (MODIFY)
 - `CLAUDE.md` - Update template count and list
@@ -758,7 +758,7 @@ pytest tests/ -v --cov=src
 After running `/template-create --validate --output-location=repo`:
 
 ```
-installer/global/templates/taskwright-python/
+installer/global/templates/guardkit-python/
 ├── manifest.json                 # Template metadata + placeholders
 ├── settings.json                 # Template configuration
 ├── CLAUDE.md                     # AI guidance for Python CLI
@@ -803,7 +803,7 @@ installer/global/templates/taskwright-python/
 ### Risk 4: Missing Stack Agents
 **Mitigation**: Create 3 stack-specific agents (CLI, Testing, Architecture) with clear expertise definitions.
 
-### Risk 5: Template Doesn't Reflect Taskwright Patterns
+### Risk 5: Template Doesn't Reflect GuardKit Patterns
 **Mitigation**: Manually enhance CLAUDE.md and template files to explicitly document orchestrator pattern, DI, and agent system.
 
 ---

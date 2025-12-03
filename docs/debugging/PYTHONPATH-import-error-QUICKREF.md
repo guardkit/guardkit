@@ -12,7 +12,7 @@
 
 ```bash
 # Until fix is implemented, use this:
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /template-create --name test
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template-create --name test
 ```
 
 ---
@@ -42,19 +42,19 @@ import sys
 from pathlib import Path
 
 def _setup_pythonpath():
-    """Find taskwright installation and add to sys.path."""
+    """Find guardkit installation and add to sys.path."""
     # Try ~/.agentecflow symlink
     agentecflow = Path.home() / ".agentecflow"
     if agentecflow.is_symlink():
         target = agentecflow.resolve()
         if target.name == ".agentecflow":
-            taskwright_path = target.parent
-            if (taskwright_path / "installer").exists():
-                sys.path.insert(0, str(taskwright_path))
+            guardkit_path = target.parent
+            if (guardkit_path / "installer").exists():
+                sys.path.insert(0, str(guardkit_path))
                 return
 
     # Try standard location
-    standard_path = Path.home() / "Projects" / "appmilla_github" / "taskwright"
+    standard_path = Path.home() / "Projects" / "appmilla_github" / "guardkit"
     if (standard_path / "installer").exists():
         sys.path.insert(0, str(standard_path))
         return
@@ -68,7 +68,7 @@ def _setup_pythonpath():
                 sys.path.insert(0, str(dir_path))
                 return
 
-    raise ImportError("Cannot find taskwright installation")
+    raise ImportError("Cannot find guardkit installation")
 
 # Run setup before imports
 _setup_pythonpath()
@@ -103,14 +103,14 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 cd /tmp && /template-create --name test1 --dry-run
 
 # ✅ Test 2: With manual PYTHONPATH
-PYTHONPATH="/path/to/taskwright" /template-create --name test2 --dry-run
+PYTHONPATH="/path/to/guardkit" /template-create --name test2 --dry-run
 
 # ✅ Test 3: Different directories
 cd / && /template-create --name test3 --dry-run
 
 # ✅ Test 4: Error handling
-mv taskwright{,.bak} && /template-create --name test4
-mv taskwright{.bak,}
+mv guardkit{,.bak} && /template-create --name test4
+mv guardkit{.bak,}
 
 # ✅ Test 5: Full workflow
 /template-create --name test5
@@ -132,7 +132,7 @@ Orchestrator imports from multiple repo locations:
 
 Can't use relative imports (would need to copy 50+ modules to ~/.agentecflow/)
 MUST use absolute imports from 'installer' package root
-REQUIRES PYTHONPATH pointing to taskwright repo directory
+REQUIRES PYTHONPATH pointing to guardkit repo directory
 ```
 
 ---
@@ -154,7 +154,7 @@ REQUIRES PYTHONPATH pointing to taskwright repo directory
 ## Files
 
 **Primary**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
 
 **Documentation**:
 - `docs/debugging/PYTHONPATH-import-error-RCA.md` (full analysis)

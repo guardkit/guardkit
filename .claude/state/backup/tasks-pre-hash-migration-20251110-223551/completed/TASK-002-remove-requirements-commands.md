@@ -26,11 +26,11 @@ completion_metrics:
 
 ## Description
 
-Remove all commands related to requirements management (EARS, BDD, Epic/Feature hierarchy) from taskwright repository, keeping only task-focused workflow commands.
+Remove all commands related to requirements management (EARS, BDD, Epic/Feature hierarchy) from guardkit repository, keeping only task-focused workflow commands.
 
 ## Context
 
-Taskwright is the "lite" version (formerly Agentecflow Lite) focusing on task workflow with quality gates. Requirements management features (EARS, BDD, epics, features) are being removed to reduce complexity.
+GuardKit is the "lite" version (formerly Agentecflow Lite) focusing on task workflow with quality gates. Requirements management features (EARS, BDD, epics, features) are being removed to reduce complexity.
 
 ## Commands to Remove
 
@@ -83,7 +83,7 @@ Taskwright is the "lite" version (formerly Agentecflow Lite) focusing on task wo
 ### 1. Identify Command Files to Delete
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Find all requirements-related commands
 find installer/global/commands -name "*requirements*.md"
@@ -252,7 +252,7 @@ These references will be removed/updated in:
 - ✅ Task state transitions tracked (backlog → in_progress → in_review → completed)
 
 ### Impact
-This task successfully reduced the complexity of Taskwright by removing requirements management features (EARS, BDD, Epic/Feature hierarchy, PM tool integration) that were moving to the separate require-kit package. The repository now focuses purely on task workflow with quality gates.
+This task successfully reduced the complexity of GuardKit by removing requirements management features (EARS, BDD, Epic/Feature hierarchy, PM tool integration) that were moving to the separate require-kit package. The repository now focuses purely on task workflow with quality gates.
 
 **Complexity Reduction:**
 - Command count: 23 → 9 (61% reduction)

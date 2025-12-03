@@ -45,7 +45,7 @@ The template validation system is implemented in 4 sequential phases, with oppor
 ### Implementation Command
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-work TASK-043
 ```
 
@@ -143,7 +143,7 @@ echo $?  # Should be 0, 1, or 2
 #### Step 1: Foundation (Day 1 - Main Repo)
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure TASK-043 is completed and merged
 git checkout main
@@ -169,38 +169,38 @@ git pull
 # Create worktrees for parallel section development
 cd ~/conductor-worktrees
 
-git worktree add taskwright-sections-1-4 -b feature/task-044-sections-1-4
-git worktree add taskwright-sections-5-7 -b feature/task-044-sections-5-7
-git worktree add taskwright-sections-8-10 -b feature/task-044-sections-8-10
-git worktree add taskwright-sections-11-13 -b feature/task-044-sections-11-13
-git worktree add taskwright-sections-14-16 -b feature/task-044-sections-14-16
+git worktree add guardkit-sections-1-4 -b feature/task-044-sections-1-4
+git worktree add guardkit-sections-5-7 -b feature/task-044-sections-5-7
+git worktree add guardkit-sections-8-10 -b feature/task-044-sections-8-10
+git worktree add guardkit-sections-11-13 -b feature/task-044-sections-11-13
+git worktree add guardkit-sections-14-16 -b feature/task-044-sections-14-16
 ```
 
 **Worktree Development**:
 
 ```bash
 # Terminal 1: Sections 1-4
-cd ~/conductor-worktrees/taskwright-sections-1-4
+cd ~/conductor-worktrees/guardkit-sections-1-4
 /task-create "Implement audit sections 1-4 (Manifest, Settings, Docs, Templates)"
 /task-work TASK-044-SEC-1-4
 
 # Terminal 2: Sections 5-7
-cd ~/conductor-worktrees/taskwright-sections-5-7
+cd ~/conductor-worktrees/guardkit-sections-5-7
 /task-create "Implement audit sections 5-7 (Agents, README, Global)"
 /task-work TASK-044-SEC-5-7
 
 # Terminal 3: Sections 8-10
-cd ~/conductor-worktrees/taskwright-sections-8-10
+cd ~/conductor-worktrees/guardkit-sections-8-10
 /task-create "Implement audit sections 8-10 (Source, Readiness, Scoring)"
 /task-work TASK-044-SEC-8-10
 
 # Terminal 4: Sections 11-13
-cd ~/conductor-worktrees/taskwright-sections-11-13
+cd ~/conductor-worktrees/guardkit-sections-11-13
 /task-create "Implement audit sections 11-13 (Findings, Testing, Market)"
 /task-work TASK-044-SEC-11-13
 
 # Terminal 5: Sections 14-16
-cd ~/conductor-worktrees/taskwright-sections-14-16
+cd ~/conductor-worktrees/guardkit-sections-14-16
 /task-create "Implement audit sections 14-16 (Recommendations, Summary)"
 /task-work TASK-044-SEC-14-16
 ```
@@ -209,7 +209,7 @@ cd ~/conductor-worktrees/taskwright-sections-14-16
 
 ```bash
 # Merge PRs sequentially
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 gh pr create --head feature/task-044-sections-1-4
 gh pr merge feature/task-044-sections-1-4 --squash
 
@@ -330,7 +330,7 @@ Days 4-5 (Sequential - Main Repo):
 #### Step 1: Foundation (Day 1 Morning - Main Repo)
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure TASK-044 is completed and merged
 git checkout main
@@ -356,32 +356,32 @@ git pull
 # Create worktrees for AI enhancements
 cd ~/conductor-worktrees
 
-git worktree add taskwright-ai-section-8 -b feature/task-045-ai-section-8
-git worktree add taskwright-ai-section-11 -b feature/task-045-ai-section-11
-git worktree add taskwright-ai-section-12 -b feature/task-045-ai-section-12
-git worktree add taskwright-ai-section-13 -b feature/task-045-ai-section-13
+git worktree add guardkit-ai-section-8 -b feature/task-045-ai-section-8
+git worktree add guardkit-ai-section-11 -b feature/task-045-ai-section-11
+git worktree add guardkit-ai-section-12 -b feature/task-045-ai-section-12
+git worktree add guardkit-ai-section-13 -b feature/task-045-ai-section-13
 ```
 
 **Worktree Development**:
 
 ```bash
 # Terminal 1: Section 8 AI
-cd ~/conductor-worktrees/taskwright-ai-section-8
+cd ~/conductor-worktrees/guardkit-ai-section-8
 /task-create "Add AI assistance to Section 8 (Source Comparison)"
 /task-work TASK-045-AI-SEC-8
 
 # Terminal 2: Section 11 AI
-cd ~/conductor-worktrees/taskwright-ai-section-11
+cd ~/conductor-worktrees/guardkit-ai-section-11
 /task-create "Add AI assistance to Section 11 (Detailed Findings)"
 /task-work TASK-045-AI-SEC-11
 
 # Terminal 3: Section 12 AI
-cd ~/conductor-worktrees/taskwright-ai-section-12
+cd ~/conductor-worktrees/guardkit-ai-section-12
 /task-create "Add AI assistance to Section 12 (Validation Testing)"
 /task-work TASK-045-AI-SEC-12
 
 # Terminal 4: Section 13 AI
-cd ~/conductor-worktrees/taskwright-ai-section-13
+cd ~/conductor-worktrees/guardkit-ai-section-13
 /task-create "Add AI assistance to Section 13 (Market Comparison)"
 /task-work TASK-045-AI-SEC-13
 ```
@@ -390,7 +390,7 @@ cd ~/conductor-worktrees/taskwright-ai-section-13
 
 ```bash
 # Merge all AI enhancements
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 gh pr merge feature/task-045-ai-section-8 --squash
 gh pr merge feature/task-045-ai-section-11 --squash
 gh pr merge feature/task-045-ai-section-12 --squash
@@ -492,7 +492,7 @@ python scripts/compare_ai_vs_manual.py
 ### Implementation Command
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure all features complete
 git checkout main
@@ -660,24 +660,24 @@ ls -la .claude/state      # Should show symlink to main repo
 ```bash
 # Phase 2: Create section worktrees
 cd ~/conductor-worktrees
-git worktree add taskwright-sections-1-4 -b feature/task-044-sections-1-4
-git worktree add taskwright-sections-5-7 -b feature/task-044-sections-5-7
-git worktree add taskwright-sections-8-10 -b feature/task-044-sections-8-10
-git worktree add taskwright-sections-11-13 -b feature/task-044-sections-11-13
-git worktree add taskwright-sections-14-16 -b feature/task-044-sections-14-16
+git worktree add guardkit-sections-1-4 -b feature/task-044-sections-1-4
+git worktree add guardkit-sections-5-7 -b feature/task-044-sections-5-7
+git worktree add guardkit-sections-8-10 -b feature/task-044-sections-8-10
+git worktree add guardkit-sections-11-13 -b feature/task-044-sections-11-13
+git worktree add guardkit-sections-14-16 -b feature/task-044-sections-14-16
 
 # Phase 3: Create AI enhancement worktrees
-git worktree add taskwright-ai-section-8 -b feature/task-045-ai-section-8
-git worktree add taskwright-ai-section-11 -b feature/task-045-ai-section-11
-git worktree add taskwright-ai-section-12 -b feature/task-045-ai-section-12
-git worktree add taskwright-ai-section-13 -b feature/task-045-ai-section-13
+git worktree add guardkit-ai-section-8 -b feature/task-045-ai-section-8
+git worktree add guardkit-ai-section-11 -b feature/task-045-ai-section-11
+git worktree add guardkit-ai-section-12 -b feature/task-045-ai-section-12
+git worktree add guardkit-ai-section-13 -b feature/task-045-ai-section-13
 ```
 
 ### Merge Strategy
 
 ```bash
 # Merge worktrees sequentially to avoid conflicts
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Phase 2 merges
 git merge feature/task-044-sections-1-4
@@ -795,7 +795,7 @@ pytest tests/integration/test_ai_validation_e2e.py -v
 
 ```bash
 # Start Phase 1
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-work TASK-043
 
 # Test when complete
@@ -824,26 +824,26 @@ cd ~/Projects/appmilla_github/taskwright
 ```bash
 # Create worktrees
 cd ~/conductor-worktrees
-git worktree add taskwright-sections-1-4 -b feature/task-044-sections-1-4
-git worktree add taskwright-sections-5-7 -b feature/task-044-sections-5-7
-git worktree add taskwright-sections-8-10 -b feature/task-044-sections-8-10
-git worktree add taskwright-sections-11-13 -b feature/task-044-sections-11-13
-git worktree add taskwright-sections-14-16 -b feature/task-044-sections-14-16
+git worktree add guardkit-sections-1-4 -b feature/task-044-sections-1-4
+git worktree add guardkit-sections-5-7 -b feature/task-044-sections-5-7
+git worktree add guardkit-sections-8-10 -b feature/task-044-sections-8-10
+git worktree add guardkit-sections-11-13 -b feature/task-044-sections-11-13
+git worktree add guardkit-sections-14-16 -b feature/task-044-sections-14-16
 
 # Terminal 1
-cd taskwright-sections-1-4
+cd guardkit-sections-1-4
 /task-create "Implement audit sections 1-4"
 /task-work TASK-044-SEC-1-4
 
 # Terminal 2
-cd taskwright-sections-5-7
+cd guardkit-sections-5-7
 /task-create "Implement audit sections 5-7"
 /task-work TASK-044-SEC-5-7
 
 # ... etc for all terminals
 
 # Merge when complete
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git merge feature/task-044-sections-1-4
 git merge feature/task-044-sections-5-7
 # ... etc
@@ -853,7 +853,7 @@ git merge feature/task-044-sections-5-7
 
 ```bash
 # Start Phase 3 (after Phase 2 complete)
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull
 
@@ -962,7 +962,7 @@ git pull
 
 ```bash
 # Start Phase 1
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-work TASK-043
 ```
 

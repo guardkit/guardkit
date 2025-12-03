@@ -482,7 +482,7 @@ timeout_seconds=240,  # Increased for code sample processing (15-20k tokens)
 
 ### Manual Verification
 
-1. Run `/template-create` on Taskwright codebase
+1. Run `/template-create` on GuardKit codebase
 2. Inspect `agents/*.md` files
 3. Verify:
    - Files are 150-250 lines ✅
@@ -606,7 +606,7 @@ timeout_seconds=240,  # Increased for code sample processing (15-20k tokens)
 - [ ] Phase 4: Update MCP timeout
 - [ ] Run all unit tests (pytest -v)
 - [ ] Run integration test
-- [ ] Manual verification on Taskwright codebase
+- [ ] Manual verification on GuardKit codebase
 - [ ] Verify agent file lengths ≥150 lines
 - [ ] Verify code references in enhanced content
 

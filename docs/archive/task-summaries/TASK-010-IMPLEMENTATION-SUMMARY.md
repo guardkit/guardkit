@@ -237,14 +237,14 @@ Generated template package structure:
 - `/template-init` - Create from scratch (no codebase)
 - `/template-create` - Create from existing codebase
 
-### With taskwright init
+### With guardkit init
 ```bash
 # After creating template
 /template-create
 # → Output: ./templates/my-template/
 
 # Use template
-taskwright init my-template
+guardkit init my-template
 # → Applies template to new project
 ```
 

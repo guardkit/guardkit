@@ -41,10 +41,10 @@
 
 ```bash
 # AppShell template
-taskwright init maui-appshell
+guardkit init maui-appshell
 
 # NavigationPage template
-taskwright init maui-navigationpage
+guardkit init maui-navigationpage
 ```
 
 **Learn More**: See "Core Concepts" below for detailed comparison and examples.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskwright uses AI-powered agent discovery to automatically match tasks to appropriate specialist agents. This guide explains how discovery works, how to leverage it, and how to add discovery metadata to custom agents.
+GuardKit uses AI-powered agent discovery to automatically match tasks to appropriate specialist agents. This guide explains how discovery works, how to leverage it, and how to add discovery metadata to custom agents.
 
 ## How Discovery Works
 
@@ -53,7 +53,7 @@ Using python-api-specialist for implementation (Haiku model)
 The agent discovery system scans 4 sources in priority order:
 
 1. **Local** (`.claude/agents/`)  - **Highest Priority**
-   - Created by `taskwright init <template>`
+   - Created by `guardkit init <template>`
    - Project-specific customizations
    - **Always takes precedence** over all other sources
 
@@ -215,7 +215,7 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 ### "Template agents not found after initialization"
 
-**Symptom**: Agent not discovered after `taskwright init <template>`
+**Symptom**: Agent not discovered after `guardkit init <template>`
 
 **Possible causes**:
 1. `.claude/agents/` directory missing or empty
@@ -224,7 +224,7 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 **Solutions**:
 - Verify `.claude/agents/` directory exists: `ls .claude/agents/`
-- Re-run template init: `taskwright init <template>`
+- Re-run template init: `guardkit init <template>`
 - Check template has agents: `ls installer/global/templates/<template>/agents/`
 
 ### "Wrong agent selected (global instead of local)"

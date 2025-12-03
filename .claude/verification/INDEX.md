@@ -1,8 +1,8 @@
 # TASK-037 Verification Documentation Index
-## Complete Verification Suite for Remove BDD Mode from Taskwright
+## Complete Verification Suite for Remove BDD Mode from GuardKit
 
 **Date**: 2025-11-02
-**Task**: TASK-037 - Remove BDD Mode from Taskwright
+**Task**: TASK-037 - Remove BDD Mode from GuardKit
 **Status**: COMPLETE AND VERIFIED
 
 ---
@@ -240,7 +240,7 @@ See individual reports for complete command reference.
 
 ## Verification Completion Sign-Off
 
-**Task**: TASK-037 - Remove BDD Mode from Taskwright
+**Task**: TASK-037 - Remove BDD Mode from GuardKit
 **Verification Date**: 2025-11-02
 **Agent**: Test Verification Specialist
 **Status**: COMPLETE

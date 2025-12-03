@@ -99,7 +99,7 @@ Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This ref
    🎯 Type: Personal use (immediately available)
 
    📝 Next Steps:
-      taskwright init my-template
+      guardkit init my-template
    ```
    vs.
    ```
@@ -149,7 +149,7 @@ Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This ref
 ```bash
 # Scenario 1: Solo Developer (Personal Template)
 /template-create  # Default to global
-taskwright init my-template  # Should work immediately
+guardkit init my-template  # Should work immediately
 # ✅ Expected: Template available without install.sh
 
 # Scenario 2: Team Lead (Distribution Template)
@@ -157,14 +157,14 @@ taskwright init my-template  # Should work immediately
 git add installer/global/templates/my-team-template/
 git commit -m "Add team template"
 ./installer/scripts/install.sh
-taskwright init my-team-template
+guardkit init my-team-template
 # ✅ Expected: Template in version control, team can install
 
 # Scenario 3: Template Iteration
 /template-create  # Version 1 in global
-taskwright init test-template  # Test immediately
+guardkit init test-template  # Test immediately
 /template-create --overwrite  # Version 2 in global
-taskwright init test-template  # Test immediately
+guardkit init test-template  # Test immediately
 # ✅ Expected: Fast iteration without install.sh
 ```
 
@@ -208,7 +208,7 @@ docs/guides/
 ## Questions to Resolve
 
 1. Should we add a config option to set default output location per user?
-2. Should we detect if running in taskwright repo and auto-select repo location?
+2. Should we detect if running in guardkit repo and auto-select repo location?
 3. Should we add `--force` flag to skip overwrite confirmation?
 
 ---
@@ -269,8 +269,8 @@ docs/guides/
 **Next Steps** (for manual testing):
 1. Test personal workflow: `/template-create` → verify output in `~/.agentecflow/templates/`
 2. Test team workflow: `/template-create -o repo` → verify output in `installer/global/templates/`
-3. Test immediate usage: Create personal template → `taskwright init {template}` without `install.sh`
-4. Test distribution: Create repo template → `install.sh` → `taskwright init {template}`
+3. Test immediate usage: Create personal template → `guardkit init {template}` without `install.sh`
+4. Test distribution: Create repo template → `install.sh` → `guardkit init {template}`
 
 **Benefits Realized**:
 - Solo developers can create and use templates in 1 step (vs. 2 steps previously)

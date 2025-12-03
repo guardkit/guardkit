@@ -162,7 +162,7 @@ Comprehensive debug logging plan documented in:
 
 ## Key Code Locations
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
 
 **Critical methods**:
 - Line ~145: `run()` - routing logic
@@ -239,10 +239,10 @@ When debugging is complete and fix applied:
 
 ## Related Documentation
 
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-PHASE-7-5-CHECKPOINT.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/SESSION-SUMMARY-PHASE-7-5-SILENT-FAILURE.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/DEBUGGING-PHASE-7-5-NOT-RUNNING.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/DEBUG-PHASE-7-5.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-PHASE-7-5-CHECKPOINT.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/SESSION-SUMMARY-PHASE-7-5-SILENT-FAILURE.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/DEBUGGING-PHASE-7-5-NOT-RUNNING.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/DEBUG-PHASE-7-5.md`
 
 ---
 

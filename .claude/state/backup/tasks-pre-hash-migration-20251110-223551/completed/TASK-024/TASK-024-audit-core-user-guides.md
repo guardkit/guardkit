@@ -84,14 +84,14 @@ plan_audit:
 
 ## Description
 
-Review and update essential user-facing guides to ensure they only document Taskwright features. These are critical onboarding documents that users encounter first.
+Review and update essential user-facing guides to ensure they only document GuardKit features. These are critical onboarding documents that users encounter first.
 
 ## Scope
 
 **Files to audit:**
 - docs/guides/GETTING-STARTED.md
 - docs/guides/QUICK_REFERENCE.md
-- docs/guides/taskwright-workflow.md
+- docs/guides/guardkit-workflow.md
 
 **Estimated: ~2000 lines combined**
 
@@ -102,10 +102,10 @@ Review and update essential user-facing guides to ensure they only document Task
 - [x] Remove epic/feature hierarchy examples (RequireKit feature)
 - [x] Remove PM tool synchronization instructions (RequireKit feature)
 - [x] Remove requirements traceability examples (RequireKit feature)
-- [x] Update command examples to use Taskwright-only syntax
+- [x] Update command examples to use GuardKit-only syntax
 - [x] Fix GitHub URLs to correct repositories
 - [x] Add "Need requirements management?" callout boxes with RequireKit links
-- [x] Ensure workflow diagrams show Taskwright-only flow
+- [x] Ensure workflow diagrams show GuardKit-only flow
 - [x] Verify all command examples work without RequireKit installed
 
 ## RequireKit Features to Remove/Link
@@ -153,8 +153,8 @@ Example callout format:
 - Keep simple parameter examples only
 - Add "Extended Features" section pointing to RequireKit
 
-### taskwright-workflow.md
-- Update workflow diagrams to show Taskwright-only states
+### guardkit-workflow.md
+- Update workflow diagrams to show GuardKit-only states
 - Remove Requirements Analysis phase references
 - Keep quality gates and test enforcement sections
 

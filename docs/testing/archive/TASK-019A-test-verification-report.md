@@ -314,7 +314,7 @@ No test failures detected.
 - **Coverage Plugin**: pytest-cov 7.0.0
 
 ### Test Configuration
-- **Config File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/pytest.ini`
+- **Config File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/pytest.ini`
 - **Test Paths**: `tests/`
 - **Coverage Source**: `installer/global/lib`
 - **Markers**: unit, integration

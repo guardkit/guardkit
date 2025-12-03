@@ -150,16 +150,16 @@ class AgentSourceRegistry:
 
 DEFAULT_AGENT_SOURCES = AgentSourceRegistry(
     sources=[
-        # Priority 1: Local taskwright agents (highest priority)
+        # Priority 1: Local guardkit agents (highest priority)
         AgentSourceConfig(
             id="local_global",
-            name="Taskwright Built-in Agents",
+            name="GuardKit Built-in Agents",
             type=SourceType.LOCAL,
             enabled=True,
             priority=100,
             bonus_score=20,
             path="installer/global/agents",
-            description="Battle-tested agents included with taskwright",
+            description="Battle-tested agents included with guardkit",
             tags=["official", "local"]
         ),
 
@@ -244,14 +244,14 @@ from pathlib import Path
 class AgentSourceManager:
     """Manages agent source configuration"""
 
-    DEFAULT_CONFIG_PATH = Path.home() / ".taskwright" / "agent-sources.json"
+    DEFAULT_CONFIG_PATH = Path.home() / ".guardkit" / "agent-sources.json"
 
     def __init__(self, config_path: Optional[Path] = None):
         """
         Initialize manager
 
         Args:
-            config_path: Path to config file (default: ~/.taskwright/agent-sources.json)
+            config_path: Path to config file (default: ~/.guardkit/agent-sources.json)
         """
         self.config_path = config_path or self.DEFAULT_CONFIG_PATH
         self.registry = self._load_or_create_default()

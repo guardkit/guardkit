@@ -124,7 +124,7 @@ See `BROKEN_LINKS_DETAIL.md` for complete analysis.
 ### One-Time Execution
 
 ```bash
-python3 /Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py
+python3 /Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py
 ```
 
 ### As Part of CI/CD
@@ -253,15 +253,15 @@ The validation suite is implemented in Python 3 with:
 ### File Locations
 
 **Source Code**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py`
 
 **Reports**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/validation-report.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/TASK-023-VALIDATION-REPORT.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/TEST_VERIFICATION_SUMMARY.txt`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/validation-report.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/TASK-023-VALIDATION-REPORT.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/TEST_VERIFICATION_SUMMARY.txt`
 
 **Analysis**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/BROKEN_LINKS_DETAIL.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/BROKEN_LINKS_DETAIL.md`
 
 ---
 

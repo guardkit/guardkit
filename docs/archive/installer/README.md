@@ -1,6 +1,6 @@
 # Archived Installer Documentation
 
-This directory contains historical installer documentation from the AI-Engineer to Taskwright migration and various system updates completed in November 2025.
+This directory contains historical installer documentation from the AI-Engineer to GuardKit migration and various system updates completed in November 2025.
 
 ## Files Archived (2025-11-26)
 

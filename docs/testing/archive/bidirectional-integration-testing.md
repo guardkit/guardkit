@@ -1,15 +1,15 @@
 # Bidirectional Integration Testing Guide
 
-This guide provides comprehensive testing strategies for validating the bidirectional optional integration between taskwright and require-kit.
+This guide provides comprehensive testing strategies for validating the bidirectional optional integration between guardkit and require-kit.
 
 ## Overview
 
-The bidirectional optional integration allows taskwright and require-kit to work independently with optional mutual enhancement. This testing guide ensures all three installation scenarios work correctly.
+The bidirectional optional integration allows guardkit and require-kit to work independently with optional mutual enhancement. This testing guide ensures all three installation scenarios work correctly.
 
 ## Test Scenarios
 
-### Scenario 1: taskwright Only (Standalone Mode)
-**Goal**: Verify taskwright works without require-kit installed
+### Scenario 1: guardkit Only (Standalone Mode)
+**Goal**: Verify guardkit works without require-kit installed
 
 **Expected Behavior**:
 - Task management workflow functions
@@ -18,13 +18,13 @@ The bidirectional optional integration allows taskwright and require-kit to work
 - Users see helpful messages about installing require-kit
 
 ### Scenario 2: require-kit Only (Standalone Mode)
-**Goal**: Verify require-kit works without taskwright installed
+**Goal**: Verify require-kit works without guardkit installed
 
 **Expected Behavior**:
 - Requirements engineering functions
 - Epic/Feature hierarchy management works
 - BDD scenario generation works
-- Users see helpful messages about installing taskwright
+- Users see helpful messages about installing guardkit
 
 ### Scenario 3: Both Installed (Full Agentecflow)
 **Goal**: Verify full integration when both packages installed
@@ -81,7 +81,7 @@ The bidirectional optional integration allows taskwright and require-kit to work
 
 ## Installation Testing Procedure
 
-### Phase 1: taskwright Only Installation
+### Phase 1: guardkit Only Installation
 
 #### Step 1: Pre-Installation Checks
 
@@ -100,8 +100,8 @@ pip3 --version         # Should be installed
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/taskwright.git
-cd taskwright
+git clone https://github.com/yourusername/guardkit.git
+cd guardkit
 
 # Make installer executable
 chmod +x installer/scripts/install.sh
@@ -125,11 +125,11 @@ agentecflow doctor
 # ✓ Agents symlinked correctly
 
 # Verify marker file exists
-cat ~/.agentecflow/taskwright.marker.json
+cat ~/.agentecflow/guardkit.marker.json
 
 # Expected output:
 # {
-#   "package": "taskwright",
+#   "package": "guardkit",
 #   "version": "2.0.0",
 #   "provides": ["task_management", "quality_gates", ...],
 #   "optional_integration": ["require-kit"],
@@ -167,7 +167,7 @@ from feature_detection import (
 )
 
 print("Installed packages:", get_installed_packages())
-# Expected: ['taskwright']
+# Expected: ['guardkit']
 
 print("Supports requirements:", supports_requirements())
 # Expected: False
@@ -266,10 +266,10 @@ cd require-kit
 ls -la ~/.agentecflow/*.marker.json
 
 # Expected:
-# taskwright.marker.json
+# guardkit.marker.json
 # require-kit.marker.json
 
-cat ~/.agentecflow/taskwright.marker.json
+cat ~/.agentecflow/guardkit.marker.json
 cat ~/.agentecflow/require-kit.marker.json
 ```
 
@@ -285,7 +285,7 @@ from feature_detection import (
 )
 
 print("Installed packages:", get_installed_packages())
-# Expected: ['taskwright', 'require-kit']
+# Expected: ['guardkit', 'require-kit']
 
 print("Supports requirements:", supports_requirements())
 # Expected: True
@@ -345,12 +345,12 @@ EOF
 
 ### Installation Execution Checklist
 
-**taskwright Installation:**
+**guardkit Installation:**
 - [ ] Repository clones successfully
 - [ ] Installer runs without errors
 - [ ] All prerequisites detected (Python, pip, git)
 - [ ] All directories created in ~/.agentecflow/
-- [ ] Marker file created: taskwright.marker.json
+- [ ] Marker file created: guardkit.marker.json
 - [ ] Marker file has valid JSON format
 - [ ] Marker file contains correct metadata
 - [ ] Symlinks created: ~/.claude/commands → ~/.agentecflow/commands
@@ -363,7 +363,7 @@ EOF
 - [ ] Installer runs without errors
 - [ ] Marker file created: require-kit.marker.json
 - [ ] Both marker files exist in ~/.agentecflow/
-- [ ] Installation detects existing taskwright
+- [ ] Installation detects existing guardkit
 - [ ] Shows "Full Agentecflow integration available" message
 
 ### Post-Installation Verification Checklist
@@ -377,7 +377,7 @@ EOF
 - [ ] get_installed_packages() returns correct list
 - [ ] get_available_features() returns correct features
 
-### Functional Testing Checklist (Scenario 1: taskwright Only)
+### Functional Testing Checklist (Scenario 1: guardkit Only)
 
 **Task Creation:**
 - [ ] `/task-create "Basic task"` works
@@ -438,11 +438,11 @@ EOF
 
 ### Edge Cases to Test
 
-- [ ] Install taskwright, remove marker file, verify graceful degradation
+- [ ] Install guardkit, remove marker file, verify graceful degradation
 - [ ] Install both, remove require-kit marker, verify fallback to standalone
 - [ ] Install with existing ~/.claude/ directory
 - [ ] Install with existing ~/.agentecflow/ directory
-- [ ] Reinstall taskwright over existing installation
+- [ ] Reinstall guardkit over existing installation
 - [ ] Shell integration with zsh
 - [ ] Shell integration with bash
 - [ ] Commands work from subdirectories
@@ -487,9 +487,9 @@ EOF
 grep "Creating marker file" installer_output.log
 
 # Manually create marker file if needed
-cat > ~/.agentecflow/taskwright.marker.json << 'EOF'
+cat > ~/.agentecflow/guardkit.marker.json << 'EOF'
 {
-  "package": "taskwright",
+  "package": "guardkit",
   "version": "2.0.0",
   "installed": "2025-10-28T00:00:00Z",
   "provides": ["task_management", "quality_gates"],
@@ -540,13 +540,13 @@ python3 -c "import sys; print(sys.path)"
 **Solution**:
 ```bash
 # Check marker file
-cat ~/.agentecflow/taskwright.marker.json
+cat ~/.agentecflow/guardkit.marker.json
 
 # Test feature detection directly
 python3 << 'EOF'
 from feature_detection import supports_requirements
 print("Supports requirements:", supports_requirements())
-# Should be False if taskwright only
+# Should be False if guardkit only
 EOF
 ```
 
@@ -562,7 +562,7 @@ EOF
 
 ## Test Summary
 
-- Scenario 1 (taskwright only): ✅/❌
+- Scenario 1 (guardkit only): ✅/❌
 - Scenario 3 (both installed): ✅/❌
 - Installation: ✅/❌
 - Feature Detection: ✅/❌
@@ -574,7 +574,7 @@ EOF
 - VM clean: ✅/❌
 - Prerequisites: ✅/❌
 
-### Installation (taskwright)
+### Installation (guardkit)
 - Clone: ✅/❌
 - Install script: ✅/❌
 - Marker file: ✅/❌
@@ -582,7 +582,7 @@ EOF
 
 ### Feature Detection
 - supports_requirements(): ✅/❌ (Expected: False)
-- get_installed_packages(): ✅/❌ (Expected: ['taskwright'])
+- get_installed_packages(): ✅/❌ (Expected: ['guardkit'])
 
 ### Command Testing
 - /task-create basic: ✅/❌

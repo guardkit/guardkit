@@ -103,9 +103,9 @@ tests/integration/shared-agents/
 ├── TEST-PLAN.md                    # Master test plan (already exists)
 ├── test_integration.py             # Pytest-based automated tests
 ├── test_scenarios/
-│   ├── scenario_01_taskwright_standalone.sh
+│   ├── scenario_01_guardkit_standalone.sh
 │   ├── scenario_02_requirekit_standalone.sh
-│   ├── scenario_03_combined_taskwright_first.sh
+│   ├── scenario_03_combined_guardkit_first.sh
 │   ├── scenario_04_combined_requirekit_first.sh
 │   ├── scenario_05_version_pinning.sh
 │   ├── scenario_06_offline_fallback.sh
@@ -182,9 +182,9 @@ jobs:
     strategy:
       matrix:
         scenario:
-          - taskwright-standalone
+          - guardkit-standalone
           - requirekit-standalone
-          - combined-taskwright-first
+          - combined-guardkit-first
           - combined-requirekit-first
           - conflict-detection
 

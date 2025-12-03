@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Feature detection module for Taskwright/RequireKit integration.
+"""Feature detection module for GuardKit/RequireKit integration.
 
 This module provides functions to gracefully detect which features are available
 based on installed packages and configuration markers. It enables commands to

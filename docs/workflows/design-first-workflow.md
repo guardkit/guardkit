@@ -53,7 +53,7 @@
 
 **Phases Skipped**: 1 (RequireKit Only), 3 (Implementation), 4 (Testing), 4.5 (Fix Loop), 5 (Code Review)
 
-> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
+> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
 
 **Outcome**: Task moves to `design_approved` state with saved implementation plan
 

@@ -22,7 +22,7 @@ Instead of removing requirements loading from Phase 1, make it **conditional** b
 
 ## Strategic Context
 
-- **taskwright only**: Phase 1 analyzes task description only
+- **guardkit only**: Phase 1 analyzes task description only
 - **require-kit installed + task has requirements**: Phase 1 loads EARS/BDD context
 - **Graceful operation**: All quality gate phases always execute
 
@@ -203,7 +203,7 @@ done
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-work.md installer/global/commands/task-work.md.backup
 ```
 
@@ -233,7 +233,7 @@ Test with and without require-kit, with and without requirements.
 
 ## Validation Checklist
 
-### With taskwright Only
+### With guardkit Only
 - [ ] `/task-work TASK-001` executes Phase 1 without requirements
 - [ ] All quality gate phases execute (2.5, 2.6, 2.7, 4.5, 5.5)
 - [ ] No errors about missing requirements files
@@ -248,7 +248,7 @@ Test with and without require-kit, with and without requirements.
 
 ### With Both Installed (Task without Requirements)
 - [ ] Phase 1 skips requirements loading
-- [ ] Works same as taskwright only
+- [ ] Works same as guardkit only
 - [ ] No unnecessary file lookups
 
 ### Edge Cases
@@ -260,10 +260,10 @@ Test with and without require-kit, with and without requirements.
 ## Testing
 
 ```bash
-# Test taskwright only scenario
+# Test guardkit only scenario
 rm ~/.agentecflow/require-kit.marker
 
-cd /tmp/test-taskwright
+cd /tmp/test-guardkit
 /task-create "Simple feature"
 /task-work TASK-001
 
@@ -282,7 +282,7 @@ touch ~/.agentecflow/require-kit.marker
 # Should:
 # - Check for requirements (finds none)
 # - Skip requirements loading
-# - Work same as taskwright only
+# - Work same as guardkit only
 
 # Test with both installed (requirements on task)
 /task-create "Auth feature" epic:EPIC-001 requirements:[REQ-012]
@@ -345,7 +345,7 @@ Install require-kit for requirements features: https://github.com/requirekit/req
 - [ ] Agent orchestration conditional
 - [ ] Help text adapts to installed packages
 - [ ] All quality gate phases intact
-- [ ] Works with taskwright only (no errors)
+- [ ] Works with guardkit only (no errors)
 - [ ] Works with both installed (enhanced Phase 1)
 - [ ] Tests pass for all scenarios
 
@@ -404,7 +404,7 @@ from installer.global.lib.feature_detection import supports_requirements
 if supports_requirements():
     analysis_agent = "requirements-analyst"
 else:
-    analysis_agent = "task-manager"  # Fallback for standalone taskwright
+    analysis_agent = "task-manager"  # Fallback for standalone guardkit
 ```
 
 **Display Logic:**

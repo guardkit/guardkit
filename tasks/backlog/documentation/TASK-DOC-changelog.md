@@ -6,7 +6,7 @@
 
 ## Problem
 
-Users need to track Taskwright's evolution, understand what's changed between versions, and plan upgrades accordingly. A comprehensive changelog provides transparency and helps users stay informed.
+Users need to track GuardKit's evolution, understand what's changed between versions, and plan upgrades accordingly. A comprehensive changelog provides transparency and helps users stay informed.
 
 ## Changelog Structure
 
@@ -40,7 +40,7 @@ Each version should include:
 
 **Removed**
 - Deleted features
-- Removed templates (e.g., taskwright-python)
+- Removed templates (e.g., guardkit-python)
 - Cleanup
 
 **Fixed**
@@ -81,7 +81,7 @@ Each version should include:
 - Enhanced agent discovery with metadata-based matching
 
 ### Removed
-- `taskwright-python` template (use `/template-create` instead)
+- `guardkit-python` template (use `/template-create` instead)
 
 ### Fixed
 - Windows WSL2 installation issues (#156)
@@ -89,7 +89,7 @@ Each version should include:
 
 ### Migration Notes
 - Run `scripts/migrate-my-tasks.py` to convert sequential to hash-based IDs
-- Remove references to `taskwright-python` template
+- Remove references to `guardkit-python` template
 - See [Migration Guide](docs/guides/migration.md) for details
 ```
 

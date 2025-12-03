@@ -98,7 +98,7 @@ agent_path               Agent path in one of two formats:
 
 ## Relationship with /agent-format
 
-Taskwright uses a **two-tier enhancement system** to balance speed, quality, and flexibility.
+GuardKit uses a **two-tier enhancement system** to balance speed, quality, and flexibility.
 
 ### Two-Tier Enhancement System
 

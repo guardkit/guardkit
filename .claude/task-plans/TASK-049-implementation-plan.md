@@ -9,7 +9,7 @@
 
 ## 1. Overview
 
-Implement a bidirectional mapping system between Taskwright's internal hash-based IDs and external sequential IDs used by PM tools (JIRA, Azure DevOps, Linear, GitHub).
+Implement a bidirectional mapping system between GuardKit's internal hash-based IDs and external sequential IDs used by PM tools (JIRA, Azure DevOps, Linear, GitHub).
 
 ### Goals
 - Enable seamless integration with external PM tools

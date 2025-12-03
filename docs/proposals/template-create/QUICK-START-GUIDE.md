@@ -260,7 +260,7 @@ cd ~/Projects/nextjs-boilerplate
 ### 1. Test Current State (15 min)
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Document current behavior
 /template-create --validate --name baseline > baseline.log 2>&1
@@ -322,7 +322,7 @@ pytest tests/ -v
 **Issue**: Import errors
 ```bash
 # Set PYTHONPATH
-export PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/global"
+export PYTHONPATH="/path/to/guardkit:/path/to/guardkit/installer/global"
 ```
 
 **Issue**: Checkpoint not working
@@ -351,7 +351,7 @@ ls -la .agent-request.json .agent-response.json
 **Your first step:**
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Read the design
 cat TEMPLATE-CREATE-REDESIGN-PROPOSAL.md

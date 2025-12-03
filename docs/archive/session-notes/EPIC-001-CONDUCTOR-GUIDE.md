@@ -10,10 +10,10 @@ conductor add feature/task-002 --task TASK-002
 # etc...
 
 # Work on tasks in parallel
-cd ../taskwright-feature-task-001
+cd ../guardkit-feature-task-001
 /task-work TASK-001
 
-cd ../taskwright-feature-task-002
+cd ../guardkit-feature-task-002
 /task-work TASK-002
 ```
 
@@ -202,14 +202,14 @@ conductor add feature/task-001b --task TASK-001B  # 8h
 conductor add feature/task-003 --task TASK-003    # 2h
 
 # Work in parallel
-cd ../taskwright-feature-task-001 && /task-work TASK-001 &
-cd ../taskwright-feature-task-001b && /task-work TASK-001B &
-cd ../taskwright-feature-task-003 && /task-work TASK-003 &
+cd ../guardkit-feature-task-001 && /task-work TASK-001 &
+cd ../guardkit-feature-task-001b && /task-work TASK-001B &
+cd ../guardkit-feature-task-003 && /task-work TASK-003 &
 
 # Wait for TASK-001 to complete, then start TASK-002
-cd ../taskwright-feature-task-001 && /task-complete TASK-001
+cd ../guardkit-feature-task-001 && /task-complete TASK-001
 conductor add feature/task-002 --task TASK-002    # 5h
-cd ../taskwright-feature-task-002 && /task-work TASK-002
+cd ../guardkit-feature-task-002 && /task-work TASK-002
 ```
 
 **Wave 1 (Start after TASK-002 and TASK-003 complete)**:
@@ -222,43 +222,43 @@ conductor add feature/task-007 --task TASK-007    # 5h
 conductor add feature/task-008 --task TASK-008    # 6h
 
 # Work in parallel (all 5 tasks)
-cd ../taskwright-feature-task-004a && /task-work TASK-004A &
-cd ../taskwright-feature-task-005 && /task-work TASK-005 &
-cd ../taskwright-feature-task-006 && /task-work TASK-006 &
-cd ../taskwright-feature-task-007 && /task-work TASK-007 &
-cd ../taskwright-feature-task-008 && /task-work TASK-008 &
+cd ../guardkit-feature-task-004a && /task-work TASK-004A &
+cd ../guardkit-feature-task-005 && /task-work TASK-005 &
+cd ../guardkit-feature-task-006 && /task-work TASK-006 &
+cd ../guardkit-feature-task-007 && /task-work TASK-007 &
+cd ../guardkit-feature-task-008 && /task-work TASK-008 &
 ```
 
 **Wave 2 (Sequential)**:
 ```bash
 # TASK-009 (can start slightly earlier if TASK-004A done)
 conductor add feature/task-009 --task TASK-009
-cd ../taskwright-feature-task-009 && /task-work TASK-009
+cd ../guardkit-feature-task-009 && /task-work TASK-009
 
 # TASK-010 (wait for all Wave 1)
 conductor add feature/task-010 --task TASK-010
-cd ../taskwright-feature-task-010 && /task-work TASK-010
+cd ../guardkit-feature-task-010 && /task-work TASK-010
 
 # TASK-011 (wait for TASK-010)
 conductor add feature/task-011 --task TASK-011
-cd ../taskwright-feature-task-011 && /task-work TASK-011
+cd ../guardkit-feature-task-011 && /task-work TASK-011
 ```
 
 **Wave 3 (Partial parallel)**:
 ```bash
 # TASK-012 first
 conductor add feature/task-012 --task TASK-012
-cd ../taskwright-feature-task-012 && /task-work TASK-012
+cd ../guardkit-feature-task-012 && /task-work TASK-012
 
 # Then TASK-013 and TASK-015 in parallel
 conductor add feature/task-013 --task TASK-013
 conductor add feature/task-015 --task TASK-015
-cd ../taskwright-feature-task-013 && /task-work TASK-013 &
-cd ../taskwright-feature-task-015 && /task-work TASK-015 &
+cd ../guardkit-feature-task-013 && /task-work TASK-013 &
+cd ../guardkit-feature-task-015 && /task-work TASK-015 &
 
 # TASK-014 after TASK-013
 conductor add feature/task-014 --task TASK-014
-cd ../taskwright-feature-task-014 && /task-work TASK-014
+cd ../guardkit-feature-task-014 && /task-work TASK-014
 ```
 
 ---
@@ -283,7 +283,7 @@ The critical path (longest sequence) is:
 
 ## State Management
 
-Taskwright uses symlinked state (`.claude/state`) across worktrees, so:
+GuardKit uses symlinked state (`.claude/state`) across worktrees, so:
 
 ✅ **Works automatically**:
 - Task state syncs across all worktrees

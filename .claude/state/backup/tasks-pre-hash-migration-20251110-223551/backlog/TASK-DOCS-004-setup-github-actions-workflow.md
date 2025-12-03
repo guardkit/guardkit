@@ -246,7 +246,7 @@ jobs:
 - [ ] Pip cache reduces build time by 30%+
 
 ### Production Ready
-- [ ] Site accessible at https://taskwright-dev.github.io/taskwright/
+- [ ] Site accessible at https://guardkit.github.io/guardkit/
 - [ ] All pages load correctly
 - [ ] Navigation works
 - [ ] Search works
@@ -343,7 +343,7 @@ concurrency:
 
 **If deployment succeeds but site doesn't work**:
 1. Check GitHub Pages settings (should be "GitHub Actions")
-2. Verify site URL: https://taskwright-dev.github.io/taskwright/
+2. Verify site URL: https://guardkit.github.io/guardkit/
 3. Check browser console for errors
 4. Test site locally with `mkdocs serve`
 

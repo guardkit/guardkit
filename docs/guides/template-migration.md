@@ -8,7 +8,7 @@
 
 ## Overview
 
-As part of Taskwright's template quality initiative, we have updated templates based on comprehensive audit findings (TASK-056). This guide helps users migrate from removed templates and understand the reinstated default template.
+As part of GuardKit's template quality initiative, we have updated templates based on comprehensive audit findings (TASK-056). This guide helps users migrate from removed templates and understand the reinstated default template.
 
 **Goal**: Focus on high-quality reference implementations while providing a language-agnostic option for unsupported stacks.
 
@@ -47,7 +47,7 @@ As part of Taskwright's template quality initiative, we have updated templates b
 
 ```bash
 # Initialize new project with dotnet-fastendpoints
-taskwright init dotnet-fastendpoints
+guardkit init dotnet-fastendpoints
 ```
 
 #### Key Differences
@@ -178,7 +178,7 @@ After (Vertical Slices):
 **Use default template for**:
 - **Unsupported Languages**: Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala
 - **Custom Stacks**: Unique technology combinations
-- **Prototyping**: Exploring Taskwright before committing to a stack
+- **Prototyping**: Exploring GuardKit before committing to a stack
 - **Template Development**: Building custom templates with `/template-create`
 
 **Do NOT use default for well-supported stacks** - use specialized templates instead.
@@ -203,7 +203,7 @@ If you were previously advised to avoid the default template, consider these upd
 
 ```bash
 # Initialize with default template
-taskwright init default
+guardkit init default
 
 # Customize .claude/settings.json
 {
@@ -225,7 +225,7 @@ taskwright init default
 
 ```bash
 # Initialize
-taskwright init default
+guardkit init default
 
 # Customize settings
 {
@@ -243,13 +243,13 @@ taskwright init default
 
 ```bash
 # React project → Use react template (NOT default)
-taskwright init react
+guardkit init react
 
 # Python API → Use python template (NOT default)
-taskwright init python
+guardkit init python
 
 # .NET API → Use dotnet-fastendpoints (NOT default)
-taskwright init dotnet-fastendpoints
+guardkit init dotnet-fastendpoints
 ```
 
 **3. Migrate Existing Tasks**
@@ -271,13 +271,13 @@ The technology-specific templates provide starting points. If you need customiza
 
 ```bash
 # Option 1: Use template as-is and customize over time
-taskwright init react
+guardkit init react
 # Add your custom patterns incrementally
 
 # Option 2: Create custom template from your existing codebase
 cd your-production-codebase
 /template-create  # Creates custom template
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ---
@@ -300,7 +300,7 @@ cd ~/projects/your-production-app
 
 # 3. Use your custom template
 cd ~/projects/new-project
-taskwright init my-custom-template
+guardkit init my-custom-template
 ```
 
 ### Benefits of Custom Templates
@@ -384,7 +384,7 @@ Our strategy focuses on **quality over quantity** - fewer, better templates that
 
 - **Unsupported Languages**: Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala
 - **Custom Stacks**: Unique technology combinations
-- **Prototyping**: Exploring Taskwright before committing
+- **Prototyping**: Exploring GuardKit before committing
 
 **However, if you're using a supported stack, always choose the specialized template**:
 - **JavaScript/TypeScript**: `react` or `typescript-api`
@@ -422,7 +422,7 @@ What language/stack are you using?
     └─ Node.js → typescript-api (NestJS)
 ```
 
-### Q: Can I still use taskwright without templates?
+### Q: Can I still use guardkit without templates?
 
 **A**: Yes, but not recommended. Templates provide:
 - Architecture patterns and best practices
@@ -460,8 +460,8 @@ For reference, here are the quality scores from audits:
 
 ### Questions or Issues?
 
-- **GitHub Issues**: [Report migration issues](https://github.com/taskwright-dev/taskwright/issues)
-- **Discussions**: [Ask questions](https://github.com/taskwright-dev/taskwright/discussions)
+- **GitHub Issues**: [Report migration issues](https://github.com/guardkit/guardkit/issues)
+- **Discussions**: [Ask questions](https://github.com/guardkit/guardkit/discussions)
 - **Documentation**: [Template guides](docs/guides/)
 
 ### Additional Resources
@@ -474,5 +474,5 @@ For reference, here are the quality scores from audits:
 ---
 
 **Migration Guide Version**: 1.0
-**Taskwright Version**: 2.0.0
+**GuardKit Version**: 2.0.0
 **Last Updated**: 2025-11-09

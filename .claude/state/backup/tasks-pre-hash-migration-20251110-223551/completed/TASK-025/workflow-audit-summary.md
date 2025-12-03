@@ -56,20 +56,20 @@ Created `scripts/audit_requirekit.py` with:
 
 **iterative-refinement-workflow.md**:
 - Removed `--with-context` flag (epic/feature hierarchy)
-- Replaced with "Multiple Related Tasks" pattern (Taskwright-compatible)
+- Replaced with "Multiple Related Tasks" pattern (GuardKit-compatible)
 - Added RequireKit integration notes
 
 **quality-gates-workflow.md**:
 - Removed Jira/Linear sync examples from escalation
-- Kept GitHub integration (standalone Taskwright)
+- Kept GitHub integration (standalone GuardKit)
 - Added RequireKit integration note for PM tools
 
 ### 3.2 Major Workflow File
 
-**agentecflow-lite-vs-full.md** → **taskwright-vs-requirekit.md**:
+**agentecflow-lite-vs-full.md** → **guardkit-vs-requirekit.md**:
 - Complete rewrite with correct positioning
 - Renamed file to reflect actual products
-- Clear comparison: Taskwright vs RequireKit
+- Clear comparison: GuardKit vs RequireKit
 - When to use each tool
 - Hybrid approach guidance
 - Decision matrix
@@ -108,7 +108,7 @@ Added standard integration notes throughout:
 
 ```markdown
 > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy),
-> see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+> see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
 ```
 
 **Where Added**:
@@ -122,7 +122,7 @@ Added standard integration notes throughout:
 
 ### Created
 1. `scripts/audit_requirekit.py` - Audit script
-2. `docs/workflows/taskwright-vs-requirekit.md` - New comparison guide
+2. `docs/workflows/guardkit-vs-requirekit.md` - New comparison guide
 3. `docs/research/TASK-025-audit-report.md` - Audit findings
 4. `docs/research/TASK-025-workflow-audit-summary.md` - This file
 
@@ -134,7 +134,7 @@ Added standard integration notes throughout:
 5. `docs/quick-reference/design-first-workflow-card.md`
 
 ### Deleted
-1. `docs/workflows/agentecflow-lite-vs-full.md` (replaced with taskwright-vs-requirekit.md)
+1. `docs/workflows/agentecflow-lite-vs-full.md` (replaced with guardkit-vs-requirekit.md)
 
 ## Key Changes Summary
 
@@ -144,25 +144,25 @@ Added standard integration notes throughout:
 - Epic/feature hierarchy features
 - BDD scenario generation workflows
 - PM tool sync (except GitHub)
-- Phase 1 (Requirements Analysis) from Taskwright workflow
+- Phase 1 (Requirements Analysis) from GuardKit workflow
 
 ### What Was Added
-- Clear Taskwright vs RequireKit positioning
+- Clear GuardKit vs RequireKit positioning
 - Integration notes pointing to RequireKit
 - Phase clarifications (Phase 1 = RequireKit domain)
-- Taskwright-standalone examples
+- GuardKit-standalone examples
 - When to use each tool guidance
 
 ### What Was Clarified
-- Phase numbering (Taskwright starts at Phase 2)
-- Task descriptions + acceptance criteria (Taskwright)
+- Phase numbering (GuardKit starts at Phase 2)
+- Task descriptions + acceptance criteria (GuardKit)
 - EARS notation + formal requirements (RequireKit)
 - Command syntax (removed RequireKit parameters)
 
 ## Quality Verification
 
 ### Manual Checks Completed
-- All command examples use valid Taskwright syntax
+- All command examples use valid GuardKit syntax
 - No dangling `/require-*` command references
 - Phase descriptions match implementation
 - Integration notes are consistent
@@ -186,25 +186,25 @@ Added standard integration notes throughout:
 ## Documentation Quality
 
 ### Before
-- Mixed Taskwright and RequireKit features
+- Mixed GuardKit and RequireKit features
 - Unclear which tool provides which functionality
 - Examples used RequireKit parameters
-- Phase 1 described as Taskwright feature
+- Phase 1 described as GuardKit feature
 
 ### After
-- Clear separation: Taskwright vs RequireKit
+- Clear separation: GuardKit vs RequireKit
 - Integration notes guide users to correct tool
-- All examples work with Taskwright standalone
+- All examples work with GuardKit standalone
 - Phase 1 correctly attributed to RequireKit
 
 ## Integration Strategy
 
 **Positioning**:
-- **Taskwright**: Lightweight task workflow (standalone)
-- **RequireKit**: Formal requirements management (builds on Taskwright)
+- **GuardKit**: Lightweight task workflow (standalone)
+- **RequireKit**: Formal requirements management (builds on GuardKit)
 
 **User Journey**:
-1. Start with Taskwright (fast, simple, quality gates)
+1. Start with GuardKit (fast, simple, quality gates)
 2. Add RequireKit when needed (formal requirements, epic hierarchy, PM sync)
 3. Use both strategically (hybrid approach)
 
@@ -213,7 +213,7 @@ Added standard integration notes throughout:
 - All RequireKit-specific features removed from workflow docs
 - Integration notes added where appropriate
 - Command syntax examples are accurate
-- Phase numbering clarified (Phase 1 = RequireKit, Phase 2+ = Taskwright)
+- Phase numbering clarified (Phase 1 = RequireKit, Phase 2+ = GuardKit)
 - Quick-reference cards work standalone
 - Audit script committed to repository
 

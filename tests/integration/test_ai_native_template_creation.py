@@ -583,7 +583,7 @@ class TestTemplateFileGeneration:
             print(f"Warning: Generated {result.template_count} templates (expected 10-20 for full project)")
 
     def test_templates_work_with_init(self, sample_react_project, temp_output_dir, tmp_path):
-        """Verify generated templates can be used with 'taskwright init'"""
+        """Verify generated templates can be used with 'guardkit init'"""
         # Generate template
         config = OrchestrationConfig(
             codebase_path=sample_react_project,
@@ -597,7 +597,7 @@ class TestTemplateFileGeneration:
 
         assert result.success, f"Template creation failed: {result.errors}"
 
-        # Verify required files exist (needed for 'taskwright init')
+        # Verify required files exist (needed for 'guardkit init')
         assert result.manifest_path and result.manifest_path.exists(), \
             "manifest.json missing (required for init)"
         assert result.settings_path and result.settings_path.exists(), \

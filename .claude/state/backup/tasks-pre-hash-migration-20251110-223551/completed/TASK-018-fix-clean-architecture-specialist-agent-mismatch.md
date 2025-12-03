@@ -152,7 +152,7 @@ Example:
 - [ ] **AC2**: Decision made on solution (Option A, B, or C)
 - [ ] **AC3**: Fix implemented and verified
 - [ ] **AC4**: Template updated in `installer/global/templates/ardalis-clean-architecture/`
-- [ ] **AC5**: Verification test run: `taskwright init ardalis-clean-architecture` in test directory
+- [ ] **AC5**: Verification test run: `guardkit init ardalis-clean-architecture` in test directory
 - [ ] **AC6**: Updated CLAUDE.md reviewed for accuracy
 - [ ] **AC7**: If systemic, validation added to `/template-create` command to prevent recurrence
 - [ ] **AC8**: Issue documented in `docs/testing/template-analysis-task.md` Section 3.4 findings
@@ -197,7 +197,7 @@ installer/global/templates/ardalis-clean-architecture/
 1. **Before Fix**:
    ```bash
    cd /tmp/test-fix
-   taskwright init ardalis-clean-architecture
+   guardkit init ardalis-clean-architecture
    grep -n "clean-architecture-specialist" .claude/CLAUDE.md
    ls .claude/agents/ | grep clean-architecture
    ```
@@ -205,7 +205,7 @@ installer/global/templates/ardalis-clean-architecture/
 2. **After Fix**:
    ```bash
    cd /tmp/test-fix-after
-   taskwright init ardalis-clean-architecture
+   guardkit init ardalis-clean-architecture
    # Verify fix applied
    grep -n "clean-architecture-specialist" .claude/CLAUDE.md || echo "Fixed!"
    # Verify agents documented match agents installed
@@ -236,7 +236,7 @@ installer/global/templates/ardalis-clean-architecture/
 1. **Investigate**: Review `/template-create` agent logic for Phase 5 and Phase 7
 2. **Decide**: Choose solution option (A, B, or C)
 3. **Implement**: Apply fix to `ardalis-clean-architecture` template
-4. **Test**: Verify fix works via `taskwright init`
+4. **Test**: Verify fix works via `guardkit init`
 5. **Audit**: Check other templates for similar issues
 6. **Prevent**: Add validation if systemic
 

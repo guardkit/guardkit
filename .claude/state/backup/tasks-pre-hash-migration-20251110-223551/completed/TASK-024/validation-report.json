@@ -77,7 +77,7 @@
           "name": "Command structure",
           "passed": true,
           "severity": "info",
-          "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'taskwright', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
+          "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'guardkit', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
         }
       ]
     },
@@ -228,7 +228,7 @@
       "check": "Command structure",
       "passed": true,
       "severity": "info",
-      "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'taskwright', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
+      "details": "Found 2 valid command examples (invalid: {'zeplin', 'Reject', 'task', 'commands', 'scripts', 'high', 'global', 'mcp', 'full', 'Human', 'requirekit', 'YAGNI', 'domain', 'agents', 'agentecflow', 'design', 'medium', 'code', 'quick', 'templates', 'Modify', 'iterative', 'maui', '100', 'Zeplin', 'Postpone', 'conductor', 'workflows', 'formatting', 'JavaScript', 'guides', '10', 'figma', 'guardkit', 'Testing', 'state', 'feature', 'implementation', 'ux', 'install', 'DRY', 'orchestrator', 'complexity', 'Domain', 'Simplify', 'github', 'creating', 'UI', 'patterns', 'installer', 'require'})"
     },
     {
       "category": "Feature Accuracy",

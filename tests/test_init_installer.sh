@@ -7,7 +7,7 @@ set -e
 
 # Test configuration
 TEST_DIR=$(mktemp -d)
-SCRIPT_PATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/scripts/init-project.sh"
+SCRIPT_PATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/init-project.sh"
 MOCK_AGENTECFLOW="$TEST_DIR/mock-agentecflow"
 MOCK_PROJECT="$TEST_DIR/mock-project"
 

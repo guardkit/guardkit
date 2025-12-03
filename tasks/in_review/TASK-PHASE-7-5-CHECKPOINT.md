@@ -441,7 +441,7 @@ Must handle gracefully:
 ## Related Files
 
 **Primary File:**
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
 
 **Reference Implementations:**
 - Phase 5 checkpoint-resume (lines 210-280)
@@ -449,8 +449,8 @@ Must handle gracefully:
 - Agent enhancement (lines 500-540)
 
 **Supporting Files:**
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/template_creation/agent_enhancer.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/agent_bridge/invoker.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/template_creation/agent_enhancer.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_bridge/invoker.py`
 
 ---
 

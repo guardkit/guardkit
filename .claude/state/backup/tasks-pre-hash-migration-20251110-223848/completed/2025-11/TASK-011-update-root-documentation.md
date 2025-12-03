@@ -16,7 +16,7 @@ completed: 2025-11-01
 
 ## Description
 
-Update README.md, CLAUDE.md, and other root documentation to position taskwright as a lightweight task workflow system with quality gates, removing all requirements management references.
+Update README.md, CLAUDE.md, and other root documentation to position guardkit as a lightweight task workflow system with quality gates, removing all requirements management references.
 
 ## Files to Update
 
@@ -41,7 +41,7 @@ Full Agentecflow Implementation:
 
 **TO** (pragmatic focus):
 ```markdown
-# Taskwright
+# GuardKit
 
 **Lightweight AI-assisted development with built-in quality gates.**
 
@@ -71,7 +71,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 - Requirements Management
 
 **Keep/update sections**:
-- Project Context (rewrite for taskwright)
+- Project Context (rewrite for guardkit)
 - Core Principles (simplify)
 - Essential Commands (task-* only)
 - Quality Gates (Phase 2.5, 4.5)
@@ -128,7 +128,7 @@ Remove references to:
 ### 1. Backup Files
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 cp README.md README.md.backup
 cp CLAUDE.md CLAUDE.md.backup
@@ -187,7 +187,7 @@ ls -la *.md
 ## Validation Checklist
 
 ### README.md
-- [ ] Title changed to "Taskwright"
+- [ ] Title changed to "GuardKit"
 - [ ] Tagline emphasizes lightweight + quality gates
 - [ ] 5-minute quickstart present
 - [ ] No EARS/BDD/epic references
@@ -195,7 +195,7 @@ ls -la *.md
 - [ ] Simple workflow examples
 
 ### CLAUDE.md (Root)
-- [ ] Project context updated for taskwright
+- [ ] Project context updated for guardkit
 - [ ] Stage 1 and 2 removed
 - [ ] Command list simplified (8 commands)
 - [ ] Quality gates section retained
@@ -213,7 +213,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 
 ## Acceptance Criteria
 
-- [ ] README.md rewritten for taskwright
+- [ ] README.md rewritten for guardkit
 - [ ] Root CLAUDE.md updated
 - [ ] .claude/CLAUDE.md updated (if exists)
 - [ ] No requirements management references
@@ -225,7 +225,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 ## Example README Structure
 
 ```markdown
-# Taskwright
+# GuardKit
 
 [One-line tagline]
 
@@ -282,9 +282,9 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 ### Status: IN_REVIEW ✅
 
 ### Files Updated:
-1. ✅ README.md - Complete rewrite for Taskwright positioning
+1. ✅ README.md - Complete rewrite for GuardKit positioning
 2. ✅ CLAUDE.md (root) - Removed enterprise features, simplified to task workflow
-3. ✅ .claude/CLAUDE.md - Updated for consistency with Taskwright focus
+3. ✅ .claude/CLAUDE.md - Updated for consistency with GuardKit focus
 
 ### Backups Created:
 - README.md.backup
@@ -294,7 +294,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 ### Validation Results:
 
 #### README.md ✅
-- [x] Title changed to "Taskwright"
+- [x] Title changed to "GuardKit"
 - [x] Tagline emphasizes lightweight + quality gates
 - [x] 5-minute quickstart present
 - [x] No EARS/BDD/epic references (except acceptable "upgrade to full" context)
@@ -302,7 +302,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 - [x] Simple workflow examples - 14 task command references
 
 #### CLAUDE.md (Root) ✅
-- [x] Project context updated for taskwright - 3 mentions
+- [x] Project context updated for guardkit - 3 mentions
 - [x] Stage 1 and 2 removed
 - [x] Command list simplified to 8 commands (task-create, task-work, task-complete, task-status, task-refine, figma-to-react, zeplin-to-maui, debug)
 - [x] Quality gates section retained - 3 sections
@@ -316,7 +316,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 ### Key Changes:
 
 **README.md:**
-- Changed from "AI Engineer - Complete Agentecflow Implementation" to "Taskwright"
+- Changed from "AI Engineer - Complete Agentecflow Implementation" to "GuardKit"
 - New tagline: "Lightweight AI-assisted development with built-in quality gates"
 - Added compelling "Stop shipping broken code" messaging
 - 5-minute quickstart with concrete examples
@@ -326,7 +326,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 - Simplified from 346 lines to 306 lines (more focused)
 
 **CLAUDE.md:**
-- Changed from "AI Engineer - Complete Agentecflow Implementation" to "Taskwright - Lightweight AI-Assisted Development"
+- Changed from "AI Engineer - Complete Agentecflow Implementation" to "GuardKit - Lightweight AI-Assisted Development"
 - Removed EARS Notation Patterns section
 - Removed Epic/Feature Hierarchy sections
 - Removed External PM Tool Integration
@@ -337,7 +337,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 - Clear upgrade path to full Agentecflow for enterprise needs
 
 **.claude/CLAUDE.md:**
-- Updated title from "Claude Code Software Engineering Lifecycle System" to "Taskwright - Lightweight Task Workflow System"
+- Updated title from "Claude Code Software Engineering Lifecycle System" to "GuardKit - Lightweight Task Workflow System"
 - Removed "Requirements First" principle
 - Removed "Test-Driven: BDD scenarios" reference
 - Simplified workflow from 6 steps to 4
@@ -345,7 +345,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 
 ### Acceptance Criteria: ALL MET ✅
 
-- [x] README.md rewritten for taskwright
+- [x] README.md rewritten for guardkit
 - [x] Root CLAUDE.md updated
 - [x] .claude/CLAUDE.md updated
 - [x] No requirements management references (except upgrade path)
@@ -356,7 +356,7 @@ grep -i "EARS\|epic.*create\|feature.*create\|requirements.*management\|Stage 1.
 
 ### Positioning Summary:
 
-**Taskwright is now positioned as:**
+**GuardKit is now positioned as:**
 - Lightweight, pragmatic task workflow system
 - Built-in quality gates (Phase 2.5, 4.5) as main differentiator
 - Simple 3-command workflow (create → work → complete)

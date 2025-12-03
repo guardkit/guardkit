@@ -88,7 +88,7 @@ Fix all MkDocs warnings and improve documentation quality to achieve:
 
 **Specific Fixes Required**:
 
-#### guides/taskwright-workflow.md
+#### guides/guardkit-workflow.md
 - [ ] Add anchor: `#iterative-refinement` (referenced by advanced.md)
 - [ ] Add anchor: `#conductor-integration` (referenced by advanced.md)
 - [ ] Add anchor: `#task-states` (referenced by concepts.md)
@@ -280,7 +280,7 @@ Fix all MkDocs warnings and improve documentation quality to achieve:
 6. Re-run `mkdocs build --strict` to verify fixes
 
 ### Phase 3: Add Missing Anchors (1 hour)
-1. Update `guides/taskwright-workflow.md`:
+1. Update `guides/guardkit-workflow.md`:
    - Add sections with anchors for: iterative-refinement, conductor-integration, task-states, development-modes
    - Fix internal broken links
 2. Update `workflows/design-first-workflow.md`:

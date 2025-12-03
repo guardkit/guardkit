@@ -1908,13 +1908,13 @@ The EPIC-001 design shows **strong architectural vision with AI-first approach**
 ## Appendix A: File References
 
 **Primary Documents Reviewed**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/EPIC-001-ai-template-creation.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/guides/template-creation-workflow.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-001-template-create-qa-session.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-011-template-init-command.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-003-local-agent-scanner.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-009-agent-recommendation.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/backlog/TASK-010-template-create-command.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/EPIC-001-ai-template-creation.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/template-creation-workflow.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-001-template-create-qa-session.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-011-template-init-command.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-003-local-agent-scanner.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-009-agent-recommendation.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-010-template-create-command.md`
 
 **Missing Specifications** (referenced but not found):
 - TASK-002: AI Codebase Analyzer

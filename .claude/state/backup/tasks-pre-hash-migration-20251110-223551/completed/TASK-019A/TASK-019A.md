@@ -134,7 +134,7 @@ Phase 8: Package Assembly
 ### AC7: Immediate Fix Applied
 - [ ] `ardalis-clean-architecture` template CLAUDE.md fixed (remove lines 811-823)
 - [ ] Template regenerated with new phase order
-- [ ] Template tested with `taskwright init ardalis-clean-architecture`
+- [ ] Template tested with `guardkit init ardalis-clean-architecture`
 - [ ] Zero agent documentation mismatches
 
 ## Implementation Plan
@@ -242,7 +242,7 @@ Updates:
 /template-create --path /path/to/CleanArchitecture-ardalis
 
 # Verify
-taskwright init ardalis-clean-architecture
+guardkit init ardalis-clean-architecture
 grep -c "specialist" .claude/CLAUDE.md  # Should equal agent count
 ls .claude/agents/*.md | wc -l          # Should match CLAUDE.md references
 ```

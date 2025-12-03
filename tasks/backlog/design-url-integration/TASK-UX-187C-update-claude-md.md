@@ -81,7 +81,7 @@ Replace existing section with updated workflow:
 ```markdown
 ## UX Design Integration
 
-Taskwright provides a unified design-to-code workflow that converts Figma and Zeplin designs into production-ready components with **zero scope creep**.
+GuardKit provides a unified design-to-code workflow that converts Figma and Zeplin designs into production-ready components with **zero scope creep**.
 
 ### Unified Workflow
 

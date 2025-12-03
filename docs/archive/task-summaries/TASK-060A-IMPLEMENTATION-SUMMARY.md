@@ -283,10 +283,10 @@ grep "Available Templates" CLAUDE.md
 
 **Test 5: Template Initialization**
 ```bash
-taskwright init default
+guardkit init default
 ```
 **Expected**: Project initializes successfully with all files
-**Status**: ⏸️ DEFERRED (requires taskwright CLI)
+**Status**: ⏸️ DEFERRED (requires guardkit CLI)
 
 **Test 6: Settings Parsing**
 ```bash
@@ -320,7 +320,7 @@ taskwright init default
 
 ### Phase 4: Testing
 - ✅ Manual validation tests (completed)
-- ⏸️ Integration tests with taskwright CLI (TASK-060B)
+- ⏸️ Integration tests with guardkit CLI (TASK-060B)
 - ⏸️ Template initialization test (TASK-060B)
 
 ### Phase 5: Code Review
@@ -334,7 +334,7 @@ taskwright init default
 - ⏸️ Detect scope creep (if any)
 
 ### TASK-060B: Integration Testing
-- Test template initialization with `taskwright init default`
+- Test template initialization with `guardkit init default`
 - Verify settings.json parsing
 - Test customization workflows (Go, Rust examples)
 - Validate quality gates with default template

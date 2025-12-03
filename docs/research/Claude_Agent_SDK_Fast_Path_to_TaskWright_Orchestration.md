@@ -8,7 +8,7 @@ The Claude Agent SDK provides a **dramatically faster path** to TaskWright workf
 
 This document uses "orchestration" in some places, but the more accurate term is **workflow automation**. 
 TaskWright automates a developer's manual workflow - it's not multi-agent orchestration like swarm systems.
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for details.
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for details.
 
 **Key Finding**: The Claude Agent SDK reads and executes custom commands from `.claude/commands/` directories automatically. This means TaskWright's existing command files work immediately with the SDK.
 
@@ -88,12 +88,12 @@ async def run_task_work(task_id: str, project_path: str):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    TASKWRIGHT ORCHESTRATOR (NEW)                             │
+│                    GUARDKIT ORCHESTRATOR (NEW)                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   ┌─────────────────┐                                                       │
-│   │ Python CLI      │  taskwright plan TASK-XXX --design-only               │
-│   │ (Click)         │  taskwright implement TASK-XXX                        │
+│   │ Python CLI      │  guardkit plan TASK-XXX --design-only               │
+│   │ (Click)         │  guardkit implement TASK-XXX                        │
 │   └────────┬────────┘                                                       │
 │            │                                                                 │
 │            ▼                                                                 │
@@ -112,7 +112,7 @@ async def run_task_work(task_id: str, project_path: str):
 │            │                                                                 │
 │            ▼                                                                 │
 │   ┌─────────────────────────────────────────────────────────────────┐       │
-│   │                     EXISTING TASKWRIGHT                          │       │
+│   │                     EXISTING GUARDKIT                          │       │
 │   │  .claude/commands/     .claude/agents/     .claude/tasks/       │       │
 │   │  ├── task-work.md      ├── task-manager.md  ├── TASK-XXX.md     │       │
 │   │  ├── task-create.md    ├── architect.md     └── ...             │       │
@@ -194,7 +194,7 @@ from datetime import datetime
 class TaskWrightOrchestrator:
     def __init__(self, project_path: str):
         self.project_path = Path(project_path)
-        self.db_path = self.project_path / ".taskwright" / "state.db"
+        self.db_path = self.project_path / ".guardkit" / "state.db"
         self.db_path.parent.mkdir(exist_ok=True)
         self._init_db()
     
@@ -304,7 +304,7 @@ class TaskWrightOrchestrator:
 ```python
 import click
 import anyio
-from taskwright_orchestrator import TaskWrightOrchestrator
+from guardkit_orchestrator import TaskWrightOrchestrator
 
 @click.group()
 def cli():
@@ -430,8 +430,8 @@ options = ClaudeAgentOptions(
 
 ### Phase 3: RequireKit Integration (~1 week)
 - Build orchestrator commands for requirements workflow
-- `taskwright requirements gather`
-- `taskwright requirements formalize`
+- `guardkit requirements gather`
+- `guardkit requirements formalize`
 - Connect to TaskWright task creation
 
 ### Phase 4: Consider LangGraph for Multi-LLM (Future)

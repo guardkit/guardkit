@@ -1,17 +1,17 @@
-# Taskwright Quick Reference Guide
+# GuardKit Quick Reference Guide
 
 ## Quick Start Commands
 
 ### Installation
 ```bash
 # Install globally (one-time)
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
 # Initialize projects with stack templates
-taskwright init react-typescript       # React + TypeScript (from Bulletproof React)
-taskwright init fastapi-python         # Python + FastAPI (from best practices)
-taskwright init nextjs-fullstack       # Next.js App Router full-stack
-taskwright init default                # Language-agnostic (Go, Rust, Ruby, etc.)
+guardkit init react-typescript       # React + TypeScript (from Bulletproof React)
+guardkit init fastapi-python         # Python + FastAPI (from best practices)
+guardkit init nextjs-fullstack       # Next.js App Router full-stack
+guardkit init default                # Language-agnostic (Go, Rust, Ruby, etc.)
 ```
 
 ## Core Workflow Commands
@@ -76,7 +76,7 @@ These templates are **learning resources** demonstrating best practices. For pro
 #### react-typescript
 **Source:** [Bulletproof React](https://github.com/alan2207/bulletproof-react) (28.5k stars)
 **Score:** 9.3/10
-**Use For:** Evaluating Taskwright, learning React patterns
+**Use For:** Evaluating GuardKit, learning React patterns
 
 **Demonstrates:**
 - Error boundaries, SSE hooks, performance optimization
@@ -86,7 +86,7 @@ These templates are **learning resources** demonstrating best practices. For pro
 
 **Setup:**
 ```bash
-taskwright init react-typescript
+guardkit init react-typescript
 cd react-typescript-app
 npm install
 npm run dev
@@ -95,7 +95,7 @@ npm run dev
 #### fastapi-python
 **Source:** [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) (12k+ stars)
 **Score:** 9.2/10
-**Use For:** Evaluating Taskwright, learning FastAPI patterns
+**Use For:** Evaluating GuardKit, learning FastAPI patterns
 
 **Demonstrates:**
 - Factory pattern, LangGraph workflow orchestration
@@ -105,7 +105,7 @@ npm run dev
 
 **Setup:**
 ```bash
-taskwright init fastapi-python
+guardkit init fastapi-python
 cd fastapi-python-app
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
@@ -116,7 +116,7 @@ uvicorn main:app --reload
 #### nextjs-fullstack
 **Source:** Next.js App Router + Production Patterns
 **Score:** 9.4/10
-**Use For:** Evaluating Taskwright, learning Next.js App Router
+**Use For:** Evaluating GuardKit, learning Next.js App Router
 
 **Demonstrates:**
 - Next.js 14+ App Router patterns
@@ -126,7 +126,7 @@ uvicorn main:app --reload
 
 **Setup:**
 ```bash
-taskwright init nextjs-fullstack
+guardkit init nextjs-fullstack
 cd nextjs-fullstack-app
 npm install
 npm run dev
@@ -140,13 +140,13 @@ npm run dev
 
 **Demonstrates:**
 - Language-agnostic task workflow
-- Taskwright workflow integration
+- GuardKit workflow integration
 - Quality gate patterns
 - Starting point before `/template-create`
 
 **Setup:**
 ```bash
-taskwright init default
+guardkit init default
 cd default-app
 # Configure for your stack
 ```
@@ -165,7 +165,7 @@ cd your-production-codebase
 # ✅ YOUR proven architecture
 # ✅ YOUR team's best practices
 
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **See:** [Template Philosophy](template-philosophy.md) for detailed explanation.
@@ -365,7 +365,7 @@ BACKLOG
 
 | Issue | Solution |
 |-------|----------|
-| `taskwright: command not found` | Run `source ~/.bashrc` or `source ~/.zshrc` |
+| `guardkit: command not found` | Run `source ~/.bashrc` or `source ~/.zshrc` |
 | NuGet package conflicts | Ensure all target .NET 8.0 |
 | Either monad errors | Add `using static LanguageExt.Prelude;` |
 | React SSE not closing | Ensure `event: done` is sent |
@@ -376,7 +376,7 @@ BACKLOG
 ## Documentation Links
 
 - [Getting Started Guide](getting-started.md) - 5-minute quickstart
-- [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
+- [GuardKit Workflow](guardkit-workflow.md) - Complete workflow guide
 - [Migration Guide](migration-guide.md) - Migrate from old workflow
 - [MCP Optimization](../deep-dives/mcp-integration/mcp-optimization.md) - Library docs integration (Advanced)
 - [Template Selection](maui-template-selection.md) - MAUI template guide
@@ -411,4 +411,4 @@ BACKLOG
 
 ---
 
-*This guide covers the enhanced Taskwright system with production-tested patterns from multiple successful projects.*
+*This guide covers the enhanced GuardKit system with production-tested patterns from multiple successful projects.*

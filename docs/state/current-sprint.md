@@ -7,7 +7,7 @@ status: planning
 # Sprint 1 - Project Setup
 
 ## Goals
-- [ ] Set up Taskwright system
+- [ ] Set up GuardKit system
 - [ ] Create first task
 - [ ] Complete implementation with quality gates
 

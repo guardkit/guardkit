@@ -172,8 +172,8 @@ react-typescript)
     ;;
 ```
 
-### Step 8: Update taskwright-init Help Text
-**Action**: Update template list in taskwright-init command
+### Step 8: Update guardkit-init Help Text
+**Action**: Update template list in guardkit-init command
 **Location**: Lines 529-537 (print_help function in create_cli_commands)
 **Changes**:
 
@@ -199,18 +199,18 @@ echo "  react-typescript     - React frontend with TypeScript"
 ### Step 9: Update Example Commands
 **Action**: Update example commands in help text to use core templates
 **Locations**:
-- Lines 540-542 (taskwright-init examples)
-- Lines 601-603 (taskwright examples)
+- Lines 540-542 (guardkit-init examples)
+- Lines 601-603 (guardkit examples)
 
 **Changes**:
 ```bash
 # OLD examples:
-taskwright-init react              # Initialize with React template
-taskwright-init dotnet-minimalapi  # Initialize with .NET Minimal API
+guardkit-init react              # Initialize with React template
+guardkit-init dotnet-minimalapi  # Initialize with .NET Minimal API
 
 # NEW examples:
-taskwright-init react-typescript   # Initialize with React TypeScript template
-taskwright-init fastapi-python     # Initialize with FastAPI template
+guardkit-init react-typescript   # Initialize with React TypeScript template
+guardkit-init fastapi-python     # Initialize with FastAPI template
 ```
 
 ### Step 10: Verify install.sh Agent Count Display
@@ -274,9 +274,9 @@ taskwright-init fastapi-python     # Initialize with FastAPI template
 ### Files to Modify (1)
 **installer/scripts/install.sh**:
 - Line 281: Update mkdir template list (5 core templates)
-- Lines 529-537: Update taskwright-init help text (5 core templates)
-- Lines 540-542: Update taskwright-init examples
-- Lines 601-603: Update taskwright examples
+- Lines 529-537: Update guardkit-init help text (5 core templates)
+- Lines 540-542: Update guardkit-init examples
+- Lines 601-603: Update guardkit examples
 - Lines 1105-1139: Update print_summary template descriptions (5 core templates)
 
 ## Testing Strategy

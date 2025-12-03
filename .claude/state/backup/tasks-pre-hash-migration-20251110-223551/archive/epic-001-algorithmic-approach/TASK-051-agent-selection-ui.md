@@ -153,7 +153,7 @@ class AgentSelectionUI:
     def _get_source_name(self, source_id: str) -> str:
         """Get human-readable source name"""
         names = {
-            'local_global': 'Taskwright Built-in',
+            'local_global': 'GuardKit Built-in',
             'local_user': 'User Custom Agents',
             'subagents_cc': 'Subagents.cc',
             'wshobson_agents': 'wshobson/agents',

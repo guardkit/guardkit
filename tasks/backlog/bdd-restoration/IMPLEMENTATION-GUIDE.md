@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in taskwright for implementing formal agentic orchestration systems (specifically LangGraph). The work is structured into 3 parallel waves using Conductor git worktrees for maximum efficiency.
+This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in guardkit for implementing formal agentic orchestration systems (specifically LangGraph). The work is structured into 3 parallel waves using Conductor git worktrees for maximum efficiency.
 
 ### What Was Removed
 
@@ -23,7 +23,7 @@ This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in taskwright
 
 ### What We're Restoring
 
-**In Taskwright**:
+**In GuardKit**:
 - ✅ `--mode=bdd` flag with RequireKit detection
 - ✅ Error messages when RequireKit not installed
 - ✅ BDD workflow routing logic
@@ -40,7 +40,7 @@ This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in taskwright
 - EARS requirements → Gherkin scenarios → Implementation
 - State machine behavior specifications
 - Checkpoint and routing logic validation
-- Dogfooding RequireKit + Taskwright integration
+- Dogfooding RequireKit + GuardKit integration
 
 **Reference**: `LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md`
 
@@ -121,7 +121,7 @@ Phase 5: Review
 
 **Conductor Setup**:
 ```bash
-# In taskwright repo
+# In guardkit repo
 conductor create-workspace bdd-wave1-investigate TASK-BDD-001
 conductor create-workspace bdd-wave1-docs TASK-BDD-002
 
@@ -645,8 +645,8 @@ Scenario: User login with valid credentials
 
 **Conductor Setup**:
 ```bash
-# Taskwright repo
-cd ~/Projects/appmilla_github/taskwright
+# GuardKit repo
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave1-investigate TASK-BDD-001
 conductor create-workspace bdd-wave1-docs TASK-BDD-002
 
@@ -673,7 +673,7 @@ conductor create-workspace bdd-wave1-requirekit TASK-BDD-006
 
 **Conductor Setup**:
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave2-flag TASK-BDD-003
 ```
 
@@ -700,7 +700,7 @@ conductor create-workspace bdd-wave2-flag TASK-BDD-003
 
 **Conductor Setup**:
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave3-testing TASK-BDD-005
 ```
 

@@ -181,7 +181,7 @@ There's an important distinction between what TaskWright does and what swarm/mul
 
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    TASKWRIGHT: WORKFLOW AUTOMATION                           │
+│                    GUARDKIT: WORKFLOW AUTOMATION                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │                     👤 Human Developer                                       │
@@ -473,7 +473,7 @@ This means:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    REQUIREKIT → TASKWRIGHT PIPELINE                          │
+│                    REQUIREKIT → GUARDKIT PIPELINE                          │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │   REQUIREKIT (Product Perspective)                                          │
@@ -512,7 +512,7 @@ This means:
 │                              ▼                                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   TASKWRIGHT (Developer Perspective)                                        │
+│   GUARDKIT (Developer Perspective)                                        │
 │   ══════════════════════════════════                                        │
 │                                                                              │
 │   Developer                                                                 │
@@ -931,8 +931,8 @@ def feature_create(description: str, from_spec: str, project: str):
     Create a feature task through investigation and planning.
     
     Example:
-        taskwright create "add dark mode support"
-        taskwright create --from-spec auth-spec.md "implement auth improvements"
+        guardkit create "add dark mode support"
+        guardkit create --from-spec auth-spec.md "implement auth improvements"
     """
     workflow = FeatureWorkflow(project)
     anyio.run(workflow.feature_task_create, description, from_spec)
@@ -958,9 +958,9 @@ def feature_work(
     Execute feature implementation.
     
     Examples:
-        taskwright work FEATURE-DARK-MODE
-        taskwright work FEATURE-AUTH --skip TASK-003,TASK-004
-        taskwright work FEATURE-DB --dry-run
+        guardkit work FEATURE-DARK-MODE
+        guardkit work FEATURE-AUTH --skip TASK-003,TASK-004
+        guardkit work FEATURE-DB --dry-run
     """
     skip_list = skip.split(',') if skip else None
     only_list = only.split(',') if only else None
@@ -982,7 +982,7 @@ def feature_status(feature_id: str, project: str):
     Show status of a feature task and its subtasks.
     
     Example:
-        taskwright status FEATURE-DARK-MODE
+        guardkit status FEATURE-DARK-MODE
     """
     workflow = FeatureWorkflow(project)
     workflow.display_status(feature_id)

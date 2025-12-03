@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Task**: Remove BDD Mode from Taskwright
+**Task**: Remove BDD Mode from GuardKit
 **Quality Score**: 9.5/10 (EXCELLENT)
 **Status**: APPROVED - Ready for IN_REVIEW
 **Reviewer**: code-reviewer agent
@@ -15,7 +15,7 @@
 
 ## Review Context
 
-This is a **documentation cleanup task** (complexity 1/10) involving removal of BDD mode functionality from taskwright while preserving backward compatibility with the require-kit package through the `supports_bdd()` function.
+This is a **documentation cleanup task** (complexity 1/10) involving removal of BDD mode functionality from guardkit while preserving backward compatibility with the require-kit package through the `supports_bdd()` function.
 
 **Implementation Type**: Documentation-only (no compilation required)
 **Default Template Pattern**: Documentation cleanup and consistency verification
@@ -59,7 +59,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 - Complete removal of BDD mode references from active documentation
 - Backward compatibility preserved (supports_bdd() function intact)
 - Clear migration path documented in CHANGELOG.md
-- Excellent separation of concerns (taskwright vs require-kit)
+- Excellent separation of concerns (guardkit vs require-kit)
 - Zero broken links or dangling references
 - Comprehensive verification suite demonstrates thoroughness
 
@@ -81,7 +81,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 ### Minor Issues (1)
 
 #### Issue 1: Documentation Clarity Enhancement Opportunity
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
 **Line**: 28 (approximate)
 **Severity**: Minor (cosmetic)
 **Description**: While the task-work command now correctly shows `--mode=standard|tdd`, the documentation could be slightly more explicit about BDD removal for users upgrading from previous versions.
@@ -131,7 +131,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 - Backward compatibility noted
 - Impact statement included
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/CHANGELOG.md` (lines 7-15)
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/CHANGELOG.md` (lines 7-15)
 
 ### Consistency ✅
 
@@ -150,7 +150,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 
 ### Verification Suite Quality ✅
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/verification/TASK-037-verification-suite.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/verification/TASK-037-verification-suite.md`
 
 **Assessment**: COMPREHENSIVE (372 lines)
 - Six acceptance criteria fully verified
@@ -167,7 +167,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 
 ## Plan Audit (Phase 5.5) ✅
 
-**Implementation Plan**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/task-plans/TASK-037-implementation-plan.md`
+**Implementation Plan**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-037-implementation-plan.md`
 
 ### Plan vs Actual Comparison
 
@@ -206,7 +206,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 - DRY Principle: Removing unused code reduces duplication
 - YAGNI Principle: Removing unused feature aligns perfectly with YAGNI
 - Backward Compatibility: Preserved through supports_bdd() function
-- Separation of Concerns: Clear boundary between taskwright and require-kit
+- Separation of Concerns: Clear boundary between guardkit and require-kit
 
 **No architectural issues** identified by architectural-reviewer in Phase 2.5, and implementation matches approved design.
 
@@ -306,11 +306,11 @@ When performing human review, focus on:
 ## Supporting Documentation
 
 **Files Referenced in Review**:
-1. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tasks/in_progress/TASK-037-remove-bdd-mode.md` - Task specification
-2. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/task-plans/TASK-037-implementation-plan.md` - Implementation plan
-3. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/verification/TASK-037-verification-suite.md` - Verification results
-4. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/CHANGELOG.md` - Migration documentation
-5. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/feature_detection.py` - Backward compatibility code
+1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_progress/TASK-037-remove-bdd-mode.md` - Task specification
+2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-037-implementation-plan.md` - Implementation plan
+3. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/verification/TASK-037-verification-suite.md` - Verification results
+4. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/CHANGELOG.md` - Migration documentation
+5. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py` - Backward compatibility code
 
 **Verification Commands**:
 ```bash
@@ -334,4 +334,4 @@ grep -r "def supports_bdd" installer/global/lib/ 2>/dev/null | wc -l
 
 ---
 
-**This code review follows taskwright quality standards for minimal documentation level (complexity 1/10). All review checklist items completed, quality score calculated, and approval decision based on objective criteria.**
+**This code review follows guardkit quality standards for minimal documentation level (complexity 1/10). All review checklist items completed, quality score calculated, and approval decision based on objective criteria.**

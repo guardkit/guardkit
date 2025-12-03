@@ -15,7 +15,7 @@ This checklist guides you through testing `/template-create` on each repository 
 
 1. Clone all repositories:
    ```bash
-   cd ~/taskwright-testing
+   cd ~/guardkit-testing
    ./docs/testing/clone-test-repos.sh
    mkdir -p results
    ```
@@ -33,7 +33,7 @@ This checklist guides you through testing `/template-create` on each repository 
 
 2. **Navigate to test repo**:
    ```bash
-   cd ~/taskwright-testing/test-repos/[repo-name]
+   cd ~/guardkit-testing/test-repos/[repo-name]
    ```
 
 3. **Open results file** in editor for notes
@@ -422,7 +422,7 @@ This saves analysis JSON to disk.
 
 4. **Create GitHub Issues**: For any bugs or improvements found
 
-5. **Share Findings**: With Taskwright team
+5. **Share Findings**: With GuardKit team
 
 ## Summary Report Template
 

@@ -10,8 +10,8 @@ You want to test the **EPIC-001 template creation functionality**, which analyze
 # CORRECT: Use /template-create to analyze repos and create templates
 /template-create
 
-# WRONG: taskwright init (this just applies existing templates)
-taskwright init
+# WRONG: guardkit init (this just applies existing templates)
+guardkit init
 ```
 
 ## How /template-create Works
@@ -259,4 +259,4 @@ For the EPIC-001 feature to be considered successful:
 
 ---
 
-**Key Takeaway**: You're testing `/template-create` (EPIC-001), not `taskwright init` (standard initialization).
+**Key Takeaway**: You're testing `/template-create` (EPIC-001), not `guardkit init` (standard initialization).

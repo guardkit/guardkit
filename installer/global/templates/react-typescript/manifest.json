@@ -4,7 +4,7 @@
   "display_name": "React TypeScript",
   "description": "Production-ready React template with TypeScript, Vite, TanStack Query, and feature-based architecture. Based on Bulletproof React (28.5k+ stars).",
   "version": "1.0.0",
-  "author": "Taskwright",
+  "author": "GuardKit",
   "language": "TypeScript",
   "language_version": "5.4+",
   "frameworks": [

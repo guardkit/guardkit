@@ -161,7 +161,7 @@ return Task.FromResult<ErrorOr<IList<T>>>(result);
    Lines 987-1043: New "Production Code Pattern" section added
 ```
 
-### Taskwright Repository
+### GuardKit Repository
 ```
 ✅ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
    Lines 905-961: New "Production Code Pattern" section added
@@ -334,7 +334,7 @@ This issue highlights the importance of **complete, context-specific documentati
 ```
 
 **Lines Added**: ~50 lines per file
-**Files Updated**: 3 (ExampleApp + ai-engineer + taskwright)
+**Files Updated**: 3 (ExampleApp + ai-engineer + guardkit)
 **Impact**: Prevents future incorrect patterns
 
 ---

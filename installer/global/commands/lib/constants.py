@@ -1,4 +1,4 @@
-"""Shared constants for Taskwright."""
+"""Shared constants for GuardKit."""
 
 from pathlib import Path
 from typing import List

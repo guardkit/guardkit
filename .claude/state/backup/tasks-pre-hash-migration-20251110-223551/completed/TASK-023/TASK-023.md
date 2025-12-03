@@ -43,7 +43,7 @@ completion_summary:
 
 ## Description
 
-Review and update the main entry point documentation files (README.md and CLAUDE.md) to ensure they only document Taskwright features. Remove references to RequireKit features while adding appropriate links to RequireKit where integration makes sense.
+Review and update the main entry point documentation files (README.md and CLAUDE.md) to ensure they only document GuardKit features. Remove references to RequireKit features while adding appropriate links to RequireKit where integration makes sense.
 
 ## Scope
 
@@ -60,12 +60,12 @@ Review and update the main entry point documentation files (README.md and CLAUDE
 - [x] Remove epic/feature hierarchy references (RequireKit feature)
 - [x] Remove portfolio management mentions (RequireKit feature)
 - [x] Fix GitHub repository URLs to use correct orgs:
-  - Taskwright: `https://github.com/taskwright-dev/taskwright`
+  - GuardKit: `https://github.com/guardkit/guardkit`
   - RequireKit: `https://github.com/requirekit/require-kit`
 - [x] Add appropriate "Need requirements management?" sections with links to RequireKit
-- [x] Ensure all features described actually exist in Taskwright
-- [x] Verify command examples work with Taskwright-only features
-- [x] Update "When to Use" section to clarify Taskwright vs RequireKit use cases
+- [x] Ensure all features described actually exist in GuardKit
+- [x] Verify command examples work with GuardKit-only features
+- [x] Update "When to Use" section to clarify GuardKit vs RequireKit use cases
 
 ## Implementation Summary
 
@@ -75,11 +75,11 @@ Review and update the main entry point documentation files (README.md and CLAUDE
 3. **Removed RequireKit feature documentation** from core sections
 4. **Added "Need Requirements Management?" sections** with links to RequireKit
 5. **Fixed 5 broken internal documentation links** (bonus quality improvement)
-6. **Ensured all features described exist** in Taskwright
+6. **Ensured all features described exist** in GuardKit
 
 ### Files Modified
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md` (18 changes)
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md` (18 changes)
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md` (18 changes)
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md` (18 changes)
 
 ### Validation Results
 - **All 6 test categories passed** (100%)
@@ -126,7 +126,7 @@ Review and update the main entry point documentation files (README.md and CLAUDE
 - PM tool synchronization (Jira, Linear, Azure DevOps, GitHub)
 - Requirements traceability matrices
 
-**Keep these features** (they are Taskwright):
+**Keep these features** (they are GuardKit):
 - Task creation and workflow (backlog → in_progress → in_review → completed)
 - Quality gates (Phase 2.5 architectural review, Phase 4.5 test enforcement)
 - Complexity evaluation (Phase 2.7)
@@ -140,7 +140,7 @@ Review and update the main entry point documentation files (README.md and CLAUDE
 Add references to RequireKit in these contexts:
 - When discussing requirements management
 - When mentioning formal specifications (EARS, BDD)
-- In "When NOT to Use Taskwright" section
+- In "When NOT to Use GuardKit" section
 - In "Need More?" or "Advanced Features" sections
 
 ## Implementation Notes
@@ -149,13 +149,13 @@ Use this pattern for RequireKit references:
 ```markdown
 ## Need Requirements Management?
 
-For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.
+For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
 ```
 
 ## Test Requirements
 
 - [x] Verify all links work (no 404s)
-- [x] Ensure code examples can be run with Taskwright installation only
+- [x] Ensure code examples can be run with GuardKit installation only
 - [x] Check that feature claims match actual implementation
 - [x] Validate command syntax against actual command specs
 

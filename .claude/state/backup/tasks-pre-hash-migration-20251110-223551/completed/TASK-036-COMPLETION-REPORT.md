@@ -113,7 +113,7 @@ phase: 1|2|2.5|4|5
 - **Workflow Efficiency**: Users can choose appropriate documentation level
 
 ### Long-Term Benefits ✅
-- **Taskwright Development**: Fast iteration with minimal overhead
+- **GuardKit Development**: Fast iteration with minimal overhead
 - **Require-kit Development**: Same benefits during split/setup
 - **ai-engineer Learnings**: Proven 67% reduction model for backport
 - **User Experience**: Faster feedback loop
@@ -177,7 +177,7 @@ phase: 1|2|2.5|4|5
 - [x] Archive task file
 
 ### Follow-up (Recommended)
-1. **Use in production**: Test with real tasks in taskwright
+1. **Use in production**: Test with real tasks in guardkit
 2. **Monitor metrics**: Track time/token savings
 3. **Gather feedback**: Identify if user guide is needed
 4. **Refine templates**: Update based on actual usage patterns
@@ -222,7 +222,7 @@ TASK-036 has been successfully completed with all acceptance criteria met and qu
 - **100% feature parity** with ai-engineer
 - **100% backward compatibility** maintained
 
-The task is ready for production use and demonstrates the value of the documentation level approach for taskwright and require-kit development.
+The task is ready for production use and demonstrates the value of the documentation level approach for guardkit and require-kit development.
 
 **Status**: ✅ COMPLETED AND READY FOR ARCHIVE
 

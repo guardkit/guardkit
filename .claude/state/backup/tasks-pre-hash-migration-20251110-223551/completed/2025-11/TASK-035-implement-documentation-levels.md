@@ -9,7 +9,7 @@ priority: high
 complexity: 5
 estimated_time: 2-3 hours
 actual_time: 2.5 hours
-tags: [performance, optimization, documentation, task-work, user-experience, taskwright]
+tags: [performance, optimization, documentation, task-work, user-experience, guardkit]
 epic: null
 feature: null
 parent_task: null
@@ -213,7 +213,7 @@ Ensure ALL modes enforce identical quality standards:
 
 ### AC6: Implementation Summary
 
-- [ ] Create `TASK-035-TASKWRIGHT-IMPLEMENTATION-SUMMARY.md`
+- [ ] Create `TASK-035-GUARDKIT-IMPLEMENTATION-SUMMARY.md`
 - [ ] Document all 7 agent updates
 - [ ] Document template configuration
 - [ ] Include usage examples
@@ -367,7 +367,7 @@ For agents that read markdown plans or communicate with other agents:
 8. `installer/global/templates/default/settings.json` (+89 lines - documentation section) OR create template-specific configuration file
 
 ### Documentation (1 file)
-9. `TASK-035-TASKWRIGHT-IMPLEMENTATION-SUMMARY.md` (new file)
+9. `TASK-035-GUARDKIT-IMPLEMENTATION-SUMMARY.md` (new file)
 
 **Total**: 9 files (~754 lines added)
 
@@ -461,7 +461,7 @@ Add this complete `documentation` section to template settings.json:
 
 1. **Verify Agent Installation**:
    ```bash
-   cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+   cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
    ./installer/scripts/install.sh
    # Verify: Updated agents installed to ~/.agentecflow/agents/
    grep -l "Documentation Level Awareness" ~/.agentecflow/agents/*.md

@@ -103,7 +103,7 @@ Both configuration files are syntactically valid and parseable.
   "name": "react-fastapi-monorepo",
   "display_name": "React + FastAPI Monorepo",
   "version": "1.0.0",
-  "author": "Taskwright",
+  "author": "GuardKit",
   "language": "TypeScript, Python",
   "frameworks": [9 frameworks with versions],
   "placeholders": [6 defined placeholders],
@@ -259,7 +259,7 @@ Defined but Unused:
 
 **Example Failure Scenario**:
 ```python
-# User runs: taskwright init react-fastapi-monorepo
+# User runs: guardkit init react-fastapi-monorepo
 # Expected to be prompted for entity names
 # Instead generates:
 class {{EntityName}}(Base):
@@ -703,7 +703,7 @@ To proceed to production:
 
 ## File Locations
 
-**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/templates/react-fastapi-monorepo/`
+**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/`
 
 **Key Files**:
 - Manifest: `manifest.json` (3.9 KB)

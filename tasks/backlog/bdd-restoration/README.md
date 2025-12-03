@@ -18,7 +18,7 @@
 **Wave 1** (Parallel - Day 1):
 ```bash
 # Start all 4 simultaneously using Conductor
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave1-investigate TASK-BDD-001
 conductor create-workspace bdd-wave1-docs TASK-BDD-002
 conductor create-workspace bdd-wave1-claude-md TASK-BDD-007
@@ -30,7 +30,7 @@ conductor create-workspace bdd-wave1-requirekit TASK-BDD-006
 **Wave 2** (Sequential - Day 2):
 ```bash
 # After Wave 1 merges
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave2-flag TASK-BDD-003
 # Wait for merge
 conductor create-workspace bdd-wave2-workflow TASK-BDD-004
@@ -160,7 +160,7 @@ ERROR: BDD mode requires RequireKit installation
 **Principle**: TaskWright delegates to RequireKit for BDD logic
 
 **No Duplication**:
-- ❌ BDD agents NOT in taskwright
+- ❌ BDD agents NOT in guardkit
 - ✅ BDD agents in RequireKit only
 - ✅ TaskWright calls RequireKit agents
 
@@ -195,8 +195,8 @@ ERROR: BDD mode requires RequireKit installation
 
 ### Wave 1 Setup
 ```bash
-# Taskwright repo
-cd ~/Projects/appmilla_github/taskwright
+# GuardKit repo
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave1-investigate TASK-BDD-001
 conductor create-workspace bdd-wave1-docs TASK-BDD-002
 conductor create-workspace bdd-wave1-claude-md TASK-BDD-007
@@ -216,7 +216,7 @@ conductor merge-workspace
 
 ### Wave 2 Setup
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave2-flag TASK-BDD-003
 # Complete and merge
 conductor create-workspace bdd-wave2-workflow TASK-BDD-004
@@ -225,7 +225,7 @@ conductor create-workspace bdd-wave2-workflow TASK-BDD-004
 
 ### Wave 3 Setup
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 conductor create-workspace bdd-wave3-testing TASK-BDD-005
 # Complete and merge
 ```

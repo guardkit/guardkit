@@ -549,7 +549,7 @@ Reduce from 9 templates to 3 high-quality reference templates (9+/10 score requi
 ## Deprecation Timeline
 
 ### Phase 1: Announcement (Week 1)
-- Update CLAUDE.md in taskwright root
+- Update CLAUDE.md in guardkit root
 - Add deprecation notices to dotnet-aspnetcontroller and default templates
 - Document migration paths in docs/
 

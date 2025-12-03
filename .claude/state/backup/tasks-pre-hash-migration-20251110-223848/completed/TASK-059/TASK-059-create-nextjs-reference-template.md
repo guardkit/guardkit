@@ -148,7 +148,7 @@ IT IS MANDATORY TO INVOKE THIS COMMAND - DO NOT GET ALL CREATIVE AND DECIDE TO D
 Use SlashCommand tool to invoke: /template-create --skip-qa --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The '--skip-qa' flag will skip the interactive Q&A which caused issues on a previous task
 
@@ -291,7 +291,7 @@ Use **Bash tool** to test the template:
 
 # Test template initialization in clean directory
 cd /tmp/test-nextjs-app
-taskwright init nextjs-fullstack
+guardkit init nextjs-fullstack
 
 # Verify generated project builds and tests pass
 cd /tmp/test-nextjs-app
@@ -504,7 +504,7 @@ export const revalidate = 3600 // Revalidate every hour
 ### Generated Project Tests
 ```bash
 # Initialize project from template
-taskwright init nextjs-fullstack --output /tmp/test-nextjs-app
+guardkit init nextjs-fullstack --output /tmp/test-nextjs-app
 
 # Setup
 cd /tmp/test-nextjs-app

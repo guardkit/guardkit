@@ -232,7 +232,7 @@ TASK-REV-5DC2     TASK-REV-4DE8    (Wave 3 - Polish, parallel)
 ✅ **Isolated Development**: Each task in its own directory
 ✅ **No Branch Conflicts**: Work on multiple tasks simultaneously
 ✅ **Shared Git Repo**: All worktrees share `.git/` (no duplication)
-✅ **State Preservation**: Taskwright state synced via symlinks
+✅ **State Preservation**: GuardKit state synced via symlinks
 ✅ **Zero Context Switching**: Keep all worktrees open in separate IDE windows
 
 #### Workflow
@@ -284,8 +284,8 @@ conductor create worktree-testing
 # Install Conductor (if not already installed)
 # See https://conductor.build for installation instructions
 
-# Verify Taskwright is Conductor-compatible
-taskwright doctor
+# Verify GuardKit is Conductor-compatible
+guardkit doctor
 
 # Expected output:
 # ✅ Conductor integration: Enabled
@@ -330,7 +330,7 @@ cd worktree-reports
 **Parallel Development**:
 - Developer A works in `worktree-modes/`
 - Developer B works in `worktree-reports/`
-- Both see same Taskwright commands (symlinked)
+- Both see same GuardKit commands (symlinked)
 - Both have independent task state (isolated)
 - No conflicts (different files modified)
 
@@ -353,10 +353,10 @@ cd worktree-testing
 
 ### State Management Across Worktrees
 
-Taskwright automatically syncs state across worktrees via symlinks:
+GuardKit automatically syncs state across worktrees via symlinks:
 
 ```
-Main Repo: ~/Projects/taskwright/
+Main Repo: ~/Projects/guardkit/
   ├── .claude/
   │   └── state/ → ~/.agentecflow/state/  (symlinked, shared)
   ├── worktree-modes/
@@ -493,7 +493,7 @@ print(report)
 # Now integrate the two branches
 
 # Developer A or Lead
-cd ~/Projects/taskwright  # Main repo
+cd ~/Projects/guardkit  # Main repo
 
 # Merge review modes first
 git checkout main
@@ -588,7 +588,7 @@ pytest tests/ --cov=installer/global/commands/lib/task_review_orchestrator --cov
 # Both developers have completed their tasks
 # Final integration and validation
 
-cd ~/Projects/taskwright  # Main repo
+cd ~/Projects/guardkit  # Main repo
 
 # Merge integration first (documentation and task-create)
 git checkout main
@@ -808,7 +808,7 @@ print('Skeleton functions verified')
 ls -la worktree-modes/.claude/state
 # Should show: state -> /Users/you/.agentecflow/state
 
-# If broken, reinstall Taskwright
+# If broken, reinstall GuardKit
 cd worktree-modes
 ./installer/scripts/install.sh
 ```
@@ -951,7 +951,7 @@ conductor remove worktree-reports     # After Wave 2 complete
 - **Proposal**: [task-review-command-proposal.md](../proposals/task-review-command-proposal.md)
 - **Tasks**: `tasks/backlog/TASK-REV-*.md`
 - **Conductor Docs**: https://conductor.build
-- **Taskwright Workflows**: [taskwright-workflow.md](taskwright-workflow.md)
+- **GuardKit Workflows**: [guardkit-workflow.md](guardkit-workflow.md)
 
 ---
 

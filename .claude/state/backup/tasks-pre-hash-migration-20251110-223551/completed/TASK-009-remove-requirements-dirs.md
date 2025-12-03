@@ -86,7 +86,7 @@ mkdir -p docs/adr
 ### 1. Check What Exists
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Check if requirements directories exist
 ls -la docs/epics 2>/dev/null && echo "epics exists"

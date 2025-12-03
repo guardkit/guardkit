@@ -474,7 +474,7 @@ $ python3 -m pytest tests/unit/commands/review_modes/ \
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.0, pytest-8.4.2, pluggy-1.6.0
 cachedir: .pytest_cache
-rootdir: /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/accra-v2
+rootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/accra-v2
 configfile: pytest.ini
 plugins: cov-7.0.0
 collected 139 items

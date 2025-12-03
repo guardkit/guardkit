@@ -12,7 +12,7 @@ Common workflow patterns for template validation in different scenarios.
 /template-create
 
 # 2. Verify it works
-taskwright init my-template
+guardkit init my-template
 
 # 3. Use immediately
 ```
@@ -92,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Taskwright
+      - name: Install GuardKit
         run: |
           chmod +x installer/scripts/install.sh
           ./installer/scripts/install.sh
@@ -268,7 +268,7 @@ cat ~/.agentecflow/templates/my-template/validation-report.md
 ✅ All sections reviewed
 
 # 3. Verify template works
-taskwright init my-template
+guardkit init my-template
 cd my-template-test
 ✅ Template initializes successfully
 

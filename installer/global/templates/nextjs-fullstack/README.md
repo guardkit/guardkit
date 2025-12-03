@@ -17,7 +17,7 @@ Production-ready Next.js 15 template with App Router, React Server Components, S
 
 ```bash
 # Initialize from template
-taskwright init nextjs-fullstack
+guardkit init nextjs-fullstack
 
 # Install dependencies
 npm install
@@ -227,7 +227,7 @@ This template includes 3 specialized agents:
 
 ## License
 
-This template is part of the Taskwright project.
+This template is part of the GuardKit project.
 
 ---
 

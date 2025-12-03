@@ -78,16 +78,16 @@ python3 --version  # Should be 3.11+
 # 3. Clone TaskWright
 mkdir -p ~/Projects
 cd ~/Projects
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 
 # 4. Run installer
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # 5. Verify installation
-taskwright --version
-which taskwright  # Should show ~/.agentecflow/bin/taskwright
+guardkit --version
+which guardkit  # Should show ~/.agentecflow/bin/guardkit
 ```
 
 **Expected Output**:
@@ -100,7 +100,7 @@ which taskwright  # Should show ~/.agentecflow/bin/taskwright
 
 **Test Checklist**:
 - [ ] Installation completes without errors
-- [ ] `taskwright --version` works
+- [ ] `guardkit --version` works
 - [ ] `~/.agentecflow/` directory created
 - [ ] Symlinks in `~/.agentecflow/bin/` point to correct scripts
 
@@ -159,7 +159,7 @@ git config user.name "Test User"
 git config user.email "test@example.com"
 
 # 3. Initialize with fastapi-python template
-taskwright init fastapi-python
+guardkit init fastapi-python
 ```
 
 **Expected Q&A Session** (Template init greenfield questions):
@@ -1021,7 +1021,7 @@ Added:
 ### Create Test Results Document
 
 ```bash
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 
 cat > PARALLELS-VM-TEST-RESULTS.md << 'EOF'
 # TaskWright Parallels VM Test Results
@@ -1195,10 +1195,10 @@ EOF
 **Solution**:
 ```bash
 # Check symlink exists
-ls -l ~/.agentecflow/bin/taskwright
+ls -l ~/.agentecflow/bin/guardkit
 
 # If missing, re-run installer
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 ./installer/scripts/install.sh
 
 # Add to PATH if needed

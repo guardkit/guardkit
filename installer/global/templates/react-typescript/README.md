@@ -155,11 +155,11 @@ These agents provide expert guidance for React/TypeScript development.
 
 ## Getting Started
 
-### Using with Taskwright
+### Using with GuardKit
 
 ```bash
 # Initialize project with this template
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Answer prompts for placeholders:
 # - ProjectName: my-app
@@ -266,10 +266,10 @@ For issues or questions:
 ## License
 
 This template is based on Bulletproof React (MIT License).
-Template adaptation by Taskwright.
+Template adaptation by GuardKit.
 
 ## Credits
 
 - **Original**: [Bulletproof React](https://github.com/alan2207/bulletproof-react) by @alan2207
-- **Template Adaptation**: Taskwright team
+- **Template Adaptation**: GuardKit team
 - **Confidence Score**: 92% (High)

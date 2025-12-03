@@ -21,7 +21,7 @@ The reference has been added to `installer/global/commands/agent-enhance.md`, bu
 ## Problem
 
 `CLAUDE.md` is generated in **two ways**:
-1. **`taskwright init <template>`** - Copies from built-in template CLAUDE.md files
+1. **`guardkit init <template>`** - Copies from built-in template CLAUDE.md files
 2. **`/template-create`** - Generates from codebase analysis
 
 Both paths need the agent-response format reference so Claude Code has access to it when running `/agent-enhance`.
@@ -41,9 +41,9 @@ This ensures the reference appears regardless of how the project was initialized
 3. ✅ Reference includes link to format specification document
 4. ✅ Reference mentions TASK-FIX-267C for traceability
 5. ✅ Test both paths:
-   - `taskwright init react-typescript` → verify CLAUDE.md has reference
+   - `guardkit init react-typescript` → verify CLAUDE.md has reference
    - `/template-create` → verify generated CLAUDE.md has reference
-6. ✅ Existing CLAUDE.md in Taskwright repo updated (for dogfooding)
+6. ✅ Existing CLAUDE.md in GuardKit repo updated (for dogfooding)
 
 ## Implementation
 
@@ -104,7 +104,7 @@ See the specification for complete schema and examples.
 ### Recommended Approach
 
 **Implement BOTH options** because:
-- ✅ Option 1 covers `taskwright init` path
+- ✅ Option 1 covers `guardkit init` path
 - ✅ Option 2 covers `/template-create` path
 - ✅ Both paths are actively used
 - ✅ Ensures consistency across all projects
@@ -125,7 +125,7 @@ See the specification for complete schema and examples.
 ### Test Option 1 (Built-in Templates)
 1. Verify reference added to all 6 template CLAUDE.md files
 2. Create test project: `mkdir /tmp/test-template && cd /tmp/test-template`
-3. Run: `taskwright init react-typescript`
+3. Run: `guardkit init react-typescript`
 4. Check generated CLAUDE.md includes the agent-response format section
 5. Verify links resolve correctly from project root
 
@@ -147,8 +147,8 @@ See the specification for complete schema and examples.
 This is a follow-up to TASK-FIX-267C, which created the format specification.
 
 **Why both options are needed**:
-- Users who run `taskwright init` get templates from `installer/global/templates/` (Option 1)
+- Users who run `guardkit init` get templates from `installer/global/templates/` (Option 1)
 - Users who run `/template-create` get generated CLAUDE.md from their codebase (Option 2)
 - Both groups need access to the format specification when using `/agent-enhance`
 
-Adding the reference to both paths ensures all future projects generated with Taskwright will have access to the correct format documentation, regardless of initialization method.
+Adding the reference to both paths ensures all future projects generated with GuardKit will have access to the correct format documentation, regardless of initialization method.

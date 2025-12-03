@@ -87,10 +87,10 @@ All placeholders used in templates are properly defined in manifest.json
 
 **Installation Output**:
 ```
-✅ Taskwright successfully initialized!
+✅ GuardKit successfully initialized!
 
 📁 Project Structure Created:
-  .claude/       - Taskwright configuration
+  .claude/       - GuardKit configuration
   docs/          - Documentation and ADRs
   tasks/         - Task workflow
 ```
@@ -117,7 +117,7 @@ All placeholders used in templates are properly defined in manifest.json
 **Test Command**:
 ```bash
 cd /tmp/test-react-fastapi-monorepo
-taskwright-init react-fastapi-monorepo
+guardkit-init react-fastapi-monorepo
 ```
 
 ---
@@ -240,7 +240,7 @@ python3 -m json.tool manifest.json
 
 ### Template Initialization Test
 ```bash
-taskwright-init react-fastapi-monorepo
+guardkit-init react-fastapi-monorepo
 # ✅ Successfully initialized
 # ✅ All files created
 # ✅ No errors
@@ -252,13 +252,13 @@ taskwright-init react-fastapi-monorepo
 
 ### Immediate Use
 ```bash
-# Install Taskwright (if not already installed)
-cd /path/to/taskwright
+# Install GuardKit (if not already installed)
+cd /path/to/guardkit
 ./installer/scripts/install.sh
 
 # Initialize new monorepo project
 mkdir my-monorepo && cd my-monorepo
-taskwright-init react-fastapi-monorepo
+guardkit-init react-fastapi-monorepo
 
 # Start development
 docker-compose up        # Start all services

@@ -1,11 +1,11 @@
-# Taskwright
+# GuardKit
 
 ![version](https://img.shields.io/badge/version-0.9.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 ![integration](https://img.shields.io/badge/integration-requirekit%20optional-yellow)
 ![detection](https://img.shields.io/badge/detection-automatic-blueviolet)
-[![documentation](https://img.shields.io/badge/docs-online-blue)](https://taskwright-dev.github.io/taskwright/)
+[![documentation](https://img.shields.io/badge/docs-online-blue)](https://guardkit.github.io/guardkit/)
 
 **Lightweight AI-assisted development with built-in quality gates.**
 
@@ -13,7 +13,7 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ## Spec-Oriented Development (SOD)
 
-Taskwright provides **Spec-Oriented Development** out of the box:
+GuardKit provides **Spec-Oriented Development** out of the box:
 
 ✅ **Task descriptions as lightweight specifications**
 - Acceptance criteria instead of formal requirements (EARS)
@@ -21,7 +21,7 @@ Taskwright provides **Spec-Oriented Development** out of the box:
 - Perfect for solo developers and small teams
 
 ✅ **Optional Upgrade to Spec-Driven Development (SDD)**
-- For teams needing formal requirements management, combine Taskwright with [RequireKit](https://github.com/requirekit/require-kit)
+- For teams needing formal requirements management, combine GuardKit with [RequireKit](https://github.com/requirekit/require-kit)
 - EARS notation requirements
 - BDD scenarios (Gherkin)
 - Epic/feature hierarchy
@@ -30,7 +30,7 @@ Taskwright provides **Spec-Oriented Development** out of the box:
 
 ### Why "Spec-Oriented" vs "Spec-Driven"?
 
-| | Spec-Oriented (Taskwright) | Spec-Driven (Spec-Kit, Kiro, Tessl) |
+| | Spec-Oriented (GuardKit) | Spec-Driven (Spec-Kit, Kiro, Tessl) |
 |---|---|---|
 | **Specs** | Task descriptions + acceptance criteria | Formal specifications (EARS, extensive docs) |
 | **Ceremony** | Minimal (1-2 minute task creation) | Heavy (30+ minute spec authoring) |
@@ -74,7 +74,7 @@ Taskwright provides **Spec-Oriented Development** out of the box:
 
 **Work on multiple tasks simultaneously without context switching chaos.**
 
-Taskwright integrates seamlessly with [Conductor.build](https://conductor.build) for parallel development:
+GuardKit integrates seamlessly with [Conductor.build](https://conductor.build) for parallel development:
 
 ### How It Works
 - **Multiple Worktrees** - Work on 3-5 tasks in parallel, each in isolated git worktree
@@ -91,38 +91,38 @@ Taskwright integrates seamlessly with [Conductor.build](https://conductor.build)
 ### Competitive Advantage
 - **Linear/Jira**: Sequential task switching (lose context on every switch)
 - **GitHub Projects**: No parallel workspace support
-- **Taskwright + Conductor**: True parallel development with state preservation
+- **GuardKit + Conductor**: True parallel development with state preservation
 
 **Setup**: One command - `./installer/scripts/install.sh` creates symlinks automatically
 
 ## Documentation
 
-📚 **[View Full Documentation](https://taskwright-dev.github.io/taskwright/)**
+📚 **[View Full Documentation](https://guardkit.github.io/guardkit/)**
 
 Comprehensive guides, workflows, and references:
 
-- **[Quickstart Guide](https://taskwright-dev.github.io/taskwright/guides/GETTING-STARTED/)** - Get up and running in 5 minutes
-- **[Core Concepts](https://taskwright-dev.github.io/taskwright/concepts/)** - Workflow, complexity, quality gates, task states
-- **[Advanced Topics](https://taskwright-dev.github.io/taskwright/advanced/)** - Design-first, UX integration, review workflows
-- **[Templates](https://taskwright-dev.github.io/taskwright/templates/)** - Stack-specific templates and customization
-- **[Agent System](https://taskwright-dev.github.io/taskwright/agents/)** - Discovery, enhancement, and boundary sections
-- **[Task Review](https://taskwright-dev.github.io/taskwright/task-review/)** - Analysis workflows and review modes
-- **[MCP Integration](https://taskwright-dev.github.io/taskwright/mcp-integration/)** - Optional enhancements (context7, design-patterns)
-- **[Troubleshooting](https://taskwright-dev.github.io/taskwright/troubleshooting/)** - Common issues and solutions
+- **[Quickstart Guide](https://guardkit.github.io/guardkit/guides/GETTING-STARTED/)** - Get up and running in 5 minutes
+- **[Core Concepts](https://guardkit.github.io/guardkit/concepts/)** - Workflow, complexity, quality gates, task states
+- **[Advanced Topics](https://guardkit.github.io/guardkit/advanced/)** - Design-first, UX integration, review workflows
+- **[Templates](https://guardkit.github.io/guardkit/templates/)** - Stack-specific templates and customization
+- **[Agent System](https://guardkit.github.io/guardkit/agents/)** - Discovery, enhancement, and boundary sections
+- **[Task Review](https://guardkit.github.io/guardkit/task-review/)** - Analysis workflows and review modes
+- **[MCP Integration](https://guardkit.github.io/guardkit/mcp-integration/)** - Optional enhancements (context7, design-patterns)
+- **[Troubleshooting](https://guardkit.github.io/guardkit/troubleshooting/)** - Common issues and solutions
 
 ## 5-Minute Quickstart
 
-**📚 Full documentation: https://taskwright-dev.github.io/taskwright/**
+**📚 Full documentation: https://guardkit.github.io/guardkit/**
 
 ### Option 1: Quick Install (Recommended)
 
 **macOS / Linux:**
 ```bash
-# Install Taskwright
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+# Install GuardKit
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
 # Initialize your project (choose a template)
-taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
+guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
 
 **Windows (WSL2):**
@@ -131,13 +131,13 @@ taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, defaul
 wsl --install
 
 # 2. Open WSL2 terminal and run installer
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
 # 3. Initialize your project
-taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, default
+guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
 
-> **Note for Windows users**: Taskwright requires bash and runs best on WSL2. Native PowerShell installation is not currently supported.
+> **Note for Windows users**: GuardKit requires bash and runs best on WSL2. Native PowerShell installation is not currently supported.
 
 **If using VS Code:** Reload the window to enable slash commands:
 - Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows/Linux)
@@ -148,7 +148,7 @@ taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, defaul
 
 > **⚠️ Important - Working Directory**
 >
-> Always run `/task-work` from your **project root directory** (where your code lives), not from the Taskwright installation directory. The command uses your current directory to detect the tech stack and create files.
+> Always run `/task-work` from your **project root directory** (where your code lives), not from the GuardKit installation directory. The command uses your current directory to detect the tech stack and create files.
 >
 > ```bash
 > cd /path/to/your/project  # ✅ Navigate to project root first
@@ -165,14 +165,14 @@ taskwright init react-typescript  # or: fastapi-python, nextjs-fullstack, defaul
 ### Option 2: Clone Repository
 ```bash
 # Clone and install
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize your project
 cd /path/to/your/project
-taskwright init react-typescript
+guardkit init react-typescript
 
 # IMPORTANT: Stay in your project directory for task work
 /task-create "Add user login feature"
@@ -184,7 +184,7 @@ taskwright init react-typescript
 
 That's it! Three commands from idea to production-ready code.
 
-## What Makes Taskwright Different?
+## What Makes GuardKit Different?
 
 1. **AI-Assisted with Human Oversight** ⚖️
    - Not fully automated (AI writes code)
@@ -209,8 +209,8 @@ That's it! Three commands from idea to production-ready code.
    - **Competitor gap**: Linear/Jira require sequential context switching
 
 5. **Spectrum of Formality** 📊
-   - Lightweight: Taskwright alone (SOD)
-   - Full-featured: Taskwright + RequireKit (SDD)
+   - Lightweight: GuardKit alone (SOD)
+   - Full-featured: GuardKit + RequireKit (SDD)
    - **Right amount of process for your team size**
 
 6. **Zero Vendor Lock-In** 🔓
@@ -218,23 +218,23 @@ That's it! Three commands from idea to production-ready code.
    - Self-hosted (no SaaS required)
    - **Competitor gap**: Linear is proprietary platform
 
-## Who Should Use Taskwright?
+## Who Should Use GuardKit?
 
 | Audience | Use Case | Solution | Specs? | Parallel? |
 |----------|----------|----------|--------|-----------|
-| **Solo Developers** | Quick prototyping, personal projects | Taskwright (SOD) | Task descriptions | Optional (Conductor) |
-| **Small Teams (2-5)** | Agile development, startup MVPs | Taskwright (SOD) | Task descriptions | Recommended (Conductor) |
-| **Medium Teams (5-20)** | Structured development, traceability | Taskwright + RequireKit (SDD) | EARS + Gherkin | Recommended (Conductor) |
-| **Large Teams (20+)** | Regulated industries, compliance | Taskwright + RequireKit (SDD) | EARS + Gherkin + PM sync | Essential (Conductor) |
+| **Solo Developers** | Quick prototyping, personal projects | GuardKit (SOD) | Task descriptions | Optional (Conductor) |
+| **Small Teams (2-5)** | Agile development, startup MVPs | GuardKit (SOD) | Task descriptions | Recommended (Conductor) |
+| **Medium Teams (5-20)** | Structured development, traceability | GuardKit + RequireKit (SDD) | EARS + Gherkin | Recommended (Conductor) |
+| **Large Teams (20+)** | Regulated industries, compliance | GuardKit + RequireKit (SDD) | EARS + Gherkin + PM sync | Essential (Conductor) |
 
 ### Migration Path
-- ✅ Start with Taskwright (SOD) - "Zero ceremony, get moving fast"
+- ✅ Start with GuardKit (SOD) - "Zero ceremony, get moving fast"
 - ✅ Add Conductor when parallelizing - "Work on multiple tasks simultaneously"
 - ✅ Add RequireKit when needed (SDD) - "Team grew? Need compliance? Upgrade seamlessly"
 
 ## Need Requirements Management?
 
-For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.
+For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
 
 ## Available Commands
 
@@ -272,7 +272,7 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 
 ## Templates
 
-Taskwright ships with **5 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
+GuardKit ships with **5 high-quality templates**: Stack-specific reference implementations, specialized patterns, and language-agnostic foundation.
 
 ### High-Quality Reference Templates
 
@@ -302,12 +302,12 @@ All templates validated using comprehensive quality audit.
 
 ```bash
 # Try a reference template (evaluation)
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Create your own template (production)
 cd your-production-codebase
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ### Why These 5 Templates?
@@ -320,7 +320,7 @@ Your production codebase is better than any generic template. Use `/template-cre
 - How to structure templates
 - Stack-specific best practices
 - Quality standards to target (9+/10)
-- Taskwright workflow patterns
+- GuardKit workflow patterns
 
 **Default template** provides:
 - Language-agnostic foundation for unsupported stacks (Go, Rust, Ruby, etc.)
@@ -411,7 +411,7 @@ BACKLOG
 
 ## Optional: MCP Enhancements
 
-**Model Context Protocol (MCP)** servers enhance Taskwright with specialized capabilities. **All are optional** - system works fine without them.
+**Model Context Protocol (MCP)** servers enhance GuardKit with specialized capabilities. **All are optional** - system works fine without them.
 
 ### Core MCPs (General Development)
 
@@ -478,8 +478,8 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 ## Documentation
 
 ### Getting Started
-- [Claude Code Web Setup](docs/guides/claude-code-web-setup.md) - Using Taskwright with Claude Code Web (installation, persistence, multi-repo)
-- [Taskwright Workflow](docs/guides/taskwright-workflow.md) - Complete workflow guide
+- [Claude Code Web Setup](docs/guides/claude-code-web-setup.md) - Using GuardKit with Claude Code Web (installation, persistence, multi-repo)
+- [GuardKit Workflow](docs/guides/guardkit-workflow.md) - Complete workflow guide
 - [Complexity Management](docs/workflows/complexity-management-workflow.md) - Understanding complexity evaluation
 - [Design-First Workflow](docs/workflows/design-first-workflow.md) - When and how to split design/implementation
 
@@ -556,7 +556,7 @@ Fully compatible with [Conductor.build](https://conductor.build) for parallel de
 **Setup:**
 ```bash
 ./installer/scripts/install.sh  # Creates symlinks automatically
-taskwright doctor              # Verify integration
+guardkit doctor              # Verify integration
 ```
 
 ## Testing by Stack
@@ -586,7 +586,7 @@ MIT License - See LICENSE file for details
 
 ## Support
 
-- Check [Taskwright Workflow](docs/guides/taskwright-workflow.md)
+- Check [GuardKit Workflow](docs/guides/guardkit-workflow.md)
 - Read [Complexity Management](docs/workflows/complexity-management-workflow.md)
 - See [Design-First Workflow](docs/workflows/design-first-workflow.md)
 - Create a GitHub issue

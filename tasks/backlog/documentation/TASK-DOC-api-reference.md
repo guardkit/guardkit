@@ -6,7 +6,7 @@
 
 ## Problem
 
-Users need comprehensive reference documentation for all Taskwright commands, their parameters, flags, and behaviors. While command .md files exist in `installer/global/commands/`, they need to be consolidated and presented in a user-friendly format in MkDocs.
+Users need comprehensive reference documentation for all GuardKit commands, their parameters, flags, and behaviors. While command .md files exist in `installer/global/commands/`, they need to be consolidated and presented in a user-friendly format in MkDocs.
 
 ## Command Categories
 
@@ -35,8 +35,8 @@ Users need comprehensive reference documentation for all Taskwright commands, th
 
 ### 6. Utility Commands
 - `/debug`
-- `taskwright init`
-- `taskwright doctor`
+- `guardkit init`
+- `guardkit doctor`
 
 ## Acceptance Criteria
 

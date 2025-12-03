@@ -29,7 +29,7 @@ Analysis of major developer tool companies reveals a clear winner: **dedicated e
 ### Recommended Structure
 
 ```
-taskwright-examples/
+guardkit-examples/
 ├── README.md                    # Index table with all examples
 ├── fastapi/
 │   ├── basic-crud/
@@ -76,7 +76,7 @@ git diff starter..feature/weather
 
 # Or pick up where we left off
 git checkout starter
-taskwright task-work TASK-001
+guardkit task-work TASK-001
 ```
 
 ---
@@ -101,7 +101,7 @@ password hashing, and refresh token rotation—production patterns, not toy demo
 git clone https://github.com/yourorg/examples
 cd examples/fastapi-auth
 git checkout starter        # See the "before" state
-taskwright task-work        # Run the tool
+guardkit task-work        # Run the tool
 git diff main               # Compare with solution
 ```
 

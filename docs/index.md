@@ -1,4 +1,4 @@
-# Taskwright
+# GuardKit
 
 ![version](https://img.shields.io/badge/version-0.9.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -19,10 +19,10 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ## Quick Start
 
-New to Taskwright? Start here:
+New to GuardKit? Start here:
 
 - **[5-Minute Quickstart](guides/GETTING-STARTED.md)** - Get up and running fast
-- **[Taskwright Workflow](guides/taskwright-workflow.md)** - Learn the core workflow
+- **[GuardKit Workflow](guides/guardkit-workflow.md)** - Learn the core workflow
 - **[Choose a Template](templates.md)** - Select your tech stack
 
 ## Documentation Sections
@@ -51,12 +51,12 @@ Common issues, solutions, and the `/debug` command.
 ## Example Workflow
 
 ```bash
-# Install Taskwright
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+# Install GuardKit
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
 # Initialize your project
 cd /path/to/your/project
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Create and work on a task
 /task-create "Add user authentication"
@@ -66,9 +66,9 @@ taskwright init react-typescript
 
 That's it! Three commands from idea to production-ready code.
 
-## When to Use Taskwright
+## When to Use GuardKit
 
-### ✅ Use Taskwright When
+### ✅ Use GuardKit When
 
 - Individual tasks or small features (1-8 hours)
 - Solo dev or small teams (1-3 developers)
@@ -80,12 +80,12 @@ That's it! Three commands from idea to production-ready code.
 
 ### 🔗 Use RequireKit When
 
-For formal requirements management (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with Taskwright.
+For formal requirements management (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
 
 ## Links
 
-- **[GitHub Repository](https://github.com/taskwright-dev/taskwright)** - Source code and contributions
-- **[Report an Issue](https://github.com/taskwright-dev/taskwright/issues)** - Bug reports and feature requests
+- **[GitHub Repository](https://github.com/guardkit/guardkit)** - Source code and contributions
+- **[Report an Issue](https://github.com/guardkit/guardkit/issues)** - Bug reports and feature requests
 - **[RequireKit](https://github.com/requirekit/require-kit)** - Formal requirements management
 
 ---

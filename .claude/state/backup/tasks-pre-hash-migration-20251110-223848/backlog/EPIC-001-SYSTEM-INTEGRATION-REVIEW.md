@@ -128,7 +128,7 @@ EPIC-001 has **excellent strategic foundation** with the AI-first pivot and wave
 - ❌ Generator compatibility unresolved
 - ❌ Orchestration logic missing
 
-#### Flow 3: Template Usage (`agentic-init` → `taskwright`)
+#### Flow 3: Template Usage (`agentic-init` → `guardkit`)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -620,7 +620,7 @@ class TemplateCreateOrchestrator:
 ```
 1. Create: /template-create OR /template-init
 2. Store: installer/local/templates/
-3. Discover: agentic-init (→ taskwright)
+3. Discover: agentic-init (→ guardkit)
 4. Apply: New project initialized
 ```
 
@@ -680,7 +680,7 @@ def discover_templates():
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────┐
-│ agentic-init (→ taskwright) (EXISTING)                          │
+│ agentic-init (→ guardkit) (EXISTING)                          │
 │ Responsibility: Apply template to new project                   │
 │ Inputs: Template name                                           │
 │ Outputs: Initialized project with template                      │

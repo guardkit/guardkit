@@ -118,7 +118,7 @@ Update `_identify_capability_needs()` to return empty list on failure instead of
 ✅ Generated agents are saved to template's `agents/` directory
 ✅ Agent definitions are properly formatted markdown
 ✅ Integration tests pass for React, Python, .NET stacks
-✅ Generated agents are usable in taskwright workflows
+✅ Generated agents are usable in guardkit workflows
 ✅ No hard-coded pattern detection used
 ✅ Maintains AI-native approach throughout
 

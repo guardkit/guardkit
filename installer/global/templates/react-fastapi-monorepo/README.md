@@ -25,7 +25,7 @@ This template provides a complete monorepo setup for building modern web applica
 
 ```bash
 # Initialize from template
-taskwright init react-fastapi-monorepo my-fullstack-app
+guardkit init react-fastapi-monorepo my-fullstack-app
 
 # Navigate to project
 cd my-fullstack-app

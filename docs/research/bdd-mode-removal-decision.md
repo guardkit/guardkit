@@ -1,4 +1,4 @@
-# Decision: Remove BDD Mode from Taskwright
+# Decision: Remove BDD Mode from GuardKit
 
 **Date:** 2025-11-02
 **Status:** Proposed
@@ -35,7 +35,7 @@ However, investigation reveals:
 ### 2. Low Expected Usage
 
 **Questions revealing low demand:**
-- How many taskwright users write Gherkin scenarios?
+- How many guardkit users write Gherkin scenarios?
 - Of those, how many DON'T use require-kit?
 - Of those, how many want AI to implement from scenarios vs just writing code?
 
@@ -76,7 +76,7 @@ Each requires:
 ## Alternatives Considered
 
 ### Option A: Split BDD into Two Concerns ❌
-**Create bdd-scenario-implementer in taskwright**
+**Create bdd-scenario-implementer in guardkit**
 - **Pros:** Full BDD support without require-kit dependency
 - **Cons:** 45-70 hours implementation, high complexity, ongoing maintenance
 - **Verdict:** Not worth the effort for low expected usage
@@ -95,18 +95,18 @@ Each requires:
 
 ## Decision
 
-**Remove BDD mode from taskwright.**
+**Remove BDD mode from guardkit.**
 
 ### Rationale
 
 1. **Simplicity over completeness**
-   - Taskwright is "lightweight AI-assisted development"
+   - GuardKit is "lightweight AI-assisted development"
    - BDD mode adds significant complexity
    - Standard and TDD modes cover 95% of use cases
 
 2. **Clear separation of concerns**
    - **require-kit:** Formal requirements engineering (EARS → BDD)
-   - **taskwright:** Pragmatic task workflow (Standard/TDD)
+   - **guardkit:** Pragmatic task workflow (Standard/TDD)
 
 3. **Avoid incomplete implementations**
    - BDD mode is currently documented but non-functional
@@ -150,18 +150,18 @@ Each requires:
 2. **Remove unused BDD templates**
    - Keep: `installer/global/instructions/core/bdd-gherkin.md` (educational)
    - Keep: `bdd-generator` agent (only loads with require-kit)
-   - Remove: Any taskwright-specific BDD mode logic
+   - Remove: Any guardkit-specific BDD mode logic
 
 ### Phase 3: Communication (ongoing)
 
 **Messaging:**
-> **Taskwright focuses on Standard and TDD development modes.**
+> **GuardKit focuses on Standard and TDD development modes.**
 >
 > For Behavior-Driven Development (BDD) workflows:
 > - Use **require-kit** for full EARS → Gherkin → Implementation flow
 > - Or write Gherkin scenarios manually and use Standard mode
 >
-> Taskwright's strength is lightweight, pragmatic task workflow—not formal requirements engineering.
+> GuardKit's strength is lightweight, pragmatic task workflow—not formal requirements engineering.
 
 ## Risks and Mitigations
 
@@ -241,7 +241,7 @@ After implementation:
 
 2. **Use Standard mode with detailed acceptance criteria:**
    ```bash
-   # In taskwright
+   # In guardkit
    /task-create "Implement login feature"
    # Add detailed acceptance criteria to task
    /task-work TASK-042  # Standard mode
@@ -257,7 +257,7 @@ After implementation:
 - Quality gates
 - Test enforcement
 - Architectural review
-- All the value of taskwright
+- All the value of guardkit
 
 **What they need require-kit for:**
 - EARS requirements
@@ -267,6 +267,6 @@ After implementation:
 
 ## Conclusion
 
-**Remove BDD mode from taskwright.**
+**Remove BDD mode from guardkit.**
 
-It's the pragmatic choice for a lightweight system. Users needing BDD workflows should use require-kit, which provides a complete EARS → BDD → Implementation flow. Taskwright should focus on what it does well: simple, quality-first task workflow with Standard and TDD modes.
+It's the pragmatic choice for a lightweight system. Users needing BDD workflows should use require-kit, which provides a complete EARS → BDD → Implementation flow. GuardKit should focus on what it does well: simple, quality-first task workflow with Standard and TDD modes.

@@ -18,7 +18,7 @@
    - Integration with RequireKit's Gherkin scenarios
 
 2. **Template Init Greenfield Q&A** (if recently changed)
-   - Interactive questions during `taskwright init`
+   - Interactive questions during `guardkit init`
    - Configuration generation based on answers
    - Template customization workflow
 
@@ -69,14 +69,14 @@ brew install python@3.11
 # Install TaskWright
 mkdir -p ~/Projects
 cd ~/Projects
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Verify
-taskwright --version
-which taskwright
+guardkit --version
+which guardkit
 ls ~/.agentecflow/
 
 # Install RequireKit
@@ -87,7 +87,7 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Verify RequireKit installation
-bash ~/Projects/taskwright/docs/testing/pre-launch-2025-11-29/check-requirekit.sh
+bash ~/Projects/guardkit/docs/testing/pre-launch-2025-11-29/check-requirekit.sh
 
 # Or manually check marker file
 ls ~/.agentecflow/require-kit.marker
@@ -116,7 +116,7 @@ git config user.name "Test User"
 git config user.email "test@example.com"
 
 # Initialize with template
-taskwright init fastapi-python
+guardkit init fastapi-python
 ```
 
 **What to Validate**:
@@ -412,7 +412,7 @@ Invoking python-api-specialist...
 **Note**: This assumes you have Conductor installed. Skip if not.
 
 ```bash
-cd ~/Projects/taskwright  # Main repo
+cd ~/Projects/guardkit  # Main repo
 
 # Create two test tasks
 /task-create "Test conductor task 1"
@@ -433,7 +433,7 @@ cd ../test-wt2
 /task-complete TASK-YYYY
 
 # Back to main
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 ls tasks/completed/
 
 # Should see both tasks

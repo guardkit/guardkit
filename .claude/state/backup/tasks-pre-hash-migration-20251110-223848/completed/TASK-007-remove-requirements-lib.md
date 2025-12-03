@@ -67,7 +67,7 @@ Remove Python library modules related to requirements management (feature_genera
 ### 1. Identify Files to Remove
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Find requirements-related modules
 find installer/global/commands/lib -name "*feature*.py"

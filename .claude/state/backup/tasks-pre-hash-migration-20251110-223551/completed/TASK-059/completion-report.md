@@ -153,7 +153,7 @@ Per user request, stable versions were used instead of bleeding edge:
 - ✅ Unit Tests: Passing (all 3 test files)
 
 ### Template Installation
-- ✅ Template installed successfully via `taskwright init nextjs-fullstack`
+- ✅ Template installed successfully via `guardkit init nextjs-fullstack`
 - ✅ All 10 template files copied
 - ✅ All 3 custom agents installed
 - ✅ CLAUDE.md and README.md accessible
@@ -180,7 +180,7 @@ Per user request, stable versions were used instead of bleeding edge:
 
 ## Template Philosophy
 
-This template demonstrates **how to structure Taskwright templates**, featuring:
+This template demonstrates **how to structure GuardKit templates**, featuring:
 - Stack-specific best practices from Next.js documentation
 - Production-ready patterns validated in real projects
 - Comprehensive documentation for both AI and humans
@@ -237,7 +237,7 @@ For production use, teams should use `/template-create` to generate templates fr
 ## Next Steps
 
 ### Immediate
-- ✅ Template available for use via `taskwright init nextjs-fullstack`
+- ✅ Template available for use via `guardkit init nextjs-fullstack`
 - ✅ Template validated and production-ready
 - ✅ Documentation complete
 

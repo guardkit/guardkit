@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-**Current State**: Taskwright has duplicate task ID issues due to inconsistent ID formats and lack of atomic ID generation.
+**Current State**: GuardKit has duplicate task ID issues due to inconsistent ID formats and lack of atomic ID generation.
 
 **Root Causes Identified**:
 1. Multiple ID formats in use simultaneously (TASK-004, TASK-004A, TASK-030B-1, TASK-DOCS-001)

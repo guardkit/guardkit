@@ -267,7 +267,7 @@ All 31 tasks successfully created with:
 
 **Ready for implementation!**
 
-The task breakdown provides a solid foundation for delivering `/template-create` and `/template-init` commands that will transform how teams adopt and customize taskwright.
+The task breakdown provides a solid foundation for delivering `/template-create` and `/template-init` commands that will transform how teams adopt and customize guardkit.
 
 ---
 

@@ -3,7 +3,7 @@ Agent Discovery Module for AI-Powered Agent Selection.
 
 This module provides agent discovery functionality that matches task context
 to appropriate specialist agents using metadata (stack, phase, capabilities, keywords).
-It replaces hardcoded mappings with intelligent discovery, maintaining Taskwright's
+It replaces hardcoded mappings with intelligent discovery, maintaining GuardKit's
 AI-first philosophy.
 
 Task Reference: TASK-HAI-005-7A2E

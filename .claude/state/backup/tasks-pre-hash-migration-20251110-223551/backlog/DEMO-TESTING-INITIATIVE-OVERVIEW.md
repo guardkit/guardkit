@@ -9,7 +9,7 @@
 
 ## Purpose
 
-This initiative creates comprehensive testing and demo content for Taskwright's template system, combining practical validation with marketing-ready materials for blogs and YouTube videos.
+This initiative creates comprehensive testing and demo content for GuardKit's template system, combining practical validation with marketing-ready materials for blogs and YouTube videos.
 
 ---
 
@@ -97,7 +97,7 @@ With recent improvements to template creation and validation (TASK-060 through T
 **Effort**: 6-8 hours
 **Complexity**: Medium (5/10)
 
-**What**: Demonstrate complete Taskwright workflow building Todo API.
+**What**: Demonstrate complete GuardKit workflow building Todo API.
 
 **Deliverables**:
 - 5 tasks executed (create → work → complete)
@@ -120,7 +120,7 @@ With recent improvements to template creation and validation (TASK-060 through T
 **What**: Organize all demos into shareable GitHub repositories.
 
 **Deliverables**:
-- Main repository (`taskwright-examples`)
+- Main repository (`guardkit-examples`)
 - 5 template demos organized
 - Custom template example packaged
 - Greenfield example packaged
@@ -305,7 +305,7 @@ Focus on high-value tasks first:
 - **Per Week**: 5-8 hours
 
 ### Tools
-- **Required**: Taskwright, Git, Node.js, Python
+- **Required**: GuardKit, Git, Node.js, Python
 - **Optional**: Go (for default template demo)
 - **Infrastructure**: GitHub account for repo creation
 
@@ -327,7 +327,7 @@ Focus on high-value tasks first:
 - TASK-068: Refactor template creation location strategy
 
 **In Progress**:
-- TASK-066: Create Taskwright Python template
+- TASK-066: Create GuardKit Python template
 
 **Future**:
 - Documentation site (TASK-DOCS series)

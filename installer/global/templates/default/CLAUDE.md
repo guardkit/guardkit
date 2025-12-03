@@ -1,12 +1,12 @@
-# Taskwright - Default Template
+# GuardKit - Default Template
 
 ## When to Use This Template
 
-The **default** template is a **language-agnostic** starting point for projects that don't fit Taskwright's specialized templates. Use this template if:
+The **default** template is a **language-agnostic** starting point for projects that don't fit GuardKit's specialized templates. Use this template if:
 
 1. **Language Not Yet Supported**: Working with Go, Rust, Ruby, PHP, Kotlin, Swift, etc.
 2. **Custom Tech Stack**: Unique combination of technologies not covered by existing templates
-3. **Learning/Prototyping**: Exploring Taskwright's workflow before committing to a specific stack
+3. **Learning/Prototyping**: Exploring GuardKit's workflow before committing to a specific stack
 4. **Template Development**: Building a custom template using `/template-create`
 
 ## When NOT to Use This Template
@@ -48,7 +48,7 @@ docs/                       # Documentation
 └── state/                 # (Created as needed)
 ```
 
-### Core Taskwright Workflow
+### Core GuardKit Workflow
 All core commands are available via global symlinks:
 ```bash
 /task-create "Feature description"
@@ -67,7 +67,7 @@ The template includes `settings.json` with documentation level configuration:
 
 ### 1. Initialize with Default Template
 ```bash
-taskwright init default
+guardkit init default
 ```
 
 ### 2. Customize for Your Stack
@@ -126,13 +126,13 @@ For reusable templates, use `/template-create`:
 
 See [Creating Local Templates](../../../docs/guides/creating-local-templates.md) for details.
 
-## Core Taskwright Workflow
+## Core GuardKit Workflow
 
-The default template includes the complete Taskwright workflow:
+The default template includes the complete GuardKit workflow:
 
 ### Phase Execution
 ```
-Phase 1: Requirements Analysis (skipped in Taskwright)
+Phase 1: Requirements Analysis (skipped in GuardKit)
 Phase 2: Implementation Planning
 Phase 2.5: Architectural Review
 Phase 2.7: Complexity Evaluation
@@ -158,7 +158,7 @@ When your project matures or you add team members, migrate to a specialized temp
 1. **Identify your stack**: React, Python, .NET, etc.
 2. **Generate new template**: Use `/template-create` or use existing template
 3. **Preserve state**: Copy `.claude/state/`, `tasks/`, `docs/`
-4. **Reinitialize**: `taskwright init <specialized-template>`
+4. **Reinitialize**: `guardkit init <specialized-template>`
 
 See [Template Migration Guide](../../../docs/guides/template-migration.md) for details.
 
@@ -187,18 +187,18 @@ See [Template Migration Guide](../../../docs/guides/template-migration.md) for d
 
 ## Support and Documentation
 
-- **User Guide**: See root `CLAUDE.md` for complete Taskwright documentation
+- **User Guide**: See root `CLAUDE.md` for complete GuardKit documentation
 - **Template Guide**: [Creating Local Templates](../../../docs/guides/creating-local-templates.md)
 - **Migration Guide**: [Template Migration Guide](../../../docs/guides/template-migration.md)
 
 ## Philosophy
 
-The default template embodies Taskwright's philosophy:
+The default template embodies GuardKit's philosophy:
 
 **"Start simple, scale as needed"**
 
 It provides the core workflow without imposing stack-specific constraints, allowing you to:
-- Explore Taskwright with any language
+- Explore GuardKit with any language
 - Build custom templates for specialized stacks
 - Prototype quickly before committing to structure
 - Develop in languages not yet supported by built-in templates

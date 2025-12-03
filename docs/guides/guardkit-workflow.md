@@ -1,4 +1,4 @@
-# Taskwright Workflow Guide
+# GuardKit Workflow Guide
 
 **Version**: 1.0.0
 **Last Updated**: 2025-11-04
@@ -10,9 +10,9 @@
 ## Table of Contents
 
 ### Part 1: Quick Start (5 Minutes)
-- [What is Taskwright?](#what-is-taskwright)
+- [What is GuardKit?](#what-is-guardkit)
 - [5-Minute Getting Started](#5-minute-getting-started)
-- [When to Use Taskwright](#when-to-use-taskwright)
+- [When to Use GuardKit](#when-to-use-guardkit)
 
 ### Part 2: Core Workflow (15 Minutes)
 - [The 9 Workflow Phases](#the-9-workflow-phases)
@@ -39,9 +39,9 @@
 
 # Part 1: QUICK START (5 Minutes)
 
-## What is Taskwright?
+## What is GuardKit?
 
-**Taskwright** is a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
+**GuardKit** is a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 ### Core Philosophy
 
@@ -72,9 +72,9 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 - Stack-specific templates available
 - Custom templates supported
 
-### When to Use Taskwright
+### When to Use GuardKit
 
-**Use Taskwright when**:
+**Use GuardKit when**:
 - Working on individual tasks (1-8 hour chunks)
 - Solo dev or small teams (1-3 developers)
 - Want quality gates without ceremony
@@ -182,7 +182,7 @@ All quality gates passed ✅
 
 ### What Just Happened?
 
-In under 2 minutes, Taskwright:
+In under 2 minutes, GuardKit:
 
 1. **Analyzed** your task description
 2. **Planned** the implementation approach
@@ -199,7 +199,7 @@ All without you writing any code, running any tests, or managing state transitio
 
 ## Review vs Implementation Workflows
 
-Taskwright provides two distinct workflows depending on whether you're **building code** or **analyzing/deciding**:
+GuardKit provides two distinct workflows depending on whether you're **building code** or **analyzing/deciding**:
 
 ### Implementation Workflow (`/task-work`)
 
@@ -439,7 +439,7 @@ Implementation (Phase 3)
 
 ## State Management
 
-Taskwright uses filesystem-based state management. Task files move between directories to represent state transitions.
+GuardKit uses filesystem-based state management. Task files move between directories to represent state transitions.
 
 ### State Directories
 
@@ -1562,17 +1562,17 @@ A: Yes. Edit `.claude/settings.json` to adjust `auto_split_threshold`, `auto_pro
 **Q: Does architectural review slow down simple tasks?**
 A: No. Simple tasks (complexity 1-3) auto-proceed without checkpoint, so review adds minimal overhead (~5 seconds).
 
-**Q: Can I use Taskwright without MCP tools?**
-A: Yes. MCP tools are optional enhancements. Taskwright works perfectly without them.
+**Q: Can I use GuardKit without MCP tools?**
+A: Yes. MCP tools are optional enhancements. GuardKit works perfectly without them.
 
-**Q: What's the difference between Taskwright and RequireKit?**
-A: Taskwright is lightweight task workflow with quality gates. RequireKit adds formal requirements management (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool integration). See: https://github.com/requirekit/require-kit
+**Q: What's the difference between GuardKit and RequireKit?**
+A: GuardKit is lightweight task workflow with quality gates. RequireKit adds formal requirements management (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool integration). See: https://github.com/requirekit/require-kit
 
 ---
 
 ## Need Formal Requirements Management?
 
-Taskwright focuses on lightweight task workflow with quality gates. For formal requirements management, use **RequireKit** which adds:
+GuardKit focuses on lightweight task workflow with quality gates. For formal requirements management, use **RequireKit** which adds:
 
 - EARS notation (structured requirements)
 - BDD scenarios (Gherkin)
@@ -1586,4 +1586,4 @@ Taskwright focuses on lightweight task workflow with quality gates. For formal r
 
 ---
 
-**Version**: 2.0.0 | **License**: MIT | **Repository**: https://github.com/taskwright-dev/taskwright
+**Version**: 2.0.0 | **License**: MIT | **Repository**: https://github.com/guardkit/guardkit

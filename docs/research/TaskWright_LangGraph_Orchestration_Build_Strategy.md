@@ -6,7 +6,7 @@ This document discusses workflow automation options, comparing LangGraph with th
 The term "orchestration" appears in places but the more accurate description is **workflow automation** -
 automating a developer's manual process, not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 
@@ -58,7 +58,7 @@ async for message in query(
 Those slash commands are:
 1. **Claude Code UI constructs** - Interpreted by Claude Code's interface
 2. **Prompt injections** - Trigger Claude to read `.md` command files
-3. **Not CLI commands** - No `taskwright /task-create` binary exists
+3. **Not CLI commands** - No `guardkit /task-create` binary exists
 
 **However**, the Claude Agent SDK provides the programmatic bridge we need.
 

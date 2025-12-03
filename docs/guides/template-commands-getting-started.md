@@ -13,7 +13,7 @@
 
 ### What Are Template Commands?
 
-Taskwright provides two complementary commands for creating custom project templates:
+GuardKit provides two complementary commands for creating custom project templates:
 
 1. **`/template-create`** (Brownfield) - Extract templates from existing codebases
 2. **`/template-init`** (Greenfield) - Create templates from scratch with AI assistance
@@ -176,7 +176,7 @@ Phase 4: Template Creation
 └─ Specialized agents
 
 Phase 5: Use Template
-└─ taskwright init my-template
+└─ guardkit init my-template
 ```
 
 ### What Gets Generated
@@ -430,7 +430,7 @@ Output: installer/local/templates/mycompany-maui-template/
 
 Next steps:
 1. Review generated files
-2. Test template: taskwright init mycompany-maui-template
+2. Test template: guardkit init mycompany-maui-template
 3. Customize if needed
 4. Share with team
 ```
@@ -443,7 +443,7 @@ mkdir ~/test-template
 cd ~/test-template
 
 # Initialize with your template
-taskwright init mycompany-maui-template
+guardkit init mycompany-maui-template
 
 # Verify files generated correctly
 ls -la src/
@@ -708,7 +708,7 @@ Template structure:
 💡 Next steps:
    1. Review template at: installer/local/templates/python-fastapi-clean/
    2. Customize agents if needed
-   3. Test with: taskwright init python-fastapi-clean
+   3. Test with: guardkit init python-fastapi-clean
 ```
 
 #### Step 5: Test Template
@@ -719,7 +719,7 @@ mkdir ~/test-fastapi
 cd ~/test-fastapi
 
 # Initialize with template
-taskwright init python-fastapi-clean
+guardkit init python-fastapi-clean
 
 # Review generated structure
 tree src/

@@ -1,11 +1,11 @@
 ---
 id: TASK-033
-title: Rebrand agentecflow-lite to taskwright - update init command and documentation
+title: Rebrand agentecflow-lite to guardkit - update init command and documentation
 status: backlog
 created: 2025-10-26T10:00:00Z
 updated: 2025-10-26T10:00:00Z
 priority: high
-tags: [branding, documentation, cli, taskwright]
+tags: [branding, documentation, cli, guardkit]
 epic: null
 feature: null
 requirements: []
@@ -19,15 +19,15 @@ test_results:
   last_run: null
 ---
 
-# Task: Rebrand agentecflow-lite to taskwright
+# Task: Rebrand agentecflow-lite to guardkit
 
 ## Context
 
 We're splitting the main repository into two focused products:
-1. **taskwright**: Agentecflow Lite product (lightweight task workflow)
+1. **guardkit**: Agentecflow Lite product (lightweight task workflow)
 2. **require-kit**: Requirements gathering product (EARS/BDD)
 
-This task focuses on **taskwright only** - rebranding the Agentecflow Lite subset.
+This task focuses on **guardkit only** - rebranding the Agentecflow Lite subset.
 
 ## Key Decisions
 
@@ -37,25 +37,25 @@ This task focuses on **taskwright only** - rebranding the Agentecflow Lite subse
 - ✅ Core workflow and commands (just branding changes)
 
 ### What CHANGES
-- 🔄 CLI command: `agentecflow init` → `taskwright init`
-- 🔄 Product name in documentation: "Agentecflow Lite" → "taskwright"
+- 🔄 CLI command: `agentecflow init` → `guardkit init`
+- 🔄 Product name in documentation: "Agentecflow Lite" → "guardkit"
 - 🔄 References to the product positioning
 
 ## Description
 
-Update the init command name and all documentation references to reflect the new "taskwright" branding for Agentecflow Lite, while keeping all configuration folder names as `.agentecflow/`.
+Update the init command name and all documentation references to reflect the new "guardkit" branding for Agentecflow Lite, while keeping all configuration folder names as `.agentecflow/`.
 
 ## Acceptance Criteria
 
 ### 1. Init Command Branding
-- [ ] Command renamed: `taskwright init` (was `agentecflow init`)
-- [ ] Help text updated to reference "taskwright"
-- [ ] Example output shows "taskwright" product name
-- [ ] Error messages use "taskwright" branding
+- [ ] Command renamed: `guardkit init` (was `agentecflow init`)
+- [ ] Help text updated to reference "guardkit"
+- [ ] Example output shows "guardkit" product name
+- [ ] Error messages use "guardkit" branding
 
 ### 2. Documentation Updates
 - [ ] CLAUDE.md: Update product name references
-- [ ] README.md: Update to "taskwright" branding
+- [ ] README.md: Update to "guardkit" branding
 - [ ] docs/guides/agentecflow-lite-workflow.md: Update title and references
 - [ ] docs/research/agentecflow-lite-positioning-summary.md: Update product name
 - [ ] All other markdown files referencing "agentecflow init" command
@@ -64,15 +64,15 @@ Update the init command name and all documentation references to reflect the new
 - [ ] `.agentecflow/` folder name stays the same
 - [ ] `~/.agentecflow/` global folder stays the same
 - [ ] All internal references to `.agentecflow/` remain unchanged
-- [ ] Documentation clarifies: "taskwright uses `.agentecflow/` for configuration"
+- [ ] Documentation clarifies: "guardkit uses `.agentecflow/` for configuration"
 
 ### 4. Template References
-- [ ] Template initialization examples use "taskwright init"
+- [ ] Template initialization examples use "guardkit init"
 - [ ] Stack-specific guides updated (react, python, typescript-api, maui, dotnet-microservice)
-- [ ] Installation guides reference "taskwright"
+- [ ] Installation guides reference "guardkit"
 
 ### 5. Positioning Documents
-- [ ] Agentecflow Lite → taskwright in positioning summary
+- [ ] Agentecflow Lite → guardkit in positioning summary
 - [ ] Product comparison tables updated
 - [ ] Marketing/description text updated
 
@@ -91,8 +91,8 @@ Update the init command name and all documentation references to reflect the new
 - Any CLI command definitions (to be identified)
 
 **Additional Documentation:**
-- Search all `.md` files for "agentecflow init" and update to "taskwright init"
-- Search all `.md` files for "Agentecflow Lite" and update to "taskwright"
+- Search all `.md` files for "agentecflow init" and update to "guardkit init"
+- Search all `.md` files for "Agentecflow Lite" and update to "guardkit"
 
 ### What NOT to Change
 
@@ -116,17 +116,17 @@ grep -r "\.agentecflow" . --include="*.md" | wc -l  # Should stay same count
 ## Test Requirements
 
 ### 1. Command Execution Tests
-- [ ] `taskwright init` command works (if implemented)
-- [ ] Help output shows "taskwright" branding
-- [ ] Error messages use "taskwright" name
+- [ ] `guardkit init` command works (if implemented)
+- [ ] Help output shows "guardkit" branding
+- [ ] Error messages use "guardkit" name
 
 ### 2. Documentation Consistency Tests
 - [ ] No remaining "agentecflow init" references (except historical/archived)
-- [ ] "Agentecflow Lite" replaced with "taskwright" in active docs
+- [ ] "Agentecflow Lite" replaced with "guardkit" in active docs
 - [ ] `.agentecflow/` references intact (not changed)
 
 ### 3. User Journey Tests
-- [ ] New user can follow installation guide with "taskwright" branding
+- [ ] New user can follow installation guide with "guardkit" branding
 - [ ] Template initialization examples are clear
 - [ ] No confusion between product name and config folder name
 
@@ -137,8 +137,8 @@ grep -r "\.agentecflow" . --include="*.md" | wc -l  # Should stay same count
 
 ## Definition of Done
 
-- [ ] All "agentecflow init" → "taskwright init" in active documentation
-- [ ] All "Agentecflow Lite" → "taskwright" in active documentation
+- [ ] All "agentecflow init" → "guardkit init" in active documentation
+- [ ] All "Agentecflow Lite" → "guardkit" in active documentation
 - [ ] Configuration folder paths (`.agentecflow/`) unchanged
 - [ ] Documentation clarifies config folder naming
 - [ ] No broken references or inconsistencies

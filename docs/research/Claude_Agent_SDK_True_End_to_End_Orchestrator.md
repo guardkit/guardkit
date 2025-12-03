@@ -12,7 +12,7 @@
 This specification covers a **single-command workflow automation** approach:
 
 ```bash
-taskwright implement "dark mode for settings page"
+guardkit implement "dark mode for settings page"
 ```
 
 ### Important Terminology Clarification
@@ -26,7 +26,7 @@ What we're building is **workflow automation**, not multi-agent orchestration:
 | "Orchestration" | Workflow Automation |
 | "FeatureOrchestrator" | FeatureWorkflow |
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) 
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) 
 for a detailed comparison with true multi-agent orchestration systems like Claude-Flow.
 
 ---
@@ -39,7 +39,7 @@ This document specifies a **true end-to-end orchestrator** that automates the co
 
 **Single Command Goal**:
 ```bash
-taskwright implement "dark mode for settings page"
+guardkit implement "dark mode for settings page"
 ```
 
 This runs the entire workflow automatically, only pausing for human approval at the final merge.
@@ -137,10 +137,10 @@ async def parallel_tasks():
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    TRUE ORCHESTRATOR: taskwright implement                   │
+│                    TRUE ORCHESTRATOR: guardkit implement                   │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
-│   CLI: taskwright implement "dark mode for settings page"                   │
+│   CLI: guardkit implement "dark mode for settings page"                   │
 │                                                                              │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
 │   │ PHASE 1: Investigation (Automated)                                   │   │
@@ -1251,8 +1251,8 @@ def implement(description: str, project: str, max_parallel: int, dry_run: bool):
     Implement a feature end-to-end.
     
     Example:
-        taskwright implement "dark mode for settings page"
-        taskwright implement "add user authentication" -j 4
+        guardkit implement "dark mode for settings page"
+        guardkit implement "add user authentication" -j 4
     """
     if dry_run:
         click.echo(f"Would implement: {description}")
@@ -1332,15 +1332,15 @@ To inspect changes:
 export ANTHROPIC_API_KEY="sk-..."
 
 # Orchestrator defaults
-export TASKWRIGHT_MAX_PARALLEL=3
-export TASKWRIGHT_PROJECT_PATH="."
-export TASKWRIGHT_AUTO_APPROVE_THRESHOLD=0.8  # AI confidence threshold
+export GUARDKIT_MAX_PARALLEL=3
+export GUARDKIT_PROJECT_PATH="."
+export GUARDKIT_AUTO_APPROVE_THRESHOLD=0.8  # AI confidence threshold
 ```
 
 ### Project Configuration
 
 ```yaml
-# .taskwright/config.yaml
+# .guardkit/config.yaml
 orchestrator:
   max_parallel: 3
   worktrees_dir: .worktrees
@@ -1382,10 +1382,10 @@ orchestrator:
 
 ```bash
 # If workflow is interrupted, resume from last checkpoint
-taskwright resume --workflow-id abc123
+guardkit resume --workflow-id abc123
 
 # Or re-run failed tasks only
-taskwright retry --workflow-id abc123 --failed-only
+guardkit retry --workflow-id abc123 --failed-only
 ```
 
 ---
@@ -1426,7 +1426,7 @@ taskwright retry --workflow-id abc123 --failed-only
 - [ ] Configurable review thresholds
 
 ### Phase 4: Polish and Testing (3-4 days)
-- [ ] CLI interface (`taskwright implement`)
+- [ ] CLI interface (`guardkit implement`)
 - [ ] Configuration file support
 - [ ] Error handling and recovery
 - [ ] Resume capability

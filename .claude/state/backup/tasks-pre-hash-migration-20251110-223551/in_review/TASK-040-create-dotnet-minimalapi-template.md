@@ -226,7 +226,7 @@ Update `installer/scripts/install.sh`:
   ```
 - [ ] Line ~509: Add example command
   ```bash
-  echo "  taskwright-init dotnet-minimalapi # Initialize with Minimal API"
+  echo "  guardkit-init dotnet-minimalapi # Initialize with Minimal API"
   ```
 - [ ] Line ~570: Add to another help section
 - [ ] Line ~1089: Add case statement for template
@@ -238,7 +238,7 @@ Update `installer/scripts/install.sh`:
 - [ ] Line ~1117: Add to examples
 
 ### Phase 4: Update CLI Commands
-Update `taskwright-init` help text in install.sh (line ~476-520):
+Update `guardkit-init` help text in install.sh (line ~476-520):
 - [ ] Add template to list
 - [ ] Add description
 - [ ] Add usage example
@@ -261,7 +261,7 @@ Update `taskwright-init` help text in install.sh (line ~476-520):
 
 ### Phase 7: Update Post-Installation Messages
 - [ ] Install script success message
-- [ ] `taskwright doctor` output
+- [ ] `guardkit doctor` output
 - [ ] Next steps guidance
 
 ### Phase 8: Testing & Validation
@@ -270,13 +270,13 @@ Update `taskwright-init` help text in install.sh (line ~476-520):
 ./installer/scripts/install.sh
 
 # Verify template appears in help
-taskwright-init --help | grep dotnet-minimalapi
+guardkit-init --help | grep dotnet-minimalapi
 
 # Verify in doctor command
-taskwright doctor
+guardkit doctor
 
 # Test template initialization (if init command exists)
-taskwright init dotnet-minimalapi --dry-run
+guardkit init dotnet-minimalapi --dry-run
 ```
 
 ## Template Comparison for Documentation

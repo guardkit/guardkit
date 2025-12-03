@@ -24,7 +24,7 @@ TaskWright can support multiple AI coding tools (Claude Code, Cursor, Windsurf, 
 
 1. [Current State Analysis](#current-state-analysis)
 2. [How SpecKit Solves This](#how-speckit-solves-this)
-3. [TaskWright Adaptation Strategy](#taskwright-adaptation-strategy)
+3. [TaskWright Adaptation Strategy](#guardkit-adaptation-strategy)
 4. [Implementation Phases](#implementation-phases)
 5. [Code Examples](#code-examples)
 6. [Testing Strategy](#testing-strategy)
@@ -261,7 +261,7 @@ def detect_installed_tool() -> str:
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         TaskWright CLI (taskwright)             │
+│         TaskWright CLI (guardkit)             │
 │                                                 │
 │  ┌──────────────────────────────────────────┐  │
 │  │   Core Logic (Tool-Agnostic)             │  │
@@ -316,15 +316,15 @@ def detect_installed_tool() -> str:
 **Goal:** Separate tool-agnostic logic from Claude-specific code.
 
 **Tasks:**
-- [ ] Create `taskwright/core/template_creator.py` (pure business logic)
-- [ ] Create `taskwright/core/codebase_analyzer.py` (analysis only)
-- [ ] Create `taskwright/core/agent_generator.py` (AI-powered agent creation)
+- [ ] Create `guardkit/core/template_creator.py` (pure business logic)
+- [ ] Create `guardkit/core/codebase_analyzer.py` (analysis only)
+- [ ] Create `guardkit/core/agent_generator.py` (AI-powered agent creation)
 - [ ] Move all AI calls to core modules
 - [ ] Remove Claude-specific assumptions from core
 
 **File Structure:**
 ```
-taskwright/
+guardkit/
 ├── core/
 │   ├── __init__.py
 │   ├── template_creator.py      # Main orchestrator
@@ -364,14 +364,14 @@ class AnalysisResult:
 **Goal:** Single source of truth for all tool configurations.
 
 **Tasks:**
-- [ ] Create `taskwright/config/tools.py`
+- [ ] Create `guardkit/config/tools.py`
 - [ ] Define TOOL_CONFIG dictionary
 - [ ] Add metadata for 4 initial tools (Claude, Cursor, Windsurf, Copilot)
 - [ ] Create tool validation functions
 
 **Implementation:**
 ```python
-# taskwright/config/tools.py
+# guardkit/config/tools.py
 
 TOOL_CONFIG = {
     "claude": {
@@ -448,16 +448,16 @@ def detect_installed_tool() -> Optional[str]:
 **Goal:** Create formatter classes for each supported tool.
 
 **Tasks:**
-- [ ] Create `taskwright/formatters/base.py` (abstract base)
-- [ ] Create `taskwright/formatters/claude.py`
-- [ ] Create `taskwright/formatters/cursor.py`
-- [ ] Create `taskwright/formatters/windsurf.py`
-- [ ] Create `taskwright/formatters/copilot.py`
-- [ ] Create `taskwright/formatters/universal.py` (AGENTS.md)
+- [ ] Create `guardkit/formatters/base.py` (abstract base)
+- [ ] Create `guardkit/formatters/claude.py`
+- [ ] Create `guardkit/formatters/cursor.py`
+- [ ] Create `guardkit/formatters/windsurf.py`
+- [ ] Create `guardkit/formatters/copilot.py`
+- [ ] Create `guardkit/formatters/universal.py` (AGENTS.md)
 
 **File Structure:**
 ```
-taskwright/
+guardkit/
 ├── formatters/
 │   ├── __init__.py
 │   ├── base.py              # Abstract formatter
@@ -470,11 +470,11 @@ taskwright/
 
 **Base Formatter:**
 ```python
-# taskwright/formatters/base.py
+# guardkit/formatters/base.py
 
 from abc import ABC, abstractmethod
 from typing import List
-from taskwright.core.models import Agent, Template
+from guardkit.core.models import Agent, Template
 
 class BaseFormatter(ABC):
     """Abstract base class for tool-specific formatters."""
@@ -512,7 +512,7 @@ class BaseFormatter(ABC):
 
 **Claude Formatter:**
 ```python
-# taskwright/formatters/claude.py
+# guardkit/formatters/claude.py
 
 class ClaudeFormatter(BaseFormatter):
     """Formatter for Claude Code."""
@@ -581,7 +581,7 @@ Use `/task-work` to implement tasks with AI assistance.
 
 **Cursor Formatter:**
 ```python
-# taskwright/formatters/cursor.py
+# guardkit/formatters/cursor.py
 
 class CursorFormatter(BaseFormatter):
     """Formatter for Cursor (single .cursorrules file)."""
@@ -643,7 +643,7 @@ Reference specific agents using @ mentions:
 
 **Universal Formatter:**
 ```python
-# taskwright/formatters/universal.py
+# guardkit/formatters/universal.py
 
 class UniversalFormatter:
     """Creates AGENTS.md for any tool."""
@@ -743,13 +743,13 @@ for tool in "${TOOLS[@]}"; do
     TEMP_DIR="$(mktemp -d)"
     
     # Generate tool-specific structure
-    python -m taskwright.scripts.generate_template_structure \
+    python -m guardkit.scripts.generate_template_structure \
         --tool "$tool" \
         --output "$TEMP_DIR" \
         --version "$VERSION"
     
     # Create zip package
-    PACKAGE_NAME="taskwright-template-${tool}-${VERSION}.zip"
+    PACKAGE_NAME="guardkit-template-${tool}-${VERSION}.zip"
     (cd "$TEMP_DIR" && zip -r "$DIST_DIR/$PACKAGE_NAME" .)
     
     echo "✅ Created $PACKAGE_NAME"
@@ -763,7 +763,7 @@ echo "✅ All template packages built in $DIST_DIR"
 
 **Package Contents Example (Claude):**
 ```
-taskwright-template-claude-v1.0.0.zip
+guardkit-template-claude-v1.0.0.zip
 ├── .claude/
 │   ├── agents/
 │   │   └── .gitkeep
@@ -779,7 +779,7 @@ taskwright-template-claude-v1.0.0.zip
 
 ### Phase 5: Update CLI (3 days)
 
-**Goal:** Integrate multi-tool support into taskwright CLI.
+**Goal:** Integrate multi-tool support into guardkit CLI.
 
 **Tasks:**
 - [ ] Add `--tool` option to `template-create` command
@@ -790,14 +790,14 @@ taskwright-template-claude-v1.0.0.zip
 
 **Updated CLI:**
 ```python
-# taskwright/cli.py
+# guardkit/cli.py
 
 import click
 from pathlib import Path
-from taskwright.config.tools import TOOL_CONFIG, detect_installed_tool
-from taskwright.core.template_creator import TemplateCreator
-from taskwright.formatters import get_formatter
-from taskwright.formatters.universal import UniversalFormatter
+from guardkit.config.tools import TOOL_CONFIG, detect_installed_tool
+from guardkit.core.template_creator import TemplateCreator
+from guardkit.formatters import get_formatter
+from guardkit.formatters.universal import UniversalFormatter
 
 @cli.command()
 @click.option(
@@ -819,7 +819,7 @@ from taskwright.formatters.universal import UniversalFormatter
 @click.option(
     '--output',
     type=click.Path(),
-    help='Output directory (default: ~/.taskwright/templates/{name})'
+    help='Output directory (default: ~/.guardkit/templates/{name})'
 )
 def template_create(tool: str, codebase: str, name: str, output: str):
     """
@@ -850,7 +850,7 @@ def template_create(tool: str, codebase: str, name: str, output: str):
     
     # Set output directory
     if not output:
-        output = Path.home() / '.taskwright' / 'templates' / name
+        output = Path.home() / '.guardkit' / 'templates' / name
     output = Path(output)
     
     # Phase 1: Analyze codebase (tool-agnostic)
@@ -962,25 +962,25 @@ def get_formatter(tool_name: str):
 
 ```bash
 # For Claude Code
-taskwright template-create \
+guardkit template-create \
     --tool claude \
     --codebase ~/projects/my-maui-app \
     --name maui-enterprise
 
 # For Cursor
-taskwright template-create \
+guardkit template-create \
     --tool cursor \
     --codebase ~/projects/my-maui-app \
     --name maui-enterprise
 
 # For Windsurf
-taskwright template-create \
+guardkit template-create \
     --tool windsurf \
     --codebase ~/projects/my-maui-app \
     --name maui-enterprise
 
 # Auto-detect tool
-taskwright template-create \
+guardkit template-create \
     --codebase ~/projects/my-maui-app \
     --name maui-enterprise
 ```
@@ -989,7 +989,7 @@ taskwright template-create \
 
 **For Claude Code:**
 ```
-~/.taskwright/templates/maui-enterprise/
+~/.guardkit/templates/maui-enterprise/
 ├── .claude/
 │   └── agents/
 │       ├── repository-pattern-specialist.md
@@ -1005,7 +1005,7 @@ taskwright template-create \
 
 **For Cursor:**
 ```
-~/.taskwright/templates/maui-enterprise/
+~/.guardkit/templates/maui-enterprise/
 ├── .cursorrules              # ALL agents in one file
 ├── templates/
 │   ├── ConfigurationRepository.cs.template
@@ -1019,8 +1019,8 @@ taskwright template-create \
 **Claude Code:**
 ```bash
 # Copy to project
-cp -r ~/.taskwright/templates/maui-enterprise/.claude ~/my-project/
-cp ~/.taskwright/templates/maui-enterprise/CLAUDE.md ~/my-project/
+cp -r ~/.guardkit/templates/maui-enterprise/.claude ~/my-project/
+cp ~/.guardkit/templates/maui-enterprise/CLAUDE.md ~/my-project/
 
 # Use in Claude
 cd ~/my-project
@@ -1033,7 +1033,7 @@ claude
 **Cursor:**
 ```bash
 # Copy to project
-cp ~/.taskwright/templates/maui-enterprise/.cursorrules ~/my-project/
+cp ~/.guardkit/templates/maui-enterprise/.cursorrules ~/my-project/
 
 # Use in Cursor
 @codebase Implement user authentication with repository pattern
@@ -1259,13 +1259,13 @@ def test_full_template_creation_claude():
 
 ```bash
 # Create template
-taskwright template-create --tool claude --codebase ./my-app --name my-template
+guardkit template-create --tool claude --codebase ./my-app --name my-template
 
 # List supported tools
-taskwright tools list
+guardkit tools list
 
 # Check tool installation
-taskwright tools check
+guardkit tools check
 
 # Build release packages
 ./scripts/build-templates.sh

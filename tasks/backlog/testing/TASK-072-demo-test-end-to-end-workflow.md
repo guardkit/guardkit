@@ -1,4 +1,4 @@
-# TASK-072: Demo/Test - End-to-End Taskwright Workflow
+# TASK-072: Demo/Test - End-to-End GuardKit Workflow
 
 **Created**: 2025-01-10
 **Priority**: High
@@ -13,13 +13,13 @@
 
 ## Problem Statement
 
-While we have demos for specific features (templates, template creation), we need a comprehensive demo showing the **complete Taskwright workflow** from initialization to production-ready code.
+While we have demos for specific features (templates, template creation), we need a comprehensive demo showing the **complete GuardKit workflow** from initialization to production-ready code.
 
 **Current State**: Feature-specific demos exist, but:
 - No end-to-end workflow demonstration
 - No showcase of all quality gates working together
 - No demo of typical development lifecycle
-- No content showing Taskwright's full value proposition
+- No content showing GuardKit's full value proposition
 
 **Desired State**: Complete demo showing:
 1. Template initialization (project start)
@@ -34,7 +34,7 @@ While we have demos for specific features (templates, template creation), we nee
 ## Context
 
 **Workflow Phases** (to demonstrate):
-1. **Initialization**: `taskwright init [template]`
+1. **Initialization**: `guardkit init [template]`
 2. **Task Creation**: `/task-create "Feature description"`
 3. **Task Execution**: `/task-work TASK-XXX`
    - Phase 2: Implementation Planning
@@ -64,7 +64,7 @@ Build a **Todo API with authentication** using the `fastapi-python` template, de
 ## Objectives
 
 ### Primary Objective
-Create a comprehensive end-to-end demo of the Taskwright workflow by building a complete Todo API feature, showcasing all phases, quality gates, and best practices.
+Create a comprehensive end-to-end demo of the GuardKit workflow by building a complete Todo API feature, showcasing all phases, quality gates, and best practices.
 
 ### Success Criteria
 - [ ] Project initialized from core template
@@ -87,13 +87,13 @@ Create a comprehensive end-to-end demo of the Taskwright workflow by building a 
 
 **Create Demo Workspace**:
 ```bash
-mkdir -p ~/taskwright-demos/end-to-end-workflow
-cd ~/taskwright-demos/end-to-end-workflow
+mkdir -p ~/guardkit-demos/end-to-end-workflow
+cd ~/guardkit-demos/end-to-end-workflow
 ```
 
 **Initialize with Template**:
 ```bash
-taskwright init fastapi-python
+guardkit init fastapi-python
 
 # Prompts:
 # ProjectName: TodoAPI
@@ -501,7 +501,7 @@ curl http://localhost:8000/docs
 
 **Blog Post** (`docs/demos/end-to-end-workflow-blog.md`):
 ```markdown
-# Building Production-Ready APIs with Taskwright: An End-to-End Journey
+# Building Production-Ready APIs with GuardKit: An End-to-End Journey
 
 ## Introduction
 Building production-ready applications requires more than writing code. It requires:
@@ -511,15 +511,15 @@ Building production-ready applications requires more than writing code. It requi
 - Code review
 - Continuous quality assurance
 
-Most tools force you to do this manually. Taskwright automates it.
+Most tools force you to do this manually. GuardKit automates it.
 
 This is the story of building a complete Todo API from initialization to production in one day, with every quality gate passed automatically.
 
 ## The Setup (10 minutes)
-We started with Taskwright's `fastapi-python` template:
+We started with GuardKit's `fastapi-python` template:
 
 ```bash
-taskwright init fastapi-python
+guardkit init fastapi-python
 ```
 
 In 2 minutes, we had:
@@ -535,7 +535,7 @@ In 2 minutes, we had:
 ### Task 1: User Authentication (2.5 hours)
 
 **Planning Phase**:
-- Taskwright analyzed our task: "Implement user registration and JWT authentication"
+- GuardKit analyzed our task: "Implement user registration and JWT authentication"
 - Generated implementation plan (User model, auth endpoints, JWT utilities)
 - Estimated effort: 2-3 hours
 
@@ -605,7 +605,7 @@ We intentionally created basic documentation to demonstrate `/task-refine`:
 - Fixing issues: 2 hours
 - **Total: 14 hours**
 
-**Taskwright Approach**:
+**GuardKit Approach**:
 - Implementation: 8 hours
 - Quality gates (automated): 0 hours
 - **Total: 8 hours**
@@ -622,14 +622,14 @@ We intentionally created basic documentation to demonstrate `/task-refine`:
 
 ## What's Next?
 
-Try Taskwright yourself:
+Try GuardKit yourself:
 ```bash
 # Install
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize project
-taskwright init [template]
+guardkit init [template]
 
 # Create your first task
 /task-create "Your feature description"
@@ -654,19 +654,19 @@ taskwright init [template]
 - Architecture degrades over time
 - Quality is aspirational, not enforced
 
-**Solution**: Taskwright builds quality gates into your workflow.
+**Solution**: GuardKit builds quality gates into your workflow.
 
 **What We'll Build**: Complete Todo API with authentication in one day, every quality gate passed.
 
 ## Act 2: Project Initialization (2:00-4:00)
 **Show**:
-- `taskwright init fastapi-python`
+- `guardkit init fastapi-python`
 - Interactive prompts
 - Generated project structure
 - Initial tests passing
 - Ready to develop in 2 minutes
 
-**Narration**: "Traditional setup: hours. Taskwright setup: 2 minutes."
+**Narration**: "Traditional setup: hours. GuardKit setup: 2 minutes."
 
 ## Act 3: Task 1 - Authentication (4:00-10:00)
 **Phase 2: Planning** (1 minute)
@@ -732,12 +732,12 @@ taskwright init [template]
 ## Act 7: Results & Takeaways (20:00-23:00)
 **Time Comparison**:
 - Traditional: 14 hours (8 dev + 6 QA/review)
-- Taskwright: 8 hours (QA/review automated)
+- GuardKit: 8 hours (QA/review automated)
 - Savings: 6 hours (43%)
 
 **Quality Comparison**:
 - Traditional: Varies (manual process)
-- Taskwright: Consistent (automated gates)
+- GuardKit: Consistent (automated gates)
 
 **Key Takeaways**:
 1. Quality is automatic
@@ -748,7 +748,7 @@ taskwright init [template]
 ## Act 8: Call to Action (23:00-25:00)
 **Getting Started**:
 ```bash
-taskwright init [template]
+guardkit init [template]
 /task-create "Your feature"
 /task-work TASK-001
 ```
@@ -758,7 +758,7 @@ taskwright init [template]
 - GitHub: [link]
 - Community: [link]
 
-**Closing**: "Build with confidence. Quality is automatic with Taskwright."
+**Closing**: "Build with confidence. Quality is automatic with GuardKit."
 
 **End screen**: Logo, links, subscribe/like prompts
 ```
@@ -899,7 +899,7 @@ TASK-005 (Documentation)
 - All quality gates shown in action
 - Compelling narrative for blog/video
 - Production-ready artifact
-- Confidence in recommending Taskwright
+- Confidence in recommending GuardKit
 
 ---
 

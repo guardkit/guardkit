@@ -652,7 +652,7 @@ docs = get_library_docs("/react", tokens=5000)
 
 ## Performance Optimization
 
-Context7 is already optimized in Taskwright (see [MCP Optimization Guide](mcp-optimization-guide.md)):
+Context7 is already optimized in GuardKit (see [MCP Optimization Guide](mcp-optimization-guide.md)):
 
 **Current metrics**:
 - Context window usage: 4.5-12%

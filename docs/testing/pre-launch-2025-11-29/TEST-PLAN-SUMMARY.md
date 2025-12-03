@@ -32,7 +32,7 @@
 **Status**: ✅ FIXED - Curl install now clones repository permanently
 
 **Changes**:
-1. Curl install now clones repo to `~/Projects/taskwright` (permanent)
+1. Curl install now clones repo to `~/Projects/guardkit` (permanent)
 2. Marker file includes `repo_path` field
 3. task-create.md includes repository path resolution
 4. Works with git clone OR tarball download

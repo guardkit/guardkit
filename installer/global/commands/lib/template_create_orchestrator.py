@@ -25,7 +25,7 @@ def _add_repo_to_path():
     2. commands_lib: For local modules like template_qa_session.py
     """
     script_path = Path(__file__).resolve()
-    # Navigate: lib/ -> commands/ -> global/ -> installer/ -> taskwright/ (5 levels up)
+    # Navigate: lib/ -> commands/ -> global/ -> installer/ -> guardkit/ (5 levels up)
     repo_root = script_path.parent.parent.parent.parent.parent
     repo_root_str = str(repo_root)
 
@@ -1636,15 +1636,15 @@ Enhance the {agent_name} agent with template-specific content:
         # TASK-068: Location-specific next steps
         print("\n📝 Next Steps:")
         if location_type == "personal":
-            print(f"   taskwright init {manifest.name}")
+            print(f"   guardkit init {manifest.name}")
         elif location_type == "distribution":
             print(f"   git add installer/global/templates/{manifest.name}/")
             print(f"   git commit -m \"Add {manifest.name} template\"")
             print(f"   ./installer/scripts/install.sh")
-            print(f"   taskwright init {manifest.name}")
+            print(f"   guardkit init {manifest.name}")
         else:
             print(f"1. Review generated files in {output_path}/")
-            print(f"2. Test template with: taskwright init {manifest.name}")
+            print(f"2. Test template with: guardkit init {manifest.name}")
 
     def _print_success_line(self, message: str) -> None:
         """Print success line."""

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskwright provides a 3-level validation system for ensuring template quality:
+GuardKit provides a 3-level validation system for ensuring template quality:
 
 1. **Level 1 (Automatic)**: Built-in quality gates during template creation
 2. **Level 2 (Extended)**: Optional detailed validation with reports

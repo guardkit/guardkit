@@ -44,7 +44,7 @@ This is part of Phase 6 of the Design URL Integration project (see [design-url-i
 ```markdown
 # Design-to-Code User Guide
 
-Comprehensive guide for converting Figma and Zeplin designs into code using Taskwright's unified design workflow.
+Comprehensive guide for converting Figma and Zeplin designs into code using GuardKit's unified design workflow.
 
 ## Table of Contents
 
@@ -74,7 +74,7 @@ Comprehensive guide for converting Figma and Zeplin designs into code using Task
 
 ## Overview
 
-Taskwright's design-to-code workflow converts design system files (Figma, Zeplin) into production-ready components with **zero scope creep**.
+GuardKit's design-to-code workflow converts design system files (Figma, Zeplin) into production-ready components with **zero scope creep**.
 
 **Key Features:**
 - ✓ Technology-agnostic (works with any stack)
@@ -95,10 +95,10 @@ Taskwright's design-to-code workflow converts design system files (Figma, Zeplin
 
 ## Prerequisites
 
-1. **Taskwright Installed**: Follow installation guide
+1. **GuardKit Installed**: Follow installation guide
 2. **Design Tool Access**: Figma or Zeplin account with design access
 3. **MCP Server**: Install appropriate MCP server (Figma or Zeplin)
-4. **Project Initialized**: Use `taskwright init <template>` for your stack
+4. **Project Initialized**: Use `guardkit init <template>` for your stack
 
 ## Setup
 
@@ -640,7 +640,7 @@ See: [Figma MCP Setup Guide](../mcp-setup/figma-mcp-setup.md)
 **Solution:**
 1. Create UI specialist via `/template-create`
 2. Or use existing template that includes UI specialist
-3. Ensure template is initialized: `taskwright init flutter-template`
+3. Ensure template is initialized: `guardkit init flutter-template`
 
 ## Best Practices
 
@@ -694,7 +694,7 @@ A: Create a UI specialist via /template-create. Follow the pattern from existing
 A: Typically >95% for well-structured designs. Complex designs or custom fonts may require manual adjustment.
 
 **Q: Can I skip MCP setup?**
-A: No, MCP servers are required for design extraction. They provide the bridge between Figma/Zeplin and Taskwright.
+A: No, MCP servers are required for design extraction. They provide the bridge between Figma/Zeplin and GuardKit.
 
 ## Migration from Old Commands
 
@@ -725,9 +725,9 @@ See: [Deprecation Notice](../../installer/global/commands/figma-to-react.md)
 
 ## Need Help?
 
-- **Issues**: Report at https://github.com/anthropics/taskwright/issues
-- **Discussions**: https://github.com/anthropics/taskwright/discussions
-- **Documentation**: https://github.com/anthropics/taskwright/docs
+- **Issues**: Report at https://github.com/anthropics/guardkit/issues
+- **Discussions**: https://github.com/anthropics/guardkit/discussions
+- **Documentation**: https://github.com/anthropics/guardkit/docs
 ```
 
 ### Key Sections to Include

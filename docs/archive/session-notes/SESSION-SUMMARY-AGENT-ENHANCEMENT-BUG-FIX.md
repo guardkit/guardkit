@@ -9,7 +9,7 @@
 
 ## 🔍 What Happened
 
-When you ran `taskwright template-create` after implementing TASK-ENHANCE-AGENT-FILES, Phase 7.5 failed silently:
+When you ran `guardkit template-create` after implementing TASK-ENHANCE-AGENT-FILES, Phase 7.5 failed silently:
 
 ```
 Phase 7.5: Agent Enhancement
@@ -41,7 +41,7 @@ The implementation was **incomplete** - it assumed infrastructure that doesn't e
 
 3. **Wrong architecture pattern**:
    - The `AgentEnhancer` was designed to use a **direct AI client**
-   - But Taskwright uses the **agent bridge pattern** (like `architectural-reviewer`)
+   - But GuardKit uses the **agent bridge pattern** (like `architectural-reviewer`)
    - The system doesn't have direct API integration - it works through agent requests/responses
 
 ---
@@ -80,7 +80,7 @@ def _phase7_5_enhance_agents(self, output_path: Path) -> bool:
 - ✅ Agent files generated with YAML frontmatter and basic description
 - ✅ CLAUDE.md includes agent documentation  
 - ✅ Templates include all necessary patterns
-- ✅ `taskwright init` works with created templates
+- ✅ `guardkit init` works with created templates
 
 ### What's Missing
 - ❌ Agent files are basic (3/10 quality vs. 9/10 target)
@@ -113,7 +113,7 @@ Specializes in implementing Repository pattern with ErrorOr and Realm.
 - ErrorOr
 - Realm
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when the task involves repository pattern specialist.
 ```
@@ -201,7 +201,7 @@ Key features:
 - ErrorOr
 - Realm
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when the task involves repository pattern specialist.
 ```
@@ -298,7 +298,7 @@ Trade-off: More complex to implement, but better long-term architecture.
 
 1. **Test the fix**:
    ```bash
-   taskwright template-create --name test-fix --validate
+   guardkit template-create --name test-fix --validate
    ```
    - Should complete without errors
    - Phase 7.5 will show "temporarily disabled" message
@@ -312,7 +312,7 @@ Trade-off: More complex to implement, but better long-term architecture.
 
 3. **Use the templates** (they work fine despite basic agents):
    ```bash
-   taskwright init net9-maui-mydrive
+   guardkit init net9-maui-mydrive
    ```
 
 ### Next: Make Architectural Decision

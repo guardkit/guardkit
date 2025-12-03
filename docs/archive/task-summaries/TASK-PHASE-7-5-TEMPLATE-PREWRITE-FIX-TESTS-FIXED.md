@@ -34,7 +34,7 @@ This patches the `TemplateGenerator` reference in the orchestrator module's name
 
 ## Test File
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/unit/lib/template_creation/test_ensure_templates_on_disk.py`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/lib/template_creation/test_ensure_templates_on_disk.py`
 
 ## Tests Fixed
 

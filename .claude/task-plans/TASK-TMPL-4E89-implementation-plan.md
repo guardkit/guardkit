@@ -4,7 +4,7 @@
 **Complexity**: 8/10 (Complex)
 **Priority**: High
 **Estimated Duration**: 6-8 hours
-**Stack**: Python (taskwright-python orchestrator pattern)
+**Stack**: Python (guardkit-python orchestrator pattern)
 
 ---
 

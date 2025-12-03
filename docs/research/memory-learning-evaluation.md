@@ -1,4 +1,4 @@
-# Memory & Learning Capabilities for Taskwright - Critical Evaluation
+# Memory & Learning Capabilities for GuardKit - Critical Evaluation
 
 **Date:** 2025-11-02
 **Status:** Research & Evaluation
@@ -39,9 +39,9 @@ The post author described enhancing Claude Desktop with persistent memory:
 
 **Context:** This was for general Claude Desktop usage, not a structured workflow system.
 
-## Proposed Application to Taskwright
+## Proposed Application to GuardKit
 
-The idea is to enable Taskwright to learn and improve as it's used on a project:
+The idea is to enable GuardKit to learn and improve as it's used on a project:
 
 - Pattern recognition across tasks
 - Learning from failures
@@ -54,7 +54,7 @@ The idea is to enable Taskwright to learn and improve as it's used on a project:
 ### The Core Tension
 
 **Philosophical Conflict:**
-Taskwright is explicitly designed as "lightweight" with "zero ceremony." Persistent memory systems are inherently complex and require ongoing maintenance. This creates a fundamental identity crisis.
+GuardKit is explicitly designed as "lightweight" with "zero ceremony." Persistent memory systems are inherently complex and require ongoing maintenance. This creates a fundamental identity crisis.
 
 From CLAUDE.md:
 > "No Ceremony: Minimal process, maximum productivity"
@@ -111,7 +111,7 @@ Persistent memory systems ARE ceremony.
 
 #### 2. Philosophical Misalignment
 
-Taskwright's core principles explicitly reject ceremony:
+GuardKit's core principles explicitly reject ceremony:
 
 | Principle | Memory System Reality |
 |-----------|----------------------|
@@ -155,13 +155,13 @@ Taskwright's core principles explicitly reject ceremony:
 
 **Key Distinction:**
 
-| General Claude Desktop | Taskwright |
+| General Claude Desktop | GuardKit |
 |------------------------|-----------|
 | Each chat is isolated | Structured state via tasks |
 | No persistence between sessions | Changelogs, plans, task history |
 | Memory solves real pain point | Already has structured memory |
 
-**Implication:** The LinkedIn post solves a problem Taskwright doesn't have. We already have memory - it's in markdown files.
+**Implication:** The LinkedIn post solves a problem GuardKit doesn't have. We already have memory - it's in markdown files.
 
 ### Alternative Approaches (Simpler)
 
@@ -514,7 +514,7 @@ Would you like to review these tasks before starting? [Y/n]
    All achieve 80% of theoretical benefits with 10% of complexity.
 
 3. **Alignment with Core Principles**
-   - Taskwright is "lightweight" - memory systems are heavy
+   - GuardKit is "lightweight" - memory systems are heavy
    - Better to stay focused on core value proposition
    - Don't dilute the brand with feature creep
 
@@ -539,7 +539,7 @@ Would you like to review these tasks before starting? [Y/n]
 It's like adding AI to your app before proving core value prop - technically impressive but strategically questionable.
 
 **Analogy:**
-You're at MVP stage with Taskwright. Adding memory is like adding advanced analytics before you have product-market fit. Solve the core workflow first, optimize later.
+You're at MVP stage with GuardKit. Adding memory is like adding advanced analytics before you have product-market fit. Solve the core workflow first, optimize later.
 
 ### Better Question to Ask
 
@@ -598,7 +598,7 @@ Week 10+: AgentDB evaluation (only if Phase 2 insufficient)
 
 ## Conclusion
 
-**Memory for Taskwright is a solution looking for a problem.**
+**Memory for GuardKit is a solution looking for a problem.**
 
 Before adding complexity:
 1. Prove the problem exists (data, not speculation)
@@ -621,7 +621,7 @@ Until then: **DEFER.**
 
 - AgentDB: https://agentdb.ruv.io/
 - LinkedIn Post: https://www.linkedin.com/my-items/saved-posts/ *(specific post to be added)*
-- Taskwright CLAUDE.md: Philosophy and principles
+- GuardKit CLAUDE.md: Philosophy and principles
 - Related: YAGNI (You Aren't Gonna Need It) principle
 
 ## Related Documents

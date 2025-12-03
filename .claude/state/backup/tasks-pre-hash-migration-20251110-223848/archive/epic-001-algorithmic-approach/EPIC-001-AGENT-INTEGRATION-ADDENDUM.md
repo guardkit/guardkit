@@ -9,12 +9,12 @@
 
 Two critical enhancements to agent discovery system:
 
-1. **Reuse Existing Agents**: Integrate 15 existing taskwright agents into template orchestration
+1. **Reuse Existing Agents**: Integrate 15 existing guardkit agents into template orchestration
 2. **Configurable Sources**: Allow custom agent source URLs (not hardcoded to 3 sources)
 
 ---
 
-## Part 1: Existing Taskwright Agents
+## Part 1: Existing GuardKit Agents
 
 ### Current Inventory
 
@@ -52,7 +52,7 @@ Agent Discovery:
 4. User selects agents
 5. Download agents to template/agents/
 
-❌ Problem: Completely ignores 15 existing taskwright agents!
+❌ Problem: Completely ignores 15 existing guardkit agents!
 ```
 
 **Why This Is Wrong**:
@@ -97,7 +97,7 @@ Phase 5: Selection with Local Priority
 
 ### 🔧 TASK-048B: Local Agent Scanner (NEW)
 
-**Objective**: Discover and integrate existing taskwright agents
+**Objective**: Discover and integrate existing guardkit agents
 
 **Estimated**: 4 hours | **Complexity**: 4/10 | **Priority**: HIGH
 
@@ -190,7 +190,7 @@ class AgentMatcher:
         for agent in all_agents:
             score = 0
 
-            # Local agents get bonus (already vetted for taskwright)
+            # Local agents get bonus (already vetted for guardkit)
             if agent.source.startswith("local"):
                 score += 20  # +20 bonus for local agents
 
@@ -216,27 +216,27 @@ class AgentMatcher:
 
 ```
 📊 Found 28 agents from 4 sources:
-   - local_global: 15 agents (taskwright built-in)
+   - local_global: 15 agents (guardkit built-in)
    - local_project: 2 agents (project-specific)
    - subagents.cc: 8 agents
    - github: 3 agents
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ TASKWRIGHT BUILT-IN (15 agents - already integrated)
+✅ GUARDKIT BUILT-IN (15 agents - already integrated)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [x] architectural-reviewer               Score: 95
-    Source: taskwright (local_global)
+    Source: guardkit (local_global)
     SOLID/DRY/YAGNI compliance review
     Tools: Read, Analyze, Search
 
 [x] code-reviewer                        Score: 92
-    Source: taskwright (local_global)
+    Source: guardkit (local_global)
     Code quality and standards enforcement
     Tools: Read, Write, Search, Grep
 
 [x] test-orchestrator                    Score: 90
-    Source: taskwright (local_global)
+    Source: guardkit (local_global)
     Test execution and quality gates
     Tools: Read, Write, Bash, Search
 
@@ -250,8 +250,8 @@ class AgentMatcher:
     Tools: Read, Write, Edit, Bash
 
 Options:
-  [A] Accept all taskwright built-in + recommended external (score ≥85)
-  [T] Accept taskwright built-in only
+  [A] Accept all guardkit built-in + recommended external (score ≥85)
+  [T] Accept guardkit built-in only
   [C] Customize selection
 ```
 
@@ -322,7 +322,7 @@ sources = [
   "sources": [
     {
       "id": "local_global",
-      "name": "Taskwright Built-in",
+      "name": "GuardKit Built-in",
       "type": "local",
       "path": "installer/global/agents",
       "enabled": true,
@@ -472,7 +472,7 @@ class AgentSourceRegistry:
             "sources": [
                 {
                     "id": "local_global",
-                    "name": "Taskwright Built-in",
+                    "name": "GuardKit Built-in",
                     "type": "local",
                     "path": "installer/global/agents",
                     "enabled": True,
@@ -613,7 +613,7 @@ class AgentDiscoveryOrchestrator:
 **TASK-051** (Selection UI):
 - Add: Group agents by source (Local first, then external)
 - Add: Show source name and priority
-- Add: Option to accept "Taskwright built-in only"
+- Add: Option to accept "GuardKit built-in only"
 
 **TASK-047** (template-create orchestrator):
 - Add: Uses AgentDiscoveryOrchestrator (respects source registry)
@@ -628,12 +628,12 @@ class AgentDiscoveryOrchestrator:
 ### 1. Reuse Existing Agents ✅
 
 **Before**:
-- 15 taskwright agents ignored
+- 15 guardkit agents ignored
 - Download external agents from scratch
 - Reinvent the wheel
 
 **After**:
-- 15 taskwright agents automatically discovered
+- 15 guardkit agents automatically discovered
 - Prioritized in selection (bonus +20 points)
 - Templates include battle-tested agents
 
@@ -700,7 +700,7 @@ class AgentDiscoveryOrchestrator:
 ## Success Criteria
 
 ### Must Have
-- [ ] 15 taskwright agents discovered automatically
+- [ ] 15 guardkit agents discovered automatically
 - [ ] Local agents prioritized in selection
 - [ ] Agent sources configurable via JSON
 - [ ] Can add company-internal GitHub repos
@@ -721,7 +721,7 @@ class AgentDiscoveryOrchestrator:
 ## Conclusion
 
 **Impact**:
-- ✅ Reuses 15 existing taskwright agents (battle-tested)
+- ✅ Reuses 15 existing guardkit agents (battle-tested)
 - ✅ Allows unlimited custom agent sources
 - ✅ Enterprise-ready (private repos, auth, compliance)
 - ✅ Reduces external dependencies

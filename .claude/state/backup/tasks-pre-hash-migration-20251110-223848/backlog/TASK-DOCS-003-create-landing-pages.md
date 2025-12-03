@@ -57,7 +57,7 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
 ## Requirements
 
 ### Site Homepage (docs/index.md)
-- [ ] Welcome message explaining Taskwright
+- [ ] Welcome message explaining GuardKit
 - [ ] Quick overview of core features (from README)
 - [ ] Quick navigation to main sections
 - [ ] Link to Quickstart guide
@@ -71,7 +71,7 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
 
 ### Core Concepts Section
 - [ ] Section landing page aggregating links to:
-  - Taskwright Workflow
+  - GuardKit Workflow
   - Complexity Management
   - Quality Gates
   - Task States
@@ -104,7 +104,7 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
 - [ ] Link to GitHub issues
 
 ### FAQ Section (if needed)
-- [ ] Common questions about Taskwright
+- [ ] Common questions about GuardKit
 - [ ] When to use vs RequireKit
 - [ ] Complexity evaluation questions
 - [ ] Quality gates questions
@@ -215,7 +215,7 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
 ### docs/index.md (Site Homepage)
 
 ```markdown
-# Taskwright
+# GuardKit
 
 **Lightweight AI-assisted development with built-in quality gates.**
 
@@ -230,10 +230,10 @@ Stop shipping broken code. Get architectural review before implementation and au
 
 ## Quick Start
 
-New to Taskwright? Start here:
+New to GuardKit? Start here:
 
 - [**Quickstart Guide**](guides/GETTING-STARTED.md) - Get up and running in 5 minutes
-- [**Taskwright Workflow**](guides/taskwright-workflow.md) - Learn the core workflow
+- [**GuardKit Workflow**](guides/guardkit-workflow.md) - Learn the core workflow
 - [**Choose a Template**](templates/index.md) - Select your tech stack
 
 ## Documentation Sections
@@ -255,8 +255,8 @@ Common issues and solutions
 
 ## Links
 
-- [GitHub Repository](https://github.com/taskwright-dev/taskwright)
-- [Report an Issue](https://github.com/taskwright-dev/taskwright/issues)
+- [GitHub Repository](https://github.com/guardkit/guardkit)
+- [Report an Issue](https://github.com/guardkit/guardkit/issues)
 - [RequireKit](https://github.com/requirekit/require-kit) - For formal requirements management
 
 ---
@@ -269,27 +269,27 @@ Common issues and solutions
 ```markdown
 # Core Concepts
 
-Understand the fundamentals of Taskwright's workflow and quality gates.
+Understand the fundamentals of GuardKit's workflow and quality gates.
 
-## 🔄 [Taskwright Workflow](../guides/taskwright-workflow.md)
+## 🔄 [GuardKit Workflow](../guides/guardkit-workflow.md)
 The complete workflow from task creation to completion, including all phases and quality gates.
 
 ## 📊 [Complexity Management](../workflows/complexity-management-workflow.md)
-How Taskwright evaluates task complexity and decides when to require human review.
+How GuardKit evaluates task complexity and decides when to require human review.
 
 ## ✅ [Quality Gates](../workflows/quality-gates-workflow.md)
 Automatic enforcement of compilation, testing, coverage, and architectural standards.
 
-## 📋 [Task States & Transitions](../guides/taskwright-workflow.md#task-states)
+## 📋 [Task States & Transitions](../guides/guardkit-workflow.md#task-states)
 How tasks move through backlog, in_progress, in_review, blocked, and completed states.
 
-## 🎯 [Development Modes](../guides/taskwright-workflow.md#development-modes)
+## 🎯 [Development Modes](../guides/guardkit-workflow.md#development-modes)
 Standard vs TDD mode for different types of tasks.
 
 ---
 
 **Next Steps:**
-- Start with [Taskwright Workflow](../guides/taskwright-workflow.md)
+- Start with [GuardKit Workflow](../guides/guardkit-workflow.md)
 - Try creating your first task: [Quickstart Guide](../guides/GETTING-STARTED.md)
 ```
 
@@ -336,7 +336,7 @@ Standard vs TDD mode for different types of tasks.
 
 ### Existing Comprehensive Guides to Link To
 
-- `guides/taskwright-workflow.md` - Complete workflow (43KB)
+- `guides/guardkit-workflow.md` - Complete workflow (43KB)
 - `guides/creating-local-templates.md` - Template customization (34KB)
 - `guides/maui-template-selection.md` - MAUI templates (32KB)
 - `workflows/complexity-management-workflow.md` - Complexity (20KB)

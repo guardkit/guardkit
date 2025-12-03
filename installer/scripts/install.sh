@@ -18,7 +18,7 @@ AGENTECFLOW_VERSION="2.0.0"
 INSTALL_DIR="$HOME/.agentecflow"
 CONFIG_DIR="$HOME/.config/agentecflow"
 INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GITHUB_REPO="https://github.com/taskwright-dev/taskwright"
+GITHUB_REPO="https://github.com/guardkit/guardkit"
 GITHUB_BRANCH="main"
 INSTALL_METHOD="git-clone"  # Default, updated if running via curl
 
@@ -39,7 +39,7 @@ print_message() {
 print_header() {
     echo ""
     print_message "$BLUE" "╔════════════════════════════════════════════════════════╗"
-    print_message "$BLUE" "║         Taskwright Installation System                 ║"
+    print_message "$BLUE" "║         GuardKit Installation System                 ║"
     print_message "$BLUE" "║         Version: $AGENTECFLOW_VERSION                  ║"
     print_message "$BLUE" "╚════════════════════════════════════════════════════════╝"
     echo ""
@@ -69,12 +69,12 @@ ensure_repository_files() {
         INSTALL_METHOD="curl"
 
         # Determine permanent location for repository
-        # Use ~/Projects/taskwright or ~/taskwright if ~/Projects doesn't exist
+        # Use ~/Projects/guardkit or ~/guardkit if ~/Projects doesn't exist
         local REPO_DEST
         if [ -d "$HOME/Projects" ]; then
-            REPO_DEST="$HOME/Projects/taskwright"
+            REPO_DEST="$HOME/Projects/guardkit"
         else
-            REPO_DEST="$HOME/taskwright"
+            REPO_DEST="$HOME/guardkit"
         fi
 
         # Check if git is available for cloning
@@ -179,7 +179,7 @@ check_prerequisites() {
     # Check for Python (REQUIRED for complexity evaluation and task splitting)
     if ! command -v python3 &> /dev/null; then
         print_error "Python 3 is REQUIRED for complexity evaluation and task splitting features"
-        print_info "Taskwright requires Python 3.7+ for core functionality"
+        print_info "GuardKit requires Python 3.7+ for core functionality"
         print_info "Please install Python 3.7 or higher and try again"
         missing_deps+=("python3")
     else
@@ -587,11 +587,11 @@ EOF
 create_cli_commands() {
     print_info "Creating CLI commands..."
     
-    # Create taskwright-init command (primary command)
-    cat > "$INSTALL_DIR/bin/taskwright-init" << 'EOF'
+    # Create guardkit-init command (primary command)
+    cat > "$INSTALL_DIR/bin/guardkit-init" << 'EOF'
 #!/bin/bash
 
-# Taskwright Project Initialization
+# GuardKit Project Initialization
 # Primary command for initializing projects
 
 AGENTECFLOW_HOME="$HOME/.agentecflow"
@@ -605,9 +605,9 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 print_help() {
-    echo "Taskwright Project Initialization"
+    echo "GuardKit Project Initialization"
     echo ""
-    echo "Usage: taskwright-init [template]"
+    echo "Usage: guardkit-init [template]"
     echo ""
     echo "Templates:"
     echo "  default              - Language-agnostic foundation (Go, Rust, Ruby, PHP, etc.)"
@@ -617,9 +617,9 @@ print_help() {
     echo "  react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)"
     echo ""
     echo "Examples:"
-    echo "  taskwright-init                     # Interactive setup"
-    echo "  taskwright-init react-typescript    # Initialize with React template"
-    echo "  taskwright-init fastapi-python      # Initialize with FastAPI template"
+    echo "  guardkit-init                     # Interactive setup"
+    echo "  guardkit-init react-typescript    # Initialize with React template"
+    echo "  guardkit-init fastapi-python      # Initialize with FastAPI template"
 }
 
 if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
@@ -627,9 +627,9 @@ if [ "$1" = "help" ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     exit 0
 fi
 
-# Check if Taskwright is installed
+# Check if GuardKit is installed
 if [ ! -d "$AGENTECFLOW_HOME" ]; then
-    echo -e "${RED}Error: Taskwright not installed at $AGENTECFLOW_HOME${NC}"
+    echo -e "${RED}Error: GuardKit not installed at $AGENTECFLOW_HOME${NC}"
     echo "Please run the installer first"
     exit 1
 fi
@@ -646,15 +646,15 @@ else
 fi
 EOF
 
-    chmod +x "$INSTALL_DIR/bin/taskwright-init"
-    print_success "Created taskwright-init command"
+    chmod +x "$INSTALL_DIR/bin/guardkit-init"
+    print_success "Created guardkit-init command"
 
-    # Create taskwright main command
-    cat > "$INSTALL_DIR/bin/taskwright" << 'EOF'
+    # Create guardkit main command
+    cat > "$INSTALL_DIR/bin/guardkit" << 'EOF'
 #!/bin/bash
 
-# Taskwright CLI
-# Main command-line interface for Taskwright
+# GuardKit CLI
+# Main command-line interface for GuardKit
 
 AGENTECFLOW_HOME="$HOME/.agentecflow"
 AGENTECFLOW_VERSION="1.0.0"
@@ -667,21 +667,21 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 print_help() {
-    echo "Taskwright - Lightweight AI-Assisted Development"
+    echo "GuardKit - Lightweight AI-Assisted Development"
     echo ""
-    echo "Usage: taskwright <command> [options]"
+    echo "Usage: guardkit <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  init [template]     Initialize Taskwright in current directory"
+    echo "  init [template]     Initialize GuardKit in current directory"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
     echo "  help                Show this help message"
     echo ""
     echo "Examples:"
-    echo "  taskwright init                      # Interactive initialization"
-    echo "  taskwright init react-typescript     # Initialize with React template"
-    echo "  taskwright init fastapi-python       # Initialize with FastAPI template"
-    echo "  taskwright doctor                    # Check installation health"
+    echo "  guardkit init                      # Interactive initialization"
+    echo "  guardkit init react-typescript     # Initialize with React template"
+    echo "  guardkit init fastapi-python       # Initialize with FastAPI template"
+    echo "  guardkit doctor                    # Check installation health"
 }
 
 # Detect project context by traversing upward
@@ -708,16 +708,16 @@ case "$1" in
     init)
         shift
         export CLAUDE_HOME="$AGENTECFLOW_HOME"
-        exec "$AGENTECFLOW_HOME/bin/taskwright-init" "$@"
+        exec "$AGENTECFLOW_HOME/bin/guardkit-init" "$@"
         ;;
     doctor)
-        echo -e "${BLUE}Running Taskwright diagnostics...${NC}"
+        echo -e "${BLUE}Running GuardKit diagnostics...${NC}"
         echo ""
 
         # Check installation
         echo "Installation:"
         if [ -d "$AGENTECFLOW_HOME" ]; then
-            echo -e "  ${GREEN}✓${NC} Taskwright home: $AGENTECFLOW_HOME"
+            echo -e "  ${GREEN}✓${NC} GuardKit home: $AGENTECFLOW_HOME"
 
             # Check key directories
             for dir in agents bin cache commands completions docs instructions plugins scripts templates versions; do
@@ -728,7 +728,7 @@ case "$1" in
                 fi
             done
         else
-            echo -e "  ${RED}✗${NC} Taskwright home not found"
+            echo -e "  ${RED}✗${NC} GuardKit home not found"
         fi
 
         # Check agents
@@ -747,7 +747,7 @@ case "$1" in
         echo ""
         echo "PATH Configuration:"
         if [[ ":$PATH:" == *":$AGENTECFLOW_HOME/bin:"* ]]; then
-            echo -e "  ${GREEN}✓${NC} Taskwright bin in PATH"
+            echo -e "  ${GREEN}✓${NC} GuardKit bin in PATH"
         else
             echo -e "  ${YELLOW}⚠${NC} Add to PATH: export PATH=\"\$HOME/.agentecflow/bin:\$PATH\""
         fi
@@ -833,11 +833,11 @@ case "$1" in
             echo "    3. Default (CLAUDE_HOME/templates/) [LOWEST PRIORITY]"
         else
             echo -e "  ${BLUE}ℹ${NC} Not in a project directory"
-            echo -e "      Run this command from a project initialized with taskwright-init"
+            echo -e "      Run this command from a project initialized with guardkit-init"
         fi
         ;;
     version|--version|-v)
-        echo "Taskwright version $AGENTECFLOW_VERSION"
+        echo "GuardKit version $AGENTECFLOW_VERSION"
         echo "Installation: $AGENTECFLOW_HOME"
         ;;
     help|--help|-h|"")
@@ -845,19 +845,19 @@ case "$1" in
         ;;
     *)
         echo -e "${RED}Unknown command: $1${NC}"
-        echo "Run 'taskwright help' for usage information"
+        echo "Run 'guardkit help' for usage information"
         exit 1
         ;;
 esac
 EOF
 
-    chmod +x "$INSTALL_DIR/bin/taskwright"
+    chmod +x "$INSTALL_DIR/bin/guardkit"
 
     # Create shorthand aliases
-    ln -sf "$INSTALL_DIR/bin/taskwright" "$INSTALL_DIR/bin/tw"
-    ln -sf "$INSTALL_DIR/bin/taskwright-init" "$INSTALL_DIR/bin/twi"
+    ln -sf "$INSTALL_DIR/bin/guardkit" "$INSTALL_DIR/bin/gk"
+    ln -sf "$INSTALL_DIR/bin/guardkit-init" "$INSTALL_DIR/bin/gki"
 
-    print_success "Created CLI commands (taskwright, taskwright-init, tw, twi)"
+    print_success "Created CLI commands (guardkit, guardkit-init, gk, gki)"
 }
 
 # Setup shell integration
@@ -916,7 +916,7 @@ setup_shell_integration() {
 
     # Remove old configurations if they exist
     if grep -q "\.agenticflow\|\.agentic-flow\|\.claude\|CLAUDE_HOME\|AGENTIC_FLOW_HOME\|AGENTICFLOW_HOME" "$shell_config" 2>/dev/null; then
-        print_info "Removing old Taskwright configurations..."
+        print_info "Removing old GuardKit configurations..."
         # Create backup
         cp "$shell_config" "$shell_config.backup.$(date +%Y%m%d_%H%M%S)"
 
@@ -949,21 +949,21 @@ setup_shell_integration() {
     if [ "$shell_name" = "bash" ]; then
         cat >> "$shell_config" << 'EOF'
 
-# Taskwright
+# GuardKit
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 # Note: Config folder stays .agentecflow for methodology compatibility
 
-# Taskwright completions (bash)
-if [ -f "$HOME/.agentecflow/completions/taskwright.bash" ]; then
-    source "$HOME/.agentecflow/completions/taskwright.bash"
+# GuardKit completions (bash)
+if [ -f "$HOME/.agentecflow/completions/guardkit.bash" ]; then
+    source "$HOME/.agentecflow/completions/guardkit.bash"
 fi
 EOF
     else
         # For zsh or other shells, skip bash completions
         cat >> "$shell_config" << 'EOF'
 
-# Taskwright
+# GuardKit
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 # Note: Config folder stays .agentecflow for methodology compatibility
@@ -1191,7 +1191,7 @@ EOF
 print_summary() {
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✅ Taskwright installation complete!${NC}"
+    echo -e "${GREEN}✅ GuardKit installation complete!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${BOLD}Installation Summary:${NC}"
@@ -1211,11 +1211,11 @@ print_summary() {
     echo "  ⚡ Commands: $command_count"
     echo ""
     echo -e "${BOLD}Available Commands:${NC}"
-    echo "  • taskwright-init [template]  - Initialize a project"
-    echo "  • taskwright init             - Alternative initialization"
-    echo "  • taskwright doctor           - Check system health"
-    echo "  • tw                          - Short for taskwright"
-    echo "  • twi                         - Short for taskwright-init"
+    echo "  • guardkit-init [template]  - Initialize a project"
+    echo "  • guardkit init             - Alternative initialization"
+    echo "  • guardkit doctor           - Check system health"
+    echo "  • gk                          - Short for guardkit"
+    echo "  • gki                         - Short for guardkit-init"
     echo ""
     echo -e "${BOLD}Available Templates:${NC}"
     for template in "$INSTALL_DIR/templates"/*/; do
@@ -1256,22 +1256,22 @@ print_summary() {
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
-    echo "  3. Run: taskwright-init [template]  # e.g., react-typescript, fastapi-python, nextjs-fullstack"
+    echo "  3. Run: guardkit-init [template]  # e.g., react-typescript, fastapi-python, nextjs-fullstack"
     echo "  4. (Optional) Install Conductor.build for parallel development"
     echo ""
     echo -e "${BLUE}📚 Documentation: $INSTALL_DIR/docs/${NC}"
-    echo -e "${BLUE}❓ Check health: taskwright doctor${NC}"
+    echo -e "${BLUE}❓ Check health: guardkit doctor${NC}"
     echo -e "${BLUE}🔗 Conductor: https://conductor.build${NC}"
 }
 
-# Create marker file for taskwright installation (DEPRECATED - using create_marker_file instead)
+# Create marker file for guardkit installation (DEPRECATED - using create_marker_file instead)
 # This function is kept for reference but should not be called
 create_package_marker() {
     print_info "Skipping legacy marker creation (using JSON marker instead)..."
 
     # Only create manifest for compatibility
     if [ -f "$INSTALLER_DIR/global/manifest.json" ]; then
-        cp "$INSTALLER_DIR/global/manifest.json" "$INSTALL_DIR/taskwright.manifest.json"
+        cp "$INSTALLER_DIR/global/manifest.json" "$INSTALL_DIR/guardkit.manifest.json"
         print_success "Package manifest created"
     fi
 }
@@ -1316,7 +1316,7 @@ setup_claude_integration() {
         print_info "  Commands: ~/.claude/commands → ~/.agentecflow/commands"
         print_info "  Agents: ~/.claude/agents → ~/.agentecflow/agents"
         echo ""
-        print_success "All taskwright commands now available in Claude Code!"
+        print_success "All guardkit commands now available in Claude Code!"
         print_info "Compatible with Conductor.build for parallel development"
     else
         print_error "Failed to create symlinks for Claude Code integration"
@@ -1457,7 +1457,7 @@ setup_python_bin_symlinks() {
 create_marker_file() {
     print_info "Creating marker file for package detection..."
 
-    local marker_file="$INSTALL_DIR/taskwright.marker.json"
+    local marker_file="$INSTALL_DIR/guardkit.marker.json"
     local install_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     # Determine repository root (parent of installer/)
@@ -1473,7 +1473,7 @@ create_marker_file() {
     # Create marker file from template with substitution
     cat > "$marker_file" << EOF
 {
-  "package": "taskwright",
+  "package": "guardkit",
   "version": "$AGENTECFLOW_VERSION",
   "installed": "$install_date",
   "install_location": "$INSTALL_DIR",
@@ -1493,13 +1493,13 @@ create_marker_file() {
   ],
   "integration_model": "bidirectional_optional",
   "description": "Task execution and quality gates for Agentecflow",
-  "homepage": "https://github.com/taskwright-dev/taskwright"
+  "homepage": "https://github.com/guardkit/guardkit"
 }
 EOF
 
     if [ -f "$marker_file" ]; then
         print_success "Marker file created: $marker_file"
-        print_info "  Package: taskwright (standalone + optional require-kit integration)"
+        print_info "  Package: guardkit (standalone + optional require-kit integration)"
         print_info "  Install method: $INSTALL_METHOD"
         print_info "  Model: Bidirectional optional integration"
 
@@ -1518,7 +1518,7 @@ EOF
 main() {
     print_header
 
-    print_info "Installing Taskwright to $INSTALL_DIR"
+    print_info "Installing GuardKit to $INSTALL_DIR"
     echo ""
 
     # Ensure we have repository files (download if running via curl)

@@ -6,12 +6,12 @@ Feature Detection Library
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 This file is duplicated across multiple repositories:
-  • taskwright/installer/global/lib/feature_detection.py
+  • guardkit/installer/global/lib/feature_detection.py
   • require-kit/installer/global/lib/feature_detection.py
 
 When making changes:
   1. Update both copies to maintain consistency
-  2. Test in both contexts (taskwright-only and require-kit-only)
+  2. Test in both contexts (guardkit-only and require-kit-only)
   3. Changes should be rare (only when adding new packages or features)
 
 Why duplicated?
@@ -28,11 +28,11 @@ pragmatic choice.
 Provides utilities to detect which Agentecflow packages are installed
 and enable graceful degradation of features.
 
-This enables taskwright and require-kit to coexist in ~/.agentecflow
+This enables guardkit and require-kit to coexist in ~/.agentecflow
 with conditional feature availability based on installed marker files.
 
 Core Capabilities:
-  • Detect installed packages (taskwright, require-kit)
+  • Detect installed packages (guardkit, require-kit)
   • Query feature availability (requirements, epics, BDD, etc.)
   • Check package compatibility
   • Provide user-friendly status messages
@@ -73,9 +73,9 @@ class FeatureDetector:
         """
         self.agentecflow_home = agentecflow_home or Path.home() / ".agentecflow"
 
-    def is_taskwright_installed(self) -> bool:
-        """Check if taskwright is installed."""
-        marker = self.agentecflow_home / "taskwright.marker"
+    def is_guardkit_installed(self) -> bool:
+        """Check if guardkit is installed."""
+        marker = self.agentecflow_home / "guardkit.marker"
         return marker.exists()
 
     def is_require_kit_installed(self) -> bool:
@@ -127,11 +127,11 @@ class FeatureDetector:
         Get list of installed Agentecflow packages.
 
         Returns:
-            List of package names (e.g., ['taskwright', 'require-kit'])
+            List of package names (e.g., ['guardkit', 'require-kit'])
         """
         packages = []
-        if self.is_taskwright_installed():
-            packages.append("taskwright")
+        if self.is_guardkit_installed():
+            packages.append("guardkit")
         if self.is_require_kit_installed():
             packages.append("require-kit")
         return packages
@@ -141,7 +141,7 @@ class FeatureDetector:
         Get information about an installed package.
 
         Args:
-            package_name: Name of the package (e.g., 'taskwright')
+            package_name: Name of the package (e.g., 'guardkit')
 
         Returns:
             Package manifest dict or None if not installed
@@ -164,10 +164,10 @@ class FeatureDetector:
             Dict mapping feature names to availability (True/False)
         """
         return {
-            "task_management": self.is_taskwright_installed(),
-            "quality_gates": self.is_taskwright_installed(),
-            "architectural_review": self.is_taskwright_installed(),
-            "test_enforcement": self.is_taskwright_installed(),
+            "task_management": self.is_guardkit_installed(),
+            "quality_gates": self.is_guardkit_installed(),
+            "architectural_review": self.is_guardkit_installed(),
+            "test_enforcement": self.is_guardkit_installed(),
             "requirements_engineering": self.supports_requirements(),
             "bdd_generation": self.supports_bdd(),
             "epic_management": self.supports_epics(),
@@ -187,11 +187,11 @@ class FeatureDetector:
             "errors": []
         }
 
-        # require-kit depends on taskwright
-        if self.is_require_kit_installed() and not self.is_taskwright_installed():
+        # require-kit depends on guardkit
+        if self.is_require_kit_installed() and not self.is_guardkit_installed():
             result["compatible"] = False
             result["errors"].append(
-                "require-kit requires taskwright to be installed first"
+                "require-kit requires guardkit to be installed first"
             )
 
         return result
@@ -209,13 +209,13 @@ class FeatureDetector:
             return "No Agentecflow packages installed"
 
         if len(packages) == 1:
-            if packages[0] == "taskwright":
-                return "taskwright installed (task workflow only)"
+            if packages[0] == "guardkit":
+                return "guardkit installed (task workflow only)"
             elif packages[0] == "require-kit":
-                return "ERROR: require-kit requires taskwright"
+                return "ERROR: require-kit requires guardkit"
 
-        if "taskwright" in packages and "require-kit" in packages:
-            return "Full Agentecflow (taskwright + require-kit)"
+        if "guardkit" in packages and "require-kit" in packages:
+            return "Full Agentecflow (guardkit + require-kit)"
 
         return f"Installed: {', '.join(packages)}"
 

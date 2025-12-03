@@ -42,7 +42,7 @@ All debug files, temporary scripts, coverage JSON files, and session documents h
 - pytest.ini
 - tsconfig.json
 - vitest.config.ts
-- taskwright.sln
+- guardkit.sln
 
 **Directories** (11):
 - .claude/ (configuration and state)

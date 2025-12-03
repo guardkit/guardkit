@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-**Current State**: Taskwright has duplicate task IDs causing issues in task management.
+**Current State**: GuardKit has duplicate task IDs causing issues in task management.
 
 **Evidence**:
 - TASK-003 exists twice in the codebase
@@ -204,7 +204,7 @@ The hash-based approach is inspired by [Beads Issue Tracker](https://github.com/
 - Dot notation for subtasks (`bd-a3f8.1`)
 - Birthday paradox math for collision probability
 
-**Taskwright adaptation**:
+**GuardKit adaptation**:
 - Same hash approach (`TASK-a3f8`)
 - Added prefix support (`TASK-E01-b2c4`)
 - PM tool mapping table (hash → sequential)

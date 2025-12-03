@@ -1,6 +1,6 @@
-# Contributing to Taskwright
+# Contributing to GuardKit
 
-Thank you for your interest in contributing to Taskwright! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to GuardKit! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -22,8 +22,8 @@ We are committed to providing a welcoming and inclusive environment for all cont
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/taskwright.git
-   cd taskwright
+   git clone https://github.com/YOUR-USERNAME/guardkit.git
+   cd guardkit
    ```
 3. **Set up the development environment** (see below)
 4. **Create a branch** for your changes:
@@ -42,12 +42,12 @@ We are committed to providing a welcoming and inclusive environment for all cont
 ### Installation
 
 ```bash
-# Install Taskwright
+# Install GuardKit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with a template (optional, for testing)
-taskwright init react-typescript
+guardkit init react-typescript
 ```
 
 ### Running Tests
@@ -98,9 +98,9 @@ We welcome various types of contributions:
 - **Error handling**: Use appropriate exception handling
 - **SOLID principles**: Follow architectural best practices
 
-### Taskwright Workflow
+### GuardKit Workflow
 
-When working on Taskwright itself, we dogfood our own system:
+When working on GuardKit itself, we dogfood our own system:
 
 ```bash
 # Create a task for your work
@@ -233,7 +233,7 @@ Reviews focus on:
 - **Quality**: Is the code well-structured and maintainable?
 - **Tests**: Are there adequate tests with good coverage?
 - **Documentation**: Is the change properly documented?
-- **Architectural alignment**: Does it follow Taskwright principles?
+- **Architectural alignment**: Does it follow GuardKit principles?
 
 ### Response Time
 
@@ -245,9 +245,9 @@ We aim to:
 ## Additional Resources
 
 - **Project Guide**: [CLAUDE.md](CLAUDE.md) - Main documentation
-- **Workflow Guide**: [docs/guides/taskwright-workflow.md](docs/guides/taskwright-workflow.md)
+- **Workflow Guide**: [docs/guides/guardkit-workflow.md](docs/guides/guardkit-workflow.md)
 - **Template Creation**: [docs/guides/creating-local-templates.md](docs/guides/creating-local-templates.md)
-- **Issue Tracker**: [GitHub Issues](https://github.com/taskwright/taskwright/issues)
+- **Issue Tracker**: [GitHub Issues](https://github.com/guardkit/guardkit/issues)
 
 ## Questions?
 
@@ -260,8 +260,8 @@ If you have questions:
 
 ## License
 
-By contributing to Taskwright, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to GuardKit, you agree that your contributions will be licensed under the [MIT License](LICENSE).
 
 ---
 
-Thank you for contributing to Taskwright! Your efforts help make this project better for everyone.
+Thank you for contributing to GuardKit! Your efforts help make this project better for everyone.

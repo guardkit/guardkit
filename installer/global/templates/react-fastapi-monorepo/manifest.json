@@ -4,7 +4,7 @@
   "display_name": "React + FastAPI Monorepo",
   "description": "Production-ready full-stack monorepo template combining React frontend and FastAPI backend with type safety (OpenAPI → TypeScript), Turborepo orchestration, and Docker Compose. Perfect for Python-first teams building modern web applications.",
   "version": "1.0.0",
-  "author": "Taskwright",
+  "author": "GuardKit",
   "language": "TypeScript, Python",
   "language_version": "TypeScript 5.4+, Python 3.9+",
   "frameworks": [

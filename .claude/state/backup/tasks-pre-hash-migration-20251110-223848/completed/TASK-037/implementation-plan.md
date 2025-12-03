@@ -1,4 +1,4 @@
-# Implementation Plan: TASK-037 - Remove BDD Mode from Taskwright
+# Implementation Plan: TASK-037 - Remove BDD Mode from GuardKit
 
 **Task ID**: TASK-037
 **Complexity**: 2/10 (Simple cleanup/documentation task)
@@ -9,7 +9,7 @@
 
 ## Overview
 
-Remove BDD mode functionality from taskwright while preserving the supports_bdd() function in shared code for backward compatibility with require-kit package.
+Remove BDD mode functionality from guardkit while preserving the supports_bdd() function in shared code for backward compatibility with require-kit package.
 
 ## Architecture Decisions
 
@@ -20,7 +20,7 @@ Remove BDD mode functionality from taskwright while preserving the supports_bdd(
 
 ### AD-2: Remove BDD Mode from task-work
 **Decision**: Remove all BDD mode references from task-work command
-**Rationale**: BDD mode is not being used in taskwright and adds unnecessary complexity
+**Rationale**: BDD mode is not being used in guardkit and adds unnecessary complexity
 **Impact**: Users can no longer specify --mode=bdd flag
 
 ### AD-3: Maintain Clear Migration Path

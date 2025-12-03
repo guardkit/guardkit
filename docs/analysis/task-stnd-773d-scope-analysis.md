@@ -475,22 +475,22 @@ If multiple users report confusion, consider adding a brief "What's New" note me
 ### File References
 
 **Template-Create Orchestrator**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
   - Lines 904-932: Phase 8 execution
   - Lines 1523-1561: `_print_agent_enhancement_instructions()`
 
 **Agent-Enhance Command Spec**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/agent-enhance.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
   - Lines 127-154: Validation report documentation
 
 **Agent-Content-Enhancer**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/agent-content-enhancer.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/agent-content-enhancer.md`
   - Lines 59-88: Boundary sections specification (TASK-STND-773D changes)
   - Lines 138-169: Self-validation protocol
   - Lines 263-295: Validation output format
 
 **Template-Create Command Spec**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/template-create.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/template-create.md`
   - Lines 126-134: Phase 8 documentation
 
 ### Change History

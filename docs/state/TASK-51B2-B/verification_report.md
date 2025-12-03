@@ -70,7 +70,7 @@ Test Methods: 12 total (7 existing + 5 new)
 1. `test_template_files_contain_placeholders()` - Verifies {{placeholders}}
 2. `test_template_diversity()` - Validates layer coverage (≥3 layers)
 3. `test_minimum_template_count()` - Ensures ≥5 templates for sample projects
-4. `test_templates_work_with_init()` - Validates taskwright init compatibility
+4. `test_templates_work_with_init()` - Validates guardkit init compatibility
 5. `test_example_files_count_in_analysis()` - Verifies AI returns 10-20 example files
 
 ### Test Results
@@ -179,7 +179,7 @@ Test Methods: 12 total (7 existing + 5 new)
 2. Generated templates contain placeholders
 3. Templates cover ≥3 architectural layers
 4. Template count ≥5 for sample projects
-5. Generated templates work with `taskwright init`
+5. Generated templates work with `guardkit init`
 
 **Manual Verification Needed**:
 ```bash
@@ -214,14 +214,14 @@ ls ~/.agentecflow/templates/*/templates/*.template | wc -l  # Should be ≥10
 2. Perform smoke test with real codebase
 3. Verify template quality and diversity
 4. Confirm placeholders are present
-5. Test `taskwright init` with generated template
+5. Test `guardkit init` with generated template
 
 **Success Criteria for Phase 4**:
 - Integration tests pass (5/5)
 - Smoke test generates 10-20 templates
 - Templates include placeholders
 - Templates cover ≥3 layers
-- `taskwright init` works with generated template
+- `guardkit init` works with generated template
 
 ### Conclusion
 

@@ -37,7 +37,7 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 
 1. **Scripts still reference "default"**:
    - `~/.agentecflow/scripts/init-project.sh` defaults to `"default"` (line 26)
-   - Help text in `taskwright-init` lists "default - Language-agnostic template"
+   - Help text in `guardkit-init` lists "default - Language-agnostic template"
    - Fallback logic tries to use "default" when template not found (lines 214-216)
 
 2. **Documentation assumes it exists**:
@@ -46,13 +46,13 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 
 3. **Valid use case not served**:
    - Users with Go/Rust/Ruby/Elixir/etc. projects (languages not covered by existing templates)
-   - Users wanting to evaluate Taskwright before committing to stack-specific template
-   - Workflow: `taskwright init` → work in Claude Code → `/template-create` → generate custom template
+   - Users wanting to evaluate GuardKit before committing to stack-specific template
+   - Workflow: `guardkit init` → work in Claude Code → `/template-create` → generate custom template
 
 **Current State**:
 - Existing installations work (have old default template installed)
 - New installations **will fail** (template doesn't exist in repository)
-- Fresh users running `taskwright init` → defaults to "default" → **error**
+- Fresh users running `guardkit init` → defaults to "default" → **error**
 
 **Related Tasks**:
 - **TASK-060**: Removed default template (parent task)
@@ -66,7 +66,7 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 - [x] **AC2**: Template scores ≥8.0/10 on quality audit (improved from 6.0/10)
 - [x] **AC3**: Contains all required files (CLAUDE.md, settings.json, agents/, templates/)
 - [x] **AC4**: Language-agnostic guidance (no stack-specific assumptions)
-- [x] **AC5**: Works with `taskwright init` without arguments
+- [x] **AC5**: Works with `guardkit init` without arguments
 
 ### Quality Improvements (from original 6.0/10)
 - [x] **AC6**: CLAUDE.md provides clear, actionable guidance (not generic boilerplate)
@@ -79,18 +79,18 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 - [x] **AC11**: Compatible with existing init scripts (no script changes needed)
 - [x] **AC12**: install.sh correctly copies default template to `~/.agentecflow/templates/`
 - [x] **AC13**: Works with TASK-068's `--output-location` flag for `/template-create`
-- [x] **AC14**: taskwright doctor validates default template structure
+- [x] **AC14**: guardkit doctor validates default template structure
 
 ### Documentation
 - [x] **AC15**: CLAUDE.md updated to reflect default template purpose and use cases
 - [x] **AC16**: TASK-061 documentation aligned with improved default template
 - [x] **AC17**: Migration guide updated to clarify when to use default
-- [x] **AC18**: Help text in taskwright-init accurately describes default template
+- [x] **AC18**: Help text in guardkit-init accurately describes default template
 - [x] **AC19**: README.md template table includes improved default template
 
 ### Testing
 - [x] **AC20**: Fresh installation test (remove ~/.agentecflow → install.sh → verify default exists)
-- [x] **AC21**: Init with no args test (`taskwright init` → verify default template used)
+- [x] **AC21**: Init with no args test (`guardkit init` → verify default template used)
 - [x] **AC22**: Template quality audit (≥8.0/10 score)
 - [x] **AC23**: Integration with `/template-create` workflow test
 
@@ -124,8 +124,8 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 
 ✅ **Use the default template when**:
 - Your project uses Go, Rust, Ruby, Elixir, PHP, or languages not covered by other templates
-- You're evaluating Taskwright before committing to a stack-specific template
-- You want Taskwright's workflow without stack-specific patterns
+- You're evaluating GuardKit before committing to a stack-specific template
+- You want GuardKit's workflow without stack-specific patterns
 
 ⚠️ **Use a stack-specific template instead when**:
 - Your project uses React, Python, .NET, or other supported stacks
@@ -138,11 +138,11 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 
 ## Creating Your Custom Template
 
-Once you've validated Taskwright works for your stack:
+Once you've validated GuardKit works for your stack:
 
 1. Work in your project using this default template
 2. Use `/template-create` to generate a custom template from your code
-3. Initialize new projects with `taskwright init your-custom-template`
+3. Initialize new projects with `guardkit init your-custom-template`
 
 **Why?** Your proven code patterns are better than any generic template.
 ```
@@ -163,7 +163,7 @@ Once you've validated Taskwright works for your stack:
 1. **Script Verification**:
    - `~/.agentecflow/scripts/init-project.sh` line 26: `TEMPLATE="${1:-default}"` ✓ (works)
    - Lines 214-216: Fallback to default ✓ (works)
-   - `~/.agentecflow/bin/taskwright-init`: Help text ✓ (accurate)
+   - `~/.agentecflow/bin/guardkit-init`: Help text ✓ (accurate)
 
 2. **Documentation Verification**:
    - TASK-061 line 106: Template list ✓ (includes default)
@@ -230,30 +230,30 @@ ls -la ~/.agentecflow/templates/default/
 #### Test 2: Default Init (No Args)
 ```bash
 cd /tmp/test-project
-taskwright init
+guardkit init
 # Expected: Initializes with default template (language-agnostic)
 ```
 
 #### Test 3: Explicit Default Init
 ```bash
 cd /tmp/test-project-2
-taskwright init default
+guardkit init default
 # Expected: Initializes with default template
 ```
 
 #### Test 4: Template Creation Workflow
 ```bash
-# Scenario: User with Go project evaluates Taskwright
+# Scenario: User with Go project evaluates GuardKit
 cd /path/to/go-project
-taskwright init  # Uses default
+guardkit init  # Uses default
 # [Work in Claude Code]
 /template-create  # Creates custom template from Go code
-taskwright init my-go-template  # Future projects use custom template
+guardkit init my-go-template  # Future projects use custom template
 ```
 
 #### Test 5: Help Text Accuracy
 ```bash
-taskwright init --help
+guardkit init --help
 # Expected: "default - Language-agnostic template" description accurate
 ```
 
@@ -266,8 +266,8 @@ taskwright init --help
 
 ### Integration Tests
 - [ ] Fresh installation includes default template
-- [ ] `taskwright init` defaults to "default" when no arg provided
-- [ ] `taskwright init default` explicitly selects default
+- [ ] `guardkit init` defaults to "default" when no arg provided
+- [ ] `guardkit init default` explicitly selects default
 - [ ] Template works with `/template-create` command (TASK-068)
 
 ### Quality Tests
@@ -319,7 +319,7 @@ installer/scripts/install.sh
 ├── Line 26: Defaults to "default" ✓
 └── Lines 214-216: Fallback to default ✓
 
-~/.agentecflow/bin/taskwright-init
+~/.agentecflow/bin/guardkit-init
 └── Help text mentions default ✓
 ```
 
@@ -333,11 +333,11 @@ installer/scripts/install.sh
 - ✅ Scripts work with default template
 - ✅ Fresh installations include default
 - ✅ Documentation accurate
-- ✅ No errors when running `taskwright init`
+- ✅ No errors when running `guardkit init`
 
 ### Use Case Coverage
 - ✅ Language-agnostic initialization (Go, Rust, Ruby, Elixir, PHP, etc.)
-- ✅ Taskwright evaluation workflow
+- ✅ GuardKit evaluation workflow
 - ✅ `/template-create` workflow (init default → create custom → use custom)
 
 ### User Impact
@@ -367,11 +367,11 @@ installer/scripts/install.sh
 
 ## Questions to Resolve
 
-1. ✅ Should default be the default template when running `taskwright init`?
+1. ✅ Should default be the default template when running `guardkit init`?
    - **Answer**: Yes (already is in init-project.sh line 26)
 
 2. Should we add auto-detection to suggest stack-specific templates when available?
-   - **Example**: User runs `taskwright init` in React project → suggest `taskwright init react`
+   - **Example**: User runs `guardkit init` in React project → suggest `guardkit init react`
 
 3. Should default template include placeholder detection for common patterns?
    - **Example**: Detect `package.json` → suggest React/TypeScript templates

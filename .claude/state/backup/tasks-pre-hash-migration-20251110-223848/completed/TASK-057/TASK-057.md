@@ -98,7 +98,7 @@ Use **Read tool** to analyze key files:
 Use SlashCommand tool to invoke: /template-create --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The command will:
 1. Run interactive Q&A (answer as specified below)
@@ -235,7 +235,7 @@ Use **Bash tool** to test the template:
 
 # Test template initialization in clean directory
 cd /tmp/test-react-app
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Verify generated project builds and tests pass
 cd /tmp/test-react-app
@@ -411,7 +411,7 @@ function ErrorFallback({ error, resetErrorBoundary }) {
 ### Generated Project Tests
 ```bash
 # Initialize project from template
-taskwright init react-typescript --output /tmp/test-react-app
+guardkit init react-typescript --output /tmp/test-react-app
 
 # Build project
 cd /tmp/test-react-app

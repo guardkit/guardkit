@@ -13,7 +13,7 @@
 
 ## Problem Statement
 
-Taskwright supports two template creation workflows:
+GuardKit supports two template creation workflows:
 1. **Existing Codebase** → Template (TASK-070)
 2. **Greenfield** → Build → Template → Reuse
 
@@ -26,7 +26,7 @@ The second workflow hasn't been demonstrated: starting from scratch, building a 
 
 **Desired State**: Complete demo showing:
 1. Planning and building a greenfield project
-2. Using Taskwright's workflow to ensure quality
+2. Using GuardKit's workflow to ensure quality
 3. Extracting the project as a template
 4. Using that template to start new projects
 
@@ -65,7 +65,7 @@ Demonstrate the complete greenfield → template workflow by building a producti
 
 ### Success Criteria
 - [ ] Greenfield project planned with clear objectives
-- [ ] Project built using Taskwright workflow (/task-create, /task-work)
+- [ ] Project built using GuardKit workflow (/task-create, /task-work)
 - [ ] Project passes all quality gates (tests, coverage, architecture)
 - [ ] Template extracted with `/template-create` (≥8.0/10 quality)
 - [ ] Template validated and enhanced
@@ -133,7 +133,7 @@ git add .
 git commit -m "Initial commit: GraphQL API Starter"
 ```
 
-### Phase 2: Build Using Taskwright Workflow
+### Phase 2: Build Using GuardKit Workflow
 
 **Task 1: Setup Project Structure**
 ```bash
@@ -499,7 +499,7 @@ docker run -p 4000:4000 graphql-api
 mkdir -p ~/template-test-workspace/blog-api
 cd ~/template-test-workspace/blog-api
 
-taskwright init graphql-api-starter
+guardkit init graphql-api-starter
 
 # Prompts:
 # ProjectName: BlogAPI
@@ -549,7 +549,7 @@ npm run dev
 **Test 2: Initialize Second Project**:
 ```bash
 cd ~/template-test-workspace/product-api
-taskwright init graphql-api-starter
+guardkit init graphql-api-starter
 
 # Prompts:
 # ProjectName: ProductAPI
@@ -574,7 +574,7 @@ npm run dev
 ## Introduction
 "I need a GraphQL API for my project." Sound familiar? Instead of copying code from old projects or starting from scratch every time, what if you could build once and reuse infinitely?
 
-This is the story of building a production-ready GraphQL API from scratch and turning it into a reusable template with Taskwright.
+This is the story of building a production-ready GraphQL API from scratch and turning it into a reusable template with GuardKit.
 
 ## The Challenge
 We needed a GraphQL API starter that:
@@ -607,7 +607,7 @@ We achieved:
 - ✅ Docker-ready deployment
 
 ### Week 3: Template Extraction
-Using Taskwright's `/template-create`:
+Using GuardKit's `/template-create`:
 ```bash
 /template-create --validate --output-location=repo
 ```
@@ -622,7 +622,7 @@ In 5 minutes, our week of work became a reusable template.
 ## Lessons Learned
 
 1. **Build Quality First**: The template is only as good as the source project
-2. **Use Taskwright Throughout**: Quality gates ensure template worthiness
+2. **Use GuardKit Throughout**: Quality gates ensure template worthiness
 3. **Think Generic During Development**: Avoid hardcoding project-specific logic
 4. **Document Patterns**: Future you will thank present you
 5. **Test the Template**: Initialize multiple projects to verify reusability
@@ -659,7 +659,7 @@ Ready to try it yourself? [Link to getting started guide]
 ## Act 2: The Build (1:00-6:00)
 - **Project Introduction**: We're building a GraphQL API starter
 - **Tech Stack**: Apollo Server + TypeScript + Prisma + JWT
-- **Taskwright Workflow Demo**:
+- **GuardKit Workflow Demo**:
   - Show `/task-create` for first task
   - Show `/task-work` executing with quality gates
   - Fast-forward through 7 tasks (montage style)
@@ -690,7 +690,7 @@ Ready to try it yourself? [Link to getting started guide]
 ## Act 6: Lessons and Call to Action (13:00-15:00)
 - **Key Lessons**:
   1. Build quality first
-  2. Use Taskwright throughout
+  2. Use GuardKit throughout
   3. Think generic during development
   4. Test the template
 - **ROI Calculation**: Show the math (56 hours saved per project)
@@ -844,7 +844,7 @@ The more you reuse, the higher the ROI.
 
 - **TASK-069**: Demo/Test - Core Template Usage
 - **TASK-070**: Demo/Test - Custom Template from Existing Codebase
-- **TASK-072**: Demo/Test - End-to-End Taskwright Workflow
+- **TASK-072**: Demo/Test - End-to-End GuardKit Workflow
 
 ---
 

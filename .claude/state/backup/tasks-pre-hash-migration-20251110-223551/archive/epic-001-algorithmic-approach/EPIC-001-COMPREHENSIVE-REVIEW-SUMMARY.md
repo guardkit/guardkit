@@ -85,7 +85,7 @@ Completed comprehensive review of all 31 tasks for `/template-create` and `/temp
 **Document**: [EPIC-001-AGENT-INTEGRATION-ADDENDUM.md](EPIC-001-AGENT-INTEGRATION-ADDENDUM.md)
 
 **Findings**:
-- ❌ Ignores 15 existing taskwright agents
+- ❌ Ignores 15 existing guardkit agents
 - ❌ Hardcoded to 3 external sources only
 - ❌ Cannot add company-internal agent repositories
 - ✅ Good external discovery design (subagents.cc, GitHub)
@@ -265,7 +265,7 @@ Completed comprehensive review of all 31 tasks for `/template-create` and `/temp
 
 **Options**:
 1. ✅ **RECOMMENDED**: Implement local-first + configurable (TASK-048B, 048C)
-   - **Pros**: Reuses 15 battle-tested taskwright agents
+   - **Pros**: Reuses 15 battle-tested guardkit agents
    - **Pros**: Enterprise-ready (company-internal repos)
    - **Pros**: Better templates out-of-the-box
    - **Cons**: +9 hours
@@ -331,14 +331,14 @@ Completed comprehensive review of all 31 tasks for `/template-create` and `/temp
 - ✅ **100% stack support** vs. 20%
 
 ### Agent Integration
-- ✅ Reuses **15 existing taskwright agents**
+- ✅ Reuses **15 existing guardkit agents**
 - ✅ **Better templates** with battle-tested agents
 - ✅ **Enterprise-ready** (company repos, private auth)
 - ✅ **Unlimited sources** (not hardcoded to 3)
 
 ### Overall Impact
 - ✅ Commands work for **ANY technology stack**
-- ✅ Templates include **proven taskwright agents**
+- ✅ Templates include **proven guardkit agents**
 - ✅ **Extensible** for company-internal workflows
 - ✅ **Future-proof** architecture
 

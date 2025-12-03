@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Taskwright Initialization Feature Testing - Repository Cloning Script
+# GuardKit Initialization Feature Testing - Repository Cloning Script
 # This script clones all test repositories for evaluating the initialization feature
 
 set -e  # Exit on error
@@ -17,7 +17,7 @@ TEST_REPOS_DIR="${1:-./test-repos}"
 CLONE_DEPTH="${CLONE_DEPTH:-1}"  # Shallow clone by default for speed
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}Taskwright Initialization Test Repos${NC}"
+echo -e "${BLUE}GuardKit Initialization Test Repos${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "Target directory: ${GREEN}${TEST_REPOS_DIR}${NC}"

@@ -7,7 +7,7 @@
 │                    INSTALLATION STRUCTURE                           │
 ├────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  taskwright/                    ← PYTHONPATH must point HERE       │
+│  guardkit/                    ← PYTHONPATH must point HERE       │
 │  ├── installer/                                                    │
 │  │   └── global/                                                   │
 │  │       ├── commands/                                            │
@@ -68,8 +68,8 @@
 │  6. Without PYTHONPATH:                                           │
 │     ModuleNotFoundError: No module named 'installer'              │
 │                                                                     │
-│  7. With PYTHONPATH="/path/to/taskwright":                        │
-│     - Searches: /path/to/taskwright/installer/  ✅ Found!        │
+│  7. With PYTHONPATH="/path/to/guardkit":                        │
+│     - Searches: /path/to/guardkit/installer/  ✅ Found!        │
 │     - Imports: installer.global.commands.lib.template_qa_session  │
 │     - Success! ✅                                                 │
 │                                                                     │
@@ -113,7 +113,7 @@
 │  SOLUTION: Use absolute imports from 'installer' root:            │
 │            installer.global.lib.codebase_analyzer.ai_analyzer     │
 │                                                                     │
-│  REQUIRES: PYTHONPATH includes taskwright repo directory          │
+│  REQUIRES: PYTHONPATH includes guardkit repo directory          │
 │                                                                     │
 │  ALTERNATIVE (Not Used): Relative imports                         │
 │  ❌ Would require:                                                │
@@ -140,15 +140,15 @@
 │  3. Claude executes markdown Python code:                          │
 │     ┌────────────────────────────────────────────────────┐        │
 │     │ # Lines 1026-1105 in template-create.md           │        │
-│     │ taskwright_path = find_taskwright_path()           │        │
-│     │ os.environ["PYTHONPATH"] = str(taskwright_path)    │        │
+│     │ guardkit_path = find_guardkit_path()           │        │
+│     │ os.environ["PYTHONPATH"] = str(guardkit_path)    │        │
 │     │                                                     │        │
-│     │ cmd = f'PYTHONPATH="{taskwright_path}" python3 ...'│        │
+│     │ cmd = f'PYTHONPATH="{guardkit_path}" python3 ...'│        │
 │     │ result = await bash(cmd, timeout=600000)           │        │
 │     └────────────────────────────────────────────────────┘        │
 │           ↓                                                         │
 │  4. Bash executes with PYTHONPATH set:                            │
-│     PYTHONPATH="/path/to/taskwright" python3 orchestrator.py      │
+│     PYTHONPATH="/path/to/guardkit" python3 orchestrator.py      │
 │           ↓                                                         │
 │  5. Orchestrator imports installer.global.* modules ✅            │
 │           ↓                                                         │
@@ -196,7 +196,7 @@
 │  │ from pathlib import Path                                     │ │
 │  │                                                               │ │
 │  │ def _setup_pythonpath():                                     │ │
-│  │     """Find taskwright and add to sys.path"""               │ │
+│  │     """Find guardkit and add to sys.path"""               │ │
 │  │                                                               │ │
 │  │     # Try ~/.agentecflow symlink                            │ │
 │  │     agentecflow = Path.home() / ".agentecflow"              │ │
@@ -207,12 +207,12 @@
 │  │             return                                           │ │
 │  │                                                               │ │
 │  │     # Try standard location                                  │ │
-│  │     standard = Path.home() / "Projects" / "appmilla_github" / "taskwright"
+│  │     standard = Path.home() / "Projects" / "appmilla_github" / "guardkit"
 │  │     if (standard / "installer").exists():                   │ │
 │  │         sys.path.insert(0, str(standard))                   │ │
 │  │         return                                               │ │
 │  │                                                               │ │
-│  │     raise ImportError("Cannot find taskwright")             │ │
+│  │     raise ImportError("Cannot find guardkit")             │ │
 │  │                                                               │ │
 │  │ # Run BEFORE any installer.global imports                   │ │
 │  │ _setup_pythonpath()                                         │ │
@@ -246,13 +246,13 @@
 │                                                                     │
 │  2. First line runs: _setup_pythonpath()                           │
 │     ↓                                                               │
-│     Discovers: /Users/user/Projects/appmilla_github/taskwright    │
+│     Discovers: /Users/user/Projects/appmilla_github/guardkit    │
 │     ↓                                                               │
-│     Adds to sys.path: sys.path.insert(0, taskwright_path)          │
+│     Adds to sys.path: sys.path.insert(0, guardkit_path)          │
 │                                                                     │
 │  3. Now sys.path contains:                                         │
 │     [                                                               │
-│       '/Users/user/Projects/appmilla_github/taskwright',  ← NEW   │
+│       '/Users/user/Projects/appmilla_github/guardkit',  ← NEW   │
 │       '/opt/homebrew/.../python3.14',                              │
 │       '/opt/homebrew/.../site-packages',                           │
 │       ...                                                           │
@@ -262,10 +262,10 @@
 │     importlib.import_module('installer.global.commands.lib.template_qa_session')
 │     ↓                                                               │
 │     Python searches sys.path[0]:                                   │
-│     /Users/user/Projects/appmilla_github/taskwright/installer/    │
+│     /Users/user/Projects/appmilla_github/guardkit/installer/    │
 │     ↓                                                               │
 │     Found! ✅                                                      │
-│     /Users/.../taskwright/installer/global/commands/lib/template_qa_session.py
+│     /Users/.../guardkit/installer/global/commands/lib/template_qa_session.py
 │                                                                     │
 │  5. All subsequent installer.global.* imports work ✅             │
 │                                                                     │
@@ -326,7 +326,7 @@
 │  │    Expected: ✅ Success                                      │ │
 │  ├──────────────────────────────────────────────────────────────┤ │
 │  │ 2. With manual PYTHONPATH (compatibility)                    │ │
-│  │    PYTHONPATH="/path/to/taskwright" /template-create ...     │ │
+│  │    PYTHONPATH="/path/to/guardkit" /template-create ...     │ │
 │  │    Expected: ✅ Success (respects manual override)           │ │
 │  ├──────────────────────────────────────────────────────────────┤ │
 │  │ 3. From different directories                                 │ │
@@ -335,8 +335,8 @@
 │  │    cd ~/Projects && /template-create ...                     │ │
 │  │    Expected: ✅ Success in all                               │ │
 │  ├──────────────────────────────────────────────────────────────┤ │
-│  │ 4. Error handling (taskwright not found)                      │ │
-│  │    mv taskwright taskwright.bak                              │ │
+│  │ 4. Error handling (guardkit not found)                      │ │
+│  │    mv guardkit guardkit.bak                              │ │
 │  │    /template-create ...                                       │ │
 │  │    Expected: Clear error message with troubleshooting        │ │
 │  ├──────────────────────────────────────────────────────────────┤ │

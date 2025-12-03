@@ -336,14 +336,14 @@
     }
   },
   "files_involved": {
-    "source_file": "/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py",
+    "source_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py",
     "methods_tested": [
       "_phase7_write_agents (lines 598-664)",
       "_phase8_claude_md_generation (lines 666-706)",
       "_phase9_package_assembly (lines 897-960)",
       "_complete_workflow (lines 272-355)"
     ],
-    "test_file": "/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/unit/test_task_c7a9_phase_refactoring.py",
+    "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_task_c7a9_phase_refactoring.py",
     "test_lines_of_code": 932
   },
   "execution_summary": {

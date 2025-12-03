@@ -260,7 +260,7 @@ cat installer/shared-agents-version.txt
    ```bash
    # Download shared-agents manually
    VERSION="v1.0.0"
-   curl -sL "https://github.com/taskwright-dev/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o /tmp/shared-agents.tar.gz
+   curl -sL "https://github.com/guardkit/shared-agents/releases/download/$VERSION/shared-agents.tar.gz" -o /tmp/shared-agents.tar.gz
 
    # Verify download
    test -f /tmp/shared-agents.tar.gz && echo "Downloaded"
@@ -469,9 +469,9 @@ git status .claude/agents/
 
 ## Support
 
-**Issues**: https://github.com/taskwright-dev/shared-agents/issues
+**Issues**: https://github.com/guardkit/shared-agents/issues
 **Slack**: #shared-agents-support
-**Docs**: https://github.com/taskwright-dev/shared-agents/blob/main/README.md
+**Docs**: https://github.com/guardkit/shared-agents/blob/main/README.md
 
 ---
 

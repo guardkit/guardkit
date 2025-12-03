@@ -79,12 +79,12 @@ Users will encounter common issues that should be documented proactively in the 
 ### Task Created in Wrong Directory
 
 **Symptoms:**
-- Files appear in Taskwright installation directory
+- Files appear in GuardKit installation directory
 - Stack detection fails
 - "Unknown technology" errors
 
 **Cause:**
-Running `/task-work` from Taskwright repo instead of your project.
+Running `/task-work` from GuardKit repo instead of your project.
 
 **Solution:**
 1. Navigate to your project root:
@@ -93,7 +93,7 @@ Running `/task-work` from Taskwright repo instead of your project.
    \`\`\`
 2. Verify you're in the right directory:
    \`\`\`bash
-   pwd  # Should show your project path, not taskwright
+   pwd  # Should show your project path, not guardkit
    \`\`\`
 3. Run task command again
 

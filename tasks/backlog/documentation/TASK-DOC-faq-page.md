@@ -6,12 +6,12 @@
 
 ## Problem
 
-Users have common questions about Taskwright's design decisions, capabilities, and comparison with other tools. A comprehensive FAQ page can reduce support burden and improve user understanding.
+Users have common questions about GuardKit's design decisions, capabilities, and comparison with other tools. A comprehensive FAQ page can reduce support burden and improve user understanding.
 
 ## FAQ Categories
 
 ### 1. Getting Started
-- "What is Taskwright?"
+- "What is GuardKit?"
 - "How is it different from Linear/Jira?"
 - "Do I need RequireKit?"
 - "What tech stacks are supported?"
@@ -34,7 +34,7 @@ Users have common questions about Taskwright's design decisions, capabilities, a
 
 ### 4. Templates
 - "Should I use reference templates?"
-- "Why was taskwright-python removed?"
+- "Why was guardkit-python removed?"
 - "How do I create custom templates?"
 - "Can templates be shared across teams?"
 - "What makes a good template?"
@@ -100,6 +100,6 @@ Hash-based IDs prevent duplicates in concurrent and distributed workflows. This 
 ## References
 
 - CLAUDE.md hash ID FAQ section
-- README.md "What Makes Taskwright Different?"
+- README.md "What Makes GuardKit Different?"
 - Common support questions
 - GitHub issues

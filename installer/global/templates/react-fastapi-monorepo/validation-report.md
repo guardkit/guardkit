@@ -438,7 +438,7 @@ Excellent React + FastAPI monorepo template demonstrating:
 ### Short-Term (Recommended)
 
 3. Add model.py.template example (10 minutes)
-4. Test template initialization with `taskwright init react-fastapi-monorepo`
+4. Test template initialization with `guardkit init react-fastapi-monorepo`
 5. Verify type generation workflow end-to-end
 
 ### Long-Term (Optional)

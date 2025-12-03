@@ -37,7 +37,7 @@ The proposed design for prefix inference demonstrates strong architectural princ
 - Priority-based inference allows adding new sources without breaking existing code
 
 **Enhancement Opportunity:**
-- Consider making dictionaries configurable via external file (.taskwrightrc) for even better extensibility
+- Consider making dictionaries configurable via external file (.guardkitrc) for even better extensibility
 
 ### Liskov Substitution Principle (LSP): 10/10 ✅
 

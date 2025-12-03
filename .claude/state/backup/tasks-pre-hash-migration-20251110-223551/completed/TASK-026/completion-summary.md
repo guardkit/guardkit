@@ -9,7 +9,7 @@
 - **Completed**: 2025-11-03T23:20:00Z
 
 ## Overview
-Fixed all incorrect phase numbering references in Taskwright documentation following the split from RequireKit. Phase 1 (Requirements Analysis) is a RequireKit-only feature, and Taskwright workflow starts at Phase 2.
+Fixed all incorrect phase numbering references in GuardKit documentation following the split from RequireKit. Phase 1 (Requirements Analysis) is a RequireKit-only feature, and GuardKit workflow starts at Phase 2.
 
 ## Changes Made
 
@@ -25,7 +25,7 @@ Fixed all incorrect phase numbering references in Taskwright documentation follo
 - **Line 128**: `All phases 1-5` → `All phases 2-5.5` (default workflow)
 - **Line 334**: `Phases 1-5.5` → `Phases 2-5.5` (example workflow)
 
-#### 3. docs/guides/taskwright-workflow.md
+#### 3. docs/guides/guardkit-workflow.md
 - **Line 529**: `Phase 1-2.8` → `Phase 2-2.8` (design-first example)
 
 #### 4. docs/quick-reference/task-work-cheat-sheet.md
@@ -63,18 +63,18 @@ grep -rn "phases 1-5" README.md CLAUDE.md docs/
 
 ### Documentation Consistency
 - ✅ Phase numbering now consistent across all user-facing documentation
-- ✅ Clear separation between Taskwright (Phase 2+) and RequireKit (Phase 1)
-- ✅ Examples accurately reflect Taskwright workflow
+- ✅ Clear separation between GuardKit (Phase 2+) and RequireKit (Phase 1)
+- ✅ Examples accurately reflect GuardKit workflow
 - ✅ Command syntax updated correctly
 
 ### Related Tasks
 - **Parent**: TASK-025 (Audit workflow and quick-reference documentation)
-- **Context**: Post-split cleanup following Taskwright/RequireKit separation
+- **Context**: Post-split cleanup following GuardKit/RequireKit separation
 
 ## Notes
 
 ### GitHub URL Verification
-The README.md line 20 contains `https://github.com/taskwright-dev/taskwright.git`. The local repository is at `/Users/richardwoollcott/Projects/appmilla_github/taskwright`, which suggests this may need verification to ensure the correct public repository URL is documented.
+The README.md line 20 contains `https://github.com/guardkit/guardkit.git`. The local repository is at `/Users/richardwoollcott/Projects/appmilla_github/guardkit`, which suggests this may need verification to ensure the correct public repository URL is documented.
 
 ### Files That Remain Correct
 These files correctly reference Phase 1 as RequireKit-only and were NOT changed:
@@ -94,7 +94,7 @@ These files correctly reference Phase 1 as RequireKit-only and were NOT changed:
 - [x] No broken links introduced
 - [x] Examples remain clear and accurate
 - [x] Validation passes with zero errors
-- [x] All changes maintain Taskwright/RequireKit separation
+- [x] All changes maintain GuardKit/RequireKit separation
 
 ## Completion Status
 🎉 **Task successfully completed with all quality gates passed**

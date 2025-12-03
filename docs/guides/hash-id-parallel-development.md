@@ -228,7 +228,7 @@ git rebase main             # Get updates
 
 **Solution**:
 ```bash
-# Taskwright uses symlinks for state persistence
+# GuardKit uses symlinks for state persistence
 # Verify symlinks are correct
 ls -la .claude/state/
 

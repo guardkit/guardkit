@@ -3,7 +3,7 @@
 
 **Date**: 2025-11-01
 **Status**: Design Validation
-**Purpose**: Sanity check integration of new template creation with existing `agentic-init` (→ `taskwright`)
+**Purpose**: Sanity check integration of new template creation with existing `agentic-init` (→ `guardkit`)
 
 ---
 
@@ -16,7 +16,7 @@
 
     CREATE TEMPLATES                      USE TEMPLATES
     ├─ Brownfield                         ├─ Initialize Project
-    │  /template-create                   │  agentic-init (→ taskwright)
+    │  /template-create                   │  agentic-init (→ guardkit)
     │                                     │
     └─ Greenfield                         └─ Apply to new project
        /template-init
@@ -53,7 +53,7 @@ FLOW:
 
 ### Usage Command (Existing)
 
-**`agentic-init <template-name>`** (→ `taskwright`)
+**`agentic-init <template-name>`** (→ `guardkit`)
 - Discovers available templates (global + local)
 - Applies template to new project
 - Sets up agents
@@ -175,7 +175,7 @@ $ cd new-inventory-app
 
 $ agentic-init mycompany-maui
 
-# (Will become: taskwright mycompany-maui)
+# (Will become: guardkit mycompany-maui)
 
 📦 Discovering templates...
   ✓ Found 5 global templates
@@ -394,7 +394,7 @@ template-name/
 │ TEMPLATE USAGE (Every new project)                          │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  agentic-init template-name  (→ taskwright template-name)   │
+│  agentic-init template-name  (→ guardkit template-name)   │
 │          ↓                                                   │
 │  [Discover templates]                                        │
 │    - Check installer/local/templates/                       │
@@ -531,7 +531,7 @@ $ /template-create "react"
 
 ---
 
-## Command Renaming: agentic-init → taskwright
+## Command Renaming: agentic-init → guardkit
 
 ### Current (Before Rename)
 
@@ -542,13 +542,13 @@ agentic-init <template-name>
 ### After Rename
 
 ```bash
-taskwright <template-name>
+guardkit <template-name>
 ```
 
 **OR** (more explicit):
 
 ```bash
-taskwright init <template-name>
+guardkit init <template-name>
 ```
 
 **Rationale**: Shorter, consistent with project name
@@ -557,7 +557,7 @@ taskwright init <template-name>
 
 ```bash
 # Keep alias for backwards compatibility
-alias agentic-init='taskwright'
+alias agentic-init='guardkit'
 ```
 
 ---
@@ -571,7 +571,7 @@ alias agentic-init='taskwright'
    - `/template-init` - Design from scratch
 
 2. **Template Usage** (Every project):
-   - `agentic-init` (→ `taskwright`) - Initialize new project
+   - `agentic-init` (→ `guardkit`) - Initialize new project
 
 ### ✅ Consistent Template Format
 
@@ -729,7 +729,7 @@ def install_agents(template_path: Path, project_path: Path):
 
 **✅ Design is sound!**
 
-The integration between template creation (`/template-create`, `/template-init`) and template usage (`agentic-init` → `taskwright`) is clean and logical:
+The integration between template creation (`/template-create`, `/template-init`) and template usage (`agentic-init` → `guardkit`) is clean and logical:
 
 1. **Clear separation**: Creation vs usage
 2. **Compatible format**: Both creation methods produce same structure

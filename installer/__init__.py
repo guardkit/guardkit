@@ -1,1 +1,1 @@
-"""Taskwright installer package"""
+"""GuardKit installer package"""

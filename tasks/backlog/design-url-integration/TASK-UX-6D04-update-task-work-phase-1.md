@@ -51,7 +51,7 @@ def phase_1_requirements_analysis(task: Task, config: Config) -> AnalysisResult:
     """
     Analyze task requirements and detect design URL if present.
 
-    For Taskwright: This phase is skipped for requirements gathering,
+    For GuardKit: This phase is skipped for requirements gathering,
     but we still need to check for design URLs.
     """
 
@@ -96,7 +96,7 @@ def phase_1_requirements_analysis(task: Task, config: Config) -> AnalysisResult:
         return AnalysisResult(
             has_design_url=True,
             design_context=design_context,
-            skip_requirements_phase=True  # Taskwright skips Phase 1
+            skip_requirements_phase=True  # GuardKit skips Phase 1
         )
     else:
         # Standard workflow (no design URL)
@@ -105,7 +105,7 @@ def phase_1_requirements_analysis(task: Task, config: Config) -> AnalysisResult:
         return AnalysisResult(
             has_design_url=False,
             design_context=None,
-            skip_requirements_phase=True  # Taskwright skips Phase 1
+            skip_requirements_phase=True  # GuardKit skips Phase 1
         )
 ```
 

@@ -4,7 +4,7 @@ Stack-specific reference templates and customization guide.
 
 ## Available Templates
 
-Taskwright includes **5 high-quality templates** for learning and evaluation:
+GuardKit includes **5 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 
@@ -34,7 +34,7 @@ Each template demonstrates:
 
 - ✅ How to structure templates for `/template-create`
 - ✅ Stack-specific best practices (or language-agnostic patterns)
-- ✅ Taskwright workflow integration
+- ✅ GuardKit workflow integration
 - ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
 - ✅ High quality standards (all score 8+/10)
 
@@ -44,7 +44,7 @@ Each template demonstrates:
 
 ```bash
 # Try a reference template
-taskwright init react-typescript
+guardkit init react-typescript
 ```
 
 **For Production:**
@@ -53,7 +53,7 @@ taskwright init react-typescript
 # Create template from YOUR proven code
 cd your-existing-project
 /template-create  # Creates agents + enhancement tasks
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **Your production code is better than any generic template.** Create templates from what you've proven works.
@@ -86,10 +86,10 @@ Migrating from old templates to current structure.
 
 ```bash
 # Initialize with template
-taskwright init react-typescript
+guardkit init react-typescript
 
 # View template details
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 ```
 
 ### Template Locations
@@ -158,17 +158,17 @@ Templates generated via `/template-create` automatically include:
 
 Each reference template includes comprehensive README:
 
-- **[react-typescript](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/templates/react-typescript)**: Frontend best practices from Bulletproof React
-- **[fastapi-python](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/templates/fastapi-python)**: Backend API patterns from FastAPI Best Practices
-- **[nextjs-fullstack](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/templates/nextjs-fullstack)**: Full-stack with Next.js App Router
-- **[react-fastapi-monorepo](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/templates/react-fastapi-monorepo)**: Monorepo structure (9.2/10)
-- **[default](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/templates/default)**: Language-agnostic foundation
+- **[react-typescript](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/react-typescript)**: Frontend best practices from Bulletproof React
+- **[fastapi-python](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/fastapi-python)**: Backend API patterns from FastAPI Best Practices
+- **[nextjs-fullstack](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/nextjs-fullstack)**: Full-stack with Next.js App Router
+- **[react-fastapi-monorepo](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/react-fastapi-monorepo)**: Monorepo structure (9.2/10)
+- **[default](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/default)**: Language-agnostic foundation
 
 ---
 
 ## Next Steps
 
-- **Evaluate**: Try `taskwright init react-typescript` or `fastapi-python`
+- **Evaluate**: Try `guardkit init react-typescript` or `fastapi-python`
 - **Customize**: Read [Creating Local Templates](guides/creating-local-templates.md)
 - **Validate**: Learn [Template Validation](guides/template-validation-guide.md)
 - **Understand**: Review [Template Philosophy](guides/template-philosophy.md)

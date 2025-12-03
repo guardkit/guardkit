@@ -121,7 +121,7 @@ Broken Links Details:
 4. CLAUDE.md -> docs/guides/iterative-refinement-guide.md [FILE NOT FOUND]
 
 External URLs (All Valid):
-- https://github.com/taskwright-dev/taskwright.git
+- https://github.com/guardkit/guardkit.git
 - https://github.com/requirekit/require-kit
 - https://conductor.build
 
@@ -337,9 +337,9 @@ Execution Time: <1 second
 Timestamp: 2025-11-03
 
 Report Locations:
-- JSON Report: /Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/validation-report.json
-- Markdown Report: /Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/TASK-023-VALIDATION-REPORT.md
-- Implementation Plan: /Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/task-plans/TASK-023-implementation-plan.md
+- JSON Report: /Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/validation-report.json
+- Markdown Report: /Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/TASK-023-VALIDATION-REPORT.md
+- Implementation Plan: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-023-implementation-plan.md
 
 ================================================================================
 END OF REPORT

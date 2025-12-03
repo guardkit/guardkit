@@ -174,7 +174,7 @@ Creates complete template package in one of two locations (TASK-068):
 │   └── mvvm-viewmodel-specialist.md
 └── validation-report.md         # Quality report (TASK-043, only with --validate)
 ```
-✅ Immediately available for `taskwright init {template_name}` without running install.sh
+✅ Immediately available for `guardkit init {template_name}` without running install.sh
 
 **Distribution (--output-location repo):**
 ```
@@ -531,7 +531,7 @@ Templates use a **two-tier quality approach**:
 
 When you initialize a project from a template:
 ```bash
-taskwright init react-typescript
+guardkit init react-typescript
 # All agents have generic boundaries (6/10)
 
 # Optional: Upgrade to domain-specific (9/10)
@@ -754,7 +754,7 @@ $ /template-create
   └── agents/ (2 agents)
 
 📝 Next Steps:
-   taskwright init my-template
+   guardkit init my-template
 ```
 
 ### Team Distribution Template
@@ -781,7 +781,7 @@ $ /template-create --output-location repo
    git add installer/global/templates/my-template/
    git commit -m "Add my-template template"
    ./installer/scripts/install.sh
-   taskwright init my-template
+   guardkit init my-template
 ```
 
 ### Template with Extended Validation
@@ -823,7 +823,7 @@ Phase 5.7: Extended Validation
   └── validation-report.md (12 KB)
 
 📝 Next Steps:
-   taskwright init my-template
+   guardkit init my-template
 
 # Exit code: 0 (production ready - score ≥8/10)
 $ echo $?
@@ -909,7 +909,7 @@ Output: ./templates/dotnet-maui-mvvm/
 
 Next steps:
 1. Review generated files in ./templates/dotnet-maui-mvvm/
-2. Test template with: taskwright init dotnet-maui-mvvm
+2. Test template with: guardkit init dotnet-maui-mvvm
 3. Share template with team or contribute to global library
 ```
 
@@ -972,14 +972,14 @@ $ /template-create --path ~/projects/my-app -o repo  # Distribution
 → Template extracted from examples
 ```
 
-### With taskwright init
+### With guardkit init
 ```bash
 # After creating template
 /template-create
 → Output: ./templates/my-template/
 
 # Use template
-taskwright init my-template
+guardkit init my-template
 → Applies template to new project
 → Prompts for placeholder values
 → Generates project structure
@@ -1072,7 +1072,7 @@ Follows orchestrator pattern:
 
 - `/template-init` - Greenfield template creation (no existing codebase)
 - `/template-create-qa` - Standalone Q&A session for greenfield
-- `taskwright init` - Apply template to new project
+- `guardkit init` - Apply template to new project
 - `/task-create` - Create development task
 
 ## Dependencies

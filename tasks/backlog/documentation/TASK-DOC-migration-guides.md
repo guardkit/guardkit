@@ -6,19 +6,19 @@
 
 ## Problem
 
-Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to transition their workflows and data to Taskwright. Clear migration paths reduce adoption friction.
+Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to transition their workflows and data to GuardKit. Clear migration paths reduce adoption friction.
 
 ## Migration Guides Needed
 
 ### 1. Migrating from Linear
-- Export Linear issues to Taskwright tasks
-- Mapping Linear states to Taskwright states
+- Export Linear issues to GuardKit tasks
+- Mapping Linear states to GuardKit states
 - Handling Linear cycles/sprints
 - Team collaboration transition
 - Timeline and estimate conversion
 
 ### 2. Migrating from JIRA
-- Export JIRA issues to Taskwright tasks
+- Export JIRA issues to GuardKit tasks
 - Epic/Story/Task hierarchy mapping
 - Custom field migration
 - Workflow status mapping
@@ -34,7 +34,7 @@ Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to tr
 ### 4. Migrating from Manual Workflows
 - From TODO comments to tasks
 - From spreadsheets to task files
-- From Notion/Trello to Taskwright
+- From Notion/Trello to GuardKit
 - Best practices for initial setup
 
 ## Acceptance Criteria
@@ -44,7 +44,7 @@ Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to tr
 3. Each guide must include:
    - Pre-migration checklist
    - Export process from source tool
-   - Import/conversion to Taskwright
+   - Import/conversion to GuardKit
    - Data mapping table
    - State transition mapping
    - Verification steps
@@ -65,22 +65,22 @@ Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to tr
 ## Example Structure
 
 ```markdown
-# Migrating from Linear to Taskwright
+# Migrating from Linear to GuardKit
 
 ## Pre-Migration Checklist
 - [ ] Export Linear data
-- [ ] Install Taskwright
+- [ ] Install GuardKit
 - [ ] Backup existing tasks
 - [ ] Review state mapping
 
 ## Export from Linear
 [Step-by-step export instructions]
 
-## Convert to Taskwright Format
+## Convert to GuardKit Format
 [Conversion process or script usage]
 
 ## Data Mapping
-| Linear | Taskwright |
+| Linear | GuardKit |
 |--------|-----------|
 | To Do | BACKLOG |
 | In Progress | IN_PROGRESS |
@@ -104,4 +104,4 @@ Users migrating from Linear, JIRA, or GitHub Projects need guidance on how to tr
 - Linear API documentation
 - JIRA REST API
 - GitHub GraphQL API
-- Taskwright task file format
+- GuardKit task file format

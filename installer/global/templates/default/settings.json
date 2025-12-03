@@ -2,8 +2,8 @@
   "template": {
     "name": "default",
     "version": "2.0.0",
-    "description": "Language-agnostic Taskwright template for unsupported stacks",
-    "author": "Taskwright Team",
+    "description": "Language-agnostic GuardKit template for unsupported stacks",
+    "author": "GuardKit Team",
     "created": "2025-11-09"
   },
   "documentation": {
@@ -176,7 +176,7 @@
       "1": {
         "name": "Requirements Analysis",
         "enabled": false,
-        "description": "Skipped in Taskwright (use require-kit for formal requirements)"
+        "description": "Skipped in GuardKit (use require-kit for formal requirements)"
       },
       "2": {
         "name": "Implementation Planning",

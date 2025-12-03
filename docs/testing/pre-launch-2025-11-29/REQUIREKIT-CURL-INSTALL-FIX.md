@@ -76,7 +76,7 @@ Applied the same architectural fixes that were implemented for TaskWright to ens
     "requirements_traceability"
   ],
   "requires": [
-    "taskwright"
+    "guardkit"
   ],
   "integration_model": "bidirectional_optional",
   "description": "Requirements engineering and BDD for Agentecflow",
@@ -99,7 +99,7 @@ Applied the same architectural fixes that were implemented for TaskWright to ens
 ### 2. feature_detection.py (Both Repos)
 
 **Files**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/feature_detection.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py`
 - `/Users/richardwoollcott/Projects/appmilla_github/require-kit/installer/global/lib/feature_detection.py`
 
 **Changes** (lines 81-89):
@@ -126,7 +126,7 @@ def is_require_kit_installed(self) -> bool:
 
 ### 3. check-requirekit.sh
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/testing/pre-launch-2025-11-29/check-requirekit.sh`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/testing/pre-launch-2025-11-29/check-requirekit.sh`
 
 **Changes** (lines 15-25):
 ```bash
@@ -210,7 +210,7 @@ Both packages now have **identical installation architecture**:
 
 | Feature | TaskWright | RequireKit |
 |---------|-----------|-----------|
-| **Curl install** | ✅ Clones to `~/Projects/taskwright` | ✅ Clones to `~/Projects/require-kit` |
+| **Curl install** | ✅ Clones to `~/Projects/guardkit` | ✅ Clones to `~/Projects/require-kit` |
 | **Marker format** | JSON (`.marker.json`) | JSON (`.marker.json`) |
 | **repo_path field** | ✅ Yes | ✅ Yes |
 | **Git clone support** | ✅ Yes (preferred) | ✅ Yes (preferred) |
@@ -286,7 +286,7 @@ cat ~/.agentecflow/require-kit.marker.json | grep repo_path
 # Should output: "repo_path": "/Users/[username]/Projects/require-kit"
 
 # 3. Verify feature detection
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 python3 -c "from installer.global.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
 # Should output: RequireKit installed: True
 

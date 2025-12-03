@@ -51,7 +51,7 @@ install_shared_agents() {
     echo "📦 Installing shared agents..."
 
     local version=$(cat "$SCRIPT_DIR/../shared-agents-version.txt" 2>/dev/null || echo "v1.0.0")
-    local url="https://github.com/taskwright-dev/shared-agents/releases/download/$version/shared-agents.tar.gz"
+    local url="https://github.com/guardkit/shared-agents/releases/download/$version/shared-agents.tar.gz"
     local target_dir="$PROJECT_ROOT/.claude/agents/universal"
 
     mkdir -p "$target_dir"

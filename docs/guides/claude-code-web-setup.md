@@ -1,8 +1,8 @@
-# Using Taskwright with Claude Code Web
+# Using GuardKit with Claude Code Web
 
 ## Overview
 
-Taskwright is fully compatible with **Claude Code Web** (claude.ai/code), providing a complete AI-assisted development workflow with quality gates directly in your browser. This guide covers installation, persistence, and best practices for using Taskwright across multiple repositories.
+GuardKit is fully compatible with **Claude Code Web** (claude.ai/code), providing a complete AI-assisted development workflow with quality gates directly in your browser. This guide covers installation, persistence, and best practices for using GuardKit across multiple repositories.
 
 ## Table of Contents
 
@@ -22,7 +22,7 @@ Taskwright is fully compatible with **Claude Code Web** (claude.ai/code), provid
 
 ### Architecture
 
-Taskwright uses Claude Code's **slash command system** and **agent framework**:
+GuardKit uses Claude Code's **slash command system** and **agent framework**:
 
 ```
 /root/.agentecflow/          # Global installation (persistent storage)
@@ -55,7 +55,7 @@ Taskwright uses Claude Code's **slash command system** and **agent framework**:
 - **Persistent file system**: `/root/` and `/home/user/` persist across sessions
 - **No installation required**: Slash commands are markdown files, not executables
 - **Browser-based**: All operations use Claude Code's built-in tools (Bash, Read, Write, Edit)
-- **Full functionality**: Access to all Taskwright features without limitations
+- **Full functionality**: Access to all GuardKit features without limitations
 
 ---
 
@@ -63,11 +63,11 @@ Taskwright uses Claude Code's **slash command system** and **agent framework**:
 
 ### One-Time Setup
 
-Run the installation script from the Taskwright repository:
+Run the installation script from the GuardKit repository:
 
 ```bash
-# 1. Navigate to taskwright repository
-cd /home/user/taskwright
+# 1. Navigate to guardkit repository
+cd /home/user/guardkit
 
 # 2. Run installer (creates global installation)
 ./installer/scripts/install.sh
@@ -88,7 +88,7 @@ cd /home/user/taskwright
 - Compatible with Conductor.build for parallel development
 
 **Shell Integration** (`~/.bashrc`):
-- PATH configuration for CLI commands (`taskwright`, `taskwright-init`)
+- PATH configuration for CLI commands (`guardkit`, `guardkit-init`)
 - Environment variables (`AGENTECFLOW_HOME`)
 
 ### Installation Output
@@ -193,7 +193,7 @@ ls ~/.claude/commands/task-work.md
 **Not Required!** Installation is one-time only.
 
 **When to Re-install:**
-- Upgrading to a new Taskwright version
+- Upgrading to a new GuardKit version
 - Fixing corrupted installation
 - Adding new templates or agents
 
@@ -206,8 +206,8 @@ ls ~/.claude/commands/task-work.md
 Commands are available in **all repositories**:
 
 ```bash
-# Taskwright repository
-cd /home/user/taskwright
+# GuardKit repository
+cd /home/user/guardkit
 /task-status    # ✅ Works
 
 # RequireKit repository
@@ -232,12 +232,12 @@ cd /home/user/my-project
 
 ### Repository-Specific Usage
 
-**Taskwright Development:**
+**GuardKit Development:**
 ```bash
-cd /home/user/taskwright
-/task-status                  # View taskwright tasks
-/task-work TASK-002          # Implement taskwright feature
-/task-complete TASK-002      # Complete taskwright task
+cd /home/user/guardkit
+/task-status                  # View guardkit tasks
+/task-work TASK-002          # Implement guardkit feature
+/task-complete TASK-002      # Complete guardkit task
 ```
 
 **RequireKit Development:**
@@ -251,7 +251,7 @@ cd /home/user/requirekit
 **Other Projects:**
 ```bash
 cd /home/user/my-web-app
-taskwright init react-typescript  # Initialize with React template
+guardkit init react-typescript  # Initialize with React template
 /task-create "Add user auth"  # Create task in this project
 /task-work TASK-001          # Implement in this project
 ```
@@ -287,18 +287,18 @@ taskwright init react-typescript  # Initialize with React template
 
 ### Correct Usage Examples
 
-✅ **Correct - Working on Taskwright Tasks:**
+✅ **Correct - Working on GuardKit Tasks:**
 ```bash
-# 1. Navigate to taskwright project
-cd /home/user/taskwright
-pwd  # Verify: /home/user/taskwright
+# 1. Navigate to guardkit project
+cd /home/user/guardkit
+pwd  # Verify: /home/user/guardkit
 
 # 2. Confirm you see project files
 ls   # Should show: installer/, tasks/, README.md, etc.
 
 # 3. Work on task
 /task-work TASK-001
-# Creates files in /home/user/taskwright/
+# Creates files in /home/user/guardkit/
 # Detects: Python/Shell project
 ```
 
@@ -321,10 +321,10 @@ ls   # Should show: requirements.txt, src/, tests/, etc.
 
 ❌ **Wrong - Files Go to Wrong Location:**
 ```bash
-# In taskwright directory, working on requirekit task
-cd /home/user/taskwright
+# In guardkit directory, working on requirekit task
+cd /home/user/guardkit
 /task-work REQ-TASK-001
-# Problem: Creates files in taskwright/ instead of requirekit/
+# Problem: Creates files in guardkit/ instead of requirekit/
 # Problem: Detects wrong tech stack
 ```
 
@@ -375,15 +375,15 @@ fi
 
 ### Automatic Detection
 
-Taskwright automatically detects if RequireKit is installed and enhances workflow:
+GuardKit automatically detects if RequireKit is installed and enhances workflow:
 
-**Taskwright Only:**
+**GuardKit Only:**
 - Task workflow with quality gates
 - Implementation planning
 - Architectural review
 - Test enforcement
 
-**Taskwright + RequireKit:**
+**GuardKit + RequireKit:**
 - All the above PLUS:
 - Loads EARS requirements automatically
 - Includes Gherkin scenarios for BDD
@@ -395,8 +395,8 @@ Taskwright automatically detects if RequireKit is installed and enhances workflo
 Detection is automatic - just install both packages:
 
 ```bash
-# Install Taskwright (already done)
-cd /home/user/taskwright
+# Install GuardKit (already done)
+cd /home/user/guardkit
 ./installer/scripts/install.sh
 
 # Install RequireKit (optional)
@@ -433,7 +433,7 @@ cd /home/user/my-web-app
 
 ### Benefits of Integration
 
-| Feature | Taskwright Only | Taskwright + RequireKit |
+| Feature | GuardKit Only | GuardKit + RequireKit |
 |---------|----------------|------------------------|
 | Task workflow | ✅ | ✅ |
 | Quality gates | ✅ | ✅ |
@@ -546,7 +546,7 @@ ls package.json  # or *.csproj, requirements.txt, etc.
 
 ### Tech Stack Misdetected
 
-**Problem:** Taskwright detects wrong technology stack
+**Problem:** GuardKit detects wrong technology stack
 
 **Cause:** Running from wrong directory
 
@@ -584,7 +584,7 @@ ls -la tasks/backlog/
 ls -la tasks/in_progress/
 
 # Navigate to correct repository
-cd /home/user/taskwright  # or requirekit, or your project
+cd /home/user/guardkit  # or requirekit, or your project
 /task-status
 ```
 
@@ -639,7 +639,7 @@ ls -la ~/.agentecflow/logs/  # If exists
 
 ### Installation Checklist
 
-- [ ] Navigate to taskwright repository
+- [ ] Navigate to guardkit repository
 - [ ] Run `./installer/scripts/install.sh`
 - [ ] Verify symlinks: `ls -la ~/.claude/`
 - [ ] Test command: `/task-status`
@@ -689,13 +689,13 @@ cd /home/user/your-project
 ├── agents/                      # 55 AI agents
 ├── commands/                    # 9 slash commands
 ├── templates/                   # 5 high-quality templates
-└── bin/                        # CLI commands (taskwright, tw)
+└── bin/                        # CLI commands (guardkit, gk)
 
 /root/.claude/                   # Claude Code config
 ├── commands -> ../agentecflow/commands
 └── agents -> ../agentecflow/agents
 
-/home/user/taskwright/           # Taskwright repository
+/home/user/guardkit/           # GuardKit repository
 ├── tasks/
 │   ├── backlog/
 │   ├── in_progress/
@@ -710,8 +710,8 @@ cd /home/user/your-project
 └── .claude/
 
 /home/user/your-project/         # Your project
-├── tasks/                       # Created by taskwright init
-├── .claude/                     # Created by taskwright init
+├── tasks/                       # Created by guardkit init
+├── .claude/                     # Created by guardkit init
 ├── src/                        # Your source code
 └── tests/                      # Your tests
 ```
@@ -744,7 +744,7 @@ Detects Tech Stack from Current Directory
 ### Getting Help
 
 **Documentation:**
-- [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
+- [GuardKit Workflow](guardkit-workflow.md) - Complete workflow guide
 - [Quick Reference](quick-reference.md) - Command cheat sheet
 - [Creating Local Templates](creating-local-templates.md) - Custom templates
 - [MAUI Template Selection](maui-template-selection.md) - .NET MAUI guidance
@@ -773,11 +773,11 @@ ls ~/.claude/agents/
 
 ## Summary
 
-**Taskwright works seamlessly with Claude Code Web:**
+**GuardKit works seamlessly with Claude Code Web:**
 
 ✅ **One-time installation** - Persists across all sessions
 ✅ **Global commands** - Available in all repositories
-✅ **Multi-repository support** - Use with taskwright, requirekit, and your projects
+✅ **Multi-repository support** - Use with guardkit, requirekit, and your projects
 ✅ **Full functionality** - No limitations compared to desktop
 ✅ **Automatic integration** - RequireKit detection when both installed
 ✅ **Quality gates** - 80% coverage, 100% test pass, architectural review

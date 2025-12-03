@@ -18,7 +18,7 @@
 4. ✅ `installer/global/agents/task-manager.md` (+187 lines)
 5. ✅ `installer/global/agents/test-verifier.md` (+163 lines)
 6. ✅ `installer/global/templates/default/settings.json` (NEW, 89 lines)
-7. ✅ `TASK-035-TASKWRIGHT-IMPLEMENTATION-SUMMARY.md` (NEW)
+7. ✅ `TASK-035-GUARDKIT-IMPLEMENTATION-SUMMARY.md` (NEW)
 8. ✅ `TASK-035-COMPARISON-WITH-AI-ENGINEER.md` (NEW)
 
 **Total Lines Added**: ~1,246 lines
@@ -290,7 +290,7 @@ TASK-035 has been **successfully completed** with full architecture-appropriate 
 ### Next Steps
 1. Work on TASK-036 when ready (complete command and template parity)
 2. Test documentation level modes in actual task execution
-3. Monitor performance improvements during taskwright and require-kit development
+3. Monitor performance improvements during guardkit and require-kit development
 4. Backport learnings to ai-engineer after refinement
 
 ---

@@ -59,7 +59,7 @@ Update all documentation to include 4th template (React + FastAPI Monorepo) whil
 
 ### 1. Update CLAUDE.md
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
 
 **Changes**:
 
@@ -68,10 +68,10 @@ Update all documentation to include 4th template (React + FastAPI Monorepo) whil
 
 ```bash
 # Available Templates
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-monorepo|default]
+guardkit init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-monorepo|default]
 
 # View template details
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 ```
 
 **Template Documentation**:
@@ -116,7 +116,7 @@ taskwright init react-typescript --info
 ## Available Templates (UPDATE)
 
 ```bash
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-monorepo]
+guardkit init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-monorepo]
 ```
 
 **All templates validated at 9+/10 quality score.**
@@ -124,7 +124,7 @@ taskwright init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-
 
 ### 2. Update README.md
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md`
 
 **Changes**:
 
@@ -133,7 +133,7 @@ taskwright init [react-typescript|fastapi-python|nextjs-fullstack|react-fastapi-
 
 ### Reference Implementation Templates
 
-Taskwright ships with **4 high-quality reference templates** created from production-proven codebases:
+GuardKit ships with **4 high-quality reference templates** created from production-proven codebases:
 
 | Template | Source | Stars | Focus | Score |
 |----------|--------|-------|-------|-------|
@@ -148,21 +148,21 @@ All templates validated at 9+/10 using comprehensive quality audit.
 
 ```bash
 # Frontend only
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Backend API only
-taskwright init fastapi-python
+guardkit init fastapi-python
 
 # JavaScript full-stack
-taskwright init nextjs-fullstack
+guardkit init nextjs-fullstack
 
 # Python full-stack (monorepo)
-taskwright init react-fastapi-monorepo
+guardkit init react-fastapi-monorepo
 
 # Create your own template (production)
 cd your-production-codebase
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ### Why Only 4 Templates?
@@ -232,11 +232,11 @@ Both are full-stack templates, but serve different use cases:
 ### 5-Minute Setup
 
 ```bash
-# 1. Install Taskwright
+# 1. Install GuardKit
 ./installer/scripts/install.sh
 
 # 2. Initialize monorepo template
-taskwright init react-fastapi-monorepo
+guardkit init react-fastapi-monorepo
 
 # 3. Start with Docker Compose
 cd react-fastapi-monorepo-app
@@ -291,7 +291,7 @@ If you're currently using separate templates and want to combine into monorepo:
 # 1. Create new monorepo
 mkdir my-monorepo
 cd my-monorepo
-taskwright init react-fastapi-monorepo
+guardkit init react-fastapi-monorepo
 
 # 2. Copy your existing code
 cp -r ../my-frontend/* apps/frontend/
@@ -318,7 +318,7 @@ pnpm generate-types
 - [ ] `docs/guides/template-philosophy.md` - Add 4th template section
 - [ ] `docs/guides/creating-local-templates.md` - Update examples
 - [ ] `docs/guides/template-quality-validation.md` - Reference monorepo template
-- [ ] `docs/guides/taskwright-workflow.md` - Update template examples
+- [ ] `docs/guides/guardkit-workflow.md` - Update template examples
 - [ ] `docs/guides/quick-reference.md` - Update template list (3→4)
 - [ ] `docs/guides/GETTING-STARTED.md` - Add monorepo quick start
 - [ ] `docs/guides/template-migration.md` - Add monorepo migration path
@@ -371,7 +371,7 @@ grep -r "react-fastapi-monorepo" docs/ CLAUDE.md README.md
 # Expected: Multiple references
 
 # 3. Check template lists
-grep -A 5 "taskwright init" docs/ CLAUDE.md README.md
+grep -A 5 "guardkit init" docs/ CLAUDE.md README.md
 # Expected: All lists include react-fastapi-monorepo
 
 # 4. Verify template selection guide exists

@@ -37,7 +37,7 @@ Create greenfield template through interactive Q&A session with automatic qualit
 
 **global** (default): Personal templates (~/.agentecflow/templates/)
 - For personal use and experimentation
-- Immediate availability with `taskwright init {template_name}`
+- Immediate availability with `guardkit init {template_name}`
 - Not shared with team
 - No install.sh required
 
@@ -175,7 +175,7 @@ Save templates to personal or repository location.
 ```bash
 /template-init
 # Saves to ~/.agentecflow/templates/
-# ✅ Immediate use: taskwright init {template-name}
+# ✅ Immediate use: guardkit init {template-name}
 # ✅ No install.sh required
 ```
 
@@ -221,7 +221,7 @@ keywords: [python, api, fastapi, pydantic, async, endpoints]
 
 ### 7. Agent Registration Verification (TASK-ENF-P0-3)
 
-When initializing a project with `taskwright init`, the system verifies that template agents are properly registered for discovery. This ensures agents will be available during `/task-work` execution.
+When initializing a project with `guardkit init`, the system verifies that template agents are properly registered for discovery. This ensures agents will be available during `/task-work` execution.
 
 **Verification Steps:**
 1. **Metadata Verification**: Check each agent's frontmatter for required fields (stack, phase, capabilities, keywords)
@@ -414,7 +414,7 @@ Interactive questionnaire covering:
 ```bash
 /template-init
 # Interactive Q&A → saves to ~/.agentecflow/templates/
-# ✅ Immediate use: taskwright init {template-name}
+# ✅ Immediate use: guardkit init {template-name}
 ```
 
 ### Repository Template with Validation
@@ -660,7 +660,7 @@ During agent enhancement (Option A or B), boundary sections are automatically va
 - `/template-validate <path>` - Comprehensive 16-section audit (Level 3 validation)
 - `/agent-enhance <template>/<agent> --hybrid` - Quick agent enhancement (2-5 min)
 - `/task-work TASK-AGENT-XXX` - Full agent enhancement workflow (30-60 min)
-- `taskwright init <template>` - Initialize project using template
+- `guardkit init <template>` - Initialize project using template
 
 ## Dependencies
 

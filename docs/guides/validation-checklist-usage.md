@@ -135,7 +135,7 @@ Verifies consistent patterns across all entities:
 
 ### Step 1: Generate Template
 ```bash
-taskwright template-create \
+guardkit template-create \
   --source /path/to/codebase \
   --output /path/to/template \
   --name my-template

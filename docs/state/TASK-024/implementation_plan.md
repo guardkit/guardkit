@@ -12,7 +12,7 @@
 ### Three-Tier Documentation Structure
 1. **GETTING-STARTED.md** - Focus on basic 5-minute quickstart
 2. **QUICK_REFERENCE.md** - Essential commands and syntax only
-3. **taskwright-workflow.md** - Core workflow states and phases
+3. **guardkit-workflow.md** - Core workflow states and phases
 
 This separation ensures:
 - New users get simple, clear onboarding
@@ -22,7 +22,7 @@ This separation ensures:
 ## Files to Modify
 
 ### 1. docs/guides/GETTING-STARTED.md
-**Purpose:** Focus on 5-minute quickstart with Taskwright-only features
+**Purpose:** Focus on 5-minute quickstart with GuardKit-only features
 **Estimated Lines:** 650
 
 **Changes Required:**
@@ -40,33 +40,33 @@ This separation ensures:
 ---
 
 ### 2. docs/guides/QUICK_REFERENCE.md
-**Purpose:** Remove RequireKit command parameters, keep Taskwright-only syntax
+**Purpose:** Remove RequireKit command parameters, keep GuardKit-only syntax
 **Estimated Lines:** 700
 
 **Changes Required:**
 - Remove `epic:`, `feature:`, `requirements:`, `bdd:` parameters from syntax tables
 - Keep simple parameter examples only: `priority:`, `tags:`
 - Create "Extended Features" section pointing to RequireKit
-- Update all command examples to use Taskwright-only syntax
+- Update all command examples to use GuardKit-only syntax
 - Remove PM tool synchronization references
 
 **Implementation Notes:**
 - Update command syntax table to remove RequireKit columns
 - Create callout box: "Need advanced features? See RequireKit integration"
-- Verify all parameter examples are valid Taskwright syntax
+- Verify all parameter examples are valid GuardKit syntax
 
 ---
 
-### 3. docs/guides/taskwright-workflow.md
+### 3. docs/guides/guardkit-workflow.md
 **Purpose:** Update workflow diagrams and remove Requirements Analysis phase
 **Estimated Lines:** 650
 
 **Changes Required:**
-- Update workflow diagrams to show Taskwright-only states
+- Update workflow diagrams to show GuardKit-only states
 - Remove References Analysis phase (Phase 1) documentation
 - Keep quality gates and test enforcement sections intact
 - Fix GitHub repository URLs to correct repositories
-- Ensure workflow diagrams accurately reflect Taskwright flow
+- Ensure workflow diagrams accurately reflect GuardKit flow
 
 **Implementation Notes:**
 - Workflow states: BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
@@ -126,9 +126,9 @@ Add in these sections:
 2. Remove epic, feature, requirements, bdd parameters
 3. Create "Extended Features" section with RequireKit link
 4. Update all command examples
-5. Review parameter list against Taskwright spec
+5. Review parameter list against GuardKit spec
 
-### Phase 3: Audit taskwright-workflow.md (110 minutes)
+### Phase 3: Audit guardkit-workflow.md (110 minutes)
 1. Update workflow diagrams (Markdown/Mermaid format)
 2. Remove Requirements Analysis phase references
 3. Add design-first workflow documentation
@@ -205,10 +205,10 @@ Add in these sections:
 - [ ] Remove epic/feature hierarchy examples (RequireKit feature)
 - [ ] Remove PM tool synchronization instructions (RequireKit feature)
 - [ ] Remove requirements traceability examples (RequireKit feature)
-- [ ] Update command examples to use Taskwright-only syntax
+- [ ] Update command examples to use GuardKit-only syntax
 - [ ] Fix GitHub URLs to correct repositories
 - [ ] Add "Need requirements management?" callout boxes with RequireKit links
-- [ ] Ensure workflow diagrams show Taskwright-only flow
+- [ ] Ensure workflow diagrams show GuardKit-only flow
 - [ ] Verify all command examples work without RequireKit installed
 
 ---
@@ -228,6 +228,6 @@ This task removes RequireKit feature references from three critical user-facing 
 The three-tier documentation structure ensures:
 - **GETTING-STARTED.md** remains a simple 5-minute onboarding guide
 - **QUICK_REFERENCE.md** provides quick lookup without cognitive overload
-- **taskwright-workflow.md** documents accurate Taskwright workflow states
+- **guardkit-workflow.md** documents accurate GuardKit workflow states
 
 Total effort: ~6.3 hours of careful documentation audit and validation.

@@ -18,13 +18,13 @@ started: 2025-10-28
 
 TASK-004, TASK-005, and TASK-006 currently plan to **remove** epic/feature/requirements functionality from task-create.md, task-work.md, and task-status.md.
 
-However, if taskwright and require-kit both install to `~/.agentecflow` and can coexist, we should make requirements features **optional/extensible** rather than removing them.
+However, if guardkit and require-kit both install to `~/.agentecflow` and can coexist, we should make requirements features **optional/extensible** rather than removing them.
 
 ## Strategic Decision
 
 ### Installation Scenarios
 
-1. **taskwright only**: Task workflow without requirements
+1. **guardkit only**: Task workflow without requirements
 2. **require-kit only**: Full requirements management (includes tasks)
 3. **Both installed**: Full integration with all features
 
@@ -147,31 +147,31 @@ fi
 ```
 ~/.agentecflow/
 ├── commands/
-│   ├── task-create.md         # Taskwright (graceful degradation)
-│   ├── task-work.md           # Taskwright (graceful degradation)
-│   ├── task-status.md         # Taskwright (graceful degradation)
+│   ├── task-create.md         # GuardKit (graceful degradation)
+│   ├── task-work.md           # GuardKit (graceful degradation)
+│   ├── task-status.md         # GuardKit (graceful degradation)
 │   ├── epic-create.md         # Require-kit only
 │   ├── feature-create.md      # Require-kit only
 │   └── gather-requirements.md # Require-kit only
 ├── agents/
-│   ├── architectural-reviewer.md  # Taskwright
-│   ├── test-verifier.md          # Taskwright
+│   ├── architectural-reviewer.md  # GuardKit
+│   ├── test-verifier.md          # GuardKit
 │   ├── requirements-analyst.md   # Require-kit only
 │   └── bdd-generator.md          # Require-kit only
 ├── lib/
-│   ├── checkpoint_display.py     # Taskwright
+│   ├── checkpoint_display.py     # GuardKit
 │   ├── feature_generator.py      # Require-kit only
 │   └── ...
-├── taskwright.marker             # Installed marker
+├── guardkit.marker             # Installed marker
 └── require-kit.marker            # Installed marker
 ```
 
 ### Package Manifests
 
-**taskwright/installer/global/manifest.json**:
+**guardkit/installer/global/manifest.json**:
 ```json
 {
-  "name": "taskwright",
+  "name": "guardkit",
   "version": "1.0.0",
   "install_to": "~/.agentecflow",
   "provides": [
@@ -199,7 +199,7 @@ fi
     "feature-management"
   ],
   "requires": [
-    "taskwright"  # Require-kit depends on taskwright
+    "guardkit"  # Require-kit depends on guardkit
   ]
 }
 ```
@@ -208,7 +208,7 @@ fi
 
 ### Phase 1: Install Scripts
 - Both packages install to `~/.agentecflow`
-- Create marker files (`taskwright.marker`, `require-kit.marker`)
+- Create marker files (`guardkit.marker`, `require-kit.marker`)
 - Check for conflicts, merge safely
 
 ### Phase 2: Feature Detection Library
@@ -232,7 +232,7 @@ def supports_requirements() -> bool:
 Commands should show different help based on what's installed:
 ```bash
 /task-create --help
-# Taskwright only:
+# GuardKit only:
 #   Usage: /task-create "title" [priority:high|medium|low]
 
 # Both installed:
@@ -258,13 +258,13 @@ Commands should show different help based on what's installed:
 ### For Users
 1. **Flexibility**: Install just what you need
 2. **No Breaking Changes**: Full integration when both installed
-3. **Progressive Enhancement**: Start with taskwright, add require-kit later
+3. **Progressive Enhancement**: Start with guardkit, add require-kit later
 4. **No Duplication**: Shared agents, lib, templates
 
 ### For Maintenance
 1. **Single Source**: One set of commands, conditional behavior
 2. **No Divergence**: Changes apply to both systems
-3. **Clear Dependencies**: require-kit extends taskwright
+3. **Clear Dependencies**: require-kit extends guardkit
 
 ## Testing Strategy
 
@@ -272,14 +272,14 @@ Commands should show different help based on what's installed:
 ```
 | Scenario | task-create | task-work | task-status |
 |----------|-------------|-----------|-------------|
-| taskwright only | No epic/feature | No req loading | No epic filter |
+| guardkit only | No epic/feature | No req loading | No epic filter |
 | require-kit only | Full features | Full req loading | Full filters |
 | Both installed | Full features | Full req loading | Full filters |
 ```
 
 ### Test Commands
 ```bash
-# Scenario 1: taskwright only
+# Scenario 1: guardkit only
 uninstall require-kit
 /task-create "Task"  # Should work, no epic/feature
 /task-status --epic EPIC-001  # Should warn "require-kit not installed"
@@ -292,9 +292,9 @@ install require-kit
 
 ## Documentation Strategy
 
-### taskwright README.md
+### guardkit README.md
 ```markdown
-# Taskwright
+# GuardKit
 
 Lightweight task workflow with quality gates.
 
@@ -313,11 +313,11 @@ When both are installed, task commands gain additional features.
 ```markdown
 # Require-Kit
 
-Requirements management for taskwright.
+Requirements management for guardkit.
 
 ## Prerequisites
 
-Requires [taskwright](https://github.com/you/taskwright) to be installed first.
+Requires [guardkit](https://github.com/you/guardkit) to be installed first.
 
 ## What You Get
 
@@ -331,7 +331,7 @@ Requires [taskwright](https://github.com/you/taskwright) to be installed first.
 
 ### For Existing Users
 If someone has "full agentecflow" installed:
-1. Install taskwright → Gets task workflow + quality gates
+1. Install guardkit → Gets task workflow + quality gates
 2. Install require-kit → Gets requirements features
 3. Everything works together, no data loss
 
@@ -341,7 +341,7 @@ If someone has "full agentecflow" installed:
 - [x] Marker files created/detected correctly
 - [x] Commands detect require-kit presence
 - [x] Epic/feature functionality works when both installed
-- [x] Graceful degradation when only taskwright installed
+- [x] Graceful degradation when only guardkit installed
 - [x] Help text adapts to installed packages
 - [x] No breaking changes when both installed
 
@@ -351,13 +351,13 @@ If someone has "full agentecflow" installed:
 
 1. **Feature Detection Library** (`lib/feature_detection.py`)
    - `FeatureDetector` class for package detection
-   - Marker file checking (taskwright.marker, require-kit.marker)
+   - Marker file checking (guardkit.marker, require-kit.marker)
    - Feature availability queries (requirements, epics, features, BDD)
    - Compatibility checking and status messages
    - Global convenience functions
 
 2. **Package Manifest** (`manifest.json`)
-   - Updated name to "taskwright"
+   - Updated name to "guardkit"
    - Added `install_to: ~/.agentecflow`
    - Listed provided features
    - Declared optional integration with require-kit
@@ -369,21 +369,21 @@ If someone has "full agentecflow" installed:
 
 4. **Installation Script** (`install.sh`)
    - Added `create_package_marker()` function
-   - Creates taskwright.marker with metadata
+   - Creates guardkit.marker with metadata
    - Copies manifest to ~/.agentecflow
    - Integrated into main installation flow
 
 5. **Documentation** (`README.md`)
    - Added installation options section
    - Documented graceful degradation behavior
-   - Explained taskwright-only vs full Agentecflow setup
+   - Explained guardkit-only vs full Agentecflow setup
 
 ### Testing
 
 Successfully tested feature detection library with all scenarios:
 - No packages installed
-- Taskwright only
-- Taskwright + require-kit
+- GuardKit only
+- GuardKit + require-kit
 - Feature availability queries
 - Status message generation
 
@@ -412,7 +412,7 @@ Successfully tested feature detection library with all scenarios:
 
 - This is a **breaking change to the plan** but a **better long-term architecture**
 - Preserves optionality and progressive enhancement
-- Avoids code duplication between taskwright and require-kit
+- Avoids code duplication between guardkit and require-kit
 - Makes both packages more maintainable
 - **CRITICAL**: Need to update TASK-004, 005, 006 before executing them
 
@@ -422,7 +422,7 @@ Successfully tested feature detection library with all scenarios:
 
 ### ✅ Completed Implementation
 
-The bidirectional optional integration has been successfully implemented for taskwright, matching require-kit's existing implementation.
+The bidirectional optional integration has been successfully implemented for guardkit, matching require-kit's existing implementation.
 
 ### Files Created/Modified
 
@@ -448,7 +448,7 @@ The bidirectional optional integration has been successfully implemented for tas
    - Added installation instructions for require-kit
    - Added bidirectional integration note at top
 
-5. **`installer/global/templates/taskwright.marker.json`** - NEW ✨
+5. **`installer/global/templates/guardkit.marker.json`** - NEW ✨
    - Marker file template for installation scripts
    - Declares optional_integration with require-kit
    - Lists all provided capabilities
@@ -466,7 +466,7 @@ The bidirectional optional integration has been successfully implemented for tas
 - [x] Marker files created/detected correctly (template provided)
 - [x] Commands detect require-kit presence (`supports_requirements()`)
 - [x] Epic/feature functionality works when both installed (conditional logic)
-- [x] Graceful degradation when only taskwright installed (all commands updated)
+- [x] Graceful degradation when only guardkit installed (all commands updated)
 - [x] Help text adapts to installed packages (task-create.md shows conditional options)
 - [x] No breaking changes when both installed (backwards compatible)
 
@@ -488,7 +488,7 @@ else:
 
 **Agent Selection Logic:**
 - **With require-kit**: Uses `requirements-analyst` for Phase 1
-- **Without require-kit**: Uses `task-manager` for Phase 1 (existing taskwright agent)
+- **Without require-kit**: Uses `task-manager` for Phase 1 (existing guardkit agent)
 
 **Display Logic:**
 - Requirements/epic/feature info shown only when `supports_requirements()` returns True
@@ -504,7 +504,7 @@ This implementation aligns with require-kit's existing bidirectional integration
 
 ### Testing Required
 
-1. **Scenario 1**: taskwright only (no require-kit marker)
+1. **Scenario 1**: guardkit only (no require-kit marker)
    - Task creation should work without epic/feature fields
    - Phase 1 should use task-manager agent
    - Spec drift should skip requirements loading
@@ -514,7 +514,7 @@ This implementation aligns with require-kit's existing bidirectional integration
    - Phase 1 uses requirements-analyst
    - Spec drift loads from docs/requirements/
 
-3. **Scenario 3**: Transition (install require-kit after taskwright)
+3. **Scenario 3**: Transition (install require-kit after guardkit)
    - Existing tasks continue to work
    - New tasks get enhanced features
    - No data migration required

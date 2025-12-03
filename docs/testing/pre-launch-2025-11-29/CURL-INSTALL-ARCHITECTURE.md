@@ -11,7 +11,7 @@
 ### Previous Architecture (BROKEN)
 
 ```bash
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 ```
 
 **What happened**:
@@ -47,7 +47,7 @@ With repo files deleted, **there was nothing to import**.
 ### New Architecture (FIXED)
 
 ```bash
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 ```
 
 **What happens now**:
@@ -55,8 +55,8 @@ curl -sSL https://install.taskwright.dev | bash
 #### If Git is Available (Recommended)
 1. Detects `git` command is available
 2. Clones repository to **permanent location**:
-   - `~/Projects/taskwright` (if `~/Projects/` exists)
-   - `~/taskwright` (if `~/Projects/` doesn't exist)
+   - `~/Projects/guardkit` (if `~/Projects/` exists)
+   - `~/guardkit` (if `~/Projects/` doesn't exist)
 3. Creates symlinks in `~/.agentecflow/` pointing to repo
 4. Creates marker file with `repo_path` field
 5. Repository **persists after installation**
@@ -82,7 +82,7 @@ curl -sSL https://install.taskwright.dev | bash
 
 ### Git Clone Install (Manual)
 ```
-~/Projects/appmilla_github/taskwright/
+~/Projects/appmilla_github/guardkit/
 ├── installer/
 │   ├── global/
 │   │   ├── agents/
@@ -99,16 +99,16 @@ curl -sSL https://install.taskwright.dev | bash
 ├── agents/       → symlink to repo
 ├── templates/    → user templates (NOT symlinked)
 ├── bin/          → command script symlinks
-└── taskwright.marker.json
+└── guardkit.marker.json
     {
-      "repo_path": "~/Projects/appmilla_github/taskwright",
+      "repo_path": "~/Projects/appmilla_github/guardkit",
       ...
     }
 ```
 
 ### Curl Install (NEW - with git)
 ```
-~/Projects/taskwright/  ← Cloned by installer
+~/Projects/guardkit/  ← Cloned by installer
 ├── installer/
 │   ├── global/
 │   │   ├── agents/
@@ -121,27 +121,27 @@ curl -sSL https://install.taskwright.dev | bash
 └── .git/  ← Can run git pull for updates
 
 ~/.agentecflow/
-├── commands/     → symlink to ~/Projects/taskwright/...
-├── agents/       → symlink to ~/Projects/taskwright/...
+├── commands/     → symlink to ~/Projects/guardkit/...
+├── agents/       → symlink to ~/Projects/guardkit/...
 ├── templates/    → user templates (NOT symlinked)
 ├── bin/          → command script symlinks
-└── taskwright.marker.json
+└── guardkit.marker.json
     {
-      "repo_path": "~/Projects/taskwright",
+      "repo_path": "~/Projects/guardkit",
       ...
     }
 ```
 
 ### Curl Install (OLD - BROKEN)
 ```
-~/Projects/taskwright/  ← DOES NOT EXIST!
+~/Projects/guardkit/  ← DOES NOT EXIST!
 
 ~/.agentecflow/
 ├── commands/     → copied files (outdated on updates)
 ├── agents/       → copied files (outdated on updates)
 ├── templates/    → user templates
 ├── bin/          → command script symlinks
-└── taskwright.marker.json  ← Missing repo_path!
+└── guardkit.marker.json  ← Missing repo_path!
 ```
 
 ---
@@ -160,22 +160,22 @@ cd ~/Projects/my-api-service
 The spec includes repository resolution code:
 
 ```python
-# Find taskwright repo
-def _find_taskwright_repo():
+# Find guardkit repo
+def _find_guardkit_repo():
     # Check marker file first (most reliable)
-    marker_json = Path.home() / ".agentecflow" / "taskwright.marker.json"
+    marker_json = Path.home() / ".agentecflow" / "guardkit.marker.json"
     if marker_json.exists():
         with open(marker_json) as f:
             data = json.load(f)
             repo_path = Path(data.get("repo_path", ""))
             if repo_path.exists():
-                return repo_path  # ← Returns ~/Projects/taskwright
+                return repo_path  # ← Returns ~/Projects/guardkit
 
     # Fallback to common locations...
     return None
 
-taskwright_repo = _find_taskwright_repo()
-sys.path.insert(0, str(taskwright_repo))
+guardkit_repo = _find_guardkit_repo()
+sys.path.insert(0, str(guardkit_repo))
 ```
 
 ### Step 3: Import Succeeds
@@ -188,12 +188,12 @@ from installer.global.lib.id_generator import generate_task_id
 Path resolution:
 ```
 sys.path = [
-    "~/Projects/taskwright",  # ← Added by resolution code
+    "~/Projects/guardkit",  # ← Added by resolution code
     ...
 ]
 
 Import: installer.global.lib.id_generator
-Resolves to: ~/Projects/taskwright/installer/global/lib/id_generator.py
+Resolves to: ~/Projects/guardkit/installer/global/lib/id_generator.py
 ✅ SUCCESS
 ```
 
@@ -203,8 +203,8 @@ Resolves to: ~/Projects/taskwright/installer/global/lib/id_generator.py
 
 | Method | Repository Location | Updates | Symlinks | Works? |
 |--------|-------------------|---------|----------|--------|
-| **Git clone (manual)** | User chooses (e.g., `~/Projects/appmilla_github/taskwright`) | `git pull` | Yes | ✅ Yes |
-| **Curl install (NEW)** | Auto: `~/Projects/taskwright` | `git pull` (if git available) | Yes | ✅ Yes |
+| **Git clone (manual)** | User chooses (e.g., `~/Projects/appmilla_github/guardkit`) | `git pull` | Yes | ✅ Yes |
+| **Curl install (NEW)** | Auto: `~/Projects/guardkit` | `git pull` (if git available) | Yes | ✅ Yes |
 | **Curl install (OLD)** | ❌ None (temp dir deleted) | ❌ Reinstall required | No | ❌ No |
 
 ---
@@ -216,12 +216,12 @@ Resolves to: ~/Projects/taskwright/installer/global/lib/id_generator.py
 ```bash
 # Clone to custom location
 cd ~/Projects/appmilla_github
-git clone https://github.com/taskwright/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 ./installer/scripts/install.sh
 
 # Updates
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git pull
 # Symlinks automatically point to updated files ✅
 ```
@@ -240,10 +240,10 @@ git pull
 
 ```bash
 # One command install
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 
 # Updates
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 git pull
 # Symlinks automatically point to updated files ✅
 ```
@@ -255,7 +255,7 @@ git pull
 - ✅ Same structure as git clone
 
 **Cons**:
-- ⚠️ Fixed installation location (`~/Projects/taskwright`)
+- ⚠️ Fixed installation location (`~/Projects/guardkit`)
 - ⚠️ Without git, updates require reinstall
 
 ---
@@ -266,26 +266,26 @@ git pull
 
 ```bash
 # Install detects missing ~/Projects/ directory
-# Falls back to ~/taskwright
-curl -sSL https://install.taskwright.dev | bash
+# Falls back to ~/guardkit
+curl -sSL https://install.guardkit.dev | bash
 
 # Result
-ls ~/taskwright  # ← Repository here
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-# "repo_path": "/Users/[username]/taskwright"
+ls ~/guardkit  # ← Repository here
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+# "repo_path": "/Users/[username]/guardkit"
 ```
 
 ### Case 2: Repository Already Exists
 
 ```bash
-# Already have ~/Projects/taskwright
-ls ~/Projects/taskwright/.git  # Exists
+# Already have ~/Projects/guardkit
+ls ~/Projects/guardkit/.git  # Exists
 
 # Run install again
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 
 # Installer detects existing repo and updates it
-cd ~/Projects/taskwright && git pull
+cd ~/Projects/guardkit && git pull
 # ✅ Updated to latest version
 ```
 
@@ -297,18 +297,18 @@ which git
 # git not found
 
 # Install uses tarball download
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 
 # Warning: git not found - downloading tarball instead
 # Installing git is recommended for easier updates
 
 # Result
-ls ~/Projects/taskwright  # ← Repository files here (no .git/)
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-# "repo_path": "/Users/[username]/Projects/taskwright"
+ls ~/Projects/guardkit  # ← Repository files here (no .git/)
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+# "repo_path": "/Users/[username]/Projects/guardkit"
 
 # Updates require manual reinstall
-curl -sSL https://install.taskwright.dev | bash  # Re-downloads
+curl -sSL https://install.guardkit.dev | bash  # Re-downloads
 ```
 
 ---
@@ -328,11 +328,11 @@ curl -sSL https://install.taskwright.dev | bash  # Re-downloads
 rm -rf ~/.agentecflow
 
 # Reinstall with new method
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 
 # Verify
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-ls ~/Projects/taskwright/installer/global/lib/id_generator.py
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+ls ~/Projects/guardkit/installer/global/lib/id_generator.py
 ```
 
 ### If Installed via Git Clone
@@ -341,7 +341,7 @@ ls ~/Projects/taskwright/installer/global/lib/id_generator.py
 
 **Optional**: Update to get latest fixes
 ```bash
-cd ~/Projects/appmilla_github/taskwright  # Your clone location
+cd ~/Projects/appmilla_github/guardkit  # Your clone location
 git pull
 ./installer/scripts/install.sh  # Regenerates marker file with repo_path
 ```
@@ -373,18 +373,18 @@ git pull
 One command to install:
 
 \`\`\`bash
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 \`\`\`
 
 This will:
-- Clone the repository to `~/Projects/taskwright`
+- Clone the repository to `~/Projects/guardkit`
 - Install commands and agents to `~/.agentecflow/`
 - Make everything available globally
 
 ## Updates
 
 \`\`\`bash
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 git pull
 \`\`\`
 
@@ -392,8 +392,8 @@ git pull
 
 \`\`\`bash
 cd ~/Projects
-git clone https://github.com/taskwright/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 ./installer/scripts/install.sh
 \`\`\`
 ```

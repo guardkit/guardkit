@@ -22,7 +22,7 @@ Instead of removing epic/feature/requirements fields, make them **optional** and
 
 ## Strategic Context
 
-- **taskwright only**: Task creation without epic/feature/requirements
+- **guardkit only**: Task creation without epic/feature/requirements
 - **require-kit installed**: Full epic/feature/requirements linking available
 - **Graceful degradation**: Commands work in both scenarios
 
@@ -165,7 +165,7 @@ fi
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-create.md installer/global/commands/task-create.md.backup
 ```
 
@@ -190,7 +190,7 @@ Add at the top of the command logic:
 ### 5. Update Validation Logic
 
 - Only validate epic/feature/requirements if require-kit installed
-- Skip validation if taskwright only
+- Skip validation if guardkit only
 
 ### 6. Test Both Scenarios
 
@@ -198,7 +198,7 @@ Test with and without require-kit.marker file.
 
 ## Validation Checklist
 
-### With taskwright Only
+### With guardkit Only
 - [ ] `/task-create "Task"` works
 - [ ] `/task-create "Task" priority:high` works
 - [ ] `/task-create "Task" epic:EPIC-001` shows warning
@@ -221,10 +221,10 @@ Test with and without require-kit.marker file.
 ## Testing
 
 ```bash
-# Test taskwright only scenario
+# Test guardkit only scenario
 rm ~/.agentecflow/require-kit.marker
 
-cd /tmp/test-taskwright
+cd /tmp/test-guardkit
 /task-create "Test task"
 cat tasks/backlog/TASK-001-test-task.md
 # Should have: epic: none, feature: none, requirements: []
@@ -272,7 +272,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 - [ ] Flag parsing includes warnings
 - [ ] Help text adapts to installed packages
 - [ ] Frontmatter always includes all fields
-- [ ] Works with taskwright only (no errors)
+- [ ] Works with guardkit only (no errors)
 - [ ] Works with both installed (full features)
 - [ ] Tests pass for both scenarios
 
@@ -291,7 +291,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 
 - This approach is more complex than removal, but more flexible
 - Preserves backward compatibility when both packages installed
-- Users can start with taskwright, add require-kit later
+- Users can start with guardkit, add require-kit later
 - No data loss or migration needed
 - **IMPORTANT**: Old TASK-004 should be marked as superseded/cancelled
 

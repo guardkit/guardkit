@@ -1,10 +1,10 @@
 # MCP Integration (Optional)
 
-Enhance Taskwright with Model Context Protocol servers for library documentation and design patterns.
+Enhance GuardKit with Model Context Protocol servers for library documentation and design patterns.
 
 ## Overview
 
-**All MCPs are optional** - Taskwright works fine without them and falls back gracefully to training data.
+**All MCPs are optional** - GuardKit works fine without them and falls back gracefully to training data.
 
 ### MCP Types
 

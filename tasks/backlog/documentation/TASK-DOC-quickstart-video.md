@@ -6,12 +6,12 @@
 
 ## Problem
 
-Visual learners would benefit from a screencast showing Taskwright in action. A 5-10 minute video tutorial can demonstrate the complete workflow more effectively than text for many users.
+Visual learners would benefit from a screencast showing GuardKit in action. A 5-10 minute video tutorial can demonstrate the complete workflow more effectively than text for many users.
 
 ## Video Content Outline
 
 ### 1. Introduction (30 seconds)
-- What is Taskwright?
+- What is GuardKit?
 - Why use it?
 - What you'll learn
 

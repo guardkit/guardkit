@@ -5,7 +5,7 @@ status: backlog
 created: 2025-11-28T21:00:00Z
 updated: 2025-11-28T21:00:00Z
 priority: high
-tags: [shared-agents, taskwright, installer, lean]
+tags: [shared-agents, guardkit, installer, lean]
 complexity: 3
 estimated_effort: 2h
 depends_on: [TASK-SHA-002]
@@ -49,7 +49,7 @@ install_shared_agents() {
 
     # Read version
     local version=$(cat "$SCRIPT_DIR/../shared-agents-version.txt" 2>/dev/null || echo "v1.0.0")
-    local url="https://github.com/taskwright-dev/shared-agents/releases/download/$version/shared-agents.tar.gz"
+    local url="https://github.com/guardkit/shared-agents/releases/download/$version/shared-agents.tar.gz"
     local target_dir="$PROJECT_ROOT/.claude/agents/universal"
 
     # Create directory
@@ -88,8 +88,8 @@ git commit -m "refactor: Move universal agents to shared-agents repo"
 
 ```bash
 # Create fresh test project
-mkdir test-taskwright
-cd test-taskwright
+mkdir test-guardkit
+cd test-guardkit
 
 # Run installer
 ../installer/scripts/install.sh

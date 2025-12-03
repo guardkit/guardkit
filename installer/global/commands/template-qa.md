@@ -434,7 +434,7 @@ Config file is validated before saving:
 
 - `/template-create` - Create template from codebase (uses config if available)
 - `/template-init` - Create greenfield template
-- `taskwright init` - Apply template to new project
+- `guardkit init` - Apply template to new project
 
 ## Implementation Details
 

@@ -50,7 +50,7 @@ This guide provides a structured approach to implementing TASK-043, TASK-044, TA
 #### Step 1: Start Task with `/task-work`
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Start TASK-043 in standard mode
 /task-work TASK-043
@@ -72,25 +72,25 @@ cd ~/Projects/appmilla_github/taskwright
 
 ```bash
 # Main repo - Foundation
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-work TASK-043
 
 # While Phase 3 (Implementation) is in progress, split into worktrees:
 
 # Worktree 1: Extended Validator Implementation
-cd ~/conductor-worktrees/taskwright-validator
+cd ~/conductor-worktrees/guardkit-validator
 /task-create "Implement ExtendedValidator class (TASK-043)"
 /task-work TASK-XXX
 # → Focus: installer/global/lib/template_validation/extended_validator.py
 
 # Worktree 2: Report Generator Implementation
-cd ~/conductor-worktrees/taskwright-reports
+cd ~/conductor-worktrees/guardkit-reports
 /task-create "Implement ValidationReportGenerator class (TASK-043)"
 /task-work TASK-YYY
 # → Focus: installer/global/lib/template_validation/report_generator.py
 
 # Worktree 3: Orchestrator Integration
-cd ~/conductor-worktrees/taskwright-orchestrator
+cd ~/conductor-worktrees/guardkit-orchestrator
 /task-create "Integrate --validate flag into orchestrator (TASK-043)"
 /task-work TASK-ZZZ
 # → Focus: installer/global/commands/lib/template_create_orchestrator.py
@@ -99,9 +99,9 @@ cd ~/conductor-worktrees/taskwright-orchestrator
 **Conductor Setup**:
 ```bash
 # Create worktrees for parallel development
-git worktree add ~/conductor-worktrees/taskwright-validator -b feature/task-043-validator
-git worktree add ~/conductor-worktrees/taskwright-reports -b feature/task-043-reports
-git worktree add ~/conductor-worktrees/taskwright-orchestrator -b feature/task-043-integration
+git worktree add ~/conductor-worktrees/guardkit-validator -b feature/task-043-validator
+git worktree add ~/conductor-worktrees/guardkit-reports -b feature/task-043-reports
+git worktree add ~/conductor-worktrees/guardkit-orchestrator -b feature/task-043-integration
 
 # Each worktree has access to:
 # - Same .claude/commands/* (via symlinks from install script)
@@ -155,7 +155,7 @@ git worktree add ~/conductor-worktrees/taskwright-orchestrator -b feature/task-0
 #### Step 1: Foundation with `/task-work`
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure TASK-043 is completed and merged to main
 git checkout main
@@ -186,7 +186,7 @@ Create parallel development streams:
 
 ```bash
 # Foundation (Main Repo) - DO NOT parallelize
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 # Keep working on infrastructure:
 # - Command spec
 # - Interactive orchestrator skeleton
@@ -198,22 +198,22 @@ cd ~/Projects/appmilla_github/taskwright
 # Worktree Group A: Technical Validation (Sections 1-7)
 cd ~/conductor-worktrees
 
-git worktree add taskwright-sections-1-4 -b feature/task-044-sections-1-4
-git worktree add taskwright-sections-5-7 -b feature/task-044-sections-5-7
+git worktree add guardkit-sections-1-4 -b feature/task-044-sections-1-4
+git worktree add guardkit-sections-5-7 -b feature/task-044-sections-5-7
 
 # Worktree Group B: Quality Assessment (Sections 8-13)
-git worktree add taskwright-sections-8-10 -b feature/task-044-sections-8-10
-git worktree add taskwright-sections-11-13 -b feature/task-044-sections-11-13
+git worktree add guardkit-sections-8-10 -b feature/task-044-sections-8-10
+git worktree add guardkit-sections-11-13 -b feature/task-044-sections-11-13
 
 # Worktree Group C: Decision Framework (Sections 14-16)
-git worktree add taskwright-sections-14-16 -b feature/task-044-sections-14-16
+git worktree add guardkit-sections-14-16 -b feature/task-044-sections-14-16
 ```
 
 **Development Workflow**:
 
 ```bash
 # === Main Repo: Foundation (Day 1) ===
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-create "TASK-044: Build foundation - orchestrator, session, reports"
 /task-work TASK-044-FOUNDATION
 
@@ -227,35 +227,35 @@ cd ~/Projects/appmilla_github/taskwright
 # === Parallel Worktrees: Sections (Day 2-4) ===
 
 # Worktree 1: Sections 1-4
-cd ~/conductor-worktrees/taskwright-sections-1-4
+cd ~/conductor-worktrees/guardkit-sections-1-4
 /task-create "Implement audit sections 1-4 (Manifest, Settings, Docs, Templates)"
 /task-work TASK-044-SEC-1-4
 # → Implements: ManifestAnalysisSection, SettingsAnalysisSection,
 #               DocumentationAnalysisSection, TemplateFilesAnalysisSection
 
 # Worktree 2: Sections 5-7
-cd ~/conductor-worktrees/taskwright-sections-5-7
+cd ~/conductor-worktrees/guardkit-sections-5-7
 /task-create "Implement audit sections 5-7 (Agents, README, Global)"
 /task-work TASK-044-SEC-5-7
 # → Implements: AIAgentsAnalysisSection, ReadmeReviewSection,
 #               GlobalTemplateValidationSection
 
 # Worktree 3: Sections 8-10
-cd ~/conductor-worktrees/taskwright-sections-8-10
+cd ~/conductor-worktrees/guardkit-sections-8-10
 /task-create "Implement audit sections 8-10 (Source, Readiness, Scoring)"
 /task-work TASK-044-SEC-8-10
 # → Implements: ComparisonWithSourceSection, ProductionReadinessSection,
 #               ScoringRubricSection
 
 # Worktree 4: Sections 11-13
-cd ~/conductor-worktrees/taskwright-sections-11-13
+cd ~/conductor-worktrees/guardkit-sections-11-13
 /task-create "Implement audit sections 11-13 (Findings, Testing, Market)"
 /task-work TASK-044-SEC-11-13
 # → Implements: DetailedFindingsSection, ValidationTestingSection,
 #               MarketComparisonSection
 
 # Worktree 5: Sections 14-16
-cd ~/conductor-worktrees/taskwright-sections-14-16
+cd ~/conductor-worktrees/guardkit-sections-14-16
 /task-create "Implement audit sections 14-16 (Recommendations, Summary)"
 /task-work TASK-044-SEC-14-16
 # → Implements: FinalRecommendationsSection, TestingRecommendationsSection,
@@ -271,7 +271,7 @@ cd ~/conductor-worktrees/taskwright-sections-14-16
 # 6. Sections 14-16 → main
 
 # Final integration testing in main repo
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-create "TASK-044: Integration testing and final polish"
 /task-work TASK-044-INTEGRATION
 ```
@@ -287,7 +287,7 @@ cd ~/Projects/appmilla_github/taskwright
 {worktree}/.claude/state/    # Local state (symlinked to main repo)
 
 # Commands work identically in all worktrees:
-cd ~/conductor-worktrees/taskwright-sections-1-4
+cd ~/conductor-worktrees/guardkit-sections-1-4
 /task-work TASK-044-SEC-1-4   # ✓ Works
 /task-status                   # ✓ Shows all tasks across worktrees
 ```
@@ -303,7 +303,7 @@ cd ~/conductor-worktrees/taskwright-sections-1-4
 - 5 parallel streams (if team) or sequential sessions (if solo)
 - Each implements 3-4 sections
 - Independent development
-- Automatic state sync via Taskwright
+- Automatic state sync via GuardKit
 
 **Day 4-5** (Sequential - Main Repo):
 - Merge PRs sequentially
@@ -366,7 +366,7 @@ cd ~/conductor-worktrees/taskwright-sections-1-4
 #### Step 1: Foundation with `/task-work`
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure TASK-044 is completed and merged to main
 git checkout main
@@ -390,7 +390,7 @@ Components to implement:
 
 ```bash
 # === Main Repo: AI Utilities (Day 1) ===
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-create "TASK-045: Build AI analysis utilities and framework"
 /task-work TASK-045-FOUNDATION
 
@@ -404,28 +404,28 @@ cd ~/Projects/appmilla_github/taskwright
 # === Parallel Worktrees: AI Enhancements (Day 1-2) ===
 
 # Worktree 1: Section 8 AI Enhancement
-cd ~/conductor-worktrees/taskwright-ai-section-8
+cd ~/conductor-worktrees/guardkit-ai-section-8
 git worktree add . -b feature/task-045-ai-section-8
 /task-create "Add AI assistance to Section 8 (Source Comparison)"
 /task-work TASK-045-AI-SEC-8
 # → Enhance ComparisonWithSourceSection with AI
 
 # Worktree 2: Section 11 AI Enhancement
-cd ~/conductor-worktrees/taskwright-ai-section-11
+cd ~/conductor-worktrees/guardkit-ai-section-11
 git worktree add . -b feature/task-045-ai-section-11
 /task-create "Add AI assistance to Section 11 (Detailed Findings)"
 /task-work TASK-045-AI-SEC-11
 # → Enhance DetailedFindingsSection with AI
 
 # Worktree 3: Section 12 AI Enhancement
-cd ~/conductor-worktrees/taskwright-ai-section-12
+cd ~/conductor-worktrees/guardkit-ai-section-12
 git worktree add . -b feature/task-045-ai-section-12
 /task-create "Add AI assistance to Section 12 (Validation Testing)"
 /task-work TASK-045-AI-SEC-12
 # → Enhance ValidationTestingSection with AI
 
 # Worktree 4: Section 13 AI Enhancement
-cd ~/conductor-worktrees/taskwright-ai-section-13
+cd ~/conductor-worktrees/guardkit-ai-section-13
 git worktree add . -b feature/task-045-ai-section-13
 /task-create "Add AI assistance to Section 13 (Market Comparison)"
 /task-work TASK-045-AI-SEC-13
@@ -440,7 +440,7 @@ git worktree add . -b feature/task-045-ai-section-13
 # 5. Section 13 enhancement → main
 
 # Final testing
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-create "TASK-045: End-to-end AI validation testing"
 /task-work TASK-045-TESTING
 ```
@@ -510,8 +510,8 @@ cd ~/Projects/appmilla_github/taskwright
 ### Conductor Setup (One-time)
 
 ```bash
-# 1. Install Taskwright (if not already)
-cd ~/Projects/appmilla_github/taskwright
+# 1. Install GuardKit (if not already)
+cd ~/Projects/appmilla_github/guardkit
 ./installer/scripts/install.sh
 
 # 2. Create conductor worktrees directory
@@ -519,15 +519,15 @@ mkdir -p ~/conductor-worktrees
 
 # 3. Verify symlinks work
 cd ~/conductor-worktrees
-git worktree add taskwright-test -b test-worktree
-cd taskwright-test
+git worktree add guardkit-test -b test-worktree
+cd guardkit-test
 ls .claude/commands/  # Should show all commands via symlinks
 ls .claude/agents/    # Should show all agents via symlinks
 /task-status          # Should work
 
 # 4. Remove test worktree
-cd ~/Projects/appmilla_github/taskwright
-git worktree remove taskwright-test
+cd ~/Projects/appmilla_github/guardkit
+git worktree remove guardkit-test
 git branch -d test-worktree
 ```
 
@@ -535,7 +535,7 @@ git branch -d test-worktree
 
 ```bash
 # === Phase 1: Foundation (Main Repo) ===
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-work TASK-XXX
 # → Build infrastructure, base classes
 
@@ -562,7 +562,7 @@ cd ~/conductor-worktrees/component-c
 # === Phase 3: Integration (Main Repo) ===
 
 # Merge PRs in dependency order
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 gh pr create --head feature/component-a --title "Component A"
 gh pr merge feature/component-a --squash
 
@@ -848,19 +848,19 @@ Day 5: Integration (main repo)
 **Scenario**: Task state gets out of sync between worktrees
 
 **Mitigation**:
-- Taskwright handles this automatically via symlinks
+- GuardKit handles this automatically via symlinks
 - `.claude/state` is symlinked to main repo
 - All worktrees share same state
 
 **Verify State Sync**:
 ```bash
 # Main repo
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /task-create "Test task"
 /task-status  # Shows TASK-XXX
 
 # Worktree
-cd ~/conductor-worktrees/taskwright-test
+cd ~/conductor-worktrees/guardkit-test
 /task-status  # Shows TASK-XXX (same state)
 ```
 
@@ -1071,7 +1071,7 @@ tests/
 ### Implementation Workflow
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Ensure all previous phases completed
 git checkout main

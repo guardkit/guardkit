@@ -5,7 +5,7 @@
 This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
 TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 

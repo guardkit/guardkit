@@ -148,7 +148,7 @@ Need to modify completed task?
 **Flags:**
 - `--dry-run`: Preview changes without applying (coming soon)
 
-> **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+> **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
 
 ### Examples
 

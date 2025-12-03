@@ -112,11 +112,11 @@ Create a comprehensive `mkdocs.yml` configuration file at the repository root th
 - [ ] Comments explain non-obvious configuration
 
 ### Site Metadata ✅
-- [ ] site_name: "Taskwright"
+- [ ] site_name: "GuardKit"
 - [ ] site_description matches project purpose
 - [ ] site_url points to GitHub Pages
 - [ ] repo_url points to GitHub repository
-- [ ] repo_name set to "taskwright-dev/taskwright"
+- [ ] repo_name set to "guardkit/guardkit"
 
 ### Theme Configuration ✅
 - [ ] Material theme selected
@@ -188,11 +188,11 @@ Create a comprehensive `mkdocs.yml` configuration file at the repository root th
 
 ```yaml
 # Site Metadata
-site_name: Taskwright
+site_name: GuardKit
 site_description: AI-assisted development with built-in quality gates
-site_url: https://taskwright-dev.github.io/taskwright/
-repo_url: https://github.com/taskwright-dev/taskwright
-repo_name: taskwright-dev/taskwright
+site_url: https://guardkit.github.io/guardkit/
+repo_url: https://github.com/guardkit/guardkit
+repo_name: guardkit/guardkit
 
 # Theme Configuration
 theme:
@@ -228,7 +228,7 @@ nav:
     - Quickstart: guides/GETTING-STARTED.md
     - Migration Guide: guides/MIGRATION-GUIDE.md
   - Core Concepts:
-    - Taskwright Workflow: guides/taskwright-workflow.md
+    - GuardKit Workflow: guides/guardkit-workflow.md
     - Complexity Management: workflows/complexity-management-workflow.md
     - Quality Gates: workflows/quality-gates-workflow.md
   # ... more from plan

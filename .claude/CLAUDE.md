@@ -1,10 +1,10 @@
-# Taskwright - Lightweight Task Workflow System
+# GuardKit - Lightweight Task Workflow System
 
 ## Project Context
 
 This is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. The system is technology-agnostic with stack-specific plugins.
 
-For formal agentic system development (LangGraph, multi-agent coordination), TaskWright integrates with RequireKit to provide EARS notation, BDD scenarios, and requirements traceability.
+For formal agentic system development (LangGraph, multi-agent coordination), GuardKit integrates with RequireKit to provide EARS notation, BDD scenarios, and requirements traceability.
 
 ## Core Principles
 
@@ -69,7 +69,7 @@ Then use BDD workflow:
 /formalize-ears REQ-001
 /generate-bdd REQ-001
 
-# In TaskWright: Implement from scenarios
+# In GuardKit: Implement from scenarios
 /task-create "Implement behavior" requirements:[REQ-001]
 /task-work TASK-042 --mode=bdd
 ```
@@ -78,7 +78,7 @@ See [BDD Workflow for Agentic Systems](../docs/guides/bdd-workflow-for-agentic-s
 
 ## Development Mode Selection
 
-TaskWright supports three development modes:
+GuardKit supports three development modes:
 
 ### Standard Mode (Default)
 ```bash

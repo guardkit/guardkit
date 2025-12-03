@@ -325,7 +325,7 @@ Proceeding to Phase {next_phase}...
 **Important**: This is a documentation-only update. The messages are displayed as markdown text in the task-work.md command specification. These are **instructions for Claude to follow**, not Python code to execute.
 
 **Rationale**:
-- Taskwright commands are specifications, not executable scripts
+- GuardKit commands are specifications, not executable scripts
 - Claude reads the messages in task-work.md and displays them during execution
 - No separate Python/helper module needed (unlike architectural review or testing)
 - Messages are part of the orchestration workflow documentation

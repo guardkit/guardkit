@@ -4,12 +4,12 @@
 
 This command supports **graceful degradation** based on installed packages:
 
-### Taskwright Only (Core Workflow)
+### GuardKit Only (Core Workflow)
 - Loads task description, acceptance criteria, implementation notes
 - Executes full workflow with architectural review and quality gates
 - No requirements/epic loading (require-kit features)
 
-### Taskwright + Require-Kit (Enhanced Workflow)
+### GuardKit + Require-Kit (Enhanced Workflow)
 - All core features PLUS:
 - Loads EARS requirements if linked in task frontmatter
 - Loads Gherkin scenarios if linked (for BDD workflow)
@@ -41,7 +41,7 @@ pwd  # Should show: /Users/you/Projects/weather_demo
 ls   # Should show: weather_demo.csproj, Program.cs, Controllers/, tasks/, etc.
 /task-work TASK-001
 
-# ❌ Wrong - Running from RequireKit/Taskwright directory
+# ❌ Wrong - Running from RequireKit/GuardKit directory
 cd ~/Projects/require-kit  # Wrong location!
 /task-work TASK-001        # Will create files in wrong place, wrong stack detection
 ```
@@ -61,7 +61,7 @@ If you run `/task-work` from the wrong directory:
 ├── require-kit/           # RequireKit installation (don't run task-work here!)
 │   ├── requirements.txt
 │   └── ...
-├── taskwright/            # Taskwright repo (don't run task-work here!)
+├── guardkit/            # GuardKit repo (don't run task-work here!)
 │   └── ...
 └── weather_demo/          # Your project (run task-work HERE ✅)
     ├── weather_demo.csproj
@@ -1189,16 +1189,16 @@ validator = PhaseGateValidator(tracker)
 
 #### Phase 1: Requirements Analysis *(Require-Kit Only)*
 
-**SKIPPED IN TASKWRIGHT**: Taskwright uses task descriptions and acceptance criteria directly without formal requirements analysis.
+**SKIPPED IN GUARDKIT**: GuardKit uses task descriptions and acceptance criteria directly without formal requirements analysis.
 
-**Why skipped**: Taskwright is lightweight - no EARS notation or formal BDD generation needed.
+**Why skipped**: GuardKit is lightweight - no EARS notation or formal BDD generation needed.
 
 **For formal requirements**: Use [require-kit](https://github.com/requirekit/require-kit) which provides:
 - EARS notation requirements analysis
 - BDD/Gherkin scenario generation
 - Full requirements traceability
 
-**Taskwright workflow**: Proceed directly to Phase 2 (Implementation Planning).
+**GuardKit workflow**: Proceed directly to Phase 2 (Implementation Planning).
 
 #### Phase 2: Implementation Planning
 
@@ -3186,20 +3186,20 @@ Agents are discovered from 4 sources in priority order:
    - Overrides global agents with same name
 
 3. **Global** (`installer/global/agents/`)
-   - Built-in Taskwright agents
+   - Built-in GuardKit agents
    - Shared across all users
    - Overridden by local/user agents
 
 4. **Template** (`installer/global/templates/*/agents/`) - Lowest priority
    - Template-provided agents (before initialization)
    - Only used if agent not found in higher-priority sources
-   - Replaced by local agents after `taskwright init`
+   - Replaced by local agents after `guardkit init`
 
 **Precedence Rule**: Local > User > Global > Template
 
 #### Template Override Behavior
 
-When you run `taskwright init <template>`:
+When you run `guardkit init <template>`:
 - Template agents copied to `.claude/agents/` (local)
 - Local agents now **override** global agents with same name
 - Enables template customization without modifying global agents
@@ -3210,7 +3210,7 @@ When you run `taskwright init <template>`:
 /task-work TASK-001  # Uses global python-api-specialist
 
 # After initialization
-taskwright init fastapi-python
+guardkit init fastapi-python
 # Template's python-api-specialist copied to .claude/agents/
 
 /task-work TASK-002  # Now uses LOCAL python-api-specialist 📁 (not global 🌐)

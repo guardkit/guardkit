@@ -615,7 +615,7 @@ ls tasks/backlog/TASK-AGENT-* | wc -l  # Should be 15
 echo "Agents are basic stubs. Enhance manually as needed." >> ~/.agentecflow/templates/maui-mydrive-test/README.md
 
 # Use template as-is
-taskwright init maui-mydrive-test
+guardkit init maui-mydrive-test
 ```
 
 ---

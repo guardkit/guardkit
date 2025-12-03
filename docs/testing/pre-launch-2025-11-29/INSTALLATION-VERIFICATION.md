@@ -10,7 +10,7 @@
 ### Method 1: Check Marker File
 
 ```bash
-ls ~/.agentecflow/taskwright.marker
+ls ~/.agentecflow/guardkit.marker
 ```
 
 **Expected**: File exists
@@ -18,10 +18,10 @@ ls ~/.agentecflow/taskwright.marker
 ### Method 2: Check Commands
 
 ```bash
-which taskwright
-# Expected: /Users/[username]/.agentecflow/bin/taskwright (or similar)
+which guardkit
+# Expected: /Users/[username]/.agentecflow/bin/guardkit (or similar)
 
-taskwright --version
+guardkit --version
 # Expected: Version number or help output
 ```
 
@@ -36,8 +36,8 @@ ls ~/.agentecflow/
 - `agents/` - Global agents
 - `commands/` - Command specifications
 - `templates/` - User templates
-- `taskwright.marker` - Installation marker
-- `taskwright.marker.json` - Installation metadata (optional)
+- `guardkit.marker` - Installation marker
+- `guardkit.marker.json` - Installation metadata (optional)
 
 ---
 
@@ -96,7 +96,7 @@ ls ~/.agentecflow/bin/ | grep req
 ### Method 4: Python Feature Detection
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 python3 -c "from installer.global.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
 ```
 
@@ -191,7 +191,7 @@ cd require-kit
 ### Quick Check
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 python3 << 'EOF'
 from installer.global.lib.feature_detection import supports_bdd
 print("BDD mode available:", supports_bdd())
@@ -248,10 +248,10 @@ EOF
 
 Before starting the VM test plan, verify:
 
-- [ ] TaskWright marker exists: `ls ~/.agentecflow/taskwright.marker`
+- [ ] TaskWright marker exists: `ls ~/.agentecflow/guardkit.marker`
 - [ ] RequireKit marker exists: `ls ~/.agentecflow/require-kit.marker`
 - [ ] BDD mode available: `python3 -c "from installer.global.lib.feature_detection import supports_bdd; print(supports_bdd())"`
-- [ ] Both command sets work: `taskwright --version` and `req-create --help`
+- [ ] Both command sets work: `guardkit --version` and `req-create --help`
 
 **If any checks fail**, re-run the respective installer before proceeding with tests.
 
@@ -263,7 +263,7 @@ Before starting the VM test plan, verify:
 
 | Tool | Marker File | Command Check |
 |------|-------------|---------------|
-| **TaskWright** | `~/.agentecflow/taskwright.marker` | `taskwright --version` |
+| **TaskWright** | `~/.agentecflow/guardkit.marker` | `guardkit --version` |
 | **RequireKit** | `~/.agentecflow/require-kit.marker` | `req-create --help` |
 
 **BDD Mode Availability**:

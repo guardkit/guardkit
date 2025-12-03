@@ -1,13 +1,13 @@
-# Taskwright vs RequireKit: Comparison and Decision Guide
+# GuardKit vs RequireKit: Comparison and Decision Guide
 
 ## Overview
 
-The Taskwright ecosystem offers two complementary tools: **Taskwright** (lightweight task workflow) and **RequireKit** (formal requirements management). This guide helps you choose the right tool for your project and understand when to use both together.
+The GuardKit ecosystem offers two complementary tools: **GuardKit** (lightweight task workflow) and **RequireKit** (formal requirements management). This guide helps you choose the right tool for your project and understand when to use both together.
 
 **Think of it as a spectrum:**
 
 ```
-Plain AI Coding ←──────── Taskwright ──────────→ RequireKit
+Plain AI Coding ←──────── GuardKit ──────────→ RequireKit
 (Cursor, Claude)         (SWEET SPOT)          (Enterprise SDD)
 
 ✗ No structure          ✓ Structured workflow    ✓ Complete traceability
@@ -19,27 +19,27 @@ Plain AI Coding ←──────── Taskwright ────────�
 
 ## Side-by-Side Comparison
 
-| Feature | Taskwright | RequireKit | Recommendation |
+| Feature | GuardKit | RequireKit | Recommendation |
 |---------|------------|------------|----------------|
-| **Setup Time** | 5 minutes | 2-4 hours | Taskwright for quick start |
-| **Per-Task Overhead** | 10-15 minutes | 30-60 minutes | Taskwright for agile teams |
+| **Setup Time** | 5 minutes | 2-4 hours | GuardKit for quick start |
+| **Per-Task Overhead** | 10-15 minutes | 30-60 minutes | GuardKit for agile teams |
 | **EARS Requirements** | Not supported | Required | RequireKit for compliance |
 | **BDD Scenarios** | Not supported | Automatic generation | RequireKit for behavior specs |
 | **Epic/Feature Hierarchy** | Not supported | Full hierarchy | RequireKit for large projects |
 | **PM Tool Integration** | Manual (GitHub only) | Automatic (Jira, Linear, Azure DevOps) | RequireKit for enterprise |
-| **Quality Gate Coverage** | 80% (core gates) | 100% (all gates) | Taskwright for most teams |
-| **Architectural Review** | Phase 2.5B only | Multi-phase | Taskwright sufficient |
+| **Quality Gate Coverage** | 80% (core gates) | 100% (all gates) | GuardKit for most teams |
+| **Architectural Review** | Phase 2.5B only | Multi-phase | GuardKit sufficient |
 | **Test Enforcement** | Phase 4.5 (3 attempts) | Phase 4.5 + Manual QA | Same in both |
-| **Plan Audit** | Phase 5.5 (basic) | Phase 5.5 + Compliance | Taskwright for most |
+| **Plan Audit** | Phase 5.5 (basic) | Phase 5.5 + Compliance | GuardKit for most |
 | **Documentation Output** | Markdown plans | EARS + BDD + Plans | RequireKit for regulation |
 | **Agent Orchestration** | Single agent | Multi-agent | RequireKit for complex |
-| **MCP Server Required** | No | Yes (optional) | Taskwright for simplicity |
-| **Team Size** | 1-5 developers | 5+ developers | Taskwright for small teams |
+| **MCP Server Required** | No | Yes (optional) | GuardKit for simplicity |
+| **Team Size** | 1-5 developers | 5+ developers | GuardKit for small teams |
 | **Project Scale** | Individual tasks | Features/Epics hierarchy | Depends on complexity |
 | **Compliance Needs** | Low | High (FDA, SOX, etc.) | RequireKit for regulation |
 | **Ideal For** | Startups, MVPs, agile | Enterprise, regulated | Match to context |
 
-## When to Use Taskwright
+## When to Use GuardKit
 
 ### ✅ Perfect For
 
@@ -87,7 +87,7 @@ Plain AI Coding ←──────── Taskwright ────────�
 /task-create "Implement user dashboard"
 /task-create "Add billing integration"
 
-# Development: Use Taskwright workflow
+# Development: Use GuardKit workflow
 /task-work TASK-001  # Auto-proceeds, quality gates enforced
 /task-work TASK-002  # Architectural review, test enforcement
 /task-work TASK-003  # Plan audit, scope creep detection
@@ -190,12 +190,12 @@ Plain AI Coding ←──────── Taskwright ────────�
 
 The most effective approach for many teams is to use **both tools** strategically:
 
-### Scenario 1: Most Tasks with Taskwright, Critical Features with RequireKit
+### Scenario 1: Most Tasks with GuardKit, Critical Features with RequireKit
 
 **Example: Fintech Startup**
 - Core banking features → RequireKit (regulatory compliance)
-- UI improvements → Taskwright (fast iteration)
-- Bug fixes → Taskwright (quick wins)
+- UI improvements → GuardKit (fast iteration)
+- Bug fixes → GuardKit (quick wins)
 - Security features → RequireKit (traceability)
 
 ```bash
@@ -204,33 +204,33 @@ The most effective approach for many teams is to use **both tools** strategicall
 /feature-generate-tasks FEAT-001
 /task-work TASK-001 --mode=bdd  # Full traceability
 
-# UI enhancement (Taskwright)
+# UI enhancement (GuardKit)
 /task-create "Improve dashboard loading time"
 /task-work TASK-050  # Fast, quality-gated
 
-# Bug fix (Taskwright)
+# Bug fix (GuardKit)
 /task-create "Fix date picker validation"
 /task-work TASK-051  # Quick, tested
 ```
 
-### Scenario 2: Start with Taskwright, Upgrade to RequireKit Later
+### Scenario 2: Start with GuardKit, Upgrade to RequireKit Later
 
 **Example: Growing SaaS Company**
 
-**Phase 1 (0-6 months):** Taskwright only
+**Phase 1 (0-6 months):** GuardKit only
 - Fast MVP development
 - Minimal process overhead
 - Core quality gates
 
 **Phase 2 (6-12 months):** Add RequireKit for new features
-- Keep existing Taskwright tasks
+- Keep existing GuardKit tasks
 - New complex features use RequireKit
 - Gradual adoption
 
 **Phase 3 (12+ months):** Full RequireKit for regulated features
 - Critical features → RequireKit
-- Standard features → Taskwright
-- Bug fixes → Taskwright
+- Standard features → GuardKit
+- Bug fixes → GuardKit
 
 ### Scenario 3: Team-Based Routing
 
@@ -242,12 +242,12 @@ The most effective approach for many teams is to use **both tools** strategicall
 - Regulatory compliance focus
 
 **Frontend Team (UI/UX):**
-- Use Taskwright for most features
+- Use GuardKit for most features
 - Fast iteration on UI improvements
 - Quality gates for testing
 
 **DevOps Team (Infrastructure):**
-- Use Taskwright for infrastructure tasks
+- Use GuardKit for infrastructure tasks
 - Simple, tested, documented
 
 ## Integration Points
@@ -267,7 +267,7 @@ Both tools integrate seamlessly:
 
 ### Cross-References
 ```yaml
-# Taskwright task can reference RequireKit requirements
+# GuardKit task can reference RequireKit requirements
 ---
 id: TASK-042
 title: Implement OAuth2 authentication
@@ -278,7 +278,7 @@ bdd_scenarios: [BDD-001]           # RequireKit BDD scenarios
 
 ### Upgrade Path
 ```bash
-# Convert Taskwright task to RequireKit workflow
+# Convert GuardKit task to RequireKit workflow
 /task-convert TASK-042 --to-requirekit
 
 # Generates:
@@ -291,7 +291,7 @@ bdd_scenarios: [BDD-001]           # RequireKit BDD scenarios
 
 Use this matrix to decide which tool(s) to use:
 
-| Question | Taskwright | RequireKit | Both |
+| Question | GuardKit | RequireKit | Both |
 |----------|------------|------------|------|
 | Team size <5? | ✅ | ❌ | ⚠️ |
 | No compliance needs? | ✅ | ❌ | ⚠️ |
@@ -310,7 +310,7 @@ Use this matrix to decide which tool(s) to use:
 
 ## Cost-Benefit Analysis
 
-### Taskwright
+### GuardKit
 
 **Time Investment:**
 - Setup: 5 minutes
@@ -342,27 +342,27 @@ Use this matrix to decide which tool(s) to use:
 
 ## FAQ
 
-### Q: Can I use Taskwright without RequireKit?
-**A:** Yes! Taskwright is standalone. Use task descriptions and acceptance criteria instead of formal requirements.
+### Q: Can I use GuardKit without RequireKit?
+**A:** Yes! GuardKit is standalone. Use task descriptions and acceptance criteria instead of formal requirements.
 
-### Q: Can I use RequireKit without Taskwright?
-**A:** No. RequireKit builds on Taskwright's task workflow and quality gates.
+### Q: Can I use RequireKit without GuardKit?
+**A:** No. RequireKit builds on GuardKit's task workflow and quality gates.
 
-### Q: Can I switch from Taskwright to RequireKit mid-project?
-**A:** Yes. RequireKit integrates with existing Taskwright tasks. Use `/task-convert` to upgrade tasks.
+### Q: Can I switch from GuardKit to RequireKit mid-project?
+**A:** Yes. RequireKit integrates with existing GuardKit tasks. Use `/task-convert` to upgrade tasks.
 
 ### Q: Which tool has better quality gates?
 **A:** Both have the same core gates (architectural review, test enforcement, code review, plan audit). RequireKit adds compliance-specific gates (requirements traceability, BDD validation).
 
 ### Q: Do I need to learn both tools?
-**A:** Start with Taskwright. Add RequireKit only when you need formal requirements, epic/feature hierarchy, or PM tool integration.
+**A:** Start with GuardKit. Add RequireKit only when you need formal requirements, epic/feature hierarchy, or PM tool integration.
 
 ### Q: What if I need formal requirements but don't want the overhead?
-**A:** Consider hybrid approach: Use RequireKit for critical features (security, compliance) and Taskwright for everything else.
+**A:** Consider hybrid approach: Use RequireKit for critical features (security, compliance) and GuardKit for everything else.
 
 ## Related Documentation
 
-- [Taskwright Workflow](../guides/taskwright-workflow.md) - Complete Taskwright workflow
+- [GuardKit Workflow](../guides/guardkit-workflow.md) - Complete GuardKit workflow
 - [RequireKit Documentation](https://github.com/requirekit/require-kit) - Full RequireKit documentation
 - [Quality Gates Workflow](./quality-gates-workflow.md) - Shared quality gates
 - [Complexity Management](./complexity-management-workflow.md) - Task complexity evaluation
@@ -371,4 +371,4 @@ Use this matrix to decide which tool(s) to use:
 
 **Last Updated**: 2025-11-03
 **Version**: 1.0.0
-**Maintained By**: Taskwright Team
+**Maintained By**: GuardKit Team

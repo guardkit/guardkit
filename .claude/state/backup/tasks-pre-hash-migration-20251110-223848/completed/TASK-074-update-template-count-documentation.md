@@ -15,13 +15,13 @@
 
 The CLAUDE.md file contains outdated references to "4 high-quality templates" or "5 templates" when we actually have **6 templates** after recent additions:
 - TASK-062 added `react-fastapi-monorepo` (5th template)
-- TASK-066 added `taskwright-python` (6th template)
+- TASK-066 added `guardkit-python` (6th template)
 
-Additionally, the `taskwright-python` template needs proper context explaining its **internal development purpose** - it's based on Taskwright's own codebase and demonstrates patterns used within the project itself.
+Additionally, the `guardkit-python` template needs proper context explaining its **internal development purpose** - it's based on GuardKit's own codebase and demonstrates patterns used within the project itself.
 
-**Current State**: Documentation mentions 4-5 templates, no explanation of taskwright-python's special purpose.
+**Current State**: Documentation mentions 4-5 templates, no explanation of guardkit-python's special purpose.
 
-**Desired State**: Documentation accurately reflects 6 templates with clear explanation that taskwright-python is for internal development (dogfooding).
+**Desired State**: Documentation accurately reflects 6 templates with clear explanation that guardkit-python is for internal development (dogfooding).
 
 ---
 
@@ -32,37 +32,37 @@ Additionally, the `taskwright-python` template needs proper context explaining i
 - TASK-060: Reduced to 4 templates (quality focus)
 - TASK-060A: Added back `default` template (5 templates)
 - TASK-062: Added `react-fastapi-monorepo` (6 templates) - but docs not fully updated
-- TASK-066: Added `taskwright-python` (6 templates) - needs context
+- TASK-066: Added `guardkit-python` (6 templates) - needs context
 
-**Taskwright-Python Special Purpose**:
-The `taskwright-python` template is **unique** among the templates:
-- Based on Taskwright's own codebase (16K LOC)
-- Demonstrates the patterns Taskwright uses internally
+**GuardKit-Python Special Purpose**:
+The `guardkit-python` template is **unique** among the templates:
+- Based on GuardKit's own codebase (16K LOC)
+- Demonstrates the patterns GuardKit uses internally
 - Shows orchestrator pattern + DI + agent system
 - **Dogfooding example**: Template created from the tool that creates templates
-- Primarily for developers who want to understand Taskwright's architecture
+- Primarily for developers who want to understand GuardKit's architecture
 - Secondary use: Building similar CLI tools with orchestrator patterns
 
 **Why This Matters**:
-Users need to understand that taskwright-python is different from the other templates:
+Users need to understand that guardkit-python is different from the other templates:
 - **Not** a general-purpose Python template (use fastapi-python for APIs)
 - **Not** for typical web applications
 - **IS** for CLI tools with complex orchestration
-- **IS** for understanding Taskwright's own patterns
+- **IS** for understanding GuardKit's own patterns
 
 ---
 
 ## Objectives
 
 ### Primary Objective
-Update all documentation references to accurately reflect 6 templates and explain taskwright-python's internal development purpose.
+Update all documentation references to accurately reflect 6 templates and explain guardkit-python's internal development purpose.
 
 ### Success Criteria
 - [ ] All "4 templates" references updated to "6 templates"
 - [ ] All "5 templates" references updated to "6 templates"
 - [ ] Template list consistently shows all 6 templates
-- [ ] Taskwright-python explained as "internal development / dogfooding" template
-- [ ] Clear guidance on when to use taskwright-python vs other templates
+- [ ] GuardKit-python explained as "internal development / dogfooding" template
+- [ ] Clear guidance on when to use guardkit-python vs other templates
 - [ ] Installer output verified to match documentation
 - [ ] README.md updated
 - [ ] CLAUDE.md updated
@@ -83,7 +83,7 @@ Update all documentation references to accurately reflect 6 templates and explai
 
 **Update to**:
 ```markdown
-Taskwright includes **6 high-quality templates** for learning and evaluation:
+GuardKit includes **6 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
@@ -92,10 +92,10 @@ Taskwright includes **6 high-quality templates** for learning and evaluation:
 4. **react-fastapi-monorepo** - Full-stack monorepo with type safety (9.2/10)
 
 ### Specialized Templates
-5. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
-   - **Special Purpose**: Based on Taskwright's own codebase (dogfooding)
-   - **Use Case**: Understanding Taskwright's architecture, building similar CLI tools
-   - **Internal Development**: Shows patterns used to build Taskwright itself
+5. **guardkit-python** - Python CLI with orchestrator pattern (8+/10)
+   - **Special Purpose**: Based on GuardKit's own codebase (dogfooding)
+   - **Use Case**: Understanding GuardKit's architecture, building similar CLI tools
+   - **Internal Development**: Shows patterns used to build GuardKit itself
    - **Not for**: General Python APIs (use fastapi-python instead)
 
 ### Language-Agnostic Template (8+/10 Quality)
@@ -108,7 +108,7 @@ Taskwright includes **6 high-quality templates** for learning and evaluation:
 ```markdown
 ## Templates
 
-Taskwright provides **6 high-quality reference templates**:
+GuardKit provides **6 high-quality reference templates**:
 
 ### Production Stack Templates
 1. **react-typescript** - React frontend (9+/10)
@@ -117,8 +117,8 @@ Taskwright provides **6 high-quality reference templates**:
 4. **react-fastapi-monorepo** - Monorepo (9.2/10)
 
 ### Specialized Templates
-5. **taskwright-python** - Python CLI tool (8+/10)
-   - Based on Taskwright's own codebase
+5. **guardkit-python** - Python CLI tool (8+/10)
+   - Based on GuardKit's own codebase
    - For internal development patterns
    - Demonstrates orchestrator + DI + agents
 
@@ -138,17 +138,17 @@ Taskwright provides **6 high-quality reference templates**:
 ```markdown
 ## Internal Development Template
 
-### taskwright-python
+### guardkit-python
 
-The `taskwright-python` template is unique - it's created from Taskwright's own codebase.
+The `guardkit-python` template is unique - it's created from GuardKit's own codebase.
 
 **Purpose**:
-- **Dogfooding**: Shows patterns Taskwright uses to build itself
+- **Dogfooding**: Shows patterns GuardKit uses to build itself
 - **Learning**: Understand the orchestrator pattern, DI, and agent system
 - **Reference**: See production CLI architecture (16K LOC, 80%+ coverage)
 
 **When to Use**:
-- ✅ You want to understand Taskwright's architecture
+- ✅ You want to understand GuardKit's architecture
 - ✅ Building a CLI tool with orchestrator pattern
 - ✅ Creating agent-based systems
 - ✅ Need DI and complex workflow coordination
@@ -166,7 +166,7 @@ The `taskwright-python` template is unique - it's created from Taskwright's own 
 
 **Relationship to Other Templates**:
 - `fastapi-python`: For **APIs** (REST, GraphQL)
-- `taskwright-python`: For **CLI tools** with orchestration
+- `guardkit-python`: For **CLI tools** with orchestration
 - `default`: For **any language** (language-agnostic)
 ```
 
@@ -195,7 +195,7 @@ The `taskwright-python` template is unique - it's created from Taskwright's own 
 | fastapi-python | REST APIs, backends | 9+/10 | Production API patterns |
 | nextjs-fullstack | Full-stack apps | 9+/10 | SSR, App Router patterns |
 | react-fastapi-monorepo | Full-stack monorepos | 9.2/10 | Type-safe monorepo patterns |
-| **taskwright-python** | **CLI tools** | **8+/10** | **Internal dev patterns (dogfooding)** |
+| **guardkit-python** | **CLI tools** | **8+/10** | **Internal dev patterns (dogfooding)** |
 | default | Any language | 8+/10 | Language-agnostic foundation |
 ```
 
@@ -214,7 +214,7 @@ grep -r "four templates" CLAUDE.md README.md docs/
 grep -r "five templates" CLAUDE.md README.md docs/
 
 # Search for template lists that might be incomplete
-grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "taskwright-python"
+grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "guardkit-python"
 ```
 
 **Document findings**:
@@ -228,17 +228,17 @@ grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "taskwright-pytho
 1. **Template Philosophy** section (around line 150-200)
 2. **Template count mentions** (search for "4" or "5")
 3. **Template list** (ensure all 6 listed)
-4. **When to Use Taskwright** section (if mentions templates)
+4. **When to Use GuardKit** section (if mentions templates)
 5. **Quick Reference** section (if has template table)
 
-**Add taskwright-python context**:
+**Add guardkit-python context**:
 ```markdown
 ### Specialized Templates (8-9+/10 Quality)
 5. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
-6. **taskwright-python** - Python CLI with orchestrator pattern (8+/10)
-   - **Internal Development**: Based on Taskwright's own 16K LOC codebase
+6. **guardkit-python** - Python CLI with orchestrator pattern (8+/10)
+   - **Internal Development**: Based on GuardKit's own 16K LOC codebase
    - **Demonstrates**: Orchestrator pattern, DI, agent system, template generation
-   - **Use Case**: CLI tools with complex workflows, understanding Taskwright
+   - **Use Case**: CLI tools with complex workflows, understanding GuardKit
    - **Dogfooding**: The tool used to create templates, templatized itself
 ```
 
@@ -246,7 +246,7 @@ grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "taskwright-pytho
 
 **Main template section**:
 - Update count: "6 high-quality reference templates"
-- Add taskwright-python with explanation
+- Add guardkit-python with explanation
 - Emphasize its special purpose
 
 **Installation section** (if mentions templates):
@@ -258,7 +258,7 @@ grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "taskwright-pytho
 
 - Add new section: "Internal Development Template"
 - Explain dogfooding concept
-- Clarify when to use vs not use taskwright-python
+- Clarify when to use vs not use guardkit-python
 
 ### Step 5: Update Other Documentation
 
@@ -275,7 +275,7 @@ grep -r "react-typescript" CLAUDE.md README.md docs/ | grep -v "taskwright-pytho
 ./installer/scripts/install.sh | grep -A 10 "Available Templates"
 
 # Verify shows 6 templates with correct descriptions
-# Verify taskwright-python has appropriate description
+# Verify guardkit-python has appropriate description
 ```
 
 **Current installer output** (from user's installation):
@@ -286,12 +286,12 @@ Available Templates:
   • nextjs-fullstack - Next.js App Router full-stack (9+/10)
   • react-fastapi-monorepo - React + FastAPI monorepo with type safety (9.2/10)
   • react-typescript - React frontend with feature-based architecture (9+/10)
-  • taskwright-python - Python CLI tool with orchestrator pattern (8+/10)
+  • guardkit-python - Python CLI tool with orchestrator pattern (8+/10)
 ```
 
 **Proposed enhancement** (if desired):
 ```
-  • taskwright-python - Python CLI tool with orchestrator pattern (8+/10) [Internal Development]
+  • guardkit-python - Python CLI tool with orchestrator pattern (8+/10) [Internal Development]
 ```
 
 ### Step 7: Create Summary Document
@@ -300,13 +300,13 @@ Available Templates:
 
 **Content**:
 ```markdown
-# Taskwright Templates Overview
+# GuardKit Templates Overview
 
 Last Updated: 2025-01-10
 
 ## Template Count: 6
 
-Taskwright includes 6 high-quality reference templates for different use cases.
+GuardKit includes 6 high-quality reference templates for different use cases.
 
 ## Template Categories
 
@@ -335,8 +335,8 @@ Templates based on popular open-source projects and best practices:
 
 ### Specialized Templates (1 template)
 
-5. **taskwright-python** (8+/10)
-   - Source: Taskwright's own codebase (16K LOC)
+5. **guardkit-python** (8+/10)
+   - Source: GuardKit's own codebase (16K LOC)
    - Use: CLI tools with orchestration
    - Patterns: Orchestrator, DI, agents
    - **Special**: Internal development / dogfooding
@@ -356,22 +356,22 @@ Templates based on popular open-source projects and best practices:
 | REST API | fastapi-python |
 | Full-stack web app | nextjs-fullstack |
 | Full-stack monorepo | react-fastapi-monorepo |
-| CLI tool with orchestration | taskwright-python |
-| Understand Taskwright | taskwright-python |
+| CLI tool with orchestration | guardkit-python |
+| Understand GuardKit | guardkit-python |
 | Go/Rust/Ruby/PHP | default |
 
-## Special Note: taskwright-python
+## Special Note: guardkit-python
 
-The `taskwright-python` template is unique:
+The `guardkit-python` template is unique:
 
 **Why it exists**:
-- Demonstrates patterns used to build Taskwright itself
+- Demonstrates patterns used to build GuardKit itself
 - Dogfooding: The tool that creates templates, templatized
 - Educational: Shows production CLI architecture
 
 **When to use**:
 - Building CLI tools with complex orchestration
-- Understanding Taskwright's internal architecture
+- Understanding GuardKit's internal architecture
 - Creating agent-based systems
 - Need orchestrator pattern + DI
 
@@ -408,12 +408,12 @@ Quality scores reflect:
 - [ ] Template validation guide checked for count references
 - [ ] All "4 templates" or "5 templates" references updated
 
-### Taskwright-Python Context
+### GuardKit-Python Context
 - [ ] Explanation added: "internal development / dogfooding"
 - [ ] Use cases clearly documented
 - [ ] When to use vs not use clarified
 - [ ] Relationship to other templates explained
-- [ ] Emphasize it's based on Taskwright's own codebase
+- [ ] Emphasize it's based on GuardKit's own codebase
 
 ### Quality Checks
 - [ ] All template lists include all 6 templates
@@ -425,8 +425,8 @@ Quality scores reflect:
 ### Verification
 - [ ] Search confirms no "4 templates" references remain
 - [ ] Search confirms no "5 templates" references remain
-- [ ] All template mentions include taskwright-python
-- [ ] Taskwright-python always explained as "internal development"
+- [ ] All template mentions include guardkit-python
+- [ ] GuardKit-python always explained as "internal development"
 
 ---
 
@@ -443,8 +443,8 @@ grep -r "5 templates" CLAUDE.md README.md docs/
 grep -r "6 templates" CLAUDE.md README.md docs/
 # Expected: Multiple matches
 
-# Test 3: Taskwright-python always has context
-grep -r "taskwright-python" CLAUDE.md README.md docs/ | grep -v "internal\|dogfooding\|CLI tool"
+# Test 3: GuardKit-python always has context
+grep -r "guardkit-python" CLAUDE.md README.md docs/ | grep -v "internal\|dogfooding\|CLI tool"
 # Expected: Few or no matches (all should have context)
 
 # Test 4: Template lists are complete
@@ -469,15 +469,15 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 
 ### Key Points to Emphasize
 
-1. **Taskwright-python is unique**: It's not like the other templates
+1. **GuardKit-python is unique**: It's not like the other templates
 2. **Dogfooding concept**: Template created by the tool it demonstrates
-3. **Internal development focus**: For understanding Taskwright itself
+3. **Internal development focus**: For understanding GuardKit itself
 4. **Not general-purpose**: For CLI tools, not APIs or web apps
 5. **Educational value**: Shows 16K LOC production patterns
 
 ### Tone Guidance
 
-- Be clear that taskwright-python has a specific purpose
+- Be clear that guardkit-python has a specific purpose
 - Don't oversell it for general Python development
 - Emphasize learning and internal development
 - Position it as "bonus" template for understanding the tool
@@ -485,7 +485,7 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 
 ### Common Pitfalls to Avoid
 
-- ❌ Treating taskwright-python like other templates
+- ❌ Treating guardkit-python like other templates
 - ❌ Recommending it for web APIs (that's fastapi-python)
 - ❌ Forgetting to explain "dogfooding"
 - ❌ Not clarifying when to use vs not use
@@ -495,7 +495,7 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 
 ## Deliverables
 
-1. **Updated CLAUDE.md** - 6 templates with taskwright-python context
+1. **Updated CLAUDE.md** - 6 templates with guardkit-python context
 2. **Updated README.md** - 6 templates with proper categorization
 3. **Updated Template Philosophy Guide** - Internal development section
 4. **Template Overview Document** - New comprehensive guide
@@ -509,11 +509,11 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 **Quantitative**:
 - Outdated references: 0 (all updated)
 - Template count consistency: 100% (all say 6)
-- Taskwright-python mentions with context: 100%
+- GuardKit-python mentions with context: 100%
 - Documentation completeness: 100%
 
 **Qualitative**:
-- Clear understanding of taskwright-python's purpose
+- Clear understanding of guardkit-python's purpose
 - No confusion about when to use it
 - Dogfooding concept well-explained
 - Consistent messaging across all docs
@@ -523,7 +523,7 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 ## Related Tasks
 
 - **TASK-062**: Created react-fastapi-monorepo (5th template)
-- **TASK-066**: Created taskwright-python (6th template)
+- **TASK-066**: Created guardkit-python (6th template)
 - **TASK-069-073**: Demo/testing initiative (uses templates)
 
 ---
@@ -544,22 +544,22 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
 
 #### 1. CLAUDE.md (Root)
 - ✅ Updated template list to show 6 templates
-- ✅ Added taskwright-python context:
-  - Internal Development (based on Taskwright's own 16K LOC codebase)
-  - Use Case: CLI tools with orchestration, understanding Taskwright
+- ✅ Added guardkit-python context:
+  - Internal Development (based on GuardKit's own 16K LOC codebase)
+  - Use Case: CLI tools with orchestration, understanding GuardKit
   - Not for: General Python APIs (use fastapi-python instead)
 
 #### 2. README.md
 - ✅ Updated template table to show 6 templates
-- ✅ Added note explaining taskwright-python's dogfooding purpose
-- ✅ Clarified when to use vs when NOT to use taskwright-python
+- ✅ Added note explaining guardkit-python's dogfooding purpose
+- ✅ Clarified when to use vs when NOT to use guardkit-python
 
 #### 3. docs/guides/template-philosophy.md
 - ✅ Updated "The 4 Templates" → "The 6 Templates"
-- ✅ Added Specialized Templates section with react-fastapi-monorepo and taskwright-python
-- ✅ Added detailed taskwright-python explanation (dogfooding, internal dev)
+- ✅ Added Specialized Templates section with react-fastapi-monorepo and guardkit-python
+- ✅ Added detailed guardkit-python explanation (dogfooding, internal dev)
 - ✅ Updated quality approach: "4 templates" → "6 templates"
-- ✅ Added "Use taskwright-python When" section with clear guidance
+- ✅ Added "Use guardkit-python When" section with clear guidance
 - ✅ Updated FAQ to reflect 6 templates with evolution history
 
 #### 4. docs/guides/claude-code-web-setup.md
@@ -573,7 +573,7 @@ grep -A 10 "Stack-Specific Reference Templates" CLAUDE.md
   - Quality metrics
   - Selection guide
   - When to use vs when NOT to use
-  - Special section on taskwright-python's dogfooding purpose
+  - Special section on guardkit-python's dogfooding purpose
 
 ### Verification
 
@@ -590,7 +590,7 @@ grep -r "4 templates\|5 templates" CLAUDE.md README.md docs/guides/
 - claude-code-web-setup.md: "6 high-quality templates"
 - TEMPLATE-OVERVIEW.md: "6 high-quality templates"
 
-✅ **Taskwright-python always has context**:
+✅ **GuardKit-python always has context**:
 - CLAUDE.md: Internal Development, dogfooding explanation
 - README.md: Internal Development note in table
 - template-philosophy.md: Detailed explanation + when to use
@@ -598,7 +598,7 @@ grep -r "4 templates\|5 templates" CLAUDE.md README.md docs/guides/
 
 ### Files Updated
 
-1. `/CLAUDE.md` - Template list + taskwright-python context
+1. `/CLAUDE.md` - Template list + guardkit-python context
 2. `/README.md` - Template table + dogfooding note
 3. `/docs/guides/template-philosophy.md` - Comprehensive 6-template update
 4. `/docs/guides/claude-code-web-setup.md` - Template count references
@@ -609,8 +609,8 @@ grep -r "4 templates\|5 templates" CLAUDE.md README.md docs/guides/
 - ✅ All "4 templates" references updated to "6 templates"
 - ✅ All "5 templates" references updated to "6 templates"
 - ✅ Template lists consistently show all 6 templates
-- ✅ Taskwright-python explained as "internal development / dogfooding"
-- ✅ Clear guidance on when to use vs not use taskwright-python
+- ✅ GuardKit-python explained as "internal development / dogfooding"
+- ✅ Clear guidance on when to use vs not use guardkit-python
 - ✅ Installer output matches documentation (verified in user's installation)
 - ✅ No conflicting information across docs
 - ✅ Template overview document created
@@ -622,11 +622,11 @@ grep -r "4 templates\|5 templates" CLAUDE.md README.md docs/guides/
    - 2 specialized (8-9+/10)
    - 1 language-agnostic (8+/10)
 
-2. **Taskwright-Python is Special**:
-   - Dogfooding: Created from Taskwright's own codebase
-   - Internal Development: Shows patterns used to build Taskwright
+2. **GuardKit-Python is Special**:
+   - Dogfooding: Created from GuardKit's own codebase
+   - Internal Development: Shows patterns used to build GuardKit
    - Not for general Python APIs (use fastapi-python)
-   - For CLI tools with orchestration + understanding Taskwright
+   - For CLI tools with orchestration + understanding GuardKit
 
 3. **Quality Maintained**:
    - All templates 8+/10

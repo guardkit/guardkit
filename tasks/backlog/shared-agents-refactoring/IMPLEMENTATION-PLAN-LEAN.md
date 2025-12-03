@@ -39,11 +39,11 @@ The architectural review identified many potential risks and edge cases. However
 # Simple duplication check
 echo "Comparing TaskWright and RequireKit agents..."
 
-TASKWRIGHT="installer/global/agents"
+GUARDKIT="installer/global/agents"
 REQUIREKIT="../require-kit/.claude/agents"
 
 echo "Agents in both repos:"
-comm -12 <(ls $TASKWRIGHT/*.md | xargs basename -a | sort) \
+comm -12 <(ls $GUARDKIT/*.md | xargs basename -a | sort) \
          <(ls $REQUIREKIT/*.md | xargs basename -a | sort)
 
 echo ""
@@ -59,7 +59,7 @@ echo "Save this list for migration."
 **Depends on**: TASK-SHA-001 (need verified list)
 
 **Acceptance Criteria**:
-- [ ] GitHub repo created: `taskwright-dev/shared-agents`
+- [ ] GitHub repo created: `guardkit/shared-agents`
 - [ ] Verified agents copied to `agents/` directory
 - [ ] Simple `manifest.json` listing agent files
 - [ ] README with basic usage instructions
@@ -68,12 +68,12 @@ echo "Save this list for migration."
 **Implementation**:
 ```bash
 # 1. Create repo
-gh repo create taskwright-dev/shared-agents --public
+gh repo create guardkit/shared-agents --public
 
 # 2. Copy verified agents (from TASK-SHA-001 list)
 mkdir -p agents
-cp taskwright/installer/global/agents/code-reviewer.md agents/
-cp taskwright/installer/global/agents/test-orchestrator.md agents/
+cp guardkit/installer/global/agents/code-reviewer.md agents/
+cp guardkit/installer/global/agents/test-orchestrator.md agents/
 # ... copy other verified agents
 
 # 3. Create simple manifest
@@ -112,7 +112,7 @@ gh release create v1.0.0 shared-agents.tar.gz --title "Initial Release"
 
 install_shared_agents() {
     local version=$(cat installer/shared-agents-version.txt)
-    local url="https://github.com/taskwright-dev/shared-agents/releases/download/$version/shared-agents.tar.gz"
+    local url="https://github.com/guardkit/shared-agents/releases/download/$version/shared-agents.tar.gz"
 
     echo "Installing shared agents $version..."
 
@@ -161,7 +161,7 @@ Same as TASK-SHA-003, but in RequireKit repo.
 ```bash
 # Test TaskWright
 cd test-project-1
-../taskwright/installer/scripts/install.sh
+../guardkit/installer/scripts/install.sh
 /task-create "Test task"
 /task-work TASK-001  # Should use shared agents
 
@@ -172,7 +172,7 @@ cd test-project-2
 
 # Test both together
 cd test-project-3
-../taskwright/installer/scripts/install.sh
+../guardkit/installer/scripts/install.sh
 ../require-kit/installer/scripts/install.sh
 ls .claude/agents/universal/  # Should have shared agents (not duplicated)
 ```

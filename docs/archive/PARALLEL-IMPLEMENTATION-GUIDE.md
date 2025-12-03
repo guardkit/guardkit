@@ -1,6 +1,6 @@
 # Parallel Implementation Guide: Open Source Release Prep
 
-**Goal**: Prepare Taskwright for open source release (target: early next week)
+**Goal**: Prepare GuardKit for open source release (target: early next week)
 
 **Strategy**: Use Conductor.build git worktrees for parallel development
 
@@ -15,7 +15,7 @@
 ### Worktree A: Main Branch
 ```bash
 # Stay in main branch - these are quick sequential fixes
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 ```
 
 **Task 1.1**: TASK-FIX-9E1A (Task ID uniqueness fix)
@@ -41,7 +41,7 @@ cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
 ### Setup Worktrees
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Create 3 parallel worktrees
 conductor worktree create docs-user-guide
@@ -90,7 +90,7 @@ cd docs-user-guide
 **Files Modified**:
 - `CLAUDE.md` (task ID format section)
 - `installer/global/commands/task-create.md`
-- `docs/guides/taskwright-workflow.md`
+- `docs/guides/guardkit-workflow.md`
 - `docs/guides/quick-reference.md`
 
 **Commands**:
@@ -134,7 +134,7 @@ cd docs-phase-8
 
 ### Step 1: Merge Worktree B (Hash IDs) - First
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 git checkout main
 git merge docs-hash-ids --no-ff -m "docs: Update documentation for hash-based IDs"
 ```
@@ -292,7 +292,7 @@ graph TD
 | `docs/troubleshooting/template-create-troubleshooting.md` | Worktree A | ✅ |
 | `docs/workflows/incremental-enhancement-workflow.md` | Worktree C | ✅ |
 | `installer/global/commands/task-create.md` | Worktree B | ✅ |
-| `docs/guides/taskwright-workflow.md` | Worktree B | ✅ |
+| `docs/guides/guardkit-workflow.md` | Worktree B | ✅ |
 | `docs/guides/quick-reference.md` | Worktree B | ✅ |
 
 ### Conflict Resolution: CLAUDE.md
@@ -301,7 +301,7 @@ graph TD
 ```markdown
 # CLAUDE.md
 
-## Taskwright - Lightweight AI-Assisted Development
+## GuardKit - Lightweight AI-Assisted Development
 ...
 
 ## Task ID Format (NEW - from Worktree B)

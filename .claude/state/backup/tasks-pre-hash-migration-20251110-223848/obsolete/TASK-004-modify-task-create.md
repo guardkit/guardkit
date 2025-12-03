@@ -89,7 +89,7 @@ Remove or simplify:
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-create.md installer/global/commands/task-create.md.backup
 ```
 

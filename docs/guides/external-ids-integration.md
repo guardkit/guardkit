@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `external_ids` field in task frontmatter enables seamless integration with external project management tools. This field stores mappings between Taskwright tasks and tickets/issues in tools like Jira, Azure DevOps, Linear, and GitHub.
+The `external_ids` field in task frontmatter enables seamless integration with external project management tools. This field stores mappings between GuardKit tasks and tickets/issues in tools like Jira, Azure DevOps, Linear, and GitHub.
 
 ## Supported Tools
 
@@ -219,7 +219,7 @@ external_ids:
 
 ### Pattern 3: Sync Workflow
 
-1. Create task in Taskwright
+1. Create task in GuardKit
 2. Export to external tool (requires require-kit)
 3. Store returned ID in external_ids
 4. Use ID for bi-directional sync

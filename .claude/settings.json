@@ -1,5 +1,5 @@
 {
-  "name": "taskwright",
+  "name": "guardkit",
   "version": "1.0.0",
   "description": "Lightweight task workflow with quality gates and architectural review",
   "features": {

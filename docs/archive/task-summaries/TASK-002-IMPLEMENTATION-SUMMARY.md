@@ -58,7 +58,7 @@ Successfully implemented AI-powered codebase analysis system following the **sim
 9. **`tests/integration/test_codebase_analyzer_integration.py`** (536 lines)
    - 8 integration tests with real codebases
    - Python/TypeScript/.NET scenarios
-   - Real taskwright codebase analysis
+   - Real guardkit codebase analysis
 
 ## Test Results
 

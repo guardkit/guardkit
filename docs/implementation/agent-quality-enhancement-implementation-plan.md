@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Based on analysis of GitHub's blog post about writing effective AGENTS.md files (from 2,500+ repositories), we've designed a comprehensive agent quality enhancement system for Taskwright. Instead of creating a separate guidelines document (which would be 95%+ redundant), we're implementing:
+Based on analysis of GitHub's blog post about writing effective AGENTS.md files (from 2,500+ repositories), we've designed a comprehensive agent quality enhancement system for GuardKit. Instead of creating a separate guidelines document (which would be 95%+ redundant), we're implementing:
 
 1. **Enhanced agent-content-enhancer.md** - AI agent that self-validates output against GitHub standards
 2. **/agent-validate command** - Automated quality checking tool with objective scoring
@@ -346,7 +346,7 @@ TASK-AGENT-ENHANCER (4 hours)
 
 ### External Dependencies
 
-- None (all work is internal to Taskwright)
+- None (all work is internal to GuardKit)
 
 ### Blockers
 
@@ -416,7 +416,7 @@ TASK-AGENT-ENHANCER (4 hours)
 
 ### Reference Documents
 
-- [GitHub Agent Best Practices Analysis](../analysis/github-agent-best-practices-analysis.md) - Detailed comparison of Taskwright vs GitHub standards (20KB, 710 lines)
+- [GitHub Agent Best Practices Analysis](../analysis/github-agent-best-practices-analysis.md) - Detailed comparison of GuardKit vs GitHub standards (20KB, 710 lines)
 - [TASK-AI-2B37 Visual Comparison](./task-ai-2b37-visual-comparison.md) - Before/after examples for AI integration
 - [TASK-AI-2B37 Clarification](./task-ai-2b37-clarification.md) - Implementation details for AI enhancement
 

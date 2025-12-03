@@ -1,16 +1,16 @@
 # GuardKit Rename Report
 
-**Generated**: 2025-12-03 10:09:56
-**Mode**: DRY RUN
+**Generated**: 2025-12-03 10:20:08
+**Mode**: EXECUTED
 
 ## Summary
 
 | Metric | Count |
 |--------|-------|
-| Files Modified | 574 |
+| Files Modified | 575 |
 | Files Renamed | 4 |
 | Files Skipped | 0 |
-| Total Replacements | 5600 |
+| Total Replacements | 5622 |
 | Errors | 0 |
 
 ## Replacement Patterns Applied
@@ -254,6 +254,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/obsolete/TASK-005-modify-task-work.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/obsolete/TASK-006-REV-optional-requirements-task-status.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/obsolete/TASK-006-modify-task-status.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/rename-report.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-002-test-report.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-010-implementation-plan.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/task-plans/TASK-023-implementation-plan.md`
@@ -560,7 +561,6 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/testing/TASK-073-create-demo-repositories.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_progress/TASK-2E9E-review-bdd-restoration-plan-requirekit-integration.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_progress/TASK-D3A1-review-template-init-architecture.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_progress/TASK-IMP-RENAME-PREP.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-020-improve-template-generation-completeness.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-0CE5-fix-empty-example-files-in-ai-analysis.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-51B2-B-fix-ai-template-file-generation.md`
@@ -574,6 +574,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-DOC-267D-add-agent-response-format-reference-to-claude-md-templates.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-ENHANCE-AGENT-FILES.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-FBC2-create-dotnet-aspnetcontroller-template.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-IMP-RENAME-PREP.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-IMP-TMPL-FIX-template-create-command-fix.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-MCP-C1C1-implement-mcp-enhancements-progressive-disclosure-monitoring.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_review/TASK-PHASE-7-5-CHECKPOINT.md`

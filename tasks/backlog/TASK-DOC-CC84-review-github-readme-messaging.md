@@ -32,16 +32,16 @@ review_results:
 
 ## Context
 
-The GitHub README.md is the primary marketing and onboarding document for Taskwright. It needs to clearly communicate the value proposition and key differentiators to potential users.
+The GitHub README.md is the primary marketing and onboarding document for GuardKit. It needs to clearly communicate the value proposition and key differentiators to potential users.
 
-**Current README**: https://github.com/taskwright-dev/taskwright?tab=readme-ov-file#what-you-get
+**Current README**: https://github.com/guardkit/guardkit?tab=readme-ov-file#what-you-get
 
 **User Feedback**: Key features are not prominently highlighted in the "What You Get" section:
 1. Human-in-the-loop review checkpoints (Phase 2.5, Phase 2.8, Phase 4.5)
 2. Complexity evaluation (upfront task sizing)
 3. Plan audit (Phase 5.5 scope creep detection)
 
-**Positioning Opportunity**: Frame Taskwright as **"Spec-Oriented Development"** (SOD) with optional upgrade to **"Spec-Driven Development"** (SDD) via RequireKit integration.
+**Positioning Opportunity**: Frame GuardKit as **"Spec-Oriented Development"** (SOD) with optional upgrade to **"Spec-Driven Development"** (SDD) via RequireKit integration.
 
 ---
 
@@ -92,7 +92,7 @@ Review and recommend improvements to the GitHub README.md to:
   - Target: Solo developers, small teams, rapid prototyping
 
 - **"Spec-Driven Development" (SDD)**: Full requirements management
-  - Combines Taskwright + RequireKit
+  - Combines GuardKit + RequireKit
   - EARS notation requirements
   - BDD scenarios (Gherkin)
   - Epic/feature hierarchy
@@ -131,14 +131,14 @@ Review and recommend improvements to the GitHub README.md to:
 
 ### 2. Spec-Oriented vs Spec-Driven Positioning
 
-**Question**: Should Taskwright be positioned as "Spec-Oriented Development" with optional upgrade to "Spec-Driven Development"?
+**Question**: Should GuardKit be positioned as "Spec-Oriented Development" with optional upgrade to "Spec-Driven Development"?
 
 **Proposed Messaging**:
 
 ```markdown
 ## Spec-Oriented Development (SOD)
 
-Taskwright provides **Spec-Oriented Development** out of the box:
+GuardKit provides **Spec-Oriented Development** out of the box:
 - Task descriptions as lightweight specifications
 - Acceptance criteria instead of formal requirements
 - Quick start, minimal ceremony
@@ -146,7 +146,7 @@ Taskwright provides **Spec-Oriented Development** out of the box:
 
 ## Upgrade to Spec-Driven Development (SDD)
 
-For teams needing formal requirements management, combine Taskwright with [RequireKit](https://github.com/requirekit/require-kit):
+For teams needing formal requirements management, combine GuardKit with [RequireKit](https://github.com/requirekit/require-kit):
 - EARS notation requirements
 - BDD scenarios (Gherkin)
 - Epic/feature hierarchy
@@ -169,7 +169,7 @@ For teams needing formal requirements management, combine Taskwright with [Requi
 
 ### 3. Target Audience Messaging
 
-**Question**: Does the README clearly communicate who should use Taskwright (lightweight) vs Taskwright + RequireKit (full-featured)?
+**Question**: Does the README clearly communicate who should use GuardKit (lightweight) vs GuardKit + RequireKit (full-featured)?
 
 **Current Messaging**: Needs evaluation
 
@@ -177,10 +177,10 @@ For teams needing formal requirements management, combine Taskwright with [Requi
 
 | Audience | Use Case | Solution |
 |----------|----------|----------|
-| Solo developers | Quick prototyping, personal projects | Taskwright (SOD) |
-| Small teams (2-5) | Agile development, startup MVPs | Taskwright (SOD) |
-| Medium teams (5-20) | Structured development, traceability needed | Taskwright + RequireKit (SDD) |
-| Large teams (20+) | Regulated industries, compliance required | Taskwright + RequireKit (SDD) |
+| Solo developers | Quick prototyping, personal projects | GuardKit (SOD) |
+| Small teams (2-5) | Agile development, startup MVPs | GuardKit (SOD) |
+| Medium teams (5-20) | Structured development, traceability needed | GuardKit + RequireKit (SDD) |
+| Large teams (20+) | Regulated industries, compliance required | GuardKit + RequireKit (SDD) |
 
 **Recommendation Criteria**:
 - Clarity (can readers identify which solution fits their needs?)
@@ -191,7 +191,7 @@ For teams needing formal requirements management, combine Taskwright with [Requi
 
 ### 4. Competitive Differentiation
 
-**Question**: What makes Taskwright unique compared to alternatives (Linear, Jira, GitHub Projects, etc.)?
+**Question**: What makes GuardKit unique compared to alternatives (Linear, Jira, GitHub Projects, etc.)?
 
 **Proposed Unique Value Props**:
 1. **AI-Assisted with Human Oversight** (not fully automated, not fully manual)
@@ -312,7 +312,7 @@ After analysis, the review will present options for:
 
 ## References
 
-- **GitHub README**: https://github.com/taskwright-dev/taskwright?tab=readme-ov-file#what-you-get
+- **GitHub README**: https://github.com/guardkit/guardkit?tab=readme-ov-file#what-you-get
 - **Current Features**:
   - Phase 2.5: Architectural review (CLAUDE.md, task-work.md)
   - Phase 2.8: Complexity checkpoint (CLAUDE.md, complexity-management-workflow.md)

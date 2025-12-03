@@ -1,6 +1,6 @@
 # Completed Tasks Index
 
-This index tracks all completed tasks in the Taskwright project.
+This index tracks all completed tasks in the GuardKit project.
 
 ---
 

@@ -27,7 +27,7 @@
 ### Agents Removed
 1. **requirements-analyst.md** - EARS notation specialist
    - Purpose: Interactive requirements gathering and EARS formalization
-   - Reason for removal: Not needed for taskwright lite workflow
+   - Reason for removal: Not needed for guardkit lite workflow
 
 2. **bdd-generator.md** - BDD/Gherkin scenario generation
    - Purpose: Generate testable scenarios from requirements
@@ -89,12 +89,12 @@ modified:   installer/global/agents/pattern-advisor.md
 
 ### Positive Impact
 - ✅ Streamlined agent set focused on quality gates and task workflow
-- ✅ Reduced complexity for taskwright lite workflow
+- ✅ Reduced complexity for guardkit lite workflow
 - ✅ Maintained all critical quality gate agents
 - ✅ Preserved all supporting specialist agents
 
 ### No Negative Impact
-- ✅ No functionality loss for core taskwright workflow
+- ✅ No functionality loss for core guardkit workflow
 - ✅ No breaking changes to existing task execution
 - ✅ No impact on quality gates (Phase 2.5, 4.5, 5)
 

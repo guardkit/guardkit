@@ -135,9 +135,9 @@ cat ~/.agentecflow/templates/maui-mydrive/agents/dotnet-domain-specialist.md
 **Scenario**:
 1. User runs `/template-create` and sees 9.9/10 score
 2. User trusts the score and thinks template is ready
-3. User runs `taskwright init maui-mydrive`
+3. User runs `guardkit init maui-mydrive`
 4. System fails with "agent not found" error
-5. User loses trust in Taskwright quality gates
+5. User loses trust in GuardKit quality gates
 
 ### System Impact: 🔴 CRITICAL
 
@@ -146,7 +146,7 @@ cat ~/.agentecflow/templates/maui-mydrive/agents/dotnet-domain-specialist.md
 - ❌ Phase 5.5 validation false positive
 - ❌ No pre-use verification
 
-**This undermines the core promise of Taskwright: "quality gates prevent broken code"**
+**This undermines the core promise of GuardKit: "quality gates prevent broken code"**
 
 ---
 
@@ -300,7 +300,7 @@ cat ~/.agentecflow/templates/maui-mydrive/agents/dotnet-domain-specialist.md
 2. Fix validation logic (P0)
 3. Re-test with fixes (P1)
 
-**Full Report**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/validation/maui-mydrive-template-validation-report.md`
+**Full Report**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/validation/maui-mydrive-template-validation-report.md`
 
 ---
 

@@ -22,7 +22,7 @@
 
 **Critical Problem**: `/template-create` worked over the weekend to create core templates, but now **nothing works**. Need forensic analysis to understand what changed.
 
-**User Report**: "At the weekend I ran the commands to create the core templates shipping with taskwright and it appeared to work, now it all just seems to have fallen apart."
+**User Report**: "At the weekend I ran the commands to create the core templates shipping with guardkit and it appeared to work, now it all just seems to have fallen apart."
 
 ---
 
@@ -60,7 +60,7 @@
 
 1. **Check git history**
    ```bash
-   cd ~/Projects/appmilla_github/taskwright
+   cd ~/Projects/appmilla_github/guardkit
 
    # Commits since weekend (adjust date)
    git log --since="2025-11-09" --oneline

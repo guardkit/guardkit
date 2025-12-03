@@ -30,7 +30,7 @@ This task involved creating a comprehensive validation suite to audit the core d
 
 ### Phase 3: Implementation
 Created comprehensive validation suite at:
-`/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py`
+`/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py`
 
 **Features Implemented**:
 1. **Markdown Syntax Validation**
@@ -154,18 +154,18 @@ Validation logic reviewed for:
 ### Generated Files
 
 1. **Validation Suite**
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py`
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py`
    - Size: ~20 KB
    - Type: Python test suite
    - Function: Comprehensive documentation validation
 
 2. **JSON Report**
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/validation-report.json`
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/validation-report.json`
    - Format: JSON with nested results by category
    - Contains: All 20 check results with pass/fail status
 
 3. **Markdown Report**
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/TASK-023-VALIDATION-REPORT.md`
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/TASK-023-VALIDATION-REPORT.md`
    - Format: Human-readable markdown
    - Contains: Executive summary, detailed results, recommendations
 
@@ -174,7 +174,7 @@ Validation logic reviewed for:
 To run the validation suite again:
 
 ```bash
-/opt/homebrew/bin/python3 /Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py
+/opt/homebrew/bin/python3 /Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py
 ```
 
 Expected output after fixes: 100% pass rate (20/20 checks)

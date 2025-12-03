@@ -1,10 +1,10 @@
 # GitHub Agent Best Practices Analysis
-## Taskwright vs Industry Standards (2,500+ Repositories)
+## GuardKit vs Industry Standards (2,500+ Repositories)
 
 **Date**: 2025-11-21  
 **Source**: GitHub Blog - "How to write a great AGENTS.md" (analysis of 2,500+ repositories)  
 **Review Team**: Software Architect, Code Reviewer, QA Tester  
-**Scope**: Taskwright global agents vs GitHub's recommended best practices
+**Scope**: GuardKit global agents vs GitHub's recommended best practices
 
 ---
 
@@ -14,7 +14,7 @@
 
 **Status**: **Strong Foundation with Strategic Gaps**
 
-Taskwright demonstrates several architectural strengths that **exceed** GitHub's recommendations (structured workflows, quality gates, comprehensive error handling), but has notable gaps in areas GitHub identifies as critical (early command placement, clear boundaries, code-first examples).
+GuardKit demonstrates several architectural strengths that **exceed** GitHub's recommendations (structured workflows, quality gates, comprehensive error handling), but has notable gaps in areas GitHub identifies as critical (early command placement, clear boundaries, code-first examples).
 
 **Overall Scores**:
 - **Code Quality**: 8.82/10
@@ -48,9 +48,9 @@ Taskwright demonstrates several architectural strengths that **exceed** GitHub's
 
 ---
 
-## Comparison Matrix: GitHub vs Taskwright
+## Comparison Matrix: GitHub vs GuardKit
 
-| GitHub Recommendation | Taskwright Status | Score | Priority |
+| GitHub Recommendation | GuardKit Status | Score | Priority |
 |---------------------|-------------------|-------|----------|
 | **1. Specific Role Definition** | ✅ EXCELLENT | 🟢 8.5/10 | ✅ Keep |
 | **2. Early Command Placement** | ⚠️ PARTIAL | 🟡 3/10 | 🔴 P0 Fix |
@@ -70,7 +70,7 @@ Taskwright demonstrates several architectural strengths that **exceed** GitHub's
 #### GitHub's Recommendation
 > Define precise roles (e.g., "test engineer who writes tests for React components" vs "helpful coding assistant")
 
-#### Taskwright's Performance
+#### GuardKit's Performance
 **EXCELLENT** - Our role definitions are exceptionally specific:
 
 ```yaml
@@ -104,7 +104,7 @@ Review architecture during planning phase (Phase 2.5) NOT after implementation (
 #### GitHub's Recommendation
 > Show commands with flags/options upfront (first 50 lines)
 
-#### Taskwright's Problem
+#### GuardKit's Problem
 **DELAYED** - Commands appear after 200-400 lines:
 - **architectural-reviewer**: No commands until line ~750 (MCP tools)
 - **code-reviewer**: Build commands at line ~439
@@ -154,7 +154,7 @@ Commands:
 #### GitHub's Finding
 > "One real code snippet showing your style beats three paragraphs describing it"
 
-#### Taskwright's Problem
+#### GuardKit's Problem
 **TOO LATE** - Examples appear after 150-300 lines of prose:
 
 **Current State**:
@@ -222,7 +222,7 @@ class EmailService:
 #### GitHub's Recommendation
 > Three-tier system: **ALWAYS do**, **ASK first**, **NEVER do**
 
-#### Taskwright's Problem
+#### GuardKit's Problem
 **COMPLETELY MISSING** - No agent explicitly defines Always/Ask/Never boundaries
 
 #### What We Have (Implicit)
@@ -395,7 +395,7 @@ class EmailService:
 
 ---
 
-## Where Taskwright Exceeds GitHub
+## Where GuardKit Exceeds GitHub
 
 ### 1. Structured Workflow Orchestration 🏆 (9/10)
 
@@ -437,7 +437,7 @@ phase: 2.5
 **GitHub's approach** is less prescriptive:
 
 ```markdown
-# Taskwright's rigorous thresholds:
+# GuardKit's rigorous thresholds:
 - 100% test pass rate (zero tolerance)
 - ≥80% line coverage, ≥75% branch coverage
 - ≥60/100 architectural score
@@ -641,11 +641,11 @@ phase: 2.5
 ## Files Analyzed
 
 ### Global Agents (5 reviewed)
-1. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/task-manager.md` (1,156 lines)
-2. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/code-reviewer.md` (595 lines)
-3. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/architectural-reviewer.md` (867 lines)
-4. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/test-orchestrator.md` (est. 300 lines)
-5. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/agents/figma-react-orchestrator.md` (est. 300 lines)
+1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/task-manager.md` (1,156 lines)
+2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/code-reviewer.md` (595 lines)
+3. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/architectural-reviewer.md` (867 lines)
+4. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/test-orchestrator.md` (est. 300 lines)
+5. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/figma-react-orchestrator.md` (est. 300 lines)
 
 ### Template Agents (attempted, not found in expected locations)
 - `~/.agentecflow/templates/maui-mydrive/agents/entity-mapper-specialist.md`
@@ -677,7 +677,7 @@ phase: 2.5
 ## Conclusion
 
 ### Key Achievements
-Taskwright agents demonstrate **strong architectural foundations**:
+GuardKit agents demonstrate **strong architectural foundations**:
 - Exceptional role specificity (8.5/10)
 - Sophisticated workflow orchestration (9/10)
 - Rigorous quality gates (9/10)
@@ -696,11 +696,11 @@ Three areas require immediate attention:
 - Double example density (25% → 45%)
 
 **Expected Outcome**: 
-After implementing these recommendations, Taskwright's agents will combine the best of both worlds:
+After implementing these recommendations, GuardKit's agents will combine the best of both worlds:
 - **GitHub's clarity and discoverability** (examples upfront, explicit boundaries)
-- **Taskwright's sophisticated orchestration** (quality gates, phase workflows, MCP integration)
+- **GuardKit's sophisticated orchestration** (quality gates, phase workflows, MCP integration)
 
-This positions Taskwright as a **best-in-class AI-assisted development system** with exceptional agent architecture.
+This positions GuardKit as a **best-in-class AI-assisted development system** with exceptional agent architecture.
 
 ---
 

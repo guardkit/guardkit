@@ -21,7 +21,7 @@ This document provides a comprehensive checklist for analyzing the generated tem
 
 ```bash
 # Navigate to template directory
-cd ~/Projects/Github/taskwright/installer/global/templates/ardalis-clean-architecture/
+cd ~/Projects/Github/guardkit/installer/global/templates/ardalis-clean-architecture/
 
 # Get file structure overview
 find . -type f -name "*.md" -o -name "*.json" -o -name "*.template" | sort
@@ -521,7 +521,7 @@ Imagine you're a developer who:
 
 ```bash
 # Check template structure matches expected format
-cd ~/Projects/Github/taskwright/installer/global/templates/
+cd ~/Projects/Github/guardkit/installer/global/templates/
 
 # Verify directory structure
 ls -la ardalis-clean-architecture/
@@ -557,7 +557,7 @@ ls -la ardalis-clean-architecture/
 
 ### 7.3 Template Initialization Simulation
 
-**Scenario**: Developer runs `taskwright init ardalis-clean-architecture`
+**Scenario**: Developer runs `guardkit init ardalis-clean-architecture`
 
 **Expected Behavior**:
 1. Template files copied to new project

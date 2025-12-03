@@ -348,4 +348,4 @@ MIT
 
 ## Author
 
-Taskwright Team
+GuardKit Team

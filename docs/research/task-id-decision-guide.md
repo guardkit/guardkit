@@ -137,10 +137,10 @@ TASK-DOC-012           # Documentation task 12
 
 ## Recommended Decision: Hash-Based
 
-### Why This is Best for Taskwright
+### Why This is Best for GuardKit
 
 1. **Conductor.build is Core Feature**
-   - Taskwright explicitly supports parallel worktrees
+   - GuardKit explicitly supports parallel worktrees
    - File locks don't work across worktrees
    - Hash-based IDs work perfectly in parallel
 
@@ -211,7 +211,7 @@ Hash length is same as sequential: `TASK-E01-b2c4` (13 chars) vs `TASK-E01-042` 
 ### Q: What about existing JIRA/Azure DevOps integration?
 
 **A**: Mapping table handles this:
-- Taskwright uses hash internally
+- GuardKit uses hash internally
 - JIRA sees sequential `PROJ-456`
 - Azure DevOps sees integer `1234`
 - Mapping is automatic and transparent

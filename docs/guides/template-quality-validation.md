@@ -346,7 +346,7 @@ Quality Standards:
 
 ```bash
 # 1. Create test project
-taskwright init [template-name]
+guardkit init [template-name]
 
 # 2. Answer placeholder prompts
 # - ProjectName: "TestApp"

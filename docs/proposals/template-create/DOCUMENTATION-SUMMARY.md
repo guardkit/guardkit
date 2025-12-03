@@ -318,7 +318,7 @@ Before starting implementation, make sure you've:
 ## 📁 File Structure
 
 ```
-taskwright/
+guardkit/
 ├── TEMPLATE-CREATE-REDESIGN-PROPOSAL.md     ⭐ Design document (33KB)
 ├── IMPLEMENTATION-OVERVIEW.md               📋 Executive summary (12KB)
 ├── QUICK-START-GUIDE.md                     🚀 Action guide (15KB)

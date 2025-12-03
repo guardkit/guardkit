@@ -19,9 +19,9 @@ import argparse
 def _add_repo_to_path():
     """Add repository root to sys.path if not already present."""
     script_path = Path(__file__).resolve()
-    # From: /path/to/taskwright/installer/global/commands/agent-enhance.py
-    # To:   /path/to/taskwright/
-    # Navigate: commands/ -> global/ -> installer/ -> taskwright/ (4 levels up)
+    # From: /path/to/guardkit/installer/global/commands/agent-enhance.py
+    # To:   /path/to/guardkit/
+    # Navigate: commands/ -> global/ -> installer/ -> guardkit/ (4 levels up)
     repo_root = script_path.parent.parent.parent.parent
     repo_root_str = str(repo_root)
 

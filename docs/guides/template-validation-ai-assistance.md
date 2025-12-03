@@ -2,7 +2,7 @@
 
 ## Overview
 
-Taskwright's comprehensive audit (Level 3) includes AI-assisted analysis for 4 sections:
+GuardKit's comprehensive audit (Level 3) includes AI-assisted analysis for 4 sections:
 - **Section 8**: Comparison with Source
 - **Section 11**: Detailed Findings
 - **Section 12**: Validation Testing
@@ -158,7 +158,7 @@ Test each template file independently:
 1. **Repository Templates**
    ```bash
    # Test scenario 1: Basic CRUD operations
-   taskwright init my-template
+   guardkit init my-template
    npm run test:unit
 
    # Expected: All repository tests pass

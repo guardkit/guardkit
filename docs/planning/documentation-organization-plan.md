@@ -1,4 +1,4 @@
-# Taskwright Documentation Organization Plan
+# GuardKit Documentation Organization Plan
 
 **Date**: 2025-11-25
 **Task**: TASK-957C
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The Taskwright repository contains **417 markdown files** across **59 subdirectories**, mixing user-facing documentation with internal development artifacts. This plan provides:
+The GuardKit repository contains **417 markdown files** across **59 subdirectories**, mixing user-facing documentation with internal development artifacts. This plan provides:
 
 1. Complete inventory of all documentation
 2. Clear categorization (User-Facing / Developer / Internal)
@@ -105,7 +105,7 @@ The Taskwright repository contains **417 markdown files** across **59 subdirecto
 - **migration-guide.md** (6.7 KB) - Migration guide
 - **quick-reference.md** (11 KB) - Quick reference
 - **task-review-implementation-guide.md** (26 KB) - Task review implementation
-- **taskwright-workflow.md** (45 KB) - Core workflow documentation
+- **guardkit-workflow.md** (45 KB) - Core workflow documentation
 - **template-philosophy.md** - Template design philosophy
 - **template-validation-guide.md** - Template validation system
 - Plus 12 more guide files
@@ -120,7 +120,7 @@ The Taskwright repository contains **417 markdown files** across **59 subdirecto
 - **plan-modification-workflow.md** (22 KB) - Plan modifications
 - **quality-gates-workflow.md** (20 KB) - Quality gates
 - **task-review-workflow.md** (22 KB) - Task review workflow
-- **taskwright-vs-requirekit.md** (12 KB) - Product comparison
+- **guardkit-vs-requirekit.md** (12 KB) - Product comparison
 - **TEMPLATE-LIFECYCLE-complete-flow.md** (21 KB) - Template lifecycle
 - **ux-design-integration-workflow.md** (28 KB) - UX design integration
 - Plus 2 more workflow files
@@ -187,7 +187,7 @@ Each template has:
 4. **react-fastapi-monorepo** (9.2/10 quality) - Full-stack monorepo
 5. **default** (8.0/10 quality) - Language-agnostic foundation
 
-**Note**: taskwright-python template was removed (ref: TASK-G6D4) as Taskwright's `.claude/` is git-managed.
+**Note**: guardkit-python template was removed (ref: TASK-G6D4) as GuardKit's `.claude/` is git-managed.
 
 #### Reference Documentation
 - **quick-reference/** (5 files) - Quick reference cards
@@ -250,12 +250,12 @@ Each template has:
 ### Getting Started
 - **Installation** (aggregate from README.md + installer/global/instructions/)
 - **Quickstart** (aggregate from guides/GETTING-STARTED.md)
-- **Your First Task** (new walkthrough or link to taskwright-workflow.md)
+- **Your First Task** (new walkthrough or link to guardkit-workflow.md)
 - **Migration Guide** (guides/migration-guide.md)
 - **Claude Code Web Setup** (guides/claude-code-web-setup.md)
 
 ### Core Concepts
-- **Taskwright Workflow** (guides/taskwright-workflow.md)
+- **GuardKit Workflow** (guides/guardkit-workflow.md)
 - **Task Lifecycle** (extract from workflow)
   - Create → Work → Complete
   - Task States & Transitions
@@ -307,7 +307,7 @@ Comprehensive workflows from docs/workflows/:
 - **UX Design Integration** (ux-design-integration-workflow.md)
 - **Template Lifecycle** (TEMPLATE-LIFECYCLE-complete-flow.md)
 - **Context7 MCP Integration** (context7-mcp-integration-workflow.md)
-- **Taskwright vs RequireKit** (taskwright-vs-requirekit.md)
+- **GuardKit vs RequireKit** (guardkit-vs-requirekit.md)
 
 ### Agent System
 Documentation for all 19+ agents:
@@ -361,7 +361,7 @@ Each with link to installer/global/templates/{name}/README.md:
 - **react-fastapi-monorepo** (9.2/10) - Full-stack monorepo
 - **default** (8.0/10) - Language-agnostic
 
-**Note**: taskwright-python removed (TASK-G6D4) - Taskwright uses git-managed `.claude/`
+**Note**: guardkit-python removed (TASK-G6D4) - GuardKit uses git-managed `.claude/`
 
 #### Template Commands
 - **/template-create** - Create from codebase
@@ -437,7 +437,7 @@ Each with link to installer/global/templates/{name}/README.md:
    - Length: ~150-200 lines
 
 3. **docs/core-concepts/index.md** - Core Concepts section home
-   - Overview: Taskwright philosophy, quality gates, workflows
+   - Overview: GuardKit philosophy, quality gates, workflows
    - Link to: All workflow documentation
    - Length: ~100-150 lines
 
@@ -457,7 +457,7 @@ Each with link to installer/global/templates/{name}/README.md:
    - Quality tier explanation (9+/10, 8-9/10)
    - Link to: All 5 templates + guides
    - Length: ~150 lines
-   - **Note**: taskwright-python removed (TASK-G6D4)
+   - **Note**: guardkit-python removed (TASK-G6D4)
 
 7. **docs/advanced/index.md** - Advanced Topics section home
    - MCP integration overview
@@ -481,7 +481,7 @@ Each with link to installer/global/templates/{name}/README.md:
 
 10. **docs/faq.md** - Frequently Asked Questions
     - Common questions from CLAUDE.md troubleshooting section
-    - When to use Taskwright vs RequireKit
+    - When to use GuardKit vs RequireKit
     - MCP setup questions
     - Template selection questions
     - Length: ~150-200 lines
@@ -502,14 +502,14 @@ Each with link to installer/global/templates/{name}/README.md:
     - Length: ~100-150 lines
 
 13. **docs/integrations/requirekit.md** - RequireKit Integration
-    - Extract from workflows/taskwright-vs-requirekit.md
+    - Extract from workflows/guardkit-vs-requirekit.md
     - When to use each, how they complement
     - Length: ~100 lines
 
 ### Existing Content to Reuse (No Action Needed)
 
 ✅ **guides/GETTING-STARTED.md** - Excellent quickstart (9.2 KB)
-✅ **guides/taskwright-workflow.md** - Comprehensive workflow (45 KB)
+✅ **guides/guardkit-workflow.md** - Comprehensive workflow (45 KB)
 ✅ **workflows/complexity-management-workflow.md** - Complete complexity guide (20 KB)
 ✅ **workflows/quality-gates-workflow.md** - Quality gates explained (20 KB)
 ✅ **workflows/task-review-workflow.md** - Task review process (22 KB)
@@ -617,11 +617,11 @@ exclude_docs: |
 ### MkDocs Configuration Preview
 
 ```yaml
-site_name: Taskwright Documentation
+site_name: GuardKit Documentation
 site_description: Lightweight AI-Assisted Development with Quality Gates
-site_url: https://taskwright.github.io  # or custom domain
-repo_url: https://github.com/taskwright/taskwright
-repo_name: taskwright/taskwright
+site_url: https://guardkit.github.io  # or custom domain
+repo_url: https://github.com/guardkit/guardkit
+repo_name: guardkit/guardkit
 
 theme:
   name: material
@@ -698,7 +698,7 @@ nav:
       - Claude Code Web Setup: guides/claude-code-web-setup.md
   - Core Concepts:
       - core-concepts/index.md
-      - Taskwright Workflow: guides/taskwright-workflow.md
+      - GuardKit Workflow: guides/guardkit-workflow.md
       - Quality Gates: workflows/quality-gates-workflow.md
       - Complexity Management: workflows/complexity-management-workflow.md
       - Design-First Workflow: workflows/design-first-workflow.md
@@ -736,7 +736,7 @@ nav:
       - UX Design Integration: workflows/ux-design-integration-workflow.md
       - Template Lifecycle: workflows/TEMPLATE-LIFECYCLE-complete-flow.md
       - Context7 MCP: workflows/context7-mcp-integration-workflow.md
-      - Taskwright vs RequireKit: workflows/taskwright-vs-requirekit.md
+      - GuardKit vs RequireKit: workflows/guardkit-vs-requirekit.md
   - Agent System:
       - agents/index.md
       - Overview:
@@ -959,14 +959,14 @@ Create 13 landing pages in priority order:
 **Recommendation**: Dedicated "Templates" section
 
 **Rationale**:
-- 5 templates with comprehensive docs (~26 files after taskwright-python removal)
+- 5 templates with comprehensive docs (~26 files after guardkit-python removal)
 - Template system is core differentiator
 - Multiple related guides (philosophy, creation, validation)
 - Justifies dedicated navigation section
 
 **Action**: Create "Templates" top-level nav section
 
-**Note**: taskwright-python removed (TASK-G6D4) - Taskwright's `.claude/` is git-managed
+**Note**: guardkit-python removed (TASK-G6D4) - GuardKit's `.claude/` is git-managed
 
 ### Decision 5: Agent Documentation
 **Recommendation**: Dedicated "Agent System" section
@@ -975,7 +975,7 @@ Create 13 landing pages in priority order:
 - 19+ agent definitions
 - Agent discovery system
 - Agent enhancement workflow
-- Core to Taskwright value proposition
+- Core to GuardKit value proposition
 
 **Action**: Create "Agent System" top-level nav section
 
@@ -1113,13 +1113,13 @@ Each of the 5 templates has:
 - **Multiple agent .md files** - Stack-specific agent definitions
 - **Example code** - Sample implementations
 
-**Total template documentation**: ~26 markdown files (after taskwright-python removal)
+**Total template documentation**: ~26 markdown files (after guardkit-python removal)
 
 **Templates by quality score**:
 - 9.0-9.2/10: react-typescript, fastapi-python, react-fastapi-monorepo (3 templates)
 - 8.0-8.5/10: nextjs-fullstack, default (2 templates)
 
-**Note**: taskwright-python template removed (TASK-G6D4) - Taskwright's `.claude/` is git-managed, so template initialization is not needed for Taskwright development
+**Note**: guardkit-python template removed (TASK-G6D4) - GuardKit's `.claude/` is git-managed, so template initialization is not needed for GuardKit development
 
 ### Appendix D: Command Categories
 
@@ -1163,7 +1163,7 @@ Each of the 5 templates has:
 
 ## Conclusion
 
-This plan provides a comprehensive roadmap for organizing Taskwright's 417 markdown files into a clean, navigable documentation site. Key outcomes:
+This plan provides a comprehensive roadmap for organizing GuardKit's 417 markdown files into a clean, navigable documentation site. Key outcomes:
 
 1. **Clear categorization**: 172 user-facing, 49 developer, 230 internal
 2. **Navigation structure**: 8 top-level sections, max 3 levels deep

@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions for Taskwright workflows.
+Common issues and solutions for GuardKit workflows.
 
 ## Quick Reference
 
@@ -9,7 +9,7 @@ Common issues and solutions for Taskwright workflows.
 1. Run `/debug` to check your configuration
 2. Check the [Common Issues](#common-issues) section below
 3. Review [Command-Specific Troubleshooting](#command-specific-troubleshooting)
-4. [Report an issue](https://github.com/taskwright-dev/taskwright/issues) if problem persists
+4. [Report an issue](https://github.com/guardkit/guardkit/issues) if problem persists
 
 ## Common Issues
 
@@ -27,7 +27,7 @@ ls -l ~/.agentecflow/bin/agent-enhance
 readlink ~/.agentecflow/bin/agent-enhance
 
 # Re-run installation
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 ./installer/scripts/install.sh
 ```
 
@@ -45,11 +45,11 @@ chmod +x ~/.agentecflow/bin/*
 
 **Template Initialization Fails**
 
-If `taskwright init` fails:
+If `guardkit init` fails:
 
 ```bash
 # Check available templates
-taskwright init --list
+guardkit init --list
 
 # Verify template exists
 ls -la installer/global/templates/
@@ -106,7 +106,7 @@ ls -la .claude/state/
 
 **State Not Syncing Across Worktrees**
 
-Taskwright state is auto-committed on every command. If state isn't syncing:
+GuardKit state is auto-committed on every command. If state isn't syncing:
 
 1. Check symlinks: `ls -l .claude/`
 2. Verify auto-commit working: `git log .claude/state/`
@@ -243,7 +243,7 @@ Use `/debug` to diagnose configuration issues:
 - Task state directory
 - Test runner setup
 
-**[/debug Command Reference](https://github.com/taskwright-dev/taskwright/blob/main/installer/global/commands/debug.md)**
+**[/debug Command Reference](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/debug.md)**
 
 ## Getting Help
 
@@ -257,7 +257,7 @@ Use `/debug` to diagnose configuration issues:
 
 ### Reporting Issues
 
-**[Create an Issue on GitHub](https://github.com/taskwright-dev/taskwright/issues)**
+**[Create an Issue on GitHub](https://github.com/guardkit/guardkit/issues)**
 
 **Include:**
 
@@ -270,13 +270,13 @@ Use `/debug` to diagnose configuration issues:
 
 ### Community Support
 
-- **GitHub Issues**: [taskwright/issues](https://github.com/taskwright-dev/taskwright/issues)
-- **GitHub Discussions**: [taskwright/discussions](https://github.com/taskwright-dev/taskwright/discussions)
+- **GitHub Issues**: [guardkit/issues](https://github.com/guardkit/guardkit/issues)
+- **GitHub Discussions**: [guardkit/discussions](https://github.com/guardkit/guardkit/discussions)
 
 ---
 
 ## Next Steps
 
 - **Run Diagnostics**: Use `/debug` to check your setup
-- **Review Workflow**: [Taskwright Workflow Guide](guides/taskwright-workflow.md)
-- **Check Commands**: [Command Reference](https://github.com/taskwright-dev/taskwright/tree/main/installer/global/commands)
+- **Review Workflow**: [GuardKit Workflow Guide](guides/guardkit-workflow.md)
+- **Check Commands**: [Command Reference](https://github.com/guardkit/guardkit/tree/main/installer/global/commands)

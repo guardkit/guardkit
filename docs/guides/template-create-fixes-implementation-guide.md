@@ -104,20 +104,20 @@ tests/integration/test_template_create_non_interactive.py     (NEW)
 **Setup**:
 ```bash
 # Terminal 1: Main worktree (for monitoring/merging)
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull
 
 # Terminal 2: Worktree for TASK-9037
 conductor create task-9037
-# Creates: ~/Projects/appmilla_github/taskwright-task-9037/
-cd ~/Projects/appmilla_github/taskwright-task-9037
+# Creates: ~/Projects/appmilla_github/guardkit-task-9037/
+cd ~/Projects/appmilla_github/guardkit-task-9037
 /task-work TASK-9037
 
 # Terminal 3: Worktree for TASK-9038
 conductor create task-9038
-# Creates: ~/Projects/appmilla_github/taskwright-task-9038/
-cd ~/Projects/appmilla_github/taskwright-task-9038
+# Creates: ~/Projects/appmilla_github/guardkit-task-9038/
+cd ~/Projects/appmilla_github/guardkit-task-9038
 /task-work TASK-9038
 ```
 
@@ -176,18 +176,18 @@ conductor --version
 **Create worktrees**:
 ```bash
 # Terminal 1: Main repo (for coordination)
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull origin main
 
 # Terminal 2: Worktree for TASK-9037
 conductor create task-9037
-cd ~/Projects/appmilla_github/taskwright-task-9037
+cd ~/Projects/appmilla_github/guardkit-task-9037
 git checkout -b fix/task-9037-build-artifacts
 
 # Terminal 3: Worktree for TASK-9038
 conductor create task-9038
-cd ~/Projects/appmilla_github/taskwright-task-9038
+cd ~/Projects/appmilla_github/guardkit-task-9038
 git checkout -b feature/task-9038-qa-command
 ```
 
@@ -197,9 +197,9 @@ git checkout -b feature/task-9038-qa-command
 
 **Terminal 2 (TASK-9037)**:
 ```bash
-cd ~/Projects/appmilla_github/taskwright-task-9037
+cd ~/Projects/appmilla_github/guardkit-task-9037
 
-# Execute task-work (uses taskwright workflow)
+# Execute task-work (uses guardkit workflow)
 /task-work TASK-9037
 
 # Monitor progress
@@ -209,9 +209,9 @@ cd ~/Projects/appmilla_github/taskwright-task-9037
 
 **Terminal 3 (TASK-9038)**:
 ```bash
-cd ~/Projects/appmilla_github/taskwright-task-9038
+cd ~/Projects/appmilla_github/guardkit-task-9038
 
-# Execute task-work (uses taskwright workflow)
+# Execute task-work (uses guardkit workflow)
 /task-work TASK-9038
 
 # Monitor progress
@@ -241,7 +241,7 @@ cd ~/Projects/appmilla_github/taskwright-task-9038
 
 ```bash
 # Terminal 2: TASK-9037 worktree
-cd ~/Projects/appmilla_github/taskwright-task-9037
+cd ~/Projects/appmilla_github/guardkit-task-9037
 
 # Verify tests pass
 pytest tests/unit/test_exclusions.py -v
@@ -303,7 +303,7 @@ cd ~/Projects/DeCUK.Mobile.MyDrive
 
 ```bash
 # Terminal 3: TASK-9038 worktree
-cd ~/Projects/appmilla_github/taskwright-task-9038
+cd ~/Projects/appmilla_github/guardkit-task-9038
 
 # Verify tests pass
 pytest tests/unit/test_template_qa_orchestrator.py -v
@@ -360,14 +360,14 @@ cd ~/Projects/test-project
 **Terminal 1 or new worktree**:
 ```bash
 # Option A: Work directly on main (simpler)
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull origin main
 /task-work TASK-9039
 
 # Option B: Use new worktree (cleaner)
 conductor create task-9039
-cd ~/Projects/appmilla_github/taskwright-task-9039
+cd ~/Projects/appmilla_github/guardkit-task-9039
 git checkout -b refactor/task-9039-remove-qa
 /task-work TASK-9039
 ```
@@ -432,7 +432,7 @@ git push origin main
 **Verify all fixes work together**:
 
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull origin main
 
@@ -553,7 +553,7 @@ ls installer/global/commands/template-qa.md
 **Impact**: LOW (state committed to git)
 
 **Mitigation**:
-- Taskwright uses symlinks for commands/agents (shared across worktrees)
+- GuardKit uses symlinks for commands/agents (shared across worktrees)
 - State files in `docs/state/` committed to git (synced automatically)
 - Conductor docs confirm full state preservation
 
@@ -576,7 +576,7 @@ ls docs/state/TASK-9037/
 **Create worktrees**:
 ```bash
 conductor create <task-name>
-# Creates: ~/Projects/appmilla_github/taskwright-<task-name>/
+# Creates: ~/Projects/appmilla_github/guardkit-<task-name>/
 ```
 
 **List worktrees**:
@@ -589,7 +589,7 @@ conductor list
 ```bash
 conductor switch <task-name>
 # Or use cd directly
-cd ~/Projects/appmilla_github/taskwright-<task-name>/
+cd ~/Projects/appmilla_github/guardkit-<task-name>/
 ```
 
 **Delete worktrees** (after merge):
@@ -636,7 +636,7 @@ git pull origin main
 ### During Execution Checklist
 
 **TASK-9037**:
-- [ ] Worktree created: `taskwright-task-9037`
+- [ ] Worktree created: `guardkit-task-9037`
 - [ ] `/task-work TASK-9037` executed
 - [ ] Tests passing (100%)
 - [ ] Coverage ≥ 80%
@@ -644,7 +644,7 @@ git pull origin main
 - [ ] Merged to main
 
 **TASK-9038**:
-- [ ] Worktree created: `taskwright-task-9038`
+- [ ] Worktree created: `guardkit-task-9038`
 - [ ] `/task-work TASK-9038` executed
 - [ ] Tests passing (100%)
 - [ ] `/template-qa` command works
@@ -653,7 +653,7 @@ git pull origin main
 
 **TASK-9039**:
 - [ ] ⚠️ **VERIFIED TASK-9038 MERGED** (critical!)
-- [ ] Worktree created: `taskwright-task-9039`
+- [ ] Worktree created: `guardkit-task-9039`
 - [ ] `/task-work TASK-9039` executed
 - [ ] Tests passing (100%)
 - [ ] Non-interactive workflow verified
@@ -686,7 +686,7 @@ ls -la ~/.claude/commands/task-work.md
 # Should be symlink to ~/.agentecflow/commands/task-work.md
 
 # If not, re-run installer
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 ./installer/scripts/install.sh
 ```
 
@@ -702,8 +702,8 @@ cd ~/Projects/appmilla_github/taskwright
 # Or fall back to Option 2 (Sequential execution)
 
 # Alternative: Manual worktree creation
-git worktree add ../taskwright-task-9037 -b fix/task-9037-build-artifacts
-cd ../taskwright-task-9037
+git worktree add ../guardkit-task-9037 -b fix/task-9037-build-artifacts
+cd ../guardkit-task-9037
 /task-work TASK-9037
 ```
 
@@ -717,11 +717,11 @@ cd ../taskwright-task-9037
 ```bash
 # Verify PYTHONPATH
 echo $PYTHONPATH
-# Should include taskwright root
+# Should include guardkit root
 
 # If not set, add to shell profile
-export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright:$PYTHONPATH"
-export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global:$PYTHONPATH"
+export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit:$PYTHONPATH"
+export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global:$PYTHONPATH"
 
 # Re-run tests
 pytest tests/unit/test_exclusions.py -v
@@ -801,18 +801,18 @@ ls installer/global/lib/template_creation/qa_session.py
 
 ```bash
 # Terminal 1: Main coordination
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git checkout main
 git pull origin main
 
 # Terminal 2: TASK-9037
 conductor create task-9037
-cd ~/Projects/appmilla_github/taskwright-task-9037
+cd ~/Projects/appmilla_github/guardkit-task-9037
 /task-work TASK-9037
 
 # Terminal 3: TASK-9038
 conductor create task-9038
-cd ~/Projects/appmilla_github/taskwright-task-9038
+cd ~/Projects/appmilla_github/guardkit-task-9038
 /task-work TASK-9038
 ```
 

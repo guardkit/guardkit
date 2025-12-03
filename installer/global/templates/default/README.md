@@ -1,11 +1,11 @@
-# Default Template - Language-Agnostic Taskwright
+# Default Template - Language-Agnostic GuardKit
 
 Version: 2.0.0
 Last Updated: 2025-11-09
 
 ## Overview
 
-The **default** template is a minimal, language-agnostic starting point for Taskwright projects that don't fit into specialized templates. It provides the core Taskwright workflow without stack-specific constraints.
+The **default** template is a minimal, language-agnostic starting point for GuardKit projects that don't fit into specialized templates. It provides the core GuardKit workflow without stack-specific constraints.
 
 ## Purpose
 
@@ -13,7 +13,7 @@ Use this template for:
 
 1. **Unsupported Languages**: Go, Rust, Ruby, PHP, Kotlin, Swift, Elixir, Scala, etc.
 2. **Custom Stacks**: Unique technology combinations
-3. **Prototyping**: Exploring Taskwright before committing to a stack
+3. **Prototyping**: Exploring GuardKit before committing to a stack
 4. **Template Development**: Building custom templates with `/template-create`
 
 **Do NOT use for well-supported stacks** - use specialized templates instead:
@@ -56,7 +56,7 @@ docs/                # Documentation (created as needed)
 
 ### Available Commands
 
-All core Taskwright commands work out of the box:
+All core GuardKit commands work out of the box:
 
 ```bash
 # Task lifecycle
@@ -82,10 +82,10 @@ All core Taskwright commands work out of the box:
 
 ```bash
 # Initialize with default template
-taskwright init default
+guardkit init default
 
 # Or specify path
-taskwright init default --path /path/to/project
+guardkit init default --path /path/to/project
 ```
 
 This creates:
@@ -183,7 +183,7 @@ See [Creating Local Templates](../../../docs/guides/creating-local-templates.md)
 
 ```bash
 # Initialize
-taskwright init default
+guardkit init default
 
 # Customize settings.json
 {
@@ -205,7 +205,7 @@ taskwright init default
 
 ```bash
 # Initialize
-taskwright init default
+guardkit init default
 
 # Customize settings.json
 {
@@ -230,7 +230,7 @@ taskwright init default
 
 ```bash
 # Initialize
-taskwright init default
+guardkit init default
 
 # Customize settings.json
 {
@@ -258,7 +258,7 @@ EOF
 
 ## Quality Gates
 
-The default template includes all Taskwright quality gates:
+The default template includes all GuardKit quality gates:
 
 | Gate | Threshold | Blocking | Description |
 |------|-----------|----------|-------------|
@@ -328,7 +328,7 @@ cp -r tasks/ ../backup/
 cp -r docs/ ../backup/
 
 # 2. Reinitialize with specialized template
-taskwright init react  # or python, typescript-api, etc.
+guardkit init react  # or python, typescript-api, etc.
 
 # 3. Restore state
 cp -r ../backup/state/ .claude/
@@ -363,7 +363,7 @@ See [Template Migration Guide](../../../docs/guides/template-migration.md) for c
 ls -la .claude/commands/
 
 # If missing, reinitialize
-taskwright init default --force
+guardkit init default --force
 ```
 
 ### Issue: Tests not running
@@ -431,4 +431,4 @@ taskwright init default --force
 
 ## License
 
-Part of the Taskwright project. See root LICENSE file.
+Part of the GuardKit project. See root LICENSE file.

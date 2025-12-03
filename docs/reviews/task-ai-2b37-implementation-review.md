@@ -36,7 +36,7 @@ The TASK-AI-2B37 implementation in the `ai-agent-enhancement` worktree (`.conduc
 
 ### What Was Implemented
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/zurich-v1/installer/global/lib/agent_enhancement/enhancer.py`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/zurich-v1/installer/global/lib/agent_enhancement/enhancer.py`
 
 **Lines 278-298**:
 ```python
@@ -849,7 +849,7 @@ class TestAIEnhancement:
 
 **Step 1: Prepare Branch** (5 minutes)
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/zurich-v1
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/zurich-v1
 git status  # Verify we're in ai-agent-enhancement branch
 git stash   # Stash current changes
 ```
@@ -900,7 +900,7 @@ git push origin ai-agent-enhancement
 
 **Step 6: Merge to Main** (5 minutes)
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 git checkout main
 git merge ai-agent-enhancement
 git push origin main

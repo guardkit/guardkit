@@ -18,7 +18,7 @@ During template analysis testing, we observed that the `/template-create` comman
 
 ```
 Step 1: Template Creation (Development)
-├─ Location: /Users/richwoollcott/Projects/Github/taskwright/
+├─ Location: /Users/richwoollcott/Projects/Github/guardkit/
 │            installer/global/templates/ardalis-clean-architecture/
 ├─ Command: /template-create
 └─ Output: Template written to REPOSITORY location
@@ -30,7 +30,7 @@ Step 2: Template Installation (Deployment)
 
 Step 3: Template Usage (Runtime)
 ├─ Location: Project directory
-├─ Command: taskwright init ardalis-clean-architecture
+├─ Command: guardkit init ardalis-clean-architecture
 └─ Output: Init reads from GLOBAL location (~/.agentecflow/templates/)
 ```
 
@@ -40,10 +40,10 @@ When testing the `ardalis-clean-architecture` template:
 
 ```bash
 # 1. Created template on macOS VM
-/template-create  # Wrote to repo: ~/Projects/Github/taskwright/installer/global/templates/
+/template-create  # Wrote to repo: ~/Projects/Github/guardkit/installer/global/templates/
 
 # 2. Tried to use template immediately
-taskwright init ardalis-clean-architecture
+guardkit init ardalis-clean-architecture
 # ⚠️ Result: "Template 'ardalis-clean-architecture' not found, using default"
 
 # 3. Had to run installer to make template available
@@ -115,7 +115,7 @@ User creates template for team
 Template creator develops template
 └─> Template goes to repo
     └─> Gets reviewed and polished
-        └─> Committed to GitHub (taskwright repository)
+        └─> Committed to GitHub (guardkit repository)
             └─> install.sh makes it available globally
 ```
 
@@ -146,14 +146,14 @@ Let's evaluate which approach best serves different user types:
 ```bash
 /template-create  # Creates in repo
 ./installer/scripts/install.sh  # Install to global
-taskwright init my-template  # Use it
+guardkit init my-template  # Use it
 ```
 **Rating**: ⚠️ Extra step (install.sh) feels unnecessary
 
 **Direct-to-Global Workflow**:
 ```bash
 /template-create  # Creates in ~/.agentecflow/templates/
-taskwright init my-template  # Use immediately
+guardkit init my-template  # Use immediately
 ```
 **Rating**: ✅ Streamlined, immediate use
 
@@ -185,7 +185,7 @@ git push
 ---
 
 #### Use Case 3: Open Source Contributor (Public Templates)
-**Scenario**: Contributor creates template for taskwright repository.
+**Scenario**: Contributor creates template for guardkit repository.
 
 **Current Workflow**:
 ```bash
@@ -194,7 +194,7 @@ git push
 git add installer/global/templates/new-template/
 git commit -m "Add new template"
 git push
-# Create PR for taskwright repo
+# Create PR for guardkit repo
 ```
 **Rating**: ✅ Perfect - templates are in repo as artifacts
 
@@ -207,21 +207,21 @@ git push
 ```bash
 /template-create  # Version 1 in repo
 ./installer/scripts/install.sh  # Install
-taskwright init test-template  # Test
+guardkit init test-template  # Test
 # Find issues, recreate template
 /template-create  # Version 2 in repo (overwrites)
 ./installer/scripts/install.sh  # Reinstall
-taskwright init test-template  # Test again
+guardkit init test-template  # Test again
 ```
 **Rating**: ⚠️ Reinstall step is tedious during iteration
 
 **Direct-to-Global Workflow**:
 ```bash
 /template-create  # Version 1 in global (immediate)
-taskwright init test-template  # Test immediately
+guardkit init test-template  # Test immediately
 # Find issues, recreate
 /template-create --overwrite  # Version 2 (overwrites in global)
-taskwright init test-template  # Test immediately
+guardkit init test-template  # Test immediately
 ```
 **Rating**: ✅ Faster iteration cycle
 
@@ -238,7 +238,7 @@ taskwright init test-template  # Test immediately
 - **Public Use**: Does it support open-source contributions?
 
 ### Factor 3: Consistency
-- **Command Pattern**: Does it match other Taskwright commands?
+- **Command Pattern**: Does it match other GuardKit commands?
 - **Installation Model**: Does it align with agent/command installation?
 
 ### Factor 4: Maintainability
@@ -323,7 +323,7 @@ TEMPLATE_DIR="$HOME/.agentecflow/templates/$TEMPLATE_NAME"
 
 **Implementation Logic**:
 ```bash
-if [[ inside taskwright repo ]]; then
+if [[ inside guardkit repo ]]; then
     OUTPUT_DIR="installer/global/templates/"
     echo "📦 Template for distribution (in repo)"
 elif [[ --to-repo flag ]]; then
@@ -369,14 +369,14 @@ cd ~/my-project
 /template-create
 
 # Expected: Template immediately usable
-taskwright init my-custom-template
+guardkit init my-custom-template
 # ✅ Should work without install.sh
 ```
 
 ### Scenario 2: Team Lead - Distributed Template
 ```bash
-# Create template for team (in taskwright repo)
-cd ~/Projects/taskwright
+# Create template for team (in guardkit repo)
+cd ~/Projects/guardkit
 /template-create [appropriate-flag]
 
 # Expected: Template in repo for version control
@@ -388,9 +388,9 @@ git status
 ```bash
 # Create, test, recreate loop
 /template-create
-taskwright init test-template  # Test v1
+guardkit init test-template  # Test v1
 /template-create --overwrite  # Recreate
-taskwright init test-template  # Test v2
+guardkit init test-template  # Test v2
 # ✅ Should complete quickly without install.sh
 ```
 
@@ -404,7 +404,7 @@ installer/
     └── templates/ ← Current template creation target
 
 ~/.agentecflow/
-└── templates/ ← Where taskwright init reads from
+└── templates/ ← Where guardkit init reads from
 
 installer/global/commands/
 └── template-create.md ← Command that creates templates

@@ -61,7 +61,7 @@ Implement two HIGH priority MCP optimization enhancements identified in TASK-MCP
 
 ### Context from TASK-MCP-7796 Review
 
-The review of Anthropic's MCP Code Execution article identified that Taskwright's current MCP usage aligns well with Anthropic's optimization patterns (7/8 patterns aligned, 84% overall). However, two opportunities for improvement were identified:
+The review of Anthropic's MCP Code Execution article identified that GuardKit's current MCP usage aligns well with Anthropic's optimization patterns (7/8 patterns aligned, 84% overall). However, two opportunities for improvement were identified:
 
 **Current State**:
 - ✅ Context7 uses topic-based scoping (90% token reduction vs. full docs)

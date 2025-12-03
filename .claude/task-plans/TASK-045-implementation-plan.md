@@ -472,7 +472,7 @@ def calculate_confidence_score(response: Dict) -> float:
 
 ### Dependencies
 - No new external dependencies required
-- Uses existing Taskwright infrastructure
+- Uses existing GuardKit infrastructure
 - Leverages existing Task agent
 
 ---

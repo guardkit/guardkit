@@ -6,23 +6,23 @@
 
 ## Problem
 
-README.md has updated template philosophy (lines 273-343) emphasizing "learning resources, not production code" and documenting the removal of `taskwright-python` template. The MkDocs Templates page may not reflect these changes.
+README.md has updated template philosophy (lines 273-343) emphasizing "learning resources, not production code" and documenting the removal of `guardkit-python` template. The MkDocs Templates page may not reflect these changes.
 
 ## Current State
 
 **README.md includes**:
 - "Templates are learning resources, not production code" philosophy
-- Removal of `taskwright-python` template with explanation
+- Removal of `guardkit-python` template with explanation
 - Clear guidance: use reference templates for evaluation, `/template-create` for production
 - 5 high-quality templates focus
 - Quality standards and scoring
 
-**MkDocs site**: May have outdated philosophy or list `taskwright-python`
+**MkDocs site**: May have outdated philosophy or list `guardkit-python`
 
 ## Acceptance Criteria
 
 1. Update `docs/templates/index.md` with current philosophy
-2. Remove any references to `taskwright-python` template
+2. Remove any references to `guardkit-python` template
 3. Add explanation of why it was removed
 4. Content must include:
    - "Learning resources, not production code" emphasis
@@ -36,7 +36,7 @@ README.md has updated template philosophy (lines 273-343) emphasizing "learning 
 ## Implementation Notes
 
 - Extract from README.md lines 273-343
-- Check for any `taskwright-python` references across docs
+- Check for any `guardkit-python` references across docs
 - Emphasize `/template-create` as production path
 - Link to Template Philosophy Guide
 

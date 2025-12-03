@@ -412,7 +412,7 @@ grep -i "agent" /tmp/template-create-*.log
 
 **Scenarios**:
 1. User creates template with 9.9/10 score
-2. User attempts to initialize project: `taskwright init maui-mydrive`
+2. User attempts to initialize project: `guardkit init maui-mydrive`
 3. System fails with "agent not found" error
 4. User loses trust in quality gates
 
@@ -438,7 +438,7 @@ The validation system (Phase 5.5 Level 2) completely failed to detect:
 - Invalid manifest references
 - Incomplete Phase 6 execution
 
-**This undermines the entire premise of quality gates in Taskwright.**
+**This undermines the entire premise of quality gates in GuardKit.**
 
 ---
 

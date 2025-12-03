@@ -2,11 +2,11 @@
 
 ## Overview
 
-This guide provides step-by-step instructions for testing the Taskwright initialization feature using popular GitHub repositories across different technology stacks.
+This guide provides step-by-step instructions for testing the GuardKit initialization feature using popular GitHub repositories across different technology stacks.
 
 **Estimated Time**: 2-3 days (16 hours)
 **Environment**: Virtual Machine (recommended)
-**Prerequisites**: Git, Taskwright installed
+**Prerequisites**: Git, GuardKit installed
 
 ## Table of Contents
 
@@ -18,14 +18,14 @@ This guide provides step-by-step instructions for testing the Taskwright initial
 
 ## Environment Setup
 
-### 1. Verify Taskwright Installation
+### 1. Verify GuardKit Installation
 
 ```bash
-# Check Taskwright is installed
-taskwright --version
+# Check GuardKit is installed
+guardkit --version
 
 # Verify initialization feature is available
-taskwright init --help
+guardkit init --help
 ```
 
 **Expected Output**: Should show version and help for init command.
@@ -34,8 +34,8 @@ taskwright init --help
 
 ```bash
 # Create a dedicated testing directory
-mkdir -p ~/taskwright-testing
-cd ~/taskwright-testing
+mkdir -p ~/guardkit-testing
+cd ~/guardkit-testing
 
 # Create results directory
 mkdir -p results
@@ -43,12 +43,12 @@ mkdir -p results
 
 ### 3. Copy Testing Resources
 
-If you have the Taskwright repository locally:
+If you have the GuardKit repository locally:
 
 ```bash
 # Copy the test plan and scripts
-cp /path/to/taskwright/docs/testing/initialization-test-plan.md .
-cp /path/to/taskwright/docs/testing/clone-test-repos.sh .
+cp /path/to/guardkit/docs/testing/initialization-test-plan.md .
+cp /path/to/guardkit/docs/testing/clone-test-repos.sh .
 chmod +x clone-test-repos.sh
 ```
 
@@ -56,7 +56,7 @@ Or download directly:
 
 ```bash
 # Download the clone script
-curl -O https://raw.githubusercontent.com/[your-repo]/taskwright/main/docs/testing/clone-test-repos.sh
+curl -O https://raw.githubusercontent.com/[your-repo]/guardkit/main/docs/testing/clone-test-repos.sh
 chmod +x clone-test-repos.sh
 ```
 
@@ -100,12 +100,12 @@ git clone --depth 1 https://github.com/qiangxue/go-rest-api.git
 
 ## Understanding the Init Command
 
-The `taskwright init` command automatically detects your project type and recommends an appropriate template. **No flags needed** - detection is automatic!
+The `guardkit init` command automatically detects your project type and recommends an appropriate template. **No flags needed** - detection is automatic!
 
 **How it works:**
 ```bash
 cd /path/to/repository
-taskwright init
+guardkit init
 
 # Output shows:
 # ℹ Detected project type: [type]
@@ -142,24 +142,24 @@ cd test-repos/[repository-name]
 
 ```bash
 # Run init - it will auto-detect and show results
-taskwright init
+guardkit init
 
 # To capture output for analysis (DON'T actually initialize):
 # Answer "No" when asked to proceed with initialization
 # OR use Ctrl+C after seeing the detection results
 
 # Better: Redirect output to capture detection info
-taskwright init 2>&1 | tee ../../results/[repository-name]-detection.txt
+guardkit init 2>&1 | tee ../../results/[repository-name]-detection.txt
 # Then press Ctrl+C when you see the detection results
 ```
 
 **Time the execution** (optional but recommended):
 
 ```bash
-time ( taskwright init 2>&1 | head -20 ) | tee ../../results/[repository-name]-detection.txt
+time ( guardkit init 2>&1 | head -20 ) | tee ../../results/[repository-name]-detection.txt
 ```
 
-**Important**: You DON'T want to actually initialize Taskwright in these test repos - you just want to see what it detects. So either:
+**Important**: You DON'T want to actually initialize GuardKit in these test repos - you just want to see what it detects. So either:
 1. Answer "No" to the initialization prompt
 2. Use `Ctrl+C` after seeing the detection
 3. Or just note the "Detected project type" line
@@ -184,19 +184,19 @@ Use the test data collection template (see below) to document findings.
 **Goal**: Quick validation of basic pattern detection
 
 ```bash
-cd ~/taskwright-testing/test-repos
+cd ~/guardkit-testing/test-repos
 
 # Test 1: Go Clean Architecture
 cd go-clean-architecture
 echo "Testing: go-clean-architecture" | tee ../../results/go-clean-architecture.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/go-clean-architecture.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/go-clean-architecture.txt
 # Press Ctrl+C or answer "No" to avoid full initialization
 cd ..
 
 # Test 2: Bulletproof React
 cd bulletproof-react
 echo "Testing: bulletproof-react" | tee ../../results/bulletproof-react.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/bulletproof-react.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/bulletproof-react.txt
 # Press Ctrl+C or answer "No" to avoid full initialization
 cd ..
 ```
@@ -217,19 +217,19 @@ cd ..
 # Test 3: FastAPI Template
 cd full-stack-fastapi-template
 echo "Testing: fastapi-template" | tee ../../results/fastapi-template.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/fastapi-template.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/fastapi-template.txt
 cd ..
 
 # Test 4: Ardalis Clean Architecture
 cd CleanArchitecture-ardalis
 echo "Testing: ardalis-clean-arch" | tee ../../results/ardalis-clean-arch.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/ardalis-clean-arch.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/ardalis-clean-arch.txt
 cd ..
 
 # Test 5: Go REST API
 cd go-rest-api
 echo "Testing: go-rest-api" | tee ../../results/go-rest-api.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/go-rest-api.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/go-rest-api.txt
 cd ..
 ```
 
@@ -247,31 +247,31 @@ cd ..
 # Test 6: Jason Taylor Clean Architecture
 cd CleanArchitecture-jasontaylor
 echo "Testing: jasontaylor-clean-arch" | tee ../../results/jasontaylor-clean-arch.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/jasontaylor-clean-arch.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/jasontaylor-clean-arch.txt
 cd ..
 
 # Test 7: Go REST API with Full Stack
 cd Go-Clean-Architecture-REST-API
 echo "Testing: go-rest-full-stack" | tee ../../results/go-rest-full-stack.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/go-rest-full-stack.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/go-rest-full-stack.txt
 cd ..
 
 # Test 8: Actix Examples
 cd actix-examples
 echo "Testing: actix-examples" | tee ../../results/actix-examples.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/actix-examples.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/actix-examples.txt
 cd ..
 
 # Test 9: Rocket Examples
 cd rocket/examples
 echo "Testing: rocket-examples" | tee ../../../results/rocket-examples.txt
-taskwright init 2>&1 | head -20 | tee -a ../../../results/rocket-examples.txt
+guardkit init 2>&1 | head -20 | tee -a ../../../results/rocket-examples.txt
 cd ../..
 
 # Test 10: Practical Clean Architecture (Optional - Very Large)
 cd Practical.CleanArchitecture
 echo "Testing: practical-clean-arch" | tee ../../results/practical-clean-arch.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/practical-clean-arch.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/practical-clean-arch.txt
 cd ..
 ```
 
@@ -289,7 +289,7 @@ cd ..
 # Test 11: eShop Microservices
 cd eShop
 echo "Testing: eShop" | tee ../../results/eShop.txt
-taskwright init 2>&1 | head -20 | tee -a ../../results/eShop.txt
+guardkit init 2>&1 | head -20 | tee -a ../../results/eShop.txt
 cd ..
 ```
 
@@ -469,11 +469,11 @@ ping github.com
 git clone https://github.com/zhashkevych/go-clean-architecture.git
 ```
 
-#### Issue: Taskwright init command not found
+#### Issue: GuardKit init command not found
 
 ```bash
 # Verify installation
-which taskwright
+which guardkit
 
 # Check PATH
 echo $PATH
@@ -512,18 +512,18 @@ rm -rf [repo-name]
 #### Issue: Results are inconsistent
 
 ```bash
-# Clear any Taskwright state (if it exists)
+# Clear any GuardKit state (if it exists)
 rm -rf .claude/
 
 # Run detection again
-taskwright init
+guardkit init
 ```
 
 ### Getting Help
 
 If you encounter issues:
 
-1. **Check logs**: Look for log files in `.taskwright/logs/`
+1. **Check logs**: Look for log files in `.guardkit/logs/`
 2. **Verbose mode**: Run with `--verbose` flag
 3. **Debug mode**: Run with `--debug` flag
 4. **Document the issue**: Capture error messages and context
@@ -550,7 +550,7 @@ Use `tee` to save all output to files. You might need to review later.
 Consider committing results to a git repo for tracking:
 
 ```bash
-cd ~/taskwright-testing
+cd ~/guardkit-testing
 git init
 git add results/
 git commit -m "Testing results for [date]"
@@ -601,7 +601,7 @@ See [initialization-test-plan.md](initialization-test-plan.md) for report templa
 
 # Test a single repo (capture detection only)
 cd test-repos/[repo-name]
-taskwright init 2>&1 | head -20 | tee ../../results/[repo-name]-detection.txt
+guardkit init 2>&1 | head -20 | tee ../../results/[repo-name]-detection.txt
 
 # Check progress
 ls results/*.txt | wc -l
@@ -636,7 +636,7 @@ Suggested schedule for 3-day testing:
 
 For questions or issues:
 - Review [initialization-test-plan.md](initialization-test-plan.md)
-- Check Taskwright documentation
+- Check GuardKit documentation
 - Open GitHub issue
 - Contact maintainers
 

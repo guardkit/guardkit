@@ -18,7 +18,7 @@
 - Edit: `installer/scripts/init-project.sh` (lines 36-43 header + 370-462 messages)
 - Edit: `CLAUDE.md`
 - Edit: `README.md`
-- Rename: `docs/guides/agentecflow-lite-workflow.md` → `taskwright-workflow.md`
+- Rename: `docs/guides/agentecflow-lite-workflow.md` → `guardkit-workflow.md`
 - **Conflicts with:** TASK-019 (init-project.sh), TASK-021 (init-project.sh), TASK-022 (CLAUDE.md + README.md)
 
 ### TASK-021 (Update output - 1.5h)
@@ -60,18 +60,18 @@
 **Batch 1: Run in Parallel (3 worktrees)**
 ```bash
 # Worktree 1 - CRITICAL FIX
-git worktree add ../taskwright-task-022 -b task-022
-cd ../taskwright-task-022
+git worktree add ../guardkit-task-022 -b task-022
+cd ../guardkit-task-022
 # Work on TASK-022 (Fix Phase 1)
 
 # Worktree 2 - QUICK WIN
-git worktree add ../taskwright-task-018 -b task-018
-cd ../taskwright-task-018
+git worktree add ../guardkit-task-018 -b task-018
+cd ../guardkit-task-018
 # Work on TASK-018 (Move agent)
 
 # Worktree 3 - INDEPENDENT
-git worktree add ../taskwright-task-019 -b task-019
-cd ../taskwright-task-019
+git worktree add ../guardkit-task-019 -b task-019
+cd ../guardkit-task-019
 # Work on TASK-019 (Remove folders)
 ```
 
@@ -103,11 +103,11 @@ TASK-020 (2h) → TASK-021 (1.5h)
 **Batch 1: Run in Parallel (2 worktrees)**
 ```bash
 # Worktree 1 - CRITICAL + Independent
-git worktree add ../taskwright-task-022 -b task-022
+git worktree add ../guardkit-task-022 -b task-022
 # Work on TASK-022 (Fix Phase 1)
 
 # Worktree 2 - Quick + Independent
-git worktree add ../taskwright-task-018 -b task-018
+git worktree add ../guardkit-task-018 -b task-018
 # Work on TASK-018 (Move agent)
 ```
 
@@ -137,11 +137,11 @@ TASK-019 → TASK-020 → TASK-021
 
 **Batch 1: All 5 in Parallel (5 worktrees)**
 ```bash
-git worktree add ../taskwright-task-018 -b task-018
-git worktree add ../taskwright-task-019 -b task-019
-git worktree add ../taskwright-task-020 -b task-020
-git worktree add ../taskwright-task-021 -b task-021
-git worktree add ../taskwright-task-022 -b task-022
+git worktree add ../guardkit-task-018 -b task-018
+git worktree add ../guardkit-task-019 -b task-019
+git worktree add ../guardkit-task-020 -b task-020
+git worktree add ../guardkit-task-021 -b task-021
+git worktree add ../guardkit-task-022 -b task-022
 ```
 
 **Merge Order (Critical!):**
@@ -167,20 +167,20 @@ git worktree add ../taskwright-task-022 -b task-022
 # Install Conductor.build
 # See: https://conductor.build
 
-# Verify taskwright is Conductor-ready
-cd ~/Projects/appmilla_github/taskwright
+# Verify guardkit is Conductor-ready
+cd ~/Projects/appmilla_github/guardkit
 ls -la ~/.claude/commands  # Should be symlink to ~/.agentecflow/commands
 ```
 
 ### Step 2: Create Worktrees for Batch 1
 ```bash
-# From main taskwright repo
-cd ~/Projects/appmilla_github/taskwright
+# From main guardkit repo
+cd ~/Projects/appmilla_github/guardkit
 
 # Create 3 worktrees
-git worktree add ../taskwright-task-018 -b task/018-audit-agents
-git worktree add ../taskwright-task-019 -b task/019-remove-folders
-git worktree add ../taskwright-task-022 -b task/022-fix-phase1
+git worktree add ../guardkit-task-018 -b task/018-audit-agents
+git worktree add ../guardkit-task-019 -b task/019-remove-folders
+git worktree add ../guardkit-task-022 -b task/022-fix-phase1
 
 # Verify worktrees
 git worktree list
@@ -189,15 +189,15 @@ git worktree list
 ### Step 3: Open 3 Conductor Windows
 ```bash
 # Terminal 1 - TASK-022 (CRITICAL)
-cd ~/Projects/appmilla_github/taskwright-task-022
+cd ~/Projects/appmilla_github/guardkit-task-022
 conductor open  # Opens Claude Code in this worktree
 
 # Terminal 2 - TASK-018 (Quick)
-cd ~/Projects/appmilla_github/taskwright-task-018
+cd ~/Projects/appmilla_github/guardkit-task-018
 conductor open
 
 # Terminal 3 - TASK-019 (Independent)
-cd ~/Projects/appmilla_github/taskwright-task-019
+cd ~/Projects/appmilla_github/guardkit-task-019
 conductor open
 ```
 
@@ -216,7 +216,7 @@ conductor open
 ### Step 5: Merge in Order
 ```bash
 # Back to main repo
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # 1. Merge TASK-018 (no conflicts)
 git merge task/018-audit-agents
@@ -233,15 +233,15 @@ git merge task/022-fix-phase1
 git push
 
 # Cleanup worktrees
-git worktree remove ../taskwright-task-018
-git worktree remove ../taskwright-task-019
-git worktree remove ../taskwright-task-022
+git worktree remove ../guardkit-task-018
+git worktree remove ../guardkit-task-019
+git worktree remove ../guardkit-task-022
 ```
 
 ### Step 6: Sequential Execution (Batch 2)
 ```bash
 # TASK-020 and TASK-021 must be sequential (same file/section)
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 /task-work TASK-020  # 2 hours
 /task-complete TASK-020

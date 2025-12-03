@@ -435,7 +435,7 @@ cd template-nextjs
 
 **Conductor Setup**:
 ```bash
-# Ensure Taskwright symlinks created
+# Ensure GuardKit symlinks created
 ./installer/scripts/install.sh
 
 # Create 3 worktrees
@@ -567,7 +567,7 @@ cd ../main-repo
 
 ### Setup
 ```bash
-# 1. Install Taskwright (creates symlinks)
+# 1. Install GuardKit (creates symlinks)
 ./installer/scripts/install.sh
 
 # 2. Verify state symlinks

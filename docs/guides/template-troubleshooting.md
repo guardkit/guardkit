@@ -36,7 +36,7 @@ bash: /template-create: No such file or directory
 ls ~/.claude/commands/ | grep template
 
 # If missing, reinstall
-cd /path/to/taskwright
+cd /path/to/guardkit
 ./installer/scripts/install.sh
 
 # Verify installation
@@ -103,11 +103,11 @@ ModuleNotFoundError: No module named 'template_qa_session'
 # Check PYTHONPATH
 echo $PYTHONPATH
 
-# Add taskwright to path
-export PYTHONPATH="$PYTHONPATH:/path/to/taskwright"
+# Add guardkit to path
+export PYTHONPATH="$PYTHONPATH:/path/to/guardkit"
 
 # Or add to ~/.bashrc or ~/.zshrc
-echo 'export PYTHONPATH="$PYTHONPATH:/path/to/taskwright"' >> ~/.zshrc
+echo 'export PYTHONPATH="$PYTHONPATH:/path/to/guardkit"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -154,7 +154,7 @@ Template name: my template with spaces
 **Solution**:
 ```bash
 # Update to latest version
-cd /path/to/taskwright
+cd /path/to/guardkit
 git pull origin main
 ./installer/scripts/install.sh
 
@@ -384,7 +384,7 @@ vim installer/local/templates/my-template/templates/Domain/GetEntity.cs.template
 public class {{Verb}}{{EntityNamePlural}}
 
 # Test template
-taskwright init my-template
+guardkit init my-template
 # Verify generated file compiles
 ```
 
@@ -425,7 +425,7 @@ cat installer/local/templates/my-template/manifest.json | jq .
 ### Problem: Template Not Found
 
 ```bash
-$ taskwright init my-template
+$ guardkit init my-template
 Error: Template 'my-template' not found
 ```
 
@@ -455,7 +455,7 @@ ls installer/global/templates/ | grep my-template
 namespace {{ProjectName}}.Domain.Products;  # Should be MyApp.Domain.Products
 ```
 
-**Cause**: `taskwright init` failed to prompt or replace.
+**Cause**: `guardkit init` failed to prompt or replace.
 
 **Solution**:
 ```bash
@@ -471,7 +471,7 @@ cat installer/local/templates/my-template/manifest.json | jq .placeholders
 }
 
 # Re-init with explicit values
-taskwright init my-template --ProjectName=MyApp
+guardkit init my-template --ProjectName=MyApp
 ```
 
 ### Problem: Generated Project Won't Build
@@ -816,11 +816,11 @@ chmod u+w installer/local/templates/
 
 ```bash
 # Check logs
-cat ~/.taskwright/logs/template-create.log
-cat ~/.taskwright/logs/template-init.log
+cat ~/.guardkit/logs/template-create.log
+cat ~/.guardkit/logs/template-init.log
 
 # Search for errors
-grep ERROR ~/.taskwright/logs/template-create.log
+grep ERROR ~/.guardkit/logs/template-create.log
 ```
 
 ### Reporting Issues
@@ -842,7 +842,7 @@ If problem persists:
    ```
 
 2. **Check Existing Issues**:
-   - [GitHub Issues](https://github.com/taskwright/taskwright/issues)
+   - [GitHub Issues](https://github.com/guardkit/guardkit/issues)
    - Search for similar problems
 
 3. **Report Issue**:
@@ -852,8 +852,8 @@ If problem persists:
    - Mention system environment
 
 4. **Community Help**:
-   - [GitHub Discussions](https://github.com/taskwright/taskwright/discussions)
-   - Team Slack: #taskwright-support
+   - [GitHub Discussions](https://github.com/guardkit/guardkit/discussions)
+   - Team Slack: #guardkit-support
 
 ---
 
@@ -895,7 +895,7 @@ If problem persists:
 
 1. **Test Immediately**:
    ```bash
-   taskwright init my-template
+   guardkit init my-template
    dotnet build
    dotnet test
    ```
@@ -958,7 +958,7 @@ rm .template-create-session.json
 
 - **Main Guide**: [template-commands-getting-started.md](./template-commands-getting-started.md)
 - **Walkthroughs**: [template-create-walkthrough.md](./template-create-walkthrough.md)
-- **Report Issues**: [GitHub Issues](https://github.com/taskwright/taskwright/issues)
+- **Report Issues**: [GitHub Issues](https://github.com/guardkit/guardkit/issues)
 
 ---
 

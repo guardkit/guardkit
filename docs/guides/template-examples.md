@@ -292,7 +292,7 @@ Agents: [1] Yes (generates HIPAA-compliance specialist)
 **Template Usage**:
 ```bash
 # Create new service: Labs Management
-taskwright init healthcare-fastapi-hipaa
+guardkit init healthcare-fastapi-hipaa
 
 Placeholders:
   EntityName: Lab
@@ -363,7 +363,7 @@ cd ~/company/tools/project-tracker
 # Create new project from template
 mkdir ../project-tracker-new
 cd ../project-tracker-new
-taskwright init company-internal-tool-standard
+guardkit init company-internal-tool-standard
 
 # Migrate business logic
 cp -r ../project-tracker/src/domain/* src/domain/
@@ -535,7 +535,7 @@ payment-service-template/
 ```bash
 mkdir ~/projects/payment-service
 cd ~/projects/payment-service
-taskwright init payment-service-template
+guardkit init payment-service-template
 
 # Prompts:
 ProjectName: PaymentService
@@ -704,7 +704,7 @@ Result:
 ```bash
 # Day 1: New developer
 git clone company-repo
-taskwright init company-standard-template
+guardkit init company-standard-template
 
 # Fill project details
 ProjectName: NewFeature
@@ -734,8 +734,8 @@ EntityName: Feature
 git commit -m "Add company-standard-template"
 
 # All teams use
-Team A: taskwright init company-standard-template
-Team B: taskwright init company-standard-template
+Team A: guardkit init company-standard-template
+Team B: guardkit init company-standard-template
 # ... etc
 
 Result:
@@ -788,7 +788,7 @@ cd ~/projects/monolith
 # Create first microservice
 mkdir ~/projects/payment-service
 cd ~/projects/payment-service
-taskwright init microservice-template
+guardkit init microservice-template
 
 # Repeat for other services
 ```
@@ -815,7 +815,7 @@ taskwright init microservice-template
 # Create new app structure
 mkdir ~/projects/app-v2
 cd ~/projects/app-v2
-taskwright init react18-nextjs14-template
+guardkit init react18-nextjs14-template
 
 # Migrate components one by one
 # Test both versions

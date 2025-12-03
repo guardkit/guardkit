@@ -22,7 +22,7 @@ Task TASK-B479 requested creation of documentation landing pages. Upon investiga
 ### ✅ Core Concepts Landing Page (docs/concepts.md)
 - **Status**: EXISTS (comprehensive)
 - **Content**:
-  - Taskwright Workflow overview
+  - GuardKit Workflow overview
   - Complexity Management explanation
   - Quality Gates table
   - Task States & Transitions diagram
@@ -175,7 +175,7 @@ The `mkdocs build --strict` command identified 55 warnings, primarily:
 4. react-fastapi-monorepo (9.2/10)
 5. default (8+/10)
 
-No references to removed taskwright-python template found.
+No references to removed guardkit-python template found.
 
 ## Agent System Section (NEW 2025-11-23)
 
@@ -209,7 +209,7 @@ All landing pages are complete and meet requirements.
 
 ### Future Improvements (Optional)
 1. Fix 55 mkdocs warnings in supporting documentation files
-2. Add missing anchors in guides/taskwright-workflow.md (#iterative-refinement, #conductor-integration, #task-states, #development-modes)
+2. Add missing anchors in guides/guardkit-workflow.md (#iterative-refinement, #conductor-integration, #task-states, #development-modes)
 3. Add missing anchors in workflows/design-first-workflow.md (#modifying-saved-plans)
 4. Consider adding installer/global/commands/ and installer/global/agents/ to docs via symlinks or copies
 

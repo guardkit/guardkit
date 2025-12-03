@@ -26,7 +26,7 @@ completion_metrics:
 
 ## Objective
 
-Fix the broken `/task-work` command by removing the Phase 1 dependency on `requirements-analyst` agent, which was removed in TASK-003 as part of the taskwright/require-kit split.
+Fix the broken `/task-work` command by removing the Phase 1 dependency on `requirements-analyst` agent, which was removed in TASK-003 as part of the guardkit/require-kit split.
 
 ## Problem Statement
 
@@ -44,7 +44,7 @@ Phase 1: Requirements Analysis
 3. This creates a broken workflow - EVERY task execution fails immediately
 
 **Why This Happened**:
-- Requirements-analyst was removed as part of taskwright/require-kit split
+- Requirements-analyst was removed as part of guardkit/require-kit split
 - Task-manager agent was not updated to reflect this change
 - Phase 1 became a hard dependency on a non-existent agent
 
@@ -56,7 +56,7 @@ From [TASK-003-remove-requirements-agents.md](../completed/TASK-003-remove-requi
 - ❌ Removed `bdd-generator.md` (BDD/Gherkin generation)
 - ✅ Kept 15 core agents (task-manager, architectural-reviewer, test-orchestrator, etc.)
 
-**Rationale**: Taskwright is lightweight - no formal requirements gathering
+**Rationale**: GuardKit is lightweight - no formal requirements gathering
 
 ### What Broke
 Task-manager still has this code (lines 82-95):
@@ -81,10 +81,10 @@ This agent doesn't exist anymore!
 ## Solution Options
 
 ### Option 1: Make Phase 1 Optional ⭐ **RECOMMENDED**
-Skip Phase 1 entirely for taskwright. Jump straight to Phase 2 (Implementation Planning).
+Skip Phase 1 entirely for guardkit. Jump straight to Phase 2 (Implementation Planning).
 
 **Why**:
-- Aligns with taskwright's lightweight philosophy
+- Aligns with guardkit's lightweight philosophy
 - Task description + acceptance criteria are enough
 - No formal requirements gathering needed
 - Faster workflow
@@ -107,10 +107,10 @@ Replace requirements-analyst with general-purpose agent for basic requirements a
 2. Simplify Phase 1 prompt (no EARS, no BDD)
 
 ### Option 3: Copy Requirements-Analyst Back ❌ **NOT RECOMMENDED**
-Copy requirements-analyst from require-kit back to taskwright.
+Copy requirements-analyst from require-kit back to guardkit.
 
 **Why NOT**:
-- Contradicts taskwright's lightweight positioning
+- Contradicts guardkit's lightweight positioning
 - Adds unnecessary complexity
 - Undoes TASK-003 decision
 
@@ -141,9 +141,9 @@ Analyze requirements for {task.title}...
 
 **Updated**:
 ```markdown
-**Phase 1: Requirements Analysis** *(Skipped in taskwright - use require-kit for formal requirements)*
+**Phase 1: Requirements Analysis** *(Skipped in guardkit - use require-kit for formal requirements)*
 
-Taskwright uses task descriptions and acceptance criteria directly, without formal requirements gathering.
+GuardKit uses task descriptions and acceptance criteria directly, without formal requirements gathering.
 If you need EARS notation or BDD scenarios, install require-kit.
 
 Proceed directly to Phase 2...
@@ -155,9 +155,9 @@ Proceed directly to Phase 2...
 
 **Add Note**:
 ```markdown
-## Taskwright vs Require-Kit Workflow
+## GuardKit vs Require-Kit Workflow
 
-**Taskwright** (lightweight):
+**GuardKit** (lightweight):
 - Phase 1: SKIPPED (uses task description + acceptance criteria)
 - Phase 2: Implementation Planning
 - Phase 2.5: Architectural Review
@@ -173,7 +173,7 @@ Proceed directly to Phase 2...
 - Phase 2: BDD Generation (Gherkin scenarios)
 - ... (continues with Phase 2-5.5)
 
-For taskwright, skip Phase 1 and proceed directly to Phase 2.
+For guardkit, skip Phase 1 and proceed directly to Phase 2.
 ```
 
 #### 3. CLAUDE.md - Update Phase List
@@ -190,7 +190,7 @@ Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 
 **Updated**:
 ```markdown
-Phase 1: Requirements Analysis (require-kit only - skipped in taskwright)
+Phase 1: Requirements Analysis (require-kit only - skipped in guardkit)
 Phase 2: Implementation Planning (Markdown format)
 Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 Phase 2.7: Complexity Evaluation (0-10 scale)
@@ -201,7 +201,7 @@ Phase 4.5: Test Enforcement Loop (auto-fix up to 3 attempts)
 Phase 5: Code Review
 Phase 5.5: Plan Audit (scope creep detection)
 
-Note: Taskwright starts directly at Phase 2 using task descriptions and acceptance criteria.
+Note: GuardKit starts directly at Phase 2 using task descriptions and acceptance criteria.
 For formal requirements (EARS, BDD), use require-kit.
 ```
 
@@ -213,11 +213,11 @@ For formal requirements (EARS, BDD), use require-kit.
 ```markdown
 #### Phase 1: Requirements Analysis *(Require-Kit Only)*
 
-**In Taskwright**: This phase is skipped. Task descriptions and acceptance criteria are used directly.
+**In GuardKit**: This phase is skipped. Task descriptions and acceptance criteria are used directly.
 
 **In Require-Kit**: Formal requirements analysis with EARS notation and BDD generation.
 
-**Taskwright Workflow**: Proceed directly to Phase 2 (Implementation Planning).
+**GuardKit Workflow**: Proceed directly to Phase 2 (Implementation Planning).
 ```
 
 ### Implementation Steps
@@ -287,9 +287,9 @@ Document that new projects will have test failures initially.
 
 ### Test 1: Task-Work Without Requirements-Analyst
 ```bash
-cd /tmp/test-taskwright
+cd /tmp/test-guardkit
 mkdir test && cd test
-taskwright init default
+guardkit init default
 
 # Create test task
 /task-create "Test Phase 1 skip"
@@ -306,7 +306,7 @@ taskwright init default
 ### Test 2: Empty Project Test Handling
 ```bash
 # New empty project
-taskwright init dotnet-microservice
+guardkit init dotnet-microservice
 
 # Create task
 /task-create "Add health check"
@@ -326,7 +326,7 @@ taskwright init dotnet-microservice
 for template in default react python typescript-api dotnet-microservice maui-appshell maui-navigationpage; do
     cd /tmp/test-$template
     mkdir test && cd test
-    taskwright init $template
+    guardkit init $template
 
     /task-create "Test workflow"
     /task-work TASK-001
@@ -344,7 +344,7 @@ done
 - [ ] No errors about missing requirements-analyst agent
 - [ ] Empty projects handle test execution gracefully
 - [ ] All 7 templates tested successfully
-- [ ] Clear distinction between taskwright and require-kit workflows
+- [ ] Clear distinction between guardkit and require-kit workflows
 
 ## Definition of Done
 
@@ -354,7 +354,7 @@ done
 - [ ] README.md workflow updated
 - [ ] Empty project test handling implemented
 - [ ] All templates tested (no requirements-analyst errors)
-- [ ] Documentation clearly explains taskwright vs require-kit phases
+- [ ] Documentation clearly explains guardkit vs require-kit phases
 - [ ] User can successfully run /task-work without errors
 
 ## Related Issues
@@ -368,7 +368,7 @@ done
 - **Critical Priority**: Blocks ALL task execution
 - **Quick Fix**: ~2 hours
 - **High Impact**: Fixes broken workflow for every user
-- **Clean Separation**: Reinforces taskwright vs require-kit positioning
+- **Clean Separation**: Reinforces guardkit vs require-kit positioning
 
 ---
 
@@ -382,9 +382,9 @@ done
 
 #### 1. task-manager.md Updates
 - ✅ Removed requirements-analyst from sub-agent list (line 40)
-- ✅ Phase 1 already marked as "Skipped in Taskwright - Require-Kit Only" (lines 82-88)
+- ✅ Phase 1 already marked as "Skipped in GuardKit - Require-Kit Only" (lines 82-88)
 - ✅ Removed "Requirements Analysis" from Standard Mode summary template (line 162)
-- ✅ Updated "Link to Requirements" section to clarify taskwright vs require-kit (lines 1122-1128)
+- ✅ Updated "Link to Requirements" section to clarify guardkit vs require-kit (lines 1122-1128)
 
 #### 2. test-orchestrator.md Updates
 - ✅ Added Rule #0: Empty Project Detection (before Rule #1: Build Before Test)
@@ -416,7 +416,7 @@ done
 1. **Test task-work on empty project**:
    ```bash
    cd /tmp/test-empty
-   taskwright init default
+   guardkit init default
    /task-create "Test empty project handling"
    /task-work TASK-001
    # Should skip tests gracefully with success
@@ -425,7 +425,7 @@ done
 2. **Test task-work on project with source**:
    ```bash
    cd /tmp/test-with-source
-   taskwright init react
+   guardkit init react
    # Add some source code
    /task-create "Test with source code"
    /task-work TASK-001
@@ -445,7 +445,7 @@ done
 - [x] Workflow proceeds directly to Phase 2
 - [x] No errors about missing requirements-analyst agent
 - [x] Empty projects handle test execution gracefully
-- [x] Clear distinction between taskwright and require-kit workflows
+- [x] Clear distinction between guardkit and require-kit workflows
 
 All acceptance criteria met! ✅
 

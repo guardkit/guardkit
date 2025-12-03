@@ -1,6 +1,6 @@
 # Hash-Based IDs and PM Tool Integration
 
-This guide explains how Taskwright maps internal hash-based task IDs to external sequential IDs in project management tools like JIRA, Azure DevOps, Linear, and GitHub Issues.
+This guide explains how GuardKit maps internal hash-based task IDs to external sequential IDs in project management tools like JIRA, Azure DevOps, Linear, and GitHub Issues.
 
 ## The Problem: Humans Want Sequential, Systems Need Unique
 
@@ -16,9 +16,9 @@ But sequential IDs create problems for distributed/parallel workflows:
 
 ## The Solution: Automatic ID Mapping
 
-Taskwright uses **hash-based IDs internally** and **maps to sequential IDs externally**:
+GuardKit uses **hash-based IDs internally** and **maps to sequential IDs externally**:
 
-**Internal ID** (Taskwright): `TASK-E01-b2c4`
+**Internal ID** (GuardKit): `TASK-E01-b2c4`
 
 **External IDs** (PM tools):
 - JIRA: `PROJ-456`
@@ -348,7 +348,7 @@ Developers work with hash IDs internally:
 /task-create "Add caching" prefix:PERF
 # Created: TASK-PERF-v5w8
 
-# 2. Work on it (Taskwright workflow)
+# 2. Work on it (GuardKit workflow)
 /task-work TASK-PERF-v5w8
 # Phases 2-5.5 complete
 
@@ -365,7 +365,7 @@ Developers work with hash IDs internally:
 ```bash
 # 1. PM creates issue in JIRA: PROJ-460
 
-# 2. Import to Taskwright
+# 2. Import to GuardKit
 /task-import --tool jira --id PROJ-460
 # Created: TASK-x3y7
 # Mapped: TASK-x3y7 → PROJ-460
@@ -430,14 +430,14 @@ external_ids:
 
 ### Problem: Mapping Out of Sync
 
-**Symptom**: Task status in PM tool doesn't match Taskwright
+**Symptom**: Task status in PM tool doesn't match GuardKit
 
 **Solution**:
 ```bash
 # Sync from PM tool (authoritative source)
 /task-sync TASK-xxx --from jira --force
 
-# Or sync to PM tool (Taskwright authoritative)
+# Or sync to PM tool (GuardKit authoritative)
 /task-sync TASK-xxx --to jira --force
 ```
 

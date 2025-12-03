@@ -1,6 +1,6 @@
 ---
 id: TASK-000
-title: "Requirements Removal Overview - Taskwright Lite"
+title: "Requirements Removal Overview - GuardKit Lite"
 created: 2025-10-27
 status: backlog
 priority: high
@@ -23,7 +23,7 @@ subtasks:
 
 ## Context
 
-Taskwright (formerly "Agentecflow Lite") is being extracted from the TASK-001 series to focus on lightweight task workflow with quality gates, removing all requirements management features (EARS, BDD, Epic/Feature hierarchy).
+GuardKit (formerly "Agentecflow Lite") is being extracted from the TASK-001 series to focus on lightweight task workflow with quality gates, removing all requirements management features (EARS, BDD, Epic/Feature hierarchy).
 
 ## Strategic Goal
 
@@ -86,7 +86,7 @@ Create a pragmatic, lightweight AI-assisted development system that:
 - Add architectural-review, test-enforcement capabilities
 
 **TASK-011: Update Root Documentation** [2h]
-- Rewrite README.md for taskwright positioning
+- Rewrite README.md for guardkit positioning
 - Update root CLAUDE.md
 - Emphasize lightweight + quality gates
 - Remove all requirements management references
@@ -215,7 +215,7 @@ python3 -c "import installer.global.commands.lib.*"
 3. Run smoke tests for quality gates
 4. Update CHANGELOG.md
 5. Create v1.0.0 release
-6. Announce taskwright
+6. Announce guardkit
 
 ## Notes
 

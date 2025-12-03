@@ -68,14 +68,14 @@ Update all documentation to reflect new template strategy and messaging.
 
 ### 1. Update CLAUDE.md
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
 
 **Changes**:
 
 ```markdown
 ## Template Philosophy (NEW SECTION)
 
-Taskwright includes **4 high-quality templates** for learning and evaluation:
+GuardKit includes **4 high-quality templates** for learning and evaluation:
 
 ### Stack-Specific Reference Templates (9+/10 Quality)
 1. **react-typescript** - Frontend best practices (from Bulletproof React)
@@ -92,19 +92,19 @@ Taskwright includes **4 high-quality templates** for learning and evaluation:
 Each template demonstrates:
 - ✅ How to structure templates for `/template-create`
 - ✅ Stack-specific best practices (or language-agnostic patterns)
-- ✅ Taskwright workflow integration
+- ✅ GuardKit workflow integration
 - ✅ High quality standards (all score 8+/10)
 
 ### For Production: Use `/template-create`
 
 ```bash
-# Evaluate Taskwright (reference template)
-taskwright init react-typescript
+# Evaluate GuardKit (reference template)
+guardkit init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **Why?** Your production code is better than any generic template. Create templates from what you've proven works.
@@ -113,10 +113,10 @@ taskwright init your-custom-template
 
 ```bash
 # Available Templates
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
+guardkit init [react-typescript|fastapi-python|nextjs-fullstack|default]
 
 # View template details
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 ```
 
 **Template Documentation**:
@@ -142,12 +142,12 @@ cd your-production-codebase
 
 # Template created and validated
 # Ready to use
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **See**: [Creating Local Templates](docs/guides/creating-local-templates.md)
 
-## When to Use Taskwright (UPDATE)
+## When to Use GuardKit (UPDATE)
 
 ### Use When:
 - Individual tasks or small features (1-8 hours)
@@ -167,7 +167,7 @@ taskwright init your-custom-template
 
 ### 2. Update README.md
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md`
 
 **Changes**:
 
@@ -176,7 +176,7 @@ taskwright init your-custom-template
 
 ### High-Quality Templates
 
-Taskwright ships with **4 high-quality templates**: 3 stack-specific reference implementations + 1 language-agnostic default.
+GuardKit ships with **4 high-quality templates**: 3 stack-specific reference implementations + 1 language-agnostic default.
 
 #### Stack-Specific Reference Templates (Production-Proven)
 
@@ -198,12 +198,12 @@ All templates validated using comprehensive quality audit.
 
 ```bash
 # Try a reference template (evaluation)
-taskwright init react-typescript
+guardkit init react-typescript
 
 # Create your own template (production)
 cd your-production-codebase
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ### Why These 4 Templates?
@@ -216,7 +216,7 @@ Your production codebase is better than any generic template. Use `/template-cre
 - How to structure templates
 - Stack-specific best practices
 - Quality standards to target (9+/10)
-- Taskwright workflow patterns
+- GuardKit workflow patterns
 
 **Default template** provides:
 - Language-agnostic foundation for unsupported stacks (Go, Rust, Ruby, etc.)
@@ -245,12 +245,12 @@ chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # Initialize with template
-taskwright init [react-typescript|fastapi-python|nextjs-fullstack|default]
+guardkit init [react-typescript|fastapi-python|nextjs-fullstack|default]
 
 # Or create custom template
 cd your-project
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ## Features (ADD)
@@ -271,7 +271,7 @@ cd your-production-codebase
 # - Validates quality
 ```
 
-**Unique to Taskwright**: Create templates from proven code, not generic examples.
+**Unique to GuardKit**: Create templates from proven code, not generic examples.
 ```
 
 ### 3. Create Template Philosophy Guide
@@ -283,7 +283,7 @@ cd your-production-codebase
 
 ## Overview
 
-Taskwright's template strategy is simple: **Reference implementations for learning, `/template-create` for production.**
+GuardKit's template strategy is simple: **Reference implementations for learning, `/template-create` for production.**
 
 ## The 4 Templates
 
@@ -291,9 +291,9 @@ Taskwright's template strategy is simple: **Reference implementations for learni
 
 | Template | Purpose | When to Use |
 |----------|---------|-------------|
-| **react-typescript** | Learn frontend best practices | Evaluating Taskwright, learning React patterns |
-| **fastapi-python** | Learn backend API patterns | Evaluating Taskwright, learning FastAPI |
-| **nextjs-fullstack** | Learn full-stack development | Evaluating Taskwright, learning Next.js App Router |
+| **react-typescript** | Learn frontend best practices | Evaluating GuardKit, learning React patterns |
+| **fastapi-python** | Learn backend API patterns | Evaluating GuardKit, learning FastAPI |
+| **nextjs-fullstack** | Learn full-stack development | Evaluating GuardKit, learning Next.js App Router |
 
 ### Language-Agnostic Template
 
@@ -339,18 +339,18 @@ Reference templates teach:
 - How to structure templates for `/template-create`
 - What makes a template high quality
 - Stack-specific best practices
-- Taskwright workflow integration
+- GuardKit workflow integration
 
 ## The Production Workflow
 
 ### Step 1: Evaluate with Reference Templates
 
 ```bash
-# Try Taskwright quickly
-taskwright init react-typescript
+# Try GuardKit quickly
+guardkit init react-typescript
 
 # Explore generated code
-# See Taskwright in action
+# See GuardKit in action
 ```
 
 ### Step 2: Create Your Template
@@ -368,7 +368,7 @@ cd your-production-codebase
 
 ```bash
 # Now use YOUR patterns, not ours
-taskwright init your-custom-template
+guardkit init your-custom-template
 
 # Get YOUR best practices
 # Follow YOUR conventions
@@ -376,7 +376,7 @@ taskwright init your-custom-template
 
 ## Comparison with Other Tools
 
-| Tool | Approach | Taskwright Difference |
+| Tool | Approach | GuardKit Difference |
 |------|----------|---------------------|
 | create-react-app | 1 opinionated template | 3 reference examples + create your own |
 | dotnet new | 50+ built-in templates | 3 references + `/template-create` from your code |
@@ -387,19 +387,19 @@ taskwright init your-custom-template
 ## When to Use Which Template
 
 ### Use react-typescript When:
-- ⏱️ Evaluating Taskwright (< 1 hour)
+- ⏱️ Evaluating GuardKit (< 1 hour)
 - 📚 Learning React + TypeScript best practices
 - 🎓 Training new team members
 - 🔍 Reference for building your own template
 
 ### Use fastapi-python When:
-- ⏱️ Evaluating Taskwright for backend
+- ⏱️ Evaluating GuardKit for backend
 - 📚 Learning FastAPI best practices
 - 🎓 Training Python developers
 - 🔍 Reference for API architecture
 
 ### Use nextjs-fullstack When:
-- ⏱️ Evaluating Taskwright for full-stack
+- ⏱️ Evaluating GuardKit for full-stack
 - 📚 Learning Next.js App Router
 - 🎓 Training full-stack developers
 - 🔍 Reference for modern Next.js
@@ -407,7 +407,7 @@ taskwright init your-custom-template
 ### Use default When:
 - 🌐 Working with Go, Rust, Ruby, Elixir, PHP, or other unsupported languages
 - ⏱️ Quick evaluation without stack commitment
-- 🎯 Learning Taskwright before creating custom template
+- 🎯 Learning GuardKit before creating custom template
 - 📝 Need language-agnostic workflow foundation
 
 ### Use `/template-create` When:
@@ -454,11 +454,11 @@ A: Use `/template-create` in your repo, commit to git, team members run `install
 ### 5-Minute Evaluation
 
 ```bash
-# 1. Install Taskwright
+# 1. Install GuardKit
 ./installer/scripts/install.sh
 
 # 2. Try a reference template
-taskwright init react-typescript
+guardkit init react-typescript
 
 # 3. Explore generated code
 cd react-typescript-app
@@ -474,7 +474,7 @@ cd your-production-codebase
 /template-create
 
 # 2. Use your template
-taskwright init your-custom-template
+guardkit init your-custom-template
 
 # 3. Start working with YOUR patterns
 ```
@@ -570,7 +570,7 @@ grep -r "/template-create" docs/ CLAUDE.md README.md
 # Are instructions complete?
 
 # 3. Check template information
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 # Is information accurate and helpful?
 ```
 
@@ -587,7 +587,7 @@ taskwright init react-typescript --info
 - [ ] `docs/guides/template-philosophy.md` - NEW
 - [ ] `docs/guides/creating-local-templates.md` - Update examples
 - [ ] `docs/guides/template-quality-validation.md` - Reference new templates
-- [ ] `docs/guides/taskwright-workflow.md` - Update template examples
+- [ ] `docs/guides/guardkit-workflow.md` - Update template examples
 - [ ] `docs/guides/quick-reference.md` - Update template list
 - [ ] `docs/guides/GETTING-STARTED.md` - Update quick start
 

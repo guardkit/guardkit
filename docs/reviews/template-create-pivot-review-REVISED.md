@@ -34,7 +34,7 @@ After comprehensive analysis including forensic investigation of the "regression
 ### The "Regression" That Wasn't
 
 **User Report** (Nov 12, 2025):
-> "At the weekend I ran the commands to create the core templates shipping with taskwright and it appeared to work, now it all just seems to have fallen apart."
+> "At the weekend I ran the commands to create the core templates shipping with guardkit and it appeared to work, now it all just seems to have fallen apart."
 
 **Investigation Finding** (TASK-9040):
 ```
@@ -53,7 +53,7 @@ Nov 9-10 (Weekend): PARTIAL SUCCESS
 │  ├─ fastapi-python (high quality)
 │  ├─ nextjs-fullstack (9.2/10)
 │  ├─ react-fastapi-monorepo (9.2/10)
-│  ├─ taskwright-python (8+/10)
+│  ├─ guardkit-python (8+/10)
 │  └─ default (language-agnostic)
 ├─ Agent generation: 2-3 agents per template
 ├─ ✅ Seemed fine (simple reference templates)
@@ -433,7 +433,7 @@ Performance:
 
 **Verification Test**:
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git log --oneline --since="2025-01-11" | grep -i "TMPL-4E89"
 
 # Expected: See completion commit
@@ -474,13 +474,13 @@ Recommendation: Verify user has fix deployed, re-run /template-create
 ### Evidence Summary
 
 **No Regression Occurred**:
-1. ✅ Template creation worked over weekend (5 active templates created, taskwright-python later removed)
+1. ✅ Template creation worked over weekend (5 active templates created, guardkit-python later removed)
 2. ✅ Templates still exist and are intact (verified Nov 12)
 3. ✅ Recent changes were **fixes**, not regressions
 4. ✅ Template creation still working (java template created 08:48 Nov 12)
 5. ✅ TASK-TMPL-4E89 fix completed 2025-01-11
 
-**Note**: taskwright-python removed in TASK-G6D4 - Taskwright's `.claude/` is git-managed
+**Note**: guardkit-python removed in TASK-G6D4 - GuardKit's `.claude/` is git-managed
 
 **Known Issues** (not regressions):
 1. TASK-9037: Build artifact counting (affects language detection)
@@ -540,7 +540,7 @@ Recommendation: Verify user has fix deployed, re-run /template-create
 **Actions**:
 1. **Check User's Git Version**:
    ```bash
-   cd ~/Projects/appmilla_github/taskwright
+   cd ~/Projects/appmilla_github/guardkit
    git log --oneline --since="2025-01-11" | grep -E "(TMPL-4E89|agent)"
 
    # Expected: See TASK-TMPL-4E89 completion commit

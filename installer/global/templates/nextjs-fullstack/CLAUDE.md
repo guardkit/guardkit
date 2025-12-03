@@ -572,7 +572,7 @@ This template includes 3 custom AI agents specialized for Next.js full-stack dev
 
 ### 1. Initialize Project
 ```bash
-taskwright init nextjs-fullstack --output my-app
+guardkit init nextjs-fullstack --output my-app
 cd my-app
 ```
 

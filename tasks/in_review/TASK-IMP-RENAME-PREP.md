@@ -16,7 +16,7 @@ dependencies: []
 
 ## Context
 
-Part of the Taskwright → GuardKit rename initiative. This task creates the foundation for safe migration.
+Part of the GuardKit → GuardKit rename initiative. This task creates the foundation for safe migration.
 
 **Parent Review**: TASK-REV-803B
 **GitHub Rename**: ✅ Complete (https://github.com/guardkit/guardkit)
@@ -29,14 +29,14 @@ Create scripts to automate the bulk rename process safely:
    - Create timestamped backup branch
    - Export current state summary
 
-2. **Bulk Rename Script** (`scripts/rename-taskwright-to-guardkit.py`)
+2. **Bulk Rename Script** (`scripts/rename-guardkit-to-guardkit.py`)
    - Search/replace with case handling:
-     - `taskwright-dev` → `guardkit`
-     - `Taskwright` → `GuardKit`
-     - `TASKWRIGHT` → `GUARDKIT`
-     - `taskwright` → `guardkit`
-     - `tw` (CLI alias) → `gk`
-     - `twi` (CLI alias) → `gki`
+     - `guardkit` → `guardkit`
+     - `GuardKit` → `GuardKit`
+     - `GUARDKIT` → `GUARDKIT`
+     - `guardkit` → `guardkit`
+     - `gk` (CLI alias) → `gk`
+     - `gki` (CLI alias) → `gki`
    - Exclusion list:
      - `tasks/completed/*` (historical)
      - `tasks/archived/*` (historical)
@@ -45,7 +45,7 @@ Create scripts to automate the bulk rename process safely:
    - Generate change report
 
 3. **Validation Script** (`scripts/validate-rename.sh`)
-   - Check no "taskwright" remains in critical files
+   - Check no "guardkit" remains in critical files
    - List any remaining references (for review)
 
 ## Acceptance Criteria
@@ -66,7 +66,7 @@ Create scripts to automate the bulk rename process safely:
 ## Files Created
 
 - `scripts/backup-pre-rename.sh` ✅
-- `scripts/rename-taskwright-to-guardkit.py` ✅
+- `scripts/rename-guardkit-to-guardkit.py` ✅
 - `scripts/validate-rename.sh` ✅
 
 ## Implementation Summary
@@ -79,7 +79,7 @@ Create scripts to automate the bulk rename process safely:
    - Interactive confirmation for uncommitted changes
    - Clear rollback instructions
 
-2. **rename-taskwright-to-guardkit.py** (350+ lines)
+2. **rename-guardkit-to-guardkit.py** (350+ lines)
    - Comprehensive replacement patterns with case handling
    - Binary file detection (extension + null byte check)
    - Git-aware file renaming with `git mv`
@@ -112,7 +112,7 @@ Key strengths:
 ## Next Steps
 
 1. Run backup: `./scripts/backup-pre-rename.sh`
-2. Execute rename: `python3 scripts/rename-taskwright-to-guardkit.py`
+2. Execute rename: `python3 scripts/rename-guardkit-to-guardkit.py`
 3. Validate: `./scripts/validate-rename.sh`
 4. Review changes: `git diff`
-5. Commit: `git add -A && git commit -m "Rename Taskwright to GuardKit"`
+5. Commit: `git add -A && git commit -m "Rename GuardKit to GuardKit"`

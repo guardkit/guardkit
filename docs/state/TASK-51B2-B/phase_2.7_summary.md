@@ -162,7 +162,7 @@ complexity_evaluation:
 4. **Phase 4: Manual Testing** (1 hour)
    - Test with React TypeScript project
    - Test with FastAPI Python project
-   - Verify taskwright init compatibility
+   - Verify guardkit init compatibility
 
 ---
 

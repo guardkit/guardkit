@@ -13,7 +13,7 @@ After comprehensive analysis, I **strongly recommend** adopting the user's propo
 
 1. **REVERT** TASK-C2F8 implementation immediately
 2. **ADOPT** symlink-based agent sourcing for cross-stack agents
-3. **DEPRECATE** taskwright-python template
+3. **DEPRECATE** guardkit-python template
 4. **IMPLEMENT** safeguards against self-modification
 5. **ENHANCE** existing agents with discovery metadata
 
@@ -31,7 +31,7 @@ Current Implementation (Post TASK-C2F8):
 │   └── software-architect.md
 │
 └── installer/global/templates/
-    ├── taskwright-python/agents/      # DUPLICATED agents (maintenance burden)
+    ├── guardkit-python/agents/      # DUPLICATED agents (maintenance burden)
     │   ├── task-manager.md            # Copy of global
     │   ├── architectural-reviewer.md  # Copy of global
     │   ├── test-orchestrator.md       # Copy of global
@@ -47,11 +47,11 @@ Current Implementation (Post TASK-C2F8):
 |---------|----------|--------|
 | **Agent Duplication** | CRITICAL | 5 templates × 5 agents = 25 copies to maintain |
 | **Version Drift** | HIGH | Updates to global agents don't propagate |
-| **Self-Modification** | HIGH | Taskwright can overwrite its own config |
+| **Self-Modification** | HIGH | GuardKit can overwrite its own config |
 | **Maintenance Burden** | HIGH | Every agent change requires 5 template updates |
 | **Conceptual Confusion** | MEDIUM | Templates mixing infrastructure with domain |
 
-**Note**: Count updated to 5 templates after taskwright-python removal (TASK-G6D4)
+**Note**: Count updated to 5 templates after guardkit-python removal (TASK-G6D4)
 
 ### 1.3 Root Cause Analysis
 
@@ -83,10 +83,10 @@ TASK-C2F8 attempted to solve a symptom (missing agents) rather than addressing t
 
 ### 2.3 YAGNI (You Aren't Gonna Need It)
 
-**Analysis**: The `taskwright-python` template itself may violate YAGNI:
-- Taskwright uses git-managed `.claude/` directory
+**Analysis**: The `guardkit-python` template itself may violate YAGNI:
+- GuardKit uses git-managed `.claude/` directory
 - Template initialization would overwrite production config
-- No actual use case for initializing Taskwright from template
+- No actual use case for initializing GuardKit from template
 
 **Score**: 4/10
 
@@ -181,7 +181,7 @@ def initialize_project_agents(template_name):
 
 **DECISION**: Global Symlinks with copy fallback
 
-### 5.2 Should Taskwright repo's `.claude/` be modifiable?
+### 5.2 Should GuardKit repo's `.claude/` be modifiable?
 
 | Option | Pros | Cons | Score |
 |--------|------|------|-------|
@@ -191,7 +191,7 @@ def initialize_project_agents(template_name):
 
 **DECISION**: Block modification with clear error message
 
-### 5.3 Should taskwright-python template exist?
+### 5.3 Should guardkit-python template exist?
 
 | Option | Pros | Cons | Score |
 |--------|------|------|-------|
@@ -208,13 +208,13 @@ def initialize_project_agents(template_name):
 # 1. Revert TASK-C2F8 changes
 git revert <TASK-C2F8-commit>
 
-# 2. Restore Taskwright's .claude/ directory
+# 2. Restore GuardKit's .claude/ directory
 git checkout main -- .claude/
 
 # 3. Update installer to block self-modification
 # Add check in init-project.sh:
-if [ -f "./.claude/TASKWRIGHT_MANAGED" ]; then
-    echo "Error: Cannot reinitialize Taskwright's own repository"
+if [ -f "./.claude/GUARDKIT_MANAGED" ]; then
+    echo "Error: Cannot reinitialize GuardKit's own repository"
     exit 1
 fi
 ```
@@ -239,8 +239,8 @@ find installer/global/templates -name "task-manager.md" -delete
 find installer/global/templates -name "architectural-reviewer.md" -delete
 # ... etc
 
-# 2. Deprecate taskwright-python template
-mv installer/global/templates/taskwright-python installer/global/templates/.deprecated/
+# 2. Deprecate guardkit-python template
+mv installer/global/templates/guardkit-python installer/global/templates/.deprecated/
 
 # 3. Update documentation
 ```
@@ -304,14 +304,14 @@ mv installer/global/templates/taskwright-python installer/global/templates/.depr
 ### Immediate Actions (CRITICAL)
 
 1. **REVERT** TASK-C2F8 implementation
-2. **RESTORE** Taskwright's `.claude/` to git state
+2. **RESTORE** GuardKit's `.claude/` to git state
 3. **IMPLEMENT** self-modification protection
 
 ### Short-term (This Week)
 
 4. **IMPLEMENT** global agent system with symlinks
 5. **REMOVE** agent duplication from all templates
-6. **DEPRECATE** taskwright-python template
+6. **DEPRECATE** guardkit-python template
 
 ### Medium-term (Next Sprint)
 

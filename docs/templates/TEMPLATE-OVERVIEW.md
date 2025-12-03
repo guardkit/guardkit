@@ -1,4 +1,4 @@
-# Taskwright Templates Overview
+# GuardKit Templates Overview
 
 **Last Updated**: 2025-11-26
 **Template Count**: 5
@@ -7,7 +7,7 @@
 
 ## Summary
 
-Taskwright includes **5 high-quality reference templates** for different use cases, all validated to 8+/10 quality standards.
+GuardKit includes **5 high-quality reference templates** for different use cases, all validated to 8+/10 quality standards.
 
 ---
 
@@ -156,8 +156,8 @@ Quality scores reflect:
 | TASK-060 | 4 | Quality focus: removed 5 low-quality templates |
 | TASK-060A | 5 | Reinstated `default` with quality improvements |
 | TASK-062 | 5 | Added `react-fastapi-monorepo` (9.2/10) |
-| TASK-066 | 6 | Added `taskwright-python` (8+/10, internal dev) |
-| TASK-G6D4 | 5 | Removed `taskwright-python` (confusion, no valid use case) |
+| TASK-066 | 6 | Added `guardkit-python` (8+/10, internal dev) |
+| TASK-G6D4 | 5 | Removed `guardkit-python` (confusion, no valid use case) |
 | **Current** | **5** | **Stable, high-quality set** |
 
 ### Philosophy Evolution
@@ -173,7 +173,7 @@ Quality scores reflect:
 - ✅ Low maintenance
 - ✅ Consistent quality
 - ✅ Focus on learning + `/template-create` for production
-- ✅ Clear separation: Taskwright dev (git-managed) vs user projects (template-initialized)
+- ✅ Clear separation: GuardKit dev (git-managed) vs user projects (template-initialized)
 
 ---
 
@@ -182,29 +182,29 @@ Quality scores reflect:
 ### Quick Start
 
 ```bash
-# 1. Install Taskwright
+# 1. Install GuardKit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 
 # 2. Choose a template
-taskwright init [template-name]
+guardkit init [template-name]
 
 # Examples:
-taskwright init react-typescript
-taskwright init fastapi-python
-taskwright init nextjs-fullstack
-taskwright init react-fastapi-monorepo
-taskwright init default
+guardkit init react-typescript
+guardkit init fastapi-python
+guardkit init nextjs-fullstack
+guardkit init react-fastapi-monorepo
+guardkit init default
 ```
 
 ### Template Information
 
 ```bash
 # View template details
-taskwright init [template-name] --info
+guardkit init [template-name] --info
 
 # Example:
-taskwright init react-typescript --info
+guardkit init react-typescript --info
 ```
 
 ### After Initialization
@@ -240,7 +240,7 @@ Each template includes:
 
 ### Recommended Workflow
 
-1. **Evaluate** with reference templates (understand Taskwright)
+1. **Evaluate** with reference templates (understand GuardKit)
 2. **Build** your production project (proven patterns)
 3. **Extract** template with `/template-create` (from your code)
 4. **Validate** with 3-level validation system (quality assurance)
@@ -266,7 +266,7 @@ cd your-proven-project
 
 # Initialize new project
 cd ../new-project
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 **See**: [Template Philosophy Guide](../guides/template-philosophy.md) for complete rationale.
@@ -289,16 +289,16 @@ Yes, but we recommend using them as references and creating your own with `/temp
 
 ### What happened to the other templates?
 
-We reduced from 9 to 5 high-quality templates, removing 5 low-quality templates, adding 1 specialized one (react-fastapi-monorepo), and later removing taskwright-python. All templates now meet 8+/10 quality threshold. See [Template Migration Guide](../guides/template-migration.md).
+We reduced from 9 to 5 high-quality templates, removing 5 low-quality templates, adding 1 specialized one (react-fastapi-monorepo), and later removing guardkit-python. All templates now meet 8+/10 quality threshold. See [Template Migration Guide](../guides/template-migration.md).
 
-### What happened to taskwright-python?
+### What happened to guardkit-python?
 
-The `taskwright-python` template was removed (TASK-G6D4) because:
-- Taskwright's `.claude/` directory is git-managed, not template-initialized
-- Created confusion about when to run `taskwright init` on the Taskwright repo (you don't)
+The `guardkit-python` template was removed (TASK-G6D4) because:
+- GuardKit's `.claude/` directory is git-managed, not template-initialized
+- Created confusion about when to run `guardkit init` on the GuardKit repo (you don't)
 - No valid use case for users - Python CLI projects should use `fastapi-python` or create custom templates via `/template-create`
 
-**For Taskwright development**: Clone the repo; the `.claude/` configuration is checked into git.
+**For GuardKit development**: Clone the repo; the `.claude/` configuration is checked into git.
 
 **For Python projects**: Use `fastapi-python` template or create a custom template based on your proven code.
 

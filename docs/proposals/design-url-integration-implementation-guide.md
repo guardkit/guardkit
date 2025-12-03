@@ -599,7 +599,7 @@ cat docs/proposals/design-url-integration-proposal.md
 ### For questions or issues:
 - Review proposal: `docs/proposals/design-url-integration-proposal.md`
 - Check task status: `/task-status TASK-UX-*`
-- Review workflow: `docs/guides/taskwright-workflow.md`
+- Review workflow: `docs/guides/guardkit-workflow.md`
 
 ---
 

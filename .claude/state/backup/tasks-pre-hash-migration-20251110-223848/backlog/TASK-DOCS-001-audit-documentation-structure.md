@@ -37,7 +37,7 @@ complexity_evaluation:
 
 ## Context
 
-The Taskwright repository has 28 subdirectories in the docs/ folder, mixing:
+The GuardKit repository has 28 subdirectories in the docs/ folder, mixing:
 - **User-facing documentation** (guides/, workflows/, patterns/)
 - **Development artifacts** (implementation/, test_reports/, fixes/)
 - **Architecture decisions** (adr/)
@@ -158,7 +158,7 @@ Analyze the current documentation structure and create a content organization pl
 ## Expected Deliverable Structure
 
 ```markdown
-# Taskwright Documentation Organization Plan
+# GuardKit Documentation Organization Plan
 
 ## Current Structure Inventory
 
@@ -195,7 +195,7 @@ Home (index.md)
 │   ├── Installation (link to README section)
 │   └── Migration Guide (guides/MIGRATION-GUIDE.md)
 ├── Core Concepts
-│   ├── Taskwright Workflow (guides/taskwright-workflow.md)
+│   ├── GuardKit Workflow (guides/guardkit-workflow.md)
 │   ├── Complexity Management (workflows/complexity-management-workflow.md)
 │   └── Quality Gates (workflows/quality-gates-workflow.md)
 ...
@@ -214,7 +214,7 @@ Home (index.md)
 
 ### Existing Content to Reuse
 - ✅ guides/GETTING-STARTED.md - exists, use as quickstart
-- ✅ guides/taskwright-workflow.md - exists, core concept
+- ✅ guides/guardkit-workflow.md - exists, core concept
 - ...
 ```
 

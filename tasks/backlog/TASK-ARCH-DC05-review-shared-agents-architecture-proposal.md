@@ -47,7 +47,7 @@ The shared agents architecture proposal ([docs/proposals/shared-agents-architect
 - Inconsistent behavior
 - Testing complexity
 
-**Agreed Solution**: Hybrid approach with build-time composition using a dedicated `taskwright-dev/shared-agents` repository.
+**Agreed Solution**: Hybrid approach with build-time composition using a dedicated `guardkit/shared-agents` repository.
 
 ## Description
 
@@ -275,7 +275,7 @@ However, the review should define testing requirements for the implementation ta
 
 ### Proposal Key Points
 
-**Architecture**: Dedicated `taskwright-dev/shared-agents` repository with build-time download during installation.
+**Architecture**: Dedicated `guardkit/shared-agents` repository with build-time download during installation.
 
 **Agents to Share**:
 1. `requirements-analyst.md` - EARS validation

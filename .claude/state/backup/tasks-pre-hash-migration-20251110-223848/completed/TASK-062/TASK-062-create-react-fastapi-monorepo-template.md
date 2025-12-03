@@ -229,7 +229,7 @@ IT IS MANDATORY TO INVOKE THIS COMMAND - DO NOT GET ALL CREATIVE AND DECIDE TO D
 Use SlashCommand tool to invoke: /template-create --skip-qa --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The '--skip-qa' flag will skip the interactive Q&A which caused issues on a previous task
 
@@ -370,7 +370,7 @@ Use **Bash tool** to test the template:
 
 # Test template initialization in clean directory
 cd /tmp/test-monorepo
-taskwright init react-fastapi-monorepo
+guardkit init react-fastapi-monorepo
 
 # Verify monorepo setup
 cd test-monorepo
@@ -578,7 +578,7 @@ turbo run build --filter=frontend
 ### Generated Monorepo Tests
 ```bash
 # Initialize monorepo from template
-taskwright init react-fastapi-monorepo --output /tmp/test-monorepo
+guardkit init react-fastapi-monorepo --output /tmp/test-monorepo
 
 # Test Docker Compose
 cd /tmp/test-monorepo

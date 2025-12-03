@@ -797,7 +797,7 @@ def _ai_enhancement(...) -> dict:
 
 **Assessment**:
 - ✅ **Correct decision**: Over-engineered for this use case
-- ✅ **Aligns with Taskwright**: "Pragmatic approach, right amount of process"
+- ✅ **Aligns with GuardKit**: "Pragmatic approach, right amount of process"
 - ✅ **Reduces cognitive load**: Users understand what happens
 
 #### 1.3 State Persistence Strategy ✅
@@ -807,7 +807,7 @@ def _ai_enhancement(...) -> dict:
 **Current Design**:
 - **No persistent state** during enhancement (ephemeral process)
 - **File-based persistence** only for final result
-- **Task state** managed by Taskwright (if using `--create-agent-tasks`)
+- **Task state** managed by GuardKit (if using `--create-agent-tasks`)
 
 **Assessment**:
 - ✅ **Fits the pattern**: Enhancement is atomic operation
@@ -1002,7 +1002,7 @@ Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL) [OPTIONAL]
 - ✅ **Manual workflow works**: Can use `/agent-enhance` directly
 - ⚠️ **Docs ahead of implementation**: Command spec references non-existent code
 
-#### 3.2 Taskwright Pattern Compliance ✅
+#### 3.2 GuardKit Pattern Compliance ✅
 
 **Status**: ✅ **Excellent Pattern Compliance**
 
@@ -1165,7 +1165,7 @@ def _load_agent_metadata(self, agent_file: Path) -> dict:
 
 **Status**: ✅ **Excellent Alignment**
 
-**Taskwright Principles** → **Phase 8**:
+**GuardKit Principles** → **Phase 8**:
 
 1. **Quality First** → ✅ Validation before apply
 2. **Pragmatic** → ✅ Simple strategies (ai/static/hybrid)
@@ -1768,7 +1768,7 @@ This is the **most visible quality gap** for users.
 
 ## Conclusion
 
-The TASK-PHASE-8-INCREMENTAL implementation represents a **significant step forward** from the failed Phase 7.5 approach. The architecture is **sound, simple, and maintainable**—exactly what Taskwright's philosophy demands.
+The TASK-PHASE-8-INCREMENTAL implementation represents a **significant step forward** from the failed Phase 7.5 approach. The architecture is **sound, simple, and maintainable**—exactly what GuardKit's philosophy demands.
 
 However, **critical implementation gaps** prevent immediate production deployment:
 1. AI integration is placeholder code

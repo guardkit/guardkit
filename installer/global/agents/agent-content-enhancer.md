@@ -59,7 +59,7 @@ When enhancing agents, the following standards MUST be met:
 
 #### 1. Time to First Example (CRITICAL)
 - **Target**: <50 lines from file start
-- **Current Taskwright Average**: 150-280 lines
+- **Current GuardKit Average**: 150-280 lines
 - **Enforcement**: REQUIRED (FAIL if exceeded)
 - **Calculation**: Count lines from YAML frontmatter end to first ```code block
 
@@ -67,7 +67,7 @@ When enhancing agents, the following standards MUST be met:
 
 #### 2. Example Density (CRITICAL)
 - **Target**: 40-50% of content should be executable code examples
-- **Current Taskwright Average**: 20-30%
+- **Current GuardKit Average**: 20-30%
 - **Enforcement**: REQUIRED (FAIL if <30%, WARN if <40%)
 - **Calculation**: (Lines inside ```code blocks / Total lines excluding frontmatter) × 100
 - **Format Preference**: ✅ DO / ❌ DON'T comparison style
@@ -93,7 +93,7 @@ When enhancing agents, the following standards MUST be met:
 **Why**: Explicit boundaries prevent costly mistakes and reduce human intervention by 40%.
 
 #### 4. Specificity Score (MAINTAINED)
-- **Target**: ≥8/10 (Taskwright already strong at 8.5/10)
+- **Target**: ≥8/10 (GuardKit already strong at 8.5/10)
 - **Bad**: "Helpful assistant for code quality"
 - **Good**: "Code review specialist for React components with TypeScript"
 - **Enforcement**: REQUIRED (FAIL if <8/10)
@@ -539,7 +539,7 @@ If enhancement fails or confidence is below threshold:
 - **architectural-reviewer** - Receives analysis for context
 - **agent-generator** - Provides basic agents to enhance
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` in template-create Phase 7.5 when enhancing agent documentation files.
 

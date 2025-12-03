@@ -82,7 +82,7 @@ cp PARALLELS-VM-TEST-RESULTS-TEMPLATE.md \
 - Scenario loading and step generation
 
 ✅ **Template Init Q&A** (20 min)
-- Interactive questions during `taskwright init`
+- Interactive questions during `guardkit init`
 - Configuration generation
 
 ✅ **Subagent Discovery** (15 min)

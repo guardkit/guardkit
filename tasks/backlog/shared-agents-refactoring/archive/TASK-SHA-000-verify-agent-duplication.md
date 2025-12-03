@@ -51,7 +51,7 @@ Create and execute a verification script that compares agents between TaskWright
 
 set -e
 
-TASKWRIGHT_AGENTS="installer/global/agents"
+GUARDKIT_AGENTS="installer/global/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
 echo "======================================================================="
@@ -59,7 +59,7 @@ echo "Agent Duplication Verification"
 echo "======================================================================="
 echo ""
 echo "Comparing:"
-echo "  TaskWright: $TASKWRIGHT_AGENTS"
+echo "  TaskWright: $GUARDKIT_AGENTS"
 echo "  RequireKit: $REQUIREKIT_AGENTS"
 echo ""
 
@@ -81,7 +81,7 @@ duplicates=0
 diverged=0
 unique=0
 
-for agent in $TASKWRIGHT_AGENTS/*.md; do
+for agent in $GUARDKIT_AGENTS/*.md; do
     basename=$(basename "$agent")
     requirekit_agent="$REQUIREKIT_AGENTS/$basename"
 

@@ -24,7 +24,7 @@ import time
 def _add_repo_to_path():
     """Add repository root to sys.path if not already present."""
     script_path = Path(__file__).resolve()
-    # Navigate: commands/ -> global/ -> installer/ -> taskwright/ (4 levels up)
+    # Navigate: commands/ -> global/ -> installer/ -> guardkit/ (4 levels up)
     repo_root = script_path.parent.parent.parent.parent
     repo_root_str = str(repo_root)
     if repo_root_str not in sys.path:

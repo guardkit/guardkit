@@ -28,7 +28,7 @@ class DocumentationValidator:
         self.files_to_validate = [
             "docs/guides/GETTING-STARTED.md",
             "docs/guides/QUICK_REFERENCE.md",
-            "docs/guides/taskwright-workflow.md"
+            "docs/guides/guardkit-workflow.md"
         ]
 
     def validate_all(self) -> Tuple[int, int]:
@@ -80,7 +80,7 @@ class DocumentationValidator:
         # 6. Example Validation
         print("6. EXAMPLE VALIDATION")
         print("-" * 70)
-        self.validate_taskwright_syntax()
+        self.validate_guardkit_syntax()
         self.validate_workflow_examples()
         self.validate_no_requirekit_examples()
         print()
@@ -203,7 +203,7 @@ class DocumentationValidator:
                           f"Found incorrect URLs: {[u for u in matches if u != correct_url]}" if not all_correct else "")
 
     def validate_command_syntax(self):
-        """Validate command syntax matches Taskwright-only capabilities"""
+        """Validate command syntax matches GuardKit-only capabilities"""
         invalid_patterns = [
             (r'/task-create.*--ears', "task-create with --ears flag"),
             (r'/task-work.*--mode=bdd', "task-work with BDD mode"),
@@ -389,28 +389,28 @@ class DocumentationValidator:
         """Validate terminology is uniform"""
         # Check for consistent use of key terms
         terms_to_check = {
-            'Taskwright': r'\btaskwright\b',  # Should be capitalized
+            'GuardKit': r'\bguardkit\b',  # Should be capitalized
             'quality gates': r'quality[- ]gates?',  # Should be lowercase
         }
 
         for file_path in self.files_to_validate:
             content = self.read_file(file_path)
 
-            # Check Taskwright capitalization (outside code blocks)
+            # Check GuardKit capitalization (outside code blocks)
             non_code = re.sub(r'```.*?```', '', content, flags=re.DOTALL)
-            lowercase_taskwright = re.findall(r'\btaskwright\b', non_code)
+            lowercase_guardkit = re.findall(r'\bguardkit\b', non_code)
 
             # Allow in commands and code
-            valid_lowercase = [m for m in lowercase_taskwright if '`' not in m]
+            valid_lowercase = [m for m in lowercase_guardkit if '`' not in m]
 
             passed = len(valid_lowercase) == 0
-            self.add_result("Cross-Reference", f"{file_path} - Taskwright capitalized", passed,
+            self.add_result("Cross-Reference", f"{file_path} - GuardKit capitalized", passed,
                           f"Found {len(valid_lowercase)} lowercase instances" if not passed else "")
 
     # ==================== EXAMPLE VALIDATION ====================
 
-    def validate_taskwright_syntax(self):
-        """Validate all command examples use valid Taskwright syntax"""
+    def validate_guardkit_syntax(self):
+        """Validate all command examples use valid GuardKit syntax"""
         for file_path in self.files_to_validate:
             content = self.read_file(file_path)
 
@@ -430,7 +430,7 @@ class DocumentationValidator:
                     invalid_commands.extend(invalid_flags)
 
             passed = len(invalid_commands) == 0
-            self.add_result("Examples", f"{file_path} - Valid Taskwright syntax", passed,
+            self.add_result("Examples", f"{file_path} - Valid GuardKit syntax", passed,
                           f"Invalid commands: {invalid_commands}" if not passed else "")
 
     def validate_workflow_examples(self):

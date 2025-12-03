@@ -396,7 +396,7 @@ DELETE /products/{id}    → DeleteProductHandler → ??? (No endpoint to call i
 
 **Evidence Sources**:
 - Template creation output: `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/template_creation_output.md`
-- Generated template: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/templates/ardalis-clean-architecture`
+- Generated template: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/ardalis-clean-architecture`
 - Source repository: `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/CleanArchitecture-ardalis`
 
 **Related Tasks**:

@@ -9,7 +9,7 @@
 
 ## Problem Statement
 
-Phase 7.5 (Agent Enhancement) is currently disabled because the implementation assumes a direct AI client exists, but the Taskwright architecture uses the **agent bridge pattern** for all AI interactions.
+Phase 7.5 (Agent Enhancement) is currently disabled because the implementation assumes a direct AI client exists, but the GuardKit architecture uses the **agent bridge pattern** for all AI interactions.
 
 ### Current State
 - ❌ Phase 7.5 temporarily disabled in orchestrator
@@ -61,7 +61,7 @@ The `AIClient` at `installer.global.lib.template_generator.ai_client` is a mock 
 
 ### The Agent Bridge Pattern
 
-The Taskwright architecture uses **agent bridge pattern** for all AI interactions:
+The GuardKit architecture uses **agent bridge pattern** for all AI interactions:
 
 ```python
 # How architectural-reviewer works:

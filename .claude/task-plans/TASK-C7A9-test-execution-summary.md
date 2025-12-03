@@ -242,7 +242,7 @@ AI-enhanced agent metadata preserved through workflow:
 ## Files Tested
 
 ### Source File
-**Path**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+**Path**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
 
 **Methods Tested**:
 - `_phase7_write_agents` (lines 598-664)
@@ -251,7 +251,7 @@ AI-enhanced agent metadata preserved through workflow:
 - `_complete_workflow` (lines 272-355)
 
 ### Test File
-**Path**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/unit/test_task_c7a9_phase_refactoring.py`
+**Path**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_task_c7a9_phase_refactoring.py`
 
 **Statistics**:
 - 932 lines of code

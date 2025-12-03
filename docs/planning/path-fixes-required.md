@@ -9,7 +9,7 @@ The main repository's README.md contains 3 path mismatches that reference non-ex
 
 ## Path Corrections Needed
 
-### File: /Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md
+### File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md
 
 #### Fix 1: Context7 Setup Path (Line 360)
 **Current (incorrect)**:
@@ -78,7 +78,7 @@ These fixes should be applied in the main repository using:
 
 ```bash
 # Navigate to main repo
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Apply fixes using sed or manual edit
 # Then commit

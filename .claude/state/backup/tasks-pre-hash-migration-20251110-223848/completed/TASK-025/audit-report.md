@@ -20,41 +20,41 @@ These features are RequireKit-specific and must be removed or heavily rewritten:
 
 - **Line 53** (RequireKit command reference)
   ```
-  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
   ```
 
 - **Line 53** (EARS notation reference)
   ```
-  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
   ```
 
 - **Line 53** (Epic/feature hierarchy)
   ```
-  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+  > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
   ```
 
 ### design-first-workflow.md
 
 - **Line 56** (RequireKit command reference)
   ```
-  > **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
+  > **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
   ```
 
 - **Line 56** (EARS notation reference)
   ```
-  > **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
+  > **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit uses task descriptions and acceptance criteria directly. For EARS notation and formal requirements, see [RequireKit](https://github.com/requirekit/require-kit).
   ```
 
 ### iterative-refinement-workflow.md
 
 - **Line 151** (RequireKit command reference)
   ```
-  > **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+  > **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
   ```
 
 - **Line 151** (Epic/feature hierarchy)
   ```
-  > **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+  > **Note:** For epic/feature hierarchy and context, see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
   ```
 
 - **Line 216** (RequireKit command reference)
@@ -69,7 +69,7 @@ These features are RequireKit-specific and must be removed or heavily rewritten:
   > **Note:** For PM tool synchronization (Jira, Linear, Azure DevOps), see [RequireKit](https://github.com/requirekit/require-kit) which provides automatic issue sync.
   ```
 
-### taskwright-vs-requirekit.md
+### guardkit-vs-requirekit.md
 
 - **Line 28** (Epic/feature hierarchy)
   ```
@@ -113,7 +113,7 @@ These features are RequireKit-specific and must be removed or heavily rewritten:
 
 - **Line 358** (Epic/feature hierarchy)
   ```
-  **A:** Start with Taskwright. Add RequireKit only when you need formal requirements, epic/feature hierarchy, or PM tool integration.
+  **A:** Start with GuardKit. Add RequireKit only when you need formal requirements, epic/feature hierarchy, or PM tool integration.
   ```
 
 - **Line 366** (RequireKit command reference)
@@ -133,7 +133,7 @@ These mentions may need context clarification or removal:
 
 ### design-first-workflow-card.md
 
-- **Line 16** (Phase 1 general mention): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright us...`
+- **Line 16** (Phase 1 general mention): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit us...`
 
 ### complexity-management-workflow.md
 
@@ -143,8 +143,8 @@ These mentions may need context clarification or removal:
 
 ### design-first-workflow.md
 
-- **Line 56** (Formal requirements management): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright us...`
-- **Line 56** (Phase 1 general mention): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright us...`
+- **Line 56** (Formal requirements management): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit us...`
+- **Line 56** (Phase 1 general mention): `> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit us...`
 
 ### iterative-refinement-workflow.md
 
@@ -165,9 +165,9 @@ These mentions may need context clarification or removal:
 
 - **Line 429** (Phase 1 general mention): `1. **Immediate**: Start Phase 1 (Create global templates)...`
 
-### taskwright-vs-requirekit.md
+### guardkit-vs-requirekit.md
 
-- **Line 5** (Formal requirements management): `The Taskwright ecosystem offers two complementary tools: **Taskwright** (lightwe...`
+- **Line 5** (Formal requirements management): `The GuardKit ecosystem offers two complementary tools: **GuardKit** (lightwe...`
 - **Line 27** (BDD/Gherkin keyword mention): `| **BDD Scenarios** | Not supported | Automatic generation | RequireKit for beha...`
 - **Line 28** (Epic keyword mention): `| **Epic/Feature Hierarchy** | Not supported | Full hierarchy | RequireKit for l...`
 - **Line 34** (BDD/Gherkin keyword mention): `| **Documentation Output** | Markdown plans | EARS + BDD + Plans | RequireKit fo...`
@@ -189,18 +189,18 @@ These mentions may need context clarification or removal:
 - **Line 186** (BDD/Gherkin keyword mention): `- ⚠️ More ceremony (requirements → BDD → implementation)...`
 - **Line 203** (Epic keyword mention): `/epic-create "ACH Payment Processing" requirements:[REQ-001,REQ-002]...`
 - **Line 205** (BDD/Gherkin keyword mention): `/task-work TASK-001 --mode=bdd  # Full traceability...`
-- **Line 220** (Phase 1 general mention): `**Phase 1 (0-6 months):** Taskwright only...`
+- **Line 220** (Phase 1 general mention): `**Phase 1 (0-6 months):** GuardKit only...`
 - **Line 241** (BDD/Gherkin keyword mention): `- Full EARS → BDD → Code traceability...`
 - **Line 275** (BDD/Gherkin keyword mention): `bdd_scenarios: [BDD-001]           # RequireKit BDD scenarios...`
 - **Line 286** (BDD/Gherkin keyword mention): `# - BDD-XXX (Gherkin scenarios)...`
 - **Line 299** (Formal requirements management): `| Formal requirements needed? | ❌ | ✅ | ✅ |...`
 - **Line 301** (Epic keyword mention): `| Epic/Feature hierarchy? | ❌ | ✅ | ✅ |...`
 - **Line 304** (BDD/Gherkin keyword mention): `| BDD required? | ❌ | ✅ | ✅ |...`
-- **Line 346** (Formal requirements management): `**A:** Yes! Taskwright is standalone. Use task descriptions and acceptance crite...`
+- **Line 346** (Formal requirements management): `**A:** Yes! GuardKit is standalone. Use task descriptions and acceptance crite...`
 - **Line 355** (BDD/Gherkin keyword mention): `**A:** Both have the same core gates (architectural review, test enforcement, co...`
 - **Line 355** (Formal requirements management): `**A:** Both have the same core gates (architectural review, test enforcement, co...`
-- **Line 358** (Epic keyword mention): `**A:** Start with Taskwright. Add RequireKit only when you need formal requireme...`
-- **Line 358** (Formal requirements management): `**A:** Start with Taskwright. Add RequireKit only when you need formal requireme...`
+- **Line 358** (Epic keyword mention): `**A:** Start with GuardKit. Add RequireKit only when you need formal requireme...`
+- **Line 358** (Formal requirements management): `**A:** Start with GuardKit. Add RequireKit only when you need formal requireme...`
 - **Line 360** (Formal requirements management): `### Q: What if I need formal requirements but don't want the overhead?...`
 
 ---
@@ -217,9 +217,9 @@ These mentions could benefit from RequireKit integration notes:
 
 - **Line 503** (PM tool mention (potential integration note)): `> **Note:** For PM tool synchronization (Jira, Linear, Azure DevOps), see [Requi...`
 
-### taskwright-vs-requirekit.md
+### guardkit-vs-requirekit.md
 
-- **Line 5** (Requirements management mention): `The Taskwright ecosystem offers two complementary tools: **Taskwright** (lightwe...`
+- **Line 5** (Requirements management mention): `The GuardKit ecosystem offers two complementary tools: **GuardKit** (lightwe...`
 - **Line 29** (PM tool mention (potential integration note)): `| **PM Tool Integration** | Manual (GitHub only) | Automatic (Jira, Linear, Azur...`
 - **Line 140** (Requirements management mention): `- Formal requirements management needed...`
 - **Line 172** (PM tool mention (potential integration note)): `/task-sync TASK-001 --rollup-progress  # Automatic Jira sync...`
@@ -229,7 +229,7 @@ These mentions could benefit from RequireKit integration notes:
 
 ## Files by Finding Count (Priority Order)
 
-- **taskwright-vs-requirekit.md**: 50 findings
+- **guardkit-vs-requirekit.md**: 50 findings
 - **complexity-management-workflow.md**: 7 findings
 - **iterative-refinement-workflow.md**: 6 findings
 - **design-first-workflow.md**: 4 findings
@@ -253,17 +253,17 @@ These mentions could benefit from RequireKit integration notes:
 
 2. **Review Light Mentions**
    - Check context and clarify if needed
-   - Remove if not applicable to Taskwright
+   - Remove if not applicable to GuardKit
    - Update phase numbering (Phase 1 = RequireKit)
 
 3. **Add Integration Notes**
    - Add standard RequireKit integration note:
    ```markdown
    > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy),
-   > see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+   > see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
    ```
 
 4. **Validate Updates**
    - Ensure command syntax matches specifications
-   - Verify all examples work standalone (Taskwright only)
+   - Verify all examples work standalone (GuardKit only)
    - Check phase descriptions are accurate

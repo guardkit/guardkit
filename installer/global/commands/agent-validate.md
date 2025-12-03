@@ -6,7 +6,7 @@ summary: Objective quality validation for agent files using GitHub best practice
 
 # Agent Validate - Objective Agent Quality Validation
 
-Provides automated, objective validation of agent markdown files against GitHub best practices and Taskwright quality standards. Generates actionable feedback with measurable metrics and auto-fix suggestions.
+Provides automated, objective validation of agent markdown files against GitHub best practices and GuardKit quality standards. Generates actionable feedback with measurable metrics and auto-fix suggestions.
 
 ## Purpose
 
@@ -2849,7 +2849,7 @@ This specification provides a complete, implementation-ready design for `/agent-
 
 1. **Objective**: All checks are measurable with clear scoring algorithms
 2. **Actionable**: Every issue includes specific recommendations with impact estimates
-3. **Comprehensive**: Covers all 6 GitHub best practice areas plus Taskwright standards
+3. **Comprehensive**: Covers all 6 GitHub best practice areas plus GuardKit standards
 4. **Extensible**: Modular architecture makes adding new checks straightforward
 5. **CI/CD Ready**: JSON output, exit codes, and threshold support for automation
 6. **Developer-Friendly**: Clear console output with Unicode formatting and color coding

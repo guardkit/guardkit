@@ -103,7 +103,7 @@ Expected:
 mkdir -p ~/Projects/test-react-app
 cd ~/Projects/test-react-app
 git init
-taskwright init react-typescript
+guardkit init react-typescript
 
 Expected:
 ✅ Template files copied
@@ -122,7 +122,7 @@ Expected: TASK-E01-XXXX format
 **Conductor State Management**:
 ```bash
 # Test 5: Parallel task completion
-cd ~/Projects/taskwright  # main repo
+cd ~/Projects/guardkit  # main repo
 conductor create-workspace test-parallel-1 TASK-TEST-001
 conductor create-workspace test-parallel-2 TASK-TEST-002
 
@@ -137,7 +137,7 @@ cd ../test-parallel-2
 /task-complete TASK-TEST-002
 
 # Back in main
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 ls tasks/completed/
 
 Expected:
@@ -202,7 +202,7 @@ cd ~/Projects/test-full-stack
 git init
 
 # 1. Initialize with template
-taskwright init react-typescript
+guardkit init react-typescript
 
 # 2. Create BDD task with hash ID
 /task-create "Implement auth with BDD" prefix:AUTH task_type:implementation

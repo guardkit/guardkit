@@ -6,7 +6,7 @@
 
 ## Problem
 
-Documentation would benefit from real, tested code examples showing Taskwright in action across different scenarios and stacks. Users learn best from concrete examples.
+Documentation would benefit from real, tested code examples showing GuardKit in action across different scenarios and stacks. Users learn best from concrete examples.
 
 ## Examples Needed
 

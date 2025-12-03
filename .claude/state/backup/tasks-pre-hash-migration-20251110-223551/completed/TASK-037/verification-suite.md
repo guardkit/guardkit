@@ -1,5 +1,5 @@
 # TASK-037 Verification Suite
-## Remove BDD Mode from Taskwright
+## Remove BDD Mode from GuardKit
 
 **Task ID**: TASK-037
 **Verification Date**: 2025-11-02
@@ -12,7 +12,7 @@
 
 | Criterion | Status | Evidence | Details |
 |-----------|--------|----------|---------|
-| AC-1: BDD agent files deleted | PASS | No files found | bdd-generator.md not found in taskwright |
+| AC-1: BDD agent files deleted | PASS | No files found | bdd-generator.md not found in guardkit |
 | AC-2: BDD mode removed from task-work.md | PASS | Grep returns nothing | No mode=bdd in command specs |
 | AC-3: BDD references removed from CLAUDE.md | PASS | No references found | Both root and local CLAUDE.md clean |
 | AC-4: supports_bdd() function preserved | PASS | Function exists | Located at feature_detection.py:257 |
@@ -50,7 +50,7 @@ Additional Context:
 - No active references in current implementation
 ```
 
-**Conclusion**: PASS - All BDD agent files successfully deleted from taskwright
+**Conclusion**: PASS - All BDD agent files successfully deleted from guardkit
 
 ---
 
@@ -87,15 +87,15 @@ Verified Command Specs:
 **Results**:
 ```
 PASS: Root CLAUDE.md clean
-- File: /Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md
+- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md
 - BDD references: NONE FOUND (CORRECT)
 - Contains task-work modes: Yes (Standard and TDD only)
 - Mentions require-kit for BDD: Verified needed
 
 PASS: Local .claude/CLAUDE.md clean
-- File: /Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/CLAUDE.md
+- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/CLAUDE.md
 - BDD references: NONE FOUND (CORRECT)
-- Mentions BDD workflows: No (CORRECT - not applicable to taskwright)
+- Mentions BDD workflows: No (CORRECT - not applicable to guardkit)
 
 PASS: No --mode=bdd in either CLAUDE.md
 - Root CLAUDE.md: No --mode=bdd (CORRECT)
@@ -114,7 +114,7 @@ PASS: No --mode=bdd in either CLAUDE.md
 **Results**:
 ```
 PASS: supports_bdd() function exists and preserved
-- File: /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/feature_detection.py
+- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py
 - Function Location: Line 257
 - Method Location: Line 106 (class method)
 - Status: PRESERVED (CORRECT)
@@ -142,7 +142,7 @@ Backward Compatibility Status:
 **Results**:
 ```
 PASS: CHANGELOG.md contains BDD removal entry
-- File: /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/CHANGELOG.md
+- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/CHANGELOG.md
 - Version: 2.0.0 (in development)
 - Section: Removed
 - Entry Lines: 7-15
@@ -326,7 +326,7 @@ Since this is a documentation cleanup task with no code changes:
 
 TASK-037 implementation is **COMPLETE AND VERIFIED**
 
-- BDD mode completely removed from taskwright
+- BDD mode completely removed from guardkit
 - All related documentation updated
 - Migration path to require-kit documented
 - Backward compatibility maintained

@@ -123,7 +123,7 @@ Create a production-ready FastAPI Python reference template based on the [FastAP
 ./installer/scripts/install.sh
 
 # Initialize new project
-taskwright init fastapi-python
+guardkit init fastapi-python
 ```
 
 ## Impact

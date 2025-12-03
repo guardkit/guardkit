@@ -9,7 +9,7 @@
     {
       "path": "docs/guides/GETTING-STARTED.md",
       "action": "modify",
-      "purpose": "Focus on 5-minute quickstart with Taskwright-only features",
+      "purpose": "Focus on 5-minute quickstart with GuardKit-only features",
       "changes": [
         "Remove RequireKit-specific workflow references",
         "Remove EARS notation examples",
@@ -21,25 +21,25 @@
     {
       "path": "docs/guides/QUICK_REFERENCE.md",
       "action": "modify",
-      "purpose": "Remove RequireKit command parameters, keep simple Taskwright syntax only",
+      "purpose": "Remove RequireKit command parameters, keep simple GuardKit syntax only",
       "changes": [
         "Remove epic, feature, requirements, bdd parameters from syntax tables",
         "Keep simple parameter examples only (priority, tags)",
         "Add 'Extended Features' section pointing to RequireKit",
-        "Update command examples to use Taskwright-only syntax"
+        "Update command examples to use GuardKit-only syntax"
       ],
       "estimated_lines": 700
     },
     {
-      "path": "docs/guides/taskwright-workflow.md",
+      "path": "docs/guides/guardkit-workflow.md",
       "action": "modify",
       "purpose": "Update workflow diagrams and remove Requirements Analysis phase",
       "changes": [
-        "Update workflow diagrams to show Taskwright-only states",
+        "Update workflow diagrams to show GuardKit-only states",
         "Remove Requirements Analysis phase references",
         "Keep quality gates and test enforcement sections",
         "Fix GitHub URLs to correct repositories",
-        "Ensure workflow diagrams accurately reflect Taskwright flow"
+        "Ensure workflow diagrams accurately reflect GuardKit flow"
       ],
       "estimated_lines": 650
     }
@@ -96,7 +96,7 @@
     },
     {
       "phase": 3,
-      "title": "Audit taskwright-workflow.md",
+      "title": "Audit guardkit-workflow.md",
       "tasks": [
         "Update workflow diagrams (Markdown or Mermaid)",
         "Remove Requirements Analysis phase",

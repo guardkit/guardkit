@@ -182,13 +182,13 @@ def has_force_triggers(task):
 
 ### Sub-Agent Invocation Pattern
 
-**Phase 1: Requirements Analysis** *(Skipped in Taskwright - Require-Kit Only)*
+**Phase 1: Requirements Analysis** *(Skipped in GuardKit - Require-Kit Only)*
 
-Phase 1 is **skipped** in Taskwright's lightweight workflow. Tasks use descriptions and acceptance criteria directly without formal requirements analysis.
+Phase 1 is **skipped** in GuardKit's lightweight workflow. Tasks use descriptions and acceptance criteria directly without formal requirements analysis.
 
 For formal requirements management with EARS notation and BDD generation, use [require-kit](https://github.com/requirekit/require-kit).
 
-**Taskwright workflow proceeds directly to Phase 2 (Implementation Planning).**
+**GuardKit workflow proceeds directly to Phase 2 (Implementation Planning).**
 
 **Phase 2.5B: Architectural Review**
 ```markdown
@@ -1223,11 +1223,11 @@ tasks/
 ## Integration with Other Systems
 
 ### Link to Requirements (Require-Kit Only)
-**Taskwright**: Tasks use description and acceptance criteria directly
+**GuardKit**: Tasks use description and acceptance criteria directly
 **Require-Kit**: Link EARS requirements from docs/requirements/
 
 ### Link to BDD Scenarios (Require-Kit Only)
-**Taskwright**: Acceptance criteria are sufficient
+**GuardKit**: Acceptance criteria are sufficient
 **Require-Kit**: Reference Gherkin scenarios from docs/bdd/
 
 ### GitHub Integration (if needed)

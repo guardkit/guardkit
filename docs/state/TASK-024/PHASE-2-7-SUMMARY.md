@@ -19,13 +19,13 @@
 #### Files Identified (3 files)
 1. **docs/guides/GETTING-STARTED.md** (650 lines)
    - Action: Modify
-   - Purpose: Focus on 5-minute quickstart with Taskwright-only features
+   - Purpose: Focus on 5-minute quickstart with GuardKit-only features
 
 2. **docs/guides/QUICK_REFERENCE.md** (700 lines)
    - Action: Modify
-   - Purpose: Remove RequireKit parameters, keep simple Taskwright syntax
+   - Purpose: Remove RequireKit parameters, keep simple GuardKit syntax
 
-3. **docs/guides/taskwright-workflow.md** (650 lines)
+3. **docs/guides/guardkit-workflow.md** (650 lines)
    - Action: Modify
    - Purpose: Update diagrams, remove Requirements Analysis phase
 
@@ -95,7 +95,7 @@
 **Estimated Duration:** 6.3 hours (380 minutes)
 - Phase 1 (GETTING-STARTED): 90 minutes
 - Phase 2 (QUICK_REFERENCE): 80 minutes
-- Phase 3 (taskwright-workflow): 110 minutes
+- Phase 3 (guardkit-workflow): 110 minutes
 - Phase 4 (Validation): 100 minutes
 
 **Effort Category:** Medium (4-8 hours)

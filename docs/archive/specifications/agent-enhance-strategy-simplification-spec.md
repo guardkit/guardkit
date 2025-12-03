@@ -146,7 +146,7 @@ def resolve_strategy(parsed_args) -> str:
 
 ### 2.1 Code Changes
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/agent-enhance.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.py`
 
 #### Change 1: Add New Flags
 
@@ -258,7 +258,7 @@ enhancer = SingleAgentEnhancer(
 
 **Rationale**: The `SingleAgentEnhancer` class already accepts a `strategy` string parameter. No changes needed to the enhancement logic itself—only the command-line interface changes.
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/enhancer.py`
 
 ```python
 # Lines 50-66 remain unchanged
@@ -491,7 +491,7 @@ Example:
 
 ### 5.1 Unit Tests
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/unit/test_agent_enhance_strategy_resolution.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_agent_enhance_strategy_resolution.py`
 
 ```python
 """
@@ -595,7 +595,7 @@ class TestStrategyResolution:
 
 ### 5.2 Integration Tests
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/integration/test_agent_enhance_workflows.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/integration/test_agent_enhance_workflows.py`
 
 ```python
 """
@@ -705,7 +705,7 @@ Initial content.
 
 ### 5.3 Backward Compatibility Tests
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/integration/test_agent_enhance_backward_compat.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/integration/test_agent_enhance_backward_compat.py`
 
 ```python
 """
@@ -801,7 +801,7 @@ name: test-specialist
 
 ### 6.1 agent-enhance.md Structure
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/agent-enhance.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
 
 #### Section 1: Quick Start (New)
 
@@ -1023,7 +1023,7 @@ The `--strategy` flag will be removed in v2.0. Update your scripts and workflows
 
 ### 6.2 CLAUDE.md Updates
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
 
 Update the "UX Design Integration" section to reflect new syntax:
 
@@ -1051,7 +1051,7 @@ Converts design system files (Figma, Zeplin) into components with **zero scope c
 
 ### 6.3 Migration Guide
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/guides/agent-enhance-migration-guide.md` (NEW)
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/agent-enhance-migration-guide.md` (NEW)
 
 ```markdown
 # Agent Enhance Migration Guide

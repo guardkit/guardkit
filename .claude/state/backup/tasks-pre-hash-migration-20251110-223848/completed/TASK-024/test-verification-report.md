@@ -51,7 +51,7 @@ All documentation files compile correctly:
 |------|-------|--------|
 | GETTING-STARTED.md | 4/4 | ✅ PASS |
 | QUICK_REFERENCE.md | 4/4 | ✅ PASS |
-| taskwright-workflow.md | 4/4 | ✅ PASS |
+| guardkit-workflow.md | 4/4 | ✅ PASS |
 
 **Checks Performed**:
 - ✅ Files exist and are not empty
@@ -79,7 +79,7 @@ All RequireKit features successfully removed from documentation:
 - ✅ All RequireKit URLs use correct format: `https://github.com/requirekit/require-kit`
 
 **Command Syntax**:
-- ✅ All examples use valid Taskwright-only syntax
+- ✅ All examples use valid GuardKit-only syntax
 - ✅ No references to RequireKit-specific features
 
 **Critical Content Integrity**: VERIFIED ✅
@@ -95,7 +95,7 @@ All internal and external links are valid:
 **Internal Links** (cross-references):
 - ✅ GETTING-STARTED.md: All links resolve (3 links validated)
 - ✅ QUICK_REFERENCE.md: All links resolve (4 links validated)
-- ✅ taskwright-workflow.md: All links resolve (5 links validated)
+- ✅ guardkit-workflow.md: All links resolve (5 links validated)
 
 **External Links** (RequireKit, GitHub):
 - ✅ All URLs are well-formed
@@ -114,7 +114,7 @@ All internal and external links are valid:
 1. **Code Block Language Specifiers** (Low Priority):
    - GETTING-STARTED.md: 24 blocks without language ⚠️
    - QUICK_REFERENCE.md: 22 blocks without language ⚠️
-   - taskwright-workflow.md: 46 blocks without language ⚠️
+   - guardkit-workflow.md: 46 blocks without language ⚠️
    - **Impact**: Minimal - blocks still render correctly, just no syntax highlighting
    - **Recommendation**: Low priority cosmetic improvement
 
@@ -143,17 +143,17 @@ All internal and external links are valid:
 **Non-Critical Failures**:
 
 1. **Phase 6 Reference** (False Positive):
-   - taskwright-workflow.md references "Phase 6" ⚠️
+   - guardkit-workflow.md references "Phase 6" ⚠️
    - **Analysis**: Phase 6 is `/task-refine` (separate command, not part of main workflow)
    - **Context**: Documented in Part 3: Feature Deep Dives
    - **Impact**: None - Phase 6 is valid
    - **Recommendation**: Update validation to include Phase 6
 
-2. **Taskwright Capitalization** (False Positive):
+2. **GuardKit Capitalization** (False Positive):
    - GETTING-STARTED.md: 1 instance ⚠️
    - QUICK_REFERENCE.md: 2 instances ⚠️
-   - taskwright-workflow.md: 3 instances ⚠️
-   - **Analysis**: All instances are CLI commands (`taskwright init`), which should be lowercase
+   - guardkit-workflow.md: 3 instances ⚠️
+   - **Analysis**: All instances are CLI commands (`guardkit init`), which should be lowercase
    - **Impact**: None - proper usage
    - **Recommendation**: Update validation to exclude CLI commands
 
@@ -166,14 +166,14 @@ All internal and external links are valid:
 **Status**: 88% PASSED (8/9 tests)
 
 **Passing Tests**:
-- ✅ Valid Taskwright syntax (all files)
+- ✅ Valid GuardKit syntax (all files)
 - ✅ No RequireKit examples (all files)
 - ✅ Workflows self-contained (GETTING-STARTED.md, QUICK_REFERENCE.md)
 
 **Non-Critical Failure**:
 
 1. **Incomplete Workflow Example** (Low Priority):
-   - taskwright-workflow.md: 1 incomplete workflow ⚠️
+   - guardkit-workflow.md: 1 incomplete workflow ⚠️
    - **Analysis**: Example 12 shows partial workflow for illustration
    - **Context**: Used to demonstrate specific phase behavior
    - **Impact**: Minimal - example is pedagogically valid
@@ -237,7 +237,7 @@ The following issues are **non-critical** and do not block task completion:
 - ✅ No BDD mode references (0)
 
 **Documentation Integrity**:
-- ✅ All Taskwright features documented
+- ✅ All GuardKit features documented
 - ✅ All RequireKit references point to correct URL
 - ✅ All workflow examples use valid syntax
 - ✅ All cross-references resolve correctly
@@ -277,10 +277,10 @@ The following issues are **non-critical** and do not block task completion:
 ✅ QUICK_REFERENCE.md - Has headers
 ✅ QUICK_REFERENCE.md - Code fences balanced
 ✅ QUICK_REFERENCE.md - No malformed links
-✅ taskwright-workflow.md - File not empty
-✅ taskwright-workflow.md - Has headers
-✅ taskwright-workflow.md - Code fences balanced
-✅ taskwright-workflow.md - No malformed links
+✅ guardkit-workflow.md - File not empty
+✅ guardkit-workflow.md - Has headers
+✅ guardkit-workflow.md - Code fences balanced
+✅ guardkit-workflow.md - No malformed links
 ```
 
 ### Content Validation (27/27) ✅
@@ -288,16 +288,16 @@ The following issues are **non-critical** and do not block task completion:
 ```
 ✅ GETTING-STARTED.md - No --mode=bdd
 ✅ QUICK_REFERENCE.md - No --mode=bdd
-✅ taskwright-workflow.md - No --mode=bdd
+✅ guardkit-workflow.md - No --mode=bdd
 ✅ GETTING-STARTED.md - No --ears flag
 ✅ QUICK_REFERENCE.md - No --ears flag
-✅ taskwright-workflow.md - No --ears flag
+✅ guardkit-workflow.md - No --ears flag
 ✅ GETTING-STARTED.md - No EARS notation in examples
 ✅ QUICK_REFERENCE.md - No EARS notation in examples
-✅ taskwright-workflow.md - No EARS notation in examples
+✅ guardkit-workflow.md - No EARS notation in examples
 ✅ GETTING-STARTED.md - RequireKit URLs correct
 ✅ QUICK_REFERENCE.md - RequireKit URLs correct
-✅ taskwright-workflow.md - RequireKit URLs correct
+✅ guardkit-workflow.md - RequireKit URLs correct
 ✅ All files - No RequireKit commands (15 tests)
 ```
 
@@ -306,10 +306,10 @@ The following issues are **non-critical** and do not block task completion:
 ```
 ✅ GETTING-STARTED.md - Internal links valid
 ✅ QUICK_REFERENCE.md - Internal links valid
-✅ taskwright-workflow.md - Internal links valid
+✅ guardkit-workflow.md - Internal links valid
 ✅ GETTING-STARTED.md - External links well-formed
 ✅ QUICK_REFERENCE.md - External links well-formed
-✅ taskwright-workflow.md - External links well-formed
+✅ guardkit-workflow.md - External links well-formed
 ```
 
 ---

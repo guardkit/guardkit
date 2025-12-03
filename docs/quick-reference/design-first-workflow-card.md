@@ -13,7 +13,7 @@ Design-first workflow splits task execution into separate design approval and im
 | `--implement-only` | Implementation | 3-5.5 | IN_REVIEW or BLOCKED |
 | (no flags) | Complete workflow | 2-5.5 | IN_REVIEW or BLOCKED |
 
-> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. Taskwright uses task descriptions and acceptance criteria directly.
+> **Note:** Phase 1 (Requirements Analysis) is part of RequireKit. GuardKit uses task descriptions and acceptance criteria directly.
 
 ### State Machine
 ```

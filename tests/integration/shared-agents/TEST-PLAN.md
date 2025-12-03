@@ -37,8 +37,8 @@ This test plan provides comprehensive testing procedures for the shared-agents a
 **Repositories**:
 ```bash
 # Clone test repositories
-git clone https://github.com/taskwright-dev/shared-agents.git
-git clone https://github.com/taskwright-dev/taskwright.git
+git clone https://github.com/guardkit/shared-agents.git
+git clone https://github.com/guardkit/guardkit.git
 git clone https://github.com/requirekit/require-kit.git
 ```
 
@@ -73,7 +73,7 @@ git init
 
 2. **Run TaskWright installer**:
    ```bash
-   cd ../taskwright
+   cd ../guardkit
    ./installer/scripts/install.sh
    ```
 
@@ -122,7 +122,7 @@ git init
 test -d .claude/agents/universal && echo "✅ Universal agents directory exists" || echo "❌ Directory missing"
 
 # Count agents
-EXPECTED_COUNT=$(curl -sL https://github.com/taskwright-dev/shared-agents/releases/latest/download/manifest.json | jq '.agents | length')
+EXPECTED_COUNT=$(curl -sL https://github.com/guardkit/shared-agents/releases/latest/download/manifest.json | jq '.agents | length')
 ACTUAL_COUNT=$(ls -1 .claude/agents/universal/*.md | wc -l)
 [ "$ACTUAL_COUNT" -eq "$EXPECTED_COUNT" ] && echo "✅ Agent count matches ($ACTUAL_COUNT)" || echo "❌ Agent count mismatch (expected: $EXPECTED_COUNT, actual: $ACTUAL_COUNT)"
 
@@ -130,7 +130,7 @@ ACTUAL_COUNT=$(ls -1 .claude/agents/universal/*.md | wc -l)
 cd .claude/agents/universal
 tar -czf /tmp/test-agents.tar.gz .
 INSTALLED_CHECKSUM=$(sha256sum /tmp/test-agents.tar.gz | cut -d' ' -f1)
-EXPECTED_CHECKSUM=$(curl -sL https://github.com/taskwright-dev/shared-agents/releases/latest/download/shared-agents.tar.gz.sha256 | cut -d' ' -f1)
+EXPECTED_CHECKSUM=$(curl -sL https://github.com/guardkit/shared-agents/releases/latest/download/shared-agents.tar.gz.sha256 | cut -d' ' -f1)
 # Note: This is approximate - exact match requires same tar options
 echo "Installed checksum: $INSTALLED_CHECKSUM"
 echo "Expected checksum: $EXPECTED_CHECKSUM"
@@ -222,7 +222,7 @@ Same as Test Scenario 1
 1. **Install TaskWright first**:
    ```bash
    cd test-project
-   ../taskwright/installer/scripts/install.sh
+   ../guardkit/installer/scripts/install.sh
    ```
 
 2. **Verify initial installation**:
@@ -345,7 +345,7 @@ Same as Test Scenario 3
 
 1. **Modify TaskWright version pinning**:
    ```bash
-   cd taskwright
+   cd guardkit
    echo "v1.0.0" > installer/shared-agents-version.txt
    ```
 
@@ -358,7 +358,7 @@ Same as Test Scenario 3
 3. **Install TaskWright**:
    ```bash
    cd ../test-project
-   ../taskwright/installer/scripts/install.sh
+   ../guardkit/installer/scripts/install.sh
    ```
 
 4. **Verify TaskWright version**:
@@ -415,7 +415,7 @@ VERSIONS=$(grep -r "version:" .claude/agents/universal/*.md | awk '{print $2}' |
 
 ```bash
 rm -rf .claude/
-cd taskwright && git checkout installer/shared-agents-version.txt
+cd guardkit && git checkout installer/shared-agents-version.txt
 cd ../require-kit && git checkout installer/shared-agents-version.txt
 ```
 
@@ -448,7 +448,7 @@ cd ../require-kit && git checkout installer/shared-agents-version.txt
 2. **Run installer**:
    ```bash
    cd test-project
-   ../taskwright/installer/scripts/install.sh
+   ../guardkit/installer/scripts/install.sh
    ```
 
 3. **Verify fallback used**:
@@ -534,7 +534,7 @@ rm -rf .claude/
 
 2. **Run TaskWright installer**:
    ```bash
-   ../taskwright/installer/scripts/install.sh
+   ../guardkit/installer/scripts/install.sh
    ```
 
 3. **Verify conflict detection**:
@@ -717,7 +717,7 @@ rm -rf .claude/
 
 4. **Manual agent installation**:
    ```bash
-   curl -sL https://github.com/taskwright-dev/shared-agents/releases/download/v1.0.0/shared-agents.tar.gz | tar -xz -C .claude/agents/universal/
+   curl -sL https://github.com/guardkit/shared-agents/releases/download/v1.0.0/shared-agents.tar.gz | tar -xz -C .claude/agents/universal/
    ```
 
 **Expected**: Manual recovery works, agents restored.
@@ -798,14 +798,14 @@ class TestSharedAgents:
         yield tmpdir
         shutil.rmtree(tmpdir)
 
-    def test_taskwright_standalone(self, fresh_project):
+    def test_guardkit_standalone(self, fresh_project):
         """Test Scenario 1: TaskWright standalone installation."""
         # Change to test project
         os.chdir(fresh_project)
 
         # Run installer
         result = subprocess.run(
-            ["../taskwright/installer/scripts/install.sh"],
+            ["../guardkit/installer/scripts/install.sh"],
             capture_output=True,
             text=True
         )
@@ -826,16 +826,16 @@ class TestSharedAgents:
 
     def test_requirekit_standalone(self, fresh_project):
         """Test Scenario 2: RequireKit standalone installation."""
-        # Similar to test_taskwright_standalone
+        # Similar to test_guardkit_standalone
         pass
 
-    def test_combined_installation_taskwright_first(self, fresh_project):
+    def test_combined_installation_guardkit_first(self, fresh_project):
         """Test Scenario 3: Combined installation (TaskWright first)."""
         os.chdir(fresh_project)
 
         # Install TaskWright
         result1 = subprocess.run(
-            ["../taskwright/installer/scripts/install.sh"],
+            ["../guardkit/installer/scripts/install.sh"],
             capture_output=True,
             text=True
         )
@@ -874,7 +874,7 @@ class TestSharedAgents:
 
         # Run installer with automated input (select backup)
         result = subprocess.run(
-            ["../taskwright/installer/scripts/install.sh"],
+            ["../guardkit/installer/scripts/install.sh"],
             input="B\n",  # Choose backup option
             capture_output=True,
             text=True
@@ -925,9 +925,9 @@ jobs:
     strategy:
       matrix:
         scenario:
-          - taskwright-standalone
+          - guardkit-standalone
           - requirekit-standalone
-          - combined-taskwright-first
+          - combined-guardkit-first
           - combined-requirekit-first
           - conflict-detection
 
@@ -935,7 +935,7 @@ jobs:
       - name: Checkout TaskWright
         uses: actions/checkout@v4
         with:
-          path: taskwright
+          path: guardkit
 
       - name: Checkout RequireKit
         uses: actions/checkout@v4
@@ -946,7 +946,7 @@ jobs:
       - name: Checkout Shared Agents
         uses: actions/checkout@v4
         with:
-          repository: taskwright-dev/shared-agents
+          repository: guardkit/shared-agents
           path: shared-agents
 
       - name: Set up test environment

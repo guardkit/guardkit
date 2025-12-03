@@ -24,7 +24,7 @@ rework_cycles: 0
 
 ## Description
 
-Update manifest.json and any configuration files to reflect taskwright's focus on task workflow with quality gates, removing requirements management capabilities.
+Update manifest.json and any configuration files to reflect guardkit's focus on task workflow with quality gates, removing requirements management capabilities.
 
 ## Files to Update
 
@@ -51,7 +51,7 @@ Update manifest.json and any configuration files to reflect taskwright's focus o
 **Updated**:
 ```json
 {
-  "name": "taskwright",
+  "name": "guardkit",
   "version": "1.0.0",
   "description": "Lightweight AI-Assisted Development with Quality Gates",
   "capabilities": [
@@ -78,7 +78,7 @@ Update manifest.json and any configuration files to reflect taskwright's focus o
 - `test-enforcement` (Phase 4.5)
 
 **Update metadata**:
-- Name: "taskwright" (not "agentecflow")
+- Name: "guardkit" (not "agentecflow")
 - Description: Emphasize lightweight + quality gates
 - Version: Start at 1.0.0
 
@@ -121,7 +121,7 @@ Update any references to:
 ### 1. Locate Configuration Files
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Find all config files
 find . -name "manifest.json"
@@ -163,7 +163,7 @@ done
 ## Validation Checklist
 
 ### manifest.json
-- [ ] Name updated to "taskwright"
+- [ ] Name updated to "guardkit"
 - [ ] Description emphasizes quality gates
 - [ ] "requirements-engineering" removed
 - [ ] "bdd-generation" removed
@@ -186,7 +186,7 @@ done
 ## Acceptance Criteria
 
 - [ ] manifest.json updated
-- [ ] Name changed to "taskwright"
+- [ ] Name changed to "guardkit"
 - [ ] Capabilities list reflects lite workflow
 - [ ] Template settings cleaned (if any exist)
 - [ ] All JSON files have valid syntax

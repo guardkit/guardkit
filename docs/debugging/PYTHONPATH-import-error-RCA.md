@@ -31,7 +31,7 @@ cd /path/to/any/directory
 ### Working Scenario (Manual PYTHONPATH)
 ```bash
 cd /path/to/any/directory
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /template-create --name test-template
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template-create --name test-template
 
 # Result: ✅ Success
 ```
@@ -48,18 +48,18 @@ PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /templa
 ### 2. Environment Discovery
 - **Directory check**: `~/.agentecflow/commands/` is a **regular directory** (NOT a symlink)
 - **Install process**: `install.sh` copies files from `installer/global/commands/` to `~/.agentecflow/commands/`
-- **Python path**: Does NOT include taskwright repository directory by default
+- **Python path**: Does NOT include guardkit repository directory by default
 
 ### 3. PYTHONPATH Setup Discovery
 Found comprehensive PYTHONPATH discovery code in `template-create.md` (lines 1026-1105):
 ```python
-def find_taskwright_path():
+def find_guardkit_path():
     """
-    Find taskwright installation directory.
+    Find guardkit installation directory.
 
     Tries multiple strategies in priority order:
-    1. Follow ~/.agentecflow symlink (if exists and points to taskwright)
-    2. Check standard location: ~/Projects/appmilla_github/taskwright
+    1. Follow ~/.agentecflow symlink (if exists and points to guardkit)
+    2. Check standard location: ~/Projects/appmilla_github/guardkit
     3. Check current directory (fallback for development)
     """
     # ... implementation omitted for brevity
@@ -68,7 +68,7 @@ def find_taskwright_path():
 ### 4. Command Execution Pattern Discovery
 Found that command should execute orchestrator with PYTHONPATH (line 1160):
 ```python
-cmd = f'PYTHONPATH="{taskwright_path}" {cmd_without_env}'
+cmd = f'PYTHONPATH="{guardkit_path}" {cmd_without_env}'
 ```
 
 ---
@@ -78,7 +78,7 @@ cmd = f'PYTHONPATH="{taskwright_path}" {cmd_without_env}'
 ### Architectural Context
 
 **Installation Model** (`install.sh`):
-1. Copies files from `taskwright/installer/global/commands/` → `~/.agentecflow/commands/`
+1. Copies files from `guardkit/installer/global/commands/` → `~/.agentecflow/commands/`
 2. Creates symlinks: `~/.claude/commands` → `~/.agentecflow/commands/`
 3. Makes commands available to Claude Code
 
@@ -95,16 +95,16 @@ Import Reference: installer.global.commands.lib.template_qa_session
 Python Working Dir: <user's current directory>
 
 Python cannot resolve 'installer' module because:
-1. Python's working directory is user's current directory (not taskwright repo)
-2. PYTHONPATH does not include taskwright repository directory
-3. The 'installer' package exists in taskwright repo, NOT in ~/.agentecflow/
+1. Python's working directory is user's current directory (not guardkit repo)
+2. PYTHONPATH does not include guardkit repository directory
+3. The 'installer' package exists in guardkit repo, NOT in ~/.agentecflow/
 ```
 
 ### Why PYTHONPATH Fix Was Necessary
 
 **Directory Structure**:
 ```
-taskwright/                           # PYTHONPATH must point here
+guardkit/                           # PYTHONPATH must point here
 ├── installer/
 │   └── global/
 │       ├── commands/
@@ -122,8 +122,8 @@ taskwright/                           # PYTHONPATH must point here
 
 **Import Resolution**:
 - Import: `installer.global.commands.lib.template_qa_session`
-- Requires: Python to find `taskwright/installer/global/commands/lib/template_qa_session.py`
-- Needs: `PYTHONPATH="/path/to/taskwright"` so Python can resolve `installer.global.*`
+- Requires: Python to find `guardkit/installer/global/commands/lib/template_qa_session.py`
+- Needs: `PYTHONPATH="/path/to/guardkit"` so Python can resolve `installer.global.*`
 
 ---
 
@@ -135,18 +135,18 @@ The command specification includes PYTHONPATH discovery and setup (lines 1026-11
 
 1. **Discovery Phase**:
    ```python
-   taskwright_path = find_taskwright_path()
+   guardkit_path = find_guardkit_path()
    # Tries: ~/.agentecflow symlink, standard path, current directory
    ```
 
 2. **PYTHONPATH Setup**:
    ```python
-   os.environ["PYTHONPATH"] = str(taskwright_path)
+   os.environ["PYTHONPATH"] = str(guardkit_path)
    ```
 
 3. **Command Execution**:
    ```python
-   cmd = f'PYTHONPATH="{taskwright_path}" python3 {orchestrator_script}'
+   cmd = f'PYTHONPATH="{guardkit_path}" python3 {orchestrator_script}'
    ```
 
 ### Actual Flow (What Claude Code Does)
@@ -251,13 +251,13 @@ def setup_pythonpath():
     if agentecflow.is_symlink():
         target = agentecflow.resolve()
         if target.name == ".agentecflow":
-            taskwright_path = target.parent
-            if (taskwright_path / "installer").exists():
-                sys.path.insert(0, str(taskwright_path))
-                return taskwright_path
+            guardkit_path = target.parent
+            if (guardkit_path / "installer").exists():
+                sys.path.insert(0, str(guardkit_path))
+                return guardkit_path
 
     # Strategy 2: Standard installation
-    standard_path = Path.home() / "Projects" / "appmilla_github" / "taskwright"
+    standard_path = Path.home() / "Projects" / "appmilla_github" / "guardkit"
     if (standard_path / "installer").exists():
         sys.path.insert(0, str(standard_path))
         return standard_path
@@ -268,9 +268,9 @@ def setup_pythonpath():
         return Path.cwd()
 
     raise ImportError(
-        "Cannot find taskwright installation. "
+        "Cannot find guardkit installation. "
         "Set PYTHONPATH manually: "
-        "export PYTHONPATH=/path/to/taskwright"
+        "export PYTHONPATH=/path/to/guardkit"
     )
 
 # Run setup before any imports
@@ -334,12 +334,12 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 ---
 
 ### Solution 4: Symlink ~/.agentecflow to Repo (ARCHITECTURAL CHANGE)
-**Change**: Make `~/.agentecflow/` a symlink to `taskwright/installer/global/`
+**Change**: Make `~/.agentecflow/` a symlink to `guardkit/installer/global/`
 
 **Implementation**:
 ```bash
 rm -rf ~/.agentecflow
-ln -s ~/Projects/appmilla_github/taskwright/installer/global ~/.agentecflow
+ln -s ~/Projects/appmilla_github/guardkit/installer/global ~/.agentecflow
 ```
 
 **Pros**:
@@ -388,7 +388,7 @@ ln -s ~/Projects/appmilla_github/taskwright/installer/global ~/.agentecflow
 - Low risk (self-contained change) ✅
 
 **Maintains Quality**:
-- Proper error messages if taskwright not found ✅
+- Proper error messages if guardkit not found ✅
 - Automatic discovery (no user configuration) ✅
 - Compatible with existing workflows ✅
 
@@ -411,7 +411,7 @@ cd /tmp
 ### Test 2: With Manual PYTHONPATH (Compatibility)
 ```bash
 cd /tmp
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /template-create --name test-manual --dry-run
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template-create --name test-manual --dry-run
 # Expected: ✅ Success
 ```
 
@@ -425,16 +425,16 @@ cd /
 # Expected: ✅ Success in both
 ```
 
-### Test 4: Error Message (Taskwright Not Found)
+### Test 4: Error Message (GuardKit Not Found)
 ```bash
-# Temporarily rename taskwright directory
-mv ~/Projects/appmilla_github/taskwright ~/Projects/appmilla_github/taskwright.bak
+# Temporarily rename guardkit directory
+mv ~/Projects/appmilla_github/guardkit ~/Projects/appmilla_github/guardkit.bak
 
 /template-create --name test-error
 # Expected: Clear error message with troubleshooting steps
 
 # Restore
-mv ~/Projects/appmilla_github/taskwright.bak ~/Projects/appmilla_github/taskwright
+mv ~/Projects/appmilla_github/guardkit.bak ~/Projects/appmilla_github/guardkit
 ```
 
 ---
@@ -465,7 +465,7 @@ mv ~/Projects/appmilla_github/taskwright.bak ~/Projects/appmilla_github/taskwrig
 
    PYTHONPATH Requirements:
    - Must be able to import 'installer.global' package
-   - Auto-discovers taskwright installation
+   - Auto-discovers guardkit installation
    - Falls back to PYTHONPATH environment variable
    """
    ```
@@ -482,7 +482,7 @@ mv ~/Projects/appmilla_github/taskwright.bak ~/Projects/appmilla_github/taskwrig
 When reviewing orchestrator PRs:
 - [ ] Does orchestrator import from `installer.global.*`?
 - [ ] Does it include PYTHONPATH setup before imports?
-- [ ] Are error messages clear if taskwright not found?
+- [ ] Are error messages clear if guardkit not found?
 - [ ] Has it been tested from multiple directories?
 - [ ] Does it handle manual PYTHONPATH override?
 

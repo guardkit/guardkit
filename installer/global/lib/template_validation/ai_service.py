@@ -50,7 +50,7 @@ class AIAnalysisService(Protocol):
 class TaskAgentService:
     """Concrete implementation of AIAnalysisService using Task agent.
 
-    This is the production implementation that uses the Taskwright Task agent
+    This is the production implementation that uses the GuardKit Task agent
     for AI analysis.
     """
 

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Taskwright will be documented in this file.
+All notable changes to GuardKit will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -89,7 +89,7 @@ See [Template Strategy Decision](docs/research/template-strategy-decision.md) an
 
 ### v1.0.0 - Initial Release
 
-First public release of Taskwright, a lightweight AI-assisted development workflow system.
+First public release of GuardKit, a lightweight AI-assisted development workflow system.
 
 **Core Features**:
 - Task workflow (create → work → complete)
@@ -110,9 +110,9 @@ First public release of Taskwright, a lightweight AI-assisted development workfl
 
 For questions about template removal or migration:
 - See [Template Migration Guide](docs/guides/template-migration.md)
-- Report issues: [GitHub Issues](https://github.com/taskwright-dev/taskwright/issues)
-- Ask questions: [GitHub Discussions](https://github.com/taskwright-dev/taskwright/discussions)
+- Report issues: [GitHub Issues](https://github.com/guardkit/guardkit/issues)
+- Ask questions: [GitHub Discussions](https://github.com/guardkit/guardkit/discussions)
 
 ---
 
-**Changelog Maintenance**: This file is updated with each release. See [git commits](https://github.com/taskwright-dev/taskwright/commits) for detailed change history.
+**Changelog Maintenance**: This file is updated with each release. See [git commits](https://github.com/guardkit/guardkit/commits) for detailed change history.

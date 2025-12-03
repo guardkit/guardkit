@@ -41,7 +41,7 @@ The "pragmatic fix" (build locally, copy at end) failed because **it doesn't add
 
 From investigating the code:
 - **Python Orchestrator CWD**: Set via `Path.cwd()` in line 971 of `template_create_orchestrator.py`
-- **Claude Code CWD**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright` (the repo root)
+- **Claude Code CWD**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit` (the repo root)
 - **Evidence**: Running `pwd` in this session confirms it
 
 ---
@@ -70,21 +70,21 @@ From investigating the code:
                       ⬇️
 ┌─────────────────────────────────────────────────┐
 │ Claude Code (Agent Invocation)                   │
-│ CWD: /Users/.../taskwright                      │
+│ CWD: /Users/.../guardkit                      │
 │                                                  │
 │ Reads request from:                              │
 │   .agent-request.json (relative path)            │
-│   = /Users/.../taskwright/.agent-request.json   │
+│   = /Users/.../guardkit/.agent-request.json   │
 │                                                  │
 │ Writes response to:                              │
 │   Write(.agent-response.json) (relative)         │
-│   = /Users/.../taskwright/.agent-response.json  │
+│   = /Users/.../guardkit/.agent-response.json  │
 └─────────────────────────────────────────────────┘
 ```
 
 **Result**:
 - Request written to `/Users/.../DeCUK.Mobile.MyDrive/.agent-request.json`
-- Response written to `/Users/.../taskwright/.agent-response.json`
+- Response written to `/Users/.../guardkit/.agent-response.json`
 - Orchestrator checks `/Users/.../DeCUK.Mobile.MyDrive/.agent-response.json` → **NOT FOUND**
 
 ---
@@ -111,7 +111,7 @@ enhancement_invoker = AgentBridgeInvoker(
 )
 ```
 
-**Problem**: `Path.cwd()` returns **Python's** current working directory, which is set by whoever invokes the Python script (likely the codebase directory). But **Claude Code** runs in the **Taskwright repo directory** (`/Users/.../taskwright`), and we have no control over that.
+**Problem**: `Path.cwd()` returns **Python's** current working directory, which is set by whoever invokes the Python script (likely the codebase directory). But **Claude Code** runs in the **GuardKit repo directory** (`/Users/.../guardkit`), and we have no control over that.
 
 **The pragmatic fix only changed WHERE templates are built**, not WHERE the processes run.
 
@@ -188,7 +188,7 @@ The command handler:
 1. Runs Python script (CWD = codebase directory)
 2. Python writes files to its CWD
 3. Python exits with code 42
-4. Claude Code resumes (CWD = taskwright repo)
+4. Claude Code resumes (CWD = guardkit repo)
 5. Claude Code looks for files in ITS CWD
 6. **MISMATCH**
 
@@ -233,7 +233,7 @@ import uuid
 
 def __init__(self, ...):
     session_id = str(uuid.uuid4())
-    base_dir = Path(tempfile.gettempdir()) / "taskwright"
+    base_dir = Path(tempfile.gettempdir()) / "guardkit"
     base_dir.mkdir(exist_ok=True)
 
     self.request_file = base_dir / f"agent-request-{session_id}.json"
@@ -253,7 +253,7 @@ def load_response(self) -> str:
         self.response_file,  # Expected location (Python CWD)
         Path.cwd() / ".agent-response.json",  # Current CWD
         Path(__file__).parent / ".agent-response.json",  # Script directory
-        Path.home() / ".taskwright" / ".agent-response.json",  # User directory
+        Path.home() / ".guardkit" / ".agent-response.json",  # User directory
     ]
 
     for path in search_paths:
@@ -317,7 +317,7 @@ def load_response(self) -> str:
 
    def __init__(self, phase: int = 6, phase_name: str = "agent_generation"):
        session_id = str(uuid.uuid4())[:8]  # Short UUID for readability
-       temp_dir = Path(tempfile.gettempdir()) / "taskwright"
+       temp_dir = Path(tempfile.gettempdir()) / "guardkit"
        temp_dir.mkdir(parents=True, exist_ok=True)
 
        self.request_file = temp_dir / f"agent-request-{session_id}.json"
@@ -354,7 +354,7 @@ def load_response(self) -> str:
 4. **Test**:
    ```bash
    /template-create /path/to/codebase
-   # Check /tmp/taskwright/ for request/response files
+   # Check /tmp/guardkit/ for request/response files
    # Verify enhancement works
    ```
 
@@ -370,24 +370,24 @@ def load_response(self) -> str:
 │ CWD: /Users/.../DeCUK.Mobile.MyDrive            │
 │                                                  │
 │ Writes request to:                               │
-│   /tmp/taskwright/agent-request-abc123.json      │
+│   /tmp/guardkit/agent-request-abc123.json      │
 │                                                  │
 │ Expects response at:                             │
-│   /tmp/taskwright/agent-response-abc123.json     │
+│   /tmp/guardkit/agent-response-abc123.json     │
 └─────────────────────────────────────────────────┘
                       ⬇️
               ✅ SHARED LOCATION ✅
                       ⬇️
 ┌─────────────────────────────────────────────────┐
 │ Claude Code (Agent Invocation)                   │
-│ CWD: /Users/.../taskwright                      │
+│ CWD: /Users/.../guardkit                      │
 │                                                  │
 │ Reads request from:                              │
-│   /tmp/taskwright/agent-request-abc123.json      │
+│   /tmp/guardkit/agent-request-abc123.json      │
 │   (absolute path, CWD doesn't matter)            │
 │                                                  │
 │ Writes response to:                              │
-│   /tmp/taskwright/agent-response-abc123.json     │
+│   /tmp/guardkit/agent-response-abc123.json     │
 │   (absolute path, CWD doesn't matter)            │
 └─────────────────────────────────────────────────┘
 ```

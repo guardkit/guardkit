@@ -1,1 +1,1 @@
-"""Taskwright global resources package"""
+"""GuardKit global resources package"""

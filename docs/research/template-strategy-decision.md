@@ -12,7 +12,7 @@
 
 **Updated Decision (2025-01-08)**: Added 4th template (React + FastAPI Monorepo) based on additional research showing strong industry adoption and genuine use case differentiation.
 
-**Final Update (2025-11-27)**: Removed taskwright-python template (TASK-G6D4) - Taskwright's `.claude/` is git-managed, so template initialization is not needed for Taskwright development. Final count: 5 reference templates.
+**Final Update (2025-11-27)**: Removed guardkit-python template (TASK-G6D4) - GuardKit's `.claude/` is git-managed, so template initialization is not needed for GuardKit development. Final count: 5 reference templates.
 
 **Rationale**: All major scaffolding tools (create-react-app, dotnet new, Vite) ship with default templates despite developers being highly opinionated. Built-in templates serve 6 critical functions beyond code generation.
 
@@ -61,9 +61,9 @@ Built-in templates serve purposes beyond code generation:
 - First-time developers learning the stack
 - Startups with no existing codebase
 - Proof-of-concept projects where importing is overkill
-- Evaluating Taskwright before committing
+- Evaluating GuardKit before committing
 
-**Without templates**: "Install Taskwright, then... uh... go find some code somewhere?"
+**Without templates**: "Install GuardKit, then... uh... go find some code somewhere?"
 
 **Evidence**: The React template README is 186 lines teaching:
 - Error boundaries, performance optimization (React.memo, useMemo/useCallback)
@@ -83,16 +83,16 @@ This is **documentation as code** - removing it removes a learning resource.
 
 #### 3. **Demonstration & Marketing**
 
-**"Look what Taskwright can do"** requires working examples.
+**"Look what GuardKit can do"** requires working examples.
 
 **Evidence**: Our documentation uses templates everywhere:
-- `taskwright init react` appears in multiple guides
+- `guardkit init react` appears in multiple guides
 - Template selection guide compares maui-appshell vs maui-navigationpage
-- Quick start shows `taskwright init [template-name]`
+- Quick start shows `guardkit init [template-name]`
 
 #### 4. **Best Practices Showcase**
 
-**Templates demonstrate how to use Taskwright's features**.
+**Templates demonstrate how to use GuardKit's features**.
 
 **Evidence from React template**:
 ```markdown
@@ -112,7 +112,7 @@ Every additional step before "working code" increases abandonment.
 **Industry pattern**:
 - create-react-app: `npx create-react-app my-app` → working code
 - dotnet new: `dotnet new react` → working code
-- Taskwright without templates: "Install, then... figure out how to get code"
+- GuardKit without templates: "Install, then... figure out how to get code"
 
 #### 6. **Stack-Specific Guidance**
 
@@ -124,7 +124,7 @@ Templates encode **years of stack-specific best practices**:
 - ErrorOr functional error handling
 - MVVM viewmodel patterns
 
-Telling users "just template your own code" assumes they already know these patterns - but they're using Taskwright to LEARN them.
+Telling users "just template your own code" assumes they already know these patterns - but they're using GuardKit to LEARN them.
 
 ---
 
@@ -183,7 +183,7 @@ Telling users "just template your own code" assumes they already know these patt
 - **default** template only
 
 **Rationale**:
-- Demonstrates Taskwright concepts without technology lock-in
+- Demonstrates GuardKit concepts without technology lock-in
 - Forces `/template-create` from day 1
 - Minimal maintenance
 
@@ -272,10 +272,10 @@ Telling users "just template your own code" assumes they already know these patt
 ```markdown
 # Built-in Templates: Learning Resources, Not Production Code
 
-Taskwright includes five reference implementation templates for three purposes:
+GuardKit includes five reference implementation templates for three purposes:
 
 1. **Learning**: See how to structure templates for `/template-create`
-2. **Evaluation**: Try Taskwright in <5 minutes
+2. **Evaluation**: Try GuardKit in <5 minutes
 3. **Foundation**: Starting point for customization
 
 **For production**: Use `/template-create` from your existing codebase.
@@ -341,7 +341,7 @@ Taskwright includes five reference implementation templates for three purposes:
 - **Depends on**: TASK-057 and TASK-058 completion
 
 **TASK-DEFAULT: Maintain Default Template**
-- Source: Taskwright's generic patterns
+- Source: GuardKit's generic patterns
 - Validate language-agnostic approach
 - Achieve 8+/10 score
 - Duration: 1-2 days
@@ -375,7 +375,7 @@ Taskwright includes five reference implementation templates for three purposes:
 
 **Logic**:
 ```bash
-if [[ inside taskwright repo ]]; then
+if [[ inside guardkit repo ]]; then
     OUTPUT_DIR="installer/global/templates/"
     echo "📦 Template for distribution (in repo)"
 elif [[ --to-repo flag ]]; then
@@ -444,7 +444,7 @@ fi
 **Concept**: Rather than shipping 50 templates, create community ecosystem.
 
 **Structure**:
-- GitHub repo: `taskwright-community-templates`
+- GitHub repo: `guardkit-community-templates`
 - User-contributed templates
 - Rating/review system
 - 3-5 "official" reference templates maintained by core team
@@ -538,7 +538,7 @@ cd nextjs-reference
 ```markdown
 ## Template Philosophy
 
-Taskwright includes **5 reference implementation templates** for learning and evaluation:
+GuardKit includes **5 reference implementation templates** for learning and evaluation:
 
 1. **react-typescript** - Frontend best practices
 2. **fastapi-python** - Backend API patterns
@@ -549,20 +549,20 @@ Taskwright includes **5 reference implementation templates** for learning and ev
 These templates demonstrate:
 - How to structure templates for `/template-create`
 - Stack-specific best practices
-- Taskwright workflow integration
+- GuardKit workflow integration
 
 **For production**: Use `/template-create` from your existing codebase.
 
 ### Quick Start
 
 ```bash
-# Evaluate Taskwright (reference template)
-taskwright init react-typescript
+# Evaluate GuardKit (reference template)
+guardkit init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 ```
 
@@ -570,7 +570,7 @@ taskwright init your-custom-template
 ```markdown
 ## Templates
 
-Taskwright ships with 5 **reference implementation templates** created from production-proven codebases:
+GuardKit ships with 5 **reference implementation templates** created from production-proven codebases:
 
 - **react-typescript**: From [Bulletproof React](https://github.com/alan2207/bulletproof-react) (28.5k stars)
 - **fastapi-python**: From [FastAPI Best Practices](https://github.com/zhanymkanov/fastapi-best-practices) (12k+ stars)
@@ -610,7 +610,7 @@ See [Creating Local Templates](docs/guides/creating-local-templates.md) for deta
 - Clearer value prop (reference + customization)
 - Better adoption path (quick demo → production customization)
 - Unique differentiation (`/template-create` from real codebases)
-- Removed taskwright-python (TASK-G6D4) - not needed for Taskwright development
+- Removed guardkit-python (TASK-G6D4) - not needed for GuardKit development
 
 ---
 

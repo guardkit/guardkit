@@ -8,7 +8,7 @@ priority: high
 complexity: 1
 estimated_hours: 0.25
 actual_hours: 0.25
-tags: [branding, installer, taskwright, quick-fix]
+tags: [branding, installer, guardkit, quick-fix]
 epic: null
 feature: installation
 dependencies: [TASK-020]
@@ -26,24 +26,24 @@ Fix all remaining "agentecflow" and "agentec-init" references in `install.sh` th
 **From User's Install Output:**
 ```
 ╔════════════════════════════════════════════════════════╗
-║         Agentecflow Installation System                ║  ← Should be "Taskwright"
+║         Agentecflow Installation System                ║  ← Should be "GuardKit"
 ║         Version: 2.0.0                                 ║
 ╚════════════════════════════════════════════════════════╝
 
-ℹ Installing Agentecflow to /Users/...                    ← Should be "Taskwright"
+ℹ Installing Agentecflow to /Users/...                    ← Should be "GuardKit"
 ...
-✓ All agentecflow commands now available in Claude Code!   ← Should be "taskwright"
+✓ All agentecflow commands now available in Claude Code!   ← Should be "guardkit"
 ...
-✅ Agentecflow installation complete!                       ← Should be "Taskwright"
+✅ Agentecflow installation complete!                       ← Should be "GuardKit"
 ...
 Available Commands:
-  • agentec-init [template]  - Initialize a project        ← Should be "taskwright-init"
-  • agentecflow init         - Alternative initialization  ← Should be "taskwright init"
-  • af                       - Short for agentecflow       ← Should be "tw (taskwright)"
-  • ai                       - Short for agentec-init      ← Should be "twi (taskwright-init)"
+  • agentec-init [template]  - Initialize a project        ← Should be "guardkit-init"
+  • agentecflow init         - Alternative initialization  ← Should be "guardkit init"
+  • af                       - Short for agentecflow       ← Should be "gk (guardkit)"
+  • ai                       - Short for agentec-init      ← Should be "gki (guardkit-init)"
 ...
 Next Steps:
-  3. Run: agentec-init dotnet-microservice                ← Should be "taskwright-init"
+  3. Run: agentec-init dotnet-microservice                ← Should be "guardkit-init"
 ```
 
 **Root Cause:**
@@ -71,7 +71,7 @@ print_header() {
 print_header() {
     echo ""
     print_message "$BLUE" "╔════════════════════════════════════════════════════════╗"
-    print_message "$BLUE" "║         Taskwright Installation System                 ║"
+    print_message "$BLUE" "║         GuardKit Installation System                 ║"
     print_message "$BLUE" "║         Version: $AGENTECFLOW_VERSION                  ║"
     print_message "$BLUE" "╚════════════════════════════════════════════════════════╝"
     echo ""
@@ -84,7 +84,7 @@ print_header() {
 print_info "Installing Agentecflow to $INSTALL_DIR"
 
 # FIXED
-print_info "Installing Taskwright to $INSTALL_DIR"
+print_info "Installing GuardKit to $INSTALL_DIR"
 ```
 
 #### Change 3: Claude Code Integration Message (Line ~1191)
@@ -93,7 +93,7 @@ print_info "Installing Taskwright to $INSTALL_DIR"
 print_success "All agentecflow commands now available in Claude Code!"
 
 # FIXED
-print_success "All taskwright commands now available in Claude Code!"
+print_success "All guardkit commands now available in Claude Code!"
 ```
 
 #### Change 4: Completion Header (Lines ~1043-1045)
@@ -105,7 +105,7 @@ echo -e "${GREEN}═════════════════════
 
 # FIXED
 echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}✅ Taskwright installation complete!${NC}"
+echo -e "${GREEN}✅ GuardKit installation complete!${NC}"
 echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
 ```
 
@@ -121,11 +121,11 @@ echo "  • ai                       - Short for agentec-init"
 
 # FIXED
 echo -e "${BOLD}Available Commands:${NC}"
-echo "  • taskwright-init [template]  - Initialize a project"
-echo "  • taskwright init             - Alternative initialization"
-echo "  • taskwright doctor           - Check system health"
-echo "  • tw                          - Short for taskwright"
-echo "  • twi                         - Short for taskwright-init"
+echo "  • guardkit-init [template]  - Initialize a project"
+echo "  • guardkit init             - Alternative initialization"
+echo "  • guardkit doctor           - Check system health"
+echo "  • gk                          - Short for guardkit"
+echo "  • gki                         - Short for guardkit-init"
 ```
 
 #### Change 6: Next Steps (Line ~1115)
@@ -134,7 +134,7 @@ echo "  • twi                         - Short for taskwright-init"
 echo "  3. Run: agentec-init dotnet-microservice"
 
 # FIXED
-echo "  3. Run: taskwright-init dotnet-microservice"
+echo "  3. Run: guardkit-init dotnet-microservice"
 ```
 
 #### Change 7: Comments (Multiple locations)
@@ -144,7 +144,7 @@ grep -n "Agentecflow" installer/scripts/install.sh
 
 # Update comments like:
 # Line 3: # Agentecflow - Global Installation Script
-# TO: # Taskwright - Global Installation Script
+# TO: # GuardKit - Global Installation Script
 
 # Line 39: ║         Agentecflow Installation System                ║
 # Already covered above
@@ -156,26 +156,26 @@ grep -n "Agentecflow" installer/scripts/install.sh
 #!/bin/bash
 # Quick fix for install.sh branding
 
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 
 # Backup
 cp installer/scripts/install.sh installer/scripts/install.sh.backup
 
 # Find and replace - user-facing text only
-sed -i '' 's/Agentecflow Installation System/Taskwright Installation System/g' installer/scripts/install.sh
-sed -i '' 's/Installing Agentecflow to/Installing Taskwright to/g' installer/scripts/install.sh
-sed -i '' 's/All agentecflow commands/All taskwright commands/g' installer/scripts/install.sh
-sed -i '' 's/Agentecflow installation complete/Taskwright installation complete/g' installer/scripts/install.sh
-sed -i '' 's/agentec-init \[template\]/taskwright-init [template]/g' installer/scripts/install.sh
-sed -i '' 's/agentecflow init/taskwright init/g' installer/scripts/install.sh
-sed -i '' 's/agentecflow doctor/taskwright doctor/g' installer/scripts/install.sh
-sed -i '' 's/Short for agentecflow/Short for taskwright/g' installer/scripts/install.sh
-sed -i '' 's/Short for agentec-init/Short for taskwright-init/g' installer/scripts/install.sh
-sed -i '' 's/Run: agentec-init/Run: taskwright-init/g' installer/scripts/install.sh
+sed -i '' 's/Agentecflow Installation System/GuardKit Installation System/g' installer/scripts/install.sh
+sed -i '' 's/Installing Agentecflow to/Installing GuardKit to/g' installer/scripts/install.sh
+sed -i '' 's/All agentecflow commands/All guardkit commands/g' installer/scripts/install.sh
+sed -i '' 's/Agentecflow installation complete/GuardKit installation complete/g' installer/scripts/install.sh
+sed -i '' 's/agentec-init \[template\]/guardkit-init [template]/g' installer/scripts/install.sh
+sed -i '' 's/agentecflow init/guardkit init/g' installer/scripts/install.sh
+sed -i '' 's/agentecflow doctor/guardkit doctor/g' installer/scripts/install.sh
+sed -i '' 's/Short for agentecflow/Short for guardkit/g' installer/scripts/install.sh
+sed -i '' 's/Short for agentec-init/Short for guardkit-init/g' installer/scripts/install.sh
+sed -i '' 's/Run: agentec-init/Run: guardkit-init/g' installer/scripts/install.sh
 
 # Update shorthand aliases in output
-sed -i '' 's/  • af  /  • tw  /g' installer/scripts/install.sh
-sed -i '' 's/  • ai  /  • twi /g' installer/scripts/install.sh
+sed -i '' 's/  • af  /  • gk  /g' installer/scripts/install.sh
+sed -i '' 's/  • ai  /  • gki /g' installer/scripts/install.sh
 
 # Verify changes
 echo "Changes made:"
@@ -204,25 +204,25 @@ echo "Test the installer manually to verify all output"
 
 ```
 ╔════════════════════════════════════════════════════════╗
-║         Taskwright Installation System                 ║
+║         GuardKit Installation System                 ║
 ║         Version: 2.0.0                                 ║
 ╚════════════════════════════════════════════════════════╝
 
-ℹ Installing Taskwright to /Users/richwoollcott/.agentecflow
+ℹ Installing GuardKit to /Users/richwoollcott/.agentecflow
 ...
-✓ All taskwright commands now available in Claude Code!
+✓ All guardkit commands now available in Claude Code!
 ...
-✅ Taskwright installation complete!
+✅ GuardKit installation complete!
 ...
 Available Commands:
-  • taskwright-init [template]  - Initialize a project
-  • taskwright init             - Alternative initialization
-  • taskwright doctor           - Check system health
-  • tw                          - Short for taskwright
-  • twi                         - Short for taskwright-init
+  • guardkit-init [template]  - Initialize a project
+  • guardkit init             - Alternative initialization
+  • guardkit doctor           - Check system health
+  • gk                          - Short for guardkit
+  • gki                         - Short for guardkit-init
 ...
 Next Steps:
-  3. Run: taskwright-init dotnet-microservice
+  3. Run: guardkit-init dotnet-microservice
 ```
 
 ## Testing Strategy
@@ -237,8 +237,8 @@ grep -i "agentecflow" install-output.txt | grep -v ".agentecflow"  # Should be e
 grep -i "agentec-init" install-output.txt  # Should be empty
 
 # Check for new branding
-grep -i "taskwright" install-output.txt  # Should have multiple matches
-grep -i "taskwright-init" install-output.txt  # Should have multiple matches
+grep -i "guardkit" install-output.txt  # Should have multiple matches
+grep -i "guardkit-init" install-output.txt  # Should have multiple matches
 ```
 
 ### Test 2: Full Install
@@ -247,14 +247,14 @@ grep -i "taskwright-init" install-output.txt  # Should have multiple matches
 rm -rf ~/.agentecflow ~/.claude
 
 # Run installer
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 ./installer/scripts/install.sh
 
 # Verify commands created
-which taskwright
-which taskwright-init
-which tw
-which twi
+which guardkit
+which guardkit-init
+which gk
+which gki
 
 # Verify old commands NOT created
 ! which agentec-init || echo "ERROR: Old command still exists"
@@ -264,22 +264,22 @@ which twi
 ### Test 3: Help Text
 ```bash
 # Check command help shows new branding
-taskwright --help | grep -i "taskwright"
-taskwright-init --help | grep -i "taskwright"
+guardkit --help | grep -i "guardkit"
+guardkit-init --help | grep -i "guardkit"
 
 # Should NOT show old branding
-! taskwright --help | grep -i "agentecflow"
-! taskwright-init --help | grep -i "agentec-init"
+! guardkit --help | grep -i "agentecflow"
+! guardkit-init --help | grep -i "agentec-init"
 ```
 
 ## Acceptance Criteria
 
-- [ ] Header shows "Taskwright Installation System"
-- [ ] Installing message says "Installing Taskwright to..."
-- [ ] Completion message says "✅ Taskwright installation complete!"
-- [ ] Available commands list shows "taskwright-init", "taskwright init", etc.
-- [ ] Shorthand aliases shown as "tw" and "twi"
-- [ ] Next steps reference "taskwright-init"
+- [ ] Header shows "GuardKit Installation System"
+- [ ] Installing message says "Installing GuardKit to..."
+- [ ] Completion message says "✅ GuardKit installation complete!"
+- [ ] Available commands list shows "guardkit-init", "guardkit init", etc.
+- [ ] Shorthand aliases shown as "gk" and "gki"
+- [ ] Next steps reference "guardkit-init"
 - [ ] No user-facing "agentecflow" or "agentec-init" references remain
 - [ ] Internal paths (`.agentecflow/`) unchanged
 - [ ] Full install test passes
@@ -287,9 +287,9 @@ taskwright-init --help | grep -i "taskwright"
 
 ## Definition of Done
 
-- [ ] All user-facing text updated to "taskwright"
-- [ ] Command examples use "taskwright-init"
-- [ ] Shorthand aliases updated (tw, twi)
+- [ ] All user-facing text updated to "guardkit"
+- [ ] Command examples use "guardkit-init"
+- [ ] Shorthand aliases updated (gk, gki)
 - [ ] Internal config paths unchanged (`.agentecflow/`)
 - [ ] Install test shows correct branding
 - [ ] No "agentecflow init" or "agentec-init" in user output

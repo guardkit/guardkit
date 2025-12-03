@@ -462,7 +462,7 @@ When doing research followed by implementation:
 
 ### For Existing Projects
 
-**If you're starting Taskwright now**:
+**If you're starting GuardKit now**:
 - ✅ Use hash-based IDs from day 1
 - ✅ Apply prefixes consistently
 - ✅ No migration needed

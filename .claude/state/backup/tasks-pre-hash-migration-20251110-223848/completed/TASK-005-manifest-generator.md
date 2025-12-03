@@ -27,7 +27,7 @@ Generate `manifest.json` from AI-powered codebase analysis containing template m
 ## Context
 
 The manifest.json file is the primary metadata file for templates. It's used by:
-- `agentic-init` (taskwright) to discover and apply templates
+- `agentic-init` (guardkit) to discover and apply templates
 - Template browsers to display template information
 - Validation systems to ensure template compatibility
 

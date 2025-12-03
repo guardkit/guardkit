@@ -4,7 +4,7 @@ status: accepted
 date: 2025-11-26
 ---
 
-# ADR-001: Adopt Taskwright System
+# ADR-001: Adopt GuardKit System
 
 ## Status
 Accepted
@@ -13,7 +13,7 @@ Accepted
 We need a lightweight task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 ## Decision
-Adopt the Taskwright system with automated architectural review and test enforcement.
+Adopt the GuardKit system with automated architectural review and test enforcement.
 
 ## Consequences
 **Positive:**

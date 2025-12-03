@@ -39,23 +39,23 @@ test_results:
 
 ## Context
 
-BDD mode was removed from taskwright on November 2, 2025 (commit `08e6f21`) due to:
+BDD mode was removed from guardkit on November 2, 2025 (commit `08e6f21`) due to:
 - Dependency Inversion Principle violation
 - 45-70 hours estimated implementation effort
 - Low expected standalone usage (<5%)
 - Better served by require-kit for full EARS → Gherkin → Implementation workflow
 
-**Now reconsidering**: Reinstating BDD support specifically for taskwright + require-kit integration scenarios.
+**Now reconsidering**: Reinstating BDD support specifically for guardkit + require-kit integration scenarios.
 
 ## Description
 
-This is a **review and planning task** to evaluate whether and how to reinstate BDD mode support in taskwright when used in conjunction with require-kit.
+This is a **review and planning task** to evaluate whether and how to reinstate BDD mode support in guardkit when used in conjunction with require-kit.
 
 **Key Questions**:
 1. Should BDD mode be reinstated at all?
 2. If yes, should it ONLY work when require-kit is detected (avoiding DIP violation)?
 3. What's the minimal viable restoration approach?
-4. How should taskwright and require-kit interact for BDD workflows?
+4. How should guardkit and require-kit interact for BDD workflows?
 5. What's different now vs when it was removed?
 
 ## Documents to Review
@@ -85,13 +85,13 @@ This is a **review and planning task** to evaluate whether and how to reinstate 
 
 ### 1. Dependency Inversion Analysis
 
-**Original Problem**: Taskwright depending on require-kit violated DIP
-- Taskwright (higher-level) should not depend on require-kit (lower-level)
+**Original Problem**: GuardKit depending on require-kit violated DIP
+- GuardKit (higher-level) should not depend on require-kit (lower-level)
 - BDD functionality scattered across both repositories
 
 **Proposed Solution**: Feature detection pattern
 ```python
-# In taskwright
+# In guardkit
 def supports_bdd() -> bool:
     """Check if BDD available via require-kit."""
     return is_package_installed('require-kit')
@@ -106,17 +106,17 @@ if mode == 'bdd' and not supports_bdd():
 ### 2. Integration Architecture
 
 **Option A: Lightweight Integration** (Recommended for evaluation)
-- Taskwright: Minimal BDD mode stub (detects require-kit, delegates to it)
+- GuardKit: Minimal BDD mode stub (detects require-kit, delegates to it)
 - Require-Kit: Owns all BDD logic (agents, instructions, generation)
 - No code duplication, clear ownership
 
 **Option B: Full Restoration** (Original approach)
-- Restore all deleted BDD files to taskwright
+- Restore all deleted BDD files to guardkit
 - Independent BDD support without require-kit
 - 45-70 hours implementation (as documented)
 
 **Option C: Hybrid Approach**
-- Taskwright: Basic Gherkin generation from task descriptions
+- GuardKit: Basic Gherkin generation from task descriptions
 - Require-Kit: Enhanced EARS → Gherkin with full traceability
 - Some code duplication, but clear differentiation
 
@@ -151,7 +151,7 @@ if mode == 'bdd' and not supports_bdd():
 
 **Standard BDD Support** (5-10 hours):
 - Restore bdd-generator agent to require-kit (if not there)
-- Feature detection in taskwright
+- Feature detection in guardkit
 - Integration tests
 - Documentation for both repos
 
@@ -168,7 +168,7 @@ if mode == 'bdd' and not supports_bdd():
 - [ ] Analyze DIP implications of each integration approach
 - [ ] Evaluate user demand evidence (do we have >20% requesting BDD?)
 - [ ] Design minimal viable BDD restoration (if proceeding)
-- [ ] Define clear ownership boundaries (taskwright vs require-kit)
+- [ ] Define clear ownership boundaries (guardkit vs require-kit)
 - [ ] Assess implementation effort for chosen approach
 - [ ] Create decision document with recommendation
 - [ ] If approved: Create implementation task(s)
@@ -215,7 +215,7 @@ If decision is to proceed, create follow-up task:
 > High-level modules should not depend on low-level modules. Both should depend on abstractions.
 
 **Current situation**:
-- Taskwright = higher-level (task workflow orchestration)
+- GuardKit = higher-level (task workflow orchestration)
 - Require-kit = lower-level (requirements management)
 
 **Compliant approach**:
@@ -232,7 +232,7 @@ class RequireKitBDDGenerator(BDDGenerator):
         # Use EARS → Gherkin logic
         pass
 
-# Taskwright depends on abstraction, not implementation
+# GuardKit depends on abstraction, not implementation
 def task_work_bdd_mode(task):
     generator = discover_bdd_generator()  # Plugin discovery
     scenarios = generator.generate_scenarios(task)

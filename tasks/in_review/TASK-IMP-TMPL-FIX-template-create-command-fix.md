@@ -119,8 +119,8 @@ grep -c "^def \|^class " installer/global/commands/template-create.md
 /template-create --dry-run --path /path/to/test/codebase
 
 # Expected output pattern:
-# Taskwright path: /Users/.../taskwright
-# PYTHONPATH: /Users/.../taskwright
+# GuardKit path: /Users/.../guardkit
+# PYTHONPATH: /Users/.../guardkit
 # Iteration 1: Running orchestrator...
 # [orchestrator output]
 ```

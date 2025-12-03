@@ -7,7 +7,7 @@ Tests the complete analyzer workflow with real codebase fixtures:
 - Serialization round-trips
 - Multiple language/framework scenarios
 
-These tests use real codebases (either fixtures or the taskwright project itself).
+These tests use real codebases (either fixtures or the guardkit project itself).
 """
 
 import pytest
@@ -464,15 +464,15 @@ app.Run();
 
 
 class TestRealCodebaseAnalysis:
-    """Integration tests using the actual taskwright codebase."""
+    """Integration tests using the actual guardkit codebase."""
 
-    def test_analyze_taskwright_itself(self):
-        """Test analyzing the taskwright project itself."""
+    def test_analyze_guardkit_itself(self):
+        """Test analyzing the guardkit project itself."""
         # Get the project root (should be accessible from test environment)
         project_root = Path(__file__).parent.parent.parent
 
         if not project_root.exists():
-            pytest.skip("Taskwright project root not found")
+            pytest.skip("GuardKit project root not found")
 
         analyzer = CodebaseAnalyzer(use_agent=False, max_files=5)
 
@@ -481,7 +481,7 @@ class TestRealCodebaseAnalysis:
         )
 
         # Verify basic detection works on real codebase
-        # Taskwright is polyglot, but should detect something
+        # GuardKit is polyglot, but should detect something
         assert analysis.technology.primary_language != "Unknown"
 
         # Should detect testing frameworks
@@ -495,7 +495,7 @@ class TestRealCodebaseAnalysis:
         project_root = Path(__file__).parent.parent.parent
 
         if not project_root.exists():
-            pytest.skip("Taskwright project root not found")
+            pytest.skip("GuardKit project root not found")
 
         import time
 

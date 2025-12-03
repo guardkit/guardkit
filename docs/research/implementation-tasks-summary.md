@@ -350,7 +350,7 @@ pytest tests/integration/test_wave1_integration.py -v
 
 # Verify documentation updated
 grep "TASK-.*-[a-f0-9]{4,6}" CLAUDE.md
-grep "hash-based" docs/guides/taskwright-workflow.md
+grep "hash-based" docs/guides/guardkit-workflow.md
 ```
 
 ---
@@ -464,7 +464,7 @@ With aggressive parallelization (team): 10-11 days (~2 weeks)
 ### Initial Setup
 
 ```bash
-# Ensure Taskwright installer has created symlinks
+# Ensure GuardKit installer has created symlinks
 ./installer/scripts/install.sh
 
 # Verify state directory is symlinked

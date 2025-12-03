@@ -1,6 +1,6 @@
 ---
 id: TASK-021
-title: Update Init Output to Show Taskwright Workflow Only
+title: Update Init Output to Show GuardKit Workflow Only
 status: completed
 created: 2025-11-02T00:00:00Z
 completed: 2025-11-02T10:30:00Z
@@ -8,22 +8,22 @@ priority: high
 complexity: 2
 estimated_hours: 1.5
 actual_hours: 1.0
-tags: [init, output, taskwright, workflow, require-kit-split]
+tags: [init, output, guardkit, workflow, require-kit-split]
 epic: null
 feature: installation
 dependencies: [TASK-020]
 blocks: []
 ---
 
-# TASK-021: Update Init Output to Show Taskwright Workflow Only
+# TASK-021: Update Init Output to Show GuardKit Workflow Only
 
 ## Objective
 
-Update `init-project.sh` output to show ONLY taskwright commands (task workflow) and remove all require-kit commands (requirements, EARS, BDD, epics, features, portfolio).
+Update `init-project.sh` output to show ONLY guardkit commands (task workflow) and remove all require-kit commands (requirements, EARS, BDD, epics, features, portfolio).
 
 ## Problem Statement
 
-**Current Output** (from user's `taskwright init dotnet-microservice`):
+**Current Output** (from user's `guardkit init dotnet-microservice`):
 ```
 ═══════════════════════════════════════════════════════
 Agentic Flow Workflow
@@ -38,17 +38,17 @@ Stage 1: Requirements & Planning
 Stage 2: Feature & Task Definition
    /feature-create       - Create feature from epic               ← require-kit!
    /generate-bdd         - Create BDD scenarios from requirements ← require-kit!
-   /task-create          - Create task from feature               ✓ taskwright
-   /task-split           - Split complex task                     ✓ taskwright
+   /task-create          - Create task from feature               ✓ guardkit
+   /task-split           - Split complex task                     ✓ guardkit
 
 Stage 3: Engineering & Testing
-   /task-work            - Implement task with quality gates      ✓ taskwright
-   /execute-tests        - Run test suite                         ✓ taskwright
-   /refine               - Refine without full re-work            ✓ taskwright
-   /code-review          - Review code quality                    ✓ taskwright
+   /task-work            - Implement task with quality gates      ✓ guardkit
+   /execute-tests        - Run test suite                         ✓ guardkit
+   /refine               - Refine without full re-work            ✓ guardkit
+   /code-review          - Review code quality                    ✓ guardkit
 
 Stage 4: Completion & Deployment
-   /task-complete        - Complete and archive task              ✓ taskwright
+   /task-complete        - Complete and archive task              ✓ guardkit
    /update-state         - Update progress tracking               ← require-kit!
    /update-portfolio     - Update portfolio metrics               ← require-kit!
    /deploy               - Deploy to environment                  ← generic?
@@ -56,10 +56,10 @@ Stage 4: Completion & Deployment
 ═══════════════════════════════════════════════════════
 ```
 
-**Expected Output** (taskwright only):
+**Expected Output** (guardkit only):
 ```
 ═══════════════════════════════════════════════════════
-Taskwright Workflow
+GuardKit Workflow
 ═══════════════════════════════════════════════════════
 
 Simple Task Management:
@@ -92,7 +92,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 
 ## Context
 
-Taskwright is the **lightweight** product:
+GuardKit is the **lightweight** product:
 - ✅ Task workflow (create → work → complete)
 - ✅ Quality gates (architectural review, test enforcement)
 - ✅ Stack templates
@@ -105,7 +105,7 @@ Require-kit is the **full requirements** product:
 - ❌ Epic/feature hierarchy
 - ❌ Portfolio management
 
-Users who want BOTH can install both products. But taskwright should only show taskwright commands.
+Users who want BOTH can install both products. But guardkit should only show guardkit commands.
 
 ## Files to Modify
 
@@ -125,10 +125,10 @@ print_next_steps() {
     # ... many require-kit commands ...
 
     echo "Stage 2: Feature & Task Definition"
-    # ... mix of require-kit and taskwright ...
+    # ... mix of require-kit and guardkit ...
 
     echo "Stage 3: Engineering & Testing"
-    # ... mostly taskwright ...
+    # ... mostly guardkit ...
 
     echo "Stage 4: Completion & Deployment"
     # ... mix of both ...
@@ -142,7 +142,7 @@ print_next_steps() {
 
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✅ Taskwright successfully initialized!${NC}"
+    echo -e "${GREEN}✅ GuardKit successfully initialized!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${BOLD}Project Configuration:${NC}"
@@ -164,8 +164,8 @@ print_next_steps() {
     fi
     echo ""
 
-    # Taskwright workflow (SIMPLIFIED)
-    echo -e "${BOLD}Taskwright Workflow:${NC}"
+    # GuardKit workflow (SIMPLIFIED)
+    echo -e "${BOLD}GuardKit Workflow:${NC}"
     echo ""
     echo "  Simple Task Management:"
     echo "    /task-create      - Create a new task"
@@ -235,7 +235,7 @@ cp installer/scripts/init-project.sh installer/scripts/init-project.sh.backup
 - Template-specific next steps (but simplified)
 
 **Add new sections**:
-- Simple taskwright workflow commands
+- Simple guardkit workflow commands
 - Design-first workflow flags
 - UX design integration commands
 - Link to require-kit
@@ -250,9 +250,9 @@ for template in default react python typescript-api dotnet-microservice maui-app
     mkdir test && cd test
 
     # Capture output
-    output=$(taskwright init $template 2>&1)
+    output=$(guardkit init $template 2>&1)
 
-    # Verify taskwright commands shown
+    # Verify guardkit commands shown
     echo "$output" | grep -q "/task-create" && echo "  ✓ /task-create shown"
     echo "$output" | grep -q "/task-work" && echo "  ✓ /task-work shown"
     echo "$output" | grep -q "/task-complete" && echo "  ✓ /task-complete shown"
@@ -270,7 +270,7 @@ done
 
 ```
 ╔════════════════════════════════════════════════════════╗
-║         Taskwright Initialization                      ║
+║         GuardKit Initialization                      ║
 ║         Template: dotnet-microservice                  ║
 ╚════════════════════════════════════════════════════════╝
 
@@ -283,7 +283,7 @@ Copying template files...
   ✓ Copied project context file
   ✓ Copied template-specific agents
   ✓ Copied template files
-  ✓ Linked Taskwright commands
+  ✓ Linked GuardKit commands
 
 Creating project configuration...
   ✓ Created project configuration
@@ -292,7 +292,7 @@ Creating initial documentation...
   ✓ Created initial documentation
 
 ════════════════════════════════════════════════════════
-✅ Taskwright successfully initialized!
+✅ GuardKit successfully initialized!
 ════════════════════════════════════════════════════════
 
 Project Configuration:
@@ -311,7 +311,7 @@ AI Agents:
   🤖 task-manager
   🤖 test-orchestrator
 
-Taskwright Workflow:
+GuardKit Workflow:
 
   Simple Task Management:
     /task-create      - Create a new task
@@ -349,7 +349,7 @@ Ready to start development!
 
 ## Acceptance Criteria
 
-- [ ] Output shows ONLY taskwright commands
+- [ ] Output shows ONLY guardkit commands
 - [ ] No require-kit commands shown (gather-requirements, formalize-ears, etc.)
 - [ ] No epic/feature/portfolio commands shown
 - [ ] Simple task workflow clearly displayed
@@ -364,9 +364,9 @@ Ready to start development!
 
 ### Test 1: Command Visibility
 ```bash
-output=$(taskwright init default 2>&1)
+output=$(guardkit init default 2>&1)
 
-# Should show these taskwright commands
+# Should show these guardkit commands
 echo "$output" | grep -q "/task-create" || echo "FAIL: Missing /task-create"
 echo "$output" | grep -q "/task-work" || echo "FAIL: Missing /task-work"
 echo "$output" | grep -q "/task-complete" || echo "FAIL: Missing /task-complete"
@@ -382,24 +382,24 @@ echo "$output" | grep -q "/task-status" || echo "FAIL: Missing /task-status"
 ### Test 2: Output Length
 ```bash
 # Output should be concise (<60 lines for main workflow section)
-output=$(taskwright init default 2>&1)
-workflow_lines=$(echo "$output" | grep -A 100 "Taskwright Workflow" | wc -l)
+output=$(guardkit init default 2>&1)
+workflow_lines=$(echo "$output" | grep -A 100 "GuardKit Workflow" | wc -l)
 [ $workflow_lines -lt 60 ] || echo "WARN: Output too long ($workflow_lines lines)"
 ```
 
 ### Test 3: All Templates
 ```bash
-# Every template should show same taskwright workflow
+# Every template should show same guardkit workflow
 for template in default react python typescript-api dotnet-microservice maui-appshell maui-navigationpage; do
-    output=$(taskwright init $template 2>&1)
-    echo "$output" | grep -q "Taskwright Workflow" || echo "FAIL: $template missing workflow"
+    output=$(guardkit init $template 2>&1)
+    echo "$output" | grep -q "GuardKit Workflow" || echo "FAIL: $template missing workflow"
 done
 ```
 
 ## Definition of Done
 
 - [ ] print_next_steps() rewritten
-- [ ] Output shows only taskwright commands
+- [ ] Output shows only guardkit commands
 - [ ] No require-kit commands in output
 - [ ] Link to require-kit provided
 - [ ] Template-specific sections simplified
@@ -417,7 +417,7 @@ done
 - **Medium effort**: ~1.5 hours
 - **High impact**: First impression for users
 - **Low risk**: Only affects output text
-- **Clear separation**: Taskwright vs require-kit boundaries
+- **Clear separation**: GuardKit vs require-kit boundaries
 
 ---
 
@@ -449,11 +449,11 @@ done
    - Reduced from ~80 lines to ~50 lines
    - Better organization with clear section headers
    - Removed all require-kit commands
-   - Added clear separation between taskwright and require-kit
+   - Added clear separation between guardkit and require-kit
 
 ### Verification Results
 
-✅ All taskwright commands shown:
+✅ All guardkit commands shown:
 - /task-create, /task-work, /task-complete, /task-status, /task-refine
 - /figma-to-react, /zeplin-to-maui
 - /debug
@@ -478,7 +478,7 @@ done
 
 ### Acceptance Criteria Status
 
-- ✅ Output shows ONLY taskwright commands
+- ✅ Output shows ONLY guardkit commands
 - ✅ No require-kit commands shown
 - ✅ No epic/feature/portfolio commands shown
 - ✅ Simple task workflow clearly displayed
@@ -493,7 +493,7 @@ done
 
 **User Experience:**
 - First impression is now clear and focused
-- Users understand taskwright's scope immediately
+- Users understand guardkit's scope immediately
 - Clear upgrade path to require-kit if needed
 
 **Documentation:**

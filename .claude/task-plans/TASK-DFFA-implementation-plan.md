@@ -446,7 +446,7 @@ None (existing mkdocs.yml already configured)
 ### 10.2 Deploy Job Outputs
 
 - **Deployment**: GitHub Pages live
-- **URL**: https://taskwright-dev.github.io/taskwright/
+- **URL**: https://guardkit.github.io/guardkit/
 - **Duration**: 10-15 seconds
 - **Status**: ✅ deployment-status in PR
 
@@ -590,7 +590,7 @@ pymdown-extensions: ^10.0
 
 - **Source**: Deploy from Actions (modern approach)
 - **Branch**: Automatic (Actions handles)
-- **Domain**: taskwright-dev.github.io/taskwright/ (from mkdocs.yml site_url)
+- **Domain**: guardkit.github.io/guardkit/ (from mkdocs.yml site_url)
 
 ---
 

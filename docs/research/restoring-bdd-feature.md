@@ -1,8 +1,8 @@
-# Restoring BDD Feature to Taskwright
+# Restoring BDD Feature to GuardKit
 
 ## Executive Summary
 
-This document provides complete instructions for restoring BDD (Behavior-Driven Development) functionality to taskwright if needed in the future. BDD was removed in commit `08e6f21` (November 2, 2025) to simplify the system and focus on lightweight task management.
+This document provides complete instructions for restoring BDD (Behavior-Driven Development) functionality to guardkit if needed in the future. BDD was removed in commit `08e6f21` (November 2, 2025) to simplify the system and focus on lightweight task management.
 
 ## Why BDD Was Removed
 
@@ -16,7 +16,7 @@ This document provides complete instructions for restoring BDD (Behavior-Driven 
 4. **Unnecessary complexity** - Added overhead to lightweight system
 5. **Better served elsewhere** - require-kit provides complete EARS → Gherkin → Implementation flow
 
-**Philosophy**: Keep taskwright lightweight and pragmatic. Users needing full BDD workflows should use require-kit which provides:
+**Philosophy**: Keep guardkit lightweight and pragmatic. Users needing full BDD workflows should use require-kit which provides:
 - EARS requirements notation
 - Automated Gherkin generation from EARS
 - Requirements traceability
@@ -58,7 +58,7 @@ Consider restoring BDD mode if:
 
 ```bash
 # Navigate to repository root
-cd /path/to/taskwright
+cd /path/to/guardkit
 
 # Create restoration branch
 git checkout -b restore-bdd-feature
@@ -334,20 +334,20 @@ For features requiring executable specifications:
 
 **Current state**: Function `supports_bdd()` still exists (it's a shared file with require-kit)
 
-**Update docstring** to reflect BDD now available in taskwright:
+**Update docstring** to reflect BDD now available in guardkit:
 ```python
 def supports_bdd() -> bool:
     """
     Check if BDD generation is available.
 
-    BDD generation is now supported in taskwright standalone mode.
+    BDD generation is now supported in guardkit standalone mode.
     Enhanced BDD workflow (with EARS requirements) available when
     require-kit is also installed.
 
     Returns:
-        bool: True if BDD generation available (always True in taskwright)
+        bool: True if BDD generation available (always True in guardkit)
     """
-    return True  # Now native to taskwright
+    return True  # Now native to guardkit
 ```
 
 **Note**: If this breaks require-kit compatibility, consider:
@@ -357,7 +357,7 @@ def supports_bdd() -> bool:
     Check if BDD generation is available.
 
     Returns True if either:
-    - taskwright has bdd-generator agent (standalone BDD)
+    - guardkit has bdd-generator agent (standalone BDD)
     - require-kit is installed (full EARS → BDD workflow)
 
     Returns:
@@ -365,8 +365,8 @@ def supports_bdd() -> bool:
     """
     packages = get_installed_packages()
 
-    # Check if taskwright has BDD agent
-    if 'taskwright' in packages:
+    # Check if guardkit has BDD agent
+    if 'guardkit' in packages:
         bdd_agent_path = Path.home() / '.agentecflow' / 'agents' / 'bdd-generator.md'
         if bdd_agent_path.exists():
             return True
@@ -561,7 +561,7 @@ grep -r "task-work.*--mode=bdd" CLAUDE.md
 ```bash
 # Commit changes
 git add .
-git commit -m "Restore BDD feature to taskwright
+git commit -m "Restore BDD feature to guardkit
 
 Restored complete BDD (Behavior-Driven Development) support:
 - bdd-generator agent for Gherkin scenario generation
@@ -731,9 +731,9 @@ The `bdd-gherkin.md` instruction file provides:
 
 ## Integration with require-kit
 
-If both taskwright and require-kit are installed:
+If both guardkit and require-kit are installed:
 
-**taskwright provides**:
+**guardkit provides**:
 - Standalone BDD mode (task description → Gherkin)
 - Quick BDD scenario generation
 - BDD without full requirements engineering
@@ -746,7 +746,7 @@ If both taskwright and require-kit are installed:
 - Comprehensive BDD workflow
 
 **Collaboration**:
-- taskwright BDD mode can leverage require-kit requirements
+- guardkit BDD mode can leverage require-kit requirements
 - `feature_detection.supports_bdd()` returns True if either package provides BDD
 - Task-work checks for linked requirements (require-kit) first
 - Falls back to standalone BDD if no requirements linked
@@ -759,7 +759,7 @@ Before restoring BDD, verify:
 - [ ] **Clear Use Case**: Standalone BDD need validated
 - [ ] **Resource Availability**: Time to maintain BDD feature
 - [ ] **AI Quality**: Current LLM can generate quality Gherkin
-- [ ] **No Overlap**: BDD in taskwright complements (not duplicates) require-kit
+- [ ] **No Overlap**: BDD in guardkit complements (not duplicates) require-kit
 - [ ] **Documentation**: Willing to maintain BDD documentation
 - [ ] **Testing**: Can test BDD generation quality
 - [ ] **Support**: Can support users with BDD questions
@@ -768,7 +768,7 @@ Before restoring BDD, verify:
 
 ## Alternative: Recommend require-kit
 
-Instead of restoring BDD to taskwright, consider:
+Instead of restoring BDD to guardkit, consider:
 
 **Enhanced require-kit Recommendation**:
 
@@ -808,7 +808,7 @@ cd require-kit
 ```
 
 This approach:
-- Keeps taskwright lightweight
+- Keeps guardkit lightweight
 - Provides superior BDD experience (with full requirements)
 - Maintains clear separation of concerns
 - Reduces maintenance burden

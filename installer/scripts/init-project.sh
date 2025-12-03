@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Taskwright Project Initialization Script
+# GuardKit Project Initialization Script
 # Works with ~/.agentecflow structure (backward compatible)
 
 set -e
@@ -17,7 +17,7 @@ elif [ -d "$HOME/.agentic-flow" ]; then
 elif [ -d "$HOME/.claude" ]; then
     AGENTECFLOW_HOME="$HOME/.claude"
 else
-    echo "Error: No Taskwright installation found"
+    echo "Error: No GuardKit installation found"
     echo "Please run the installer first"
     exit 1
 fi
@@ -36,7 +36,7 @@ NC='\033[0m'
 print_header() {
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         Taskwright Project Initialization              ║${NC}"
+    echo -e "${BLUE}║         GuardKit Project Initialization              ║${NC}"
     echo -e "${BLUE}║         Template: ${BOLD}$(printf '%-20s' "$TEMPLATE")${NC}${BLUE}         ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
@@ -143,7 +143,7 @@ create_project_structure() {
     # Always create docs at root
     mkdir -p docs/{adr,state}
 
-    # Create task management structure (core taskwright feature)
+    # Create task management structure (core guardkit feature)
     mkdir -p tasks/{backlog,in_progress,in_review,blocked,completed}
 
     # Handle test directory based on project type
@@ -245,7 +245,7 @@ copy_template_files() {
                 cp "$cmd" ".claude/commands/$cmd_name"
             fi
         done
-        print_success "Linked Taskwright commands"
+        print_success "Linked GuardKit commands"
     fi
     
     TEMPLATE="$effective_template"  # Update for later use
@@ -323,7 +323,7 @@ status: planning
 # Sprint 1 - Project Setup
 
 ## Goals
-- [ ] Set up Taskwright system
+- [ ] Set up GuardKit system
 - [ ] Create first task
 - [ ] Complete implementation with quality gates
 
@@ -344,7 +344,7 @@ status: accepted
 date: $(date +%Y-%m-%d)
 ---
 
-# ADR-001: Adopt Taskwright System
+# ADR-001: Adopt GuardKit System
 
 ## Status
 Accepted
@@ -353,7 +353,7 @@ Accepted
 We need a lightweight task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 ## Decision
-Adopt the Taskwright system with automated architectural review and test enforcement.
+Adopt the GuardKit system with automated architectural review and test enforcement.
 
 ## Consequences
 **Positive:**
@@ -376,11 +376,11 @@ print_next_steps() {
     
     echo ""
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}✅ Taskwright successfully initialized!${NC}"
+    echo -e "${GREEN}✅ GuardKit successfully initialized!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${BOLD}📁 Project Structure Created:${NC}"
-    echo "  .claude/       - Taskwright configuration"
+    echo "  .claude/       - GuardKit configuration"
     echo "  docs/          - Documentation and ADRs"
     echo "  tasks/         - Task workflow (backlog → in_progress → in_review → blocked → completed)"
     echo ""
@@ -408,13 +408,13 @@ print_next_steps() {
             echo "  📦 Creating .NET Web API Project:"
             echo "     dotnet new webapi -n YourServiceName --use-controllers"
             echo ""
-            echo "  ✨ Taskwright provides:"
+            echo "  ✨ GuardKit provides:"
             echo "     • ErrorOr pattern for functional error handling"
             echo "     • Controller best practices and examples"
             echo "     • Specialized AI agents for .NET development"
             echo "     • Testing patterns and quality gates"
             echo ""
-            echo "  🚀 Taskwright Workflow:"
+            echo "  🚀 GuardKit Workflow:"
             echo "     1. /task-create 'Add product endpoints'"
             echo "     2. /task-work TASK-001"
             echo "     3. /task-complete TASK-001"
@@ -428,13 +428,13 @@ print_next_steps() {
             echo "     # or"
             echo "     dotnet new webapi -n YourServiceName --use-minimal-apis"
             echo ""
-            echo "  ✨ Taskwright provides:"
+            echo "  ✨ GuardKit provides:"
             echo "     • ErrorOr pattern for functional error handling"
             echo "     • Minimal API best practices and examples"
             echo "     • Specialized AI agents for .NET development"
             echo "     • Testing patterns and quality gates"
             echo ""
-            echo "  🚀 Taskwright Workflow:"
+            echo "  🚀 GuardKit Workflow:"
             echo "     1. /task-create 'Add weather endpoints'"
             echo "     2. /task-work TASK-001"
             echo "     3. /task-complete TASK-001"
@@ -470,7 +470,7 @@ print_next_steps() {
             ;;
     esac
     
-    echo -e "${BOLD}Taskwright Workflow:${NC}"
+    echo -e "${BOLD}GuardKit Workflow:${NC}"
     echo ""
     echo "  Simple Task Management:"
     echo "    /task-create      - Create a new task"
@@ -545,7 +545,7 @@ main() {
     esac
     
     print_header
-    print_info "Using Taskwright from: $AGENTECFLOW_HOME"
+    print_info "Using GuardKit from: $AGENTECFLOW_HOME"
     check_existing
     create_project_structure
     copy_template_files

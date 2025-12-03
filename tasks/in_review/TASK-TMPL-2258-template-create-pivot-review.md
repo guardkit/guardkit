@@ -424,7 +424,7 @@ OUTPUT: Debugging and reliability analysis with pivot recommendations
 1. User runs: `/create-template-task "my-template" --source /path/to/codebase`
 2. Command creates task with proven workflow steps
 3. User runs: `/task-work TASK-XXX`
-4. Taskwright executes all phases with quality gates
+4. GuardKit executes all phases with quality gates
 5. User completes task with 9+/10 quality template
 
 ### Architecture

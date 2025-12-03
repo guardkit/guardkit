@@ -16,7 +16,7 @@ dependencies: [TASK-IMP-RENAME-INFRA]
 
 ## Context
 
-Part of the Taskwright → GuardKit rename initiative. This task updates all user-facing documentation.
+Part of the GuardKit → GuardKit rename initiative. This task updates all user-facing documentation.
 
 **Parent Review**: TASK-REV-803B
 **GitHub Rename**: ✅ Complete (https://github.com/guardkit/guardkit)
@@ -35,8 +35,8 @@ Part of the Taskwright → GuardKit rename initiative. This task updates all use
 
 | Current | New |
 |---------|-----|
-| `docs/guides/taskwright-workflow.md` | `docs/guides/guardkit-workflow.md` |
-| `docs/workflows/taskwright-vs-requirekit.md` | `docs/workflows/guardkit-vs-requirekit.md` |
+| `docs/guides/guardkit-workflow.md` | `docs/guides/guardkit-workflow.md` |
+| `docs/workflows/guardkit-vs-requirekit.md` | `docs/workflows/guardkit-vs-requirekit.md` |
 
 ### 3. Bulk Documentation Updates
 
@@ -58,9 +58,9 @@ Part of the Taskwright → GuardKit rename initiative. This task updates all use
 ### 4. URL Updates
 
 All documentation URLs need updating:
-- `https://github.com/taskwright-dev/taskwright` → `https://github.com/guardkit/guardkit`
-- `https://taskwright-dev.github.io/taskwright/` → `https://guardkit.github.io/guardkit/`
-- `https://raw.githubusercontent.com/taskwright-dev/taskwright/...` → `https://raw.githubusercontent.com/guardkit/guardkit/...`
+- `https://github.com/guardkit/guardkit` → `https://github.com/guardkit/guardkit`
+- `https://guardkit.github.io/guardkit/` → `https://guardkit.github.io/guardkit/`
+- `https://raw.githubusercontent.com/guardkit/guardkit/...` → `https://raw.githubusercontent.com/guardkit/guardkit/...`
 
 ## Acceptance Criteria
 
@@ -73,12 +73,12 @@ All documentation URLs need updating:
 - [ ] CONTRIBUTING.md updated
 - [ ] CHANGELOG.md updated
 - [ ] All GitHub URLs point to guardkit/guardkit
-- [ ] No "taskwright" references in user-facing docs
+- [ ] No "guardkit" references in user-facing docs
 
 ## Exclusions
 
 Do NOT update:
-- `docs/adr/0003-remove-taskwright-python-template.md` (historical ADR)
+- `docs/adr/0003-remove-guardkit-python-template.md` (historical ADR)
 - Historical references in completed tasks
 - Review reports (`.claude/reviews/*`)
 
@@ -89,7 +89,7 @@ Do NOT update:
 mkdocs build
 
 # Search for remaining references
-grep -ri "taskwright" docs/ --include="*.md" | grep -v "adr/"
+grep -ri "guardkit" docs/ --include="*.md" | grep -v "adr/"
 ```
 
 ## Estimated Effort

@@ -22,7 +22,7 @@ Demo content created in TASK-069 through TASK-072 exists locally but needs to be
 **Current State**: Demo projects exist locally but aren't shareable or discoverable.
 
 **Desired State**: Professional demo repositories on GitHub that:
-- Showcase Taskwright's capabilities
+- Showcase GuardKit's capabilities
 - Serve as learning resources
 - Provide copy-paste examples for documentation
 - Act as marketing materials for blog posts and videos
@@ -40,9 +40,9 @@ Demo content created in TASK-069 through TASK-072 exists locally but needs to be
 **Repository Strategy**:
 
 ### Option 1: Monorepo Approach
-**Single Repository**: `taskwright-examples`
+**Single Repository**: `guardkit-examples`
 ```
-taskwright-examples/
+guardkit-examples/
 ├── template-demos/           # From TASK-069
 │   ├── react-typescript-demo/
 │   ├── fastapi-python-demo/
@@ -57,30 +57,30 @@ taskwright-examples/
 
 ### Option 2: Multiple Repositories
 **Separate Repositories**:
-- `taskwright-template-demos` (TASK-069)
-- `taskwright-custom-template-example` (TASK-070)
-- `taskwright-greenfield-example` (TASK-071)
-- `taskwright-workflow-example` (TASK-072)
+- `guardkit-template-demos` (TASK-069)
+- `guardkit-custom-template-example` (TASK-070)
+- `guardkit-greenfield-example` (TASK-071)
+- `guardkit-workflow-example` (TASK-072)
 
 **Pros**: Focused repos, clear purpose
 **Cons**: More to maintain, harder to discover
 
 ### Recommended: Hybrid Approach
-**Main Repository**: `taskwright-examples` (monorepo)
+**Main Repository**: `guardkit-examples` (monorepo)
 **Specialized Repos**: For standout examples
 - Main: All demos organized
-- Specialized: `taskwright-realworld-template` (showcase quality)
-- Specialized: `taskwright-graphql-starter` (usable template)
+- Specialized: `guardkit-realworld-template` (showcase quality)
+- Specialized: `guardkit-graphql-starter` (usable template)
 
 ---
 
 ## Objectives
 
 ### Primary Objective
-Create and publish professional demo repositories showcasing Taskwright's features, suitable for documentation, marketing, and learning.
+Create and publish professional demo repositories showcasing GuardKit's features, suitable for documentation, marketing, and learning.
 
 ### Success Criteria
-- [ ] Main repository created (`taskwright-examples`)
+- [ ] Main repository created (`guardkit-examples`)
 - [ ] All demo projects organized and committed
 - [ ] Each demo has comprehensive README
 - [ ] Repository has overall README explaining all demos
@@ -100,8 +100,8 @@ Create and publish professional demo repositories showcasing Taskwright's featur
 **Initialize Repository**:
 ```bash
 # Create main demo repository
-mkdir ~/projects/taskwright-examples
-cd ~/projects/taskwright-examples
+mkdir ~/projects/guardkit-examples
+cd ~/projects/guardkit-examples
 
 # Initialize git
 git init
@@ -117,13 +117,13 @@ mkdir -p .github/workflows
 
 **Create Main README**:
 ```markdown
-# Taskwright Examples
+# GuardKit Examples
 
-> Comprehensive examples showcasing Taskwright's task workflow system with built-in quality gates.
+> Comprehensive examples showcasing GuardKit's task workflow system with built-in quality gates.
 
-## What is Taskwright?
+## What is GuardKit?
 
-Taskwright is a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
+GuardKit is a lightweight, pragmatic task workflow system with built-in quality gates that prevents broken code from reaching production.
 
 **Core Features**:
 - Quality Gates (architectural review + test enforcement)
@@ -134,7 +134,7 @@ Taskwright is a lightweight, pragmatic task workflow system with built-in qualit
 ## Examples in This Repository
 
 ### 1. Template Demos (`template-demos/`)
-Demonstrations of all 5 core Taskwright templates.
+Demonstrations of all 5 core GuardKit templates.
 
 | Template | Description | Demo Project | Quality |
 |----------|-------------|--------------|---------|
@@ -164,7 +164,7 @@ Building a production-ready project from scratch and extracting it as a template
 **Journey**: Zero → Production-ready → Template → Reusable
 
 **Demonstrates**:
-- Using Taskwright workflow from day one
+- Using GuardKit workflow from day one
 - Building with quality gates (80% coverage, 78/100 architecture)
 - Extracting proven patterns as template
 - Reusing for multiple projects
@@ -172,7 +172,7 @@ Building a production-ready project from scratch and extracting it as a template
 **Learn More**: [Greenfield Example README](greenfield-example/README.md)
 
 ### 4. Workflow Example (`workflow-example/`)
-End-to-end demonstration of complete Taskwright workflow.
+End-to-end demonstration of complete GuardKit workflow.
 
 **Project**: Todo API with authentication
 **Workflow**: Template init → Task creation → Quality gates → Completion
@@ -189,15 +189,15 @@ End-to-end demonstration of complete Taskwright workflow.
 ## Quick Start
 
 ### Prerequisites
-- Taskwright installed ([Installation Guide](https://github.com/yourusername/taskwright))
+- GuardKit installed ([Installation Guide](https://github.com/yourusername/guardkit))
 - Node.js 18+ / Python 3.11+ / Go 1.21+ (depending on example)
 
 ### Run an Example
 
 ```bash
 # Clone this repository
-git clone https://github.com/yourusername/taskwright-examples.git
-cd taskwright-examples
+git clone https://github.com/yourusername/guardkit-examples.git
+cd guardkit-examples
 
 # Choose an example
 cd template-demos/react-typescript-demo
@@ -208,7 +208,7 @@ cat README.md
 
 ## Learning Path
 
-**New to Taskwright?**
+**New to GuardKit?**
 1. Start with **Workflow Example** → Understand complete process
 2. Try **Template Demos** → See different tech stacks
 3. Explore **Custom Template Example** → Learn template extraction
@@ -221,15 +221,15 @@ cat README.md
 
 ## Documentation
 
-- [Main Documentation](https://github.com/yourusername/taskwright)
-- [Template Philosophy](https://github.com/yourusername/taskwright/docs/guides/template-philosophy.md)
-- [Workflow Guide](https://github.com/yourusername/taskwright/docs/guides/taskwright-workflow.md)
+- [Main Documentation](https://github.com/yourusername/guardkit)
+- [Template Philosophy](https://github.com/yourusername/guardkit/docs/guides/template-philosophy.md)
+- [Workflow Guide](https://github.com/yourusername/guardkit/docs/guides/guardkit-workflow.md)
 
 ## Contributing
 
 Found an issue or have an improvement?
-- Open an issue: [Issues](https://github.com/yourusername/taskwright-examples/issues)
-- Submit a PR: [Pull Requests](https://github.com/yourusername/taskwright-examples/pulls)
+- Open an issue: [Issues](https://github.com/yourusername/guardkit-examples/issues)
+- Submit a PR: [Pull Requests](https://github.com/yourusername/guardkit-examples/pulls)
 
 ## License
 
@@ -237,22 +237,22 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ## Related Projects
 
-- [Taskwright](https://github.com/yourusername/taskwright) - Main project
-- [RequireKit](https://github.com/requirekit/require-kit) - Requirements management (pairs with Taskwright)
+- [GuardKit](https://github.com/yourusername/guardkit) - Main project
+- [RequireKit](https://github.com/requirekit/require-kit) - Requirements management (pairs with GuardKit)
 
 ---
 
-**Questions?** Open a [discussion](https://github.com/yourusername/taskwright-examples/discussions) or join our [community](link-to-community).
+**Questions?** Open a [discussion](https://github.com/yourusername/guardkit-examples/discussions) or join our [community](link-to-community).
 ```
 
 ### Phase 2: Organize Template Demos
 
 **Copy and Organize**:
 ```bash
-cd ~/projects/taskwright-examples/template-demos
+cd ~/projects/guardkit-examples/template-demos
 
 # Copy demos from TASK-069
-cp -r ~/taskwright-demos/core-templates/* .
+cp -r ~/guardkit-demos/core-templates/* .
 
 # Structure:
 # template-demos/
@@ -267,7 +267,7 @@ cp -r ~/taskwright-demos/core-templates/* .
 ```markdown
 # Template Demos
 
-Demonstrations of all Taskwright core templates with working examples.
+Demonstrations of all GuardKit core templates with working examples.
 
 ## Overview
 
@@ -352,7 +352,7 @@ pytest tests/ -v --cov=src --cov-report=term
 
 After exploring these demos:
 1. Choose a template for your project
-2. Run `taskwright init [template-name]`
+2. Run `guardkit init [template-name]`
 3. Start building with `/task-create` and `/task-work`
 
 ## Related Examples
@@ -379,7 +379,7 @@ After exploring these demos:
 
 **Copy and Enhance**:
 ```bash
-cd ~/projects/taskwright-examples/custom-template-example
+cd ~/projects/guardkit-examples/custom-template-example
 
 # Copy from TASK-070
 cp -r ~/template-test-workspace/realworld-react-redux-template .
@@ -401,7 +401,7 @@ cp -r ~/template-test-workspace/realworld-react-redux-template .
 ```markdown
 # Custom Template Example
 
-Complete example of extracting a custom template from an existing codebase using Taskwright's `/template-create` command.
+Complete example of extracting a custom template from an existing codebase using GuardKit's `/template-create` command.
 
 ## Overview
 
@@ -426,7 +426,7 @@ Generated template with quality score 8.5/10:
 - Placeholder system for customization
 - Pattern documentation in CLAUDE.md
 - Validation report showing quality metrics
-- Ready to use with `taskwright init`
+- Ready to use with `guardkit init`
 
 ### Example Projects
 Two projects initialized from the template:
@@ -461,13 +461,13 @@ cat manifest.json         # Placeholder definitions
 
 ### 3. Try Template
 ```bash
-# Install template (if not already in Taskwright)
+# Install template (if not already in GuardKit)
 cp -r extracted-template ~/.agentecflow/templates/realworld-react-redux
 
 # Initialize new project
 mkdir my-app
 cd my-app
-taskwright init realworld-react-redux
+guardkit init realworld-react-redux
 ```
 
 ### 4. Compare Example Projects
@@ -517,14 +517,14 @@ See [docs/before-after-comparison.md](docs/before-after-comparison.md) for trans
 
 - Try extracting a template from your own codebase
 - Read [Template Extraction Best Practices](../../docs/template-extraction-best-practices.md)
-- Join [Taskwright community](link) to share your templates
+- Join [GuardKit community](link) to share your templates
 ```
 
 ### Phase 4: Organize Greenfield Example
 
 **Copy and Document**:
 ```bash
-cd ~/projects/taskwright-examples/greenfield-example
+cd ~/projects/guardkit-examples/greenfield-example
 
 # Copy from TASK-071
 cp -r ~/projects/graphql-api-starter .
@@ -549,10 +549,10 @@ cp -r ~/projects/graphql-api-starter .
 
 **Copy and Document**:
 ```bash
-cd ~/projects/taskwright-examples/workflow-example
+cd ~/projects/guardkit-examples/workflow-example
 
 # Copy from TASK-072
-cp -r ~/taskwright-demos/end-to-end-workflow/todo-api .
+cp -r ~/guardkit-demos/end-to-end-workflow/todo-api .
 
 # Structure:
 # workflow-example/
@@ -634,13 +634,13 @@ jobs:
 
 **Commit and Push**:
 ```bash
-cd ~/projects/taskwright-examples
+cd ~/projects/guardkit-examples
 
 # Add all files
 git add .
 
 # Create commit
-git commit -m "Initial commit: Taskwright examples repository
+git commit -m "Initial commit: GuardKit examples repository
 
 Includes:
 - Template demos (5 core templates)
@@ -652,7 +652,7 @@ All demos tested and verified working.
 Quality scores: 8-9.2/10 across all examples."
 
 # Create GitHub repository (via gh CLI or web)
-gh repo create taskwright-examples --public --source=. --remote=origin
+gh repo create guardkit-examples --public --source=. --remote=origin
 
 # Push
 git push -u origin main
@@ -665,7 +665,7 @@ git push origin v1.0.0
 **Add Topics**:
 ```bash
 # Via GitHub web interface or CLI
-gh repo edit --add-topic taskwright
+gh repo edit --add-topic guardkit
 gh repo edit --add-topic examples
 gh repo edit --add-topic templates
 gh repo edit --add-topic quality-gates
@@ -679,28 +679,28 @@ gh repo edit --add-topic nextjs
 
 ### Phase 8: Create Specialized Repositories
 
-**Option 1: Taskwright RealWorld Template**:
+**Option 1: GuardKit RealWorld Template**:
 ```bash
 # Extract custom template example into standalone repo
 cd ~/projects
-git clone https://github.com/yourusername/taskwright-examples.git temp
+git clone https://github.com/yourusername/guardkit-examples.git temp
 cd temp/custom-template-example/extracted-template
 
 # Create new repo
-mkdir ~/projects/taskwright-realworld-template
-cp -r . ~/projects/taskwright-realworld-template
-cd ~/projects/taskwright-realworld-template
+mkdir ~/projects/guardkit-realworld-template
+cp -r . ~/projects/guardkit-realworld-template
+cd ~/projects/guardkit-realworld-template
 
 # Polish and publish
 git init
 # Add comprehensive README, documentation
 git add .
-git commit -m "Taskwright template based on RealWorld React + Redux"
-gh repo create taskwright-realworld-template --public --source=.
+git commit -m "GuardKit template based on RealWorld React + Redux"
+gh repo create guardkit-realworld-template --public --source=.
 git push -u origin main
 ```
 
-**Option 2: Taskwright GraphQL Starter**:
+**Option 2: GuardKit GraphQL Starter**:
 ```bash
 # Similar process for greenfield GraphQL template
 # Make it a standalone, production-ready template repo
@@ -708,21 +708,21 @@ git push -u origin main
 
 ### Phase 9: Update Main Project Documentation
 
-**Update Taskwright README.md**:
+**Update GuardKit README.md**:
 ```markdown
 ## Examples
 
-Want to see Taskwright in action? Check out our comprehensive examples:
+Want to see GuardKit in action? Check out our comprehensive examples:
 
-**[taskwright-examples](https://github.com/yourusername/taskwright-examples)** - Main examples repository:
+**[guardkit-examples](https://github.com/yourusername/guardkit-examples)** - Main examples repository:
 - ✅ All 5 core templates demonstrated
 - ✅ Custom template extraction walkthrough
 - ✅ Greenfield project example
 - ✅ End-to-end workflow demonstration
 
 **Specialized Templates**:
-- [taskwright-realworld-template](https://github.com/yourusername/taskwright-realworld-template) - RealWorld React + Redux template
-- [taskwright-graphql-starter](https://github.com/yourusername/taskwright-graphql-starter) - GraphQL API starter template
+- [guardkit-realworld-template](https://github.com/yourusername/guardkit-realworld-template) - RealWorld React + Redux template
+- [guardkit-graphql-starter](https://github.com/yourusername/guardkit-graphql-starter) - GraphQL API starter template
 ```
 
 **Update CLAUDE.md**:
@@ -730,7 +730,7 @@ Want to see Taskwright in action? Check out our comprehensive examples:
 ## Examples and Demos
 
 For comprehensive examples, see:
-- **Main Repository**: [taskwright-examples](https://github.com/yourusername/taskwright-examples)
+- **Main Repository**: [guardkit-examples](https://github.com/yourusername/guardkit-examples)
 - **Template Demos**: See all 5 core templates in action
 - **Custom Template Example**: Learn template extraction from existing code
 - **Greenfield Example**: Build from scratch with quality gates
@@ -776,7 +776,7 @@ For comprehensive examples, see:
 - [ ] Contributing guide added
 
 ### Integration
-- [ ] Main Taskwright repo updated with links
+- [ ] Main GuardKit repo updated with links
 - [ ] CLAUDE.md updated with examples
 - [ ] Specialized repos created (2+)
 - [ ] Cross-references added
@@ -785,7 +785,7 @@ For comprehensive examples, see:
 
 ## Deliverables
 
-1. **Main Repository** (`taskwright-examples`) - Published on GitHub
+1. **Main Repository** (`guardkit-examples`) - Published on GitHub
 2. **Template Demos** (5 working demos)
 3. **Custom Template Example** (Complete walkthrough)
 4. **Greenfield Example** (Build → Template journey)

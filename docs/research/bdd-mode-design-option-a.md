@@ -4,7 +4,7 @@
 
 This document explores splitting BDD functionality into two distinct concerns:
 1. **Scenario Generation** (require-kit): EARS → Gherkin
-2. **Scenario Implementation** (taskwright): Gherkin → Working Code
+2. **Scenario Implementation** (guardkit): Gherkin → Working Code
 
 ## bdd-scenario-implementer Agent Specification
 
@@ -477,14 +477,14 @@ Before starting, verify:
 **BUT:**
 - Most teams don't write Gherkin scenarios upfront
 - Those who do often use require-kit for full EARS → BDD → Implementation flow
-- BDD without formal requirements (taskwright-only) is uncommon
+- BDD without formal requirements (guardkit-only) is uncommon
 
 ## Verdict
 
 **Complexity:** High
 **Usage:** Low
 **Maintenance:** Medium-High
-**Value:** Questionable for taskwright-only users
+**Value:** Questionable for guardkit-only users
 
 ---
 

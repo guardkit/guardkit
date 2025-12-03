@@ -1,6 +1,6 @@
 # Agent Discovery Implementation Guide: GitHub Best Practices
 
-**Goal**: Implement GitHub's agent best practices (analysis of 2,500+ repositories) to improve Taskwright's 15 global agents.
+**Goal**: Implement GitHub's agent best practices (analysis of 2,500+ repositories) to improve GuardKit's 15 global agents.
 
 **Strategy**: Use conductor app with git worktree workspaces for parallel development where possible, sequential /task-work for interdependent tasks.
 
@@ -105,7 +105,7 @@
 
 **Setup Worktrees**:
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Create 2 parallel worktrees for new agents
 conductor worktree create docs-git-agent
@@ -312,7 +312,7 @@ Total: 40 hours over 3 weeks
 
 ### Step 1: Merge Worktree A (Git Agent) - First
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 git checkout main
 git merge docs-git-agent --no-ff -m "docs: Add git-workflow-manager.md agent"
 ```

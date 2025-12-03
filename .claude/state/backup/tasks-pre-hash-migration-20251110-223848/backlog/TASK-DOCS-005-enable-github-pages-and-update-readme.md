@@ -58,7 +58,7 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 - [ ] Navigate to repository Settings → Pages
 - [ ] Verify "GitHub Actions" is selected as source
 - [ ] Verify site is being deployed
-- [ ] Verify site URL is accessible: https://taskwright-dev.github.io/taskwright/
+- [ ] Verify site URL is accessible: https://guardkit.github.io/guardkit/
 - [ ] Check for any deployment errors
 
 ### Site Verification
@@ -78,7 +78,7 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 - [ ] Keep existing documentation links for now (no breaking changes)
 
 ### Custom Domain Decision (Optional)
-- [ ] Decide if using custom domain (docs.taskwright.dev)
+- [ ] Decide if using custom domain (docs.guardkit.dev)
 - [ ] If yes: Configure DNS CNAME record
 - [ ] If yes: Add custom domain in GitHub Pages settings
 - [ ] If yes: Wait for SSL certificate provisioning
@@ -99,7 +99,7 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 - [ ] GitHub Pages configured in repository settings
 - [ ] Source set to "GitHub Actions"
 - [ ] Site deployed successfully
-- [ ] URL accessible: https://taskwright-dev.github.io/taskwright/
+- [ ] URL accessible: https://guardkit.github.io/guardkit/
 
 ### Site Verification ✅
 - [ ] Homepage loads correctly
@@ -126,7 +126,7 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 ## Implementation Plan
 
 ### Phase 1: GitHub Pages Configuration
-1. Go to https://github.com/taskwright-dev/taskwright/settings/pages
+1. Go to https://github.com/guardkit/guardkit/settings/pages
 2. Under "Build and deployment"
 3. Verify "Source" is set to "GitHub Actions"
 4. If not set, select "GitHub Actions"
@@ -139,7 +139,7 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 4. Note any errors if deployment fails
 
 ### Phase 3: Site Verification
-1. Visit https://taskwright-dev.github.io/taskwright/
+1. Visit https://guardkit.github.io/guardkit/
 2. Click through all navigation items
 3. Test search (search for "task", "quality", etc.)
 4. Open browser console, check for errors
@@ -158,11 +158,11 @@ Finalize GitHub Pages setup and make the documentation discoverable by adding pr
 1. Decide: Yes or No to custom domain
 2. If NO: Skip to Phase 6
 3. If YES:
-   - Add CNAME record in DNS: `docs.taskwright.dev → taskwright-dev.github.io`
-   - In GitHub Pages settings, add custom domain: `docs.taskwright.dev`
+   - Add CNAME record in DNS: `docs.guardkit.dev → guardkit.github.io`
+   - In GitHub Pages settings, add custom domain: `docs.guardkit.dev`
    - Check "Enforce HTTPS" (after DNS propagates)
    - Wait for SSL certificate (5-10 minutes)
-   - Test both http://docs.taskwright.dev and https://docs.taskwright.dev
+   - Test both http://docs.guardkit.dev and https://docs.guardkit.dev
    - Update README to use custom domain URL
 
 ### Phase 6: Final Verification
@@ -181,15 +181,15 @@ Add this section after "What You Get" in README.md:
 ```markdown
 ## Documentation
 
-📚 **[View Full Documentation](https://taskwright-dev.github.io/taskwright/)**
+📚 **[View Full Documentation](https://guardkit.github.io/guardkit/)**
 
 Comprehensive guides, workflows, and API references:
-- [Quickstart Guide](https://taskwright-dev.github.io/taskwright/guides/GETTING-STARTED/)
-- [Core Concepts](https://taskwright-dev.github.io/taskwright/core-concepts/)
-- [Advanced Topics](https://taskwright-dev.github.io/taskwright/advanced/)
-- [Templates](https://taskwright-dev.github.io/taskwright/templates/)
-- [MCP Integration](https://taskwright-dev.github.io/taskwright/mcp/)
-- [Troubleshooting](https://taskwright-dev.github.io/taskwright/troubleshooting/)
+- [Quickstart Guide](https://guardkit.github.io/guardkit/guides/GETTING-STARTED/)
+- [Core Concepts](https://guardkit.github.io/guardkit/core-concepts/)
+- [Advanced Topics](https://guardkit.github.io/guardkit/advanced/)
+- [Templates](https://guardkit.github.io/guardkit/templates/)
+- [MCP Integration](https://guardkit.github.io/guardkit/mcp/)
+- [Troubleshooting](https://guardkit.github.io/guardkit/troubleshooting/)
 ```
 
 ### Update Quick Start Section
@@ -199,7 +199,7 @@ Add reference in "5-Minute Quickstart":
 ```markdown
 ## 5-Minute Quickstart
 
-**📚 Full documentation: https://taskwright-dev.github.io/taskwright/**
+**📚 Full documentation: https://guardkit.github.io/guardkit/**
 
 ### Option 1: Quick Install (Recommended)
 ...
@@ -216,7 +216,7 @@ At the top with other badges:
 Or clickable badge:
 
 ```markdown
-[![documentation](https://img.shields.io/badge/docs-online-blue)](https://taskwright-dev.github.io/taskwright/)
+[![documentation](https://img.shields.io/badge/docs-online-blue)](https://guardkit.github.io/guardkit/)
 ```
 
 ## Success Criteria
@@ -247,11 +247,11 @@ Or clickable badge:
 
 **Default GitHub Pages URL**:
 - Format: `https://<username>.github.io/<repository>/`
-- For taskwright: `https://taskwright-dev.github.io/taskwright/`
+- For guardkit: `https://guardkit.github.io/guardkit/`
 - Note the trailing slash (optional but recommended)
 
 **Custom Domain URL** (if used):
-- Format: `https://docs.taskwright.dev/`
+- Format: `https://docs.guardkit.dev/`
 - Cleaner, more professional
 - Requires DNS configuration
 
@@ -263,13 +263,13 @@ If you decide to use a custom domain:
 ```
 Type: CNAME
 Name: docs
-Value: taskwright-dev.github.io
+Value: guardkit.github.io
 TTL: 3600 (or auto)
 ```
 
 **2. GitHub Pages Settings**:
 - Go to Settings → Pages
-- Under "Custom domain", enter: `docs.taskwright.dev`
+- Under "Custom domain", enter: `docs.guardkit.dev`
 - Click "Save"
 - Wait for DNS check (green checkmark)
 
@@ -279,14 +279,14 @@ TTL: 3600 (or auto)
 - Once ready, check "Enforce HTTPS"
 
 **4. Verification**:
-- Test: `http://docs.taskwright.dev` → redirects to https
-- Test: `https://docs.taskwright.dev` → site loads
+- Test: `http://docs.guardkit.dev` → redirects to https
+- Test: `https://docs.guardkit.dev` → site loads
 - Test: old URL still works (GitHub redirects)
 
 ### Custom Domain Pros/Cons
 
 **Pros**:
-- Professional URL (`docs.taskwright.dev` vs `taskwright-dev.github.io/taskwright/`)
+- Professional URL (`docs.guardkit.dev` vs `guardkit.github.io/guardkit/`)
 - Easier to remember
 - Better SEO
 - Can migrate to different host later without breaking links
@@ -326,7 +326,7 @@ Before marking complete:
 
 **Custom domain shows "DNS not configured"**:
 - DNS changes take 5-60 minutes to propagate
-- Check DNS with: `dig docs.taskwright.dev` (should show CNAME)
+- Check DNS with: `dig docs.guardkit.dev` (should show CNAME)
 - Wait and try again
 
 **HTTPS not available**:

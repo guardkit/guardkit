@@ -18,11 +18,11 @@ task_type: implementation
 
 ## Context
 
-Create `taskwright-dev/shared-agents` repository and migrate the verified agents (from TASK-SHA-001) to it. Keep it simple - just the essentials.
+Create `guardkit/shared-agents` repository and migrate the verified agents (from TASK-SHA-001) to it. Keep it simple - just the essentials.
 
 ## Acceptance Criteria
 
-- [ ] GitHub repository created: `https://github.com/taskwright-dev/shared-agents`
+- [ ] GitHub repository created: `https://github.com/guardkit/shared-agents`
 - [ ] Verified agents copied to `agents/` directory
 - [ ] Simple `manifest.json` listing agent files
 - [ ] Basic README with usage instructions
@@ -35,12 +35,12 @@ Create `taskwright-dev/shared-agents` repository and migrate the verified agents
 
 ```bash
 # Using GitHub CLI (or create via web UI)
-gh repo create taskwright-dev/shared-agents \
+gh repo create guardkit/shared-agents \
   --public \
   --description "Universal AI agents shared between TaskWright and RequireKit"
 
 # Clone it
-git clone https://github.com/taskwright-dev/shared-agents.git
+git clone https://github.com/guardkit/shared-agents.git
 cd shared-agents
 ```
 
@@ -52,8 +52,8 @@ mkdir agents
 
 # Copy verified agents (from TASK-SHA-001 list)
 # Example (replace with actual verified list):
-cp ../taskwright/installer/global/agents/code-reviewer.md agents/
-cp ../taskwright/installer/global/agents/test-orchestrator.md agents/
+cp ../guardkit/installer/global/agents/code-reviewer.md agents/
+cp ../guardkit/installer/global/agents/test-orchestrator.md agents/
 # ... copy others from verified list
 ```
 
@@ -80,7 +80,7 @@ Universal AI agents shared between TaskWright and RequireKit.
 ## What is this?
 
 This repository contains agent definitions that are used by both:
-- [TaskWright](https://github.com/taskwright-dev/taskwright)
+- [TaskWright](https://github.com/guardkit/guardkit)
 - [RequireKit](https://github.com/requirekit/require-kit)
 
 Instead of duplicating agents in both repos, we maintain them here.

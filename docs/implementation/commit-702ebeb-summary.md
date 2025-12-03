@@ -339,7 +339,7 @@ elif self.strategy == "hybrid":
 **Remote**: origin/main
 **Status**: ✅ Merged and Pushed
 
-**GitHub**: https://github.com/taskwright-dev/taskwright/commit/702ebeb
+**GitHub**: https://github.com/guardkit/guardkit/commit/702ebeb
 
 ---
 

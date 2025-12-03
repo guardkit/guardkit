@@ -1,4 +1,4 @@
-# Conductor.build User Guide for Taskwright
+# Conductor.build User Guide for GuardKit
 
 ## Quick Start (2 minutes)
 
@@ -145,7 +145,7 @@ cd ~/Projects/team-app
 # Each developer works independently, no conflicts!
 ```
 
-> **Note:** For RequireKit users: Use `/epic-create`, `/feature-create` for hierarchical requirements management before creating Taskwright tasks.
+> **Note:** For RequireKit users: Use `/epic-create`, `/feature-create` for hierarchical requirements management before creating GuardKit tasks.
 
 ### Workflow 3: Monitoring Progress Across Worktrees
 
@@ -231,7 +231,7 @@ Agentecflow now provides automatic state file committing via `git_state_helper.p
 
 ### 5. Requirements Management (RequireKit)
 
-> **Note:** This section applies to RequireKit users only. Taskwright uses task descriptions directly without formal requirements management.
+> **Note:** This section applies to RequireKit users only. GuardKit uses task descriptions directly without formal requirements management.
 
 **For RequireKit users - Manage EARS requirements in main worktree only:**
 
@@ -246,7 +246,7 @@ cd ~/project (main)
 # (Can cause conflicts when merging)
 ```
 
-**For Taskwright users:**
+**For GuardKit users:**
 - Create tasks in main worktree using `/task-create`
 - Implementation happens in Conductor worktrees
 - No formal requirements management needed
@@ -837,7 +837,7 @@ Both approaches work perfectly with Agentecflow!
 
 ```bash
 # Check your installation is Conductor-ready:
-taskwright doctor
+guardkit doctor
 
 # Should show all green:
 # ✓ Commands symlinked correctly

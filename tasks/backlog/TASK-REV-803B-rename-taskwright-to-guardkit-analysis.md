@@ -1,6 +1,6 @@
 ---
 id: TASK-REV-803B
-title: "Rename Taskwright to GuardKit - Comprehensive Analysis"
+title: "Rename GuardKit to GuardKit - Comprehensive Analysis"
 status: completed
 task_type: review
 created: 2025-12-03T09:37:53Z
@@ -20,11 +20,11 @@ review_results:
   completed_at: 2025-12-03T10:30:00Z
 ---
 
-# Review Task: Rename Taskwright to GuardKit - Comprehensive Analysis
+# Review Task: Rename GuardKit to GuardKit - Comprehensive Analysis
 
 ## Background
 
-A naming conflict has been discovered with an existing AI-oriented application called "Taskwright". To avoid confusion and potential trademark issues, we need to rename the project from **Taskwright** to **GuardKit**.
+A naming conflict has been discovered with an existing AI-oriented application called "GuardKit". To avoid confusion and potential trademark issues, we need to rename the project from **GuardKit** to **GuardKit**.
 
 This review task will:
 1. Identify all locations where the name appears
@@ -36,8 +36,8 @@ This review task will:
 ### Areas to Investigate
 
 1. **GitHub Infrastructure**
-   - Organisation name (taskwright-dev → guardkit-dev?)
-   - Repository name (taskwright → guardkit)
+   - Organisation name (guardkit → guardkit-dev?)
+   - Repository name (guardkit → guardkit)
    - GitHub Actions workflows
    - Release tags and versions
 
@@ -45,7 +45,7 @@ This review task will:
    - `installer/scripts/install.sh`
    - Marker files (`~/.agentecflow/*.marker*`)
    - Symlink targets
-   - Binary/script names (`taskwright` CLI command)
+   - Binary/script names (`guardkit` CLI command)
 
 3. **Documentation**
    - `CLAUDE.md` (root and `.claude/`)
@@ -55,12 +55,12 @@ This review task will:
 
 4. **Code References**
    - Python modules and imports
-   - Template names containing "taskwright"
+   - Template names containing "guardkit"
    - Agent references
    - Error messages and logging
 
 5. **User-Facing Elements**
-   - CLI command name (`taskwright init`, etc.)
+   - CLI command name (`guardkit init`, etc.)
    - Template references
    - Help text and usage examples
 
@@ -70,13 +70,13 @@ This review task will:
 
 **Phase 1: External Infrastructure (User Action Required)**
 1. Fork/backup the repository
-2. Rename GitHub organisation (taskwright-dev → guardkit-dev)
-3. Rename repository (taskwright → guardkit)
+2. Rename GitHub organisation (guardkit → guardkit-dev)
+3. Rename repository (guardkit → guardkit)
 4. Update any DNS/domain references
 
 **Phase 2: Core Identity (Implementation Tasks)**
 1. Update marker files and detection logic
-2. Rename CLI command (`taskwright` → `guardkit`)
+2. Rename CLI command (`guardkit` → `guardkit`)
 3. Update installer scripts
 
 **Phase 3: Documentation**
@@ -112,13 +112,13 @@ This review task will:
 
 **Option A**: `guardkit` (matches new name)
 **Option B**: `gkit` (shorter, easier to type)
-**Option C**: Keep `taskwright` temporarily for backward compatibility
+**Option C**: Keep `guardkit` temporarily for backward compatibility
 
 **Recommendation**: Option A with alias support for transition period
 
 ### Q3: Marker File Strategy
 
-Current: `~/.agentecflow/taskwright.marker.json`
+Current: `~/.agentecflow/guardkit.marker.json`
 New: `~/.agentecflow/guardkit.marker.json`
 
 **Question**: Should we detect and migrate old marker files?
@@ -127,7 +127,7 @@ New: `~/.agentecflow/guardkit.marker.json`
 
 ## Acceptance Criteria
 
-- [ ] Complete inventory of all "taskwright" references
+- [ ] Complete inventory of all "guardkit" references
 - [ ] Documented order of operations
 - [ ] Risk assessment for each change type
 - [ ] Implementation tasks created and prioritized

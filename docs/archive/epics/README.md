@@ -26,4 +26,4 @@ Epic focused on algorithmic AI-driven template creation from existing codebases.
 
 ## Current Epic Management
 
-Taskwright now uses lightweight task-based workflows. For multi-epic portfolio management, see [RequireKit](https://github.com/requirekit/require-kit).
+GuardKit now uses lightweight task-based workflows. For multi-epic portfolio management, see [RequireKit](https://github.com/requirekit/require-kit).

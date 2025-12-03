@@ -332,7 +332,7 @@ def test_template_creation_generates_templates():
 - ✅ 5-15 template files generated
 - ✅ templates/ directory exists with .template files
 - ✅ Validation report shows actual template count and quality
-- ✅ Users can run `taskwright init <template-name>` successfully
+- ✅ Users can run `guardkit init <template-name>` successfully
 
 ### Architecture Compliance
 - ✅ NO Python code added for language detection

@@ -17,7 +17,7 @@ This template provides a complete foundation for building async Python web APIs 
 
 ```bash
 # Initialize new project from this template
-taskwright init fastapi-python
+guardkit init fastapi-python
 
 # Set up virtual environment
 python -m venv venv
@@ -384,11 +384,11 @@ Invoke these during development for specialized guidance.
 
 ## Contributing
 
-This is a reference template maintained as part of Taskwright. To create your own customized version:
+This is a reference template maintained as part of GuardKit. To create your own customized version:
 
 ```bash
 # Use this template as reference
-taskwright init fastapi-python
+guardkit init fastapi-python
 
 # Or create your own template from your codebase
 /template-create

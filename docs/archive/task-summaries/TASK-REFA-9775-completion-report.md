@@ -150,7 +150,7 @@ Enhanced with comprehensive patterns:
 - `pytest.ini` - Pytest configuration
 - `README.md` - Project readme
 - `requirements.txt` - Python dependencies
-- `taskwright.sln` - .NET solution file
+- `guardkit.sln` - .NET solution file
 - `tsconfig.json` - TypeScript configuration
 - `vitest.config.ts` - Vitest configuration
 

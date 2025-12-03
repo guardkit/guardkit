@@ -19,38 +19,38 @@ related_tasks: [TASK-C2F8, TASK-BAA5]
 
 During TASK-C2F8 implementation, a fundamental architectural question arose: **Should cross-stack agents be duplicated into every template, or sourced from a single global location?**
 
-**Update (2025-11-27)**: taskwright-python template has been removed (TASK-G6D4) as Taskwright's `.claude/` directory is git-managed and should not use template initialization. This review task remains relevant for understanding the architectural decision.
+**Update (2025-11-27)**: guardkit-python template has been removed (TASK-G6D4) as GuardKit's `.claude/` directory is git-managed and should not use template initialization. This review task remains relevant for understanding the architectural decision.
 
 **Original confusion**:
-1. TASK-C2F8 "fixed" the issue by copying 5 cross-stack agents into `taskwright-python` template
+1. TASK-C2F8 "fixed" the issue by copying 5 cross-stack agents into `guardkit-python` template
 2. This created duplication - same agents existed in:
    - `installer/global/agents/` (source of truth)
-   - `installer/global/templates/taskwright-python/agents/` (duplicate)
+   - `installer/global/templates/guardkit-python/agents/` (duplicate)
 3. This pattern would have needed to repeat for EVERY template (react-typescript, fastapi-python, etc.)
 
 **Fundamental question**: Is this duplication the right design?
 
 ## Context
 
-### Scenario A: Taskwright Repo Itself
+### Scenario A: GuardKit Repo Itself
 - `.claude/` directory is checked into git
 - Users clone repo and get pre-configured agents
-- **Resolution (TASK-G6D4)**: `taskwright init` should NOT be run on Taskwright repo
-- **TASK-BAA5 Issue**: Running init on Taskwright caused agent deletion (the problem that led to removal)
+- **Resolution (TASK-G6D4)**: `guardkit init` should NOT be run on GuardKit repo
+- **TASK-BAA5 Issue**: Running init on GuardKit caused agent deletion (the problem that led to removal)
 
 ### Scenario B: User's Python CLI Project
-- User has their own Python CLI project (NOT Taskwright)
+- User has their own Python CLI project (NOT GuardKit)
 - **Resolution (TASK-G6D4)**: User should use `fastapi-python` template or `/template-create` for custom templates
-- **Rationale**: taskwright-python was specific to Taskwright's architecture, not general Python CLI projects
+- **Rationale**: guardkit-python was specific to GuardKit's architecture, not general Python CLI projects
 - For Python CLI projects, better options:
   - Use `fastapi-python` template as foundation
   - Create custom template via `/template-create` based on their architecture
 
-### Historical Template Structure (taskwright-python - Now Removed)
+### Historical Template Structure (guardkit-python - Now Removed)
 
 **Before TASK-C2F8**:
 ```
-installer/global/templates/taskwright-python/agents/
+installer/global/templates/guardkit-python/agents/
 ├── python-architecture-specialist.md
 ├── python-cli-specialist.md
 └── python-testing-specialist.md
@@ -58,7 +58,7 @@ installer/global/templates/taskwright-python/agents/
 
 **After TASK-C2F8** (temporary fix, later removed):
 ```
-installer/global/templates/taskwright-python/agents/
+installer/global/templates/guardkit-python/agents/
 ├── architectural-reviewer.md          ← DUPLICATED from global
 ├── code-reviewer.md                   ← DUPLICATED from global
 ├── python-architecture-specialist.md
@@ -71,7 +71,7 @@ installer/global/templates/taskwright-python/agents/
 
 **After TASK-G6D4** (final resolution):
 - Template removed entirely
-- Taskwright's `.claude/` managed via git
+- GuardKit's `.claude/` managed via git
 
 ## Review Objectives
 
@@ -96,14 +96,14 @@ installer/global/templates/taskwright-python/agents/
 
 ### 2. Template Application Scope
 
-**Question 1**: Should Taskwright repo's `.claude/` directory even be modified by `taskwright init`?
+**Question 1**: Should GuardKit repo's `.claude/` directory even be modified by `guardkit init`?
 - **Current**: `.claude/` is checked into git
-- **Implication**: Running `taskwright init` would overwrite checked-in configuration
+- **Implication**: Running `guardkit init` would overwrite checked-in configuration
 - **Decision needed**: Is this intended behavior or a misuse case?
 
-**Question 2 - RESOLVED**: taskwright-python template was intended for Taskwright development, but this was the wrong approach:
+**Question 2 - RESOLVED**: guardkit-python template was intended for GuardKit development, but this was the wrong approach:
 - **Decision (TASK-G6D4)**: Template removed
-- **Rationale**: Taskwright's `.claude/` is git-managed, not template-initialized
+- **Rationale**: GuardKit's `.claude/` is git-managed, not template-initialized
 - **For users**: Use `fastapi-python` or `/template-create` instead
 
 ### 3. Init Script Behavior
@@ -152,7 +152,7 @@ Should templates declare dependencies instead of including files?
 **Example manifest.json**:
 ```json
 {
-  "template": "taskwright-python",
+  "template": "guardkit-python",
   "agents": {
     "template_specific": [
       "python-testing-specialist.md",
@@ -180,7 +180,7 @@ Init script would:
 ```bash
 mkdir my-python-cli
 cd my-python-cli
-taskwright init taskwright-python
+guardkit init guardkit-python
 ```
 
 **Expected result**:
@@ -192,7 +192,7 @@ taskwright init taskwright-python
 **Use Case 2: Existing Project with Custom Agents**
 ```bash
 cd existing-project  # Already has .claude/ with customizations
-taskwright init taskwright-python
+guardkit init guardkit-python
 ```
 
 **Expected result**:
@@ -200,10 +200,10 @@ taskwright init taskwright-python
 - Preserve existing cross-stack agents (don't overwrite customizations)
 - Merge CLAUDE.md (preserve project context, add template sections)
 
-**Use Case 3: Taskwright Development (This Repo)**
+**Use Case 3: GuardKit Development (This Repo)**
 ```bash
-cd ~/Projects/taskwright  # .claude/ already in git
-taskwright init taskwright-python  # Should this even be run?
+cd ~/Projects/guardkit  # .claude/ already in git
+guardkit init guardkit-python  # Should this even be run?
 ```
 
 **Expected result**: ???
@@ -220,7 +220,7 @@ After analysis, recommend one of the following:
 - Update all other templates (react-typescript, fastapi-python, etc.) to also include cross-stack agents
 
 ### Decision 2: Global Sourcing Model (Revert TASK-C2F8, Redesign Init)
-- Remove duplicated agents from taskwright-python template
+- Remove duplicated agents from guardkit-python template
 - Modify `init-project.sh` to copy cross-stack agents from `installer/global/agents/`
 - Add manifest field to declare which cross-stack agents are required
 
@@ -229,9 +229,9 @@ After analysis, recommend one of the following:
 - Init script assembles agents from multiple sources
 - No duplication, clear dependency tracking
 
-### Decision 4: Deprecate Template Init on Taskwright Repo
-- Document that `taskwright init` should NOT be run on Taskwright repo itself
-- `.claude/` directory is managed via git for Taskwright development
+### Decision 4: Deprecate Template Init on GuardKit Repo
+- Document that `guardkit init` should NOT be run on GuardKit repo itself
+- `.claude/` directory is managed via git for GuardKit development
 - Templates are only for USER projects
 
 ## Acceptance Criteria
@@ -256,7 +256,7 @@ After analysis, recommend one of the following:
 
 ## References
 
-- **TASK-C2F8**: Fix taskwright-python template (implemented duplication)
+- **TASK-C2F8**: Fix guardkit-python template (implemented duplication)
 - **TASK-BAA5**: Review of template application (identified deletion issue)
 - **Current init script**: installer/scripts/init-project.sh
 - **Template directory**: installer/global/templates/
@@ -265,7 +265,7 @@ After analysis, recommend one of the following:
 ## Questions for Review
 
 1. **Primary Question**: Should cross-stack agents be duplicated into every template, or sourced from global?
-2. **Scope Question**: Is `taskwright init` intended for Taskwright repo itself, or only for user projects?
+2. **Scope Question**: Is `guardkit init` intended for GuardKit repo itself, or only for user projects?
 3. **Maintenance Question**: Can we maintain 6 templates with duplicated cross-stack agents?
 4. **Design Question**: Should templates be self-contained or dependency-based?
 
@@ -277,7 +277,7 @@ After analysis, recommend one of the following:
 
 ### Root Cause Identified
 
-**User's mistake**: Running `taskwright init taskwright-python` on the Taskwright repo itself was the wrong action. The Taskwright repo's `.claude/` directory is managed via git and should NOT be modified by template initialization.
+**User's mistake**: Running `guardkit init guardkit-python` on the GuardKit repo itself was the wrong action. The GuardKit repo's `.claude/` directory is managed via git and should NOT be modified by template initialization.
 
 **Key insight**: This revealed unnecessary complexity in the current approach.
 
@@ -297,7 +297,7 @@ Revert:
 - ❌ Modified README.md
 - ❌ All other uncommitted changes
 
-**2. Restore Taskwright Repo's `.claude/` Directory**
+**2. Restore GuardKit Repo's `.claude/` Directory**
 
 Use git to restore the original `.claude/` directory to its checked-in state.
 
@@ -307,26 +307,26 @@ Once restored, analyze what's actually in `.claude/` and determine:
 - Are agents up to date with latest standards?
 - Do agents have discovery metadata (frontmatter with stack/phase/capabilities/keywords)?
 - Do agents have boundary sections (ALWAYS/NEVER/ASK per GitHub best practices)?
-- Are there Taskwright-specific agents that need enhancement?
+- Are there GuardKit-specific agents that need enhancement?
 - Does CLAUDE.md need updates for agent discovery?
 
-**4. Consider Removing taskwright-python Template**
+**4. Consider Removing guardkit-python Template**
 
 **Rationale**:
-- Taskwright repo manages `.claude/` via git (not template init)
-- The template was created for Taskwright development, not user projects
+- GuardKit repo manages `.claude/` via git (not template init)
+- The template was created for GuardKit development, not user projects
 - User projects needing Python CLI patterns should use `fastapi-python` template or create custom templates via `/template-create`
 - Removing this template eliminates confusion and maintenance burden
 
-**Question for review**: Should `taskwright-python` template be:
-- A) Removed entirely (Taskwright uses git-managed `.claude/`)
-- B) Repurposed for user Python CLI projects (not Taskwright itself)
-- C) Kept as reference implementation of Taskwright's architecture
+**Question for review**: Should `guardkit-python` template be:
+- A) Removed entirely (GuardKit uses git-managed `.claude/`)
+- B) Repurposed for user Python CLI projects (not GuardKit itself)
+- C) Kept as reference implementation of GuardKit's architecture
 
-**5. Update Taskwright Agents to Current Standards**
+**5. Update GuardKit Agents to Current Standards**
 
 If analysis reveals gaps, create tasks to:
-- Add discovery metadata to Taskwright-specific agents
+- Add discovery metadata to GuardKit-specific agents
 - Add boundary sections to agents missing them
 - Update CLAUDE.md with agent discovery guidance
 - Ensure all agents follow GitHub best practices from 2,500+ repo analysis
@@ -334,19 +334,19 @@ If analysis reveals gaps, create tasks to:
 ### Expected Outcome
 
 **Clean state**:
-- Taskwright repo's `.claude/` managed via git (no template init)
+- GuardKit repo's `.claude/` managed via git (no template init)
 - User projects use appropriate templates (fastapi-python, react-typescript, etc.)
-- Taskwright agents enhanced to current standards (discovery metadata, boundaries)
-- Reduced complexity (no taskwright-python template maintenance)
+- GuardKit agents enhanced to current standards (discovery metadata, boundaries)
+- Reduced complexity (no guardkit-python template maintenance)
 - Clear documentation on when to use template init vs git-managed configuration
 
 ### Learning
 
 **Positive outcome from mistake**:
-- Discovered that taskwright-python template adds unnecessary complexity
-- Identified that Taskwright's `.claude/` should be git-managed, not template-initialized
-- Opportunity to enhance Taskwright's own agents to current standards
-- Clearer separation of concerns (Taskwright development vs user project templates)
+- Discovered that guardkit-python template adds unnecessary complexity
+- Identified that GuardKit's `.claude/` should be git-managed, not template-initialized
+- Opportunity to enhance GuardKit's own agents to current standards
+- Clearer separation of concerns (GuardKit development vs user project templates)
 
 ---
 

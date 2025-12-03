@@ -51,8 +51,8 @@ Update these lines in `installer/scripts/install.sh`:
 - [ ] Line ~1089: Template case statement - update case name
 - [ ] Line ~1117: Example command - change `dotnet-microservice` to `dotnet-fastendpoints`
 
-### 3. CLI Commands (taskwright-init)
-- [ ] Line ~476-520 in install.sh: Update `taskwright-init` help text
+### 3. CLI Commands (guardkit-init)
+- [ ] Line ~476-520 in install.sh: Update `guardkit-init` help text
 - [ ] Change template description from "dotnet-microservice" to "dotnet-fastendpoints"
 - [ ] Update description: ".NET microservice with FastEndpoints"  → ".NET API with FastEndpoints + REPR pattern"
 
@@ -65,7 +65,7 @@ Update these lines in `installer/scripts/install.sh`:
 ### 5. Template Messages
 Update post-installation messages shown to users:
 - [ ] Install script success message (line ~500-520)
-- [ ] `taskwright doctor` command output
+- [ ] `guardkit doctor` command output
 - [ ] Any "Next Steps" sections
 
 ### 6. Stack-Specific Agent References
@@ -104,8 +104,8 @@ mv dotnet-microservice dotnet-fastendpoints
 **Step 5**: Verify Installation
 ```bash
 ./installer/scripts/install.sh
-taskwright-init --help  # Should show dotnet-fastendpoints
-taskwright doctor      # Should list dotnet-fastendpoints
+guardkit-init --help  # Should show dotnet-fastendpoints
+guardkit doctor      # Should list dotnet-fastendpoints
 ```
 
 ## Impact

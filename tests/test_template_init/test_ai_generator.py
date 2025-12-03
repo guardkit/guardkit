@@ -128,7 +128,7 @@ class TestAITemplateGenerator:
         assert "FastAPI" in claude_md
         assert "Clean Architecture" in claude_md
         assert "pytest" in claude_md
-        assert "Taskwright" in claude_md
+        assert "GuardKit" in claude_md
         assert "#" in claude_md  # Has markdown headers
 
     def test_generate_project_structure_python(self):

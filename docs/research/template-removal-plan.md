@@ -326,7 +326,7 @@ docs/archive/deprecated-templates/
 ```markdown
 ## Template Quality Improvement Initiative
 
-We've completed a comprehensive audit of all Taskwright templates and identified
+We've completed a comprehensive audit of all GuardKit templates and identified
 opportunities to improve template quality and reduce user confusion.
 
 **What's Changing**:

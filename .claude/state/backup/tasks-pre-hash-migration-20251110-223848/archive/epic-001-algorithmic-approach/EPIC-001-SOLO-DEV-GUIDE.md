@@ -82,7 +82,7 @@ Tasks are organized into **6 waves** based on dependencies:
 ┌─────────────────────────────────────────────────────────────────┐
 │ TASK-048B: Local Agent Scanner (4h, Complexity 4/10)            │
 │   • Scan installer/global/agents/ directory                     │
-│   • Discover 15+ existing taskwright agents                     │
+│   • Discover 15+ existing guardkit agents                     │
 │   • No dependencies - START IMMEDIATELY                          │
 │   • Worktree: epic001-local-agents                              │
 │   • Command: /task-work TASK-048B                               │
@@ -568,7 +568,7 @@ etc.
 
 1. **Click different worktree** in Conductor sidebar
 2. **Claude Code switches** to that worktree automatically
-3. **All state preserved** via symlinks (taskwright's Conductor integration)
+3. **All state preserved** via symlinks (guardkit's Conductor integration)
 4. **Run `/task-work TASK-XXX`** in new context
 
 ### Completing a Task
@@ -708,7 +708,7 @@ Don't manually implement - use `/task-work`:
 
 ### 4. Leverage Conductor State Sync
 
-Taskwright's Conductor integration ensures:
+GuardKit's Conductor integration ensures:
 - All worktrees share same state (symlinks)
 - No manual syncing needed
 - Task completion in one worktree visible everywhere
@@ -801,7 +801,7 @@ After completing a wave:
 - `/task-work` automates 90% of implementation
 - Conductor app prevents blocking (switch worktrees)
 - Wave structure ensures dependencies always met
-- State sync automatic (taskwright integration)
+- State sync automatic (guardkit integration)
 
 **Next Step**: Open Conductor app → Create first worktree → Run `/task-work TASK-037A`
 

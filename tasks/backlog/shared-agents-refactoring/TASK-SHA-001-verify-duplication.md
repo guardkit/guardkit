@@ -37,7 +37,7 @@ Before migrating agents to a shared repository, we need to verify which agents a
 #!/bin/bash
 # verify-duplication.sh
 
-TASKWRIGHT_AGENTS="installer/global/agents"
+GUARDKIT_AGENTS="installer/global/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
 echo "========================================"
@@ -57,7 +57,7 @@ echo "Agents present in BOTH repositories:"
 echo ""
 
 COMMON=$(comm -12 \
-    <(ls $TASKWRIGHT_AGENTS/*.md 2>/dev/null | xargs basename -a | sort) \
+    <(ls $GUARDKIT_AGENTS/*.md 2>/dev/null | xargs basename -a | sort) \
     <(ls $REQUIREKIT_AGENTS/*.md 2>/dev/null | xargs basename -a | sort))
 
 if [ -z "$COMMON" ]; then
@@ -67,7 +67,7 @@ fi
 
 # Check each common agent
 for agent in $COMMON; do
-    tw_file="$TASKWRIGHT_AGENTS/$agent"
+    tw_file="$GUARDKIT_AGENTS/$agent"
     rk_file="$REQUIREKIT_AGENTS/$agent"
 
     # Quick similarity check (line count difference)

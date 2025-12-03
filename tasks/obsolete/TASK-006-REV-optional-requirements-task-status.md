@@ -22,7 +22,7 @@ Instead of removing epic/feature filters, make them **conditional** based on whe
 
 ## Strategic Context
 
-- **taskwright only**: Simple kanban board with task-focused filters
+- **guardkit only**: Simple kanban board with task-focused filters
 - **require-kit installed**: Enhanced kanban with epic/feature columns and filters
 - **Adaptive output**: Display adapts to what's installed
 
@@ -233,7 +233,7 @@ esac
 ### 1. Backup Current File
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 cp installer/global/commands/task-status.md installer/global/commands/task-status.md.backup
 ```
 
@@ -263,7 +263,7 @@ Add require-kit marker check at command start.
 
 ## Validation Checklist
 
-### With taskwright Only
+### With guardkit Only
 - [ ] `/task-status` shows basic kanban (no epic/feature columns)
 - [ ] `--status` filter works
 - [ ] `--priority` filter works
@@ -283,17 +283,17 @@ Add require-kit marker check at command start.
 - [ ] Help text includes epic/feature filters
 
 ### Views (Always Available)
-- [ ] `--view=list` works (taskwright only)
-- [ ] `--view=complexity` works (taskwright only)
-- [ ] `--view=hierarchy` works (taskwright only)
+- [ ] `--view=list` works (guardkit only)
+- [ ] `--view=complexity` works (guardkit only)
+- [ ] `--view=hierarchy` works (guardkit only)
 
 ## Testing
 
 ```bash
-# Test taskwright only scenario
+# Test guardkit only scenario
 rm ~/.agentecflow/require-kit.marker
 
-cd /tmp/test-taskwright
+cd /tmp/test-guardkit
 /task-create "Task 1"
 /task-create "Task 2" priority:high
 
@@ -370,7 +370,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 - [ ] Help text adapts to installed packages
 - [ ] All basic views always work
 - [ ] Requirements views conditional
-- [ ] Works with taskwright only (simple output)
+- [ ] Works with guardkit only (simple output)
 - [ ] Works with both installed (enhanced output)
 - [ ] Tests pass for both scenarios
 
@@ -388,7 +388,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 
 - Simpler than task-work.md modifications
 - Focus on output formatting and filter availability
-- Keep hierarchy view (parent/subtask) - that's taskwright feature
+- Keep hierarchy view (parent/subtask) - that's guardkit feature
 - Epic-rollup/feature-progress are require-kit exclusive views
 - **IMPORTANT**: Old TASK-006 should be marked as superseded/cancelled
 
@@ -427,7 +427,7 @@ else:
 
 TASK-012 established the bidirectional integration architecture. The task-status command works correctly in both scenarios:
 
-- **taskwright only**: Shows tasks with empty epic/feature fields (displays as "none")
+- **guardkit only**: Shows tasks with empty epic/feature fields (displays as "none")
 - **Both installed**: Shows tasks with populated epic/feature fields
 
 No breaking functionality exists in the current implementation, making this task obsolete for now.

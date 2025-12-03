@@ -374,7 +374,7 @@ FILE LOCATIONS
 ================================================================================
 
 Template Location:
-  /Users/richardwoollcott/Projects/appmilla_github/taskwright/
+  /Users/richardwoollcott/Projects/appmilla_github/guardkit/
   installer/global/templates/react-fastapi-monorepo/
 
 Key Files:

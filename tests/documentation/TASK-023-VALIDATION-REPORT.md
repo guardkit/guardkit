@@ -83,7 +83,7 @@ Five broken links detected in documentation:
 | External URL format | PASS | All 7 external URLs are properly formatted |
 
 **External URLs Validated**:
-- https://github.com/taskwright-dev/taskwright.git
+- https://github.com/guardkit/guardkit.git
 - https://github.com/requirekit/require-kit (2 occurrences)
 - https://conductor.build (1 occurrence)
 - https://github.com/requirekit/require-kit (additional references)
@@ -328,13 +328,13 @@ Expected result: 20/20 checks passed (100%)
 ### Validation Suite Information
 - **Suite Name**: Comprehensive Documentation Validation Suite
 - **Language**: Python 3
-- **Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/test_documentation_audit.py`
-- **Report Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/validation-report.json`
+- **Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/test_documentation_audit.py`
+- **Report Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/validation-report.json`
 
 ### Execution Environment
 - **Python Version**: 3.x
 - **OS**: macOS
-- **Project Root**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright`
+- **Project Root**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit`
 
 ### Test Categories
 1. Markdown Syntax Validation
@@ -366,7 +366,7 @@ The TASK-023 documentation audit has identified **one critical issue**: 5 broken
 
 A detailed JSON report has been generated at:
 ```
-/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/documentation/validation-report.json
+/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/documentation/validation-report.json
 ```
 
 This report contains:

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This test plan evaluates the Taskwright initialization feature (from EPIC-001) by analyzing how well it detects patterns, architecture, and technology stacks from popular open-source repositories across different languages and frameworks.
+This test plan evaluates the GuardKit initialization feature (from EPIC-001) by analyzing how well it detects patterns, architecture, and technology stacks from popular open-source repositories across different languages and frameworks.
 
 ## Test Repositories
 
@@ -291,7 +291,7 @@ For each repository, evaluate:
 For each repository:
 
 - [ ] Clone repository locally
-- [ ] Run initialization feature: `taskwright init` (auto-detection)
+- [ ] Run initialization feature: `guardkit init` (auto-detection)
 - [ ] Record execution time
 - [ ] Review detected patterns
 - [ ] Verify stack detection accuracy

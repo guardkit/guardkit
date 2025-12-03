@@ -28,13 +28,13 @@
 
 ### Mandatory Syntax Validation
 - **Status**: PASSED
-- **Command**: `bash -n /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/scripts/init-project.sh`
+- **Command**: `bash -n /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/init-project.sh`
 - **Result**: No syntax errors detected
 - **Severity**: Critical - Must pass before functional testing
 
 ### Test Suite Details
 
-**Test File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/tests/test_init_installer.sh`
+**Test File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/test_init_installer.sh`
 
 **Test Execution Results**:
 

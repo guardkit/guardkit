@@ -1,6 +1,6 @@
 ---
 id: TASK-037
-title: Remove BDD mode from taskwright
+title: Remove BDD mode from guardkit
 status: completed
 created: 2025-11-02T00:00:00Z
 updated: 2025-11-02T16:45:00Z
@@ -34,7 +34,7 @@ completion_summary:
   all_gates_passed: true
 ---
 
-# Task: Remove BDD mode from taskwright
+# Task: Remove BDD mode from guardkit
 
 ## Context
 
@@ -45,13 +45,13 @@ BDD mode is currently documented in task-work but:
 - Adds unnecessary complexity to lightweight system
 - Better served by require-kit for full EARS → BDD workflow
 
-**Decision:** Remove ALL BDD functionality from taskwright, focus on Standard and TDD modes only.
+**Decision:** Remove ALL BDD functionality from guardkit, focus on Standard and TDD modes only.
 
 **Reference:** [BDD Mode Removal Decision](../docs/research/bdd-mode-removal-decision.md)
 
 ## Description
 
-**COMPLETE REMOVAL** of all BDD-related functionality from taskwright to simplify the system and avoid incomplete/misleading documentation. Users needing BDD workflows should use require-kit which provides complete EARS → Gherkin → Implementation flow.
+**COMPLETE REMOVAL** of all BDD-related functionality from guardkit to simplify the system and avoid incomplete/misleading documentation. Users needing BDD workflows should use require-kit which provides complete EARS → Gherkin → Implementation flow.
 
 This means removing:
 - BDD mode from task-work command
@@ -79,7 +79,7 @@ This means removing:
 ### Phase 3: Shared Code Update (10 minutes)
 - [ ] **KEEP** `supports_bdd()` function in `feature_detection.py` (shared file with require-kit)
 - [ ] Update docstring: "BDD generation requires require-kit installation"
-- [ ] Note: feature_detection.py is shared between taskwright and require-kit
+- [ ] Note: feature_detection.py is shared between guardkit and require-kit
 
 ### Phase 4: Migration Notes (5 minutes)
 - [ ] Add changelog entry explaining complete BDD removal
@@ -101,12 +101,12 @@ This means removing:
 
 1. **`.claude/agents/bdd-generator.md`** ❌ DELETE
    - EARS → Gherkin conversion is require-kit feature only
-   - Remove entire file from taskwright
+   - Remove entire file from guardkit
    - This agent should only exist in require-kit
 
 2. **`installer/global/instructions/core/bdd-gherkin.md`** ❌ DELETE
-   - BDD instruction file not needed in taskwright
-   - Delete from taskwright (move to require-kit if they need it)
+   - BDD instruction file not needed in guardkit
+   - Delete from guardkit (move to require-kit if they need it)
 
 3. **`installer/global/templates/*/agents/bdd-generator.md`** ❌ DELETE ALL
    - Find all template-specific copies:
@@ -116,7 +116,7 @@ This means removing:
 
 4. **Any other BDD-related files** ❌ DELETE
    - Search for files containing "bdd" in name
-   - Review and delete if taskwright-specific
+   - Review and delete if guardkit-specific
 
 ### Files to **MODIFY**
 
@@ -179,7 +179,7 @@ grep -q "def supports_bdd" installer/global/lib/feature_detection.py && echo "�
 **Removed capability:**
 ```bash
 /task-work TASK-042 --mode=bdd
-# ERROR: BDD mode has been removed from taskwright
+# ERROR: BDD mode has been removed from guardkit
 # For BDD workflows (EARS → Gherkin → Implementation), install require-kit
 ```
 
@@ -196,18 +196,18 @@ grep -q "def supports_bdd" installer/global/lib/feature_detection.py && echo "�
 
 ## Benefits
 
-- ✅ Simplifies taskwright (removes 45-70 hours of potential implementation)
-- ✅ Clearer separation: require-kit for requirements/BDD, taskwright for workflows
+- ✅ Simplifies guardkit (removes 45-70 hours of potential implementation)
+- ✅ Clearer separation: require-kit for requirements/BDD, guardkit for workflows
 - ✅ Avoids broken/incomplete documentation
 - ✅ Reduces maintenance burden (no need to track 4+ BDD frameworks)
 - ✅ Focuses resources on core Standard/TDD modes
-- ✅ **Removes all BDD-related agents and instructions from taskwright**
+- ✅ **Removes all BDD-related agents and instructions from guardkit**
 - ✅ **Single source of truth: BDD functionality lives in require-kit only**
 - ✅ Eliminates confusion about which repo owns BDD features
 
 ## Test Requirements
 
-- [ ] Verify no BDD agents remain in taskwright
+- [ ] Verify no BDD agents remain in guardkit
 - [ ] Verify no BDD instruction files remain
 - [ ] Verify no broken links in documentation
 - [ ] Verify task-work command still works with `--mode=standard` and `--mode=tdd`
@@ -218,9 +218,9 @@ grep -q "def supports_bdd" installer/global/lib/feature_detection.py && echo "�
 
 ## Success Metrics
 
-- **Zero BDD agents** in taskwright repository
-- **Zero BDD instruction files** in taskwright repository
-- No references to `--mode=bdd` in taskwright command specs
+- **Zero BDD agents** in guardkit repository
+- **Zero BDD instruction files** in guardkit repository
+- No references to `--mode=bdd` in guardkit command specs
 - Clear messaging: "BDD workflows require require-kit"
 - Standard and TDD modes remain fully functional
 - Migration path documented for any affected users

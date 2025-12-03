@@ -75,7 +75,7 @@ Starting 10-second countdown timer...
    - Add Extended Features section
    - Update command examples
 
-3. docs/guides/taskwright-workflow.md (650 lines)
+3. docs/guides/guardkit-workflow.md (650 lines)
    - Update workflow diagrams
    - Remove Requirements Analysis phase
    - Fix GitHub URLs
@@ -93,7 +93,7 @@ Starting 10-second countdown timer...
 **Estimated Effort:** 6.3 hours (380 minutes)
 - Phase 1: Audit GETTING-STARTED.md (90 min)
 - Phase 2: Audit QUICK_REFERENCE.md (80 min)
-- Phase 3: Audit taskwright-workflow.md (110 min)
+- Phase 3: Audit guardkit-workflow.md (110 min)
 - Phase 4: Validation & Testing (100 min)
 
 ---
@@ -124,7 +124,7 @@ The implementation plan has been approved and is ready for execution.
 2. Execute implementation phases in order:
    - Phase 1: Audit GETTING-STARTED.md
    - Phase 2: Audit QUICK_REFERENCE.md
-   - Phase 3: Audit taskwright-workflow.md
+   - Phase 3: Audit guardkit-workflow.md
    - Phase 4: Validation & Testing
 3. Track completion of acceptance criteria
 4. Move to Phase 4 (Testing) upon implementation completion
@@ -135,10 +135,10 @@ The implementation plan has been approved and is ready for execution.
 - Remove epic/feature hierarchy examples
 - Remove PM tool synchronization instructions
 - Remove requirements traceability examples
-- Update command examples to Taskwright-only syntax
+- Update command examples to GuardKit-only syntax
 - Fix GitHub URLs to correct repositories
 - Add RequireKit integration callouts
-- Ensure workflow diagrams show Taskwright-only flow
+- Ensure workflow diagrams show GuardKit-only flow
 - Verify command examples work without RequireKit
 
 ---

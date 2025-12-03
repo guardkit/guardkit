@@ -31,7 +31,7 @@ state_transition_reason: "Task successfully completed with all acceptance criter
 
 ## Description
 
-Following the Taskwright/RequireKit split (completed in TASK-025), there are 7 remaining instances where documentation incorrectly references "Phase 1" as part of Taskwright workflow. Phase 1 (Requirements Analysis) is exclusively a RequireKit feature, and Taskwright starts at Phase 2.
+Following the GuardKit/RequireKit split (completed in TASK-025), there are 7 remaining instances where documentation incorrectly references "Phase 1" as part of GuardKit workflow. Phase 1 (Requirements Analysis) is exclusively a RequireKit feature, and GuardKit starts at Phase 2.
 
 This task fixes all incorrect phase numbering references to maintain consistency with the established separation.
 
@@ -39,7 +39,7 @@ This task fixes all incorrect phase numbering references to maintain consistency
 
 **Correct Phase Numbering**:
 - **Phase 1**: Requirements Analysis (RequireKit ONLY - EARS notation, BDD scenarios)
-- **Phase 2**: Implementation Planning (Taskwright starts here)
+- **Phase 2**: Implementation Planning (GuardKit starts here)
 - **Phase 2.5-2.8**: Architectural Review, Complexity Evaluation, Human Checkpoint
 - **Phase 3-5.5**: Implementation, Testing, Review, Plan Audit
 
@@ -85,7 +85,7 @@ This task fixes all incorrect phase numbering references to maintain consistency
 **File**: `/README.md`
 **Current**:
 ```bash
-git clone https://github.com/taskwright-dev/taskwright.git
+git clone https://github.com/guardkit/guardkit.git
 ```
 
 **Action Required**: Verify this GitHub org/repo exists. If not, update to correct repository URL.
@@ -126,8 +126,8 @@ git clone https://github.com/taskwright-dev/taskwright.git
 - (default): All phases 2-5.5 in sequence
 ```
 
-### 7. docs/guides/taskwright-workflow.md - Line 529
-**File**: `/docs/guides/taskwright-workflow.md`
+### 7. docs/guides/guardkit-workflow.md - Line 529
+**File**: `/docs/guides/guardkit-workflow.md`
 **Current** (WRONG):
 ```bash
 # Phase 1-2.8 execute, task moves to design_approved state
@@ -146,8 +146,8 @@ git clone https://github.com/taskwright-dev/taskwright.git
 - [x] CLAUDE.md line 36: Update `Phases 1-2.8` to `Phases 2-2.8`
 - [x] CLAUDE.md line 126: Update `Phases 1-2.8` to `Phases 2-2.8`
 - [x] CLAUDE.md line 128: Update `All phases 1-5` to `All phases 2-5.5`
-- [x] taskwright-workflow.md line 529: Update `Phase 1-2.8` to `Phase 2-2.8`
-- [x] All changes maintain consistency with Taskwright/RequireKit separation
+- [x] guardkit-workflow.md line 529: Update `Phase 1-2.8` to `Phase 2-2.8`
+- [x] All changes maintain consistency with GuardKit/RequireKit separation
 - [x] No new broken links introduced
 - [x] Examples remain clear and accurate
 
@@ -156,7 +156,7 @@ git clone https://github.com/taskwright-dev/taskwright.git
 ### Search Pattern
 Use this pattern to find all remaining instances:
 ```bash
-grep -rn "Phase 1" README.md CLAUDE.md docs/guides/taskwright-workflow.md docs/quick-reference/
+grep -rn "Phase 1" README.md CLAUDE.md docs/guides/guardkit-workflow.md docs/quick-reference/
 ```
 
 ### Validation After Changes
@@ -184,7 +184,7 @@ After making changes:
 ## Related Tasks
 
 - **TASK-025**: Audit workflow and quick-reference documentation (parent task)
-- **Context**: Post-split cleanup following Taskwright/RequireKit separation
+- **Context**: Post-split cleanup following GuardKit/RequireKit separation
 
 ## Estimated Effort
 

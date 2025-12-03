@@ -40,7 +40,7 @@ Complete the documentation level implementation by updating commands and templat
 
 **Reference Document**: `TASK-035-COMPARISON-WITH-AI-ENGINEER.md`
 
-**Strategic Context**: This work enables significant time and token reduction during development in taskwright and require-kit repos, which will be used to refine the approach before backporting improvements to ai-engineer.
+**Strategic Context**: This work enables significant time and token reduction during development in guardkit and require-kit repos, which will be used to refine the approach before backporting improvements to ai-engineer.
 
 ## Context from TASK-035 Comparison
 
@@ -329,7 +329,7 @@ Following the insight that documentation level control **drastically reduces tim
 4. **Workflow Efficiency**: Users can choose appropriate documentation level
 
 ### Long-Term Benefits
-1. **Taskwright Development**: Fast iteration with minimal documentation overhead
+1. **GuardKit Development**: Fast iteration with minimal documentation overhead
 2. **Require-kit Development**: Same benefits during split and setup
 3. **Learnings for ai-engineer**: Refined approach can be backported
 4. **User Experience**: Faster feedback loop for simple tasks
@@ -341,7 +341,7 @@ Following the insight that documentation level control **drastically reduces tim
 
 ## Related Documentation
 
-- **TASK-035 Implementation**: `TASK-035-TASKWRIGHT-IMPLEMENTATION-SUMMARY.md`
+- **TASK-035 Implementation**: `TASK-035-GUARDKIT-IMPLEMENTATION-SUMMARY.md`
 - **Comparison Analysis**: `TASK-035-COMPARISON-WITH-AI-ENGINEER.md`
 - **ai-engineer Reference**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/requirements/TASK-035-FINAL-IMPLEMENTATION-SUMMARY.md`
 - **Agent Files (Already Updated)**:
@@ -366,7 +366,7 @@ Following the insight that documentation level control **drastically reduces tim
 
 **Priority**: Medium
 - Not blocking other work
-- Valuable for taskwright/require-kit development
+- Valuable for guardkit/require-kit development
 - Can be completed incrementally
 
 ## Definition of Done
@@ -380,13 +380,13 @@ Following the insight that documentation level control **drastically reduces tim
 - ✅ Backward compatible (no breaking changes)
 - ✅ Documentation is clear, concise, and non-redundant
 - ✅ Implementation summary created
-- ✅ Ready for use in taskwright and require-kit development
+- ✅ Ready for use in guardkit and require-kit development
 
 ---
 
 **Priority Justification**: MEDIUM
 - Completes documentation level implementation (builds on TASK-035)
-- Enables significant time/token savings for taskwright and require-kit
+- Enables significant time/token savings for guardkit and require-kit
 - Not blocking other work (agents already functional)
 - Provides valuable learnings for ai-engineer refinement
 

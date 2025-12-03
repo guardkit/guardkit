@@ -1,11 +1,11 @@
 {
-  "name": "taskwright",
+  "name": "guardkit",
   "version": "1.0.0",
   "description": "Lightweight task workflow with quality gates, architectural review, and test enforcement",
-  "homepage": "https://github.com/appmilla/taskwright",
+  "homepage": "https://github.com/appmilla/guardkit",
   "repository": {
     "type": "git",
-    "url": "https://github.com/appmilla/taskwright.git"
+    "url": "https://github.com/appmilla/guardkit.git"
   },
   "author": "AppMilla",
   "license": "MIT",

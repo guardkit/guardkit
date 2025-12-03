@@ -34,11 +34,11 @@ Simple smoke testing to verify both TaskWright and RequireKit work correctly wit
 
 ```bash
 # Fresh test directory
-mkdir test-taskwright-solo
-cd test-taskwright-solo
+mkdir test-guardkit-solo
+cd test-guardkit-solo
 
 # Install TaskWright
-../taskwright/installer/scripts/install.sh
+../guardkit/installer/scripts/install.sh
 
 # Verify shared agents installed
 test -d .claude/agents/universal && echo "✅ Universal agents present"
@@ -84,7 +84,7 @@ mkdir test-both-tools
 cd test-both-tools
 
 # Install TaskWright first
-../taskwright/installer/scripts/install.sh
+../guardkit/installer/scripts/install.sh
 count1=$(ls .claude/agents/universal/*.md | wc -l)
 
 # Install RequireKit second
@@ -144,7 +144,7 @@ grep -H "name:" universal/*.md
 2. Check agents downloaded correctly
 3. Check installer logs for errors
 4. Verify v1.0.0 release is accessible
-5. Try manual download: `curl -sL https://github.com/taskwright-dev/shared-agents/releases/download/v1.0.0/shared-agents.tar.gz`
+5. Try manual download: `curl -sL https://github.com/guardkit/shared-agents/releases/download/v1.0.0/shared-agents.tar.gz`
 
 ## Estimated Effort
 

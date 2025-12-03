@@ -94,7 +94,7 @@ installer/global/templates/fullstack/CLAUDE.md
 ### 1. Create Backup
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Backup all CLAUDE.md files
 for template in default react python typescript-api maui-appshell \

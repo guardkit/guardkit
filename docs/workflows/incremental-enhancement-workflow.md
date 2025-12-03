@@ -696,7 +696,7 @@ cat my-template/agents/api-specialist.md
 /agent-enhance experimental-api/testing-specialist --hybrid
 
 # Test template
-taskwright init experimental-api
+guardkit init experimental-api
 
 # Discard if not useful (no task cleanup needed)
 ```

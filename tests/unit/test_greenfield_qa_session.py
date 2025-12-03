@@ -1419,7 +1419,7 @@ class TestTwoLocationOutput:
         captured = capsys.readouterr()
         assert '✅ Personal template:' in captured.out
         assert 'Personal use' in captured.out
-        assert 'taskwright init test-template' in captured.out
+        assert 'guardkit init test-template' in captured.out
 
     @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
     def test_display_location_guidance_repo(self, capsys):
@@ -1433,7 +1433,7 @@ class TestTwoLocationOutput:
         assert '✅ Repository template:' in captured.out
         assert 'Team distribution' in captured.out
         assert 'git add installer/global/templates/' in captured.out
-        assert 'taskwright init test-template' in captured.out
+        assert 'guardkit init test-template' in captured.out
 
 
 if __name__ == "__main__":

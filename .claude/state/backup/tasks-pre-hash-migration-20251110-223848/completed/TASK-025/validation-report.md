@@ -10,7 +10,7 @@
 
 ### Created Files (3) ✅
 - ✅ `scripts/audit_requirekit.py` - Audit script executable
-- ✅ `docs/workflows/taskwright-vs-requirekit.md` - Comparison guide
+- ✅ `docs/workflows/guardkit-vs-requirekit.md` - Comparison guide
 - ✅ `docs/research/TASK-025-workflow-audit-summary.md` - Implementation summary
 
 ### Updated Files (5) ✅
@@ -61,7 +61,7 @@ Report generated: docs/research/TASK-025-audit-report.md
 - ✅ No `/require-*` commands outside of integration notes
 
 **Finding**: NO invalid command syntax detected. All commands are either:
-1. Valid Taskwright commands, or
+1. Valid GuardKit commands, or
 2. RequireKit commands placed appropriately in RequireKit-only sections
 
 ---
@@ -72,8 +72,8 @@ Report generated: docs/research/TASK-025-audit-report.md
 
 ### Valid Links Found
 ```
-docs/workflows/taskwright-vs-requirekit.md:
-  ✅ ../guides/taskwright-workflow.md (exists)
+docs/workflows/guardkit-vs-requirekit.md:
+  ✅ ../guides/guardkit-workflow.md (exists)
   ✅ ./quality-gates-workflow.md (exists)
   ✅ ./complexity-management-workflow.md (exists)
 
@@ -104,14 +104,14 @@ docs/quick-reference/design-first-workflow-card.md:
 
 ## 5. Pattern Removal Verification
 
-**Check Pattern**: Confirm RequireKit features removed from Taskwright docs
+**Check Pattern**: Confirm RequireKit features removed from GuardKit docs
 
 ### Heavy Patterns (Must Remove)
-- ✅ `/require-*` commands: NOT in Taskwright sections
-- ✅ EARS notation: NOT in Taskwright sections (only integration notes + RequireKit sections)
-- ✅ BDD generation: NOT in Taskwright sections (only integration notes + RequireKit sections)
-- ✅ Epic hierarchy: NOT in Taskwright sections (only integration notes + RequireKit sections)
-- ✅ PM tool sync (Jira/Linear/Azure): NOT in Taskwright sections (only integration notes + RequireKit sections)
+- ✅ `/require-*` commands: NOT in GuardKit sections
+- ✅ EARS notation: NOT in GuardKit sections (only integration notes + RequireKit sections)
+- ✅ BDD generation: NOT in GuardKit sections (only integration notes + RequireKit sections)
+- ✅ Epic hierarchy: NOT in GuardKit sections (only integration notes + RequireKit sections)
+- ✅ PM tool sync (Jira/Linear/Azure): NOT in GuardKit sections (only integration notes + RequireKit sections)
 
 ### Integration Notes (✅ Properly Added)
 - ✅ Added to: complexity-management-workflow.md
@@ -146,7 +146,7 @@ docs/quick-reference/design-first-workflow-card.md:
 ### Integration Notes Format (Consistent) ✅
 ```markdown
 > **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy),
-> see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+> see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
 ```
 
 Variations by context:
@@ -155,8 +155,8 @@ Variations by context:
 - Feature/Epic hierarchies: RequireKit integration
 - Requirements traceability: RequireKit focused
 
-### Taskwright-Standalone Verification ✅
-- ✅ All examples work with Taskwright only
+### GuardKit-Standalone Verification ✅
+- ✅ All examples work with GuardKit only
 - ✅ No examples require RequireKit dependencies
 - ✅ Task descriptions and acceptance criteria used instead of EARS
 - ✅ Phase 2-2.8 (not Phase 1) for design-first workflow
@@ -169,12 +169,12 @@ Variations by context:
 |----------|--------|---------|
 | **File Changes** | ✅ PASSED | All 3 created, 5 updated, 1 deleted |
 | **Audit Script** | ✅ PASSED | Executes successfully, generates report |
-| **Command Syntax** | ✅ PASSED | All Taskwright commands valid |
+| **Command Syntax** | ✅ PASSED | All GuardKit commands valid |
 | **Internal Links** | ⚠️ PASSED* | *Pre-existing broken link to feature-generate-tasks.md |
-| **Pattern Removal** | ✅ PASSED | No RequireKit features in Taskwright sections |
+| **Pattern Removal** | ✅ PASSED | No RequireKit features in GuardKit sections |
 | **Integration Notes** | ✅ PASSED | Consistent format and placement |
 | **Phase Numbering** | ✅ PASSED | TASK-025 corrections applied correctly |
-| **Documentation Quality** | ✅ PASSED | Clear separation of Taskwright vs RequireKit |
+| **Documentation Quality** | ✅ PASSED | Clear separation of GuardKit vs RequireKit |
 
 ---
 
@@ -202,8 +202,8 @@ All documentation updates for TASK-025 have been validated and pass quality chec
 
 1. ✅ File structure correct (created/updated/deleted)
 2. ✅ Audit script functional and generates valid reports
-3. ✅ Command syntax correct for all Taskwright examples
-4. ✅ RequireKit features properly removed from Taskwright sections
+3. ✅ Command syntax correct for all GuardKit examples
+4. ✅ RequireKit features properly removed from GuardKit sections
 5. ✅ Integration notes consistently formatted
 6. ✅ Phase numbering corrected per TASK-025 scope
 7. ✅ No new broken links introduced

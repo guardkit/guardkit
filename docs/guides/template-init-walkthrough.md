@@ -964,7 +964,7 @@ Total: 7 agents configured
 💡 Next steps:
    1. Review template at: installer/local/templates/python-fastapi-clean/
    2. Customize if needed
-   3. Test with: taskwright init python-fastapi-clean
+   3. Test with: guardkit init python-fastapi-clean
 ```
 
 ### Testing the Template
@@ -975,7 +975,7 @@ mkdir ~/test-fastapi
 cd ~/test-fastapi
 
 # Initialize with template
-taskwright init python-fastapi-clean
+guardkit init python-fastapi-clean
 
 # Prompts will ask for:
 # - ProjectName: ProductAPI

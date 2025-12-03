@@ -6,7 +6,7 @@ Create a new task with requirements, acceptance criteria, and optional BDD scena
 
 This command supports **graceful degradation** based on installed packages:
 
-### Taskwright Only (Core Features)
+### GuardKit Only (Core Features)
 ```bash
 # Basic task creation
 /task-create "Add user authentication"
@@ -15,7 +15,7 @@ This command supports **graceful degradation** based on installed packages:
 
 Available fields: `title`, `priority`, `tags`, `status`, `complexity`
 
-### Taskwright + Require-Kit (Full Features)
+### GuardKit + Require-Kit (Full Features)
 ```bash
 # Advanced task creation with requirements management
 /task-create "Add user authentication" epic:EPIC-001 feature:FEAT-003 requirements:[REQ-001]
@@ -56,7 +56,7 @@ Additional fields: `epic`, `feature`, `requirements`, `bdd_scenarios`, `export`
 
 Creates a markdown file with metadata. The fields included depend on which packages are installed:
 
-### Core Fields (Taskwright)
+### Core Fields (GuardKit)
 ```markdown
 ---
 id: TASK-A3F2
@@ -74,7 +74,7 @@ test_results:
 ---
 ```
 
-### Extended Fields (Taskwright + Require-Kit)
+### Extended Fields (GuardKit + Require-Kit)
 ```markdown
 ---
 id: TASK-E01-B2C4
@@ -818,7 +818,7 @@ The `/task-work` command provides:
 - **Code Review** (Phase 5): Quality verification after implementation
 - **Plan Audit** (Phase 5.5): Scope creep detection
 
-**If you implement directly, you bypass all quality gates and the entire Taskwright workflow!**
+**If you implement directly, you bypass all quality gates and the entire GuardKit workflow!**
 
 ### Correct Workflow:
 ```bash

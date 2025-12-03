@@ -44,7 +44,7 @@ Add section:
 ```markdown
 ## Shared Agents
 
-Universal agents (code-reviewer, test-orchestrator, etc.) are maintained in the [shared-agents](https://github.com/taskwright-dev/shared-agents) repository and shared with RequireKit.
+Universal agents (code-reviewer, test-orchestrator, etc.) are maintained in the [shared-agents](https://github.com/guardkit/shared-agents) repository and shared with RequireKit.
 
 **For users**: No action required. Agents are automatically downloaded during installation.
 
@@ -69,7 +69,7 @@ Same as TaskWright, adjusted for RequireKit context.
 - Manifest.json for agent listing
 - Basic README and documentation
 
-[1.0.0]: https://github.com/taskwright-dev/shared-agents/releases/tag/v1.0.0
+[1.0.0]: https://github.com/guardkit/shared-agents/releases/tag/v1.0.0
 ```
 
 ### 5. Update CHANGELOG in TaskWright

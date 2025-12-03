@@ -28,8 +28,8 @@ from installer.global.lib.id_generator import generate_task_id, validate_task_id
 
 **Problem**: This import assumes Python can find the `installer/` package, but:
 
-1. When running from a user project (e.g., `~/Projects/test-api-service`), the taskwright repo is NOT in Python's sys.path
-2. The `id_generator.py` module exists at `~/Projects/appmilla_github/taskwright/installer/global/lib/id_generator.py`
+1. When running from a user project (e.g., `~/Projects/test-api-service`), the guardkit repo is NOT in Python's sys.path
+2. The `id_generator.py` module exists at `~/Projects/appmilla_github/guardkit/installer/global/lib/id_generator.py`
 3. Python doesn't know where to find it
 
 **Unlike Python command scripts** (e.g., `agent-enhance.py`) which use `__file__` to resolve the repo path, **inline spec execution** doesn't have `__file__` available.
@@ -49,15 +49,15 @@ from installer.global.lib.id_generator import generate_task_id, validate_task_id
 import sys
 from pathlib import Path
 
-def _find_taskwright_repo():
+def _find_guardkit_repo():
     """
-    Find taskwright repository root by looking for marker file.
+    Find guardkit repository root by looking for marker file.
     Search order:
-    1. ~/.agentecflow/taskwright.marker.json (contains repo path)
-    2. Common locations (~/Projects/appmilla_github/taskwright, ~/Projects/taskwright)
+    1. ~/.agentecflow/guardkit.marker.json (contains repo path)
+    2. Common locations (~/Projects/appmilla_github/guardkit, ~/Projects/guardkit)
     """
     # Check marker file first (most reliable)
-    marker_json = Path.home() / ".agentecflow" / "taskwright.marker.json"
+    marker_json = Path.home() / ".agentecflow" / "guardkit.marker.json"
     if marker_json.exists():
         import json
         try:
@@ -71,40 +71,40 @@ def _find_taskwright_repo():
 
     # Fallback: Check common locations
     common_paths = [
-        Path.home() / "Projects" / "appmilla_github" / "taskwright",
-        Path.home() / "Projects" / "taskwright",
+        Path.home() / "Projects" / "appmilla_github" / "guardkit",
+        Path.home() / "Projects" / "guardkit",
         Path.cwd(),  # Current directory (if running from repo)
     ]
 
     for path in common_paths:
-        # Verify it's the taskwright repo
+        # Verify it's the guardkit repo
         if (path / "installer" / "global" / "lib" / "id_generator.py").exists():
             return path
 
     return None
 
-taskwright_repo = _find_taskwright_repo()
-if not taskwright_repo:
-    print("ERROR: Cannot locate taskwright repository")
+guardkit_repo = _find_guardkit_repo()
+if not guardkit_repo:
+    print("ERROR: Cannot locate guardkit repository")
     print("  Searched:")
-    print("    - ~/.agentecflow/taskwright.marker.json")
-    print("    - ~/Projects/appmilla_github/taskwright")
-    print("    - ~/Projects/taskwright")
+    print("    - ~/.agentecflow/guardkit.marker.json")
+    print("    - ~/Projects/appmilla_github/guardkit")
+    print("    - ~/Projects/guardkit")
     print("  Installation may be incomplete. Try reinstalling:")
-    print("    cd ~/Projects/appmilla_github/taskwright")
+    print("    cd ~/Projects/appmilla_github/guardkit")
     print("    ./installer/scripts/install.sh")
     sys.exit(1)
 
 # Add to sys.path
-if str(taskwright_repo) not in sys.path:
-    sys.path.insert(0, str(taskwright_repo))
+if str(guardkit_repo) not in sys.path:
+    sys.path.insert(0, str(guardkit_repo))
 # === END: Repository Root Resolution ===
 
 from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 ```
 
 **How it works**:
-1. Checks `~/.agentecflow/taskwright.marker.json` for `repo_path` field (most reliable)
+1. Checks `~/.agentecflow/guardkit.marker.json` for `repo_path` field (most reliable)
 2. Falls back to common installation paths
 3. Verifies path contains `installer/global/lib/id_generator.py`
 4. Adds repo root to `sys.path`
@@ -128,7 +128,7 @@ fi
 # Create marker file with repo_path
 cat > "$marker_file" << EOF
 {
-  "package": "taskwright",
+  "package": "guardkit",
   "version": "$AGENTECFLOW_VERSION",
   "installed": "$install_date",
   "install_location": "$INSTALL_DIR",
@@ -150,13 +150,13 @@ EOF
 ### Test 1: Fresh Installation on VM
 
 ```bash
-# Install taskwright
-cd ~/Projects/appmilla_github/taskwright
+# Install guardkit
+cd ~/Projects/appmilla_github/guardkit
 ./installer/scripts/install.sh
 
 # Verify marker file has repo_path
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-# Should output: "repo_path": "/Users/[username]/Projects/appmilla_github/taskwright"
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+# Should output: "repo_path": "/Users/[username]/Projects/appmilla_github/guardkit"
 
 # Try task creation from user project
 cd ~/Projects/test-api-service
@@ -176,22 +176,22 @@ cd ~/Projects/test-api-service
 ```bash
 # Remove existing installation
 rm -rf ~/.agentecflow
-rm -rf ~/Projects/taskwright  # or ~/taskwright
+rm -rf ~/Projects/guardkit  # or ~/guardkit
 
 # Install via curl
-curl -sSL https://install.taskwright.dev | bash
+curl -sSL https://install.guardkit.dev | bash
 
 # Expected behavior:
-# - If git is available: Clones repo to ~/Projects/taskwright (or ~/taskwright)
-# - If git not available: Downloads tarball to ~/Projects/taskwright (or ~/taskwright)
+# - If git is available: Clones repo to ~/Projects/guardkit (or ~/guardkit)
+# - If git not available: Downloads tarball to ~/Projects/guardkit (or ~/guardkit)
 # - Creates marker file with repo_path pointing to permanent location
 
 # Verify marker file
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-# Should output: "repo_path": "/Users/[username]/Projects/taskwright"
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+# Should output: "repo_path": "/Users/[username]/Projects/guardkit"
 
 # Verify repository exists
-ls ~/Projects/taskwright/installer/global/lib/id_generator.py
+ls ~/Projects/guardkit/installer/global/lib/id_generator.py
 # Should exist
 
 # Try task creation
@@ -211,15 +211,15 @@ cd ~/Projects/my-project
 ```bash
 # Clone to custom location
 cd ~/custom-location
-git clone https://github.com/taskwright/taskwright.git
+git clone https://github.com/guardkit/guardkit.git
 
 # Install
-cd taskwright
+cd guardkit
 ./installer/scripts/install.sh
 
 # Verify marker file
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
-# Should output: "repo_path": "/Users/[username]/custom-location/taskwright"
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
+# Should output: "repo_path": "/Users/[username]/custom-location/guardkit"
 
 # Try task creation
 cd ~/Projects/another-project
@@ -305,12 +305,12 @@ cd ~/Projects/another-project
 
 ```bash
 # On VM
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 git pull
 ./installer/scripts/install.sh
 
 # Verify marker file
-cat ~/.agentecflow/taskwright.marker.json | grep repo_path
+cat ~/.agentecflow/guardkit.marker.json | grep repo_path
 
 # Test task creation
 cd ~/Projects/test-api-service

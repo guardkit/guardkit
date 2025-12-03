@@ -4,7 +4,7 @@
   "display_name": "Next.js Full-Stack (App Router)",
   "description": "Production-ready Next.js 15 full-stack template with React Server Components, Server Actions, Prisma ORM, and comprehensive testing",
   "version": "1.0.0",
-  "author": "Taskwright",
+  "author": "GuardKit",
   "language": "TypeScript",
   "language_version": "5.x",
   "frameworks": [

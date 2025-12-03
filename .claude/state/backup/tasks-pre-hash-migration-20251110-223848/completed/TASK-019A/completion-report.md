@@ -284,7 +284,7 @@ class TemplateClaude(BaseModel):
 ### AC7: Immediate Fix Applied ⚠️ (Deferred)
 - ⏸️ `ardalis-clean-architecture` template CLAUDE.md fix (deferred to follow-up)
 - ⏸️ Template regenerated with new phase order (deferred)
-- ⏸️ Template tested with `taskwright init ardalis-clean-architecture` (deferred)
+- ⏸️ Template tested with `guardkit init ardalis-clean-architecture` (deferred)
 - ⏸️ Zero agent documentation mismatches (to be verified after regeneration)
 
 **Note**: AC7 requires regenerating the `ardalis-clean-architecture` template with the new phase order. This should be done in a follow-up task to verify the fix works end-to-end.
@@ -319,7 +319,7 @@ class TemplateClaude(BaseModel):
 1. **Regenerate ardalis-clean-architecture Template** (AC7)
    - Run `/template-create` with new phase order on CleanArchitecture codebase
    - Verify CLAUDE.md documents only generated agents
-   - Test with `taskwright init ardalis-clean-architecture`
+   - Test with `guardkit init ardalis-clean-architecture`
    - Confirm zero agent documentation mismatches
 
 2. **Audit Other Templates**

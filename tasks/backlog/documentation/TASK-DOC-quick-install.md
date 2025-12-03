@@ -12,7 +12,7 @@ README.md has a curl-based one-liner install script (lines 122-125) for quick in
 
 **README.md includes**:
 ```bash
-curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 ```
 
 **MkDocs site**: May only show git clone method
@@ -27,7 +27,7 @@ curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/insta
    - macOS/Linux: Direct curl command
    - Windows: WSL2 requirement, then curl command
 4. Add security note about inspecting scripts before piping to bash
-5. Include verification step: `taskwright --version`
+5. Include verification step: `guardkit --version`
 
 ## Implementation Notes
 

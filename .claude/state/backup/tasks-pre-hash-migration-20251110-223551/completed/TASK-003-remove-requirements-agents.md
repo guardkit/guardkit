@@ -22,11 +22,11 @@ completion_metrics:
 
 ## Description
 
-Remove AI agents specifically designed for requirements management (EARS notation, BDD generation) from taskwright, keeping all quality gate and task workflow agents.
+Remove AI agents specifically designed for requirements management (EARS notation, BDD generation) from guardkit, keeping all quality gate and task workflow agents.
 
 ## Context
 
-Taskwright focuses on task workflow with quality gates. Requirements-specific agents (requirements-analyst, bdd-generator) are not needed for the lite workflow.
+GuardKit focuses on task workflow with quality gates. Requirements-specific agents (requirements-analyst, bdd-generator) are not needed for the lite workflow.
 
 ## Agents to Remove
 
@@ -65,7 +65,7 @@ Taskwright focuses on task workflow with quality gates. Requirements-specific ag
 ### 1. Locate Agent Files
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Find requirements-related agents
 find installer/global/agents -name "*requirements*.md"

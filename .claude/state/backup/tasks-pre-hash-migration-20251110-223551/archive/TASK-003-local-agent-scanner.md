@@ -17,7 +17,7 @@ blocks: [TASK-009]
 
 ## Objective
 
-Scan `installer/global/agents/` directory to discover existing taskwright agents (architectural-reviewer, code-reviewer, test-orchestrator, etc.) for inclusion in templates.
+Scan `installer/global/agents/` directory to discover existing guardkit agents (architectural-reviewer, code-reviewer, test-orchestrator, etc.) for inclusion in templates.
 
 **Note**: Kept from original approach - implementation is sound and valuable.
 

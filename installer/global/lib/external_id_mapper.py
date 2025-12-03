@@ -1,7 +1,7 @@
 """
 External ID Mapper for PM Tools Integration
 
-This module provides bidirectional mapping between Taskwright's internal
+This module provides bidirectional mapping between GuardKit's internal
 hash-based task IDs and external sequential IDs used by PM tools.
 
 Supported PM Tools:

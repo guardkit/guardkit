@@ -3,7 +3,7 @@
 **Version**: 1.0
 **Last Updated**: 2025-11-20
 **Status**: Phase 8 Implementation
-**Review Source**: [docs/reviews/phase-8-implementation-review.md](/Users/richardwoollcott/Projects/appmilla_github/taskwright/docs/reviews/phase-8-implementation-review.md)
+**Review Source**: [docs/reviews/phase-8-implementation-review.md](/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/reviews/phase-8-implementation-review.md)
 
 ---
 
@@ -311,7 +311,7 @@ Phase 7.5 State Files (removed):
 
 Phase 8 State (none):
 - No persistent state during enhancement
-- Task state managed by Taskwright (if using tasks)
+- Task state managed by GuardKit (if using tasks)
 - File-based persistence only for final result
 ```
 
@@ -1166,7 +1166,7 @@ Individual tasks are created by default for each agent to enhance incrementally.
 **Must Pass Before Merge**:
 
 - [ ] All acceptance criteria met
-- [ ] Code follows Taskwright patterns (orchestrator, components, Result types)
+- [ ] Code follows GuardKit patterns (orchestrator, components, Result types)
 - [ ] No placeholder code (except documented TODOs)
 - [ ] Error handling comprehensive
 - [ ] Logging appropriate (info/warning/error)

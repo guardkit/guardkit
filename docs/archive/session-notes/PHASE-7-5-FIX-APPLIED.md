@@ -28,7 +28,7 @@ This condition evaluated to `True` for BOTH:
 
 ## Solution Applied
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
 
 **Line**: ~334 (in `_complete_workflow()` method)
 
@@ -224,12 +224,12 @@ else:  # Clear success path
 
 ## Files Modified
 
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py` (line ~334)
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py` (line ~334)
 
 ## Commits Needed
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
+cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 git add installer/global/commands/lib/template_create_orchestrator.py
 git commit -m "Fix Phase 7.5 blocking condition and add debug logging
 

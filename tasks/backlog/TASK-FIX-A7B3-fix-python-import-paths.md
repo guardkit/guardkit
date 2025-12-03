@@ -17,7 +17,7 @@ test_results:
 
 ## Problem Description
 
-When taskwright is installed via curl (not from a local git clone), Python imports fail because:
+When guardkit is installed via curl (not from a local git clone), Python imports fail because:
 
 1. **Wrong import paths in documentation**: Commands reference `from installer.global.lib.X` but files are copied to `~/.agentecflow/commands/lib/`
 2. **Missing Python path setup**: The `repo_path` field in the marker file exists but isn't used to add the repository to Python's sys.path
@@ -76,7 +76,7 @@ import json
 import os
 
 # Read repo_path from marker
-marker_path = os.path.expanduser("~/.agentecflow/taskwright.marker.json")
+marker_path = os.path.expanduser("~/.agentecflow/guardkit.marker.json")
 with open(marker_path) as f:
     marker = json.load(f)
     repo_path = marker.get("repo_path")
@@ -118,7 +118,7 @@ ln -sf "$repo_root" "$INSTALL_DIR/installer"
 - `installer/scripts/install.sh` - May need to copy additional Python files or create path setup
 
 ### Marker File (already updated)
-- `taskwright.marker.json` - Contains `repo_path` field
+- `guardkit.marker.json` - Contains `repo_path` field
 
 ## Test Plan
 
@@ -128,7 +128,7 @@ ln -sf "$repo_root" "$INSTALL_DIR/installer"
    rm -rf ~/.agentecflow
 
    # Install via curl
-   curl -sSL https://raw.githubusercontent.com/taskwright-dev/taskwright/main/installer/scripts/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
 
    # Test Python imports
    /task-create "Test task"
@@ -142,7 +142,7 @@ ln -sf "$repo_root" "$INSTALL_DIR/installer"
 - This is a **critical bug** affecting curl installations
 - Adding `repo_path` to marker was a good first step but doesn't solve the import issue
 - Solution must work without requiring users to set environment variables
-- Consider adding this check to the `taskwright doctor` command
+- Consider adding this check to the `guardkit doctor` command
 
 ## Related Issues
 

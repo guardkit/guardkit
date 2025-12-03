@@ -19,7 +19,7 @@ Batch format agent documentation files to meet GitHub best practices for documen
 4. Pre-distribution formatting for team agents
 5. CI/CD quality gates for agent documentation
 
-**Note**: Template count updated to 5 (taskwright-python removed in TASK-G6D4).
+**Note**: Template count updated to 5 (guardkit-python removed in TASK-G6D4).
 
 ## Usage
 

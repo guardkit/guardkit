@@ -1,6 +1,6 @@
 ---
 id: TASK-020
-title: Complete Taskwright Rebrand (agentecflow → taskwright)
+title: Complete GuardKit Rebrand (agentecflow → guardkit)
 status: completed
 created: 2025-11-02T00:00:00Z
 updated: 2025-11-02T16:30:00Z
@@ -9,7 +9,7 @@ priority: high
 complexity: 3
 estimated_hours: 2
 actual_hours: 1.5
-tags: [branding, documentation, cli, taskwright]
+tags: [branding, documentation, cli, guardkit]
 epic: null
 feature: installation
 dependencies: [TASK-019]
@@ -19,11 +19,11 @@ verified: 2025-11-02T17:45:00Z
 note: "ID conflict - Old TASK-020 (Micro-Task Mode) kept in tasks/completed/TASK-020/, rebrand moved to TASK-020-rebrand/"
 ---
 
-# TASK-020: Complete Taskwright Rebrand
+# TASK-020: Complete GuardKit Rebrand
 
 ## Objective
 
-Complete the rebrand from "Agentecflow" / "agentecflow init" to "Taskwright" / "taskwright init" across all user-facing documentation, output messages, and CLI commands.
+Complete the rebrand from "Agentecflow" / "agentecflow init" to "GuardKit" / "guardkit init" across all user-facing documentation, output messages, and CLI commands.
 
 **Note**: This REPLACES archived task TASK-033 (which was incomplete).
 
@@ -44,20 +44,20 @@ Complete the rebrand from "Agentecflow" / "agentecflow init" to "Taskwright" / "
 **Expected State**:
 ```
 ╔════════════════════════════════════════════════════════╗
-║         Taskwright Initialization                      ║  ← Correct!
+║         GuardKit Initialization                      ║  ← Correct!
 ║         Template: dotnet-microservice                  ║
 ╚════════════════════════════════════════════════════════╝
 
-✅ Taskwright successfully initialized!                    ← Correct!
+✅ GuardKit successfully initialized!                    ← Correct!
 
-📚 Documentation: https://github.com/appmilla/taskwright   ← Correct!
+📚 Documentation: https://github.com/appmilla/guardkit   ← Correct!
 ```
 
 ## Scope
 
 ### What CHANGES (User-Facing)
-- ✅ Product name: "Agentecflow" → "Taskwright"
-- ✅ CLI command: `agentecflow init` → `taskwright init`
+- ✅ Product name: "Agentecflow" → "GuardKit"
+- ✅ CLI command: `agentecflow init` → `guardkit init`
 - ✅ Output messages: All references to "Agentecflow"
 - ✅ Documentation: README, CLAUDE.md, guides
 - ✅ Repository references
@@ -68,7 +68,7 @@ Complete the rebrand from "Agentecflow" / "agentecflow init" to "Taskwright" / "
 - ✅ Internal variable names (unless user-facing)
 - ✅ File paths and folder structure
 
-**Rationale**: The configuration folders stay `.agentecflow` for backward compatibility and because "agentecflow" represents the methodology, while "taskwright" is the product name.
+**Rationale**: The configuration folders stay `.agentecflow` for backward compatibility and because "agentecflow" represents the methodology, while "guardkit" is the product name.
 
 ## Files to Modify
 
@@ -79,33 +79,33 @@ Complete the rebrand from "Agentecflow" / "agentecflow init" to "Taskwright" / "
 
 **Changes**:
 ```bash
-# Create taskwright-init command (was agentec-init)
-cat > "$INSTALL_DIR/bin/taskwright-init" << 'EOF'
+# Create guardkit-init command (was agentec-init)
+cat > "$INSTALL_DIR/bin/guardkit-init" << 'EOF'
 #!/bin/bash
 
-# Taskwright Project Initialization
+# GuardKit Project Initialization
 # Primary command for initializing projects
 
 # ... implementation ...
 EOF
 
-chmod +x "$INSTALL_DIR/bin/taskwright-init"
+chmod +x "$INSTALL_DIR/bin/guardkit-init"
 
 # Create main command
-cat > "$INSTALL_DIR/bin/taskwright" << 'EOF'
+cat > "$INSTALL_DIR/bin/guardkit" << 'EOF'
 #!/bin/bash
 
-# Taskwright CLI
+# GuardKit CLI
 # Main command-line interface
 
 # ... implementation ...
 EOF
 
-chmod +x "$INSTALL_DIR/bin/taskwright"
+chmod +x "$INSTALL_DIR/bin/guardkit"
 
 # Create shorthand aliases
-ln -sf "$INSTALL_DIR/bin/taskwright" "$INSTALL_DIR/bin/tw"
-ln -sf "$INSTALL_DIR/bin/taskwright-init" "$INSTALL_DIR/bin/twi"
+ln -sf "$INSTALL_DIR/bin/guardkit" "$INSTALL_DIR/bin/gk"
+ln -sf "$INSTALL_DIR/bin/guardkit-init" "$INSTALL_DIR/bin/gki"
 ```
 
 #### init-project.sh
@@ -116,17 +116,17 @@ ln -sf "$INSTALL_DIR/bin/taskwright-init" "$INSTALL_DIR/bin/twi"
 print_header() {
     echo ""
     echo -e "${BLUE}╔════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║         Taskwright Initialization                      ║${NC}"  # Changed
+    echo -e "${BLUE}║         GuardKit Initialization                      ║${NC}"  # Changed
     echo -e "${BLUE}║         Template: ${BOLD}$(printf '%-20s' "$TEMPLATE")${NC}${BLUE}         ║${NC}"
     echo -e "${BLUE}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
 }
 
 # In print_next_steps():
-echo -e "${GREEN}✅ Taskwright successfully initialized!${NC}"  # Changed
+echo -e "${GREEN}✅ GuardKit successfully initialized!${NC}"  # Changed
 echo ""
 echo -e "${BOLD}Next Steps:${NC}"
-echo "  1. Use taskwright commands to manage tasks"  # Changed
+echo "  1. Use guardkit commands to manage tasks"  # Changed
 # ... etc
 ```
 
@@ -134,10 +134,10 @@ echo "  1. Use taskwright commands to manage tasks"  # Changed
 
 #### Root Files
 - **CLAUDE.md** (lines 1-50): Update product description
-- **README.md**: Complete rewrite with taskwright branding
+- **README.md**: Complete rewrite with guardkit branding
 
 #### Guides (docs/guides/)
-- `agentecflow-lite-workflow.md` → Rename to `taskwright-workflow.md`
+- `agentecflow-lite-workflow.md` → Rename to `guardkit-workflow.md`
 - Update all command examples
 - Update all product references
 
@@ -150,14 +150,14 @@ echo "  1. Use taskwright commands to manage tasks"  # Changed
 ```bash
 cat >> "$shell_config" << 'EOF'
 
-# Taskwright
+# GuardKit
 export PATH="$HOME/.agentecflow/bin:$PATH"
 export AGENTECFLOW_HOME="$HOME/.agentecflow"
 # Note: Config folder stays .agentecflow for methodology compatibility
 
-# Taskwright completions (bash)
-if [ -f "$HOME/.agentecflow/completions/taskwright.bash" ]; then
-    source "$HOME/.agentecflow/completions/taskwright.bash"
+# GuardKit completions (bash)
+if [ -f "$HOME/.agentecflow/completions/guardkit.bash" ]; then
+    source "$HOME/.agentecflow/completions/guardkit.bash"
 fi
 EOF
 ```
@@ -174,14 +174,14 @@ All user-facing help text needs updating:
 ## Implementation Plan
 
 ### Phase 1: CLI Commands (30 min)
-1. Update `install.sh` - Create `taskwright` and `taskwright-init` commands
+1. Update `install.sh` - Create `guardkit` and `guardkit-init` commands
 2. Update `init-project.sh` - Change all output messages
 3. Test: Commands work with new names
 
 ### Phase 2: Documentation (45 min)
 1. Update `CLAUDE.md` - Product description and examples
 2. Update `README.md` - Complete rewrite
-3. Rename `agentecflow-lite-workflow.md` → `taskwright-workflow.md`
+3. Rename `agentecflow-lite-workflow.md` → `guardkit-workflow.md`
 4. Update all guide documents
 5. Search and replace remaining references
 
@@ -213,12 +213,12 @@ grep -r "agentec-init" --include="*.md" --include="*.sh" .
 ### Replace Pattern
 ```bash
 # Command name
-agentecflow init → taskwright init
-agentec-init → taskwright-init
+agentecflow init → guardkit init
+agentec-init → guardkit-init
 
 # Product name
-Agentecflow → Taskwright
-agentecflow → taskwright (in prose)
+Agentecflow → GuardKit
+agentecflow → guardkit (in prose)
 
 # Keep config paths
 .agentecflow/ → .agentecflow/ (NO CHANGE)
@@ -238,13 +238,13 @@ AGENTECFLOW_HOME → AGENTECFLOW_HOME (NO CHANGE - internal)
 ### Test 1: CLI Commands
 ```bash
 # After install
-taskwright --help
-taskwright init --help
-taskwright-init --help
-tw --help  # shorthand
-twi --help  # shorthand
+guardkit --help
+guardkit init --help
+guardkit-init --help
+gk --help  # shorthand
+gki --help  # shorthand
 
-# All should show "Taskwright" branding
+# All should show "GuardKit" branding
 ```
 
 ### Test 2: Installation Flow
@@ -252,16 +252,16 @@ twi --help  # shorthand
 # Clean install
 ./installer/scripts/install.sh
 
-# Check output for "Taskwright" branding
-# Check shell config has taskwright references
+# Check output for "GuardKit" branding
+# Check shell config has guardkit references
 ```
 
 ### Test 3: Init Flow
 ```bash
 # Test init with new command
-taskwright init dotnet-microservice
+guardkit init dotnet-microservice
 
-# Verify all output shows "Taskwright"
+# Verify all output shows "GuardKit"
 # Verify .agentecflow/ folder still used (internal)
 ```
 
@@ -270,16 +270,16 @@ taskwright init dotnet-microservice
 # No remaining agentecflow init references (except archived)
 ! grep -r "agentecflow init" --include="*.md" . | grep -v "archive\|archived"
 
-# Taskwright appears in key docs
-grep -q "Taskwright" README.md
-grep -q "Taskwright" CLAUDE.md
-grep -q "taskwright init" docs/guides/*.md
+# GuardKit appears in key docs
+grep -q "GuardKit" README.md
+grep -q "GuardKit" CLAUDE.md
+grep -q "guardkit init" docs/guides/*.md
 ```
 
 ### Test 5: Links & References
 ```bash
-# All docs links point to taskwright repo
-grep -r "github.com.*taskwright" --include="*.md" .
+# All docs links point to guardkit repo
+grep -r "github.com.*guardkit" --include="*.md" .
 
 # No broken links
 # ... manual verification ...
@@ -288,22 +288,22 @@ grep -r "github.com.*taskwright" --include="*.md" .
 ## Acceptance Criteria
 
 ### CLI Commands
-- [ ] `taskwright` command exists and works
-- [ ] `taskwright init` command exists and works
-- [ ] `taskwright-init` command exists and works
-- [ ] Shorthands `tw` and `twi` work
-- [ ] Help text shows "Taskwright" branding
-- [ ] Error messages use "Taskwright"
+- [ ] `guardkit` command exists and works
+- [ ] `guardkit init` command exists and works
+- [ ] `guardkit-init` command exists and works
+- [ ] Shorthands `gk` and `gki` work
+- [ ] Help text shows "GuardKit" branding
+- [ ] Error messages use "GuardKit"
 
 ### Documentation
-- [ ] README.md uses "Taskwright" throughout
-- [ ] CLAUDE.md uses "Taskwright" for product name
+- [ ] README.md uses "GuardKit" throughout
+- [ ] CLAUDE.md uses "GuardKit" for product name
 - [ ] Workflow guide renamed and updated
-- [ ] All command examples use `taskwright init`
+- [ ] All command examples use `guardkit init`
 - [ ] No remaining "agentecflow init" in active docs
 
 ### Shell Integration
-- [ ] Shell config mentions "Taskwright" in comments
+- [ ] Shell config mentions "GuardKit" in comments
 - [ ] Commands added to PATH correctly
 - [ ] Completions updated (if exist)
 
@@ -313,8 +313,8 @@ grep -r "github.com.*taskwright" --include="*.md" .
 - [ ] Documentation explains folder naming
 
 ### Testing
-- [ ] Clean install shows "Taskwright"
-- [ ] Init output shows "Taskwright"
+- [ ] Clean install shows "GuardKit"
+- [ ] Init output shows "GuardKit"
 - [ ] All templates work with new commands
 - [ ] Documentation links verified
 - [ ] No broken references

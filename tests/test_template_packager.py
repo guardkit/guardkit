@@ -292,7 +292,7 @@ class TestTemplatePackager:
         content = readme_path.read_text()
 
         assert "tar -xzf" in content
-        assert "taskwright init" in content
+        assert "guardkit init" in content
         assert result.checksum_sha256 in content
 
     def test_package_with_missing_manifest(self, temp_dir):

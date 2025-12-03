@@ -42,7 +42,7 @@ Execute tasks in order:
 **Quick version**:
 ```bash
 # Compare agent files
-comm -12 <(ls taskwright/installer/global/agents/*.md | xargs basename -a | sort) \
+comm -12 <(ls guardkit/installer/global/agents/*.md | xargs basename -a | sort) \
          <(ls ../require-kit/.claude/agents/*.md | xargs basename -a | sort)
 ```
 
@@ -50,7 +50,7 @@ comm -12 <(ls taskwright/installer/global/agents/*.md | xargs basename -a | sort
 **Effort**: 2 hours
 **Depends on**: TASK-SHA-001
 
-1. Create `taskwright-dev/shared-agents` repo
+1. Create `guardkit/shared-agents` repo
 2. Copy verified agents
 3. Create simple manifest.json
 4. Release v1.0.0
@@ -148,7 +148,7 @@ We're accepting these small risks:
 - **[IMPLEMENTATION-PLAN-LEAN.md](./IMPLEMENTATION-PLAN-LEAN.md)** - Detailed task breakdown
 - **[TASK-SHA-001](./TASK-SHA-001-verify-duplication.md)** - Verification
 - **[TASK-SHA-002](./TASK-SHA-002-create-shared-repo.md)** - Create repo
-- **[TASK-SHA-003](./TASK-SHA-003-update-taskwright.md)** - Update TaskWright
+- **[TASK-SHA-003](./TASK-SHA-003-update-guardkit.md)** - Update TaskWright
 - **[TASK-SHA-004](./TASK-SHA-004-update-requirekit.md)** - Update RequireKit
 - **[TASK-SHA-005](./TASK-SHA-005-test-both-tools.md)** - Testing
 - **[TASK-SHA-006](./TASK-SHA-006-update-documentation.md)** - Documentation

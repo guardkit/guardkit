@@ -75,7 +75,7 @@ analyzer = CodebaseAnalyzer(max_files=30)
    - Prevents sparse template generation
 
 4. **test_templates_work_with_init()**
-   - Validates generated templates can be used with `taskwright init`
+   - Validates generated templates can be used with `guardkit init`
    - Checks all required files exist (manifest.json, settings.json, CLAUDE.md, templates/)
    - Ensures template package is complete
 
@@ -170,7 +170,7 @@ python3 -m py_compile tests/integration/test_ai_native_template_creation.py ✅
 3. **Quality Check**:
    - Verify templates cover ≥3 architectural layers
    - Confirm placeholders are present in template files
-   - Test `taskwright init {generated-template}` works
+   - Test `guardkit init {generated-template}` works
 
 ### Success Criteria
 

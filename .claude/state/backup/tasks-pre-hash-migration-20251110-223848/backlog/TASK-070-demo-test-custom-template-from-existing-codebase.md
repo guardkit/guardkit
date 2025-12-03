@@ -13,7 +13,7 @@
 
 ## Problem Statement
 
-One of Taskwright's key value propositions is the ability to extract templates from **existing, proven codebases** rather than starting from scratch. However, this workflow hasn't been thoroughly tested or documented for demos.
+One of GuardKit's key value propositions is the ability to extract templates from **existing, proven codebases** rather than starting from scratch. However, this workflow hasn't been thoroughly tested or documented for demos.
 
 **Current State**: The `/template-create` command exists and works, but:
 - No documented examples of extracting templates from real codebases
@@ -50,7 +50,7 @@ One of Taskwright's key value propositions is the ability to extract templates f
 
 **Candidate Codebases for Demo**:
 1. **Public GitHub Repos**: Well-maintained open source projects
-2. **Taskwright Itself**: Already proven (16K LOC, high quality)
+2. **GuardKit Itself**: Already proven (16K LOC, high quality)
 3. **Example Apps**: Realworld.io implementations
 4. **Personal Projects**: Your own proven codebases
 
@@ -280,7 +280,7 @@ mkdir -p ~/template-test-workspace/project-1
 cd ~/template-test-workspace/project-1
 
 # Initialize with custom template
-taskwright init realworld-react-redux
+guardkit init realworld-react-redux
 
 # Prompts:
 # ProjectName: BlogPlatform
@@ -324,7 +324,7 @@ npm run build
 **Test 2: Initialize Second Project** (Different Parameters):
 ```bash
 cd ~/template-test-workspace/project-2
-taskwright init realworld-react-redux
+guardkit init realworld-react-redux
 
 # Prompts:
 # ProjectName: ForumApp
@@ -345,7 +345,7 @@ npm run dev
 # Creating a Custom Template from Your Production Codebase
 
 ## Introduction
-You've built a successful application. Now you want to replicate that success for your next project. With Taskwright's `/template-create` command, you can extract a template from any existing codebase in minutes.
+You've built a successful application. Now you want to replicate that success for your next project. With GuardKit's `/template-create` command, you can extract a template from any existing codebase in minutes.
 
 ## Why Extract Templates?
 - Preserve proven patterns
@@ -400,7 +400,7 @@ You've built a successful application. Now you want to replicate that success fo
 ## Opening (0:00-0:45)
 - **Hook**: "What if you could turn any successful project into a reusable template in 5 minutes?"
 - **Problem**: Starting new projects from scratch wastes time and loses proven patterns
-- **Solution**: Taskwright's `/template-create` extracts templates from existing code
+- **Solution**: GuardKit's `/template-create` extracts templates from existing code
 - **What we'll cover**: Complete workflow from codebase to template to new project
 
 ## Demo Part 1: Select and Prepare (0:45-2:00)
@@ -661,7 +661,7 @@ installer/global/templates/your-template/
 5. **Video Script** (`custom-template-extraction-video.md`)
 6. **Before/After Comparison** (`template-extraction-comparison.md`)
 7. **Best Practices Guide** (`template-extraction-best-practices.md`)
-8. **Demo Repository** (GitHub: taskwright-custom-template-demo)
+8. **Demo Repository** (GitHub: guardkit-custom-template-demo)
 9. **Screenshots** (15+ images of entire process)
 10. **Test Projects** (2 initialized projects)
 
@@ -689,8 +689,8 @@ installer/global/templates/your-template/
 
 - **TASK-069**: Demo/Test - Core Template Usage
 - **TASK-071**: Demo/Test - Greenfield Project with Template Creation
-- **TASK-072**: Demo/Test - End-to-End Taskwright Workflow
-- **TASK-066**: Create Taskwright Python Template
+- **TASK-072**: Demo/Test - End-to-End GuardKit Workflow
+- **TASK-066**: Create GuardKit Python Template
 
 ---
 

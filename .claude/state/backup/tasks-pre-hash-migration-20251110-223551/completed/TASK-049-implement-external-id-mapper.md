@@ -33,7 +33,7 @@ completion_metrics:
 
 ## Description
 
-Create a bidirectional mapping system between internal hash-based task IDs and external sequential IDs used by PM tools (JIRA, Azure DevOps, Linear, GitHub). This enables Taskwright to use collision-free hash IDs internally while PM tools see their preferred sequential formats.
+Create a bidirectional mapping system between internal hash-based task IDs and external sequential IDs used by PM tools (JIRA, Azure DevOps, Linear, GitHub). This enables GuardKit to use collision-free hash IDs internally while PM tools see their preferred sequential formats.
 
 ## Acceptance Criteria
 
@@ -292,7 +292,7 @@ def increment_counter(tool: str, key: str = None) -> int:
 
 ### 🏗️ Implementation Phases
 
-**Phase 1:** ❌ Skipped (Requirements Analysis - taskwright starts at Phase 2)
+**Phase 1:** ❌ Skipped (Requirements Analysis - guardkit starts at Phase 2)
 **Phase 2:** ✅ Implementation Planning (30 minutes)
 **Phase 2.5:** ✅ Architectural Review (15 minutes, score: 88/100)
 **Phase 3:** ✅ Implementation (1 hour 15 minutes)

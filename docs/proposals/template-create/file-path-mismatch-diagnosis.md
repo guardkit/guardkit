@@ -32,12 +32,12 @@
 │  Python Orchestrator          Claude Code               │
 │  ─────────────────            ───────────                │
 │                                                          │
-│  CWD: /DeCUK.Mobile.MyDrive/  CWD: /taskwright/         │
+│  CWD: /DeCUK.Mobile.MyDrive/  CWD: /guardkit/         │
 │       ↓                            ↓                     │
-│  Write: /DeCUK.Mobile.MyDrive/ Read: /taskwright/       │
+│  Write: /DeCUK.Mobile.MyDrive/ Read: /guardkit/       │
 │         .agent-request.json        .agent-request.json  │
 │         ❌ DIFFERENT LOCATIONS ❌                        │
-│  Read:  /DeCUK.Mobile.MyDrive/ Write: /taskwright/      │
+│  Read:  /DeCUK.Mobile.MyDrive/ Write: /guardkit/      │
 │         .agent-response.json       .agent-response.json │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
@@ -78,13 +78,13 @@
 
 ```bash
 # Python Orchestrator CWD
-$ cd /path/to/codebase && python3 /path/to/taskwright/...
+$ cd /path/to/codebase && python3 /path/to/guardkit/...
 # CWD = /path/to/codebase
 
 # Claude Code CWD
 $ pwd
-/Users/richardwoollcott/Projects/appmilla_github/taskwright
-# CWD = taskwright repo
+/Users/richardwoollcott/Projects/appmilla_github/guardkit
+# CWD = guardkit repo
 ```
 
 **Analysis**: Two different processes, two different CWDs.
@@ -138,7 +138,7 @@ def _get_output_path(self) -> Path:
 
 - Changed **where templates are written**
 - Did NOT change **where Python runs** (still codebase directory)
-- Did NOT change **where Claude Code runs** (still taskwright repo)
+- Did NOT change **where Claude Code runs** (still guardkit repo)
 - **CWD mismatch persists**
 
 ---
@@ -154,7 +154,7 @@ import uuid
 class AgentBridgeInvoker:
     def __init__(self, phase: int, phase_name: str):
         session_id = str(uuid.uuid4())[:8]
-        temp_dir = Path(tempfile.gettempdir()) / "taskwright"
+        temp_dir = Path(tempfile.gettempdir()) / "guardkit"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         # These paths work from ANY working directory
@@ -172,12 +172,12 @@ class AgentBridgeInvoker:
 │  Python Orchestrator          Claude Code               │
 │  ─────────────────            ───────────                │
 │                                                          │
-│  CWD: /DeCUK.Mobile.MyDrive/  CWD: /taskwright/         │
+│  CWD: /DeCUK.Mobile.MyDrive/  CWD: /guardkit/         │
 │       ↓                            ↓                     │
-│  Write: /tmp/taskwright/      Read: /tmp/taskwright/    │
+│  Write: /tmp/guardkit/      Read: /tmp/guardkit/    │
 │         agent-request-abc.json     agent-request-abc.json│
 │         ✅ SAME ABSOLUTE PATH ✅                         │
-│  Read:  /tmp/taskwright/      Write: /tmp/taskwright/   │
+│  Read:  /tmp/guardkit/      Write: /tmp/guardkit/   │
 │         agent-response-abc.json    agent-response-abc.json│
 │                                                          │
 │  CWD doesn't matter - both use absolute paths!          │
@@ -228,7 +228,7 @@ def __init__(
     phase_name: str = "agent_generation"
 ):
     session_id = str(uuid.uuid4())[:8]
-    temp_dir = Path(tempfile.gettempdir()) / "taskwright"
+    temp_dir = Path(tempfile.gettempdir()) / "guardkit"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     self.request_file = temp_dir / f"agent-request-{session_id}.json"
@@ -268,7 +268,7 @@ After implementing:
 /template-create /path/to/codebase
 
 # Check temp directory
-ls -la /tmp/taskwright/
+ls -la /tmp/guardkit/
 # Should see:
 # agent-request-abc123.json
 # agent-response-abc123.json

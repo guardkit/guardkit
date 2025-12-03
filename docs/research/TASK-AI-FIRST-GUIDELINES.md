@@ -41,7 +41,7 @@ The template-create command degraded from clean AI-first architecture (TASK-077E
 ## Objectives
 
 ### Primary Objective
-Create comprehensive architecture guidelines that prevent hard-coding patterns and enforce AI-first principles across all taskwright components.
+Create comprehensive architecture guidelines that prevent hard-coding patterns and enforce AI-first principles across all guardkit components.
 
 ### Success Criteria
 - [ ] AI-First Design Principles documented

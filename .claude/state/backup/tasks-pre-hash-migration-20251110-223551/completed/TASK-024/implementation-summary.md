@@ -14,7 +14,7 @@
 - Removed epic/feature hierarchy mentions
 - Removed PM tool synchronization instructions
 - Removed requirements traceability examples
-- Updated command examples to Taskwright-only syntax
+- Updated command examples to GuardKit-only syntax
 - Fixed GitHub URLs to https://github.com/requirekit/require-kit
 - Added "Need Formal Requirements?" callout box at end
 - Focused on 5-minute quickstart with simple task workflow
@@ -24,7 +24,7 @@
 - Introduction: Now focuses on lightweight task workflow
 - Quick Start: Simplified to 5-minute setup
 - Development Flow: Removed BDD/EARS phases
-- Command Examples: Only Taskwright parameters (priority, tags)
+- Command Examples: Only GuardKit parameters (priority, tags)
 - Technology Support: Clarified stack templates
 
 **Before/After Example**:
@@ -37,7 +37,7 @@
 /task-link-bdd TASK-001 BDD-001
 /task-work TASK-001 --mode=bdd
 
-# NEW (Taskwright-only):
+# NEW (GuardKit-only):
 /task-create "Add user authentication" priority:high
 /task-work TASK-001 --mode=tdd
 /task-complete TASK-001
@@ -50,8 +50,8 @@
 - Removed PM tool integration section (Jira, Linear, GitHub, Azure DevOps)
 - Removed "Enterprise Features" section entirely
 - Removed EARS/BDD workflow commands
-- Updated command parameter tables to show only Taskwright parameters
-- Fixed installation URL to github.com/appmilla/taskwright
+- Updated command parameter tables to show only GuardKit parameters
+- Fixed installation URL to github.com/appmilla/guardkit
 - Added "Need Formal Requirements?" callout box at end
 - Maintained stack template documentation (unchanged)
 - Kept quality gates and troubleshooting sections
@@ -70,7 +70,7 @@
 - bdd_scenarios ← REMOVED
 ```
 
-**NEW** (Taskwright-only):
+**NEW** (GuardKit-only):
 ```
 /task-create Parameters:
 - title (required)
@@ -78,7 +78,7 @@
 - tags
 ```
 
-### 3. docs/guides/taskwright-workflow.md (4,942 lines → 1,503 lines)
+### 3. docs/guides/guardkit-workflow.md (4,942 lines → 1,503 lines)
 
 **Major Rewrite**: This was the most significant change. Reduced from 4,942 lines to 1,503 lines (70% reduction).
 
@@ -90,7 +90,7 @@
 - Removed epic/feature hierarchy sections
 - Removed PM tool integration sections
 - Removed "Enterprise Agentecflow" mentions
-- Renamed to "Taskwright Workflow Guide"
+- Renamed to "GuardKit Workflow Guide"
 - Updated version to 2.0.0
 - Streamlined table of contents (4 parts instead of 6)
 - Focused on 9 core workflow phases (kept)
@@ -109,7 +109,7 @@ Plain AI ←─── Agentecflow Lite ───→ Full Spec-Kit
 ✗ No gates   ✓ Quality gates      ✓ EARS/BDD/PM
 ```
 
-**NEW** (Taskwright-only):
+**NEW** (GuardKit-only):
 ```
 BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
             ↓              ↓
@@ -128,11 +128,11 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 
 ### Link Verification
 ✅ All GitHub URLs point to correct repositories:
-- Taskwright: https://github.com/appmilla/taskwright
+- GuardKit: https://github.com/appmilla/guardkit
 - RequireKit: https://github.com/requirekit/require-kit
 
 ### Command Syntax Verification
-✅ All command examples use Taskwright-only syntax:
+✅ All command examples use GuardKit-only syntax:
 - `/task-create` (only title, priority, tags)
 - `/task-work` (only --mode, --design-only, --implement-only)
 - `/task-complete`
@@ -151,13 +151,13 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 ✅ Each guide has clear focus:
 - **GETTING-STARTED.md**: 5-minute quickstart, first-time users
 - **QUICK_REFERENCE.md**: Command cheat sheet, parameter reference
-- **taskwright-workflow.md**: Complete workflow documentation, deep dives
+- **guardkit-workflow.md**: Complete workflow documentation, deep dives
 
 ### DRY Principle Compliance
 ✅ No command syntax duplication across guides:
 - GETTING-STARTED: Conceptual examples with context
 - QUICK_REFERENCE: Parameter tables only
-- taskwright-workflow: Workflow phase examples only
+- guardkit-workflow: Workflow phase examples only
 
 ## Removed Features Summary
 
@@ -172,7 +172,7 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 8. **Requirements Commands**: /gather-requirements, /formalize-ears, /generate-bdd
 9. **Linking Commands**: /task-link-requirements, /task-link-bdd, /epic-create, /feature-create
 
-### Preserved Features (Taskwright Core):
+### Preserved Features (GuardKit Core):
 1. **3-Step Workflow**: /task-create → /task-work → /task-complete
 2. **Quality Gates**: Architectural review, test enforcement, coverage
 3. **Complexity Evaluation**: 1-10 scale, auto-proceed routing
@@ -209,10 +209,10 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 - ✅ Remove epic/feature hierarchy examples
 - ✅ Remove PM tool synchronization instructions
 - ✅ Remove requirements traceability examples
-- ✅ Update command examples to Taskwright-only syntax
+- ✅ Update command examples to GuardKit-only syntax
 - ✅ Fix GitHub URLs to https://github.com/requirekit/require-kit
 - ✅ Add "Need requirements management?" callout boxes
-- ✅ Ensure workflow diagrams show Taskwright-only flow
+- ✅ Ensure workflow diagrams show GuardKit-only flow
 - ✅ Verify all command examples work without RequireKit
 
 ## Metrics
@@ -243,7 +243,7 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 ## Notes
 
 - All changes align with architectural review recommendations (Score: 72/100 → Approved with Recommendations)
-- Documentation now clearly distinguishes Taskwright (lightweight) from RequireKit (formal requirements)
-- Users can seamlessly graduate from Taskwright to RequireKit when needed
-- No Taskwright-native features were removed (only RequireKit-specific features)
+- Documentation now clearly distinguishes GuardKit (lightweight) from RequireKit (formal requirements)
+- Users can seamlessly graduate from GuardKit to RequireKit when needed
+- No GuardKit-native features were removed (only RequireKit-specific features)
 - Workflow phases (9 phases) remain unchanged and fully documented

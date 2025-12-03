@@ -37,7 +37,7 @@ test_results:
 
 ## Executive Summary
 
-Evaluate the current greenfield project initialization workflow (likely `taskwright init` or similar Q&A-based command) and assess whether it can benefit from the extensive improvements made to `/template-create`. The goal is to identify gaps, opportunities, and determine if the greenfield workflow is fit for purpose or needs enhancement.
+Evaluate the current greenfield project initialization workflow (likely `guardkit init` or similar Q&A-based command) and assess whether it can benefit from the extensive improvements made to `/template-create`. The goal is to identify gaps, opportunities, and determine if the greenfield workflow is fit for purpose or needs enhancement.
 
 ## Context and Background
 
@@ -78,7 +78,7 @@ This suggests:
 ## Scope of Review
 
 ### 1. Discovery Phase
-- **Find the command**: Locate the actual greenfield initialization command (e.g., `taskwright init`, `/init`, `/greenfield-create`)
+- **Find the command**: Locate the actual greenfield initialization command (e.g., `guardkit init`, `/init`, `/greenfield-create`)
 - **Read implementation**: Review the Q&A session logic (`greenfield_qa_session.py` exists in `lib/`)
 - **Compare architecture**: Map greenfield workflow to `/template-create` phases
 
@@ -204,7 +204,7 @@ Review UX considerations:
 ### Key Files to Review
 - `installer/global/lib/greenfield_qa_session.py` (exists)
 - `installer/global/commands/*.md` (check for greenfield-related commands)
-- `installer/scripts/taskwright` or `installer/scripts/taskwright-init` (CLI entry points)
+- `installer/scripts/guardkit` or `installer/scripts/guardkit-init` (CLI entry points)
 - Recent changes to `/template-create` (TASK-STND-773D, TASK-UX-3A8D)
 
 ### Reference Documentation

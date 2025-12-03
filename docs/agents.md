@@ -4,7 +4,7 @@ AI agent discovery, enhancement workflow, and boundary sections.
 
 ## Agent Discovery
 
-Taskwright uses AI-powered agent discovery to automatically match tasks to appropriate specialists based on metadata.
+GuardKit uses AI-powered agent discovery to automatically match tasks to appropriate specialists based on metadata.
 
 ### How It Works
 
@@ -119,7 +119,7 @@ All enhanced agents include **ALWAYS/NEVER/ASK boundary sections** (GitHub best 
 - ⚠️ Flaky tests detected: Ask if should quarantine or fix immediately
 ```
 
-**[Agent Enhancement with Boundary Sections](https://github.com/taskwright-dev/taskwright/blob/main/CLAUDE.md#agent-enhancement-with-boundary-sections)** - Complete documentation.
+**[Agent Enhancement with Boundary Sections](https://github.com/guardkit/guardkit/blob/main/CLAUDE.md#agent-enhancement-with-boundary-sections)** - Complete documentation.
 
 ## Guides
 
@@ -141,9 +141,9 @@ Based on [analysis of 2,500+ repositories](https://github.blog/ai-and-ml/github-
 
 ## Commands
 
-- **[/agent-format](https://github.com/taskwright-dev/taskwright/blob/main/installer/global/commands/agent-format.md)**: Format agent to template standards
-- **[/agent-enhance](https://github.com/taskwright-dev/taskwright/blob/main/installer/global/commands/agent-enhance.md)**: Project-specific enhancement
-- **[/agent-validate](https://github.com/taskwright-dev/taskwright/blob/main/installer/global/commands/agent-validate.md)**: Quality validation
+- **[/agent-format](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-format.md)**: Format agent to template standards
+- **[/agent-enhance](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-enhance.md)**: Project-specific enhancement
+- **[/agent-validate](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-validate.md)**: Quality validation
 
 ---
 

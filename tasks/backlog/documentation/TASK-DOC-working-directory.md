@@ -6,7 +6,7 @@
 
 ## Problem
 
-README.md has a prominent warning about running commands from the project root directory (lines 149-155), not from the Taskwright installation directory. This critical user guidance should be in the MkDocs Getting Started guide.
+README.md has a prominent warning about running commands from the project root directory (lines 149-155), not from the GuardKit installation directory. This critical user guidance should be in the MkDocs Getting Started guide.
 
 ## Current State
 
@@ -43,7 +43,7 @@ README.md has a prominent warning about running commands from the project root d
 
 ```markdown
 !!! warning "Working Directory"
-    Always run `/task-work` from your **project root directory** (where your code lives), not from the Taskwright installation directory. The command uses your current directory to detect the tech stack and create files.
+    Always run `/task-work` from your **project root directory** (where your code lives), not from the GuardKit installation directory. The command uses your current directory to detect the tech stack and create files.
 
     ```bash
     cd /path/to/your/project  # ✅ Navigate to project root first

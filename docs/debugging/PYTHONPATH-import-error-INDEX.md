@@ -132,7 +132,7 @@ Claude Code executes Python orchestrators directly without processing PYTHONPATH
 **Just fix it right now**
 → Immediate workaround:
 ```bash
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /template-create --name test
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template-create --name test
 ```
 
 **Implement permanent fix**
@@ -172,7 +172,7 @@ docs/debugging/
 
 **Environment Discovery**
 - Verified `~/.agentecflow/commands/` is regular directory (not symlink)
-- Confirmed Python path doesn't include taskwright repo
+- Confirmed Python path doesn't include guardkit repo
 - Found comprehensive PYTHONPATH setup in markdown
 
 **Root Cause Identification**
@@ -196,7 +196,7 @@ docs/debugging/
 
 ### Installation Model
 ```
-taskwright/                    # Git repository
+guardkit/                    # Git repository
 ├── installer/global/
 │   ├── commands/lib/
 │   └── lib/
@@ -251,7 +251,7 @@ Current architecture is cleaner and maintainable.
 1. **Direct execution** (no PYTHONPATH)
 2. **With manual PYTHONPATH** (compatibility)
 3. **From different directories** (portability)
-4. **Error handling** (taskwright not found)
+4. **Error handling** (guardkit not found)
 5. **Full workflow** (end-to-end)
 
 ### Test Commands
@@ -260,14 +260,14 @@ Current architecture is cleaner and maintainable.
 cd /tmp && /template-create --name test1 --dry-run
 
 # Test 2: Manual PYTHONPATH
-PYTHONPATH="/path/to/taskwright" /template-create --name test2 --dry-run
+PYTHONPATH="/path/to/guardkit" /template-create --name test2 --dry-run
 
 # Test 3: Different directories
 cd / && /template-create --name test3 --dry-run
 
 # Test 4: Error message
-mv taskwright{,.bak} && /template-create --name test4
-mv taskwright{.bak,}
+mv guardkit{,.bak} && /template-create --name test4
+mv guardkit{.bak,}
 
 # Test 5: Full workflow
 /template-create --name test5
@@ -313,7 +313,7 @@ mv taskwright{.bak,}
    ```python
    """
    PYTHONPATH Requirements:
-   - Auto-discovers taskwright installation
+   - Auto-discovers guardkit installation
    - Falls back to PYTHONPATH env var
    """
    ```
@@ -355,7 +355,7 @@ Result: Only `template_create_orchestrator.py` affected
 ## Questions & Answers
 
 **Q: Why did the workaround succeed?**
-A: Manual PYTHONPATH allowed Python to find `installer` package in taskwright repo.
+A: Manual PYTHONPATH allowed Python to find `installer` package in guardkit repo.
 
 **Q: Why wasn't the markdown setup code executed?**
 A: Claude Code directly executes orchestrator script without processing markdown setup code.

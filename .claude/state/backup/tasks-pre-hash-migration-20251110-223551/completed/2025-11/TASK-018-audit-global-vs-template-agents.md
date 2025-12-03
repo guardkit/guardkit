@@ -120,7 +120,7 @@ ls -1 installer/global/templates/python/agents/
 ```bash
 # Test dotnet-microservice init
 cd /tmp/test-dotnet
-taskwright init dotnet-microservice
+guardkit init dotnet-microservice
 
 # Verify NO python-mcp-specialist in agents
 ls .claude/agents/ | grep python-mcp
@@ -128,7 +128,7 @@ ls .claude/agents/ | grep python-mcp
 
 # Test python init
 cd /tmp/test-python
-taskwright init python
+guardkit init python
 
 # Verify python-mcp-specialist IS present
 ls .claude/agents/python-mcp-specialist.md
@@ -198,7 +198,7 @@ fi
 ## Related Issues
 
 - User reported: "python mcp specialist agent in dotnet-microservice project"
-- This is part of the larger cleanup from splitting agentecflow → taskwright + require-kit
+- This is part of the larger cleanup from splitting agentecflow → guardkit + require-kit
 
 ---
 

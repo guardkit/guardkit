@@ -1,16 +1,16 @@
-# Getting Started with Taskwright
+# Getting Started with GuardKit
 
 ## Welcome to Lightweight Task Workflow!
 
-Taskwright is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. Work on individual tasks with automatic architectural review, test enforcement, and quality verification.
+GuardKit is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. Work on individual tasks with automatic architectural review, test enforcement, and quality verification.
 
 ## Quick Start (5 Minutes!)
 
 ### Step 1: Initialize Your Project
 ```bash
 # Clone and setup
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
 ```
@@ -37,7 +37,7 @@ That's it! The `/task-work` command handles planning, implementation, architectu
 docs/
 ├── guides/
 │   ├── GETTING-STARTED.md         # This guide (START HERE!)
-│   ├── taskwright-workflow.md     # Complete workflow guide
+│   ├── guardkit-workflow.md     # Complete workflow guide
 │   ├── creating-local-templates.md # Template customization
 │   └── template-philosophy.md     # Why these templates?
 ├── workflows/
@@ -47,7 +47,7 @@ docs/
 └── Landing pages: concepts.md, advanced.md, templates.md, agents.md
 ```
 
-## What is Taskwright?
+## What is GuardKit?
 
 ### The Core Features
 
@@ -225,7 +225,7 @@ Auto-detected for simple tasks. [Details: task-work.md](../../installer/global/c
 ```bash
 /task-refine TASK-XXX          # Quick fixes after code review
 ```
-For small adjustments without full re-work. [Details: Taskwright Workflow](taskwright-workflow.md#37-iterative-refinement)
+For small adjustments without full re-work. [Details: GuardKit Workflow](guardkit-workflow.md#37-iterative-refinement)
 
 **Analysis & Reviews (decisions, audits)**:
 ```bash
@@ -284,17 +284,17 @@ All enforced automatically by `/task-work`:
 Reference templates for learning and evaluation:
 ```bash
 # Stack-specific reference templates (9+/10 quality)
-taskwright init react-typescript       # React + TypeScript (from Bulletproof React)
-taskwright init fastapi-python         # FastAPI + pytest (from best practices)
-taskwright init nextjs-fullstack       # Next.js App Router (full-stack)
+guardkit init react-typescript       # React + TypeScript (from Bulletproof React)
+guardkit init fastapi-python         # FastAPI + pytest (from best practices)
+guardkit init nextjs-fullstack       # Next.js App Router (full-stack)
 
 # Language-agnostic template (8+/10 quality)
-taskwright init default                # Go, Rust, Ruby, Elixir, PHP, etc.
+guardkit init default                # Go, Rust, Ruby, Elixir, PHP, etc.
 
 # For production: Create from your codebase
 cd your-production-codebase
 /template-create
-taskwright init your-custom-template
+guardkit init your-custom-template
 ```
 
 ## Key Benefits
@@ -325,7 +325,7 @@ taskwright init your-custom-template
 ### Documentation
 - [Claude Code Web Setup](claude-code-web-setup.md) - Using with Claude Code Web (installation, persistence, multi-repo)
 - [Quick Reference](quick-reference.md) - Command cheat sheet
-- [Taskwright Workflow](taskwright-workflow.md) - Complete workflow guide
+- [GuardKit Workflow](guardkit-workflow.md) - Complete workflow guide
 - [Migration Guide](migration-guide.md) - Migrate from old workflow
 - [MCP Optimization](../deep-dives/mcp-integration/mcp-optimization.md) - Library docs integration (Advanced)
 
@@ -338,7 +338,7 @@ taskwright init your-custom-template
 
 ## Start Building!
 
-You now have everything you need to use Taskwright:
+You now have everything you need to use GuardKit:
 
 1. **Create** tasks with clear descriptions
 2. **Work** on them with your preferred mode

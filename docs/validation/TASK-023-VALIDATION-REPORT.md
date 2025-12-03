@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-Comprehensive validation of Taskwright documentation files has been completed with 100% success rate. All automated quality gates have passed:
+Comprehensive validation of GuardKit documentation files has been completed with 100% success rate. All automated quality gates have passed:
 
 - **Total Tests Executed**: 6
 - **Tests Passed**: 6 (100%)
@@ -24,9 +24,9 @@ The documentation is production-ready, accurate, and fully consistent across all
 ## Validation Scope
 
 ### Files Validated
-1. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md`
-2. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md`
-3. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/CLAUDE.md`
+1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md`
+2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md`
+3. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/CLAUDE.md`
 
 ### Validation Dimensions
 - Link validation (broken link detection)
@@ -53,7 +53,7 @@ The documentation is production-ready, accurate, and fully consistent across all
 - docs/guides/creating-local-templates.md ✓
 - docs/guides/maui-template-selection.md ✓
 - docs/guides/mcp-optimization-guide.md ✓
-- docs/guides/taskwright-workflow.md ✓
+- docs/guides/guardkit-workflow.md ✓
 - docs/patterns/domain-layer-pattern.md ✓
 - docs/workflows/complexity-management-workflow.md ✓
 - docs/workflows/design-first-workflow.md ✓
@@ -146,7 +146,7 @@ The documentation is production-ready, accurate, and fully consistent across all
 
 | Section | README | CLAUDE |
 |---------|--------|--------|
-| Taskwright | ✓ OK | ✓ OK |
+| GuardKit | ✓ OK | ✓ OK |
 | Quality First | ✓ OK | ✓ OK |
 | Pragmatic Approach | ✓ OK | ✓ OK |
 | Commands | ✓ OK | ✓ OK |
@@ -276,9 +276,9 @@ This validation report certifies that:
 ### Files Analyzed
 
 ```
-/Users/richardwoollcott/Projects/appmilla_github/taskwright/README.md (308 lines)
-/Users/richardwoollcott/Projects/appmilla_github/taskwright/CLAUDE.md (412 lines)
-/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/CLAUDE.md (42 lines)
+/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md (308 lines)
+/Users/richardwoollcott/Projects/appmilla_github/guardkit/CLAUDE.md (412 lines)
+/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/CLAUDE.md (42 lines)
 ```
 
 ### Documented Commands (Verified)

@@ -20,7 +20,7 @@ task_type: implementation
 ## Context
 
 **Phase**: Phase 1 - Create Shared Agents Repository
-**Goal**: Initialize the `taskwright-dev/shared-agents` repository with proper directory structure and documentation.
+**Goal**: Initialize the `guardkit/shared-agents` repository with proper directory structure and documentation.
 
 ## Description
 
@@ -28,7 +28,7 @@ Create a new GitHub repository for shared agents with the proper directory struc
 
 ## Acceptance Criteria
 
-- [ ] GitHub repository created: `taskwright-dev/shared-agents`
+- [ ] GitHub repository created: `guardkit/shared-agents`
 - [ ] Directory structure created:
   ```
   shared-agents/
@@ -52,20 +52,20 @@ Create a new GitHub repository for shared agents with the proper directory struc
 
 ```bash
 # Using GitHub CLI
-gh repo create taskwright-dev/shared-agents \
+gh repo create guardkit/shared-agents \
   --public \
   --description "Universal AI agents shared between TaskWright and RequireKit" \
-  --homepage "https://github.com/taskwright-dev"
+  --homepage "https://github.com/guardkit"
 
 # Or create via GitHub web UI:
-# https://github.com/organizations/taskwright-dev/repositories/new
+# https://github.com/organizations/guardkit/repositories/new
 ```
 
 ### 2. Clone and Initialize
 
 ```bash
 # Clone repository
-git clone https://github.com/taskwright-dev/shared-agents.git
+git clone https://github.com/guardkit/shared-agents.git
 cd shared-agents
 
 # Create directory structure
@@ -84,7 +84,7 @@ touch docs/.gitkeep
 ```markdown
 # Shared Agents
 
-Universal AI agents shared between [TaskWright](https://github.com/taskwright-dev/taskwright) and [RequireKit](https://github.com/requirekit/require-kit).
+Universal AI agents shared between [TaskWright](https://github.com/guardkit/guardkit) and [RequireKit](https://github.com/requirekit/require-kit).
 
 ## Overview
 
@@ -133,7 +133,7 @@ Releases are published via GitHub Releases and include:
 - `shared-agents.tar.gz` - Agent files and manifest
 - `shared-agents.tar.gz.sha256` - Checksum for integrity verification
 
-View releases: https://github.com/taskwright-dev/shared-agents/releases
+View releases: https://github.com/guardkit/shared-agents/releases
 
 ## Documentation
 
@@ -151,14 +151,14 @@ All releases include SHA256 checksums for integrity verification. See [Security]
 
 ## Support
 
-- **Issues**: https://github.com/taskwright-dev/shared-agents/issues
-- **Discussions**: https://github.com/taskwright-dev/shared-agents/discussions
-- **TaskWright**: https://github.com/taskwright-dev/taskwright
+- **Issues**: https://github.com/guardkit/shared-agents/issues
+- **Discussions**: https://github.com/guardkit/shared-agents/discussions
+- **TaskWright**: https://github.com/guardkit/guardkit
 - **RequireKit**: https://github.com/requirekit/require-kit
 
 ---
 
-**Maintained by**: [TaskWright](https://github.com/taskwright-dev)
+**Maintained by**: [TaskWright](https://github.com/guardkit)
 **Version**: See [CHANGELOG.md](CHANGELOG.md)
 ```
 
@@ -188,8 +188,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SHA256 checksum validation
 - Integration documentation
 
-[Unreleased]: https://github.com/taskwright-dev/shared-agents/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/taskwright-dev/shared-agents/releases/tag/v1.0.0
+[Unreleased]: https://github.com/guardkit/shared-agents/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/guardkit/shared-agents/releases/tag/v1.0.0
 ```
 
 ### 5. Create LICENSE
@@ -268,7 +268,7 @@ git push origin main
 
 ### Validation Checklist
 
-- [ ] Repository accessible at `https://github.com/taskwright-dev/shared-agents`
+- [ ] Repository accessible at `https://github.com/guardkit/shared-agents`
 - [ ] All files committed and pushed
 - [ ] README renders correctly on GitHub
 - [ ] License is MIT (matches TaskWright/RequireKit)
@@ -285,7 +285,7 @@ git push origin main
 - TASK-SHA-P1-004 (Set up GitHub Actions - needs repository)
 
 **External Dependencies**:
-- GitHub organization: `taskwright-dev` (must have permissions)
+- GitHub organization: `guardkit` (must have permissions)
 - Git installed locally
 - GitHub CLI (optional, can use web UI)
 
@@ -320,7 +320,7 @@ git push origin main
 
 **Short description**: "Universal AI agents shared between TaskWright and RequireKit"
 
-**Topics**: `ai`, `agents`, `taskwright`, `requirekit`, `claude-code`
+**Topics**: `ai`, `agents`, `guardkit`, `requirekit`, `claude-code`
 
 ## Related Documents
 

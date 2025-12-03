@@ -33,7 +33,7 @@ vim installer/local/templates/mycompany-maui/manifest.json
 # - Add company libraries
 
 # 4. Use your custom template
-taskwright init mycompany-maui
+guardkit init mycompany-maui
 ```
 
 **That's it!** Your custom template is ready for team use.
@@ -1202,7 +1202,7 @@ Update `manifest.json` with appropriate `technology` value.
 
 ```bash
 # Create project from your template
-taskwright init mycompany-maui --output /tmp/test-project
+guardkit init mycompany-maui --output /tmp/test-project
 
 # Verify generated files
 cd /tmp/test-project

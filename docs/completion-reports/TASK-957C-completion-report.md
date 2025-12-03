@@ -61,7 +61,7 @@
 - **User-Facing**: 172 files (41%) - include in MkDocs
 - **Developer**: 49 files (12%) - accessible in site
 - **Internal**: 230 files (55%) - exclude from site
-- **Templates**: ~52 files (12%) - 5 templates with docs (taskwright-python removed)
+- **Templates**: ~52 files (12%) - 5 templates with docs (guardkit-python removed)
 
 ### Gap Analysis
 - **Missing landing pages**: 13 identified
@@ -110,7 +110,7 @@
 ## Key Findings
 
 ### Documentation Scale
-- Taskwright has extensive documentation (417 files)
+- GuardKit has extensive documentation (417 files)
 - Over half (55%) is internal development artifacts
 - Well-organized with clear separation between user/developer content
 - Templates and agents are well-documented (57 files)
@@ -121,7 +121,7 @@
 - **Deep dives**: 8 technical deep dives (17-34 KB)
 - **Commands**: 19 command specifications (8-85 KB)
 - **Agents**: 19+ agent definitions
-- **Templates**: 5 templates with comprehensive READMEs (taskwright-python removed)
+- **Templates**: 5 templates with comprehensive READMEs (guardkit-python removed)
 
 ### Largest Directories
 1. **research/** - 83 files (exclude from site)
@@ -156,7 +156,7 @@ Note: CLAUDE.md already has correct paths ✅
 
 ### Decision 4: Dedicated Template Section
 **Chosen**: "Templates" top-level nav section
-**Rationale**: 5 templates, ~26 files (taskwright-python removed), core differentiator
+**Rationale**: 5 templates, ~26 files (guardkit-python removed), core differentiator
 
 ### Decision 5: Dedicated Agent Section
 **Chosen**: "Agent System" top-level nav section
@@ -340,7 +340,7 @@ This comprehensive documentation audit provides:
 - Ready-to-use navigation structure
 - 5-phase implementation roadmap
 
-The Taskwright documentation is now ready for professional organization and deployment!
+The GuardKit documentation is now ready for professional organization and deployment!
 
 **Key Achievement**: Transformed a complex 417-file documentation set into a clear, navigable structure in just 1.5 hours.
 
@@ -365,4 +365,4 @@ The Taskwright documentation is now ready for professional organization and depl
 - **Documentation Plan**: docs/planning/documentation-organization-plan.md
 - **Path Fixes**: docs/planning/path-fixes-required.md
 - **Task Summary**: docs/planning/TASK-957C-completion-summary.md
-- **PR Link**: https://github.com/taskwright-dev/taskwright/pull/new/RichWoollcott/audit-docs-structure
+- **PR Link**: https://github.com/guardkit/guardkit/pull/new/RichWoollcott/audit-docs-structure

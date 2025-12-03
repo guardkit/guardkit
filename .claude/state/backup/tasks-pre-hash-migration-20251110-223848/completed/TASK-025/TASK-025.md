@@ -44,7 +44,7 @@ state_transition_reason: "Task completion - all quality gates passed"
 
 ## Description
 
-Review and update workflow documentation and quick-reference cards to ensure they only document Taskwright features. These are reference documents that users consult during development.
+Review and update workflow documentation and quick-reference cards to ensure they only document GuardKit features. These are reference documents that users consult during development.
 
 ## Scope
 
@@ -73,23 +73,23 @@ Review and update workflow documentation and quick-reference cards to ensure the
 - [x] Remove BDD scenario generation workflows
 - [x] Remove epic/feature hierarchy workflows
 - [x] Remove PM tool integration workflows
-- [x] Update workflow diagrams to show Taskwright-only phases
+- [x] Update workflow diagrams to show GuardKit-only phases
 - [x] Fix command syntax examples (remove RequireKit parameters)
 - [x] Add RequireKit integration notes where appropriate
 - [x] Ensure phase descriptions match actual implementation
-- [x] Verify all workflow steps work with Taskwright only
+- [x] Verify all workflow steps work with GuardKit only
 - [x] Update quick-reference cards with accurate command syntax
 
 ## Implementation Summary
 
-Successfully audited and updated workflow documentation to remove RequireKit-specific features and clarify the separation between Taskwright and RequireKit.
+Successfully audited and updated workflow documentation to remove RequireKit-specific features and clarify the separation between GuardKit and RequireKit.
 
 **Key Achievements:**
 - Created reusable audit script ([scripts/audit_requirekit.py](../../scripts/audit_requirekit.py))
 - Updated 5 workflow/quick-reference files with RequireKit integration notes
-- Created comprehensive comparison document ([taskwright-vs-requirekit.md](../../docs/workflows/taskwright-vs-requirekit.md))
-- All command examples now use Taskwright-only syntax
-- Phase numbering clarified (Phase 1 = RequireKit, Phase 2+ = Taskwright)
+- Created comprehensive comparison document ([guardkit-vs-requirekit.md](../../docs/workflows/guardkit-vs-requirekit.md))
+- All command examples now use GuardKit-only syntax
+- Phase numbering clarified (Phase 1 = RequireKit, Phase 2+ = GuardKit)
 
 **Quality Metrics:**
 - Documentation validation: 8/8 categories passed
@@ -143,7 +143,7 @@ Successfully audited and updated workflow documentation to remove RequireKit-spe
 
 ### 4. Quick-Reference Cards
 - Remove RequireKit command parameters
-- Keep Taskwright-only syntax
+- Keep GuardKit-only syntax
 - Add "See RequireKit for..." notes
 
 ## Where to Add RequireKit Links
@@ -157,7 +157,7 @@ Add integration notes in these workflows:
 
 ### Phase Numbering
 
-Current phase numbering assumes Phase 1 (Requirements Analysis) is part of Taskwright, but it's actually in RequireKit. We should either:
+Current phase numbering assumes Phase 1 (Requirements Analysis) is part of GuardKit, but it's actually in RequireKit. We should either:
 
 **Option A**: Renumber phases starting from Phase 1 (Planning)
 - Phase 1: Implementation Planning (was Phase 2)
@@ -172,11 +172,11 @@ Current phase numbering assumes Phase 1 (Requirements Analysis) is part of Taskw
 
 **Option B**: Keep phase numbering but clarify RequireKit phases
 - RequireKit Phase 1: Requirements Analysis (EARS notation)
-- Taskwright Phase 2: Implementation Planning
-- Taskwright Phase 2.5: Architectural Review
+- GuardKit Phase 2: Implementation Planning
+- GuardKit Phase 2.5: Architectural Review
 - (continue as-is)
 
-**Recommendation**: Choose Option B to maintain backward compatibility and make it clear where RequireKit ends and Taskwright begins.
+**Recommendation**: Choose Option B to maintain backward compatibility and make it clear where RequireKit ends and GuardKit begins.
 
 ## Workflow Diagram Updates
 
@@ -192,7 +192,7 @@ Update diagrams to show:
              │
              ↓
 ┌─────────────────────────────────┐
-│ Taskwright Workflow             │
+│ GuardKit Workflow             │
 │ Phase 2: Planning               │
 │ Phase 2.5: Arch Review          │
 │ Phase 3: Implementation         │

@@ -92,7 +92,7 @@ Successfully reinstated the `default` template that was removed in TASK-060, wit
 - ✅ AC2: Quality ≥8.0/10 (achieved 8.5/10)
 - ✅ AC3: All required files present
 - ✅ AC4: Language-agnostic guidance
-- ✅ AC5: Works with taskwright init
+- ✅ AC5: Works with guardkit init
 
 ### Quality Improvements (5/5)
 - ✅ AC6: Clear, actionable CLAUDE.md
@@ -169,8 +169,8 @@ Successfully reinstated the `default` template that was removed in TASK-060, wit
 - Quality improvement sets new standard for future templates
 
 ### User Benefits
-1. **Developers using unsupported languages**: Can now use Taskwright (Go, Rust, Ruby, etc.)
-2. **New users evaluating Taskwright**: Have a safe default to start with
+1. **Developers using unsupported languages**: Can now use GuardKit (Go, Rust, Ruby, etc.)
+2. **New users evaluating GuardKit**: Have a safe default to start with
 3. **Teams**: Can bootstrap custom templates from production code
 4. **Maintainers**: Clear template purpose prevents future confusion
 

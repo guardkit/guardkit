@@ -266,7 +266,7 @@ Based on the patterns in this template:
 - **ErrorOr** - Functional error handling library
 - **.NET MAUI** - Cross-platform framework
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when:
 - Task involves data access or persistence
@@ -504,7 +504,7 @@ Based on the patterns in this template:
 - ErrorOr
 - Async/Await
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when the task involves 
 data access, persistence, or repository patterns.
@@ -918,7 +918,7 @@ technologies:
 
 {self._format_bullet_list(agent_metadata.get('technologies', []))}
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when the task involves {agent_metadata['name'].replace('-', ' ')}.
 """
@@ -1131,7 +1131,7 @@ def test_content_references_templates():
 
 ```bash
 # Create test template
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /template-create --name test-enhanced --validate
 
 # Check agent files are enhanced
@@ -1301,7 +1301,7 @@ public class {{Namespace}}Repository : I{{Namespace}}Repository
 4. **ErrorOr Integration** - Functional error handling over exceptions
    - Benefit: Explicit error handling, type-safe errors
 
-## Usage in Taskwright
+## Usage in GuardKit
 
 This agent is automatically invoked when working with repository patterns and data access.
 ```

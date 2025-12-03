@@ -24,10 +24,10 @@ brew install python@3.11
 
 # Install TaskWright
 mkdir -p ~/Projects && cd ~/Projects
-git clone https://github.com/taskwright-dev/taskwright.git
-cd taskwright
+git clone https://github.com/guardkit/guardkit.git
+cd guardkit
 chmod +x installer/scripts/install.sh && ./installer/scripts/install.sh
-taskwright --version  # Verify
+guardkit --version  # Verify
 
 # Install RequireKit
 cd ~/Projects
@@ -47,7 +47,7 @@ git init
 git config user.name "Test User"
 git config user.email "test@example.com"
 
-taskwright init fastapi-python
+guardkit init fastapi-python
 # Watch for Q&A session - document questions asked
 ```
 
@@ -151,7 +151,7 @@ cd ~/Projects/test-api-service
 ## Conductor (15 min, optional)
 
 ```bash
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 
 /task-create "Test conductor 1"
 /task-create "Test conductor 2"
@@ -168,7 +168,7 @@ cd ../test-wt2
 /task-work TASK-YYYY && /task-complete TASK-YYYY
 
 # Back to main
-cd ~/Projects/taskwright
+cd ~/Projects/guardkit
 ls tasks/completed/  # Both should be here
 git status  # Should be clean
 ```

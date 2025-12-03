@@ -50,7 +50,7 @@ The system evaluates complexity at TWO distinct stages with different purposes:
 
 **Threshold**: Complexity ≥7 triggers split recommendations
 
-> **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with Taskwright.
+> **Note:** For formal requirements management (EARS notation, BDD scenarios, epic hierarchy), see [RequireKit](https://github.com/requirekit/require-kit) which integrates with GuardKit.
 
 **Example**:
 ```bash

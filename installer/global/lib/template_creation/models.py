@@ -33,7 +33,7 @@ class TemplateManifest(BaseModel):
     Template manifest structure (manifest.json)
 
     This is the primary metadata file for templates, used by:
-    - taskwright init command to discover and apply templates
+    - guardkit init command to discover and apply templates
     - Template browsers to display template information
     - Validation systems to ensure template compatibility
     """

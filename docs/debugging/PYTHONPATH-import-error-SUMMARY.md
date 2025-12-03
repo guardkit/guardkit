@@ -9,13 +9,13 @@
 
 ## TL;DR
 
-**Problem**: The `/template-create` command requires `PYTHONPATH=/path/to/taskwright` to work, but this isn't set automatically.
+**Problem**: The `/template-create` command requires `PYTHONPATH=/path/to/guardkit` to work, but this isn't set automatically.
 
 **Why**: Claude Code executes the Python orchestrator directly without running the PYTHONPATH setup code that exists in the command specification markdown.
 
 **Fix**: Move PYTHONPATH discovery from markdown into the orchestrator Python file (30 lines of code).
 
-**Workaround**: `PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" /template-create ...`
+**Workaround**: `PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template-create ...`
 
 ---
 
@@ -27,7 +27,7 @@
 ├─────────────────────────────────────────────────────────────┤
 │ 1. Claude Code reads template-create.md                     │
 │ 2. Extracts PYTHONPATH setup code (lines 1026-1105)        │
-│ 3. Executes setup: discovers taskwright path               │
+│ 3. Executes setup: discovers guardkit path               │
 │ 4. Sets PYTHONPATH environment variable                     │
 │ 5. Executes orchestrator with PYTHONPATH                    │
 │ 6. Orchestrator imports installer.global.* successfully ✅  │
@@ -51,7 +51,7 @@
 
 ### Installation Architecture
 ```
-taskwright/                           # Git repository
+guardkit/                           # Git repository
 ├── installer/
 │   └── global/
 │       ├── commands/lib/
@@ -84,7 +84,7 @@ import installer.global.commands.lib.template_qa_session
 # Resolves to:
 {PYTHONPATH}/installer/global/commands/lib/template_qa_session.py
 
-# Without PYTHONPATH pointing to taskwright repo:
+# Without PYTHONPATH pointing to guardkit repo:
 ModuleNotFoundError: No module named 'installer'
 ```
 
@@ -101,7 +101,7 @@ ModuleNotFoundError: No module named 'installer'
 Template Create Orchestrator
 
 PYTHONPATH Requirements:
-- Requires taskwright repository in PYTHONPATH to import installer.global modules
+- Requires guardkit repository in PYTHONPATH to import installer.global modules
 - Auto-discovers installation using multiple strategies
 - Falls back to PYTHONPATH environment variable if discovery fails
 """
@@ -116,16 +116,16 @@ import os
 
 def _setup_pythonpath():
     """
-    Find taskwright installation and add to sys.path.
+    Find guardkit installation and add to sys.path.
 
     Discovery strategies (in order):
-    1. Follow ~/.agentecflow symlink (if points to taskwright repo)
-    2. Check standard location: ~/Projects/appmilla_github/taskwright
+    1. Follow ~/.agentecflow symlink (if points to guardkit repo)
+    2. Check standard location: ~/Projects/appmilla_github/guardkit
     3. Use PYTHONPATH environment variable
     4. Check current directory
 
     Raises:
-        ImportError: If taskwright installation cannot be found
+        ImportError: If guardkit installation cannot be found
     """
     # Strategy 1: Follow ~/.agentecflow symlink
     agentecflow = Path.home() / ".agentecflow"
@@ -133,13 +133,13 @@ def _setup_pythonpath():
         target = agentecflow.resolve()
         # Symlink might point to repo/.agentecflow, go up one level
         if target.name == ".agentecflow":
-            taskwright_path = target.parent
-            if (taskwright_path / "installer").exists():
-                sys.path.insert(0, str(taskwright_path))
-                return str(taskwright_path)
+            guardkit_path = target.parent
+            if (guardkit_path / "installer").exists():
+                sys.path.insert(0, str(guardkit_path))
+                return str(guardkit_path)
 
     # Strategy 2: Standard installation location
-    standard_path = Path.home() / "Projects" / "appmilla_github" / "taskwright"
+    standard_path = Path.home() / "Projects" / "appmilla_github" / "guardkit"
     if (standard_path / "installer").exists():
         sys.path.insert(0, str(standard_path))
         return str(standard_path)
@@ -161,29 +161,29 @@ def _setup_pythonpath():
     # Not found - provide helpful error
     raise ImportError(
         "\n"
-        "❌ Cannot find taskwright installation directory.\n"
+        "❌ Cannot find guardkit installation directory.\n"
         "\n"
         "Searched locations:\n"
         "  - ~/.agentecflow symlink target\n"
-        "  - ~/Projects/appmilla_github/taskwright\n"
+        "  - ~/Projects/appmilla_github/guardkit\n"
         "  - PYTHONPATH environment variable\n"
         "  - Current directory\n"
         "\n"
         "Troubleshooting:\n"
-        "  1. Verify taskwright is installed:\n"
-        "     ls ~/Projects/appmilla_github/taskwright\n"
+        "  1. Verify guardkit is installed:\n"
+        "     ls ~/Projects/appmilla_github/guardkit\n"
         "\n"
         "  2. Run install script:\n"
-        "     ~/Projects/appmilla_github/taskwright/installer/scripts/install.sh\n"
+        "     ~/Projects/appmilla_github/guardkit/installer/scripts/install.sh\n"
         "\n"
         "  3. Or set PYTHONPATH manually:\n"
-        "     export PYTHONPATH=/path/to/taskwright:$PYTHONPATH\n"
+        "     export PYTHONPATH=/path/to/guardkit:$PYTHONPATH\n"
     )
 
 # Execute PYTHONPATH setup before any imports
 try:
-    _taskwright_path = _setup_pythonpath()
-    print(f"🔍 Taskwright installation: {_taskwright_path}")
+    _guardkit_path = _setup_pythonpath()
+    print(f"🔍 GuardKit installation: {_guardkit_path}")
 except ImportError as e:
     print(str(e))
     sys.exit(2)
@@ -209,7 +209,7 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 - **Quick**: 1-2 hour implementation + testing
 - **User-friendly**: Works automatically, no manual configuration
 - **Compatible**: Still respects manual PYTHONPATH if set
-- **Clear errors**: Helpful troubleshooting if taskwright not found
+- **Clear errors**: Helpful troubleshooting if guardkit not found
 
 ### ❌ Cons
 - **Duplication**: Setup code exists in markdown AND orchestrator
@@ -246,7 +246,7 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 ### After Fix
 - **Affected command**: None
 - **Frequency**: 0% failures (auto-discovery)
-- **Severity**: LOW (only fails if taskwright truly missing)
+- **Severity**: LOW (only fails if guardkit truly missing)
 - **User impact**: Works automatically ✅
 
 ### Other Commands
@@ -272,7 +272,7 @@ $ find ~/.agentecflow/commands/lib -name "*.py" -exec grep -l "installer.global"
 - [ ] Test: Direct execution (no PYTHONPATH)
 - [ ] Test: With manual PYTHONPATH (compatibility)
 - [ ] Test: From different directories (/, /tmp, ~, /project)
-- [ ] Test: Error message when taskwright not found
+- [ ] Test: Error message when guardkit not found
 - [ ] Test: Full template creation workflow
 
 ### Phase 3: Documentation
@@ -298,7 +298,7 @@ cd /tmp
 
 # Test 2: With manual PYTHONPATH (compatibility)
 cd /tmp
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright" \
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" \
   /template-create --name test-manual --dry-run
 # Expected: ✅ Success
 
@@ -307,11 +307,11 @@ cd ~/Documents && /template-create --name test-docs --dry-run
 cd / && /template-create --name test-root --dry-run
 # Expected: ✅ Success in both
 
-# Test 4: Error message (taskwright not found)
-mv ~/Projects/appmilla_github/taskwright{,.bak}
+# Test 4: Error message (guardkit not found)
+mv ~/Projects/appmilla_github/guardkit{,.bak}
 /template-create --name test-error
 # Expected: Clear error message with troubleshooting steps
-mv ~/Projects/appmilla_github/taskwright{.bak,}
+mv ~/Projects/appmilla_github/guardkit{.bak,}
 ```
 
 ---
@@ -336,7 +336,7 @@ mv ~/Projects/appmilla_github/taskwright{.bak,}
 ## Files Affected
 
 ### Primary File
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
   - Add `_setup_pythonpath()` function
   - Call before imports
   - Update docstring

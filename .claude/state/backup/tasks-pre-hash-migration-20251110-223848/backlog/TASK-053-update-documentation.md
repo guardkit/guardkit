@@ -49,7 +49,7 @@ Update all documentation to reflect the new hash-based task ID system. This incl
 **Primary Documentation**:
 1. `CLAUDE.md` - Main project documentation
 2. `installer/global/commands/task-create.md` - Command specification
-3. `docs/guides/taskwright-workflow.md` - Workflow guide
+3. `docs/guides/guardkit-workflow.md` - Workflow guide
 4. `docs/guides/quick-reference.md` - Quick reference
 
 **Secondary Documentation**:
@@ -70,7 +70,7 @@ Update all documentation to reflect the new hash-based task ID system. This incl
 ```markdown
 ## Task ID Format
 
-Taskwright uses hash-based task IDs to prevent duplicates and support concurrent creation:
+GuardKit uses hash-based task IDs to prevent duplicates and support concurrent creation:
 
 ### Format
 - Simple: `TASK-{hash}` (e.g., TASK-a3f8)
@@ -95,7 +95,7 @@ Taskwright uses hash-based task IDs to prevent duplicates and support concurrent
 ```markdown
 ## PM Tool Integration
 
-Taskwright maps internal hash IDs to external sequential IDs automatically:
+GuardKit maps internal hash IDs to external sequential IDs automatically:
 
 Internal ID: TASK-E01-b2c4
 External IDs:
@@ -144,7 +144,7 @@ A: Prevents duplicates in concurrent and distributed workflows. Critical for Con
 A: Users rarely type IDs manually. Shell completion, copy/paste, and IDE integration handle this.
 
 **Q: How do PM tools handle hash IDs?**
-A: They don't see them! Taskwright maps internal hash IDs to external sequential IDs automatically.
+A: They don't see them! GuardKit maps internal hash IDs to external sequential IDs automatically.
 
 **Q: Can I still use sequential IDs?**
 A: No. Hash-based IDs are mandatory to prevent duplicates.
@@ -315,7 +315,7 @@ Search for patterns and update:
 ```markdown
 ## Hash-Based Task IDs (New)
 
-Taskwright uses collision-free hash-based task IDs:
+GuardKit uses collision-free hash-based task IDs:
 
 ### Format
 - Simple: `TASK-a3f8`

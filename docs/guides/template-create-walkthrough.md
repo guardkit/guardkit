@@ -421,7 +421,7 @@ Quality Metrics:
 
 Next Steps:
   1. Review template files
-  2. Test with: taskwright init mycompany-maui-template
+  2. Test with: guardkit init mycompany-maui-template
   3. Customize if needed
   4. Share with team
 ```
@@ -457,7 +457,7 @@ mkdir ~/test-template
 cd ~/test-template
 
 # Initialize with your template
-taskwright init mycompany-maui-template
+guardkit init mycompany-maui-template
 
 # Follow prompts to fill placeholders:
 # ProjectName: TestApp
@@ -877,7 +877,7 @@ HealthcareAPI/
    # Test in clean directory
    mkdir /tmp/test-template
    cd /tmp/test-template
-   taskwright init mycompany-template
+   guardkit init mycompany-template
 
    # Verify builds
    dotnet build
@@ -959,9 +959,9 @@ HealthcareAPI/
 
 ### Get Help
 
-- Report issues: [GitHub Issues](https://github.com/taskwright/taskwright/issues)
-- Ask questions: [Discussions](https://github.com/taskwright/taskwright/discussions)
-- Team Slack: #taskwright-templates
+- Report issues: [GitHub Issues](https://github.com/guardkit/guardkit/issues)
+- Ask questions: [Discussions](https://github.com/guardkit/guardkit/discussions)
+- Team Slack: #guardkit-templates
 
 ---
 

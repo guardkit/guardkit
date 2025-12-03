@@ -6,7 +6,7 @@
 
 ## Problem
 
-The README.md introduces Spec-Oriented Development (SOD) as the core philosophy and differentiator (lines 14-39), but the MkDocs site does not position Taskwright this way.
+The README.md introduces Spec-Oriented Development (SOD) as the core philosophy and differentiator (lines 14-39), but the MkDocs site does not position GuardKit this way.
 
 ## Current State
 
@@ -26,7 +26,7 @@ The README.md introduces Spec-Oriented Development (SOD) as the core philosophy 
 3. Add to MkDocs navigation under "Core Concepts"
 4. Content must include:
    - What is SOD vs SDD
-   - Taskwright's position on the formality spectrum
+   - GuardKit's position on the formality spectrum
    - When to use task descriptions vs formal specs
    - Upgrade path to RequireKit for SDD
    - Comparison table

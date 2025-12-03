@@ -3,8 +3,8 @@
 ## Problem
 
 After installation, two marker files exist:
-- `taskwright.marker.json` (correct, new format)
-- `taskwright.manifest.json` (legacy, should not exist)
+- `guardkit.marker.json` (correct, new format)
+- `guardkit.manifest.json` (legacy, should not exist)
 
 ## Root Cause
 
@@ -62,7 +62,7 @@ curl -sSL .../install.sh | bash
 ls ~/.agentecflow/*.json
 
 # Expected output (only one file):
-# taskwright.marker.json
+# guardkit.marker.json
 ```
 
 ## Implementation Time

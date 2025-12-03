@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-**User Report**: "At the weekend I ran the commands to create the core templates shipping with taskwright and it appeared to work, now it all just seems to have fallen apart."
+**User Report**: "At the weekend I ran the commands to create the core templates shipping with guardkit and it appeared to work, now it all just seems to have fallen apart."
 
 **Command Used**: `/template-create --validate` on DeCUK.Mobile.MyDrive (.NET MAUI project)
 
@@ -76,9 +76,9 @@ Based on git commit history, the following templates were created over the weeke
 | `nextjs-fullstack` | Nov 9, 20:05 | f087c95 | ✅ Complete |
 | `default` | Nov 9, 14:33 | 69b3170 | ✅ Complete |
 | `react-fastapi-monorepo` | Nov 10, 07:12 | ecc4ea8 | ✅ Complete |
-| `taskwright-python` | Nov 10, 09:22 | c8c4b29 | ✅ Complete (later removed - TASK-G6D4) |
+| `guardkit-python` | Nov 10, 09:22 | c8c4b29 | ✅ Complete (later removed - TASK-G6D4) |
 
-**Note**: taskwright-python was later removed in TASK-G6D4 as Taskwright's `.claude/` directory is git-managed.
+**Note**: guardkit-python was later removed in TASK-G6D4 as GuardKit's `.claude/` directory is git-managed.
 
 **Verification**:
 ```bash
@@ -90,10 +90,10 @@ drwxr-xr-x@  8 richardwoollcott  staff   256 Nov  9 16:50 fastapi-python
 drwxr-xr-x@  9 richardwoollcott  staff   288 Nov  9 19:55 nextjs-fullstack
 drwxr-xr-x   9 richardwoollcott  staff   288 Nov  9 22:44 react-fastapi-monorepo
 drwxr-xr-x@ 10 richardwoollcott  staff   320 Nov  9 16:15 react-typescript
-drwxr-xr-x   8 richardwoollcott  staff   256 Nov 10 09:04 taskwright-python
+drwxr-xr-x   8 richardwoollcott  staff   256 Nov 10 09:04 guardkit-python
 ```
 
-**Evidence**: 5 reference templates exist in repository with complete structure (manifest.json, CLAUDE.md, settings.json, validation reports). taskwright-python was later removed.
+**Evidence**: 5 reference templates exist in repository with complete structure (manifest.json, CLAUDE.md, settings.json, validation reports). guardkit-python was later removed.
 
 #### Template Quality Scores
 
@@ -106,7 +106,7 @@ From manifest files:
 | nextjs-fullstack | 8.5/10 | 8/10 | Active |
 | react-fastapi-monorepo | 9.2/10 | 8/10 | Active |
 | default | 8.0/10 | 5/10 | Active |
-| taskwright-python | 8+/10 | TBD | Removed (TASK-G6D4) |
+| guardkit-python | 8+/10 | TBD | Removed (TASK-G6D4) |
 
 **Evidence**: Templates were successfully created with high-quality output.
 
@@ -216,12 +216,12 @@ drwxr-xr-x@  6 richardwoollcott  staff  192 Nov 12 08:48 java-standard-structure
 drwxr-xr-x@  9 richardwoollcott  staff  288 Nov 12 08:46 nextjs-fullstack
 drwxr-xr-x@  9 richardwoollcott  staff  288 Nov 12 08:46 react-fastapi-monorepo
 drwxr-xr-x@ 10 richardwoollcott  staff  320 Nov 12 08:46 react-typescript
-drwxr-xr-x@  8 richardwoollcott  staff  256 Nov 12 08:46 taskwright-python
+drwxr-xr-x@  8 richardwoollcott  staff  256 Nov 12 08:46 guardkit-python
 ```
 
 **Key Observations**:
 1. ✅ All 5 active reference templates copied to personal directory (Nov 12, 08:46)
-2. ✅ taskwright-python present (later removed from repository in TASK-G6D4)
+2. ✅ guardkit-python present (later removed from repository in TASK-G6D4)
 3. ✅ Additional template created: `java-standard-structure-template` (Nov 12, 08:48)
 4. ✅ Timestamps show **recent activity** - templates are being used **today**
 
@@ -388,7 +388,7 @@ ls ~/.agentecflow/agents/ | grep -E "(java|repository|service)"
 ```bash
 # Check if imports work
 cd /tmp
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/taskwright:/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global" \
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit:/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global" \
 python3 -c "
 from lib.codebase_analyzer.models import CodebaseAnalysis
 from lib.template_creation.manifest_generator import ManifestGenerator
@@ -443,9 +443,9 @@ print('✅ Imports successful')
 
 **Test 1: Verify template creation still works**
 ```bash
-cd ~/Projects/appmilla_github/taskwright
+cd ~/Projects/appmilla_github/guardkit
 /template-create --validate --skip-qa
-# Should: Analyze taskwright codebase, generate Python template
+# Should: Analyze guardkit codebase, generate Python template
 ```
 
 **Test 2: Check for import errors**
@@ -453,8 +453,8 @@ cd ~/Projects/appmilla_github/taskwright
 python3 -c "
 import sys
 sys.path.extend([
-    '/Users/richardwoollcott/Projects/appmilla_github/taskwright',
-    '/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global'
+    '/Users/richardwoollcott/Projects/appmilla_github/guardkit',
+    '/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global'
 ])
 from lib.template_creation.manifest_generator import ManifestGenerator
 print('✅ Imports work')
@@ -596,7 +596,7 @@ Nov 12, 08:48: java-standard-structure-template created (personal dir)
 Nov 12, 08:46: Reference templates updated (personal dir)
 Nov 12, 08:46: TASK-BRIDGE-006 completed (Python 3.14 fix)
 Nov 11, XX:XX: TASK-BRIDGE-005 completed (PYTHONPATH fix)
-Nov 10, 09:22: taskwright-python template created
+Nov 10, 09:22: guardkit-python template created
 Nov 10, 09:00: installer/global/templates/ updated
 Nov 10, 07:12: react-fastapi-monorepo template created
 Nov  9, 20:05: nextjs-fullstack template created
@@ -627,7 +627,7 @@ Nov  9, 14:33: default template created
 ├── nextjs-fullstack/
 ├── react-fastapi-monorepo/
 ├── react-typescript/
-└── taskwright-python/
+└── guardkit-python/
 
 # Repository templates (created Nov 9-10)
 installer/global/templates/
@@ -636,7 +636,7 @@ installer/global/templates/
 ├── nextjs-fullstack/
 ├── react-fastapi-monorepo/
 ├── react-typescript/
-└── taskwright-python/
+└── guardkit-python/
 
 # Command file
 ~/.agentecflow/commands/template-create.md  # Symlink to installer/global/commands/
@@ -669,9 +669,9 @@ installer/global/commands/lib/template_create_orchestrator.py
 ```bash
 # The 6 reference templates have comprehensive agent sets
 # Use react-typescript, fastapi-python, etc. as starting points
-taskwright init react-typescript
+guardkit init react-typescript
 # OR
-taskwright init nextjs-fullstack
+guardkit init nextjs-fullstack
 ```
 
 **Option 2: Manually Add Missing Agents** (Workaround)

@@ -33,7 +33,7 @@ OVERALL TEST SUITE: 84.7% PASSED (61/72)
    - 3 RequireKit callouts removed
    - 1 RequireKit callout box added
    - All links valid
-   - All examples use Taskwright-only syntax
+   - All examples use GuardKit-only syntax
 
 2. **docs/guides/QUICK_REFERENCE.md** ✅
    - 464 lines
@@ -41,7 +41,7 @@ OVERALL TEST SUITE: 84.7% PASSED (61/72)
    - All command syntax validated
    - All links valid
 
-3. **docs/guides/taskwright-workflow.md** ✅
+3. **docs/guides/guardkit-workflow.md** ✅
    - 1,503 lines
    - Comprehensive workflow documentation
    - All phases documented (1, 2, 2.5A, 2.5B, 2.7, 2.8, 3, 4, 4.5, 5, 5.5, 6)
@@ -79,7 +79,7 @@ OVERALL TEST SUITE: 84.7% PASSED (61/72)
 **Locations**:
 - GETTING-STARTED.md (line 312) ✅
 - QUICK_REFERENCE.md (line 458) ✅
-- taskwright-workflow.md (line 1497) ✅
+- guardkit-workflow.md (line 1497) ✅
 
 **URL Validation**: All use correct RequireKit repository ✅
 
@@ -117,7 +117,7 @@ OVERALL TEST SUITE: 84.7% PASSED (61/72)
 
 **Issue**: 7 tests flagged incorrectly
 - Phase 6 reference (valid - /task-refine command)
-- Lowercase "taskwright" (valid - CLI command)
+- Lowercase "guardkit" (valid - CLI command)
 
 **Impact**: None
 **Severity**: None (validation logic issue)
