@@ -405,7 +405,7 @@ For a React project, return example_files like:
 - `src/__tests__/Button.test.tsx` (Component test)
 - `src/__tests__/hooks.test.ts` (Hook test)
 
-**Remember**: These become `.template` files that developers scaffold with `taskwright init`.
+**Remember**: These become `.template` files that developers scaffold with `guardkit init`.
 Provide 10-20 diverse, template-worthy files covering all architectural layers.
 
 **VERIFICATION CHECKLIST** before submitting your response:
