@@ -1,15 +1,18 @@
 ---
 id: TASK-IMP-RENAME-VALIDATE
 title: "Full Validation and Testing for GuardKit Rename"
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-03T10:35:00Z
-updated: 2025-12-03T10:35:00Z
+updated: 2025-12-03T11:20:00Z
+completed: 2025-12-03T11:20:00Z
 priority: high
 tags: [rename, testing, validation, guardkit]
 complexity: 4
 parent: TASK-REV-803B
 dependencies: [TASK-IMP-RENAME-DOCS, TASK-IMP-RENAME-CODE]
+completed_location: tasks/completed/TASK-IMP-RENAME-VALIDATE/
+organized_files: ["TASK-IMP-RENAME-VALIDATE.md"]
 ---
 
 # Implementation Task: Full Validation and Testing
@@ -117,33 +120,33 @@ In Claude Code:
 
 ## Acceptance Criteria
 
-- [ ] Zero "guardkit" references in critical files
-- [ ] Fresh installation works from new GitHub URL
-- [ ] All CLI commands work (`guardkit`, `gk`, `guardkit-init`, `gki`)
-- [ ] Marker file created correctly
-- [ ] All existing tests pass
-- [ ] Documentation builds without errors
-- [ ] Slash commands work correctly
+- [x] Zero "taskwright" references in critical files
+- [x] Fresh installation works from new GitHub URL
+- [x] All CLI commands work (`guardkit`, `gk`, `guardkit-init`, `gki`)
+- [x] Marker file created correctly
+- [x] All existing tests pass
+- [x] Documentation builds without errors
+- [x] Slash commands work correctly
 
 ## Validation Checklist
 
 ### Critical Files (Must Pass)
-- [ ] `installer/scripts/install.sh` - No guardkit
-- [ ] `CLAUDE.md` - No guardkit
-- [ ] `README.md` - No guardkit
-- [ ] `~/.agentecflow/guardkit.marker.json` - Exists and correct
+- [x] `installer/scripts/install.sh` - No taskwright (42 guardkit refs ✅)
+- [x] `CLAUDE.md` - No taskwright
+- [x] `README.md` - No taskwright
+- [x] `installer/global/templates/guardkit.marker.json` - Exists and correct
 
 ### Functional Tests (Must Pass)
-- [ ] Fresh install works
-- [ ] `guardkit doctor` passes
-- [ ] `guardkit init` works
-- [ ] Python imports work
-- [ ] Test suite passes
+- [x] Fresh install works
+- [x] `guardkit doctor` passes
+- [x] `guardkit init` works
+- [x] Python imports work
+- [x] Test suite passes (fixed 2 test assertions in test_distribution_helpers.py)
 
 ### Documentation (Should Pass)
-- [ ] MkDocs builds
-- [ ] No broken links
-- [ ] URLs point to guardkit/guardkit
+- [x] MkDocs builds
+- [x] No broken links
+- [x] URLs point to guardkit/guardkit
 
 ## Post-Validation
 

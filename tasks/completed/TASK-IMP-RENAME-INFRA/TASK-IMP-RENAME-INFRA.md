@@ -1,15 +1,18 @@
 ---
 id: TASK-IMP-RENAME-INFRA
 title: "Update Installer, Marker Files, and CLI Commands for GuardKit"
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-03T10:35:00Z
-updated: 2025-12-03T10:35:00Z
+updated: 2025-12-03T11:15:00Z
+completed: 2025-12-03T11:15:00Z
 priority: critical
 tags: [rename, infrastructure, installer, cli, guardkit]
 complexity: 7
 parent: TASK-REV-803B
 dependencies: [TASK-IMP-RENAME-PREP]
+completed_location: tasks/completed/TASK-IMP-RENAME-INFRA/
+organized_files: ["TASK-IMP-RENAME-INFRA.md"]
 ---
 
 # Implementation Task: Update Core Infrastructure
@@ -70,13 +73,13 @@ Files with marker detection:
 
 ## Acceptance Criteria
 
-- [ ] `install.sh` uses new GitHub URL
-- [ ] CLI commands renamed to `guardkit`, `guardkit-init`, `gk`, `gki`
-- [ ] Marker files renamed and content updated
-- [ ] `init-project.sh` updated with new branding
-- [ ] Detection logic updated to find `guardkit.marker.json`
-- [ ] Fresh installation works with new URLs
-- [ ] No "guardkit" references in installer/* (except historical comments)
+- [x] `install.sh` uses new GitHub URL
+- [x] CLI commands renamed to `guardkit`, `guardkit-init`, `gk`, `gki`
+- [x] Marker files renamed and content updated
+- [x] `init-project.sh` updated with new branding
+- [x] Detection logic updated to find `guardkit.marker.json`
+- [x] Fresh installation works with new URLs
+- [x] No "guardkit" references in installer/* (except historical comments)
 
 ## Testing
 

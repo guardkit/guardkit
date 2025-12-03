@@ -17,5 +17,5 @@
   ],
   "integration_model": "bidirectional_optional",
   "description": "Task execution and quality gates for Agentecflow",
-  "homepage": "https://github.com/your-org/guardkit"
+  "homepage": "https://github.com/guardkit/guardkit"
 }

@@ -85,7 +85,7 @@ class TestDistributionHelper:
         assert "test-template" in instructions
         assert "1.0.0" in instructions
         assert "Installation" in instructions
-        assert "taskwright init" in instructions
+        assert "guardkit init" in instructions
 
     def test_generate_usage_instructions_saves_file(self, template_dir):
         """Test usage instructions are saved to file."""
@@ -123,7 +123,7 @@ class TestDistributionHelper:
         guide = helper.generate_sharing_guide(include_registry=True)
 
         assert "Template Registry" in guide
-        assert "taskwright registry" in guide
+        assert "guardkit registry" in guide
 
     def test_generate_sharing_guide_without_registry(self, template_dir):
         """Test sharing guide without registry instructions."""
