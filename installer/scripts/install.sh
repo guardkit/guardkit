@@ -178,9 +178,22 @@ check_prerequisites() {
     
     # Check for Python (REQUIRED for complexity evaluation and task splitting)
     if ! command -v python3 &> /dev/null; then
-        print_error "Python 3 is REQUIRED for complexity evaluation and task splitting features"
-        print_info "GuardKit requires Python 3.7+ for core functionality"
-        print_info "Please install Python 3.7 or higher and try again"
+        print_error "Python 3.10+ is REQUIRED for GuardKit"
+        echo ""
+        print_info "Install Python using one of these methods:"
+        echo ""
+        echo "  1. Official Installer (Recommended - easiest)"
+        echo "     Download from: https://www.python.org/downloads/"
+        echo "     Run the installer, then restart your terminal"
+        echo ""
+        echo "  2. Homebrew (if already installed)"
+        echo "     brew install python@3.13"
+        echo ""
+        echo "  3. pyenv (for developers managing multiple versions)"
+        echo "     curl https://pyenv.run | bash"
+        echo "     pyenv install 3.13 && pyenv global 3.13"
+        echo "     Note: Requires shell configuration - see pyenv docs"
+        echo ""
         missing_deps+=("python3")
     else
         # Check Python version
@@ -188,13 +201,24 @@ check_prerequisites() {
         python_major=$(echo $python_version | cut -d. -f1)
         python_minor=$(echo $python_version | cut -d. -f2)
 
-        if [ "$python_major" -lt 3 ] || ([ "$python_major" -eq 3 ] && [ "$python_minor" -lt 7 ]); then
-            print_error "Python 3.7+ is required (found: Python $python_version)"
-            print_info "Please upgrade Python to version 3.7 or higher"
-            print_info "Complexity evaluation features require Python 3.7+ standard library"
-            missing_deps+=("python3.7+")
+        if [ "$python_major" -lt 3 ] || ([ "$python_major" -eq 3 ] && [ "$python_minor" -lt 10 ]); then
+            print_error "Python 3.10+ is required (found: Python $python_version)"
+            echo ""
+            print_info "Upgrade Python using one of these methods:"
+            echo ""
+            echo "  1. Official Installer (Recommended - easiest)"
+            echo "     Download from: https://www.python.org/downloads/"
+            echo "     Run the installer, then restart your terminal"
+            echo ""
+            echo "  2. Homebrew"
+            echo "     brew install python@3.13 && brew link python@3.13"
+            echo ""
+            echo "  3. pyenv"
+            echo "     pyenv install 3.13 && pyenv global 3.13"
+            echo ""
+            missing_deps+=("python3.10+")
         else
-            print_success "Python found: Python $python_version (>= 3.7 required)"
+            print_success "Python found: Python $python_version (>= 3.10 required)"
 
             # Check for pip (needed for Jinja2 and python-frontmatter)
             if ! command -v pip3 &> /dev/null; then
