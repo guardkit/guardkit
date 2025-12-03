@@ -1,10 +1,10 @@
 ---
 id: TASK-IMP-RENAME-CODE
 title: "Update Python Code and Templates for GuardKit Rename"
-status: in_progress
+status: in_review
 task_type: implementation
 created: 2025-12-03T10:35:00Z
-updated: 2025-12-03T10:35:00Z
+updated: 2025-12-03T10:47:00Z
 priority: high
 tags: [rename, code, templates, guardkit]
 complexity: 5
