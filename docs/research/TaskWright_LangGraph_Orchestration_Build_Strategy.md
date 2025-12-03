@@ -1,4 +1,14 @@
-# TaskWright LangGraph Orchestration: Build Strategy Analysis
+# TaskWright LangGraph Workflow Automation: Build Strategy Analysis
+
+## Terminology Note
+
+This document discusses workflow automation options, comparing LangGraph with the Claude Agent SDK.
+The term "orchestration" appears in places but the more accurate description is **workflow automation** -
+automating a developer's manual process, not multi-agent swarm coordination.
+
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
+
+---
 
 ## The "Dogfooding Discovery" vs "Spec-First Build" Tradeoff
 
@@ -20,69 +30,100 @@ This is no longer exploratory - it's **implementation of a known architecture**.
 
 ---
 
-## Critical Clarification: What LangGraph Can and Cannot Do
+## Critical Update: Claude Agent SDK Changes Everything
 
-### What LangGraph CANNOT Do
+### NEW: Claude Agent SDK (Recommended Path)
 
-**LangGraph cannot directly call Claude Code slash commands like `/task-create`, `/task-work`, `/task-review`.**
+**The Claude Agent SDK can directly invoke TaskWright slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
+
+See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
+
+```python
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+# This DIRECTLY invokes your /task-work command!
+async for message in query(
+    prompt=f"/task-work {task_id}",
+    options=ClaudeAgentOptions(cwd=project_path)
+):
+    print(message)
+```
+
+**Effort**: ~1 week (vs 3-4 weeks for LangGraph reimplementation)
+
+### What LangGraph CANNOT Do (Still True)
+
+**LangGraph cannot directly call Claude Code slash commands** - but the Claude Agent SDK can!
 
 Those slash commands are:
-1. **Claude Code UI constructs** - They're interpreted by Claude Code's interface, not executable from external Python code
-2. **Prompt injections** - They trigger Claude to read the corresponding `.md` command file and follow its instructions
-3. **Not CLI commands** - There's no `taskwright /task-create` binary that LangGraph could subprocess
+1. **Claude Code UI constructs** - Interpreted by Claude Code's interface
+2. **Prompt injections** - Trigger Claude to read `.md` command files
+3. **Not CLI commands** - No `taskwright /task-create` binary exists
 
-### What This Means
+**However**, the Claude Agent SDK provides the programmatic bridge we need.
 
-TaskWright's logic currently lives in **markdown command specifications** (`.claude/commands/*.md`) that instruct Claude how to behave. These are not callable Python functions. Building a LangGraph orchestrator means **reimplementing the workflow logic in Python**, not wrapping the existing slash commands.
+### The Four Realistic Options (Updated)
 
-### The Three Realistic Options
+#### Option A: Claude Agent SDK (NEW - Fastest Path) ⭐
+- Build Python orchestrator that invokes existing slash commands via SDK
+- Uses existing `.claude/commands/*.md` without modification
+- Uses existing `.claude/agents/*.md` automatically
+- **Effort**: ~1 week
+- **Trade-off**: Vendor lock-in to Anthropic
+- **Benefit**: Fastest path, reuses all existing work
 
-#### Option A: LangGraph as a Parallel Implementation (Recommended)
-- Build a Python LangGraph workflow that does what `/task-work` does
-- It calls Anthropic API for the AI-powered parts (planning, code generation, review)
-- It manages state, checkpoints, and retries explicitly
-- **Effort**: 2-3 weeks to replicate core workflow
-- **Benefit**: Clean architecture, testable, deployable independently of Claude Code
+#### Option B: LangGraph as a Parallel Implementation
+- Build a Python LangGraph workflow that reimplements `/task-work`
+- Calls Anthropic API for AI-powered parts
+- Manages state, checkpoints, and retries explicitly
+- **Effort**: 3-4 weeks
+- **Benefit**: Multi-LLM ready, clean architecture
 
-#### Option B: Continue with Claude Code, Add LangGraph Later
+#### Option C: Continue with Claude Code, Add Orchestration Later
 - Keep using `/task-work` as-is for implementation
-- Use RequireKit for the specification layer (this works today)
-- Build LangGraph orchestrator as a future phase when needed
-- **Effort**: Zero for now, defer orchestrator work
+- Use RequireKit for specification layer
+- Build orchestrator as a future phase
+- **Effort**: Zero for now
 - **Benefit**: Ship features now, defer complexity
 
-#### Option C: Hybrid - LangGraph for Outer Loop, Claude Code for Inner (Complex)
-```
-LangGraph Orchestrator (Python)
-    │
-    ├── Phase: Requirements ──► RequireKit commands (if extracted to Python)
-    │
-    ├── Phase: Task Creation ──► Write task markdown files directly
-    │
-    ├── Phase: Implementation ──► Call Anthropic API directly
-    │                              (NOT Claude Code - it has no programmatic API)
-    │
-    └── Phase: Review ──► Parse outputs, update state
-```
+#### Option D: Phased Approach (Recommended) ⭐
+1. **Phase 1**: Claude Agent SDK orchestrator (~1 week)
+2. **Phase 2**: Validate patterns in production
+3. **Phase 3**: LangGraph reimplementation IF multi-LLM needed
 
-The challenge with Option C is that Claude Code doesn't have a clean programmatic API - it's an interactive tool designed for human use.
+This validates orchestration patterns before committing to full reimplementation.
 
 ---
 
-## Recommended Path: Parallel Implementation
+## Recommended Path: Claude Agent SDK First, LangGraph Later
 
-The LangGraph orchestrator should be built as a **new implementation** that:
+### Phase 1: Claude Agent SDK Orchestrator (~1 week)
 
-1. **Reads the same task files** - Compatible with existing `.claude/tasks/` structure
-2. **Follows the same phases** - 2 → 2.5B → 2.7 → 2.8 → 3 → 4/4.5 → 5/5.5
-3. **Uses the same agent specs** - Reads `.claude/agents/*.md` for context
-4. **Calls Anthropic API directly** - For planning, implementation, review
-5. **Manages state in LangGraph** - Using SqliteSaver/PostgresSaver
+Build a Python orchestrator that:
 
-This means the LangGraph version and Claude Code version can coexist:
-- Use Claude Code for interactive development (today)
-- Use LangGraph for automated/CI pipelines (future)
-- Same task files, same agent specs, different execution engines
+1. **Invokes existing commands** - `query(prompt="/task-work TASK-XXX")`
+2. **Uses existing task files** - Compatible with `.claude/tasks/` structure
+3. **Uses existing agents** - Auto-detected from `.claude/agents/`
+4. **Manages state in SQLite** - Track checkpoint progress
+5. **Handles human checkpoints** - Parse messages, prompt for approval
+
+### Phase 2: Validate and Enhance (~2 weeks)
+
+1. Add `--design-only` and `--implement-only` flags
+2. Add progress streaming and better UI
+3. Add retry logic and error handling
+4. Document the integration
+
+### Phase 3: LangGraph IF Needed (Future)
+
+If you need multi-LLM support:
+
+1. **Extract workflow patterns** learned from SDK usage
+2. **Reimplement as LangGraph StateGraph**
+3. **Add multi-LLM support** (OpenAI, Gemini, etc.)
+4. **Keep same CLI interface** - just swap backend
+
+The Claude Agent SDK phase is NOT wasted work - it validates orchestration patterns before committing to reimplementation.
 
 ---
 
@@ -207,11 +248,14 @@ The research document gives us a solid architectural blueprint - now it's about 
 
 ## Related Documents
 
-- [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md)
+- [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
+- [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
+- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
+- [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Orchestration.md)
 - [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
 
 *Generated: December 2025*
-*Updated: December 2025 - Added clarification that LangGraph cannot call Claude Code slash commands*
-*Context: Planning the next phase of TaskWright development - adding LangGraph-based agent orchestration*
+*Updated: December 2025 - Added Claude Agent SDK as fastest path option*
+*Context: Planning the next phase of TaskWright development - adding orchestration capabilities*

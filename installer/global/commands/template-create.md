@@ -1118,9 +1118,183 @@ Planned for future iterations:
 
 ## Command Execution
 
+Execute this command using a checkpoint-resume loop that handles Python-Claude agent bridge communication.
+
+### Execution Loop
+
+When the user invokes `/template-create`, execute this loop:
+
+```
+LOOP (max 5 iterations to prevent infinite loops):
+  1. Run Python orchestrator
+  2. Capture exit code
+  3. IF exit code == 0: SUCCESS - display results and exit loop
+  4. IF exit code == 42: AGENT NEEDED - handle bridge protocol (see below)
+  5. IF exit code == other: ERROR - display error and exit loop
+  6. After handling exit code 42, add --resume flag and continue loop
+```
+
+### Step 1: Run Python Orchestrator
+
 ```bash
-# Execute via symlinked Python script
 python3 ~/.agentecflow/bin/template-create-orchestrator "$@"
 ```
 
-**Note**: This command uses the orchestrator pattern with the entry point in `lib/template_create_orchestrator.py`. The symlink is created as `template-create-orchestrator` (underscores converted to hyphens for consistency).
+Capture the exit code from this command.
+
+### Step 2: Handle Exit Code 42 (NEED_AGENT)
+
+When exit code is 42, Python has written a request file and needs Claude to invoke an agent.
+
+**2a. Read the agent request file:**
+
+```bash
+cat .agent-request.json
+```
+
+The file has this structure:
+```json
+{
+  "request_id": "uuid-string",
+  "version": "1.0",
+  "phase": 6,
+  "phase_name": "agent_generation",
+  "agent_name": "architectural-reviewer",
+  "prompt": "Full prompt text for the agent...",
+  "timeout_seconds": 120,
+  "created_at": "ISO-8601-timestamp",
+  "context": {},
+  "model": null
+}
+```
+
+**2b. Invoke the agent using Task tool:**
+
+Use the Task tool to invoke the agent specified in `agent_name` with the `prompt` from the request file.
+
+Example:
+```
+Task: Invoke the "architectural-reviewer" agent with the prompt from .agent-request.json
+```
+
+Capture the agent's complete response text.
+
+**2c. Write the agent response file:**
+
+Create `.agent-response.json` with this exact structure:
+
+```json
+{
+  "request_id": "<copy from request>",
+  "version": "1.0",
+  "status": "success",
+  "response": "<agent's complete response text as a string>",
+  "error_message": null,
+  "error_type": null,
+  "created_at": "<current ISO-8601 timestamp>",
+  "duration_seconds": <time taken in seconds>,
+  "metadata": {
+    "agent_name": "<copy from request>",
+    "model": "claude-sonnet-4"
+  }
+}
+```
+
+**CRITICAL**: The `response` field MUST be a string, not an object. If the agent returns JSON, serialize it to a string.
+
+**2d. Delete the request file:**
+
+```bash
+rm .agent-request.json
+```
+
+**2e. Re-run orchestrator with --resume flag:**
+
+Add `--resume` to the original arguments and continue the loop:
+
+```bash
+python3 ~/.agentecflow/bin/template-create-orchestrator "$@" --resume
+```
+
+### Step 3: Handle Success (Exit Code 0)
+
+When exit code is 0:
+1. Display the success message from Python's output
+2. Clean up any remaining bridge files:
+   ```bash
+   rm -f .agent-request.json .agent-response.json .template-create-state.json
+   ```
+3. Exit the loop
+
+### Step 4: Handle Errors (Other Exit Codes)
+
+| Exit Code | Meaning | Action |
+|-----------|---------|--------|
+| 0 | SUCCESS | Display results, cleanup, exit |
+| 1 | USER_CANCELLED | Display cancellation message |
+| 2 | CODEBASE_NOT_FOUND | Display error with path |
+| 3 | ANALYSIS_FAILED | Display error, suggest --verbose |
+| 4 | GENERATION_FAILED | Display error |
+| 5 | VALIDATION_FAILED | Display validation errors |
+| 6 | SAVE_FAILED | Display file I/O error |
+| 42 | NEED_AGENT | Handle bridge protocol (loop) |
+| 130 | INTERRUPTED | Display interruption message |
+
+### Error Handling for Bridge Protocol
+
+**If `.agent-request.json` does not exist when exit code is 42:**
+```
+ERROR: Exit code 42 received but no .agent-request.json found.
+This indicates a bug in the orchestrator. Please report this issue.
+```
+
+**If agent invocation fails:**
+Write an error response to `.agent-response.json`:
+```json
+{
+  "request_id": "<from request>",
+  "version": "1.0",
+  "status": "error",
+  "response": null,
+  "error_message": "<error description>",
+  "error_type": "AgentInvocationError",
+  "created_at": "<timestamp>",
+  "duration_seconds": 0,
+  "metadata": {}
+}
+```
+Then continue with `--resume` to let Python handle the fallback.
+
+**If JSON parsing fails:**
+Display error and suggest re-running without --resume:
+```
+ERROR: Failed to parse bridge protocol files.
+Try: rm -f .agent-request.json .agent-response.json .template-create-state.json
+Then re-run: /template-create [original args]
+```
+
+### Example Execution Flow
+
+```
+User: /template-create --path /my/project
+
+[Iteration 1]
+  Run: python3 ~/.agentecflow/bin/template-create-orchestrator --path /my/project
+  Exit code: 42
+
+  Read: .agent-request.json
+  Agent: architectural-reviewer
+  Invoke agent with prompt...
+  Write: .agent-response.json
+  Delete: .agent-request.json
+
+[Iteration 2]
+  Run: python3 ~/.agentecflow/bin/template-create-orchestrator --path /my/project --resume
+  Exit code: 0
+
+  SUCCESS: Template created at ~/.agentecflow/templates/my-project/
+  Cleanup bridge files
+  Exit loop
+```
+
+**Note**: This command uses the orchestrator pattern with checkpoint-resume. The Python orchestrator handles state persistence in `.template-create-state.json`, and the bridge protocol enables AI-powered agent generation that produces 7-8 agents at 90%+ confidence (vs 3 agents at 68% with heuristic fallback).

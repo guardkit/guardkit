@@ -1,27 +1,60 @@
-# AgenticFlow MCP Architecture vs LangGraph Orchestrator: Integration Analysis
+# AgenticFlow Architecture Analysis: MCP Tools vs Workflow Automation
 
-## Executive Summary
+## Terminology Note
 
-This document analyzes the relationship between the original AgenticFlow platform architecture (with Requirements MCP and Engineering MCP servers) and a LangGraph-based orchestrator. The key finding is that **MCPs and LangGraph serve complementary, not overlapping, roles**: MCPs provide capabilities (tools), while LangGraph provides orchestration (workflow control). The recommended architecture uses LangGraph as the central orchestrator that calls MCP servers as tools.
+This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
+TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
+
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
 
 ---
 
-## Critical Clarification: Implementation Reality
+## Executive Summary
 
-### What LangGraph CANNOT Do
+This document analyzes the relationship between the original AgenticFlow platform architecture (with Requirements MCP and Engineering MCP servers) and workflow automation approaches. The key finding is that **MCPs and workflow automation serve complementary, not overlapping, roles**: MCPs provide capabilities (tools), while workflow automation provides process control.
 
-**LangGraph cannot directly call Claude Code slash commands like `/task-create`, `/task-work`, `/task-review`.**
+---
+
+## Critical Update: Claude Agent SDK Changes the Equation
+
+### NEW: Claude Agent SDK (Fastest Path)
+
+**The Claude Agent SDK can directly invoke TaskWright slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
+
+See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
+
+```python
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+# This DIRECTLY invokes your /task-work command!
+async for message in query(
+    prompt=f"/task-work {task_id}",
+    options=ClaudeAgentOptions(cwd=project_path)
+):
+    print(message)
+```
+
+**Effort**: ~1 week (vs 3-4 weeks for LangGraph reimplementation)
+
+### What LangGraph CANNOT Do (Still True)
+
+**LangGraph cannot directly call Claude Code slash commands** - but the Claude Agent SDK can!
 
 Those slash commands are:
-1. **Claude Code UI constructs** - They're interpreted by Claude Code's interface, not executable from external Python code
-2. **Prompt injections** - They trigger Claude to read the corresponding `.md` command file and follow its instructions
-3. **Not CLI commands** - There's no `taskwright /task-create` binary that LangGraph could subprocess
+1. **Claude Code UI constructs** - Interpreted by Claude Code's interface
+2. **Prompt injections** - Trigger Claude to read `.md` command files
+3. **Not CLI commands** - No executable binary exists
 
-### What This Means for Architecture
+**However**, the Claude Agent SDK provides the programmatic bridge we need.
 
-The LangGraph orchestrator must be a **reimplementation** of TaskWright's workflow logic in Python, not a wrapper around existing slash commands. This is more work than initially estimated, but provides cleaner architecture and better testability.
+### Updated Recommendation
 
-The good news: TaskWright's workflow logic is well-documented in the command `.md` files, so the reimplementation has a clear specification to follow.
+The original analysis of LangGraph vs MCP remains valid, but add a new option:
+
+1. **Phase 1**: Claude Agent SDK orchestrator (~1 week) - Fastest path
+2. **Phase 2**: Validate patterns in production
+3. **Phase 3**: LangGraph reimplementation IF multi-LLM support needed
+4. **Phase 4**: MCP extraction when team-scale centralization needed
 
 ---
 
@@ -293,23 +326,28 @@ The original AgenticFlow MCP architecture and LangGraph orchestration are **comp
 
 - **MCPs** = What can be done (capabilities, tools)
 - **LangGraph** = How and when things are done (orchestration, state, checkpoints)
+- **Claude Agent SDK** = Fastest path to orchestration using existing commands
 
-The cleanest path forward is:
-1. Build LangGraph orchestrator as a **reimplementation** calling Anthropic API directly (Phase 1)
-2. Extract MCP servers when team-scale centralization is needed (Phase 2)
-3. The workflow design remains stable across all phases
+The cleanest path forward is now:
+1. **Claude Agent SDK orchestrator** (~1 week) - Uses existing commands directly
+2. Validate orchestration patterns in production
+3. **LangGraph reimplementation** IF multi-LLM support needed (3-4 weeks)
+4. **MCP extraction** when team-scale centralization is needed
 
-**Key clarification**: The LangGraph orchestrator cannot wrap Claude Code slash commands - it must reimplement the workflow logic in Python. This is more work (~3-4 weeks) but provides a cleaner, more testable, and more deployable architecture.
+**Key update**: The Claude Agent SDK can invoke Claude Code slash commands programmatically, providing a dramatically faster path to orchestration than LangGraph reimplementation. LangGraph remains valuable for multi-LLM scenarios and enterprise features.
 
 ---
 
 ## Related Documents
 
+- [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
+- [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
+- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
 - [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md)
 - [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
 
 ---
 
 *Generated: December 2025*
-*Updated: December 2025 - Added clarification that LangGraph cannot call Claude Code slash commands*
+*Updated: December 2025 - Added Claude Agent SDK as fastest path option*
 *Context: Analyzing the relationship between original AgenticFlow MCP architecture and LangGraph orchestration for TaskWright*

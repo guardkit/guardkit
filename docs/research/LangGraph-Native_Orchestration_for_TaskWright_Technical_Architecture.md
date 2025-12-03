@@ -1,21 +1,50 @@
-# LangGraph-Native Orchestration for TaskWright: Technical Architecture
+# LangGraph-Native Workflow Automation for TaskWright: Technical Architecture
+
+## Terminology Note
+
+This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
+TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
+
+See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#taskwright-vs-swarm-systems) for the distinction.
+
+---
 
 **LangGraph provides an excellent architectural fit for TaskWright's 7-phase workflow**, offering native support for human-in-the-loop checkpoints, complexity-based routing, and long-running workflow persistence. The framework's `interrupt()` function maps directly to TaskWright's approval gates, while `StateGraph` naturally models the phase-to-phase transitions.
 
 ---
 
-## Critical Clarification: This Is a Reimplementation
+## Critical Update: Claude Agent SDK Provides a Faster Path
 
-**Important**: LangGraph cannot call Claude Code slash commands like `/task-work` or `/task-create`. Those are Claude Code UI constructs that trigger Claude to read markdown command files - they are not executable CLI commands.
+**Important Update**: While LangGraph cannot call Claude Code slash commands directly, the **Claude Agent SDK can**! This dramatically changes the effort equation.
 
-This means the LangGraph orchestrator must be a **reimplementation** of TaskWright's workflow logic in Python, calling the Anthropic API directly for AI operations. This is more work than wrapping existing commands, but provides:
+See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
 
-- **Cleaner architecture** - Explicit state management, testable nodes
-- **Better deployability** - Runs independently of Claude Code
-- **CI/CD compatibility** - Can be automated in pipelines
-- **Coexistence** - Both versions can work with the same task files
+### Recommended Approach: Claude Agent SDK First
 
-**Revised effort estimate**: 3-4 weeks for production-ready implementation (not 2-3 days as initially suggested).
+```python
+from claude_agent_sdk import query, ClaudeAgentOptions
+
+# This DIRECTLY invokes your /task-work command!
+async for message in query(
+    prompt=f"/task-work {task_id}",
+    options=ClaudeAgentOptions(cwd=project_path)
+):
+    print(message)
+```
+
+**Effort with Claude Agent SDK**: ~1 week
+**Effort with LangGraph reimplementation**: 3-4 weeks
+
+### When to Use LangGraph Instead
+
+LangGraph reimplementation is still valuable for:
+
+- **Multi-LLM support** - If you need OpenAI, Gemini, etc.
+- **Enterprise features** - LangGraph Platform RBAC, workspaces
+- **Full control** - Explicit state management, testable nodes
+- **CI/CD pipelines** - Runs independently of Claude Code
+
+The architecture documented below remains valid for the LangGraph path.
 
 ---
 
@@ -742,11 +771,14 @@ The LangGraph architecture enables TaskWright to maintain its lightweight CLI-fi
 
 ## Related Documents
 
+- [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
+- [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
+- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
 - [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
 - [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
 
 *Generated: November 2025*
-*Updated: December 2025 - Added clarification that this is a reimplementation, not a wrapper. Revised effort estimates from 2-3 days to 3-4 weeks.*
+*Updated: December 2025 - Added Claude Agent SDK as faster alternative. LangGraph remains valid for multi-LLM scenarios.*
 *Context: Technical architecture for adding LangGraph-based agent orchestration to TaskWright*

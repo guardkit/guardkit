@@ -1,14 +1,15 @@
 ---
 id: TASK-IMP-TMPL-FIX
 title: "Fix: template-create Command Orchestrator Bypass"
-status: in_progress
+status: in_review
 created: 2025-12-02T22:30:00Z
-updated: 2025-12-02T22:30:00Z
+updated: 2025-12-02T23:00:00Z
 priority: critical
 task_type: implementation
 tags: [template-create, regression-fix, pre-release-blocker]
 related_tasks: [TASK-REV-TMPL-CMD, TASK-IMP-REVERT-V097]
 review_source: TASK-REV-TMPL-CMD
+commit: 773f534
 ---
 
 # Implementation Task: Fix template-create Command Orchestrator Bypass
@@ -17,7 +18,7 @@ review_source: TASK-REV-TMPL-CMD
 
 This task implements the fix recommended by review task TASK-REV-TMPL-CMD. The `/template-create` command was bypassing its Python orchestrator because the command specification file contained ~530 lines of embedded Python pseudocode that Claude interpreted as implementation instructions.
 
-**Status**: FIX APPLIED, PENDING COMMIT AND VERIFICATION
+**Status**: FIX COMMITTED (773f534), READY FOR VERIFICATION
 
 ## Root Cause (from TASK-REV-TMPL-CMD)
 
@@ -167,8 +168,8 @@ After successful template creation:
 
 **IN SCOPE**:
 - [x] Remove problematic pseudocode from template-create.md
-- [ ] Commit the change
-- [ ] Verify command works correctly
+- [x] Commit the change (773f534)
+- [ ] Verify command works correctly (manual test required)
 - [ ] Update task status to completed
 
 **OUT OF SCOPE** (to avoid regressions):
@@ -202,10 +203,10 @@ However, this is NOT required for the fix and should be done as a separate task 
 1. [x] `template-create.md` has 1126 lines (not 1655)
 2. [x] Single `## Command Execution` section at line 1119
 3. [x] No Python pseudocode blocks in command file
-4. [ ] `/template-create --dry-run` invokes Python orchestrator
-5. [ ] Exit code 42 triggers agent invocation
-6. [ ] Template confidence score is 90%+ (not 68%)
-7. [ ] Changes committed with appropriate message
+4. [ ] `/template-create --dry-run` invokes Python orchestrator (manual test required)
+5. [ ] Exit code 42 triggers agent invocation (manual test required)
+6. [ ] Template confidence score is 90%+ (not 68%) (manual test required)
+7. [x] Changes committed with appropriate message (773f534)
 
 ## Commit Message Template
 
@@ -241,6 +242,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 ---
 
-**Implementation Status**: FIX APPLIED
-**Verification Status**: PENDING
-**Commit Status**: PENDING
+**Implementation Status**: COMPLETE
+**Verification Status**: PENDING MANUAL TEST
+**Commit Status**: COMMITTED (773f534)
