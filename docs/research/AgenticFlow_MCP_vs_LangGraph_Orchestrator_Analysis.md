@@ -3,9 +3,9 @@
 ## Terminology Note
 
 This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
-TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
+GuardKit automates a developer's manual process - it's not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
+See [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 
@@ -19,9 +19,9 @@ This document analyzes the relationship between the original AgenticFlow platfor
 
 ### NEW: Claude Agent SDK (Fastest Path)
 
-**The Claude Agent SDK can directly invoke TaskWright slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
+**The Claude Agent SDK can directly invoke GuardKit slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
 
-See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
+See: [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md)
 
 ```python
 from claude_agent_sdk import query, ClaudeAgentOptions
@@ -246,15 +246,15 @@ class AgenticFlowGraph:
 
 ---
 
-## Practical Implication for TaskWright
+## Practical Implication for GuardKit
 
-For the open-source TaskWright orchestration layer, this analysis suggests a clear migration path:
+For the open-source GuardKit orchestration layer, this analysis suggests a clear migration path:
 
 ### Phase 1: Build the Orchestrator as Reimplementation (Current Focus)
 
 **Important**: This is a reimplementation, not a wrapper. LangGraph cannot call Claude Code slash commands.
 
-1. Build the **LangGraph orchestrator** that reimplements TaskWright's workflow logic
+1. Build the **LangGraph orchestrator** that reimplements GuardKit's workflow logic
 2. Use the command `.md` files as specifications for what each phase should do
 3. Call **Anthropic API directly** for AI-powered operations (planning, code generation, review)
 4. The orchestrator reads/writes the same task files as Claude Code version
@@ -286,7 +286,7 @@ For commercial AgenticFlow:
 │                                                                              │
 │   CURRENT STATE                                                              │
 │   ─────────────                                                              │
-│   Claude Code + TaskWright slash commands (interactive, human-driven)       │
+│   Claude Code + GuardKit slash commands (interactive, human-driven)       │
 │                                                                              │
 │   PHASE 1: LangGraph Orchestrator (Open Source) - REIMPLEMENTATION          │
 │   ────────────────────────────────────────────────────────────────          │
@@ -342,12 +342,12 @@ The cleanest path forward is now:
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
 - [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
-- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
-- [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md)
-- [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
+- [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md) - Initial SDK analysis
+- [LangGraph-Native Orchestration for GuardKit: Technical Architecture](./LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md)
+- [GuardKit LangGraph Orchestration: Build Strategy](./GuardKit_LangGraph_Orchestration_Build_Strategy.md)
 
 ---
 
 *Generated: December 2025*
 *Updated: December 2025 - Added Claude Agent SDK as fastest path option*
-*Context: Analyzing the relationship between original AgenticFlow MCP architecture and LangGraph orchestration for TaskWright*
+*Context: Analyzing the relationship between original AgenticFlow MCP architecture and LangGraph orchestration for GuardKit*

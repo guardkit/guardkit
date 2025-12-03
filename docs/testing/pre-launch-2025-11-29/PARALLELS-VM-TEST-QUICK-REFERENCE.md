@@ -1,4 +1,4 @@
-# TaskWright VM Testing - Quick Reference Card
+# GuardKit VM Testing - Quick Reference Card
 
 **Print this page for easy reference during testing**
 
@@ -8,7 +8,7 @@
 
 ```bash
 # 1. Create VM snapshot
-# Name: "Pre-TaskWright-Install"
+# Name: "Pre-GuardKit-Install"
 
 # 2. Install prerequisites
 xcode-select --install
@@ -19,7 +19,7 @@ brew install python@3.11
 
 ## Phase 1: Installation (45 min)
 
-### Install TaskWright
+### Install GuardKit
 ```bash
 mkdir -p ~/Projects
 cd ~/Projects
@@ -125,7 +125,7 @@ AND system SHALL return JWT token with 24-hour expiration.
 # Expected: BDD-001 created with 3 scenarios
 ```
 
-### Run BDD Mode (TaskWright)
+### Run BDD Mode (GuardKit)
 ```bash
 cd ~/Projects/test-api-service
 
@@ -189,7 +189,7 @@ grep -r "validation" src/
 
 ## Screenshots Checklist
 
-- [ ] TaskWright installation success
+- [ ] GuardKit installation success
 - [ ] RequireKit installation success
 - [ ] Template init Q&A session
 - [ ] Project file structure

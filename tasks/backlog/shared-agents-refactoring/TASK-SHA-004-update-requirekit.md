@@ -43,7 +43,7 @@ git add installer/shared-agents-version.txt
 
 ### 2. Add Install Function
 
-Add to `installer/scripts/install.sh` (same as TaskWright):
+Add to `installer/scripts/install.sh` (same as GuardKit):
 
 ```bash
 install_shared_agents() {
@@ -112,7 +112,7 @@ ls -la .claude/agents/universal/
 
 ## Estimated Effort
 
-**2 hours** (same as TaskWright)
+**2 hours** (same as GuardKit)
 - Code changes: 1 hour
 - Testing: 30 minutes
 - Cleanup: 30 minutes
@@ -127,8 +127,8 @@ ls -la .claude/agents/universal/
 
 ## Notes
 
-**Parallel execution**: This task can run in parallel with TASK-SHA-003 (TaskWright update). Both download from the same shared-agents v1.0.0 release.
+**Parallel execution**: This task can run in parallel with TASK-SHA-003 (GuardKit update). Both download from the same shared-agents v1.0.0 release.
 
-**Same approach**: Implementation is identical to TaskWright, just in different repository.
+**Same approach**: Implementation is identical to GuardKit, just in different repository.
 
 **Keep it simple**: Same philosophy as TASK-SHA-003 - basic functionality, no elaborate error handling.

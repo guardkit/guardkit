@@ -26,7 +26,7 @@ Create `guardkit/shared-agents` repository and migrate the verified agents (from
 - [ ] Verified agents copied to `agents/` directory
 - [ ] Simple `manifest.json` listing agent files
 - [ ] Basic README with usage instructions
-- [ ] MIT LICENSE (same as TaskWright/RequireKit)
+- [ ] MIT LICENSE (same as GuardKit/RequireKit)
 - [ ] v1.0.0 release created with tarball
 
 ## Implementation
@@ -37,7 +37,7 @@ Create `guardkit/shared-agents` repository and migrate the verified agents (from
 # Using GitHub CLI (or create via web UI)
 gh repo create guardkit/shared-agents \
   --public \
-  --description "Universal AI agents shared between TaskWright and RequireKit"
+  --description "Universal AI agents shared between GuardKit and RequireKit"
 
 # Clone it
 git clone https://github.com/guardkit/shared-agents.git
@@ -75,19 +75,19 @@ cp ../guardkit/installer/global/agents/test-orchestrator.md agents/
 ```markdown
 # Shared Agents
 
-Universal AI agents shared between TaskWright and RequireKit.
+Universal AI agents shared between GuardKit and RequireKit.
 
 ## What is this?
 
 This repository contains agent definitions that are used by both:
-- [TaskWright](https://github.com/guardkit/guardkit)
+- [GuardKit](https://github.com/guardkit/guardkit)
 - [RequireKit](https://github.com/requirekit/require-kit)
 
 Instead of duplicating agents in both repos, we maintain them here.
 
 ## Installation
 
-Agents are automatically installed when you run TaskWright or RequireKit installers. No manual installation needed.
+Agents are automatically installed when you run GuardKit or RequireKit installers. No manual installation needed.
 
 ## Updating
 
@@ -101,7 +101,7 @@ See [manifest.json](manifest.json) for complete list.
 
 ## License
 
-MIT License - Same as TaskWright and RequireKit
+MIT License - Same as GuardKit and RequireKit
 ```
 
 ### 5. Add LICENSE
@@ -109,7 +109,7 @@ MIT License - Same as TaskWright and RequireKit
 ```
 MIT License
 
-Copyright (c) 2025 TaskWright
+Copyright (c) 2025 GuardKit
 
 Permission is hereby granted, free of charge...
 [Standard MIT license text]

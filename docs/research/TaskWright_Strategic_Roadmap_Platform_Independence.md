@@ -1,8 +1,8 @@
-# TaskWright Strategic Roadmap: From Workflow Automation to Platform Independence
+# GuardKit Strategic Roadmap: From Workflow Automation to Platform Independence
 
 ## The Strategic Vision
 
-TaskWright's development follows a deliberate **"walk before you run"** strategy with three phases:
+GuardKit's development follows a deliberate **"walk before you run"** strategy with three phases:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -11,7 +11,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 │                                                                              │
 │   PHASE 1: Get It Working (Current)                                         │
 │   ═══════════════════════════════════                                       │
-│   • Claude Agent SDK + TaskWright slash commands                            │
+│   • Claude Agent SDK + GuardKit slash commands                            │
 │   • Two-command workflow automation                                         │
 │   • Vendor-locked to Anthropic (acceptable trade-off)                       │
 │   • Goal: Working tooling, real-world validation                            │
@@ -55,7 +55,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 
 **The Claude Agent SDK Advantage:**
 - ~1 week to working tooling
-- Reuses existing TaskWright commands
+- Reuses existing GuardKit commands
 - Validates the two-command workflow in production
 - Builds understanding of what the workflow actually needs
 
@@ -95,7 +95,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 4. API terms become restrictive
 5. Vendor lock-in becomes painful
 
-**TaskWright's Insurance Policy:**
+**GuardKit's Insurance Policy:**
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -177,7 +177,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 - [ ] Parallel execution via git worktrees
 - [ ] Risk flagging in task output
 - [ ] Manual override capability (`--skip`, `--only`)
-- [ ] Integration with existing TaskWright commands
+- [ ] Integration with existing GuardKit commands
 
 **Validation:**
 - Use on real features (e.g., kartlog demo)
@@ -189,7 +189,7 @@ TaskWright's development follows a deliberate **"walk before you run"** strategy
 **Effort:** 3-4 weeks (informed by Phase 1 learnings)
 
 **Deliverables:**
-- [ ] LangGraph StateGraph matching TaskWright workflow
+- [ ] LangGraph StateGraph matching GuardKit workflow
 - [ ] Platform-agnostic LLM interface
 - [ ] Checkpoint/resume persistence
 - [ ] Human-in-the-loop interrupts
@@ -267,10 +267,10 @@ This is the right way to approach it.
 ## Related Documents
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) - Phase 1 specification
-- [LangGraph-Native Workflow Automation](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md) - Phase 2 architecture
-- [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) - Positioning clarity
+- [LangGraph-Native Workflow Automation](./LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md) - Phase 2 architecture
+- [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) - Positioning clarity
 
 ---
 
 *Generated: December 2025*
-*Context: Documenting the strategic rationale behind TaskWright's phased development approach*
+*Context: Documenting the strategic rationale behind GuardKit's phased development approach*

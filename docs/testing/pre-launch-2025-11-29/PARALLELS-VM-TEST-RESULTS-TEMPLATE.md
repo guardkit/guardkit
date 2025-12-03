@@ -1,4 +1,4 @@
-# TaskWright Parallels VM Test Results
+# GuardKit Parallels VM Test Results
 
 **Date**: _____________
 **Tester**: _____________
@@ -28,7 +28,7 @@
 
 ## Phase 1: Installation & Template Init (45 min)
 
-### Step 1.1: Install TaskWright (10 min)
+### Step 1.1: Install GuardKit (10 min)
 
 **Status**: [ ] PASS / [ ] FAIL
 **Duration**: _____ minutes
@@ -546,7 +546,7 @@ Git: X.XX.X
 Homebrew: X.XX.X
 ```
 
-**TaskWright Version**: X.X.X
+**GuardKit Version**: X.X.X
 **RequireKit Version**: X.X.X
 
 ### Test Artifacts

@@ -1,16 +1,16 @@
-# Claude Agent SDK: Fast Path to TaskWright Workflow Automation
+# Claude Agent SDK: Fast Path to GuardKit Workflow Automation
 
 ## Executive Summary
 
-The Claude Agent SDK provides a **dramatically faster path** to TaskWright workflow automation than the LangGraph reimplementation approach. The SDK can directly invoke existing TaskWright slash commands (`/task-work`, `/task-create`, etc.) without requiring any reimplementation of workflow logic.
+The Claude Agent SDK provides a **dramatically faster path** to GuardKit workflow automation than the LangGraph reimplementation approach. The SDK can directly invoke existing GuardKit slash commands (`/task-work`, `/task-create`, etc.) without requiring any reimplementation of workflow logic.
 
 ### Terminology Note
 
 This document uses "orchestration" in some places, but the more accurate term is **workflow automation**. 
-TaskWright automates a developer's manual workflow - it's not multi-agent orchestration like swarm systems.
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for details.
+GuardKit automates a developer's manual workflow - it's not multi-agent orchestration like swarm systems.
+See [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for details.
 
-**Key Finding**: The Claude Agent SDK reads and executes custom commands from `.claude/commands/` directories automatically. This means TaskWright's existing command files work immediately with the SDK.
+**Key Finding**: The Claude Agent SDK reads and executes custom commands from `.claude/commands/` directories automatically. This means GuardKit's existing command files work immediately with the SDK.
 
 **Revised Effort Estimate**: ~1 week for a working workflow runner (vs 3-4 weeks for LangGraph reimplementation)
 
@@ -42,9 +42,9 @@ Prerequisites:
 
 ---
 
-## Direct Invocation of TaskWright Commands
+## Direct Invocation of GuardKit Commands
 
-The SDK can invoke TaskWright's existing slash commands with zero modifications:
+The SDK can invoke GuardKit's existing slash commands with zero modifications:
 
 ```python
 from claude_agent_sdk import query, ClaudeAgentOptions
@@ -74,7 +74,7 @@ async def run_task_work(task_id: str, project_path: str):
 
 ### What Gets Used Automatically
 
-| TaskWright Component | SDK Behavior |
+| GuardKit Component | SDK Behavior |
 |---------------------|--------------|
 | `.claude/commands/task-work.md` | Invoked via `query(prompt="/task-work ...")` |
 | `.claude/commands/task-create.md` | Invoked via `query(prompt="/task-create ...")` |
@@ -191,7 +191,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-class TaskWrightOrchestrator:
+class GuardKitOrchestrator:
     def __init__(self, project_path: str):
         self.project_path = Path(project_path)
         self.db_path = self.project_path / ".guardkit" / "state.db"
@@ -304,11 +304,11 @@ class TaskWrightOrchestrator:
 ```python
 import click
 import anyio
-from guardkit_orchestrator import TaskWrightOrchestrator
+from guardkit_orchestrator import GuardKitOrchestrator
 
 @click.group()
 def cli():
-    """TaskWright - AI-powered development workflow orchestrator."""
+    """GuardKit - AI-powered development workflow orchestrator."""
     pass
 
 @cli.command()
@@ -317,7 +317,7 @@ def cli():
 @click.option('--project', '-p', default='.', help='Project path')
 def plan(task_id: str, design_only: bool, project: str):
     """Plan a task, optionally stopping after design phase."""
-    orchestrator = TaskWrightOrchestrator(project)
+    orchestrator = GuardKitOrchestrator(project)
     anyio.run(orchestrator.plan, task_id, design_only)
 
 @cli.command()
@@ -325,14 +325,14 @@ def plan(task_id: str, design_only: bool, project: str):
 @click.option('--project', '-p', default='.', help='Project path')
 def implement(task_id: str, project: str):
     """Implement an approved design."""
-    orchestrator = TaskWrightOrchestrator(project)
+    orchestrator = GuardKitOrchestrator(project)
     anyio.run(orchestrator.implement, task_id)
 
 @cli.command()
 @click.option('--project', '-p', default='.', help='Project path')
 def status(project: str):
     """Show status of all tasks."""
-    orchestrator = TaskWrightOrchestrator(project)
+    orchestrator = GuardKitOrchestrator(project)
     orchestrator.show_status()
 
 if __name__ == '__main__':
@@ -432,7 +432,7 @@ options = ClaudeAgentOptions(
 - Build orchestrator commands for requirements workflow
 - `guardkit requirements gather`
 - `guardkit requirements formalize`
-- Connect to TaskWright task creation
+- Connect to GuardKit task creation
 
 ### Phase 4: Consider LangGraph for Multi-LLM (Future)
 - If you need to support non-Anthropic models (Gemini, GPT-4)
@@ -453,7 +453,7 @@ The Claude Agent SDK approach doesn't prevent future LangGraph adoption:
 │                                                                              │
 │   NOW: Claude Agent SDK                                                      │
 │   ─────────────────────                                                      │
-│   • Uses existing TaskWright commands directly                               │
+│   • Uses existing GuardKit commands directly                               │
 │   • ~1 week to working orchestrator                                          │
 │   • Validates workflow patterns in production                                │
 │                                                                              │
@@ -473,9 +473,9 @@ The Claude Agent SDK approach doesn't prevent future LangGraph adoption:
 
 ---
 
-## What TaskWright Commands Need (Minor Updates)
+## What GuardKit Commands Need (Minor Updates)
 
-To work optimally with the orchestrator, TaskWright commands may benefit from:
+To work optimally with the orchestrator, GuardKit commands may benefit from:
 
 1. **Explicit checkpoint markers** in output:
    ```markdown
@@ -504,7 +504,7 @@ These are minor additions to existing commands, not rewrites.
 
 ## Conclusion
 
-The Claude Agent SDK provides the **fastest path to TaskWright orchestration**:
+The Claude Agent SDK provides the **fastest path to GuardKit orchestration**:
 
 1. **Direct command invocation** - No reimplementation needed
 2. **Existing agents work** - Auto-detected from `.claude/agents/`
@@ -525,8 +525,8 @@ The vendor lock-in trade-off is acceptable because:
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
 - [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification (superseded)
-- [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
-- [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md)
+- [GuardKit LangGraph Orchestration: Build Strategy](./GuardKit_LangGraph_Orchestration_Build_Strategy.md)
+- [LangGraph-Native Orchestration for GuardKit: Technical Architecture](./LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md)
 - [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
@@ -542,4 +542,4 @@ The vendor lock-in trade-off is acceptable because:
 ---
 
 *Generated: December 2025*
-*Context: Evaluating Claude Agent SDK as a faster path to TaskWright orchestration*
+*Context: Evaluating Claude Agent SDK as a faster path to GuardKit orchestration*

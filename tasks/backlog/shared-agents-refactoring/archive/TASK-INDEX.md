@@ -40,7 +40,7 @@
 
 ---
 
-## Phase 2: Update TaskWright
+## Phase 2: Update GuardKit
 
 **Duration**: 2 days
 **Dependencies**: Phase 1 complete
@@ -55,7 +55,7 @@
 | TASK-SHA-P2-004 | Remove duplicate agents | High | 1h | 📋 Planned |
 | TASK-SHA-P2-005 | Update agent discovery | High | 3h | 📋 Planned |
 | TASK-SHA-P2-006 | Update documentation | Medium | 2h | 📋 Planned |
-| TASK-SHA-P2-007 | Test TaskWright standalone | Critical | 2h | 📋 Planned |
+| TASK-SHA-P2-007 | Test GuardKit standalone | Critical | 2h | 📋 Planned |
 
 ---
 
@@ -108,7 +108,7 @@
 | TASK-SHA-P5-002 | Create migration guide | High | 3h | 📋 Planned |
 | TASK-SHA-P5-003 | Update CHANGELOG | Medium | 1h | 📋 Planned |
 | TASK-SHA-P5-004 | Create release announcements | Medium | 2h | 📋 Planned |
-| TASK-SHA-P5-005 | Tag and release TaskWright | High | 1h | 📋 Planned |
+| TASK-SHA-P5-005 | Tag and release GuardKit | High | 1h | 📋 Planned |
 | TASK-SHA-P5-006 | Tag and release RequireKit | High | 1h | 📋 Planned |
 | TASK-SHA-P5-007 | Announce to users | Low | 1h | 📋 Planned |
 

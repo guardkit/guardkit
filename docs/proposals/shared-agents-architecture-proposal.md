@@ -3,13 +3,13 @@
 **Status:** Approved  
 **Date:** November 28, 2025  
 **Author:** Rich (Appmilla)  
-**Applies to:** TaskWright, RequireKit
+**Applies to:** GuardKit, RequireKit
 
 ---
 
 ## Executive Summary
 
-This proposal addresses the duplication of sub-agent definitions between TaskWright and RequireKit repositories. Both tools evolved from the original `ai-engineer` repo and currently maintain separate copies of universal agents, leading to version drift and maintenance burden.
+This proposal addresses the duplication of sub-agent definitions between GuardKit and RequireKit repositories. Both tools evolved from the original `ai-engineer` repo and currently maintain separate copies of universal agents, leading to version drift and maintenance burden.
 
 **Agreed Solution:** Hybrid approach using a dedicated `shared-agents` repository with build-time composition.
 
@@ -142,7 +142,7 @@ jobs:
           generate_release_notes: true
 ```
 
-### 3. TaskWright Installer Integration
+### 3. GuardKit Installer Integration
 
 **installer/shared-agents-version.txt:**
 ```
@@ -211,7 +211,7 @@ install_shared_agents
 
 ### 5. Directory Structure After Installation
 
-**TaskWright (standalone):**
+**GuardKit (standalone):**
 ```
 .claude/
 ├── agents/
@@ -220,8 +220,8 @@ install_shared_agents
 │   │   ├── bdd-generator.md
 │   │   ├── test-orchestrator.md
 │   │   └── code-reviewer.md
-│   ├── react-specialist.md           # TaskWright-specific
-│   ├── python-specialist.md          # TaskWright-specific
+│   ├── react-specialist.md           # GuardKit-specific
+│   ├── python-specialist.md          # GuardKit-specific
 │   └── repository-pattern-specialist.md
 └── commands/
     ├── task-create.md
@@ -245,7 +245,7 @@ install_shared_agents
     └── generate-bdd.md
 ```
 
-**Combined Installation (TaskWright + RequireKit):**
+**Combined Installation (GuardKit + RequireKit):**
 ```
 .claude/
 ├── agents/
@@ -254,12 +254,12 @@ install_shared_agents
 │   │   ├── bdd-generator.md
 │   │   ├── test-orchestrator.md
 │   │   └── code-reviewer.md
-│   ├── react-specialist.md           # From TaskWright
-│   ├── python-specialist.md          # From TaskWright
+│   ├── react-specialist.md           # From GuardKit
+│   ├── python-specialist.md          # From GuardKit
 │   └── requirements-gathering-specialist.md  # From RequireKit
 └── commands/
-    ├── task-create.md                # From TaskWright
-    ├── task-work.md                  # From TaskWright
+    ├── task-create.md                # From GuardKit
+    ├── task-work.md                  # From GuardKit
     ├── gather-requirements.md        # From RequireKit
     └── formalize-ears.md             # From RequireKit
 ```
@@ -286,13 +286,13 @@ install_shared_agents
 ### Phase 1: Create Shared Agents Repository (Day 1)
 
 - [ ] Create `guardkit/shared-agents` repository
-- [ ] Move universal agents from TaskWright to shared-agents
+- [ ] Move universal agents from GuardKit to shared-agents
 - [ ] Create `manifest.json` with agent metadata
 - [ ] Create `version.txt` with initial version (v1.0.0)
 - [ ] Set up GitHub Actions release workflow
 - [ ] Create initial release (v1.0.0)
 
-### Phase 2: Update TaskWright (Day 2)
+### Phase 2: Update GuardKit (Day 2)
 
 - [ ] Add `installer/shared-agents-version.txt`
 - [ ] Update `install.sh` with `install_shared_agents` function
@@ -312,7 +312,7 @@ install_shared_agents
 
 ### Phase 4: Integration Testing (Day 4)
 
-- [ ] Test TaskWright standalone installation
+- [ ] Test GuardKit standalone installation
 - [ ] Test RequireKit standalone installation
 - [ ] Test combined installation (both tools)
 - [ ] Test version pinning (different versions in each repo)
@@ -324,7 +324,7 @@ install_shared_agents
 - [ ] Update README files in all three repos
 - [ ] Create migration guide for existing users
 - [ ] Announce change in release notes
-- [ ] Tag new releases of TaskWright and RequireKit
+- [ ] Tag new releases of GuardKit and RequireKit
 
 ---
 
@@ -342,7 +342,7 @@ The `shared-agents` repository follows semantic versioning:
 
 1. Make changes in `shared-agents` repository
 2. Create new release tag (e.g., `v1.1.0`)
-3. Update `shared-agents-version.txt` in TaskWright
+3. Update `shared-agents-version.txt` in GuardKit
 4. Update `shared-agents-version.txt` in RequireKit
 5. Release new versions of consuming tools
 

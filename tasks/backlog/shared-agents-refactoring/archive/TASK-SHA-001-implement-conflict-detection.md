@@ -339,7 +339,7 @@ test_rollback
 **Prerequisite Tasks**: None (Phase 0)
 
 **Blocks**:
-- TASK-SHA-P2-002 (Update TaskWright Installer)
+- TASK-SHA-P2-002 (Update GuardKit Installer)
 - TASK-SHA-P3-002 (Update RequireKit Installer)
 - TASK-SHA-P4-004 (Conflict Detection Testing)
 

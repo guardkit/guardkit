@@ -1,4 +1,4 @@
-# TaskWright VM Testing - FOCUSED Quick Reference
+# GuardKit VM Testing - FOCUSED Quick Reference
 
 **Print this for 1.5-2 hour focused test (recent changes only)**
 
@@ -22,7 +22,7 @@
 xcode-select --install
 brew install python@3.11
 
-# Install TaskWright
+# Install GuardKit
 mkdir -p ~/Projects && cd ~/Projects
 git clone https://github.com/guardkit/guardkit.git
 cd guardkit

@@ -445,7 +445,7 @@ test_missing_checksum
 
 **Blocks**:
 - TASK-SHA-P1-004 (Set up GitHub Actions) - needs checksum generation
-- TASK-SHA-P2-002 (Update TaskWright Installer) - needs validation logic
+- TASK-SHA-P2-002 (Update GuardKit Installer) - needs validation logic
 - TASK-SHA-P3-002 (Update RequireKit Installer) - needs validation logic
 
 **External Dependencies**:

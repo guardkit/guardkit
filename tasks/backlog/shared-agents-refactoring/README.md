@@ -19,7 +19,7 @@ Execute tasks in order:
 /task-work TASK-SHA-002
 
 # 3 & 4. Update both installers (can run in parallel)
-/task-work TASK-SHA-003  # TaskWright
+/task-work TASK-SHA-003  # GuardKit
 /task-work TASK-SHA-004  # RequireKit
 
 # 5. Test everything works
@@ -55,7 +55,7 @@ comm -12 <(ls guardkit/installer/global/agents/*.md | xargs basename -a | sort) 
 3. Create simple manifest.json
 4. Release v1.0.0
 
-### TASK-SHA-003: Update TaskWright Installer
+### TASK-SHA-003: Update GuardKit Installer
 **Effort**: 2 hours
 **Depends on**: TASK-SHA-002
 
@@ -75,7 +75,7 @@ Same as TASK-SHA-003, but for RequireKit.
 **Effort**: 1 hour
 **Depends on**: TASK-SHA-003 + TASK-SHA-004
 
-1. Test TaskWright alone
+1. Test GuardKit alone
 2. Test RequireKit alone
 3. Test both together
 4. Verify no duplication
@@ -148,7 +148,7 @@ We're accepting these small risks:
 - **[IMPLEMENTATION-PLAN-LEAN.md](./IMPLEMENTATION-PLAN-LEAN.md)** - Detailed task breakdown
 - **[TASK-SHA-001](./TASK-SHA-001-verify-duplication.md)** - Verification
 - **[TASK-SHA-002](./TASK-SHA-002-create-shared-repo.md)** - Create repo
-- **[TASK-SHA-003](./TASK-SHA-003-update-guardkit.md)** - Update TaskWright
+- **[TASK-SHA-003](./TASK-SHA-003-update-guardkit.md)** - Update GuardKit
 - **[TASK-SHA-004](./TASK-SHA-004-update-requirekit.md)** - Update RequireKit
 - **[TASK-SHA-005](./TASK-SHA-005-test-both-tools.md)** - Testing
 - **[TASK-SHA-006](./TASK-SHA-006-update-documentation.md)** - Documentation

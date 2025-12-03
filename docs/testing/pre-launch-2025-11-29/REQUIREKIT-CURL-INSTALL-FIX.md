@@ -1,14 +1,14 @@
 # RequireKit Curl Install Fix
 
 **Date**: 2025-11-29
-**Context**: Applied same curl install fix as TaskWright
+**Context**: Applied same curl install fix as GuardKit
 **Status**: Complete - ready for testing
 
 ---
 
 ## Changes Applied to RequireKit
 
-Applied the same architectural fixes that were implemented for TaskWright to ensure consistent installation experience across both packages.
+Applied the same architectural fixes that were implemented for GuardKit to ensure consistent installation experience across both packages.
 
 ---
 
@@ -35,7 +35,7 @@ Applied the same architectural fixes that were implemented for TaskWright to ens
 3. **Updated `create_marker_file()` function** (lines 149-189):
    - Changed from `.marker` to `.marker.json` (JSON format)
    - Added `repo_path` field
-   - Matches TaskWright marker file structure
+   - Matches GuardKit marker file structure
    - Includes metadata: package, version, installed date, capabilities
 
 4. **Updated marker file verification** (line 215):
@@ -86,10 +86,10 @@ Applied the same architectural fixes that were implemented for TaskWright to ens
 **Filename**: `~/.agentecflow/require-kit.marker.json`
 
 **Key differences**:
-- ✅ JSON format matches TaskWright
+- ✅ JSON format matches GuardKit
 - ✅ `repo_path` field for module imports
 - ✅ Consistent field names (`package` vs `name`, `installed` vs `installed_at`)
-- ✅ Added `requires` field (documents dependency on TaskWright)
+- ✅ Added `requires` field (documents dependency on GuardKit)
 - ✅ Added `integration_model` and `homepage`
 
 ---
@@ -204,11 +204,11 @@ git pull
 
 ---
 
-## Consistency with TaskWright
+## Consistency with GuardKit
 
 Both packages now have **identical installation architecture**:
 
-| Feature | TaskWright | RequireKit |
+| Feature | GuardKit | RequireKit |
 |---------|-----------|-----------|
 | **Curl install** | ✅ Clones to `~/Projects/guardkit` | ✅ Clones to `~/Projects/require-kit` |
 | **Marker format** | JSON (`.marker.json`) | JSON (`.marker.json`) |
@@ -239,7 +239,7 @@ Both packages now have **identical installation architecture**:
 - ✅ **Matched formats** - Both use JSON markers
 - ✅ **Shared detection** - `feature_detection.py` works for both
 - ✅ **Clean coexistence** - No conflicts, clear boundaries
-- ✅ **Dependency clarity** - RequireKit marker documents TaskWright requirement
+- ✅ **Dependency clarity** - RequireKit marker documents GuardKit requirement
 
 ---
 
@@ -262,8 +262,8 @@ Both packages now have **identical installation architecture**:
 
 ### Integration Testing
 
-- [ ] TaskWright detects RequireKit via JSON marker
-- [ ] RequireKit detects TaskWright via JSON marker
+- [ ] GuardKit detects RequireKit via JSON marker
+- [ ] RequireKit detects GuardKit via JSON marker
 - [ ] BDD mode works when both installed
 - [ ] `supports_bdd()` returns True
 
@@ -345,4 +345,4 @@ cat ~/.agentecflow/require-kit.marker.json | jq .
 
 ---
 
-**Ready for VM testing alongside TaskWright fix!** 🚀
+**Ready for VM testing alongside GuardKit fix!** 🚀

@@ -1,11 +1,11 @@
 # Installation Verification Guide
 
 **Created**: 2025-11-29
-**Purpose**: Correct verification steps for TaskWright and RequireKit installation
+**Purpose**: Correct verification steps for GuardKit and RequireKit installation
 
 ---
 
-## TaskWright Installation Verification
+## GuardKit Installation Verification
 
 ### Method 1: Check Marker File
 
@@ -46,7 +46,7 @@ ls ~/.agentecflow/
 ### IMPORTANT: RequireKit Installation Status
 
 **On your main development machine**: RequireKit is **NOT installed**
-- You have `ears-requirements.md` which is just TaskWright's EARS documentation
+- You have `ears-requirements.md` which is just GuardKit's EARS documentation
 - The actual RequireKit repo and tools are not present
 
 **For VM testing**: You need to actually install RequireKit
@@ -61,7 +61,7 @@ ls ~/.agentecflow/require-kit.marker
 - ✅ **File exists** = RequireKit is installed
 - ❌ **File not found** = RequireKit is NOT installed
 
-**This is the definitive check** - TaskWright's BDD mode uses this exact check (see `installer/global/lib/feature_detection.py:76`)
+**This is the definitive check** - GuardKit's BDD mode uses this exact check (see `installer/global/lib/feature_detection.py:76`)
 
 ### Method 2: Check RequireKit Commands
 
@@ -172,9 +172,9 @@ $ ls ~/.agentecflow/require-kit.marker
 # File NOT found
 ```
 
-**Diagnosis**: You have TaskWright's EARS documentation, but not RequireKit itself
+**Diagnosis**: You have GuardKit's EARS documentation, but not RequireKit itself
 
-**Explanation**: TaskWright includes basic EARS documentation in `instructions/core/ears-requirements.md`, but this is NOT the same as having RequireKit installed. RequireKit provides the full requirements management workflow.
+**Explanation**: GuardKit includes basic EARS documentation in `instructions/core/ears-requirements.md`, but this is NOT the same as having RequireKit installed. RequireKit provides the full requirements management workflow.
 
 **Solution**: Install RequireKit if you need BDD mode:
 ```bash
@@ -212,7 +212,7 @@ print(json.dumps(get_available_features(), indent=2))
 EOF
 ```
 
-**Example Output** (TaskWright only):
+**Example Output** (GuardKit only):
 ```json
 {
   "task_management": true,
@@ -226,7 +226,7 @@ EOF
 }
 ```
 
-**Example Output** (TaskWright + RequireKit):
+**Example Output** (GuardKit + RequireKit):
 ```json
 {
   "task_management": true,
@@ -248,7 +248,7 @@ EOF
 
 Before starting the VM test plan, verify:
 
-- [ ] TaskWright marker exists: `ls ~/.agentecflow/guardkit.marker`
+- [ ] GuardKit marker exists: `ls ~/.agentecflow/guardkit.marker`
 - [ ] RequireKit marker exists: `ls ~/.agentecflow/require-kit.marker`
 - [ ] BDD mode available: `python3 -c "from installer.global.lib.feature_detection import supports_bdd; print(supports_bdd())"`
 - [ ] Both command sets work: `guardkit --version` and `req-create --help`
@@ -263,7 +263,7 @@ Before starting the VM test plan, verify:
 
 | Tool | Marker File | Command Check |
 |------|-------------|---------------|
-| **TaskWright** | `~/.agentecflow/guardkit.marker` | `guardkit --version` |
+| **GuardKit** | `~/.agentecflow/guardkit.marker` | `guardkit --version` |
 | **RequireKit** | `~/.agentecflow/require-kit.marker` | `req-create --help` |
 
 **BDD Mode Availability**:

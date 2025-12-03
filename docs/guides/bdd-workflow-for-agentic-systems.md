@@ -2,7 +2,7 @@
 
 ## Overview
 
-TaskWright integrates with [RequireKit](https://github.com/requirekit/require-kit) to provide full Behavior-Driven Development (BDD) workflows specifically for **agentic orchestration systems** built with frameworks like LangGraph.
+GuardKit integrates with [RequireKit](https://github.com/requirekit/require-kit) to provide full Behavior-Driven Development (BDD) workflows specifically for **agentic orchestration systems** built with frameworks like LangGraph.
 
 This guide explains when BDD mode is appropriate, how to use it effectively, and provides a complete LangGraph case study demonstrating the value of formal behavior specifications.
 
@@ -55,7 +55,7 @@ If your feature doesn't meet these criteria, use Standard or TDD mode instead.
 
 ### Required Installations
 
-1. **TaskWright** (this system)
+1. **GuardKit** (this system)
 2. **RequireKit** - Requirement management system with EARS and BDD support
    - Repository: https://github.com/requirekit/require-kit
    - Installation:
@@ -96,7 +96,7 @@ Before using BDD mode, familiarize yourself with:
 
 ### The Challenge
 
-Building a LangGraph-based agent orchestrator for TaskWright's task workflow with:
+Building a LangGraph-based agent orchestrator for GuardKit's task workflow with:
 
 - **7-phase workflow**: Phase 2 → 2.5 → 2.7 → 2.8 → 3 → 4 → 5
 - **Complexity-based routing**: AUTO_PROCEED vs QUICK_OPTIONAL vs FULL_REQUIRED
@@ -136,12 +136,12 @@ File: `docs/bdd/complexity-routing.feature`
 
 ```gherkin
 Feature: Complexity-Based Routing
-  As a TaskWright orchestrator
+  As a GuardKit orchestrator
   I want to route tasks based on complexity scores
   So that high-risk changes get mandatory human review
 
   Background:
-    Given the TaskWright workflow is initialized
+    Given the GuardKit workflow is initialized
     And Phase 2 (implementation planning) is complete
 
   @critical @checkpoint
@@ -207,8 +207,8 @@ from typing import Literal
 from langgraph.graph import StateGraph
 from pydantic import BaseModel, Field
 
-class TaskWrightState(BaseModel):
-    """LangGraph state for TaskWright orchestration."""
+class GuardKitState(BaseModel):
+    """LangGraph state for GuardKit orchestration."""
     task_id: str
     complexity_score: int = Field(ge=0, le=10)
     current_phase: str
@@ -216,14 +216,14 @@ class TaskWrightState(BaseModel):
     approval_required: bool = False
     checkpoint_type: str | None = None
 
-def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_review", "full_review"]:
+def complexity_router(state: GuardKitState) -> Literal["auto_proceed", "quick_review", "full_review"]:
     """
     Route based on complexity score to appropriate approval path.
 
     Implements REQ-ORCH-001: Phase 2.8 Complexity Routing
 
     Args:
-        state: Current TaskWright workflow state
+        state: Current GuardKit workflow state
 
     Returns:
         Routing decision: auto_proceed, quick_review, or full_review
@@ -249,7 +249,7 @@ def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_
     else:
         return "auto_proceed"
 
-def full_review_checkpoint(state: TaskWrightState) -> TaskWrightState:
+def full_review_checkpoint(state: GuardKitState) -> GuardKitState:
     """
     FULL_REQUIRED checkpoint - mandatory human review.
 
@@ -276,7 +276,7 @@ def full_review_checkpoint(state: TaskWrightState) -> TaskWrightState:
 
     return state
 
-def quick_review_checkpoint(state: TaskWrightState) -> TaskWrightState:
+def quick_review_checkpoint(state: GuardKitState) -> GuardKitState:
     """
     QUICK_OPTIONAL checkpoint - 30-second timeout with auto-approve.
 
@@ -302,7 +302,7 @@ def quick_review_checkpoint(state: TaskWrightState) -> TaskWrightState:
 
     return state
 
-def auto_proceed(state: TaskWrightState) -> TaskWrightState:
+def auto_proceed(state: GuardKitState) -> GuardKitState:
     """
     AUTO_PROCEED - no checkpoint, continue to Phase 3.
     """
@@ -315,7 +315,7 @@ def auto_proceed(state: TaskWrightState) -> TaskWrightState:
 # Build LangGraph workflow
 def build_workflow() -> StateGraph:
     """Construct the LangGraph state machine."""
-    workflow = StateGraph(TaskWrightState)
+    workflow = StateGraph(GuardKitState)
 
     # Add nodes
     workflow.add_node("phase_2", implementation_planning)
@@ -353,7 +353,7 @@ File: `tests/bdd/test_complexity_routing.py`
 import pytest
 from pytest_bdd import scenario, given, when, then, parsers
 from src.orchestration.complexity_router import (
-    TaskWrightState,
+    GuardKitState,
     complexity_router,
     full_review_checkpoint,
     quick_review_checkpoint,
@@ -405,14 +405,14 @@ def context():
 @given(parsers.parse('a task with complexity score {score:d}'))
 def task_with_complexity(context, score):
     """Create a task state with given complexity score."""
-    context['state'] = TaskWrightState(
+    context['state'] = GuardKitState(
         task_id="TASK-001",
         complexity_score=score,
         current_phase="Phase 2.8",
         plan_content="Implementation plan content here..."
     )
 
-@given('the TaskWright workflow is initialized')
+@given('the GuardKit workflow is initialized')
 def workflow_initialized(context):
     """Workflow is ready to execute."""
     # Prerequisite check - could verify LangGraph setup
@@ -622,7 +622,7 @@ RequireKit will create comprehensive Gherkin scenarios including:
 
 ### Step 4: Create Implementation Task
 
-Switch to your TaskWright project and create an implementation task:
+Switch to your GuardKit project and create an implementation task:
 
 ```bash
 cd ~/Projects/your-project
@@ -650,13 +650,13 @@ priority: high
 
 ### Step 5: Implement via BDD Workflow
 
-Execute the BDD workflow in TaskWright:
+Execute the BDD workflow in GuardKit:
 
 ```bash
 # Start BDD mode implementation
 /task-work TASK-042 --mode=bdd
 
-# TaskWright workflow:
+# GuardKit workflow:
 # ✅ Phase 1: Checks RequireKit installed (marker file)
 # ✅ Phase 2: Loads Gherkin scenarios from RequireKit
 # ✅ Phase 2.5: Routes to bdd-generator agent
@@ -876,7 +876,7 @@ from pytest_bdd import given, parsers
 @given(parsers.parse('a task with complexity score {score:d}'))
 def task_with_complexity(context, score):
     """Create a task state with given complexity score."""
-    context['state'] = TaskWrightState(
+    context['state'] = GuardKitState(
         task_id="TASK-001",
         complexity_score=score,
         current_phase="Phase 2.8"
@@ -964,7 +964,7 @@ complexity_router() (implementation)
 
 ```gherkin
 Feature: Complexity-Based Routing
-  As a TaskWright orchestrator
+  As a GuardKit orchestrator
   I want to route tasks based on complexity scores
   So that high-risk changes get mandatory human review
 ```
@@ -1033,7 +1033,7 @@ Scenario: High complexity triggers mandatory review
 Feature: Complexity-Based Routing
 
   Background:
-    Given the TaskWright workflow is initialized
+    Given the GuardKit workflow is initialized
     And Phase 2 (implementation planning) is complete
 
   Scenario: High complexity review
@@ -1112,7 +1112,7 @@ pytest tests/bdd/ -m "not error-handling"
 @given(parsers.parse('a task with complexity score {score:d}'))
 def task_with_complexity(context, score):
     """Reusable step for creating tasks with specific complexity."""
-    context['state'] = TaskWrightState(
+    context['state'] = GuardKitState(
         task_id=f"TASK-{context['test_id']}",
         complexity_score=score,
         current_phase="Phase 2.8"
@@ -1176,7 +1176,7 @@ Scenario: High complexity triggers mandatory review
 
 ## Summary
 
-BDD mode in TaskWright is specifically designed for **agentic orchestration systems** where precise behavior specifications are critical:
+BDD mode in GuardKit is specifically designed for **agentic orchestration systems** where precise behavior specifications are critical:
 
 ✅ **Use BDD for**: LangGraph state machines, multi-agent coordination, safety-critical workflows
 ❌ **Don't use BDD for**: CRUD features, simple UI components, bug fixes
@@ -1184,7 +1184,7 @@ BDD mode in TaskWright is specifically designed for **agentic orchestration syst
 **Key workflow**:
 1. Create requirements in RequireKit (EARS notation)
 2. Generate Gherkin scenarios (`/generate-bdd`)
-3. Create implementation task in TaskWright
+3. Create implementation task in GuardKit
 4. Execute BDD workflow (`/task-work TASK-XXX --mode=bdd`)
 5. BDD tests run as quality gate (100% pass required)
 

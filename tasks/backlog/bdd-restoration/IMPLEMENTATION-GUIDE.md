@@ -42,7 +42,7 @@ This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in guardkit f
 - Checkpoint and routing logic validation
 - Dogfooding RequireKit + GuardKit integration
 
-**Reference**: `LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md`
+**Reference**: `LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md`
 
 ---
 
@@ -245,14 +245,14 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - [ ] Update `.claude/CLAUDE.md` with BDD workflow
 
 **Content Sections**:
-1. **When to Use BDD in TaskWright**
+1. **When to Use BDD in GuardKit**
    - Agentic orchestration systems (LangGraph)
    - Safety-critical workflows
    - Formal specifications
    - NOT for general CRUD features
 
 2. **Prerequisites**
-   - RequireKit + TaskWright installed
+   - RequireKit + GuardKit installed
    - Understanding of EARS notation
    - Gherkin scenario basics
 
@@ -536,7 +536,7 @@ if mode == 'bdd':
 - [ ] Add ALWAYS/NEVER/ASK boundary sections
 - [ ] Update all other RequireKit agents similarly
 - [ ] Maintain existing functionality
-- [ ] Test agent discovery from TaskWright
+- [ ] Test agent discovery from GuardKit
 
 **Agent Metadata Schema**:
 
@@ -625,15 +625,15 @@ Scenario: User login with valid credentials
 5. Any other RequireKit-specific agents
 
 **Testing**:
-- [ ] TaskWright can discover bdd-generator via metadata
-- [ ] Agent invocation works from TaskWright BDD mode
+- [ ] GuardKit can discover bdd-generator via metadata
+- [ ] Agent invocation works from GuardKit BDD mode
 - [ ] Boundary sections validate correctly
 - [ ] All existing RequireKit workflows still function
 
 **Reference**:
 - GitHub Agent Best Practices Analysis
 - agent-content-enhancer.md (boundary section format)
-- existing TaskWright agents for format examples
+- existing GuardKit agents for format examples
 
 ---
 
@@ -737,7 +737,7 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 
 ### Integration
 - ✅ RequireKit agent discovery works
-- ✅ TaskWright → RequireKit delegation clean
+- ✅ GuardKit → RequireKit delegation clean
 - ✅ No DIP violations introduced
 - ✅ LangGraph workflow executes end-to-end
 
@@ -758,8 +758,8 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - [TASK-037 Removal Task](../../completed/TASK-037/TASK-037-remove-bdd-mode.md)
 
 ### Research Documents
-- LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md
-- TaskWright_LangGraph_Orchestration_Build_Strategy.md
+- LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md
+- GuardKit_LangGraph_Orchestration_Build_Strategy.md
 
 ### Code References
 - `installer/global/lib/feature_detection.py` (supports_bdd function)
@@ -819,7 +819,7 @@ bdd_framework: pytest-bdd  # or SpecFlow, Cucumber.js
 - Why agentic systems need formal specs
 - EARS → Gherkin → Code traceability
 - LangGraph state machine implementation
-- Dogfooding TaskWright + RequireKit
+- Dogfooding GuardKit + RequireKit
 - Lessons learned
 
 ### Feedback Collection

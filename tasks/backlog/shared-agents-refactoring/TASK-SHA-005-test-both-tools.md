@@ -18,11 +18,11 @@ task_type: implementation
 
 ## Context
 
-Simple smoke testing to verify both TaskWright and RequireKit work correctly with shared-agents. Keep it practical - if the main commands work, we're good.
+Simple smoke testing to verify both GuardKit and RequireKit work correctly with shared-agents. Keep it practical - if the main commands work, we're good.
 
 ## Acceptance Criteria
 
-- [ ] TaskWright standalone works
+- [ ] GuardKit standalone works
 - [ ] RequireKit standalone works
 - [ ] Both tools together work (no conflicts)
 - [ ] Shared agents are discovered correctly
@@ -30,14 +30,14 @@ Simple smoke testing to verify both TaskWright and RequireKit work correctly wit
 
 ## Implementation
 
-### Test Scenario 1: TaskWright Standalone
+### Test Scenario 1: GuardKit Standalone
 
 ```bash
 # Fresh test directory
 mkdir test-guardkit-solo
 cd test-guardkit-solo
 
-# Install TaskWright
+# Install GuardKit
 ../guardkit/installer/scripts/install.sh
 
 # Verify shared agents installed
@@ -83,7 +83,7 @@ ls .claude/agents/universal/*.md
 mkdir test-both-tools
 cd test-both-tools
 
-# Install TaskWright first
+# Install GuardKit first
 ../guardkit/installer/scripts/install.sh
 count1=$(ls .claude/agents/universal/*.md | wc -l)
 
@@ -99,7 +99,7 @@ else
 fi
 
 # Test both tools
-/task-status  # TaskWright
+/task-status  # GuardKit
 # (RequireKit command)  # RequireKit
 
 # Both should work
@@ -133,7 +133,7 @@ grep -H "name:" universal/*.md
 
 ### Manual Testing Checklist
 
-- [ ] Test 1: TaskWright alone ✅/❌
+- [ ] Test 1: GuardKit alone ✅/❌
 - [ ] Test 2: RequireKit alone ✅/❌
 - [ ] Test 3: Both together ✅/❌
 - [ ] Test 4: Agent discovery ✅/❌

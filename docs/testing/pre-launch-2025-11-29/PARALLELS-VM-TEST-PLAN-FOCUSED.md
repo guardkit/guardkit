@@ -1,4 +1,4 @@
-# TaskWright Pre-Launch Test Plan - FOCUSED (Recent Changes Only)
+# GuardKit Pre-Launch Test Plan - FOCUSED (Recent Changes Only)
 
 **Created**: 2025-11-29
 **Platform**: macOS Parallels Virtual Machine (clean slate)
@@ -51,7 +51,7 @@
 - **Disk**: 50GB
 - **Network**: Shared network
 
-**Pre-Test Snapshot**: "Pre-TaskWright-Install"
+**Pre-Test Snapshot**: "Pre-GuardKit-Install"
 
 ---
 
@@ -66,7 +66,7 @@
 xcode-select --install
 brew install python@3.11
 
-# Install TaskWright
+# Install GuardKit
 mkdir -p ~/Projects
 cd ~/Projects
 git clone https://github.com/guardkit/guardkit.git
@@ -501,7 +501,7 @@ git status
 
 | Phase | Estimated | Notes |
 |-------|-----------|-------|
-| Installation | 20 min | Both TaskWright + RequireKit |
+| Installation | 20 min | Both GuardKit + RequireKit |
 | Template Init | 20 min | Q&A workflow |
 | BDD Integration | 40 min | Full workflow + error testing |
 | Subagent Discovery | 15 min | Quick validation |
@@ -530,7 +530,7 @@ git status
 ## Simplified Results Template
 
 ```markdown
-# TaskWright Focused Test Results
+# GuardKit Focused Test Results
 
 **Date**: _____________
 **Duration**: _____________

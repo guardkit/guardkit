@@ -37,11 +37,11 @@ test_results:
 
 ## Context
 
-The shared agents architecture proposal ([docs/proposals/shared-agents-architecture-proposal.md](../../docs/proposals/shared-agents-architecture-proposal.md)) has been **approved** and outlines a plan to eliminate agent duplication between TaskWright and RequireKit by creating a dedicated `shared-agents` repository.
+The shared agents architecture proposal ([docs/proposals/shared-agents-architecture-proposal.md](../../docs/proposals/shared-agents-architecture-proposal.md)) has been **approved** and outlines a plan to eliminate agent duplication between GuardKit and RequireKit by creating a dedicated `shared-agents` repository.
 
 **Current Status**: Approved (November 28, 2025)
 
-**Problem**: Both TaskWright and RequireKit maintain duplicate copies of universal agents (`requirements-analyst`, `bdd-generator`, `test-orchestrator`, `code-reviewer`), leading to:
+**Problem**: Both GuardKit and RequireKit maintain duplicate copies of universal agents (`requirements-analyst`, `bdd-generator`, `test-orchestrator`, `code-reviewer`), leading to:
 - Version drift
 - Maintenance burden
 - Inconsistent behavior
@@ -105,7 +105,7 @@ This review task will:
 
 - [ ] **Task Breakdown Document**
   - Phase 1: Create shared-agents repository (tasks)
-  - Phase 2: Update TaskWright (tasks)
+  - Phase 2: Update GuardKit (tasks)
   - Phase 3: Update RequireKit (tasks)
   - Phase 4: Integration testing (tasks)
   - Phase 5: Documentation & release (tasks)
@@ -150,7 +150,7 @@ This review task will:
 - This is a cross-repository refactoring affecting two projects
 - Architectural compliance is critical (DIP, single source of truth)
 - Comprehensive analysis needed for risk assessment
-- Multiple stakeholders (TaskWright users, RequireKit users)
+- Multiple stakeholders (GuardKit users, RequireKit users)
 
 ## Expected Outputs
 
@@ -197,7 +197,7 @@ Format:
 - TASK-004: Set up GitHub Actions
 - TASK-005: Create v1.0.0 release
 
-## Phase 2: Update TaskWright
+## Phase 2: Update GuardKit
 [Detailed task breakdown]
 
 ## Phase 3: Update RequireKit
@@ -257,7 +257,7 @@ This is a review task - no code implementation testing required.
 
 However, the review should define testing requirements for the implementation tasks:
 
-- [ ] TaskWright standalone installation testing
+- [ ] GuardKit standalone installation testing
 - [ ] RequireKit standalone installation testing
 - [ ] Combined installation testing
 - [ ] Version pinning testing (different versions)
@@ -292,7 +292,7 @@ However, the review should define testing requirements for the implementation ta
 ### Critical Success Factors
 
 1. **Zero Disruption**: Existing users should not experience breaking changes
-2. **Standalone Works**: Both TaskWright and RequireKit continue to work independently
+2. **Standalone Works**: Both GuardKit and RequireKit continue to work independently
 3. **Easy Updates**: Bumping version in pinning file + re-run installer
 4. **DIP Compliance**: No runtime dependencies on shared-agents repository
 5. **Rollback Safety**: Can revert to previous version if issues discovered
