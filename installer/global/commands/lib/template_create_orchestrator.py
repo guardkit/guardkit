@@ -18,21 +18,34 @@ import uuid
 
 # === BEGIN: Repository Root Resolution ===
 def _add_repo_to_path():
-    """Add repository root to sys.path if not already present."""
+    """Add repository root and commands/lib to sys.path if not already present.
+
+    Two paths are needed:
+    1. repo_root: For modules in installer/global/lib/ (via lib symlink)
+    2. commands_lib: For local modules like template_qa_session.py
+    """
     script_path = Path(__file__).resolve()
     # Navigate: lib/ -> commands/ -> global/ -> installer/ -> taskwright/ (5 levels up)
     repo_root = script_path.parent.parent.parent.parent.parent
     repo_root_str = str(repo_root)
 
+    # Also add the commands/lib directory for local imports (template_qa_session, etc.)
+    commands_lib = script_path.parent  # installer/global/commands/lib/
+    commands_lib_str = str(commands_lib)
+
     if repo_root_str not in sys.path:
         sys.path.insert(0, repo_root_str)
+
+    if commands_lib_str not in sys.path:
+        sys.path.insert(0, commands_lib_str)
 
 _add_repo_to_path()
 # === END: Repository Root Resolution ===
 
 # Import component modules using importlib to avoid 'global' keyword issue
 import importlib
-_template_qa_module = importlib.import_module('lib.template_qa_session')
+# template_qa_session is in commands/lib/ (same dir as this file), imported directly
+_template_qa_module = importlib.import_module('template_qa_session')
 _codebase_analyzer_module = importlib.import_module('lib.codebase_analyzer.ai_analyzer')
 _manifest_gen_module = importlib.import_module('lib.template_creation.manifest_generator')
 _settings_gen_module = importlib.import_module('lib.settings_generator.generator')

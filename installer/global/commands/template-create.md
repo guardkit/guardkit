@@ -1136,9 +1136,13 @@ LOOP (max 5 iterations to prevent infinite loops):
 
 ### Step 1: Run Python Orchestrator
 
+**IMPORTANT**: This script requires Python 3.10+ (uses `|` union type syntax).
+
 ```bash
 python3 ~/.agentecflow/bin/template-create-orchestrator "$@"
 ```
+
+If Python version error occurs (`TypeError: unsupported operand type(s) for |`), the user needs Python 3.10+.
 
 Capture the exit code from this command.
 
