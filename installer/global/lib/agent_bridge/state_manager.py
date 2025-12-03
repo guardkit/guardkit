@@ -25,6 +25,7 @@ class TemplateCreateState:
         config: Orchestrator configuration (codebase_path, output_location, etc.)
         phase_data: Results from completed phases (qa_answers, analysis, etc.)
         agent_request_pending: Agent request metadata if waiting for response
+        resume_count: Number of resume attempts (prevents infinite loops)
     """
     version: str
     checkpoint: str
@@ -34,6 +35,7 @@ class TemplateCreateState:
     config: dict
     phase_data: dict
     agent_request_pending: Optional[dict] = None
+    resume_count: int = 0
 
 
 class StateManager:
@@ -92,11 +94,13 @@ class StateManager:
         Raises:
             OSError: If unable to write state file
         """
-        # Load existing state to preserve created_at, or create new timestamp
+        # Load existing state to preserve created_at and resume_count
+        resume_count = 0
         if self.state_file.exists():
             try:
                 existing = json.loads(self.state_file.read_text(encoding="utf-8"))
                 created_at = existing.get("created_at", datetime.now(timezone.utc).isoformat())
+                resume_count = existing.get("resume_count", 0)
             except (json.JSONDecodeError, OSError):
                 # If existing state is corrupted, create new timestamp
                 created_at = datetime.now(timezone.utc).isoformat()
@@ -112,7 +116,8 @@ class StateManager:
             updated_at=datetime.now(timezone.utc).isoformat(),
             config=config,
             phase_data=phase_data,
-            agent_request_pending=agent_request_pending
+            agent_request_pending=agent_request_pending,
+            resume_count=resume_count
         )
 
         # Write to file with proper formatting
@@ -152,6 +157,42 @@ class StateManager:
             True if state file exists, False otherwise
         """
         return self.state_file.exists()
+
+    def increment_resume_count(self) -> int:
+        """Increment and return the resume count.
+
+        Called when resuming to track number of resume attempts.
+        Prevents infinite loops by enabling callers to check count.
+
+        Returns:
+            New resume count after increment
+
+        Raises:
+            FileNotFoundError: If state file doesn't exist
+            ValueError: If state file is malformed
+        """
+        state = self.load_state()
+        new_count = state.resume_count + 1
+
+        # Update state with new count
+        self.save_state(
+            checkpoint=state.checkpoint,
+            phase=state.phase,
+            config=state.config,
+            phase_data=state.phase_data,
+            agent_request_pending=state.agent_request_pending
+        )
+
+        # Manually update resume_count (save_state preserves existing)
+        # We need to reload and explicitly set it
+        data = json.loads(self.state_file.read_text(encoding="utf-8"))
+        data["resume_count"] = new_count
+        self.state_file.write_text(
+            json.dumps(data, indent=2),
+            encoding="utf-8"
+        )
+
+        return new_count
 
     def cleanup(self) -> None:
         """Delete state file (called on successful completion).

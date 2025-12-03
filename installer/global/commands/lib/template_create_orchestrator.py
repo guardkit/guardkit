@@ -202,6 +202,10 @@ class TemplateCreateOrchestrator:
         # TASK-PHASE-7-5-TEMPLATE-PREWRITE-FIX: Track if templates written to disk
         self._templates_written_to_disk = False
 
+        # TASK-FIX-INFINITE-LOOP: Track resume state to prevent infinite exit 42 loops
+        self._resume_count = 0
+        self._force_heuristic = False
+
         # Configure logging
         if config.verbose:
             logging.basicConfig(level=logging.DEBUG)
@@ -797,6 +801,9 @@ class TemplateCreateOrchestrator:
         TASK-BRIDGE-002: Modified to pass AgentBridgeInvoker to generator.
         May exit with code 42 if agent invocation needed.
 
+        TASK-FIX-INFINITE-LOOP: If _force_heuristic is True (after 3 failed resume attempts),
+        uses heuristic-based agent generation instead of AI to prevent infinite loops.
+
         Args:
             analysis: CodebaseAnalysis from phase 1
 
@@ -804,6 +811,11 @@ class TemplateCreateOrchestrator:
             List of GeneratedAgent objects
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
+
+        # TASK-FIX-INFINITE-LOOP: Skip AI invocation if forced to use heuristics
+        if self._force_heuristic:
+            self._print_warning("  Using heuristic agent generation (AI unavailable after 3 attempts)")
+            return self._generate_heuristic_agents(analysis)
 
         try:
             # Import agent scanner to get inventory
@@ -840,6 +852,77 @@ class TemplateCreateOrchestrator:
             self._print_warning(f"Agent generation failed: {e}")
             logger.exception("Agent generation error")
             return []
+
+    def _generate_heuristic_agents(self, analysis: Any) -> List[Any]:
+        """
+        Generate agents using heuristic patterns when AI is unavailable.
+
+        TASK-FIX-INFINITE-LOOP: Fallback for when AI agent generation fails
+        after multiple resume attempts. Uses analysis data to suggest basic agents
+        based on detected language, framework, and architecture patterns.
+
+        Args:
+            analysis: CodebaseAnalysis from phase 1
+
+        Returns:
+            List of GeneratedAgent objects (typically 3-5 basic agents)
+        """
+        _agent_generator_module = importlib.import_module('lib.agent_generator.agent_generator')
+        GeneratedAgent = _agent_generator_module.GeneratedAgent
+
+        agents = []
+
+        # Extract analysis data with safe defaults
+        language = getattr(analysis, 'language', 'unknown')
+        architecture = getattr(analysis, 'architecture_pattern', 'unknown')
+        frameworks = getattr(analysis, 'frameworks', [])
+        layers = getattr(analysis, 'layers', [])
+
+        # Generate language-specific agent
+        if language and language != 'unknown':
+            lang_name = f"{language.lower()}-specialist"
+            agents.append(GeneratedAgent(
+                name=lang_name,
+                description=f"Specialist for {language} development patterns",
+                reason=f"Detected {language} as primary language",
+                confidence=68,  # Heuristic confidence
+                tags=[language.lower()],
+                priority=8
+            ))
+
+        # Generate architecture-specific agent
+        if architecture and architecture != 'unknown':
+            arch_name = f"{architecture.lower().replace(' ', '-')}-specialist"
+            agents.append(GeneratedAgent(
+                name=arch_name,
+                description=f"Specialist for {architecture} architecture patterns",
+                reason=f"Detected {architecture} architecture",
+                confidence=68,
+                tags=[architecture.lower()],
+                priority=7
+            ))
+
+        # Generate framework agents (max 2)
+        for i, framework in enumerate(frameworks[:2]):
+            if framework:
+                fw_name = f"{framework.lower().replace(' ', '-')}-specialist"
+                agents.append(GeneratedAgent(
+                    name=fw_name,
+                    description=f"Specialist for {framework} framework patterns",
+                    reason=f"Detected {framework} framework",
+                    confidence=65,
+                    tags=[framework.lower()],
+                    priority=6 - i
+                ))
+
+        if agents:
+            self._print_info(f"  ✓ Generated {len(agents)} agents via heuristics")
+            self._print_warning("  ⚠️  Note: Heuristic agents have lower confidence (65-68%)")
+            self._print_info("  → Consider re-running /template-create for AI-powered agent generation")
+        else:
+            self._print_info("  No agents generated (insufficient analysis data)")
+
+        return agents
 
     def _phase7_write_agents(self, agents: List[Any], output_path: Path) -> Optional[List[Path]]:
         """
@@ -1760,8 +1843,23 @@ Enhance the {agent_name} agent with template-specific content:
 
         Loads saved orchestrator state and agent response (if available).
         Called during __init__ when config.resume is True.
+
+        TASK-FIX-INFINITE-LOOP: Tracks resume count to prevent infinite exit 42 loops.
+        If agent response is missing after 3 resume attempts, sets flag to use heuristics.
         """
         print("\n🔄 Resuming from checkpoint...")
+
+        # TASK-FIX-INFINITE-LOOP: Increment and check resume count
+        resume_count = self.state_manager.increment_resume_count()
+        self._resume_count = resume_count  # Store for later use in invoke()
+        print(f"  Resume attempt: {resume_count}")
+
+        if resume_count >= 3:
+            print(f"  ⚠️  Maximum resume attempts reached ({resume_count})")
+            print(f"  → Will use heuristic agent generation (no AI)")
+            self._force_heuristic = True
+        else:
+            self._force_heuristic = False
 
         # Load state
         state = self.state_manager.load_state()
