@@ -227,7 +227,7 @@ Expected:
 
 **RequireKit Integration**:
 ```bash
-# Verify RequireKit agents work from TaskWright
+# Verify RequireKit agents work from GuardKit
 cd ~/Projects/test-project
 /task-work TASK-XXX --mode=bdd  # Triggers RequireKit bdd-generator
 
@@ -279,9 +279,9 @@ Expected:
 
 ### Test Scenarios (from TASK-SHA-002)
 
-1. TaskWright standalone installation
+1. GuardKit standalone installation
 2. RequireKit standalone installation
-3. Combined installation (TaskWright first)
+3. Combined installation (GuardKit first)
 4. Combined installation (RequireKit first)
 5. Version pinning (different versions)
 6. Offline fallback (if implemented)
@@ -463,7 +463,7 @@ Expected:
 
 ### Pre-Test Setup
 
-- [ ] Backup current TaskWright state
+- [ ] Backup current GuardKit state
 - [ ] Create test project directory
 - [ ] Ensure RequireKit installed
 - [ ] Ensure Conductor installed

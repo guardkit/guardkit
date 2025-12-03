@@ -1,7 +1,7 @@
 # Testing Documentation
 
 **Location**: `docs/testing/`
-**Purpose**: Test plans, strategies, and execution guides for TaskWright validation
+**Purpose**: Test plans, strategies, and execution guides for GuardKit validation
 **Updated**: 2025-11-29
 
 ---

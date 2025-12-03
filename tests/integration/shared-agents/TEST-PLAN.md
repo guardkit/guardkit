@@ -52,16 +52,16 @@ git init
 
 ---
 
-## Test Scenario 1: TaskWright Standalone Installation
+## Test Scenario 1: GuardKit Standalone Installation
 
-**Objective**: Verify TaskWright can install shared-agents independently without RequireKit.
+**Objective**: Verify GuardKit can install shared-agents independently without RequireKit.
 
 ### Prerequisites
 
 - [ ] Fresh project directory
 - [ ] No existing `.claude/` directory
 - [ ] Internet connection
-- [ ] TaskWright cloned
+- [ ] GuardKit cloned
 
 ### Test Steps
 
@@ -71,7 +71,7 @@ git init
    ls -la .claude  # Should not exist
    ```
 
-2. **Run TaskWright installer**:
+2. **Run GuardKit installer**:
    ```bash
    cd ../guardkit
    ./installer/scripts/install.sh
@@ -153,7 +153,7 @@ git checkout .claude/  # If under version control
 
 ## Test Scenario 2: RequireKit Standalone Installation
 
-**Objective**: Verify RequireKit can install shared-agents independently without TaskWright.
+**Objective**: Verify RequireKit can install shared-agents independently without GuardKit.
 
 ### Prerequisites
 
@@ -207,19 +207,19 @@ Same as Test Scenario 1
 
 ---
 
-## Test Scenario 3: Combined Installation (TaskWright First)
+## Test Scenario 3: Combined Installation (GuardKit First)
 
-**Objective**: Verify both tools can coexist when TaskWright is installed first.
+**Objective**: Verify both tools can coexist when GuardKit is installed first.
 
 ### Prerequisites
 
 - [ ] Fresh project directory
 - [ ] No existing `.claude/` directory
-- [ ] Both TaskWright and RequireKit cloned
+- [ ] Both GuardKit and RequireKit cloned
 
 ### Test Steps
 
-1. **Install TaskWright first**:
+1. **Install GuardKit first**:
    ```bash
    cd test-project
    ../guardkit/installer/scripts/install.sh
@@ -250,7 +250,7 @@ Same as Test Scenario 1
 
 6. **Test both tools independently**:
    ```bash
-   # TaskWright command
+   # GuardKit command
    /task-status
 
    # RequireKit command (if applicable)
@@ -273,7 +273,7 @@ find .claude/agents/ -name "*.md" | sort | uniq -d
 # Should output nothing (no duplicates)
 
 # Verify both tools installed correctly
-test -f .claude/commands/task-create.md && echo "✅ TaskWright installed"
+test -f .claude/commands/task-create.md && echo "✅ GuardKit installed"
 test -f .claude/commands/formalize-ears.md && echo "✅ RequireKit installed"
 
 # Check shared agents integrity
@@ -309,7 +309,7 @@ Same as Test Scenario 3, but reverse installation order:
 
 1. Install RequireKit first
 2. Verify initial installation
-3. Install TaskWright second
+3. Install GuardKit second
 4. Verify no duplication
 5. Test both tools
 
@@ -343,7 +343,7 @@ Same as Test Scenario 3
 
 ### Test Steps
 
-1. **Modify TaskWright version pinning**:
+1. **Modify GuardKit version pinning**:
    ```bash
    cd guardkit
    echo "v1.0.0" > installer/shared-agents-version.txt
@@ -355,13 +355,13 @@ Same as Test Scenario 3
    echo "v1.1.0" > installer/shared-agents-version.txt
    ```
 
-3. **Install TaskWright**:
+3. **Install GuardKit**:
    ```bash
    cd ../test-project
    ../guardkit/installer/scripts/install.sh
    ```
 
-4. **Verify TaskWright version**:
+4. **Verify GuardKit version**:
    ```bash
    # Check agent file metadata or version marker
    head -20 .claude/agents/universal/code-reviewer.md | grep -i version
@@ -386,7 +386,7 @@ Same as Test Scenario 3
 
 ### Expected Results
 
-- [ ] TaskWright gets v1.0.0 agents (initially)
+- [ ] GuardKit gets v1.0.0 agents (initially)
 - [ ] RequireKit installer detects version mismatch
 - [ ] Warning displayed about different versions
 - [ ] User prompted with options (update, keep, abort)
@@ -515,7 +515,7 @@ rm -rf .claude/
 ### Prerequisites
 
 - [ ] Fresh project directory
-- [ ] TaskWright cloned with conflict detection implemented (TASK-SHA-001)
+- [ ] GuardKit cloned with conflict detection implemented (TASK-SHA-001)
 
 ### Test Steps
 
@@ -532,7 +532,7 @@ rm -rf .claude/
    EOF
    ```
 
-2. **Run TaskWright installer**:
+2. **Run GuardKit installer**:
    ```bash
    ../guardkit/installer/scripts/install.sh
    ```
@@ -627,7 +627,7 @@ rm -rf .claude/
 
 ### Prerequisites
 
-- [ ] TaskWright with shared-agents installed
+- [ ] GuardKit with shared-agents installed
 - [ ] Rollback script created (TASK-SHA-003)
 - [ ] Backup available
 
@@ -799,7 +799,7 @@ class TestSharedAgents:
         shutil.rmtree(tmpdir)
 
     def test_guardkit_standalone(self, fresh_project):
-        """Test Scenario 1: TaskWright standalone installation."""
+        """Test Scenario 1: GuardKit standalone installation."""
         # Change to test project
         os.chdir(fresh_project)
 
@@ -830,10 +830,10 @@ class TestSharedAgents:
         pass
 
     def test_combined_installation_guardkit_first(self, fresh_project):
-        """Test Scenario 3: Combined installation (TaskWright first)."""
+        """Test Scenario 3: Combined installation (GuardKit first)."""
         os.chdir(fresh_project)
 
-        # Install TaskWright
+        # Install GuardKit
         result1 = subprocess.run(
             ["../guardkit/installer/scripts/install.sh"],
             capture_output=True,
@@ -932,7 +932,7 @@ jobs:
           - conflict-detection
 
     steps:
-      - name: Checkout TaskWright
+      - name: Checkout GuardKit
         uses: actions/checkout@v4
         with:
           path: guardkit
@@ -987,13 +987,13 @@ jobs:
 
 ### Test Execution
 
-- [ ] **Scenario 1**: TaskWright standalone - PASS / FAIL
+- [ ] **Scenario 1**: GuardKit standalone - PASS / FAIL
   - Notes: _______________________________
 
 - [ ] **Scenario 2**: RequireKit standalone - PASS / FAIL
   - Notes: _______________________________
 
-- [ ] **Scenario 3**: Combined (TaskWright first) - PASS / FAIL
+- [ ] **Scenario 3**: Combined (GuardKit first) - PASS / FAIL
   - Notes: _______________________________
 
 - [ ] **Scenario 4**: Combined (RequireKit first) - PASS / FAIL

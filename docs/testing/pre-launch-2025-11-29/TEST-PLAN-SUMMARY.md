@@ -175,7 +175,7 @@
 
 ```bash
 # 1. Create VM and snapshot
-# Name: "Pre-TaskWright-Install"
+# Name: "Pre-GuardKit-Install"
 
 # 2. Print quick reference
 open PARALLELS-VM-TEST-QUICK-REFERENCE-FOCUSED.md

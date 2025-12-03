@@ -1,4 +1,4 @@
-# KartLog Demo: Feature Suggestions for TaskWright Testing
+# KartLog Demo: Feature Suggestions for GuardKit Testing
 
 **Date**: 2025-05-30
 **Purpose**: Define compelling features to implement in forked kartlog repo as "show me the code" demos
@@ -9,16 +9,16 @@
 
 ## Overview
 
-KartLog is an excellent candidate for TaskWright demonstrations because:
+KartLog is an excellent candidate for GuardKit demonstrations because:
 
 1. **Real-world complexity** - Not a toy app; has auth, database, AI integration
-2. **Different tech stack** - Svelte + Firebase (tests TaskWright beyond built-in templates)
+2. **Different tech stack** - Svelte + Firebase (tests GuardKit beyond built-in templates)
 3. **Domain-specific logic** - Karting data has real business rules CTOs will recognize
 4. **Active development** - Colin already uses spec-driven development manually
 5. **Clear extension points** - Obvious features missing that make sense to add
 
 ### Current Tech Stack
-- **Frontend**: Svelte (not React - good for demonstrating TaskWright's flexibility)
+- **Frontend**: Svelte (not React - good for demonstrating GuardKit's flexibility)
 - **Backend**: Firebase (Firestore + Auth)
 - **Build**: Vite
 - **AI**: GPT-4 chat assistant with function calling
@@ -39,9 +39,9 @@ KartLog is an excellent candidate for TaskWright demonstrations because:
 ```
 guardkit/kartlog-demos/
 ├── README.md              # Overview explaining the demo purpose
-├── DEMO.md                # Exact prompts/commands used with TaskWright
+├── DEMO.md                # Exact prompts/commands used with GuardKit
 ├── main branch            # Production-ready with all features implemented
-├── starter branch         # Fork point before TaskWright features
+├── starter branch         # Fork point before GuardKit features
 └── feature branches       # Each feature as separate branch for comparison
     ├── feature/weather-conditions
     ├── feature/lap-time-charts
@@ -62,7 +62,7 @@ guardkit/kartlog-demos/
 ## Feature Suggestions
 
 ### Tier 1: Quick Win (2-4 hours each)
-*Good for rapid demos, shows TaskWright working end-to-end*
+*Good for rapid demos, shows GuardKit working end-to-end*
 
 #### 1. Weather Conditions Tracking ⭐ RECOMMENDED FIRST
 **Why this feature**: Weather directly affects lap times in karting. Temperature, humidity, and track conditions change grip levels. This is domain knowledge that skeptical CTOs will recognize as "real" not "AI slop."
@@ -79,7 +79,7 @@ guardkit/kartlog-demos/
 - Weather condition icons/badges
 - Proper TypeScript/JSDoc types
 
-**Demo value**: Shows TaskWright handling form extensions, database schema changes, and UI updates in a coordinated way.
+**Demo value**: Shows GuardKit handling form extensions, database schema changes, and UI updates in a coordinated way.
 
 ---
 
@@ -98,12 +98,12 @@ guardkit/kartlog-demos/
 - Celebration animation when PB set
 - Firestore indexes for performance
 
-**Demo value**: Shows TaskWright generating domain-specific business logic, not just CRUD.
+**Demo value**: Shows GuardKit generating domain-specific business logic, not just CRUD.
 
 ---
 
 #### 3. Dark Mode
-**Why this feature**: Universal web feature, touches many components, shows TaskWright handling cross-cutting concerns.
+**Why this feature**: Universal web feature, touches many components, shows GuardKit handling cross-cutting concerns.
 
 **Scope**:
 - CSS custom properties for theming
@@ -117,12 +117,12 @@ guardkit/kartlog-demos/
 - Theme-aware charts/graphs
 - No flash on page load
 
-**Demo value**: Shows TaskWright making coordinated changes across the entire UI layer.
+**Demo value**: Shows GuardKit making coordinated changes across the entire UI layer.
 
 ---
 
 ### Tier 2: Substantial Features (4-8 hours each)
-*Good for demonstrating TaskWright on meaty features*
+*Good for demonstrating GuardKit on meaty features*
 
 #### 4. Lap Time Charts & Analytics ⭐ RECOMMENDED
 **Why this feature**: Visualization is where AI-generated code often fails. Getting charts right requires understanding data structures, library APIs, and UX.
@@ -145,7 +145,7 @@ guardkit/kartlog-demos/
 - Axis labels and legends
 - Color accessibility
 
-**Demo value**: Charting is a common "show me the code" test because bad implementations are immediately visible. This proves TaskWright produces usable visualization code.
+**Demo value**: Charting is a common "show me the code" test because bad implementations are immediately visible. This proves GuardKit produces usable visualization code.
 
 ---
 
@@ -185,12 +185,12 @@ guardkit/kartlog-demos/
 - Notification/badge system
 - Historical wear data
 
-**Demo value**: Shows TaskWright can handle domain modeling and derived business logic.
+**Demo value**: Shows GuardKit can handle domain modeling and derived business logic.
 
 ---
 
 ### Tier 3: Impressive Features (8+ hours)
-*For demonstrating TaskWright on architectural work*
+*For demonstrating GuardKit on architectural work*
 
 #### 7. Offline Support (PWA)
 **Why this feature**: Karting circuits often have poor connectivity. Making the app work offline then sync is a real user need that requires architectural thinking.
@@ -214,7 +214,7 @@ guardkit/kartlog-demos/
 - Network status detection
 - Graceful degradation
 
-**Demo value**: This is a significant architectural feature. Successfully implementing offline support demonstrates TaskWright can handle complex, cross-cutting concerns.
+**Demo value**: This is a significant architectural feature. Successfully implementing offline support demonstrates GuardKit can handle complex, cross-cutting concerns.
 
 ---
 
@@ -258,16 +258,16 @@ For maximum impact on LinkedIn "show me the code" skeptics:
 ## README Template for Demo Repo
 
 ```markdown
-# KartLog + TaskWright Demo
+# KartLog + GuardKit Demo
 
 > Real features, real code quality, no AI slop.
 
-This repository demonstrates [TaskWright](https://github.com/guardkit/guardkit) 
+This repository demonstrates [GuardKit](https://github.com/guardkit/guardkit) 
 implementing production-ready features in an existing Svelte + Firebase codebase.
 
 ## What This Proves
 
-TaskWright isn't just for greenfield projects. This demo shows:
+GuardKit isn't just for greenfield projects. This demo shows:
 
 - ✅ Working with existing codebases (Svelte, not our built-in templates)
 - ✅ Domain-specific features (karting business logic)
@@ -285,7 +285,7 @@ git checkout starter
 # See what we started with
 npm install && npm run dev
 
-# Now use TaskWright to implement features
+# Now use GuardKit to implement features
 guardkit task-create "Add weather conditions to session tracking"
 guardkit task-work TASK-001
 ```
@@ -301,7 +301,7 @@ guardkit task-work TASK-001
 
 ## The Prompts We Used
 
-See [DEMO.md](./DEMO.md) for the exact TaskWright commands and prompts used
+See [DEMO.md](./DEMO.md) for the exact GuardKit commands and prompts used
 for each feature.
 
 ## Quality Scorecard
@@ -404,4 +404,4 @@ When CTOs and senior devs look at this demo, they should see:
 5. **Test coverage** - Proof the code actually works
 6. **Documentation** - Comments explaining intent, not just syntax
 
-The goal is NOT to show TaskWright is fast. The goal is to show TaskWright produces code you'd actually ship.
+The goal is NOT to show GuardKit is fast. The goal is to show GuardKit produces code you'd actually ship.

@@ -1,6 +1,6 @@
 ---
 id: TASK-SHA-000
-title: Verify agent duplication between TaskWright and RequireKit
+title: Verify agent duplication between GuardKit and RequireKit
 status: backlog
 created: 2025-11-28T20:30:00Z
 updated: 2025-11-28T20:30:00Z
@@ -19,19 +19,19 @@ task_type: implementation
 
 ## Context
 
-**Critical Finding from Architectural Review**: The proposal assumes certain agents are duplicated between TaskWright and RequireKit, but this assumption has not been verified. Migrating the wrong agents would break existing workflows.
+**Critical Finding from Architectural Review**: The proposal assumes certain agents are duplicated between GuardKit and RequireKit, but this assumption has not been verified. Migrating the wrong agents would break existing workflows.
 
 **Risk**: High severity - Could migrate wrong agents, breaking both tools
 **Mitigation**: Create verification script to identify truly duplicated agents
 
 ## Description
 
-Create and execute a verification script that compares agents between TaskWright and RequireKit repositories to identify which agents are truly duplicated (≥80% similarity).
+Create and execute a verification script that compares agents between GuardKit and RequireKit repositories to identify which agents are truly duplicated (≥80% similarity).
 
 ## Acceptance Criteria
 
 - [ ] Script created: `scripts/verify-agent-duplication.sh`
-- [ ] Script compares TaskWright and RequireKit agents
+- [ ] Script compares GuardKit and RequireKit agents
 - [ ] Output includes:
   - [ ] Agent name
   - [ ] Similarity percentage
@@ -59,7 +59,7 @@ echo "Agent Duplication Verification"
 echo "======================================================================="
 echo ""
 echo "Comparing:"
-echo "  TaskWright: $GUARDKIT_AGENTS"
+echo "  GuardKit: $GUARDKIT_AGENTS"
 echo "  RequireKit: $REQUIREKIT_AGENTS"
 echo ""
 
@@ -93,7 +93,7 @@ for agent in $GUARDKIT_AGENTS/*.md; do
 
         if [ $similarity -ge 80 ]; then
             echo "✅ $basename - ${similarity}% similar (TRUE DUPLICATE)" | tee -a "$OUTPUT_FILE"
-            echo "   TaskWright: $agent" | tee -a "$OUTPUT_FILE"
+            echo "   GuardKit: $agent" | tee -a "$OUTPUT_FILE"
             echo "   RequireKit: $requirekit_agent" | tee -a "$OUTPUT_FILE"
             echo "" | tee -a "$OUTPUT_FILE"
             duplicates=$((duplicates + 1))
@@ -105,7 +105,7 @@ for agent in $GUARDKIT_AGENTS/*.md; do
             diverged=$((diverged + 1))
         fi
     else
-        echo "ℹ️  $basename - UNIQUE (TaskWright only)"
+        echo "ℹ️  $basename - UNIQUE (GuardKit only)"
         unique=$((unique + 1))
     fi
 done
@@ -114,14 +114,14 @@ echo "" >> "$OUTPUT_FILE"
 echo "=== SUMMARY ===" >> "$OUTPUT_FILE"
 echo "True duplicates: $duplicates" >> "$OUTPUT_FILE"
 echo "Diverged agents: $diverged" >> "$OUTPUT_FILE"
-echo "Unique to TaskWright: $unique" >> "$OUTPUT_FILE"
+echo "Unique to GuardKit: $unique" >> "$OUTPUT_FILE"
 
 echo ""
 echo "======================================================================="
 echo "Summary:"
 echo "  True duplicates: $duplicates (will be migrated)"
 echo "  Diverged agents: $diverged (manual review needed)"
-echo "  Unique to TaskWright: $unique (won't be migrated)"
+echo "  Unique to GuardKit: $unique (won't be migrated)"
 echo ""
 echo "Results saved to: $OUTPUT_FILE"
 echo "======================================================================="
@@ -150,7 +150,7 @@ Create `docs/verified-universal-agents.md`:
 Based on verification script output:
 
 1. **agent-name.md** - XX% similarity
-   - TaskWright: installer/global/agents/agent-name.md
+   - GuardKit: installer/global/agents/agent-name.md
    - RequireKit: .claude/agents/agent-name.md
    - Status: ✅ Verified duplicate
 
@@ -162,8 +162,8 @@ Based on verification script output:
 
 ## Unique Agents
 
-**TaskWright Only**:
-- [List agents unique to TaskWright]
+**GuardKit Only**:
+- [List agents unique to GuardKit]
 
 **RequireKit Only**:
 - [List agents unique to RequireKit]
@@ -171,7 +171,7 @@ Based on verification script output:
 
 ### 4. Peer Review
 
-- Share results with TaskWright maintainer
+- Share results with GuardKit maintainer
 - Share results with RequireKit maintainer
 - Document any discrepancies or concerns
 - Get sign-off from both teams
@@ -188,7 +188,7 @@ Based on verification script output:
 
 ### Edge Cases
 
-- [ ] Agent exists in TaskWright but not RequireKit (unique)
+- [ ] Agent exists in GuardKit but not RequireKit (unique)
 - [ ] Agents with similar names but different content (diverged)
 - [ ] Empty agent files (handle gracefully)
 - [ ] Binary files (skip with warning)
@@ -232,8 +232,8 @@ The proposal assumes these 4 agents are universal:
 4. `code-reviewer.md`
 
 However:
-- `test-orchestrator.md` exists in TaskWright `installer/global/agents/` ✅
-- `code-reviewer.md` exists in TaskWright `installer/global/agents/` ✅
+- `test-orchestrator.md` exists in GuardKit `installer/global/agents/` ✅
+- `code-reviewer.md` exists in GuardKit `installer/global/agents/` ✅
 - `requirements-analyst.md` may be RequireKit-only ⚠️
 - `bdd-generator.md` may be RequireKit-only ⚠️
 

@@ -26,7 +26,7 @@ What we're building is **workflow automation**, not multi-agent orchestration:
 | "Orchestration" | Workflow Automation |
 | "FeatureOrchestrator" | FeatureWorkflow |
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) 
+See [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) 
 for a detailed comparison with true multi-agent orchestration systems like Claude-Flow.
 
 ---
@@ -1439,9 +1439,9 @@ guardkit retry --workflow-id abc123 --failed-only
 ## Related Documents
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ SUCCESSOR - Refined two-command approach with manual override
-- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
-- [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md) - LangGraph alternative
-- [LangGraph-Native Orchestration for TaskWright](./LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md) - Technical architecture
+- [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md) - Initial SDK analysis
+- [GuardKit LangGraph Orchestration: Build Strategy](./GuardKit_LangGraph_Orchestration_Build_Strategy.md) - LangGraph alternative
+- [LangGraph-Native Orchestration for GuardKit](./LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md) - Technical architecture
 
 ---
 

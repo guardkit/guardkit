@@ -157,12 +157,12 @@ ERROR: BDD mode requires RequireKit installation
 
 ### 4. Delegation Architecture
 
-**Principle**: TaskWright delegates to RequireKit for BDD logic
+**Principle**: GuardKit delegates to RequireKit for BDD logic
 
 **No Duplication**:
 - ❌ BDD agents NOT in guardkit
 - ✅ BDD agents in RequireKit only
-- ✅ TaskWright calls RequireKit agents
+- ✅ GuardKit calls RequireKit agents
 
 ---
 
@@ -269,8 +269,8 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - [TASK-037 Removal Task](../../completed/TASK-037/TASK-037-remove-bdd-mode.md)
 
 ### Research Documents
-- LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md
-- TaskWright_LangGraph_Orchestration_Build_Strategy.md
+- LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md
+- GuardKit_LangGraph_Orchestration_Build_Strategy.md
 
 ### Code References
 - `installer/global/lib/feature_detection.py`

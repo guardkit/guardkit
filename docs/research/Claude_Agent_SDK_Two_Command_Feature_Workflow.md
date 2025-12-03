@@ -6,9 +6,9 @@ This document specifies a **two-command workflow** for feature implementation us
 
 ### What This Is (and Isn't)
 
-> **TaskWright is workflow automation, not AI orchestration.**
+> **GuardKit is workflow automation, not AI orchestration.**
 
-| TaskWright | Swarm Systems (e.g., Claude-Flow) |
+| GuardKit | Swarm Systems (e.g., Claude-Flow) |
 |------------|-----------------------------------|
 | Automates a developer's manual workflow | Coordinates autonomous AI agents |
 | Single Claude instance (or parallel instances for independent tasks) | Multiple agents with hive-mind coordination |
@@ -17,7 +17,7 @@ This document specifies a **two-command workflow** for feature implementation us
 | No persistent learning across features | Neural patterns, vector memory, RL algorithms |
 | **Workflow automation with human checkpoints** | **Swarm intelligence with autonomous coordination** |
 
-Both approaches are valid for different use cases. TaskWright is designed for **production feature development** where human oversight, quality gates, and predictable behavior matter more than emergent AI coordination.
+Both approaches are valid for different use cases. GuardKit is designed for **production feature development** where human oversight, quality gates, and predictable behavior matter more than emergent AI coordination.
 
 **Key Insight**: By separating "planning" from "execution" into two commands, we create natural points where humans can:
 1. Review and approve the implementation plan before committing
@@ -140,11 +140,11 @@ Both approaches are valid for different use cases. TaskWright is designed for **
 
 ---
 
-## TaskWright vs Swarm Systems
+## GuardKit vs Swarm Systems
 
 ### Understanding the Difference
 
-There's an important distinction between what TaskWright does and what swarm/multi-agent systems like [Claude-Flow](https://github.com/ruvnet/claude-flow) do:
+There's an important distinction between what GuardKit does and what swarm/multi-agent systems like [Claude-Flow](https://github.com/ruvnet/claude-flow) do:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -215,13 +215,13 @@ There's an important distinction between what TaskWright does and what swarm/mul
 | Use Case | Best Approach |
 |----------|---------------|
 | Complex, exploratory work where AI needs to discover approach | Swarm systems |
-| Well-defined features following established patterns | TaskWright |
+| Well-defined features following established patterns | GuardKit |
 | Research and prototyping | Swarm systems |
-| Production feature development with quality gates | TaskWright |
-| Solo developer wanting to multiply output predictably | TaskWright |
+| Production feature development with quality gates | GuardKit |
+| Solo developer wanting to multiply output predictably | GuardKit |
 | Team wanting AI to coordinate autonomously | Swarm systems |
 
-TaskWright deliberately chooses **predictability over emergence** because production code needs:
+GuardKit deliberately chooses **predictability over emergence** because production code needs:
 - Human oversight at critical points
 - Ability to take manual control
 - Reproducible, auditable workflows
@@ -506,7 +506,7 @@ This means:
 │   │   • Product: What the user needs                                    │   │
 │   │   • Developer: How to implement it                                  │   │
 │   │                                                                      │   │
-│   │   The spec becomes input to TaskWright                              │   │
+│   │   The spec becomes input to GuardKit                              │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │                              │                                               │
 │                              ▼                                               │
@@ -546,7 +546,7 @@ This means:
 
 ### Traceability
 
-When using `--from-spec`, TaskWright maintains traceability:
+When using `--from-spec`, GuardKit maintains traceability:
 
 ```yaml
 # FEATURE-AUTH-IMPROVEMENTS.md
@@ -919,7 +919,7 @@ import anyio
 
 @click.group()
 def cli():
-    """TaskWright - Feature workflow automation for developers."""
+    """GuardKit - Feature workflow automation for developers."""
     pass
 
 @cli.command('create')
@@ -995,9 +995,9 @@ if __name__ == '__main__':
 
 ## Summary: The Two-Command Workflow
 
-### What TaskWright Is
+### What GuardKit Is
 
-> **TaskWright automates your feature development workflow** - from investigation through implementation to merge - **while keeping you in control**.
+> **GuardKit automates your feature development workflow** - from investigation through implementation to merge - **while keeping you in control**.
 
 It is:
 - ✅ **Workflow automation** - Automating repetitive manual steps
@@ -1093,9 +1093,9 @@ This gives developers **confidence to automate** because they know they can alwa
 
 ## Related Documents
 
-- [Claude Agent SDK: Fast Path Analysis](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK research
+- [Claude Agent SDK: Fast Path Analysis](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md) - Initial SDK research
 - [Claude Agent SDK: Full Automation Spec](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Earlier single-command approach
-- [LangGraph Alternative](./TaskWright_LangGraph_Orchestration_Build_Strategy.md) - Multi-LLM option for future
+- [LangGraph Alternative](./GuardKit_LangGraph_Orchestration_Build_Strategy.md) - Multi-LLM option for future
 
 ---
 

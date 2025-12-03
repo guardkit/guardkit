@@ -17,13 +17,13 @@
 
 | Original | Replacement |
 |----------|-------------|
-| `taskwright-dev/taskwright` | `guardkit/guardkit` |
-| `taskwright-dev` | `guardkit` |
+| `guardkit-dev/guardkit` | `guardkit/guardkit` |
+| `guardkit-dev` | `guardkit` |
 | `\btwi\b` | `gki` |
 | `\btw\b` | `gk` |
-| `TASKWRIGHT` | `GUARDKIT` |
-| `Taskwright` | `GuardKit` |
-| `taskwright` | `guardkit` |
+| `GUARDKIT` | `GUARDKIT` |
+| `GuardKit` | `GuardKit` |
+| `guardkit` | `guardkit` |
 
 ## Files Modified
 
@@ -127,7 +127,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-062/completion-summary.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-065/TASK-065-clean-installer-deprecated-templates.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-066-COMPLETION-REPORT.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-066-create-taskwright-python-template.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-066-create-guardkit-python-template.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-068-COMPLETION-REPORT.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-068-refactor-template-creation-location-strategy.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-074-update-template-count-documentation.md`
@@ -239,7 +239,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-062/completion-summary.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-065/TASK-065-clean-installer-deprecated-templates.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-066-COMPLETION-REPORT.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-066-create-taskwright-python-template.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-066-create-guardkit-python-template.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-068-COMPLETION-REPORT.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-068-refactor-template-creation-location-strategy.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.claude/state/backup/tasks-pre-hash-migration-20251110-223848/completed/TASK-074-update-template-count-documentation.md`
@@ -285,7 +285,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/README.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/coverage.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/adr/0001-adopt-agentic-flow.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/adr/0003-remove-taskwright-python-template.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/adr/0003-remove-guardkit-python-template.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/advanced.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/agents.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/analysis/TASK-020-root-cause-analysis.md`
@@ -337,7 +337,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/maui-template-selection.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/quick-reference.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/task-review-implementation-guide.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/taskwright-workflow.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/template-commands-getting-started.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/template-create-fixes-implementation-guide.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/template-create-implementation-guide.md`
@@ -363,7 +363,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/planning/TASK-957C-completion-summary.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/planning/documentation-organization-plan.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/planning/path-fixes-required.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/TaskWright_Multi-Tool_Support_Implementation_Plan.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/GuardKit_Multi-Tool_Support_Implementation_Plan.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/design-url-integration-implementation-guide.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/shared-agents-architecture-proposal.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/template-create/DOCUMENTATION-SUMMARY.md`
@@ -372,15 +372,15 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/proposals/template-create/file-path-mismatch-diagnosis.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/quick-reference/design-first-workflow-card.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/Claude_Agent_SDK_True_End_to_End_Orchestrator.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/Claude_Agent_SDK_Two_Command_Feature_Workflow.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/LangGraph-Native_Orchestration_for_GuardKit_Technical_Architecture.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/TASK-025-audit-report.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/TASK-025-workflow-audit-summary.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/TASK-AI-FIRST-GUIDELINES.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/TaskWright_LangGraph_Orchestration_Build_Strategy.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/TaskWright_Strategic_Roadmap_Platform_Independence.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/GuardKit_LangGraph_Orchestration_Build_Strategy.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/GuardKit_Strategic_Roadmap_Platform_Independence.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/bdd-mode-design-option-a.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/bdd-mode-removal-decision.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/research/demo-repository-structure-best-practices.md`
@@ -455,7 +455,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/design-first-workflow.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/incremental-enhancement-workflow.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/iterative-refinement-workflow.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/taskwright-vs-requirekit.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/CHANGELOG.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/__init__.py`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/__init__.py`
@@ -503,13 +503,13 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/audit-report.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/manifest.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/validation-report.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/taskwright.marker.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/init-project.sh`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/install.sh`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/mkdocs.yml`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/scripts/audit_requirekit.py`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/scripts/backup-pre-rename.sh`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/scripts/rename-taskwright-to-guardkit.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/scripts/rename-guardkit-to-guardkit.py`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/scripts/validate-rename.sh`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-ARCH-DC05-review-shared-agents-architecture-proposal.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-DOC-CC84-review-github-readme-messaging.md`
@@ -519,7 +519,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-IMP-RENAME-DOCS.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-IMP-RENAME-INFRA.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-IMP-RENAME-VALIDATE.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-REV-803B-rename-taskwright-to-guardkit-analysis.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-REV-803B-rename-guardkit-to-guardkit-analysis.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/TASK-REV-TMPL-CMD-template-create-command-bypass-investigation.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/bdd-restoration/IMPLEMENTATION-GUIDE.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/bdd-restoration/README.md`
@@ -543,7 +543,7 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/README.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-001-verify-duplication.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-002-create-shared-repo.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-003-update-taskwright.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-003-update-guardkit.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-004-update-requirekit.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-005-test-both-tools.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/backlog/shared-agents-refactoring/TASK-SHA-006-update-documentation.md`
@@ -605,10 +605,10 @@
 
 ## Files Renamed
 
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/taskwright.sln` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit.sln`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/taskwright.marker.json` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/taskwright-workflow.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/taskwright-vs-requirekit.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit.sln` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit.sln`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md`
 
 ## Files Skipped
 
@@ -626,7 +626,7 @@ _No errors_
 1. Review changes: `git diff`
 2. Run validation: `./scripts/validate-rename.sh`
 3. Test installation: `./installer/scripts/install.sh`
-4. Commit changes: `git add -A && git commit -m "Rename Taskwright to GuardKit"`
+4. Commit changes: `git add -A && git commit -m "Rename GuardKit to GuardKit"`
 
 ## Rollback
 

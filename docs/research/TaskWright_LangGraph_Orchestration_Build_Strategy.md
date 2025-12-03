@@ -1,4 +1,4 @@
-# TaskWright LangGraph Workflow Automation: Build Strategy Analysis
+# GuardKit LangGraph Workflow Automation: Build Strategy Analysis
 
 ## Terminology Note
 
@@ -6,17 +6,17 @@ This document discusses workflow automation options, comparing LangGraph with th
 The term "orchestration" appears in places but the more accurate description is **workflow automation** -
 automating a developer's manual process, not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
+See [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 
 ## The "Dogfooding Discovery" vs "Spec-First Build" Tradeoff
 
-Your instinct is sound. TaskWright's evolution made sense as discovery - you were simultaneously figuring out *what* the tool should do while building *how* it does it. The domain was unclear, requirements emerged through use, and the feedback loop of using it daily to build itself was invaluable.
+Your instinct is sound. GuardKit's evolution made sense as discovery - you were simultaneously figuring out *what* the tool should do while building *how* it does it. The domain was unclear, requirements emerged through use, and the feedback loop of using it daily to build itself was invaluable.
 
 But for a LangGraph orchestration layer, the situation is fundamentally different:
 
-### What You Now Know (That You Didn't When Starting TaskWright)
+### What You Now Know (That You Didn't When Starting GuardKit)
 
 - The exact 7-phase workflow structure (2 → 2.5B → 2.7 → 2.8 → 3 → 4/4.5 → 5/5.5)
 - The three approval levels and their routing logic
@@ -24,7 +24,7 @@ But for a LangGraph orchestration layer, the situation is fundamentally differen
 - The design-first checkpoint/resume pattern
 - The agent selection criteria (stack, phase, capabilities)
 - The state that needs to flow between phases
-- How RequireKit and TaskWright integrate
+- How RequireKit and GuardKit integrate
 
 This is no longer exploratory - it's **implementation of a known architecture**. That's exactly where spec-driven development shines.
 
@@ -34,9 +34,9 @@ This is no longer exploratory - it's **implementation of a known architecture**.
 
 ### NEW: Claude Agent SDK (Recommended Path)
 
-**The Claude Agent SDK can directly invoke TaskWright slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
+**The Claude Agent SDK can directly invoke GuardKit slash commands** like `/task-work`, `/task-create`, etc. This dramatically changes the effort equation.
 
-See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
+See: [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md)
 
 ```python
 from claude_agent_sdk import query, ClaudeAgentOptions
@@ -191,7 +191,7 @@ Phase 2: Architecture Validation
 ├── Create architecture decision records (ADRs)
 └── Validate state schema covers all requirements
 
-Phase 3: Implementation (TaskWright + Claude Code)
+Phase 3: Implementation (GuardKit + Claude Code)
 ├── Tasks created from features with requirement links
 ├── /task-work with full quality gates (using Claude Code)
 ├── BDD scenarios drive test implementation
@@ -209,7 +209,7 @@ Phase 4: Validation
 ## What This Buys You
 
 ### For the Blog Post Context
-You'd have a concrete example of the full RequireKit → TaskWright pipeline building something non-trivial. That's powerful demonstration content.
+You'd have a concrete example of the full RequireKit → GuardKit pipeline building something non-trivial. That's powerful demonstration content.
 
 ### For the Implementation
 You'd avoid the trap of "I'll just add this one thing" that leads to architectural drift. Each change would need to trace back to a requirement.
@@ -250,12 +250,12 @@ The research document gives us a solid architectural blueprint - now it's about 
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
 - [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
-- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
-- [LangGraph-Native Orchestration for TaskWright: Technical Architecture](./LangGraph-Native_Orchestration_for_TaskWright_Orchestration.md)
+- [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md) - Initial SDK analysis
+- [LangGraph-Native Orchestration for GuardKit: Technical Architecture](./LangGraph-Native_Orchestration_for_GuardKit_Orchestration.md)
 - [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
 
 *Generated: December 2025*
 *Updated: December 2025 - Added Claude Agent SDK as fastest path option*
-*Context: Planning the next phase of TaskWright development - adding orchestration capabilities*
+*Context: Planning the next phase of GuardKit development - adding orchestration capabilities*

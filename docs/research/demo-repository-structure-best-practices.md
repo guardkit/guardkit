@@ -1,7 +1,7 @@
 # Structuring Open-Source Demos That Win Over Skeptical CTOs
 
 **Date**: 2025-05-30
-**Purpose**: Best practices for organizing TaskWright demo repositories
+**Purpose**: Best practices for organizing GuardKit demo repositories
 **Target Audience**: Developers and CTOs who respond with "show me the code"
 
 ---
@@ -88,7 +88,7 @@ guardkit task-work TASK-001
 Developers should be able to understand and run your demo in under 5 minutes:
 
 ```markdown
-# Example: Production-Ready FastAPI with TaskWright
+# Example: Production-Ready FastAPI with GuardKit
 
 > ⏱️ **Time to run**: ~3 minutes | **Difficulty**: Intermediate
 
@@ -281,7 +281,7 @@ Include in every demo README:
 | Lighthouse | 96 | Performance score |
 | Accessibility | AA | WCAG compliant |
 
-### What TaskWright Generated vs Modified
+### What GuardKit Generated vs Modified
 
 | File | Generated | Human Modified | Notes |
 |------|-----------|----------------|-------|

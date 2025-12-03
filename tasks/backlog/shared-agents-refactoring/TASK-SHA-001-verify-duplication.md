@@ -18,7 +18,7 @@ task_type: implementation
 
 ## Context
 
-Before migrating agents to a shared repository, we need to verify which agents actually exist in BOTH TaskWright and RequireKit. The proposal assumes certain agents are duplicated, but we need to confirm this.
+Before migrating agents to a shared repository, we need to verify which agents actually exist in BOTH GuardKit and RequireKit. The proposal assumes certain agents are duplicated, but we need to confirm this.
 
 **Why critical**: Migrating wrong agents would break one or both tools.
 
@@ -105,7 +105,7 @@ Create `docs/verified-agents-for-migration.md`:
 # Verified Agents for Migration
 
 **Verification Date**: 2025-11-28
-**Method**: File comparison between TaskWright and RequireKit
+**Method**: File comparison between GuardKit and RequireKit
 
 ## Agents to Migrate
 
@@ -120,7 +120,7 @@ Based on verification script:
 
 ## Agents NOT to Migrate
 
-**TaskWright only**: ...
+**GuardKit only**: ...
 **RequireKit only**: ...
 ```
 

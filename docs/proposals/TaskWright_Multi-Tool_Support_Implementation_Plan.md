@@ -1,4 +1,4 @@
-# TaskWright Multi-Tool Support Implementation Plan
+# GuardKit Multi-Tool Support Implementation Plan
 
 **Version**: 1.0  
 **Date**: November 19, 2025  
@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-TaskWright can support multiple AI coding tools (Claude Code, Cursor, Windsurf, GitHub Copilot, OpenCode, Codex) with **Medium effort (8 days, 5/10 complexity)** by adopting SpecKit's proven architectural patterns. The core insight: **keep template generation logic universal**, only vary the final output format per tool.
+GuardKit can support multiple AI coding tools (Claude Code, Cursor, Windsurf, GitHub Copilot, OpenCode, Codex) with **Medium effort (8 days, 5/10 complexity)** by adopting SpecKit's proven architectural patterns. The core insight: **keep template generation logic universal**, only vary the final output format per tool.
 
 ### Key Decision: Pre-Built Template Packages + Tool-Specific Formatters
 
@@ -24,7 +24,7 @@ TaskWright can support multiple AI coding tools (Claude Code, Cursor, Windsurf, 
 
 1. [Current State Analysis](#current-state-analysis)
 2. [How SpecKit Solves This](#how-speckit-solves-this)
-3. [TaskWright Adaptation Strategy](#guardkit-adaptation-strategy)
+3. [GuardKit Adaptation Strategy](#guardkit-adaptation-strategy)
 4. [Implementation Phases](#implementation-phases)
 5. [Code Examples](#code-examples)
 6. [Testing Strategy](#testing-strategy)
@@ -35,9 +35,9 @@ TaskWright can support multiple AI coding tools (Claude Code, Cursor, Windsurf, 
 
 ## Current State Analysis
 
-### TaskWright's Claude Code Dependencies
+### GuardKit's Claude Code Dependencies
 
-TaskWright is currently **deeply integrated** with Claude Code:
+GuardKit is currently **deeply integrated** with Claude Code:
 
 ```
 .claude/
@@ -209,7 +209,7 @@ User input: $1
 For tools without native command support:
 
 ```markdown
-# TaskWright Commands
+# GuardKit Commands
 
 ## Creating Templates
 
@@ -255,13 +255,13 @@ def detect_installed_tool() -> str:
 
 ---
 
-## TaskWright Adaptation Strategy
+## GuardKit Adaptation Strategy
 
 ### Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────┐
-│         TaskWright CLI (guardkit)             │
+│         GuardKit CLI (guardkit)             │
 │                                                 │
 │  ┌──────────────────────────────────────────┐  │
 │  │   Core Logic (Tool-Agnostic)             │  │
@@ -535,7 +535,7 @@ technologies:
 
 {self._format_bullet_list(agent.technologies)}
 
-## Usage in TaskWright
+## Usage in GuardKit
 
 This agent is automatically invoked during `/task-work` when the task involves {agent.name.replace('-', ' ')}.
 """
@@ -823,7 +823,7 @@ from guardkit.formatters.universal import UniversalFormatter
 )
 def template_create(tool: str, codebase: str, name: str, output: str):
     """
-    Create a TaskWright template from an existing codebase.
+    Create a GuardKit template from an existing codebase.
     
     Analyzes the codebase and generates:
     - Specialized agents for the technology stack
@@ -1229,7 +1229,7 @@ def test_full_template_creation_claude():
 - `.github/workflows/scripts/create-release-packages.sh` - Package generation
 - Templates for each agent in releases
 
-### TaskWright Project Files
+### GuardKit Project Files
 
 - `/mnt/project/Creating_a_System-Wide_Claude_Code_Installation_Architecture__Separating_Global_Methodology_from_Project_Implementation.md`
 - `/mnt/project/SpecKit_and_OpenSpec_Analysis__AI_Coding_Frameworks_vs_Task_Management_Integration.md`
@@ -1286,7 +1286,7 @@ Template Output:
 
 ## Conclusion
 
-This implementation plan provides a **clear, proven path** to multi-tool support for TaskWright. By adopting SpecKit's architectural patterns, we can:
+This implementation plan provides a **clear, proven path** to multi-tool support for GuardKit. By adopting SpecKit's architectural patterns, we can:
 
 1. **Maintain simplicity** - Core logic stays unchanged
 2. **Scale easily** - Adding tools is straightforward

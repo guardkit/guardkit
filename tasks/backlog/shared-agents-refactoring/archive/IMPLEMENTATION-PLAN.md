@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-This implementation plan provides a detailed task breakdown for migrating universal agents from duplicated copies in TaskWright and RequireKit to a single shared-agents repository. The plan includes all critical modifications identified in the architectural review.
+This implementation plan provides a detailed task breakdown for migrating universal agents from duplicated copies in GuardKit and RequireKit to a single shared-agents repository. The plan includes all critical modifications identified in the architectural review.
 
 **Critical Prerequisites** (Must complete before Phase 1):
 1. Verify actual agent duplication
@@ -28,11 +28,11 @@ This implementation plan provides a detailed task breakdown for migrating univer
 
 ### TASK-SHA-000: Verify Agent Duplication
 
-**Description**: Identify which agents are actually duplicated between TaskWright and RequireKit (proposal assumption may be incorrect).
+**Description**: Identify which agents are actually duplicated between GuardKit and RequireKit (proposal assumption may be incorrect).
 
 **Acceptance Criteria**:
 - [ ] Script created: `scripts/verify-agent-duplication.sh`
-- [ ] Script compares TaskWright and RequireKit agents
+- [ ] Script compares GuardKit and RequireKit agents
 - [ ] Output: List of truly duplicated agents (name, similarity %, active status)
 - [ ] Documentation updated with verified duplication list
 
@@ -52,7 +52,7 @@ This implementation plan provides a detailed task breakdown for migrating univer
 GUARDKIT_AGENTS="installer/global/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
-# For each agent in TaskWright
+# For each agent in GuardKit
 for agent in $GUARDKIT_AGENTS/*.md; do
     basename=$(basename "$agent")
     requirekit_agent="$REQUIREKIT_AGENTS/$basename"
@@ -176,9 +176,9 @@ backup_existing_agents() {
 - Rollback procedures tested
 
 **Test Scenarios**:
-1. TaskWright standalone installation
+1. GuardKit standalone installation
 2. RequireKit standalone installation
-3. Combined installation (TaskWright first)
+3. Combined installation (GuardKit first)
 4. Combined installation (RequireKit first)
 5. Version pinning (different versions)
 6. Offline fallback
@@ -304,7 +304,7 @@ validate_checksum() {
   └── .gitignore
   ```
 - [ ] README.md documents purpose and usage
-- [ ] LICENSE file added (same as TaskWright/RequireKit)
+- [ ] LICENSE file added (same as GuardKit/RequireKit)
 - [ ] .gitignore configured
 
 **Estimated Effort**: 1 hour
@@ -324,7 +324,7 @@ validate_checksum() {
 **Description**: Copy verified duplicated agents (from TASK-SHA-000) to shared-agents repository.
 
 **Acceptance Criteria**:
-- [ ] Agents copied from TaskWright to `shared-agents/agents/`
+- [ ] Agents copied from GuardKit to `shared-agents/agents/`
 - [ ] Only truly duplicated agents migrated (verified list)
 - [ ] Agent metadata preserved (frontmatter)
 - [ ] File permissions preserved
@@ -444,11 +444,11 @@ done
 
 ---
 
-## Phase 2: Update TaskWright (Day 2-3)
+## Phase 2: Update GuardKit (Day 2-3)
 
 **Duration**: 2 days
 **Dependencies**: Phase 1 complete
-**Goal**: Integrate shared-agents into TaskWright
+**Goal**: Integrate shared-agents into GuardKit
 
 ### TASK-SHA-P2-001: Add Version Pinning File
 
@@ -581,7 +581,7 @@ AGENT_SOURCES = [
 
 ### TASK-SHA-P2-006: Update Documentation
 
-**Description**: Update all TaskWright documentation referencing agents.
+**Description**: Update all GuardKit documentation referencing agents.
 
 **Acceptance Criteria**:
 - [ ] CLAUDE.md updated with shared-agents architecture
@@ -602,9 +602,9 @@ AGENT_SOURCES = [
 
 ---
 
-### TASK-SHA-P2-007: Test TaskWright Standalone
+### TASK-SHA-P2-007: Test GuardKit Standalone
 
-**Description**: Run integration tests for TaskWright standalone installation.
+**Description**: Run integration tests for GuardKit standalone installation.
 
 **Acceptance Criteria**:
 - [ ] Test scenario 1 passes (see TASK-SHA-002)
@@ -736,7 +736,7 @@ AGENT_SOURCES = [
 **Description**: Test combined installation scenarios (both tools in same project).
 
 **Acceptance Criteria**:
-- [ ] Test scenario 3 passes (TaskWright first)
+- [ ] Test scenario 3 passes (GuardKit first)
 - [ ] Test scenario 4 passes (RequireKit first)
 - [ ] Shared agents not duplicated
 - [ ] Both tools function independently
@@ -976,7 +976,7 @@ AGENT_SOURCES = [
 **Description**: Prepare release announcements for GitHub releases.
 
 **Acceptance Criteria**:
-- [ ] TaskWright release notes drafted
+- [ ] GuardKit release notes drafted
 - [ ] RequireKit release notes drafted
 - [ ] Release notes include:
   - [ ] Summary of changes
@@ -997,9 +997,9 @@ AGENT_SOURCES = [
 
 ---
 
-### TASK-SHA-P5-005: Tag and Release TaskWright
+### TASK-SHA-P5-005: Tag and Release GuardKit
 
-**Description**: Create new TaskWright release with shared-agents integration.
+**Description**: Create new GuardKit release with shared-agents integration.
 
 **Acceptance Criteria**:
 - [ ] Version incremented appropriately (semantic versioning)
@@ -1076,14 +1076,14 @@ AGENT_SOURCES = [
 
 **Total: 6 hours (1 day)**
 
-### Phase 2: Update TaskWright (2 days)
+### Phase 2: Update GuardKit (2 days)
 - TASK-SHA-P2-001: Add version pinning file (0.5h)
 - TASK-SHA-P2-002: Update installer script (4h)
 - TASK-SHA-P2-003: Create fallback agents directory (1h, optional)
 - TASK-SHA-P2-004: Remove duplicate agents (1h)
 - TASK-SHA-P2-005: Update agent discovery (3h)
 - TASK-SHA-P2-006: Update documentation (2h)
-- TASK-SHA-P2-007: Test TaskWright standalone (2h)
+- TASK-SHA-P2-007: Test GuardKit standalone (2h)
 
 **Total: 13.5 hours (2 days)**
 
@@ -1108,7 +1108,7 @@ AGENT_SOURCES = [
 - TASK-SHA-P5-002: Create migration guide (3h)
 - TASK-SHA-P5-003: Update CHANGELOG (1h)
 - TASK-SHA-P5-004: Create release announcements (2h)
-- TASK-SHA-P5-005: Tag and release TaskWright (1h)
+- TASK-SHA-P5-005: Tag and release GuardKit (1h)
 - TASK-SHA-P5-006: Tag and release RequireKit (1h)
 - TASK-SHA-P5-007: Announce to users (1h)
 
@@ -1164,7 +1164,7 @@ All critical risks identified in architectural review have mitigation tasks:
 - [ ] Release downloadable and validates
 
 ### Phase 2 Success Criteria
-- [ ] TaskWright installer updated
+- [ ] GuardKit installer updated
 - [ ] Shared agents downloaded on installation
 - [ ] Agent discovery works with universal tier
 - [ ] Standalone installation succeeds

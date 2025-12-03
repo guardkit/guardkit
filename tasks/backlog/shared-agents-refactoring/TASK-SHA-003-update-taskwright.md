@@ -1,6 +1,6 @@
 ---
 id: TASK-SHA-003
-title: Update TaskWright installer to use shared-agents
+title: Update GuardKit installer to use shared-agents
 status: backlog
 created: 2025-11-28T21:00:00Z
 updated: 2025-11-28T21:00:00Z
@@ -14,11 +14,11 @@ parent_task: TASK-ARCH-DC05
 task_type: implementation
 ---
 
-# Task: Update TaskWright Installer
+# Task: Update GuardKit Installer
 
 ## Context
 
-Update TaskWright's installer to download shared-agents from the new repository instead of using local copies.
+Update GuardKit's installer to download shared-agents from the new repository instead of using local copies.
 
 ## Acceptance Criteria
 

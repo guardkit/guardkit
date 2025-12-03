@@ -51,9 +51,9 @@ Create a comprehensive integration test plan that covers all migration scenarios
 The test plan was created during the architectural review and includes:
 
 **8 Test Scenarios**:
-1. TaskWright standalone installation
+1. GuardKit standalone installation
 2. RequireKit standalone installation
-3. Combined installation (TaskWright first)
+3. Combined installation (GuardKit first)
 4. Combined installation (RequireKit first)
 5. Version pinning (different versions)
 6. Offline fallback (if applicable)
@@ -140,9 +140,9 @@ Document in `TEST-PLAN.md`:
 - [ ] All repositories cloned
 
 ### Test Execution
-- [ ] Scenario 1: TaskWright standalone - PASS / FAIL
+- [ ] Scenario 1: GuardKit standalone - PASS / FAIL
 - [ ] Scenario 2: RequireKit standalone - PASS / FAIL
-- [ ] Scenario 3: Combined (TaskWright first) - PASS / FAIL
+- [ ] Scenario 3: Combined (GuardKit first) - PASS / FAIL
 - [ ] Scenario 4: Combined (RequireKit first) - PASS / FAIL
 - [ ] Scenario 5: Version pinning - PASS / FAIL
 - [ ] Scenario 6: Offline fallback - PASS / FAIL

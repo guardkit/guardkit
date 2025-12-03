@@ -103,7 +103,7 @@ shared-agents-refactoring/
 **Status**: Planned (5 tasks)
 **Dependencies**: Phase 0 complete
 
-### Phase 2: Update TaskWright
+### Phase 2: Update GuardKit
 **Duration**: 2 days
 **Status**: Planned (7 tasks)
 **Dependencies**: Phase 1 complete

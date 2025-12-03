@@ -1,4 +1,4 @@
-# TaskWright Pre-Launch Test Plan - macOS Parallels VM
+# GuardKit Pre-Launch Test Plan - macOS Parallels VM
 
 **Created**: 2025-11-29
 **Platform**: macOS Parallels Virtual Machine (clean slate)
@@ -27,7 +27,7 @@
 
 ```bash
 # Before starting tests, create VM snapshot
-# Name: "Pre-TaskWright-Install"
+# Name: "Pre-GuardKit-Install"
 # This allows rollback if needed
 ```
 
@@ -36,7 +36,7 @@
 ## Test Plan Overview
 
 ### Phase 1: Installation & Template Init (45 min)
-1. Install TaskWright
+1. Install GuardKit
 2. Install RequireKit
 3. Initialize greenfield project with fastapi-python template
 4. Validate /gather-requirements Q&A workflow
@@ -62,7 +62,7 @@
 
 ## Phase 1: Installation & Template Init (45 min)
 
-### Step 1.1: Install TaskWright (10 min)
+### Step 1.1: Install GuardKit (10 min)
 
 ```bash
 # Open Terminal in VM
@@ -75,7 +75,7 @@ brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/H
 brew install python@3.11
 python3 --version  # Should be 3.11+
 
-# 3. Clone TaskWright
+# 3. Clone GuardKit
 mkdir -p ~/Projects
 cd ~/Projects
 git clone https://github.com/guardkit/guardkit.git
@@ -92,7 +92,7 @@ which guardkit  # Should show ~/.agentecflow/bin/guardkit
 
 **Expected Output**:
 ```
-✅ TaskWright installed to ~/.agentecflow/
+✅ GuardKit installed to ~/.agentecflow/
 ✅ Commands symlinked to ~/.agentecflow/bin/
 ✅ Agents installed to ~/.agentecflow/agents/
 ✅ Templates available: react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, default
@@ -129,7 +129,7 @@ which /req-create  # Should resolve
 ```
 ✅ RequireKit installed
 ✅ Marker file created: ~/.agentecflow/require-kit.marker
-✅ BDD mode available in TaskWright
+✅ BDD mode available in GuardKit
 ```
 
 **Test Checklist**:
@@ -153,7 +153,7 @@ which /req-create  # Should resolve
 mkdir -p ~/Projects/test-api-service
 cd ~/Projects/test-api-service
 
-# 2. Initialize git (required for TaskWright)
+# 2. Initialize git (required for GuardKit)
 git init
 git config user.name "Test User"
 git config user.email "test@example.com"
@@ -680,7 +680,7 @@ Feature: User Login
 
 Next steps:
   1. Review scenarios in scenarios/bdd-001-user-login.feature
-  2. Link to TaskWright task: Add 'bdd_scenarios: [BDD-001]' to frontmatter
+  2. Link to GuardKit task: Add 'bdd_scenarios: [BDD-001]' to frontmatter
   3. Run: /task-work TASK-XXX --mode=bdd
 ```
 
@@ -897,7 +897,7 @@ npm run dev
 
 **Workflow**:
 
-**Claude Instance 1** (in TaskWright project):
+**Claude Instance 1** (in GuardKit project):
 ```bash
 cd ~/Projects/test-api-service
 
@@ -960,7 +960,7 @@ A: No UI component library - uses vanilla Svelte + custom CSS
 ### Step 4.3: Implement Weather Tracking Feature (15 min)
 
 ```bash
-# Back in Instance 1 (TaskWright)
+# Back in Instance 1 (GuardKit)
 /task-work TASK-XXXX --mode=standard
 ```
 
@@ -1024,7 +1024,7 @@ Added:
 cd ~/Projects/guardkit
 
 cat > PARALLELS-VM-TEST-RESULTS.md << 'EOF'
-# TaskWright Parallels VM Test Results
+# GuardKit Parallels VM Test Results
 
 **Date**: 2025-11-29
 **Tester**: [Your Name]
@@ -1033,7 +1033,7 @@ cat > PARALLELS-VM-TEST-RESULTS.md << 'EOF'
 
 ## Phase 1: Installation & Template Init
 
-### ✅ Step 1.1: Install TaskWright
+### ✅ Step 1.1: Install GuardKit
 - Status: PASSED
 - Duration: 12 minutes
 - Notes: Installation smooth, no errors
@@ -1162,7 +1162,7 @@ EOF
 
 ### Must Pass (Critical)
 
-- [ ] TaskWright installs without errors
+- [ ] GuardKit installs without errors
 - [ ] RequireKit installs and marker file created
 - [ ] Template init Q&A session works
 - [ ] Hash-based task IDs generated correctly
@@ -1190,7 +1190,7 @@ EOF
 
 ## Troubleshooting Guide
 
-### Issue: TaskWright command not found
+### Issue: GuardKit command not found
 
 **Solution**:
 ```bash
@@ -1297,7 +1297,7 @@ ERROR: BDD mode requires RequireKit installation
 
 **Pre-Test**:
 - [ ] Parallels VM created and configured
-- [ ] Snapshot created (Pre-TaskWright-Install)
+- [ ] Snapshot created (Pre-GuardKit-Install)
 - [ ] Screen recording software ready (optional)
 - [ ] Test plan printed/accessible
 
@@ -1316,4 +1316,4 @@ ERROR: BDD mode requires RequireKit installation
 
 ---
 
-**You're ready to validate TaskWright end-to-end! Good luck! 🚀**
+**You're ready to validate GuardKit end-to-end! Good luck! 🚀**

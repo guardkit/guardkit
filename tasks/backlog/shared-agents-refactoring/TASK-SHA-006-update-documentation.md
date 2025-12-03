@@ -18,12 +18,12 @@ task_type: implementation
 
 ## Context
 
-Update documentation in all three repos (shared-agents, TaskWright, RequireKit) to explain the new shared-agents architecture. Keep it brief and user-focused.
+Update documentation in all three repos (shared-agents, GuardKit, RequireKit) to explain the new shared-agents architecture. Keep it brief and user-focused.
 
 ## Acceptance Criteria
 
 - [ ] shared-agents README explains purpose and usage
-- [ ] TaskWright CLAUDE.md mentions shared-agents
+- [ ] GuardKit CLAUDE.md mentions shared-agents
 - [ ] RequireKit CLAUDE.md mentions shared-agents (if applicable)
 - [ ] CHANGELOG updated in all repos
 - [ ] Users understand what changed and why
@@ -37,7 +37,7 @@ Verify README covers:
 - How it's used (automatic installation)
 - How to update (version pinning file)
 
-### 2. Update TaskWright CLAUDE.md
+### 2. Update GuardKit CLAUDE.md
 
 Add section:
 
@@ -56,7 +56,7 @@ Universal agents (code-reviewer, test-orchestrator, etc.) are maintained in the 
 
 ### 3. Update RequireKit CLAUDE.md (if applicable)
 
-Same as TaskWright, adjusted for RequireKit context.
+Same as GuardKit, adjusted for RequireKit context.
 
 ### 4. Update CHANGELOG in shared-agents
 
@@ -72,7 +72,7 @@ Same as TaskWright, adjusted for RequireKit context.
 [1.0.0]: https://github.com/guardkit/shared-agents/releases/tag/v1.0.0
 ```
 
-### 5. Update CHANGELOG in TaskWright
+### 5. Update CHANGELOG in GuardKit
 
 ```markdown
 ## [Unreleased]
@@ -88,7 +88,7 @@ Same as TaskWright, adjusted for RequireKit context.
 
 ### 6. Update CHANGELOG in RequireKit
 
-Same pattern as TaskWright.
+Same pattern as GuardKit.
 
 ## Test Requirements
 

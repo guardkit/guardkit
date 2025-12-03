@@ -24,7 +24,7 @@ task_type: implementation
 
 ## Description
 
-Create a new GitHub repository for shared agents with the proper directory structure, licensing, and documentation. This will serve as the single source of truth for universal agents shared between TaskWright and RequireKit.
+Create a new GitHub repository for shared agents with the proper directory structure, licensing, and documentation. This will serve as the single source of truth for universal agents shared between GuardKit and RequireKit.
 
 ## Acceptance Criteria
 
@@ -42,7 +42,7 @@ Create a new GitHub repository for shared agents with the proper directory struc
   └── .gitignore              # Git ignore rules
   ```
 - [ ] README.md documents purpose and usage
-- [ ] LICENSE file matches TaskWright/RequireKit (same license)
+- [ ] LICENSE file matches GuardKit/RequireKit (same license)
 - [ ] .gitignore configured for markdown and temp files
 - [ ] Initial commit pushed to main branch
 
@@ -54,7 +54,7 @@ Create a new GitHub repository for shared agents with the proper directory struc
 # Using GitHub CLI
 gh repo create guardkit/shared-agents \
   --public \
-  --description "Universal AI agents shared between TaskWright and RequireKit" \
+  --description "Universal AI agents shared between GuardKit and RequireKit" \
   --homepage "https://github.com/guardkit"
 
 # Or create via GitHub web UI:
@@ -84,11 +84,11 @@ touch docs/.gitkeep
 ```markdown
 # Shared Agents
 
-Universal AI agents shared between [TaskWright](https://github.com/guardkit/guardkit) and [RequireKit](https://github.com/requirekit/require-kit).
+Universal AI agents shared between [GuardKit](https://github.com/guardkit/guardkit) and [RequireKit](https://github.com/requirekit/require-kit).
 
 ## Overview
 
-This repository provides a single source of truth for AI agents that are used by multiple tools in the TaskWright ecosystem. By maintaining agents in one location, we ensure consistency, reduce duplication, and simplify maintenance.
+This repository provides a single source of truth for AI agents that are used by multiple tools in the GuardKit ecosystem. By maintaining agents in one location, we ensure consistency, reduce duplication, and simplify maintenance.
 
 ## Agents
 
@@ -101,7 +101,7 @@ The following universal agents are provided:
 
 ## Installation
 
-Shared agents are automatically downloaded during installation of TaskWright or RequireKit. Manual installation is not required.
+Shared agents are automatically downloaded during installation of GuardKit or RequireKit. Manual installation is not required.
 
 ### For Tool Maintainers
 
@@ -147,18 +147,18 @@ All releases include SHA256 checksums for integrity verification. See [Security]
 
 ## License
 
-[MIT License](LICENSE) - Same as TaskWright and RequireKit
+[MIT License](LICENSE) - Same as GuardKit and RequireKit
 
 ## Support
 
 - **Issues**: https://github.com/guardkit/shared-agents/issues
 - **Discussions**: https://github.com/guardkit/shared-agents/discussions
-- **TaskWright**: https://github.com/guardkit/guardkit
+- **GuardKit**: https://github.com/guardkit/guardkit
 - **RequireKit**: https://github.com/requirekit/require-kit
 
 ---
 
-**Maintained by**: [TaskWright](https://github.com/guardkit)
+**Maintained by**: [GuardKit](https://github.com/guardkit)
 **Version**: See [CHANGELOG.md](CHANGELOG.md)
 ```
 
@@ -197,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```
 MIT License
 
-Copyright (c) 2025 TaskWright
+Copyright (c) 2025 GuardKit
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -257,7 +257,7 @@ git commit -m "chore: Initialize shared-agents repository
 - Add directory structure
 - Add README with project overview
 - Add CHANGELOG for version tracking
-- Add MIT LICENSE (consistent with TaskWright/RequireKit)
+- Add MIT LICENSE (consistent with GuardKit/RequireKit)
 - Add .gitignore for common artifacts"
 
 # Push to main
@@ -271,7 +271,7 @@ git push origin main
 - [ ] Repository accessible at `https://github.com/guardkit/shared-agents`
 - [ ] All files committed and pushed
 - [ ] README renders correctly on GitHub
-- [ ] License is MIT (matches TaskWright/RequireKit)
+- [ ] License is MIT (matches GuardKit/RequireKit)
 - [ ] Directory structure matches specification
 - [ ] No syntax errors in markdown
 
@@ -294,7 +294,7 @@ git push origin main
 - [ ] Repository created and accessible
 - [ ] All required files present and correct
 - [ ] Documentation clear and complete
-- [ ] License matches TaskWright/RequireKit
+- [ ] License matches GuardKit/RequireKit
 - [ ] Initial commit pushed to main
 - [ ] No errors or warnings
 
@@ -318,7 +318,7 @@ git push origin main
 
 ### Repository Description
 
-**Short description**: "Universal AI agents shared between TaskWright and RequireKit"
+**Short description**: "Universal AI agents shared between GuardKit and RequireKit"
 
 **Topics**: `ai`, `agents`, `guardkit`, `requirekit`, `claude-code`
 

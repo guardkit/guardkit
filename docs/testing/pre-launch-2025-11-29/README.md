@@ -88,7 +88,7 @@ open PARALLELS-VM-TEST-PLAN-FOCUSED.md
 # 3. Print reference
 open PARALLELS-VM-TEST-QUICK-REFERENCE-FOCUSED.md
 
-# 4. Create VM snapshot: "Pre-TaskWright-Install"
+# 4. Create VM snapshot: "Pre-GuardKit-Install"
 
 # 5. Run tests (1.5-2 hours)
 

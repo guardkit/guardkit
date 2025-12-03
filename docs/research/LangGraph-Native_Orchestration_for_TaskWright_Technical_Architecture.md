@@ -1,15 +1,15 @@
-# LangGraph-Native Workflow Automation for TaskWright: Technical Architecture
+# LangGraph-Native Workflow Automation for GuardKit: Technical Architecture
 
 ## Terminology Note
 
 This document uses "orchestration" in places, but the more accurate term is **workflow automation**.
-TaskWright automates a developer's manual process - it's not multi-agent swarm coordination.
+GuardKit automates a developer's manual process - it's not multi-agent swarm coordination.
 
-See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
+See [GuardKit vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md#guardkit-vs-swarm-systems) for the distinction.
 
 ---
 
-**LangGraph provides an excellent architectural fit for TaskWright's 7-phase workflow**, offering native support for human-in-the-loop checkpoints, complexity-based routing, and long-running workflow persistence. The framework's `interrupt()` function maps directly to TaskWright's approval gates, while `StateGraph` naturally models the phase-to-phase transitions.
+**LangGraph provides an excellent architectural fit for GuardKit's 7-phase workflow**, offering native support for human-in-the-loop checkpoints, complexity-based routing, and long-running workflow persistence. The framework's `interrupt()` function maps directly to GuardKit's approval gates, while `StateGraph` naturally models the phase-to-phase transitions.
 
 ---
 
@@ -17,7 +17,7 @@ See [TaskWright vs Swarm Systems](./Claude_Agent_SDK_Two_Command_Feature_Workflo
 
 **Important Update**: While LangGraph cannot call Claude Code slash commands directly, the **Claude Agent SDK can**! This dramatically changes the effort equation.
 
-See: [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
+See: [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md)
 
 ### Recommended Approach: Claude Agent SDK First
 
@@ -48,13 +48,13 @@ The architecture documented below remains valid for the LangGraph path.
 
 ---
 
-## TaskWright Phases Map Cleanly to LangGraph Nodes
+## GuardKit Phases Map Cleanly to LangGraph Nodes
 
-TaskWright's workflow translates to a LangGraph `StateGraph` where each phase becomes a node and transitions become edges (conditional or fixed). The architecture preserves TaskWright's design-first philosophy while adding persistence, time-travel debugging, and formalized human checkpoints.
+GuardKit's workflow translates to a LangGraph `StateGraph` where each phase becomes a node and transitions become edges (conditional or fixed). The architecture preserves GuardKit's design-first philosophy while adding persistence, time-travel debugging, and formalized human checkpoints.
 
 ```
                     ┌─────────────────────────────────────────────────────────────────┐
-                    │                    TaskWright StateGraph                         │
+                    │                    GuardKit StateGraph                         │
                     └─────────────────────────────────────────────────────────────────┘
                                                  │
                                             [START]
@@ -117,7 +117,7 @@ TaskWright's workflow translates to a LangGraph `StateGraph` where each phase be
 
 ### Key Architectural Mapping
 
-| TaskWright Concept | LangGraph Equivalent |
+| GuardKit Concept | LangGraph Equivalent |
 |-------------------|---------------------|
 | Phase node | `builder.add_node("phase_2", planning_node)` |
 | Phase transition | `builder.add_edge("phase_2", "phase_2_5b")` |
@@ -145,8 +145,8 @@ class ApprovalLevel(Enum):
     QUICK_OPTIONAL = "optional"  # Complexity 4-6: optional quick review
     FULL_REQUIRED = "required"   # Complexity 7+: mandatory full review
 
-class TaskWrightState(TypedDict):
-    """Core state schema for TaskWright workflow."""
+class GuardKitState(TypedDict):
+    """Core state schema for GuardKit workflow."""
     # Task metadata
     task_id: str
     description: str
@@ -178,7 +178,7 @@ class TaskWrightState(TypedDict):
     # Documentation level propagation
     documentation_level: Literal["minimal", "standard", "comprehensive"]
 
-def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_review", "full_review"]:
+def complexity_router(state: GuardKitState) -> Literal["auto_proceed", "quick_review", "full_review"]:
     """Route based on complexity score to appropriate approval path."""
     score = state["complexity_score"]
     
@@ -189,7 +189,7 @@ def complexity_router(state: TaskWrightState) -> Literal["auto_proceed", "quick_
     else:
         return "full_review"
 
-def human_checkpoint_node(state: TaskWrightState) -> Command[Literal["implement", "revise", "abort"]]:
+def human_checkpoint_node(state: GuardKitState) -> Command[Literal["implement", "revise", "abort"]]:
     """Human approval gate with complexity-aware behavior."""
     level = state["approval_level"]
     
@@ -258,7 +258,7 @@ Phase 4.5's test enforcement with maximum 3 attempts maps to a conditional edge 
 ```python
 MAX_TEST_ATTEMPTS = 3
 
-def test_enforcement_node(state: TaskWrightState) -> dict:
+def test_enforcement_node(state: GuardKitState) -> dict:
     """Run tests and capture results."""
     test_results = run_tests(state["code_changes"])
     
@@ -267,7 +267,7 @@ def test_enforcement_node(state: TaskWrightState) -> dict:
         "test_attempt_count": state.get("test_attempt_count", 0) + 1
     }
 
-def test_result_router(state: TaskWrightState) -> Literal["review", "retry_implement", "max_attempts_failed"]:
+def test_result_router(state: GuardKitState) -> Literal["review", "retry_implement", "max_attempts_failed"]:
     """Route based on test results and attempt count."""
     results = state["test_results"]
     attempts = state["test_attempt_count"]
@@ -279,7 +279,7 @@ def test_result_router(state: TaskWrightState) -> Literal["review", "retry_imple
     else:
         return "retry_implement"
 
-def retry_implementation_node(state: TaskWrightState) -> dict:
+def retry_implementation_node(state: GuardKitState) -> dict:
     """Re-implement with test failure context."""
     # Pass test failures to agent for informed retry
     return {
@@ -319,14 +319,14 @@ The `--design-only` and `--implement-only` flags map naturally to LangGraph's ch
 from langgraph.checkpoint.sqlite import SqliteSaver
 from pathlib import Path
 
-class TaskWrightCLI:
+class GuardKitCLI:
     def __init__(self, db_path: Path = Path(".guardkit/workflows.db")):
         db_path.parent.mkdir(exist_ok=True)
         self.checkpointer = SqliteSaver.from_conn_string(str(db_path))
         self.graph = self._build_graph()
     
     def _build_graph(self):
-        builder = StateGraph(TaskWrightState)
+        builder = StateGraph(GuardKitState)
         # ... add all nodes and edges ...
         return builder.compile(checkpointer=self.checkpointer)
     
@@ -388,7 +388,7 @@ class TaskWrightCLI:
 
 ## Agent Selection with Supervisor Pattern
 
-TaskWright's stack-specific agents (python-api-specialist, react-state-specialist, dotnet-domain-specialist) map to LangGraph's supervisor pattern, where a router node selects the appropriate specialist based on task analysis.
+GuardKit's stack-specific agents (python-api-specialist, react-state-specialist, dotnet-domain-specialist) map to LangGraph's supervisor pattern, where a router node selects the appropriate specialist based on task analysis.
 
 ```python
 from langgraph.prebuilt import create_react_agent
@@ -422,7 +422,7 @@ SPECIALISTS = {
     }
 }
 
-def agent_selector_node(state: TaskWrightState) -> dict:
+def agent_selector_node(state: GuardKitState) -> dict:
     """Select appropriate specialist based on task analysis."""
     
     # Extract stack indicators from plan
@@ -450,7 +450,7 @@ def agent_selector_node(state: TaskWrightState) -> dict:
         }
     }
 
-def implementation_node(state: TaskWrightState) -> dict:
+def implementation_node(state: GuardKitState) -> dict:
     """Execute implementation with selected specialist agent."""
     agent_name = state["selected_agent"]
     agent = SPECIALISTS[agent_name]["agent"]
@@ -481,7 +481,7 @@ def implementation_node(state: TaskWrightState) -> dict:
 
 ## Claude-Flow Patterns Enhance the Architecture
 
-Three patterns from claude-flow translate particularly well to TaskWright's LangGraph implementation:
+Three patterns from claude-flow translate particularly well to GuardKit's LangGraph implementation:
 
 ### 1. Blackboard Shared State
 
@@ -537,7 +537,7 @@ def goap_planner(current_state: set, goal_state: set) -> list[str]:
 Implement multi-stakeholder approval for high-complexity tasks:
 
 ```python
-def consensus_checkpoint(state: TaskWrightState) -> Command:
+def consensus_checkpoint(state: GuardKitState) -> Command:
     """Gate requiring multiple approvals for complexity 9-10 tasks."""
     if state["complexity_score"] < 9:
         return Command(goto="implement")
@@ -564,7 +564,7 @@ def consensus_checkpoint(state: TaskWrightState) -> Command:
 
 ## CLI Integration Pattern for Production Use
 
-TaskWright's CLI commands map to graph invocations with thread-based persistence:
+GuardKit's CLI commands map to graph invocations with thread-based persistence:
 
 ```python
 import click
@@ -573,7 +573,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 @click.group()
 def cli():
-    """TaskWright - AI-powered development workflow."""
+    """GuardKit - AI-powered development workflow."""
     pass
 
 @cli.command()
@@ -635,9 +635,9 @@ def run_with_interrupts(graph, task_id, config, stop_after_design=False):
 
 ---
 
-## State Schema Design for TaskWright Workflow
+## State Schema Design for GuardKit Workflow
 
-The complete state schema captures all information flowing through TaskWright's phases:
+The complete state schema captures all information flowing through GuardKit's phases:
 
 ```python
 from typing import TypedDict, Annotated, Literal, Optional
@@ -667,8 +667,8 @@ class ReviewResult(TypedDict):
     issues: list[dict]
     approved: bool
 
-class TaskWrightState(TypedDict):
-    """Complete state schema for TaskWright LangGraph workflow."""
+class GuardKitState(TypedDict):
+    """Complete state schema for GuardKit LangGraph workflow."""
     
     # === Task Metadata ===
     task_id: str
@@ -744,13 +744,13 @@ The original "quick win" estimates assumed wrapping existing slash commands. Sin
 4. **Handle test execution** - Subprocess pytest/vitest/dotnet test, parse results
 5. **Build CLI interface** - Progress display, interrupt handling, resume logic
 
-**Recommended starting point:** Use RequireKit to spec out the requirements properly, then implement using TaskWright's existing workflow. This ensures the reimplementation matches the original behavior.
+**Recommended starting point:** Use RequireKit to spec out the requirements properly, then implement using GuardKit's existing workflow. This ensures the reimplementation matches the original behavior.
 
 ---
 
 ## Production Deployment Considerations
 
-### For CLI-First Tools Like TaskWright
+### For CLI-First Tools Like GuardKit
 
 1. **Use SqliteSaver** for single-user local persistence—workflows survive CLI restarts and can resume days later
 2. **Store thread_id in project config** (e.g., `.guardkit/current_task.json`) for seamless `--resume` behavior
@@ -765,7 +765,7 @@ The original "quick win" estimates assumed wrapping existing slash commands. Sin
 3. **Add FastAPI endpoints** for webhook-based approval UIs
 4. **Consider Redis** for sub-millisecond checkpoint performance at scale
 
-The LangGraph architecture enables TaskWright to maintain its lightweight CLI-first philosophy while gaining enterprise-grade persistence, debugging (time-travel), and human-in-the-loop capabilities without requiring a separate orchestration server.
+The LangGraph architecture enables GuardKit to maintain its lightweight CLI-first philosophy while gaining enterprise-grade persistence, debugging (time-travel), and human-in-the-loop capabilities without requiring a separate orchestration server.
 
 ---
 
@@ -773,12 +773,12 @@ The LangGraph architecture enables TaskWright to maintain its lightweight CLI-fi
 
 - [Claude Agent SDK: Two-Command Feature Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) ⭐ RECOMMENDED - Two-command workflow with manual override
 - [Claude Agent SDK: True End-to-End Orchestrator](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) - Full automation specification
-- [Claude Agent SDK: Fast Path to TaskWright Orchestration](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) - Initial SDK analysis
-- [TaskWright LangGraph Orchestration: Build Strategy](./TaskWright_LangGraph_Orchestration_Build_Strategy.md)
+- [Claude Agent SDK: Fast Path to GuardKit Orchestration](./Claude_Agent_SDK_Fast_Path_to_GuardKit_Orchestration.md) - Initial SDK analysis
+- [GuardKit LangGraph Orchestration: Build Strategy](./GuardKit_LangGraph_Orchestration_Build_Strategy.md)
 - [AgenticFlow MCP vs LangGraph Orchestrator: Integration Analysis](./AgenticFlow_MCP_vs_LangGraph_Orchestrator_Analysis.md)
 
 ---
 
 *Generated: November 2025*
 *Updated: December 2025 - Added Claude Agent SDK as faster alternative. LangGraph remains valid for multi-LLM scenarios.*
-*Context: Technical architecture for adding LangGraph-based agent orchestration to TaskWright*
+*Context: Technical architecture for adding LangGraph-based agent orchestration to GuardKit*

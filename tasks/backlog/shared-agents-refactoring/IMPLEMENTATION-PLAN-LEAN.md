@@ -29,7 +29,7 @@ The architectural review identified many potential risks and edge cases. However
 **Why**: Ensures we only migrate agents that exist in both repos
 
 **Acceptance Criteria**:
-- [ ] Script compares agents in TaskWright vs RequireKit
+- [ ] Script compares agents in GuardKit vs RequireKit
 - [ ] List of verified duplicates documented
 - [ ] Only truly duplicated agents identified for migration
 
@@ -37,7 +37,7 @@ The architectural review identified many potential risks and edge cases. However
 ```bash
 #!/bin/bash
 # Simple duplication check
-echo "Comparing TaskWright and RequireKit agents..."
+echo "Comparing GuardKit and RequireKit agents..."
 
 GUARDKIT="installer/global/agents"
 REQUIREKIT="../require-kit/.claude/agents"
@@ -94,7 +94,7 @@ gh release create v1.0.0 shared-agents.tar.gz --title "Initial Release"
 
 ---
 
-### TASK-SHA-003: Update TaskWright Installer
+### TASK-SHA-003: Update GuardKit Installer
 
 **Priority**: High
 **Effort**: 2 hours
@@ -152,14 +152,14 @@ Same as TASK-SHA-003, but in RequireKit repo.
 **Depends on**: TASK-SHA-003, TASK-SHA-004 (both installers updated)
 
 **Acceptance Criteria**:
-- [ ] TaskWright standalone: `/task-work` command works
+- [ ] GuardKit standalone: `/task-work` command works
 - [ ] RequireKit standalone: `/formalize-ears` command works (if applicable)
 - [ ] Both installed together: No conflicts
 - [ ] Shared agents discovered correctly
 
 **Implementation**:
 ```bash
-# Test TaskWright
+# Test GuardKit
 cd test-project-1
 ../guardkit/installer/scripts/install.sh
 /task-create "Test task"
@@ -186,7 +186,7 @@ ls .claude/agents/universal/  # Should have shared agents (not duplicated)
 **Depends on**: TASK-SHA-005 (tests passing)
 
 **Acceptance Criteria**:
-- [ ] TaskWright CLAUDE.md mentions shared-agents
+- [ ] GuardKit CLAUDE.md mentions shared-agents
 - [ ] RequireKit CLAUDE.md mentions shared-agents
 - [ ] shared-agents README has usage instructions
 - [ ] CHANGELOG updated in all three repos
@@ -207,7 +207,7 @@ ls .claude/agents/universal/  # Should have shared agents (not duplicated)
 |------|--------|-----------------|
 | TASK-SHA-001: Verify duplication | 1h | No (must be first) |
 | TASK-SHA-002: Create repo | 2h | No (needs verification) |
-| TASK-SHA-003: Update TaskWright | 2h | Yes (after repo exists) |
+| TASK-SHA-003: Update GuardKit | 2h | Yes (after repo exists) |
 | TASK-SHA-004: Update RequireKit | 2h | Yes (after repo exists) |
 | TASK-SHA-005: Test | 1h | No (needs both updates) |
 | TASK-SHA-006: Documentation | 1h | No (needs tests passing) |
@@ -259,7 +259,7 @@ We're accepting these risks:
 
 **Must achieve**:
 - [ ] Verified agents migrated to shared-agents repo
-- [ ] Both TaskWright and RequireKit use shared-agents
+- [ ] Both GuardKit and RequireKit use shared-agents
 - [ ] No regression in functionality
 - [ ] Zero duplication (DRY achieved)
 
