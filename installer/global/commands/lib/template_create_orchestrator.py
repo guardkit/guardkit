@@ -625,11 +625,12 @@ class TemplateCreateOrchestrator:
 
             # AI-native analysis: No template_context needed!
             # AI will infer language, framework, architecture from codebase
-            # TASK-51B2-B: Increased from 10 to 30 to provide better context for template generation
-            # TASK-769D: Pass AgentBridgeInvoker for checkpoint-resume pattern
+            # TASK-PROMPT-SIZE: Reduced from 30 to 10 to keep prompt under 25k tokens
+            # TASK-CHECKPOINT-FIX: Don't pass bridge_invoker here - Phase 1 uses heuristic analysis
+            # (Agent invocation only happens in Phase 5, where checkpoint is saved BEFORE invocation)
             analyzer = CodebaseAnalyzer(
-                max_files=30,
-                bridge_invoker=self.agent_invoker
+                max_files=10,
+                bridge_invoker=None  # Heuristic fallback for Phase 1
             )
 
             self._print_info(f"  Analyzing: {codebase_path}")

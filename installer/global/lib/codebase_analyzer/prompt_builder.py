@@ -638,13 +638,15 @@ class FileCollector:
         """Check if path should be ignored using centralized exclusion patterns."""
         return should_exclude_path(path)
 
-    def _read_file_safely(self, file_path: Path, max_lines: int = 100) -> Optional[str]:
+    def _read_file_safely(self, file_path: Path, max_lines: int = 50) -> Optional[str]:
         """
         Read file content safely with error handling.
 
+        TASK-PROMPT-SIZE: Reduced max_lines from 100 to 50 to keep prompt under 25k tokens.
+
         Args:
             file_path: Path to file
-            max_lines: Maximum number of lines to read
+            max_lines: Maximum number of lines to read (default: 50)
 
         Returns:
             File content or None if read fails

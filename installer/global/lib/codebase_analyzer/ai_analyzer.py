@@ -64,7 +64,7 @@ class CodebaseAnalyzer:
         prompt_builder: Optional[PromptBuilder] = None,
         response_parser: Optional[ResponseParser] = None,
         serializer: Optional[AnalysisSerializer] = None,
-        max_files: int = 20,  # CHANGED: Increased from 10 to 20 for stratified sampling
+        max_files: int = 10,  # TASK-PROMPT-SIZE: Reduced from 20 to 10 to keep prompt under 25k tokens
         use_agent: bool = True,
         use_stratified_sampling: bool = True,  # NEW: Enable pattern-aware sampling
         bridge_invoker: Optional[Any] = None  # TASK-769D: Optional agent bridge invoker
