@@ -1,9 +1,10 @@
 ---
 id: TASK-FW-009
 title: Update documentation (CLAUDE.md, task-review.md, feature-plan.md)
-status: backlog
+status: completed
 created: 2025-12-04T11:00:00Z
-updated: 2025-12-04T11:00:00Z
+updated: 2025-12-04T15:00:00Z
+completed: 2025-12-04T15:00:00Z
 priority: medium
 tags: [feature-workflow, documentation]
 complexity: 3
@@ -12,6 +13,10 @@ parallel_group: null
 conductor_workspace: null
 parent_review: TASK-REV-FW01
 dependencies: [TASK-FW-008]
+completed_location: tasks/completed/TASK-FW-009/
+organized_files: [
+  "TASK-FW-009-update-documentation.md"
+]
 ---
 
 # Update Documentation
@@ -22,12 +27,12 @@ Update all relevant documentation to reflect the new `/feature-plan` command and
 
 ## Acceptance Criteria
 
-- [ ] Update CLAUDE.md with `/feature-plan` command section
-- [ ] Update task-review.md with enhanced [I]mplement documentation
-- [ ] Complete feature-plan.md command documentation
-- [ ] Add examples and usage patterns
-- [ ] Update workflow diagrams if present
-- [ ] Add to command index/reference
+- [x] Update CLAUDE.md with `/feature-plan` command section
+- [x] Update task-review.md with enhanced [I]mplement documentation (verified from FW-008)
+- [x] Complete feature-plan.md command documentation
+- [x] Add examples and usage patterns
+- [x] Update workflow diagrams if present (N/A - no diagrams to update)
+- [x] Add to command index/reference (added to CLAUDE.md)
 
 ## Documentation Updates
 

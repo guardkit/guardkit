@@ -405,29 +405,134 @@ Your choice:
 
 **Step 4a: Choose [I]mplement**
 
-System automatically creates implementation task:
+System executes the enhanced auto-detection pipeline:
 
 ```bash
-✅ Created implementation task: TASK-IMP-B4D1
+================================================================================
+🔄 Enhanced [I]mplement Flow - Auto-Detection Pipeline
+================================================================================
 
-Task Details:
-  Title: Implement findings from TASK-REV-A3F2
-  Status: backlog
-  Priority: high (inherited from review)
-  Related Tasks: [TASK-REV-A3F2]
+Step 1/10: Extracting feature slug...
+   ✓ Feature slug: authentication-refactor
+   ✓ Feature name: Authentication Architecture
 
-Implementation Scope:
-  - Migrate to JWT-based authentication
-  - Implement Argon2 password hashing
-  - Add rate limiting middleware
-  - Update session management logic
-  - Add integration tests for auth flow
+Step 2/10: Parsing subtasks from review recommendations...
+   ✓ Found 5 subtasks
 
-Review Report: .claude/reviews/TASK-REV-A3F2-review-report.md
+Step 3/10: Assigning implementation modes...
+   ✓ /task-work: 3, Direct: 2, Manual: 0
 
-Next Steps:
-  /task-work TASK-IMP-B4D1
+Step 4/10: Detecting parallel execution groups...
+   ✓ Organized into 2 waves
+
+Step 5/10: Generating Conductor workspace names...
+   ✓ Assigned 3 workspace names
+
+Step 6/10: Displaying auto-detected configuration...
+
+================================================================================
+✅ Auto-detected Configuration:
+================================================================================
+   Feature slug: authentication-refactor
+   Feature name: Authentication Architecture
+   Subtasks: 5 (from review recommendations)
+   Parallel groups: 2 waves
+
+   Implementation modes:
+     • /task-work: 3 tasks
+     • Direct: 2 tasks
+     • Manual: 0 tasks
+================================================================================
+
+Step 7/10: Creating subfolder structure...
+   ✓ Created tasks/backlog/authentication-refactor/
+
+Step 8/10: Generating subtask files...
+   ✓ Generated 5 task files
+
+Step 9/10: Generating IMPLEMENTATION-GUIDE.md...
+   ✓ Guide generated
+
+Step 10/10: Generating README.md...
+   ✓ README generated
+
+================================================================================
+✅ Feature Implementation Structure Created
+================================================================================
+
+Created: tasks/backlog/authentication-refactor/
+  ├── README.md
+  ├── IMPLEMENTATION-GUIDE.md
+  ├── TASK-AR-001-migrate-jwt-auth.md
+  ├── TASK-AR-002-implement-argon2.md
+  ├── TASK-AR-003-rate-limiting.md
+  ├── TASK-AR-004-update-session-mgmt.md
+  └── TASK-AR-005-add-integration-tests.md
+
+--------------------------------------------------------------------------------
+📋 Execution Strategy:
+--------------------------------------------------------------------------------
+
+Wave 1: 3 tasks
+  ⚡ Parallel execution (Conductor recommended)
+     • TASK-AR-001: Migrate to JWT-based authentication
+       Workspace: authentication-refactor-wave1-1
+       Method: task-work
+     • TASK-AR-002: Implement Argon2 password hashing
+       Workspace: authentication-refactor-wave1-2
+       Method: task-work
+     • TASK-AR-003: Add rate limiting middleware
+       Workspace: authentication-refactor-wave1-3
+       Method: direct
+
+Wave 2: 2 tasks
+  ⚡ Parallel execution (Conductor recommended)
+     • TASK-AR-004: Update session management logic
+       Workspace: authentication-refactor-wave2-1
+       Method: task-work
+     • TASK-AR-005: Add integration tests for auth flow
+       Workspace: authentication-refactor-wave2-2
+       Method: direct
+
+================================================================================
+🚀 Next Steps:
+================================================================================
+1. Review: tasks/backlog/authentication-refactor/IMPLEMENTATION-GUIDE.md
+2. Review: tasks/backlog/authentication-refactor/README.md
+3. Start with Wave 1 tasks
+4. Use Conductor for parallel Wave 1 execution
+================================================================================
 ```
+
+### What [I]mplement Does
+
+When you choose [I]mplement, the system automatically:
+
+1. **Extracts feature slug** from review title (e.g., "Authentication Refactor" → "authentication-refactor")
+2. **Parses subtasks** from review recommendations section
+3. **Assigns implementation modes** (task-work/direct/manual) based on complexity and risk
+4. **Detects parallel groups** by analyzing file conflicts between tasks
+5. **Generates workspace names** for Conductor parallel execution
+6. **Creates subfolder** at `tasks/backlog/{feature-slug}/`
+7. **Generates task files** with complete frontmatter and metadata
+8. **Generates IMPLEMENTATION-GUIDE.md** with wave breakdowns and execution strategy
+9. **Generates README.md** with problem statement, solution approach, and subtask summary
+10. **Displays execution plan** with next steps
+
+### Enhanced [I]mplement Benefits
+
+**Before (Manual)**:
+- Manually create each implementation task
+- Guess at implementation modes
+- No parallel execution strategy
+- No documentation generated
+
+**After (Auto-Detection)**:
+- Zero manual task creation
+- Smart mode assignment (task-work/direct/manual)
+- Automatic parallel group detection
+- Complete documentation generated
+- Conductor-ready workspace names
 
 **Step 5: Implement Changes**
 ```bash
@@ -766,7 +871,33 @@ review_results:
 /task-review TASK-XXX --depth=comprehensive --focus="authentication layer"
 ```
 
-## Notes
+## Implementation Notes
+
+### Enhanced [I]mplement Flow (TASK-FW-008)
+
+The enhanced [I]mplement option requires integration with `lib.implement_orchestrator`:
+
+```python
+from lib.implement_orchestrator import handle_implement_option
+
+# When user chooses [I]mplement at decision checkpoint
+await handle_implement_option(
+    review_task=review_task_dict,
+    review_report_path=".claude/reviews/TASK-XXX-review-report.md"
+)
+```
+
+**Dependencies** (from Wave 2 tasks):
+- FW-002: Feature slug extraction (`lib.id_generator`)
+- FW-003: Subtask extraction (`lib.review_parser`)
+- FW-004: Implementation mode assignment (`lib.implementation_mode_analyzer`)
+- FW-005: Parallel group detection (`lib.parallel_analyzer`)
+- FW-006: Guide generation (`lib.guide_generator`)
+- FW-007: README generation (`lib.readme_generator`)
+
+**See**: `installer/global/lib/implement_orchestrator.py` for orchestration logic
+
+### Development Phases
 
 **Phase 1 Implementation** (Current):
 - Core orchestrator structure (Phases 1-5 skeleton)
@@ -774,8 +905,20 @@ review_results:
 - State management (`REVIEW_COMPLETE` state)
 - Metadata schema (task_type, review_mode, review_depth)
 
+**Phase 2 Implementation** (TASK-FW-008 - Complete):
+- Enhanced [I]mplement flow with auto-detection pipeline
+- Feature slug extraction
+- Subtask parsing from recommendations
+- Implementation mode assignment
+- Parallel group detection
+- Workspace name generation
+- Subfolder structure creation
+- Task file generation
+- IMPLEMENTATION-GUIDE.md generation
+- README.md generation
+
 **Future Phases** (Upcoming):
-- Phase 2: Review mode implementations
-- Phase 3: Report generation templates
-- Phase 4: Integration with task-create
-- Phase 5: Comprehensive testing
+- Phase 3: Review mode implementations
+- Phase 4: Report generation templates
+- Phase 5: Integration with task-create
+- Phase 6: Comprehensive testing

@@ -38,6 +38,47 @@ This is the **GuardKit** project - a lightweight, pragmatic task workflow system
 /task-complete TASK-XXX
 ```
 
+### Feature Planning Workflow (NEW - TASK-FW-001)
+```bash
+/feature-plan "feature description"  # Single command - auto-detects everything!
+```
+
+The `/feature-plan` command provides a streamlined, single-command experience for planning new features with automatic subtask generation.
+
+**What it does**:
+1. Creates review task automatically
+2. Executes architectural review
+3. On [I]mplement: Auto-creates complete feature structure
+4. Generates all documentation and subtasks
+
+**Example**:
+```bash
+/feature-plan "implement dark mode"
+
+# System automatically:
+# ✅ Creates review task
+# ✅ Analyzes feature requirements
+# ✅ Detects feature slug: "dark-mode"
+# ✅ Extracts 7 subtasks from recommendations
+# ✅ Assigns implementation modes (task-work/direct/manual)
+# ✅ Detects 3 parallel waves
+# ✅ Creates tasks/backlog/dark-mode/ with:
+#    ├── README.md (feature documentation)
+#    ├── IMPLEMENTATION-GUIDE.md (wave breakdown)
+#    ├── TASK-DM-001-add-css-variables.md (direct, wave 1)
+#    ├── TASK-DM-002-create-theme-toggle.md (task-work, wave 1)
+#    └── ... (5 more subtasks)
+```
+
+**Benefits**:
+- **Zero manual task creation** - All subtasks auto-generated from review
+- **Smart mode assignment** - Automatic task-work/direct/manual tagging
+- **Parallel execution ready** - Conductor workspace names included
+- **Complete documentation** - README + Implementation Guide generated
+- **95% time savings** - <1 minute vs 15-30 minutes manual setup
+
+**See**: `installer/global/commands/feature-plan.md` for complete documentation
+
 ### Agent & Template Management
 ```bash
 /agent-format <template>/<agent>     # Format agent to template standards

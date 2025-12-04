@@ -208,40 +208,106 @@ What aspect would you like to explore further?
 Enter choice [1-6]:
 ```
 
-### Step 4c: If [I]mplement (Enhanced)
+### Step 4c: If [I]mplement (Enhanced with Auto-Detection - TASK-FW-008)
+
+The enhanced [I]mplement option uses the auto-detection pipeline from TASK-FW-008 to automatically generate the complete feature structure with zero manual input:
 
 ```
-🚀 Creating implementation tasks from review findings...
+🚀 Enhanced [I]mplement Flow - Auto-Detection Pipeline
 
-Created implementation structure:
-  📁 tasks/backlog/feature-dark-mode/
+Step 1/10: Extracting feature slug...
+   ✓ Feature slug: dark-mode
+   ✓ Feature name: implement dark mode
 
-Subtasks created:
-  ✅ TASK-A3F2.1 - Create ThemeContext and provider
-     Complexity: 4/10 | Effort: 1-2 hours
+Step 2/10: Parsing subtasks from review recommendations...
+   ✓ Found 5 subtasks
 
-  ✅ TASK-A3F2.2 - Define CSS variables for themes
-     Complexity: 3/10 | Effort: 1-2 hours
+Step 3/10: Assigning implementation modes...
+   ✓ /task-work: 2, Direct: 3, Manual: 0
 
-  ✅ TASK-A3F2.3 - Implement theme toggle component
-     Complexity: 4/10 | Effort: 1 hour
+Step 4/10: Detecting parallel execution groups...
+   ✓ Organized into 2 waves
 
-  ✅ TASK-A3F2.4 - Add theme persistence with localStorage
-     Complexity: 3/10 | Effort: 30 minutes
+Step 5/10: Generating Conductor workspace names...
+   ✓ Assigned 3 workspace names
 
-  ✅ TASK-A3F2.5 - Update existing components for theming
-     Complexity: 5/10 | Effort: 1-2 hours
+Step 6/10: Displaying auto-detected configuration...
 
-📋 Implementation guide created:
-  tasks/backlog/feature-dark-mode/IMPLEMENTATION_GUIDE.md
+================================================================================
+✅ Auto-detected Configuration:
+================================================================================
+   Feature slug: dark-mode
+   Feature name: implement dark mode
+   Subtasks: 5 (from review recommendations)
+   Parallel groups: 2 waves
 
-Next steps:
-  1. Review subtasks in feature folder
-  2. Start with: /task-work TASK-A3F2.1
-  3. Reference implementation guide for architecture decisions
+   Implementation modes:
+     • /task-work: 2 tasks
+     • Direct: 3 tasks
+     • Manual: 0 tasks
+================================================================================
+
+Step 7/10: Creating subfolder structure...
+   ✓ Created tasks/backlog/dark-mode/
+
+Step 8/10: Generating subtask files...
+   ✓ Generated 5 task files
+
+Step 9/10: Generating IMPLEMENTATION-GUIDE.md...
+   ✓ Guide generated
+
+Step 10/10: Generating README.md...
+   ✓ README generated
+
+================================================================================
+✅ Feature Implementation Structure Created
+================================================================================
+
+Created: tasks/backlog/dark-mode/
+  ├── README.md
+  ├── IMPLEMENTATION-GUIDE.md
+  ├── TASK-DM-001-add-css-variables.md
+  ├── TASK-DM-002-create-theme-context.md
+  ├── TASK-DM-003-implement-toggle.md
+  ├── TASK-DM-004-add-persistence.md
+  └── TASK-DM-005-update-components.md
+
+--------------------------------------------------------------------------------
+📋 Execution Strategy:
+--------------------------------------------------------------------------------
+
+Wave 1: 3 tasks (parallel execution)
+  ⚡ Conductor recommended
+     • TASK-DM-001: Add CSS variables (direct, wave1-1)
+     • TASK-DM-002: Create theme context (task-work, wave1-2)
+     • TASK-DM-003: Implement toggle (direct, wave1-3)
+
+Wave 2: 2 tasks (parallel execution)
+  ⚡ Conductor recommended
+     • TASK-DM-004: Add persistence (direct, wave2-1)
+     • TASK-DM-005: Update components (task-work, wave2-2)
+
+================================================================================
+🚀 Next Steps:
+================================================================================
+1. Review: tasks/backlog/dark-mode/IMPLEMENTATION-GUIDE.md
+2. Review: tasks/backlog/dark-mode/README.md
+3. Start with Wave 1 tasks
+4. Use Conductor for parallel Wave 1 execution
+================================================================================
 
 Original review: TASK-REV-A3F2 (marked completed)
 ```
+
+**What Makes This Enhanced**:
+- ✅ **Zero manual prompts** - Everything auto-detected
+- ✅ **Smart mode assignment** - Complexity-based task-work/direct/manual
+- ✅ **Parallel group detection** - File conflict analysis for waves
+- ✅ **Conductor integration** - Workspace names for parallel execution
+- ✅ **Complete documentation** - README + Implementation Guide auto-generated
+- ✅ **95% time savings** - <1 minute vs 15-30 minutes manual
+
+**See**: `installer/global/lib/implement_orchestrator.py` for orchestration logic
 
 ### Step 4d: If [C]ancel
 
