@@ -1,15 +1,15 @@
 ---
 id: TASK-FW-002
 title: Auto-detect feature slug from review task title
-status: backlog
+status: in_review
 created: 2025-12-04T11:00:00Z
-updated: 2025-12-04T11:00:00Z
+updated: 2025-12-04T16:30:00Z
 priority: high
 tags: [feature-workflow, auto-detection]
 complexity: 3
 implementation_mode: direct
 parallel_group: 1
-conductor_workspace: feature-workflow-1
+conductor_workspace: victoria
 parent_review: TASK-REV-FW01
 ---
 
@@ -21,11 +21,11 @@ Implement logic to automatically extract a feature slug from the review task tit
 
 ## Acceptance Criteria
 
-- [ ] Extract feature name from review task title
-- [ ] Remove common prefixes: "Plan:", "Review:", "Investigate:", "Analyze:"
-- [ ] Convert to URL/folder-safe slug (lowercase, hyphens)
-- [ ] Handle edge cases (empty, very long, special characters)
-- [ ] Return sensible defaults if extraction fails
+- [x] Extract feature name from review task title
+- [x] Remove common prefixes: "Plan:", "Review:", "Investigate:", "Analyze:"
+- [x] Convert to URL/folder-safe slug (lowercase, hyphens)
+- [x] Handle edge cases (empty, very long, special characters)
+- [x] Return sensible defaults if extraction fails
 
 ## Implementation Details
 
@@ -86,3 +86,49 @@ This will be called by the enhanced [I]mplement flow (TASK-FW-008) to determine 
 ## Notes
 
 Simple utility function - can be completed in 0.5 days.
+
+## Implementation Summary
+
+### Files Created/Modified
+
+1. **`installer/global/lib/utils/feature_utils.py`** (NEW)
+   - Implemented `extract_feature_slug(title: str) -> str` function
+   - Handles all acceptance criteria:
+     - Removes common prefixes (plan, review, investigate, analyze, assess)
+     - Removes "how to" phrases
+     - Converts to URL/folder-safe slug (lowercase, hyphens)
+     - Handles None input gracefully
+     - Handles edge cases (empty, whitespace, unicode, special characters)
+     - Limits length to 40 characters with word boundary preservation
+     - Returns "feature" as default when extraction fails
+
+2. **`installer/global/lib/utils/__init__.py`**
+   - Added export for `extract_feature_slug` function
+
+3. **`tests/lib/test_feature_utils.py`** (NEW)
+   - Created comprehensive test suite with 40 test cases
+   - 100% code coverage (22 statements, 12 branches)
+   - All tests passing
+
+### Test Results
+
+- **Total Tests**: 40
+- **Passed**: 40
+- **Failed**: 0
+- **Coverage**: 100% (line and branch coverage)
+
+### Test Coverage Summary
+
+The test suite covers:
+- All 5 prefix removal scenarios (plan, review, investigate, analyze, assess)
+- "How to" phrase removal (case insensitive)
+- Special character conversion to hyphens
+- Length limiting with word boundary preservation
+- Empty/whitespace/None input handling
+- Unicode character handling
+- Real-world examples from task specification
+- Edge cases (very short, very long, no hyphens, etc.)
+
+### Integration Point
+
+This function is ready to be called by the enhanced [I]mplement flow (TASK-FW-008) to determine the subfolder name when creating implementation tasks from review tasks.
