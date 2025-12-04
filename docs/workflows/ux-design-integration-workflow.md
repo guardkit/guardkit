@@ -1,5 +1,12 @@
 # UX Design Integration Workflow
 
+> **Status: Coming Soon**
+>
+> This workflow is under active development. The commands and agents described below are not yet available.
+> See `tasks/backlog/design-url-integration/` for implementation progress.
+
+---
+
 **Purpose**: Complete guide to converting Figma and Zeplin designs into pixel-perfect, constraint-compliant components with zero scope creep.
 
 **Learn UX design integration in**:

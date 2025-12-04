@@ -145,11 +145,12 @@ export type CreateDiscussionInput = z.infer<typeof createDiscussionInputSchema>;
 
 ## Specialized Agents
 
-This template includes 3 custom AI agents:
+This template includes 4 custom AI agents:
 
-1. **react-query-specialist** - TanStack Query patterns
-2. **feature-architecture-specialist** - Feature organization
-3. **form-validation-specialist** - React Hook Form + Zod
+1. **react-state-specialist** - React hooks, state management, TanStack Query
+2. **react-query-specialist** - TanStack Query patterns and cache management
+3. **feature-architecture-specialist** - Feature-based organization
+4. **form-validation-specialist** - React Hook Form + Zod patterns
 
 These agents provide expert guidance for React/TypeScript development.
 

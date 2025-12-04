@@ -53,11 +53,9 @@ This is the **GuardKit** project - a lightweight, pragmatic task workflow system
 /task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
 ```
 
-### UX Design Integration
-```bash
-/figma-to-react <file-key> [node-id]    # Figma → TypeScript React + Tailwind
-/zeplin-to-maui <project-id> <screen-id> # Zeplin → .NET MAUI + XAML
-```
+### UX Design Integration (Coming Soon)
+Design-to-code workflows for Figma and Zeplin are under active development.
+See `tasks/backlog/design-url-integration/` for implementation status.
 
 ### Utilities
 ```bash
@@ -443,28 +441,17 @@ ERROR: BDD mode requires linked Gherkin scenarios
 
 **See**: [BDD Workflow for Agentic Systems](docs/guides/bdd-workflow-for-agentic-systems.md)
 
-## UX Design Integration
+## UX Design Integration (Coming Soon)
 
-Converts design system files (Figma, Zeplin) into components with **zero scope creep**.
+Design-to-code workflows for Figma and Zeplin are under active development.
 
-**Supported:**
-- `/figma-to-react` - Figma → TypeScript React + Tailwind + Playwright
-- `/zeplin-to-maui` - Zeplin → XAML + C# + platform tests
+**Planned Features:**
+- `/figma-to-react` - Figma to TypeScript React + Tailwind
+- `/zeplin-to-maui` - Zeplin to XAML + C# + platform tests
 
-**6-Phase Saga:**
-1. MCP Verification
-2. Design Extraction
-3. Boundary Documentation (12-category prohibition checklist)
-4. Component Generation
-5. Visual Regression Testing (>95% similarity)
-6. Constraint Validation (zero tolerance)
+**Status:** Implementation tasks are tracked in `tasks/backlog/design-url-integration/`
 
-**Quality Gates:**
-- Visual fidelity: >95%
-- Constraint violations: 0
-- Compilation: 100%
-
-**See**: [UX Design Integration Workflow](docs/workflows/ux-design-integration-workflow.md)
+**See**: [UX Design Integration Workflow](docs/workflows/ux-design-integration-workflow.md) for planned architecture
 
 ## Template Validation
 
@@ -1000,25 +987,35 @@ GuardKit uses AI-powered agent discovery to automatically match tasks to appropr
 # - Phase: implementation ✓
 # - Capabilities: api, async-patterns, pydantic ✓
 
-# Selected: python-api-specialist (source: local)
+# Selected: fastapi-specialist (source: template)
 # Fallback: task-manager (if no specialist found)
 ```
 
-### Stack-Specific Implementation Agents (Haiku Model)
+### Stack-Specific Implementation Agents (Template-Based, Haiku Model)
 
-**Python Stack:**
-- **python-api-specialist**: FastAPI endpoints, async patterns, Pydantic schemas
+Stack-specific agents are distributed across templates and automatically discovered:
 
-**React Stack:**
+**Python Stack** (via `fastapi-python` template):
+- **fastapi-specialist**: FastAPI endpoints, async patterns, Pydantic schemas
+- **fastapi-database-specialist**: Database operations and query optimization
+- **fastapi-testing-specialist**: Testing patterns and pytest integration
+
+**React Stack** (via `react-typescript` template):
 - **react-state-specialist**: React hooks, TanStack Query, state management
+- **react-query-specialist**: TanStack Query patterns and cache management
+- **form-validation-specialist**: React Hook Form + Zod patterns
+- **feature-architecture-specialist**: Feature-based organization
 
-**.NET Stack:**
-- **dotnet-domain-specialist**: Domain models, DDD patterns, value objects
+**Next.js Stack** (via `nextjs-fullstack` template):
+- **nextjs-fullstack-specialist**: Full-stack Next.js patterns
+- **nextjs-server-components-specialist**: Server component patterns
+- **nextjs-server-actions-specialist**: Server action patterns
 
 **Benefits:**
 - 4-5x faster implementation (Haiku vs Sonnet)
 - 48-53% total cost savings (vs all-Sonnet)
 - 90%+ quality maintained via Phase 4.5 test enforcement
+- Agents co-located with template patterns for consistency
 
 **See**: [Agent Discovery Guide](docs/guides/agent-discovery-guide.md) for comprehensive documentation.
 
@@ -1145,14 +1142,12 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 - **security-specialist**: Security validation and audits (phase: review)
 - **database-specialist**: Data architecture and optimization (phase: implementation)
 
-**Stack-Specific Implementation Agents** (Haiku):
-- **python-api-specialist**: FastAPI, async, Pydantic (phase: implementation)
-- **react-state-specialist**: Hooks, TanStack Query, Zustand (phase: implementation)
-- **dotnet-domain-specialist**: DDD, entities, value objects (phase: implementation)
+**Stack-Specific Implementation Agents** (Template-Based, Haiku):
+Stack-specific agents are now in templates - see [Stack-Specific Implementation Agents](#stack-specific-implementation-agents-template-based-haiku-model) above.
 
 **Note**: All agents include ALWAYS/NEVER/ASK boundary sections. See [Agent Enhancement with Boundary Sections](#agent-enhancement-with-boundary-sections) for details.
 
-**See**: `installer/global/agents/*.md` for agent specifications.
+**See**: `installer/global/agents/*.md` for cross-stack agent specifications.
 
 ## MCP Integration Best Practices
 
@@ -1164,11 +1159,11 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 - **context7**: Library documentation (Phases 2, 3, 4 - automatic when task uses libraries)
 - **design-patterns**: Pattern recommendations (Phase 2.5A - automatic during architectural review)
 
-**Design MCPs** (ONLY used for specific commands):
-- **figma-dev-mode**: Figma design extraction (ONLY for `/figma-to-react` command)
-- **zeplin**: Zeplin design extraction (ONLY for `/zeplin-to-maui` command)
+**Design MCPs** (Coming Soon):
+- **figma-dev-mode**: Planned for future `/figma-to-react` command
+- **zeplin**: Planned for future `/zeplin-to-maui` command
 
-**Important**: Design MCPs should only be installed if you're actively using those specific design-to-code commands. They are NOT used during regular `/task-work` execution.
+**Note**: Design MCPs are reserved for future design-to-code workflows currently under development. See `tasks/backlog/design-url-integration/` for implementation status.
 
 ### Setup Guides
 
@@ -1176,9 +1171,11 @@ The system integrates with 4 MCP servers for enhanced capabilities. **All MCPs a
 - [Context7 MCP Setup](docs/deep-dives/mcp-integration/context7-setup.md) - Up-to-date library documentation
 - [Design Patterns MCP Setup](docs/deep-dives/mcp-integration/design-patterns-setup.md) - Pattern recommendations
 
-**Design MCPs** (only if using design-to-code workflows):
-- [Figma MCP Setup](docs/mcp-setup/figma-mcp-setup.md) - For `/figma-to-react` command only
-- [Zeplin MCP Setup](docs/mcp-setup/zeplin-mcp-setup.md) - For `/zeplin-to-maui` command only
+**Design MCPs** (Coming Soon):
+- Figma MCP Setup - Planned for future release
+- Zeplin MCP Setup - Planned for future release
+
+See `tasks/backlog/design-url-integration/` for implementation details.
 
 ### Performance & Optimization
 

@@ -1202,15 +1202,15 @@ Generating plan with MCP enhancements...
 - Token budget: ~5000 for 5 results
 - Use during planning for architecture guidance
 
-**figma-dev-mode** (Design Extraction):
-- Extracts Figma designs as code
+**figma-dev-mode** (Design Extraction - Coming Soon):
+- Planned for future Figma design-to-code workflow
+- Reserved MCP for future `/figma-to-react` command
 - Minimal token impact (image-based)
-- Use with `/figma-to-react` command
 
-**zeplin** (Design Extraction):
-- Extracts Zeplin designs as code
+**zeplin** (Design Extraction - Coming Soon):
+- Planned for future Zeplin design-to-code workflow
+- Reserved MCP for future `/zeplin-to-maui` command
 - Minimal token impact (design-based)
-- Use with `/zeplin-to-maui` command
 
 ### Context7 Integration Example
 
@@ -1236,63 +1236,26 @@ Implementing with latest patterns...
 
 ---
 
-## 3.9 Design System Detection
+## 3.9 Design System Detection (Coming Soon)
 
-**Phase**: 2 (during implementation planning)
-**Purpose**: Automatically detect design system URLs in task descriptions and suggest design-to-code workflows.
+> **Status: Under Development**
+>
+> Design system detection and design-to-code workflows are under active development.
+> See `tasks/backlog/design-url-integration/` for implementation progress.
 
-### Quick Start
+**Planned Features**:
+- Automatic detection of Figma/Zeplin URLs in task descriptions
+- Design-to-code workflow suggestions
+- Visual regression testing integration
+- Zero scope creep enforcement
 
-Design system detection happens automatically when URLs are present:
+**Planned Supported Design Systems**:
+- Figma → TypeScript React + Tailwind (`/figma-to-react`)
+- Zeplin → XAML + C# + platform tests (`/zeplin-to-maui`)
 
-```bash
-/task-create "Implement login screen from Figma: https://figma.com/file/abc123"
+### Design Workflow Quality Gates (Planned)
 
-/task-work TASK-042
-
-Phase 2: Implementation Planning
-🎨 Detected design system URL...
-
-DESIGN SYSTEM: Figma
-URL: https://figma.com/file/abc123
-Type: UI Component
-
-SUGGESTED WORKFLOW:
-Instead of standard implementation, consider using:
-
-  /figma-to-react https://figma.com/file/abc123
-
-This will:
-  ✅ Extract design directly from Figma
-  ✅ Generate TypeScript React component
-  ✅ Add visual regression tests (>95% similarity)
-  ✅ Zero scope creep (boundary enforcement)
-
-OPTIONS:
-1. [U]se Figma workflow (recommended)
-2. [C]ontinue standard implementation
-3. [A]bort task
-
-Your choice (U/C/A): U
-
-Switching to Figma design extraction workflow...
-```
-
-### Supported Design Systems
-
-**Figma**:
-- URL pattern: `figma.com/file/*`
-- Command: `/figma-to-react`
-- Output: TypeScript React + Tailwind + Playwright
-
-**Zeplin**:
-- URL pattern: `app.zeplin.io/*`
-- Command: `/zeplin-to-maui`
-- Output: XAML + C# + platform tests
-
-### Design Workflow Quality Gates
-
-When using design-to-code workflows, additional gates apply:
+When design-to-code workflows are available, additional gates will apply:
 
 | Gate | Threshold | Enforcement |
 |------|-----------|-------------|

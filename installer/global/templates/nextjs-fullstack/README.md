@@ -212,11 +212,12 @@ The pipeline runs on every push and pull request to ensure code quality.
 
 ## Custom AI Agents
 
-This template includes 3 specialized agents:
+This template includes 4 specialized agents:
 
-1. **nextjs-server-components-specialist** - Server Components patterns
-2. **nextjs-server-actions-specialist** - Server Actions and mutations
-3. **nextjs-fullstack-specialist** - Complete full-stack development
+1. **nextjs-fullstack-specialist** - Complete full-stack development
+2. **nextjs-server-components-specialist** - Server Components patterns
+3. **nextjs-server-actions-specialist** - Server Actions and mutations
+4. **react-state-specialist** - React hooks and state management
 
 ## Learn More
 

@@ -40,10 +40,11 @@ Phase 3: Implementation
 └─ Analyzing task context...
    ├─ Detected stack: [python]
    ├─ Keywords: [fastapi, api, endpoint]
-   └─ Found specialist: python-api-specialist (relevance: 3/5)
+   └─ Found specialist: fastapi-specialist (relevance: 3/5)
 
-Using python-api-specialist for implementation (Haiku model)
+Using fastapi-specialist for implementation (Haiku model)
 └─ Specialized in: FastAPI endpoints, async patterns, Pydantic schemas
+└─ Source: template (fastapi-python)
 ```
 
 ## Agent Sources and Precedence
@@ -63,8 +64,8 @@ The agent discovery system scans 4 sources in priority order:
    - Overrides global and template agents
 
 3. **Global** (`installer/global/agents/`)
-   - System default agent definitions
-   - Canonical implementation
+   - Cross-stack agents only (orchestration, review, testing, debugging)
+   - No stack-specific implementation agents
    - Fallback when local/user agents missing
 
 4. **Template** (`installer/global/templates/*/agents/`)
@@ -80,25 +81,33 @@ The first agent found (highest priority) is used, and duplicates from lower prio
 
 ### Precedence Examples
 
-**Example 1: Local overrides global**
+**Example 1: Local overrides template**
 ```
-Local:  .claude/agents/python-api-specialist.md (custom version)
-Global: installer/global/agents/python-api-specialist.md (default)
-Result: Uses local version
-```
-
-**Example 2: User overrides global**
-```
-User:   ~/.agentecflow/agents/react-state-specialist.md (custom)
-Global: installer/global/agents/react-state-specialist.md (default)
-Result: Uses user version
+Local:    .claude/agents/fastapi-specialist.md (custom version)
+Template: installer/global/templates/fastapi-python/agents/fastapi-specialist.md
+Result:   Uses local version
 ```
 
-**Example 3: Fallback to global**
+**Example 2: User overrides template**
 ```
-Local:  (not found)
-Global: installer/global/agents/dotnet-domain-specialist.md
-Result: Uses global version
+User:     ~/.agentecflow/agents/react-state-specialist.md (custom)
+Template: installer/global/templates/react-typescript/agents/react-state-specialist.md
+Result:   Uses user version
+```
+
+**Example 3: Fallback to cross-stack global**
+```
+Local:  (not found for Go stack)
+Global: installer/global/agents/task-manager.md (cross-stack fallback)
+Result: Uses task-manager as no Go-specific agent exists
+```
+
+**Example 4: Template agents discovered**
+```
+Project: Uses fastapi-python template
+Local:   (not found)
+Template: installer/global/templates/fastapi-python/agents/fastapi-specialist.md
+Result:   Uses template agent for FastAPI implementation
 ```
 
 ## Discovery Metadata Schema
@@ -190,20 +199,29 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 ## Available Specialists
 
-### Python Stack
-| Agent | Capabilities | Keywords |
-|-------|-------------|----------|
-| **python-api-specialist** | FastAPI endpoints, async patterns, Pydantic schemas | fastapi, async, endpoints, router, dependency-injection |
+> **Note**: Stack-specific agents are distributed across templates. Global agents are cross-stack only.
 
-### React Stack
+### Python Stack (via `fastapi-python` template)
 | Agent | Capabilities | Keywords |
 |-------|-------------|----------|
-| **react-state-specialist** | React hooks, TanStack Query, Zustand state management | hooks, useState, useEffect, tanstack-query, zustand |
+| **fastapi-specialist** | FastAPI endpoints, async patterns, Pydantic schemas | fastapi, async, endpoints, router, dependency-injection |
+| **fastapi-database-specialist** | Database operations and query optimization | sqlalchemy, database, query, orm |
+| **fastapi-testing-specialist** | Testing patterns and pytest integration | pytest, testing, fixtures, async-tests |
 
-### .NET Stack
+### React Stack (via `react-typescript` template)
 | Agent | Capabilities | Keywords |
 |-------|-------------|----------|
-| **dotnet-domain-specialist** | Domain models, DDD patterns, value objects | entity, domain, ddd, value-object, aggregate |
+| **react-state-specialist** | React hooks, TanStack Query, state management | hooks, useState, useEffect, tanstack-query, zustand |
+| **react-query-specialist** | TanStack Query patterns and cache management | query, cache, mutations, optimistic-updates |
+| **form-validation-specialist** | React Hook Form + Zod patterns | forms, validation, zod, react-hook-form |
+| **feature-architecture-specialist** | Feature-based organization | features, modules, boundaries |
+
+### Next.js Stack (via `nextjs-fullstack` template)
+| Agent | Capabilities | Keywords |
+|-------|-------------|----------|
+| **nextjs-fullstack-specialist** | Full-stack Next.js patterns | nextjs, server-components, app-router |
+| **nextjs-server-components-specialist** | Server component patterns | rsc, server-components, streaming |
+| **nextjs-server-actions-specialist** | Server action patterns | server-actions, mutations, forms |
 
 ## Graceful Degradation
 

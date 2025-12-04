@@ -294,6 +294,14 @@ Perfect for:
 - Applications with complex frontend-backend interaction
 - Teams familiar with Python wanting modern React setup
 
+## Specialized AI Agents
+
+This template includes 3 specialized agents for monorepo development:
+
+1. **react-fastapi-monorepo-specialist** - Full-stack monorepo coordination
+2. **monorepo-type-safety-specialist** - Cross-language type safety and contracts
+3. **docker-orchestration-specialist** - Docker, containerization, multi-service orchestration
+
 ## Support
 
 For detailed documentation, see:
