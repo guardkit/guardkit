@@ -1,9 +1,10 @@
 ---
 id: TASK-FW-008
 title: Update /task-review [I]mplement flow (orchestrate all above)
-status: backlog
+status: completed
 created: 2025-12-04T11:00:00Z
-updated: 2025-12-04T11:00:00Z
+updated: 2025-12-04T14:30:00Z
+completed: 2025-12-04T14:30:00Z
 priority: high
 tags: [feature-workflow, orchestration, integration]
 complexity: 5
@@ -12,6 +13,11 @@ parallel_group: null
 conductor_workspace: null
 parent_review: TASK-REV-FW01
 dependencies: [TASK-FW-002, TASK-FW-003, TASK-FW-004, TASK-FW-005, TASK-FW-006, TASK-FW-007]
+completed_location: tasks/completed/TASK-FW-008/
+organized_files: [
+  "TASK-FW-008-orchestrate-implement-flow.md",
+  "implementation-summary.md"
+]
 ---
 
 # Update /task-review [I]mplement Flow
@@ -22,13 +28,13 @@ Orchestrate all the auto-detection and generation components into the enhanced [
 
 ## Acceptance Criteria
 
-- [ ] When [I]mplement chosen, execute full auto-detection pipeline
-- [ ] Display auto-detected values before proceeding
-- [ ] Create subfolder `tasks/backlog/{feature-slug}/`
-- [ ] Generate all subtask files with correct metadata
-- [ ] Generate IMPLEMENTATION-GUIDE.md
-- [ ] Generate README.md
-- [ ] Display summary and next steps
+- [x] When [I]mplement chosen, execute full auto-detection pipeline
+- [x] Display auto-detected values before proceeding
+- [x] Create subfolder `tasks/backlog/{feature-slug}/`
+- [x] Generate all subtask files with correct metadata
+- [x] Generate IMPLEMENTATION-GUIDE.md
+- [x] Generate README.md
+- [x] Display summary and next steps
 
 ## Implementation Details
 
