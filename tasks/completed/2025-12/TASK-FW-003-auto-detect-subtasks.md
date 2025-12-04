@@ -1,9 +1,10 @@
 ---
 id: TASK-FW-003
 title: Auto-detect subtasks from review recommendations
-status: backlog
+status: completed
 created: 2025-12-04T11:00:00Z
-updated: 2025-12-04T11:00:00Z
+updated: 2025-12-04T08:14:34Z
+completed_at: 2025-12-04T08:14:34Z
 priority: high
 tags: [feature-workflow, auto-detection, parsing]
 complexity: 5
@@ -11,6 +12,17 @@ implementation_mode: task-work
 parallel_group: 2
 conductor_workspace: feature-workflow-2
 parent_review: TASK-REV-FW01
+completion_metrics:
+  total_duration: 5.5h
+  implementation_time: 3h
+  testing_time: 2h
+  review_time: 0.5h
+  test_iterations: 3
+  final_coverage: 87
+  tests_passed: 28
+  tests_total: 28
+  files_created: 2
+  lines_added: 914
 ---
 
 # Auto-detect Subtasks from Review Recommendations
@@ -21,12 +33,12 @@ Parse the review report recommendations section to automatically generate subtas
 
 ## Acceptance Criteria
 
-- [ ] Parse review report markdown to extract recommendations
-- [ ] Each actionable recommendation becomes a subtask
-- [ ] Extract subtask title from recommendation text
-- [ ] Infer files to modify from recommendation context
-- [ ] Generate sequential task IDs with feature prefix
-- [ ] Handle various recommendation formats (numbered, bulleted, etc.)
+- [x] Parse review report markdown to extract recommendations
+- [x] Each actionable recommendation becomes a subtask
+- [x] Extract subtask title from recommendation text
+- [x] Infer files to modify from recommendation context
+- [x] Generate sequential task IDs with feature prefix
+- [x] Handle various recommendation formats (numbered, bulleted, etc.)
 
 ## Implementation Details
 
