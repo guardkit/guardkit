@@ -1,9 +1,9 @@
 ---
 id: TASK-FW-001
 title: Create /feature-plan command (markdown orchestration)
-status: backlog
+status: in_review
 created: 2025-12-04T11:00:00Z
-updated: 2025-12-04T11:00:00Z
+updated: 2025-12-04T07:50:00Z
 priority: high
 tags: [feature-workflow, command, quick-win]
 complexity: 3
@@ -23,13 +23,13 @@ Create a new slash command `/feature-plan` that orchestrates the feature plannin
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/feature-plan.md`
-- [ ] Command accepts feature description as argument
-- [ ] Automatically executes `/task-create` with `task_type:review` flag
-- [ ] Captures task ID from output
-- [ ] Automatically executes `/task-review` with `--mode=decision --depth=standard`
-- [ ] Clear error handling if either step fails
-- [ ] Documentation in command file
+- [x] Create `installer/global/commands/feature-plan.md`
+- [x] Command accepts feature description as argument
+- [x] Automatically executes `/task-create` with `task_type:review` flag
+- [x] Captures task ID from output
+- [x] Automatically executes `/task-review` with `--mode=decision --depth=standard`
+- [x] Clear error handling if either step fails
+- [x] Documentation in command file
 
 ## Implementation Details
 
