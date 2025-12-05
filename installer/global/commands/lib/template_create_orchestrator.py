@@ -121,6 +121,7 @@ class OrchestrationConfig:
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
     create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
+    split_claude_md: bool = True  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
 
 
 @dataclass
@@ -1470,11 +1471,15 @@ Enhance the {agent_name} agent with template-specific content:
             settings_gen.save(settings, settings_path)
             self._print_success_line(f"settings.json ({self._file_size(settings_path)})")
 
-            # Save CLAUDE.md
-            claude_md_path = output_path / "CLAUDE.md"
-            claude_gen = ClaudeMdGenerator(None)
-            claude_gen.save(claude_md, claude_md_path)
-            self._print_success_line(f"CLAUDE.md ({self._file_size(claude_md_path)})")
+            # Save CLAUDE.md (split or single based on config)
+            if self.config.split_claude_md:
+                success = self._write_claude_md_split(output_path)
+                if not success:
+                    self.warnings.append("Failed to write split CLAUDE.md files")
+            else:
+                success = self._write_claude_md_single(claude_md, output_path)
+                if not success:
+                    self.warnings.append("Failed to write single CLAUDE.md file")
 
             # Save template files
             if templates and templates.total_count > 0:
@@ -1492,6 +1497,124 @@ Enhance the {agent_name} agent with template-specific content:
             self._print_error(f"Package assembly failed: {e}")
             logger.exception("Package assembly error")
             return None
+
+    def _write_claude_md_split(self, output_path: Path) -> bool:
+        """
+        Write split CLAUDE.md output for progressive disclosure (TASK-PD-006).
+
+        Creates:
+        - output_path/CLAUDE.md (core ~8KB)
+        - output_path/docs/patterns/README.md (patterns)
+        - output_path/docs/reference/README.md (reference)
+
+        Args:
+            output_path: Template output directory
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Step 1: Generate split content
+            generator = ClaudeMdGenerator(self.analysis, agents=self.agents, output_path=output_path)
+            split_output = generator.generate_split()
+
+            # Step 2: Create directory structure
+            docs_dir = output_path / "docs"
+            patterns_dir = docs_dir / "patterns"
+            reference_dir = docs_dir / "reference"
+
+            patterns_dir.mkdir(parents=True, exist_ok=True)
+            reference_dir.mkdir(parents=True, exist_ok=True)
+
+            # Step 3: Write files
+            core_path = output_path / "CLAUDE.md"
+            patterns_path = patterns_dir / "README.md"
+            reference_path = reference_dir / "README.md"
+
+            # Write core CLAUDE.md
+            success, error_msg = safe_write_file(core_path, split_output.core)
+            if not success:
+                logger.error(f"Failed to write core CLAUDE.md: {error_msg}")
+                return False
+
+            # Write patterns
+            success, error_msg = safe_write_file(patterns_path, split_output.patterns)
+            if not success:
+                logger.error(f"Failed to write patterns README.md: {error_msg}")
+                return False
+
+            # Write reference
+            success, error_msg = safe_write_file(reference_path, split_output.reference)
+            if not success:
+                logger.error(f"Failed to write reference README.md: {error_msg}")
+                return False
+
+            # Step 4: Log sizes with reduction percentage
+            self._log_split_sizes(core_path, patterns_path, reference_path, split_output)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to write split CLAUDE.md: {e}")
+            logger.exception("Split CLAUDE.md write error")
+            return False
+
+    def _log_split_sizes(
+        self,
+        core_path: Path,
+        patterns_path: Path,
+        reference_path: Path,
+        split_output: Any
+    ) -> None:
+        """
+        Log file sizes and reduction percentage for split output.
+
+        Args:
+            core_path: Path to core CLAUDE.md
+            patterns_path: Path to patterns README.md
+            reference_path: Path to reference README.md
+            split_output: TemplateSplitOutput with size calculation methods
+        """
+        core_size = self._file_size(core_path)
+        patterns_size = self._file_size(patterns_path)
+        reference_size = self._file_size(reference_path)
+
+        reduction = split_output.get_reduction_percent()
+
+        self._print_success_line(f"CLAUDE.md (core: {core_size}, {reduction:.1f}% reduction)")
+        self._print_success_line(f"docs/patterns/README.md ({patterns_size})")
+        self._print_success_line(f"docs/reference/README.md ({reference_size})")
+
+    def _write_claude_md_single(self, claude_md: Any, output_path: Path) -> bool:
+        """
+        Write single-file CLAUDE.md (legacy mode).
+
+        Preserved for backward compatibility when split_claude_md=False.
+
+        Args:
+            claude_md: TemplateClaude object from Phase 8
+            output_path: Template output directory
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            claude_md_path = output_path / "CLAUDE.md"
+            generator = ClaudeMdGenerator(None)
+            generator.save(claude_md, claude_md_path)
+
+            # Only log file size if file exists (in case of mocked save)
+            if claude_md_path.exists():
+                self._print_success_line(f"CLAUDE.md ({self._file_size(claude_md_path)})")
+            else:
+                self._print_success_line("CLAUDE.md")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to write single CLAUDE.md: {e}")
+            logger.exception("Single CLAUDE.md write error")
+            return False
 
     def _save_analysis_json(self, analysis: Any) -> None:
         """Save analysis to JSON for debugging."""
@@ -2229,6 +2352,7 @@ def run_template_create(
     create_agent_tasks: bool = True,  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
+    split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
     verbose: bool = False
 ) -> OrchestrationResult:
     """
@@ -2247,6 +2371,7 @@ def run_template_create(
         validate: Run extended validation and generate quality report
         create_agent_tasks: Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
         custom_name: Custom template name (overrides AI-generated name)
+        split_claude_md: Enable progressive disclosure with split CLAUDE.md (TASK-PD-006)
         verbose: Show detailed progress
 
     Returns:
@@ -2293,6 +2418,7 @@ def run_template_create(
         create_agent_tasks=create_agent_tasks,  # TASK-PHASE-8-INCREMENTAL
         resume=resume,  # TASK-BRIDGE-002
         custom_name=custom_name,  # TASK-FDB2
+        split_claude_md=split_claude_md,  # TASK-PD-006
         verbose=verbose
     )
 
@@ -2327,6 +2453,9 @@ if __name__ == "__main__":
     parser.add_argument("--no-create-agent-tasks", action="store_false",
                         dest="create_agent_tasks",
                         help="Skip agent task creation (opt-out from default behavior)")
+    parser.add_argument("--no-split-claude-md", action="store_false",
+                        dest="split_claude_md",
+                        help="Disable progressive disclosure (use single CLAUDE.md file)")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
@@ -2346,6 +2475,7 @@ if __name__ == "__main__":
         create_agent_tasks=args.create_agent_tasks,
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2
+        split_claude_md=args.split_claude_md,  # TASK-PD-006
         verbose=args.verbose
     )
 
