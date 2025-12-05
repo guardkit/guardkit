@@ -78,3 +78,88 @@ class SplitContent:
     extended_path: Path | None
     core_sections: List[str]
     extended_sections: List[str]
+
+
+@dataclass
+class EnhancementResult:
+    """
+    Result of agent enhancement operation.
+
+    TASK-PD-003: Enhanced to support split-file output mode.
+
+    This dataclass represents the outcome of enhancing an agent file,
+    including both success/error state and information about created files.
+
+    Attributes:
+        success: Whether enhancement succeeded
+        agent_name: Name of enhanced agent
+        sections: List of section names added/modified
+        templates: List of template files referenced
+        examples: List of code examples included
+        diff: Unified diff showing changes
+        error: Error message if failed (None if successful)
+        strategy_used: Enhancement strategy (ai/static/hybrid)
+        core_file: Path to core agent file (None on error)
+        extended_file: Path to extended file or None (split mode only)
+        split_output: Whether split-file mode was used
+
+    Example (split mode):
+        >>> result = EnhancementResult(
+        ...     success=True,
+        ...     agent_name="fastapi-specialist",
+        ...     core_file=Path("fastapi-specialist.md"),
+        ...     extended_file=Path("fastapi-specialist-ext.md"),
+        ...     split_output=True,
+        ...     ...
+        ... )
+        >>> result.files
+        [Path('fastapi-specialist.md'), Path('fastapi-specialist-ext.md')]
+
+    Example (single-file mode):
+        >>> result = EnhancementResult(
+        ...     success=True,
+        ...     agent_name="fastapi-specialist",
+        ...     core_file=Path("fastapi-specialist.md"),
+        ...     extended_file=None,
+        ...     split_output=False,
+        ...     ...
+        ... )
+        >>> result.files
+        [Path('fastapi-specialist.md')]
+    """
+    success: bool
+    agent_name: str
+    sections: List[str]
+    templates: List[str]
+    examples: List[str]
+    diff: str
+    error: str | None = None
+    strategy_used: str | None = None
+    core_file: Path | None = None
+    extended_file: Path | None = None
+    split_output: bool = False
+
+    @property
+    def files(self) -> List[Path]:
+        """
+        Return all created/modified files as a list.
+
+        Returns:
+            List of Path objects for files affected by enhancement.
+            Empty list if core_file is None (error case).
+
+        Example:
+            >>> result.files
+            [Path('core.md'), Path('ext.md')]  # Split mode
+            >>> result.files
+            [Path('core.md')]  # Single-file mode
+            >>> result.files
+            []  # Error case
+        """
+        if self.core_file is None:
+            return []
+
+        if self.extended_file is not None:
+            return [self.core_file, self.extended_file]
+
+        return [self.core_file]
