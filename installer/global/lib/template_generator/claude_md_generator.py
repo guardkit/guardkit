@@ -19,7 +19,7 @@ from ..codebase_analyzer.models import (
     LayerInfo,
     ExampleFile,
 )
-from .models import TemplateClaude, AgentMetadata
+from .models import TemplateClaude, AgentMetadata, TemplateSplitOutput
 from .ai_client import AIClient
 
 
@@ -1123,6 +1123,253 @@ Respond ONLY with valid JSON."""
 
         # Default to general
         return 'general'
+
+    # ===== Phase 5.6 Split Output Methods (TASK-PD-005) =====
+
+    def _get_quality_standards_data(self) -> Dict[str, Any]:
+        """Extract quality standards data (DRY fix)
+
+        Returns:
+            Dictionary with quality standards data
+        """
+        quality = self.analysis.quality
+        return {
+            'solid_compliance': quality.solid_compliance,
+            'dry_compliance': quality.dry_compliance,
+            'yagni_compliance': quality.yagni_compliance,
+            'improvements': quality.improvements
+        }
+
+    def _get_agent_metadata_list(self) -> List[AgentMetadata]:
+        """Extract agent metadata list (DRY fix)
+
+        Returns:
+            List of AgentMetadata objects
+        """
+        agent_metadata_list = []
+
+        if self.output_path:
+            # Read from template output directory
+            agent_dir = self.output_path / "agents"
+            if agent_dir.exists():
+                for agent_file in sorted(agent_dir.glob("*.md")):
+                    metadata_dict = self._read_agent_metadata_from_file(agent_file)
+                    if metadata_dict:
+                        enhanced = self._enhance_agent_info_with_ai(metadata_dict)
+                        category = self._infer_category(
+                            metadata_dict['name'],
+                            metadata_dict.get('tags', [])
+                        )
+                        agent_metadata = AgentMetadata(
+                            name=metadata_dict['name'],
+                            purpose=enhanced['purpose'],
+                            capabilities=[],
+                            when_to_use=enhanced['when_to_use'],
+                            category=category
+                        )
+                        agent_metadata_list.append(agent_metadata)
+        elif self.agents:
+            for agent in self.agents:
+                metadata = self._extract_agent_metadata(agent)
+                if metadata:
+                    agent_metadata_list.append(metadata)
+
+        return agent_metadata_list
+
+    def _generate_loading_instructions(self) -> str:
+        """Generate loading instructions section
+
+        Returns:
+            Markdown with instructions for loading extended content
+        """
+        instructions = [
+            "# How to Load This Template",
+            "",
+            "This template documentation is split into three files for optimal loading:",
+            "",
+            "1. **CLAUDE.md** (this file) - Core architecture and quick reference",
+            "2. **CLAUDE-PATTERNS.md** - Detailed patterns and best practices",
+            "3. **CLAUDE-REFERENCE.md** - Code examples and complete reference",
+            "",
+            "## Loading Strategy",
+            "",
+            "- **Start here**: Read CLAUDE.md for architecture overview and essential guidance",
+            "- **When implementing**: Load CLAUDE-PATTERNS.md for pattern details",
+            "- **When troubleshooting**: Load CLAUDE-REFERENCE.md for examples and workflows",
+            "",
+            "## Why Split?",
+            "",
+            "Splitting reduces initial context load by ~70% while keeping essential information immediately available.",
+            ""
+        ]
+        return "\n".join(instructions)
+
+    def _generate_quality_standards_summary(self) -> str:
+        """Generate quality standards summary (DRY fix)
+
+        Returns:
+            Markdown with quality standards summary
+        """
+        quality_data = self._get_quality_standards_data()
+
+        summary = [
+            "# Quality Standards",
+            "",
+            "## Quick Reference",
+            "",
+            "- **Unit Test Coverage**: ≥80%",
+            "- **Branch Coverage**: ≥75%",
+            f"- **SOLID Compliance**: {quality_data['solid_compliance']:.0f}/100",
+            f"- **DRY Compliance**: {quality_data['dry_compliance']:.0f}/100",
+            f"- **YAGNI Compliance**: {quality_data['yagni_compliance']:.0f}/100",
+            ""
+        ]
+
+        # Add testing framework if available
+        if self.analysis.technology.testing_frameworks:
+            test_fw = self.analysis.technology.testing_frameworks[0]
+            summary.append(f"- **Test Framework**: {test_fw}")
+            summary.append("")
+
+        summary.extend([
+            "**For detailed standards**: See CLAUDE-PATTERNS.md",
+            ""
+        ])
+
+        return "\n".join(summary)
+
+    def _group_agents_by_category(self, agents: List[AgentMetadata]) -> Dict[str, List[AgentMetadata]]:
+        """Group agents by category (helper for agent usage summary)
+
+        Args:
+            agents: List of AgentMetadata objects
+
+        Returns:
+            Dictionary mapping category to list of agents
+        """
+        by_category = {}
+        for metadata in agents:
+            category = metadata.category.title()
+            if category not in by_category:
+                by_category[category] = []
+            by_category[category].append(metadata)
+        return by_category
+
+    def _generate_agent_usage_summary(self) -> str:
+        """Generate agent usage summary
+
+        Returns:
+            Markdown with agent usage summary
+        """
+        usage = [
+            "# Agent Usage",
+            "",
+            "This template includes specialized agents for common tasks.",
+            ""
+        ]
+
+        agent_metadata_list = self._get_agent_metadata_list()
+
+        if not agent_metadata_list:
+            usage.extend([
+                "## Quick Guide",
+                "",
+                "- Use **domain-specific agents** for business logic",
+                "- Use **testing agents** for test generation",
+                "- Use **UI agents** for view/component creation",
+                "",
+                "**For detailed agent documentation**: See CLAUDE-REFERENCE.md",
+                ""
+            ])
+            return "\n".join(usage)
+
+        # Group and show categories only
+        by_category = self._group_agents_by_category(agent_metadata_list)
+
+        usage.extend([
+            "## Available Agent Categories",
+            ""
+        ])
+
+        for category, agents in sorted(by_category.items()):
+            agent_names = [f"`{a.name}`" for a in agents]
+            usage.append(f"- **{category}**: {', '.join(agent_names)}")
+
+        usage.extend([
+            "",
+            "**For detailed agent documentation**: See CLAUDE-REFERENCE.md",
+            ""
+        ])
+
+        return "\n".join(usage)
+
+    def _generate_core(self) -> str:
+        """Generate core CLAUDE.md content (≤10KB target)
+
+        Returns:
+            Markdown with essential content only
+        """
+        sections = [
+            self._generate_loading_instructions(),
+            self._generate_architecture_overview(),
+            self._generate_technology_stack(),
+            self._generate_project_structure(),
+            self._generate_quality_standards_summary(),
+            self._generate_agent_usage_summary()
+        ]
+        return "\n\n".join(sections)
+
+    def _generate_patterns_extended(self) -> str:
+        """Generate extended patterns content
+
+        Returns:
+            Markdown with complete patterns and best practices
+        """
+        # Delegate to existing method
+        patterns = self._generate_patterns()
+
+        # Add full quality standards
+        quality_standards = self._generate_quality_standards()
+
+        return "\n\n".join([patterns, quality_standards])
+
+    def _generate_reference_extended(self) -> str:
+        """Generate extended reference content
+
+        Returns:
+            Markdown with examples, testing, workflows, and troubleshooting
+        """
+        sections = [
+            self._generate_examples(),
+            self._generate_naming_conventions(),
+            self._generate_agent_usage()  # Full agent documentation
+        ]
+        return "\n\n".join(sections)
+
+    def generate_split(self) -> TemplateSplitOutput:
+        """Generate split CLAUDE.md output with size validation
+
+        Returns:
+            TemplateSplitOutput with validated core size
+
+        Raises:
+            ValueError: If core content exceeds 10KB limit
+        """
+        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        output = TemplateSplitOutput(
+            core_content=self._generate_core(),
+            patterns_content=self._generate_patterns_extended(),
+            reference_content=self._generate_reference_extended(),
+            generated_at=timestamp
+        )
+
+        # Validate size constraints
+        is_valid, error_msg = output.validate_size_constraints()
+        if not is_valid:
+            raise ValueError(f"Size validation failed: {error_msg}")
+
+        return output
 
     def to_markdown(self, claude: TemplateClaude) -> str:
         """Convert TemplateClaude to full CLAUDE.md content
