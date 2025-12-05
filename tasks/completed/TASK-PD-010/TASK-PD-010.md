@@ -2,29 +2,36 @@
 id: TASK-PD-010
 title: Run split-agent.py --all-global (14 agents)
 status: completed
-created: 2025-12-03T16:00:00Z
-updated: 2025-12-05T16:00:00Z
-completed: 2025-12-05T16:00:00Z
+created: 2025-12-03 16:00:00+00:00
+updated: '2025-12-05T16:48:09.331730Z'
+completed: '2025-12-05T16:48:09.330460Z'
 priority: high
-tags: [progressive-disclosure, phase-3, execution, global-agents]
+tags:
+- progressive-disclosure
+- phase-3
+- execution
+- global-agents
 complexity: 4
 estimated_hours: 8
 actual_hours: 0.25
-blocked_by: [TASK-PD-009]
-blocks: [TASK-PD-011]
+blocked_by:
+- TASK-PD-009
+blocks:
+- TASK-PD-011
 review_task: TASK-REV-426C
 completed_location: tasks/completed/TASK-PD-010/
 organized_files:
-  - TASK-PD-010.md
-  - completion-summary.md
+- TASK-PD-010.md
+- completion-summary.md
 test_results:
   status: passed
   coverage: 100
-  last_run: 2025-12-05T16:00:00Z
+  last_run: 2025-12-05 16:00:00+00:00
   agents_processed: 14
   agents_failed: 0
   verification_passed: true
 ---
+
 
 # Task: Run split-agent.py --all-global (19 agents)
 
