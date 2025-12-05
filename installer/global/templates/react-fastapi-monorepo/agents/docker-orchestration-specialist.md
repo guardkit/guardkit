@@ -147,6 +147,7 @@ volumes:
 
 **Frontend Production Dockerfile**:
 ```dockerfile
+
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
@@ -183,6 +184,7 @@ CMD ["nginx", "-g", "daemon off;"]
 
 **Backend Production Dockerfile**:
 ```dockerfile
+
 # Stage 1: Builder
 FROM python:3.11-slim AS builder
 
@@ -386,6 +388,7 @@ server {
 
 ### 1. Exposing Sensitive Data
 ```yaml
+
 # ❌ BAD: Hardcoded secrets
 environment:
   - DATABASE_PASSWORD=supersecret
@@ -397,6 +400,7 @@ environment:
 
 ### 2. Running as Root
 ```dockerfile
+
 # ❌ BAD: Running as root
 CMD ["python", "app.py"]
 
@@ -411,6 +415,7 @@ CMD ["python", "app.py"]
 
 ### 3. Not Using Health Checks
 ```yaml
+
 # ❌ BAD: No health check
 depends_on:
   - db
@@ -423,6 +428,7 @@ depends_on:
 
 ### 4. Inefficient Layer Caching
 ```dockerfile
+
 # ❌ BAD: Invalidates cache on any file change
 COPY . .
 RUN pnpm install
@@ -433,10 +439,9 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 ```
 
-## Troubleshooting
-
 ### Port Already in Use
 ```bash
+
 # Find process using port
 lsof -i :8000
 
@@ -456,6 +461,7 @@ ports:
 
 ### Volume Permission Issues
 ```dockerfile
+
 # Set correct ownership
 RUN chown -R node:node /app
 
@@ -466,6 +472,7 @@ RUN usermod -u ${USER_ID} node
 
 ### Hot Reload Not Working
 ```yaml
+
 # Ensure volumes are mounted correctly
 volumes:
   - ./apps/frontend:/app
@@ -474,6 +481,7 @@ volumes:
 
 ### Container Crashes on Startup
 ```bash
+
 # View logs
 docker-compose logs -f backend
 
@@ -484,10 +492,9 @@ docker-compose ps
 docker-compose exec backend sh
 ```
 
-## Best Practices
-
 ### 1. Use .dockerignore
 ```
+
 # .dockerignore
 node_modules
 __pycache__
@@ -533,6 +540,7 @@ Always define health checks for services that others depend on.
 ## Common Commands
 
 ```bash
+
 # Start services
 docker-compose up -d
 
@@ -591,6 +599,7 @@ docker-compose run backend python manage.py migrate
 ### Example 1: Complete Monorepo Development Environment
 
 ```yaml
+
 # docker-compose.yml
 version: '3.8'
 
@@ -682,6 +691,7 @@ networks:
 
 **Usage**:
 ```bash
+
 # Start all services
 docker compose up -d
 
@@ -697,7 +707,9 @@ docker compose up -d --build backend
 ### Example 2: Production Multi-Stage Dockerfile (Frontend)
 
 ```dockerfile
+
 # apps/frontend/Dockerfile
+
 # Stage 1: Build
 FROM node:20-alpine AS builder
 
@@ -765,7 +777,9 @@ server {
 ### Example 3: Production Multi-Stage Dockerfile (Backend)
 
 ```dockerfile
+
 # apps/backend/Dockerfile
+
 # Stage 1: Build dependencies
 FROM python:3.11-slim AS builder
 
@@ -821,7 +835,9 @@ CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --
 ### Example 4: Adding New Service (Using docker-compose.service.yml.template)
 
 ```yaml
+
 # Based on templates/docker/docker-compose.service.yml.template
+
 # Add to docker-compose.yml when adding worker service
 
   worker:
@@ -860,6 +876,7 @@ CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --
 
 **Add worker service**:
 ```bash
+
 # Append to docker-compose.yml
 cat templates/docker/docker-compose.service.yml.template >> docker-compose.yml
 
@@ -879,7 +896,9 @@ docker compose logs -f worker
 ### Example 5: Environment Variable Management Across Services
 
 ```bash
+
 # .env (root directory)
+
 # Shared across all services via docker-compose.yml
 
 # Database
@@ -927,6 +946,7 @@ services:
 
 **Secret management for production**:
 ```yaml
+
 # docker-compose.prod.yml
 services:
   backend:
@@ -982,6 +1002,7 @@ secrets:
 **Problem**: Using the same docker-compose.yml for both dev and prod leads to insecure production deployments.
 
 ```yaml
+
 # BAD: Single config with if-like environment variables
 services:
   backend:
@@ -993,6 +1014,7 @@ services:
 
 **ALWAYS**: Maintain separate compose files and merge them:
 ```bash
+
 # Development
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 
@@ -1004,6 +1026,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 **Problem**: `latest` tags are mutable and break reproducibility. Deployments become unpredictable.
 
 ```yaml
+
 # BAD
 services:
   db:
@@ -1012,6 +1035,7 @@ services:
 
 **ALWAYS**: Pin specific versions with minor version flexibility:
 ```yaml
+
 # GOOD
 services:
   db:
@@ -1022,6 +1046,7 @@ services:
 **Problem**: Secrets committed to git or logged in plaintext during deployments.
 
 ```yaml
+
 # BAD
 services:
   backend:
@@ -1031,6 +1056,7 @@ services:
 
 **ALWAYS**: Use Docker secrets or external secret managers:
 ```yaml
+
 # GOOD
 services:
   backend:
@@ -1048,6 +1074,7 @@ secrets:
 **Problem**: Default bridge network doesn't support DNS-based service discovery. Services must use container IPs.
 
 ```yaml
+
 # BAD: No networks defined, uses default bridge
 services:
   backend:
@@ -1056,6 +1083,7 @@ services:
 
 **ALWAYS**: Define custom bridge networks for DNS discovery:
 ```yaml
+
 # GOOD
 services:
   backend:
@@ -1071,6 +1099,7 @@ networks:
 **Problem**: Security vulnerability if container is compromised. Attackers gain root access.
 
 ```dockerfile
+
 # BAD: No user specified, runs as root
 FROM python:3.11-slim
 COPY . /app
@@ -1079,6 +1108,7 @@ CMD ["python", "app/main.py"]
 
 **ALWAYS**: Create and use non-root users:
 ```dockerfile
+
 # GOOD
 FROM python:3.11-slim
 RUN useradd -m -u 1000 appuser
@@ -1091,6 +1121,7 @@ CMD ["python", "app/main.py"]
 **Problem**: Large build contexts (including node_modules, .git) slow down builds and bloat images.
 
 ```dockerfile
+
 # BAD: No .dockerignore, copies everything
 FROM node:20-alpine
 COPY . /app  # Copies node_modules, .git, test files
@@ -1098,6 +1129,7 @@ COPY . /app  # Copies node_modules, .git, test files
 
 **ALWAYS**: Use `.dockerignore` and optimize COPY order:
 ```dockerfile
+
 # .dockerignore
 node_modules
 .git
@@ -1140,3 +1172,29 @@ COPY src/ ./src/  # Only copy needed files
 - **CI/CD Pipeline Integration** - When docker commands need to integrate with GitHub Actions, GitLab CI, or Jenkins pipelines, ask if CI/CD specialist should collaborate
 - **Performance Profiling** - If asked to diagnose application performance issues (slow API responses, high memory usage in app code), ask if application-level profiling is needed
 - **Security Hardening** - For advanced security requirements (image scanning, runtime protection, security policies), ask if security specialist should collaborate
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat docker-orchestration-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read docker-orchestration-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat docker-orchestration-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read docker-orchestration-specialist-ext.md for detailed examples.
+```
