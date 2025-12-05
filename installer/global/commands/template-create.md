@@ -155,12 +155,19 @@ See [Understanding Boundary Sections](#understanding-boundary-sections) for deta
 
 Creates complete template package in one of two locations (TASK-068):
 
+### Default (Progressive Disclosure)
+
 **Personal Use (default):**
 ```
 ~/.agentecflow/templates/{template_name}/
 ├── manifest.json                # Template metadata (TASK-005)
 ├── settings.json                # Generation settings (TASK-006)
-├── CLAUDE.md                    # Project documentation (TASK-007)
+├── CLAUDE.md                    # Core documentation (~8KB) (TASK-007)
+├── docs/                        # Extended documentation (split structure)
+│   ├── patterns/
+│   │   └── README.md            # Pattern documentation
+│   └── reference/
+│       └── README.md            # Reference documentation
 ├── templates/                   # Template files (TASK-008)
 │   ├── Domain/
 │   │   ├── GetEntity.cs.template
@@ -170,8 +177,10 @@ Creates complete template package in one of two locations (TASK-068):
 │   └── Views/
 │       └── EntityPage.xaml.template
 ├── agents/                      # Custom agents (TASK-009)
-│   ├── domain-operations-specialist.md
-│   └── mvvm-viewmodel-specialist.md
+│   ├── domain-operations-specialist.md      # Core (~6KB)
+│   ├── domain-operations-specialist-ext.md  # Extended content
+│   ├── mvvm-viewmodel-specialist.md         # Core (~6KB)
+│   └── mvvm-viewmodel-specialist-ext.md     # Extended content
 └── validation-report.md         # Quality report (TASK-043, only with --validate)
 ```
 ✅ Immediately available for `guardkit init {template_name}` without running install.sh
@@ -181,13 +190,39 @@ Creates complete template package in one of two locations (TASK-068):
 installer/global/templates/{template_name}/
 ├── manifest.json
 ├── settings.json
-├── CLAUDE.md
+├── CLAUDE.md                    # Core documentation
+├── docs/                        # Extended documentation
+│   ├── patterns/
+│   └── reference/
 ├── templates/
-├── agents/
+├── agents/                      # Core + extended files
+│   ├── specialist.md
+│   └── specialist-ext.md
 └── validation-report.md         # Only with --validate
 ```
 ⚠️ Requires running `./installer/scripts/install.sh` before use
 📦 Suitable for version control and team distribution
+
+### Single-File Mode (Not Recommended)
+
+```bash
+/template-create --no-split
+```
+
+Produces single CLAUDE.md and single agent files without progressive disclosure structure.
+
+### Size Targets
+
+| File | Target | Validation |
+|------|--------|------------|
+| CLAUDE.md (core) | ≤10KB | Warning at 15KB |
+| Agent (core) | ≤15KB | Warning at 20KB |
+| Token Reduction | ≥50% | Validated during /agent-enhance |
+
+**Benefits:**
+- 55-60% token reduction in typical tasks
+- Faster AI responses from reduced initial context
+- Same comprehensive content available on-demand
 
 ## Command Options
 

@@ -1,9 +1,9 @@
 ---
 id: TASK-PD-018
 title: Update command docs (template-create.md, agent-enhance.md)
-status: backlog
+status: in_progress
 created: 2025-12-03T16:00:00Z
-updated: 2025-12-03T16:00:00Z
+updated: 2025-12-05T20:20:00Z
 priority: medium
 tags: [progressive-disclosure, phase-5, documentation, commands]
 complexity: 3
@@ -11,9 +11,9 @@ blocked_by: [TASK-PD-017]
 blocks: [TASK-PD-019]
 review_task: TASK-REV-426C
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2025-12-05T20:20:00Z
 ---
 
 # Task: Update command docs (template-create.md, agent-enhance.md)
@@ -123,21 +123,34 @@ cat agents/my-agent-ext.md
 
 ## Acceptance Criteria
 
-- [ ] template-create.md updated with split output structure
-- [ ] agent-enhance.md updated with split output structure
-- [ ] Size targets documented
-- [ ] --no-split flag documented
-- [ ] Loading instructions explained
+- [x] template-create.md updated with split output structure
+- [x] agent-enhance.md updated with split output structure
+- [x] Size targets documented
+- [x] --no-split flag documented
+- [x] Loading instructions explained
 
-## Files to Modify
+## Files Modified
 
-1. `installer/global/commands/template-create.md`
-2. `installer/global/commands/agent-enhance.md`
+1. **installer/global/commands/template-create.md**
+   - Updated Output Structure section with Progressive Disclosure subsection
+   - Documented split file structure (CLAUDE.md + docs/, agents + -ext.md)
+   - Added Single-File Mode section with --no-split flag
+   - Documented Size Targets table
+   - Added Benefits list
+
+2. **installer/global/commands/agent-enhance.md**
+   - Added new Output Structure section before Output Format
+   - Documented Default (Progressive Disclosure) structure
+   - Documented core vs extended file contents
+   - Added Single-File Mode section with --no-split flag
+   - Added Loading Extended Content section with example
+   - Documented Size Targets table
+   - Added Benefits list
 
 ## Estimated Effort
 
-**0.5 days**
+**0.5 days** (Actual: ~20 minutes)
 
 ## Dependencies
 
-- TASK-PD-017 (CLAUDE.md updated)
+- TASK-PD-017 (CLAUDE.md updated) ✅ Completed
