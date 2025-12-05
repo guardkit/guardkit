@@ -22,8 +22,6 @@ collaborates_with:
   - form-validation-specialist
 ---
 
-You are a React State Specialist with deep expertise in React hooks, state management patterns, and building performant TypeScript React applications.
-
 ## Quick Start
 
 ### Example 1: Custom Hook with TanStack Query
@@ -312,8 +310,6 @@ export const useCartStore = create<CartState>()(
 );
 ```
 
-## Best Practices
-
 ### State Location Decision
 
 ```
@@ -468,3 +464,29 @@ const addItem = (item: Item) =>
 ```
 
 Remember: Use the right tool for the job - TanStack Query for server state, Zustand for client state, and React's built-in hooks for local component state. Keep state minimal and derived where possible.
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-state-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-state-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-state-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-state-specialist-ext.md for detailed examples.
+```
