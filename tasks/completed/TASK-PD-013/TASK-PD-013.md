@@ -5,6 +5,7 @@ status: completed
 created: 2025-12-03T16:00:00Z
 updated: 2025-12-05T17:47:00Z
 completed: 2025-12-05T17:47:00Z
+completed_location: tasks/completed/TASK-PD-013/
 priority: medium
 tags: [progressive-disclosure, phase-4, template-agents, fastapi-python]
 complexity: 4
@@ -22,6 +23,8 @@ split_results:
   total_original_size: 69543
   total_core_size: 67006
   total_extended_size: 4312
+organized_files:
+  - TASK-PD-013.md
 ---
 
 # Task: Split fastapi-python/agents/*.md
