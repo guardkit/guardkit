@@ -206,6 +206,67 @@ GuardKit uses a **two-tier enhancement system** to balance speed, quality, and f
 - `5` - Permission error (cannot write to agent file)
 - `42` - Agent invocation needed (checkpoint saved for resume)
 
+## Output Structure
+
+### Default (Progressive Disclosure)
+
+When enhancing an agent, two files are produced:
+
+```
+agents/
+├── my-agent.md        # Core content (~6KB)
+└── my-agent-ext.md    # Extended content (~10KB)
+```
+
+**Core file contains:**
+- Frontmatter (discovery metadata)
+- Quick Start (5-10 examples)
+- Boundaries (ALWAYS/NEVER/ASK)
+- Capabilities summary
+- Loading instructions
+
+**Extended file contains:**
+- Detailed code examples (30+)
+- Best practices with explanations
+- Anti-patterns with code samples
+- Technology-specific guidance
+- Troubleshooting scenarios
+
+### Single-File Mode (Not Recommended)
+
+```bash
+/agent-enhance my-agent.md --no-split
+```
+
+Produces single enhanced file without progressive disclosure structure.
+
+### Loading Extended Content
+
+The core file includes loading instructions:
+
+```markdown
+## Extended Reference
+
+Before generating code, load the extended reference:
+
+\`\`\`bash
+cat agents/my-agent-ext.md
+\`\`\`
+```
+
+### Size Targets
+
+| Component | Target | Validation |
+|-----------|--------|------------|
+| Core file | ≤15KB | Warning at 20KB |
+| Extended file | No limit | Informational |
+| Token Reduction | ≥50% | Validated |
+
+**Benefits:**
+- 55-60% token reduction in typical tasks
+- Faster AI responses from reduced initial context
+- Same comprehensive content available on-demand
+
 ## Output Format
 
 ### Success Output

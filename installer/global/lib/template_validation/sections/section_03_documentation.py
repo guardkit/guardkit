@@ -2,6 +2,7 @@
 Section 3: Documentation Analysis
 
 Validates CLAUDE.md architecture, patterns, and examples.
+Includes progressive disclosure split structure validation.
 """
 
 from datetime import datetime
@@ -16,6 +17,7 @@ from ..models import (
     Finding,
     Recommendation,
 )
+from ..progressive_disclosure_validator import validate_claude_md_split
 
 
 class DocumentationAnalysisSection:
@@ -122,13 +124,31 @@ class DocumentationAnalysisSection:
             ))
             score -= 1.0
 
+        # Validate progressive disclosure split structure
+        split_issues, split_findings, split_metadata = validate_claude_md_split(template_path)
+        issues.extend(split_issues)
+        findings.extend(split_findings)
+
+        # Adjust score based on split structure compliance
+        # Bonus points for meeting progressive disclosure targets
+        if split_metadata.get('meets_target', False):
+            score += 0.5  # Bonus for meeting size target
+        # Penalty for exceeding target significantly (>15KB)
+        elif split_metadata.get('claude_md_size_kb', 0) > 15:
+            score -= 1.0
+
+        metadata = {
+            "content_length": len(content),
+            **split_metadata,
+        }
+
         return SectionResult(
             section_num=self.section_num,
             section_title=self.title,
-            score=max(0.0, score),
+            score=max(0.0, min(10.0, score)),  # Clamp between 0 and 10
             findings=findings,
             issues=issues,
             recommendations=recommendations,
-            metadata={"content_length": len(content)},
+            metadata=metadata,
             completed_at=datetime.now(),
         )

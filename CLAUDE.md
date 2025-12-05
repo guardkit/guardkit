@@ -857,6 +857,59 @@ guardkit init your-custom-template
 
 **See**: [Incremental Enhancement Workflow](#incremental-enhancement-workflow)
 
+## Progressive Disclosure
+
+GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
+
+### How It Works
+
+Agent and template files are split into:
+
+1. **Core files** (`{name}.md`): Essential content always loaded
+   - Quick Start examples (5-10)
+   - Boundaries (ALWAYS/NEVER/ASK)
+   - Capabilities summary
+   - Phase integration
+   - Loading instructions
+
+2. **Extended files** (`{name}-ext.md`): Detailed reference loaded on-demand
+   - Detailed code examples (30+)
+   - Best practices with full explanations
+   - Anti-patterns with code samples
+   - Technology-specific guidance
+   - Troubleshooting scenarios
+
+### Loading Extended Content
+
+When implementing detailed code, load the extended reference:
+
+```bash
+# For agents
+cat agents/{agent-name}-ext.md
+
+# For template patterns
+cat docs/patterns/README.md
+
+# For reference documentation
+cat docs/reference/README.md
+```
+
+### Benefits
+
+- **55-60% token reduction** in typical tasks
+- **Faster responses** from reduced context
+- **Same comprehensive content** available when needed
+- **Competitive positioning** vs other AI dev tools
+
+### For Template Authors
+
+When creating templates with `/template-create`:
+- CLAUDE.md is automatically split into core + docs/
+- Agent files are automatically split during `/agent-enhance`
+- Use `--no-split` flag for single-file output (not recommended)
+
+See [Progressive Disclosure Guide](docs/guides/progressive-disclosure.md) for details.
+
 ## Installation & Setup
 
 ```bash

@@ -1,9 +1,11 @@
 ---
 id: TASK-PD-017
 title: Update CLAUDE.md with loading instructions documentation
-status: backlog
+status: completed
 created: 2025-12-03T16:00:00Z
-updated: 2025-12-03T16:00:00Z
+updated: 2025-12-05T20:15:00Z
+completed: 2025-12-05T20:15:00Z
+completed_location: tasks/completed/TASK-PD-017/
 priority: medium
 tags: [progressive-disclosure, phase-5, documentation, claude-md]
 complexity: 3
@@ -11,9 +13,11 @@ blocked_by: [TASK-PD-016]
 blocks: [TASK-PD-018]
 review_task: TASK-REV-426C
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2025-12-05T20:00:00Z
+organized_files:
+  - TASK-PD-017.md
 ---
 
 # Task: Update CLAUDE.md with loading instructions documentation
@@ -89,21 +93,29 @@ See [Progressive Disclosure Guide](docs/guides/progressive-disclosure.md) for de
 
 ## Acceptance Criteria
 
-- [ ] Progressive Disclosure section added to CLAUDE.md
-- [ ] Loading instructions explained
-- [ ] Benefits documented
-- [ ] Template author guidance included
-- [ ] Links to detailed guide (if created)
+- [x] Progressive Disclosure section added to CLAUDE.md
+- [x] Loading instructions explained
+- [x] Benefits documented
+- [x] Template author guidance included
+- [x] Links to detailed guide included
 
-## Files to Modify
+## Files Modified
 
-1. `CLAUDE.md` - Add Progressive Disclosure section
-2. `.claude/CLAUDE.md` - Add corresponding section if different
+1. **CLAUDE.md** - Added Progressive Disclosure section after Template Quality Standards
+   - How It Works (Core vs Extended files)
+   - Loading Extended Content (bash examples)
+   - Benefits (55-60% token reduction)
+   - For Template Authors (automatic splitting)
+   - Link to detailed guide
+
+2. **.claude/CLAUDE.md** - Added Progressive Disclosure section after Development Mode Selection
+   - Same content as main CLAUDE.md
+   - Appropriate for GuardKit development context
 
 ## Estimated Effort
 
-**0.5 days**
+**0.5 days** (Actual: ~30 minutes)
 
 ## Dependencies
 
-- TASK-PD-016 (validation updated)
+- TASK-PD-016 (validation updated) ✅ Completed

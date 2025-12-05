@@ -1,9 +1,10 @@
 ---
 id: TASK-PD-016
 title: Update template_validation for split structure recognition
-status: backlog
+status: completed
 created: 2025-12-03T16:00:00Z
-updated: 2025-12-03T16:00:00Z
+updated: 2025-12-05T19:45:00Z
+completed: 2025-12-05T19:45:00Z
 priority: medium
 tags: [progressive-disclosure, phase-5, validation, template-validation]
 complexity: 5
@@ -11,9 +12,9 @@ blocked_by: [TASK-PD-012, TASK-PD-013, TASK-PD-014, TASK-PD-015]
 blocks: [TASK-PD-017]
 review_task: TASK-REV-426C
 test_results:
-  status: pending
+  status: passed
   coverage: null
-  last_run: null
+  last_run: 2025-12-05T19:30:00Z
 ---
 
 # Task: Update template_validation for split structure recognition
@@ -194,21 +195,49 @@ def generate_split_validation_report(template_dir: Path) -> str:
 
 ## Acceptance Criteria
 
-- [ ] `validate_agent_split_structure()` function implemented
-- [ ] `validate_claude_md_split()` function implemented
-- [ ] Split metrics included in validation reports
-- [ ] `/template-validate` recognizes split structure
-- [ ] Validation passes for split templates
-- [ ] Backward compatible with non-split templates
+- [x] `validate_agent_split_structure()` function implemented
+- [x] `validate_claude_md_split()` function implemented
+- [x] Split metrics included in validation reports
+- [x] `/template-validate` recognizes split structure
+- [x] Validation passes for split templates
+- [x] Backward compatible with non-split templates
 
-## Files to Modify
+## Files Modified
 
-1. Template validation module (lib/template_validator or similar)
-2. Validation report generator
+1. **lib/template_validation/progressive_disclosure_validator.py** (new)
+   - `validate_agent_split_structure()` - Validates agent split structure
+   - `validate_claude_md_split()` - Validates CLAUDE.md split structure
+   - `generate_split_validation_report()` - Generates split metrics report
+   - `SplitMetrics` - Data class for split metrics
+
+2. **lib/template_validation/sections/section_03_documentation.py**
+   - Integrated `validate_claude_md_split()` into documentation analysis
+   - Added split metadata to section results
+   - Score adjustments based on progressive disclosure compliance
+
+3. **lib/template_validation/sections/section_05_agents.py**
+   - Integrated `validate_agent_split_structure()` into agent analysis
+   - Added split metadata to section results
+   - Score adjustments based on split structure quality
+
+4. **lib/template_validation/audit_report_generator.py**
+   - Added `_generate_progressive_disclosure_metrics()` method
+   - Integrated split metrics into comprehensive audit reports
+
+5. **lib/template_validation/__init__.py**
+   - Exported new validation functions and models
+
+## Testing
+
+Created and executed `test_split_validation.py`:
+- ✅ Tested with split template (react-typescript)
+- ✅ Tested with non-split template (default)
+- ✅ Verified backward compatibility
+- ✅ Confirmed all imports work correctly
 
 ## Estimated Effort
 
-**1 day**
+**1 day** (Actual: ~4 hours)
 
 ## Dependencies
 
