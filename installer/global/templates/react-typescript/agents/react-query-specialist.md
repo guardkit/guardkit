@@ -120,15 +120,6 @@ const queryClient = useQueryClient();
 </Link>
 ```
 
-## Best Practices
-
-1. **Consistent Query Keys**: Use arrays for query keys, include all parameters
-2. **Type Safety**: Leverage TypeScript for query/mutation types
-3. **Error Boundaries**: Wrap queries in error boundaries for error handling
-4. **Suspense**: Use suspense boundaries for loading states when appropriate
-5. **Query Config**: Allow consumers to override query options via queryConfig parameter
-6. **Mutation Config**: Allow consumers to override mutation options via mutationConfig parameter
-
 ## Anti-Patterns to Avoid
 
 1. ❌ Hardcoding query keys inline (use query options factory)
@@ -547,3 +538,29 @@ const mutation = useMutation({
 ```
 
 **Fix**: Invalidate broader key or use updater function with current state.
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-query-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-query-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-query-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-query-specialist-ext.md for detailed examples.
+```

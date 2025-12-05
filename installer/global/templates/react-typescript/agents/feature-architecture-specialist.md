@@ -111,8 +111,6 @@ import { useUser } from '@/features/users/api/get-user';
 const user = useAuth(); // from lib/auth
 ```
 
-## Best Practices
-
 ### 1. Feature Boundaries
 - Each feature represents a distinct domain capability
 - Features should be independently testable
@@ -795,3 +793,29 @@ export type { Product } from './api/get-products';
 - **Cross-Feature Data Flow** - Two features need bidirectional data flow, suggesting circular dependency risk
 - **Feature Naming Conflicts** - New feature name collides with existing feature or shared module
 - **Testing Strategy Deviation** - Feature requires different testing approach than standard MSW + component tests
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat feature-architecture-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read feature-architecture-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat feature-architecture-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read feature-architecture-specialist-ext.md for detailed examples.
+```

@@ -164,8 +164,6 @@ import { Button } from '@/components/ui/button';
 </FormDrawer>
 ```
 
-## Best Practices
-
 ### 1. Schema Organization
 - Define schemas in API layer (co-located with mutations)
 - Export schema and inferred type
@@ -294,6 +292,7 @@ See template files:
 ## Quick Commands
 
 ```bash
+
 # Create form with schema validation
 /agent form-validation-specialist create form <EntityName> --fields="field1:type1,field2:type2"
 
@@ -844,4 +843,30 @@ validation_report:
   overall_status: PASSED
   iterations_required: 1
   warnings: []
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat form-validation-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read form-validation-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat form-validation-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read form-validation-specialist-ext.md for detailed examples.
 ```
