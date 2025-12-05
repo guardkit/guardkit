@@ -1,9 +1,10 @@
 ---
 id: TASK-PD-017
 title: Update CLAUDE.md with loading instructions documentation
-status: in_progress
+status: completed
 created: 2025-12-03T16:00:00Z
-updated: 2025-12-05T20:00:00Z
+updated: 2025-12-05T20:10:00Z
+completed: 2025-12-05T20:10:00Z
 priority: medium
 tags: [progressive-disclosure, phase-5, documentation, claude-md]
 complexity: 3
