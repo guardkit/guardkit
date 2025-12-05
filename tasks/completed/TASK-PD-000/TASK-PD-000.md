@@ -1,9 +1,10 @@
 ---
 id: TASK-PD-000
 title: Establish before/after measurement framework for progressive disclosure
-status: in_review
+status: completed
 created: 2025-12-04T10:00:00Z
-updated: 2025-12-05T08:20:00Z
+updated: 2025-12-05T08:22:00Z
+completed: 2025-12-05T08:22:00Z
 priority: critical
 tags: [progressive-disclosure, phase-0, measurement, validation, blog-content]
 complexity: 4
@@ -14,6 +15,10 @@ test_results:
   status: passed
   coverage: 100
   last_run: 2025-12-05T08:20:00Z
+completed_location: tasks/completed/TASK-PD-000/
+organized_files: [
+  "TASK-PD-000.md"
+]
 ---
 
 # Task: Establish before/after measurement framework for progressive disclosure
