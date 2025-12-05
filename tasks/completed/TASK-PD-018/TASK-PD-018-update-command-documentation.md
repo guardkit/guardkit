@@ -1,9 +1,10 @@
 ---
 id: TASK-PD-018
 title: Update command docs (template-create.md, agent-enhance.md)
-status: in_progress
+status: completed
 created: 2025-12-03T16:00:00Z
-updated: 2025-12-05T20:20:00Z
+updated: 2025-12-05T20:25:00Z
+completed: 2025-12-05T20:25:00Z
 priority: medium
 tags: [progressive-disclosure, phase-5, documentation, commands]
 complexity: 3
