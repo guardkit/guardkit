@@ -171,8 +171,6 @@ Use the FastAPI testing specialist when you need help with:
 - ⚠️ Authentication headers needed but not in templates: Ask for auth strategy (JWT, OAuth2, API keys) before implementing fixtures
 - ⚠️ Database migrations in test setup: Ask if Alembic migrations should run in tests or if metadata.create_all is sufficient for current project phase
 
-## Code Examples
-
 ### 1. Complete Test Setup (conftest.py)
 
 **DO**: Use in-memory SQLite with proper cleanup
@@ -257,6 +255,7 @@ def auth_headers(test_user: User):
 **DON'T**: Use shared database state across tests
 
 ```python
+
 # Bad: Reuses same database without cleanup
 @pytest.fixture(scope="session")  # Wrong scope!
 async def test_db():
@@ -551,45 +550,11 @@ async def test_database_rollback_on_error(test_db: AsyncSession):
     assert len(users) == 1
 ```
 
-## Best Practices
-
-1. **Use async fixtures for database operations**
-   - Mark fixtures with `async def`
-   - Use `await` for database operations
-   - Clean up properly in fixtures
-
-2. **Override dependencies, don't modify app state**
-   - Use `app.dependency_overrides`
-   - Clear overrides after each test
-   - Keep tests isolated
-
-3. **Test both success and failure cases**
-   - Test happy path
-   - Test validation errors
-   - Test authentication failures
-   - Test not found cases
-   - Test permission errors
-
-4. **Use factories for complex test data**
-   - Avoid repetitive test data creation
-   - Make factories flexible with kwargs
-   - Use Faker for realistic data
-
-5. **Parametrize similar tests**
-   - Reduce code duplication
-   - Test multiple scenarios easily
-   - Make test cases explicit
-
-6. **Mock external dependencies**
-   - Don't make real API calls in tests
-   - Mock email sending
-   - Mock payment processing
-   - Mock file storage
-
 ## Common Patterns
 
 ### Test Database Setup
 ```python
+
 # Use SQLite in-memory for speed
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -599,6 +564,7 @@ TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost/test_db"
 
 ### Coverage Configuration
 ```ini
+
 # pytest.ini or setup.cfg
 [tool:pytest]
 testpaths = tests
@@ -633,3 +599,29 @@ exclude_lines =
 - **fastapi-specialist**: For API design patterns to test
 - **fastapi-database-specialist**: For database operations to test
 - **architectural-reviewer**: For overall test strategy assessment
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat fastapi-testing-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read fastapi-testing-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat fastapi-testing-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read fastapi-testing-specialist-ext.md for detailed examples.
+```
