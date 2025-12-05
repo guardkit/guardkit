@@ -1,16 +1,18 @@
 ---
 id: TASK-DOC-CEC6
 title: Update documentation after global agents cleanup
-status: in_review
+status: completed
 created: 2025-12-04T14:35:00Z
-updated: 2025-12-04T15:30:00Z
-previous_state: in_progress
-state_transition_reason: "All quality gates passed - documentation updates complete"
+updated: 2025-12-05T10:00:00Z
+completed: 2025-12-05T10:00:00Z
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria satisfied"
 priority: medium
 tags: [documentation, cleanup, agents]
 task_type: implementation
 complexity: 2
 related_tasks: [TASK-IMP-GA02, TASK-REV-GA01]
+completed_location: tasks/completed/TASK-DOC-CEC6/
 ---
 
 # Task: Update Documentation After Global Agents Cleanup
