@@ -19,6 +19,7 @@ test_results:
   tests_passed: 9
   tests_failed: 0
 organized_files:
+  - completion-summary.md
   - TASK-PD-004.md
 ---
 
