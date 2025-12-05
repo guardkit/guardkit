@@ -13,25 +13,10 @@ Enhance GuardKit with Model Context Protocol servers for library documentation a
 - **context7**: Library documentation (Phases 2, 3, 4 - automatic when task uses libraries)
 - **design-patterns**: Pattern recommendations (Phase 2.5A - automatic during architectural review)
 
-**Design MCPs** (ONLY used for specific commands):
-
-- **figma-dev-mode**: Figma design extraction (ONLY for `/figma-to-react` command)
-- **zeplin**: Zeplin design extraction (ONLY for `/zeplin-to-maui` command)
-
-!!! note
-    Design MCPs should only be installed if you're actively using those specific design-to-code commands. They are NOT used during regular `/task-work` execution.
-
 ## Setup Guides
-
-### Core MCPs (Recommended for All Users)
 
 - **[Context7 MCP Setup](deep-dives/mcp-integration/context7-setup.md)** - Up-to-date library documentation
 - **[Design Patterns MCP Setup](deep-dives/mcp-integration/design-patterns-setup.md)** - Pattern recommendations
-
-### Design MCPs (Only if Using Design-to-Code Workflows)
-
-- **[Figma MCP Setup](mcp-setup/figma-mcp-setup.md)** - For `/figma-to-react` command only
-- **[Zeplin MCP Setup](mcp-setup/zeplin-mcp-setup.md)** - For `/zeplin-to-maui` command only
 
 ## Performance & Optimization
 
@@ -43,8 +28,6 @@ Enhance GuardKit with Model Context Protocol servers for library documentation a
 |-----|-------------|-----------|
 | context7 | 2000-6000 tokens | Phase-dependent (when libraries detected) |
 | design-patterns | ~5000 tokens | Phase 2.5A (architectural review) |
-| figma-dev-mode | Image-based | `/figma-to-react` command only |
-| zeplin | Design-based | `/zeplin-to-maui` command only |
 
 **[MCP Optimization Guide](deep-dives/mcp-integration/mcp-optimization.md)** - Detailed usage guidelines.
 
@@ -93,29 +76,6 @@ Enhance GuardKit with Model Context Protocol servers for library documentation a
 # - Singleton Pattern (global state)
 ```
 
-### Figma & Zeplin MCPs
-
-**Purpose**: Design-to-code conversion
-
-**Use Cases:**
-
-- Converting Figma designs to React components
-- Converting Zeplin designs to .NET MAUI components
-- Visual regression testing
-
-**Example:**
-
-```bash
-# Convert Figma design to React
-/figma-to-react <file-key> [node-id]
-
-# Figma MCP extracts design
-# Generates TypeScript React + Tailwind + Playwright tests
-# Visual fidelity: >95%
-```
-
-**[UX Design Integration Workflow](workflows/ux-design-integration-workflow.md)** - Complete documentation.
-
 ## Installation
 
 ### Context7 MCP
@@ -148,17 +108,11 @@ Enhance GuardKit with Model Context Protocol servers for library documentation a
 
 ## When to Install MCPs
 
-### Install Core MCPs If:
+**Install MCPs If:**
 
 - ✅ Using newer library versions frequently
 - ✅ Working with niche libraries
 - ✅ Need pattern recommendations during review
-
-### Install Design MCPs If:
-
-- ✅ Actively using `/figma-to-react` or `/zeplin-to-maui`
-- ✅ Regular design-to-code conversion workflow
-- ❌ NOT using design-to-code commands (skip these)
 
 ---
 
@@ -166,4 +120,3 @@ Enhance GuardKit with Model Context Protocol servers for library documentation a
 
 - **Core MCPs**: Set up [Context7](deep-dives/mcp-integration/context7-setup.md) and [Design Patterns](deep-dives/mcp-integration/design-patterns-setup.md)
 - **Optimization**: Read [MCP Optimization Guide](deep-dives/mcp-integration/mcp-optimization.md)
-- **Design Workflow**: Explore [UX Design Integration](workflows/ux-design-integration-workflow.md)

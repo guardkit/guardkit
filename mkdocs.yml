@@ -79,8 +79,6 @@ nav:
 
   - Task Review: task-review.md
 
-  - MCP Integration: mcp-integration.md
-
   - Troubleshooting: troubleshooting.md
 
   - Guides:
@@ -99,7 +97,6 @@ nav:
       - Incremental Enhancement: workflows/incremental-enhancement-workflow.md
       - Quality Gates: workflows/quality-gates-workflow.md
       - Task Review Workflow: workflows/task-review-workflow.md
-      - UX Design Integration: workflows/ux-design-integration-workflow.md
 
   - Deep Dives:
       - Conductor Integration: deep-dives/conductor-integration.md
@@ -108,9 +105,6 @@ nav:
           - Design Patterns Setup: deep-dives/mcp-integration/design-patterns-setup.md
           - MCP Optimization: deep-dives/mcp-integration/mcp-optimization.md
 
-  - MCP Setup:
-      - Figma MCP Setup: mcp-setup/figma-mcp-setup.md
-      - Zeplin MCP Setup: mcp-setup/zeplin-mcp-setup.md
 
 # ============================================================================
 # Plugins

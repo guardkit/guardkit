@@ -112,7 +112,7 @@ Comprehensive guides, workflows, and references:
 
 ## 5-Minute Quickstart
 
-**📚 Full documentation: https://guardkit.github.io/guardkit/**
+📚 **[View Full Documentation](https://guardkit.github.io/guardkit/)**
 
 ### Option 1: Quick Install (Recommended)
 
@@ -257,12 +257,6 @@ For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, P
 /task-work TASK-XXX --design-only      # Phases 2-2.8, stops at checkpoint
 # [Review and approve plan]
 /task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
-```
-
-### UX Design Integration
-```bash
-/figma-to-react <file-key> [node-id]    # Figma → TypeScript React + Tailwind
-/zeplin-to-maui <project-id> <screen-id> # Zeplin → .NET MAUI + XAML
 ```
 
 ### Utilities
@@ -424,17 +418,6 @@ These enhance regular `/task-work` execution for all tasks:
 
 **Recommended**: Set up Context7 for the most value. Design Patterns is optional but helpful.
 
-### Design MCPs (Only for Design-to-Code Workflows)
-
-**⚠️ Only set these up if you're using the specific design-to-code commands:**
-
-| MCP | Purpose | Required For | Setup Time |
-|-----|---------|--------------|------------|
-| **figma-dev-mode** | Figma → React code | `/figma-to-react` command only | 10 min |
-| **zeplin** | Zeplin → MAUI code | `/zeplin-to-maui` command only | 10 min |
-
-**Skip these** if you're not converting Figma/Zeplin designs to code. They're not used during regular development.
-
 ### Quick Setup (Context7 Recommended)
 
 Context7 provides the most value for day-to-day development:
@@ -469,10 +452,6 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 - [Context7 Setup](docs/guides/context7-mcp-setup.md) - Up-to-date library docs (recommended)
 - [Design Patterns Setup](docs/guides/design-patterns-mcp-setup.md) - Pattern recommendations
 
-**Design MCPs** (only if using design-to-code commands):
-- [Figma Setup](docs/mcp-setup/figma-mcp-setup.md) - For `/figma-to-react` command
-- [Zeplin Setup](docs/mcp-setup/zeplin-mcp-setup.md) - For `/zeplin-to-maui` command
-
 **Performance**: All MCPs optimized, <15% context window usage, <2s query time.
 
 ## Documentation
@@ -481,10 +460,8 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 - [Claude Code Web Setup](docs/guides/claude-code-web-setup.md) - Using GuardKit with Claude Code Web (installation, persistence, multi-repo)
 - [GuardKit Workflow](docs/guides/guardkit-workflow.md) - Complete workflow guide
 - [Complexity Management](docs/workflows/complexity-management-workflow.md) - Understanding complexity evaluation
-- [Design-First Workflow](docs/workflows/design-first-workflow.md) - When and how to split design/implementation
 
 ### Advanced
-- [UX Design Integration](docs/workflows/ux-design-integration-workflow.md) - Figma/Zeplin → Code
 - [MCP Optimization Guide](docs/guides/mcp-optimization-guide.md) - Model Context Protocol integration
 - [Domain Layer Pattern](docs/patterns/domain-layer-pattern.md) - Verb-based Domain operations
 

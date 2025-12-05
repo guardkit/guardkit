@@ -1180,8 +1180,6 @@ Phase 2: Implementation Planning
 AVAILABLE TOOLS:
   ✅ context7 (library documentation)
   ✅ design-patterns (pattern recommendations)
-  ❌ figma-dev-mode (not configured)
-  ❌ zeplin (not configured)
 
 TOOL USAGE IN PLAN:
   - context7: Fetch fastapi documentation for dependency injection
@@ -1201,16 +1199,6 @@ Generating plan with MCP enhancements...
 - Suggests appropriate design patterns
 - Token budget: ~5000 for 5 results
 - Use during planning for architecture guidance
-
-**figma-dev-mode** (Design Extraction - Coming Soon):
-- Planned for future Figma design-to-code workflow
-- Reserved MCP for future `/figma-to-react` command
-- Minimal token impact (image-based)
-
-**zeplin** (Design Extraction - Coming Soon):
-- Planned for future Zeplin design-to-code workflow
-- Reserved MCP for future `/zeplin-to-maui` command
-- Minimal token impact (design-based)
 
 ### Context7 Integration Example
 

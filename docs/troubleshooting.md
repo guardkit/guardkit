@@ -148,15 +148,6 @@ npx -y @context7/mcp-server --help
 # See: docs/deep-dives/mcp-integration/context7-setup.md
 ```
 
-**Figma/Zeplin MCP Failing**
-
-Design MCPs only work with specific commands:
-
-- `figma-dev-mode`: ONLY for `/figma-to-react`
-- `zeplin`: ONLY for `/zeplin-to-maui`
-
-Don't install design MCPs unless using these commands.
-
 ## Command-Specific Troubleshooting
 
 ### /task-work Issues
@@ -218,12 +209,6 @@ If template validation fails:
 4. See validation report in template directory
 
 ## Deep-Dive Troubleshooting
-
-### Zeplin + .NET MAUI Icon Issues
-
-Comprehensive troubleshooting for Zeplin-to-MAUI icon rendering issues:
-
-**[Zeplin MAUI Icon Issues Guide](troubleshooting/zeplin-maui-icon-issues.md)**
 
 ### Debug Command
 

@@ -33,34 +33,6 @@ Optional design approval checkpoint for complex tasks requiring upfront planning
 
 Learn when and how to use design-first workflow for critical tasks.
 
-## 🖼️ [UX Design Integration](workflows/ux-design-integration-workflow.md)
-
-Convert design system files (Figma, Zeplin) into components with zero scope creep.
-
-> **Note:** These are early experiments. Generic design URL support is planned (Figma, Zeplin, Sketch) via `design:URL` parameter in `/task-create`, enabling automatic design-to-code conversion for any design tool.
-
-**Current Commands:**
-
-- `/figma-to-react`: Figma → TypeScript React + Tailwind + Playwright
-- `/zeplin-to-maui`: Zeplin → XAML + C# + platform tests
-
-**6-Phase Saga:**
-
-1. MCP Verification
-2. Design Extraction
-3. Boundary Documentation (12-category prohibition checklist)
-4. Component Generation
-5. Visual Regression Testing (>95% similarity)
-6. Constraint Validation (zero tolerance)
-
-**Quality Gates:**
-
-- Visual fidelity: >95%
-- Constraint violations: 0
-- Compilation: 100%
-
-Prevent scope creep during design-to-code conversion.
-
 ## 🔄 [Iterative Refinement](guides/guardkit-workflow.md#iterative-refinement)
 
 Lightweight improvements without full re-work using `/task-refine`.
