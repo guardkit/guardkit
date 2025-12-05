@@ -22,8 +22,6 @@ collaborates_with:
   - build-validator
 ---
 
-You are a Test Verification Specialist who ensures all code has comprehensive test coverage and that all tests pass before tasks can be completed.
-
 ## Your Responsibilities
 
 1. **Test Execution**: Run appropriate test suites for each technology
@@ -98,6 +96,7 @@ phase: 4.5
 
 **Standard Mode Output** (embedded section):
 ```markdown
+
 ## Test Enforcement Loop (Phase 4.5)
 
 **Final Status**: ✅ ALL TESTS PASSING (100%)
@@ -198,6 +197,7 @@ phase: 4.5
 
 ### Python Projects
 ```bash
+
 # Using pytest
 pytest tests/ -v --cov=src --cov-report=term --cov-report=json
 
@@ -210,6 +210,7 @@ cat coverage.json | extract_coverage_metrics
 
 ### TypeScript/React Projects
 ```bash
+
 # Using Jest
 npm test -- --coverage --json --outputFile=test-results.json
 
@@ -224,6 +225,7 @@ playwright:browser_take_screenshot
 
 ### .NET Projects
 ```bash
+
 # Using dotnet test
 dotnet test --collect:"XPlat Code Coverage" --logger:"json;LogFileName=test-results.json"
 
@@ -392,6 +394,7 @@ def update_task_with_results(task_id, metrics, gate_results):
 
 ### Diagnostic Steps
 ```bash
+
 # Re-run failed tests with verbose output
 pytest tests/test_failed.py -vvs
 
@@ -409,6 +412,7 @@ pytest tests/test_failed.py::specific_test -v
 
 ### Coverage Report Generation
 ```bash
+
 # Python - detailed HTML report
 pytest --cov=src --cov-report=html
 
@@ -452,20 +456,6 @@ def identify_uncovered_code():
       --coverage=${{ env.TEST_COVERAGE }} \
       --status=${{ job.status }}
 ```
-
-## Best Practices
-
-1. **Run Tests in Isolation**: Each test should be independent
-2. **Use Fixtures**: Proper setup and teardown
-3. **Mock External Dependencies**: Avoid network calls in unit tests
-4. **Measure Performance**: Track test execution time
-5. **Document Failures**: Capture full context for debugging
-6. **Version Test Results**: Keep history of test runs
-7. **Automate Everything**: No manual test execution
-
-Remember: A task is ONLY complete when ALL tests pass with adequate coverage. No exceptions.
-
----
 
 ## Related Templates
 
@@ -540,6 +530,7 @@ describe('DiscussionsList', () => {
 ### ✅ DO: Use Fixtures for Test Data (Python/pytest)
 
 ```python
+
 # conftest.py
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -620,6 +611,7 @@ export const discussionsHandlers = [
 
 **Python/pytest-mock Example:**
 ```python
+
 # test_external_service.py
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -702,6 +694,7 @@ it('renders component with correct content', () => {
 ### ❌ DON'T: Use Hardcoded Test Data Everywhere
 
 ```python
+
 # BAD - Hardcoded values repeated across tests
 async def test_create_user():
     response = await client.post("/users", json={
@@ -769,6 +762,7 @@ describe('DiscussionsList', () => {
 
 ✅ **Each test should be independent**: Tests should not depend on execution order
 ```python
+
 # Good - Each test creates its own data
 async def test_delete_user(db_session, test_user):
     await delete_user(db_session, test_user.id)
@@ -827,6 +821,7 @@ it('calls setState with correct value', () => {
 
 ✅ **Parallelize tests when possible**:
 ```python
+
 # pytest.ini
 [pytest]
 addopts = -n auto  # Run tests in parallel with pytest-xdist
@@ -880,6 +875,7 @@ it('increments counter when button clicked', async () => {
 ### ❌ NEVER: Ignore Test Failures in CI
 
 ```yaml
+
 # BAD - Ignores failures
 - name: Run tests
   run: npm test || true  # Always passes!
@@ -892,6 +888,7 @@ it('increments counter when button clicked', async () => {
 ### ❌ NEVER: Write Tests That Pass for Wrong Reasons
 
 ```python
+
 # BAD - Always passes regardless of actual behavior
 def test_user_created():
     response = create_user({"email": "test@example.com"})
@@ -970,3 +967,16 @@ When verifying tests across different technology stacks:
 - [ ] Coverage: `dotnet test --collect:"XPlat Code Coverage"`
 - [ ] Integration tests use proper test fixtures
 - [ ] Platform-specific tests are properly categorized
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat test-verifier-ext.md
+```
+
+Or in Claude Code:
+```
+Please read test-verifier-ext.md for detailed examples.
+```

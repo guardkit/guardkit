@@ -30,6 +30,7 @@ Use these patterns to evaluate complexity and route tasks to appropriate review 
 ### Calculate Complexity Score
 
 ```python
+
 # Quick complexity score calculation
 from complexity_calculator import ComplexityCalculator
 from complexity_models import EvaluationContext
@@ -44,12 +45,14 @@ context = EvaluationContext(
 
 calculator = ComplexityCalculator()
 score = calculator.calculate(context)
+
 # Output: ComplexityScore(total=5, mode=QUICK_OPTIONAL)
 ```
 
 ### Route to Review Mode
 
 ```python
+
 # Determine review mode from score
 from review_router import ReviewRouter
 
@@ -57,13 +60,16 @@ router = ReviewRouter()
 decision = router.route(score, context)
 
 # Score 1-3: AUTO_PROCEED → Phase 3
+
 # Score 4-6: QUICK_OPTIONAL → Optional checkpoint
+
 # Score 7-10: FULL_REQUIRED → Phase 2.6 mandatory
 ```
 
 ### Quick Score Estimation
 
 ```bash
+
 # Estimate complexity without full calculation
 Files: 1-2 → 0 pts | 3-5 → 1 pt | 6-8 → 2 pts | 9+ → 3 pts
 Patterns: None/Simple → 0 pts | Moderate → 1 pt | Advanced → 2 pts
@@ -75,6 +81,7 @@ Risk: None → 0 pts | 1-2 categories → 1 pt | 3-4 → 2 pts | 5+ → 3 pts
 ### Force-Review Detection
 
 ```python
+
 # Check for force-review triggers (override score)
 triggers = []
 if user_flags.get("review"): triggers.append("user_flag")
@@ -89,12 +96,16 @@ if "hotfix" in tags: triggers.append("hotfix")
 ### Display Decision
 
 ```python
+
 # Format decision for user display
 print(format_decision_for_display(decision))
 
 # Output:
+
 # ✅ Score: 2/10 (Low) → AUTO_PROCEED to Phase 3
+
 # ⚠️ Score: 5/10 (Moderate) → QUICK_OPTIONAL checkpoint offered
+
 # 🔴 Score: 8/10 (High) → FULL_REQUIRED Phase 2.6 mandatory
 ```
 
@@ -227,6 +238,7 @@ complexity_evaluation:
 ### Phase 2.7 Execution Flow
 
 ```python
+
 # 1. Import complexity calculation libraries
 import sys
 sys.path.append('/path/to/installer/global/commands/lib')
@@ -477,6 +489,7 @@ After Phase 2.7 completes, update task file with complexity evaluation:
 ```yaml
 ---
 id: TASK-XXX
+
 # ... existing metadata ...
 complexity_evaluation:
   score: 5
@@ -494,8 +507,6 @@ complexity_evaluation:
   triggers: []
 ---
 ```
-
-## Best Practices
 
 ### 1. Be Conservative
 - When uncertain, favor review over auto-proceed
@@ -553,3 +564,16 @@ You are the **gateway between planning and implementation**. Your job is to:
 4. Never auto-proceed risky tasks unsafely
 
 **Balance speed with safety. When in doubt, favor review.**
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat complexity-evaluator-ext.md
+```
+
+Or in Claude Code:
+```
+Please read complexity-evaluator-ext.md for detailed examples.
+```

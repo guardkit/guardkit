@@ -1585,6 +1585,13 @@ Enhance the {agent_name} agent with template-specific content:
         self._print_success_line(f"docs/patterns/README.md ({patterns_size})")
         self._print_success_line(f"docs/reference/README.md ({reference_size})")
 
+        # TASK-PD-007: Generate and log metadata for validation reporting
+        metadata = split_output.generate_metadata()
+        logger.debug(f"Split output metadata: validation_passed={metadata.validation_passed}, "
+                    f"reduction={metadata.reduction_percent:.1f}%, "
+                    f"core={metadata.core_size_bytes}B, "
+                    f"total={metadata.total_size_bytes}B")
+
     def _write_claude_md_single(self, claude_md: Any, output_path: Path) -> bool:
         """
         Write single-file CLAUDE.md (legacy mode).

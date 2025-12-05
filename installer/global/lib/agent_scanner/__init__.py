@@ -7,16 +7,20 @@ Scans multiple agent sources in priority order:
 3. Global built-in agents (installer/global/agents/) - MEDIUM priority
 
 Key Principle: User's custom agents always take precedence
+
+TASK-PD-004: Extended files (-ext.md) are excluded from discovery
 """
 
 from .agent_scanner import (
     AgentDefinition,
     AgentInventory,
-    MultiSourceAgentScanner
+    MultiSourceAgentScanner,
+    is_extended_file
 )
 
 __all__ = [
     'AgentDefinition',
     'AgentInventory',
-    'MultiSourceAgentScanner'
+    'MultiSourceAgentScanner',
+    'is_extended_file'
 ]

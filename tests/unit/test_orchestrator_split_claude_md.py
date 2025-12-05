@@ -29,6 +29,18 @@ OrchestrationConfig = _orchestrator_module.OrchestrationConfig
 # ===== Test Fixtures =====
 
 @dataclass
+class MockSplitMetadata:
+    """Mock TemplateSplitMetadata for testing (TASK-PD-007)."""
+    def __init__(self, core_size, patterns_size, reference_size, total_size, reduction_percent, validation_passed):
+        self.core_size_bytes = core_size
+        self.patterns_size_bytes = patterns_size
+        self.reference_size_bytes = reference_size
+        self.total_size_bytes = total_size
+        self.reduction_percent = reduction_percent
+        self.validation_passed = validation_passed
+
+
+@dataclass
 class MockSplitOutput:
     """Mock TemplateSplitOutput for testing."""
     core: str
@@ -52,6 +64,17 @@ class MockSplitOutput:
         if total == 0:
             return 0.0
         return (1 - self.get_core_size() / total) * 100
+
+    def generate_metadata(self):
+        """Generate metadata for testing (TASK-PD-007)."""
+        return MockSplitMetadata(
+            core_size=self.get_core_size(),
+            patterns_size=self.get_patterns_size(),
+            reference_size=self.get_reference_size(),
+            total_size=self.get_total_size(),
+            reduction_percent=self.get_reduction_percent(),
+            validation_passed=self.get_core_size() <= 10 * 1024
+        )
 
 
 @pytest.fixture

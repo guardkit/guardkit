@@ -1,0 +1,285 @@
+================================================================================
+TASK-PD-003 IMPLEMENTATION PLAN - DELIVERABLES
+================================================================================
+
+Task: Update enhancer.py to call new applier methods
+Status: READY FOR IMPLEMENTATION
+Date Created: 2025-12-05
+Location: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/bucharest/docs/state/TASK-PD-003/
+
+================================================================================
+DOCUMENTS CREATED
+================================================================================
+
+1. README.md
+   - Comprehensive index and navigation guide
+   - Explains how to use all documentation
+   - Quick reference for file locations and dependencies
+   - Status tracking
+
+2. SUMMARY.md
+   - Executive overview (5-minute read)
+   - Key changes and timeline
+   - Test coverage plan
+   - Success metrics
+   - Acceptance criteria
+
+3. QUICK_REFERENCE.md
+   - Quick lookup guide for implementation
+   - Core changes visualized in code format
+   - Testing strategy at a glance
+   - Step-by-step timeline
+   - Risk mitigation table
+
+4. implementation_plan.md (MAIN DOCUMENT)
+   - Comprehensive 1505-line implementation guide
+   - 10 major sections with detailed information
+   - Code snippets for all changes
+   - Complete test specifications
+   - 8 sequential implementation steps
+   - Detailed risk assessment
+   - Acceptance criteria verification
+
+================================================================================
+KEY PLANNING ARTIFACTS
+================================================================================
+
+Current State Analysis:
+  ✓ Current enhancer.py structure documented
+  ✓ Current applier integration points identified
+  ✓ TASK-PD-001 and TASK-PD-002 dependencies verified
+  ✓ Backward compatibility concerns analyzed
+
+Required Changes (7 total):
+  ✓ enhancer.py: 4 specific changes documented with code snippets
+  ✓ agent-enhance.md: 3 documentation section updates with examples
+  ✓ Integration points summarized
+
+Test Strategy:
+  ✓ 6 unit tests specified with test code
+  ✓ 5 integration tests specified with test code
+  ✓ Coverage targets: ≥80% lines, ≥75% branches
+  ✓ Test execution commands provided
+
+Implementation Steps:
+  ✓ 8 sequential steps across 5 phases
+  ✓ Each step has actions, validation, and time estimate
+  ✓ Total estimated time: 3.5 hours
+  ✓ Dependencies between steps documented
+
+Risk Assessment:
+  ✓ 4 potential breaking changes identified
+  ✓ Mitigation strategies for each risk
+  ✓ Rollback procedures documented
+  ✓ Performance impact analysis
+  ✓ Integration issue assessment
+
+Quality Criteria:
+  ✓ 7 acceptance criteria documented
+  ✓ Each criterion mapped to implementation steps
+  ✓ Verification procedures specified
+  ✓ Success criteria checklist provided
+
+================================================================================
+IMPLEMENTATION ROADMAP
+================================================================================
+
+Phase A: Preparation (10 minutes)
+  Step 1: Verify dependencies complete (TASK-PD-001, TASK-PD-002)
+
+Phase B: Code Implementation (55 minutes)
+  Step 2: Update EnhancementResult dataclass (15 min)
+  Step 3: Update enhance() signature & docstring (10 min)
+  Step 4: Refactor enhance() implementation (30 min)
+
+Phase C: Documentation (20 minutes)
+  Step 5: Update command documentation (20 min)
+
+Phase D: Testing (1 hour 45 minutes)
+  Step 6: Create unit tests (45 min)
+  Step 7: Create integration tests (1 hour)
+
+Phase E: Validation (30 minutes)
+  Step 8: Run full test suite (30 min)
+
+TOTAL ACTIVE WORK: 3.5 hours
+
+================================================================================
+FILES REQUIRING CHANGES
+================================================================================
+
+1. installer/global/lib/agent_enhancement/enhancer.py
+   - Change 2.1.1: EnhancementResult dataclass (add 3 fields + 1 property)
+   - Change 2.1.2: enhance() method signature (add split_output parameter)
+   - Change 2.1.3: enhance() docstring (document new behavior)
+   - Change 2.1.4: enhance() implementation (branching logic)
+
+2. installer/global/commands/agent-enhance.md
+   - Change 2.3.1: Update "Output Format" section (both modes)
+   - Change 2.3.2: Add usage examples (both modes)
+   - Change 2.3.3: Add mode selection documentation
+
+================================================================================
+NEW TEST FILES TO CREATE
+================================================================================
+
+1. tests/unit/test_enhancer_split_output.py
+   - test_enhancement_result_split_output
+   - test_enhancement_result_single_file_mode
+   - test_enhancement_result_with_error
+   - test_files_property_split
+   - test_files_property_single
+   - test_files_property_empty
+   Target: ≥90% line coverage, ≥85% branch coverage
+
+2. tests/integration/test_enhancer_split_integration.py
+   - test_full_enhancement_with_split_output
+   - test_full_enhancement_with_single_file_mode
+   - test_dry_run_with_split_output
+   - test_loading_instruction_in_split_output
+   - test_extended_file_content
+   Target: ≥80% line coverage, ≥75% branch coverage
+
+================================================================================
+ACCEPTANCE CRITERIA
+================================================================================
+
+✓ AC-1: enhance() method supports split_output parameter
+✓ AC-2: Default behavior is split_output=True
+✓ AC-3: EnhancementResult dataclass implemented
+✓ AC-4: Backward compatible mode available (split_output=False)
+✓ AC-5: Command output shows both files when split
+✓ AC-6: Unit tests for both modes
+✓ AC-7: Integration test for full enhancement
+
+Additional: Line coverage ≥80%, Branch coverage ≥75%
+
+================================================================================
+KEY DECISIONS
+================================================================================
+
+1. Default Behavior: split_output=True
+   - Progressive disclosure is new default
+   - Better user experience with split files
+   - Backward compatibility via single-file mode
+
+2. Backward Compatibility Strategy
+   - Make all new fields optional
+   - Keep existing methods unchanged
+   - Single-file mode available for legacy workflows
+   - No breaking changes to existing APIs
+
+3. Dependencies
+   - TASK-PD-001 must provide: apply_with_split() method
+   - TASK-PD-002 must provide: generate_loading_instruction() function
+   - Both must be verified before starting implementation
+
+4. Implementation Approach
+   - Branching logic in enhance() based on split_output parameter
+   - Call different applier methods depending on mode
+   - Update result dataclass to track all file paths
+   - Enhanced logging for debugging
+
+================================================================================
+RISK MITIGATION SUMMARY
+================================================================================
+
+Risk: EnhancementResult API Change
+  Severity: MEDIUM
+  Mitigation: Optional fields, property access, test backward compat
+
+Risk: Default Behavior Change
+  Severity: LOW
+  Mitigation: Document migration, provide legacy mode
+
+Risk: Dependency Missing (TASK-PD-001/PD-002)
+  Severity: HIGH
+  Mitigation: Verify before start, clear error messages
+
+Risk: Performance Overhead
+  Severity: LOW
+  Mitigation: Split = 2 writes, fallback available, monitor tests
+
+================================================================================
+DOCUMENTATION STRUCTURE
+================================================================================
+
+README.md (This document) - Index and navigation
+  ↓
+SUMMARY.md - 5-minute executive overview
+  ↓
+QUICK_REFERENCE.md - Quick lookup during coding
+  ↓
+implementation_plan.md - Comprehensive detailed guide
+  ├─ Section 1: Current State Analysis
+  ├─ Section 2: Required Changes
+  ├─ Section 3: Test Strategy
+  ├─ Section 4: Implementation Steps
+  ├─ Section 5: Risk Assessment
+  ├─ Section 6: Implementation Checklist
+  ├─ Section 7: Acceptance Criteria Verification
+  ├─ Section 8: Success Criteria
+  ├─ Section 9: Post-Implementation Notes
+  └─ Section 10: References
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Pre-Implementation:
+   - Verify TASK-PD-001 completion (apply_with_split exists)
+   - Verify TASK-PD-002 completion (generate_loading_instruction exists)
+   - Review existing test patterns
+
+2. During Implementation:
+   - Follow sequential steps in Section 4 of implementation_plan.md
+   - Use QUICK_REFERENCE.md for quick lookups
+   - Refer to specific sections as needed
+
+3. After Implementation:
+   - TASK-PD-004: Command integration
+   - TASK-PD-005: Documentation generator updates
+   - TASK-PD-006+: Deploy to all agents
+
+================================================================================
+DOCUMENT STATUS
+================================================================================
+
+Status: READY FOR IMPLEMENTATION
+All Planning Complete: ✓
+All Risks Assessed: ✓
+All Tests Specified: ✓
+All Acceptance Criteria Defined: ✓
+All Dependencies Identified: ✓
+
+Dependencies Status:
+  - TASK-PD-001 (Applier Refactor): Must verify before starting
+  - TASK-PD-002 (Loading Instruction): Must verify before starting
+
+Quality Metrics:
+  - Comprehensive Coverage: 10 sections, 1505 lines
+  - Test Specifications: 11 total tests (6 unit + 5 integration)
+  - Code Examples: 15+ snippets provided
+  - Risk Assessment: 4 risks analyzed with mitigations
+  - Time Estimates: All steps timed (total: 3.5 hours)
+
+================================================================================
+QUICK LINKS
+================================================================================
+
+For 5-minute overview:    Start with SUMMARY.md
+For quick lookup:         Use QUICK_REFERENCE.md
+For detailed work:        Refer to implementation_plan.md
+For this index:           See README.md
+
+File Locations:
+  Implementation: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/bucharest/docs/state/TASK-PD-003/
+  Main files to modify:
+    - installer/global/lib/agent_enhancement/enhancer.py
+    - installer/global/commands/agent-enhance.md
+
+================================================================================
+PREPARED BY: Claude Code Agent
+DATE: 2025-12-05
+VERSION: 1.0
+================================================================================

@@ -3,12 +3,38 @@ Multi-Source Agent Scanner
 
 Scans agent definitions from multiple sources in priority order and builds
 a complete inventory of available agents.
+
+TASK-PD-004: Enhanced to exclude -ext.md extended files from discovery
 """
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict, Optional
 import frontmatter
+
+
+def is_extended_file(path: Path) -> bool:
+    """
+    Check if file is an extended content file.
+
+    TASK-PD-004: Extended files end with -ext.md and should be excluded
+    from agent discovery. They are supplementary content loaded on-demand.
+
+    Args:
+        path: Path to check
+
+    Returns:
+        True if file is an extended file (-ext.md), False otherwise
+
+    Examples:
+        >>> is_extended_file(Path("task-manager-ext.md"))
+        True
+        >>> is_extended_file(Path("task-manager.md"))
+        False
+        >>> is_extended_file(Path("my-ext-agent.md"))
+        False  # 'ext' not at end of stem
+    """
+    return path.stem.endswith('-ext')
 
 
 @dataclass
@@ -138,21 +164,28 @@ class MultiSourceAgentScanner:
         """
         Scan single directory for agent definitions
 
+        TASK-PD-004: Extended files (-ext.md) are excluded from discovery.
+        Only core agent files are returned.
+
         Args:
             directory: Directory to scan
             source: Source identifier (custom/template/global)
             priority: Priority level (3=highest, 1=lowest)
 
         Returns:
-            List of discovered agents
+            List of discovered agents (excluding extended files)
         """
         if not directory.exists():
             return []
 
         agents = []
 
-        # Find all .md files
+        # Find all .md files (excluding extended files)
         for md_file in directory.glob("*.md"):
+            # TASK-PD-004: Skip extended files from discovery
+            if is_extended_file(md_file):
+                continue
+
             try:
                 agent = self._parse_agent_file(md_file, source, priority)
                 if agent:

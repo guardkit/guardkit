@@ -24,8 +24,6 @@ collaborates_with:
   - all stack specialists
 ---
 
-You are a DevOps Specialist with deep expertise in infrastructure as code, continuous integration/deployment, containerization, and cloud platform management across all technology stacks.
-
 ## Core Expertise
 
 ### 1. CI/CD Pipelines
@@ -77,6 +75,7 @@ You are a DevOps Specialist with deep expertise in infrastructure as code, conti
 
 ### GitHub Actions CI/CD Pipeline
 ```yaml
+
 # .github/workflows/ci-cd.yml
 name: CI/CD Pipeline
 
@@ -287,6 +286,7 @@ jobs:
 
 ### Docker Multi-Stage Build
 ```dockerfile
+
 # Dockerfile for .NET microservice
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
@@ -340,6 +340,7 @@ ENTRYPOINT ["dotnet", "API.dll"]
 
 ### Kubernetes Deployment
 ```yaml
+
 # k8s/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -501,6 +502,7 @@ spec:
 
 ### Terraform Infrastructure
 ```hcl
+
 # infrastructure/main.tf
 terraform {
   required_version = ">= 1.5"
@@ -709,6 +711,7 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 
 ### Monitoring Stack (Prometheus + Grafana)
 ```yaml
+
 # monitoring/prometheus-values.yaml
 prometheus:
   prometheusSpec:
@@ -835,6 +838,7 @@ alertmanager:
 
 ### GitOps with ArgoCD
 ```yaml
+
 # argocd/application.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -895,8 +899,6 @@ spec:
   - name: 'Team'
     value: 'Platform'
 ```
-
-## Best Practices
 
 ### CI/CD
 1. Implement feature branch workflows
@@ -970,6 +972,7 @@ This agent leverages the following DevOps templates from the codebase:
 ### How to Use These Templates
 
 ```bash
+
 # Generate GitHub Actions workflow
 /task-work --template=nextjs-fullstack --mode=ci-workflow
 
@@ -986,6 +989,7 @@ This agent leverages the following DevOps templates from the codebase:
 #### ✅ DO: Parallel Job Execution with Dependency Caching
 
 ```yaml
+
 # Based on: nextjs-fullstack/templates/workflows-ci.yml.template
 name: CI Pipeline
 
@@ -1101,6 +1105,7 @@ jobs:
 #### ❌ DON'T: Serial Job Execution Without Caching
 
 ```yaml
+
 # Anti-pattern: Everything runs sequentially, no caching
 name: Slow CI Pipeline
 
@@ -1154,6 +1159,7 @@ jobs:
 #### ✅ DO: Production-Ready Service with Health Checks
 
 ```yaml
+
 # Based on: react-fastapi-monorepo/templates/docker/docker-compose.service.yml.template
 version: '3.8'
 
@@ -1279,6 +1285,7 @@ secrets:
 #### ❌ DON'T: Insecure Service Configuration
 
 ```yaml
+
 # Anti-pattern: Multiple security and reliability issues
 version: '3.8'
 
@@ -1329,6 +1336,7 @@ services:
 #### ✅ DO: Optimized Multi-Stage Build with Layer Caching
 
 ```dockerfile
+
 # Stage 1: Base image with dependencies
 FROM node:20-alpine AS base
 WORKDIR /app
@@ -1388,6 +1396,7 @@ CMD ["node", "server.js"]
 #### ❌ DON'T: Single-Stage Build with Security Issues
 
 ```dockerfile
+
 # Anti-pattern: Everything in one stage, running as root
 FROM node:20
 
@@ -1403,7 +1412,9 @@ RUN npm install
 RUN npm run build
 
 # Running as root user
+
 # No health check
+
 # Image contains source code, tests, build tools, secrets
 
 EXPOSE 3000
@@ -1425,6 +1436,7 @@ CMD ["npm", "start"]
 #### ✅ DO: Selective Job Execution with Path Filters
 
 ```yaml
+
 # Optimized monorepo CI - only test changed services
 name: Monorepo CI
 
@@ -1556,6 +1568,7 @@ jobs:
 #### ✅ DO: Secure Secret Handling with External Vault
 
 ```yaml
+
 # GitHub Actions with HashiCorp Vault integration
 name: Secure Deployment
 
@@ -1604,6 +1617,7 @@ jobs:
 
 **Dockerfile with secret mounting**:
 ```dockerfile
+
 # Use BuildKit secret mounts (never stored in layers)
 FROM node:20-alpine
 
@@ -1625,6 +1639,7 @@ RUN pnpm build
 
 **Build with secrets**:
 ```bash
+
 # Secret provided at build time, not in Dockerfile
 docker buildx build \
   --secret id=npmrc,src=$HOME/.npmrc \
@@ -1645,6 +1660,7 @@ docker buildx build \
 #### ✅ DO: Blue-Green Deployment with Health Checks
 
 ```yaml
+
 # Blue-Green deployment for zero-downtime updates
 apiVersion: v1
 kind: Service
@@ -1662,6 +1678,7 @@ spec:
   type: LoadBalancer
 
 ---
+
 # Blue deployment (current production)
 apiVersion: apps/v1
 kind: Deployment
@@ -1766,6 +1783,7 @@ echo "To rollback: kubectl patch service my-app -n production -p '{\"spec\":{\"s
 #### ✅ DO: Modular Infrastructure with Remote State
 
 ```hcl
+
 # terraform/main.tf
 terraform {
   required_version = ">= 1.5.0"
@@ -1864,6 +1882,7 @@ output "rds_endpoint" {
 
 **CI/CD integration**:
 ```yaml
+
 # .github/workflows/terraform.yml
 name: Terraform
 
@@ -2087,6 +2106,7 @@ jobs:
 **Problem**: Tests run one after another, wasting time
 
 ```yaml
+
 # Anti-pattern
 jobs:
   test:
@@ -2122,6 +2142,7 @@ jobs:
 **Problem**: Installing dependencies from scratch every time
 
 ```yaml
+
 # Anti-pattern
 - run: npm install
 - run: npm test
@@ -2146,6 +2167,7 @@ jobs:
 **Problem**: Credentials in code, config files, or environment variables
 
 ```yaml
+
 # Anti-pattern
 env:
   DATABASE_URL: postgres://admin:password123@db:5432/mydb
@@ -2168,6 +2190,7 @@ env:
 **Problem**: Security vulnerability if container is compromised
 
 ```dockerfile
+
 # Anti-pattern
 FROM node:20
 COPY . /app
@@ -2192,6 +2215,7 @@ CMD ["node", "server.js"]
 **Problem**: Load balancer sends traffic to broken services
 
 ```yaml
+
 # Anti-pattern
 services:
   api:
@@ -2223,12 +2247,14 @@ services:
 **Problem**: Can't quickly revert broken deployments
 
 ```bash
+
 # Anti-pattern
 kubectl set image deployment/my-app app=my-app:latest
 ```
 
 **Solution**: Blue-green or canary deployments
 ```bash
+
 # Deploy to green environment
 kubectl apply -f deployment-green.yaml
 kubectl wait --for=condition=available deployment/my-app-green
@@ -2249,6 +2275,7 @@ kubectl patch service my-app -p '{"spec":{"selector":{"version":"blue"}}}'
 **Problem**: Final image contains build tools, source code, dev dependencies
 
 ```dockerfile
+
 # Anti-pattern
 FROM node:20
 COPY . .
@@ -2277,6 +2304,7 @@ CMD ["node", "dist/server.js"]
 **Problem**: Unpredictable deployments, can't rollback
 
 ```yaml
+
 # Anti-pattern
 image: my-app:latest
 ```
@@ -2284,6 +2312,7 @@ image: my-app:latest
 **Solution**: Use semantic versioning or commit SHA
 ```yaml
 image: my-app:v1.5.0
+
 # or
 image: my-app:sha-a3f2c1d
 ```
@@ -2297,6 +2326,7 @@ image: my-app:sha-a3f2c1d
 **Problem**: One container can consume all host resources
 
 ```yaml
+
 # Anti-pattern
 services:
   api:
@@ -2327,6 +2357,7 @@ services:
 **Problem**: 1000+ line workflow file, hard to maintain
 
 ```yaml
+
 # Anti-pattern: everything in one file
 name: Monolithic Pipeline
 jobs:
@@ -2343,6 +2374,7 @@ jobs:
 
 **Solution**: Split by responsibility
 ```yaml
+
 # .github/workflows/ci.yml
 name: CI
 jobs:
@@ -2356,3 +2388,16 @@ jobs:
 ```
 
 **Impact**: Easier to maintain, reusable workflows
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat devops-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read devops-specialist-ext.md for detailed examples.
+```

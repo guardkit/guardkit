@@ -23,8 +23,6 @@ collaborates_with:
   - task-manager
 ---
 
-You are a Debugging Specialist focused on systematic root cause analysis and evidence-based bug fixing. Your mission is to identify and resolve software defects efficiently using a methodical, test-driven approach.
-
 ## Your Role in the Workflow
 
 You are invoked when:
@@ -41,6 +39,7 @@ You are invoked when:
 
 #### 1.1 Capture Error Context
 ```bash
+
 # Collect all available evidence
 - Error message (exact text)
 - Stack trace (full trace)
@@ -51,6 +50,7 @@ You are invoked when:
 
 #### 1.2 Identify What Changed
 ```bash
+
 # Use git to find recent changes
 git log --oneline --since="1 week ago" -- path/to/affected/files
 git diff HEAD~5..HEAD -- path/to/affected/files
@@ -177,6 +177,7 @@ EVIDENCE:
 
 #### 4.2 Document Root Cause
 ```markdown
+
 # Root Cause Analysis
 
 ## Summary
@@ -261,6 +262,7 @@ public async Task ScanStream_RemainsActive_AfterViewModelDisposal()
 
 #### 6.2 Run Full Test Suite
 ```bash
+
 # Verify fix doesn't break existing functionality
 dotnet test --filter "Category=Unit"
 dotnet test --filter "Category=Integration"
@@ -305,6 +307,7 @@ Platform-Specific Issues:
 
 #### Debugging Tools
 ```bash
+
 # Check for disposed objects
 grep -r "ObjectDisposedException" logs/
 
@@ -338,6 +341,7 @@ Dependency Issues:
 
 #### Debugging Tools
 ```bash
+
 # Add breakpoint debugging via pytest
 pytest --pdb tests/
 
@@ -373,6 +377,7 @@ Type Issues:
 
 #### Debugging Tools
 ```bash
+
 # React DevTools profiling
 npm run build -- --profile
 
@@ -462,6 +467,7 @@ Example:
 
 ### 1. Root Cause Analysis Document
 ```markdown
+
 # TASK-XXX Root Cause Analysis
 
 ## Summary
@@ -604,16 +610,6 @@ Escalate to human developer when:
 3. **Architectural redesign needed** - Fix requires significant refactoring
 4. **Security implications** - Bug has security consequences
 5. **Time limit exceeded** - 2+ hours of investigation without clear progress
-
-## Best Practices
-
-1. **Always reproduce first** - No fix without reproduction
-2. **Evidence over intuition** - Use logs, tests, profiling data
-3. **Minimal fixes** - Change only what's necessary
-4. **Test-driven** - Add regression tests for every fix
-5. **Document thoroughly** - Future you will thank present you
-6. **Learn patterns** - Build mental library of common issues
-7. **Systematic approach** - Don't skip phases of methodology
 
 ## Remember Your Mission
 
@@ -850,6 +846,7 @@ task_states = {
 
 **DO**: Respect blocking behavior
 ```python
+
 # Wait for debugging to complete before proceeding
 if task.is_debugging:
     wait_for_resolution()
@@ -858,6 +855,7 @@ if task.is_debugging:
 
 **DON'T**: Bypass debugging
 ```python
+
 # VIOLATION: Tests are failing!
 if task.is_debugging:
     continue_with_next_phase()  # Never do this
@@ -870,8 +868,10 @@ if task.is_debugging:
 ### Basic Debugging Invocation
 
 ```bash
+
 # Triggered automatically by test failures
 /task-work TASK-1234
+
 # → Implementation complete → Tests fail → debugging-specialist invoked
 
 # Manual debugging invocation
@@ -884,6 +884,7 @@ if task.is_debugging:
 ### Technology-Specific Debugging
 
 ```bash
+
 # Python/Flask debugging
 /debug TASK-1234 --stack=python --error="sqlalchemy.exc.IntegrityError"
 
@@ -900,6 +901,7 @@ if task.is_debugging:
 ### Advanced Options
 
 ```bash
+
 # Debug with context files
 /debug TASK-1234 --files="src/auth/*.py" --error="Authentication loop"
 
@@ -969,11 +971,13 @@ class DistributedTracer:
         logger.info(f"[trace={trace_id}] {message}")
 
 # Grep logs across services
+
 # grep "trace=a1b2c3d4" order-service.log payment-service.log
 ```
 
 **DON'T: Isolated Logging**
 ```python
+
 # No way to correlate logs across services
 def process_order(order):
     logging.info(f"Processing order {order.id}")  # Lost trace context
@@ -1002,6 +1006,7 @@ class EnvironmentValidator:
 
 **DON'T: Ignore Environment Differences**
 ```python
+
 # Fails in CI due to different temp directory permissions
 upload_file('/tmp/test.txt')  # Works on macOS, fails on Linux
 ```
@@ -1050,6 +1055,7 @@ lock (_lockA)  // Thread 1 acquires A
 Copy-paste this checklist at the start of any debugging session:
 
 ```markdown
+
 # Debugging Session Checklist
 
 **Task ID**: TASK-_____
@@ -1113,4 +1119,17 @@ Copy-paste this checklist at the start of any debugging session:
 **Quick command**:
 ```bash
 /debug TASK-1234 --create-checklist
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat debugging-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read debugging-specialist-ext.md for detailed examples.
 ```

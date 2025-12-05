@@ -303,3 +303,143 @@ class ValidationReport(BaseModel):
     def has_high_severity_issues(self) -> bool:
         """Check if there are high severity issues"""
         return any(issue.severity in ['critical', 'high'] for issue in self.issues)
+
+
+# ===== Phase 5.6 Split Output Models (TASK-PD-005) =====
+
+class TemplateSplitMetadata(BaseModel):
+    """Metadata for split template output validation and reporting (TASK-PD-007)
+
+    This metadata provides structured metrics for validation reporting and
+    orchestrator logging. It enables transparent visibility into split output
+    quality and size reduction effectiveness.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "core_size_bytes": 8192,
+                "patterns_size_bytes": 12288,
+                "reference_size_bytes": 10240,
+                "total_size_bytes": 30720,
+                "reduction_percent": 73.33,
+                "generated_at": "2025-12-05T10:30:00Z",
+                "validation_passed": True,
+                "validation_errors": []
+            }
+        }
+    )
+
+    core_size_bytes: int = Field(description="Size of core content in bytes")
+    patterns_size_bytes: int = Field(description="Size of patterns content in bytes")
+    reference_size_bytes: int = Field(description="Size of reference content in bytes")
+    total_size_bytes: int = Field(description="Total size of all content in bytes")
+    reduction_percent: float = Field(ge=0.0, le=100.0, description="Percentage reduction of core vs total")
+    generated_at: str = Field(description="ISO 8601 timestamp of generation")
+    validation_passed: bool = Field(description="Whether core content meets size constraints (≤10KB)")
+    validation_errors: List[str] = Field(default_factory=list, description="Validation error messages if any")
+
+    def to_dict(self) -> Dict[str, any]:
+        """Convert to dictionary for serialization"""
+        return {
+            'core_size_bytes': self.core_size_bytes,
+            'patterns_size_bytes': self.patterns_size_bytes,
+            'reference_size_bytes': self.reference_size_bytes,
+            'total_size_bytes': self.total_size_bytes,
+            'reduction_percent': self.reduction_percent,
+            'generated_at': self.generated_at,
+            'validation_passed': self.validation_passed,
+            'validation_errors': self.validation_errors
+        }
+
+
+class TemplateSplitOutput(BaseModel):
+    """Split CLAUDE.md output for progressive loading
+
+    This model supports the transitional state where templates can generate
+    both single-file (legacy) and split-file (new) CLAUDE.md outputs. Both
+    formats remain fully supported to ensure backward compatibility.
+    """
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "core_content": "# How to Load This Template\n...",
+                "patterns_content": "# Patterns and Best Practices\n...",
+                "reference_content": "# Code Examples\n...",
+                "generated_at": "2025-12-05T10:30:00Z"
+            }
+        }
+    )
+
+    core_content: str = Field(description="Core CLAUDE.md content (≤10KB)")
+    patterns_content: str = Field(description="Patterns and best practices section")
+    reference_content: str = Field(description="Reference and examples section")
+    generated_at: str = Field(description="ISO 8601 timestamp")
+    metadata: Optional['TemplateSplitMetadata'] = Field(None, description="Optional metadata for validation and reporting (TASK-PD-007)")
+
+    def get_core_size(self) -> int:
+        """Calculate size of core content in bytes"""
+        return len(self.core_content.encode('utf-8'))
+
+    def get_patterns_size(self) -> int:
+        """Calculate size of patterns content in bytes"""
+        return len(self.patterns_content.encode('utf-8'))
+
+    def get_reference_size(self) -> int:
+        """Calculate size of reference content in bytes"""
+        return len(self.reference_content.encode('utf-8'))
+
+    def get_total_size(self) -> int:
+        """Calculate total size of all content in bytes"""
+        return self.get_core_size() + self.get_patterns_size() + self.get_reference_size()
+
+    def get_reduction_percent(self) -> float:
+        """Calculate percentage reduction of core vs total
+
+        Returns:
+            Percentage reduction (0-100)
+        """
+        total = self.get_total_size()
+        if total == 0:
+            return 0.0
+        core = self.get_core_size()
+        return ((total - core) / total) * 100.0
+
+    def validate_size_constraints(self) -> tuple[bool, Optional[str]]:
+        """Validate that core content meets size constraints
+
+        Returns:
+            Tuple of (is_valid, error_message)
+            error_message is None if valid
+        """
+        core_size = self.get_core_size()
+        max_core_size = 10 * 1024  # 10KB in bytes
+
+        if core_size > max_core_size:
+            return False, f"Core content exceeds 10KB limit: {core_size / 1024:.2f}KB"
+
+        return True, None
+
+    def generate_metadata(self) -> 'TemplateSplitMetadata':
+        """Generate metadata from current split output state (TASK-PD-007)
+
+        Creates structured metadata including size metrics, validation status,
+        and reduction percentage for validation reporting and orchestrator logging.
+
+        Returns:
+            TemplateSplitMetadata with current state metrics
+        """
+        is_valid, error = self.validate_size_constraints()
+        errors = [] if is_valid else [error]
+
+        return TemplateSplitMetadata(
+            core_size_bytes=self.get_core_size(),
+            patterns_size_bytes=self.get_patterns_size(),
+            reference_size_bytes=self.get_reference_size(),
+            total_size_bytes=self.get_total_size(),
+            reduction_percent=self.get_reduction_percent(),
+            generated_at=self.generated_at,
+            validation_passed=is_valid,
+            validation_errors=errors
+        )
