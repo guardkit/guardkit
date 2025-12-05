@@ -1,21 +1,32 @@
-# Wave 4: Parallel Workspace Setup Complete ✅
+# Wave 4: Parallel Workspace Setup Guide
 
 ## Overview
 
-4 Conductor workspaces have been created for parallel execution of TASK-PD-012 through TASK-PD-015 (template agent splits).
+This guide provides instructions for creating 4 parallel Conductor workspaces for TASK-PD-012 through TASK-PD-015 (template agent splits).
 
-**Created**: 2025-12-05
 **Base Branch**: `progressive-disclosure` (commit 961c39f)
 **Estimated Duration**: 2 days (0.5 days per task, all in parallel)
 
-## Workspace Details
+## Creating Workspaces via Conductor UI
 
-| Workspace | Location | Branch | Task | Template |
-|-----------|----------|--------|------|----------|
-| **A** | `.conductor/pd-react` | `pd-react-typescript` | TASK-PD-012 | react-typescript |
-| **B** | `.conductor/pd-fastapi` | `pd-fastapi-python` | TASK-PD-013 | fastapi-python |
-| **C** | `.conductor/pd-nextjs` | `pd-nextjs-fullstack` | TASK-PD-014 | nextjs-fullstack |
-| **D** | `.conductor/pd-monorepo` | `pd-react-fastapi-monorepo` | TASK-PD-015 | react-fastapi-monorepo |
+Use Conductor's built-in workspace creation to ensure proper UI integration:
+
+| Workspace Name | Base Branch | Task | Template |
+|----------------|-------------|------|----------|
+| **pd-react** | `progressive-disclosure` | TASK-PD-012 | react-typescript |
+| **pd-fastapi** | `progressive-disclosure` | TASK-PD-013 | fastapi-python |
+| **pd-nextjs** | `progressive-disclosure` | TASK-PD-014 | nextjs-fullstack |
+| **pd-monorepo** | `progressive-disclosure` | TASK-PD-015 | react-fastapi-monorepo |
+
+### Steps to Create Each Workspace
+
+1. **Open Conductor UI** - Look for the sidebar workspace panel
+2. **Click "+" button** - Add new workspace
+3. **Configure workspace**:
+   - **Name**: Use names from table above (e.g., `pd-react`)
+   - **Base Branch**: Select `progressive-disclosure`
+   - **Create Branch**: Conductor will create feature branch automatically
+4. **Repeat** for all 4 workspaces
 
 ## Execution Commands
 
@@ -24,7 +35,8 @@ Each workspace can run independently in parallel. Open 4 terminal sessions:
 ### Workspace A: React TypeScript (TASK-PD-012)
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/pd-react
+# Open workspace 'pd-react' in Conductor UI
+# Or navigate to it via terminal (path will vary based on Conductor setup)
 
 # Check template agents
 ls -la installer/global/templates/react-typescript/agents/*.md
@@ -47,7 +59,7 @@ git commit -m "TASK-PD-012: Split react-typescript template agents (progressive 
 ### Workspace B: FastAPI Python (TASK-PD-013)
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/pd-fastapi
+# Open workspace 'pd-fastapi' in Conductor UI
 
 # Check template agents
 ls -la installer/global/templates/fastapi-python/agents/*.md
@@ -69,7 +81,7 @@ git commit -m "TASK-PD-013: Split fastapi-python template agents (progressive di
 ### Workspace C: Next.js Fullstack (TASK-PD-014)
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/pd-nextjs
+# Open workspace 'pd-nextjs' in Conductor UI
 
 # Check template agents
 ls -la installer/global/templates/nextjs-fullstack/agents/*.md
@@ -91,7 +103,7 @@ git commit -m "TASK-PD-014: Split nextjs-fullstack template agents (progressive 
 ### Workspace D: React FastAPI Monorepo (TASK-PD-015)
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/pd-monorepo
+# Open workspace 'pd-monorepo' in Conductor UI
 
 # Check template agents
 ls -la installer/global/templates/react-fastapi-monorepo/agents/*.md
@@ -114,33 +126,35 @@ git commit -m "TASK-PD-015: Split react-fastapi-monorepo template agents (progre
 
 After all 4 workspaces complete their tasks:
 
+### Option 1: Via Conductor UI (Recommended)
+
+1. **Navigate to main workspace** (on `progressive-disclosure` branch)
+2. **Use Conductor's merge UI** to merge each workspace branch:
+   - Merge workspace `pd-react` → progressive-disclosure
+   - Merge workspace `pd-fastapi` → progressive-disclosure
+   - Merge workspace `pd-nextjs` → progressive-disclosure
+   - Merge workspace `pd-monorepo` → progressive-disclosure
+3. **Push to remote** via Conductor or command line
+4. **Clean up workspaces** in Conductor UI if desired
+
+### Option 2: Via Command Line
+
 ```bash
-# Return to main repo
+# Navigate to main repo
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Ensure we're on progressive-disclosure branch
 git checkout progressive-disclosure
 
-# Merge all 4 workspace branches (no fast-forward for clean history)
-git merge pd-react-typescript --no-ff -m "Merge TASK-PD-012: React TypeScript template agents split"
-git merge pd-fastapi-python --no-ff -m "Merge TASK-PD-013: FastAPI Python template agents split"
-git merge pd-nextjs-fullstack --no-ff -m "Merge TASK-PD-014: Next.js Fullstack template agents split"
-git merge pd-react-fastapi-monorepo --no-ff -m "Merge TASK-PD-015: React FastAPI Monorepo template agents split"
+# Merge all 4 workspace branches (branch names created by Conductor)
+# Note: Actual branch names may vary - check with: git branch -a
+git merge <pd-react-branch-name> --no-ff -m "Merge TASK-PD-012: React TypeScript template agents split"
+git merge <pd-fastapi-branch-name> --no-ff -m "Merge TASK-PD-013: FastAPI Python template agents split"
+git merge <pd-nextjs-branch-name> --no-ff -m "Merge TASK-PD-014: Next.js Fullstack template agents split"
+git merge <pd-monorepo-branch-name> --no-ff -m "Merge TASK-PD-015: React FastAPI Monorepo template agents split"
 
 # Push to remote
 git push origin progressive-disclosure
-
-# Clean up worktrees (optional - can keep for future work)
-git worktree remove .conductor/pd-react
-git worktree remove .conductor/pd-fastapi
-git worktree remove .conductor/pd-nextjs
-git worktree remove .conductor/pd-monorepo
-
-# Delete local branches (optional)
-git branch -d pd-react-typescript
-git branch -d pd-fastapi-python
-git branch -d pd-nextjs-fullstack
-git branch -d pd-react-fastapi-monorepo
 ```
 
 ## Validation Checklist
