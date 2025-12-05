@@ -140,6 +140,7 @@ cd apps/new-app
 pnpm init
 
 # Add to pnpm-workspace.yaml
+
 # Add to turbo.json pipeline
 ```
 
@@ -150,6 +151,7 @@ cd packages/new-package
 pnpm init
 
 # Use in apps:
+
 # pnpm add new-package --filter=frontend
 ```
 
@@ -164,10 +166,12 @@ import { getUsers } from '../../backend/app/crud/user'
 
 ### Environment Variables
 ```bash
+
 # Root .env (shared)
 POSTGRES_HOST=localhost
 
 # App-specific .env
+
 # apps/frontend/.env.local
 VITE_API_URL=http://localhost:8000
 
@@ -194,6 +198,7 @@ apps/frontend → packages/shared-types ← apps/backend ✅
 
 ### 3. Inconsistent Type Generation
 ```bash
+
 # ❌ BAD: Manual type definitions
 interface User { ... }
 
@@ -212,8 +217,6 @@ pnpm generate-types
   "outputs": ["dist/**"]
 }
 ```
-
-## Troubleshooting
 
 ### Type Generation Fails
 1. Check backend is running: `curl http://localhost:8000/health`
@@ -234,8 +237,6 @@ pnpm generate-types
 1. Check port conflicts: `lsof -i :3000,8000,5432`
 2. Rebuild containers: `docker-compose up --build`
 3. Check logs: `docker-compose logs -f`
-
-## Best Practices
 
 ### 1. Keep Apps Independent
 Each app should be deployable independently with its own Dockerfile and dependencies.
@@ -318,6 +319,7 @@ export function useCreateProduct() {
 ```
 
 ```python
+
 # Backend: templates/apps/backend/router.py.template
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -362,6 +364,7 @@ const data = await response.json()  // any type
 ✅ **DO**: Use Base/Create/Update/Public pattern from `schema.py.template`
 
 ```python
+
 # templates/apps/backend/schema.py.template
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -392,6 +395,7 @@ class ProductPublic(ProductBase):
 ❌ **DON'T**: Use flat schemas or expose internal fields
 
 ```python
+
 # BAD: No separation of concerns
 class Product(BaseModel):
     id: int  # Exposed in Create endpoint!
@@ -410,6 +414,7 @@ class ProductUpdate(BaseModel):
 ✅ **DO**: Use volume mounts for local development from `docker-compose.service.yml.template`
 
 ```yaml
+
 # templates/docker/docker-compose.service.yml.template
 frontend:
   build:
@@ -439,6 +444,7 @@ backend:
 ❌ **DON'T**: Copy code into container or skip hot reload
 
 ```yaml
+
 # BAD: No volumes = no hot reload
 backend:
   build: ./apps/backend
@@ -623,6 +629,7 @@ import { Product } from '../../../packages/shared-types/index.ts'
 
 ❌ **NEVER**: Install dependencies directly in workspace root
 ```bash
+
 # BAD: Wrong package.json location
 npm install axios  # Installs in root, not available to apps
 ```
@@ -650,6 +657,7 @@ export function useCreateProduct() {
 
 ❌ **NEVER**: Expose internal fields in Public schemas
 ```python
+
 # BAD: Leaking sensitive data
 class UserPublic(BaseModel):
     id: int
@@ -667,6 +675,7 @@ class UserPublic(BaseModel):
 
 ❌ **NEVER**: Use production builds in Docker Compose dev environment
 ```yaml
+
 # BAD: Slow rebuild cycle
 frontend:
   build:
@@ -708,6 +717,7 @@ const response = await fetch(`${API_URL}/products`)
 
 ❌ **NEVER**: Run serial tasks that could be parallel
 ```bash
+
 # BAD: Sequential execution
 pnpm --filter frontend test
 pnpm --filter backend test
@@ -720,6 +730,7 @@ pnpm --filter backend test
 
 ❌ **NEVER**: Make all Update schema fields required
 ```python
+
 # BAD: Forces full object replacement
 class ProductUpdate(BaseModel):
     name: str  # Required - can't do partial update!
@@ -732,6 +743,7 @@ class ProductUpdate(BaseModel):
 
 ❌ **NEVER**: Skip validation constraints
 ```python
+
 # BAD: No validation
 class ProductCreate(BaseModel):
     name: str  # Could be empty string!
@@ -740,3 +752,29 @@ class ProductCreate(BaseModel):
 **Why it fails**: Invalid data reaches database, causing errors or data corruption.
 
 **Fix**: Add Pydantic constraints: `name: str = Field(min_length=1)`, `price: float = Field(gt=0)`
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-fastapi-monorepo-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-fastapi-monorepo-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat react-fastapi-monorepo-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read react-fastapi-monorepo-specialist-ext.md for detailed examples.
+```

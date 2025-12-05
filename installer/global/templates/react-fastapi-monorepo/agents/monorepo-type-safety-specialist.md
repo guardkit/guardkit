@@ -342,17 +342,18 @@ const email = user.email?.toLowerCase() ?? ''
 
 ### 4. Outdated Types
 ```bash
+
 # ❌ BAD: Forgetting to regenerate types
+
 # Backend schema changed, but frontend still using old types
 
 # ✅ GOOD: Regenerate after backend changes
 pnpm generate-types
 ```
 
-## Troubleshooting
-
 ### Types Are Stale
 ```bash
+
 # Regenerate types
 pnpm generate-types
 
@@ -380,8 +381,6 @@ import { User } from '../../../packages/shared-types/src'
 // ✅ GOOD: Package import
 import { User } from 'shared-types'
 ```
-
-## Best Practices
 
 ### 1. Always Regenerate Types
 After any backend schema change, regenerate types immediately.
@@ -411,6 +410,7 @@ Use API versioning (`/api/v1/`, `/api/v2/`) for breaking changes.
 ## Quick Commands
 
 ```bash
+
 # Regenerate TypeScript types from OpenAPI (run after backend schema changes)
 cd apps/frontend && npm run generate-api
 
@@ -425,6 +425,7 @@ curl http://localhost:8000/openapi.json | jq .
 
 ### 1. Define Backend Schema
 ```python
+
 # apps/backend/app/schemas/task.py
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -514,6 +515,7 @@ export const useTasks = () => {
 
 **DO** - Use consistent field types across schema variants:
 ```python
+
 # apps/backend/app/schemas/item.py
 from pydantic import BaseModel, Field
 from datetime import datetime
@@ -583,6 +585,7 @@ class ItemPublic(BaseModel):  # ❌ Doesn't inherit Base
 
 **DO** - Explicit `response_model` enables accurate codegen:
 ```python
+
 # apps/backend/app/routers/items.py
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.item import ItemCreate, ItemUpdate, ItemPublic
@@ -720,6 +723,7 @@ export const useItems = () => {
 
 **DO** - Use `exclude_unset=True` for PATCH semantics:
 ```python
+
 # apps/backend/app/crud/item.py
 from sqlalchemy.orm import Session
 from app.models.item import Item
@@ -835,6 +839,7 @@ data.forEach((task) => {  // ✅ task is TaskPublic
 
 ### Step 1: Define Backend Schema
 ```python
+
 # apps/backend/app/schemas/new_entity.py
 from pydantic import BaseModel, Field
 
@@ -851,6 +856,7 @@ class NewEntityPublic(NewEntityBase):
 
 ### Step 2: Create Routes with response_model
 ```python
+
 # apps/backend/app/routers/new_entity.py
 @router.post("/new-entities", response_model=NewEntityPublic)
 async def create_new_entity(entity: NewEntityCreate):
@@ -859,6 +865,7 @@ async def create_new_entity(entity: NewEntityCreate):
 
 ### Step 3: Verify OpenAPI Spec
 ```bash
+
 # Start backend
 cd apps/backend && uvicorn app.main:app --reload
 
@@ -894,6 +901,7 @@ export const useCreateNewEntity = () => {
 
 ### Step 6: Validate Type Safety
 ```bash
+
 # Backend type checking
 cd apps/backend && mypy .
 
@@ -916,6 +924,7 @@ git commit -m "feat: add NewEntity with full type safety"
 
 ### Automated Checks (Add to CI/CD)
 ```yaml
+
 # .github/workflows/type-safety.yml
 - name: Regenerate types
   run: cd apps/frontend && npm run generate-api
@@ -934,6 +943,7 @@ git commit -m "feat: add NewEntity with full type safety"
 
 ### Manual Drift Detection
 ```bash
+
 # 1. Regenerate types from current backend
 cd apps/frontend && npm run generate-api
 
@@ -976,4 +986,30 @@ validation_report:
   overall_status: PASSED
   iterations_required: 1
   warnings: []
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat monorepo-type-safety-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read monorepo-type-safety-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat monorepo-type-safety-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read monorepo-type-safety-specialist-ext.md for detailed examples.
 ```
