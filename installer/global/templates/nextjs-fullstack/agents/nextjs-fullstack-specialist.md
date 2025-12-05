@@ -415,6 +415,7 @@ import Image from 'next/image'
 
 ### Environment Variables
 ```bash
+
 # .env
 DATABASE_URL="postgresql://..."
 NEXTAUTH_SECRET="..."
@@ -987,69 +988,6 @@ test.describe('Entity Management', () => {
 
 ---
 
-## Best Practices
-
-1. **Use Server Components by Default**
-   - Keep components as Server Components unless you need interactivity (onClick, useState, useEffect)
-   - Server Components reduce JavaScript bundle size and improve initial page load
-   - Only add `'use client'` when you need browser APIs or React hooks
-
-2. **Colocate Server Actions with Data Mutations**
-   - Place Server Actions in `/actions` directory, organized by domain
-   - Always validate inputs with Zod or similar schema validation
-   - Call `revalidatePath()` or `revalidateTag()` after mutations to update cached data
-   - Return structured error objects rather than throwing exceptions
-
-3. **Implement Database Singleton Pattern**
-   - Use the Prisma client singleton from `templates/lib/db.ts.template`
-   - Prevents connection pool exhaustion in development mode
-   - In production, Next.js handles connection pooling automatically
-   - Never instantiate `new PrismaClient()` directly in multiple files
-
-4. **Leverage Suspense Boundaries for Loading States**
-   - Wrap async Server Components in `<Suspense>` with skeleton fallbacks
-   - Create multiple Suspense boundaries for granular streaming
-   - Avoid showing entire page spinners - stream content progressively
-   - Use `loading.tsx` for route-level loading states
-
-5. **Type-Safe Database Queries with Prisma**
-   - Run `npx prisma generate` after schema changes to update types
-   - Use `prisma migrate dev` in development, `prisma migrate deploy` in production
-   - Enable Prisma relationMode for PlanetScale or similar databases
-   - Always include error handling for database operations
-
-6. **Optimize Cache Revalidation Strategies**
-   - Use `revalidatePath('/path')` to invalidate specific pages after mutations
-   - Use `revalidateTag('tag')` for fine-grained cache control across multiple pages
-   - Set `export const revalidate = 60` on pages for time-based revalidation
-   - Use `export const dynamic = 'force-dynamic'` for real-time data requirements
-
-7. **Separate Client and Server Boundaries Clearly**
-   - Never import Server Actions into Server Components (use props instead)
-   - Never pass non-serializable data (functions, class instances) from Server to Client Components
-   - Use TypeScript interfaces to enforce serializable prop types
-   - Keep business logic in Server Actions, UI logic in Client Components
-
-8. **Implement Progressive Enhancement with Forms**
-   - Forms should work without JavaScript using native `action` attribute
-   - Use `useTransition` to show loading states with JavaScript enabled
-   - Provide server-side validation in Server Actions
-   - Return validation errors in a consistent format for client-side display
-
-9. **Structure API Routes for External Use Only**
-   - Prefer Server Actions for internal mutations over API routes
-   - Use API routes for webhooks, third-party integrations, or REST APIs
-   - Implement proper error handling with appropriate HTTP status codes
-   - Validate request bodies and query parameters with Zod schemas
-
-10. **Test at Multiple Levels**
-    - Unit test Client Components with Vitest and React Testing Library
-    - Integration test Server Actions by importing and calling them directly
-    - E2E test critical user flows with Playwright
-    - Mock Prisma client for fast unit tests using `prisma-mock` or similar
-
----
-
 ## Anti-Patterns to Avoid
 
 1. **NEVER fetch data in Client Components**
@@ -1112,3 +1050,29 @@ test.describe('Entity Management', () => {
 - **Database choice other than Prisma** (Ask if Drizzle, TypeORM, or raw SQL is preferred; agent focuses on Prisma)
 - **Authentication beyond NextAuth** (Ask if Clerk, Auth0, or custom auth is required; agent covers NextAuth patterns)
 - **Monorepo or multi-package setup** (Ask about workspace structure if project uses Turborepo, Nx, or similar)
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-fullstack-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-fullstack-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-fullstack-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-fullstack-specialist-ext.md for detailed examples.
+```

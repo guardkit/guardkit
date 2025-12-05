@@ -167,8 +167,6 @@ export function ClientComponent({ data }) {
 3. Props from Server Components must be serializable
 4. Can only import other Client Components
 
-## Code Examples
-
 ### Loading States
 ```typescript
 // app/dashboard/loading.tsx
@@ -695,3 +693,29 @@ export default async function DashboardPage() {
 }
 ```
 **Fix**: Add `export const dynamic = 'force-dynamic'` for real-time data.
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-server-components-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-server-components-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-server-components-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-server-components-specialist-ext.md for detailed examples.
+```

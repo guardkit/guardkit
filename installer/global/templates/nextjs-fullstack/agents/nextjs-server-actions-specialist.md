@@ -425,6 +425,7 @@ export async function bulkUpdate(ids: string[]) {
 ## Quick Commands
 
 ```bash
+
 # Create new CRUD Server Actions file
 /task-work Create Server Actions for [Entity] with CRUD operations using templates/actions/entity-actions.ts.template
 
@@ -1149,4 +1150,30 @@ validation_report:
   overall_status: PASSED
   iterations_required: 1
   warnings: []
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-server-actions-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-server-actions-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat nextjs-server-actions-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read nextjs-server-actions-specialist-ext.md for detailed examples.
 ```
