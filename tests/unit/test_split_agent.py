@@ -108,7 +108,7 @@ Best practices content.
             {'title': 'Best Practices', 'content': '## Best Practices', 'level': 2},
         ]
 
-        core, extended = splitter._categorize_sections(sections)
+        core, extended = splitter._categorize_sections(sections, agent_name='test-agent')
 
         core_titles = [s['title'] for s in core]
         extended_titles = [s['title'] for s in extended]
@@ -118,6 +118,44 @@ Best practices content.
         assert 'Capabilities' in core_titles
         assert 'Examples' in extended_titles
         assert 'Best Practices' in extended_titles
+
+    def test_agent_specific_overrides(self):
+        """Test agent-specific overrides for categorization (TASK-PD-009)"""
+        splitter = AgentSplitter(dry_run=True)
+
+        # Test task-manager overrides
+        task_manager_sections = [
+            {'title': 'Phase 2.5', 'content': '## Phase 2.5', 'level': 2},
+            {'title': 'Quality Gates', 'content': '## Quality Gates', 'level': 2},
+            {'title': 'Detailed Workflow', 'content': '## Detailed Workflow', 'level': 2},
+        ]
+
+        core, extended = splitter._categorize_sections(task_manager_sections, agent_name='task-manager')
+
+        core_titles = [s['title'] for s in core]
+        extended_titles = [s['title'] for s in extended]
+
+        # Phase 2.5 and Quality Gates should be in core (override)
+        assert 'Phase 2.5' in core_titles
+        assert 'Quality Gates' in core_titles
+        # Detailed Workflow should be in extended (override)
+        assert 'Detailed Workflow' in extended_titles
+
+        # Test architectural-reviewer overrides
+        arch_reviewer_sections = [
+            {'title': 'SOLID Principles', 'content': '## SOLID Principles', 'level': 2},
+            {'title': 'SOLID Examples', 'content': '## SOLID Examples', 'level': 2},
+        ]
+
+        core, extended = splitter._categorize_sections(arch_reviewer_sections, agent_name='architectural-reviewer')
+
+        core_titles = [s['title'] for s in core]
+        extended_titles = [s['title'] for s in extended]
+
+        # SOLID Principles should be in core (override)
+        assert 'SOLID Principles' in core_titles
+        # SOLID Examples should be in extended (override)
+        assert 'SOLID Examples' in extended_titles
 
     def test_generate_loading_instruction(self):
         """Test generating loading instruction"""

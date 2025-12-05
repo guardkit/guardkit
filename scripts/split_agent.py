@@ -50,38 +50,176 @@ class SplitResult:
 
 
 class AgentSplitter:
-    """Splits agent markdown files into core and extended files."""
+    """Splits agent markdown files into core and extended files.
+
+    Categorization Philosophy (TASK-PD-009):
+    - Core = Decision-making ("Should I use this? How do I invoke it?")
+    - Extended = Implementation details ("How do I implement? Edge cases?")
+    """
 
     # Core sections (essential, always in main file)
+    # These answer: "Should I use this agent? How do I invoke it?"
     CORE_SECTION_PATTERNS = [
-        r'^---\n.*?^---',  # Frontmatter (regex with MULTILINE)
-        r'^# .*',  # Title
+        r'^---\n.*?^---',  # Frontmatter (regex with MULTILINE) - Required for discovery
+        r'^# .*',  # Title - Agent name and identity
+
+        # Essential for invocation
         r'^## Quick Start$',
+        r'^## Getting Started$',
+        r'^## Usage$',
+
+        # Boundaries (GitHub standards - TASK-STND-773D)
         r'^## Boundaries$',
+        r'^### ALWAYS$',
+        r'^### NEVER$',
+        r'^### ASK$',
+
+        # Capabilities and phase integration
         r'^## Capabilities$',
+        r'^## What I Can Do$',
+        r'^## Features$',
         r'^## Phases$',
         r'^## When to Use This Agent$',
-        r'^## Mission$',
         r'^## Integration$',
+        r'^## Phase Integration$',
+
+        # Mission and model configuration
+        r'^## Mission$',
+        r'^## Your Mission$',
+        r'^## Your Critical Mission$',
+        r'^## Role$',
         r'^## Model$',
+        r'^## Model Selection$',
+        r'^## Cost$',
     ]
 
     # Extended sections (detailed, moved to -ext.md file)
+    # These answer: "How do I implement correctly? What are edge cases?"
     EXTENDED_SECTION_PATTERNS = [
+        # Detailed examples
         r'^## Examples$',
         r'^## Code Examples$',
+        r'^## Implementation Example$',
+        r'^## Sample$',
+        r'^## Code Sample$',
+        r'^## Demonstration$',
+
+        # Patterns and practices
         r'^## Patterns$',
-        r'^## Anti-Patterns$',
         r'^## Best Practices$',
-        r'^## Troubleshooting$',
-        r'^## Templates$',
+        r'^## Recommended Practice$',
+        r'^## Design Pattern$',
+        r'^## Architecture Pattern$',
+
+        # Anti-patterns
+        r'^## Anti-Patterns$',
+        r'^## What Not to Do$',
+        r'^## Common Mistake$',
+        r'^## Pitfall$',
+        r'^## Warning$',
+
+        # Technology specifics
         r'^## Technology Details$',
+        r'^## Stack$',
+        r'^## Framework$',
+        r'^## Language-Specific$',
+        r'^## Python$',
+        r'^## TypeScript$',
+        r'^## React$',
+        r'^## \.NET$',
+        r'^## FastAPI$',
+
+        # MCP integration (advanced)
         r'^## MCP Integration$',
+        r'^## Context7$',
+        r'^## Design Pattern MCP$',
+        r'^## Tool Integration$',
+
+        # Troubleshooting and edge cases
+        r'^## Troubleshooting$',
+        r'^## Debug$',
+        r'^## Common Issue$',
+        r'^## FAQ$',
+        r'^## Edge Case$',
+        r'^## Known Issue$',
+
+        # Implementation guides
         r'^## Implementation Guide$',
+        r'^## Step-by-Step$',
+        r'^## Walkthrough$',
+        r'^## Tutorial$',
+        r'^## How To$',
+
+        # Reference material
+        r'^## Reference$',
+        r'^## Appendix$',
+        r'^## Additional$',
+        r'^## See Also$',
+        r'^## Related$',
+        r'^## Further Reading$',
+
+        # Advanced topics
         r'^## Advanced Usage$',
         r'^## Performance$',
         r'^## Testing$',
+        r'^## Templates$',
     ]
+
+    # Agent-specific overrides (TASK-PD-009)
+    # Some agents have unique sections requiring special handling
+    AGENT_OVERRIDES = {
+        'task-manager': {
+            'core_additional': [
+                'Phase 2.5', 'Phase 2.7', 'Phase 2.8',  # Critical routing logic
+                'State Management', 'Quality Gates'
+            ],
+            'extended_additional': [
+                'Detailed Workflow', 'Complex Scenarios'
+            ]
+        },
+        'architectural-reviewer': {
+            'core_additional': [
+                'SOLID Principles',  # Keep summary
+                'Scoring'
+            ],
+            'extended_additional': [
+                'SOLID Examples',    # Move detailed examples
+                'Pattern Analysis'
+            ]
+        },
+        'code-reviewer': {
+            'core_additional': [
+                'Build Verification', 'Approval Checklist'
+            ],
+            'extended_additional': [
+                'Documentation Level', 'Detailed Checklists'
+            ]
+        }
+    }
+
+    # Validation rules (TASK-PD-009)
+    VALIDATION_RULES = {
+        'core': {
+            'max_size_kb': 15,              # Core should be ≤15KB
+            'required_sections': [
+                'frontmatter',
+                'title',
+                'boundaries',               # GitHub standards
+                'loading_instruction'       # Added by splitter
+            ],
+            'max_examples': 10,             # Limit examples in core
+        },
+        'extended': {
+            'min_size_kb': 0.5,             # Should have substantial content (reduced from 5KB)
+            'required_sections': [
+                'header',                   # Reference to core file
+            ],
+        },
+        'overall': {
+            'target_reduction_percent': 40,  # Target 40% reduction (not enforced)
+            'content_preserved': True,       # No content loss
+        }
+    }
 
     def __init__(self, dry_run: bool = False, validate: bool = False):
         """Initialize splitter.
@@ -112,8 +250,9 @@ class AgentSplitter:
         # Parse sections
         sections = self._parse_sections(content)
 
-        # Categorize into core and extended
-        core_sections, extended_sections = self._categorize_sections(sections)
+        # Categorize into core and extended (with agent-specific overrides)
+        agent_name = agent_path.stem
+        core_sections, extended_sections = self._categorize_sections(sections, agent_name)
 
         # Build core and extended content
         core_content = self._build_core_content(core_sections, agent_path)
@@ -205,11 +344,12 @@ class AgentSplitter:
 
         return sections
 
-    def _categorize_sections(self, sections: List[dict]) -> Tuple[List[dict], List[dict]]:
+    def _categorize_sections(self, sections: List[dict], agent_name: str = None) -> Tuple[List[dict], List[dict]]:
         """Categorize sections into core and extended.
 
         Args:
             sections: List of section dicts
+            agent_name: Name of agent file (for overrides)
 
         Returns:
             Tuple of (core_sections, extended_sections)
@@ -218,18 +358,19 @@ class AgentSplitter:
         extended_sections = []
 
         for section in sections:
-            if self._is_core_section(section):
+            if self._is_core_section(section, agent_name):
                 core_sections.append(section)
             else:
                 extended_sections.append(section)
 
         return core_sections, extended_sections
 
-    def _is_core_section(self, section: dict) -> bool:
+    def _is_core_section(self, section: dict, agent_name: str = None) -> bool:
         """Check if a section should be in core file.
 
         Args:
             section: Section dict with 'title', 'content', 'level'
+            agent_name: Name of agent file (for overrides)
 
         Returns:
             True if section belongs in core file
@@ -238,20 +379,38 @@ class AgentSplitter:
         if section['title'] == 'frontmatter':
             return True
 
+        section_title = section['title']
+
+        # Check agent-specific overrides first (TASK-PD-009)
+        if agent_name and agent_name in self.AGENT_OVERRIDES:
+            overrides = self.AGENT_OVERRIDES[agent_name]
+
+            # Check if section is in agent's core_additional list
+            if 'core_additional' in overrides:
+                if any(section_title.startswith(core_sec) or section_title == core_sec
+                       for core_sec in overrides['core_additional']):
+                    return True
+
+            # Check if section is in agent's extended_additional list
+            if 'extended_additional' in overrides:
+                if any(section_title.startswith(ext_sec) or section_title == ext_sec
+                       for ext_sec in overrides['extended_additional']):
+                    return False
+
         # Check against core patterns
         for pattern in self.CORE_SECTION_PATTERNS:
             # For section titles, match against the markdown header format
-            section_header = f"{'#' * section['level']} {section['title']}"
+            section_header = f"{'#' * section['level']} {section_title}"
             if re.match(pattern, section_header):
                 return True
 
         # Check if it's explicitly an extended section
         for pattern in self.EXTENDED_SECTION_PATTERNS:
-            section_header = f"{'#' * section['level']} {section['title']}"
+            section_header = f"{'#' * section['level']} {section_title}"
             if re.match(pattern, section_header):
                 return False
 
-        # Default: treat as core (conservative approach)
+        # Default: treat as core (conservative approach - TASK-PD-009)
         return True
 
     def _build_core_content(self, sections: List[dict], agent_path: Path) -> str:
