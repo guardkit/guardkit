@@ -1,0 +1,5 @@
+# Ignore measurement data files (environment-specific)
+*.json
+
+# Keep the README
+!README.md

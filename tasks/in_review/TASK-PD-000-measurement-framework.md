@@ -1,9 +1,9 @@
 ---
 id: TASK-PD-000
 title: Establish before/after measurement framework for progressive disclosure
-status: backlog
+status: in_review
 created: 2025-12-04T10:00:00Z
-updated: 2025-12-04T10:00:00Z
+updated: 2025-12-05T08:20:00Z
 priority: critical
 tags: [progressive-disclosure, phase-0, measurement, validation, blog-content]
 complexity: 4
@@ -11,9 +11,9 @@ blocked_by: []
 blocks: [TASK-PD-001]
 review_task: TASK-REV-426C
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 100
+  last_run: 2025-12-05T08:20:00Z
 ---
 
 # Task: Establish before/after measurement framework for progressive disclosure
@@ -381,9 +381,9 @@ Standardized benchmark task for measuring progressive disclosure impact.
 ## Execution Steps
 
 ### Step 1: Create Measurement Script (This Task)
-- [ ] Create `scripts/measure-token-usage.py`
-- [ ] Test measurement on current installation
-- [ ] Verify correct file paths and calculations
+- [x] Create `scripts/measure-token-usage.py`
+- [x] Test measurement on current installation
+- [x] Verify correct file paths and calculations
 
 ### Step 2: Capture Baseline (Before Implementation)
 ```bash
@@ -448,11 +448,11 @@ Progressive disclosure splits content into core (always loaded) and extended (on
 
 ## Acceptance Criteria
 
-- [ ] `scripts/measure-token-usage.py` created and working
-- [ ] Baseline measurement captured before any PD changes
-- [ ] Measurement files saved in `measurements/` directory
-- [ ] Script can calculate and display comparison
-- [ ] Output format suitable for blog post content
+- [x] `scripts/measure-token-usage.py` created and working
+- [x] Baseline measurement captured before any PD changes
+- [x] Measurement files saved in `measurements/` directory
+- [x] Script can calculate and display comparison
+- [x] Output format suitable for blog post content
 
 ## Files to Create
 
