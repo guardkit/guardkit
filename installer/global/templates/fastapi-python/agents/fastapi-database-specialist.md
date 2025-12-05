@@ -100,8 +100,6 @@ Use the FastAPI database specialist when you need help with:
 - Transaction management and concurrency
 - Database testing strategies
 
-## Code Examples
-
 ### 1. SQLAlchemy Model with Relationships
 
 ```python
@@ -367,41 +365,6 @@ async def update_product_quantity(
     return product
 ```
 
-## Best Practices
-
-1. **Always use async sessions for FastAPI**
-   - Use `AsyncSession` from `sqlalchemy.ext.asyncio`
-   - Configure async engine with `create_async_engine`
-   - Use `async_sessionmaker` for session factory
-
-2. **Prevent N+1 queries**
-   - Use `selectinload()` for one-to-many relationships
-   - Use `joinedload()` for many-to-one relationships
-   - Use `.unique()` after `joinedload()` to deduplicate results
-
-3. **Design indexes strategically**
-   - Add indexes to foreign keys
-   - Index columns used in WHERE clauses frequently
-   - Add composite indexes for multi-column queries
-   - Don't over-index (impacts write performance)
-
-4. **Use proper cascade options**
-   - `cascade="all, delete-orphan"` for owned relationships
-   - `ondelete="CASCADE"` on foreign keys for database-level cascades
-   - Consider soft deletes for audit trails
-
-5. **Handle migrations carefully**
-   - Test migrations on staging before production
-   - Use `op.batch_alter_table()` for SQLite compatibility
-   - Include data migrations when needed
-   - Always provide downgrade paths
-
-6. **Use database constraints**
-   - Define constraints in models AND migrations
-   - Use unique constraints for business logic
-   - Use check constraints for data validation
-   - Leverage database-level defaults
-
 ## Common Patterns
 
 ### Database Naming Conventions
@@ -478,6 +441,7 @@ class AuditMixin:
 ### Async Database Session Setup
 
 ```python
+
 # templates/db/session.py.template
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
@@ -512,6 +476,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 ### SQLAlchemy Model Definition
 
 ```python
+
 # templates/models/models.py.template
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
@@ -543,6 +508,7 @@ class EntityModel(Base):
 ### Generic CRUD Operations
 
 ```python
+
 # templates/crud/crud_base.py.template
 from typing import Generic, TypeVar, Type, Optional, List
 from sqlalchemy import select
@@ -600,6 +566,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 ### Custom CRUD Extensions
 
 ```python
+
 # templates/crud/crud.py.template
 from src.crud.base import CRUDBase
 
@@ -629,6 +596,7 @@ class CRUDEntity(CRUDBase[Entity, EntityCreate, EntityUpdate]):
 ### Database Configuration
 
 ```python
+
 # templates/core/config.py.template
 from pydantic import PostgresDsn, Field
 from pydantic_settings import BaseSettings
@@ -658,6 +626,7 @@ async def get_user(db: AsyncSession, user_id: int):
 
 **DON'T**: Mix synchronous operations in async context
 ```python
+
 # This will block the event loop
 def get_user(db: Session, user_id: int):
     return db.query(User).filter(User.id == user_id).first()
@@ -677,6 +646,7 @@ engine = create_async_engine(
 
 **DON'T**: Use default settings without pool management
 ```python
+
 # Missing pool configuration can cause connection exhaustion
 engine = create_async_engine(DATABASE_URL)
 ```
@@ -693,6 +663,7 @@ async def get_items(db: AsyncSession = Depends(get_db)):
 
 **DON'T**: Manually manage sessions in route handlers
 ```python
+
 # Manual session management is error-prone
 @router.get("/items/")
 async def get_items():
@@ -716,6 +687,7 @@ class User(Base):
 
 **DON'T**: Query unindexed fields in hot paths
 ```python
+
 # Missing index on 'status' field
 class Order(Base):
     status = Column(String(50))  # Queried frequently but not indexed
@@ -733,6 +705,7 @@ class CRUDUser(CRUDBase[User, UserCreate, UserUpdate]):
 
 **DON'T**: Write repetitive CRUD code without reusable base classes
 ```python
+
 # Duplicated logic across multiple CRUD classes
 async def get_user(db: AsyncSession, id: int): ...
 async def get_post(db: AsyncSession, id: int): ...
@@ -753,6 +726,7 @@ updated_at = Column(
 
 **DON'T**: Manually set timestamps in application code
 ```python
+
 # Manual timestamp management is error-prone
 async def update_user(db: AsyncSession, user: User, data: dict):
     data['updated_at'] = datetime.utcnow()  # Easy to forget
@@ -773,6 +747,7 @@ async def update(self, db: AsyncSession, db_obj: ModelType, obj_in: UpdateSchema
 
 **DON'T**: Update all fields including None values
 ```python
+
 # This overwrites fields with None even if not provided
 update_data = obj_in.model_dump()  # Missing exclude_unset
 ```
@@ -791,6 +766,7 @@ async def create(self, db: AsyncSession, obj_in: CreateSchemaType):
 
 **DON'T**: Use autocommit mode (disabled in templates for safety)
 ```python
+
 # Autocommit bypasses transaction control
 AsyncSessionLocal = async_sessionmaker(autocommit=True)  # Dangerous
 ```
@@ -801,6 +777,7 @@ AsyncSessionLocal = async_sessionmaker(autocommit=True)  # Dangerous
 
 **NEVER** use synchronous database operations in async routes:
 ```python
+
 # WRONG - blocks event loop
 @router.get("/users/{user_id}")
 async def get_user(user_id: int, db: Session = Depends(get_sync_db)):
@@ -809,6 +786,7 @@ async def get_user(user_id: int, db: Session = Depends(get_sync_db)):
 
 **Solution**: Always use async sessions and await queries:
 ```python
+
 # CORRECT
 @router.get("/users/{user_id}")
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
@@ -820,6 +798,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 **NEVER** load related objects in loops:
 ```python
+
 # WRONG - fires N queries for N users
 users = await crud.user.get_multi(db)
 for user in users:
@@ -828,6 +807,7 @@ for user in users:
 
 **Solution**: Use eager loading with `selectinload` or `joinedload`:
 ```python
+
 # CORRECT - single query with JOIN
 from sqlalchemy.orm import selectinload
 
@@ -841,6 +821,7 @@ users = result.scalars().all()  # Posts already loaded
 
 **NEVER** query frequently without indexes:
 ```python
+
 # WRONG - full table scan on every query
 class User(Base):
     email = Column(String(255), unique=True)  # No index!
@@ -851,6 +832,7 @@ result = await db.execute(select(User).where(User.email == email))
 
 **Solution**: Add indexes to searchable fields:
 ```python
+
 # CORRECT
 class User(Base):
     email = Column(String(255), unique=True, index=True)  # Indexed
@@ -860,6 +842,7 @@ class User(Base):
 
 **NEVER** create sessions without proper cleanup:
 ```python
+
 # WRONG - session may leak on exception
 @router.get("/items/")
 async def get_items():
@@ -871,6 +854,7 @@ async def get_items():
 
 **Solution**: Use FastAPI dependency injection:
 ```python
+
 # CORRECT - automatic cleanup even on exceptions
 @router.get("/items/")
 async def get_items(db: AsyncSession = Depends(get_db)):
@@ -881,6 +865,7 @@ async def get_items(db: AsyncSession = Depends(get_db)):
 
 **NEVER** return SQLAlchemy models as API responses:
 ```python
+
 # WRONG - exposes internal fields and can cause lazy loading issues
 @router.get("/users/{user_id}")
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
@@ -890,6 +875,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 **Solution**: Use Pydantic schemas for serialization:
 ```python
+
 # CORRECT
 @router.get("/users/{user_id}", response_model=UserInDB)
 async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
@@ -903,6 +889,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 **NEVER** hardcode database credentials:
 ```python
+
 # WRONG - credentials in source code
 engine = create_async_engine(
     "postgresql+asyncpg://admin:password123@localhost/mydb"
@@ -911,6 +898,7 @@ engine = create_async_engine(
 
 **Solution**: Use environment variables via Pydantic settings:
 ```python
+
 # CORRECT
 from src.core.config import settings
 
@@ -924,12 +912,14 @@ engine = create_async_engine(
 
 **NEVER** rely on default pool settings for production:
 ```python
+
 # WRONG - may exhaust connections under load
 engine = create_async_engine(DATABASE_URL)  # No pool configuration
 ```
 
 **Solution**: Configure pool for your workload:
 ```python
+
 # CORRECT
 engine = create_async_engine(
     DATABASE_URL,
@@ -944,14 +934,17 @@ engine = create_async_engine(
 
 **NEVER** perform multiple dependent operations without transaction control:
 ```python
+
 # WRONG - no transaction, partial updates possible
 await crud.user.update(db, user_id=1, data={"balance": 100})
 await crud.transaction.create(db, user_id=1, amount=100)  # May fail
+
 # User balance updated but transaction record missing!
 ```
 
 **Solution**: Use explicit transactions for atomic operations:
 ```python
+
 # CORRECT
 async with db.begin():  # Transaction starts
     await crud.user.update(db, user_id=1, data={"balance": 100})
@@ -964,3 +957,29 @@ async with db.begin():  # Transaction starts
 - **fastapi-specialist**: For API design and FastAPI-specific patterns
 - **fastapi-testing-specialist**: For testing database code
 - **architectural-reviewer**: For database architecture assessment
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat fastapi-database-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read fastapi-database-specialist-ext.md for detailed examples.
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat fastapi-database-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read fastapi-database-specialist-ext.md for detailed examples.
+```
