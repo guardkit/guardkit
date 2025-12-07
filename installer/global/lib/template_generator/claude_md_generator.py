@@ -1036,13 +1036,51 @@ Respond ONLY with valid JSON."""
 
         Args:
             agent: GeneratedAgent object with full_definition
+                   May also be a deserialized object from checkpoint resume
 
         Returns:
             AgentMetadata or None if extraction fails
         """
         try:
+            # TASK-FIX-RESUME: Use getattr for safety with deserialized agents
+            agent_name = getattr(agent, 'name', None)
+            full_definition = getattr(agent, 'full_definition', None)
+
+            # Skip agents without required attributes
+            if not agent_name:
+                return None
+
+            # If no full_definition, create minimal metadata from available attributes
+            if not full_definition or not isinstance(full_definition, str):
+                agent_description = getattr(agent, 'description', f'Agent for {agent_name}')
+                agent_tags = getattr(agent, 'tags', [])
+                agent_priority = getattr(agent, 'priority', 5)
+
+                # Build minimal metadata
+                agent_metadata_dict = {
+                    'name': agent_name,
+                    'description': agent_description,
+                    'technologies': agent_tags if isinstance(agent_tags, list) else [],
+                    'tools': getattr(agent, 'tools', []),
+                    'priority': agent_priority
+                }
+
+                # Use AI to generate "when to use" guidance
+                enhanced = self._enhance_agent_info_with_ai(agent_metadata_dict)
+
+                # Infer category from name and tags
+                category = self._infer_category(agent_name, agent_tags if isinstance(agent_tags, list) else [])
+
+                return AgentMetadata(
+                    name=agent_name,
+                    purpose=enhanced['purpose'],
+                    capabilities=[],
+                    when_to_use=enhanced['when_to_use'],
+                    category=category
+                )
+
             # Parse frontmatter from agent markdown
-            post = frontmatter.loads(agent.full_definition)
+            post = frontmatter.loads(full_definition)
             metadata = post.metadata
 
             # Extract first paragraph from content as purpose
@@ -1063,7 +1101,7 @@ Respond ONLY with valid JSON."""
 
             # Build agent metadata dict for AI enhancement
             agent_metadata_dict = {
-                'name': agent.name,
+                'name': agent_name,
                 'description': purpose,
                 'technologies': metadata.get('technologies', metadata.get('tags', [])),
                 'tools': metadata.get('tools', []),
@@ -1074,10 +1112,10 @@ Respond ONLY with valid JSON."""
             enhanced = self._enhance_agent_info_with_ai(agent_metadata_dict)
 
             # Infer category from name and tags
-            category = self._infer_category(agent.name, metadata.get('tags', []))
+            category = self._infer_category(agent_name, metadata.get('tags', []))
 
             return AgentMetadata(
-                name=agent.name,
+                name=agent_name,
                 purpose=enhanced['purpose'],  # Use AI-enhanced purpose
                 capabilities=capabilities[:5],  # Max 5
                 when_to_use=enhanced['when_to_use'],  # Use AI-generated guidance

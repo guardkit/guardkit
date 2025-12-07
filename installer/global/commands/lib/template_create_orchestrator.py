@@ -116,7 +116,7 @@ class OrchestrationConfig:
     verbose: bool = False
     skip_validation: bool = False  # TASK-040: Skip Phase 5.5 validation
     auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
-    interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
+    interactive_validation: Optional[bool] = None  # TASK-040: Prompt user for validation decisions (None = auto-detect TTY)
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
@@ -955,13 +955,25 @@ class TemplateCreateOrchestrator:
 
             agent_paths = []
             for agent in agents:
-                agent_path = agents_dir / f"{agent.name}.md"
+                # TASK-FIX-RESUME: Handle deserialized agents that may have different structure
+                # After checkpoint resume, agents are reconstructed from JSON and may be:
+                # - GeneratedAgent objects (normal case)
+                # - Dynamic objects with class attributes (from _deserialize_agents)
+                # - Strings or other unexpected types (error case)
+                agent_name = getattr(agent, 'name', None)
+                if agent_name is None:
+                    logger.warning(f"Skipping agent without name attribute: {type(agent)}")
+                    continue
+
+                agent_path = agents_dir / f"{agent_name}.md"
 
                 # Check if full_definition is already properly formatted markdown
                 # or if we need to format it from agent attributes
-                if agent.full_definition and agent.full_definition.strip().startswith('---'):
+                # Use getattr for safety during checkpoint resume
+                full_def = getattr(agent, 'full_definition', None)
+                if full_def and isinstance(full_def, str) and full_def.strip().startswith('---'):
                     # Already has YAML frontmatter, use as-is
-                    markdown_content = agent.full_definition
+                    markdown_content = full_def
                 else:
                     # Need to format as markdown with YAML frontmatter
                     # Convert GeneratedAgent to dict format expected by formatter
@@ -973,10 +985,12 @@ class TemplateCreateOrchestrator:
                         except TypeError:
                             tags = []
 
+                    # TASK-FIX-RESUME: Use getattr for all agent attributes
+                    agent_description = getattr(agent, 'description', f"Agent for {agent_name}")
                     agent_dict = {
-                        'name': agent.name,
-                        'description': agent.description,
-                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent.name.replace('-', ' ')}"),
+                        'name': agent_name,
+                        'description': agent_description,
+                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent_name.replace('-', ' ')}"),
                         'technologies': tags,
                         'priority': getattr(agent, 'priority', 7)
                     }
@@ -1274,7 +1288,14 @@ Enhance the {agent_name} agent with template-specific content:
 
             # Handle validation issues if present
             if not validation_report.is_complete:
-                if self.config.interactive_validation:
+                # Determine if interactive mode should be used
+                # None = auto-detect based on TTY, True/False = explicit setting
+                use_interactive = self.config.interactive_validation
+                if use_interactive is None:
+                    # Auto-detect: only use interactive mode if stdin is a TTY
+                    use_interactive = sys.stdin.isatty()
+
+                if use_interactive:
                     action = self._handle_validation_issues_interactive(validation_report)
                 else:
                     action = self._handle_validation_issues_noninteractive(validation_report)
@@ -1904,7 +1925,11 @@ Enhance the {agent_name} agent with template-specific content:
             if agents:
                 agents_dir = output_path / "agents"
                 for agent in agents:
-                    agent_path = agents_dir / f"{agent.name}.md"
+                    # TASK-FIX-RESUME: Use getattr for safety with deserialized agents
+                    agent_name = getattr(agent, 'name', None)
+                    if not agent_name:
+                        continue
+                    agent_path = agents_dir / f"{agent_name}.md"
                     if agent_path.exists():
                         agent_paths.append(agent_path)
 
@@ -2360,7 +2385,8 @@ def run_template_create(
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    verbose: bool = False
+    verbose: bool = False,
+    interactive: Optional[bool] = None  # None = auto-detect TTY, False = non-interactive
 ) -> OrchestrationResult:
     """
     Convenience function to run template creation.
@@ -2380,6 +2406,7 @@ def run_template_create(
         custom_name: Custom template name (overrides AI-generated name)
         split_claude_md: Enable progressive disclosure with split CLAUDE.md (TASK-PD-006)
         verbose: Show detailed progress
+        interactive: Interactive mode for prompts (None = auto-detect TTY, False = non-interactive)
 
     Returns:
         OrchestrationResult
@@ -2426,7 +2453,8 @@ def run_template_create(
         resume=resume,  # TASK-BRIDGE-002
         custom_name=custom_name,  # TASK-FDB2
         split_claude_md=split_claude_md,  # TASK-PD-006
-        verbose=verbose
+        verbose=verbose,
+        interactive_validation=interactive  # None = auto-detect TTY
     )
 
     orchestrator = TemplateCreateOrchestrator(config)
@@ -2467,6 +2495,8 @@ if __name__ == "__main__":
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
                         help="Show detailed progress")
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="Disable interactive prompts (auto-fix issues without asking)")
 
     args = parser.parse_args()
 
@@ -2483,7 +2513,8 @@ if __name__ == "__main__":
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2
         split_claude_md=args.split_claude_md,  # TASK-PD-006
-        verbose=args.verbose
+        verbose=args.verbose,
+        interactive=False if args.non_interactive else None  # None = auto-detect TTY
     )
 
     sys.exit(result.exit_code if not result.success else 0)
