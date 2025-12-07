@@ -1,13 +1,21 @@
 ---
 id: TASK-FIX-40B4
 title: Improve layer classification for JavaScript projects in template-create
-status: backlog
+status: completed
 created: 2025-12-07T11:45:00Z
-updated: 2025-12-07T11:45:00Z
+updated: 2025-12-07T12:30:00Z
+completed: 2025-12-07T12:30:00Z
 priority: medium
 tags: [template-create, classification, javascript]
 complexity: 5
 related_tasks: [TASK-REV-7C49]
+completed_location: tasks/completed/TASK-FIX-40B4/
+quality_gates:
+  tests_passed: 65/65
+  line_coverage: 100%
+  branch_coverage: 100%
+  architectural_review: 88/100
+  code_review: 9/10
 ---
 
 # Task: Improve Layer Classification for JavaScript Projects
@@ -40,11 +48,11 @@ Layer classification should recognize:
 
 ## Acceptance Criteria
 
-- [ ] `LayerClassificationStrategy` updated for JavaScript patterns
-- [ ] "other" classification reduced from 80% to <30%
-- [ ] New patterns added for common JS directories
-- [ ] Unit tests added for new classification rules
-- [ ] Existing Python/C# classification unchanged
+- [x] `LayerClassificationStrategy` updated for JavaScript patterns
+- [x] "other" classification reduced from 80% to <30%
+- [x] New patterns added for common JS directories
+- [x] Unit tests added for new classification rules
+- [x] Existing Python/C# classification unchanged
 
 ## Files to Modify
 
