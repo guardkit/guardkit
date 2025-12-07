@@ -25,6 +25,7 @@ Run these commands to execute tests with quality gates. All commands verify buil
 ### Node.js / TypeScript
 
 ```bash
+
 # Full test suite with coverage
 npm run build && npm test -- --coverage
 
@@ -39,12 +40,14 @@ npm run test:e2e
 
 # Check coverage thresholds
 npm run test -- --coverage --coverageReporters=text-summary | grep -E "(Lines|Branches)"
+
 # Expected: Lines: 80%+, Branches: 75%+
 ```
 
 ### Python
 
 ```bash
+
 # Full test suite with coverage
 python -m py_compile src/**/*.py && pytest --cov=src --cov-report=term-missing --cov-fail-under=80
 
@@ -64,6 +67,7 @@ pytest --cov=src --cov-report=html && open htmlcov/index.html
 ### .NET / C#
 
 ```bash
+
 # Full test suite with coverage
 dotnet clean && dotnet restore && dotnet build --no-restore && \
 dotnet test --no-build --collect:"XPlat Code Coverage" --results-directory ./coverage
@@ -81,6 +85,7 @@ dotnet test --collect:"XPlat Code Coverage" && reportgenerator -reports:./covera
 ### Flaky Test Detection
 
 ```bash
+
 # Node.js: Run tests multiple times to detect flaky tests
 for i in {1..5}; do npm test -- --json 2>/dev/null | jq '.testResults[].assertionResults[] | select(.status != "passed") | .fullName'; done | sort | uniq -c | sort -rn
 
@@ -94,6 +99,7 @@ for i in {1..5}; do dotnet test --no-build -v q 2>&1 | grep Failed; done | sort 
 ### Quality Gate Verification
 
 ```bash
+
 # Node.js: Verify all gates pass
 npm run build && npm test -- --coverage --passWithNoTests=false && echo "✅ All gates passed"
 
@@ -208,6 +214,7 @@ phase: 4
 
 **Standard Mode Output** (embedded section):
 ```markdown
+
 ## Test Results (Phase 4)
 
 **Summary**: ✅ ALL TESTS PASSED
@@ -294,8 +301,11 @@ phase: 4
 
 **Detection sequence** (check BEFORE build):
 ```bash
+
 # Step 0: Detect if project has source code
+
 # Step 1: If no source code, skip build and tests with success
+
 # Step 2: If source code exists, proceed to build verification (Rule #1)
 ```
 
@@ -303,6 +313,7 @@ phase: 4
 
 ### .NET / C# / MAUI
 ```bash
+
 # Check for source files
 source_count=$(find . -name "*.cs" -not -path "*/bin/*" -not -path "*/obj/*" -not -path "*/tests/*" | wc -l)
 
@@ -317,6 +328,7 @@ echo "📦 Found $source_count source files - proceeding with build..."
 
 ### Python
 ```bash
+
 # Check for Python modules
 if [ ! -d "src" ] && [ $(find . -name "*.py" -not -path "*/venv/*" -not -path "*/tests/*" | wc -l) -eq 0 ]; then
   echo "ℹ️  No source code detected - skipping build and tests"
@@ -329,6 +341,7 @@ echo "📦 Found Python source files - proceeding with tests..."
 
 ### TypeScript / Node.js
 ```bash
+
 # Check for TypeScript/JavaScript source files
 if [ ! -d "src" ] && [ $(find . -name "*.ts" -o -name "*.tsx" -not -path "*/node_modules/*" -not -path "*/tests/*" | wc -l) -eq 0 ]; then
   echo "ℹ️  No source code detected - skipping build and tests"
@@ -367,10 +380,15 @@ echo "📦 Found TypeScript source files - proceeding with build..."
 
 **Enforcement sequence**:
 ```bash
+
 # Step 1: Clean (remove previous build artifacts)
+
 # Step 2: Restore (download dependencies)
+
 # Step 3: Build (compile code)
+
 # Step 4: IF build fails, STOP and report errors
+
 # Step 5: ONLY if build succeeds, proceed to test execution
 ```
 
@@ -378,6 +396,7 @@ echo "📦 Found TypeScript source files - proceeding with build..."
 
 ### .NET / C# / MAUI
 ```bash
+
 # Complete build verification sequence
 dotnet clean
 dotnet restore
@@ -396,6 +415,7 @@ dotnet test --no-build --no-restore
 
 ### TypeScript / Node.js
 ```bash
+
 # TypeScript compilation check
 npm run build  # or: tsc --noEmit
 
@@ -412,6 +432,7 @@ npm test
 
 ### Python
 ```bash
+
 # Python syntax and import verification
 python -m py_compile src/**/*.py
 
@@ -428,6 +449,7 @@ pytest
 
 ### Java
 ```bash
+
 # Maven compilation
 mvn clean compile
 
@@ -501,6 +523,7 @@ def select_tests(changed_files):
 
 ### Build Check (Mandatory)
 ```bash
+
 # MUST run before any tests
 pre_test_build_check() {
   echo "🔨 Running build verification..."
@@ -607,6 +630,7 @@ quality_gates:
 
 ### Gate Enforcement
 ```bash
+
 # Check all gates
 check_gates() {
   local passed=true
@@ -644,6 +668,7 @@ check_gates() {
 
 #### React/TypeScript
 ```bash
+
 # Unit tests with Vitest
 npm run test:unit
 
@@ -659,6 +684,7 @@ npm run test:bdd
 
 #### Python API
 ```bash
+
 # Unit tests with pytest
 pytest tests/unit -v
 
@@ -883,6 +909,7 @@ jobs:
 
 ### Test Infrastructure Issues
 ```bash
+
 # Reset test environment
 reset_test_env() {
   echo "Stopping services..."
@@ -911,3 +938,16 @@ reset_test_env() {
 6. **Gate enforcement** - Quality standards are non-negotiable
 
 Remember: Tests are the safety net that enables confident deployment. Make them fast, reliable, and comprehensive.
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat test-orchestrator-ext.md
+```
+
+Or in Claude Code:
+```
+Please read test-orchestrator-ext.md for detailed examples.
+```

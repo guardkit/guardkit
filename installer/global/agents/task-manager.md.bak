@@ -17,8 +17,6 @@ capabilities:
 keywords: [task-management, orchestration, workflow, tdd, bdd, phases, quality-gates]
 ---
 
-You are a Task Management Specialist who ensures all tasks follow the complete development lifecycle with mandatory test verification before completion.
-
 ## Quick Start Commands
 
 ### Create a New Task
@@ -241,6 +239,7 @@ Your final task summary format also varies by documentation level:
 
 **Minimal Mode** (complexity 1-3):
 ```markdown
+
 # Task Summary - {TASK_ID}
 
 **Status**: {status}
@@ -259,6 +258,7 @@ Next: /task-complete {TASK_ID}
 
 **Standard Mode** (complexity 4-10, DEFAULT):
 ```markdown
+
 # Implementation Summary - {TASK_ID}
 
 [Full summary with all sections embedded]
@@ -273,6 +273,7 @@ Next: /task-complete {TASK_ID}
 
 **Comprehensive Mode** (complexity 7-10 or force triggers):
 ```markdown
+
 # Comprehensive Implementation Report - {TASK_ID}
 
 [Enhanced summary with links to standalone documents]
@@ -1112,6 +1113,7 @@ Next Steps:
 
 ### 7. Test Task (CRITICAL)
 ```bash
+
 # For Python projects
 pytest tests/ -v --cov=src --cov-report=term
 
@@ -1246,18 +1248,6 @@ tasks/
 - Failed tests → Detailed error log in task
 - Blocked tasks → Clear unblocking criteria
 - Missing files → Regenerate from templates
-
-## Best Practices
-
-1. **Always Run Tests**: Never skip test verification
-2. **Document Failures**: Capture full error output
-3. **Track Metrics**: Maintain historical test data
-4. **Enforce Gates**: No exceptions to quality standards
-5. **Clear Communication**: Update task files with all changes
-
-Remember: The goal is to ensure EVERY task has verified, passing tests before it can be marked as complete. This prevents the "implemented but not working" problem.
-
----
 
 ## Boundaries
 
@@ -1755,6 +1745,7 @@ workflow:
 
 #### ✅ DO: Always Verify Tests Before Completion
 ```python
+
 # task_manager.py - Completion check
 async def complete_task(task_id: str) -> TaskResult:
     task = await load_task(task_id)
@@ -1783,6 +1774,7 @@ async def complete_task(task_id: str) -> TaskResult:
 
 #### ❌ DON'T: Skip Test Verification
 ```python
+
 # BAD: task_manager.py - Skipping verification
 async def complete_task(task_id: str) -> TaskResult:
     task = await load_task(task_id)
@@ -1800,6 +1792,7 @@ async def complete_task(task_id: str) -> TaskResult:
 
 #### ✅ DO: Enforce Coverage with Context
 ```python
+
 # quality_gates.py - Coverage with context
 async def verify_coverage(test_results: dict, task: Task) -> GateResult:
     coverage = test_results.get("coverage", {}).get("overall", 0)
@@ -1829,6 +1822,7 @@ async def verify_coverage(test_results: dict, task: Task) -> GateResult:
 
 #### ❌ DON'T: Hardcode or Skip Coverage Checks
 ```python
+
 # BAD: quality_gates.py - Hardcoded bypass
 async def verify_coverage(test_results: dict, task: Task) -> GateResult:
     # BAD: Hardcoded bypass for "simple" tasks
@@ -1846,6 +1840,7 @@ async def verify_coverage(test_results: dict, task: Task) -> GateResult:
 
 #### ✅ DO: Route Based on Calculated Complexity
 ```python
+
 # phase_2_8.py - Complexity-based routing
 async def route_checkpoint(task: Task, complexity: ComplexityScore) -> CheckpointResult:
     # Check for force triggers first (always full review)
@@ -1875,6 +1870,7 @@ async def route_checkpoint(task: Task, complexity: ComplexityScore) -> Checkpoin
 
 #### ❌ DON'T: Skip Checkpoints for High-Complexity Tasks
 ```python
+
 # BAD: phase_2_8.py - Bypassing complexity routing
 async def route_checkpoint(task: Task, complexity: ComplexityScore) -> CheckpointResult:
     # BAD: Always auto-proceed regardless of complexity
@@ -1893,6 +1889,7 @@ async def route_checkpoint(task: Task, complexity: ComplexityScore) -> Checkpoin
 
 #### ✅ DO: Handle All Checkpoint Outcomes
 ```python
+
 # phase_2_8.py - Complete checkpoint handling
 async def handle_full_review(task: Task, plan: ImplementationPlan) -> ReviewResult:
     display_checkpoint(task, plan)
@@ -1931,6 +1928,7 @@ async def handle_full_review(task: Task, plan: ImplementationPlan) -> ReviewResu
 
 #### ❌ DON'T: Ignore User Decisions
 ```python
+
 # BAD: phase_2_8.py - Ignoring user input
 async def handle_full_review(task: Task, plan: ImplementationPlan) -> ReviewResult:
     display_checkpoint(task, plan)
@@ -1949,6 +1947,7 @@ async def handle_full_review(task: Task, plan: ImplementationPlan) -> ReviewResu
 
 #### ✅ DO: Provide Actionable Recovery Guidance
 ```python
+
 # quality_gates.py - Recovery with guidance
 async def handle_gate_violation(violation: GateViolation, task: Task) -> RecoveryPlan:
     if violation.gate == "coverage":
@@ -1984,6 +1983,7 @@ async def handle_gate_violation(violation: GateViolation, task: Task) -> Recover
 
 #### ❌ DON'T: Block Without Recovery Path
 ```python
+
 # BAD: quality_gates.py - Unhelpful blocking
 async def handle_gate_violation(violation: GateViolation, task: Task) -> RecoveryPlan:
     # BAD: No guidance, just blocks
@@ -1992,4 +1992,17 @@ async def handle_gate_violation(violation: GateViolation, task: Task) -> Recover
         guidance=["Tests failed"],  # Not helpful!
         commands=[]  # No recovery commands!
     )
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat task-manager-ext.md
+```
+
+Or in Claude Code:
+```
+Please read task-manager-ext.md for detailed examples.
 ```

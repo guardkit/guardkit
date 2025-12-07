@@ -21,8 +21,6 @@ collaborates_with:
   - code-reviewer
 ---
 
-You are a build validation specialist responsible for ensuring all code compiles successfully and dependencies are properly configured before any code passes review.
-
 ## Your Core Responsibilities
 
 1. **Compilation Verification**: Ensure all code compiles without errors
@@ -36,6 +34,7 @@ You are a build validation specialist responsible for ensuring all code compiles
 ### Step 1: Pre-Build Checks
 
 ```bash
+
 # Check solution structure
 dotnet sln list
 
@@ -49,6 +48,7 @@ dotnet list package
 ### Step 2: Compilation Verification
 
 ```bash
+
 # Clean previous builds
 dotnet clean
 
@@ -128,6 +128,7 @@ public partial class LoadViewModel : ViewModelBase // Must inherit from correct 
 When build fails, provide:
 
 ```markdown
+
 ## Build Validation Failed ❌
 
 ### Compilation Errors Found: [count]
@@ -175,6 +176,7 @@ dotnet add package PackageName --version X.Y.Z
 ## Quick Commands
 
 ```bash
+
 # Full validation
 dotnet clean && dotnet restore && dotnet build
 
@@ -205,20 +207,6 @@ dotnet build 2>&1 | grep "CS1061" | awk -F: '{print $1}' | sort -u
 - Documentation XML complete
 - No suppressed warnings
 
-## Best Practices
-
-1. **Always Clean First**: Start with `dotnet clean` to avoid cached issues
-2. **Check Dependencies**: Run `dotnet list package` before building
-3. **Verbose Output**: Use `-v normal` for detailed error messages
-4. **Project Isolation**: Test individual projects if solution build fails
-5. **Package Versions**: Verify package version compatibility
-6. **Platform Specific**: Check conditional compilation for ANDROID/iOS
-7. **Incremental Fixes**: Fix one error type at a time
-
-Remember: **No code passes to production if it doesn't compile!**
-
----
-
 ## Related Templates
 
 This specialist validates builds across multiple technology stacks:
@@ -241,6 +229,7 @@ This specialist validates builds across multiple technology stacks:
 ### ✅ DO: Validate TypeScript Compilation
 
 ```bash
+
 # TypeScript/React Projects - Full validation sequence
 npm ci                    # Install exact versions
 npm run type-check        # TypeScript compilation check
@@ -274,6 +263,7 @@ function validateTypeScript(): boolean {
 ### ✅ DO: Validate Python Dependencies
 
 ```bash
+
 # Python/FastAPI Projects - Full validation sequence
 pip install -e ".[dev]"          # Install with dev dependencies
 python -m py_compile app/main.py # Syntax check
@@ -288,6 +278,7 @@ poetry run pytest --collect-only
 
 **FastAPI Startup Validation:**
 ```python
+
 # Ensure FastAPI app can be imported and configured
 from fastapi.testclient import TestClient
 from app.main import app
@@ -308,6 +299,7 @@ def validate_app_startup():
 ### ✅ DO: Validate .NET MAUI Builds
 
 ```bash
+
 # .NET MAUI Projects - Full validation sequence
 dotnet clean                              # Remove old artifacts
 dotnet restore                            # Restore NuGet packages
@@ -323,6 +315,7 @@ dotnet build MyApp/MyApp.csproj -v normal
 
 **Error Extraction Pattern:**
 ```bash
+
 # Extract and categorize .NET errors
 dotnet build 2>&1 | grep -E "error CS[0-9]+" | while read line; do
   error_code=$(echo "$line" | grep -oE "CS[0-9]+")
@@ -340,6 +333,7 @@ done
 ### ✅ DO: Validate Monorepo Builds with Turborepo
 
 ```bash
+
 # React + FastAPI Monorepo - Full validation
 pnpm install                    # Install all workspace dependencies
 pnpm generate-types             # Generate TypeScript types from OpenAPI
@@ -388,6 +382,7 @@ async function validateMonorepo(): Promise<ValidationResult[]> {
 ### ✅ DO: Validate Docker Builds
 
 ```bash
+
 # Docker Build Validation
 docker build --no-cache -t app:test ./apps/frontend
 docker build --no-cache -t api:test ./apps/backend
@@ -403,6 +398,7 @@ docker history app:test
 
 **Docker Compose Validation:**
 ```bash
+
 # Validate docker-compose configuration
 docker-compose config --quiet    # Syntax validation
 docker-compose build --no-cache  # Build all services
@@ -414,6 +410,7 @@ docker-compose up --abort-on-container-exit --exit-code-from backend
 ### ❌ DON'T: Ignore Build Warnings
 
 ```bash
+
 # BAD - Warnings accumulate and hide real issues
 dotnet build 2>&1 | grep -v "warning"  # Don't filter warnings!
 
@@ -425,6 +422,7 @@ npm run build -- --max-warnings 0  # ESLint strict mode
 ### ❌ DON'T: Skip Dependency Validation
 
 ```bash
+
 # BAD - Assumes dependencies are installed
 npm run build  # May fail if node_modules is stale
 
@@ -448,6 +446,7 @@ npm run build  # Then build
 6. **Verify**: Check build output exists
 
 ```bash
+
 # TypeScript Project
 rm -rf node_modules/.cache dist
 npm ci
@@ -474,6 +473,7 @@ test -d dist && echo "Build verified"
 ✅ **Validate builds in CI before tests**:
 
 ```yaml
+
 # GitHub Actions workflow
 jobs:
   build:
@@ -500,6 +500,7 @@ jobs:
 ✅ **For .NET MAUI, validate all target platforms**:
 
 ```bash
+
 # Validate all platforms
 dotnet build -f net8.0-android
 dotnet build -f net8.0-ios      # macOS only
@@ -517,6 +518,7 @@ fi
 ✅ **Use build caching for faster validation**:
 
 ```yaml
+
 # GitHub Actions caching
 - name: Cache node modules
   uses: actions/cache@v3
@@ -538,6 +540,7 @@ fi
 ### ❌ NEVER: Build Without Clean State
 
 ```bash
+
 # BAD - Uses cached artifacts that may be stale
 npm run build
 
@@ -550,6 +553,7 @@ npm run build
 ### ❌ NEVER: Ignore Exit Codes
 
 ```bash
+
 # BAD - Continues even if build fails
 npm run build
 npm run deploy  # Runs even if build failed!
@@ -583,6 +587,7 @@ npm run deploy
 ### ❌ NEVER: Use Development Dependencies in Production Build
 
 ```dockerfile
+
 # BAD - Includes devDependencies in production image
 RUN npm install
 RUN npm run build
@@ -595,6 +600,7 @@ COPY --from=builder /app/dist ./dist
 ### ❌ NEVER: Build Without Lockfile
 
 ```bash
+
 # BAD - May get different versions
 npm install
 npm run build
@@ -607,6 +613,7 @@ npm run build
 ### ❌ NEVER: Suppress Build Errors
 
 ```bash
+
 # BAD - Hides real problems
 dotnet build 2>/dev/null || true
 
@@ -656,3 +663,16 @@ When validating builds across different technology stacks:
 - [ ] Types generated: `pnpm generate-types`
 - [ ] All apps build: `turbo run build`
 - [ ] Cache working: Second build is faster
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat build-validator-ext.md
+```
+
+Or in Claude Code:
+```
+Please read build-validator-ext.md for detailed examples.
+```

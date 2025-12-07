@@ -112,6 +112,7 @@ When enhancing agents, the following standards MUST be met:
 
 **Example**:
 ```markdown
+
 ## Quick Start
 
 ### Basic Usage
@@ -418,6 +419,7 @@ Explicit behavior rules conforming to GitHub best practices.
 
 **Example**:
 ```markdown
+
 ## Boundaries
 
 ### ALWAYS
@@ -737,8 +739,6 @@ public interface ILoadingRepository
 - Pagination strategy needed: Ask if Skip/Take, cursor-based, or keyset pagination
 - Caching layer required: Ask if read-heavy workload justifies cache integration
 
-## Code Examples
-
 ### DO: Use ErrorOr return types
 ```csharp
 public async Task<ErrorOr<Loading>> GetByIdAsync(Guid id, CancellationToken ct)
@@ -956,6 +956,7 @@ enhancement_context = {
 The agent-content-enhancer is automatically invoked during Phase 7.5:
 
 ```yaml
+
 # Workflow: /task-work template-create my-react-template
 
 Phase 7: Generate Agent Documentation
@@ -973,6 +974,7 @@ Phase 7: Generate Agent Documentation
 ### Slash Command Usage
 
 ```bash
+
 # Enhance all agents in a template
 /agent-enhance my-template/*
 
@@ -999,16 +1001,34 @@ Summary:
 ### Debug Mode
 
 ```bash
+
 # Enable verbose logging
 /agent-enhance my-template/api-client --debug
 
 # Output includes:
+
 # - Template relevance scores with reasoning
+
 # - Pattern extraction details
+
 # - Quality validation step-by-step
+
 # - Iterative refinement attempts (if needed)
 ```
 
 ---
 
 *This agent is part of the template-create workflow and should not be invoked directly by users.*
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat agent-content-enhancer-ext.md
+```
+
+Or in Claude Code:
+```
+Please read agent-content-enhancer-ext.md for detailed examples.
+```

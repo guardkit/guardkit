@@ -24,8 +24,6 @@ collaborates_with:
   - all stack specialists
 ---
 
-You are a Security Specialist with deep expertise in application security, infrastructure hardening, compliance frameworks, and implementing security best practices across all technology stacks.
-
 ## Core Expertise
 
 ### 1. Application Security
@@ -431,6 +429,7 @@ export function corsConfig() {
 
 ### Input Validation and Sanitization
 ```python
+
 # security/validation.py
 import re
 import bleach
@@ -624,6 +623,7 @@ class SecurityValidator:
 
 ### Infrastructure Security Scanning
 ```yaml
+
 # security/security-scan.yml
 name: Security Scanning
 
@@ -735,6 +735,7 @@ jobs:
 
 ### Kubernetes Security Policies
 ```yaml
+
 # k8s/security-policies.yaml
 apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
@@ -849,6 +850,7 @@ spec:
 
 ### Security Compliance Checklist
 ```python
+
 # compliance/security_audit.py
 from dataclasses import dataclass
 from typing import List, Dict, Any
@@ -977,8 +979,6 @@ class SecurityAuditor:
             raise ValueError(f"Unsupported format: {format}")
 ```
 
-## Best Practices
-
 ### Application Security
 1. Implement defense in depth
 2. Follow principle of least privilege
@@ -1052,6 +1052,7 @@ This specialist ensures security across all technology stacks:
 ### ✅ DO: Secure FastAPI Configuration
 
 ```python
+
 # core/config.py - Secure configuration pattern
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
@@ -1121,6 +1122,7 @@ class Settings(BaseSettings):
 ### ✅ DO: Implement Secure Authentication Dependencies
 
 ```python
+
 # dependencies/auth.py - Secure authentication pattern
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
@@ -1341,6 +1343,7 @@ export const api = new SecureApiClient();
 ### ✅ DO: Secure Docker Configuration
 
 ```yaml
+
 # docker-compose.yml - Security-hardened configuration
 version: '3.8'
 
@@ -1427,6 +1430,7 @@ volumes:
 ### ❌ DON'T: Expose Secrets in Configuration
 
 ```python
+
 # BAD - Secrets hardcoded
 SECRET_KEY = "mysecretkey123"  # NEVER DO THIS!
 DATABASE_URL = "postgresql://user:password@localhost/db"  # Password in code!
@@ -1483,6 +1487,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
 
 ✅ **Implement token rotation**:
 ```python
+
 # Increment user's token_version to invalidate all existing tokens
 async def logout_all_sessions(db: AsyncSession, user_id: int):
     user = await crud.user.get(db, id=user_id)
@@ -1605,6 +1610,7 @@ async def log_security_event(
 ### ❌ NEVER: Trust Client Input
 
 ```python
+
 # BAD - Using client-provided user ID
 @router.get("/users/{user_id}/profile")
 async def get_profile(user_id: int):
@@ -1621,6 +1627,7 @@ async def get_my_profile(
 ### ❌ NEVER: Expose Internal Errors
 
 ```python
+
 # BAD - Leaking internal details
 except Exception as e:
     raise HTTPException(status_code=500, detail=str(e))  # Exposes stack trace!
@@ -1634,6 +1641,7 @@ except Exception as e:
 ### ❌ NEVER: Use Wildcard CORS
 
 ```python
+
 # BAD - Allows any origin
 BACKEND_CORS_ORIGINS = ["*"]
 
@@ -1647,6 +1655,7 @@ BACKEND_CORS_ORIGINS = [
 ### ❌ NEVER: Store Sensitive Data in JWT
 
 ```python
+
 # BAD - Sensitive data in token payload
 payload = {
     "sub": user.id,
@@ -1666,6 +1675,7 @@ payload = {
 ### ❌ NEVER: Disable Security for Convenience
 
 ```python
+
 # BAD - Disabling security checks
 @router.post("/admin/action")
 async def admin_action():  # No authentication!
@@ -1722,3 +1732,16 @@ When reviewing security across different technology stacks:
 - [ ] SAST scanning (Semgrep, CodeQL)
 - [ ] Container scanning (Trivy)
 - [ ] No secrets in build logs
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat security-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read security-specialist-ext.md for detailed examples.
+```

@@ -22,8 +22,6 @@ collaborates_with:
   - security-specialist
 ---
 
-You are a code review specialist who ensures code quality, maintainability, and adherence to requirements before any code is merged.
-
 ## Your Role in the Workflow
 
 You operate in **Phase 5** of the task-work command, AFTER implementation is complete. You review **actual code**, not design plans.
@@ -35,20 +33,6 @@ You operate in **Phase 5** of the task-work command, AFTER implementation is com
 - **code-reviewer** (Phase 5): Reviews actual code, ensures implementation matches approved design
 
 This two-tier approach catches issues at both the design and implementation stages.
-
-## Documentation Level Awareness (TASK-035)
-
-You receive `documentation_level` parameter via `<AGENT_CONTEXT>` block:
-
-```markdown
-<AGENT_CONTEXT>
-documentation_level: minimal|standard|comprehensive
-complexity_score: 1-10
-task_id: TASK-XXX
-stack: python|react|maui|etc
-phase: 5
-</AGENT_CONTEXT>
-```
 
 ### Output Adaptation by Documentation Level
 
@@ -112,6 +96,7 @@ phase: 5
 
 **Standard Mode Output** (embedded section):
 ```markdown
+
 ## Code Review (Phase 5)
 
 **Quality Score**: 8.5/10 (EXCELLENT)
@@ -332,6 +317,7 @@ if report.has_issues():
 
 ### Step 2: Automated Checks
 ```bash
+
 # Run after drift detection passes
 npm run lint
 npm run test
@@ -449,6 +435,7 @@ const users = await getUsersWithPosts();
 ## Build Verification Commands
 
 ```bash
+
 # MUST RUN FIRST - Block review if fails
 dotnet build 2>&1 | grep -E "error CS|error MSB" && echo "❌ BUILD FAILED" && exit 1
 
@@ -730,6 +717,7 @@ describe('UserForm', () => {
 
 **Async Route Pattern (verify async correctness)**:
 ```python
+
 # ✅ GOOD: Async route with proper session handling
 @router.get("/users/{user_id}", response_model=UserPublic)
 async def get_user(
@@ -751,6 +739,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 **Dependency Injection Pattern (verify reusability)**:
 ```python
+
 # ✅ GOOD: Reusable validation dependency
 async def valid_user_id(
     user_id: int,
@@ -783,6 +772,7 @@ async def get_user(user_id: int, db: AsyncSession = Depends(get_db)):
 
 **Pydantic Schema Pattern (verify proper layering)**:
 ```python
+
 # ✅ GOOD: Multiple schemas for different use cases
 class UserBase(BaseModel):
     email: EmailStr
@@ -811,6 +801,7 @@ class User(BaseModel):
 
 **API Test Pattern (verify coverage)**:
 ```python
+
 # ✅ GOOD: Comprehensive API tests
 @pytest.mark.asyncio
 async def test_create_user(client: AsyncClient, auth_headers: dict):
@@ -911,8 +902,6 @@ async def test_create_user(client):
 
 ---
 
-## Best Practices
-
 ### DO: Enforce Stack-Specific Patterns
 1. **Verify query key correctness** in React hooks - stale data bugs are hard to debug
 2. **Check async/await usage** in FastAPI - blocking calls break concurrent performance
@@ -976,3 +965,16 @@ collaboration:
     - test-verifier: files_to_test, coverage_requirements
   escalates_to:
     - security-specialist: if_security_vulnerabilities_found
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat code-reviewer-ext.md
+```
+
+Or in Claude Code:
+```
+Please read code-reviewer-ext.md for detailed examples.
+```

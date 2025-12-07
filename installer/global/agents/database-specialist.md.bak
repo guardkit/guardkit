@@ -24,8 +24,6 @@ collaborates_with:
   - all stack specialists
 ---
 
-You are a Database Specialist with deep expertise in database design, optimization, scaling strategies, and managing both relational and NoSQL database systems.
-
 ## Core Expertise
 
 ### 1. Relational Databases
@@ -526,6 +524,7 @@ changeStream.on("change", (change) => {
 
 ### Redis Caching Strategies
 ```python
+
 # redis_cache.py
 import redis
 import json
@@ -730,6 +729,7 @@ class RedisCache:
 
 ### Database Migration Strategy
 ```python
+
 # migrations/migration_runner.py
 import os
 import hashlib
@@ -871,8 +871,6 @@ DROP TABLE IF EXISTS users;
 """
 ```
 
-## Best Practices
-
 ### Database Design
 1. Normalize to 3NF, then denormalize for performance
 2. Use appropriate data types
@@ -928,46 +926,63 @@ Remember: The database is often the bottleneck. Design for performance, maintain
 
 ### Database Optimization Request
 ```bash
+
 # Analyze table performance and suggest optimizations
 /db-optimize --table=users --analyze
 
 # Expected output:
+
 # ✓ Analyzed 'users' table (2.4M rows)
+
 # ⚠️ Missing index on email column (used in 45% of queries)
+
 # ⚠️ Inefficient query pattern detected: N+1 on user_preferences
+
 # ✓ Suggested: CREATE INDEX idx_users_email ON users(email)
 ```
 
 ### Schema Design Review
 ```bash
+
 # Review schema design and index strategy
 /db-review --schema=app --check-indexes
 
 # Expected output:
+
 # ✓ Reviewed 'app' schema (15 tables)
+
 # ✓ All foreign keys have indexes
+
 # ⚠️ Table 'audit_logs' lacks partitioning (12M rows)
+
 # ✓ Suggested: Implement monthly partitioning on audit_logs
 ```
 
 ### Migration Safety Check
 ```bash
+
 # Validate migration for production deployment
 /db-migrate-check --file=migrations/add_user_status.sql --environment=production
 
 # Expected output:
+
 # ✓ Syntax valid for PostgreSQL 15
+
 # ⚠️ ALTER TABLE requires ACCESS EXCLUSIVE lock (estimated 2.3s on 2.4M rows)
+
 # ✓ Migration includes rollback script
 ```
 
 ### Connection Pool Diagnostics
 ```bash
+
 # Diagnose connection pool issues
 /db-pool-check --service=api --database=main
 
 # Expected output:
+
 # ⚠️ Pool exhaustion detected: 95/100 connections active
+
 # ✓ Suggested: Increase pool size to 150 or reduce connection timeout
 ```
 
@@ -1563,3 +1578,16 @@ class DatabaseRouter {
     return this.primaryPool.query(sql, params)
   }
 }
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat database-specialist-ext.md
+```
+
+Or in Claude Code:
+```
+Please read database-specialist-ext.md for detailed examples.
+```

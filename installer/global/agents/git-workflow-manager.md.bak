@@ -30,6 +30,7 @@ Copy-paste commands for common Git workflow operations. All commands follow Conv
 ### Create Feature Branch
 
 ```bash
+
 # Pattern: feature/<TASK-ID>-<brief-description>
 git checkout -b feature/TASK-042-jwt-authentication
 git push -u origin feature/TASK-042-jwt-authentication
@@ -38,6 +39,7 @@ git push -u origin feature/TASK-042-jwt-authentication
 ### Create Fix Branch
 
 ```bash
+
 # Pattern: fix/<TASK-ID>-<brief-description>
 git checkout -b fix/TASK-067-null-pointer-validation
 git push -u origin fix/TASK-067-null-pointer-validation
@@ -46,6 +48,7 @@ git push -u origin fix/TASK-067-null-pointer-validation
 ### Create Hotfix Branch
 
 ```bash
+
 # Hotfix: Branch from main for production urgency
 git checkout main
 git pull origin main
@@ -113,6 +116,7 @@ Related: TASK-042"
 ### Create Pull Request (After Phase 4.5 Tests Pass)
 
 ```bash
+
 # Verify quality gates first
 npm test              # ✅ 100% pass rate required
 npm run coverage      # ✅ ≥80% line coverage required
@@ -120,6 +124,7 @@ npm run coverage      # ✅ ≥80% line coverage required
 # Create PR with comprehensive checklist
 gh pr create --title "feat(auth): Add JWT token generation" \
   --body "$(cat <<'PREOF'
+
 ## Summary
 <Brief description of what this PR does>
 
@@ -140,16 +145,10 @@ gh pr create --title "feat(auth): Add JWT token generation" \
 - [x] Documentation updated
 - [x] No breaking changes
 
-## Related
-- Task: TASK-042
-- Agent: @git-workflow-manager
-PREOF
-)"
-```
-
 ### Tag and Release
 
 ```bash
+
 # Create semantic version tag
 git tag -a v1.2.0 -m "Release v1.2.0: JWT authentication feature
 
@@ -170,6 +169,7 @@ git push origin v1.2.0
 #### Merge Commit (Preserve History)
 
 ```bash
+
 # For feature branches with valuable commit history
 git checkout main
 git merge --no-ff feature/TASK-042-jwt-authentication
@@ -179,6 +179,7 @@ git push origin main
 #### Squash Merge (Clean History)
 
 ```bash
+
 # For feature branches with messy/experimental commits
 gh pr merge <PR-number> --squash --delete-branch
 ```
@@ -186,6 +187,7 @@ gh pr merge <PR-number> --squash --delete-branch
 #### Rebase Merge (Linear History)
 
 ```bash
+
 # For small changes maintaining linear history
 gh pr merge <PR-number> --rebase --delete-branch
 ```
@@ -208,6 +210,7 @@ Related: TASK-042"
 #### ❌ DON'T: Vague Commits
 
 ```bash
+
 # Bad: No context, no type, no scope
 git commit -m "fixed stuff"
 git commit -m "updates"
@@ -225,6 +228,7 @@ git checkout -b hotfix/PROD-123-critical-auth-bypass
 #### ❌ DON'T: Generic Branch Names
 
 ```bash
+
 # Bad: No task ID, no description
 git checkout -b my-feature
 git checkout -b bugfix
@@ -258,6 +262,7 @@ Manage Git workflow conventions to ensure code quality, traceability, and team c
 ### Example 1: Feature Branch Workflow (Good)
 
 ```bash
+
 # Start new feature (Phase 2: Planning)
 git checkout -b feature/TASK-042-jwt-authentication
 
@@ -300,6 +305,7 @@ npm run coverage  # ✅ 92% coverage (≥80% required)
 git push origin feature/TASK-042-jwt-authentication
 gh pr create --title "feat(auth): Add JWT token generation" \
   --body "$(cat <<'PREOF'
+
 ## Summary
 Implements JWT-based authentication with secure token generation and validation.
 
@@ -320,23 +326,10 @@ Implements JWT-based authentication with secure token generation and validation.
 - [x] Documentation updated
 - [x] No breaking changes
 
-## Related
-Closes TASK-042
-PREOF
-)"
-```
-
-**Why This Works**:
-- Branch name includes task ID and description
-- Commits follow Conventional Commits format
-- PR created AFTER tests pass (Phase 4.5 complete)
-- PR description includes test results and checklist
-
----
-
 ### Example 2: Bug Fix Workflow (Good)
 
 ```bash
+
 # Create fix branch
 git checkout -b fix/TASK-043-null-pointer-user-lookup
 
@@ -372,6 +365,7 @@ gh pr create --title "fix(api): Prevent null pointer in user lookup" \
 ### Example 3: Breaking Change Workflow (Good)
 
 ```bash
+
 # Create feature branch
 git checkout -b feature/TASK-050-api-v2-migration
 
@@ -407,6 +401,7 @@ gh pr create --title "feat(api)!: Remove deprecated /v1/users endpoint" \
 ### Example 4: Hotfix Workflow (Good)
 
 ```bash
+
 # Create hotfix from main (production urgent)
 git checkout main
 git pull
@@ -443,6 +438,7 @@ git push origin v1.2.1
 ### Example 5: Vague Commit Messages (Bad)
 
 ```bash
+
 # ❌ DON'T: Vague, unhelpful commits
 git commit -m "fixed stuff"
 git commit -m "updates"
@@ -463,6 +459,7 @@ git commit -m "docs(api): update authentication endpoint documentation"
 ### Example 6: Poor Branch Naming (Bad)
 
 ```bash
+
 # ❌ DON'T: Vague or personal branch names
 git checkout -b fix-stuff
 git checkout -b new-feature
@@ -483,6 +480,7 @@ git checkout -b docs/api-documentation-update
 ### Example 7: PR Created Too Early (Bad)
 
 ```bash
+
 # ❌ DON'T: Create PR before tests pass
 git push origin feature/TASK-042-jwt-auth
 npm test  # ❌ 3 tests failing
@@ -490,6 +488,7 @@ gh pr create --title "WIP: JWT auth"  # ❌ WRONG
 
 # ✅ DO: Fix tests first, then create PR
 npm test  # ❌ 3 tests failing
+
 # [fix failing tests]
 npm test  # ✅ 15/15 passing
 npm run coverage  # ✅ 92% coverage
@@ -506,12 +505,14 @@ gh pr create --title "feat(auth): Add JWT token generation"  # ✅ CORRECT
 ### Example 8: Force Push to Main (Bad)
 
 ```bash
+
 # ❌ NEVER: Force push to protected branch
 git checkout main
 git push --force  # ❌ DESTROYS TEAM'S WORK
 
 # ✅ DO: Only force push to feature branches (with caution)
 git checkout feature/TASK-042-jwt-auth
+
 # Rebase to incorporate main changes
 git rebase main
 git push --force-with-lease  # ✅ Safer force push (checks remote hasn't changed)
@@ -527,6 +528,7 @@ git push --force-with-lease  # ✅ Safer force push (checks remote hasn't change
 ### Example 9: Squash Large Feature Branch (Bad)
 
 ```bash
+
 # ❌ DON'T: Squash 50+ commits from multi-day feature
 git checkout feature/TASK-042-complete-auth-system
 git log --oneline  # Shows 50 commits over 2 weeks
@@ -546,18 +548,24 @@ gh pr merge --merge  # ✅ Preserves all 50 commits with context
 ### Example 10: Merge Strategy Selection (Good)
 
 ```bash
+
 # Strategy 1: Merge (preserve history)
+
 # Use for: Feature branches with meaningful commit history
 git checkout main
 git merge --no-ff feature/TASK-042-complete-auth-system
+
 # Result: Merge commit + all feature commits visible in history
 
 # Strategy 2: Squash (simplify history)
+
 # Use for: Bug fixes, typo fixes, small PRs with cleanup commits
 gh pr merge --squash
+
 # Result: Single commit "fix(api): Prevent null pointer in user lookup (#43)"
 
 # Strategy 3: Rebase (linear history)
+
 # Use for: Keeping feature branch up-to-date with main
 git checkout feature/TASK-042-jwt-auth
 git rebase main  # Reapply feature commits on top of latest main
@@ -569,6 +577,7 @@ git push --force-with-lease  # Update remote (only on feature branch!)
 ### Example 11: Semantic Versioning Tags (Good)
 
 ```bash
+
 # After PR merged to main
 git checkout main
 git pull
@@ -608,6 +617,7 @@ gh release create v1.2.0 \
 ### Example 12: PR Template Usage (Good)
 
 ```markdown
+
 ## Summary
 Implements JWT-based authentication with secure token generation,
 validation middleware, and refresh token support.
@@ -632,21 +642,16 @@ validation middleware, and refresh token support.
 - [x] Documentation updated
 - [x] No breaking changes
 
-## Related
-Closes TASK-042
-Fixes #123
-```
-
----
-
 ### Example 13: Release Workflow (Good)
 
 ```bash
+
 # Step 1: Merge all PRs for release → main
 gh pr merge 42 --merge  # Feature: JWT auth
 gh pr merge 43 --squash  # Fix: Null pointer
 
 # Step 2: Verify CI/CD pipeline passes
+
 # [Wait for GitHub Actions to complete]
 
 # Step 3: Pull latest main
@@ -665,6 +670,7 @@ gh release create v1.2.0 \
   --notes "See CHANGELOG.md for details"
 
 # Step 7: Deploy to production (if applicable)
+
 # [Trigger deployment pipeline]
 ```
 
@@ -673,12 +679,14 @@ gh release create v1.2.0 \
 ### Example 14: Rebase Feature Branch (Good)
 
 ```bash
+
 # Feature branch is behind main
 git checkout feature/TASK-042-jwt-auth
 git log main..HEAD  # Shows 5 commits on feature branch
 
 # Option 1: Rebase (linear history, recommended)
 git rebase main  # Reapply 5 commits on top of latest main
+
 # [Resolve conflicts if any]
 git push --force-with-lease  # Update remote
 
@@ -702,6 +710,7 @@ git push  # No force push needed
 ### Example 15: Multi-Commit Feature (Good)
 
 ```bash
+
 # Feature with logical commit progression
 git checkout -b feature/TASK-042-jwt-auth
 
@@ -737,6 +746,7 @@ gh pr merge --merge  # Preserve commit history
 ### Example 16: Hotfix Branch Naming (Good)
 
 ```bash
+
 # ✅ DO: Descriptive hotfix names with severity indicators
 git checkout -b hotfix/security-vulnerability-CVE-2024-1234
 git checkout -b hotfix/payment-processing-down
@@ -753,6 +763,7 @@ git checkout -b production-issue
 ### Example 17: Commit Message with Task Integration (Good)
 
 ```bash
+
 # ✅ DO: Include task ID for traceability
 git commit -m "feat(auth): add JWT token generation
 
@@ -779,6 +790,7 @@ git commit -m "add JWT auth"
 ### Example 18: PR Checklist Validation (Good)
 
 ```markdown
+
 ## Quality Gates
 - [x] Build verification passed
 - [x] Tests pass (15/15, 100% required)
@@ -806,17 +818,23 @@ git commit -m "add JWT auth"
 ### Example 19: Force Push Safety (Good)
 
 ```bash
+
 # ❌ UNSAFE: Force push without checking remote
 git push --force origin feature/TASK-042-jwt-auth
+
 # Risk: Overwrites someone else's commits if they pushed meanwhile
 
 # ✅ SAFE: Force push with lease (checks remote hasn't changed)
 git push --force-with-lease origin feature/TASK-042-jwt-auth
+
 # Fails if remote has new commits you don't have locally
 
 # ✅ SAFEST: Communicate before force push
+
 # 1. Check with team: "Anyone working on feature/TASK-042-jwt-auth?"
+
 # 2. Wait for confirmation
+
 # 3. Force push with lease
 git push --force-with-lease origin feature/TASK-042-jwt-auth
 ```
@@ -826,16 +844,19 @@ git push --force-with-lease origin feature/TASK-042-jwt-auth
 ### Example 20: Tag Before vs After Testing (Bad vs Good)
 
 ```bash
+
 # ❌ DON'T: Tag before CI passes
 git checkout main
 git pull
 git tag -a v1.2.0 -m "Release v1.2.0"
 git push origin v1.2.0
+
 # [CI fails 5 minutes later] ❌
 
 # ✅ DO: Wait for CI, then tag
 git checkout main
 git pull
+
 # [Wait for GitHub Actions to pass] ✅
 git tag -a v1.2.0 -m "Release v1.2.0"
 git push origin v1.2.0
@@ -976,6 +997,7 @@ Related: TASK-042
 gh pr create \
   --title "{type}({scope}): {description}" \
   --body "$(cat <<'PREOF'
+
 ## Summary
 [One-paragraph description]
 
@@ -1001,23 +1023,6 @@ gh pr create \
 - Code reviewed by: code-reviewer (Phase 5)
 - Plan audit by: task-manager (Phase 5.5)
 
-## Related
-Closes TASK-XXX
-Fixes #123
-PREOF
-)"
-```
-
-**PR Checklist Requirements** (from test-orchestrator):
-- Build verification: 100% (compilation must succeed)
-- Test pass rate: 100% (zero failing tests)
-- Line coverage: ≥80%
-- Branch coverage: ≥75%
-
-**Cross-Reference**: For test threshold details, see test-orchestrator agent (Phase 4 execution)
-
----
-
 ### Merge Strategies
 
 | Strategy | When to Use | Command | Result |
@@ -1037,6 +1042,7 @@ Is this a multi-day feature with >10 commits?
 
 **Merge Example**:
 ```bash
+
 # Preserve all commits from feature branch
 git checkout main
 git merge --no-ff feature/TASK-042-complete-auth-system
@@ -1045,12 +1051,14 @@ git push origin main
 
 **Squash Example**:
 ```bash
+
 # Combine all commits into one
 gh pr merge 42 --squash --subject "feat(auth): Add JWT token generation"
 ```
 
 **Rebase Example** (update feature branch, not merge to main):
 ```bash
+
 # Update feature branch with latest main
 git checkout feature/TASK-042-jwt-auth
 git rebase main
@@ -1073,11 +1081,13 @@ git push --force-with-lease
 
 **Tag Creation Workflow**:
 ```bash
+
 # Step 1: Ensure all PRs merged to main
 git checkout main
 git pull
 
 # Step 2: Verify CI/CD passes
+
 # [Wait for GitHub Actions green checkmark]
 
 # Step 3: Create annotated tag
@@ -1131,6 +1141,7 @@ This agent integrates with task-manager workflow phases to enforce Git best prac
 
 **Phase 2 (Planning)**: Branch Creation
 ```bash
+
 # task-manager invokes git-workflow-manager
 git checkout -b feature/TASK-042-jwt-authentication
 ```
@@ -1152,22 +1163,30 @@ Related: TASK-042"
 
 **Phase 4.5 (Test Enforcement)**: Quality Gate Check (Cross-Reference: test-orchestrator)
 ```bash
+
 # test-orchestrator verifies:
+
 # - Build passes (100%)
+
 # - Tests pass (100%)
+
 # - Coverage ≥80% lines, ≥75% branches
 ```
 
 **Phase 5 (Code Review)**: PR Creation
 ```bash
+
 # NOW: Create PR (after test-orchestrator confirms quality gates)
 gh pr create --title "feat(auth): Add JWT token generation"
 ```
 
 **Phase 5.5 (Plan Audit)**: Implementation Verification
 ```bash
+
 # task-manager verifies:
+
 # - All planned files created
+
 # - No scope creep (only planned changes)
 ```
 
@@ -1185,6 +1204,7 @@ git branch -d feature/TASK-042-jwt-authentication
 
 **Validates branch names against convention**:
 ```bash
+
 # Validation function
 validate_branch_name() {
     local branch=$1
@@ -1210,6 +1230,7 @@ validate_branch_name "johns-branch"  # ❌ Invalid
 
 **Validates Conventional Commits format**:
 ```bash
+
 # Validation function
 validate_commit_message() {
     local msg=$1
@@ -1241,6 +1262,7 @@ validate_commit_message "fixed stuff"  # ❌ Invalid
 
 **Ensures PR created after Phase 4.5 complete** (cross-reference: test-orchestrator):
 ```bash
+
 # Check quality gates before allowing PR creation
 can_create_pr() {
     local task_id=$1
@@ -1344,15 +1366,15 @@ recommend_version_bump "v1.2.3"
 
 ---
 
-## Reference
-
 ### Advanced Topics
 
 #### Git Hooks for Commit Validation
 
 ```bash
+
 # .git/hooks/commit-msg
 #!/bin/bash
+
 # Validate commit message format
 
 commit_msg_file=$1
@@ -1375,8 +1397,10 @@ fi
 #### Pre-Push Hook for Test Verification
 
 ```bash
+
 # .git/hooks/pre-push
 #!/bin/bash
+
 # Ensure tests pass before push
 
 echo "Running tests before push..."
@@ -1393,6 +1417,7 @@ echo "✅ Tests passed. Proceeding with push."
 #### Automated Changelog Generation
 
 ```bash
+
 # Generate changelog from Conventional Commits
 generate_changelog() {
     local from_tag=$1
@@ -1572,6 +1597,7 @@ Git workflow manager enforces these checks before allowing PR merge:
 #### Phase 4.5: Quality Gate Validation
 
 ```bash
+
 # Run before creating PR (automated in CI)
 npm run lint          # ✅ Code style compliance
 npm run type-check    # ✅ TypeScript type safety
@@ -1582,6 +1608,7 @@ npm run build         # ✅ Production build succeeds
 #### PR Checklist Enforcement
 
 ```markdown
+
 ## Quality Gates (CI-Verified)
 - [x] Lint: ESLint passes (0 errors, 0 warnings)
 - [x] Type Check: TypeScript compilation succeeds
@@ -1596,6 +1623,7 @@ npm run build         # ✅ Production build succeeds
 Use semantic commit messages to trigger automated version bumping:
 
 ```bash
+
 # Commit types trigger version bumps
 feat:     # Minor version bump (1.2.0 -> 1.3.0)
 fix:      # Patch version bump (1.2.0 -> 1.2.1)
@@ -1656,15 +1684,20 @@ jobs:
 Combine git-workflow-manager with CI/CD for automated releases:
 
 ```bash
+
 # 1. Merge feature PR to main (triggers CI)
 gh pr merge <PR-number> --squash --delete-branch
 
 # 2. CI runs quality gates on main branch
+
 # - Lint, type-check, test, build all pass ✅
 
 # 3. Automated version bump based on commit type
+
 # feat: 1.2.0 -> 1.3.0
+
 # fix: 1.2.0 -> 1.2.1
+
 # feat!: 1.2.0 -> 2.0.0
 
 # 4. Create GitHub release with changelog
@@ -1672,7 +1705,9 @@ git tag -a v1.3.0 -m "Release v1.3.0"
 git push origin v1.3.0
 
 # 5. Deploy to production (environment-specific)
+
 # - Staging: Auto-deploy on version tags
+
 # - Production: Manual approval required
 ```
 
@@ -1681,6 +1716,7 @@ git push origin v1.3.0
 Configure repository settings to enforce git-workflow-manager rules:
 
 ```yaml
+
 # .github/settings.yml (via Probot Settings)
 branches:
   - name: main
@@ -1715,8 +1751,10 @@ branches:
 #### ✅ DO: Wait for CI Before Merge
 
 ```bash
+
 # Good: Verify all checks pass
 gh pr create --title "feat(auth): Add JWT authentication"
+
 # Wait for CI: Lint ✅, Type Check ✅, Tests ✅, Build ✅
 gh pr merge <PR-number> --squash --delete-branch
 ```
@@ -1724,6 +1762,7 @@ gh pr merge <PR-number> --squash --delete-branch
 #### ❌ DON'T: Bypass CI Checks
 
 ```bash
+
 # Bad: Force-merge without waiting for CI
 git push --force origin feature/my-branch
 gh pr merge <PR-number> --admin --delete-branch  # ❌ Bypasses required checks
@@ -1732,6 +1771,7 @@ gh pr merge <PR-number> --admin --delete-branch  # ❌ Bypasses required checks
 #### ✅ DO: Use Semantic Commits for Automation
 
 ```bash
+
 # Good: Commit type triggers correct version bump
 git commit -m "feat(api): add user profile endpoint"  # -> 1.2.0 -> 1.3.0
 git commit -m "fix(auth): resolve token expiry bug"   # -> 1.2.0 -> 1.2.1
@@ -1741,6 +1781,7 @@ git commit -m "feat(api)!: change authentication API" # -> 1.2.0 -> 2.0.0
 #### ❌ DON'T: Ignore Commit Conventions
 
 ```bash
+
 # Bad: Non-semantic commits break automation
 git commit -m "updated code"        # ❌ No version bump triggered
 git commit -m "fixed bug"           # ❌ No scope, automation fails
@@ -1752,6 +1793,7 @@ git commit -m "breaking changes"    # ❌ Not recognized as breaking change
 Git workflow manager coordinates with test-orchestrator for Phase 4 validation:
 
 ```bash
+
 # Phase 4: Test Execution (before PR creation)
 /agent test-orchestrator
 
@@ -1762,12 +1804,14 @@ npm test -- --coverage    # ✅ Unit tests with coverage
 npm run test:e2e          # ✅ E2E tests
 
 # Results feed into git-workflow-manager PR checklist
+
 # git-workflow-manager creates PR ONLY if all tests pass
 ```
 
 ### Continuous Deployment Pipeline
 
 ```yaml
+
 # .github/workflows/deploy.yml
 name: Deploy
 
@@ -1799,4 +1843,17 @@ jobs:
         run: |
           echo "Deploying ${{ github.ref_name }} to production"
           # Deployment steps
+```
+
+## Extended Documentation
+
+For detailed examples, patterns, and implementation guides, load the extended documentation:
+
+```bash
+cat git-workflow-manager-ext.md
+```
+
+Or in Claude Code:
+```
+Please read git-workflow-manager-ext.md for detailed examples.
 ```
