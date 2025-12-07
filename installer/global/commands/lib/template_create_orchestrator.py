@@ -184,10 +184,12 @@ class TemplateCreateOrchestrator:
         self.phase_5_5_report: Optional[ValidationReport] = None  # TASK-043: Track Phase 5.5 report
 
         # TASK-BRIDGE-002: Bridge integration
+        # TASK-ENH-D960: Agent invoker used in Phase 1 (codebase analysis) and Phase 6 (agent generation)
+        # Note: Phase metadata is for request tracking only, not routing
         self.state_manager = StateManager()
         self.agent_invoker = AgentBridgeInvoker(
-            phase=WorkflowPhase.PHASE_6,
-            phase_name="agent_generation"
+            phase=WorkflowPhase.PHASE_1,  # First use in Phase 1 (also used in Phase 6)
+            phase_name="ai_analysis"
         )
 
         # Storage for phase results (used for state persistence)
@@ -249,7 +251,9 @@ class TemplateCreateOrchestrator:
                 state = self.state_manager.load_state()
                 phase = state.phase
 
-                if phase == WorkflowPhase.PHASE_7:
+                if phase == WorkflowPhase.PHASE_1:
+                    return self._run_from_phase_1()
+                elif phase == WorkflowPhase.PHASE_7:
                     return self._run_from_phase_7()
                 else:
                     # Default to Phase 5 (backward compatibility)
@@ -264,6 +268,68 @@ class TemplateCreateOrchestrator:
         except Exception as e:
             logger.exception("Unexpected error in orchestration")
             return self._create_error_result(f"Unexpected error: {e}")
+
+    def _run_from_phase_1(self) -> OrchestrationResult:
+        """
+        Resume from Phase 1 after agent invocation (TASK-ENH-D960).
+
+        State has been restored in __init__, and agent response has been loaded.
+        Now complete AI analysis with the loaded response, then continue workflow.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        self._print_header()
+        print("  (Resuming from checkpoint - Phase 1)")
+
+        # Get codebase path from restored state
+        codebase_path = self.config.codebase_path or Path.cwd()
+        if not codebase_path.exists():
+            return self._create_error_result(f"Codebase path does not exist: {codebase_path}")
+
+        # Re-run Phase 1 analysis - the agent response is now cached in agent_invoker
+        # So the second call to analyze_codebase will use the cached response
+        self.analysis = self._phase1_ai_analysis(codebase_path)
+        if not self.analysis:
+            return self._create_error_result("AI analysis failed after resume")
+
+        # Save analysis if requested
+        if self.config.save_analysis:
+            self._save_analysis_json(self.analysis)
+
+        # Continue with Phase 2 onwards
+        # Phase 2: Manifest Generation
+        self.manifest = self._phase2_manifest_generation(self.analysis)
+        if not self.manifest:
+            return self._create_error_result("Manifest generation failed")
+
+        # Phase 3: Settings Generation
+        self.settings = self._phase3_settings_generation(self.analysis)
+        if not self.settings:
+            return self._create_error_result("Settings generation failed")
+
+        # Phase 4: Template File Generation
+        self.templates = self._phase4_template_generation(self.analysis)
+        if not self.templates:
+            self.warnings.append("No template files generated")
+
+        # Phase 4.5: Completeness Validation (TASK-040)
+        if not self.config.skip_validation and self.templates:
+            self.templates = self._phase4_5_completeness_validation(
+                templates=self.templates,
+                analysis=self.analysis
+            )
+
+        # Save checkpoint before Phase 5 (may exit with code 42 for agent generation)
+        self._save_checkpoint("templates_generated", phase=WorkflowPhase.PHASE_4)
+
+        # Phase 5: Agent Recommendation
+        self.agents = []
+        if not self.config.no_agents:
+            self.agents = self._phase5_agent_recommendation(self.analysis)
+
+        # Phase 6-7: Complete workflow
+        return self._complete_workflow()
 
     def _run_all_phases(self) -> OrchestrationResult:
         """
@@ -631,11 +697,13 @@ class TemplateCreateOrchestrator:
             # AI-native analysis: No template_context needed!
             # AI will infer language, framework, architecture from codebase
             # TASK-PROMPT-SIZE: Reduced from 30 to 10 to keep prompt under 25k tokens
-            # TASK-CHECKPOINT-FIX: Don't pass bridge_invoker here - Phase 1 uses heuristic analysis
-            # (Agent invocation only happens in Phase 5, where checkpoint is saved BEFORE invocation)
+            # TASK-ENH-D960: Enable AI agent invocation in Phase 1
+            # Save checkpoint before analysis (may exit with code 42)
+            self._save_checkpoint("pre_ai_analysis", phase=WorkflowPhase.PHASE_1)
+
             analyzer = CodebaseAnalyzer(
                 max_files=10,
-                bridge_invoker=None  # Heuristic fallback for Phase 1
+                bridge_invoker=self.agent_invoker  # Enable AI invocation for Phase 1
             )
 
             self._print_info(f"  Analyzing: {codebase_path}")
