@@ -12,6 +12,8 @@ Following architectural review recommendations:
 - Clear error handling and logging
 """
 
+from __future__ import annotations  # Enable Python 3.10+ type syntax in Python 3.9
+
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -185,7 +187,8 @@ class CodebaseAnalyzer:
                 analysis = self.response_parser.parse_analysis_response(
                     response=response,
                     codebase_path=str(codebase_path),
-                    template_context=template_context
+                    template_context=template_context,
+                    directory_tree=directory_tree  # TASK-FIX-PD03: Pass directory tree
                 )
 
                 # TASK-0CE5: Verify example_files were returned
@@ -217,10 +220,12 @@ class CodebaseAnalyzer:
         if analysis is None:
             logger.info("Performing heuristic analysis...")
             # TASK-769D: Pass file_samples to fallback analysis
+            # TASK-FIX-PD03: Pass directory_tree to fallback analysis
             analysis = self._fallback_analysis(
                 codebase_path=codebase_path,
                 template_context=template_context,
-                file_samples=file_samples
+                file_samples=file_samples,
+                directory_tree=directory_tree
             )
 
         # Step 5: Validate analysis
@@ -244,7 +249,8 @@ class CodebaseAnalyzer:
         self,
         codebase_path: Path,
         template_context: Optional[Dict[str, str]],
-        file_samples: Optional[list] = None
+        file_samples: Optional[list] = None,
+        directory_tree: Optional[str] = None  # TASK-FIX-PD03
     ) -> CodebaseAnalysis:
         """
         Perform fallback heuristic analysis when agent is unavailable.
@@ -253,6 +259,7 @@ class CodebaseAnalyzer:
             codebase_path: Path to codebase
             template_context: Template context
             file_samples: Optional file samples for analysis (TASK-769D)
+            directory_tree: Directory tree from file discovery (TASK-FIX-PD03)
 
         Returns:
             CodebaseAnalysis from heuristics with appropriate confidence scores
@@ -269,6 +276,9 @@ class CodebaseAnalyzer:
             codebase_path=str(codebase_path),
             template_context=template_context
         )
+
+        # TASK-FIX-PD03: Set project_structure from directory_tree
+        analysis.project_structure = directory_tree
 
         return analysis
 
@@ -311,6 +321,9 @@ class CodebaseAnalyzer:
 
         # Update to indicate this was a quick analysis
         analysis.fallback_reason = "Quick analysis mode - limited detail"
+
+        # TASK-FIX-PD03: Set project_structure from directory_tree
+        analysis.project_structure = directory_tree
 
         return analysis
 

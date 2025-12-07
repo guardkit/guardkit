@@ -118,9 +118,13 @@ Explicit behavior rules conforming to GitHub best practices.
 - **ASK** (3-5 scenarios): Situations requiring human escalation
 
 **Format**: `[emoji] [imperative verb] [action] ([brief rationale])`
-- ✅ ALWAYS prefix
-- ❌ NEVER prefix
-- ⚠️ ASK prefix
+
+🚨 **CRITICAL - EMOJI PREFIXES ARE MANDATORY**:
+- **ALWAYS rules MUST start with**: `- ✅ ` (dash, space, checkmark emoji, space)
+- **NEVER rules MUST start with**: `- ❌ ` (dash, space, cross emoji, space)
+- **ASK scenarios MUST start with**: `- ⚠️ ` (dash, space, warning emoji, space)
+
+Rules WITHOUT emoji prefixes will FAIL validation and trigger regeneration.
 
 **Placement**: After "Quick Start", before "Capabilities"
 
@@ -194,6 +198,68 @@ Each enhanced agent must meet these standards:
 3. **Actionable** - Include concrete code examples with placeholders, not generic advice
 4. **Comprehensive** - Target 150-250 lines per agent for thorough coverage
 5. **Project-Specific** - Content must be specific to this project, not generic
+
+
+## Critical Content Guidelines
+
+### Use Discovered Paths Only
+
+🚨 **NEVER infer or assume template paths** - use ONLY paths from discovery phase.
+
+**Background**: The review TASK-REV-TC03 identified that enhanced agents sometimes show assumed paths (e.g., `templates/firebase/`) instead of actual discovered paths.
+
+**Requirements**:
+- Template paths in "Related Templates" section MUST come from the discovery input (manifest.json or template catalog)
+- If a template path was discovered as `templates/other/sessions.js.template`, use that EXACT path
+- NEVER infer paths based on file content, naming conventions, or expected directory structures
+- If uncertain about a path, OMIT the template reference rather than guess
+
+**Example (WRONG)**:
+```markdown
+## Related Templates
+- `templates/firebase/sessions.js.template` ← Inferred based on content!
+```
+
+**Example (CORRECT)**:
+```markdown
+## Related Templates
+- `templates/other/sessions.js.template` ← Actual discovered path
+```
+
+
+### Derive Framework Context From Codebase Analysis
+
+🚨 **NEVER include framework patterns not found in analyzed code**
+
+**Background**: The review TASK-REV-TC03 identified that enhanced agents sometimes include generic patterns (e.g., React hooks) when the actual codebase uses different frameworks (e.g., Svelte).
+
+**Requirements**:
+- ALL code examples MUST be derived from actual template source files provided
+- Before including any framework-specific pattern, verify it exists in the analyzed code
+- Analyze package.json/pyproject.toml/imports to determine actual frameworks used
+- State what was FOUND in analysis, not what MIGHT be expected
+
+**Verification Steps**:
+1. Check package.json `dependencies` and `devDependencies` for framework indicators
+2. Scan imports in template files for framework-specific patterns
+3. Only include patterns that have supporting evidence in source
+
+**Example (WRONG)**:
+```typescript
+// React hook example (but template uses Svelte!)
+const [sessions, setSessions] = useState([]);
+```
+
+**Example (CORRECT)**:
+```javascript
+// Svelte store example (matches actual codebase)
+import { writable } from 'svelte/store';
+export const sessions = writable([]);
+```
+
+**If Framework Detection Uncertain**:
+- Add note: `> **Note**: Adapt examples for your specific framework if needed.`
+- Prefer framework-agnostic examples when possible
 
 
 ## Confidence Thresholds

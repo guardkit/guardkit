@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "name": "javascript-standard-structure-template",
+  "display_name": "Javascript Standard Structure",
+  "description": "JavaScript template using Standard Structure architecture",
+  "version": "1.0.0",
+  "author": "richard woollcott",
+  "language": "JavaScript",
+  "language_version": null,
+  "frameworks": [],
+  "architecture": "Standard Structure",
+  "patterns": [],
+  "layers": [],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project/solution",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*$",
+      "required": true
+    },
+    "Namespace": {
+      "name": "{{Namespace}}",
+      "description": "Root namespace for the project",
+      "default_value": null,
+      "pattern": "^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$",
+      "required": true
+    },
+    "Author": {
+      "name": "{{Author}}",
+      "description": "Project author name",
+      "default_value": "richard woollcott",
+      "pattern": null,
+      "required": false
+    }
+  },
+  "tags": [
+    "javascript",
+    "standard-structure"
+  ],
+  "category": "general",
+  "complexity": 1,
+  "compatible_with": [],
+  "requires": [
+    "agent:typescript-domain-specialist"
+  ],
+  "created_at": "2025-12-07T10:42:10.591576",
+  "source_project": "/Users/richwoollcott/Projects/Github/kartlog",
+  "confidence_score": 68.33
+}

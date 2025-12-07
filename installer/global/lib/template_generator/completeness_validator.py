@@ -348,21 +348,63 @@ class CompletenessValidator:
         """
         Estimate file path for missing template based on reference.
 
+        Preserves full compound extensions (e.g., .js.template, .ts.template)
+        and follows the naming pattern from the reference file.
+
         Args:
             entity: Entity name
             operation: Operation name
             reference: Reference template
 
         Returns:
-            Estimated file path
+            Estimated file path with correct extension and naming pattern
         """
-        # Extract directory from reference path
         from pathlib import Path
         ref_path = Path(reference.template_path)
         directory = ref_path.parent
 
-        # Create new filename based on operation and entity
-        new_filename = f"{operation}{entity}{ref_path.suffix}"
+        # Get all suffixes to preserve compound extensions like .js.template
+        # Path.suffixes returns ['.js', '.template'] for 'file.js.template'
+        all_suffixes = ''.join(ref_path.suffixes)
+
+        # Determine naming pattern from reference file
+        # Check if reference uses hyphen separator (e.g., "Read-query.js.template")
+        # Remove all suffixes at once to get the base name
+        ref_stem = ref_path.name.removesuffix(all_suffixes)
+
+        # Extract the entity part from reference to understand the pattern
+        # We need to find the actual prefix used in the filename, not just the canonical operation
+        # (e.g., "Get" maps to "Read" operation, but we need to find "Get" in "Get-user")
+        ref_operation = self.pattern_matcher.identify_crud_operation(reference)
+
+        # Find the actual prefix used in the reference file
+        actual_prefix = None
+        if ref_operation:
+            # Get CRUD_PATTERNS to find the actual prefix used
+            # Note: _pattern_matcher module is already imported at module level
+            patterns_for_operation = _pattern_matcher.CRUD_PATTERNS.get(ref_operation, [ref_operation])
+            for pattern in patterns_for_operation:
+                if ref_stem.startswith(pattern):
+                    actual_prefix = pattern
+                    break
+
+        if actual_prefix:
+            # Get the separator used (if any) between operation and entity
+            remainder = ref_stem[len(actual_prefix):]
+            if remainder.startswith('-'):
+                # Hyphenated pattern: "Get-user" -> "Update-user"
+                entity_part = remainder[1:]  # Remove the hyphen
+                new_filename = f"{operation}-{entity_part}{all_suffixes}"
+            elif remainder.startswith('_'):
+                # Underscore pattern: "Get_user" -> "Update_user"
+                entity_part = remainder[1:]
+                new_filename = f"{operation}_{entity_part}{all_suffixes}"
+            else:
+                # No separator or PascalCase: "GetUser" -> "UpdateUser"
+                new_filename = f"{operation}{entity}{all_suffixes}"
+        else:
+            # Fallback: use operation + entity with compound extension
+            new_filename = f"{operation}{entity}{all_suffixes}"
 
         return str(directory / new_filename)
 

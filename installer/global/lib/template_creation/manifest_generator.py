@@ -544,8 +544,9 @@ class ManifestGenerator:
             requirements.append("agent:python-domain-specialist")
         elif lang in ["csharp", "c#", "dotnet"]:
             requirements.append("agent:dotnet-domain-specialist")
-        elif lang in ["typescript", "javascript"]:
+        elif lang == "typescript":
             requirements.append("agent:typescript-domain-specialist")
+        # JavaScript: No specialist agent exists, so no requirement added
 
         # Based on architecture
         arch = self.analysis.architecture.architectural_style.lower()

@@ -122,6 +122,9 @@ class CodebaseAnalysis(BaseModel):
     agent_used: bool = Field(default=False, description="Whether architectural-reviewer agent was used")
     fallback_reason: Optional[str] = Field(None, description="Reason for fallback if agent not used")
 
+    # TASK-FIX-PD03: Store actual directory tree from file discovery
+    project_structure: Optional[str] = Field(None, description="Directory tree from file discovery phase")
+
     # Metadata
     analysis_version: str = Field(default="0.1.0", description="Version of analysis module")
 

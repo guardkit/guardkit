@@ -217,8 +217,11 @@ class ClaudeMdGenerator:
             "```"
         ]
 
-        # Generate directory tree from layers
-        if self.analysis.architecture.layers:
+        # TASK-FIX-PD03: Use actual directory tree if available
+        if self.analysis.project_structure:
+            # Use real directory tree from file discovery
+            structure.append(self.analysis.project_structure)
+        elif self.analysis.architecture.layers:
             # Sort layers by typical hierarchy
             sorted_layers = self._sort_layers_hierarchically(self.analysis.architecture.layers)
 
@@ -237,8 +240,9 @@ class ClaudeMdGenerator:
             ""
         ])
 
-        # Add explanations for key directories
-        if self.analysis.architecture.layers:
+        # Add explanations for key directories (only when using layer-based structure)
+        # TASK-FIX-PD03: Skip directory descriptions if using actual project_structure
+        if not self.analysis.project_structure and self.analysis.architecture.layers:
             structure.append("## Directory Descriptions")
             structure.append("")
 
@@ -939,6 +943,78 @@ class ClaudeMdGenerator:
         except Exception:
             return None
 
+    def _categorize_agent_by_keywords(self, agent_metadata: Dict[str, Any]) -> str:
+        """Categorize agent based on technologies and description keywords.
+
+        Uses priority order: database > testing > api > domain > ui > general
+        to prevent false matches from generic keywords like 'view'.
+
+        Args:
+            agent_metadata: Dict with 'name', 'description', 'technologies' keys
+
+        Returns:
+            Category string: 'database', 'api', 'ui', 'domain', 'testing', or 'general'
+        """
+        # Check technologies first (most reliable)
+        technologies_lower = [t.lower() for t in agent_metadata.get('technologies', [])]
+
+        # Database technologies
+        database_techs = {
+            'firestore', 'firebase', 'realm', 'mongodb', 'postgresql', 'mysql',
+            'sqlite', 'supabase', 'dynamodb', 'redis', 'database'
+        }
+        if any(any(tech in t for tech in database_techs) for t in technologies_lower):
+            return 'database'
+
+        # Testing technologies
+        testing_techs = {'pytest', 'jest', 'mocha', 'xunit', 'nunit', 'vitest', 'testing'}
+        if any(any(tech in t for tech in testing_techs) for t in technologies_lower):
+            return 'testing'
+
+        # API technologies
+        api_techs = {'fastapi', 'express', 'flask', 'django', 'asp.net', 'spring', 'rest', 'api'}
+        if any(any(tech in t for tech in api_techs) for t in technologies_lower):
+            return 'api'
+
+        # UI technologies
+        ui_techs = {'react', 'vue', 'angular', 'svelte', 'xaml', 'swiftui'}
+        if any(any(tech in t for tech in ui_techs) for t in technologies_lower):
+            return 'ui'
+
+        # Fallback to description keyword matching
+        desc_lower = agent_metadata.get('description', '').lower()
+
+        # Database keywords (highest priority)
+        database_keywords = {
+            'database', 'firestore', 'firebase', 'realm', 'mongodb', 'postgresql',
+            'mysql', 'crud', 'persistence', 'query', 'collection', 'document',
+            'repository', 'data access', 'orm', 'migration', 'sql'
+        }
+        if any(keyword in desc_lower for keyword in database_keywords):
+            return 'database'
+
+        # Testing keywords
+        testing_keywords = {'test', 'testing', 'coverage', 'assertion', 'mock', 'fixture', 'spec'}
+        if any(keyword in desc_lower for keyword in testing_keywords):
+            return 'testing'
+
+        # API keywords
+        api_keywords = {'api', 'endpoint', 'route', 'request', 'response', 'rest', 'graphql', 'controller'}
+        if any(keyword in desc_lower for keyword in api_keywords):
+            return 'api'
+
+        # Domain keywords
+        domain_keywords = {'domain', 'business logic', 'business', 'operation', 'service', 'usecase'}
+        if any(keyword in desc_lower for keyword in domain_keywords):
+            return 'domain'
+
+        # UI keywords (lowest priority - removed 'view' to prevent false matches)
+        ui_keywords = {'ui', 'component', 'screen', 'page', 'xaml', 'jsx', 'interface', 'frontend'}
+        if any(keyword in desc_lower for keyword in ui_keywords):
+            return 'ui'
+
+        return 'general'
+
     def _enhance_agent_info_with_ai(self, agent_metadata: Dict[str, Any]) -> Dict[str, str]:
         """Use AI to generate enhanced agent documentation
 
@@ -1003,21 +1079,19 @@ Respond ONLY with valid JSON."""
                 # Fallback: Generate basic guidance without AI
                 purpose = agent_metadata['description']
 
-                # Generate basic "when to use" from description
-                desc_lower = agent_metadata['description'].lower()
-                when_to_use = f"Use this agent when working with {agent_metadata['name'].replace('-', ' ')}"
+                # Use categorization to generate appropriate guidance (TASK-FIX-PD05)
+                category = self._categorize_agent_by_keywords(agent_metadata)
 
-                # Try to make it more specific based on description
-                if 'test' in desc_lower:
-                    when_to_use = f"Use this agent when writing tests, validating test coverage, or setting up testing infrastructure"
-                elif 'ui' in desc_lower or 'view' in desc_lower:
-                    when_to_use = f"Use this agent when creating UI components, implementing views, or working with user interfaces"
-                elif 'data' in desc_lower or 'repository' in desc_lower or 'database' in desc_lower:
-                    when_to_use = f"Use this agent when implementing data access layers, working with databases, or creating repository patterns"
-                elif 'api' in desc_lower or 'endpoint' in desc_lower:
-                    when_to_use = f"Use this agent when creating API endpoints, implementing request handlers, or defining web routes"
-                elif 'domain' in desc_lower or 'business' in desc_lower:
-                    when_to_use = f"Use this agent when implementing business logic, creating domain operations, or defining core functionality"
+                when_to_use_templates = {
+                    'database': "Use this agent when implementing database operations, data persistence layers, query optimization, or repository patterns",
+                    'testing': "Use this agent when writing tests, validating test coverage, setting up testing infrastructure, or creating test fixtures",
+                    'api': "Use this agent when creating API endpoints, implementing request handlers, defining web routes, or building REST/GraphQL services",
+                    'domain': "Use this agent when implementing business logic, creating domain operations, defining core functionality, or building service layers",
+                    'ui': "Use this agent when creating UI components, implementing user interfaces, building screens, or handling presentation logic",
+                    'general': f"Use this agent when working with {agent_metadata['name'].replace('-', ' ')}"
+                }
+
+                when_to_use = when_to_use_templates.get(category, when_to_use_templates['general'])
 
                 return {
                     'purpose': purpose,
@@ -1226,14 +1300,14 @@ Respond ONLY with valid JSON."""
             "This template documentation is split into three files for optimal loading:",
             "",
             "1. **CLAUDE.md** (this file) - Core architecture and quick reference",
-            "2. **CLAUDE-PATTERNS.md** - Detailed patterns and best practices",
-            "3. **CLAUDE-REFERENCE.md** - Code examples and complete reference",
+            "2. **docs/patterns/README.md** - Detailed patterns and best practices",
+            "3. **docs/reference/README.md** - Code examples and complete reference",
             "",
             "## Loading Strategy",
             "",
             "- **Start here**: Read CLAUDE.md for architecture overview and essential guidance",
-            "- **When implementing**: Load CLAUDE-PATTERNS.md for pattern details",
-            "- **When troubleshooting**: Load CLAUDE-REFERENCE.md for examples and workflows",
+            "- **When implementing**: Load `docs/patterns/README.md` for pattern details",
+            "- **When troubleshooting**: Load `docs/reference/README.md` for examples and workflows",
             "",
             "## Why Split?",
             "",
@@ -1270,7 +1344,7 @@ Respond ONLY with valid JSON."""
             summary.append("")
 
         summary.extend([
-            "**For detailed standards**: See CLAUDE-PATTERNS.md",
+            "**For detailed standards**: See `docs/patterns/README.md`",
             ""
         ])
 
@@ -1316,7 +1390,7 @@ Respond ONLY with valid JSON."""
                 "- Use **testing agents** for test generation",
                 "- Use **UI agents** for view/component creation",
                 "",
-                "**For detailed agent documentation**: See CLAUDE-REFERENCE.md",
+                "**For detailed agent documentation**: See `docs/reference/README.md`",
                 ""
             ])
             return "\n".join(usage)
@@ -1335,7 +1409,7 @@ Respond ONLY with valid JSON."""
 
         usage.extend([
             "",
-            "**For detailed agent documentation**: See CLAUDE-REFERENCE.md",
+            "**For detailed agent documentation**: See `docs/reference/README.md`",
             ""
         ])
 

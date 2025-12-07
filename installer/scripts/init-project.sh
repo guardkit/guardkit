@@ -227,7 +227,28 @@ copy_template_files() {
         cp -r "$template_dir/templates/"* .claude/templates/ 2>/dev/null || true
         print_success "Copied template files"
     fi
-    
+
+    # Copy template docs (patterns/reference for progressive disclosure)
+    if [ -d "$template_dir/docs" ]; then
+        local docs_copied=0
+
+        # Copy patterns if exists
+        if [ -d "$template_dir/docs/patterns" ]; then
+            mkdir -p docs/patterns
+            cp -r "$template_dir/docs/patterns/"* docs/patterns/ 2>/dev/null && docs_copied=1 || true
+        fi
+
+        # Copy reference if exists
+        if [ -d "$template_dir/docs/reference" ]; then
+            mkdir -p docs/reference
+            cp -r "$template_dir/docs/reference/"* docs/reference/ 2>/dev/null && docs_copied=1 || true
+        fi
+
+        if [ $docs_copied -eq 1 ]; then
+            print_success "Copied template documentation (patterns/reference)"
+        fi
+    fi
+
     # Copy other template-specific files
     for file in "$template_dir"/*.md "$template_dir"/*.json; do
         if [ -f "$file" ] && [ "$(basename "$file")" != "CLAUDE.md" ]; then

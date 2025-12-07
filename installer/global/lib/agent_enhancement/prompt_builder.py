@@ -132,6 +132,22 @@ class EnhancementPromptBuilder:
   - ASK: 3-5 scenarios with ⚠️ prefix
 - Format: "[emoji] [action] ([brief rationale])"
 - Minimum 500 characters ensures substantive content
+
+🚨 **EMOJI PREFIXES ARE MANDATORY** - Every boundary rule MUST start with the correct emoji:
+- ALWAYS rules: `- ✅ ` (dash, space, ✅, space)
+- NEVER rules: `- ❌ ` (dash, space, ❌, space)
+- ASK scenarios: `- ⚠️ ` (dash, space, ⚠️, space)
+Rules without emoji prefixes will FAIL validation.
+
+🚨 **USE DISCOVERED PATHS ONLY**:
+- Template paths MUST come from the "Available Templates" list above
+- NEVER infer or assume paths based on file content or naming conventions
+- Use EXACT paths as provided in input
+
+🚨 **DERIVE FRAMEWORK CONTEXT FROM CODE**:
+- ALL code examples MUST match patterns found in actual template files
+- Check imports and dependencies to determine frameworks used
+- NEVER include generic framework patterns not found in analyzed code
 """
 
         return prompt

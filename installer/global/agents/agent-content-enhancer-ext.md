@@ -56,6 +56,15 @@ When enhancing agents, the following standards MUST be met:
 - Minimum 500 characters total
 - See JSON schema in prompt for full validation rules
 
+🚨 **EMOJI PREFIXES ARE MANDATORY** (TASK-FIX-PD07):
+Every boundary rule MUST include the correct emoji prefix in exactly this format:
+- ALWAYS: `- ✅ ` (dash, space, checkmark emoji, space, then action text)
+- NEVER: `- ❌ ` (dash, space, cross emoji, space, then action text)
+- ASK: `- ⚠️ ` (dash, space, warning emoji, space, then scenario text)
+
+Rules WITHOUT emoji prefixes will FAIL validation and trigger regeneration.
+This was identified as a common issue in TASK-REV-TC03 review.
+
 **Why**: Explicit boundaries prevent costly mistakes and reduce human intervention by 40%.
 
 #### 4. Specificity Score (MAINTAINED)
@@ -644,6 +653,78 @@ example_density: 52%
 boundary_sections: [ALWAYS, NEVER, ASK]
 overall_status: PASSED
 ```
+
+---
+
+
+## Critical Content Guidelines (TASK-FIX-PD07)
+
+These guidelines address common issues identified in code reviews and must be followed strictly.
+
+### 1. Use Discovered Paths Only
+
+🚨 **NEVER infer or assume template paths** - use ONLY paths from discovery phase.
+
+**Problem**: Enhanced agents sometimes show assumed paths (e.g., `templates/firebase/`) instead of actual discovered paths like `templates/other/`.
+
+**Requirements**:
+- Template paths in "Related Templates" section MUST come from the discovery input
+- Use EXACT paths as provided in manifest.json or template catalog
+- If uncertain about a path, OMIT the template reference rather than guess
+
+**Example (WRONG)**:
+```markdown
+## Related Templates
+- `templates/firebase/sessions.js.template` ← Path inferred from content!
+```
+
+**Example (CORRECT)**:
+```markdown
+## Related Templates
+- `templates/other/sessions.js.template` ← Actual path from discovery
+```
+
+
+### 2. Derive Framework Context From Codebase Analysis
+
+🚨 **NEVER include framework patterns not found in analyzed code**
+
+**Problem**: Enhanced agents sometimes include generic patterns (e.g., React hooks) when the actual codebase uses different frameworks (e.g., Svelte).
+
+**Requirements**:
+- ALL code examples MUST be derived from actual template source files
+- Before including framework-specific patterns, verify they exist in analyzed code
+- Analyze package.json/pyproject.toml imports to determine actual frameworks
+- State what was FOUND in analysis, not what MIGHT be expected
+
+**Verification Process**:
+1. Check package.json `dependencies` for framework indicators (react, svelte, vue, etc.)
+2. Scan import statements in template files
+3. Only include patterns with supporting evidence
+
+**Example (WRONG)**:
+```typescript
+// React hook example (but template uses Svelte!)
+const [sessions, setSessions] = useState([]);
+```
+
+**Example (CORRECT)**:
+```javascript
+// Svelte store example (matches actual codebase)
+import { writable } from 'svelte/store';
+export const sessions = writable([]);
+```
+
+**When Uncertain**:
+Add note: `> **Note**: Adapt examples for your specific framework if needed.`
+
+
+### 3. Emoji Prefixes Are Mandatory for Boundaries
+
+See "Boundary Sections" in GitHub Best Practices section above. Every rule MUST have:
+- ALWAYS: `- ✅ `
+- NEVER: `- ❌ `
+- ASK: `- ⚠️ `
 
 ---
 
