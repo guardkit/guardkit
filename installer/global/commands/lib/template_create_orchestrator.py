@@ -1553,19 +1553,19 @@ Enhance the {agent_name} agent with template-specific content:
             reference_path = reference_dir / "README.md"
 
             # Write core CLAUDE.md
-            success, error_msg = safe_write_file(core_path, split_output.core)
+            success, error_msg = safe_write_file(core_path, split_output.core_content)
             if not success:
                 logger.error(f"Failed to write core CLAUDE.md: {error_msg}")
                 return False
 
             # Write patterns
-            success, error_msg = safe_write_file(patterns_path, split_output.patterns)
+            success, error_msg = safe_write_file(patterns_path, split_output.patterns_content)
             if not success:
                 logger.error(f"Failed to write patterns README.md: {error_msg}")
                 return False
 
             # Write reference
-            success, error_msg = safe_write_file(reference_path, split_output.reference)
+            success, error_msg = safe_write_file(reference_path, split_output.reference_content)
             if not success:
                 logger.error(f"Failed to write reference README.md: {error_msg}")
                 return False
