@@ -1468,13 +1468,15 @@ setup_python_bin_symlinks() {
         fi
 
         # Create or update symlink
+        # NOTE: Do NOT chmod symlinks - on macOS/Linux, chmod on a symlink
+        # modifies the TARGET file's permissions, which would mark library
+        # files as executable in git. Symlinks inherit target permissions.
         if [ -L "$symlink_path" ]; then
             local current_target=$(readlink "$symlink_path")
             if [ "$current_target" = "$script_path" ]; then
                 ((symlinks_skipped++))
             else
                 ln -sf "$script_path" "$symlink_path"
-                chmod +x "$symlink_path" 2>/dev/null || true
                 ((symlinks_updated++))
                 print_info "  Updated: $symlink_name"
             fi
@@ -1483,7 +1485,6 @@ setup_python_bin_symlinks() {
             ((errors++))
         else
             ln -s "$script_path" "$symlink_path"
-            chmod +x "$symlink_path" 2>/dev/null || true
             ((symlinks_created++))
             print_info "  Created: $symlink_name → $(basename $script_path)"
         fi
