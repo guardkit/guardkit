@@ -44,6 +44,9 @@ class CompletenessValidator:
     CRUD operations, symmetric layer coverage, and consistent patterns.
     """
 
+    # TASK-FIX-6855 Issue 6: Template suffix constant (DRY principle)
+    TEMPLATE_SUFFIX = '.template'
+
     def __init__(
         self,
         pattern_matcher: CRUDPatternMatcher = None,
@@ -339,6 +342,26 @@ class CompletenessValidator:
 
         return None
 
+    def _separate_template_suffix(self, filename: str) -> tuple:
+        """Separate .template suffix from actual filename.
+
+        TASK-FIX-6855 Issue 6: Correctly handle template suffix (DRY principle).
+
+        Args:
+            filename: Filename to process
+
+        Returns:
+            Tuple of (actual_filename, template_suffix)
+
+        Examples:
+            - 'file.js.template' → ('file.js', '.template')
+            - 'file.py' → ('file.py', '')
+        """
+        if filename.endswith(self.TEMPLATE_SUFFIX):
+            actual = filename[:-len(self.TEMPLATE_SUFFIX)]
+            return actual, self.TEMPLATE_SUFFIX
+        return filename, ''
+
     def _estimate_file_path(
         self,
         entity: str,
@@ -347,6 +370,8 @@ class CompletenessValidator:
     ) -> str:
         """
         Estimate file path for missing template based on reference.
+
+        TASK-FIX-6855 Issue 6: Rewritten to correctly handle template suffix using helper.
 
         Preserves full compound extensions (e.g., .js.template, .ts.template)
         and follows the naming pattern from the reference file.
@@ -363,48 +388,55 @@ class CompletenessValidator:
         ref_path = Path(reference.template_path)
         directory = ref_path.parent
 
-        # Get all suffixes to preserve compound extensions like .js.template
-        # Path.suffixes returns ['.js', '.template'] for 'file.js.template'
-        all_suffixes = ''.join(ref_path.suffixes)
+        # TASK-FIX-6855 Issue 6: Use helper to separate template suffix
+        ref_name = ref_path.name
+        actual_filename, template_suffix = self._separate_template_suffix(ref_name)
 
-        # Determine naming pattern from reference file
-        # Check if reference uses hyphen separator (e.g., "Read-query.js.template")
-        # Remove all suffixes at once to get the base name
-        ref_stem = ref_path.name.removesuffix(all_suffixes)
+        # Now work with the actual filename (without .template)
+        actual_path = Path(actual_filename)
+
+        # Get the file extension(s) from actual filename
+        # For 'file.js' → '.js', for 'file.test.ts' → '.test.ts'
+        file_suffixes = ''.join(actual_path.suffixes)
+
+        # Get base name without any extensions
+        base_name = actual_path.name
+        if file_suffixes:
+            base_name = base_name[:-len(file_suffixes)]
 
         # Extract the entity part from reference to understand the pattern
-        # We need to find the actual prefix used in the filename, not just the canonical operation
-        # (e.g., "Get" maps to "Read" operation, but we need to find "Get" in "Get-user")
         ref_operation = self.pattern_matcher.identify_crud_operation(reference)
 
         # Find the actual prefix used in the reference file
         actual_prefix = None
         if ref_operation:
             # Get CRUD_PATTERNS to find the actual prefix used
-            # Note: _pattern_matcher module is already imported at module level
             patterns_for_operation = _pattern_matcher.CRUD_PATTERNS.get(ref_operation, [ref_operation])
             for pattern in patterns_for_operation:
-                if ref_stem.startswith(pattern):
+                if base_name.startswith(pattern):
                     actual_prefix = pattern
                     break
 
         if actual_prefix:
             # Get the separator used (if any) between operation and entity
-            remainder = ref_stem[len(actual_prefix):]
+            remainder = base_name[len(actual_prefix):]
             if remainder.startswith('-'):
                 # Hyphenated pattern: "Get-user" -> "Update-user"
                 entity_part = remainder[1:]  # Remove the hyphen
-                new_filename = f"{operation}-{entity_part}{all_suffixes}"
+                new_base = f"{operation}-{entity_part}"
             elif remainder.startswith('_'):
                 # Underscore pattern: "Get_user" -> "Update_user"
                 entity_part = remainder[1:]
-                new_filename = f"{operation}_{entity_part}{all_suffixes}"
+                new_base = f"{operation}_{entity_part}"
             else:
                 # No separator or PascalCase: "GetUser" -> "UpdateUser"
-                new_filename = f"{operation}{entity}{all_suffixes}"
+                new_base = f"{operation}{entity}"
         else:
-            # Fallback: use operation + entity with compound extension
-            new_filename = f"{operation}{entity}{all_suffixes}"
+            # Fallback: use operation + entity
+            new_base = f"{operation}{entity}"
+
+        # Reconstruct full filename: base + file_suffixes + template_suffix
+        new_filename = f"{new_base}{file_suffixes}{template_suffix}"
 
         return str(directory / new_filename)
 

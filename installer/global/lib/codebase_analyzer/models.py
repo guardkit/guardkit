@@ -14,7 +14,7 @@ These models follow the architectural review recommendations:
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -51,15 +51,45 @@ class ConfidenceScore(BaseModel):
         return self
 
 
+class FrameworkInfo(BaseModel):
+    """Framework information with optional metadata.
+
+    TASK-FIX-6855 Issue 1: Support rich framework metadata from AI.
+    """
+    name: str = Field(description="Framework name")
+    purpose: Optional[str] = Field(None, description="Framework purpose/category")
+    version: Optional[str] = Field(None, description="Framework version if detected")
+
+
 class TechnologyInfo(BaseModel):
-    """Technology stack information."""
+    """Technology stack information.
+
+    TASK-FIX-6855 Issue 1: Support both simple strings and rich FrameworkInfo objects.
+    """
     primary_language: str = Field(description="Primary programming language")
-    frameworks: List[str] = Field(default_factory=list, description="Web frameworks, API frameworks, etc.")
+    frameworks: List[Union[str, FrameworkInfo]] = Field(
+        default_factory=list,
+        description="Web frameworks, API frameworks, etc. (strings or FrameworkInfo objects)"
+    )
     testing_frameworks: List[str] = Field(default_factory=list, description="Testing tools (pytest, jest, etc.)")
     build_tools: List[str] = Field(default_factory=list, description="Build/package managers")
     databases: List[str] = Field(default_factory=list, description="Database technologies")
     infrastructure: List[str] = Field(default_factory=list, description="Infrastructure tools (Docker, K8s, etc.)")
     confidence: ConfidenceScore
+
+    @property
+    def framework_list(self) -> List[str]:
+        """Get framework names as simple list (backward compatibility).
+
+        TASK-FIX-6855 Issue 1: Convenience property for accessing framework names.
+        """
+        result = []
+        for item in self.frameworks:
+            if isinstance(item, str):
+                result.append(item)
+            else:
+                result.append(item.name)
+        return result
 
 
 class LayerInfo(BaseModel):
@@ -162,7 +192,7 @@ Analyzed: {self.analyzed_at.strftime('%Y-%m-%d %H:%M:%S')}
 
 Technology Stack:
   Language: {self.technology.primary_language}
-  Frameworks: {', '.join(self.technology.frameworks) or 'None detected'}
+  Frameworks: {', '.join(self.technology.framework_list) or 'None detected'}
   Testing: {', '.join(self.technology.testing_frameworks) or 'None detected'}
 
 Architecture:

@@ -48,6 +48,8 @@ class CRUDPatternMatcher:
         """
         Identify CRUD operation from template file path or name.
 
+        TASK-FIX-6855 Issue 5: Enhanced to prevent false positives for standalone utility files.
+
         Args:
             template: CodeTemplate to analyze
 
@@ -60,16 +62,25 @@ class CRUDPatternMatcher:
             - 'UpdateProduct.cs' → 'Update'
             - 'DeleteProduct.cs' → 'Delete'
             - 'ListProducts.cs' → 'List'
+            - 'query.js' → None (TASK-FIX-6855: utility file, not CRUD)
+            - 'firebase.js' → None (TASK-FIX-6855: utility file, not CRUD)
         """
         # Combine file name and path for matching
         search_text = f"{template.name} {template.template_path} {template.original_path}"
         search_text_lower = search_text.lower()
 
-        filename_lower = template.name.lower()
+        # Get filename without extension for pattern matching
+        filename_stem = Path(template.name).stem
+        filename_stem_lower = filename_stem.lower()
+
+        # TASK-FIX-6855 Issue 5: Skip standalone utility files
+        # Pattern must be followed by something (entity name, separator, etc.)
+        # Patterns like 'query', 'list', 'search' alone are utility files, not CRUD operations
 
         # Special case: Check 'List' first before other Read operations
         # because 'List' is also in Read patterns
-        if filename_lower.startswith('list'):
+        # But must be followed by something (ListUsers, not just List or list)
+        if filename_stem_lower.startswith('list') and len(filename_stem_lower) > 4:
             return 'List'
 
         # Check each CRUD operation pattern
@@ -83,13 +94,28 @@ class CRUDPatternMatcher:
                 # Example: 'Create' matches 'CreateProduct.cs' or 'create_product.py'
                 # But not 'MyCreateHandler.cs' (Create not at start)
                 pattern_lower = pattern.lower()
+                pattern_len = len(pattern_lower)
 
-                if filename_lower.startswith(pattern_lower):
-                    return operation
+                # TASK-FIX-6855 Issue 5: Pattern must be followed by something
+                # 'query' alone is not CRUD, but 'QueryUsers' is
+                if filename_stem_lower.startswith(pattern_lower) and len(filename_stem_lower) > pattern_len:
+                    # Check what follows the pattern
+                    remainder = filename_stem_lower[pattern_len:]
+                    # Valid separators: PascalCase (uppercase), hyphen, underscore
+                    if remainder[0].isupper() or remainder.startswith('-') or remainder.startswith('_'):
+                        return operation
+                    # Also accept if it's all lowercase but has something after
+                    # This handles cases like 'createuser.js' → Create operation
+                    elif remainder and remainder[0].isalpha():
+                        return operation
 
-                # Also check in path for cases like '/Create/' or '/create-'
-                if f'/{pattern_lower}' in search_text_lower or f'-{pattern_lower}' in search_text_lower or f'_{pattern_lower}' in search_text_lower:
-                    return operation
+                # TASK-FIX-6855 Issue 5: Skip path matching for short patterns that could be utility files
+                # Patterns like 'Query', 'List', 'Search' in paths could be false positives
+                # Only check path for longer, less ambiguous patterns like '/Create/' or '/Update/'
+                if pattern_len >= 6:  # Only match unambiguous patterns in paths
+                    # Also check in path for cases like '/Create/' or '/create-'
+                    if f'/{pattern_lower}/' in search_text_lower or f'-{pattern_lower}' in search_text_lower or f'_{pattern_lower}' in search_text_lower:
+                        return operation
 
         return None
 
@@ -127,6 +153,8 @@ class CRUDPatternMatcher:
 
         Uses heuristics to identify the entity being operated on.
 
+        TASK-FIX-6855 Issue 5: Guard clause to check if this is a CRUD file first.
+
         Args:
             template: CodeTemplate to analyze
 
@@ -139,11 +167,17 @@ class CRUDPatternMatcher:
             - 'UpdateOrderValidator.cs' → 'Order'
 
         Strategy:
-            1. Remove operation prefix (Create, Get, Update, Delete)
-            2. Remove common suffixes (Request, Response, Validator, Handler, Query, Command)
-            3. Singularize plural forms if possible
-            4. Return remaining token
+            1. Check if this is a CRUD file first
+            2. Remove operation prefix (Create, Get, Update, Delete)
+            3. Remove common suffixes (Request, Response, Validator, Handler, Query, Command)
+            4. Singularize plural forms if possible
+            5. Return remaining token
         """
+        # TASK-FIX-6855 Issue 5: Guard clause - only process CRUD files
+        operation = CRUDPatternMatcher.identify_crud_operation(template)
+        if operation is None:
+            return None  # Not a CRUD file - don't treat as entity
+
         # Start with the file name (without extension)
         name = Path(template.name).stem
 

@@ -192,6 +192,24 @@ class HeuristicAnalyzer:
     TASK-769D: Now accepts optional file_samples for better context.
     """
 
+    # TASK-FIX-6855 Issue 2: Extended layer patterns dictionary (DIP recommendation)
+    EXTENDED_LAYER_PATTERNS = {
+        "routes/": ("Presentation", "Route handlers and endpoints", ["Application"]),
+        "controllers/": ("Presentation", "API controllers", ["Application"]),
+        "views/": ("Presentation", "View templates", ["Application"]),
+        "endpoints/": ("Presentation", "API endpoints", ["Application"]),
+        "lib/": ("Infrastructure", "Utility libraries", []),
+        "utils/": ("Shared", "Utility functions", []),
+        "helpers/": ("Shared", "Helper functions", []),
+        "upload/": ("Infrastructure", "File upload utilities", []),
+        "scripts/": ("Infrastructure", "Automation scripts", []),
+        "src/": ("Application", "Source code", ["Domain"]),
+        "components/": ("Presentation", "UI components", ["Application"]),
+        "stores/": ("Application", "State management", ["Domain"]),
+        "services/": ("Application", "Business services", ["Domain"]),
+        "middleware/": ("Infrastructure", "Middleware components", ["Application"]),
+    }
+
     def __init__(self, codebase_path: Path, file_samples: Optional[List[Dict[str, Any]]] = None):
         """
         Initialize heuristic analyzer.
@@ -438,7 +456,10 @@ class HeuristicAnalyzer:
         return "Standard Structure"
 
     def _detect_layers(self) -> list:
-        """Detect architectural layers."""
+        """Detect architectural layers.
+
+        TASK-FIX-6855 Issue 2: Enhanced with extended patterns support.
+        """
         layers = []
 
         # This is a simplified heuristic
@@ -457,6 +478,39 @@ class HeuristicAnalyzer:
                 "typical_files": ["services", "use cases"],
                 "dependencies": ["Domain"]
             })
+
+        # TASK-FIX-6855 Issue 2: Add extended patterns detection (SRP recommendation)
+        extended_layers = self._detect_extended_patterns()
+        layers.extend(extended_layers)
+
+        return layers
+
+    def _detect_extended_patterns(self) -> list:
+        """Detect layers from extended patterns.
+
+        TASK-FIX-6855 Issue 2: Separate method for extended pattern detection (SRP).
+
+        Returns:
+            List of LayerInfo dictionaries for extended patterns found
+        """
+        layers = []
+        detected_layers = set()  # Track unique layers
+
+        for pattern, (layer_name, description, dependencies) in self.EXTENDED_LAYER_PATTERNS.items():
+            # Check if pattern exists in codebase
+            pattern_path = pattern.rstrip('/')
+            if any(self.codebase_path.rglob(f"{pattern_path}/*")) or \
+               any(self.codebase_path.rglob(f"*/{pattern_path}/*")):
+                # Only add if we haven't already detected this layer
+                if layer_name not in detected_layers:
+                    layers.append({
+                        "name": layer_name,
+                        "description": description,
+                        "typical_files": [pattern],
+                        "dependencies": dependencies
+                    })
+                    detected_layers.add(layer_name)
+                    logger.debug(f"Detected {layer_name} layer from {pattern} pattern")
 
         return layers
 
