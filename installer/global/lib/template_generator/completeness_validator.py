@@ -44,6 +44,9 @@ class CompletenessValidator:
     CRUD operations, symmetric layer coverage, and consistent patterns.
     """
 
+    # TASK-FIX-6855 Issue 6: Template suffix constant (DRY principle)
+    TEMPLATE_SUFFIX = '.template'
+
     def __init__(
         self,
         pattern_matcher: CRUDPatternMatcher = None,
@@ -127,6 +130,8 @@ class CompletenessValidator:
         """
         Check if all CRUD operations are present for each entity.
 
+        TASK-FIX-E5F6: Added entity validation to filter false positives.
+
         Expected operations: Create, Read, Update, Delete
 
         Args:
@@ -142,6 +147,11 @@ class CompletenessValidator:
 
         for entity, operations_dict in entity_groups.items():
             present_operations = set(operations_dict.keys())
+
+            # TASK-FIX-E5F6: Skip entities that don't meet minimum operation threshold
+            if not self._is_valid_entity(entity, present_operations):
+                continue
+
             missing_operations = EXPECTED_CRUD_OPERATIONS - present_operations
 
             for operation in missing_operations:
@@ -213,6 +223,28 @@ class CompletenessValidator:
                 logger.debug(f"Layer asymmetry: {operation} in Web but not UseCases")
 
         return issues
+
+    def _is_valid_entity(self, entity: str, operations: Set[str]) -> bool:
+        """
+        Validate entity has enough CRUD operations to be considered real.
+
+        TASK-FIX-E5F6: Entities with only 1 CRUD operation are likely false positives.
+        Minimum 2 operations required to be considered a valid CRUD entity.
+
+        Args:
+            entity: Entity name
+            operations: Set of detected CRUD operations
+
+        Returns:
+            True if entity appears valid, False otherwise
+        """
+        MIN_OPERATIONS = 2
+
+        if len(operations) < MIN_OPERATIONS:
+            logger.debug(f"Skipping entity '{entity}' - only {len(operations)} operations detected (minimum: {MIN_OPERATIONS})")
+            return False
+
+        return True
 
     def _generate_recommendations(
         self,
@@ -339,6 +371,26 @@ class CompletenessValidator:
 
         return None
 
+    def _separate_template_suffix(self, filename: str) -> tuple:
+        """Separate .template suffix from actual filename.
+
+        TASK-FIX-6855 Issue 6: Correctly handle template suffix (DRY principle).
+
+        Args:
+            filename: Filename to process
+
+        Returns:
+            Tuple of (actual_filename, template_suffix)
+
+        Examples:
+            - 'file.js.template' → ('file.js', '.template')
+            - 'file.py' → ('file.py', '')
+        """
+        if filename.endswith(self.TEMPLATE_SUFFIX):
+            actual = filename[:-len(self.TEMPLATE_SUFFIX)]
+            return actual, self.TEMPLATE_SUFFIX
+        return filename, ''
+
     def _estimate_file_path(
         self,
         entity: str,
@@ -348,21 +400,72 @@ class CompletenessValidator:
         """
         Estimate file path for missing template based on reference.
 
+        TASK-FIX-6855 Issue 6: Rewritten to correctly handle template suffix using helper.
+
+        Preserves full compound extensions (e.g., .js.template, .ts.template)
+        and follows the naming pattern from the reference file.
+
         Args:
             entity: Entity name
             operation: Operation name
             reference: Reference template
 
         Returns:
-            Estimated file path
+            Estimated file path with correct extension and naming pattern
         """
-        # Extract directory from reference path
         from pathlib import Path
         ref_path = Path(reference.template_path)
         directory = ref_path.parent
 
-        # Create new filename based on operation and entity
-        new_filename = f"{operation}{entity}{ref_path.suffix}"
+        # TASK-FIX-6855 Issue 6: Use helper to separate template suffix
+        ref_name = ref_path.name
+        actual_filename, template_suffix = self._separate_template_suffix(ref_name)
+
+        # Now work with the actual filename (without .template)
+        actual_path = Path(actual_filename)
+
+        # Get the file extension(s) from actual filename
+        # For 'file.js' → '.js', for 'file.test.ts' → '.test.ts'
+        file_suffixes = ''.join(actual_path.suffixes)
+
+        # Get base name without any extensions
+        base_name = actual_path.name
+        if file_suffixes:
+            base_name = base_name[:-len(file_suffixes)]
+
+        # Extract the entity part from reference to understand the pattern
+        ref_operation = self.pattern_matcher.identify_crud_operation(reference)
+
+        # Find the actual prefix used in the reference file
+        actual_prefix = None
+        if ref_operation:
+            # Get CRUD_PATTERNS to find the actual prefix used
+            patterns_for_operation = _pattern_matcher.CRUD_PATTERNS.get(ref_operation, [ref_operation])
+            for pattern in patterns_for_operation:
+                if base_name.startswith(pattern):
+                    actual_prefix = pattern
+                    break
+
+        if actual_prefix:
+            # Get the separator used (if any) between operation and entity
+            remainder = base_name[len(actual_prefix):]
+            if remainder.startswith('-'):
+                # Hyphenated pattern: "Get-user" -> "Update-user"
+                entity_part = remainder[1:]  # Remove the hyphen
+                new_base = f"{operation}-{entity_part}"
+            elif remainder.startswith('_'):
+                # Underscore pattern: "Get_user" -> "Update_user"
+                entity_part = remainder[1:]
+                new_base = f"{operation}_{entity_part}"
+            else:
+                # No separator or PascalCase: "GetUser" -> "UpdateUser"
+                new_base = f"{operation}{entity}"
+        else:
+            # Fallback: use operation + entity
+            new_base = f"{operation}{entity}"
+
+        # Reconstruct full filename: base + file_suffixes + template_suffix
+        new_filename = f"{new_base}{file_suffixes}{template_suffix}"
 
         return str(directory / new_filename)
 

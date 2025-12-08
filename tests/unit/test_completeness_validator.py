@@ -425,3 +425,175 @@ class TestTemplateRecommendation:
 
         assert rec_dict['file_path'] == 'templates/UseCases/Products/UpdateProduct.template'
         assert rec_dict['can_auto_generate'] is True
+
+
+class TestEstimateFilePath:
+    """Test _estimate_file_path method for correct naming and extension handling.
+
+    TASK-FIX-PD04: Tests for auto-generated template file naming fix.
+    """
+
+    @pytest.fixture
+    def validator(self):
+        """Create a CompletenessValidator instance."""
+        return CompletenessValidator()
+
+    def test_compound_extension_js_template(self, validator):
+        """Test that .js.template compound extension is preserved (not truncated to .template)."""
+        reference = CodeTemplate(
+            name="Read-query.js.template",
+            original_path="src/queries/Read-query.js",
+            template_path="templates/queries/Read-query.js.template",
+            content="// Query template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="query",
+            operation="Create",
+            reference=reference
+        )
+
+        # Should produce "Create-query.js.template", NOT "Createquery.template"
+        assert result.endswith(".js.template"), f"Expected .js.template extension, got: {result}"
+        assert "Create-query" in result, f"Expected 'Create-query' in path, got: {result}"
+
+    def test_compound_extension_ts_template(self, validator):
+        """Test that .ts.template compound extension is preserved."""
+        reference = CodeTemplate(
+            name="Get-user.ts.template",
+            original_path="src/services/Get-user.ts",
+            template_path="templates/services/Get-user.ts.template",
+            content="// Service template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="user",
+            operation="Update",
+            reference=reference
+        )
+
+        assert result.endswith(".ts.template"), f"Expected .ts.template extension, got: {result}"
+        assert "Update-user" in result, f"Expected 'Update-user' in path, got: {result}"
+
+    def test_compound_extension_cs_template(self, validator):
+        """Test that .cs.template compound extension is preserved."""
+        reference = CodeTemplate(
+            name="CreateProduct.cs.template",
+            original_path="src/UseCases/Products/CreateProduct.cs",
+            template_path="templates/UseCases/Products/CreateProduct.cs.template",
+            content="// C# template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="Product",
+            operation="Delete",
+            reference=reference
+        )
+
+        assert result.endswith(".cs.template"), f"Expected .cs.template extension, got: {result}"
+
+    def test_hyphenated_naming_pattern_preserved(self, validator):
+        """Test that hyphenated naming pattern (Read-query -> Create-query) is preserved."""
+        reference = CodeTemplate(
+            name="Read-query.js.template",
+            original_path="src/queries/Read-query.js",
+            template_path="templates/queries/Read-query.js.template",
+            content="// Query"
+        )
+
+        result = validator._estimate_file_path(
+            entity="query",
+            operation="Delete",
+            reference=reference
+        )
+
+        # Should use hyphenated pattern: Delete-query.js.template
+        assert "Delete-query.js.template" in result, f"Expected 'Delete-query.js.template', got: {result}"
+
+    def test_underscore_naming_pattern_preserved(self, validator):
+        """Test that underscore naming pattern (Read_user -> Update_user) is preserved."""
+        reference = CodeTemplate(
+            name="Read_user.py.template",
+            original_path="src/queries/Read_user.py",
+            template_path="templates/queries/Read_user.py.template",
+            content="# Python template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="user",
+            operation="Update",
+            reference=reference
+        )
+
+        # Should use underscore pattern: Update_user.py.template
+        assert "Update_user.py.template" in result, f"Expected 'Update_user.py.template', got: {result}"
+
+    def test_pascal_case_naming_pattern(self, validator):
+        """Test that PascalCase naming pattern (ReadProduct -> UpdateProduct) is preserved."""
+        reference = CodeTemplate(
+            name="GetProduct.cs.template",
+            original_path="src/UseCases/Products/GetProduct.cs",
+            template_path="templates/UseCases/Products/GetProduct.cs.template",
+            content="// C# UseCase"
+        )
+
+        result = validator._estimate_file_path(
+            entity="Product",
+            operation="Create",
+            reference=reference
+        )
+
+        # Should use PascalCase pattern
+        assert result.endswith(".cs.template"), f"Expected .cs.template extension, got: {result}"
+
+    def test_directory_preserved(self, validator):
+        """Test that the directory path from reference is preserved."""
+        reference = CodeTemplate(
+            name="Read-query.js.template",
+            original_path="src/queries/Read-query.js",
+            template_path="templates/nested/path/queries/Read-query.js.template",
+            content="// Query"
+        )
+
+        result = validator._estimate_file_path(
+            entity="query",
+            operation="Create",
+            reference=reference
+        )
+
+        assert result.startswith("templates/nested/path/queries/"), \
+            f"Expected directory 'templates/nested/path/queries/', got: {result}"
+
+    def test_simple_template_extension(self, validator):
+        """Test files with only .template extension (no compound)."""
+        reference = CodeTemplate(
+            name="CreateProduct.template",
+            original_path="src/UseCases/Products/CreateProduct",
+            template_path="templates/UseCases/Products/CreateProduct.template",
+            content="// Template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="Product",
+            operation="Update",
+            reference=reference
+        )
+
+        assert result.endswith(".template"), f"Expected .template extension, got: {result}"
+
+    def test_triple_extension_preserved(self, validator):
+        """Test that triple extensions like .spec.ts.template are preserved."""
+        reference = CodeTemplate(
+            name="Read-query.spec.ts.template",
+            original_path="src/queries/Read-query.spec.ts",
+            template_path="templates/queries/Read-query.spec.ts.template",
+            content="// Test template"
+        )
+
+        result = validator._estimate_file_path(
+            entity="query",
+            operation="Create",
+            reference=reference
+        )
+
+        assert result.endswith(".spec.ts.template"), f"Expected .spec.ts.template extension, got: {result}"

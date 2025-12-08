@@ -23,6 +23,7 @@ from lib.template_generator import (
     ClaudeMdGenerator,
     TemplateClaude,
 )
+from lib.template_generator.models import TemplateSplitOutput
 
 
 # Test Fixtures
@@ -237,12 +238,12 @@ def test_template_claude_to_markdown():
 
     markdown = claude.to_markdown()
 
-    assert "# Claude Code Project Instructions" in markdown
-    assert "**Generated**: 2025-11-06T12:00:00Z" in markdown
-    assert "**Confidence**: 92%" in markdown
+    # New split-output design starts with content directly (no top-level header)
     assert "# Architecture Overview" in markdown
     assert "# Technology Stack" in markdown
     assert "# Project Structure" in markdown
+    assert "MVVM pattern" in markdown
+    assert "C# + .NET MAUI" in markdown
 
 
 # Test ClaudeMdGenerator
@@ -326,6 +327,59 @@ def test_project_structure_generation(basic_codebase_analysis):
 
     assert "# Project Structure" in structure
     assert "```" in structure  # Code block for tree
+    assert "Directory Descriptions" in structure
+
+
+def test_project_structure_from_directory_tree(basic_technology_info, clean_architecture_info, quality_info):
+    """Test project structure uses actual directory tree when available (TASK-FIX-PD03)"""
+    # Create analysis with project_structure populated
+    sample_tree = """src/
+├── lib/
+│   ├── firestore/
+│   ├── query.js
+│   └── weather.js
+├── routes/
+│   └── api.js
+└── App.svelte"""
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/test/project",
+        analyzed_at=datetime(2025, 11, 6, 12, 0, 0),
+        technology=basic_technology_info,
+        architecture=clean_architecture_info,
+        quality=quality_info,
+        example_files=[],
+        project_structure=sample_tree  # TASK-FIX-PD03: Actual tree
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+    structure = generator._generate_project_structure()
+
+    # Should use actual directory tree
+    assert "# Project Structure" in structure
+    assert "src/" in structure
+    assert "lib/" in structure
+    assert "firestore/" in structure
+    assert "query.js" in structure
+    assert "weather.js" in structure
+    assert "routes/" in structure
+    assert "App.svelte" in structure
+    # Should NOT have Directory Descriptions when using actual tree
+    assert "Directory Descriptions" not in structure
+
+
+def test_project_structure_fallback_without_tree(basic_codebase_analysis):
+    """Test project structure falls back to layers when tree not available (TASK-FIX-PD03)"""
+    # basic_codebase_analysis doesn't have project_structure set
+    assert basic_codebase_analysis.project_structure is None
+
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    structure = generator._generate_project_structure()
+
+    # Should use layer-based generation
+    assert "# Project Structure" in structure
+    assert "```" in structure
+    # Should have Directory Descriptions in fallback mode
     assert "Directory Descriptions" in structure
 
 
@@ -438,8 +492,10 @@ def test_save_to_file(basic_codebase_analysis, tmp_path):
 
     assert output_file.exists()
     content = output_file.read_text(encoding='utf-8')
-    assert "# Claude Code Project Instructions" in content
+    # New split-output design starts with content directly
     assert "# Architecture Overview" in content
+    assert "# Technology Stack" in content
+    assert "Clean Architecture" in content  # From basic_codebase_analysis
 
 
 def test_full_markdown_generation(basic_codebase_analysis):
@@ -448,8 +504,7 @@ def test_full_markdown_generation(basic_codebase_analysis):
     claude = generator.generate()
     markdown = generator.to_markdown(claude)
 
-    # Verify all major sections present
-    assert "# Claude Code Project Instructions" in markdown
+    # Verify all major sections present (new split-output design)
     assert "# Architecture Overview" in markdown
     assert "# Technology Stack" in markdown
     assert "# Project Structure" in markdown
@@ -458,6 +513,9 @@ def test_full_markdown_generation(basic_codebase_analysis):
     assert "# Code Examples" in markdown
     assert "# Quality Standards" in markdown
     assert "# Agent Usage" in markdown
+    # Verify content is present, not just headers
+    assert "Clean Architecture" in markdown
+    assert "Python" in markdown
 
 
 def test_confidence_score_propagation(basic_codebase_analysis):
@@ -660,13 +718,15 @@ def test_end_to_end_mvvm_generation(mvvm_codebase_analysis, tmp_path):
     # Verify file content
     content = output_file.read_text(encoding='utf-8')
 
-    # Check all major sections
-    assert "# Claude Code Project Instructions" in content
+    # Check all major sections (new split-output design)
+    assert "# Architecture Overview" in content
     assert "MVVM" in content
     assert "C#" in content
     assert ".NET MAUI" in content
     assert "# Quality Standards" in content
     assert "nullable reference types" in content.lower()
+    # Verify Model-View-ViewModel structure
+    assert "Model" in content or "View" in content or "ViewModel" in content
 
 
 def test_end_to_end_clean_arch_generation(basic_codebase_analysis, tmp_path):
@@ -681,12 +741,14 @@ def test_end_to_end_clean_arch_generation(basic_codebase_analysis, tmp_path):
     # Verify file content
     content = output_file.read_text(encoding='utf-8')
 
-    # Check all major sections
-    assert "# Claude Code Project Instructions" in content
+    # Check all major sections (new split-output design)
+    assert "# Architecture Overview" in content
     assert "Clean Architecture" in content
     assert "Python" in content
     assert "Domain" in content
     assert "PEP 8" in content
+    # Verify layer structure
+    assert "Application" in content or "Infrastructure" in content
 
 
 # ===== TASK-CLAUDE-MD-AGENTS: Test AI Enhancement Methods =====
@@ -847,3 +909,463 @@ def test_enhance_agent_info_different_types():
         # Verify when_to_use is specific to agent type
         when_to_use_lower = result['when_to_use'].lower()
         assert len(result['when_to_use']) > 30  # Should be detailed
+
+
+# ===== TASK-PD-005: Test Split Output Methods =====
+
+def test_generate_split_basic(basic_codebase_analysis):
+    """Test basic split output generation"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    output = generator.generate_split()
+
+    # Verify it returns TemplateSplitOutput (check class name due to symlink path differences)
+    assert type(output).__name__ == 'TemplateSplitOutput'
+
+    # Verify all fields populated
+    assert output.core_content, "Core content should not be empty"
+    assert output.patterns_content, "Patterns content should not be empty"
+    assert output.reference_content, "Reference content should not be empty"
+    assert output.generated_at, "Timestamp should be set"
+
+
+def test_generate_split_core_size_constraint(basic_codebase_analysis):
+    """Test that core content meets size constraint (≤10KB)"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    output = generator.generate_split()
+
+    core_size = output.get_core_size()
+    max_size = 10 * 1024  # 10KB
+
+    assert core_size <= max_size, f"Core content exceeds 10KB: {core_size / 1024:.2f}KB"
+
+
+def test_generate_split_content_structure(basic_codebase_analysis):
+    """Test split content has expected structure"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    output = generator.generate_split()
+
+    # Core should have loading instructions
+    assert "# How to Load This Template" in output.core_content
+    assert "docs/patterns/README.md" in output.core_content
+    assert "docs/reference/README.md" in output.core_content
+
+    # Core should have architecture overview
+    assert "# Architecture Overview" in output.core_content
+
+    # Patterns should have full quality standards
+    assert "# Quality Standards" in output.patterns_content
+    assert "# Patterns and Best Practices" in output.patterns_content
+
+    # Reference should have examples
+    assert "# Code Examples" in output.reference_content or "# Agent Usage" in output.reference_content
+
+
+def test_generate_split_reduction_percentage(basic_codebase_analysis):
+    """Test that split actually reduces core size significantly"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    output = generator.generate_split()
+
+    reduction = output.get_reduction_percent()
+
+    # Should have significant reduction (target ~40-70%, actual depends on content)
+    assert reduction > 40, f"Reduction too low: {reduction:.2f}%"
+
+
+def test_generate_split_backward_compatibility(basic_codebase_analysis):
+    """Test that original generate() still works alongside generate_split()"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+
+    # Both methods should work
+    claude = generator.generate()
+    output = generator.generate_split()
+
+    # Original method returns TemplateClaude
+    assert isinstance(claude, TemplateClaude)
+
+    # Split method returns TemplateSplitOutput (check class name due to symlink path differences)
+    assert type(output).__name__ == 'TemplateSplitOutput'
+
+
+def test_split_output_dataclass_methods(basic_codebase_analysis):
+    """Test TemplateSplitOutput dataclass utility methods"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    output = generator.generate_split()
+
+    # Test size calculations
+    core_size = output.get_core_size()
+    patterns_size = output.get_patterns_size()
+    reference_size = output.get_reference_size()
+    total_size = output.get_total_size()
+
+    assert core_size > 0
+    assert patterns_size > 0
+    assert reference_size > 0
+    assert total_size == core_size + patterns_size + reference_size
+
+    # Test validation
+    is_valid, error_msg = output.validate_size_constraints()
+    assert is_valid, f"Validation failed: {error_msg}"
+
+
+def test_generate_split_quality_standards_summary(basic_codebase_analysis):
+    """Test quality standards summary in core"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    core_summary = generator._generate_quality_standards_summary()
+
+    # Should have quick reference
+    assert "# Quality Standards" in core_summary
+    assert "## Quick Reference" in core_summary
+
+    # Should mention detailed standards in docs/patterns/README.md
+    assert "docs/patterns/README.md" in core_summary
+
+    # Should have key metrics
+    assert "SOLID" in core_summary
+    assert "DRY" in core_summary
+    assert "YAGNI" in core_summary
+
+
+def test_generate_split_agent_usage_summary(basic_codebase_analysis):
+    """Test agent usage summary in core"""
+    generator = ClaudeMdGenerator(basic_codebase_analysis)
+    usage_summary = generator._generate_agent_usage_summary()
+
+    # Should have header
+    assert "# Agent Usage" in usage_summary
+
+    # Should mention detailed docs in docs/reference/README.md
+    assert "docs/reference/README.md" in usage_summary
+
+    # Should have quick guide or categories
+    assert "Quick Guide" in usage_summary or "Available Agent Categories" in usage_summary
+
+
+def test_generate_split_loading_instructions():
+    """Test loading instructions section"""
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        architecture=ArchitectureInfo(
+            patterns=[],
+            architectural_style="Layered",
+            layers=[],
+            key_abstractions=[],
+            dependency_flow="Standard",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=80.0,
+            solid_compliance=80.0,
+            dry_compliance=80.0,
+            yagni_compliance=80.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+    instructions = generator._generate_loading_instructions()
+
+    # Should explain split structure
+    assert "# How to Load This Template" in instructions
+    assert "CLAUDE.md" in instructions
+    assert "docs/patterns/README.md" in instructions
+    assert "docs/reference/README.md" in instructions
+
+    # Should explain when to load each file
+    assert "Loading Strategy" in instructions
+    assert "Why Split?" in instructions
+
+
+# ===== TASK-FIX-PD05: Test Agent Categorization =====
+
+def test_categorize_agent_by_keywords_database_technology():
+    """Test database agent categorization by technology (TASK-FIX-PD05)"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    # Test technology-based categorization
+    assert generator._categorize_agent_by_keywords({
+        'name': 'firestore-specialist',
+        'description': 'Firebase operations',
+        'technologies': ['Firebase', 'Firestore']
+    }) == 'database'
+
+    assert generator._categorize_agent_by_keywords({
+        'name': 'realm-specialist',
+        'description': 'Mobile database operations',
+        'technologies': ['Realm', 'C#']
+    }) == 'database'
+
+
+def test_categorize_agent_by_keywords_database_description():
+    """Test database agent categorization by description keywords (TASK-FIX-PD05)"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    # Test description keyword-based categorization
+    assert generator._categorize_agent_by_keywords({
+        'name': 'data-specialist',
+        'description': 'CRUD operations with repository pattern',
+        'technologies': []
+    }) == 'database'
+
+    # The firestore bug fix - should be database, not UI
+    assert generator._categorize_agent_by_keywords({
+        'name': 'firebase-firestore-specialist',
+        'description': 'Firebase Firestore CRUD operations with authentication guards',
+        'technologies': []
+    }) == 'database'
+
+
+def test_categorize_agent_by_keywords_precedence():
+    """Test keyword precedence: database > testing > api > domain > ui (TASK-FIX-PD05)"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    # Database + UI keywords → database wins
+    assert generator._categorize_agent_by_keywords({
+        'name': 'db-ui-specialist',
+        'description': 'Database operations with UI forms',
+        'technologies': []
+    }) == 'database'
+
+    # API + UI keywords → api wins
+    assert generator._categorize_agent_by_keywords({
+        'name': 'api-ui-specialist',
+        'description': 'API endpoints with component rendering',
+        'technologies': []
+    }) == 'api'
+
+    # Domain + UI keywords → domain wins
+    assert generator._categorize_agent_by_keywords({
+        'name': 'domain-ui-specialist',
+        'description': 'Business logic with component structure',
+        'technologies': []
+    }) == 'domain'
+
+
+def test_enhance_agent_info_with_ai_firestore_bug():
+    """Test fix for firestore agent misclassification (TASK-FIX-PD05)"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    agent_metadata = {
+        'name': 'firebase-firestore-specialist',
+        'description': 'Firebase Firestore CRUD operations with authentication guards, joins, and data transformation',
+        'technologies': ['Firebase', 'Firestore', 'JavaScript'],
+        'tools': ['Read', 'Write'],
+        'priority': 7
+    }
+
+    result = generator._enhance_agent_info_with_ai(agent_metadata)
+
+    # Should be database-related, NOT UI-related
+    assert 'database' in result['when_to_use'].lower() or 'data' in result['when_to_use'].lower()
+    # Should NOT contain UI-related text
+    assert 'UI component' not in result['when_to_use']
+
+
+def test_categorize_agent_all_categories():
+    """Test all agent categories have correct categorization (TASK-FIX-PD05)"""
+    from lib.template_generator.claude_md_generator import ClaudeMdGenerator
+    from lib.codebase_analyzer.models import (
+        CodebaseAnalysis,
+        TechnologyInfo,
+        ArchitectureInfo,
+        QualityInfo,
+        ConfidenceScore,
+        ConfidenceLevel,
+    )
+
+    analysis = CodebaseAnalysis(
+        codebase_path="/tmp/test",
+        technology=TechnologyInfo(
+            primary_language="Python",
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=95.0)
+        ),
+        architecture=ArchitectureInfo(
+            architectural_style="Clean Architecture",
+            layers=[],
+            dependency_flow="Domain → Application → Infrastructure",
+            patterns=[],
+            confidence=ConfidenceScore(level=ConfidenceLevel.HIGH, percentage=90.0)
+        ),
+        quality=QualityInfo(
+            overall_score=85.0,
+            solid_compliance=85.0,
+            dry_compliance=80.0,
+            yagni_compliance=90.0,
+            confidence=ConfidenceScore(level=ConfidenceLevel.MEDIUM, percentage=85.0)
+        ),
+        example_files=[]
+    )
+
+    generator = ClaudeMdGenerator(analysis)
+
+    test_cases = [
+        # Database
+        ({'name': 'db', 'description': 'Database operations', 'technologies': []}, 'database'),
+        ({'name': 'db', 'description': 'Firestore queries', 'technologies': []}, 'database'),
+        ({'name': 'db', 'description': 'Repository pattern', 'technologies': []}, 'database'),
+        ({'name': 'db', 'description': 'CRUD operations', 'technologies': []}, 'database'),
+        # Testing
+        ({'name': 'test', 'description': 'Test coverage', 'technologies': []}, 'testing'),
+        ({'name': 'test', 'description': 'Unit testing', 'technologies': []}, 'testing'),
+        # API
+        ({'name': 'api', 'description': 'API endpoint creation', 'technologies': []}, 'api'),
+        ({'name': 'api', 'description': 'REST controller', 'technologies': []}, 'api'),
+        # Domain
+        ({'name': 'domain', 'description': 'Business logic', 'technologies': []}, 'domain'),
+        ({'name': 'domain', 'description': 'Domain operations', 'technologies': []}, 'domain'),
+        # UI
+        ({'name': 'ui', 'description': 'UI component creation', 'technologies': []}, 'ui'),
+        ({'name': 'ui', 'description': 'Frontend interface', 'technologies': []}, 'ui'),
+        # General
+        ({'name': 'misc', 'description': 'General development', 'technologies': []}, 'general'),
+    ]
+
+    for metadata, expected_category in test_cases:
+        actual = generator._categorize_agent_by_keywords(metadata)
+        assert actual == expected_category, \
+            f"Agent '{metadata['name']}' with desc '{metadata['description']}' expected '{expected_category}' but got '{actual}'"

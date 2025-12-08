@@ -1,0 +1,12 @@
+{
+  "counters": {
+    "azure_devops": 0,
+    "github": 0,
+    "jira": {
+      "PROJ": 1
+    },
+    "linear": {}
+  },
+  "updated": "2025-12-05T12:35:07.157941+00:00",
+  "version": "1.0"
+}

@@ -9,6 +9,13 @@ Core Components:
     - TemplateGenerator: Main orchestrator for template generation
     - AIClient: Integration with Claude for placeholder extraction
     - Template validation and deduplication utilities
+    - Layer classification for template organization (TASK-FIX-40B4)
+
+Layer Classification:
+    - LayerClassificationOrchestrator: Coordinates JS-specific and generic classifiers
+    - JavaScriptLayerClassifier: JavaScript/TypeScript folder convention patterns
+    - GenericLayerClassifier: Cross-language fallback patterns
+    - ClassificationResult: Result with confidence scoring
 
 Usage:
     from lib.template_generator import TemplateGenerator
@@ -17,6 +24,11 @@ Usage:
     generator = TemplateGenerator(analysis)
     collection = generator.generate(max_templates=20)
     generator.save_templates(collection, output_dir)
+
+    # For custom layer classification:
+    from lib.template_generator import LayerClassificationOrchestrator
+    orchestrator = LayerClassificationOrchestrator()
+    result = orchestrator.classify(example_file, analysis)
 """
 
 import importlib
@@ -26,6 +38,7 @@ _template_generator_module = importlib.import_module('installer.global.lib.templ
 _claude_md_generator_module = importlib.import_module('installer.global.lib.template_generator.claude_md_generator')
 _models_module = importlib.import_module('installer.global.lib.template_generator.models')
 _ai_client_module = importlib.import_module('installer.global.lib.template_generator.ai_client')
+_layer_classifier_module = importlib.import_module('installer.global.lib.template_generator.layer_classifier')
 
 TemplateGenerator = _template_generator_module.TemplateGenerator
 ClaudeMdGenerator = _claude_md_generator_module.ClaudeMdGenerator
@@ -42,6 +55,13 @@ AgentMetadata = _models_module.AgentMetadata
 AIClient = _ai_client_module.AIClient
 MockAIClient = _ai_client_module.MockAIClient
 
+# Layer classification exports (TASK-FIX-40B4)
+LayerClassificationOrchestrator = _layer_classifier_module.LayerClassificationOrchestrator
+JavaScriptLayerClassifier = _layer_classifier_module.JavaScriptLayerClassifier
+GenericLayerClassifier = _layer_classifier_module.GenericLayerClassifier
+ClassificationResult = _layer_classifier_module.ClassificationResult
+LayerClassificationStrategy = _layer_classifier_module.LayerClassificationStrategy
+
 __all__ = [
     "TemplateGenerator",
     "ClaudeMdGenerator",
@@ -55,6 +75,12 @@ __all__ = [
     "AgentMetadata",
     "AIClient",
     "MockAIClient",
+    # Layer classification exports (TASK-FIX-40B4)
+    "LayerClassificationOrchestrator",
+    "JavaScriptLayerClassifier",
+    "GenericLayerClassifier",
+    "ClassificationResult",
+    "LayerClassificationStrategy",
 ]
 
 __version__ = "0.1.0"

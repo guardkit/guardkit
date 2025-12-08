@@ -4,9 +4,13 @@ This module provides a Strategy pattern implementation for resolving template
 file paths based on architectural layers and filename patterns.
 
 The resolver uses a chain of responsibility approach:
-1. LayerClassificationStrategy - Uses AI-provided layer information (PRIMARY)
-2. PatternClassificationStrategy - Infers layer from filename patterns (FALLBACK)
-3. Fallback to templates/other/ when classification fails
+1. AIProvidedLayerStrategy - Uses AI-provided layer information (PRIMARY)
+2. LayerClassificationOrchestratorStrategy - Language-specific & generic classification (ENHANCED)
+3. PatternClassificationStrategy - Infers layer from filename patterns (FALLBACK)
+4. Fallback to templates/other/ when classification fails
+
+TASK-FIX-40B4: Improved classification supports JavaScript folder conventions and
+generic cross-language patterns with confidence scoring.
 
 This fixes the issue where all templates were being placed in templates/other/
 instead of being organized by architectural layer.
@@ -19,9 +23,12 @@ import importlib
 
 # Import using importlib to avoid 'global' keyword issue
 _models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_layer_classifier_module = importlib.import_module('installer.global.lib.template_generator.layer_classifier')
 
 ExampleFile = _models_module.ExampleFile
 CodebaseAnalysis = _models_module.CodebaseAnalysis
+
+LayerClassificationOrchestrator = _layer_classifier_module.LayerClassificationOrchestrator
 
 
 # Pattern mappings: filename suffix → template subdirectory
@@ -59,6 +66,159 @@ class ClassificationStrategy(Protocol):
             or None if classification fails
         """
         ...
+
+
+class AIProvidedLayerStrategy:
+    """
+    Primary classification strategy using AI-provided layer information.
+
+    This strategy was previously called LayerClassificationStrategy.
+    Uses the example_file.layer attribute populated by AI during codebase analysis.
+    This is the most accurate method when layer information is available.
+    """
+
+    def classify(self, example_file: ExampleFile, analysis: CodebaseAnalysis) -> Optional[str]:
+        """
+        Classify using AI-provided layer information.
+
+        Args:
+            example_file: File to classify
+            analysis: Codebase analysis context
+
+        Returns:
+            Path like "templates/application/repositories/UserRepository.cs.template"
+            or None if layer information not available
+        """
+        if not example_file.layer:
+            return None
+
+        # Get filename components
+        original_path = Path(example_file.path)
+        filename = original_path.name
+
+        # Infer pattern subdirectory from filename
+        pattern_dir = self._infer_pattern(example_file.path)
+
+        # Build template path: templates/{layer}/{pattern}/{filename}.template
+        layer = example_file.layer.lower()
+        template_path = f"templates/{layer}/{pattern_dir}/{filename}.template"
+
+        return template_path
+
+    def _infer_pattern(self, file_path: str) -> str:
+        """
+        Infer pattern subdirectory from filename.
+
+        Examples:
+            UserRepository.cs → repositories
+            AuthService.cs → services
+            ConfigurationEngine.cs → engines
+            DomainCameraView.cs → views
+
+        Args:
+            file_path: Full file path
+
+        Returns:
+            Pattern subdirectory name (e.g., "repositories", "services")
+        """
+        filename = Path(file_path).stem  # Remove extension
+
+        # Check each pattern mapping
+        for suffix, pattern_dir in PATTERN_MAPPINGS:
+            if filename.endswith(suffix):
+                return pattern_dir
+
+        # Fallback: Use parent directory name
+        parent_name = Path(file_path).parent.name.lower()
+        return parent_name if parent_name else 'other'
+
+
+class LayerClassificationOrchestratorStrategy:
+    """
+    Enhanced classification using language-specific and generic layer classifiers.
+
+    TASK-FIX-40B4: Uses LayerClassificationOrchestrator to provide:
+    1. JavaScript-specific classification (folder conventions)
+    2. Generic cross-language classification (fallback)
+    3. Confidence scoring for reliability
+
+    This strategy bridges the gap between AI-provided layer info (when available)
+    and pattern-based inference (when layer info is missing).
+
+    Confidence > 0.80 is considered high confidence and recommended for production.
+    """
+
+    def __init__(self, orchestrator: Optional[LayerClassificationOrchestrator] = None):
+        """
+        Initialize strategy with layer classification orchestrator.
+
+        Args:
+            orchestrator: LayerClassificationOrchestrator instance
+                         (defaults to new instance with default strategies)
+        """
+        self.orchestrator = orchestrator or LayerClassificationOrchestrator()
+
+    def classify(self, example_file: ExampleFile, analysis: CodebaseAnalysis) -> Optional[str]:
+        """
+        Classify using language-specific and generic layer patterns.
+
+        Args:
+            example_file: File to classify
+            analysis: Codebase analysis context
+
+        Returns:
+            Path like "templates/presentation/components/Button.template"
+            or None if classification fails
+
+        Strategy:
+            1. Uses JavaScriptLayerClassifier for JavaScript/TypeScript files
+            2. Uses GenericLayerClassifier for all other files
+            3. Returns None if no patterns match
+            4. Includes confidence metadata for quality assessment
+        """
+        result = self.orchestrator.classify(example_file, analysis)
+
+        if not result:
+            return None
+
+        # Get filename components
+        original_path = Path(example_file.path)
+        filename = original_path.name
+
+        # Infer pattern subdirectory from filename
+        pattern_dir = self._infer_pattern(example_file.path)
+
+        # Build template path: templates/{layer}/{pattern}/{filename}.template
+        layer = result.layer.lower()
+        template_path = f"templates/{layer}/{pattern_dir}/{filename}.template"
+
+        return template_path
+
+    def _infer_pattern(self, file_path: str) -> str:
+        """
+        Infer pattern subdirectory from filename.
+
+        Examples:
+            Button.jsx → components (or might be extracted from path)
+            UserQuery.js → queries
+            useAuthStore.js → store
+
+        Args:
+            file_path: Full file path
+
+        Returns:
+            Pattern subdirectory name (e.g., "components", "queries")
+        """
+        filename = Path(file_path).stem  # Remove extension
+
+        # Check each pattern mapping
+        for suffix, pattern_dir in PATTERN_MAPPINGS:
+            if filename.endswith(suffix):
+                return pattern_dir
+
+        # Fallback: Use parent directory name
+        parent_name = Path(file_path).parent.name.lower()
+        return parent_name if parent_name else 'other'
 
 
 class LayerClassificationStrategy:
@@ -181,18 +341,31 @@ class TemplatePathResolver:
     """
     Orchestrator for template path resolution using chain of responsibility.
 
+    TASK-FIX-40B4: Updated strategy order with enhanced JavaScript classification.
+
     Tries multiple strategies in order:
-    1. LayerClassificationStrategy (AI-provided layer info)
-    2. PatternClassificationStrategy (filename pattern inference)
-    3. Fallback to templates/other/
+    1. AIProvidedLayerStrategy (AI-provided layer info) - HIGHEST ACCURACY
+    2. LayerClassificationOrchestratorStrategy (JS-specific + generic patterns) - ENHANCED
+    3. PatternClassificationStrategy (filename pattern inference) - FALLBACK
+    4. Fallback to templates/other/ when all strategies fail
 
     Tracks statistics and warnings for user feedback.
     """
 
-    def __init__(self):
-        """Initialize resolver with strategies."""
+    def __init__(self, orchestrator: Optional[LayerClassificationOrchestrator] = None):
+        """
+        Initialize resolver with strategies.
+
+        Args:
+            orchestrator: Optional LayerClassificationOrchestrator instance
+                         (created with defaults if not provided)
+        """
+        if orchestrator is None:
+            orchestrator = LayerClassificationOrchestrator()
+
         self.strategies: List[ClassificationStrategy] = [
-            LayerClassificationStrategy(),
+            AIProvidedLayerStrategy(),
+            LayerClassificationOrchestratorStrategy(orchestrator),
             PatternClassificationStrategy(),
         ]
 
@@ -269,3 +442,9 @@ class TemplatePathResolver:
 
         fallback_count = self.classification_stats.get('Fallback', 0)
         return (fallback_count / self.total_files) * 100
+
+
+# Backward compatibility alias for old class name
+# TASK-FIX-40B4: LayerClassificationStrategy renamed to AIProvidedLayerStrategy
+# This alias ensures existing tests and code continue to work
+LayerClassificationStrategy = AIProvidedLayerStrategy

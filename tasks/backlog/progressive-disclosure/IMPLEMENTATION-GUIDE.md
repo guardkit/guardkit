@@ -2,7 +2,32 @@
 
 ## Overview
 
-This guide details the execution strategy for all 20 progressive disclosure tasks (PD-000 through PD-019), including which implementation method to use and how to parallelize work using Conductor workspaces.
+This guide details the execution strategy for all 25 progressive disclosure tasks (PD-000 through PD-024), including which implementation method to use and how to parallelize work using Conductor workspaces.
+
+## Current Status
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| Phase 0 | ✅ Complete | Measurement Framework |
+| Phase 1-4 | ✅ Complete | Infrastructure |
+| Phase 5 | ✅ Complete | Validation & Documentation |
+| **Phase 6** | 🔄 **Next** | **Content Migration** |
+
+## Phase 6 Revisions (TASK-REV-PD6)
+
+The following revisions were applied based on architectural review (TASK-REV-PD6):
+
+| Revision | Task | Description |
+|----------|------|-------------|
+| Dependency fix | PD-020 | Added TASK-REV-PD6 to blocked_by |
+| Rollback strategy | PD-020 | Added backup/restore procedures |
+| Section matrix | PD-020 | Decision matrix for ambiguous sections |
+| Selection criteria | PD-020 | Quick Start example selection rules |
+| Backup mandate | PD-021 | Required backup before migration |
+| Backup mandate | PD-022 | Required backup for all 12 agents |
+| Scope clarification | README | Template agents deferred to Phase 7 |
+
+**Review Report**: [TASK-REV-PD6-review-report.md](../../../.claude/reviews/TASK-REV-PD6-review-report.md)
 
 ## Implementation Method Legend
 
@@ -460,49 +485,194 @@ python3 scripts/measure-token-usage.py --compare
 
 ---
 
+## Wave 6: Content Migration (NEW)
+
+**Duration**: 3-4 days
+**Workspaces**: 1-3 (Wave B parallel possible)
+**Review Task**: TASK-REV-PD-CONTENT
+
+This wave migrates actual content from core agent files to extended files, achieving the 55% token reduction target.
+
+### TASK-PD-020: Define Content Migration Rules
+| Attribute | Value |
+|-----------|-------|
+| **Method** | `Direct` Claude Code |
+| **Complexity** | 4/10 |
+| **Effort** | 0.5 days |
+| **Parallel** | No - establishes rules for subsequent tasks |
+
+**Why Direct**: Documentation and rule definition, creates migration script.
+
+**Execution**:
+```bash
+# Claude Code creates:
+# - docs/guides/content-migration-rules.md
+# - scripts/migrate-agent-content.py (or updates split-agent.py)
+```
+
+**Output**: Content categorization rules defining what stays in core vs moves to extended.
+
+---
+
+### TASK-PD-021: Migrate High-Priority Agents
+| Attribute | Value |
+|-----------|-------|
+| **Method** | `Direct` Claude Code |
+| **Complexity** | 5/10 |
+| **Effort** | 1 day |
+| **Parallel** | No - validates approach before bulk migration |
+
+**Why Direct**: Content reorganization, not code changes.
+
+**Target Agents**:
+- task-manager (70.4KB → ≤25KB core)
+- devops-specialist (56.1KB → ≤20KB core)
+
+**Execution**:
+```bash
+# Migrate task-manager
+# Move detailed examples, best practices, troubleshooting to ext file
+# Keep frontmatter, quick start, boundaries in core
+
+# Validate
+wc -c installer/global/agents/task-manager.md  # Should be ≤25KB
+```
+
+**CHECKPOINT**: Review migration quality before proceeding to bulk.
+
+---
+
+### TASK-PD-022: Migrate Remaining Agents
+| Attribute | Value |
+|-----------|-------|
+| **Method** | `Direct` Claude Code |
+| **Complexity** | 5/10 |
+| **Effort** | 1-1.5 days |
+| **Parallel** | **YES** - can split into 3 workspaces (Wave A/B/C) |
+
+**Why Direct**: Bulk content migration following established patterns.
+
+**Target Agents**: 12 remaining global agents
+
+**Parallel Execution Option**:
+```bash
+# Workspace A: Wave A (large agents 40KB+)
+git worktree add ../guardkit-pd-wave-a wave-a
+
+# Workspace B: Wave B (medium agents 25-35KB)
+git worktree add ../guardkit-pd-wave-b wave-b
+
+# Workspace C: Wave C (small agents <25KB)
+git worktree add ../guardkit-pd-wave-c wave-c
+```
+
+---
+
+### TASK-PD-023: Add Loading Instructions
+| Attribute | Value |
+|-----------|-------|
+| **Method** | `Direct` Claude Code |
+| **Complexity** | 3/10 |
+| **Effort** | 0.5 days |
+| **Parallel** | No - depends on content migration |
+
+**Why Direct**: Simple template addition to all core files.
+
+**Execution**:
+```bash
+# Add "## Extended Reference" section to all 14 core agents
+# Include loading instruction: cat agents/{name}-ext.md
+```
+
+---
+
+### TASK-PD-024: Final Validation and Metrics
+| Attribute | Value |
+|-----------|-------|
+| **Method** | `Manual` validation |
+| **Complexity** | 4/10 |
+| **Effort** | 0.5 days |
+| **Parallel** | No - final validation |
+
+**Why Manual**: Human runs validation scripts, reviews metrics.
+
+**Execution**:
+```bash
+# Run integration tests
+./scripts/test-progressive-disclosure.sh
+
+# Validate token reduction
+python3 -c "
+from pathlib import Path
+core_total = sum(f.stat().st_size for f in Path('installer/global/agents').glob('*.md') if not f.stem.endswith('-ext'))
+print(f'Core total: {core_total/1024:.1f}KB')
+print(f'Reduction: {(1 - core_total/520806)*100:.1f}%')  # 520806 = baseline
+"
+
+# Should show ≥55% reduction
+```
+
+**FINAL CHECKPOINT**: Review and close TASK-REV-PD-CONTENT
+
+---
+
 ## Summary: Task Matrix
 
-| Task | Method | Complexity | Effort | Can Parallel |
-|------|--------|------------|--------|--------------|
-| PD-000 | Direct | 4 | 0.5d | No |
-| PD-001 | /task-work | 7 | 2-3d | No |
-| PD-002 | Direct | 4 | 0.5d | No |
-| PD-003 | /task-work | 5 | 1d | No |
-| PD-004 | Direct | 3 | 0.5d | No |
-| PD-005 | /task-work | 6 | 2d | No |
-| PD-006 | /task-work | 5 | 1d | No |
-| PD-007 | Direct | 4 | 0.5d | No |
-| PD-008 | Direct | 6 | 1.5d | No |
-| PD-009 | Direct | 5 | 0.5d | No |
-| PD-010 | Manual | 4 | 1d | No |
-| PD-011 | Manual | 4 | 0.5d | No |
-| **PD-012** | Manual | 4 | 0.5d | **YES** |
-| **PD-013** | Manual | 4 | 0.5d | **YES** |
-| **PD-014** | Manual | 4 | 0.5d | **YES** |
-| **PD-015** | Manual | 4 | 0.5d | **YES** |
-| **PD-016** | /task-work | 5 | 1d | **YES** |
-| **PD-017** | Direct | 3 | 0.5d | **YES** |
-| PD-018 | Direct | 3 | 0.5d | No |
-| PD-019 | Manual | 5 | 1d | No |
+### Phases 0-5 (Infrastructure) ✅ COMPLETE
+
+| Task | Method | Complexity | Effort | Can Parallel | Status |
+|------|--------|------------|--------|--------------|--------|
+| PD-000 | Direct | 4 | 0.5d | No | ✅ |
+| PD-001 | /task-work | 7 | 2-3d | No | ✅ |
+| PD-002 | Direct | 4 | 0.5d | No | ✅ |
+| PD-003 | /task-work | 5 | 1d | No | ✅ |
+| PD-004 | Direct | 3 | 0.5d | No | ✅ |
+| PD-005 | /task-work | 6 | 2d | No | ✅ |
+| PD-006 | /task-work | 5 | 1d | No | ✅ |
+| PD-007 | Direct | 4 | 0.5d | No | ✅ |
+| PD-008 | Direct | 6 | 1.5d | No | ✅ |
+| PD-009 | Direct | 5 | 0.5d | No | ✅ |
+| PD-010 | Manual | 4 | 1d | No | ✅ |
+| PD-011 | Manual | 4 | 0.5d | No | ✅ |
+| PD-012 | Manual | 4 | 0.5d | **YES** | ✅ |
+| PD-013 | Manual | 4 | 0.5d | **YES** | ✅ |
+| PD-014 | Manual | 4 | 0.5d | **YES** | ✅ |
+| PD-015 | Manual | 4 | 0.5d | **YES** | ✅ |
+| PD-016 | /task-work | 5 | 1d | **YES** | ✅ |
+| PD-017 | Direct | 3 | 0.5d | **YES** | ✅ |
+| PD-018 | Direct | 3 | 0.5d | No | ✅ |
+| PD-019 | Manual | 5 | 1d | No | ✅ |
+
+### Phase 6 (Content Migration) 🔄 IN PROGRESS
+
+| Task | Method | Complexity | Effort | Can Parallel | Status |
+|------|--------|------------|--------|--------------|--------|
+| **PD-020** | Direct | 4 | 0.5d | No | Backlog |
+| **PD-021** | Direct | 5 | 1d | No | Backlog |
+| **PD-022** | Direct | 5 | 1-1.5d | **YES** (3 waves) | Backlog |
+| **PD-023** | Direct | 3 | 0.5d | No | Backlog |
+| **PD-024** | Manual | 4 | 0.5d | No | Backlog |
 
 ## Method Breakdown
 
 | Method | Task Count | Total Effort |
 |--------|------------|--------------|
 | `/task-work` | 5 tasks | 7-8 days |
-| `Direct` Claude Code | 9 tasks | 5.5 days |
+| `Direct` Claude Code | 14 tasks | 8.5-9 days |
 | `Manual` script/validation | 6 tasks | 4 days |
 
 ## Parallel Execution Savings
 
-**Sequential Duration**: 16.5-18.5 days
-**With Conductor Parallel** (Wave 4 + parts of Wave 5): **13-15 days**
+**Infrastructure (Phases 0-5)**: 16.5-18.5 days → **13-15 days** with parallel
+**Content Migration (Phase 6)**: 3-4 days → **2-3 days** with parallel (Wave B split)
 
-**Savings**: ~3 days (18% faster)
+**Total with Parallel**: ~15-18 days (vs 19.5-22.5 sequential)
 
 ---
 
 ## Recommended Execution Order
+
+### Phases 0-5 (Infrastructure) ✅ COMPLETE
 
 ```
 Day 1:     PD-000 (baseline)
@@ -515,14 +685,33 @@ Days 10-11: PD-008, PD-009 (script)
 Day 12:    PD-010, PD-011, CHECKPOINT 3
 Day 13:    PD-012/013/014/015 (PARALLEL in 4 workspaces)
 Day 14:    PD-016/017 (PARALLEL in 2 workspaces)
-Day 15:    PD-018, PD-019 (FINAL)
+Day 15:    PD-018, PD-019 (Infrastructure COMPLETE)
+```
+
+### Phase 6 (Content Migration) 🔄 NEXT
+
+```
+Day 16:    PD-020 (migration rules)
+Day 17:    PD-021 (high-priority agents: task-manager, devops-specialist)
+           CHECKPOINT: Review migration quality
+Days 18-19: PD-022 (remaining 12 agents - can parallelize in 3 workspaces)
+Day 20:    PD-023, PD-024 (loading instructions + final validation)
+           FINAL CHECKPOINT: Close TASK-REV-PD-CONTENT
 ```
 
 ## Final Deliverables
 
+### Infrastructure (Phases 0-5) ✅
 1. `measurements/baseline.json` - Before metrics
-2. `measurements/after.json` - After metrics
-3. `measurements/comparison-report.json` - Validation data
-4. All agents split (19 global + template agents)
-5. Documentation updated
-6. Blog content data ready
+2. Agent scanner excludes `-ext.md` files
+3. Extended file structure (14 core + 14 extended)
+4. Documentation updated
+5. Integration tests passing (6/6)
+
+### Content Migration (Phase 6) 🔄
+6. All core agents reduced to ≤ target size
+7. All extended files contain migrated content
+8. Loading instructions in all core files
+9. Token reduction ≥55% validated
+10. `docs/reports/progressive-disclosure-implementation-report.md` updated
+11. Blog content data ready

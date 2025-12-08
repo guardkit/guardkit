@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from .audit_session import AuditSession
 from .models import AuditRecommendation, IssueSeverity, SectionResult
+from .progressive_disclosure_validator import generate_split_validation_report
 
 
 class AuditReportGenerator:
@@ -66,6 +67,8 @@ class AuditReportGenerator:
 ## Detailed Section Results
 
 {self._generate_detailed_sections(session)}
+
+{self._generate_progressive_disclosure_metrics(session)}
 
 ## Overall Quality Assessment
 
@@ -355,3 +358,76 @@ Significant issues must be resolved before this template can be recommended."""
             minutes = duration.total_seconds() / 60
             return f"{minutes:.0f} minutes"
         return f"{hours:.1f} hours"
+
+    def _generate_progressive_disclosure_metrics(self, session: AuditSession) -> str:
+        """Generate progressive disclosure metrics section"""
+        # Extract split metrics from section 3 (Documentation) and section 5 (Agents)
+        section_3 = session.section_results.get(3)
+        section_5 = session.section_results.get(5)
+
+        # If neither section was run, skip this section
+        if not section_3 and not section_5:
+            return ""
+
+        content = ["## Progressive Disclosure Metrics", ""]
+
+        # CLAUDE.md metrics (from section 3)
+        if section_3 and section_3.metadata:
+            claude_md_size = section_3.metadata.get('claude_md_size_kb')
+            if claude_md_size is not None:
+                status = "✅" if section_3.metadata.get('meets_target', False) else "⚠️"
+                content.append("### CLAUDE.md")
+                content.append(f"- Size: {claude_md_size:.1f}KB {status}")
+                content.append("- Target: ≤10KB")
+
+                has_split = section_3.metadata.get('has_split_structure', False)
+                if has_split:
+                    content.append("- Split Structure: ✅")
+                    patterns_count = section_3.metadata.get('patterns_count', 0)
+                    reference_count = section_3.metadata.get('reference_count', 0)
+                    if patterns_count > 0:
+                        content.append(f"  - Patterns: {patterns_count} files")
+                    if reference_count > 0:
+                        content.append(f"  - Reference: {reference_count} files")
+                else:
+                    content.append("- Split Structure: Single-file mode")
+
+                content.append("")
+
+        # Agent metrics (from section 5)
+        if section_5 and section_5.metadata:
+            split_agents = section_5.metadata.get('split_agents', [])
+            total_agents = section_5.metadata.get('total_agents', 0)
+            split_count = section_5.metadata.get('split_count', 0)
+
+            if total_agents > 0:
+                content.append("### Agents")
+                content.append(f"- Total Agents: {total_agents}")
+                content.append(f"- Using Split Structure: {split_count}/{total_agents}")
+
+                if split_agents:
+                    content.append("")
+                    content.append("**Split Agents:**")
+                    for agent in split_agents:
+                        name = agent.get('name', 'Unknown')
+                        core_size = agent.get('core_size_kb', 0)
+                        reduction = agent.get('reduction_percent', 0)
+                        meets_target = agent.get('meets_target', False)
+                        has_loading = agent.get('has_loading_instruction', False)
+
+                        status = "✅" if meets_target and has_loading and reduction >= 40 else "⚠️"
+                        content.append(f"- {name}: {core_size:.1f}KB core, {reduction:.0f}% reduction {status}")
+
+                    # Show non-split agents if any
+                    non_split_count = total_agents - split_count
+                    if non_split_count > 0:
+                        content.append("")
+                        content.append(f"**Non-Split Agents:** {non_split_count} agent(s) using single-file mode")
+
+                content.append("")
+
+        # If no metrics were added, return empty string
+        if len(content) <= 2:  # Only header and empty line
+            return ""
+
+        return "\n".join(content)

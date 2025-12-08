@@ -116,7 +116,7 @@ class OrchestrationConfig:
     verbose: bool = False
     skip_validation: bool = False  # TASK-040: Skip Phase 5.5 validation
     auto_fix_templates: bool = True  # TASK-040: Auto-fix completeness issues
-    interactive_validation: bool = True  # TASK-040: Prompt user for validation decisions
+    interactive_validation: Optional[bool] = None  # TASK-040: Prompt user for validation decisions (None = auto-detect TTY)
     validate: bool = False  # TASK-043: Run extended validation and generate quality report
     resume: bool = False  # TASK-BRIDGE-002: Resume from checkpoint after agent invocation
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
@@ -184,11 +184,24 @@ class TemplateCreateOrchestrator:
         self.phase_5_5_report: Optional[ValidationReport] = None  # TASK-043: Track Phase 5.5 report
 
         # TASK-BRIDGE-002: Bridge integration
+        # TASK-ENH-D960: Agent invoker used in Phase 1 (codebase analysis) and Phase 5 (agent generation)
+        # TASK-FIX-7B74: Use separate phase-specific invokers to prevent stale cache
         self.state_manager = StateManager()
-        self.agent_invoker = AgentBridgeInvoker(
-            phase=WorkflowPhase.PHASE_6,
+
+        # Phase 1 invoker for codebase analysis (AI-assisted language/framework detection)
+        self.phase1_invoker = AgentBridgeInvoker(
+            phase=WorkflowPhase.PHASE_1,
+            phase_name="ai_analysis"
+        )
+
+        # Phase 5 invoker for agent generation (custom agent recommendations)
+        self.phase5_invoker = AgentBridgeInvoker(
+            phase=WorkflowPhase.PHASE_5,
             phase_name="agent_generation"
         )
+
+        # For backward compatibility in methods that reference self.agent_invoker
+        self.agent_invoker = self.phase1_invoker
 
         # Storage for phase results (used for state persistence)
         self.qa_answers: Optional[Dict[str, Any]] = None
@@ -206,6 +219,9 @@ class TemplateCreateOrchestrator:
         # TASK-FIX-INFINITE-LOOP: Track resume state to prevent infinite exit 42 loops
         self._resume_count = 0
         self._force_heuristic = False
+
+        # TASK-IMP-D93B: Track whether agent response was successfully loaded during resume
+        self._phase1_cached_response = None
 
         # Configure logging
         if config.verbose:
@@ -249,10 +265,15 @@ class TemplateCreateOrchestrator:
                 state = self.state_manager.load_state()
                 phase = state.phase
 
-                if phase == WorkflowPhase.PHASE_7:
+                if phase == WorkflowPhase.PHASE_1:
+                    return self._run_from_phase_1()
+                elif phase == WorkflowPhase.PHASE_5:
+                    # TASK-FIX-C3D4: Explicit Phase 5 routing for agent generation resume
+                    return self._run_from_phase_5()
+                elif phase == WorkflowPhase.PHASE_7:
                     return self._run_from_phase_7()
                 else:
-                    # Default to Phase 5 (backward compatibility)
+                    # Default to Phase 5 (backward compatibility for Phase 4 checkpoints)
                     return self._run_from_phase_5()
 
             # Normal execution: Phases 1-9.5
@@ -264,6 +285,82 @@ class TemplateCreateOrchestrator:
         except Exception as e:
             logger.exception("Unexpected error in orchestration")
             return self._create_error_result(f"Unexpected error: {e}")
+
+    def _run_from_phase_1(self) -> OrchestrationResult:
+        """
+        Resume from Phase 1 after agent invocation (TASK-ENH-D960).
+
+        State has been restored in __init__, and agent response has been loaded.
+        Now complete AI analysis with the loaded response, then continue workflow.
+
+        Returns:
+            OrchestrationResult with success status and generated artifacts
+        """
+        self._print_header()
+        print("  (Resuming from checkpoint - Phase 1)")
+
+        # Get codebase path from restored state
+        codebase_path = self.config.codebase_path or Path.cwd()
+        if not codebase_path.exists():
+            return self._create_error_result(f"Codebase path does not exist: {codebase_path}")
+
+        # TASK-IMP-D93B: Check if we have a cached response from resume
+        if self._phase1_cached_response is not None:
+            self._print_info("  Using cached agent response from checkpoint")
+            logger.info(f"  Cached response available: {len(self._phase1_cached_response)} chars")
+        else:
+            self._print_info("  No cached response - will use heuristic analysis")
+
+        # Re-run Phase 1 analysis - the agent response is now cached in agent_invoker
+        # So the second call to analyze_codebase will use the cached response
+        self.analysis = self._phase1_ai_analysis(codebase_path)
+        if not self.analysis:
+            return self._create_error_result("AI analysis failed after resume")
+
+        # TASK-FIX-D8F2: Reset resume counter after successful Phase 1 completion
+        # This prevents Phase 1's exhausted counter from affecting Phase 5
+        self.state_manager.reset_resume_count()
+        self._resume_count = 0
+        self._force_heuristic = False
+        logger.info("Phase 1 completed successfully - resume counter reset")
+
+        # Save analysis if requested
+        if self.config.save_analysis:
+            self._save_analysis_json(self.analysis)
+
+        # Continue with Phase 2 onwards
+        # Phase 2: Manifest Generation
+        self.manifest = self._phase2_manifest_generation(self.analysis)
+        if not self.manifest:
+            return self._create_error_result("Manifest generation failed")
+
+        # Phase 3: Settings Generation
+        self.settings = self._phase3_settings_generation(self.analysis)
+        if not self.settings:
+            return self._create_error_result("Settings generation failed")
+
+        # Phase 4: Template File Generation
+        self.templates = self._phase4_template_generation(self.analysis)
+        if not self.templates:
+            self.warnings.append("No template files generated")
+
+        # Phase 4.5: Completeness Validation (TASK-040)
+        if not self.config.skip_validation and self.templates:
+            self.templates = self._phase4_5_completeness_validation(
+                templates=self.templates,
+                analysis=self.analysis
+            )
+
+        # Save checkpoint before Phase 5 (may exit with code 42 for agent generation)
+        self._save_checkpoint("templates_generated", phase=WorkflowPhase.PHASE_4)
+
+        # Phase 5: Agent Recommendation
+        self.agents = []
+        if not self.config.no_agents:
+            self.agents = self._phase5_agent_recommendation(self.analysis)
+
+        # Phase 6-7: Complete workflow
+        return self._complete_workflow()
 
     def _run_all_phases(self) -> OrchestrationResult:
         """
@@ -286,6 +383,14 @@ class TemplateCreateOrchestrator:
         self.analysis = self._phase1_ai_analysis(codebase_path)
         if not self.analysis:
             return self._create_error_result("AI analysis failed")
+
+        # TASK-FIX-D8F2: Reset resume counter after successful Phase 1 completion
+        # (Phase 1 may have used checkpoint-resume, so reset for Phase 5)
+        if self.state_manager.has_state():
+            self.state_manager.reset_resume_count()
+            self._resume_count = 0
+            self._force_heuristic = False
+            logger.info("Phase 1 completed successfully - resume counter reset")
 
         # Save analysis if requested
         if self.config.save_analysis:
@@ -631,11 +736,13 @@ class TemplateCreateOrchestrator:
             # AI-native analysis: No template_context needed!
             # AI will infer language, framework, architecture from codebase
             # TASK-PROMPT-SIZE: Reduced from 30 to 10 to keep prompt under 25k tokens
-            # TASK-CHECKPOINT-FIX: Don't pass bridge_invoker here - Phase 1 uses heuristic analysis
-            # (Agent invocation only happens in Phase 5, where checkpoint is saved BEFORE invocation)
+            # TASK-ENH-D960: Enable AI agent invocation in Phase 1
+            # Save checkpoint before analysis (may exit with code 42)
+            self._save_checkpoint("pre_ai_analysis", phase=WorkflowPhase.PHASE_1)
+
             analyzer = CodebaseAnalyzer(
                 max_files=10,
-                bridge_invoker=None  # Heuristic fallback for Phase 1
+                bridge_invoker=self.agent_invoker  # Enable AI invocation for Phase 1
             )
 
             self._print_info(f"  Analyzing: {codebase_path}")
@@ -772,7 +879,15 @@ class TemplateCreateOrchestrator:
         self._print_phase_header("Phase 4: Template File Generation")
 
         try:
-            generator = TemplateGenerator(analysis)
+            # TASK-IMP-TC-F8A3: Pass manifest for project-specific placeholder extraction
+            manifest_dict = None
+            if self.manifest:
+                # Convert manifest to dict for placeholder extractor
+                manifest_dict = {
+                    'name': getattr(self.manifest, 'name', None),
+                    'author': getattr(self.manifest, 'author', None),
+                }
+            generator = TemplateGenerator(analysis, manifest=manifest_dict)
             templates = generator.generate(max_templates=self.config.max_templates)
 
             if templates and templates.total_count > 0:
@@ -813,6 +928,14 @@ class TemplateCreateOrchestrator:
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
 
+        # TASK-FIX-C3D4: Save checkpoint BEFORE agent invocation
+        # This ensures resume routing knows we're waiting for Phase 5 response
+        # When resuming, state.phase == 5 triggers the correct phase5_invoker
+        self._save_checkpoint("phase5_agent_request", phase=WorkflowPhase.PHASE_5)
+
+        # TASK-FIX-7B74: Phase 5 has its own invoker with separate cache files
+        # No need to clear Phase 1 cache - Phase 5 uses independent phase5_invoker
+
         # TASK-FIX-INFINITE-LOOP: Skip AI invocation if forced to use heuristics
         if self._force_heuristic:
             self._print_warning("  Using heuristic agent generation (AI unavailable after 3 attempts)")
@@ -825,10 +948,10 @@ class TemplateCreateOrchestrator:
             scanner = MultiSourceAgentScanner()
             inventory = scanner.scan()
 
-            # CRITICAL: Pass AgentBridgeInvoker to generator (TASK-BRIDGE-002)
+            # CRITICAL: Pass phase5_invoker to generator (TASK-BRIDGE-002, TASK-FIX-7B74)
             generator = AIAgentGenerator(
                 inventory,
-                ai_invoker=self.agent_invoker  # ← BRIDGE INTEGRATION
+                ai_invoker=self.phase5_invoker  # ← Phase 5 specific invoker (separate cache)
             )
 
             # This may exit with code 42 if agent invocation needed
@@ -955,13 +1078,25 @@ class TemplateCreateOrchestrator:
 
             agent_paths = []
             for agent in agents:
-                agent_path = agents_dir / f"{agent.name}.md"
+                # TASK-FIX-RESUME: Handle deserialized agents that may have different structure
+                # After checkpoint resume, agents are reconstructed from JSON and may be:
+                # - GeneratedAgent objects (normal case)
+                # - Dynamic objects with class attributes (from _deserialize_agents)
+                # - Strings or other unexpected types (error case)
+                agent_name = getattr(agent, 'name', None)
+                if agent_name is None:
+                    logger.warning(f"Skipping agent without name attribute: {type(agent)}")
+                    continue
+
+                agent_path = agents_dir / f"{agent_name}.md"
 
                 # Check if full_definition is already properly formatted markdown
                 # or if we need to format it from agent attributes
-                if agent.full_definition and agent.full_definition.strip().startswith('---'):
+                # Use getattr for safety during checkpoint resume
+                full_def = getattr(agent, 'full_definition', None)
+                if full_def and isinstance(full_def, str) and full_def.strip().startswith('---'):
                     # Already has YAML frontmatter, use as-is
-                    markdown_content = agent.full_definition
+                    markdown_content = full_def
                 else:
                     # Need to format as markdown with YAML frontmatter
                     # Convert GeneratedAgent to dict format expected by formatter
@@ -973,10 +1108,12 @@ class TemplateCreateOrchestrator:
                         except TypeError:
                             tags = []
 
+                    # TASK-FIX-RESUME: Use getattr for all agent attributes
+                    agent_description = getattr(agent, 'description', f"Agent for {agent_name}")
                     agent_dict = {
-                        'name': agent.name,
-                        'description': agent.description,
-                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent.name.replace('-', ' ')}"),
+                        'name': agent_name,
+                        'description': agent_description,
+                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent_name.replace('-', ' ')}"),
                         'technologies': tags,
                         'priority': getattr(agent, 'priority', 7)
                     }
@@ -990,6 +1127,17 @@ class TemplateCreateOrchestrator:
                 agent_paths.append(agent_path)
 
             self._print_success_line(f"{len(agents)} agent files written")
+
+            # TASK-IMP-TC-F8A3: Validate extended files
+            missing_ext_files = self._validate_extended_files(agents_dir)
+            if missing_ext_files:
+                self._print_info(f"  ⚠️  {len(missing_ext_files)} agent(s) missing extended files:")
+                for missing in missing_ext_files[:5]:  # Show first 5
+                    self._print_info(f"      - {missing}")
+                if len(missing_ext_files) > 5:
+                    self._print_info(f"      ... and {len(missing_ext_files) - 5} more")
+                self._print_info("      Consider running /agent-enhance to generate extended documentation")
+
             return agent_paths
 
         except Exception as e:
@@ -1274,7 +1422,14 @@ Enhance the {agent_name} agent with template-specific content:
 
             # Handle validation issues if present
             if not validation_report.is_complete:
-                if self.config.interactive_validation:
+                # Determine if interactive mode should be used
+                # None = auto-detect based on TTY, True/False = explicit setting
+                use_interactive = self.config.interactive_validation
+                if use_interactive is None:
+                    # Auto-detect: only use interactive mode if stdin is a TTY
+                    use_interactive = sys.stdin.isatty()
+
+                if use_interactive:
                     action = self._handle_validation_issues_interactive(validation_report)
                 else:
                     action = self._handle_validation_issues_noninteractive(validation_report)
@@ -1532,19 +1687,19 @@ Enhance the {agent_name} agent with template-specific content:
             reference_path = reference_dir / "README.md"
 
             # Write core CLAUDE.md
-            success, error_msg = safe_write_file(core_path, split_output.core)
+            success, error_msg = safe_write_file(core_path, split_output.core_content)
             if not success:
                 logger.error(f"Failed to write core CLAUDE.md: {error_msg}")
                 return False
 
             # Write patterns
-            success, error_msg = safe_write_file(patterns_path, split_output.patterns)
+            success, error_msg = safe_write_file(patterns_path, split_output.patterns_content)
             if not success:
                 logger.error(f"Failed to write patterns README.md: {error_msg}")
                 return False
 
             # Write reference
-            success, error_msg = safe_write_file(reference_path, split_output.reference)
+            success, error_msg = safe_write_file(reference_path, split_output.reference_content)
             if not success:
                 logger.error(f"Failed to write reference README.md: {error_msg}")
                 return False
@@ -1584,6 +1739,13 @@ Enhance the {agent_name} agent with template-specific content:
         self._print_success_line(f"CLAUDE.md (core: {core_size}, {reduction:.1f}% reduction)")
         self._print_success_line(f"docs/patterns/README.md ({patterns_size})")
         self._print_success_line(f"docs/reference/README.md ({reference_size})")
+
+        # TASK-PD-007: Generate and log metadata for validation reporting
+        metadata = split_output.generate_metadata()
+        logger.debug(f"Split output metadata: validation_passed={metadata.validation_passed}, "
+                    f"reduction={metadata.reduction_percent:.1f}%, "
+                    f"core={metadata.core_size_bytes}B, "
+                    f"total={metadata.total_size_bytes}B")
 
     def _write_claude_md_single(self, claude_md: Any, output_path: Path) -> bool:
         """
@@ -1785,6 +1947,36 @@ Enhance the {agent_name} agent with template-specific content:
         """Print error message."""
         print(f"  ❌ {message}")
 
+    def _validate_extended_files(self, agents_dir: Path) -> List[str]:
+        """
+        Validate that agent files have corresponding extended documentation.
+
+        TASK-IMP-TC-F8A3: Check for missing -ext.md files.
+
+        Args:
+            agents_dir: Path to agents directory
+
+        Returns:
+            List of agent names missing extended files
+        """
+        missing = []
+
+        if not agents_dir.exists():
+            return missing
+
+        # Find all agent files (exclude -ext.md files)
+        for agent_file in agents_dir.glob("*.md"):
+            # Skip if this is already an extended file
+            if agent_file.stem.endswith("-ext"):
+                continue
+
+            # Check for corresponding extended file
+            ext_file = agents_dir / f"{agent_file.stem}-ext.md"
+            if not ext_file.exists():
+                missing.append(agent_file.stem)
+
+        return missing
+
     def _print_agent_enhancement_instructions(
         self,
         task_ids: List[str],
@@ -1897,7 +2089,11 @@ Enhance the {agent_name} agent with template-specific content:
             if agents:
                 agents_dir = output_path / "agents"
                 for agent in agents:
-                    agent_path = agents_dir / f"{agent.name}.md"
+                    # TASK-FIX-RESUME: Use getattr for safety with deserialized agents
+                    agent_name = getattr(agent, 'name', None)
+                    if not agent_name:
+                        continue
+                    agent_path = agents_dir / f"{agent_name}.md"
                     if agent_path.exists():
                         agent_paths.append(agent_path)
 
@@ -1989,9 +2185,14 @@ Enhance the {agent_name} agent with template-specific content:
         print(f"  Checkpoint: {state.checkpoint}")
         print(f"  Phase: {state.phase}")
 
-        # Restore configuration
+        # TASK-FIX-P5RT: Exclude operational parameters from restoration
+        # Operational parameters control workflow routing (CLI flags), not business logic
+        # The 'resume' flag is passed via CLI and must NOT be overwritten by saved state
+        OPERATIONAL_PARAMS = {'resume'}
+
+        # Restore configuration (excluding operational parameters)
         for key, value in state.config.items():
-            if hasattr(self.config, key):
+            if hasattr(self.config, key) and key not in OPERATIONAL_PARAMS:
                 # Convert Path strings back to Path objects
                 if key in ('codebase_path', 'output_path') and value is not None:
                     value = Path(value)
@@ -2019,15 +2220,41 @@ Enhance the {agent_name} agent with template-specific content:
             self.agents = self._deserialize_agents(phase_data["agents"])
 
         # Load agent response if available
+        # TASK-FIX-7B74: Load from correct phase-specific invoker based on checkpoint phase
+        # TASK-IMP-D93B: Track whether response was successfully loaded
         try:
-            response = self.agent_invoker.load_response()
+            # Determine which invoker to use based on the checkpoint phase
+            if state.phase == WorkflowPhase.PHASE_1:
+                invoker = self.phase1_invoker
+            elif state.phase >= WorkflowPhase.PHASE_5:
+                invoker = self.phase5_invoker
+            else:
+                invoker = self.phase1_invoker  # Default fallback
+
+            response = invoker.load_response()
+            self._phase1_cached_response = response  # Store the cached response directly
             print(f"  ✓ Agent response loaded successfully")
+            logger.info(f"  Cached response from: {invoker.response_file.absolute()}")
         except FileNotFoundError:
+            # Determine which invoker for error reporting
+            if state.phase == WorkflowPhase.PHASE_1:
+                invoker = self.phase1_invoker
+            elif state.phase >= WorkflowPhase.PHASE_5:
+                invoker = self.phase5_invoker
+            else:
+                invoker = self.phase1_invoker
+            response_path = invoker.response_file.absolute()
+            cwd = Path.cwd()
             print(f"  ⚠️  No agent response found")
-            print(f"  → Will fall back to hard-coded detection")
+            print(f"     Expected: {response_path}")
+            print(f"     CWD: {cwd}")
+            print(f"     File exists: {response_path.exists()}")
+            print(f"  → Will fall back to heuristic analysis")
         except Exception as e:
+            response_path = self.agent_invoker.response_file.absolute()
             print(f"  ⚠️  Failed to load agent response: {e}")
-            print(f"  → Will fall back to hard-coded detection")
+            print(f"     Response file: {response_path}")
+            print(f"  → Will fall back to heuristic analysis")
 
     def _save_checkpoint(self, checkpoint: str, phase: int) -> None:
         """
@@ -2114,8 +2341,14 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to manifest."""
         if data is None:
             return None
-        # Return as dict for now, actual class reconstruction happens in phases
-        return type('Manifest', (), data)()
+
+        # Create object with to_dict() method for checkpoint resume
+        manifest_obj = type('Manifest', (), data)()
+
+        # Add fallback to_dict() method for checkpoint resume compatibility
+        manifest_obj.to_dict = lambda: data
+
+        return manifest_obj
 
     def _serialize_settings(self, settings: Any) -> Optional[dict]:
         """Serialize settings to dict."""
@@ -2138,8 +2371,19 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to settings."""
         if data is None:
             return None
-        # Return as dict for now, actual class reconstruction happens in phases
-        return type('Settings', (), data)()
+
+        # Try to use TemplateSettings Pydantic model validation if available
+        try:
+            _settings_models = importlib.import_module('lib.settings_generator.models')
+            TemplateSettings = _settings_models.TemplateSettings
+            settings_obj = TemplateSettings.model_validate(data)
+            return settings_obj
+        except (ImportError, AttributeError, Exception) as e:
+            # Fallback: create object with to_dict() method for checkpoint resume
+            logging.warning(f"Failed to validate settings with Pydantic model: {e}. Using fallback object.")
+            settings_obj = type('Settings', (), data)()
+            settings_obj.to_dict = lambda: data
+            return settings_obj
 
     def _serialize_templates(self, templates: Any) -> Optional[dict]:
         """Serialize TemplateCollection to dict."""
@@ -2179,18 +2423,32 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to TemplateCollection."""
         if data is None:
             return None
-        # Return as object with attributes
-        templates_obj = type('TemplateCollection', (), {
-            'total_count': data.get('total_count', 0),
-            'templates': []
-        })()
 
-        # Reconstruct template objects
-        for tmpl_dict in data.get('templates', []):
-            tmpl_obj = type('Template', (), tmpl_dict)()
-            templates_obj.templates.append(tmpl_obj)
+        # Try to use TemplateCollection Pydantic model validation if available
+        try:
+            _models = importlib.import_module('lib.template_generator.models')
+            TemplateCollectionModel = _models.TemplateCollection
+            templates_obj = TemplateCollectionModel.model_validate(data)
+            return templates_obj
+        except (ImportError, AttributeError, Exception) as e:
+            # Fallback: create object with attributes and to_dict() method
+            logging.warning(f"Failed to validate templates with Pydantic model: {e}. Using fallback object.")
+            templates_obj = type('TemplateCollection', (), {
+                'total_count': data.get('total_count', 0),
+                'templates': []
+            })()
 
-        return templates_obj
+            # Reconstruct template objects with to_dict() method
+            for tmpl_dict in data.get('templates', []):
+                tmpl_obj = type('Template', (), tmpl_dict)()
+                # Add fallback to_dict() method for each template
+                tmpl_obj.to_dict = lambda d=tmpl_dict: d
+                templates_obj.templates.append(tmpl_obj)
+
+            # Add to_dict() method to templates_obj
+            templates_obj.to_dict = lambda: data
+
+            return templates_obj
 
     def _serialize_value(self, value: Any, visited: Optional[set] = None) -> Any:
         """
@@ -2353,7 +2611,8 @@ def run_template_create(
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    verbose: bool = False
+    verbose: bool = False,
+    interactive: Optional[bool] = None  # None = auto-detect TTY, False = non-interactive
 ) -> OrchestrationResult:
     """
     Convenience function to run template creation.
@@ -2373,6 +2632,7 @@ def run_template_create(
         custom_name: Custom template name (overrides AI-generated name)
         split_claude_md: Enable progressive disclosure with split CLAUDE.md (TASK-PD-006)
         verbose: Show detailed progress
+        interactive: Interactive mode for prompts (None = auto-detect TTY, False = non-interactive)
 
     Returns:
         OrchestrationResult
@@ -2419,7 +2679,8 @@ def run_template_create(
         resume=resume,  # TASK-BRIDGE-002
         custom_name=custom_name,  # TASK-FDB2
         split_claude_md=split_claude_md,  # TASK-PD-006
-        verbose=verbose
+        verbose=verbose,
+        interactive_validation=interactive  # None = auto-detect TTY
     )
 
     orchestrator = TemplateCreateOrchestrator(config)
@@ -2460,6 +2721,8 @@ if __name__ == "__main__":
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
                         help="Show detailed progress")
+    parser.add_argument("--non-interactive", action="store_true",
+                        help="Disable interactive prompts (auto-fix issues without asking)")
 
     args = parser.parse_args()
 
@@ -2476,7 +2739,8 @@ if __name__ == "__main__":
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2
         split_claude_md=args.split_claude_md,  # TASK-PD-006
-        verbose=args.verbose
+        verbose=args.verbose,
+        interactive=False if args.non_interactive else None  # None = auto-detect TTY
     )
 
     sys.exit(result.exit_code if not result.success else 0)

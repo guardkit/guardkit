@@ -4,9 +4,9 @@ Single Agent Enhancer
 Enhances individual agent files with template-specific content.
 
 TASK-PHASE-8-INCREMENTAL: Incremental Agent Enhancement Workflow
+TASK-PD-003: Enhanced to support split-file output mode
 """
 
-from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 import json
@@ -15,6 +15,13 @@ import time
 
 # Import shared modules using importlib to avoid module resolution issues
 import importlib
+
+# Import EnhancementResult from models (TASK-PD-003)
+# Handle both relative and absolute imports for test compatibility
+try:
+    from .models import EnhancementResult
+except ImportError:
+    from models import EnhancementResult
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +36,6 @@ class ValidationError(Exception):
     See Clarification #4 in Architectural Review Clarifications section.
     """
     pass
-
-
-@dataclass
-class EnhancementResult:
-    """Result of agent enhancement."""
-    success: bool
-    agent_name: str
-    sections: List[str]  # Sections added
-    templates: List[str]  # Templates referenced
-    examples: List[str]   # Code examples included
-    diff: str            # Unified diff
-    error: Optional[str] = None
-    strategy_used: Optional[str] = None
 
 
 class SingleAgentEnhancer:
@@ -106,17 +100,35 @@ class SingleAgentEnhancer:
     def enhance(
         self,
         agent_file: Path,
-        template_dir: Path
+        template_dir: Path,
+        split_output: bool = True
     ) -> EnhancementResult:
         """
         Enhance single agent with template-specific content.
 
+        TASK-PD-003: Enhanced to support split-file output mode.
+
         Args:
             agent_file: Path to agent file
             template_dir: Path to template directory
+            split_output: If True (default), create separate core and extended files.
+                         If False, create single file (backward compatible mode).
 
         Returns:
-            Enhancement result with success status and details
+            Enhancement result with success status and file paths.
+            Result includes:
+            - core_file: Path to core agent file
+            - extended_file: Path to extended file (split mode only, None otherwise)
+            - split_output: Whether split mode was used
+
+        Example (split mode):
+            >>> result = enhancer.enhance(agent_file, template_dir, split_output=True)
+            >>> print(f"Core: {result.core_file}")
+            >>> print(f"Extended: {result.extended_file}")
+
+        Example (single-file mode):
+            >>> result = enhancer.enhance(agent_file, template_dir, split_output=False)
+            >>> print(f"File: {result.core_file}")
         """
         agent_name = agent_file.stem
 
@@ -156,11 +168,41 @@ class SingleAgentEnhancer:
             self._validate_enhancement(enhancement)
 
             # 5. Apply enhancement (if not dry run)
-            if not self.dry_run:
-                if self.verbose:
-                    logger.info(f"Applying enhancement to {agent_file}")
+            core_file = None
+            extended_file = None
 
-                self.applier.apply(agent_file, enhancement)
+            if not self.dry_run:
+                if split_output:
+                    # Split-file mode: Create core + extended files
+                    if self.verbose:
+                        logger.info(f"Applying enhancement with split output to {agent_file}")
+
+                    # Verify apply_with_split() is available (TASK-PD-001 dependency)
+                    if not hasattr(self.applier, 'apply_with_split'):
+                        raise RuntimeError(
+                            "split_output=True requires TASK-PD-001 completion. "
+                            "Method applier.apply_with_split() not available."
+                        )
+
+                    split_result = self.applier.apply_with_split(agent_file, enhancement)
+                    core_file = split_result.core_path
+                    extended_file = split_result.extended_path
+                else:
+                    # Single-file mode: Backward compatible behavior
+                    if self.verbose:
+                        logger.info(f"Applying enhancement to {agent_file} (single-file mode)")
+
+                    self.applier.apply(agent_file, enhancement)
+                    core_file = agent_file
+                    extended_file = None
+            else:
+                # Dry-run mode: Return paths but don't create files
+                core_file = agent_file
+                if split_output:
+                    # Derive extended file name
+                    extended_file = agent_file.parent / f"{agent_file.stem}-ext{agent_file.suffix}"
+                else:
+                    extended_file = None
 
             # 6. Generate diff
             diff = self.applier.generate_diff(agent_file, enhancement)
@@ -172,7 +214,10 @@ class SingleAgentEnhancer:
                 templates=[str(t) for t in templates],
                 examples=enhancement.get("examples", []),
                 diff=diff,
-                strategy_used=self.strategy
+                strategy_used=self.strategy,
+                core_file=core_file,
+                extended_file=extended_file,
+                split_output=split_output
             )
 
         except Exception as e:
@@ -185,7 +230,10 @@ class SingleAgentEnhancer:
                 examples=[],
                 diff="",
                 error=str(e),
-                strategy_used=self.strategy
+                strategy_used=self.strategy,
+                core_file=None,
+                extended_file=None,
+                split_output=split_output
             )
 
     def _generate_enhancement(

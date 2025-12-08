@@ -45,7 +45,8 @@ class ResponseParser:
         response: str,
         codebase_path: str,
         template_context: Optional[Dict[str, str]] = None,
-        validate_example_files: bool = True  # TASK-0CE5: Optional validation
+        validate_example_files: bool = True,  # TASK-0CE5: Optional validation
+        directory_tree: Optional[str] = None  # TASK-FIX-PD03: Directory tree from file discovery
     ) -> CodebaseAnalysis:
         """
         Parse agent response into CodebaseAnalysis model.
@@ -55,6 +56,7 @@ class ResponseParser:
             codebase_path: Path to analyzed codebase
             template_context: Template context from TASK-001
             validate_example_files: Whether to validate example_files are present (TASK-0CE5)
+            directory_tree: Directory tree from file discovery phase (TASK-FIX-PD03)
 
         Returns:
             Validated CodebaseAnalysis object
@@ -74,7 +76,8 @@ class ResponseParser:
                 json_data,
                 codebase_path,
                 template_context,
-                validate_example_files=validate_example_files
+                validate_example_files=validate_example_files,
+                directory_tree=directory_tree  # TASK-FIX-PD03
             )
             return analysis
         except ValidationError as e:
@@ -140,7 +143,8 @@ class ResponseParser:
         data: Dict[str, Any],
         codebase_path: str,
         template_context: Optional[Dict[str, str]],
-        validate_example_files: bool = True  # TASK-0CE5
+        validate_example_files: bool = True,  # TASK-0CE5
+        directory_tree: Optional[str] = None  # TASK-FIX-PD03
     ) -> CodebaseAnalysis:
         """
         Build CodebaseAnalysis from parsed JSON data.
@@ -226,7 +230,8 @@ class ResponseParser:
             example_files=example_files,
             template_context=template_context,
             agent_used=True,
-            fallback_reason=None
+            fallback_reason=None,
+            project_structure=directory_tree  # TASK-FIX-PD03: Store directory tree
         )
 
         return analysis

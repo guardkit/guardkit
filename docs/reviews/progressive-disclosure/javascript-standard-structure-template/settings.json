@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "class": {
+      "element_type": "class",
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": null,
+      "suffix": ".ts",
+      "examples": []
+    },
+    "interface": {
+      "element_type": "interface",
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "prefix": null,
+      "suffix": ".ts",
+      "examples": []
+    },
+    "function": {
+      "element_type": "function",
+      "pattern": "{{name}}",
+      "case_style": "camelCase",
+      "prefix": null,
+      "suffix": null,
+      "examples": [
+        "query",
+        "firebase",
+        "sessions"
+      ]
+    },
+    "constant": {
+      "element_type": "constant",
+      "pattern": "{{NAME}}",
+      "case_style": "SCREAMING_SNAKE_CASE",
+      "prefix": null,
+      "suffix": null,
+      "examples": []
+    }
+  },
+  "file_organization": {
+    "by_layer": false,
+    "by_feature": false,
+    "test_location": "separate",
+    "max_files_per_directory": 50
+  },
+  "layer_mappings": {},
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 2,
+    "line_length": 100,
+    "trailing_commas": true
+  },
+  "generation_options": {
+    "preserve_comments": true,
+    "preserve_whitespace": true,
+    "auto_format": true
+  }
+}

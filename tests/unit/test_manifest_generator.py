@@ -498,6 +498,43 @@ class TestUtilityMethods:
         assert "agent:python-domain-specialist" in requirements
         assert "agent:architectural-reviewer" in requirements  # Clean Architecture
 
+    def test_extract_requirements_javascript(self, sample_technology, sample_architecture, sample_quality):
+        """Test that JavaScript projects don't get TypeScript specialist."""
+        sample_technology.primary_language = "JavaScript"
+        sample_architecture.architectural_style = "Modular"  # Not Clean Architecture
+        analysis = CodebaseAnalysis(
+            codebase_path="/tmp/test",
+            technology=sample_technology,
+            architecture=sample_architecture,
+            quality=sample_quality,
+            agent_used=True
+        )
+
+        generator = ManifestGenerator(analysis)
+        requirements = generator._extract_requirements()
+
+        assert isinstance(requirements, list)
+        assert "agent:typescript-domain-specialist" not in requirements
+        assert "agent:javascript-domain-specialist" not in requirements
+
+    def test_extract_requirements_typescript(self, sample_technology, sample_architecture, sample_quality):
+        """Test that TypeScript projects correctly get TypeScript specialist."""
+        sample_technology.primary_language = "TypeScript"
+        sample_architecture.architectural_style = "Modular"  # Not Clean Architecture
+        analysis = CodebaseAnalysis(
+            codebase_path="/tmp/test",
+            technology=sample_technology,
+            architecture=sample_architecture,
+            quality=sample_quality,
+            agent_used=True
+        )
+
+        generator = ManifestGenerator(analysis)
+        requirements = generator._extract_requirements()
+
+        assert isinstance(requirements, list)
+        assert "agent:typescript-domain-specialist" in requirements
+
 
 class TestJSONSerialization:
     """Test JSON serialization and file operations."""

@@ -220,9 +220,9 @@ check_prerequisites() {
         else
             print_success "Python found: Python $python_version (>= 3.10 required)"
 
-            # Check for pip (needed for Jinja2 and python-frontmatter)
+            # Check for pip (needed for Jinja2, python-frontmatter, pydantic)
             if ! command -v pip3 &> /dev/null; then
-                print_warning "pip3 not found - Python packages (Jinja2, python-frontmatter) may need manual installation"
+                print_warning "pip3 not found - Python packages (Jinja2, python-frontmatter, pydantic) may need manual installation"
                 print_info "Install with: python3 -m ensurepip or use your package manager"
             else
                 print_success "pip3 found - can install Python dependencies"
@@ -286,6 +286,37 @@ check_prerequisites() {
                     set -e  # Re-enable exit on error
                 else
                     print_success "python-frontmatter already installed"
+                fi
+
+                # Check and install pydantic (required for template creation)
+                print_info "Checking for pydantic..."
+                set +e  # Temporarily allow errors for package checks
+                python3 -c "import pydantic" </dev/null 2>&1 >/dev/null
+                pydantic_status=$?
+                set -e  # Re-enable exit on error
+                print_info "pydantic check completed (status: $pydantic_status)"
+
+                if [ $pydantic_status -ne 0 ]; then
+                    print_info "Installing pydantic (required for template creation)..."
+                    print_info "This may take a moment, please wait..."
+                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
+                    set +e  # Temporarily allow errors
+                    pip3 install --break-system-packages pydantic 2>&1
+                    if [ $? -ne 0 ]; then
+                        # Fallback to user install if --break-system-packages not supported
+                        print_info "Retrying with --user flag..."
+                        pip3 install --user pydantic 2>&1
+                        if [ $? -ne 0 ]; then
+                            print_warning "Failed to install pydantic - install manually with: pip3 install --user pydantic"
+                        else
+                            print_success "pydantic installed successfully (user mode)"
+                        fi
+                    else
+                        print_success "pydantic installed successfully"
+                    fi
+                    set -e  # Re-enable exit on error
+                else
+                    print_success "pydantic already installed"
                 fi
 
                 print_success "Python dependency checks complete"
@@ -1437,13 +1468,15 @@ setup_python_bin_symlinks() {
         fi
 
         # Create or update symlink
+        # NOTE: Do NOT chmod symlinks - on macOS/Linux, chmod on a symlink
+        # modifies the TARGET file's permissions, which would mark library
+        # files as executable in git. Symlinks inherit target permissions.
         if [ -L "$symlink_path" ]; then
             local current_target=$(readlink "$symlink_path")
             if [ "$current_target" = "$script_path" ]; then
                 ((symlinks_skipped++))
             else
                 ln -sf "$script_path" "$symlink_path"
-                chmod +x "$symlink_path" 2>/dev/null || true
                 ((symlinks_updated++))
                 print_info "  Updated: $symlink_name"
             fi
@@ -1452,7 +1485,6 @@ setup_python_bin_symlinks() {
             ((errors++))
         else
             ln -s "$script_path" "$symlink_path"
-            chmod +x "$symlink_path" 2>/dev/null || true
             ((symlinks_created++))
             print_info "  Created: $symlink_name → $(basename $script_path)"
         fi

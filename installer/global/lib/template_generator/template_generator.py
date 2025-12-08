@@ -3,6 +3,8 @@ Template Generator - AI-Assisted Template Creation
 
 Generates .template files from example code files using AI to intelligently
 extract placeholders while preserving code structure and patterns.
+
+TASK-IMP-TC-F8A3: Enhanced placeholder extraction using centralized patterns.
 """
 
 from pathlib import Path
@@ -15,6 +17,7 @@ _analyzer_models_module = importlib.import_module('installer.global.lib.codebase
 _ai_client_module = importlib.import_module('installer.global.lib.template_generator.ai_client')
 _models_module = importlib.import_module('installer.global.lib.template_generator.models')
 _path_resolver_module = importlib.import_module('installer.global.lib.template_generator.path_resolver')
+_placeholder_module = importlib.import_module('installer.global.lib.template_generator.placeholder_patterns')
 
 CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
 ExampleFile = _analyzer_models_module.ExampleFile
@@ -28,22 +31,34 @@ PlaceholderExtractionError = _models_module.PlaceholderExtractionError
 
 TemplatePathResolver = _path_resolver_module.TemplatePathResolver
 
+# TASK-IMP-TC-F8A3: Import placeholder extraction
+PlaceholderExtractor = _placeholder_module.PlaceholderExtractor
+PlaceholderResult = _placeholder_module.PlaceholderResult
+
 
 class TemplateGenerator:
     """Generate .template files from example files using AI."""
 
-    def __init__(self, analysis: CodebaseAnalysis, ai_client: Optional[AIClient] = None):
+    def __init__(
+        self,
+        analysis: CodebaseAnalysis,
+        ai_client: Optional[AIClient] = None,
+        manifest: Optional[Dict] = None
+    ):
         """
         Initialize template generator.
 
         Args:
             analysis: Codebase analysis result
             ai_client: AI client for placeholder extraction (optional, uses default if not provided)
+            manifest: Optional manifest dict for project-specific replacements (TASK-IMP-TC-F8A3)
         """
         self.analysis = analysis
         self.ai_client = ai_client or AIClient()
         self.generated_templates: List[CodeTemplate] = []
         self.path_resolver = TemplatePathResolver()
+        # TASK-IMP-TC-F8A3: Initialize placeholder extractor with manifest
+        self.placeholder_extractor = PlaceholderExtractor(manifest=manifest)
 
     def generate(self, max_templates: Optional[int] = None) -> TemplateCollection:
         """
@@ -215,8 +230,8 @@ class TemplateGenerator:
             return template_content, placeholders
 
         except NotImplementedError:
-            # Fallback: Use basic placeholder extraction
-            return self._fallback_placeholder_extraction(content, language)
+            # Fallback: Use enhanced placeholder extraction (TASK-IMP-TC-F8A3)
+            return self._fallback_placeholder_extraction(content, language, file_path)
         except Exception as e:
             raise PlaceholderExtractionError(f"Failed to extract placeholders: {e}")
 
@@ -354,38 +369,32 @@ PLACEHOLDERS: Namespace, EntityNamePlural, Verb, EntityName
     def _fallback_placeholder_extraction(
         self,
         content: str,
-        language: str
+        language: str,
+        file_path: str = ""
     ) -> Tuple[str, List[str]]:
         """
         Fallback placeholder extraction when AI is not available.
 
-        This is a simplified regex-based approach that provides
-        basic placeholder extraction.
+        TASK-IMP-TC-F8A3: Enhanced with comprehensive regex-based extraction
+        using centralized PlaceholderExtractor.
 
         Args:
             content: File content
             language: Programming language
+            file_path: Original file path (used to determine patterns)
 
         Returns:
             (template_content, list_of_placeholders)
         """
-        template_content = content
-        placeholders = []
+        # Use the centralized PlaceholderExtractor (TASK-IMP-TC-F8A3)
+        result = self.placeholder_extractor.extract(content, file_path)
 
-        # Language-specific basic patterns
-        if language in ["C#", "csharp"]:
-            # Replace namespace
-            template_content = re.sub(
-                r'namespace\s+([A-Za-z][A-Za-z0-9.]+)',
-                'namespace {{ProjectName}}',
-                template_content
-            )
-            if 'namespace' in template_content:
-                placeholders.append('ProjectName')
+        # Log coverage for debugging
+        is_valid, message = self.placeholder_extractor.validate_coverage(result)
+        if not is_valid:
+            print(f"  ⚠️  {message}")
 
-        # This is intentionally basic as a fallback
-        # Real implementation should use AI
-        return template_content, placeholders
+        return result.content, result.placeholders
 
     def _infer_language(self, file_path: Path) -> str:
         """Infer programming language from file extension."""

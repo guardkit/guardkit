@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Protocol
+from typing import Optional, Protocol, Union
 
 logger = logging.getLogger(__name__)
 
@@ -113,21 +113,30 @@ class AgentBridgeInvoker:
 
     def __init__(
         self,
-        request_file: Path = Path(".agent-request.json"),
-        response_file: Path = Path(".agent-response.json"),
+        request_file: Optional[Union[Path, str]] = None,
+        response_file: Optional[Union[Path, str]] = None,
         phase: int = 6,
         phase_name: str = "agent_generation"
     ):
         """Initialize bridge invoker.
 
         Args:
-            request_file: Path to write request (default: ./.agent-request.json)
-            response_file: Path to read response (default: ./.agent-response.json)
+            request_file: Path to write request (default: ./.agent-request-phase{phase}.json if not specified)
+            response_file: Path to read response (default: ./.agent-response-phase{phase}.json if not specified)
             phase: Current phase number
             phase_name: Human-readable phase name
         """
-        self.request_file = request_file
-        self.response_file = response_file
+        # Default to phase-specific files if not explicitly provided
+        if request_file is None:
+            self.request_file = Path(f".agent-request-phase{phase}.json")
+        else:
+            self.request_file = Path(request_file) if isinstance(request_file, str) else request_file
+
+        if response_file is None:
+            self.response_file = Path(f".agent-response-phase{phase}.json")
+        else:
+            self.response_file = Path(response_file) if isinstance(response_file, str) else response_file
+
         self.phase = phase
         self.phase_name = phase_name
         self._cached_response: Optional[str] = None
@@ -284,6 +293,24 @@ class AgentBridgeInvoker:
             True if response file exists, False otherwise
         """
         return self.response_file.exists()
+
+    def clear_cache(self) -> None:
+        """Clear cached response AND delete cache files.
+
+        Use this when multiple phases need separate AI invocations.
+        After clearing, the next invoke() call will write a new request
+        and exit with code 42 for agent invocation.
+
+        With phase-specific files, this prevents stale data from being
+        loaded by a different phase's invoker.
+
+        TASK-FIX-29C1: Enables multi-phase AI invocation pattern.
+        TASK-FIX-7B74: Also delete cache files to prevent stale data.
+        """
+        self._cached_response = None
+        # Delete cache files to prevent stale data from different phases
+        self.request_file.unlink(missing_ok=True)
+        self.response_file.unlink(missing_ok=True)
 
 
 class AgentInvocationError(Exception):

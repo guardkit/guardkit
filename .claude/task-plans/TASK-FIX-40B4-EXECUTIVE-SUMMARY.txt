@@ -1,0 +1,307 @@
+================================================================================
+TASK-FIX-40B4: JAVASCRIPT LAYER CLASSIFICATION - IMPLEMENTATION APPROACH
+================================================================================
+
+PROBLEM STATEMENT
+================================================================================
+The `/template-create` command misclassifies 80% of JavaScript files as "other"
+due to lack of language-specific architectural patterns.
+
+EXAMPLES OF MISCLASSIFICATION:
+  src/lib/query.js                  → "other" (should be "utilities")
+  src/lib/firestore/sessions.js     → "other" (should be "data-access")
+  src/lib/firestore-mock/firebase.js → "other" (should be "testing")
+  upload/upload-sessions.js         → "other" (should be "scripts")
+
+ROOT CAUSE
+================================================================================
+Current implementation uses C#/Java-centric patterns:
+  LAYER_PATTERNS = {
+      'Domain': ['/Core/', '/Domain/', 'Domain.', '.Core.'],
+      'Web': ['/Web/', '/Api/', 'Api.'],
+      'Infrastructure': ['/Infrastructure/', '/Persistence/'],
+  }
+
+Why this fails for JavaScript:
+  1. Designed for capitalized namespaces (not lowercase directories)
+  2. No understanding of lib/, components/, stores/, routes/
+  3. Can't distinguish firestore/ from firestore-mock/
+  4. Ignores file suffix patterns (.test.js, .mock.ts)
+
+SOLUTION APPROACH
+================================================================================
+Introduce LayerClassificationStrategy abstraction using Strategy pattern:
+
+                    LayerClassificationStrategy (ABC)
+                   /         |         |         \
+         JavaScript    Python    C#    Generic
+         Classifier    Classifier  Classifier  Classifier
+
+BENEFITS:
+  ✓ Isolate JavaScript logic (no impact on C# patterns)
+  ✓ Support multiple languages (Python, Go, Rust in future)
+  ✓ Language-specific rules without massive if/else statements
+  ✓ Testable in isolation
+  ✓ Backward compatible with existing code
+
+DESIGN HIGHLIGHTS
+================================================================================
+
+1. STRATEGY PATTERN
+   Each language gets a dedicated classifier implementing the strategy interface.
+   Factory function (get_classifier) selects appropriate implementation.
+
+2. CONFIDENCE SCORING
+   Each classification returns confidence 0.0-1.0:
+     - 0.95: Testing patterns (__mocks__, .test.js)
+     - 0.90: Scripts/Routes patterns
+     - 0.85: Data-access/Presentation patterns
+     - 0.75: Utilities (generic lib/ fallback)
+
+3. PATTERN PRIORITY
+   Patterns checked in priority order (first match wins):
+     Priority 1: Testing (most specific)
+     Priority 2: Scripts
+     Priority 3: Routes
+     Priority 4: Data-Access
+     Priority 5: Presentation
+     Priority 6: State
+     Priority 7: Utilities (fallback)
+
+   This prevents firestore-mock/ → data-access misclassification.
+
+4. REGEX-BASED MATCHING
+   Fast, deterministic classification without AI/ML.
+   Pre-compiled patterns for performance.
+
+JAVASCRIPT PATTERNS
+================================================================================
+
+Testing Layer (confidence 0.95):
+  - __mocks__/ directory
+  - .test.js, .spec.js suffixes
+  - -mock/ directory suffix
+  - /test/, /tests/ directories
+
+Scripts Layer (confidence 0.90):
+  - /scripts/, /bin/, /upload/, /tasks/ directories
+  - *script.js, *upload.js file patterns
+
+Data-Access Layer (confidence 0.85):
+  - /firestore/, /api/, /data/, /database/ directories
+  - query.js, mutation.js, model.js file patterns
+
+Presentation Layer (confidence 0.85):
+  - /components/, /screens/, /views/ directories
+  - Component.js file pattern
+
+State Layer (confidence 0.90):
+  - /store/, /stores/, /state/, /context/, /contexts/ directories
+
+Routes Layer (confidence 0.95):
+  - /routes/, /pages/ directories (critical pattern)
+
+Utilities Layer (confidence 0.75, fallback):
+  - /utils/, /helpers/, /lib/, /services/ directories
+  - lib/ treated as fallback (generic, lower confidence)
+
+IMPLEMENTATION FILES
+================================================================================
+
+CREATE (NEW):
+  1. /installer/global/lib/template_generator/layer_classifier.py
+     - LayerClassificationStrategy (ABC)
+     - JavaScriptLayerClassifier
+     - PythonLayerClassifier (skeleton)
+     - CSharpLayerClassifier (wraps legacy patterns)
+     - GenericLayerClassifier
+     - get_classifier(language) factory function
+     - ClassificationResult dataclass
+
+  2. /tests/lib/template_generator/test_layer_classifier.py
+     - Comprehensive unit tests
+     - Pattern matching tests
+     - Priority ordering tests
+     - Confidence scoring tests
+     - Backward compatibility tests
+
+MODIFY (EXISTING):
+  1. /installer/global/lib/template_generator/pattern_matcher.py
+     - Inject LayerClassificationStrategy in __init__
+     - Update identify_layer() to delegate to classifier
+     - Keep legacy LAYER_PATTERNS for backward compatibility
+
+  2. /installer/global/lib/codebase_analyzer/response_parser.py
+     - Handle confidence scores in layer classification
+     - Update _parse_example_files() to accept optional confidence
+
+  3. /installer/global/lib/codebase_analyzer/prompt_builder.py
+     - Add JavaScript layer examples to AI prompt
+     - Include firestore/, components/, stores/ patterns
+     - Emphasize __mocks__/ and .test.js patterns
+
+  4. /CLAUDE.md
+     - Document JavaScript classification capability
+     - Link to layer classification examples
+
+TESTING STRATEGY
+================================================================================
+
+Unit Tests (100% coverage of new code):
+  - test_firestore_data_access() → Verify firestore/ → data-access
+  - test_mock_suffix_testing() → Verify -mock/ → testing
+  - test_jests_mocks() → Verify __mocks__/ → testing
+  - test_test_suffix() → Verify .test.js → testing
+  - test_upload_scripts() → Verify upload/ → scripts
+  - test_scripts_directory() → Verify scripts/ → scripts
+  - test_components_presentation() → Verify components/ → presentation
+  - test_lib_fallback() → Verify lib/ → utilities
+  - test_priority_ordering() → Verify testing checked before utilities
+  - test_pattern_matching() → Verify regex patterns work
+  - test_confidence_scoring() → Verify confidence values correct
+  - test_c_sharp_backward_compatibility() → Verify no regression
+  - test_language_support() → Verify JavaScript variants detected
+  - test_error_handling() → Verify graceful error handling
+
+Integration Tests:
+  - test_operation_extractor_with_javascript_classifier()
+  - test_template_generator_integration()
+
+Manual Testing:
+  - Run `/template-create` on JavaScript project
+  - Verify layer assignments match expected values
+  - Check confidence scores in generated templates
+
+EXPECTED RESULTS
+================================================================================
+
+BEFORE (Current):
+  src/lib/query.js                → "other" (wrong)
+  src/lib/firestore/sessions.js   → "other" (wrong)
+  src/lib/firestore-mock/firebase → "other" (wrong)
+  upload/upload-sessions.js       → "other" (wrong)
+  src/components/Button.js        → "other" (wrong)
+
+  Misclassification rate: 80%
+  Confidence scoring: N/A
+
+AFTER (With Implementation):
+  src/lib/query.js                → utilities (0.75) ✓
+  src/lib/firestore/sessions.js   → data-access (0.88) ✓
+  src/lib/firestore-mock/firebase → testing (0.95) ✓
+  upload/upload-sessions.js       → scripts (0.92) ✓
+  src/components/Button.js        → presentation (0.90) ✓
+
+  Misclassification rate: <5% (vs target <30%)
+  Confidence: All layers scored 0.75+
+  C# patterns: No regression (backward compatible)
+
+SUCCESS METRICS
+================================================================================
+
+Quantitative:
+  ✓ JavaScript misclassification reduced from 80% to <30% (target: <30%)
+  ✓ Test coverage: 100% of new classification code
+  ✓ All C# patterns working (zero regression)
+  ✓ 95%+ detection rate for testing files
+
+Qualitative:
+  ✓ No breaking changes to public API
+  ✓ Backward compatible with existing code
+  ✓ Clear separation of concerns (Strategy pattern)
+  ✓ Easy to add new languages in future
+
+ESTIMATED EFFORT
+================================================================================
+
+Phase 1: Core Implementation       4 hours
+Phase 2: Integration              3 hours
+Phase 3: Testing                  2 hours
+Phase 4: Documentation            1 hour
+                                 --------
+Total:                           10 hours
+
+INCLUDES:
+  - Strategy pattern implementation
+  - JavaScript classifier with 7 layers
+  - Confidence scoring system
+  - Comprehensive test suite (100% coverage)
+  - Documentation and examples
+
+EXCLUDES:
+  - Python classifier details (skeleton only)
+  - ML-based learning system (future enhancement)
+
+DEPENDENCIES & RISKS
+================================================================================
+
+DEPENDENCIES:
+  - CodeTemplate model must have 'language' field
+  - Must not break existing CRUD pattern matching
+
+RISKS (LOW):
+  ✓ Strategy pattern isolates JavaScript logic
+  ✓ Backward compatible interface
+  ✓ Comprehensive tests prevent regression
+
+KEY DECISIONS
+================================================================================
+
+1. STRATEGY PATTERN
+   Why: Different languages need different rules
+   Impact: Clean separation, testable, extensible
+
+2. REGEX-BASED PATTERNS
+   Why: Fast, deterministic, no AI/ML overhead
+   Impact: 95%+ accuracy achievable without AI
+
+3. CONFIDENCE SCORING
+   Why: Guide humans when classification uncertain
+   Impact: Transparent, enables future improvements
+
+4. FIRST-MATCH-WINS PRIORITY
+   Why: Prevent false positives (firestore-mock → testing not data-access)
+   Impact: Testing patterns checked first
+
+DELIVERABLES CHECKLIST
+================================================================================
+
+[ ] layer_classifier.py - Strategy pattern implementation
+[ ] test_layer_classifier.py - Comprehensive test suite (100% coverage)
+[ ] pattern_matcher.py - Updated to use classifier
+[ ] response_parser.py - Handle confidence scores
+[ ] prompt_builder.py - JavaScript examples in AI prompt
+[ ] CLAUDE.md - Updated capabilities documentation
+[ ] Implementation plan document (TASK-FIX-40B4-implementation-plan.md)
+[ ] Design summary (TASK-FIX-40B4-design-summary.md)
+[ ] Python patterns reference (TASK-FIX-40B4-python-patterns-reference.md)
+[ ] All C# tests still passing (zero regression)
+
+NEXT STEPS
+================================================================================
+
+1. Review and approve this design
+2. Implement layer_classifier.py with JavaScriptLayerClassifier
+3. Write comprehensive unit tests (100% coverage)
+4. Integrate with CRUDPatternMatcher (dependency injection)
+5. Verify backward compatibility (C# patterns unchanged)
+6. Update documentation and examples
+7. Test with real JavaScript projects
+8. Consider Python/Go classifiers as future enhancement
+
+CONCLUSION
+================================================================================
+
+This implementation approach:
+
+✓ Solves the JavaScript misclassification problem (80% → <30%)
+✓ Uses proven design patterns (Strategy, Factory)
+✓ Maintains backward compatibility (C# patterns unchanged)
+✓ Enables future language support (Python, Go, Rust)
+✓ Provides clear confidence scoring (no ambiguity)
+✓ Is thoroughly testable (100% unit test coverage)
+✓ Follows Python best practices (type hints, docstrings, etc.)
+
+Ready to proceed with implementation.
+
+================================================================================

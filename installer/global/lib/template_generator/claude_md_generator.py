@@ -19,7 +19,7 @@ from ..codebase_analyzer.models import (
     LayerInfo,
     ExampleFile,
 )
-from .models import TemplateClaude, AgentMetadata
+from .models import TemplateClaude, AgentMetadata, TemplateSplitOutput
 from .ai_client import AIClient
 
 
@@ -217,8 +217,11 @@ class ClaudeMdGenerator:
             "```"
         ]
 
-        # Generate directory tree from layers
-        if self.analysis.architecture.layers:
+        # TASK-FIX-PD03: Use actual directory tree if available
+        if self.analysis.project_structure:
+            # Use real directory tree from file discovery
+            structure.append(self.analysis.project_structure)
+        elif self.analysis.architecture.layers:
             # Sort layers by typical hierarchy
             sorted_layers = self._sort_layers_hierarchically(self.analysis.architecture.layers)
 
@@ -237,8 +240,9 @@ class ClaudeMdGenerator:
             ""
         ])
 
-        # Add explanations for key directories
-        if self.analysis.architecture.layers:
+        # Add explanations for key directories (only when using layer-based structure)
+        # TASK-FIX-PD03: Skip directory descriptions if using actual project_structure
+        if not self.analysis.project_structure and self.analysis.architecture.layers:
             structure.append("## Directory Descriptions")
             structure.append("")
 
@@ -939,6 +943,78 @@ class ClaudeMdGenerator:
         except Exception:
             return None
 
+    def _categorize_agent_by_keywords(self, agent_metadata: Dict[str, Any]) -> str:
+        """Categorize agent based on technologies and description keywords.
+
+        Uses priority order: database > testing > api > domain > ui > general
+        to prevent false matches from generic keywords like 'view'.
+
+        Args:
+            agent_metadata: Dict with 'name', 'description', 'technologies' keys
+
+        Returns:
+            Category string: 'database', 'api', 'ui', 'domain', 'testing', or 'general'
+        """
+        # Check technologies first (most reliable)
+        technologies_lower = [t.lower() for t in agent_metadata.get('technologies', [])]
+
+        # Database technologies
+        database_techs = {
+            'firestore', 'firebase', 'realm', 'mongodb', 'postgresql', 'mysql',
+            'sqlite', 'supabase', 'dynamodb', 'redis', 'database'
+        }
+        if any(any(tech in t for tech in database_techs) for t in technologies_lower):
+            return 'database'
+
+        # Testing technologies
+        testing_techs = {'pytest', 'jest', 'mocha', 'xunit', 'nunit', 'vitest', 'testing'}
+        if any(any(tech in t for tech in testing_techs) for t in technologies_lower):
+            return 'testing'
+
+        # API technologies
+        api_techs = {'fastapi', 'express', 'flask', 'django', 'asp.net', 'spring', 'rest', 'api'}
+        if any(any(tech in t for tech in api_techs) for t in technologies_lower):
+            return 'api'
+
+        # UI technologies
+        ui_techs = {'react', 'vue', 'angular', 'svelte', 'xaml', 'swiftui'}
+        if any(any(tech in t for tech in ui_techs) for t in technologies_lower):
+            return 'ui'
+
+        # Fallback to description keyword matching
+        desc_lower = agent_metadata.get('description', '').lower()
+
+        # Database keywords (highest priority)
+        database_keywords = {
+            'database', 'firestore', 'firebase', 'realm', 'mongodb', 'postgresql',
+            'mysql', 'crud', 'persistence', 'query', 'collection', 'document',
+            'repository', 'data access', 'orm', 'migration', 'sql'
+        }
+        if any(keyword in desc_lower for keyword in database_keywords):
+            return 'database'
+
+        # Testing keywords
+        testing_keywords = {'test', 'testing', 'coverage', 'assertion', 'mock', 'fixture', 'spec'}
+        if any(keyword in desc_lower for keyword in testing_keywords):
+            return 'testing'
+
+        # API keywords
+        api_keywords = {'api', 'endpoint', 'route', 'request', 'response', 'rest', 'graphql', 'controller'}
+        if any(keyword in desc_lower for keyword in api_keywords):
+            return 'api'
+
+        # Domain keywords
+        domain_keywords = {'domain', 'business logic', 'business', 'operation', 'service', 'usecase'}
+        if any(keyword in desc_lower for keyword in domain_keywords):
+            return 'domain'
+
+        # UI keywords (lowest priority - removed 'view' to prevent false matches)
+        ui_keywords = {'ui', 'component', 'screen', 'page', 'xaml', 'jsx', 'interface', 'frontend'}
+        if any(keyword in desc_lower for keyword in ui_keywords):
+            return 'ui'
+
+        return 'general'
+
     def _enhance_agent_info_with_ai(self, agent_metadata: Dict[str, Any]) -> Dict[str, str]:
         """Use AI to generate enhanced agent documentation
 
@@ -1003,21 +1079,19 @@ Respond ONLY with valid JSON."""
                 # Fallback: Generate basic guidance without AI
                 purpose = agent_metadata['description']
 
-                # Generate basic "when to use" from description
-                desc_lower = agent_metadata['description'].lower()
-                when_to_use = f"Use this agent when working with {agent_metadata['name'].replace('-', ' ')}"
+                # Use categorization to generate appropriate guidance (TASK-FIX-PD05)
+                category = self._categorize_agent_by_keywords(agent_metadata)
 
-                # Try to make it more specific based on description
-                if 'test' in desc_lower:
-                    when_to_use = f"Use this agent when writing tests, validating test coverage, or setting up testing infrastructure"
-                elif 'ui' in desc_lower or 'view' in desc_lower:
-                    when_to_use = f"Use this agent when creating UI components, implementing views, or working with user interfaces"
-                elif 'data' in desc_lower or 'repository' in desc_lower or 'database' in desc_lower:
-                    when_to_use = f"Use this agent when implementing data access layers, working with databases, or creating repository patterns"
-                elif 'api' in desc_lower or 'endpoint' in desc_lower:
-                    when_to_use = f"Use this agent when creating API endpoints, implementing request handlers, or defining web routes"
-                elif 'domain' in desc_lower or 'business' in desc_lower:
-                    when_to_use = f"Use this agent when implementing business logic, creating domain operations, or defining core functionality"
+                when_to_use_templates = {
+                    'database': "Use this agent when implementing database operations, data persistence layers, query optimization, or repository patterns",
+                    'testing': "Use this agent when writing tests, validating test coverage, setting up testing infrastructure, or creating test fixtures",
+                    'api': "Use this agent when creating API endpoints, implementing request handlers, defining web routes, or building REST/GraphQL services",
+                    'domain': "Use this agent when implementing business logic, creating domain operations, defining core functionality, or building service layers",
+                    'ui': "Use this agent when creating UI components, implementing user interfaces, building screens, or handling presentation logic",
+                    'general': f"Use this agent when working with {agent_metadata['name'].replace('-', ' ')}"
+                }
+
+                when_to_use = when_to_use_templates.get(category, when_to_use_templates['general'])
 
                 return {
                     'purpose': purpose,
@@ -1036,13 +1110,51 @@ Respond ONLY with valid JSON."""
 
         Args:
             agent: GeneratedAgent object with full_definition
+                   May also be a deserialized object from checkpoint resume
 
         Returns:
             AgentMetadata or None if extraction fails
         """
         try:
+            # TASK-FIX-RESUME: Use getattr for safety with deserialized agents
+            agent_name = getattr(agent, 'name', None)
+            full_definition = getattr(agent, 'full_definition', None)
+
+            # Skip agents without required attributes
+            if not agent_name:
+                return None
+
+            # If no full_definition, create minimal metadata from available attributes
+            if not full_definition or not isinstance(full_definition, str):
+                agent_description = getattr(agent, 'description', f'Agent for {agent_name}')
+                agent_tags = getattr(agent, 'tags', [])
+                agent_priority = getattr(agent, 'priority', 5)
+
+                # Build minimal metadata
+                agent_metadata_dict = {
+                    'name': agent_name,
+                    'description': agent_description,
+                    'technologies': agent_tags if isinstance(agent_tags, list) else [],
+                    'tools': getattr(agent, 'tools', []),
+                    'priority': agent_priority
+                }
+
+                # Use AI to generate "when to use" guidance
+                enhanced = self._enhance_agent_info_with_ai(agent_metadata_dict)
+
+                # Infer category from name and tags
+                category = self._infer_category(agent_name, agent_tags if isinstance(agent_tags, list) else [])
+
+                return AgentMetadata(
+                    name=agent_name,
+                    purpose=enhanced['purpose'],
+                    capabilities=[],
+                    when_to_use=enhanced['when_to_use'],
+                    category=category
+                )
+
             # Parse frontmatter from agent markdown
-            post = frontmatter.loads(agent.full_definition)
+            post = frontmatter.loads(full_definition)
             metadata = post.metadata
 
             # Extract first paragraph from content as purpose
@@ -1063,7 +1175,7 @@ Respond ONLY with valid JSON."""
 
             # Build agent metadata dict for AI enhancement
             agent_metadata_dict = {
-                'name': agent.name,
+                'name': agent_name,
                 'description': purpose,
                 'technologies': metadata.get('technologies', metadata.get('tags', [])),
                 'tools': metadata.get('tools', []),
@@ -1074,10 +1186,10 @@ Respond ONLY with valid JSON."""
             enhanced = self._enhance_agent_info_with_ai(agent_metadata_dict)
 
             # Infer category from name and tags
-            category = self._infer_category(agent.name, metadata.get('tags', []))
+            category = self._infer_category(agent_name, metadata.get('tags', []))
 
             return AgentMetadata(
-                name=agent.name,
+                name=agent_name,
                 purpose=enhanced['purpose'],  # Use AI-enhanced purpose
                 capabilities=capabilities[:5],  # Max 5
                 when_to_use=enhanced['when_to_use'],  # Use AI-generated guidance
@@ -1123,6 +1235,253 @@ Respond ONLY with valid JSON."""
 
         # Default to general
         return 'general'
+
+    # ===== Phase 5.6 Split Output Methods (TASK-PD-005) =====
+
+    def _get_quality_standards_data(self) -> Dict[str, Any]:
+        """Extract quality standards data (DRY fix)
+
+        Returns:
+            Dictionary with quality standards data
+        """
+        quality = self.analysis.quality
+        return {
+            'solid_compliance': quality.solid_compliance,
+            'dry_compliance': quality.dry_compliance,
+            'yagni_compliance': quality.yagni_compliance,
+            'improvements': quality.improvements
+        }
+
+    def _get_agent_metadata_list(self) -> List[AgentMetadata]:
+        """Extract agent metadata list (DRY fix)
+
+        Returns:
+            List of AgentMetadata objects
+        """
+        agent_metadata_list = []
+
+        if self.output_path:
+            # Read from template output directory
+            agent_dir = self.output_path / "agents"
+            if agent_dir.exists():
+                for agent_file in sorted(agent_dir.glob("*.md")):
+                    metadata_dict = self._read_agent_metadata_from_file(agent_file)
+                    if metadata_dict:
+                        enhanced = self._enhance_agent_info_with_ai(metadata_dict)
+                        category = self._infer_category(
+                            metadata_dict['name'],
+                            metadata_dict.get('tags', [])
+                        )
+                        agent_metadata = AgentMetadata(
+                            name=metadata_dict['name'],
+                            purpose=enhanced['purpose'],
+                            capabilities=[],
+                            when_to_use=enhanced['when_to_use'],
+                            category=category
+                        )
+                        agent_metadata_list.append(agent_metadata)
+        elif self.agents:
+            for agent in self.agents:
+                metadata = self._extract_agent_metadata(agent)
+                if metadata:
+                    agent_metadata_list.append(metadata)
+
+        return agent_metadata_list
+
+    def _generate_loading_instructions(self) -> str:
+        """Generate loading instructions section
+
+        Returns:
+            Markdown with instructions for loading extended content
+        """
+        instructions = [
+            "# How to Load This Template",
+            "",
+            "This template documentation is split into three files for optimal loading:",
+            "",
+            "1. **CLAUDE.md** (this file) - Core architecture and quick reference",
+            "2. **docs/patterns/README.md** - Detailed patterns and best practices",
+            "3. **docs/reference/README.md** - Code examples and complete reference",
+            "",
+            "## Loading Strategy",
+            "",
+            "- **Start here**: Read CLAUDE.md for architecture overview and essential guidance",
+            "- **When implementing**: Load `docs/patterns/README.md` for pattern details",
+            "- **When troubleshooting**: Load `docs/reference/README.md` for examples and workflows",
+            "",
+            "## Why Split?",
+            "",
+            "Splitting reduces initial context load by ~70% while keeping essential information immediately available.",
+            ""
+        ]
+        return "\n".join(instructions)
+
+    def _generate_quality_standards_summary(self) -> str:
+        """Generate quality standards summary (DRY fix)
+
+        Returns:
+            Markdown with quality standards summary
+        """
+        quality_data = self._get_quality_standards_data()
+
+        summary = [
+            "# Quality Standards",
+            "",
+            "## Quick Reference",
+            "",
+            "- **Unit Test Coverage**: ≥80%",
+            "- **Branch Coverage**: ≥75%",
+            f"- **SOLID Compliance**: {quality_data['solid_compliance']:.0f}/100",
+            f"- **DRY Compliance**: {quality_data['dry_compliance']:.0f}/100",
+            f"- **YAGNI Compliance**: {quality_data['yagni_compliance']:.0f}/100",
+            ""
+        ]
+
+        # Add testing framework if available
+        if self.analysis.technology.testing_frameworks:
+            test_fw = self.analysis.technology.testing_frameworks[0]
+            summary.append(f"- **Test Framework**: {test_fw}")
+            summary.append("")
+
+        summary.extend([
+            "**For detailed standards**: See `docs/patterns/README.md`",
+            ""
+        ])
+
+        return "\n".join(summary)
+
+    def _group_agents_by_category(self, agents: List[AgentMetadata]) -> Dict[str, List[AgentMetadata]]:
+        """Group agents by category (helper for agent usage summary)
+
+        Args:
+            agents: List of AgentMetadata objects
+
+        Returns:
+            Dictionary mapping category to list of agents
+        """
+        by_category = {}
+        for metadata in agents:
+            category = metadata.category.title()
+            if category not in by_category:
+                by_category[category] = []
+            by_category[category].append(metadata)
+        return by_category
+
+    def _generate_agent_usage_summary(self) -> str:
+        """Generate agent usage summary
+
+        Returns:
+            Markdown with agent usage summary
+        """
+        usage = [
+            "# Agent Usage",
+            "",
+            "This template includes specialized agents for common tasks.",
+            ""
+        ]
+
+        agent_metadata_list = self._get_agent_metadata_list()
+
+        if not agent_metadata_list:
+            usage.extend([
+                "## Quick Guide",
+                "",
+                "- Use **domain-specific agents** for business logic",
+                "- Use **testing agents** for test generation",
+                "- Use **UI agents** for view/component creation",
+                "",
+                "**For detailed agent documentation**: See `docs/reference/README.md`",
+                ""
+            ])
+            return "\n".join(usage)
+
+        # Group and show categories only
+        by_category = self._group_agents_by_category(agent_metadata_list)
+
+        usage.extend([
+            "## Available Agent Categories",
+            ""
+        ])
+
+        for category, agents in sorted(by_category.items()):
+            agent_names = [f"`{a.name}`" for a in agents]
+            usage.append(f"- **{category}**: {', '.join(agent_names)}")
+
+        usage.extend([
+            "",
+            "**For detailed agent documentation**: See `docs/reference/README.md`",
+            ""
+        ])
+
+        return "\n".join(usage)
+
+    def _generate_core(self) -> str:
+        """Generate core CLAUDE.md content (≤10KB target)
+
+        Returns:
+            Markdown with essential content only
+        """
+        sections = [
+            self._generate_loading_instructions(),
+            self._generate_architecture_overview(),
+            self._generate_technology_stack(),
+            self._generate_project_structure(),
+            self._generate_quality_standards_summary(),
+            self._generate_agent_usage_summary()
+        ]
+        return "\n\n".join(sections)
+
+    def _generate_patterns_extended(self) -> str:
+        """Generate extended patterns content
+
+        Returns:
+            Markdown with complete patterns and best practices
+        """
+        # Delegate to existing method
+        patterns = self._generate_patterns()
+
+        # Add full quality standards
+        quality_standards = self._generate_quality_standards()
+
+        return "\n\n".join([patterns, quality_standards])
+
+    def _generate_reference_extended(self) -> str:
+        """Generate extended reference content
+
+        Returns:
+            Markdown with examples, testing, workflows, and troubleshooting
+        """
+        sections = [
+            self._generate_examples(),
+            self._generate_naming_conventions(),
+            self._generate_agent_usage()  # Full agent documentation
+        ]
+        return "\n\n".join(sections)
+
+    def generate_split(self) -> TemplateSplitOutput:
+        """Generate split CLAUDE.md output with size validation
+
+        Returns:
+            TemplateSplitOutput with validated core size
+
+        Raises:
+            ValueError: If core content exceeds 10KB limit
+        """
+        timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        output = TemplateSplitOutput(
+            core_content=self._generate_core(),
+            patterns_content=self._generate_patterns_extended(),
+            reference_content=self._generate_reference_extended(),
+            generated_at=timestamp
+        )
+
+        # Validate size constraints
+        is_valid, error_msg = output.validate_size_constraints()
+        if not is_valid:
+            raise ValueError(f"Size validation failed: {error_msg}")
+
+        return output
 
     def to_markdown(self, claude: TemplateClaude) -> str:
         """Convert TemplateClaude to full CLAUDE.md content
