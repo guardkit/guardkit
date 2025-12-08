@@ -130,6 +130,8 @@ class CompletenessValidator:
         """
         Check if all CRUD operations are present for each entity.
 
+        TASK-FIX-E5F6: Added entity validation to filter false positives.
+
         Expected operations: Create, Read, Update, Delete
 
         Args:
@@ -145,6 +147,11 @@ class CompletenessValidator:
 
         for entity, operations_dict in entity_groups.items():
             present_operations = set(operations_dict.keys())
+
+            # TASK-FIX-E5F6: Skip entities that don't meet minimum operation threshold
+            if not self._is_valid_entity(entity, present_operations):
+                continue
+
             missing_operations = EXPECTED_CRUD_OPERATIONS - present_operations
 
             for operation in missing_operations:
@@ -216,6 +223,28 @@ class CompletenessValidator:
                 logger.debug(f"Layer asymmetry: {operation} in Web but not UseCases")
 
         return issues
+
+    def _is_valid_entity(self, entity: str, operations: Set[str]) -> bool:
+        """
+        Validate entity has enough CRUD operations to be considered real.
+
+        TASK-FIX-E5F6: Entities with only 1 CRUD operation are likely false positives.
+        Minimum 2 operations required to be considered a valid CRUD entity.
+
+        Args:
+            entity: Entity name
+            operations: Set of detected CRUD operations
+
+        Returns:
+            True if entity appears valid, False otherwise
+        """
+        MIN_OPERATIONS = 2
+
+        if len(operations) < MIN_OPERATIONS:
+            logger.debug(f"Skipping entity '{entity}' - only {len(operations)} operations detected (minimum: {MIN_OPERATIONS})")
+            return False
+
+        return True
 
     def _generate_recommendations(
         self,

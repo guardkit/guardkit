@@ -267,10 +267,13 @@ class TemplateCreateOrchestrator:
 
                 if phase == WorkflowPhase.PHASE_1:
                     return self._run_from_phase_1()
+                elif phase == WorkflowPhase.PHASE_5:
+                    # TASK-FIX-C3D4: Explicit Phase 5 routing for agent generation resume
+                    return self._run_from_phase_5()
                 elif phase == WorkflowPhase.PHASE_7:
                     return self._run_from_phase_7()
                 else:
-                    # Default to Phase 5 (backward compatibility)
+                    # Default to Phase 5 (backward compatibility for Phase 4 checkpoints)
                     return self._run_from_phase_5()
 
             # Normal execution: Phases 1-9.5
@@ -901,6 +904,11 @@ class TemplateCreateOrchestrator:
             List of GeneratedAgent objects
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
+
+        # TASK-FIX-C3D4: Save checkpoint BEFORE agent invocation
+        # This ensures resume routing knows we're waiting for Phase 5 response
+        # When resuming, state.phase == 5 triggers the correct phase5_invoker
+        self._save_checkpoint("phase5_agent_request", phase=WorkflowPhase.PHASE_5)
 
         # TASK-FIX-7B74: Phase 5 has its own invoker with separate cache files
         # No need to clear Phase 1 cache - Phase 5 uses independent phase5_invoker

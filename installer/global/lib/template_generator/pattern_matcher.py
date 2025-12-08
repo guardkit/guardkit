@@ -35,6 +35,32 @@ LAYER_PATTERNS = {
     'Infrastructure': ['/Infrastructure/', '/Persistence/', 'Infrastructure.', 'Persistence.', 'infrastructure/', 'persistence/']
 }
 
+# TASK-FIX-E5F6: Directories containing utility scripts (not CRUD entities)
+EXCLUDED_DIRECTORIES = {
+    'upload',
+    'scripts',
+    'bin',
+    'tools',
+    'migrations',
+    'seeds',
+    'fixtures',
+    'data',
+    'test',
+    'tests',
+}
+
+# TASK-FIX-E5F6: File prefixes that indicate utility scripts
+EXCLUDED_PREFIXES = {
+    'upload-',
+    'migrate-',
+    'seed-',
+    'script-',
+    'tool-',
+}
+
+# TASK-FIX-E5F6: Layers that can contain CRUD operations
+CRUD_LAYERS = {'Domain', 'UseCases', 'Web', 'Infrastructure'}
+
 
 class CRUDPatternMatcher:
     """
@@ -48,6 +74,7 @@ class CRUDPatternMatcher:
         """
         Identify CRUD operation from template file path or name.
 
+        TASK-FIX-E5F6: Enhanced exclusion logic for utility directories and scripts.
         TASK-FIX-6855 Issue 5: Enhanced to prevent false positives for standalone utility files.
 
         Args:
@@ -64,7 +91,18 @@ class CRUDPatternMatcher:
             - 'ListProducts.cs' → 'List'
             - 'query.js' → None (TASK-FIX-6855: utility file, not CRUD)
             - 'firebase.js' → None (TASK-FIX-6855: utility file, not CRUD)
+            - 'upload/update-sessions-weather.js' → None (TASK-FIX-E5F6: utility directory)
         """
+        # TASK-FIX-E5F6: Layer 1 - Directory exclusion
+        path_parts_lower = {part.lower() for part in Path(template.original_path).parts}
+        if path_parts_lower & EXCLUDED_DIRECTORIES:
+            return None
+
+        # TASK-FIX-E5F6: Layer 2 - Layer-based filtering
+        layer = CRUDPatternMatcher.identify_layer(template)
+        if layer is not None and layer not in CRUD_LAYERS:
+            return None
+
         # Combine file name and path for matching
         search_text = f"{template.name} {template.template_path} {template.original_path}"
         search_text_lower = search_text.lower()
@@ -72,6 +110,10 @@ class CRUDPatternMatcher:
         # Get filename without extension for pattern matching
         filename_stem = Path(template.name).stem
         filename_stem_lower = filename_stem.lower()
+
+        # TASK-FIX-E5F6: Layer 3 - Prefix exclusion
+        if any(filename_stem_lower.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
+            return None
 
         # TASK-FIX-6855 Issue 5: Skip standalone utility files
         # Pattern must be followed by something (entity name, separator, etc.)
@@ -153,6 +195,7 @@ class CRUDPatternMatcher:
 
         Uses heuristics to identify the entity being operated on.
 
+        TASK-FIX-E5F6: Fixed extension handling to prevent malformed entity names.
         TASK-FIX-6855 Issue 5: Guard clause to check if this is a CRUD file first.
 
         Args:
@@ -178,8 +221,13 @@ class CRUDPatternMatcher:
         if operation is None:
             return None  # Not a CRUD file - don't treat as entity
 
-        # Start with the file name (without extension)
+        # TASK-FIX-E5F6: Use Path.stem which correctly handles extensions
+        # For 'file.js' -> 'file', for 'file.test.ts' -> 'file.test'
         name = Path(template.name).stem
+
+        # TASK-FIX-E5F6: Handle compound extensions like .spec.ts, .test.js
+        while '.' in name:
+            name = Path(name).stem
 
         # Remove operation prefixes
         for operation, patterns in CRUD_PATTERNS.items():

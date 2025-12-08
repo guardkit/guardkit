@@ -35,18 +35,26 @@ class ConfidenceScore(BaseModel):
 
     @model_validator(mode='after')
     def validate_level_matches_percentage(self):
-        """Ensure confidence level matches percentage."""
-        percentage = self.percentage
-        level = self.level
+        """Auto-correct confidence level to match percentage.
 
-        if percentage >= 90 and level != ConfidenceLevel.HIGH:
-            raise ValueError("High percentage (>=90) requires HIGH confidence level")
-        if 70 <= percentage < 90 and level != ConfidenceLevel.MEDIUM:
-            raise ValueError("Medium percentage (70-89) requires MEDIUM confidence level")
-        if 50 <= percentage < 70 and level != ConfidenceLevel.LOW:
-            raise ValueError("Low percentage (50-69) requires LOW confidence level")
-        if percentage < 50 and level != ConfidenceLevel.UNCERTAIN:
-            raise ValueError("Very low percentage (<50) requires UNCERTAIN confidence level")
+        This allows AI responses with slight mismatches between level
+        and percentage to be accepted and auto-corrected.
+        """
+        percentage = self.percentage
+
+        # Determine correct level based on percentage
+        if percentage >= 90:
+            correct_level = ConfidenceLevel.HIGH
+        elif percentage >= 70:
+            correct_level = ConfidenceLevel.MEDIUM
+        elif percentage >= 50:
+            correct_level = ConfidenceLevel.LOW
+        else:
+            correct_level = ConfidenceLevel.UNCERTAIN
+
+        # Auto-correct if mismatched (no error raised)
+        if self.level != correct_level:
+            object.__setattr__(self, 'level', correct_level)
 
         return self
 
@@ -61,6 +69,20 @@ class FrameworkInfo(BaseModel):
     version: Optional[str] = Field(None, description="Framework version if detected")
 
 
+class TechnologyItemInfo(BaseModel):
+    """Generic technology item with optional metadata.
+
+    Supports rich descriptions for testing frameworks, databases,
+    infrastructure, and other technologies detected by AI.
+    """
+    name: str = Field(description="Technology/tool name")
+    type: Optional[str] = Field(None, description="Technology type (e.g., 'NoSQL database')")
+    purpose: Optional[str] = Field(None, description="Purpose or use case")
+    provider: Optional[str] = Field(None, description="Provider/vendor if applicable")
+    language: Optional[str] = Field(None, description="Primary language if applicable")
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence score (0-1)")
+
+
 class TechnologyInfo(BaseModel):
     """Technology stack information.
 
@@ -71,10 +93,19 @@ class TechnologyInfo(BaseModel):
         default_factory=list,
         description="Web frameworks, API frameworks, etc. (strings or FrameworkInfo objects)"
     )
-    testing_frameworks: List[str] = Field(default_factory=list, description="Testing tools (pytest, jest, etc.)")
+    testing_frameworks: List[Union[str, TechnologyItemInfo]] = Field(
+        default_factory=list,
+        description="Testing tools - strings or TechnologyItemInfo objects"
+    )
     build_tools: List[str] = Field(default_factory=list, description="Build/package managers")
-    databases: List[str] = Field(default_factory=list, description="Database technologies")
-    infrastructure: List[str] = Field(default_factory=list, description="Infrastructure tools (Docker, K8s, etc.)")
+    databases: List[Union[str, TechnologyItemInfo]] = Field(
+        default_factory=list,
+        description="Database technologies - strings or TechnologyItemInfo objects"
+    )
+    infrastructure: List[Union[str, TechnologyItemInfo]] = Field(
+        default_factory=list,
+        description="Infrastructure tools - strings or TechnologyItemInfo objects"
+    )
     confidence: ConfidenceScore
 
     @property
@@ -85,6 +116,39 @@ class TechnologyInfo(BaseModel):
         """
         result = []
         for item in self.frameworks:
+            if isinstance(item, str):
+                result.append(item)
+            else:
+                result.append(item.name)
+        return result
+
+    @property
+    def testing_framework_list(self) -> List[str]:
+        """Get testing framework names as simple list (backward compatibility)."""
+        result = []
+        for item in self.testing_frameworks:
+            if isinstance(item, str):
+                result.append(item)
+            else:
+                result.append(item.name)
+        return result
+
+    @property
+    def database_list(self) -> List[str]:
+        """Get database names as simple list (backward compatibility)."""
+        result = []
+        for item in self.databases:
+            if isinstance(item, str):
+                result.append(item)
+            else:
+                result.append(item.name)
+        return result
+
+    @property
+    def infrastructure_list(self) -> List[str]:
+        """Get infrastructure names as simple list (backward compatibility)."""
+        result = []
+        for item in self.infrastructure:
             if isinstance(item, str):
                 result.append(item)
             else:
@@ -193,7 +257,7 @@ Analyzed: {self.analyzed_at.strftime('%Y-%m-%d %H:%M:%S')}
 Technology Stack:
   Language: {self.technology.primary_language}
   Frameworks: {', '.join(self.technology.framework_list) or 'None detected'}
-  Testing: {', '.join(self.technology.testing_frameworks) or 'None detected'}
+  Testing: {', '.join(self.technology.testing_framework_list) or 'None detected'}
 
 Architecture:
   Style: {self.architecture.architectural_style}

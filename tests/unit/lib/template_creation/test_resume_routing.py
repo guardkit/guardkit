@@ -352,5 +352,90 @@ class TestResumeRoutingEdgeCases:
                 mock_run.assert_called()
 
 
+# ========== TASK-FIX-C3D4: Phase 5 Resume Routing Tests ==========
+
+class TestPhase5ResumeRoutingFix:
+    """
+    Test Phase 5 resume routing fix (TASK-FIX-C3D4).
+
+    Ensures that when resuming from Phase 5 checkpoint, the correct
+    phase5_invoker is used to load the agent response file.
+    """
+
+    def test_phase5_checkpoint_routes_to_phase5_invoker(self, mock_orchestrator_no_init):
+        """
+        Test that Phase 5 checkpoint correctly routes to phase5_invoker.
+
+        This is the key fix for TASK-FIX-C3D4 - ensuring that when
+        state.phase == 5, the resume routing uses phase5_invoker.
+        """
+        mock_orchestrator_no_init.config.resume = True
+
+        # Create mock invokers
+        mock_phase1_invoker = Mock()
+        mock_phase5_invoker = Mock()
+        mock_orchestrator_no_init.phase1_invoker = mock_phase1_invoker
+        mock_orchestrator_no_init.phase5_invoker = mock_phase5_invoker
+
+        # Setup state with Phase 5
+        state = Mock()
+        state.phase = WorkflowPhase.PHASE_5
+        state.checkpoint = "phase5_agent_request"
+        mock_orchestrator_no_init.state_manager.load_state.return_value = state
+
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
+
+            # Verify _run_from_phase_5 was called (explicit routing)
+            mock_run.assert_called_once()
+
+    def test_phase5_explicit_routing_in_run_method(self, mock_orchestrator_no_init):
+        """
+        Test that Phase 5 is explicitly handled in run() method routing.
+
+        Before TASK-FIX-C3D4, Phase 5 fell through to else clause.
+        After fix, Phase 5 has explicit elif clause.
+        """
+        mock_orchestrator_no_init.config.resume = True
+
+        setup_mock_state_manager(mock_orchestrator_no_init, WorkflowPhase.PHASE_5)
+
+        # Mock both handlers to track which is called
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_phase5, \
+             patch.object(mock_orchestrator_no_init, '_run_from_phase_1') as mock_phase1:
+
+            mock_phase5.return_value = Mock(success=True)
+            mock_phase1.return_value = Mock(success=True)
+
+            result = mock_orchestrator_no_init.run()
+
+            # Phase 5 should call _run_from_phase_5, NOT _run_from_phase_1
+            mock_phase5.assert_called_once()
+            mock_phase1.assert_not_called()
+
+    def test_phase4_checkpoint_falls_through_to_phase5(self, mock_orchestrator_no_init):
+        """
+        Test that Phase 4 checkpoint (before Phase 5 agent request) still works.
+
+        This tests backward compatibility - old checkpoints with phase=4
+        should still route to Phase 5 handler via the else clause.
+        """
+        mock_orchestrator_no_init.config.resume = True
+
+        # Simulate old behavior - Phase 4 checkpoint with no explicit Phase 5 checkpoint
+        state = Mock()
+        state.phase = WorkflowPhase.PHASE_4
+        state.checkpoint = "templates_generated"
+        mock_orchestrator_no_init.state_manager.load_state.return_value = state
+
+        with patch.object(mock_orchestrator_no_init, '_run_from_phase_5') as mock_run:
+            mock_run.return_value = Mock(success=True)
+            result = mock_orchestrator_no_init.run()
+
+            # Should fall back to Phase 5 handler (backward compatibility)
+            mock_run.assert_called_once()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--tb=short"])
