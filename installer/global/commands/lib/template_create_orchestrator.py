@@ -184,13 +184,24 @@ class TemplateCreateOrchestrator:
         self.phase_5_5_report: Optional[ValidationReport] = None  # TASK-043: Track Phase 5.5 report
 
         # TASK-BRIDGE-002: Bridge integration
-        # TASK-ENH-D960: Agent invoker used in Phase 1 (codebase analysis) and Phase 6 (agent generation)
-        # Note: Phase metadata is for request tracking only, not routing
+        # TASK-ENH-D960: Agent invoker used in Phase 1 (codebase analysis) and Phase 5 (agent generation)
+        # TASK-FIX-7B74: Use separate phase-specific invokers to prevent stale cache
         self.state_manager = StateManager()
-        self.agent_invoker = AgentBridgeInvoker(
-            phase=WorkflowPhase.PHASE_1,  # First use in Phase 1 (also used in Phase 6)
+
+        # Phase 1 invoker for codebase analysis (AI-assisted language/framework detection)
+        self.phase1_invoker = AgentBridgeInvoker(
+            phase=WorkflowPhase.PHASE_1,
             phase_name="ai_analysis"
         )
+
+        # Phase 5 invoker for agent generation (custom agent recommendations)
+        self.phase5_invoker = AgentBridgeInvoker(
+            phase=WorkflowPhase.PHASE_5,
+            phase_name="agent_generation"
+        )
+
+        # For backward compatibility in methods that reference self.agent_invoker
+        self.agent_invoker = self.phase1_invoker
 
         # Storage for phase results (used for state persistence)
         self.qa_answers: Optional[Dict[str, Any]] = None
@@ -891,11 +902,8 @@ class TemplateCreateOrchestrator:
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
 
-        # TASK-FIX-29C1: Clear Phase 1 cached response before Phase 5 invocation
-        # This enables multi-phase AI invocation pattern where both Phase 1
-        # (codebase analysis) and Phase 5 (agent generation) can invoke AI
-        if hasattr(self, 'agent_invoker') and self.agent_invoker is not None:
-            self.agent_invoker.clear_cache()
+        # TASK-FIX-7B74: Phase 5 has its own invoker with separate cache files
+        # No need to clear Phase 1 cache - Phase 5 uses independent phase5_invoker
 
         # TASK-FIX-INFINITE-LOOP: Skip AI invocation if forced to use heuristics
         if self._force_heuristic:
@@ -909,10 +917,10 @@ class TemplateCreateOrchestrator:
             scanner = MultiSourceAgentScanner()
             inventory = scanner.scan()
 
-            # CRITICAL: Pass AgentBridgeInvoker to generator (TASK-BRIDGE-002)
+            # CRITICAL: Pass phase5_invoker to generator (TASK-BRIDGE-002, TASK-FIX-7B74)
             generator = AIAgentGenerator(
                 inventory,
-                ai_invoker=self.agent_invoker  # ← BRIDGE INTEGRATION
+                ai_invoker=self.phase5_invoker  # ← Phase 5 specific invoker (separate cache)
             )
 
             # This may exit with code 42 if agent invocation needed
@@ -2135,14 +2143,30 @@ Enhance the {agent_name} agent with template-specific content:
             self.agents = self._deserialize_agents(phase_data["agents"])
 
         # Load agent response if available
+        # TASK-FIX-7B74: Load from correct phase-specific invoker based on checkpoint phase
         # TASK-IMP-D93B: Track whether response was successfully loaded
         try:
-            response = self.agent_invoker.load_response()
+            # Determine which invoker to use based on the checkpoint phase
+            if state.phase == WorkflowPhase.PHASE_1:
+                invoker = self.phase1_invoker
+            elif state.phase >= WorkflowPhase.PHASE_5:
+                invoker = self.phase5_invoker
+            else:
+                invoker = self.phase1_invoker  # Default fallback
+
+            response = invoker.load_response()
             self._phase1_cached_response = response  # Store the cached response directly
             print(f"  ✓ Agent response loaded successfully")
-            logger.info(f"  Cached response from: {self.agent_invoker.response_file.absolute()}")
+            logger.info(f"  Cached response from: {invoker.response_file.absolute()}")
         except FileNotFoundError:
-            response_path = self.agent_invoker.response_file.absolute()
+            # Determine which invoker for error reporting
+            if state.phase == WorkflowPhase.PHASE_1:
+                invoker = self.phase1_invoker
+            elif state.phase >= WorkflowPhase.PHASE_5:
+                invoker = self.phase5_invoker
+            else:
+                invoker = self.phase1_invoker
+            response_path = invoker.response_file.absolute()
             cwd = Path.cwd()
             print(f"  ⚠️  No agent response found")
             print(f"     Expected: {response_path}")
