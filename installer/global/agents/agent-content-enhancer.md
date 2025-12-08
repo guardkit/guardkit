@@ -156,6 +156,24 @@ Rules WITHOUT emoji prefixes will FAIL validation and trigger regeneration.
 [1-2 more scenarios]
 ```
 
+**Format Templates** (copy exactly, replacing bracketed text):
+```
+ALWAYS: - ✅ [imperative verb] [object] ([2-4 word rationale])
+NEVER:  - ❌ Never [verb] [object] ([consequence])
+ASK:    - ⚠️ [Scenario]: Ask [question or decision needed]
+```
+
+**Validation Examples** (machine-parseable format is enforced):
+
+| Input | Status | Reason |
+|-------|--------|--------|
+| `- ✅ Validate input parameters (prevent injection)` | ✅ PASS | Correct format |
+| `- Validate input parameters` | ❌ FAIL | Missing emoji prefix |
+| `- ✅ Always validate input parameters` | ❌ FAIL | "Always" redundant in ALWAYS section |
+| `- ❌ Don't expose raw queries` | ❌ FAIL | Use "Never" not "Don't" |
+| `- ⚠️ Ask about caching strategy` | ❌ FAIL | Missing colon separator |
+| `- ⚠️ Caching strategy: Ask if Redis preferred` | ✅ PASS | Correct ASK format |
+
 **Rule Derivation Guidance**:
 - **ALWAYS**: Extract from template patterns that appear consistently
 - **NEVER**: Identify anti-patterns and violations from template comments

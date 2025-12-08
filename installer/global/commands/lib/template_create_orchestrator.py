@@ -879,7 +879,15 @@ class TemplateCreateOrchestrator:
         self._print_phase_header("Phase 4: Template File Generation")
 
         try:
-            generator = TemplateGenerator(analysis)
+            # TASK-IMP-TC-F8A3: Pass manifest for project-specific placeholder extraction
+            manifest_dict = None
+            if self.manifest:
+                # Convert manifest to dict for placeholder extractor
+                manifest_dict = {
+                    'name': getattr(self.manifest, 'name', None),
+                    'author': getattr(self.manifest, 'author', None),
+                }
+            generator = TemplateGenerator(analysis, manifest=manifest_dict)
             templates = generator.generate(max_templates=self.config.max_templates)
 
             if templates and templates.total_count > 0:
@@ -1119,6 +1127,17 @@ class TemplateCreateOrchestrator:
                 agent_paths.append(agent_path)
 
             self._print_success_line(f"{len(agents)} agent files written")
+
+            # TASK-IMP-TC-F8A3: Validate extended files
+            missing_ext_files = self._validate_extended_files(agents_dir)
+            if missing_ext_files:
+                self._print_info(f"  ⚠️  {len(missing_ext_files)} agent(s) missing extended files:")
+                for missing in missing_ext_files[:5]:  # Show first 5
+                    self._print_info(f"      - {missing}")
+                if len(missing_ext_files) > 5:
+                    self._print_info(f"      ... and {len(missing_ext_files) - 5} more")
+                self._print_info("      Consider running /agent-enhance to generate extended documentation")
+
             return agent_paths
 
         except Exception as e:
@@ -1927,6 +1946,36 @@ Enhance the {agent_name} agent with template-specific content:
     def _print_error(self, message: str) -> None:
         """Print error message."""
         print(f"  ❌ {message}")
+
+    def _validate_extended_files(self, agents_dir: Path) -> List[str]:
+        """
+        Validate that agent files have corresponding extended documentation.
+
+        TASK-IMP-TC-F8A3: Check for missing -ext.md files.
+
+        Args:
+            agents_dir: Path to agents directory
+
+        Returns:
+            List of agent names missing extended files
+        """
+        missing = []
+
+        if not agents_dir.exists():
+            return missing
+
+        # Find all agent files (exclude -ext.md files)
+        for agent_file in agents_dir.glob("*.md"):
+            # Skip if this is already an extended file
+            if agent_file.stem.endswith("-ext"):
+                continue
+
+            # Check for corresponding extended file
+            ext_file = agents_dir / f"{agent_file.stem}-ext.md"
+            if not ext_file.exists():
+                missing.append(agent_file.stem)
+
+        return missing
 
     def _print_agent_enhancement_instructions(
         self,

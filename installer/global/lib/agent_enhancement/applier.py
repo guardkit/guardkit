@@ -656,9 +656,13 @@ class EnhancementApplier:
         """
         return f"""## Extended Documentation
 
-For detailed examples, comprehensive best practices, and in-depth guidance, see the extended documentation file.
+For detailed examples, comprehensive best practices, and in-depth guidance, load the extended documentation:
 
-**Loading**: The extended file ([`{agent_name}-ext.md`](./{agent_name}-ext.md)) contains additional sections that provide deeper context and advanced usage patterns. Consult it when you need:
+```bash
+cat agents/{agent_name}-ext.md
+```
+
+The extended file contains:
 - Detailed code examples with explanations
 - Comprehensive best practice recommendations
 - Common anti-patterns and how to avoid them

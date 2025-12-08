@@ -295,27 +295,126 @@ class SettingsGenerator:
         return TestLocation.SEPARATE
 
     def _create_layer_mappings(self) -> Dict[str, LayerMapping]:
-        """Create layer mappings from analysis."""
+        """Create layer mappings from analysis.
+
+        TASK-IMP-TC-F8A3: Derive actual directories from example_files paths.
+        """
         mappings = {}
 
+        # Build a map of layer -> actual directories from example files
+        layer_directories = self._extract_layer_directories()
+
         for layer in self.analysis.architecture.layers:
+            # Use actual directory if found, else fall back to inference
+            actual_dir = layer_directories.get(layer.name)
+            directory = actual_dir if actual_dir else self._infer_layer_directory(layer)
+
             mappings[layer.name] = LayerMapping(
                 name=layer.name,
-                directory=self._infer_layer_directory(layer),
+                directory=directory,
                 namespace_pattern=self._infer_namespace_pattern(layer),
-                file_patterns=self._infer_file_patterns(layer)
+                file_patterns=self._infer_file_patterns_from_examples(layer)
             )
 
         return mappings
 
+    def _extract_layer_directories(self) -> Dict[str, str]:
+        """
+        Extract actual directory paths from example files.
+
+        TASK-IMP-TC-F8A3: Maps layer names to actual directory paths
+        found in the codebase.
+
+        Returns:
+            Dict mapping layer name to actual directory path
+        """
+        from os.path import commonpath, dirname
+        from pathlib import Path
+
+        layer_files: Dict[str, List[str]] = {}
+
+        # Group files by layer
+        for example_file in self.analysis.example_files:
+            layer = example_file.layer
+            if layer:
+                if layer not in layer_files:
+                    layer_files[layer] = []
+                layer_files[layer].append(example_file.path)
+
+        # Find common path prefix for each layer
+        layer_directories: Dict[str, str] = {}
+        for layer_name, file_paths in layer_files.items():
+            if not file_paths:
+                continue
+
+            if len(file_paths) == 1:
+                # Single file: use its directory
+                layer_directories[layer_name] = dirname(file_paths[0])
+            else:
+                # Multiple files: find common prefix
+                try:
+                    # commonpath needs absolute paths or all relative from same root
+                    directories = [dirname(p) for p in file_paths]
+                    # Filter out empty directories
+                    directories = [d for d in directories if d]
+                    if directories:
+                        common = commonpath(directories)
+                        layer_directories[layer_name] = common
+                except ValueError:
+                    # Paths don't share common prefix (different drives on Windows)
+                    # Fall back to first file's directory
+                    layer_directories[layer_name] = dirname(file_paths[0])
+
+        return layer_directories
+
     def _infer_layer_directory(self, layer: LayerInfo) -> str:
-        """Infer directory path for a layer."""
+        """Infer directory path for a layer (fallback when no example files).
+
+        TASK-IMP-TC-F8A3: Only used as fallback when actual paths not available.
+        """
         # Use description as hint for path
         # Common patterns: src/{LayerName}, {LayerName}, etc.
         layer_name = layer.name
 
         # Most modern projects use src/ prefix
         return f"src/{layer_name}"
+
+    def _infer_file_patterns_from_examples(self, layer: LayerInfo) -> List[str]:
+        """
+        Infer file patterns from actual example files for this layer.
+
+        TASK-IMP-TC-F8A3: Extracts patterns from actual files in the layer.
+        """
+        from pathlib import Path
+        from collections import Counter
+
+        # Collect extensions from example files in this layer
+        extensions: Counter = Counter()
+        for example_file in self.analysis.example_files:
+            if example_file.layer == layer.name:
+                ext = Path(example_file.path).suffix.lower()
+                if ext:
+                    extensions[ext] += 1
+
+        if not extensions:
+            # Fall back to language-based inference
+            return self._infer_file_patterns(layer)
+
+        # Build patterns from actual extensions found
+        patterns = []
+        for ext, count in extensions.most_common():
+            patterns.append(f"*{ext}")
+
+        # Add test exclusions based on language
+        lang = self.analysis.technology.primary_language.lower()
+        if lang in ["c#", "csharp"]:
+            patterns.extend(["!*Test.cs", "!*Tests.cs"])
+        elif lang in ["typescript", "javascript"]:
+            patterns.extend(["!*.test.ts", "!*.test.js", "!*.spec.ts", "!*.spec.js"])
+        elif lang == "python":
+            patterns.extend(["!*_test.py", "!test_*.py"])
+
+        return patterns
 
     def _infer_namespace_pattern(self, layer: LayerInfo) -> Optional[str]:
         """Infer namespace pattern for layer."""
