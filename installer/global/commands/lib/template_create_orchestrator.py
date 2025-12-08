@@ -209,6 +209,9 @@ class TemplateCreateOrchestrator:
         self._resume_count = 0
         self._force_heuristic = False
 
+        # TASK-IMP-D93B: Track whether agent response was successfully loaded during resume
+        self._phase1_cached_response = None
+
         # Configure logging
         if config.verbose:
             logging.basicConfig(level=logging.DEBUG)
@@ -286,6 +289,13 @@ class TemplateCreateOrchestrator:
         codebase_path = self.config.codebase_path or Path.cwd()
         if not codebase_path.exists():
             return self._create_error_result(f"Codebase path does not exist: {codebase_path}")
+
+        # TASK-IMP-D93B: Check if we have a cached response from resume
+        if self._phase1_cached_response is not None:
+            self._print_info("  Using cached agent response from checkpoint")
+            logger.info(f"  Cached response available: {len(self._phase1_cached_response)} chars")
+        else:
+            self._print_info("  No cached response - will use heuristic analysis")
 
         # Re-run Phase 1 analysis - the agent response is now cached in agent_invoker
         # So the second call to analyze_codebase will use the cached response
@@ -2119,15 +2129,25 @@ Enhance the {agent_name} agent with template-specific content:
             self.agents = self._deserialize_agents(phase_data["agents"])
 
         # Load agent response if available
+        # TASK-IMP-D93B: Track whether response was successfully loaded
         try:
             response = self.agent_invoker.load_response()
+            self._phase1_cached_response = response  # Store the cached response directly
             print(f"  ✓ Agent response loaded successfully")
+            logger.info(f"  Cached response from: {self.agent_invoker.response_file.absolute()}")
         except FileNotFoundError:
+            response_path = self.agent_invoker.response_file.absolute()
+            cwd = Path.cwd()
             print(f"  ⚠️  No agent response found")
-            print(f"  → Will fall back to hard-coded detection")
+            print(f"     Expected: {response_path}")
+            print(f"     CWD: {cwd}")
+            print(f"     File exists: {response_path.exists()}")
+            print(f"  → Will fall back to heuristic analysis")
         except Exception as e:
+            response_path = self.agent_invoker.response_file.absolute()
             print(f"  ⚠️  Failed to load agent response: {e}")
-            print(f"  → Will fall back to hard-coded detection")
+            print(f"     Response file: {response_path}")
+            print(f"  → Will fall back to heuristic analysis")
 
     def _save_checkpoint(self, checkpoint: str, phase: int) -> None:
         """
