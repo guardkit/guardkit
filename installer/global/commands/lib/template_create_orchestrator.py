@@ -891,6 +891,12 @@ class TemplateCreateOrchestrator:
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
 
+        # TASK-FIX-29C1: Clear Phase 1 cached response before Phase 5 invocation
+        # This enables multi-phase AI invocation pattern where both Phase 1
+        # (codebase analysis) and Phase 5 (agent generation) can invoke AI
+        if hasattr(self, 'agent_invoker') and self.agent_invoker is not None:
+            self.agent_invoker.clear_cache()
+
         # TASK-FIX-INFINITE-LOOP: Skip AI invocation if forced to use heuristics
         if self._force_heuristic:
             self._print_warning("  Using heuristic agent generation (AI unavailable after 3 attempts)")

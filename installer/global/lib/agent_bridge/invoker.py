@@ -285,6 +285,17 @@ class AgentBridgeInvoker:
         """
         return self.response_file.exists()
 
+    def clear_cache(self) -> None:
+        """Clear cached response to allow new AI invocation.
+
+        Use this when multiple phases need separate AI invocations.
+        After clearing, the next invoke() call will write a new request
+        and exit with code 42 for agent invocation.
+
+        TASK-FIX-29C1: Enables multi-phase AI invocation pattern.
+        """
+        self._cached_response = None
+
 
 class AgentInvocationError(Exception):
     """Raised when agent invocation fails.

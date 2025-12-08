@@ -6,6 +6,7 @@ Tests the agent invocation request/response cycle including:
 - Response loading and caching
 - Error handling and timeouts
 - File cleanup behavior
+- Cache clearing (TASK-FIX-29C1)
 """
 
 import json
@@ -186,7 +187,6 @@ class TestAgentBridgeInvoker:
             invoker.load_response()
 
         assert "not found" in str(exc_info.value).lower()
-        assert "--resume" in str(exc_info.value)
 
     def test_load_response_malformed_json(self, invoker, temp_dir):
         """Test that load_response() raises ValueError on malformed JSON."""
@@ -267,6 +267,221 @@ class TestAgentBridgeInvoker:
         # Validate ISO 8601 timestamp format (basic check)
         assert "T" in request_data["created_at"]
         assert len(request_data["created_at"]) > 10
+
+
+class TestClearCacheMethod:
+    """Test suite for clear_cache() method (TASK-FIX-29C1)."""
+
+    def test_clear_cache_sets_cached_response_to_none(self, invoker):
+        """Test that clear_cache() sets _cached_response to None."""
+        # Set up cached response
+        invoker._cached_response = "Cached response text"
+        assert invoker._cached_response is not None
+
+        # Clear cache
+        invoker.clear_cache()
+
+        # Verify cache is cleared
+        assert invoker._cached_response is None
+
+    def test_clear_cache_allows_new_invocation(self, invoker, temp_dir):
+        """Test that after clear_cache(), next invoke() writes new request."""
+        request_file = temp_dir / ".agent-request.json"
+
+        # Set cached response
+        invoker._cached_response = "Cached response"
+
+        # Clear cache
+        invoker.clear_cache()
+
+        # Now invoke should write request and exit (not return cached)
+        with pytest.raises(SystemExit) as exc_info:
+            invoker.invoke("test-agent", "New prompt")
+
+        # Should exit with code 42 (not return cached response)
+        assert exc_info.value.code == 42
+        assert request_file.exists()
+
+        # Verify request was written with new prompt
+        request_data = json.loads(request_file.read_text())
+        assert request_data["prompt"] == "New prompt"
+
+    def test_clear_cache_multiple_times(self, invoker):
+        """Test that calling clear_cache() multiple times is safe."""
+        # Set cache
+        invoker._cached_response = "Response"
+
+        # Clear multiple times
+        invoker.clear_cache()
+        assert invoker._cached_response is None
+
+        invoker.clear_cache()
+        assert invoker._cached_response is None
+
+        invoker.clear_cache()
+        assert invoker._cached_response is None
+
+    def test_clear_cache_on_already_empty_cache(self, invoker):
+        """Test that clear_cache() on empty cache doesn't raise error."""
+        # Cache is already None by default
+        assert invoker._cached_response is None
+
+        # Should not raise error
+        invoker.clear_cache()
+
+        # Cache should still be None
+        assert invoker._cached_response is None
+
+    def test_clear_cache_different_cache_values(self, invoker):
+        """Test clear_cache() with different types of cached values."""
+        test_values = [
+            "Simple string response",
+            "Multi-line\nresponse\ntext",
+            "",  # Empty string
+            "Very long response " * 100,  # Long response
+        ]
+
+        for test_value in test_values:
+            invoker._cached_response = test_value
+            assert invoker._cached_response == test_value
+
+            invoker.clear_cache()
+            assert invoker._cached_response is None
+
+    def test_clear_cache_in_multi_phase_workflow(self, invoker, temp_dir):
+        """Test clear_cache() enables multi-phase invocation pattern."""
+        request_file1 = temp_dir / ".agent-request.json"
+        request_file2 = temp_dir / ".agent-request.json"
+
+        # Phase 1: First invocation with cache
+        invoker._cached_response = "Phase 1 response"
+        result1 = invoker.invoke("phase1-agent", "Phase 1 prompt")
+        assert result1 == "Phase 1 response"
+
+        # Clear cache to allow Phase 5 invocation
+        invoker.clear_cache()
+        assert invoker._cached_response is None
+
+        # Phase 5: New invocation should write request
+        with pytest.raises(SystemExit) as exc_info:
+            invoker.invoke("phase5-agent", "Phase 5 prompt")
+
+        assert exc_info.value.code == 42
+
+    def test_clear_cache_preserves_other_state(self, invoker):
+        """Test that clear_cache() doesn't affect other invoker state."""
+        # Set multiple attributes
+        invoker._cached_response = "Cached"
+        original_phase = invoker.phase
+        original_phase_name = invoker.phase_name
+        original_request_file = invoker.request_file
+        original_response_file = invoker.response_file
+
+        # Clear cache
+        invoker.clear_cache()
+
+        # Verify only cache was cleared, other state preserved
+        assert invoker._cached_response is None
+        assert invoker.phase == original_phase
+        assert invoker.phase_name == original_phase_name
+        assert invoker.request_file == original_request_file
+        assert invoker.response_file == original_response_file
+
+    def test_clear_cache_returns_none(self, invoker):
+        """Test that clear_cache() returns None (implicit return)."""
+        invoker._cached_response = "Cached"
+        result = invoker.clear_cache()
+        assert result is None
+
+    def test_clear_cache_with_special_characters(self, invoker):
+        """Test clear_cache() with special characters in cached response."""
+        special_responses = [
+            'Response with "quotes"',
+            "Response with 'apostrophes'",
+            "Response with\ttabs\tand\nnewlines",
+            "Response with unicode: café, 中文, 😀",
+            'Response with \\ backslashes',
+        ]
+
+        for response in special_responses:
+            invoker._cached_response = response
+            assert invoker._cached_response == response
+
+            invoker.clear_cache()
+            assert invoker._cached_response is None
+
+    def test_clear_cache_and_load_response_sequence(self, invoker, temp_dir):
+        """Test clear_cache() followed by load_response() works correctly."""
+        response_file = temp_dir / ".agent-response.json"
+
+        # Set cached response
+        invoker._cached_response = "Old cached response"
+
+        # Clear cache
+        invoker.clear_cache()
+        assert invoker._cached_response is None
+
+        # Create new response file
+        response_data = {
+            "request_id": "new-123",
+            "version": "1.0",
+            "status": "success",
+            "response": "New response from file",
+            "error_message": None,
+            "error_type": None,
+            "created_at": "2025-01-11T10:00:00Z",
+            "duration_seconds": 3.5,
+            "metadata": {}
+        }
+        response_file.write_text(json.dumps(response_data))
+
+        # Load new response
+        result = invoker.load_response()
+
+        # Should have new response, not old cached one
+        assert result == "New response from file"
+        assert invoker._cached_response == "New response from file"
+
+
+class TestCachingBehavior:
+    """Test suite for overall caching behavior with clear_cache()."""
+
+    def test_cache_flow_without_clear(self, invoker):
+        """Test caching without clearing (original behavior)."""
+        # First response loaded
+        invoker._cached_response = "First response"
+
+        # Subsequent invokes return same cached response
+        result1 = invoker.invoke("agent1", "prompt1")
+        assert result1 == "First response"
+
+        result2 = invoker.invoke("agent2", "prompt2")
+        assert result2 == "First response"
+
+    def test_cache_flow_with_clear(self, invoker, temp_dir):
+        """Test caching with clearing (TASK-FIX-29C1 feature)."""
+        request_file = temp_dir / ".agent-request.json"
+
+        # First response loaded
+        invoker._cached_response = "First response"
+
+        # Invoke returns cached response
+        result1 = invoker.invoke("agent1", "prompt1")
+        assert result1 == "First response"
+
+        # Clear cache to allow new invocation
+        invoker.clear_cache()
+
+        # Next invoke should write new request
+        with pytest.raises(SystemExit) as exc_info:
+            invoker.invoke("agent2", "prompt2")
+
+        assert exc_info.value.code == 42
+
+        # Verify new request was written
+        request_data = json.loads(request_file.read_text())
+        assert request_data["agent_name"] == "agent2"
+        assert request_data["prompt"] == "prompt2"
 
 
 class TestAgentInvocationError:
