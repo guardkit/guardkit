@@ -317,6 +317,13 @@ class TemplateCreateOrchestrator:
         if not self.analysis:
             return self._create_error_result("AI analysis failed after resume")
 
+        # TASK-FIX-D8F2: Reset resume counter after successful Phase 1 completion
+        # This prevents Phase 1's exhausted counter from affecting Phase 5
+        self.state_manager.reset_resume_count()
+        self._resume_count = 0
+        self._force_heuristic = False
+        logger.info("Phase 1 completed successfully - resume counter reset")
+
         # Save analysis if requested
         if self.config.save_analysis:
             self._save_analysis_json(self.analysis)
@@ -376,6 +383,14 @@ class TemplateCreateOrchestrator:
         self.analysis = self._phase1_ai_analysis(codebase_path)
         if not self.analysis:
             return self._create_error_result("AI analysis failed")
+
+        # TASK-FIX-D8F2: Reset resume counter after successful Phase 1 completion
+        # (Phase 1 may have used checkpoint-resume, so reset for Phase 5)
+        if self.state_manager.has_state():
+            self.state_manager.reset_resume_count()
+            self._resume_count = 0
+            self._force_heuristic = False
+            logger.info("Phase 1 completed successfully - resume counter reset")
 
         # Save analysis if requested
         if self.config.save_analysis:
@@ -2121,9 +2136,14 @@ Enhance the {agent_name} agent with template-specific content:
         print(f"  Checkpoint: {state.checkpoint}")
         print(f"  Phase: {state.phase}")
 
-        # Restore configuration
+        # TASK-FIX-P5RT: Exclude operational parameters from restoration
+        # Operational parameters control workflow routing (CLI flags), not business logic
+        # The 'resume' flag is passed via CLI and must NOT be overwritten by saved state
+        OPERATIONAL_PARAMS = {'resume'}
+
+        # Restore configuration (excluding operational parameters)
         for key, value in state.config.items():
-            if hasattr(self.config, key):
+            if hasattr(self.config, key) and key not in OPERATIONAL_PARAMS:
                 # Convert Path strings back to Path objects
                 if key in ('codebase_path', 'output_path') and value is not None:
                     value = Path(value)
@@ -2272,8 +2292,14 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to manifest."""
         if data is None:
             return None
-        # Return as dict for now, actual class reconstruction happens in phases
-        return type('Manifest', (), data)()
+
+        # Create object with to_dict() method for checkpoint resume
+        manifest_obj = type('Manifest', (), data)()
+
+        # Add fallback to_dict() method for checkpoint resume compatibility
+        manifest_obj.to_dict = lambda: data
+
+        return manifest_obj
 
     def _serialize_settings(self, settings: Any) -> Optional[dict]:
         """Serialize settings to dict."""
@@ -2296,8 +2322,19 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to settings."""
         if data is None:
             return None
-        # Return as dict for now, actual class reconstruction happens in phases
-        return type('Settings', (), data)()
+
+        # Try to use TemplateSettings Pydantic model validation if available
+        try:
+            _settings_models = importlib.import_module('lib.settings_generator.models')
+            TemplateSettings = _settings_models.TemplateSettings
+            settings_obj = TemplateSettings.model_validate(data)
+            return settings_obj
+        except (ImportError, AttributeError, Exception) as e:
+            # Fallback: create object with to_dict() method for checkpoint resume
+            logging.warning(f"Failed to validate settings with Pydantic model: {e}. Using fallback object.")
+            settings_obj = type('Settings', (), data)()
+            settings_obj.to_dict = lambda: data
+            return settings_obj
 
     def _serialize_templates(self, templates: Any) -> Optional[dict]:
         """Serialize TemplateCollection to dict."""
@@ -2337,18 +2374,32 @@ Enhance the {agent_name} agent with template-specific content:
         """Deserialize dict back to TemplateCollection."""
         if data is None:
             return None
-        # Return as object with attributes
-        templates_obj = type('TemplateCollection', (), {
-            'total_count': data.get('total_count', 0),
-            'templates': []
-        })()
 
-        # Reconstruct template objects
-        for tmpl_dict in data.get('templates', []):
-            tmpl_obj = type('Template', (), tmpl_dict)()
-            templates_obj.templates.append(tmpl_obj)
+        # Try to use TemplateCollection Pydantic model validation if available
+        try:
+            _models = importlib.import_module('lib.template_generator.models')
+            TemplateCollectionModel = _models.TemplateCollection
+            templates_obj = TemplateCollectionModel.model_validate(data)
+            return templates_obj
+        except (ImportError, AttributeError, Exception) as e:
+            # Fallback: create object with attributes and to_dict() method
+            logging.warning(f"Failed to validate templates with Pydantic model: {e}. Using fallback object.")
+            templates_obj = type('TemplateCollection', (), {
+                'total_count': data.get('total_count', 0),
+                'templates': []
+            })()
 
-        return templates_obj
+            # Reconstruct template objects with to_dict() method
+            for tmpl_dict in data.get('templates', []):
+                tmpl_obj = type('Template', (), tmpl_dict)()
+                # Add fallback to_dict() method for each template
+                tmpl_obj.to_dict = lambda d=tmpl_dict: d
+                templates_obj.templates.append(tmpl_obj)
+
+            # Add to_dict() method to templates_obj
+            templates_obj.to_dict = lambda: data
+
+            return templates_obj
 
     def _serialize_value(self, value: Any, visited: Optional[set] = None) -> Any:
         """

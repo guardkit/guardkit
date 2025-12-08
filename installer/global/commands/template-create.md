@@ -1181,14 +1181,47 @@ If Python version error occurs (`TypeError: unsupported operand type(s) for |`),
 
 Capture the exit code from this command.
 
+### Phase-Specific Agent Invocations
+
+The `/template-create` command may require **two separate agent invocations** during execution:
+
+| Phase | Request File | Response File | Purpose |
+|-------|--------------|---------------|---------|
+| Phase 1 | `.agent-request-phase1.json` | `.agent-response-phase1.json` | AI Codebase Analysis |
+| Phase 5 | `.agent-request-phase5.json` | `.agent-response-phase5.json` | Agent Recommendation |
+
+**Workflow**:
+```
+Run 1: Orchestrator → Exit 42 (Phase 1 request)
+       Claude → Invoke agent via Task tool
+       Claude → Write phase1 response
+       Claude → Resume orchestrator
+
+Run 2: Orchestrator → Exit 42 (Phase 5 request)
+       Claude → Invoke agent via Task tool
+       Claude → Write phase5 response
+       Claude → Resume orchestrator
+
+Run 3: Orchestrator → Exit 0 (Success)
+       Claude → Display results, cleanup
+```
+
+**IMPORTANT**: Each phase has its own request/response file pair. Do NOT confuse Phase 1 responses with Phase 5 requests.
+
 ### Step 2: Handle Exit Code 42 (NEED_AGENT)
 
 When exit code is 42, Python has written a request file and needs Claude to invoke an agent.
 
 **2a. Read the agent request file:**
 
+The request file is **phase-specific**. Check which phase file exists:
+
 ```bash
-cat .agent-request.json
+# Phase 1 (AI Codebase Analysis)
+cat .agent-request-phase1.json
+
+# Phase 5 (Agent Recommendation)
+cat .agent-request-phase5.json
 ```
 
 The file has this structure:
@@ -1196,8 +1229,8 @@ The file has this structure:
 {
   "request_id": "uuid-string",
   "version": "1.0",
-  "phase": 6,
-  "phase_name": "agent_generation",
+  "phase": 1,
+  "phase_name": "ai_analysis",
   "agent_name": "architectural-reviewer",
   "prompt": "Full prompt text for the agent...",
   "timeout_seconds": 120,
@@ -1207,21 +1240,41 @@ The file has this structure:
 }
 ```
 
+**NOTE**: The `phase` field indicates which phase requested the agent:
+- `phase: 1` = AI Codebase Analysis (Phase 1)
+- `phase: 5` = Agent Recommendation (Phase 5)
+
 **2b. Invoke the agent using Task tool:**
 
-Use the Task tool to invoke the agent specified in `agent_name` with the `prompt` from the request file.
+**CRITICAL**: You MUST use the Task tool to invoke the agent. Do NOT write the response directly.
 
-Example:
+Use the Task tool to invoke the agent specified in `agent_name` with the `prompt` from the request file:
+
 ```
-Task: Invoke the "architectural-reviewer" agent with the prompt from .agent-request.json
+Task tool invocation:
+  subagent_type: The agent_name from the request (e.g., "architectural-reviewer")
+  prompt: The full prompt text from the request file
+  description: "Analyze codebase architecture" (or similar based on phase)
 ```
+
+**Why Task tool is required**:
+1. Ensures consistent agent behavior across invocations
+2. Provides proper model selection for the agent
+3. Maintains separation between orchestration and analysis
+4. Enables proper timeout handling and error recovery
+
+**DO NOT** write the response file directly based on your own analysis. The bridge protocol requires actual agent subprocess invocation.
 
 Capture the agent's complete response text.
 
 **2c. Write the agent response file:**
 
-Create `.agent-response.json` with this exact structure:
+Create the **phase-specific** response file matching the request phase:
 
+- If request was `.agent-request-phase1.json` → write `.agent-response-phase1.json`
+- If request was `.agent-request-phase5.json` → write `.agent-response-phase5.json`
+
+Use this exact structure:
 ```json
 {
   "request_id": "<copy from request>",
@@ -1243,8 +1296,14 @@ Create `.agent-response.json` with this exact structure:
 
 **2d. Delete the request file:**
 
+Delete the phase-specific request file that was processed:
+
 ```bash
-rm .agent-request.json
+# If processing Phase 1 request:
+rm .agent-request-phase1.json
+
+# If processing Phase 5 request:
+rm .agent-request-phase5.json
 ```
 
 **2e. Re-run orchestrator with --resume flag:**
@@ -1261,7 +1320,7 @@ When exit code is 0:
 1. Display the success message from Python's output
 2. Clean up any remaining bridge files:
    ```bash
-   rm -f .agent-request.json .agent-response.json .template-create-state.json
+   rm -f .agent-request-phase*.json .agent-response-phase*.json .template-create-state.json
    ```
 3. Exit the loop
 
@@ -1281,14 +1340,14 @@ When exit code is 0:
 
 ### Error Handling for Bridge Protocol
 
-**If `.agent-request.json` does not exist when exit code is 42:**
+**If no `.agent-request-phase*.json` file exists when exit code is 42:**
 ```
-ERROR: Exit code 42 received but no .agent-request.json found.
+ERROR: Exit code 42 received but no .agent-request-phase*.json found.
 This indicates a bug in the orchestrator. Please report this issue.
 ```
 
 **If agent invocation fails:**
-Write an error response to `.agent-response.json`:
+Write an error response to the phase-specific response file (e.g., `.agent-response-phase1.json` or `.agent-response-phase5.json`):
 ```json
 {
   "request_id": "<from request>",
@@ -1308,7 +1367,7 @@ Then continue with `--resume` to let Python handle the fallback.
 Display error and suggest re-running without --resume:
 ```
 ERROR: Failed to parse bridge protocol files.
-Try: rm -f .agent-request.json .agent-response.json .template-create-state.json
+Try: rm -f .agent-request-phase*.json .agent-response-phase*.json .template-create-state.json
 Then re-run: /template-create [original args]
 ```
 
@@ -1317,22 +1376,32 @@ Then re-run: /template-create [original args]
 ```
 User: /template-create --path /my/project
 
-[Iteration 1]
+[Iteration 1 - Phase 1: AI Codebase Analysis]
   Run: python3 ~/.agentecflow/bin/template-create-orchestrator --path /my/project
   Exit code: 42
 
-  Read: .agent-request.json
+  Read: .agent-request-phase1.json
   Agent: architectural-reviewer
-  Invoke agent with prompt...
-  Write: .agent-response.json
-  Delete: .agent-request.json
+  Invoke agent via Task tool...
+  Write: .agent-response-phase1.json
+  Delete: .agent-request-phase1.json
 
-[Iteration 2]
+[Iteration 2 - Phase 5: Agent Recommendation]
+  Run: python3 ~/.agentecflow/bin/template-create-orchestrator --path /my/project --resume
+  Exit code: 42
+
+  Read: .agent-request-phase5.json
+  Agent: architectural-reviewer
+  Invoke agent via Task tool...
+  Write: .agent-response-phase5.json
+  Delete: .agent-request-phase5.json
+
+[Iteration 3 - Completion]
   Run: python3 ~/.agentecflow/bin/template-create-orchestrator --path /my/project --resume
   Exit code: 0
 
   SUCCESS: Template created at ~/.agentecflow/templates/my-project/
-  Cleanup bridge files
+  Cleanup bridge files (rm -f .agent-*-phase*.json .template-create-state.json)
   Exit loop
 ```
 

@@ -194,6 +194,30 @@ class StateManager:
 
         return new_count
 
+    def reset_resume_count(self) -> None:
+        """Reset the resume count to 0.
+
+        Called after successful phase completion to allow new phases to have
+        a fresh retry budget. Prevents exhausted resume counts from one phase
+        affecting subsequent phases.
+
+        TASK-FIX-D8F2: Counter should reset between phases to allow
+        each phase its own retry budget.
+
+        Raises:
+            FileNotFoundError: If state file doesn't exist
+            ValueError: If state file is malformed
+        """
+        if not self.state_file.exists():
+            return  # No state to reset
+
+        data = json.loads(self.state_file.read_text(encoding="utf-8"))
+        data["resume_count"] = 0
+        self.state_file.write_text(
+            json.dumps(data, indent=2),
+            encoding="utf-8"
+        )
+
     def cleanup(self) -> None:
         """Delete state file (called on successful completion).
 
