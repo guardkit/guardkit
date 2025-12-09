@@ -88,7 +88,9 @@ class TestParserValidationErrors:
 - ⚠️ Scenario 3
 """
 
-        response = f'{{"sections": ["boundaries"], "boundaries": "{boundaries_content.replace(chr(10), "\\n")}"}}'
+        newline = "\n"
+        escaped_content = boundaries_content.replace(newline, "\\n")
+        response = f'{{"sections": ["boundaries"], "boundaries": "{escaped_content}"}}'
 
         with pytest.raises(ValueError, match="Boundaries section missing '### ALWAYS' subsection"):
             parser.parse(response)
@@ -113,7 +115,9 @@ class TestParserValidationErrors:
 - ⚠️ Scenario 3
 """
 
-        response = f'{{"sections": ["boundaries"], "boundaries": "{boundaries_content.replace(chr(10), "\\n")}"}}'
+        newline = "\n"
+        escaped_content = boundaries_content.replace(newline, "\\n")
+        response = f'{{"sections": ["boundaries"], "boundaries": "{escaped_content}"}}'
 
         with pytest.raises(ValueError, match="Boundaries section missing '### NEVER' subsection"):
             parser.parse(response)

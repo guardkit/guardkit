@@ -6,10 +6,12 @@ Parses AI responses for agent enhancement.
 TASK-PHASE-8-INCREMENTAL: Shared module for agent enhancement
 """
 
+from __future__ import annotations
+
 import json
 import re
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 # TASK-UX-6581: Import shared boundary utilities
 # Handle both package import and direct import

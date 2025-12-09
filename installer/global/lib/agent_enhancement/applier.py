@@ -222,7 +222,8 @@ class EnhancementApplier:
                 # Check if this section already exists
                 section_header = f"## {section_name.replace('_', ' ').title()}"
 
-                if section_header not in existing_content:
+                # TASK-FIX-AE01: Use fuzzy matching to prevent duplicate sections
+                if not self._section_exists(existing_content, section_name):
                     # Add blank line before section if content exists
                     if new_lines and new_lines[-1].strip():
                         new_lines.append("")
@@ -235,6 +236,53 @@ class EnhancementApplier:
     # TASK-UX-6581: Removed _find_boundaries_insertion_point() and _find_post_description_position()
     # These methods have been moved to boundary_utils.py for shared use between
     # /agent-enhance and /agent-format commands.
+
+    def _normalize_section_name(self, section_name: str) -> str:
+        """
+        Normalize section name for comparison.
+
+        Converts snake_case to lowercase with spaces for fuzzy matching.
+
+        Args:
+            section_name: Section name (e.g., "why_this_agent_exists")
+
+        Returns:
+            Normalized string (e.g., "why this agent exists")
+        """
+        return section_name.replace('_', ' ').strip().lower()
+
+    def _section_exists(self, content: str, section_name: str) -> bool:
+        """
+        Check if section already exists in content (case-insensitive, fuzzy).
+
+        TASK-FIX-AE01: Prevents duplicate sections by matching:
+        - Case variations: "## Technologies" vs "## TECHNOLOGIES"
+        - Underscore variations: "Why_This_Agent_Exists" vs "Why This Agent Exists"
+        - Partial matches: "## Technologies Used" contains "Technologies"
+
+        Args:
+            content: Full file content to search
+            section_name: Section name from enhancement (e.g., "technologies")
+
+        Returns:
+            True if similar section header found, False otherwise
+        """
+        normalized = self._normalize_section_name(section_name)
+
+        for line in content.split('\n'):
+            stripped = line.strip()
+            # Match only H2 headers ("## Section" or "##Section"), NOT H3+ ("### Section")
+            if stripped.startswith('##') and not stripped.startswith('###'):
+                # Extract header text (skip "##" and any leading spaces)
+                header_text = stripped[2:].lstrip()
+                existing = self._normalize_section_name(header_text)
+
+                # Fuzzy match: normalized is substring of existing or vice versa
+                if normalized in existing or existing in normalized:
+                    logger.debug(f"Section '{section_name}' matches existing header: '{stripped}'")
+                    return True
+
+        return False
 
     # ========================================================================
     # TASK-PD-001: Progressive Disclosure Methods (Split File Architecture)

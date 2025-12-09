@@ -6,9 +6,11 @@ Type-safe data structures for agent enhancement and progressive disclosure.
 TASK-PD-001: Created for split file architecture support
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict, List
+from typing import TypedDict, List, Optional
 
 
 class AgentEnhancement(TypedDict, total=False):
@@ -75,7 +77,7 @@ class SplitContent:
         ... )
     """
     core_path: Path
-    extended_path: Path | None
+    extended_path: Optional[Path]
     core_sections: List[str]
     extended_sections: List[str]
 
@@ -133,10 +135,10 @@ class EnhancementResult:
     templates: List[str]
     examples: List[str]
     diff: str
-    error: str | None = None
-    strategy_used: str | None = None
-    core_file: Path | None = None
-    extended_file: Path | None = None
+    error: Optional[str] = None
+    strategy_used: Optional[str] = None
+    core_file: Optional[Path] = None
+    extended_file: Optional[Path] = None
     split_output: bool = False
 
     @property

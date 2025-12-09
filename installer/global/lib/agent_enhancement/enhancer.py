@@ -400,9 +400,23 @@ class SingleAgentEnhancer:
 
         except json.JSONDecodeError as e:
             duration = time.time() - start_time
-            logger.error(f"AI response parsing failed after {duration:.2f}s: {e}")
-            logger.error(f"  Invalid response (first 200 chars): {result_text[:200]}")
-            raise ValidationError(f"Invalid JSON response: {e}")
+
+            # TASK-FIX-AE01: Extract context around error position for better debugging
+            error_pos = e.pos if hasattr(e, 'pos') else 0
+            context_start = max(0, error_pos - 50)
+            context_end = min(len(result_text), error_pos + 50)
+            context_snippet = result_text[context_start:context_end]
+
+            # Build comprehensive error message with actionable suggestions
+            logger.error(
+                f"AI response parsing failed after {duration:.2f}s\n"
+                f"  Error: {e.msg} at position {error_pos}\n"
+                f"  Context: ...{context_snippet}...\n"
+                f"  Response size: {len(result_text)} chars\n"
+                f"  Likely cause: AI response truncated or corrupted\n"
+                f"  Suggestion: Re-run with --static for reliable results"
+            )
+            raise ValidationError(f"Invalid JSON at position {error_pos}: {e.msg}")
 
         except ValidationError as e:
             duration = time.time() - start_time
