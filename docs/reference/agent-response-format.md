@@ -1,12 +1,51 @@
 # Agent Response Format Specification
 
-**Version**: 1.0
-**Task**: TASK-FIX-267C
-**Last Updated**: 2025-11-24
+**Version**: 1.1
+**Task**: TASK-FIX-267C, TASK-FIX-AE42
+**Last Updated**: 2025-12-09
 
 ## Overview
 
 This document specifies the correct format for `.agent-response.json` files used in the checkpoint-resume pattern for agent invocations.
+
+## Phase-Specific Response Files
+
+Different phases use different response file names. **Always use the phase-specific filename.**
+
+| Phase | Request File | Response File |
+|-------|--------------|---------------|
+| 6 | `.agent-request-phase6.json` | `.agent-response-phase6.json` |
+| 8 | `.agent-request-phase8.json` | `.agent-response-phase8.json` |
+
+### Agent Enhancement (Phase 8)
+
+When `/agent-enhance` returns exit code 42:
+
+1. **Request file**: `~/.agentecflow/state/.agent-request-phase8.json`
+2. **Response file**: `~/.agentecflow/state/.agent-response-phase8.json`
+
+🚨 **Common Mistake**: Writing to `.agent-response.json` instead of `.agent-response-phase8.json` will cause the orchestrator to fail with "no agent response file found".
+
+### Enhancement Content Format
+
+The `response` field should contain JSON-encoded enhancement content:
+
+```json
+{
+  "sections": ["related_templates", "examples", "boundaries"],
+  "related_templates": "## Related Templates\n\n...",
+  "examples": "## Code Examples\n\n...",
+  "boundaries": "## Boundaries\n\n### ALWAYS\n- ✅ ...",
+  "frontmatter_metadata": {
+    "stack": ["python"],
+    "phase": "implementation",
+    "capabilities": ["..."],
+    "keywords": ["..."]
+  }
+}
+```
+
+**Note**: `frontmatter_metadata` is a separate field, NOT included in the `sections` array. The `sections` array should only contain keys whose values are markdown strings.
 
 ## Critical Requirements
 

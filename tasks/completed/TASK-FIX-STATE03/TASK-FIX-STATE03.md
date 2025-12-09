@@ -1,7 +1,7 @@
 ---
 id: TASK-FIX-STATE03
 title: "Fix state_paths import regression in installation"
-status: in_review
+status: completed
 task_type: implementation
 created: 2025-12-09
 priority: critical
@@ -10,6 +10,8 @@ related_tasks: [TASK-FIX-STATE02, TASK-FIX-STATE01, TASK-REV-STATE01]
 estimated_complexity: 5
 caused_by: TASK-FIX-STATE02
 completed: 2025-12-09
+completed_location: tasks/completed/TASK-FIX-STATE03/
+production_verified: true
 ---
 
 # TASK-FIX-STATE03: Fix state_paths Import Regression

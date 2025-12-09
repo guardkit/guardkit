@@ -252,6 +252,122 @@ GuardKit uses a **two-tier enhancement system** to balance speed, quality, and f
 - `5` - Permission error (cannot write to agent file)
 - `42` - Agent invocation needed (checkpoint saved for resume)
 
+---
+
+## Handling Exit Code 42 (Agent Invocation Needed)
+
+When the Python script returns exit code 42, it means the orchestrator needs Claude to invoke the `agent-content-enhancer` agent to generate enhancement content. **You must follow these steps exactly.**
+
+### Step 1: Read the Request File
+
+The orchestrator writes a request file with the prompt and context:
+
+```bash
+cat ~/.agentecflow/state/.agent-request-phase8.json
+```
+
+This file contains:
+- `request_id`: UUID that **MUST** be copied to the response
+- `prompt`: The enhancement prompt for the agent
+- `agent_name`: Which agent to invoke ("agent-content-enhancer")
+
+### Step 2: Invoke the Agent
+
+Use the Task tool with `subagent_type="agent-content-enhancer"` to generate enhancement content. Pass the prompt from the request file.
+
+### Step 3: Write the Response File
+
+🚨 **CRITICAL**: The response MUST be written to the **correct file** with the **correct format**.
+
+**File Path** (EXACT - do not modify):
+```
+~/.agentecflow/state/.agent-response-phase8.json
+```
+
+**Format** (AgentResponse envelope - all fields required):
+```json
+{
+  "request_id": "<COPY from request file>",
+  "version": "1.0",
+  "status": "success",
+  "response": "<JSON-ENCODED STRING of enhancement content>",
+  "error_message": null,
+  "error_type": null,
+  "created_at": "<ISO 8601 timestamp>",
+  "duration_seconds": <number>,
+  "metadata": {}
+}
+```
+
+🚨 **IMPORTANT**: The `response` field must be a **JSON-encoded string**, NOT a raw object.
+
+**Complete Example**:
+```json
+{
+  "request_id": "32ecfadc-2b66-4daa-a7c0-a03c449fcea5",
+  "version": "1.0",
+  "status": "success",
+  "response": "{\"sections\": [\"related_templates\", \"examples\", \"boundaries\"], \"related_templates\": \"## Related Templates\\n\\n...\", \"examples\": \"## Code Examples\\n\\n...\", \"boundaries\": \"## Boundaries\\n\\n...\", \"frontmatter_metadata\": {\"stack\": [\"python\"], \"phase\": \"implementation\", \"capabilities\": [...], \"keywords\": [...]}}",
+  "error_message": null,
+  "error_type": null,
+  "created_at": "2025-12-09T12:00:00.000000+00:00",
+  "duration_seconds": 120.0,
+  "metadata": {}
+}
+```
+
+### Step 4: Resume the Orchestrator
+
+```bash
+python3 ~/.agentecflow/bin/agent-enhance <original-args> --resume
+```
+
+### Common Mistakes (Avoid These!)
+
+| Mistake | Problem | Solution |
+|---------|---------|----------|
+| Wrong filename | `.agent-response.json` | Use `.agent-response-phase8.json` |
+| Raw JSON object in `response` | `"response": { ... }` | Use `"response": "{...}"` (JSON string) |
+| Missing `request_id` | Envelope incomplete | Copy from request file |
+| Missing required fields | Parse error | Include ALL fields from schema |
+| `frontmatter_metadata` in `sections` array | Validation failure | Keep as separate field, not in `sections` |
+
+### Enhancement Content Format
+
+The `response` field should contain a JSON-encoded string of the enhancement content:
+
+```json
+{
+  "sections": ["related_templates", "examples", "boundaries"],
+  "related_templates": "## Related Templates\n\n...",
+  "examples": "## Code Examples\n\n...",
+  "boundaries": "## Boundaries\n\n### ALWAYS\n- ✅ ...",
+  "frontmatter_metadata": {
+    "stack": ["python"],
+    "phase": "implementation",
+    "capabilities": ["..."],
+    "keywords": ["..."]
+  }
+}
+```
+
+**Note**: `frontmatter_metadata` is a **separate field**, NOT included in the `sections` array. The `sections` array should only contain keys whose values are **markdown strings**.
+
+### Quick Reference Checklist
+
+Before writing the response file, verify:
+
+- [ ] File path is `~/.agentecflow/state/.agent-response-phase8.json` (not `.agent-response.json`)
+- [ ] `request_id` copied from request file
+- [ ] `response` field is a JSON-encoded **string** (use `json.dumps()`)
+- [ ] All 9 required fields present (request_id, version, status, response, error_message, error_type, created_at, duration_seconds, metadata)
+- [ ] `frontmatter_metadata` is NOT in the `sections` array
+- [ ] `sections` array only contains keys for markdown string content
+
+**See Also**: [Agent Response Format Specification](../../docs/reference/agent-response-format.md) for complete schema details.
+
+---
+
 ## Output Structure
 
 ### Default (Progressive Disclosure)

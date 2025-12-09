@@ -61,6 +61,31 @@ Example valid response format:
 }
 ```
 
+🚨 **CRITICAL: `frontmatter_metadata` Location**
+
+The `frontmatter_metadata` field is a **SEPARATE top-level field**. It must **NOT** be included in the `sections` array.
+
+✅ **CORRECT**:
+```json
+{
+  "sections": ["related_templates", "examples", "boundaries"],
+  "frontmatter_metadata": { "stack": ["python"], "phase": "implementation", ... },
+  "related_templates": "## Related Templates\n\n...",
+  "examples": "## Code Examples\n\n...",
+  "boundaries": "## Boundaries\n\n..."
+}
+```
+
+❌ **WRONG**:
+```json
+{
+  "sections": ["related_templates", "examples", "boundaries", "frontmatter_metadata"],
+  "frontmatter_metadata": { ... }
+}
+```
+
+**Why this matters**: The `sections` array is used to iterate over content keys. Each key in `sections` must map to a **markdown string** value. The `frontmatter_metadata` field is an **object**, not a string, so including it in `sections` causes validation failures and type errors during enhancement processing.
+
 
 ## When to Use This Agent
 
