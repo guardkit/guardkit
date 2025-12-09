@@ -525,6 +525,74 @@ class TestAgentRequestDataclass:
         assert request.agent_name == "test-agent"
 
 
+class TestStateFilePersistence:
+    """
+    TASK-FIX-STATE01: Tests for state file persistence with absolute paths.
+
+    These tests verify that request/response files are written to ~/.agentecflow/state/
+    for CWD independence, ensuring checkpoint-resume works across directory changes.
+    """
+
+    def test_default_request_file_uses_home_directory(self):
+        """Test that default request file is created in ~/.agentecflow/state/."""
+        invoker = AgentBridgeInvoker(phase=6, phase_name="test")
+
+        expected_dir = Path.home() / ".agentecflow" / "state"
+        assert invoker.request_file.parent == expected_dir
+        assert invoker.request_file.name == ".agent-request-phase6.json"
+
+    def test_default_response_file_uses_home_directory(self):
+        """Test that default response file is created in ~/.agentecflow/state/."""
+        invoker = AgentBridgeInvoker(phase=6, phase_name="test")
+
+        expected_dir = Path.home() / ".agentecflow" / "state"
+        assert invoker.response_file.parent == expected_dir
+        assert invoker.response_file.name == ".agent-response-phase6.json"
+
+    def test_state_directory_created_automatically(self):
+        """Test that state directory is created if it doesn't exist."""
+        invoker = AgentBridgeInvoker(phase=6, phase_name="test")
+
+        # Verify the state directory exists
+        assert invoker.request_file.parent.exists()
+        assert invoker.request_file.parent.is_dir()
+
+    def test_explicit_path_overrides_default(self, temp_dir):
+        """Test that explicit paths override the default home directory paths."""
+        custom_request = temp_dir / "custom-request.json"
+        custom_response = temp_dir / "custom-response.json"
+
+        invoker = AgentBridgeInvoker(
+            request_file=custom_request,
+            response_file=custom_response,
+            phase=6,
+            phase_name="test"
+        )
+
+        assert invoker.request_file == custom_request
+        assert invoker.response_file == custom_response
+
+    def test_phase_specific_files(self):
+        """Test that file names include phase number."""
+        invoker = AgentBridgeInvoker(phase=8, phase_name="enhancement")
+
+        assert "phase8" in invoker.request_file.name
+        assert "phase8" in invoker.response_file.name
+
+    def test_error_message_shows_absolute_path(self):
+        """Test that error messages show absolute paths for debugging."""
+        invoker = AgentBridgeInvoker(phase=6, phase_name="test")
+
+        # Response file doesn't exist, so load_response should fail
+        with pytest.raises(FileNotFoundError) as exc_info:
+            invoker.load_response()
+
+        error_message = str(exc_info.value)
+        # Error should contain absolute path
+        assert str(Path.home()) in error_message
+        assert ".agentecflow/state" in error_message
+
+
 class TestAgentResponseDataclass:
     """Test suite for AgentResponse dataclass."""
 

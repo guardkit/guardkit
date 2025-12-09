@@ -89,6 +89,14 @@ class EnhancementApplier:
             # original_content contains error message
             raise PermissionError(f"Cannot read agent file: {original_content}")
 
+        # TASK-ENH-DM01: Merge frontmatter metadata first (if present)
+        if "frontmatter_metadata" in enhancement:
+            self._merge_frontmatter_metadata(agent_file, enhancement["frontmatter_metadata"])
+            # Re-read content after metadata merge
+            success, original_content = safe_read_file(agent_file)
+            if not success:
+                raise PermissionError(f"Cannot re-read agent file: {original_content}")
+
         # Generate new content with enhancements
         new_content = self._merge_content(original_content, enhancement)
 
@@ -370,6 +378,91 @@ class EnhancementApplier:
         return new_lines
 
     # ========================================================================
+    # TASK-ENH-DM01: Frontmatter Metadata Merge Methods
+    # ========================================================================
+
+    def _merge_frontmatter_metadata_content(
+        self,
+        content: str,
+        metadata: Dict[str, Any]
+    ) -> str:
+        """
+        Merge discovery metadata into frontmatter content (pure function).
+
+        TASK-ENH-DM01: Adds stack/phase/capabilities/keywords without
+        overwriting existing fields.
+
+        Args:
+            content: Original file content with frontmatter
+            metadata: Dict with stack, phase, capabilities, keywords
+
+        Returns:
+            Updated content with merged frontmatter
+        """
+        import frontmatter
+
+        # Parse existing frontmatter
+        post = frontmatter.loads(content)
+
+        # Discovery metadata fields to merge
+        discovery_fields = ["stack", "phase", "capabilities", "keywords"]
+
+        fields_added = []
+        fields_preserved = []
+
+        for field in discovery_fields:
+            if field in metadata:
+                if field not in post.metadata:
+                    # Field doesn't exist - add it
+                    post.metadata[field] = metadata[field]
+                    fields_added.append(field)
+                else:
+                    # Field exists - preserve original
+                    fields_preserved.append(field)
+
+        if fields_added:
+            logger.info(f"Added discovery metadata: {', '.join(fields_added)}")
+        if fields_preserved:
+            logger.debug(f"Preserved existing metadata: {', '.join(fields_preserved)}")
+
+        return frontmatter.dumps(post)
+
+    def _merge_frontmatter_metadata(
+        self,
+        agent_file: Path,
+        metadata: Dict[str, Any]
+    ) -> None:
+        """
+        Merge discovery metadata into agent YAML frontmatter.
+
+        TASK-ENH-DM01: I/O wrapper for frontmatter metadata merging.
+
+        Args:
+            agent_file: Path to agent markdown file
+            metadata: Dict with stack, phase, capabilities, keywords
+
+        Raises:
+            PermissionError: If file cannot be read/written
+            ValueError: If file exceeds size limit (security)
+        """
+        # Read existing content
+        success, content = safe_read_file(agent_file)
+        if not success:
+            raise PermissionError(f"Cannot read agent file: {content}")
+
+        # Security: Guard against YAML bombs (per architectural review)
+        if len(content) > 100_000:  # 100KB limit for agent files
+            raise ValueError(f"Agent file too large: {len(content)} bytes (max 100KB)")
+
+        # Merge metadata using pure function
+        updated_content = self._merge_frontmatter_metadata_content(content, metadata)
+
+        # Write back
+        success, error_msg = safe_write_file(agent_file, updated_content)
+        if not success:
+            raise PermissionError(f"Cannot write agent file: {error_msg}")
+
+    # ========================================================================
     # TASK-PD-001: Progressive Disclosure Methods (Split File Architecture)
     # ========================================================================
 
@@ -462,6 +555,14 @@ class EnhancementApplier:
         success, original_content = safe_read_file(agent_path)
         if not success:
             raise PermissionError(f"Cannot read agent file: {original_content}")
+
+        # TASK-ENH-DM01: Merge frontmatter metadata before building content
+        if "frontmatter_metadata" in enhancement:
+            self._merge_frontmatter_metadata(agent_path, enhancement["frontmatter_metadata"])
+            # Re-read content after metadata merge
+            success, original_content = safe_read_file(agent_path)
+            if not success:
+                raise PermissionError(f"Cannot re-read agent file: {original_content}")
 
         # Step 3: Build and write core content (preserves original + adds core sections)
         has_extended = bool(extended_sections)

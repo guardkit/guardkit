@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import sys
+from pathlib import Path as PathLib
+sys.path.insert(0, str(PathLib(__file__).parent.parent))
+from state_paths import get_state_file, TEMPLATE_CREATE_STATE
+
 
 @dataclass
 class TemplateCreateState:
@@ -63,12 +68,17 @@ class StateManager:
         >>> manager.cleanup()
     """
 
-    def __init__(self, state_file: Path = Path(".template-create-state.json")):
+    def __init__(self, state_file: Path = None):
         """Initialize state manager.
 
         Args:
-            state_file: Path to state file (default: ./.template-create-state.json)
+            state_file: Path to state file. If None, uses
+                        ~/.agentecflow/state/.template-create-state.json
+                        for CWD independence (TASK-FIX-STATE02)
         """
+        if state_file is None:
+            # TASK-FIX-STATE02: Use centralized state path helper
+            state_file = get_state_file(TEMPLATE_CREATE_STATE)
         self.state_file = state_file
 
     def save_state(
@@ -138,7 +148,7 @@ class StateManager:
         """
         if not self.state_file.exists():
             raise FileNotFoundError(
-                f"State file not found: {self.state_file}\n"
+                f"State file not found: {self.state_file.absolute()}\n"
                 "Cannot resume - no saved state exists."
             )
 

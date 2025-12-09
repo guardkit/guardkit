@@ -187,6 +187,40 @@ class EnhancementParser:
         # Case 3: Boundaries present → Validate format
         self._validate_boundaries(enhancement.get("boundaries", ""))
 
+        # TASK-ENH-DM01: Validate metadata (graceful, non-blocking)
+        self._validate_metadata(enhancement)
+
+    def _validate_metadata(self, enhancement: Dict[str, Any]) -> None:
+        """
+        Validate frontmatter_metadata structure with graceful degradation.
+
+        TASK-ENH-DM01: Discovery metadata validation (warning, not blocking).
+
+        Does NOT raise ValueError - logs warnings for invalid/missing metadata.
+        This enables graceful degradation when AI omits discovery fields.
+        """
+        metadata = enhancement.get("frontmatter_metadata")
+
+        if metadata is None:
+            logger.warning(
+                "AI response missing 'frontmatter_metadata' field. "
+                "Agent will not have discovery metadata until manually added."
+            )
+            return
+
+        if not isinstance(metadata, dict):
+            logger.warning(
+                f"'frontmatter_metadata' must be a dict, got {type(metadata).__name__}. "
+                "Ignoring invalid metadata."
+            )
+            return
+
+        # Basic presence checks only (MVP validation per architectural review)
+        if "stack" not in metadata:
+            logger.warning("Missing 'stack' in frontmatter_metadata")
+        if "phase" not in metadata:
+            logger.warning("Missing 'phase' in frontmatter_metadata")
+
     def _validate_boundaries(self, boundaries_content: str) -> None:
         """
         Validate boundaries section structure and rule counts.

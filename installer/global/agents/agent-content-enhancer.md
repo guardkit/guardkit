@@ -44,6 +44,16 @@ Example valid response format:
 ```json
 {
   "sections": ["frontmatter", "quick_start", "boundaries", "detailed_examples"],
+  "frontmatter_metadata": {
+    "stack": ["python"],
+    "phase": "implementation",
+    "capabilities": [
+      "FastAPI endpoint creation",
+      "Async patterns with asyncio",
+      "Pydantic schema validation"
+    ],
+    "keywords": ["fastapi", "api", "async", "pydantic", "endpoints", "python"]
+  },
   "frontmatter": "---\nname: agent-name\n...",
   "quick_start": "## Quick Start\n\n...",
   "boundaries": "## Boundaries\n\n### ALWAYS\n...",
@@ -228,6 +238,32 @@ Each enhanced agent must meet these standards:
 - **ALWAYS/NEVER/ASK sections present** - All three boundary sections required
 - **Boundary rule counts** - 5-7 ALWAYS, 5-7 NEVER, 3-5 ASK
 - **Boundary emoji format** - ✅/❌/⚠️ prefixes required
+
+
+### 11. Discovery Metadata (Required for Agent Matching)
+
+Generate `frontmatter_metadata` object for AI-powered agent matching in `/task-work`:
+
+```json
+"frontmatter_metadata": {
+  "stack": ["python"],           // Technology stacks: python, react, typescript, dotnet, etc.
+  "phase": "implementation",     // implementation, review, testing, orchestration, debugging
+  "capabilities": [              // 3-7 specific capabilities
+    "Capability 1",
+    "Capability 2"
+  ],
+  "keywords": [                  // 5-10 searchable keywords
+    "keyword1",
+    "keyword2"
+  ]
+}
+```
+
+**Derivation Guidance**:
+- **stack**: Infer from template technologies, imports, file extensions
+- **phase**: Match to agent purpose (implementation for code, review for analysis, testing for testers)
+- **capabilities**: Extract from agent description and template patterns
+- **keywords**: Combine agent name parts + technologies + key patterns
 
 
 ## Key Principles

@@ -101,7 +101,9 @@ class TestAgentEnhanceOrchestrator:
         assert orchestrator.enhancer == mock_enhancer
         assert orchestrator.resume is False
         assert orchestrator.verbose is False
-        assert orchestrator.state_file == Path(".agent-enhance-state.json")
+        # TASK-FIX-STATE01: State file now uses absolute path in ~/.agentecflow/state/
+        expected_state_file = Path.home() / ".agentecflow" / "state" / ".agent-enhance-state.json"
+        assert orchestrator.state_file == expected_state_file
 
     def test_save_state_creates_valid_json(self, tmp_dir, mock_enhancer, monkeypatch):
         """Test that _save_state() creates valid JSON file."""
@@ -616,6 +618,74 @@ class TestAgentEnhanceOrchestrator:
 
         assert result.success is True
         assert not orchestrator2.state_file.exists()  # Cleaned up
+
+
+class TestStateFilePersistence:
+    """
+    TASK-FIX-STATE01: Tests for state file persistence with absolute paths.
+
+    These tests verify that state files are written to ~/.agentecflow/state/
+    for CWD independence, ensuring checkpoint-resume works across directory changes.
+    """
+
+    @pytest.fixture
+    def mock_enhancer(self):
+        """Create a mock SingleAgentEnhancer."""
+        enhancer = Mock()
+        enhancer.strategy = "ai"
+        enhancer.dry_run = False
+        enhancer.verbose = False
+        return enhancer
+
+    def test_state_file_uses_home_directory(self, mock_enhancer):
+        """Test that state file is created in ~/.agentecflow/state/."""
+        orchestrator = AgentEnhanceOrchestrator(
+            enhancer=mock_enhancer,
+            resume=False,
+            verbose=False
+        )
+
+        # Verify state file path is under home directory
+        expected_dir = Path.home() / ".agentecflow" / "state"
+        assert orchestrator.state_file.parent == expected_dir
+        assert orchestrator.state_file.name == ".agent-enhance-state.json"
+
+    def test_state_directory_created_automatically(self, mock_enhancer, tmp_path, monkeypatch):
+        """Test that state directory is created if it doesn't exist."""
+        # The directory should be created during orchestrator initialization
+        orchestrator = AgentEnhanceOrchestrator(
+            enhancer=mock_enhancer,
+            resume=False,
+            verbose=False
+        )
+
+        # Verify the state directory exists
+        assert orchestrator.state_file.parent.exists()
+        assert orchestrator.state_file.parent.is_dir()
+
+    def test_error_message_shows_absolute_path(self, mock_enhancer):
+        """Test that error messages show absolute paths for debugging."""
+        orchestrator = AgentEnhanceOrchestrator(
+            enhancer=mock_enhancer,
+            resume=True,  # resume mode
+            verbose=False
+        )
+
+        # Create a temp directory for agent/template paths
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            agent_file = tmp_path / "agent.md"
+            template_dir = tmp_path / "template"
+
+            # Try to resume without state file
+            with pytest.raises(ValueError) as exc_info:
+                orchestrator._run_with_resume(agent_file, template_dir)
+
+            error_message = str(exc_info.value)
+            # Error should contain absolute path
+            assert str(Path.home()) in error_message
+            assert ".agentecflow/state" in error_message
 
 
 if __name__ == "__main__":

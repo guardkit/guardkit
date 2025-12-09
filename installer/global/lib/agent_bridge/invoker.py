@@ -14,6 +14,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Protocol, Union
 
+from pathlib import Path as PathLib
+sys.path.insert(0, str(PathLib(__file__).parent.parent))
+from state_paths import get_phase_request_file, get_phase_response_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,19 +125,23 @@ class AgentBridgeInvoker:
         """Initialize bridge invoker.
 
         Args:
-            request_file: Path to write request (default: ./.agent-request-phase{phase}.json if not specified)
-            response_file: Path to read response (default: ./.agent-response-phase{phase}.json if not specified)
+            request_file: Path to write request. If None, uses
+                          ~/.agentecflow/state/.agent-request-phase{phase}.json
+                          for CWD independence (TASK-FIX-STATE02)
+            response_file: Path to read response. If None, uses
+                           ~/.agentecflow/state/.agent-response-phase{phase}.json
+                           for CWD independence (TASK-FIX-STATE02)
             phase: Current phase number
             phase_name: Human-readable phase name
         """
-        # Default to phase-specific files if not explicitly provided
+        # TASK-FIX-STATE02: Use centralized state path helpers
         if request_file is None:
-            self.request_file = Path(f".agent-request-phase{phase}.json")
+            self.request_file = get_phase_request_file(phase)
         else:
             self.request_file = Path(request_file) if isinstance(request_file, str) else request_file
 
         if response_file is None:
-            self.response_file = Path(f".agent-response-phase{phase}.json")
+            self.response_file = get_phase_response_file(phase)
         else:
             self.response_file = Path(response_file) if isinstance(response_file, str) else response_file
 
@@ -216,7 +224,7 @@ class AgentBridgeInvoker:
         """
         if not self.response_file.exists():
             raise FileNotFoundError(
-                f"Agent response file not found: {self.response_file}\n"
+                f"Agent response file not found: {self.response_file.absolute()}\n"
                 "Cannot resume - agent invocation may not have completed."
             )
 

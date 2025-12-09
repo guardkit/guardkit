@@ -314,6 +314,52 @@ class TestStateManager:
         assert state_data["checkpoint"] == "test"
 
 
+class TestStateFilePersistence:
+    """
+    TASK-FIX-STATE01: Tests for state file persistence with absolute paths.
+
+    These tests verify that state files are written to ~/.agentecflow/state/
+    for CWD independence, ensuring checkpoint-resume works across directory changes.
+    """
+
+    def test_default_state_file_uses_home_directory(self):
+        """Test that default state file is created in ~/.agentecflow/state/."""
+        manager = StateManager()  # No explicit state_file provided
+
+        expected_dir = Path.home() / ".agentecflow" / "state"
+        assert manager.state_file.parent == expected_dir
+        assert manager.state_file.name == ".template-create-state.json"
+
+    def test_state_directory_created_automatically(self):
+        """Test that state directory is created if it doesn't exist."""
+        manager = StateManager()  # Default path
+
+        # Verify the state directory exists
+        assert manager.state_file.parent.exists()
+        assert manager.state_file.parent.is_dir()
+
+    def test_explicit_path_overrides_default(self, temp_dir):
+        """Test that explicit path overrides the default home directory path."""
+        custom_path = temp_dir / "custom-state.json"
+        manager = StateManager(state_file=custom_path)
+
+        assert manager.state_file == custom_path
+        assert manager.state_file.parent == temp_dir
+
+    def test_error_message_shows_absolute_path(self):
+        """Test that error messages show absolute paths for debugging."""
+        manager = StateManager()  # Default path
+
+        # State file doesn't exist, so load_state should fail
+        with pytest.raises(FileNotFoundError) as exc_info:
+            manager.load_state()
+
+        error_message = str(exc_info.value)
+        # Error should contain absolute path
+        assert str(Path.home()) in error_message
+        assert ".agentecflow/state" in error_message
+
+
 class TestTemplateCreateStateDataclass:
     """Test suite for TemplateCreateState dataclass."""
 

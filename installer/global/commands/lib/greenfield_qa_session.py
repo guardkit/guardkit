@@ -23,6 +23,11 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional
 
+import sys
+from pathlib import Path as PathLib
+sys.path.insert(0, str(PathLib(__file__).parent.parent.parent / "lib"))
+from state_paths import get_state_file, TEMPLATE_SESSION, TEMPLATE_PARTIAL_SESSION
+
 try:
     import inquirer
     from inquirer import Text, List as InquirerList, Checkbox, Confirm
@@ -1249,18 +1254,18 @@ keywords: [{keywords_yaml}]
         Save Q&A session for resuming later.
 
         Args:
-            session_file: Optional path to save session (default: .template-init-session.json)
+            session_file: Optional path to save session (default: ~/.agentecflow/state/.template-init-session.json)
 
         Example:
             >>> session.save_session()
-            ✓ Session saved to .template-init-session.json
+            ✓ Session saved to ~/.agentecflow/state/.template-init-session.json
         """
         if not self.answers:
             print("⚠️ No answers to save.")
             return
 
         if session_file is None:
-            session_file = Path(".template-init-session.json")
+            session_file = get_state_file(TEMPLATE_SESSION)
 
         data = self.answers.to_dict()
         session_file.write_text(json.dumps(data, indent=2))
@@ -1272,7 +1277,7 @@ keywords: [{keywords_yaml}]
         Load saved Q&A session.
 
         Args:
-            session_file: Optional path to load session from
+            session_file: Optional path to load session from (default: ~/.agentecflow/state/.template-init-session.json)
 
         Returns:
             GreenfieldAnswers: Loaded answers, or None if file not found
@@ -1283,7 +1288,7 @@ keywords: [{keywords_yaml}]
             ...     print(f"Loaded template: {answers.template_name}")
         """
         if session_file is None:
-            session_file = Path(".template-init-session.json")
+            session_file = get_state_file(TEMPLATE_SESSION)
 
         if not session_file.exists():
             return None
@@ -1297,7 +1302,7 @@ keywords: [{keywords_yaml}]
             print("No data to save.")
             return
 
-        session_file = Path(".template-init-partial-session.json")
+        session_file = get_state_file(TEMPLATE_PARTIAL_SESSION)
         session_file.write_text(json.dumps(self._session_data, indent=2, default=str))
         print(f"\n✓ Partial session saved to {session_file}")
         print("You can review and manually edit this file if needed.\n")

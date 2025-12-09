@@ -109,6 +109,32 @@ class EnhancementPromptBuilder:
             "minLength": 500,
             "pattern": ".*## Boundaries.*### ALWAYS.*### NEVER.*### ASK.*",
             "description": "Markdown section with ALWAYS/NEVER/ASK framework (REQUIRED)"
+        }},
+        "frontmatter_metadata": {{
+            "type": "object",
+            "description": "Discovery metadata for agent matching in /task-work",
+            "properties": {{
+                "stack": {{
+                    "type": "array",
+                    "items": {{"type": "string"}},
+                    "description": "Technology stacks (e.g., ['python'], ['react', 'typescript'])"
+                }},
+                "phase": {{
+                    "type": "string",
+                    "enum": ["implementation", "review", "testing", "orchestration", "debugging"],
+                    "description": "Primary workflow phase for this agent"
+                }},
+                "capabilities": {{
+                    "type": "array",
+                    "items": {{"type": "string"}},
+                    "description": "Specific capabilities (3-7 items)"
+                }},
+                "keywords": {{
+                    "type": "array",
+                    "items": {{"type": "string"}},
+                    "description": "Searchable keywords (5-10 items)"
+                }}
+            }}
         }}
     }}
 }}
@@ -148,6 +174,12 @@ Rules without emoji prefixes will FAIL validation.
 - ALL code examples MUST match patterns found in actual template files
 - Check imports and dependencies to determine frameworks used
 - NEVER include generic framework patterns not found in analyzed code
+
+**Discovery Metadata**: Generate `frontmatter_metadata` for agent matching:
+- `stack`: Technology stacks from file extensions, imports (e.g., ["python"], ["react", "typescript"])
+- `phase`: Agent role - "implementation" for builders, "review" for analyzers, "testing" for testers
+- `capabilities`: 3-7 specific skills derived from template patterns
+- `keywords`: 5-10 searchable terms combining agent name + technologies + key patterns
 """
 
         return prompt

@@ -18,6 +18,11 @@ import json
 import logging
 from datetime import datetime
 
+import sys
+from pathlib import Path as PathLib
+sys.path.insert(0, str(PathLib(__file__).parent.parent.parent / "lib"))
+from state_paths import get_state_file, AGENT_ENHANCE_STATE
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,7 +78,9 @@ class AgentEnhanceOrchestrator:
         self.resume = resume
         self.verbose = verbose
         self.split_output = split_output  # TASK-FIX-DBFA
-        self.state_file = Path(".agent-enhance-state.json")
+
+        # TASK-FIX-STATE02: Use centralized state path helper
+        self.state_file = get_state_file(AGENT_ENHANCE_STATE)
 
         # Create bridge invoker for response detection
         # This is only used for has_response() check, not for invocation
@@ -207,7 +214,7 @@ class AgentEnhanceOrchestrator:
         # Validate state file exists
         if not self.state_file.exists():
             raise ValueError(
-                f"Cannot resume - no state file found at {self.state_file}\n"
+                f"Cannot resume - no state file found at {self.state_file.absolute()}\n"
                 "Did you run without --resume flag first?"
             )
 

@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
+from .state_paths import get_state_file, TEMPLATE_CONFIG
+
 
 class ConfigValidationError(Exception):
     """Raised when config validation fails."""
@@ -47,10 +49,16 @@ class TemplateConfigHandler:
         Initialize config handler.
 
         Args:
-            config_path: Optional path to config file directory (default: current directory)
+            config_path: Optional path to config file directory (default: ~/.agentecflow/state/)
         """
-        self.config_dir = config_path or Path.cwd()
-        self.config_file = self.config_dir / self.CONFIG_FILENAME
+        if config_path is not None:
+            # Explicit path provided - use it (backwards compatibility)
+            self.config_dir = config_path
+            self.config_file = self.config_dir / self.CONFIG_FILENAME
+        else:
+            # Default to state directory (TASK-FIX-STATE02)
+            self.config_file = get_state_file(TEMPLATE_CONFIG)
+            self.config_dir = self.config_file.parent
 
     def save_config(
         self,
