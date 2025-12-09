@@ -48,13 +48,17 @@ class AgentEnhanceOrchestrator:
     IMPORTANT: The checkpoint-resume logic in enhancer.py (lines 269-283)
     is correct and does not need modification. This orchestrator only
     handles the state persistence and resume routing.
+
+    TASK-FIX-DBFA: Added post-AI split detection and application.
+    When AI writes monolithic file directly, orchestrator applies split post-hoc.
     """
 
     def __init__(
         self,
         enhancer,  # SingleAgentEnhancer instance
         resume: bool = False,
-        verbose: bool = False
+        verbose: bool = False,
+        split_output: bool = True  # TASK-FIX-DBFA: Control split behavior
     ):
         """
         Initialize orchestrator.
@@ -63,10 +67,12 @@ class AgentEnhanceOrchestrator:
             enhancer: The SingleAgentEnhancer instance
             resume: If True, attempt to resume from checkpoint
             verbose: If True, show detailed progress
+            split_output: If True, apply progressive disclosure split (default: True)
         """
         self.enhancer = enhancer
         self.resume = resume
         self.verbose = verbose
+        self.split_output = split_output  # TASK-FIX-DBFA
         self.state_file = Path(".agent-enhance-state.json")
 
         # Create bridge invoker for response detection
@@ -130,6 +136,7 @@ class AgentEnhanceOrchestrator:
         1. Saves state to .agent-enhance-state.json
         2. Calls enhancer.enhance() which may exit 42
         3. If enhancer returns (response was cached), clean up state
+        4. TASK-FIX-DBFA: Apply post-AI split if monolithic file detected
 
         The enhancer.enhance() method handles the checkpoint-resume
         logic internally (lines 269-283). This orchestrator only
@@ -145,7 +152,21 @@ class AgentEnhanceOrchestrator:
         # If agent response is already cached, this will complete
         # If agent is needed, this will exit 42 and we'll resume later
         try:
-            result = self.enhancer.enhance(agent_file, template_dir)
+            # TASK-FIX-PD03: Pass split_output to enhancer
+            # The enhancer now handles split correctly when AI returns JSON
+            result = self.enhancer.enhance(
+                agent_file,
+                template_dir,
+                split_output=self.split_output
+            )
+
+            # TASK-FIX-DBFA: Post-AI split detection and application
+            # This is now a safety net - should rarely trigger after TASK-FIX-PD03
+            # because enhancer.enhance() now correctly calls apply_with_split()
+            if self._should_apply_split(result):
+                if self.verbose:
+                    logger.info("Detected monolithic file from AI (fallback), applying split...")
+                result = self._apply_post_ai_split(agent_file, result)
 
             # Success - clean up state file
             self._cleanup_state()
@@ -177,6 +198,7 @@ class AgentEnhanceOrchestrator:
         3. Checks that agent response exists
         4. Calls enhancer.enhance() which will load the response
         5. Cleans up state file on success
+        6. TASK-FIX-DBFA: Apply post-AI split if monolithic file detected
 
         The enhancer.enhance() method will see has_response() == True
         and load the cached response (line 272), then continue with
@@ -214,7 +236,19 @@ class AgentEnhanceOrchestrator:
 
         # Run enhancement (will load cached response)
         try:
-            result = self.enhancer.enhance(agent_file, template_dir)
+            # TASK-FIX-PD03: Pass split_output to enhancer
+            result = self.enhancer.enhance(
+                agent_file,
+                template_dir,
+                split_output=self.split_output
+            )
+
+            # TASK-FIX-DBFA: Post-AI split detection and application
+            # Safety net - should rarely trigger after TASK-FIX-PD03
+            if self._should_apply_split(result):
+                if self.verbose:
+                    logger.info("Detected monolithic file from AI (fallback), applying split...")
+                result = self._apply_post_ai_split(agent_file, result)
 
             # Success - clean up state file
             self._cleanup_state()
@@ -289,3 +323,87 @@ class AgentEnhanceOrchestrator:
             response_file.unlink()
             if self.verbose:
                 logger.info("Cleaned up agent response file")
+
+    # ========================================================================
+    # TASK-FIX-DBFA: Post-AI Split Detection and Application
+    # ========================================================================
+
+    def _should_apply_split(self, result) -> bool:
+        """
+        Detect if post-AI split is needed.
+
+        Returns True if:
+        - split_output is enabled (not --no-split flag)
+        - Result indicates success
+        - No extended file was created (monolithic file written by AI)
+        - Not in dry-run mode
+
+        Args:
+            result: EnhancementResult from enhancement
+
+        Returns:
+            True if split should be applied post-hoc
+        """
+        return (
+            self.split_output and
+            result.success and
+            not result.extended_file and
+            not self.enhancer.dry_run
+        )
+
+    def _apply_post_ai_split(self, agent_file: Path, result):
+        """
+        Apply progressive disclosure split after AI wrote monolithic file.
+
+        This method is called when AI agent writes a single enhanced file
+        instead of split files. It re-parses the enhanced content and
+        applies splitting post-hoc.
+
+        TASK-FIX-DBFA: Core fix for progressive disclosure regression.
+
+        Args:
+            agent_file: Path to enhanced agent file (monolithic)
+            result: EnhancementResult from initial enhancement
+
+        Returns:
+            Updated EnhancementResult with split file paths
+
+        Raises:
+            ValueError: If re-parsing fails (caught and logged, returns original)
+            PermissionError: If files cannot be written (caught and logged)
+        """
+        try:
+            # Step 1: Re-parse enhanced file content
+            enhancement = self.enhancer.reparse_enhanced_file(agent_file)
+
+            if self.verbose:
+                logger.info(f"Re-parsed {len(enhancement.get('sections', []))} sections")
+
+            # Step 2: Apply split using the applier
+            split_result = self.enhancer.applier.apply_with_split(
+                agent_file,
+                enhancement
+            )
+
+            if self.verbose:
+                ext_name = split_result.extended_path.name if split_result.extended_path else "None"
+                logger.info(f"Split applied: {split_result.core_path.name}, {ext_name}")
+
+            # Step 3: Update result metadata
+            result.core_file = split_result.core_path
+            result.extended_file = split_result.extended_path
+            result.split_output = True
+
+            logger.info(f"✓ Progressive disclosure split applied successfully")
+            if split_result.extended_path:
+                logger.info(f"  Core: {split_result.core_path.name}")
+                logger.info(f"  Extended: {split_result.extended_path.name}")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Post-AI split failed: {e}")
+            logger.warning("Keeping original monolithic file")
+            # Keep original monolithic file - graceful degradation
+            result.split_output = False
+            return result

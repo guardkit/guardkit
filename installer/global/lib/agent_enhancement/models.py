@@ -88,6 +88,7 @@ class EnhancementResult:
     Result of agent enhancement operation.
 
     TASK-PD-003: Enhanced to support split-file output mode.
+    TASK-FIX-PD03: Added enhancement_data for passing structured content.
 
     This dataclass represents the outcome of enhancing an agent file,
     including both success/error state and information about created files.
@@ -104,6 +105,7 @@ class EnhancementResult:
         core_file: Path to core agent file (None on error)
         extended_file: Path to extended file or None (split mode only)
         split_output: Whether split-file mode was used
+        enhancement_data: Raw enhancement dict from AI/static strategy (for debugging/passthrough)
 
     Example (split mode):
         >>> result = EnhancementResult(
@@ -140,6 +142,7 @@ class EnhancementResult:
     core_file: Optional[Path] = None
     extended_file: Optional[Path] = None
     split_output: bool = False
+    enhancement_data: Optional[dict] = None  # TASK-FIX-PD03: Raw enhancement dict
 
     @property
     def files(self) -> List[Path]:

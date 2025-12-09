@@ -139,6 +139,11 @@ def main(args: list[str]) -> int:
         action="store_true",
         help="Resume from checkpoint after agent invocation"
     )
+    parser.add_argument(
+        "--no-split",
+        action="store_true",
+        help="Create single file (disable progressive disclosure split)"
+    )
 
     parsed_args = parser.parse_args(args)
 
@@ -189,11 +194,15 @@ def main(args: list[str]) -> int:
         verbose=parsed_args.verbose
     )
 
-    # Create orchestrator wrapper
+    # TASK-FIX-DBFA: Determine split preference
+    split_output = not parsed_args.no_split
+
+    # Create orchestrator wrapper with split preference
     orchestrator = AgentEnhanceOrchestrator(
         enhancer=enhancer,
         resume=parsed_args.resume,
-        verbose=parsed_args.verbose
+        verbose=parsed_args.verbose,
+        split_output=split_output  # TASK-FIX-DBFA
     )
 
     # Enhance agent with orchestrator
@@ -210,6 +219,16 @@ def main(args: list[str]) -> int:
             logger.info(f"  Sections added: {len(result.sections)}")
             logger.info(f"  Templates referenced: {len(result.templates)}")
             logger.info(f"  Code examples: {len(result.examples)}")
+
+            # TASK-FIX-DBFA: Report split status
+            if result.split_output and result.extended_file:
+                logger.info(f"  Split output: ✓ (core + extended files)")
+                logger.info(f"    Core: {result.core_file.name if result.core_file else 'N/A'}")
+                logger.info(f"    Extended: {result.extended_file.name if result.extended_file else 'N/A'}")
+            elif not split_output:
+                logger.info(f"  Split output: ✗ (--no-split flag)")
+            else:
+                logger.info(f"  Split output: ✗ (single file)")
 
             # TASK-ENF-P0-4: Validate discovery metadata
             if not parsed_args.dry_run:

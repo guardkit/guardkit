@@ -207,6 +207,7 @@ class SingleAgentEnhancer:
             # 6. Generate diff
             diff = self.applier.generate_diff(agent_file, enhancement)
 
+            # TASK-FIX-PD03: Include enhancement_data for debugging/passthrough
             return EnhancementResult(
                 success=True,
                 agent_name=agent_name,
@@ -217,7 +218,8 @@ class SingleAgentEnhancer:
                 strategy_used=self.strategy,
                 core_file=core_file,
                 extended_file=extended_file,
-                split_output=split_output
+                split_output=split_output,
+                enhancement_data=enhancement
             )
 
         except Exception as e:
@@ -233,7 +235,8 @@ class SingleAgentEnhancer:
                 strategy_used=self.strategy,
                 core_file=None,
                 extended_file=None,
-                split_output=split_output
+                split_output=split_output,
+                enhancement_data=None
             )
 
     def _generate_enhancement(
@@ -635,3 +638,111 @@ class SingleAgentEnhancer:
 
         if not isinstance(enhancement["sections"], list):
             raise ValidationError("'sections' must be a list")
+
+    def reparse_enhanced_file(self, agent_file: Path) -> dict:
+        """
+        Re-parse enhanced agent file to extract enhancement data for splitting.
+
+        Used when AI writes monolithic file directly and we need to apply
+        split post-hoc. Extracts sections from the enhanced markdown.
+
+        TASK-FIX-DBFA: Added for post-AI split support.
+
+        Args:
+            agent_file: Path to enhanced agent file (monolithic)
+
+        Returns:
+            Enhancement dict compatible with apply_with_split()
+
+        Raises:
+            ValueError: If file cannot be parsed or has insufficient content
+
+        Examples:
+            >>> enhancer = SingleAgentEnhancer(strategy='ai')
+            >>> agent_file = Path('agents/test-agent.md')
+            >>> enhancement = enhancer.reparse_enhanced_file(agent_file)
+            >>> enhancement['sections']
+            ['frontmatter', 'quick_start', 'boundaries', 'capabilities']
+        """
+        try:
+            content = agent_file.read_text()
+        except (OSError, IOError, PermissionError) as e:
+            raise ValueError(f"Cannot read enhanced file {agent_file}: {e}")
+
+        # Parse markdown sections
+        enhancement = {"sections": []}
+        current_section = None
+        section_content = []
+
+        lines = content.split('\n')
+        in_frontmatter = False
+        frontmatter_lines = []
+        frontmatter_done = False
+
+        for i, line in enumerate(lines):
+            # Handle frontmatter
+            if line.strip() == '---':
+                if i == 0:
+                    in_frontmatter = True
+                    frontmatter_lines.append(line)
+                    continue
+                elif in_frontmatter and not frontmatter_done:
+                    in_frontmatter = False
+                    frontmatter_done = True
+                    frontmatter_lines.append(line)
+                    enhancement['frontmatter'] = '\n'.join(frontmatter_lines)
+                    enhancement['sections'].append('frontmatter')
+                    continue
+
+            if in_frontmatter:
+                frontmatter_lines.append(line)
+                continue
+
+            # Detect section headers (## Section Name)
+            if line.startswith('## '):
+                # Save previous section
+                if current_section:
+                    section_key = self._normalize_section_key(current_section)
+                    enhancement[section_key] = '\n'.join(section_content)
+                    if section_key not in enhancement['sections']:
+                        enhancement['sections'].append(section_key)
+
+                # Start new section
+                current_section = line[3:].strip()
+                section_content = [line]
+            elif current_section:
+                section_content.append(line)
+
+        # Save last section
+        if current_section:
+            section_key = self._normalize_section_key(current_section)
+            enhancement[section_key] = '\n'.join(section_content)
+            if section_key not in enhancement['sections']:
+                enhancement['sections'].append(section_key)
+
+        # Validate the parsed content has required structure
+        if 'frontmatter' not in enhancement:
+            raise ValueError(f"Enhanced file {agent_file} missing frontmatter (YAML header)")
+
+        if len(enhancement['sections']) < 2:  # frontmatter + at least one section
+            raise ValueError(
+                f"Enhanced file {agent_file} has insufficient sections: "
+                f"{len(enhancement['sections'])} found (minimum 2 required)"
+            )
+
+        if self.verbose:
+            logger.info(f"Re-parsed {len(enhancement['sections'])} sections from enhanced file")
+
+        return enhancement
+
+    def _normalize_section_key(self, section_name: str) -> str:
+        """
+        Convert section header to snake_case key.
+
+        Args:
+            section_name: Section header text (e.g., "Quick Start")
+
+        Returns:
+            Normalized key (e.g., "quick_start")
+        """
+        return section_name.lower().replace(' ', '_').replace('-', '_')

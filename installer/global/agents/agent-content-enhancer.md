@@ -7,7 +7,7 @@ technologies:
   - Documentation
   - Code Analysis
   - Pattern Recognition
-tools: [Read, Write, Edit, Grep, Glob]
+tools: [Read, Grep, Glob]
 tags: [template-creation, agent-generation, documentation, enhancement]
 
 # Discovery metadata
@@ -29,6 +29,27 @@ keywords: [agent-enhancement, documentation, boundaries, best-practices, metadat
 Specialized agent for transforming basic AI agent definitions (30 lines) into comprehensive, actionable documentation (150-250 lines). Analyzes agent metadata, available code templates, and project patterns to generate rich documentation including usage scenarios, code examples, and best practices.
 
 This agent is invoked during Phase 7.5 of the template-create workflow to ensure generated agents are immediately useful and actionable.
+
+**CRITICAL: JSON-ONLY RESPONSE**
+
+This agent MUST return enhancement content as a JSON object. It MUST NOT write to files directly.
+
+- **DO**: Return JSON with sections and content
+- **DO NOT**: Use Write tool, Edit tool, or any file modification
+- **DO NOT**: Create files directly in the filesystem
+
+All file I/O is handled by the orchestrator, which will create the appropriate core and extended files using the JSON response.
+
+Example valid response format:
+```json
+{
+  "sections": ["frontmatter", "quick_start", "boundaries", "detailed_examples"],
+  "frontmatter": "---\nname: agent-name\n...",
+  "quick_start": "## Quick Start\n\n...",
+  "boundaries": "## Boundaries\n\n### ALWAYS\n...",
+  "detailed_examples": "## Detailed Examples\n\n..."
+}
+```
 
 
 ## When to Use This Agent
