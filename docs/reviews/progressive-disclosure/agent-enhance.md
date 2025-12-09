@@ -685,6 +685,123 @@ python3 ~/.agentecflow/bin/agent-enhance "$@"
 
 ---
 
+## Bridge Protocol for AI Invocation (Exit Code 42)
+
+When the Python script exits with code 42, it means an AI agent invocation is needed.
+
+### Step 1: Detect Exit Code 42
+
+After running the Python script, check the exit code. If it's 42:
+
+```bash
+# Python exited with 42
+echo "Agent invocation needed - handling checkpoint-resume"
+```
+
+### Step 2: Read the Request File
+
+Read `.agent-request-phase8.json` to get the agent name and prompt:
+
+```json
+{
+  "request_id": "uuid-here",
+  "version": "1.0",
+  "phase": 8,
+  "phase_name": "agent_enhancement",
+  "agent_name": "agent-content-enhancer",
+  "prompt": "...",
+  "timeout_seconds": 120,
+  "created_at": "ISO timestamp",
+  "context": {}
+}
+```
+
+### Step 3: Invoke the Agent
+
+Use the Task tool to invoke the specified agent with the prompt from the request file.
+
+### Step 4: Write the Response File (CRITICAL FORMAT)
+
+Create `.agent-response-phase8.json` with this **EXACT** structure:
+
+```json
+{
+  "request_id": "<copy from .agent-request-phase8.json>",
+  "version": "1.0",
+  "status": "success",
+  "response": "<JSON-encoded string of agent output>",
+  "error_message": null,
+  "error_type": null,
+  "created_at": "<ISO 8601 timestamp>",
+  "duration_seconds": <seconds as float>,
+  "metadata": {}
+}
+```
+
+**CRITICAL**: The `response` field MUST be a **JSON string**, not an object!
+
+Example - if the agent returns:
+```json
+{
+  "sections": ["related_templates", "boundaries"],
+  "related_templates": "## Related Templates\n\n...",
+  "boundaries": "## Boundaries\n\n..."
+}
+```
+
+The response file must wrap it as a string:
+```json
+{
+  "request_id": "abc-123",
+  "version": "1.0",
+  "status": "success",
+  "response": "{\"sections\": [\"related_templates\", \"boundaries\"], \"related_templates\": \"## Related Templates\\n\\n...\", \"boundaries\": \"## Boundaries\\n\\n...\"}",
+  "error_message": null,
+  "error_type": null,
+  "created_at": "2025-12-09T10:30:00.000000+00:00",
+  "duration_seconds": 5.2,
+  "metadata": {}
+}
+```
+
+### Step 5: Resume the Python Script
+
+Re-run with `--resume` flag:
+
+```bash
+python3 ~/.agentecflow/bin/agent-enhance "$@" --resume
+```
+
+### Error Handling
+
+If agent invocation fails, write error response:
+
+```json
+{
+  "request_id": "<from request>",
+  "version": "1.0",
+  "status": "error",
+  "response": null,
+  "error_message": "<error description>",
+  "error_type": "AgentInvocationError",
+  "created_at": "<timestamp>",
+  "duration_seconds": 0,
+  "metadata": {}
+}
+```
+
+Then continue with `--resume` to let Python handle the fallback.
+
+### Cleanup
+
+On success (exit code 0), clean up bridge files:
+
+```bash
+rm -f .agent-request-phase8.json .agent-response-phase8.json .agent-enhance-state.json
+```
+
+---
+
 **Document Status**: IMPLEMENTED
 **Last Updated**: 2025-12-09
 **Related Tasks**: TASK-PHASE-8-INCREMENTAL, HAI-001, TASK-FIX-PD06

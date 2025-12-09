@@ -8,7 +8,7 @@ TASK-PD-001: Added progressive disclosure support with split file methods
 """
 
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import logging
 import difflib
 import re
@@ -21,10 +21,11 @@ safe_write_file = _file_io_module.safe_write_file
 
 # TASK-UX-6581: Import shared boundary utilities
 # Handle both package import and direct import
+# TASK-FIX-PD04: Added is_generic_boundaries for boundary replacement logic
 try:
-    from .boundary_utils import find_boundaries_insertion_point
+    from .boundary_utils import find_boundaries_insertion_point, is_generic_boundaries
 except ImportError:
-    from boundary_utils import find_boundaries_insertion_point
+    from boundary_utils import find_boundaries_insertion_point, is_generic_boundaries
 
 # TASK-PD-001: Import new data models
 try:
@@ -47,12 +48,14 @@ CORE_SECTIONS = [
 
 EXTENDED_SECTIONS = [
     'detailed_examples',
+    'examples',              # TASK-FIX-PD04: AI may use this instead of detailed_examples
     'best_practices',
     'anti_patterns',
     'cross_stack',
     'mcp_integration',
     'troubleshooting',
     'technology_specific',
+    'related_templates',     # TASK-FIX-PD04: AI-generated template references
 ]
 
 
@@ -200,8 +203,25 @@ class EnhancementApplier:
                 other_sections.append(section_name)
 
         # Handle boundaries special placement (after Quick Start, before Capabilities)
+        # TASK-FIX-PD04: Replace generic boundaries with AI-specific boundaries
         if boundaries_content and boundaries_content.strip():
-            if "## Boundaries" not in existing_content:
+            existing_has_boundaries = "## Boundaries" in existing_content
+
+            # Decide whether to insert/replace boundaries
+            should_insert = False
+            if not existing_has_boundaries:
+                # No existing boundaries - insert new ones
+                should_insert = True
+            elif not is_generic_boundaries(boundaries_content):
+                # New boundaries are AI-specific, check if existing are generic
+                existing_boundaries = self._extract_boundaries_section(existing_content)
+                if existing_boundaries and is_generic_boundaries(existing_boundaries):
+                    # Replace generic with AI-specific
+                    logger.info("Replacing generic boundaries with AI-specific boundaries")
+                    new_lines = self._remove_boundaries_section(new_lines)
+                    should_insert = True
+
+            if should_insert:
                 # TASK-UX-6581: Use shared boundary utilities
                 # find_boundaries_insertion_point now NEVER returns None
                 insertion_point = find_boundaries_insertion_point(new_lines)
@@ -283,6 +303,71 @@ class EnhancementApplier:
                     return True
 
         return False
+
+    # ========================================================================
+    # TASK-FIX-PD04: Boundary Section Helper Methods
+    # ========================================================================
+
+    def _extract_boundaries_section(self, content: str) -> Optional[str]:
+        """
+        Extract the boundaries section from content.
+
+        TASK-FIX-PD04: Used to detect if existing boundaries are generic.
+
+        Args:
+            content: Full file content
+
+        Returns:
+            Boundaries section content (from "## Boundaries" to next "##"), or None
+        """
+        lines = content.split('\n')
+        in_boundaries = False
+        boundaries_lines = []
+
+        for line in lines:
+            if line.strip().startswith('## Boundaries'):
+                in_boundaries = True
+                boundaries_lines.append(line)
+            elif in_boundaries:
+                # Check if we've hit the next section
+                if line.strip().startswith('## ') and not line.strip().startswith('### '):
+                    break
+                boundaries_lines.append(line)
+
+        if boundaries_lines:
+            return '\n'.join(boundaries_lines)
+        return None
+
+    def _remove_boundaries_section(self, lines: list) -> list:
+        """
+        Remove the boundaries section from lines.
+
+        TASK-FIX-PD04: Used to remove generic boundaries before inserting AI-specific.
+
+        Args:
+            lines: List of lines from content
+
+        Returns:
+            List of lines with boundaries section removed
+        """
+        new_lines = []
+        in_boundaries = False
+
+        for line in lines:
+            if line.strip().startswith('## Boundaries'):
+                in_boundaries = True
+                continue
+            elif in_boundaries:
+                # Check if we've hit the next section
+                if line.strip().startswith('## ') and not line.strip().startswith('### '):
+                    in_boundaries = False
+                    new_lines.append(line)
+                # Skip lines while in boundaries section
+                continue
+            else:
+                new_lines.append(line)
+
+        return new_lines
 
     # ========================================================================
     # TASK-PD-001: Progressive Disclosure Methods (Split File Architecture)
@@ -607,8 +692,9 @@ class EnhancementApplier:
         # Use existing merge logic to preserve structure
         merged_content = self._merge_content(original_content, enhancement)
 
-        # Add loading instruction if extended file exists
-        if has_extended:
+        # TASK-FIX-PD04: Add loading instruction if extended file exists
+        # Only add if not already present (prevents duplicates)
+        if has_extended and "## Extended Documentation" not in merged_content:
             loading_instruction = self._format_loading_instruction(agent_name)
             merged_content = self._append_section(merged_content, loading_instruction)
 
@@ -662,8 +748,11 @@ class EnhancementApplier:
         lines.append("")
 
         # Extended sections in consistent order
+        # TASK-FIX-PD04: Added 'related_templates' and 'examples' to match AI response formats
         section_order = [
+            'related_templates',     # Templates first for context
             'detailed_examples',
+            'examples',              # AI alternate name for detailed_examples
             'best_practices',
             'anti_patterns',
             'cross_stack',

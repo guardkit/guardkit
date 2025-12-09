@@ -1,79 +1,121 @@
 ---
 id: TASK-FIX-PD04
-title: Fix auto-generated template file naming (.j.template)
+title: Fix progressive disclosure section name mapping in applier.py
 status: completed
-created: 2025-12-07T12:05:00Z
-updated: 2025-12-07T14:35:00Z
-completed: 2025-12-07T14:35:00Z
-priority: high
-tags: [template-create, completeness-validator, bug-fix]
-complexity: 3
-related_tasks: [TASK-REV-TC02]
-test_results:
-  status: passed
-  coverage: 84
-  last_run: 2025-12-07T14:30:00Z
+task_type: implementation
+created: 2025-12-09
+completed: 2025-12-09
 completed_location: tasks/completed/TASK-FIX-PD04/
+priority: high
+tags: [progressive-disclosure, agent-enhance, bug-fix]
+related_tasks: [TASK-REV-AB89, TASK-FIX-PD03, TASK-FIX-DBFA]
+estimated_complexity: 3
+organized_files: [TASK-FIX-PD04.md]
 ---
 
-# Task: Fix Auto-Generated Template File Naming
+# TASK-FIX-PD04: Fix Progressive Disclosure Section Name Mapping
 
-## Description
+## Summary
 
-The completeness validator auto-generates CRUD templates with incorrect file extensions:
+Fix the section name mapping in `applier.py` so that AI-generated content is correctly routed to extended files. Currently, AI returns sections named `examples` and `related_templates`, but these are not recognized by the applier's `EXTENDED_SECTIONS` constant or `section_order` list, causing the extended file to be nearly empty.
 
-**Current (incorrect)**:
-- `Createquery.j.template`
-- `Deletequery.j.template`
-- `Updatequery.j.template`
+## Background
 
-**Expected**:
-- `Create-query.js.template`
-- `Delete-query.js.template`
-- `Update-query.js.template`
-
-Or following the entity naming pattern used by the source file.
-
-## Root Cause
-
-The `_estimate_file_path` method in `completeness_validator.py` had two issues:
-
-1. **Truncated file extensions**: Used `Path.suffix` which only returns the last extension (`.template`), not compound extensions like `.js.template`. Fixed by using `Path.suffixes` and joining them.
-
-2. **Didn't detect naming patterns correctly**: When detecting if a reference file used hyphenated naming (like `Read-query`), it compared against the canonical operation name (`Read`) rather than the actual prefix used in the filename (`Get` for `Read` operations). Fixed by looking up the actual prefix from `CRUD_PATTERNS`.
+From TASK-REV-AB89 code quality review:
+- Extended file has only 11 lines instead of 50+
+- AI-generated content (`examples`, `related_templates`) was lost
+- Root cause: `_build_extended_content()` only outputs sections matching its hardcoded `section_order` list
 
 ## Acceptance Criteria
 
-- [x] Auto-generated templates have correct file extensions (.js.template for JS)
-- [x] Template naming follows consistent pattern (Operation-entity.ext.template)
-- [x] Re-run template-create produces correctly named files
+### AC1: Update EXTENDED_SECTIONS Constant
+- [x] Add `examples` to EXTENDED_SECTIONS list (line ~48-56)
+- [x] Add `related_templates` to EXTENDED_SECTIONS list
+- [x] Consider adding other common AI section names
 
-## Files Modified
+### AC2: Update section_order in _build_extended_content()
+- [x] Add `examples` to section_order (line ~665-673)
+- [x] Add `related_templates` to section_order
+- [x] Ensure order is logical (templates first, then examples)
 
-- `installer/global/lib/template_generator/completeness_validator.py` - Fixed `_estimate_file_path` method
+### AC3: Fix Duplicate Loading Instruction
+- [x] Add deduplication check in `_build_core_content()` before appending loading instruction
+- [x] Check if "## Extended Documentation" already exists in merged content
 
-## Tests Added
+### AC4: Preserve AI-Generated Boundaries
+- [x] In `_merge_content()`, detect if existing boundaries are generic
+- [x] Prioritize AI boundaries over generic fallback via `is_generic_boundaries()`
+- [x] Only use generic boundaries if AI boundaries are empty/missing
 
-- `tests/unit/test_completeness_validator.py::TestEstimateFilePath` - 9 new tests:
-  - `test_compound_extension_js_template` - Verifies .js.template preserved
-  - `test_compound_extension_ts_template` - Verifies .ts.template preserved
-  - `test_compound_extension_cs_template` - Verifies .cs.template preserved
-  - `test_hyphenated_naming_pattern_preserved` - Verifies Read-query → Create-query
-  - `test_underscore_naming_pattern_preserved` - Verifies Read_user → Update_user
-  - `test_pascal_case_naming_pattern` - Verifies PascalCase preserved
-  - `test_directory_preserved` - Verifies directory path from reference
-  - `test_simple_template_extension` - Verifies single .template extension
-  - `test_triple_extension_preserved` - Verifies .spec.ts.template preserved
+### AC5: Integration Test
+- [x] Verified EXTENDED_SECTIONS contains `examples` and `related_templates`
+- [x] Verified section_order includes new sections in correct order
+- [x] Verified duplicate loading instruction check in place
+- [x] Verified `is_generic_boundaries()` function and helper methods exist
 
-## Test Results
+## Implementation Details
 
+### File: installer/global/lib/agent_enhancement/applier.py
+
+**Change 1: Update EXTENDED_SECTIONS (lines 48-56)**
+```python
+EXTENDED_SECTIONS = [
+    'detailed_examples',
+    'examples',              # AI may use this instead of detailed_examples
+    'best_practices',
+    'anti_patterns',
+    'cross_stack',
+    'mcp_integration',
+    'troubleshooting',
+    'technology_specific',
+    'related_templates',     # AI-generated template references
+]
 ```
-✅ 25 tests passed
-   - 16 existing tests: PASSED
-   - 9 new tests: PASSED
-   - Coverage: 84% for completeness_validator.py
+
+**Change 2: Update section_order (lines 665-673)**
+```python
+section_order = [
+    'related_templates',     # Templates first for context
+    'detailed_examples',
+    'examples',              # AI alternate name
+    'best_practices',
+    'anti_patterns',
+    'cross_stack',
+    'mcp_integration',
+    'troubleshooting',
+    'technology_specific',
+]
 ```
 
-## Related
+**Change 3: Fix duplicate loading instruction (around line 612)**
+```python
+if has_extended and "## Extended Documentation" not in merged_content:
+    loading_instruction = self._format_loading_instruction(agent_name)
+    merged_content = self._append_section(merged_content, loading_instruction)
+```
 
-- Review: TASK-REV-TC02
+**Change 4: Preserve AI boundaries in apply_with_split() (around line 380)**
+```python
+# Step 3: Build and write core content - preserve AI boundaries
+# Check if AI provided boundaries before using generic
+has_ai_boundaries = (
+    'boundaries' in core_sections and
+    core_sections.get('boundaries', '').strip()
+)
+```
+
+## Test Verification
+
+After implementation, re-run the test scenario:
+```bash
+/agent-enhance docs/reviews/progressive-disclosure/svelte5-component-specialist --hybrid
+```
+
+Expected results:
+- Extended file: 50+ lines with examples and related_templates
+- Core file: No duplicate "## Extended Documentation" sections
+- Boundaries: Svelte 5-specific (from AI), not generic
+
+## Review Report Reference
+
+Full analysis: [.claude/reviews/TASK-REV-AB89-review-report.md](../../.claude/reviews/TASK-REV-AB89-review-report.md)

@@ -19,7 +19,8 @@ import re
 __all__ = [
     'find_boundaries_insertion_point',
     'validate_boundaries_format',
-    'generate_generic_boundaries'
+    'generate_generic_boundaries',
+    'is_generic_boundaries',  # TASK-FIX-PD04: Added to detect generic vs AI boundaries
 ]
 
 
@@ -460,3 +461,66 @@ def _default_boundaries_template() -> str:
 - ⚠️ Conflicting requirements or constraints (decision needed)
 - ⚠️ Uncertain approach with multiple valid options (human judgment)
 """
+
+
+# TASK-FIX-PD04: Generic boundary detection markers
+# These phrases appear in generic boundaries but not in AI-specific boundaries
+_GENERIC_BOUNDARY_MARKERS = [
+    "Execute core responsibilities as defined in Purpose section",
+    "Follow established patterns in technology stack",
+    "Validate inputs before processing",
+    "Provide clear, actionable feedback",
+    "Document assumptions and constraints",
+    # From testing template
+    "Run build verification before tests",
+    "Execute in technology-specific test runner",
+    # From architecture template
+    "Evaluate against SOLID principles",
+    "Assess design patterns for appropriateness",
+    # From code_review template
+    "Verify all tests pass before approval",
+    "Check code style consistency",
+    # From orchestration template
+    "Execute phases in defined sequence",
+    "Validate prerequisites before phase execution",
+]
+
+
+def is_generic_boundaries(boundaries_content: str) -> bool:
+    """
+    Detect if boundaries content is generic (template-based) or AI-specific.
+
+    TASK-FIX-PD04: Used to determine if AI-generated boundaries should replace
+    existing generic boundaries during merge.
+
+    Generic boundaries contain recognizable template phrases that are not
+    technology-specific. AI-generated boundaries contain domain-specific
+    terminology (e.g., "onMount", "reactive declarations", "Firestore listeners").
+
+    Args:
+        boundaries_content: The boundaries section content to analyze
+
+    Returns:
+        True if boundaries appear to be generic (template-based)
+        False if boundaries appear to be AI-generated (technology-specific)
+
+    Example:
+        >>> generic = "## Boundaries\\n### ALWAYS\\n- ✅ Execute core responsibilities..."
+        >>> is_generic_boundaries(generic)
+        True
+
+        >>> ai_specific = "## Boundaries\\n### ALWAYS\\n- ✅ Use onMount lifecycle hook..."
+        >>> is_generic_boundaries(ai_specific)
+        False
+    """
+    if not boundaries_content:
+        return False
+
+    # Check if any generic marker phrases appear in the content
+    content_lower = boundaries_content.lower()
+
+    for marker in _GENERIC_BOUNDARY_MARKERS:
+        if marker.lower() in content_lower:
+            return True
+
+    return False
