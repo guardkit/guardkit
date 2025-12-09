@@ -230,7 +230,7 @@ class AgentEnhanceOrchestrator:
         if self.bridge_invoker and not self.bridge_invoker.has_response():
             raise ValueError(
                 "Cannot resume - no agent response file found\n"
-                "Expected: .agent-response.json\n"
+                f"Expected: {self.bridge_invoker.response_file}\n"
                 "The agent may not have completed yet."
             )
 
@@ -311,18 +311,19 @@ class AgentEnhanceOrchestrator:
                 logger.info("Cleaned up state file")
 
         # Clean up agent bridge files if they exist
-        request_file = Path(".agent-request.json")
-        response_file = Path(".agent-response.json")
+        if self.bridge_invoker:
+            request_file = self.bridge_invoker.request_file
+            response_file = self.bridge_invoker.response_file
 
-        if request_file.exists():
-            request_file.unlink()
-            if self.verbose:
-                logger.info("Cleaned up agent request file")
+            if request_file.exists():
+                request_file.unlink()
+                if self.verbose:
+                    logger.info("Cleaned up agent request file")
 
-        if response_file.exists():
-            response_file.unlink()
-            if self.verbose:
-                logger.info("Cleaned up agent response file")
+            if response_file.exists():
+                response_file.unlink()
+                if self.verbose:
+                    logger.info("Cleaned up agent response file")
 
     # ========================================================================
     # TASK-FIX-DBFA: Post-AI Split Detection and Application
