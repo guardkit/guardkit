@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Protocol, Union
 
-from pathlib import Path as PathLib
-sys.path.insert(0, str(PathLib(__file__).parent.parent))
-from state_paths import get_phase_request_file, get_phase_response_file
+# TASK-FIX-STATE03: Use relative import for proper Python package structure
+# This works in both dev (installer/global/lib/) and prod (~/.agentecflow/commands/lib/)
+from ..state_paths import get_phase_request_file, get_phase_response_file
 
 logger = logging.getLogger(__name__)
 

@@ -18,10 +18,9 @@ import json
 import logging
 from datetime import datetime
 
-import sys
-from pathlib import Path as PathLib
-sys.path.insert(0, str(PathLib(__file__).parent.parent.parent / "lib"))
-from state_paths import get_state_file, AGENT_ENHANCE_STATE
+# TASK-FIX-STATE03: Use relative import for proper Python package structure
+# This works in both dev (installer/global/lib/) and prod (~/.agentecflow/commands/lib/)
+from ..state_paths import get_state_file, AGENT_ENHANCE_STATE
 
 logger = logging.getLogger(__name__)
 

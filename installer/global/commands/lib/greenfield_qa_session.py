@@ -23,10 +23,20 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import List, Optional
 
-import sys
-from pathlib import Path as PathLib
-sys.path.insert(0, str(PathLib(__file__).parent.parent.parent / "lib"))
-from state_paths import get_state_file, TEMPLATE_SESSION, TEMPLATE_PARTIAL_SESSION
+# TASK-FIX-STATE03: Use conditional import for proper Python package structure
+# In production, state_paths.py is in the same directory (~/.agentecflow/commands/lib/)
+# In development, it's in a different directory (installer/global/lib/)
+try:
+    # Production: both files in ~/.agentecflow/commands/lib/
+    from .state_paths import get_state_file, TEMPLATE_SESSION, TEMPLATE_PARTIAL_SESSION
+except ImportError:
+    # Development: state_paths.py is in installer/global/lib/
+    import sys
+    from pathlib import Path
+    _lib_dir = Path(__file__).parent.parent.parent / "lib"
+    if str(_lib_dir) not in sys.path:
+        sys.path.insert(0, str(_lib_dir))
+    from state_paths import get_state_file, TEMPLATE_SESSION, TEMPLATE_PARTIAL_SESSION
 
 try:
     import inquirer

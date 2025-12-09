@@ -11,10 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-import sys
-from pathlib import Path as PathLib
-sys.path.insert(0, str(PathLib(__file__).parent.parent))
-from state_paths import get_state_file, TEMPLATE_CREATE_STATE
+# TASK-FIX-STATE03: Use relative import for proper Python package structure
+# This works in both dev (installer/global/lib/) and prod (~/.agentecflow/commands/lib/)
+from ..state_paths import get_state_file, TEMPLATE_CREATE_STATE
 
 
 @dataclass
