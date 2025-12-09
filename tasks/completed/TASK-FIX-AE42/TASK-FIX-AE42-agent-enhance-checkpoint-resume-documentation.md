@@ -1,17 +1,34 @@
 ---
 id: TASK-FIX-AE42
 title: "Fix /agent-enhance checkpoint-resume documentation for exit code 42 handling"
-status: in_review
+status: completed
 task_type: implementation
 created: 2025-12-09
 updated: 2025-12-09
+completed: 2025-12-09
 priority: high
 tags: [agent-enhance, checkpoint-resume, documentation, exit-code-42, agent-response-format]
 estimated_complexity: 5
 related_tasks: [TASK-FIX-STATE03, TASK-FIX-267C]
+verification:
+  tested_with: svelte5-component-specialist.md
+  result: success
+  warnings: none
+  retries_needed: 0
 ---
 
 # TASK-FIX-AE42: Fix /agent-enhance Checkpoint-Resume Documentation
+
+## Completion Summary
+
+**Status**: ✅ COMPLETED
+
+The documentation fix was verified effective through actual use. The `/agent-enhance kartlog/svelte5-component-specialist --hybrid` command:
+- Correctly wrote response to `.agent-response-phase8.json` (not `.agent-response.json`)
+- Used proper AgentResponse envelope format
+- Resumed successfully with `✓ Agent response loaded`
+- No "auto-wrapped" warnings
+- Generated both core and extended files successfully
 
 ## Summary
 
@@ -172,24 +189,24 @@ Added new "Phase-Specific Response Files" section near the top:
 - [x] Existing backward compatibility in `invoker.py` remains as safety net
 - [x] No changes to Python scripts needed
 
-## Testing Strategy
+## Verification Results
 
-### Manual Verification
-1. Run `/agent-enhance` on a test agent
-2. When exit code 42 returned, follow new documentation
-3. Verify response file is written correctly on first attempt
-4. Verify `--resume` completes successfully without warnings
+### Manual Verification (Post-Fix)
+1. ✅ Run `/agent-enhance` on `svelte5-component-specialist.md`
+2. ✅ Exit code 42 returned, documentation followed
+3. ✅ Response file written correctly on first attempt
+4. ✅ `--resume` completed successfully without warnings
 
 ### Documentation Review
-1. Verify all file paths are correct
-2. Verify JSON examples are valid JSON
-3. Verify cross-references between documents are accurate
+1. ✅ All file paths are correct
+2. ✅ JSON examples are valid JSON
+3. ✅ Cross-references between documents are accurate
 
 ## Definition of Done
 
 - [x] All three documentation files updated
-- [ ] No "auto-wrapped" warnings during normal execution (requires manual testing)
-- [ ] Exit code 42 handling succeeds on first attempt (requires manual testing)
+- [x] No "auto-wrapped" warnings during normal execution
+- [x] Exit code 42 handling succeeds on first attempt
 - [x] Documentation reviewed for accuracy
 
 ## Notes
@@ -201,7 +218,8 @@ The backward compatibility code in `invoker.py` should remain as a safety net bu
 
 ## References
 
-- Evidence: `docs/reviews/progressive-disclosure/agent-enhance-output/output.md`
+- Evidence (pre-fix): `docs/reviews/progressive-disclosure/agent-enhance-output/output.md` (original firestore-crud-specialist run)
+- Verification (post-fix): `docs/reviews/progressive-disclosure/agent-enhance-output/output.md` (svelte5-component-specialist run)
 - Agent Response Format Spec: `docs/reference/agent-response-format.md`
 - Agent Content Enhancer: `installer/global/agents/agent-content-enhancer.md`
 - Agent Enhance Command: `installer/global/commands/agent-enhance.md`
