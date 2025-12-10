@@ -34,8 +34,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-# Add installer/global/commands to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands"))
+# Add installer/core/commands to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands"))
 
 # Import the module under test
 from lib import feature_detection

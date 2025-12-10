@@ -116,8 +116,8 @@ Next: Review IMPLEMENTATION-GUIDE.md and start with Wave 1
 
 ## Files to Create/Modify
 
-- `installer/global/commands/task-review.md` (MODIFY - add enhanced [I]mplement)
-- `installer/global/lib/implement_orchestrator.py` (NEW - orchestration logic)
+- `installer/core/commands/task-review.md` (MODIFY - add enhanced [I]mplement)
+- `installer/core/lib/implement_orchestrator.py` (NEW - orchestration logic)
 
 ## Test Scenarios
 

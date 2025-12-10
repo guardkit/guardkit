@@ -13,7 +13,7 @@ from unittest.mock import Mock, MagicMock, patch
 from dataclasses import dataclass
 
 # Add lib directory to path
-lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "global"
+lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "core"
 commands_lib_path = lib_path / "commands" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
@@ -21,9 +21,9 @@ if str(commands_lib_path) not in sys.path:
     sys.path.insert(0, str(commands_lib_path))
 
 # Import modules using importlib to avoid 'global' keyword issue
-_orchestrator_module = importlib.import_module('installer.global.commands.lib.template_create_orchestrator')
-_state_manager_module = importlib.import_module('installer.global.lib.agent_bridge.state_manager')
-_invoker_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+_orchestrator_module = importlib.import_module('installer.core.commands.lib.template_create_orchestrator')
+_state_manager_module = importlib.import_module('installer.core.lib.agent_bridge.state_manager')
+_invoker_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
 
 TemplateCreateOrchestrator = _orchestrator_module.TemplateCreateOrchestrator
 OrchestrationConfig = _orchestrator_module.OrchestrationConfig

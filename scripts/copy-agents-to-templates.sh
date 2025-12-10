@@ -8,7 +8,7 @@ set -e
 # Get the directory of this script
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 AI_ENGINEER_DIR="$(dirname "$SCRIPT_DIR")"
-TEMPLATES_DIR="$AI_ENGINEER_DIR/installer/global/templates"
+TEMPLATES_DIR="$AI_ENGINEER_DIR/installer/core/templates"
 SOURCE_AGENTS_DIR="$AI_ENGINEER_DIR/.claude/agents"
 
 echo "Copying agents to all templates..."

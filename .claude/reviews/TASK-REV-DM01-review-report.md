@@ -6,7 +6,7 @@
 
 **Root Cause Identified**: The discovery metadata fields are **never requested from the AI** in the prompt, and there is **no code path** to generate or inject these fields anywhere in the enhancement pipeline.
 
-**Fix Location**: `installer/global/lib/agent_enhancement/prompt_builder.py` (primary) with supporting changes in `parser.py` and `applier.py`.
+**Fix Location**: `installer/core/lib/agent_enhancement/prompt_builder.py` (primary) with supporting changes in `parser.py` and `applier.py`.
 
 **Estimated Complexity**: 4/10 (Medium - requires prompt changes + JSON schema updates + applier logic)
 
@@ -25,7 +25,7 @@
 
 ### Finding 1: Prompt Builder Never Requests Discovery Metadata
 
-**Location**: [prompt_builder.py:69-151](installer/global/lib/agent_enhancement/prompt_builder.py#L69-L151)
+**Location**: [prompt_builder.py:69-151](installer/core/lib/agent_enhancement/prompt_builder.py#L69-L151)
 
 **Evidence**: The JSON schema in `prompt_builder.py` lines 86-114 specifies only:
 ```json
@@ -51,7 +51,7 @@
 
 ### Finding 2: Parser Does Not Validate or Extract Discovery Metadata
 
-**Location**: [parser.py:139-188](installer/global/lib/agent_enhancement/parser.py#L139-L188)
+**Location**: [parser.py:139-188](installer/core/lib/agent_enhancement/parser.py#L139-L188)
 
 **Evidence**: The `_validate_basic_structure()` method only checks for:
 - `sections` key existence
@@ -63,7 +63,7 @@
 
 ### Finding 3: Applier Has No Logic to Inject Discovery Metadata into Frontmatter
 
-**Location**: [applier.py:151-254](installer/global/lib/agent_enhancement/applier.py#L151-L254)
+**Location**: [applier.py:151-254](installer/core/lib/agent_enhancement/applier.py#L151-L254)
 
 **Evidence**: The `_merge_content()` method:
 1. Preserves existing frontmatter (lines 175-187)
@@ -79,7 +79,7 @@
 
 ### Finding 4: Command Documentation Claims Metadata Generation but Implementation Doesn't Support It
 
-**Location**: [agent-enhance.md:372-400](installer/global/commands/agent-enhance.md#L372-L400)
+**Location**: [agent-enhance.md:372-400](installer/core/commands/agent-enhance.md#L372-L400)
 
 **Evidence**: The documentation states:
 > "As of HAI-001 (Nov 2025), agents enhanced via `/agent-enhance` include **discovery metadata**"
@@ -106,7 +106,7 @@
 
 ### Finding 6: agent-content-enhancer Agent Prompt Also Doesn't Mention Discovery Metadata
 
-**Location**: [agent-content-enhancer.md:114-122](installer/global/agents/agent-content-enhancer.md#L114-L122)
+**Location**: [agent-content-enhancer.md:114-122](installer/core/agents/agent-content-enhancer.md#L114-L122)
 
 **Evidence**: The "Enhancement Structure" section (lines 114-122) defines header structure as:
 ```yaml
@@ -142,7 +142,7 @@ Request Flow:
 
 ### Recommendation 1: Update Prompt Builder Schema (HIGH PRIORITY)
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 
 **Changes Required**:
 1. Add discovery metadata fields to JSON schema (lines 86-114)
@@ -189,7 +189,7 @@ Request Flow:
 
 ### Recommendation 2: Update Applier to Merge Frontmatter Metadata
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 **Changes Required**:
 1. Add method `_merge_frontmatter_metadata(original_content, new_metadata) -> str`
@@ -202,7 +202,7 @@ Request Flow:
 
 ### Recommendation 3: Update Parser to Validate Metadata Structure
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 
 **Changes Required**:
 1. Add `_validate_metadata()` method
@@ -214,7 +214,7 @@ Request Flow:
 
 ### Recommendation 4: Update Agent Documentation
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 
 **Changes Required**:
 1. Add discovery metadata fields to "Enhancement Structure" section
@@ -284,13 +284,13 @@ Request Flow:
 ## Appendix: Files Analyzed
 
 ### Primary Investigation
-- `installer/global/lib/agent_enhancement/prompt_builder.py`
-- `installer/global/lib/agent_enhancement/enhancer.py`
-- `installer/global/lib/agent_enhancement/parser.py`
-- `installer/global/lib/agent_enhancement/applier.py`
-- `installer/global/lib/agent_enhancement/orchestrator.py`
-- `installer/global/agents/agent-content-enhancer.md`
-- `installer/global/commands/agent-enhance.md`
+- `installer/core/lib/agent_enhancement/prompt_builder.py`
+- `installer/core/lib/agent_enhancement/enhancer.py`
+- `installer/core/lib/agent_enhancement/parser.py`
+- `installer/core/lib/agent_enhancement/applier.py`
+- `installer/core/lib/agent_enhancement/orchestrator.py`
+- `installer/core/agents/agent-content-enhancer.md`
+- `installer/core/commands/agent-enhance.md`
 
 ### Evidence Sources
 - `docs/reviews/progressive-disclosure/agent-enhance-output/*.md` (7 files)

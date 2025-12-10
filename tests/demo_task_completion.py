@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 
 # Add lib directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from task_completion_helper import find_task_file, complete_task
 from git_state_helper import get_git_root

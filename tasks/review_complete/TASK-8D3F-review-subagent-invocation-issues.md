@@ -62,12 +62,12 @@ Analyze the MyDrive conversation and `/task-work` command specification to:
    - Final report accuracy
 
 2. **Command Specification**:
-   - `installer/global/commands/task-work.md`
+   - `installer/core/commands/task-work.md`
    - Protocol warnings and enforcement mechanisms
    - Agent selection logic
 
 3. **Agent Discovery System**:
-   - `installer/global/agents/*.md` (frontmatter metadata)
+   - `installer/core/agents/*.md` (frontmatter metadata)
    - Agent selection table in task-work
    - Stack detection logic
 

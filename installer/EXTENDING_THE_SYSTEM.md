@@ -166,7 +166,7 @@ Agents that work with ANY technology stack should be added to **ALL templates**.
 # Copy to ALL templates
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
   cp performance-optimizer.md \
-    /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/$template/agents/
+    /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/$template/agents/
 done
 ```
 
@@ -191,15 +191,15 @@ Agents that only work with ONE technology stack should be added to **THAT TEMPLA
 # Copy to SPECIFIC template only
 # Example: Adding a Python-specific agent
 cp my-python-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/python/agents/
+  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/python/agents/
 
 # Example: Adding a React-specific agent
 cp my-react-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/react/agents/
+  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/react/agents/
 
 # Example: Adding a MAUI-specific agent
 cp my-maui-agent.md \
-  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/agents/
+  /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/agents/
 ```
 
 #### Decision Tree
@@ -238,10 +238,10 @@ Add your agent to the main documentation in `.claude/CLAUDE.md`:
 
 ### Step 4: Create a Command (Optional)
 
-If your agent needs a specific command, create one in `installer/global/commands/`:
+If your agent needs a specific command, create one in `installer/core/commands/`:
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/
+cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/
 ```
 
 Create `optimize-performance.md`:
@@ -272,7 +272,7 @@ Templates provide stack-specific configurations and resources for different proj
 ### Step 1: Create Template Directory Structure
 
 ```bash
-cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/
+cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/
 mkdir -p my-template/{agents,templates}
 ```
 
@@ -321,8 +321,8 @@ project/
 Copy the standard agents to your template:
 
 ```bash
-cp /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/default/agents/*.md \
-   /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/my-template/agents/
+cp /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/default/agents/*.md \
+   /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/my-template/agents/
 ```
 
 ### Step 4: Add Template-Specific Files
@@ -535,11 +535,11 @@ ls ~/.claude/templates/my-template/
 ### Add New Global Agent (Language-Agnostic)
 ```bash
 # 1. Create agent
-vim installer/global/agents/new-global-agent.md
+vim installer/core/agents/new-global-agent.md
 
 # 2. Copy to ALL templates (because it's global)
 for t in default maui react python dotnet-microservice typescript-api fullstack; do
-  cp installer/global/agents/new-global-agent.md installer/global/templates/$t/agents/
+  cp installer/core/agents/new-global-agent.md installer/core/templates/$t/agents/
 done
 
 # 3. Reinstall
@@ -549,11 +549,11 @@ cd installer && ./scripts/install-global.sh
 ### Add New Stack-Specific Agent
 ```bash
 # 1. Create agent
-vim installer/global/agents/python-specific-agent.md
+vim installer/core/agents/python-specific-agent.md
 
 # 2. Copy to SPECIFIC template ONLY (not all templates)
-cp installer/global/agents/python-specific-agent.md \
-   installer/global/templates/python/agents/
+cp installer/core/agents/python-specific-agent.md \
+   installer/core/templates/python/agents/
 
 # 3. Reinstall
 cd installer && ./scripts/install-global.sh
@@ -573,14 +573,14 @@ cd installer && ./scripts/install-global.sh
 ### Add New Template Commands
 ```bash
 # 1. Create template structure
-mkdir -p installer/global/templates/new-template/{agents,templates}
+mkdir -p installer/core/templates/new-template/{agents,templates}
 
 # 2. Add CLAUDE.md
-vim installer/global/templates/new-template/CLAUDE.md
+vim installer/core/templates/new-template/CLAUDE.md
 
 # 3. Copy base agents
-cp installer/global/templates/default/agents/*.md \
-   installer/global/templates/new-template/agents/
+cp installer/core/templates/default/agents/*.md \
+   installer/core/templates/new-template/agents/
 
 # 4. Update init script
 vim installer/scripts/init-claude-project.sh

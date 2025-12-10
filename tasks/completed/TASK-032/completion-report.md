@@ -45,11 +45,11 @@ Successfully implemented all Priority 1 documentation updates from the TASK-012 
    - Features: 8-point checklist, decision tree, 5 anti-patterns, token budgets
 
 ### Files Modified (3)
-2. **installer/global/agents/task-manager.md** (+20 lines)
+2. **installer/core/agents/task-manager.md** (+20 lines)
    - Added: Context7 token budget guidelines
    - Location: Lines 42-62
 
-3. **installer/global/agents/pattern-advisor.md** (+35 lines)
+3. **installer/core/agents/pattern-advisor.md** (+35 lines)
    - Added: Design Patterns MCP guidance
    - Location: Lines 149-183
 

@@ -43,7 +43,7 @@ Code quality review of the `/agent-enhance` output and generated agent files for
 *This extended documentation is part of GuardKit's progressive disclosure system.*
 ```
 
-**Root Cause**: The AI response contained rich content (related_templates, examples, boundaries sections with ~5000+ characters), but the `_categorize_sections()` method in [applier.py:415-481](installer/global/lib/agent_enhancement/applier.py#L415-L481) failed to route content correctly.
+**Root Cause**: The AI response contained rich content (related_templates, examples, boundaries sections with ~5000+ characters), but the `_categorize_sections()` method in [applier.py:415-481](installer/core/lib/agent_enhancement/applier.py#L415-L481) failed to route content correctly.
 
 The AI response used section names:
 - `related_templates` (not in CORE_SECTIONS or EXTENDED_SECTIONS)
@@ -120,7 +120,7 @@ AI enhancement failed after 0.00s: Invalid response format: AgentResponse.__init
 
 ### Recommendation 1: Fix Section Name Mapping (HIGH PRIORITY)
 
-**Action**: Update `EXTENDED_SECTIONS` constant in [applier.py:48-56](installer/global/lib/agent_enhancement/applier.py#L48-L56) to include `examples` and `related_templates`:
+**Action**: Update `EXTENDED_SECTIONS` constant in [applier.py:48-56](installer/core/lib/agent_enhancement/applier.py#L48-L56) to include `examples` and `related_templates`:
 
 ```python
 EXTENDED_SECTIONS = [
@@ -185,9 +185,9 @@ Based on this review:
 | Core output | docs/reviews/progressive-disclosure/agents/svelte5-component-specialist.md |
 | Extended output | docs/reviews/progressive-disclosure/agents/svelte5-component-specialist-ext.md |
 | Session log | docs/reviews/progressive-disclosure/svelte5-component-specialist.md |
-| Applier module | installer/global/lib/agent_enhancement/applier.py |
-| Orchestrator | installer/global/lib/agent_enhancement/orchestrator.py |
-| Enhancer | installer/global/lib/agent_enhancement/enhancer.py |
+| Applier module | installer/core/lib/agent_enhancement/applier.py |
+| Orchestrator | installer/core/lib/agent_enhancement/orchestrator.py |
+| Enhancer | installer/core/lib/agent_enhancement/enhancer.py |
 
 ### B. AI Response Summary
 

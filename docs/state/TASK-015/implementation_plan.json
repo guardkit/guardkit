@@ -19,13 +19,13 @@
   "files": {
     "to_create": [
       {
-        "path": "installer/global/utils/icon-converter.ts",
+        "path": "installer/core/utils/icon-converter.ts",
         "type": "implementation",
         "estimated_loc": 250,
         "purpose": "Icon code conversion utility with Result pattern"
       },
       {
-        "path": "installer/global/tests/utils/icon-converter.test.ts",
+        "path": "installer/core/tests/utils/icon-converter.test.ts",
         "type": "test",
         "estimated_loc": 350,
         "purpose": "Comprehensive test suite with 25+ test cases"
@@ -45,19 +45,19 @@
     ],
     "to_modify": [
       {
-        "path": "installer/global/agents/zeplin-maui-orchestrator.md",
+        "path": "installer/core/agents/zeplin-maui-orchestrator.md",
         "type": "agent",
         "purpose": "Integrate icon conversion in Phase 1",
         "sections_affected": ["Phase 1: Design Extraction"]
       },
       {
-        "path": "installer/global/commands/zeplin-to-maui.md",
+        "path": "installer/core/commands/zeplin-to-maui.md",
         "type": "documentation",
         "purpose": "Update command documentation with icon handling",
         "sections_affected": ["Features", "Quality Gates"]
       },
       {
-        "path": "installer/global/commands/mcp-zeplin.md",
+        "path": "installer/core/commands/mcp-zeplin.md",
         "type": "documentation",
         "purpose": "Reference icon conversion utility",
         "sections_affected": ["Usage Examples"]

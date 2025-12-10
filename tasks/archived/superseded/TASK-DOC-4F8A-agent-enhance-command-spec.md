@@ -18,7 +18,7 @@ review_source: docs/reviews/phase-8-implementation-review.md
 
 ## Problem Statement
 
-The `/agent-enhance` command has no specification document in `installer/global/commands/`. Users and developers lack reference documentation for this command.
+The `/agent-enhance` command has no specification document in `installer/core/commands/`. Users and developers lack reference documentation for this command.
 
 **Review Finding** (Section 6.3, Documentation Gap #3):
 > **Command Spec**: No `agent-enhance.md` in commands/
@@ -26,12 +26,12 @@ The `/agent-enhance` command has no specification document in `installer/global/
 
 ## Current State
 
-**Missing File**: `installer/global/commands/agent-enhance.md`
+**Missing File**: `installer/core/commands/agent-enhance.md`
 
 **Existing Command Specs** (for reference):
-- `installer/global/commands/template-create.md`
-- `installer/global/commands/task-work.md`
-- `installer/global/commands/task-create.md`
+- `installer/core/commands/template-create.md`
+- `installer/core/commands/task-work.md`
+- `installer/core/commands/task-create.md`
 
 **Gap**: No specification for `/agent-enhance` command.
 
@@ -71,7 +71,7 @@ The `/agent-enhance` command has no specification document in `installer/global/
 
 ### File to Create
 
-**Location**: `installer/global/commands/agent-enhance.md`
+**Location**: `installer/core/commands/agent-enhance.md`
 
 **Length**: ~1200-1500 words (similar to other command specs)
 
@@ -404,10 +404,10 @@ File Updated: ~/.agentecflow/templates/my-template/agents/api-service-specialist
 
 ### Implementation
 
-- **Orchestrator**: `installer/global/commands/lib/agent_enhancement/enhancer.py`
-- **Prompt Builder**: `installer/global/commands/lib/agent_enhancement/prompt_builder.py`
-- **Parser**: `installer/global/commands/lib/agent_enhancement/parser.py`
-- **Applier**: `installer/global/commands/lib/agent_enhancement/applier.py`
+- **Orchestrator**: `installer/core/commands/lib/agent_enhancement/enhancer.py`
+- **Prompt Builder**: `installer/core/commands/lib/agent_enhancement/prompt_builder.py`
+- **Parser**: `installer/core/commands/lib/agent_enhancement/parser.py`
+- **Applier**: `installer/core/commands/lib/agent_enhancement/applier.py`
 
 ### Agent Invocation
 

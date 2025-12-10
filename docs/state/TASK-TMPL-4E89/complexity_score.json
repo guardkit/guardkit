@@ -10,7 +10,7 @@
       "max": 3,
       "rationale": "3 files to modify (1 core + 2 test files)",
       "files": [
-        "installer/global/lib/agent_generator/agent_generator.py",
+        "installer/core/lib/agent_generator/agent_generator.py",
         "tests/unit/lib/agent_generator/test_ai_agent_generator.py",
         "tests/integration/lib/test_agent_generator_integration.py"
       ]

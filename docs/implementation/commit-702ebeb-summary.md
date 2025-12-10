@@ -17,7 +17,7 @@ This commit completes TASK-AI-2B37 (AI integration for agent enhancement) and ad
 
 ### 1. Core Implementation (TASK-AI-2B37)
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Changes**: +166 lines, -19 lines (net +147 lines)
 
 #### Key Modifications
@@ -228,8 +228,8 @@ elif self.strategy == "hybrid":
 - **Priority**: MEDIUM
 - **Estimated Effort**: ~1 hour
 - **Files to Modify**:
-  - `installer/global/commands/lib/template_create_orchestrator.py` (Phase 8 output)
-  - `installer/global/commands/template-create.md` (documentation)
+  - `installer/core/commands/lib/template_create_orchestrator.py` (Phase 8 output)
+  - `installer/core/commands/template-create.md` (documentation)
   - `docs/guides/template-creation-guide.md` (if exists)
 
 **Acceptance Criteria**:

@@ -13,13 +13,13 @@ Successfully implemented progressive disclosure architecture for agent enhanceme
 
 ### Files Created
 
-1. **installer/global/lib/agent_enhancement/models.py** (NEW)
+1. **installer/core/lib/agent_enhancement/models.py** (NEW)
    - `AgentEnhancement` TypedDict (type-safe enhancement data)
    - `SplitContent` dataclass (split file metadata)
 
 ### Files Modified
 
-1. **installer/global/lib/agent_enhancement/applier.py**
+1. **installer/core/lib/agent_enhancement/applier.py**
    - Added constants: `CORE_SECTIONS`, `EXTENDED_SECTIONS`
    - Added 10 new methods (6 public/private split methods)
    - Zero changes to existing `apply()` method

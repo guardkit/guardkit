@@ -8,7 +8,7 @@ This document describes the implementation of the Configuration & Metrics System
 
 ### Created Modules
 
-#### 1. Utilities Module (`installer/global/lib/utils/`)
+#### 1. Utilities Module (`installer/core/lib/utils/`)
 
 Shared utilities following DRY principles:
 
@@ -31,7 +31,7 @@ Shared utilities following DRY principles:
   - `get_metrics_file()`: Path to metrics JSONL file
   - `from_env_or_default()`: Environment variable fallback
 
-#### 2. Configuration Module (`installer/global/lib/config/`)
+#### 2. Configuration Module (`installer/core/lib/config/`)
 
 Configuration management with 4-layer precedence:
 
@@ -64,7 +64,7 @@ Configuration management with 4-layer precedence:
   - `set_cli_override()`: Set CLI argument overrides
   - `reload()`: Reload configuration from sources
 
-#### 3. Metrics Module (`installer/global/lib/metrics/`)
+#### 3. Metrics Module (`installer/core/lib/metrics/`)
 
 Metrics tracking and visualization:
 
@@ -148,7 +148,7 @@ Based on architectural review (73/100), the following simplifications were made:
 
 ```python
 # Configuration
-from installer.global.lib.config import PlanReviewConfig
+from installer.core.lib.config import PlanReviewConfig
 
 config = PlanReviewConfig()
 if config.is_enabled():
@@ -157,7 +157,7 @@ if config.is_enabled():
 
 ```python
 # Metrics
-from installer.global.lib.metrics import PlanReviewMetrics
+from installer.core.lib.metrics import PlanReviewMetrics
 
 metrics = PlanReviewMetrics()
 metrics.track_complexity(
@@ -170,7 +170,7 @@ metrics.track_complexity(
 
 ```python
 # Dashboard
-from installer.global.lib.metrics import PlanReviewDashboard
+from installer.core.lib.metrics import PlanReviewDashboard
 
 dashboard = PlanReviewDashboard()
 dashboard.print_dashboard(days=30)
@@ -226,7 +226,7 @@ python3 test_imports.py
 
 ```python
 # Test configuration loading
-from installer.global.lib.config import PlanReviewConfig
+from installer.core.lib.config import PlanReviewConfig
 
 config = PlanReviewConfig()
 print(config.get_threshold(85))  # Should return 'auto_approve'
@@ -235,7 +235,7 @@ print(config.should_force_review(35))  # Should return True (>= 30)
 
 ```python
 # Test metrics tracking
-from installer.global.lib.metrics import PlanReviewMetrics
+from installer.core.lib.metrics import PlanReviewMetrics
 
 metrics = PlanReviewMetrics()
 success = metrics.track_decision(
@@ -251,7 +251,7 @@ print(f"Tracked: {success}")
 ## File Structure
 
 ```
-installer/global/lib/
+installer/core/lib/
 ├── utils/
 │   ├── __init__.py
 │   ├── json_serializer.py      (117 lines)

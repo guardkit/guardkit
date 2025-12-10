@@ -52,7 +52,7 @@ When user runs `/template-create --validate`, Claude Code should:
 3. **Import path issues in orchestrator files**
    - `manifest_generator.py` has incorrect imports
    - Other files may have similar issues
-   - Multiple PYTHONPATH locations needed (taskwright + installer/global)
+   - Multiple PYTHONPATH locations needed (taskwright + installer/core)
 
 4. **Missing __main__ entry point in orchestrator module**
    - `template_create_orchestrator.py` is a module, not a script
@@ -76,8 +76,8 @@ When user runs `/template-create --validate`, Claude Code should:
 
 - [x] All import errors in orchestrator files fixed
 - [x] PYTHONPATH includes both locations:
-  - [x] `/path/to/taskwright` (for `installer.global.*` imports)
-  - [x] `/path/to/taskwright/installer/global` (for `lib.*` imports)
+  - [x] `/path/to/taskwright` (for `installer.core.*` imports)
+  - [x] `/path/to/taskwright/installer/core` (for `lib.*` imports)
 - [x] Imports use consistent patterns across all files
 
 ### Testing Criteria
@@ -111,12 +111,12 @@ When user runs `/template-create --validate`, Claude Code should:
 
 **Questions to answer:**
 - Why do some files use `from lib.codebase_analyzer.models` imports?
-- Why do other files use `from installer.global.lib.*` imports?
+- Why do other files use `from installer.core.lib.*` imports?
 - What PYTHONPATH configuration makes both work?
 - Should all imports be standardized?
 
 **Actions:**
-- [ ] Audit all import statements in `installer/global/` directory
+- [ ] Audit all import statements in `installer/core/` directory
 - [ ] Map import patterns to file locations
 - [ ] Determine correct PYTHONPATH configuration
 - [ ] Document import conventions
@@ -124,7 +124,7 @@ When user runs `/template-create --validate`, Claude Code should:
 ### 3. Module Execution Model
 
 **Questions to answer:**
-- How does `python3 -m installer.global.commands.lib.template_create_orchestrator` work?
+- How does `python3 -m installer.core.commands.lib.template_create_orchestrator` work?
 - What makes a module executable with `-m` flag?
 - Should there be a `__main__.py` file?
 - How are arguments passed to the module?
@@ -169,28 +169,28 @@ When user runs `/template-create --validate`, Claude Code should:
 1. **Audit All Import Statements**
    ```bash
    # Find all Python files in orchestrator
-   find ~/Projects/appmilla_github/taskwright/installer/global -name "*.py" -type f
+   find ~/Projects/appmilla_github/taskwright/installer/core -name "*.py" -type f
 
    # Extract import statements
-   grep -rn "^from " ~/Projects/appmilla_github/taskwright/installer/global/ | grep -v "__pycache__"
+   grep -rn "^from " ~/Projects/appmilla_github/taskwright/installer/core/ | grep -v "__pycache__"
 
    # Group by import pattern
-   grep -rn "^from lib\." ~/Projects/appmilla_github/taskwright/installer/global/
-   grep -rn "^from installer\.global\.lib\." ~/Projects/appmilla_github/taskwright/installer/global/
+   grep -rn "^from lib\." ~/Projects/appmilla_github/taskwright/installer/core/
+   grep -rn "^from installer\.global\.lib\." ~/Projects/appmilla_github/taskwright/installer/core/
    ```
 
 2. **Fix Inconsistent Imports**
    - Choose standard pattern (likely `from lib.*` based on existing code)
    - Update all imports to use consistent pattern
-   - Update PYTHONPATH to include `installer/global/`
+   - Update PYTHONPATH to include `installer/core/`
 
 3. **Test Import Resolution**
    ```bash
    # Test imports work with PYTHONPATH
    cd /tmp
-   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/global" python3 -c "
+   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/core" python3 -c "
    from lib.codebase_analyzer.models import CodebaseAnalysis
-   from installer.global.commands.lib.template_create_orchestrator import *
+   from installer.core.commands.lib.template_create_orchestrator import *
    print('✅ All imports successful')
    "
    ```
@@ -263,8 +263,8 @@ When user runs `/template-create --validate`, Claude Code should:
 1. **Test Orchestrator Module**
    ```bash
    cd /tmp
-   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/global" \
-   python3 -m installer.global.commands.lib.template_create_orchestrator --help
+   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/core" \
+   python3 -m installer.core.commands.lib.template_create_orchestrator --help
 
    # Should show help output without errors
    ```
@@ -272,8 +272,8 @@ When user runs `/template-create --validate`, Claude Code should:
 2. **Test From User Project**
    ```bash
    cd ~/Projects/DeCUK.Mobile.MyDrive
-   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/global" \
-   python3 -m installer.global.commands.lib.template_create_orchestrator --validate --path .
+   PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/core" \
+   python3 -m installer.core.commands.lib.template_create_orchestrator --validate --path .
 
    # Should start Q&A or validation
    ```
@@ -323,26 +323,26 @@ import sys
 
 **Two locations needed:**
 1. **Base**: `/path/to/taskwright`
-   - For imports like: `from installer.global.lib.* import *`
+   - For imports like: `from installer.core.lib.* import *`
 
-2. **Global**: `/path/to/taskwright/installer/global`
+2. **Global**: `/path/to/taskwright/installer/core`
    - For imports like: `from lib.codebase_analyzer.models import *`
 
 **Setting in bash command:**
 ```bash
-PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/global" python3 -m ...
+PYTHONPATH="/path/to/taskwright:/path/to/taskwright/installer/core" python3 -m ...
 ```
 
 ### Import Pattern Standards
 
 **Current patterns found:**
 - `from lib.codebase_analyzer.models import X` (most files)
-- `from installer.global.lib.codebase_analyzer.models import X` (some files)
+- `from installer.core.lib.codebase_analyzer.models import X` (some files)
 - `from .models import X` (relative imports)
 
 **Standard pattern** (to be decided):
 - Use `from lib.*` throughout
-- Requires PYTHONPATH to include `installer/global/`
+- Requires PYTHONPATH to include `installer/core/`
 
 ---
 
@@ -364,7 +364,7 @@ cd ~/Projects/DeCUK.Mobile.MyDrive
 ### Test Case 2: Import Resolution
 ```bash
 cd /tmp
-PYTHONPATH="<discovered_paths>" python3 -m installer.global.commands.lib.template_create_orchestrator --help
+PYTHONPATH="<discovered_paths>" python3 -m installer.core.commands.lib.template_create_orchestrator --help
 
 # Expected:
 # ✅ Module loads successfully

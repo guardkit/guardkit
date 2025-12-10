@@ -52,8 +52,8 @@ mkdir agents
 
 # Copy verified agents (from TASK-SHA-001 list)
 # Example (replace with actual verified list):
-cp ../guardkit/installer/global/agents/code-reviewer.md agents/
-cp ../guardkit/installer/global/agents/test-orchestrator.md agents/
+cp ../guardkit/installer/core/agents/code-reviewer.md agents/
+cp ../guardkit/installer/core/agents/test-orchestrator.md agents/
 # ... copy others from verified list
 ```
 

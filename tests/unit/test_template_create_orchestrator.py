@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import tempfile
 
 # Add lib directory to path
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core"
 commands_lib_path = lib_path / "commands" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
@@ -397,7 +397,7 @@ def test_phase5_agent_recommendation_success(mock_analysis, mock_agents, monkeyp
     # Mock importlib.import_module to return a fake agent_scanner module
     original_import_module = importlib.import_module
     def mock_import_module(name, *args, **kwargs):
-        if name == 'installer.global.lib.agent_scanner':
+        if name == 'installer.core.lib.agent_scanner':
             mock_module = Mock()
             mock_scanner_inst = Mock()
             mock_scanner_inst.scan.return_value = Mock()  # mock inventory
@@ -887,7 +887,7 @@ def test_phase5_agent_recommendation_exception_handling(mock_analysis, monkeypat
     # Mock importlib.import_module to return a fake agent_scanner module
     original_import_module = importlib.import_module
     def mock_import_module(name, *args, **kwargs):
-        if name == 'installer.global.lib.agent_scanner':
+        if name == 'installer.core.lib.agent_scanner':
             mock_module = Mock()
             mock_scanner_inst = Mock()
             mock_scanner_inst.scan.return_value = Mock()  # mock inventory

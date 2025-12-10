@@ -30,7 +30,7 @@ class AgentSource(Enum):
     """Agent source types"""
     CUSTOM = "custom"          # .claude/agents/ (highest priority)
     TEMPLATE = "template"      # template/agents/
-    GLOBAL = "global"          # installer/global/agents/
+    GLOBAL = "global"          # installer/core/agents/
     GENERATED = "generated"    # AI-generated
     EXTERNAL = "external"      # subagents.cc, GitHub (lowest priority)
 
@@ -94,7 +94,7 @@ class AgentInventory:
       "name": "architectural-reviewer",
       "source": "global",
       "priority": 1,
-      "path": "installer/global/agents/architectural-reviewer.md",
+      "path": "installer/core/agents/architectural-reviewer.md",
       "capabilities": ["architecture", "review", "solid"]
     }
   ],

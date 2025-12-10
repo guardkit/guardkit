@@ -212,7 +212,7 @@ Version? 1.0.0
 
 **Expected Output**:
 ```
-installer/global/templates/realworld-react-redux/
+installer/core/templates/realworld-react-redux/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md
@@ -237,7 +237,7 @@ fi
 **Review Validation Report**:
 ```bash
 # Use Read tool
-cat installer/global/templates/realworld-react-redux/validation-report.md
+cat installer/core/templates/realworld-react-redux/validation-report.md
 ```
 
 **Check Quality Score**:
@@ -247,7 +247,7 @@ cat installer/global/templates/realworld-react-redux/validation-report.md
 **Review Manifest**:
 ```bash
 # Check placeholders are correct
-cat installer/global/templates/realworld-react-redux/manifest.json
+cat installer/core/templates/realworld-react-redux/manifest.json
 ```
 
 **Verify Placeholders**:
@@ -471,7 +471,7 @@ realworld-react/
 
 ### Structure
 ```
-installer/global/templates/realworld-react-redux/
+installer/core/templates/realworld-react-redux/
 ├── manifest.json (placeholders defined)
 ├── CLAUDE.md (pattern documentation)
 ├── README.md (template usage guide)
@@ -603,7 +603,7 @@ installer/global/templates/realworld-react-redux/
 ### Team Use
 ```bash
 # Repository location (requires --output-location=repo)
-installer/global/templates/your-template/
+installer/core/templates/your-template/
 ```
 
 ### Public Distribution
@@ -655,7 +655,7 @@ installer/global/templates/your-template/
 ## Deliverables
 
 1. **Source Codebase Selection Document** (`source-codebase-selection.md`)
-2. **Extracted Template** (`installer/global/templates/[template-name]/`)
+2. **Extracted Template** (`installer/core/templates/[template-name]/`)
 3. **Validation Report** (≥8.0/10 score)
 4. **Blog Post** (`custom-template-extraction-blog.md`)
 5. **Video Script** (`custom-template-extraction-video.md`)

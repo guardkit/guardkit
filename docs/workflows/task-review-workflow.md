@@ -846,6 +846,6 @@ The decision mode will evaluate trade-offs and provide unified recommendation.
 5. Iterative refinement via [R]evise option
 
 **Next Steps:**
-- Read command specification: `installer/global/commands/task-review.md`
+- Read command specification: `installer/core/commands/task-review.md`
 - Review CLAUDE.md for integration details
 - Practice with sample review tasks

@@ -11,7 +11,7 @@
 
   "files_to_modify": [
     {
-      "path": "installer/global/lib/agent_generator/agent_generator.py",
+      "path": "installer/core/lib/agent_generator/agent_generator.py",
       "changes": "Add AI-powered agent detection methods",
       "lines_added": 225,
       "methods_added": [

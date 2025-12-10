@@ -162,7 +162,7 @@ Comprehensive debug logging plan documented in:
 
 ## Key Code Locations
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
 
 **Critical methods**:
 - Line ~145: `run()` - routing logic

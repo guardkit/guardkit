@@ -37,9 +37,9 @@ requirements:
   - REQ-MAUI-TEMPLATE-002
 related_documents:
   - docs/shared/maui-template-architecture.md
-  - installer/global/templates/maui/templates/Repository.cs
-  - installer/global/templates/maui/templates/IRepository.cs
-  - installer/global/templates/maui/templates/RepositoryTests.cs
+  - installer/core/templates/maui/templates/Repository.cs
+  - installer/core/templates/maui/templates/IRepository.cs
+  - installer/core/templates/maui/templates/RepositoryTests.cs
 tags:
   - maui
   - template
@@ -62,8 +62,8 @@ Part of the MAUI template migration Phase 2 (Agent Creation). This agent is resp
 ## Acceptance Criteria
 
 ### 1. Agent File Creation
-- [ ] Create `installer/global/templates/maui-appshell/agents/maui-repository-specialist.md`
-- [ ] Create `installer/global/templates/maui-navigationpage/agents/maui-repository-specialist.md` (identical content)
+- [ ] Create `installer/core/templates/maui-appshell/agents/maui-repository-specialist.md`
+- [ ] Create `installer/core/templates/maui-navigationpage/agents/maui-repository-specialist.md` (identical content)
 - [ ] Follow standard agent markdown format with frontmatter
 
 ### 2. Agent Frontmatter
@@ -382,17 +382,17 @@ public async Task<ErrorOr<Product>> GetByIdAsync(int id)
 ## Related Files
 
 ### Reference Templates
-- `installer/global/templates/maui/templates/IRepository.cs` - Interface template
-- `installer/global/templates/maui/templates/Repository.cs` - Implementation template (Realm)
-- `installer/global/templates/maui/templates/RepositoryTests.cs` - Test template
+- `installer/core/templates/maui/templates/IRepository.cs` - Interface template
+- `installer/core/templates/maui/templates/Repository.cs` - Implementation template (Realm)
+- `installer/core/templates/maui/templates/RepositoryTests.cs` - Test template
 
 ### Agent Reference
-- `installer/global/templates/maui/agents/maui-viewmodel-specialist.md` - Format reference
-- `installer/global/templates/maui/agents/maui-usecase-specialist.md` - Collaboration patterns
+- `installer/core/templates/maui/agents/maui-viewmodel-specialist.md` - Format reference
+- `installer/core/templates/maui/agents/maui-usecase-specialist.md` - Collaboration patterns
 
 ### Documentation
 - `docs/shared/maui-template-architecture.md` - Architecture patterns
-- `installer/global/templates/maui/CLAUDE.md` - Project context
+- `installer/core/templates/maui/CLAUDE.md` - Project context
 
 ## Implementation Notes
 

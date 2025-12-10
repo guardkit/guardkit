@@ -45,7 +45,7 @@ for template in react-typescript fastapi-python nextjs-fullstack react-fastapi-m
     core_total=0
     ext_total=0
 
-    for f in installer/global/templates/$template/agents/*.md; do
+    for f in installer/core/templates/$template/agents/*.md; do
         if [[ ! "$f" == *"-ext.md" ]]; then
             core_size=$(wc -c < "$f")
             core_total=$((core_total + core_size))
@@ -81,7 +81,7 @@ core_total=0
 ext_total=0
 
 for template in react-typescript fastapi-python nextjs-fullstack react-fastapi-monorepo; do
-    for f in installer/global/templates/$template/agents/*.md; do
+    for f in installer/core/templates/$template/agents/*.md; do
         if [[ ! "$f" == *"-ext.md" ]]; then
             core_size=$(wc -c < "$f")
             core_total=$((core_total + core_size))
@@ -119,7 +119,7 @@ for template in react-typescript fastapi-python nextjs-fullstack react-fastapi-m
     echo ""
     echo "Template: $template"
 
-    for f in installer/global/templates/$template/agents/*.md; do
+    for f in installer/core/templates/$template/agents/*.md; do
         if [[ ! "$f" == *"-ext.md" ]]; then
             if grep -q "## Extended Reference" "$f"; then
                 echo "  ✓ $(basename $f)"
@@ -143,11 +143,11 @@ for template in react-typescript fastapi-python nextjs-fullstack react-fastapi-m
     echo ""
     echo "Template: $template"
 
-    for bak in installer/global/templates/$template/agents/*.md.bak; do
+    for bak in installer/core/templates/$template/agents/*.md.bak; do
         if [ -f "$bak" ]; then
             base=$(basename "$bak" .md.bak)
-            core="installer/global/templates/$template/agents/${base}.md"
-            ext="installer/global/templates/$template/agents/${base}-ext.md"
+            core="installer/core/templates/$template/agents/${base}.md"
+            ext="installer/core/templates/$template/agents/${base}-ext.md"
 
             if [ -f "$core" ] && [ -f "$ext" ]; then
                 bak_size=$(wc -c < "$bak")
@@ -175,7 +175,7 @@ done
 from pathlib import Path
 import sys
 
-sys.path.insert(0, 'installer/global/lib/agent_scanner')
+sys.path.insert(0, 'installer/core/lib/agent_scanner')
 from agent_scanner import MultiSourceAgentScanner
 
 print("=== Template Agent Discovery Validation ===")
@@ -188,10 +188,10 @@ templates = [
 ]
 
 for template in templates:
-    template_path = Path(f'installer/global/templates/{template}/agents')
+    template_path = Path(f'installer/core/templates/{template}/agents')
     if template_path.exists():
         scanner = MultiSourceAgentScanner(
-            global_path=Path('installer/global/agents'),
+            global_path=Path('installer/core/agents'),
             template_path=template_path
         )
         inventory = scanner.scan()

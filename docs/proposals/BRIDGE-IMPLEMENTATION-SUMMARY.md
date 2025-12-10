@@ -90,8 +90,8 @@ Created 4 implementation tasks in `tasks/backlog/`:
 **File**: [`tasks/backlog/TASK-BRIDGE-001-implement-agent-bridge-infrastructure.md`](../../tasks/backlog/TASK-BRIDGE-001-implement-agent-bridge-infrastructure.md)
 
 **Scope**:
-- Create `installer/global/lib/agent_bridge/invoker.py`
-- Create `installer/global/lib/agent_bridge/state_manager.py`
+- Create `installer/core/lib/agent_bridge/invoker.py`
+- Create `installer/core/lib/agent_bridge/state_manager.py`
 - Implement `AgentBridgeInvoker` class:
   - `invoke()` - Write request, exit with code 42
   - `load_response()` - Read and cache response

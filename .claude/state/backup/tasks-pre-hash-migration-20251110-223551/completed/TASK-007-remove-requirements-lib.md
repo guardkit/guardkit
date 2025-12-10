@@ -17,7 +17,7 @@ completed: 2025-11-01
 
 ## Description
 
-Remove Python library modules related to requirements management (feature_generator.py and any EARS/BDD/Epic/Feature modules) from installer/global/commands/lib/, keeping all quality gate implementation.
+Remove Python library modules related to requirements management (feature_generator.py and any EARS/BDD/Epic/Feature modules) from installer/core/commands/lib/, keeping all quality gate implementation.
 
 ## Modules to Remove
 
@@ -70,11 +70,11 @@ Remove Python library modules related to requirements management (feature_genera
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 
 # Find requirements-related modules
-find installer/global/commands/lib -name "*feature*.py"
-find installer/global/commands/lib -name "*epic*.py"
-find installer/global/commands/lib -name "*requirement*.py"
-find installer/global/commands/lib -name "*ears*.py"
-find installer/global/commands/lib -name "*bdd*.py"
+find installer/core/commands/lib -name "*feature*.py"
+find installer/core/commands/lib -name "*epic*.py"
+find installer/core/commands/lib -name "*requirement*.py"
+find installer/core/commands/lib -name "*ears*.py"
+find installer/core/commands/lib -name "*bdd*.py"
 ```
 
 ### 2. Check for Import Dependencies
@@ -82,7 +82,7 @@ find installer/global/commands/lib -name "*bdd*.py"
 ```bash
 # Find imports of modules to be removed
 grep -r "from.*feature_generator\|import.*feature_generator" \
-  installer/global/commands/lib/
+  installer/core/commands/lib/
 
 # If any found, update those files to remove imports
 ```
@@ -90,7 +90,7 @@ grep -r "from.*feature_generator\|import.*feature_generator" \
 ### 3. Remove Files
 
 ```bash
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 
 # Remove feature generator
 rm -f feature_generator.py
@@ -104,7 +104,7 @@ rm -f test_feature_generator.py
 
 ```bash
 # Test Python imports still work
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 
 python3 -c "
 import sys
@@ -165,7 +165,7 @@ from .plan_persistence import *
 
 ```bash
 # Run import test
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 python3 -c "import sys; sys.path.insert(0, '.'); from checkpoint_display import *; print('OK')"
 
 # Search for orphaned references
@@ -199,10 +199,10 @@ grep -r "feature_generator" . --include="*.py"
 
 ### Files Removed
 ✅ **Modules Removed (1 file):**
-- `installer/global/commands/lib/feature_generator.py` - Feature task file generator (14,139 bytes)
+- `installer/core/commands/lib/feature_generator.py` - Feature task file generator (14,139 bytes)
 
 ✅ **Test Files Removed (3 files):**
-- `installer/global/commands/lib/test_task_008_integration.py` - Integration tests for feature generator
+- `installer/core/commands/lib/test_task_008_integration.py` - Integration tests for feature generator
 - `tests/test_task_008_comprehensive.py` - Comprehensive tests for TASK-008 modules
 - `tests/test_task_008_comprehensive_fixed.py` - Fixed version of comprehensive tests
 

@@ -27,7 +27,7 @@ The `/agent-enhance` command's hybrid strategy behaves as designed, providing gr
 ## Finding 1: JSON Parsing Error Handling
 
 **Severity**: Medium
-**Location**: [parser.py:55-95](installer/global/lib/agent_enhancement/parser.py#L55-L95)
+**Location**: [parser.py:55-95](installer/core/lib/agent_enhancement/parser.py#L55-L95)
 
 ### Issue
 
@@ -94,7 +94,7 @@ def _attempt_partial_recovery(self, response: str) -> Dict[str, Any]:
 ## Finding 2: Duplicate Content in Applier
 
 **Severity**: High
-**Location**: [applier.py:148-233](installer/global/lib/agent_enhancement/applier.py#L148-L233)
+**Location**: [applier.py:148-233](installer/core/lib/agent_enhancement/applier.py#L148-L233)
 
 ### Issue
 
@@ -158,7 +158,7 @@ def _section_exists(self, content: str, section_name: str) -> bool:
 ## Finding 3: Error Message Quality
 
 **Severity**: Medium
-**Location**: [enhancer.py:401-405](installer/global/lib/agent_enhancement/enhancer.py#L401-L405)
+**Location**: [enhancer.py:401-405](installer/core/lib/agent_enhancement/enhancer.py#L401-L405)
 
 ### Issue
 
@@ -198,7 +198,7 @@ except json.JSONDecodeError as e:
 ## Finding 4: Hybrid Strategy - Working as Designed
 
 **Severity**: None (Positive Finding)
-**Location**: [enhancer.py:251-257](installer/global/lib/agent_enhancement/enhancer.py#L251-L257)
+**Location**: [enhancer.py:251-257](installer/core/lib/agent_enhancement/enhancer.py#L251-L257)
 
 ### Observation
 
@@ -230,7 +230,7 @@ The graceful degradation design is robust and user-friendly. The fallback provid
 ## Finding 5: Static Enhancement Quality Gap
 
 **Severity**: Low
-**Location**: [enhancer.py:483-515](installer/global/lib/agent_enhancement/enhancer.py#L483-L515)
+**Location**: [enhancer.py:483-515](installer/core/lib/agent_enhancement/enhancer.py#L483-L515)
 
 ### Issue
 
@@ -288,7 +288,7 @@ def _extract_code_examples_from_templates(self, templates: List[Path], max_examp
 ## Finding 6: Retry Logic Implementation
 
 **Severity**: Low (Minor Enhancement)
-**Location**: [enhancer.py:418-481](installer/global/lib/agent_enhancement/enhancer.py#L418-L481)
+**Location**: [enhancer.py:418-481](installer/core/lib/agent_enhancement/enhancer.py#L418-L481)
 
 ### Observation
 
@@ -319,7 +319,7 @@ Document the expected total timeout (3 attempts × 5 min max = 15 min worst case
 ## Finding 7: Shared Boundary Utilities - Excellent
 
 **Severity**: None (Positive Finding)
-**Location**: [boundary_utils.py](installer/global/lib/agent_enhancement/boundary_utils.py)
+**Location**: [boundary_utils.py](installer/core/lib/agent_enhancement/boundary_utils.py)
 
 ### Commendation
 
@@ -348,7 +348,7 @@ This is a model module for the codebase.
 ## Finding 8: Type Safety with TypedDict
 
 **Severity**: None (Positive Finding)
-**Location**: [models.py](installer/global/lib/agent_enhancement/models.py)
+**Location**: [models.py](installer/core/lib/agent_enhancement/models.py)
 
 ### Commendation
 

@@ -72,7 +72,7 @@ INTENDED FLOW:
 
 ### Code Analysis
 
-**File**: `installer/global/lib/agent_enhancement/orchestrator.py`
+**File**: `installer/core/lib/agent_enhancement/orchestrator.py`
 
 ```python
 # Lines 147-148 (current - broken)
@@ -81,7 +81,7 @@ result = self.enhancer.enhance(agent_file, template_dir)
 # BUT the AI agent writes the file directly, bypassing the applier
 ```
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 
 ```python
 # Lines 100-104 - The split functionality EXISTS but isn't reached
@@ -205,15 +205,15 @@ Update `agent-content-enhancer.md` to instruct the AI to create two files.
 
 ## Files to Modify
 
-1. **`installer/global/lib/agent_enhancement/orchestrator.py`**
+1. **`installer/core/lib/agent_enhancement/orchestrator.py`**
    - Add post-AI split logic in `_run_initial()` and `_run_with_resume()`
    - Add helper method `_extract_enhancement_from_file()`
 
-2. **`installer/global/lib/agent_enhancement/enhancer.py`**
+2. **`installer/core/lib/agent_enhancement/enhancer.py`**
    - Ensure `split_output` flag is properly propagated
    - Add method to re-parse enhanced file for splitting
 
-3. **`installer/global/commands/agent-enhance.py`**
+3. **`installer/core/commands/agent-enhance.py`**
    - Add `--no-split` flag for backward compatibility
    - Pass split preference to orchestrator
 
@@ -308,18 +308,18 @@ If the fix causes issues:
 
 ### Files Modified
 
-1. **`installer/global/lib/agent_enhancement/enhancer.py`**
+1. **`installer/core/lib/agent_enhancement/enhancer.py`**
    - Added `reparse_enhanced_file()` method (~50 lines)
    - Added `_normalize_section_key()` helper method
    - Re-parses enhanced markdown to extract sections for splitting
 
-2. **`installer/global/lib/agent_enhancement/orchestrator.py`**
+2. **`installer/core/lib/agent_enhancement/orchestrator.py`**
    - Added `split_output` parameter to `__init__`
    - Added `_should_apply_split()` detection method
    - Added `_apply_post_ai_split()` method for post-hoc splitting
    - Modified `_run_initial()` and `_run_with_resume()` to apply split
 
-3. **`installer/global/commands/agent-enhance.py`**
+3. **`installer/core/commands/agent-enhance.py`**
    - Added `--no-split` flag for backward compatibility
    - Updated orchestrator instantiation with split preference
    - Added split status reporting in output

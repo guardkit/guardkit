@@ -48,7 +48,7 @@ Update all documentation to reflect the new hash-based task ID system. This incl
 
 **Primary Documentation**:
 1. `CLAUDE.md` - Main project documentation
-2. `installer/global/commands/task-create.md` - Command specification
+2. `installer/core/commands/task-create.md` - Command specification
 3. `docs/guides/guardkit-workflow.md` - Workflow guide
 4. `docs/guides/quick-reference.md` - Quick reference
 

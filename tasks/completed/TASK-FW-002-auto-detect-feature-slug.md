@@ -79,7 +79,7 @@ This will be called by the enhanced [I]mplement flow (TASK-FW-008) to determine 
 
 ## Files to Create/Modify
 
-- `installer/global/lib/feature_utils.py` (NEW or add to existing utils)
+- `installer/core/lib/feature_utils.py` (NEW or add to existing utils)
 
 ## Test Cases
 
@@ -100,7 +100,7 @@ Simple utility function - can be completed in 0.5 days.
 
 ### Files Created/Modified
 
-1. **`installer/global/lib/utils/feature_utils.py`** (NEW)
+1. **`installer/core/lib/utils/feature_utils.py`** (NEW)
    - Implemented `extract_feature_slug(title: str) -> str` function
    - Handles all acceptance criteria:
      - Removes common prefixes (plan, review, investigate, analyze, assess)
@@ -111,7 +111,7 @@ Simple utility function - can be completed in 0.5 days.
      - Limits length to 40 characters with word boundary preservation
      - Returns "feature" as default when extraction fails
 
-2. **`installer/global/lib/utils/__init__.py`**
+2. **`installer/core/lib/utils/__init__.py`**
    - Added export for `extract_feature_slug` function
 
 3. **`tests/lib/test_feature_utils.py`** (NEW)
@@ -154,10 +154,10 @@ This function is ready to be called by the enhanced [I]mplement flow (TASK-FW-00
 
 ### Deliverables
 - **Files created**: 2
-  - `installer/global/lib/utils/feature_utils.py`
+  - `installer/core/lib/utils/feature_utils.py`
   - `tests/lib/test_feature_utils.py`
 - **Files modified**: 1
-  - `installer/global/lib/utils/__init__.py`
+  - `installer/core/lib/utils/__init__.py`
 - **Tests written**: 40
 - **Coverage achieved**: 100% (line and branch)
 - **Requirements satisfied**: 5/5

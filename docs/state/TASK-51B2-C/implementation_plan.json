@@ -7,38 +7,38 @@
   "files": {
     "to_modify": [
       {
-        "path": "installer/global/lib/codebase_analyzer/ai_analyzer.py",
-        "purpose": "Update 5 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/ai_analyzer.py",
+        "purpose": "Update 5 import statements from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 5
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/agent_invoker.py",
-        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/agent_invoker.py",
+        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 2
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/prompt_builder.py",
-        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/prompt_builder.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 1
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/response_parser.py",
-        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/response_parser.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 1
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/serializer.py",
-        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/serializer.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 1
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/stratified_sampler.py",
-        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/stratified_sampler.py",
+        "purpose": "Update 1 import statement from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 1
       },
       {
-        "path": "installer/global/lib/codebase_analyzer/__init__.py",
-        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.global.lib.codebase_analyzer",
+        "path": "installer/core/lib/codebase_analyzer/__init__.py",
+        "purpose": "Update 2 import statements from lib.codebase_analyzer to installer.core.lib.codebase_analyzer",
         "estimated_loc": 2
       }
     ],
@@ -55,7 +55,7 @@
   "dependencies": {
     "new": [],
     "existing": [
-      "installer.global.lib.codebase_analyzer (internal)"
+      "installer.core.lib.codebase_analyzer (internal)"
     ]
   },
   "risks": [
@@ -69,7 +69,7 @@
   "phases": [
     {
       "name": "Phase 1: Update imports in each file",
-      "description": "Replace from lib.codebase_analyzer with from installer.global.lib.codebase_analyzer in 7 files",
+      "description": "Replace from lib.codebase_analyzer with from installer.core.lib.codebase_analyzer in 7 files",
       "estimated_time_minutes": 15,
       "tasks": [
         "Update ai_analyzer.py imports (5 lines)",

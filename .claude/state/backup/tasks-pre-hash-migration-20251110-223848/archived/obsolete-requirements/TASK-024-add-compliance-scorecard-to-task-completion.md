@@ -72,7 +72,7 @@ Add compliance analysis to `/task-complete` command that:
 
 ### Phase 1: Compliance Data Model (2 hours)
 ```python
-# File: installer/global/commands/lib/compliance_scorer.py
+# File: installer/core/commands/lib/compliance_scorer.py
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -165,7 +165,7 @@ Recommendations:
 
 ### Phase 2: Requirements Coverage Analysis (3 hours)
 ```python
-# File: installer/global/commands/lib/requirement_coverage_analyzer.py
+# File: installer/core/commands/lib/requirement_coverage_analyzer.py
 
 import ast
 import re
@@ -232,7 +232,7 @@ class RequirementCoverageAnalyzer:
 
 ### Phase 3: Scope Creep Detection (3 hours)
 ```python
-# File: installer/global/commands/lib/scope_creep_detector.py
+# File: installer/core/commands/lib/scope_creep_detector.py
 
 class ScopeCreepDetector:
     def detect_scope_creep(
@@ -324,7 +324,7 @@ class ScopeCreepDetector:
 
 ### Phase 4: Test Coverage Analysis (2 hours)
 ```python
-# File: installer/global/commands/lib/test_coverage_analyzer.py
+# File: installer/core/commands/lib/test_coverage_analyzer.py
 
 class TestCoverageAnalyzer:
     def analyze_test_coverage(
@@ -388,7 +388,7 @@ class TestCoverageAnalyzer:
 
 ### Phase 5: Compliance Scoring (2 hours)
 ```python
-# File: installer/global/commands/lib/compliance_scorer.py
+# File: installer/core/commands/lib/compliance_scorer.py
 
 class ComplianceScorer:
     def calculate_compliance(
@@ -439,7 +439,7 @@ class ComplianceScorer:
 
 ### Phase 6: Interactive Remediation (2 hours)
 ```python
-# File: installer/global/commands/lib/compliance_remediator.py
+# File: installer/core/commands/lib/compliance_remediator.py
 
 class ComplianceRemediator:
     def handle_compliance(self, scorecard: ComplianceScorecard):
@@ -488,7 +488,7 @@ class ComplianceRemediator:
 
 ### Phase 7: Integration with Task Complete (2 hours)
 ```markdown
-# File: installer/global/commands/task-complete.md
+# File: installer/core/commands/task-complete.md
 
 ## Compliance Analysis (NEW)
 
@@ -582,17 +582,17 @@ def test_remediation_workflow():
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/commands/lib/compliance_scorer.py`
-- `installer/global/commands/lib/requirement_coverage_analyzer.py`
-- `installer/global/commands/lib/scope_creep_detector.py`
-- `installer/global/commands/lib/test_coverage_analyzer.py`
-- `installer/global/commands/lib/compliance_remediator.py`
+- `installer/core/commands/lib/compliance_scorer.py`
+- `installer/core/commands/lib/requirement_coverage_analyzer.py`
+- `installer/core/commands/lib/scope_creep_detector.py`
+- `installer/core/commands/lib/test_coverage_analyzer.py`
+- `installer/core/commands/lib/compliance_remediator.py`
 - `tests/unit/test_compliance_scorer.py`
 - `tests/integration/test_compliance_scoring.py`
 
 ### Modified Files
-- `installer/global/commands/task-complete.md` (add compliance analysis)
-- `installer/global/agents/code-reviewer.md` (integrate compliance scoring)
+- `installer/core/commands/task-complete.md` (add compliance analysis)
+- `installer/core/agents/code-reviewer.md` (integrate compliance scoring)
 
 ## Success Metrics
 

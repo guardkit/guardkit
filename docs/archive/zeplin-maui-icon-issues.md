@@ -415,7 +415,7 @@ When reporting icon rendering issues, include:
 ### Related Documentation
 
 - [Icon Code Conversion Pattern](../patterns/icon-code-conversion-pattern.md)
-- [Zeplin-to-MAUI Command Reference](../../installer/global/commands/zeplin-to-maui.md)
+- [Zeplin-to-MAUI Command Reference](../../installer/core/commands/zeplin-to-maui.md)
 - [Material Design Icons Setup](https://fonts.google.com/icons)
 
 ---

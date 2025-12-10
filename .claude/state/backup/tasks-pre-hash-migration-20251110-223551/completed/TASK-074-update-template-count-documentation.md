@@ -182,10 +182,10 @@ The `guardkit-python` template is unique - it's created from GuardKit's own code
 ```markdown
 ## Quick Reference
 
-**Command Specifications:** `installer/global/commands/*.md`
-**Agent Definitions:** `installer/global/agents/*.md`
+**Command Specifications:** `installer/core/commands/*.md`
+**Agent Definitions:** `installer/core/agents/*.md`
 **Workflow Guides:** `docs/guides/*.md` and `docs/workflows/*.md`
-**Stack Templates:** `installer/global/templates/*/` (6 templates)
+**Stack Templates:** `installer/core/templates/*/` (6 templates)
 
 ### Template Quick Reference
 

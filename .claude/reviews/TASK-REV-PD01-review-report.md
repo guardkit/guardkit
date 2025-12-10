@@ -25,8 +25,8 @@ Analysis of applying progressive disclosure techniques from GuardKit to RequireK
 
 | File | Location | Size (bytes) | Lines | Token Est. | Priority |
 |------|----------|--------------|-------|------------|----------|
-| bdd-generator.md | installer/global/agents/ | 17,989 | 606 | ~4,500 | HIGH |
-| requirements-analyst.md | installer/global/agents/ | 12,301 | 388 | ~3,100 | HIGH |
+| bdd-generator.md | installer/core/agents/ | 17,989 | 606 | ~4,500 | HIGH |
+| requirements-analyst.md | installer/core/agents/ | 12,301 | 388 | ~3,100 | HIGH |
 | bdd-generator.md | .claude/agents/ | 9,705 | 349 | ~2,400 | MEDIUM |
 | requirements-analyst.md | .claude/agents/ | 5,176 | 186 | ~1,300 | LOW |
 | CLAUDE.md | root | 5,953 | 128 | ~1,500 | LOW |
@@ -70,7 +70,7 @@ Analysis of applying progressive disclosure techniques from GuardKit to RequireK
 
 ## 3. Reusable GuardKit Assets
 
-### Scripts (From `installer/global/lib/agent_enhancement/`)
+### Scripts (From `installer/core/lib/agent_enhancement/`)
 
 | Script | Reusability | Modifications Needed |
 |--------|-------------|---------------------|
@@ -122,7 +122,7 @@ The EARS notation sections in requirements-analyst.md should remain in **core** 
 ### BDD Scenario Structure
 
 Current bdd-generator.md has significant overlap between:
-- installer/global/agents/bdd-generator.md (606 lines)
+- installer/core/agents/bdd-generator.md (606 lines)
 - .claude/agents/bdd-generator.md (349 lines)
 
 **Recommendation**: Consolidate to single source + extend pattern:
@@ -180,7 +180,7 @@ RequireKit detects GuardKit via `~/.agentecflow/guardkit.marker`. Progressive di
 ### Pre-Implementation Cleanup
 
 **Issue**: RequireKit has duplicate agent files:
-- `installer/global/agents/bdd-generator.md` (606 lines, 18KB)
+- `installer/core/agents/bdd-generator.md` (606 lines, 18KB)
 - `.claude/agents/bdd-generator.md` (349 lines, 10KB)
 
 **Resolution**: The global version is authoritative (more comprehensive). The local version appears to be a simplified copy. During installation, the global version should be symlinked/copied to .claude/agents/.
@@ -192,15 +192,15 @@ RequireKit detects GuardKit via `~/.agentecflow/guardkit.marker`. Progressive di
 1. **Consolidate Agent Files**
    ```bash
    # Verify global is superset of local
-   diff installer/global/agents/bdd-generator.md .claude/agents/bdd-generator.md
+   diff installer/core/agents/bdd-generator.md .claude/agents/bdd-generator.md
    # If global is authoritative, local can be symlink or generated from global
    ```
 
 2. **Copy Reusable Scripts**
    ```bash
-   mkdir -p installer/global/lib/agent_enhancement
-   cp <guardkit>/installer/global/lib/agent_enhancement/models.py installer/global/lib/agent_enhancement/
-   cp <guardkit>/installer/global/lib/agent_enhancement/applier.py installer/global/lib/agent_enhancement/
+   mkdir -p installer/core/lib/agent_enhancement
+   cp <guardkit>/installer/core/lib/agent_enhancement/models.py installer/core/lib/agent_enhancement/
+   cp <guardkit>/installer/core/lib/agent_enhancement/applier.py installer/core/lib/agent_enhancement/
    ```
 
 3. **Modify applier.py for RequireKit**
@@ -230,7 +230,7 @@ RequireKit detects GuardKit via `~/.agentecflow/guardkit.marker`. Progressive di
 ```
 require-kit/
 ├── CLAUDE.md                              # Unchanged (already lean)
-├── installer/global/
+├── installer/core/
 │   ├── agents/
 │   │   ├── bdd-generator.md              # Core (~6KB)
 │   │   ├── bdd-generator-ext.md          # Extended (~12KB)

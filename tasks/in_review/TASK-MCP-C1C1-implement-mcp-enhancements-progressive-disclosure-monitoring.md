@@ -576,7 +576,7 @@ monitor.save_report(f"docs/state/{task_id}/mcp_usage_report.json")
 **Deliverables**: Core classes and unit tests
 
 #### Step 1.1: Create DetailLevel Enum (2 hours)
-- [ ] Create `installer/global/lib/mcp/detail_level.py`
+- [ ] Create `installer/core/lib/mcp/detail_level.py`
 - [ ] Implement `DetailLevel` enum (SUMMARY, DETAILED)
 - [ ] Write unit tests (test valid values, string conversion)
 
@@ -588,7 +588,7 @@ monitor.save_report(f"docs/state/{task_id}/mcp_usage_report.json")
 - [ ] Write unit tests (12+ tests covering all scenarios)
 
 #### Step 1.3: Implement MCPMonitor Class (8 hours)
-- [ ] Create `installer/global/lib/mcp/monitor.py`
+- [ ] Create `installer/core/lib/mcp/monitor.py`
 - [ ] Implement `MCPRequest` dataclass
 - [ ] Implement `MCPResponse` dataclass with variance calculation
 - [ ] Implement `MCPMonitor` class (record_request, record_response, generate_report, save_report)
@@ -643,7 +643,7 @@ monitor.save_report(f"docs/state/{task_id}/mcp_usage_report.json")
 
 #### Step 4.1: Documentation Updates (2 hours)
 - [ ] Update `docs/deep-dives/mcp-integration/mcp-optimization.md` (lines 95-134 for progressive disclosure)
-- [ ] Update `installer/global/agents/task-manager.md` (lines 23-73 for Context7 usage)
+- [ ] Update `installer/core/agents/task-manager.md` (lines 23-73 for Context7 usage)
 - [ ] Add monitoring section to MCP optimization guide
 - [ ] Create usage examples document
 
@@ -778,17 +778,17 @@ def test_ac2_2_2_variance_warning():
 ## Files Modified
 
 ### New Files
-1. `installer/global/lib/mcp/detail_level.py` - DetailLevel enum
-2. `installer/global/lib/mcp/monitor.py` - MCPMonitor, MCPRequest, MCPResponse classes
-3. `installer/global/lib/mcp/__init__.py` - Package exports
+1. `installer/core/lib/mcp/detail_level.py` - DetailLevel enum
+2. `installer/core/lib/mcp/monitor.py` - MCPMonitor, MCPRequest, MCPResponse classes
+3. `installer/core/lib/mcp/__init__.py` - Package exports
 4. `tests/unit/lib/mcp/test_detail_level.py` - DetailLevel tests
 5. `tests/unit/lib/mcp/test_monitor.py` - MCPMonitor tests
 6. `tests/integration/mcp/test_context7_progressive_disclosure.py` - Integration tests
 7. `tests/integration/mcp/test_monitor_integration.py` - Monitor integration tests
 
 ### Modified Files
-1. `installer/global/lib/mcp/context7_client.py` - Add detail_level parameter, convenience methods
-2. `installer/global/agents/task-manager.md` - Update Context7 usage (lines 23-73)
+1. `installer/core/lib/mcp/context7_client.py` - Add detail_level parameter, convenience methods
+2. `installer/core/agents/task-manager.md` - Update Context7 usage (lines 23-73)
 3. `docs/deep-dives/mcp-integration/mcp-optimization.md` - Add progressive disclosure section (after line 134)
 4. `CLAUDE.md` - Document new features (lines 669-679)
 

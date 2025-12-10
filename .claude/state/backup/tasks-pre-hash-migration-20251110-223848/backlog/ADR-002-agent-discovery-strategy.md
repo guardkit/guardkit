@@ -11,7 +11,7 @@
 
 The template creation system needs to discover and recommend relevant AI agents for generated templates. Two approaches were considered:
 
-1. **Local-only**: Scan existing agents in `installer/global/agents/` (15+ agents)
+1. **Local-only**: Scan existing agents in `installer/core/agents/` (15+ agents)
 2. **Local + External**: Add external sources (subagents.cc, GitHub repos, etc.)
 
 Initial architectural review flagged external discovery as HIGH-RISK due to brittle web scraping approach. However, user identified a key distinction: **AI-powered extraction using WebFetch tool** vs **algorithmic web scraping**.

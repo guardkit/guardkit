@@ -56,8 +56,8 @@ Created comprehensive validation suite for Feature 3.9 documentation with **16 a
 **Checks**:
 1. ✅ **Cross-Reference Links**:
    - ✅ UX Design Integration Workflow: `../workflows/ux-design-integration-workflow.md` (RESOLVED)
-   - ✅ Figma-to-React Command: `../../installer/global/commands/figma-to-react.md` (RESOLVED)
-   - ✅ Zeplin-to-MAUI Command: `../../installer/global/commands/zeplin-to-maui.md` (RESOLVED)
+   - ✅ Figma-to-React Command: `../../installer/core/commands/figma-to-react.md` (RESOLVED)
+   - ✅ Zeplin-to-MAUI Command: `../../installer/core/commands/zeplin-to-maui.md` (RESOLVED)
    - ✅ Design-to-Code Common Patterns: `../shared/design-to-code-common.md` (RESOLVED)
    - ✅ Internal reference to Feature 3.8 found
 

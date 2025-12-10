@@ -308,8 +308,8 @@ Content here.
         text = "Create /feature-plan command and update /task-review command"
         files = extractor._infer_files_from_text(text)
 
-        assert "installer/global/commands/feature-plan.md" in files
-        assert "installer/global/commands/task-review.md" in files
+        assert "installer/core/commands/feature-plan.md" in files
+        assert "installer/core/commands/task-review.md" in files
 
     def test_infer_files_from_text_backticks(self, tmp_path):
         """Test file inference from backtick-wrapped paths."""

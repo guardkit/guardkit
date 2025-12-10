@@ -205,7 +205,7 @@ class AgentBridgeInvoker:
 
 ### Files to Change
 
-**1. `installer/global/lib/agent_bridge/invoker.py`** (lines 112-131)
+**1. `installer/core/lib/agent_bridge/invoker.py`** (lines 112-131)
 
 ```python
 # BEFORE
@@ -238,7 +238,7 @@ def __init__(
     self._cached_response = None
 ```
 
-**2. `installer/global/commands/lib/template_create_orchestrator.py`** (lines 971-976)
+**2. `installer/core/commands/lib/template_create_orchestrator.py`** (lines 971-976)
 
 ```python
 # BEFORE

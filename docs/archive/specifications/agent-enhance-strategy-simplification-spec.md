@@ -146,7 +146,7 @@ def resolve_strategy(parsed_args) -> str:
 
 ### 2.1 Code Changes
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.py`
 
 #### Change 1: Add New Flags
 
@@ -258,7 +258,7 @@ enhancer = SingleAgentEnhancer(
 
 **Rationale**: The `SingleAgentEnhancer` class already accepts a `strategy` string parameter. No changes needed to the enhancement logic itself—only the command-line interface changes.
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/enhancer.py`
 
 ```python
 # Lines 50-66 remain unchanged
@@ -502,7 +502,7 @@ Tests the resolve_strategy() function with various flag combinations.
 
 import pytest
 from argparse import Namespace
-from installer.global.commands.agent_enhance import resolve_strategy
+from installer.core.commands.agent_enhance import resolve_strategy
 
 
 class TestStrategyResolution:
@@ -640,7 +640,7 @@ Initial content.
     def test_ai_strategy_workflow(self, test_agent, test_template):
         """Test full AI enhancement workflow."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent)],
             capture_output=True,
             text=True
@@ -652,7 +652,7 @@ Initial content.
     def test_hybrid_strategy_workflow(self, test_agent, test_template):
         """Test hybrid enhancement workflow."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--hybrid"],
             capture_output=True,
             text=True
@@ -663,7 +663,7 @@ Initial content.
     def test_static_strategy_workflow(self, test_agent, test_template):
         """Test static enhancement workflow."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--static"],
             capture_output=True,
             text=True
@@ -676,7 +676,7 @@ Initial content.
     def test_conflicting_flags_error(self, test_agent, test_template):
         """Test error handling for conflicting flags."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--hybrid", "--static"],
             capture_output=True,
             text=True
@@ -690,7 +690,7 @@ Initial content.
         original_content = test_agent.read_text()
 
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--hybrid", "--dry-run"],
             capture_output=True,
             text=True
@@ -738,7 +738,7 @@ name: test-specialist
     def test_legacy_strategy_ai_still_works(self, test_agent, caplog):
         """--strategy=ai should still work with warning."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--strategy=ai"],
             capture_output=True,
             text=True
@@ -750,7 +750,7 @@ name: test-specialist
     def test_legacy_strategy_hybrid_still_works(self, test_agent):
         """--strategy=hybrid should still work with warning."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--strategy=hybrid"],
             capture_output=True,
             text=True
@@ -762,7 +762,7 @@ name: test-specialist
     def test_legacy_strategy_static_still_works(self, test_agent):
         """--strategy=static should still work with warning."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--strategy=static"],
             capture_output=True,
             text=True
@@ -774,7 +774,7 @@ name: test-specialist
     def test_new_flags_preferred_over_legacy(self, test_agent):
         """New flags should suppress deprecation warnings."""
         result = subprocess.run(
-            ["python", "installer/global/commands/agent-enhance.py",
+            ["python", "installer/core/commands/agent-enhance.py",
              str(test_agent), "--hybrid"],
             capture_output=True,
             text=True
@@ -801,7 +801,7 @@ name: test-specialist
 
 ### 6.1 agent-enhance.md Structure
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.md`
 
 #### Section 1: Quick Start (New)
 
@@ -1338,8 +1338,8 @@ A: Migrate to the new syntax. Warnings are intentional to encourage migration.
 ### A. Code Diff Summary
 
 **Files Modified**:
-1. `installer/global/commands/agent-enhance.py` (~50 lines changed)
-2. `installer/global/commands/agent-enhance.md` (~100 lines changed)
+1. `installer/core/commands/agent-enhance.py` (~50 lines changed)
+2. `installer/core/commands/agent-enhance.md` (~100 lines changed)
 3. `CLAUDE.md` (~10 lines changed)
 
 **Files Created**:

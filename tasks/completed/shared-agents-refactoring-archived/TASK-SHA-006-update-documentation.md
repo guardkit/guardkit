@@ -79,7 +79,7 @@ Same as GuardKit, adjusted for RequireKit context.
 
 ### Changed
 - Universal agents now sourced from shared-agents repository
-- Agents installed to `.claude/agents/universal/` instead of `installer/global/agents/`
+- Agents installed to `.claude/agents/universal/` instead of `installer/core/agents/`
 - Version pinning via `installer/shared-agents-version.txt`
 
 ### Removed

@@ -42,7 +42,7 @@ Update the template creation orchestrator to write split CLAUDE.md output (core 
 
 ### Current Orchestrator Flow (Phase 9)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Current Phase 9 Implementation** (lines 1430-1494):
 ```python
@@ -645,7 +645,7 @@ After implementation, validate manually:
 
 ### Files to Modify
 
-#### 1. `installer/global/commands/lib/template_create_orchestrator.py`
+#### 1. `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes**:
 - Add `split_claude_md: bool = True` to `OrchestrationConfig` (line ~124)
@@ -661,7 +661,7 @@ After implementation, validate manually:
 - Configuration changes: ~10 lines
 - Total: ~90 lines
 
-#### 2. `installer/global/lib/template_generator/models.py`
+#### 2. `installer/core/lib/template_generator/models.py`
 
 **Changes**:
 - Add `TemplateSplitOutput` dataclass (if not already added by TASK-PD-005)

@@ -112,7 +112,7 @@ def _ensure_boundaries(self, enhancement: dict, agent_metadata: dict) -> dict:
 
 ### Minimal Fix (12 Lines Added)
 
-**Modify ONLY**: `installer/global/lib/agent_enhancement/parser.py` (lines 137-163)
+**Modify ONLY**: `installer/core/lib/agent_enhancement/parser.py` (lines 137-163)
 
 **Before** (Current Code):
 ```python
@@ -252,7 +252,7 @@ def _validate_basic_structure(self, enhancement: Dict[str, Any]) -> None:
 
 ### Files to Modify
 
-**ONLY**: `installer/global/lib/agent_enhancement/parser.py`
+**ONLY**: `installer/core/lib/agent_enhancement/parser.py`
 - Lines: 137-163 (26 lines total, 12 added)
 - Method: `_validate_basic_structure()`
 - Change type: Add schema enforcement logic
@@ -368,7 +368,7 @@ If the fix causes issues:
 
 1. **Revert parser.py** to previous version
 2. **Restore original _validate_basic_structure()** (lines 137-163)
-3. **Git**: `git checkout HEAD~1 -- installer/global/lib/agent_enhancement/parser.py`
+3. **Git**: `git checkout HEAD~1 -- installer/core/lib/agent_enhancement/parser.py`
 
 ## Dependencies
 

@@ -14,12 +14,12 @@ Successfully created the core infrastructure for the unified clarification modul
 
 ### Files Created
 
-1. **`installer/global/commands/lib/clarification/__init__.py`** (50 lines)
+1. **`installer/core/commands/lib/clarification/__init__.py`** (50 lines)
    - Module exports and documentation
    - Public API definitions
    - Version information
 
-2. **`installer/global/commands/lib/clarification/core.py`** (315 lines)
+2. **`installer/core/commands/lib/clarification/core.py`** (315 lines)
    - Core dataclasses and enums
    - Processing functions
    - Full type hints and validation
@@ -157,8 +157,8 @@ All acceptance criteria completed:
 **Commit**: `5e223b7` - "Implement TASK-CLQ-001: Create clarification module core infrastructure"
 
 **Files Changed**:
-- `installer/global/commands/lib/clarification/__init__.py` (new)
-- `installer/global/commands/lib/clarification/core.py` (new)
+- `installer/core/commands/lib/clarification/__init__.py` (new)
+- `installer/core/commands/lib/clarification/core.py` (new)
 - `tests/unit/lib/clarification/__init__.py` (new)
 - `tests/unit/lib/clarification/test_core.py` (new)
 

@@ -213,12 +213,12 @@ From the provided LoadPage.xaml, all icon instances need correction:
 ## Files to Modify
 
 1. **Icon Generation Logic**
-   - `installer/global/agents/zeplin-maui-orchestrator.md` - Icon extraction
+   - `installer/core/agents/zeplin-maui-orchestrator.md` - Icon extraction
    - `.claude/stacks/maui/agents/maui-ux-specialist.md` - XAML generation
 
 2. **Command Documentation**
-   - `installer/global/commands/zeplin-to-maui.md` - Usage examples
-   - `installer/global/commands/mcp-zeplin.md` - Icon extraction reference
+   - `installer/core/commands/zeplin-to-maui.md` - Usage examples
+   - `installer/core/commands/mcp-zeplin.md` - Icon extraction reference
 
 3. **Tests**
    - `tests/unit/zeplin-maui-icon-conversion.test.ts` - Icon conversion tests
@@ -273,7 +273,7 @@ From the provided LoadPage.xaml, all icon instances need correction:
 
 ### Internal References
 - [TASK-004: Zeplin-to-MAUI Integration](../in_review/TASK-004-zeplin-maui-ux-design-integration.md)
-- [Zeplin-to-MAUI Command](../../installer/global/commands/zeplin-to-maui.md)
+- [Zeplin-to-MAUI Command](../../installer/core/commands/zeplin-to-maui.md)
 - [Zeplin MCP Setup Guide](../../docs/mcp-setup/zeplin-mcp-setup.md)
 
 ### External References

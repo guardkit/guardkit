@@ -35,7 +35,7 @@ from typing import Dict, List, Optional
 from unittest.mock import Mock, patch
 
 # Add the library to the path
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 # Import helpers
@@ -80,7 +80,7 @@ def project_root():
 @pytest.fixture
 def agents_dir(project_root):
     """Get the global agents directory."""
-    return project_root / "installer" / "global" / "agents"
+    return project_root / "installer" / "core" / "agents"
 
 
 @pytest.fixture

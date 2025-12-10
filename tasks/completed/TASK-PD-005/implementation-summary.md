@@ -54,11 +54,11 @@ class TemplateSplitOutput(BaseModel):
 
 ## Files Modified
 
-1. **installer/global/lib/template_generator/models.py**
+1. **installer/core/lib/template_generator/models.py**
    - Added `TemplateSplitOutput` class (lines 308-375)
    - 68 new lines of code
 
-2. **installer/global/lib/template_generator/claude_md_generator.py**
+2. **installer/core/lib/template_generator/claude_md_generator.py**
    - Added 247 new lines of code (lines 1127-1373)
    - Methods: 11 new methods
    - Import updated to include TemplateSplitOutput

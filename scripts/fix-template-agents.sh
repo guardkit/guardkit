@@ -5,7 +5,7 @@
 
 set -e
 
-TEMPLATES_DIR="/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates"
+TEMPLATES_DIR="/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates"
 SOURCE_DIR="$TEMPLATES_DIR/maui/agents"
 
 # Ensure source exists

@@ -49,7 +49,7 @@ The bridge protocol works (as evidenced by the agent recommendations phase), but
 
 ### Files Modified
 
-1. **`installer/global/commands/lib/template_create_orchestrator.py`**
+1. **`installer/core/commands/lib/template_create_orchestrator.py`**
    - Lines 187-193: Updated agent_invoker initialization (PHASE_1, "ai_analysis")
    - Lines 254-260: Added Phase 1 resume routing
    - Lines 272-332: NEW `_run_from_phase_1()` method

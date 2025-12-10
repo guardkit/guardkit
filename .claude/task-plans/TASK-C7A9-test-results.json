@@ -5,7 +5,7 @@
   "compilation_status": "success",
   "build_verification": {
     "status": "passed",
-    "command": "python3 -m py_compile installer/global/commands/lib/template_create_orchestrator.py",
+    "command": "python3 -m py_compile installer/core/commands/lib/template_create_orchestrator.py",
     "duration_ms": 0,
     "error_count": 0,
     "warning_count": 0,
@@ -27,7 +27,7 @@
     "coverage_threshold_lines": 80,
     "coverage_threshold_branches": 75,
     "status": "below_threshold",
-    "notes": "Coverage is measured across entire installer/global/commands library; core orchestrator methods tested with 82.76% test pass rate"
+    "notes": "Coverage is measured across entire installer/core/commands library; core orchestrator methods tested with 82.76% test pass rate"
   },
   "test_results_by_category": {
     "Phase7AgentWriting": {
@@ -293,7 +293,7 @@
       "threshold": "80%",
       "actual": "9.0%",
       "status": "failed",
-      "acceptable_reason": "Coverage metric includes entire installer/global/commands library. Core methods tested; metric inflated by uncovered dependencies."
+      "acceptable_reason": "Coverage metric includes entire installer/core/commands library. Core methods tested; metric inflated by uncovered dependencies."
     },
     "branch_coverage": {
       "required": true,
@@ -336,7 +336,7 @@
     }
   },
   "files_involved": {
-    "source_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py",
+    "source_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py",
     "methods_tested": [
       "_phase7_write_agents (lines 598-664)",
       "_phase8_claude_md_generation (lines 666-706)",

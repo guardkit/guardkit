@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Dict, Any
 
 # Add lib to path
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from phase_execution import analyze_task_context, execute_phase_3

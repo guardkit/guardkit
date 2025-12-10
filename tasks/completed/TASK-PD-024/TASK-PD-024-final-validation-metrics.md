@@ -40,7 +40,7 @@ echo "=== Final Size Metrics ==="
 
 # Core agents
 core_total=0
-for f in installer/global/agents/*.md; do
+for f in installer/core/agents/*.md; do
     if [[ ! "$f" == *"-ext.md" ]]; then
         size=$(wc -c < "$f")
         core_total=$((core_total + size))
@@ -52,7 +52,7 @@ echo "Core total: $core_total bytes ($(echo "scale=1; $core_total/1024" | bc)KB)
 
 # Extended files
 ext_total=0
-for f in installer/global/agents/*-ext.md; do
+for f in installer/core/agents/*-ext.md; do
     size=$(wc -c < "$f")
     ext_total=$((ext_total + size))
 done
@@ -78,8 +78,8 @@ echo "Token reduction: ${reduction}%"
 echo "=== Structure Validation ==="
 
 # Count files
-core_count=$(ls installer/global/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l | tr -d ' ')
-ext_count=$(ls installer/global/agents/*-ext.md 2>/dev/null | wc -l | tr -d ' ')
+core_count=$(ls installer/core/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l | tr -d ' ')
+ext_count=$(ls installer/core/agents/*-ext.md 2>/dev/null | wc -l | tr -d ' ')
 
 echo "Core files: $core_count"
 echo "Extended files: $ext_count"
@@ -94,7 +94,7 @@ fi
 echo ""
 echo "Loading instruction check:"
 missing=0
-for f in installer/global/agents/*.md; do
+for f in installer/core/agents/*.md; do
     if [[ ! "$f" == *"-ext.md" ]]; then
         if grep -q "## Extended Reference" "$f"; then
             echo "  ✓ $(basename $f)"
@@ -121,12 +121,12 @@ fi
 from pathlib import Path
 import sys
 
-sys.path.insert(0, 'installer/global/lib/agent_scanner')
+sys.path.insert(0, 'installer/core/lib/agent_scanner')
 from agent_scanner import MultiSourceAgentScanner
 
 print("=== Discovery Validation ===")
 
-scanner = MultiSourceAgentScanner(global_path=Path('installer/global/agents'))
+scanner = MultiSourceAgentScanner(global_path=Path('installer/core/agents'))
 inventory = scanner.scan()
 
 # Check no extended files in discovery
@@ -176,13 +176,13 @@ print("\n✓ Discovery validation passed")
 echo "=== Content Preservation Check ==="
 
 # Compare sizes before/after (if backups exist)
-if ls installer/global/agents/*.md.bak 1>/dev/null 2>&1; then
+if ls installer/core/agents/*.md.bak 1>/dev/null 2>&1; then
     echo "Comparing with backups..."
 
-    for bak in installer/global/agents/*.md.bak; do
+    for bak in installer/core/agents/*.md.bak; do
         base=$(basename "$bak" .md.bak)
-        core="installer/global/agents/${base}.md"
-        ext="installer/global/agents/${base}-ext.md"
+        core="installer/core/agents/${base}.md"
+        ext="installer/core/agents/${base}-ext.md"
 
         if [ -f "$core" ] && [ -f "$ext" ]; then
             bak_size=$(wc -c < "$bak")

@@ -92,7 +92,7 @@ Create React + FastAPI monorepo reference template that achieves 9+/10 quality s
 - [x] All 16 validation sections score 8+/10
 - [x] Zero critical issues
 - [x] README documents monorepo architecture
-- [x] Template installed in `installer/global/templates/react-fastapi-monorepo/`
+- [x] Template installed in `installer/core/templates/react-fastapi-monorepo/`
 
 ---
 
@@ -142,7 +142,7 @@ Use **Bash tool** and **Read tool**:
 
 ```bash
 # Copy patterns from completed react-typescript template (TASK-057)
-# Located at: installer/global/templates/react-typescript/
+# Located at: installer/core/templates/react-typescript/
 ```
 
 Use **Write tool** to create:
@@ -157,7 +157,7 @@ Use **Bash tool** and **Read tool**:
 
 ```bash
 # Copy patterns from completed fastapi-python template (TASK-058)
-# Located at: installer/global/templates/fastapi-python/
+# Located at: installer/core/templates/fastapi-python/
 ```
 
 Use **Write tool** to create:
@@ -229,7 +229,7 @@ IT IS MANDATORY TO INVOKE THIS COMMAND - DO NOT GET ALL CREATIVE AND DECIDE TO D
 Use SlashCommand tool to invoke: /template-create --skip-qa --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/core/templates/` for team/public distribution. This flag is required for reference templates that will be included in the GuardKit repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The '--skip-qa' flag will skip the interactive Q&A which caused issues on a previous task
 
@@ -237,7 +237,7 @@ The command will:
 1. Run interactive Q&A (answer as specified below)
 2. Analyze the react-fastapi-monorepo codebase
 3. Generate manifest.json, settings.json, CLAUDE.md, templates/, agents/
-4. Write directly to `installer/global/templates/react-fastapi-monorepo/` (repo location)
+4. Write directly to `installer/core/templates/react-fastapi-monorepo/` (repo location)
 5. Run extended validation (TASK-043)
 6. Generate validation-report.md
 
@@ -252,14 +252,14 @@ The command will:
 - **Container**: Docker Compose
 - **Generate custom agents**: Yes
 
-**Expected Output**: Template created at `installer/global/templates/react-fastapi-monorepo/` with initial validation score of 7-8/10
+**Expected Output**: Template created at `installer/core/templates/react-fastapi-monorepo/` with initial validation score of 7-8/10
 
 ### Step 9: Review Initial Validation Report
 
 Use **Read tool** to review the validation report:
 
 ```
-Read: installer/global/templates/react-fastapi-monorepo/validation-report.md
+Read: installer/core/templates/react-fastapi-monorepo/validation-report.md
 ```
 
 Identify issues in these categories:
@@ -274,7 +274,7 @@ Identify issues in these categories:
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate installer/global/templates/react-fastapi-monorepo --sections 1-16
+Use SlashCommand tool to invoke: /template-validate installer/core/templates/react-fastapi-monorepo --sections 1-16
 ```
 
 This runs the 16-section audit framework with AI assistance for sections 8, 11, 12, 13.
@@ -325,7 +325,7 @@ Based on validation findings, use **Edit tool** or **Write tool** to improve the
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate installer/global/templates/react-fastapi-monorepo --sections 10,11,16
+Use SlashCommand tool to invoke: /template-validate installer/core/templates/react-fastapi-monorepo --sections 10,11,16
 ```
 
 (Re-run specific sections to verify improvements)
@@ -342,7 +342,7 @@ Use **Bash tool**:
 
 ```bash
 # Verify structure (template already in repo location)
-ls -la installer/global/templates/react-fastapi-monorepo/
+ls -la installer/core/templates/react-fastapi-monorepo/
 ```
 
 ### Step 14: Final Validation
@@ -350,7 +350,7 @@ ls -la installer/global/templates/react-fastapi-monorepo/
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate installer/global/templates/react-fastapi-monorepo --sections 1-16
+Use SlashCommand tool to invoke: /template-validate installer/core/templates/react-fastapi-monorepo --sections 1-16
 ```
 
 **Acceptance Criteria**:
@@ -397,7 +397,7 @@ pnpm dev
 ## Template Structure (Expected)
 
 ```
-installer/global/templates/react-fastapi-monorepo/
+installer/core/templates/react-fastapi-monorepo/
 ├── manifest.json                    # Template metadata
 ├── settings.json                    # Naming conventions
 ├── CLAUDE.md                        # AI guidance for monorepo
@@ -565,7 +565,7 @@ turbo run build --filter=frontend
 ### Template Validation Tests
 ```bash
 # Comprehensive validation
-/template-validate installer/global/templates/react-fastapi-monorepo
+/template-validate installer/core/templates/react-fastapi-monorepo
 
 # Expected results:
 # Overall Score: ≥9.0/10
@@ -712,7 +712,7 @@ Excellent React + FastAPI monorepo demonstrating:
 
 **Report Generated**: 2025-01-XX
 **Validation Duration**: 60 minutes
-**Template Location**: installer/global/templates/react-fastapi-monorepo/
+**Template Location**: installer/core/templates/react-fastapi-monorepo/
 ```
 
 ---

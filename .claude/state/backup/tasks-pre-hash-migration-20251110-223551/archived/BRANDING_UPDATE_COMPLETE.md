@@ -51,8 +51,8 @@ Successfully updated all references from "agenticflow" to "agentecflow" across t
 - ✅ `docs/guides/QUICK_REFERENCE.md`
 
 ### Global Instructions
-- ✅ `installer/global/instructions/core/00-overview.md`
-- ✅ `installer/global/instructions/core/04-workflow.md`
+- ✅ `installer/core/instructions/core/00-overview.md`
+- ✅ `installer/core/instructions/core/04-workflow.md`
 
 ### Installer Documentation
 - ✅ `installer/DUPLICATION_ANALYSIS.md`
@@ -67,15 +67,15 @@ Successfully updated all references from "agenticflow" to "agentecflow" across t
 - ✅ `installer/SETUP_GUIDE.md`
 
 ### Template Files
-- ✅ `installer/global/templates/python/CLAUDE.md`
-- ✅ `installer/global/templates/maui/CLAUDE.md`
-- ✅ `installer/global/templates/dotnet-microservice/CLAUDE.md`
-- ✅ `installer/global/templates/fullstack/CLAUDE.md`
-- ✅ `installer/global/templates/react/CLAUDE.md`
-- ✅ `installer/global/templates/typescript-api/CLAUDE.md`
+- ✅ `installer/core/templates/python/CLAUDE.md`
+- ✅ `installer/core/templates/maui/CLAUDE.md`
+- ✅ `installer/core/templates/dotnet-microservice/CLAUDE.md`
+- ✅ `installer/core/templates/fullstack/CLAUDE.md`
+- ✅ `installer/core/templates/react/CLAUDE.md`
+- ✅ `installer/core/templates/typescript-api/CLAUDE.md`
 
 ### Command Files
-- ✅ `installer/global/commands/epic-create.md`
+- ✅ `installer/core/commands/epic-create.md`
 - ✅ All other command files updated
 
 ## Key Changes in Scripts

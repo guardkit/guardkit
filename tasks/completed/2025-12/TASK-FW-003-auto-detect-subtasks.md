@@ -103,7 +103,7 @@ Look for file mentions in recommendation text:
 
 ## Files to Create/Modify
 
-- `installer/global/lib/review_parser.py` (NEW)
+- `installer/core/lib/review_parser.py` (NEW)
 
 ## Test Cases
 

@@ -30,7 +30,7 @@ Audit all existing templates using `/template-validate` 16-section framework and
 ## Scope
 
 ### In Scope
-1. Auditing all templates in `installer/global/templates/`
+1. Auditing all templates in `installer/core/templates/`
 2. Running full 16-section validation for each template
 3. Collecting and aggregating quality scores
 4. Identifying common patterns (strengths/weaknesses)
@@ -51,7 +51,7 @@ Audit all existing templates using `/template-validate` 16-section framework and
 ### Phase 1: Discovery and Preparation (0.5 day)
 
 **Tasks:**
-1. Enumerate all templates in `installer/global/templates/`
+1. Enumerate all templates in `installer/core/templates/`
 2. Verify `/template-validate` command is accessible
 3. Test command on one sample template
 4. Create tracking spreadsheet for audit progress
@@ -63,9 +63,9 @@ Audit all existing templates using `/template-validate` 16-section framework and
 - Progress tracking document
 
 **Files to Read:**
-- `installer/global/templates/` (directory listing)
-- `installer/global/commands/template-validate.md` (command spec)
-- `installer/global/commands/lib/template_validate_cli.py` (implementation)
+- `installer/core/templates/` (directory listing)
+- `installer/core/commands/template-validate.md` (command spec)
+- `installer/core/commands/lib/template_validate_cli.py` (implementation)
 
 ### Phase 2: Template Audits - Batch 1 (1.5 days)
 
@@ -78,7 +78,7 @@ Audit all existing templates using `/template-validate` 16-section framework and
 
 **Process for Each Template:**
 ```bash
-/template-validate installer/global/templates/{template-name}
+/template-validate installer/core/templates/{template-name}
 # Run full 16-section interactive audit
 # Review generated audit-report.md
 # Document key findings in tracking spreadsheet
@@ -218,15 +218,15 @@ Same as Phase 2
 ### Files to Create
 
 **Audit Reports (9 files):**
-1. `installer/global/templates/default/audit-report.md`
-2. `installer/global/templates/react/audit-report.md`
-3. `installer/global/templates/python/audit-report.md`
-4. `installer/global/templates/typescript-api/audit-report.md`
-5. `installer/global/templates/maui-appshell/audit-report.md`
-6. `installer/global/templates/maui-navigationpage/audit-report.md`
-7. `installer/global/templates/dotnet-fastendpoints/audit-report.md`
-8. `installer/global/templates/dotnet-aspnetcontroller/audit-report.md`
-9. `installer/global/templates/dotnet-minimalapi/audit-report.md`
+1. `installer/core/templates/default/audit-report.md`
+2. `installer/core/templates/react/audit-report.md`
+3. `installer/core/templates/python/audit-report.md`
+4. `installer/core/templates/typescript-api/audit-report.md`
+5. `installer/core/templates/maui-appshell/audit-report.md`
+6. `installer/core/templates/maui-navigationpage/audit-report.md`
+7. `installer/core/templates/dotnet-fastendpoints/audit-report.md`
+8. `installer/core/templates/dotnet-aspnetcontroller/audit-report.md`
+9. `installer/core/templates/dotnet-minimalapi/audit-report.md`
 
 **Analysis Documents (2 files):**
 1. `docs/research/template-audit-comparative-analysis.md`
@@ -240,10 +240,10 @@ Same as Phase 2
 **Existing Documentation:**
 - `docs/research/template-strategy-decision.md`
 - `docs/research/template-validation-strategy.md`
-- `installer/global/commands/template-validate.md`
+- `installer/core/commands/template-validate.md`
 
 **Existing Templates:**
-- All 9 template directories in `installer/global/templates/`
+- All 9 template directories in `installer/core/templates/`
 
 ### Files to Update
 
@@ -262,7 +262,7 @@ Same as Phase 2
 **Test 1: Verify Audit Reports Exist**
 ```bash
 # Expected: 9 audit reports
-ls -la installer/global/templates/*/audit-report.md | wc -l
+ls -la installer/core/templates/*/audit-report.md | wc -l
 # Should return: 9
 ```
 
@@ -283,7 +283,7 @@ echo $?
 **Test 4: Validate Report Format**
 ```bash
 # Check that all reports have required sections
-for report in installer/global/templates/*/audit-report.md; do
+for report in installer/core/templates/*/audit-report.md; do
   grep -q "Overall Score:" "$report" && \
   grep -q "Grade:" "$report" && \
   grep -q "Strengths" "$report" && \
@@ -409,7 +409,7 @@ done
 ## Related Documents
 
 - **Task Definition**: `tasks/in_progress/TASK-056-audit-existing-templates.md`
-- **Command Spec**: `installer/global/commands/template-validate.md`
+- **Command Spec**: `installer/core/commands/template-validate.md`
 - **Strategy Docs**:
   - `docs/research/template-strategy-decision.md`
   - `docs/research/template-validation-strategy.md`

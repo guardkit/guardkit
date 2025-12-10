@@ -116,7 +116,7 @@ The '--skip-qa' flag will skip the interactive Q&A which caused issues on a prev
 
 ### What We Built
 
-**File**: `installer/global/commands/lib/smart_defaults_detector.py` (531 LOC)
+**File**: `installer/core/commands/lib/smart_defaults_detector.py` (531 LOC)
 
 ```python
 class LanguageDetector:
@@ -263,7 +263,7 @@ Result: Template created (same output, more code)
 > 1. Run interactive Q&A
 > 2. **Analyze the fastapi-best-practices codebase**
 > 3. Generate manifest.json, settings.json, CLAUDE.md, templates/, agents/
-> 4. Write directly to `installer/global/templates/fastapi-python/`"
+> 4. Write directly to `installer/core/templates/fastapi-python/`"
 
 **Interpretation**: AI analyzes codebase. No detection step mentioned.
 
@@ -333,7 +333,7 @@ Result: Template created (same output, more code)
 
 **Action Items**:
 1. **Delete detection code**:
-   - `installer/global/commands/lib/smart_defaults_detector.py` (531 LOC)
+   - `installer/core/commands/lib/smart_defaults_detector.py` (531 LOC)
    - `tests/unit/test_smart_defaults_detector.py` (514 LOC)
    - Total: 1,045 LOC removed
 

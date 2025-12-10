@@ -16,7 +16,7 @@ blocks: []
 related_tasks: [TASK-003A, TASK-003B, TASK-003C]
 research_documents:
   - docs/research/implementation-plan-review-recommendation.md
-  - installer/global/commands/task-create.md
+  - installer/core/commands/task-create.md
 test_results:
   status: passed
   last_run: 2025-10-11T00:00:00Z

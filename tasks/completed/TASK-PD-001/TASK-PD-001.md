@@ -41,7 +41,7 @@ duration_hours: 0.25
 
 ## Description
 
-Refactor `installer/global/lib/agent_enhancement/applier.py` to support progressive disclosure by creating separate extended files (`{name}-ext.md`) alongside core agent files.
+Refactor `installer/core/lib/agent_enhancement/applier.py` to support progressive disclosure by creating separate extended files (`{name}-ext.md`) alongside core agent files.
 
 This is the **highest risk task** in the progressive disclosure initiative as it changes the core behavior of the enhancement pipeline.
 
@@ -190,8 +190,8 @@ def test_apply_with_split():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_enhancement/applier.py` - Main changes
-2. `installer/global/lib/agent_enhancement/models.py` - May need new types
+1. `installer/core/lib/agent_enhancement/applier.py` - Main changes
+2. `installer/core/lib/agent_enhancement/models.py` - May need new types
 
 ## Risk Mitigation
 
@@ -221,4 +221,4 @@ After completing this task:
 
 - [Review Report](.claude/reviews/TASK-REV-426C-review-report.md)
 - [Progressive Disclosure Analysis](docs/research/progressive-disclosure-analysis.md)
-- [Current applier.py](installer/global/lib/agent_enhancement/applier.py)
+- [Current applier.py](installer/core/lib/agent_enhancement/applier.py)

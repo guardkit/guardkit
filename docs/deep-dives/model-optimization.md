@@ -136,7 +136,7 @@ All agents (regardless of model) must pass:
 **Option 1: Edit Agent Frontmatter Directly**
 ```bash
 # Edit the agent file
-vim installer/global/agents/requirements-analyst.md
+vim installer/core/agents/requirements-analyst.md
 
 # Change model field
 model: sonnet  # Change to haiku
@@ -148,13 +148,13 @@ model_rationale: "Your reasoning here"
 **Option 2: Use Git for Rollback**
 ```bash
 # Revert specific agent
-git checkout HEAD -- installer/global/agents/requirements-analyst.md
+git checkout HEAD -- installer/core/agents/requirements-analyst.md
 
 # Revert all agents
-git checkout HEAD -- installer/global/agents/*.md
+git checkout HEAD -- installer/core/agents/*.md
 
 # Revert to specific commit
-git checkout <commit-hash> -- installer/global/agents/
+git checkout <commit-hash> -- installer/core/agents/
 ```
 
 ### Rollback Safety
@@ -188,7 +188,7 @@ git checkout <commit-hash> -- installer/global/agents/
 git checkout -b experiment/haiku-code-reviewer
 
 # Update agent model
-# Edit installer/global/agents/code-reviewer.md
+# Edit installer/core/agents/code-reviewer.md
 # model: sonnet → model: haiku
 
 # Run 50 tasks and measure:

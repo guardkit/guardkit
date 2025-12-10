@@ -78,7 +78,7 @@ Revert to AI-native template creation by removing detector code and Q&A session,
 **Files to Delete**:
 ```bash
 # Detector implementation
-installer/global/commands/lib/smart_defaults_detector.py  # 531 LOC
+installer/core/commands/lib/smart_defaults_detector.py  # 531 LOC
 
 # Detector tests
 tests/unit/test_smart_defaults_detector.py  # 514 LOC
@@ -95,14 +95,14 @@ grep -r "smart_defaults_detector" installer/ tests/
 
 ### Step 2: Remove Phase 1 Q&A from Orchestrator
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes**:
 
 1. **Remove imports** (lines ~17):
    ```python
    # DELETE THIS:
-   from installer.global.commands.lib.template_qa_session import TemplateQASession
+   from installer.core.commands.lib.template_qa_session import TemplateQASession
    ```
 
 2. **Remove Q&A from config** (lines ~68):
@@ -127,7 +127,7 @@ grep -r "smart_defaults_detector" installer/ tests/
 
 ### Step 3: Simplify Orchestrator Run Method
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Current flow** (lines ~160-180):
 ```python
@@ -324,12 +324,12 @@ grep -r "skip_qa" installer/ tests/
 ```
 
 **Files to update**:
-- `installer/global/commands/template-create.md` - Remove `--skip-qa` flag documentation
-- `installer/global/commands/lib/template_create_cli.py` - Remove `--skip-qa` argument parser
+- `installer/core/commands/template-create.md` - Remove `--skip-qa` flag documentation
+- `installer/core/commands/lib/template_create_cli.py` - Remove `--skip-qa` argument parser
 
 ### Step 6: Simplify Command Interface
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Current usage**:
 ```bash
@@ -365,7 +365,7 @@ Tests that /template-create works without Q&A or detector code.
 """
 import pytest
 from pathlib import Path
-from installer.global.commands.lib.template_create_orchestrator import (
+from installer.core.commands.lib.template_create_orchestrator import (
     TemplateCreateOrchestrator,
     OrchestrationConfig
 )
@@ -436,7 +436,7 @@ def test_ai_native_nextjs_fullstack(tmp_path):
    - Add AI-native template creation explanation
    - Update command examples
 
-2. **installer/global/commands/template-create.md**:
+2. **installer/core/commands/template-create.md**:
    - Remove `--skip-qa` flag
    - Add "AI-Native Analysis" section
    - Update usage examples
@@ -544,7 +544,7 @@ TERM=dumb /template-create --output-location=repo
 **Impact**: High
 
 **Mitigation**:
-- Existing templates in `installer/global/templates/` are not affected
+- Existing templates in `installer/core/templates/` are not affected
 - Only creation process changes, not template format
 - Integration tests verify template generation works
 
@@ -596,7 +596,7 @@ After removing Phase 1 Q&A, renumber phases:
 
 ### Codebase Analyzer Enhancement
 
-The `CodebaseAnalyzer` (in `installer/global/lib/codebase_analyzer/ai_analyzer.py`) already exists. Enhance it to:
+The `CodebaseAnalyzer` (in `installer/core/lib/codebase_analyzer/ai_analyzer.py`) already exists. Enhance it to:
 1. Accept `codebase_path` directly (no Q&A answers)
 2. Return structured analysis with inferred metadata
 3. Use enhanced AI prompt for detection

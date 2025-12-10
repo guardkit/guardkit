@@ -18,8 +18,8 @@ test_results:
   notes: "Syntax verification passed. Pre-existing test infrastructure issue with Python 3.9 compatibility unrelated to changes."
 implementation_summary:
   files_modified:
-    - installer/global/agents/agent-content-enhancer.md
-    - installer/global/lib/agent_enhancement/applier.py
+    - installer/core/agents/agent-content-enhancer.md
+    - installer/core/lib/agent_enhancement/applier.py
   changes:
     - "Added Format Templates and Validation Examples table to agent-content-enhancer.md"
     - "Updated _format_loading_instruction() to use relative path pattern with cat command"
@@ -97,9 +97,9 @@ cat agents/svelte5-component-specialist-ext.md
 
 ## Files to Modify
 
-1. `installer/global/agents/agent-content-enhancer.md` - Update boundary generation prompts
-2. `installer/global/commands/agent-enhance.md` - Update format specifications
-3. Potentially: `installer/global/commands/lib/agent_enhance_orchestrator.py` - If programmatic generation
+1. `installer/core/agents/agent-content-enhancer.md` - Update boundary generation prompts
+2. `installer/core/commands/agent-enhance.md` - Update format specifications
+3. Potentially: `installer/core/commands/lib/agent_enhance_orchestrator.py` - If programmatic generation
 
 ## Implementation Notes
 

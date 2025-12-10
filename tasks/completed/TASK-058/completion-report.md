@@ -14,7 +14,7 @@ Create a production-ready FastAPI Python reference template based on the [FastAP
 
 ### Files Created
 - **Total**: 17 files (4,386 lines of code)
-- **Location**: `installer/global/templates/fastapi-python/`
+- **Location**: `installer/core/templates/fastapi-python/`
 
 ### Key Deliverables
 

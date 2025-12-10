@@ -52,13 +52,13 @@ Test 6: Documentation updated            ✅ PASSED
 
 ### What's Implemented
 
-1. **Agent Scanner** (`installer/global/lib/agent_scanner/agent_scanner.py`):
+1. **Agent Scanner** (`installer/core/lib/agent_scanner/agent_scanner.py`):
    - `is_extended_file()` function to detect `-ext.md` files
    - `_scan_directory()` excludes extended files from discovery
    - Comments reference TASK-PD-004
 
 2. **Extended File Structure**:
-   - 13 stub `-ext.md` files created in `installer/global/agents/`
+   - 13 stub `-ext.md` files created in `installer/core/agents/`
    - Each has proper markdown header and boilerplate content
    - Ready for future content migration
 
@@ -79,14 +79,14 @@ The actual content splitting from core to extended files is deferred. Currently:
 ### New Files
 - `scripts/test-progressive-disclosure.sh` - Integration test suite
 - `docs/reports/progressive-disclosure-implementation-report.md` - This report
-- `installer/global/agents/*-ext.md` (13 files) - Extended file stubs
+- `installer/core/agents/*-ext.md` (13 files) - Extended file stubs
 
 ### Modified Files
-- `installer/global/lib/agent_scanner/agent_scanner.py` - Added exclusion logic
+- `installer/core/lib/agent_scanner/agent_scanner.py` - Added exclusion logic
 - `CLAUDE.md` - Added Progressive Disclosure section
 - `.claude/CLAUDE.md` - Added Progressive Disclosure section
-- `installer/global/commands/template-create.md` - Output structure docs
-- `installer/global/commands/agent-enhance.md` - Output structure docs
+- `installer/core/commands/template-create.md` - Output structure docs
+- `installer/core/commands/agent-enhance.md` - Output structure docs
 
 ## Size Analysis
 

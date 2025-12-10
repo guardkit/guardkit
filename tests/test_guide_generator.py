@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from io import StringIO
 
-# Add installer/global/lib to path
-lib_path = Path(__file__).parent.parent / "installer" / "global" / "lib"
+# Add installer/core/lib to path
+lib_path = Path(__file__).parent.parent / "installer" / "core" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from guide_generator import (

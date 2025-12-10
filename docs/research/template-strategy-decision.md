@@ -376,10 +376,10 @@ GuardKit includes five reference implementation templates for three purposes:
 **Logic**:
 ```bash
 if [[ inside guardkit repo ]]; then
-    OUTPUT_DIR="installer/global/templates/"
+    OUTPUT_DIR="installer/core/templates/"
     echo "📦 Template for distribution (in repo)"
 elif [[ --to-repo flag ]]; then
-    OUTPUT_DIR="installer/global/templates/"
+    OUTPUT_DIR="installer/core/templates/"
     echo "📦 Template for distribution"
 else
     OUTPUT_DIR="$HOME/.agentecflow/templates/"

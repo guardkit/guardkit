@@ -102,7 +102,7 @@ Document the **Design-First Workflow** feature (Phases 2-3 with --design-only / 
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phases 2-3, flags)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phases 2-3, flags)
 - Design-first workflow: `docs/workflows/design-first-workflow.md`
 - TASK-006 examples (design-first implementation)
 

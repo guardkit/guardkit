@@ -139,7 +139,7 @@ AFTER all agents complete, GENERATE summary report with:
 ## Specific Fix for Your Command
 
 ### File to Update
-`installer/global/commands/task-work.md`
+`installer/core/commands/task-work.md`
 
 ### New Structure
 
@@ -343,7 +343,7 @@ Result: ✅ All subagents invoked automatically
 
 ### Option 1: Restructure Command (Recommended)
 
-1. Back up current `installer/global/commands/task-work.md`
+1. Back up current `installer/core/commands/task-work.md`
 2. Rewrite with "EXECUTION PROTOCOL" leading
 3. Move documentation to bottom
 4. Test with real task

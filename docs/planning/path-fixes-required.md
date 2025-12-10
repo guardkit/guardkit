@@ -104,7 +104,7 @@ Task: TASK-957C"
 
 Other files that reference old paths (lower priority):
 - tasks/backlog/design-url-integration/TASK-UX-187C-update-claude-md.md (lines 207-208)
-- installer/global/agents/task-manager.md (line 345)
+- installer/core/agents/task-manager.md (line 345)
 - Various completed task files (historical reference only)
 
 These can be fixed later as they're not primary user-facing documentation.

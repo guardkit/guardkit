@@ -32,7 +32,7 @@ Review and clean up the repository root directory to prepare Taskwright for open
 
 **Target State**:
 - ✅ Clean root directory with <20 essential files
-- ✅ All documentation in appropriate directories (docs/, installer/global/)
+- ✅ All documentation in appropriate directories (docs/, installer/core/)
 - ✅ Debug/log files removed or moved to appropriate locations
 - ✅ Backup directories removed
 - ✅ .gitignore updated to prevent future clutter

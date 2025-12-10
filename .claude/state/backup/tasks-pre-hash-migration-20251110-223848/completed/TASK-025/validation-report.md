@@ -80,11 +80,11 @@ docs/workflows/guardkit-vs-requirekit.md:
 docs/workflows/complexity-management-workflow.md:
   ✅ ../shared/common-thresholds.md (exists)
   ✅ ./design-first-workflow.md (exists)
-  ✅ ../../installer/global/commands/task-work.md (exists)
+  ✅ ../../installer/core/commands/task-work.md (exists)
 
 docs/workflows/design-first-workflow.md:
   ✅ ./complexity-management-workflow.md (exists)
-  ✅ ../../installer/global/commands/task-work.md (exists)
+  ✅ ../../installer/core/commands/task-work.md (exists)
   ✅ ../shared/common-thresholds.md (exists)
 
 docs/quick-reference/design-first-workflow-card.md:
@@ -94,7 +94,7 @@ docs/quick-reference/design-first-workflow-card.md:
 ```
 
 ### Pre-Existing Broken Link (Not from TASK-025)
-- ⚠️ `installer/global/commands/feature-generate-tasks.md` (referenced but doesn't exist)
+- ⚠️ `installer/core/commands/feature-generate-tasks.md` (referenced but doesn't exist)
   - This is a pre-existing issue from before TASK-025
   - Command file was removed in TASK-002
   - NOT introduced by TASK-025
@@ -182,7 +182,7 @@ Variations by context:
 
 ### Issue 1: Pre-Existing Broken Link
 **File**: `docs/workflows/complexity-management-workflow.md` (lines 715, 389, 401)
-**Issue**: References to `installer/global/commands/feature-generate-tasks.md`
+**Issue**: References to `installer/core/commands/feature-generate-tasks.md`
 **Status**: Pre-existing (from before TASK-025)
 **Action**: Deferred to future task (remove references or create command spec)
 

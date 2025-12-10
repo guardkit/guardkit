@@ -58,13 +58,13 @@ Add the three missing commands to CLAUDE.md Essential Commands section with brie
 /template-validate <template-path>   # Comprehensive template audit
 ```
 
-**See**: `installer/global/commands/*.md` for complete command specifications.
+**See**: `installer/core/commands/*.md` for complete command specifications.
 ```
 
 **Cross-references to add**:
-- `/agent-format` → `installer/global/commands/agent-format.md`
-- `/agent-validate` → `installer/global/commands/agent-validate.md`
-- `/template-validate` → `installer/global/commands/template-validate.md`
+- `/agent-format` → `installer/core/commands/agent-format.md`
+- `/agent-validate` → `installer/core/commands/agent-validate.md`
+- `/template-validate` → `installer/core/commands/template-validate.md`
 
 ## Source
 

@@ -19,7 +19,7 @@ architecture_improvement: +5.25
 
 ## Problem Statement
 
-The `taskwright-python` template at `installer/global/templates/taskwright-python/` serves no valid purpose and creates confusion. It should be removed.
+The `taskwright-python` template at `installer/core/templates/taskwright-python/` serves no valid purpose and creates confusion. It should be removed.
 
 ## Context
 
@@ -44,12 +44,12 @@ The `taskwright-python` template at `installer/global/templates/taskwright-pytho
 
 Remove the entire template:
 ```bash
-rm -rf installer/global/templates/taskwright-python/
+rm -rf installer/core/templates/taskwright-python/
 ```
 
 ### 2. Update Template Documentation
 
-**File**: `installer/global/templates/README.md` (or main README.md)
+**File**: `installer/core/templates/README.md` (or main README.md)
 
 Remove references to `taskwright-python` template and explain why it was removed:
 
@@ -175,7 +175,7 @@ Remove the `taskwright-python` template entirely.
 ## Implementation Approach
 
 **Phase 1: Remove Template** (10 min)
-- Delete `installer/global/templates/taskwright-python/` directory
+- Delete `installer/core/templates/taskwright-python/` directory
 - Verify no references in init scripts
 
 **Phase 2: Update Documentation** (30 min)
@@ -191,10 +191,10 @@ Remove the `taskwright-python` template entirely.
 ## Files to Modify
 
 **Delete**:
-- `installer/global/templates/taskwright-python/` (entire directory)
+- `installer/core/templates/taskwright-python/` (entire directory)
 
 **Update**:
-- `installer/global/templates/README.md` (or main README.md)
+- `installer/core/templates/README.md` (or main README.md)
 - `CLAUDE.md` or `.claude/CLAUDE.md`
 - Installation documentation
 - Any references to template count (6 → 5)
@@ -204,7 +204,7 @@ Remove the `taskwright-python` template entirely.
 
 ## Acceptance Criteria
 
-- [x] Template directory removed: `installer/global/templates/taskwright-python/`
+- [x] Template directory removed: `installer/core/templates/taskwright-python/`
 - [x] Documentation updated to reference 5 templates (not 6)
 - [x] Explanation added for why template was removed
 - [x] CLAUDE.md template philosophy updated

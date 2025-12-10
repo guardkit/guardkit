@@ -99,9 +99,9 @@ Execution Time: 0.10 seconds
 ### Dependencies
 - ✅ `tests/fixtures/data_fixtures.py` (Phase 1)
 - ✅ `tests/fixtures/mock_fixtures.py` (Phase 1)
-- ✅ `installer/global/commands/lib/complexity_models.py`
-- ✅ `installer/global/commands/lib/review_router.py`
-- ✅ `installer/global/commands/lib/review_modes.py`
+- ✅ `installer/core/commands/lib/complexity_models.py`
+- ✅ `installer/core/commands/lib/review_router.py`
+- ✅ `installer/core/commands/lib/review_modes.py`
 
 ### No Regressions
 - Phase 1 Unit Tests: 124/124 PASSING

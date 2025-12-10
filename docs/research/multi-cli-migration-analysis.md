@@ -198,7 +198,7 @@ scripts/
 
 #### **1. CLI Adapter Interface**
 ```python
-# installer/global/lib/cli_adapter.py
+# installer/core/lib/cli_adapter.py
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
@@ -243,7 +243,7 @@ prompt: "Gather requirements for user authentication"
 
 **Proposed (CLI-agnostic)**:
 ```python
-# installer/global/lib/orchestration.py
+# installer/core/lib/orchestration.py
 def invoke_agent(agent_type: str, prompt: str, cli_adapter: CLIAdapter):
     """
     Invoke agent using appropriate CLI adapter
@@ -301,7 +301,7 @@ def install_commands(cli_type: str, install_dir: str):
 **Proposed**: Adapter-based configuration
 
 ```python
-# installer/global/lib/config.py
+# installer/core/lib/config.py
 class ConfigAdapter(ABC):
     @abstractmethod
     def load_config(self) -> Dict[str, Any]:

@@ -12,7 +12,7 @@ from pathlib import Path
 import sys
 
 # Add lib directory to path for imports
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from checkpoint_display import (

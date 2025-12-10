@@ -39,7 +39,7 @@
 ## Primary Finding: Settings Deserialization Bug (CRITICAL)
 
 ### Location
-[template_create_orchestrator.py:2300-2305](installer/global/commands/lib/template_create_orchestrator.py#L2300-L2305)
+[template_create_orchestrator.py:2300-2305](installer/core/commands/lib/template_create_orchestrator.py#L2300-L2305)
 
 ### Evidence
 
@@ -65,7 +65,7 @@ AttributeError: 'Settings' object has no attribute 'to_dict'
 
 **Step 1: Phase 3 generates settings correctly**
 
-In [template_create_orchestrator.py:824-852](installer/global/commands/lib/template_create_orchestrator.py#L824-L852), `_phase3_settings_generation()` calls:
+In [template_create_orchestrator.py:824-852](installer/core/commands/lib/template_create_orchestrator.py#L824-L852), `_phase3_settings_generation()` calls:
 ```python
 generator = SettingsGenerator(analysis)
 settings = generator.generate()  # Returns TemplateSettings (Pydantic model)
@@ -80,7 +80,7 @@ def to_dict(self) -> dict:
 
 **Step 2: Checkpoint saves settings correctly**
 
-In [template_create_orchestrator.py:2195-2231](installer/global/commands/lib/template_create_orchestrator.py#L2195-L2231), `_save_checkpoint()` calls `_serialize_settings()`:
+In [template_create_orchestrator.py:2195-2231](installer/core/commands/lib/template_create_orchestrator.py#L2195-L2231), `_save_checkpoint()` calls `_serialize_settings()`:
 ```python
 "settings": self._serialize_settings(self.settings),  # Calls settings.to_dict()
 ```
@@ -89,7 +89,7 @@ The serialization works because `settings` is still the original `TemplateSettin
 
 **Step 3: Resume deserializes settings INCORRECTLY**
 
-In [template_create_orchestrator.py:2300-2305](installer/global/commands/lib/template_create_orchestrator.py#L2300-L2305), `_deserialize_settings()` creates a **bare dynamic class**:
+In [template_create_orchestrator.py:2300-2305](installer/core/commands/lib/template_create_orchestrator.py#L2300-L2305), `_deserialize_settings()` creates a **bare dynamic class**:
 ```python
 def _deserialize_settings(self, data: Optional[dict]) -> Any:
     """Deserialize dict back to settings."""
@@ -106,7 +106,7 @@ This creates a new class named `'Settings'` with data attributes, but:
 
 **Step 4: Phase 9 fails when calling to_dict()**
 
-In [template_create_orchestrator.py:1590-1592](installer/global/commands/lib/template_create_orchestrator.py#L1590-L1592):
+In [template_create_orchestrator.py:1590-1592](installer/core/commands/lib/template_create_orchestrator.py#L1590-L1592):
 ```python
 settings_path = output_path / "settings.json"
 settings_gen = SettingsGenerator(None)
@@ -123,7 +123,7 @@ settings_gen.save(settings, settings_path)  # ← Calls settings.to_dict() which
 
 **Option A: Proper Pydantic Deserialization** (RECOMMENDED)
 ```python
-from installer.global.lib.settings_generator.models import TemplateSettings
+from installer.core.lib.settings_generator.models import TemplateSettings
 
 def _deserialize_settings(self, data: Optional[dict]) -> Optional[TemplateSettings]:
     """Deserialize dict back to TemplateSettings."""
@@ -151,7 +151,7 @@ def _deserialize_settings(self, data: Optional[dict]) -> Any:
 
 ### Issue 2: Manifest Deserialization (HIGH)
 
-**Location**: [template_create_orchestrator.py:2276-2281](installer/global/commands/lib/template_create_orchestrator.py#L2276-L2281)
+**Location**: [template_create_orchestrator.py:2276-2281](installer/core/commands/lib/template_create_orchestrator.py#L2276-L2281)
 
 **Same bug pattern**:
 ```python
@@ -167,7 +167,7 @@ def _deserialize_manifest(self, data: Optional[dict]) -> Any:
 
 ### Issue 3: Templates Deserialization (HIGH)
 
-**Location**: [template_create_orchestrator.py:2341-2356](installer/global/commands/lib/template_create_orchestrator.py#L2341-L2356)
+**Location**: [template_create_orchestrator.py:2341-2356](installer/core/commands/lib/template_create_orchestrator.py#L2341-L2356)
 
 **Same bug pattern**:
 ```python
@@ -267,7 +267,7 @@ Cascades from Finding 4.
 # template_create_orchestrator.py
 
 # Add import at top
-from installer.global.lib.settings_generator.models import TemplateSettings
+from installer.core.lib.settings_generator.models import TemplateSettings
 
 def _deserialize_settings(self, data: Optional[dict]) -> Optional[TemplateSettings]:
     """Deserialize dict back to TemplateSettings Pydantic model."""
@@ -388,7 +388,7 @@ def test_settings_deserialization_has_to_dict():
 
 ### Core Files Reviewed
 
-1. [template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) - Main orchestrator (2500+ lines)
+1. [template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) - Main orchestrator (2500+ lines)
 2. [lib/settings_generator/generator.py](lib/settings_generator/generator.py) - Settings generator
 3. [lib/settings_generator/models.py](lib/settings_generator/models.py) - TemplateSettings Pydantic model
 4. [tests/unit/test_template_create_orchestrator.py](tests/unit/test_template_create_orchestrator.py) - Unit tests

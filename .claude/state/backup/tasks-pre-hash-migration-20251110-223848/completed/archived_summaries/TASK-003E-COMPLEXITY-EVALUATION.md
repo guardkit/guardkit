@@ -208,14 +208,14 @@ This task requires mandatory human review before proceeding to Phase 3 implement
 **Required Checks**:
 ```bash
 # Verify these modules exist and have expected interfaces:
-ls -la installer/global/commands/lib/complexity_models.py
-ls -la installer/global/commands/lib/review_modes.py
-ls -la installer/global/commands/lib/plan_templates.py
-ls -la installer/global/commands/lib/metrics_collection.py
+ls -la installer/core/commands/lib/complexity_models.py
+ls -la installer/core/commands/lib/review_modes.py
+ls -la installer/core/commands/lib/plan_templates.py
+ls -la installer/core/commands/lib/metrics_collection.py
 
 # Verify interfaces match test expectations:
-python -c "from installer.global.commands.lib import complexity_models; print(dir(complexity_models))"
-python -c "from installer.global.commands.lib import review_modes; print(dir(review_modes))"
+python -c "from installer.core.commands.lib import complexity_models; print(dir(complexity_models))"
+python -c "from installer.core.commands.lib import review_modes; print(dir(review_modes))"
 ```
 
 #### 3. Scope Reduction Validation
@@ -304,15 +304,15 @@ python -c "from installer.global.commands.lib import review_modes; print(dir(rev
 **Commands**:
 ```bash
 # List all dependency modules
-find installer/global/commands/lib -name "*.py" | grep -E "(complexity|review|plan|metrics)"
+find installer/core/commands/lib -name "*.py" | grep -E "(complexity|review|plan|metrics)"
 
 # Check imports work
 python -c "
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.complexity_models import EvaluationContext
-from installer.global.commands.lib.review_modes import ReviewRouter
-from installer.global.commands.lib.plan_templates import PlanTemplateRenderer
-from installer.global.commands.lib.metrics_collection import MetricsCollector
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.complexity_models import EvaluationContext
+from installer.core.commands.lib.review_modes import ReviewRouter
+from installer.core.commands.lib.plan_templates import PlanTemplateRenderer
+from installer.core.commands.lib.metrics_collection import MetricsCollector
 print('All imports successful')
 "
 ```

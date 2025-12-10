@@ -69,12 +69,12 @@ Dynamic imports are used to **defer import errors** until runtime, not load-time
 
 ```python
 # WRONG (load-time error if modules don't exist yet):
-from installer.global.lib.agent_enhancement.prompt_builder import EnhancementPromptBuilder
+from installer.core.lib.agent_enhancement.prompt_builder import EnhancementPromptBuilder
 
 # CORRECT (runtime error only when enhancer is instantiated):
 import importlib
 _prompt_builder = importlib.import_module(
-    'installer.global.lib.agent_enhancement.prompt_builder'
+    'installer.core.lib.agent_enhancement.prompt_builder'
 )
 EnhancementPromptBuilder = _prompt_builder.EnhancementPromptBuilder
 ```
@@ -95,7 +95,7 @@ EnhancementPromptBuilder = _prompt_builder.EnhancementPromptBuilder
 
 **Clarification**:
 
-**File**: `installer/global/lib/agent_enhancement/applier.py` (~100 lines)
+**File**: `installer/core/lib/agent_enhancement/applier.py` (~100 lines)
 
 **Class**: `EnhancementApplier`
 
@@ -138,7 +138,7 @@ class ValidationError(Exception):
     pass
 ```
 
-**Location**: Top of `installer/global/lib/agent_enhancement/enhancer.py` (after imports, before dataclasses)
+**Location**: Top of `installer/core/lib/agent_enhancement/enhancer.py` (after imports, before dataclasses)
 
 **Usage**: Raised by `_validate_enhancement()` method when enhancement dict is malformed.
 
@@ -165,8 +165,8 @@ class ValidationError(Exception):
 
 ### 3. `/agent-enhance` Command
 
-- [ ] **AC3.1**: New command file created: `installer/global/commands/agent-enhance.py`
-- [ ] **AC3.2**: Command spec created: `installer/global/commands/agent-enhance.md`
+- [ ] **AC3.1**: New command file created: `installer/core/commands/agent-enhance.py`
+- [ ] **AC3.2**: Command spec created: `installer/core/commands/agent-enhance.md`
 - [ ] **AC3.3**: Accepts two path formats: `template/agent` and `/path/to/agent.md`
 - [ ] **AC3.4**: Supports `--dry-run` flag (show preview without applying)
 - [ ] **AC3.5**: Supports `--strategy` flag (ai|static|hybrid)
@@ -177,7 +177,7 @@ class ValidationError(Exception):
 
 ### 4. SingleAgentEnhancer Module
 
-- [ ] **AC4.1**: Module created: `installer/global/lib/agent_enhancement/enhancer.py`
+- [ ] **AC4.1**: Module created: `installer/core/lib/agent_enhancement/enhancer.py`
 - [ ] **AC4.2**: `SingleAgentEnhancer` class with `__init__(strategy, dry_run, verbose)`
 - [ ] **AC4.3**: `enhance(agent_file, template_dir)` method returns `EnhancementResult`
 - [ ] **AC4.4**: Three strategies implemented: ai, static, hybrid
@@ -235,7 +235,7 @@ class ValidationError(Exception):
 ### Phase 8: Task Creation
 
 ```python
-# File: installer/global/commands/lib/template_create_orchestrator.py
+# File: installer/core/commands/lib/template_create_orchestrator.py
 
 def _run_phase_8_create_agent_tasks(
     self,
@@ -274,7 +274,7 @@ def _run_phase_8_create_agent_tasks(
     logger.info(f"Creating enhancement tasks for {len(agent_files)} agents...")
 
     # Import task creator
-    from installer.global.commands.lib.task_creator import create_task
+    from installer.core.commands.lib.task_creator import create_task
 
     task_ids = []
     for agent_file in agent_files:
@@ -330,7 +330,7 @@ Use the /agent-enhance command:
 ### `/agent-enhance` Command
 
 ```python
-# File: installer/global/commands/agent-enhance.py
+# File: installer/core/commands/agent-enhance.py
 
 """
 /agent-enhance Command
@@ -346,7 +346,7 @@ import argparse
 
 import importlib
 _enhancer_module = importlib.import_module(
-    'installer.global.lib.agent_enhancement.enhancer'
+    'installer.core.lib.agent_enhancement.enhancer'
 )
 SingleAgentEnhancer = _enhancer_module.SingleAgentEnhancer
 
@@ -473,7 +473,7 @@ def resolve_paths(agent_path_str: str) -> tuple[Path, Path]:
         agent_name = parts[1]
 
         # Look in global templates
-        template_dir = Path(f"installer/global/templates/{template_name}")
+        template_dir = Path(f"installer/core/templates/{template_name}")
         if not template_dir.exists():
             # Look in local templates
             template_dir = Path.home() / ".agentecflow" / "templates" / template_name
@@ -495,7 +495,7 @@ if __name__ == "__main__":
 ### SingleAgentEnhancer Module
 
 ```python
-# File: installer/global/lib/agent_enhancement/enhancer.py
+# File: installer/core/lib/agent_enhancement/enhancer.py
 
 """
 Single Agent Enhancer
@@ -512,13 +512,13 @@ import logging
 # Import shared modules
 import importlib
 _prompt_builder = importlib.import_module(
-    'installer.global.lib.agent_enhancement.prompt_builder'
+    'installer.core.lib.agent_enhancement.prompt_builder'
 )
 _parser = importlib.import_module(
-    'installer.global.lib.agent_enhancement.parser'
+    'installer.core.lib.agent_enhancement.parser'
 )
 _applier = importlib.import_module(
-    'installer.global.lib.agent_enhancement.applier'
+    'installer.core.lib.agent_enhancement.applier'
 )
 
 EnhancementPromptBuilder = _prompt_builder.EnhancementPromptBuilder

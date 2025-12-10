@@ -46,8 +46,8 @@ Create an exclusion filter that removes build artifacts before analysis. This is
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/lib/codebase_analyzer/exclusion_patterns.py` | CREATE | Exclusion logic |
-| `installer/global/lib/codebase_analyzer/stratified_sampler.py` | MODIFY | Use exclusion filter |
+| `installer/core/lib/codebase_analyzer/exclusion_patterns.py` | CREATE | Exclusion logic |
+| `installer/core/lib/codebase_analyzer/stratified_sampler.py` | MODIFY | Use exclusion filter |
 | `tests/unit/codebase_analyzer/test_exclusion_patterns.py` | CREATE | Unit tests |
 
 ---
@@ -57,7 +57,7 @@ Create an exclusion filter that removes build artifacts before analysis. This is
 ### 1. ExclusionPatterns Module
 
 ```python
-# installer/global/lib/codebase_analyzer/exclusion_patterns.py
+# installer/core/lib/codebase_analyzer/exclusion_patterns.py
 
 from pathlib import Path
 from typing import List, Optional, Set
@@ -329,7 +329,7 @@ def get_exclusion_summary(
 ### 2. Integrate with Stratified Sampler
 
 ```python
-# In installer/global/lib/codebase_analyzer/stratified_sampler.py
+# In installer/core/lib/codebase_analyzer/stratified_sampler.py
 
 from .exclusion_patterns import filter_files
 
@@ -391,7 +391,7 @@ class StratifiedSampler:
 
 import pytest
 from pathlib import Path
-from installer.global.lib.codebase_analyzer.exclusion_patterns import (
+from installer.core.lib.codebase_analyzer.exclusion_patterns import (
     should_exclude,
     filter_files,
     load_gitignore_patterns,

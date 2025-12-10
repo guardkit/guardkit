@@ -589,8 +589,8 @@ A: Context7 supports version-specific IDs (e.g., `/facebook/react/v18.2.0`). Use
 
 ## Related Documentation
 
-- [task-work.md](../../installer/global/commands/task-work.md) - Full command specification with Context7 integration
-- [task-manager.md](../../installer/global/agents/task-manager.md) - Task manager agent with Context7 usage instructions
+- [task-work.md](../../installer/core/commands/task-work.md) - Full command specification with Context7 integration
+- [task-manager.md](../../installer/core/agents/task-manager.md) - Task manager agent with Context7 usage instructions
 - [CLAUDE.md](../../CLAUDE.md) - Project overview with Context7 reference
 
 ## Changelog

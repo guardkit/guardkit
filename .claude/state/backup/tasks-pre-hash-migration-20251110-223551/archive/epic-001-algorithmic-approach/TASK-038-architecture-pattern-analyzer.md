@@ -133,7 +133,7 @@ When analyzing domain logic, the system shall:
 ### Step 1: Create Analyzer Module
 
 ```python
-# installer/global/commands/lib/architecture_analyzer.py
+# installer/core/commands/lib/architecture_analyzer.py
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional
@@ -476,9 +476,9 @@ def test_detect_clean_architecture():
 
 ## Files to Create
 
-1. `installer/global/commands/lib/architecture_analyzer.py` - Main analyzer (~500 lines)
-2. `installer/global/commands/lib/architecture_analyzer/pattern_detectors.py` - Pattern detection (~350 lines)
-3. `installer/global/commands/lib/architecture_analyzer/layer_detector.py` - Layer identification (~200 lines)
+1. `installer/core/commands/lib/architecture_analyzer.py` - Main analyzer (~500 lines)
+2. `installer/core/commands/lib/architecture_analyzer/pattern_detectors.py` - Pattern detection (~350 lines)
+3. `installer/core/commands/lib/architecture_analyzer/layer_detector.py` - Layer identification (~200 lines)
 4. `tests/unit/test_architecture_analyzer.py` - Unit tests (~400 lines)
 5. `tests/fixtures/` - Test project fixtures (MVVM, Clean Architecture)
 

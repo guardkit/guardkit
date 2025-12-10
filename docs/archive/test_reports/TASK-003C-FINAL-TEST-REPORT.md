@@ -32,8 +32,8 @@ All critical tests pass. Initial automated test failures were false positives ca
 - **Total Test Cases**: 37
 - **Execution Time**: ~2 seconds
 - **Files Validated**:
-  - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/task-work.md`
-  - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/task-manager.md`
+  - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/task-work.md`
+  - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/task-manager.md`
 
 ### Test Results by Category
 

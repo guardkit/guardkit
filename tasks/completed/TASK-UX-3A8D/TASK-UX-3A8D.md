@@ -73,7 +73,7 @@ Make `--create-agent-tasks` the default behavior for `/template-create` command,
 
 ### Step 1: Change Default Value
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Location**: Line 85 in `OrchestrationConfig` dataclass
 
@@ -110,7 +110,7 @@ class OrchestrationConfig:
 
 ### Step 2: Add Opt-Out Flag
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Location**: Lines 2073-2074 in argument parser (inside `if __name__ == "__main__"` block)
 
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     parser.add_argument("--name", type=str,
                         help="Custom template name (overrides AI-generated name)")
     parser.add_argument("--output-location", choices=['global', 'repo'], default='global',
-                        help="Output location: 'global' (~/.agentecflow/templates/) or 'repo' (installer/global/templates/)")
+                        help="Output location: 'global' (~/.agentecflow/templates/) or 'repo' (installer/core/templates/)")
     parser.add_argument("--skip-qa", action="store_true",
                         help="DEPRECATED: Now always uses smart defaults")
     parser.add_argument("--config", type=str,
@@ -166,7 +166,7 @@ if __name__ == "__main__":
 
 ### Step 3: Update Documentation
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Location 1**: Lines 126-133 (Phase 8 description)
 

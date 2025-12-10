@@ -3,14 +3,14 @@
 ## ✅ Completed Actions
 
 ### 1. Templates Migration
-Successfully moved all templates from `.claude/templates/` to `installer/global/templates/default/templates/`:
+Successfully moved all templates from `.claude/templates/` to `installer/core/templates/default/templates/`:
 
 - ✅ `ears-requirement.md` - EARS requirement template
 - ✅ `bdd-scenario.md` - BDD/Gherkin scenario template  
 - ✅ `adr-template.md` - Architecture Decision Record template
 - ✅ `task-template.md` - Task definition template
 
-**Location**: `/installer/global/templates/default/templates/`
+**Location**: `/installer/core/templates/default/templates/`
 
 ### 2. Methodology Consolidation
 Successfully consolidated and enhanced methodology files into global instructions:
@@ -24,7 +24,7 @@ Successfully consolidated and enhanced methodology files into global instruction
 - ✅ `bdd-gherkin.md` - BDD and Gherkin patterns
 - ✅ `test-orchestration.md` - Test orchestration strategies
 
-**Location**: `/installer/global/instructions/core/`
+**Location**: `/installer/core/instructions/core/`
 
 ## 📁 Current Structure
 

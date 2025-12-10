@@ -52,7 +52,7 @@ Replace the current sequential ID generation in `/task-create` command with the 
 ## Implementation Notes
 
 ### Files to Modify
-1. `installer/global/commands/task-create.md` - Update documentation
+1. `installer/core/commands/task-create.md` - Update documentation
 2. Command implementation script (search for current ID generation logic)
 
 ### Changes Required
@@ -67,7 +67,7 @@ task_id="TASK-$(printf '%03d' $next_num)"
 
 **After (Hash-based)**:
 ```python
-from installer.global.lib.id_generator import generate_task_id, validate_task_id
+from installer.core.lib.id_generator import generate_task_id, validate_task_id
 
 # Parse prefix from args
 prefix = parse_prefix_from_args(args)  # e.g., "E01", "DOC", None

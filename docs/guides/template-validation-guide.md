@@ -53,7 +53,7 @@ Optional `--validate` flag adds:
 # Personal templates (default: ~/.agentecflow/templates/)
 /template-create --validate
 
-# Repository templates (installer/global/templates/)
+# Repository templates (installer/core/templates/)
 /template-create --validate --output-location=repo
 
 # Dry run with validation
@@ -106,7 +106,7 @@ Interactive 16-section audit command:
 /template-validate ~/.agentecflow/templates/my-template
 
 # Repository templates
-/template-validate installer/global/templates/react-typescript
+/template-validate installer/core/templates/react-typescript
 
 # Specific sections
 /template-validate <template-path> --sections 1,4,7
@@ -174,9 +174,9 @@ Run all sections? [Y/n/select]:
 | Scenario | Level | Why | Template Location |
 |----------|-------|-----|-------------------|
 | Personal template | 1 (Auto) | Quick, no ceremony | `~/.agentecflow/templates/` |
-| Team template | 2 (Extended) | Quality report for stakeholders | `installer/global/templates/` (use `--output-location=repo`) |
-| Global deployment | 3 (Comprehensive) | Thorough validation required | `installer/global/templates/` |
-| CI/CD integration | 2 (Extended) | Exit codes, reports | `installer/global/templates/` |
+| Team template | 2 (Extended) | Quality report for stakeholders | `installer/core/templates/` (use `--output-location=repo`) |
+| Global deployment | 3 (Comprehensive) | Thorough validation required | `installer/core/templates/` |
+| CI/CD integration | 2 (Extended) | Exit codes, reports | `installer/core/templates/` |
 | Troubleshooting | 3 (Comprehensive) | Deep analysis needed | Either location |
 
 ## Examples
@@ -193,7 +193,7 @@ Run all sections? [Y/n/select]:
 /template-create --output-location=repo --validate
 
 # Review report
-cat installer/global/templates/my-template/validation-report.md
+cat installer/core/templates/my-template/validation-report.md
 ```
 
 ### Production Template with Comprehensive Audit
@@ -202,10 +202,10 @@ cat installer/global/templates/my-template/validation-report.md
 /template-create --output-location=repo
 
 # Run comprehensive audit
-/template-validate installer/global/templates/my-template
+/template-validate installer/core/templates/my-template
 
 # Review audit report
-cat installer/global/templates/my-template/audit-report.md
+cat installer/core/templates/my-template/audit-report.md
 ```
 
 ### CI/CD Integration
@@ -265,11 +265,11 @@ A: Review the validation report recommendations and use `/template-validate` for
 
 **Q: Where are templates created by default?**
 
-A: Templates are created in `~/.agentecflow/templates/` by default for immediate personal use. Use `--output-location=repo` flag to create templates in `installer/global/templates/` for team/public distribution.
+A: Templates are created in `~/.agentecflow/templates/` by default for immediate personal use. Use `--output-location=repo` flag to create templates in `installer/core/templates/` for team/public distribution.
 
 **Q: Can I validate templates in either location?**
 
-A: Yes! Both `/template-create --validate` and `/template-validate` work with templates in either `~/.agentecflow/templates/` (personal) or `installer/global/templates/` (repository) locations.
+A: Yes! Both `/template-create --validate` and `/template-validate` work with templates in either `~/.agentecflow/templates/` (personal) or `installer/core/templates/` (repository) locations.
 
 ## See Also
 

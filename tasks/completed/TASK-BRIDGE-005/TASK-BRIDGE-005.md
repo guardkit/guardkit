@@ -23,11 +23,11 @@ Fix the `/template-create` command to set PYTHONPATH before invoking the Python 
 The bridge implementation (TASK-BRIDGE-001, 002, 003) is complete, but users get this error when running `/template-create` from their project directories:
 
 ```
-python3 -m installer.global.commands.lib.template_create_orchestrator
+python3 -m installer.core.commands.lib.template_create_orchestrator
 ModuleNotFoundError: No module named 'installer'
 ```
 
-**Root Cause**: The command runs `python3 -m installer.global...` but doesn't set PYTHONPATH to include the taskwright directory, so Python can't find the `installer` module.
+**Root Cause**: The command runs `python3 -m installer.core...` but doesn't set PYTHONPATH to include the taskwright directory, so Python can't find the `installer` module.
 
 **Current Workaround**: Users must manually set PYTHONPATH or run from taskwright directory.
 
@@ -52,7 +52,7 @@ ModuleNotFoundError: No module named 'installer'
 
 ### File to Modify
 
-1. `~/.agentecflow/commands/template-create.md` (or `installer/global/commands/template-create.md`)
+1. `~/.agentecflow/commands/template-create.md` (or `installer/core/commands/template-create.md`)
 
 ### Implementation Steps
 
@@ -64,7 +64,7 @@ Modify the command execution section (around line 950) to add PYTHONPATH before 
 # BEFORE (Current - BROKEN):
 cmd_parts = [
     "python3", "-m",
-    "installer.global.commands.lib.template_create_orchestrator"
+    "installer.core.commands.lib.template_create_orchestrator"
 ]
 
 # ... add arguments ...
@@ -140,7 +140,7 @@ print()
 # Step 3: Build and run command (unchanged)
 cmd_parts = [
     "python3", "-m",
-    "installer.global.commands.lib.template_create_orchestrator"
+    "installer.core.commands.lib.template_create_orchestrator"
 ]
 
 # ... add arguments ...

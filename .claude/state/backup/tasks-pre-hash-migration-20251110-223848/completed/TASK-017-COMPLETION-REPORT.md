@@ -115,23 +115,23 @@ Successfully optimized the Agentecflow system's agent model configuration by str
 ### Files Modified
 **Agent Configurations** (17 files):
 ```
-installer/global/agents/architectural-reviewer.md → sonnet
-installer/global/agents/bdd-generator.md → haiku
-installer/global/agents/build-validator.md → haiku
-installer/global/agents/code-reviewer.md → sonnet
-installer/global/agents/complexity-evaluator.md → sonnet
-installer/global/agents/database-specialist.md → sonnet
-installer/global/agents/debugging-specialist.md → sonnet
-installer/global/agents/devops-specialist.md → sonnet
-installer/global/agents/figma-react-orchestrator.md → sonnet
-installer/global/agents/pattern-advisor.md → sonnet
-installer/global/agents/python-mcp-specialist.md → sonnet
-installer/global/agents/requirements-analyst.md → haiku
-installer/global/agents/security-specialist.md → sonnet
-installer/global/agents/task-manager.md → sonnet
-installer/global/agents/test-orchestrator.md → haiku
-installer/global/agents/test-verifier.md → haiku
-installer/global/agents/zeplin-maui-orchestrator.md → sonnet
+installer/core/agents/architectural-reviewer.md → sonnet
+installer/core/agents/bdd-generator.md → haiku
+installer/core/agents/build-validator.md → haiku
+installer/core/agents/code-reviewer.md → sonnet
+installer/core/agents/complexity-evaluator.md → sonnet
+installer/core/agents/database-specialist.md → sonnet
+installer/core/agents/debugging-specialist.md → sonnet
+installer/core/agents/devops-specialist.md → sonnet
+installer/core/agents/figma-react-orchestrator.md → sonnet
+installer/core/agents/pattern-advisor.md → sonnet
+installer/core/agents/python-mcp-specialist.md → sonnet
+installer/core/agents/requirements-analyst.md → haiku
+installer/core/agents/security-specialist.md → sonnet
+installer/core/agents/task-manager.md → sonnet
+installer/core/agents/test-orchestrator.md → haiku
+installer/core/agents/test-verifier.md → haiku
+installer/core/agents/zeplin-maui-orchestrator.md → sonnet
 ```
 
 ### Frontmatter Schema
@@ -209,13 +209,13 @@ No custom backup system needed - leveraging git version control:
 
 ```bash
 # Revert specific agent
-git checkout HEAD -- installer/global/agents/requirements-analyst.md
+git checkout HEAD -- installer/core/agents/requirements-analyst.md
 
 # Revert all agents
-git checkout HEAD -- installer/global/agents/*.md
+git checkout HEAD -- installer/core/agents/*.md
 
 # Revert to specific commit
-git checkout <commit-hash> -- installer/global/agents/
+git checkout <commit-hash> -- installer/core/agents/
 ```
 
 **Benefits**:

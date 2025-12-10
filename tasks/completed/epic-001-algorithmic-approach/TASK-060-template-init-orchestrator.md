@@ -40,7 +40,7 @@ Integrate all Q&A sections into cohesive `/template-init` command:
 ## Implementation
 
 ```python
-# installer/global/commands/template-init.py
+# installer/core/commands/template-init.py
 
 class TemplateInitCommand:
     def execute(self, options):

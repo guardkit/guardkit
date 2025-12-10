@@ -13,7 +13,7 @@ from datetime import datetime
 import importlib
 
 # Import using importlib to avoid 'global' keyword issue
-_config_handler_module = importlib.import_module('installer.global.lib.template_config_handler')
+_config_handler_module = importlib.import_module('installer.core.lib.template_config_handler')
 TemplateConfigHandler = _config_handler_module.TemplateConfigHandler
 ConfigValidationError = _config_handler_module.ConfigValidationError
 

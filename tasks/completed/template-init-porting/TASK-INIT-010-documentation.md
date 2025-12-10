@@ -42,7 +42,7 @@ Documentation doesn't reflect the 13 ported features from `/template-create`, le
 
 From TASK-5E55 review:
 - 13 features ported from template-create
-- Documentation at installer/global/commands/template-init.md is outdated
+- Documentation at installer/core/commands/template-init.md is outdated
 - Missing: command options, feature descriptions, examples, exit codes
 - Gap severity: 🔴 **CRITICAL** (documentation debt)
 
@@ -62,7 +62,7 @@ From TASK-5E55 review:
 
 ## Documentation Updates Required
 
-### File: installer/global/commands/template-init.md
+### File: installer/core/commands/template-init.md
 
 **SECTION 1: Command Synopsis** (update):
 
@@ -90,7 +90,7 @@ Create greenfield template through interactive Q&A session with automatic qualit
 - Immediate availability
 - Not shared with team
 
-**repo**: Repository templates (installer/global/templates/)
+**repo**: Repository templates (installer/core/templates/)
 - For team distribution
 - Requires git commit
 - Shared across projects
@@ -193,7 +193,7 @@ Save templates to personal or repository location.
 **Repository:**
 ```bash
 /template-init --output-location=repo
-# Saves to installer/global/templates/
+# Saves to installer/core/templates/
 ```
 
 ### 6. Discovery Metadata (TASK-INIT-008)
@@ -296,7 +296,7 @@ Quality-based exit codes for CI/CD integration.
 ### Repository Template with Validation
 ```bash
 /template-init --validate --output-location=repo
-# Full quality assessment → saves to installer/global/templates/
+# Full quality assessment → saves to installer/core/templates/
 ```
 
 ### Skip Agent Enhancement Tasks
@@ -313,7 +313,7 @@ EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo "✅ Template meets quality standards (≥8/10)"
-    git add installer/global/templates/
+    git add installer/core/templates/
     git commit -m "Add high-quality template"
 elif [ $EXIT_CODE -eq 1 ]; then
     echo "⚠️ Template has medium quality (6-7.9/10) - review recommended"
@@ -397,7 +397,7 @@ tasks/backlog/
 - Update other documentation files
 
 ### ✅ DO ONLY
-- Update installer/global/commands/template-init.md
+- Update installer/core/commands/template-init.md
 - Document all 13 ported features
 - Provide clear examples
 - Explain exit codes and CI/CD usage
@@ -405,7 +405,7 @@ tasks/backlog/
 
 ## Files to Modify
 
-1. **installer/global/commands/template-init.md** - COMPLETE REWRITE
+1. **installer/core/commands/template-init.md** - COMPLETE REWRITE
    - Update synopsis and options
    - Add features section (13 features)
    - Update workflow with new phases
@@ -494,7 +494,7 @@ tasks/backlog/
 
 - **Parent Review**: TASK-5E55
 - **Implementation Tasks**: TASK-INIT-001 through TASK-INIT-009
-- **Comparison Source**: installer/global/commands/template-create.md
+- **Comparison Source**: installer/core/commands/template-create.md
 - **Gap Analysis**: docs/decisions/template-init-vs-template-create-analysis.md
 
 ## Success Metrics
@@ -517,7 +517,7 @@ When complete:
 **Final Status**: ✅ COMPLETED
 
 ### Deliverables
-- **File Updated**: installer/global/commands/template-init.md
+- **File Updated**: installer/core/commands/template-init.md
 - **Lines Added**: 585 insertions, 187 deletions
 - **Net Growth**: 398 lines (140% increase from 282 to 679 lines)
 - **Subsections**: 40 (from 20 - 100% increase)
@@ -584,7 +584,7 @@ When complete:
 
 ### Files Changed
 ```
-installer/global/commands/template-init.md | 772 ++++++++++++++++++++++-------
+installer/core/commands/template-init.md | 772 ++++++++++++++++++++++-------
 1 file changed, 585 insertions(+), 187 deletions(-)
 ```
 

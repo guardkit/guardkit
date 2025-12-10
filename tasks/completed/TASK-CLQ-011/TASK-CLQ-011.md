@@ -202,9 +202,9 @@ Update each command's reference section:
 
 1. `CLAUDE.md` - Add Clarifying Questions section
 2. `.claude/CLAUDE.md` - Mirror updates
-3. `installer/global/commands/task-work.md` - Update flags table
-4. `installer/global/commands/task-review.md` - Update flags table
-5. `installer/global/commands/feature-plan.md` - Update flags table
+3. `installer/core/commands/task-work.md` - Update flags table
+4. `installer/core/commands/task-review.md` - Update flags table
+5. `installer/core/commands/feature-plan.md` - Update flags table
 
 ## Why Direct Implementation
 

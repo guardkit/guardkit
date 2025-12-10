@@ -37,7 +37,7 @@ This is part of Phase 4 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source File
-- **File**: `installer/global/commands/task-work.md`
+- **File**: `installer/core/commands/task-work.md`
 
 ### Key Changes Required
 
@@ -417,7 +417,7 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 4](../../docs/proposals/design-url-integration-implementation-guide.md#phase-4-update-task-work)
-- [Existing task-work Command](../../installer/global/commands/task-work.md)
+- [Existing task-work Command](../../installer/core/commands/task-work.md)
 - [Figma URL Format](https://help.figma.com/hc/en-us/articles/360045942953-Share-files-and-prototypes)
 - [Zeplin URL Format](https://support.zeplin.io/en/articles/244698-sharing-screens)
 

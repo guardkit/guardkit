@@ -120,7 +120,7 @@ conductor worktree create docs-style-agent
 | **TASK-AGENT-GIT** | P2 | 6h | Create git-workflow-manager.md agent | TASK-AGENT-ENHANCER (for validation) |
 
 **Files Created**:
-- `installer/global/agents/git-workflow-manager.md` (NEW)
+- `installer/core/agents/git-workflow-manager.md` (NEW)
 
 **Coverage**:
 - Branch naming conventions (feature/fix/hotfix/release)
@@ -152,7 +152,7 @@ cd docs-git-agent
 | **TASK-AGENT-STYLE** | P2 | 8h | Create code-style-enforcer.md agent | TASK-AGENT-ENHANCER (for validation) |
 
 **Files Created**:
-- `installer/global/agents/code-style-enforcer.md` (NEW)
+- `installer/core/agents/code-style-enforcer.md` (NEW)
 - Example config files (pyproject.toml, .prettierrc, .editorconfig)
 - Pre-commit hook examples (.pre-commit-config.yaml, .husky)
 
@@ -222,7 +222,7 @@ Total: ~8.5 hours (vs 14 hours sequential, 39% faster)
 **Validation**:
 ```bash
 # After each agent restructured
-/agent-validate installer/global/agents/<agent-name>.md --threshold=7.0
+/agent-validate installer/core/agents/<agent-name>.md --threshold=7.0
 
 # Expected: time_to_first_example ≤50 lines ✅
 ```
@@ -250,7 +250,7 @@ Total: ~8.5 hours (vs 14 hours sequential, 39% faster)
 **Validation**:
 ```bash
 # After each agent enhanced
-/agent-validate installer/global/agents/<agent-name>.md --threshold=7.0
+/agent-validate installer/core/agents/<agent-name>.md --threshold=7.0
 
 # Expected: example_density ≥40% ✅
 ```
@@ -278,7 +278,7 @@ Total: ~8.5 hours (vs 14 hours sequential, 39% faster)
 **Validation**:
 ```bash
 # After each agent enhanced
-/agent-validate installer/global/agents/<agent-name>.md --threshold=7.0
+/agent-validate installer/core/agents/<agent-name>.md --threshold=7.0
 
 # Expected: boundary_sections ["ALWAYS", "NEVER", "ASK"] ✅
 ```
@@ -328,7 +328,7 @@ git merge docs-style-agent --no-ff -m "docs: Add code-style-enforcer.md agent"
 
 **Why Second**: Single new agent file, no conflicts with Git agent.
 
-**Potential Conflicts**: None (both create new files in `installer/global/agents/`)
+**Potential Conflicts**: None (both create new files in `installer/core/agents/`)
 
 ---
 
@@ -429,9 +429,9 @@ graph TD
 | File | Wave | Owner | Safe to Merge |
 |------|------|-------|---------------|
 | `.claude/commands/shared/agent_validation.py` | 1 | TASK-AGENT-ENHANCER | ✅ |
-| `installer/global/commands/agent-validate.py` | 2A | TASK-AGENT-VALIDATE | ✅ |
-| `installer/global/agents/git-workflow-manager.md` | 2B | TASK-AGENT-GIT | ✅ |
-| `installer/global/agents/code-style-enforcer.md` | 2B | TASK-AGENT-STYLE | ✅ |
+| `installer/core/commands/agent-validate.py` | 2A | TASK-AGENT-VALIDATE | ✅ |
+| `installer/core/agents/git-workflow-manager.md` | 2B | TASK-AGENT-GIT | ✅ |
+| `installer/core/agents/code-style-enforcer.md` | 2B | TASK-AGENT-STYLE | ✅ |
 | `.claude/agents/README-AGENT-MODES.md` | 3 | Sprint 1 | ✅ |
 | `examples/security-patterns.md` | 3 | Sprint 2 | ✅ |
 | `examples/performance-patterns.md` | 3 | Sprint 2 | ✅ |
@@ -441,8 +441,8 @@ graph TD
 ### Modifications (Existing Files - Sequential Required)
 | File | Wave | Changes | Conflict Risk |
 |------|------|---------|---------------|
-| `installer/global/agents/agent-content-enhancer.md` | 1 | Add GitHub standards section | LOW (single task) |
-| `installer/global/commands/agent-enhance.md` | 1 | Add validation output docs | LOW (single task) |
+| `installer/core/agents/agent-content-enhancer.md` | 1 | Add GitHub standards section | LOW (single task) |
+| `installer/core/commands/agent-enhance.md` | 1 | Add validation output docs | LOW (single task) |
 | All 15 global agents | 3 | Restructure + enhance + boundaries | NONE (sequential by design) |
 
 ---
@@ -459,14 +459,14 @@ graph TD
 - [ ] **TASK-AGENT-ENHANCER** (4 hours)
   - [ ] Add GitHub Best Practices section to agent-content-enhancer.md
   - [ ] Create shared validation module (`.claude/commands/shared/agent_validation.py`)
-  - [ ] Update command documentation (installer/global/commands/agent-enhance.md)
+  - [ ] Update command documentation (installer/core/commands/agent-enhance.md)
   - [ ] Write unit tests (≥5 tests)
   - [ ] Write integration tests (≥2 tests)
   - [ ] Commit: `git commit -m "feat(agents): Add GitHub standards validation to agent-content-enhancer"`
 
 ### Wave 2A: Validation Infrastructure (Sequential After Wave 1)
 - [ ] **TASK-AGENT-VALIDATE** (24 hours)
-  - [ ] Create command specification (installer/global/commands/agent-validate.md)
+  - [ ] Create command specification (installer/core/commands/agent-validate.md)
   - [ ] Implement core validator (6 categories, 15+ checks)
   - [ ] Implement output formatters (console/JSON/minimal)
   - [ ] Write unit tests (≥45 tests)
@@ -484,7 +484,7 @@ graph TD
   - [ ] Add 10-20 Git workflow examples
   - [ ] Add ALWAYS/NEVER/ASK boundaries
   - [ ] Document branch naming, Conventional Commits, PR workflow
-  - [ ] Validate: `/agent-validate installer/global/agents/git-workflow-manager.md`
+  - [ ] Validate: `/agent-validate installer/core/agents/git-workflow-manager.md`
   - [ ] Commit in worktree: `git commit -m "feat(agents): Add git-workflow-manager agent"`
 
 - [ ] **Worktree B: TASK-AGENT-STYLE** (8 hours)
@@ -493,7 +493,7 @@ graph TD
   - [ ] Add pre-commit hook configs
   - [ ] Add IDE settings examples
   - [ ] Add ALWAYS/NEVER/ASK boundaries
-  - [ ] Validate: `/agent-validate installer/global/agents/code-style-enforcer.md`
+  - [ ] Validate: `/agent-validate installer/core/agents/code-style-enforcer.md`
   - [ ] Commit in worktree: `git commit -m "feat(agents): Add code-style-enforcer agent"`
 
 - [ ] **Merge Wave 2B**
@@ -549,7 +549,7 @@ graph TD
 ### Final Validation
 - [ ] Run full validation sweep
   ```bash
-  /agent-validate-batch installer/global/agents/ --threshold=8.0
+  /agent-validate-batch installer/core/agents/ --threshold=8.0
   ```
 - [ ] **Expected**: 15/15 agents score ≥8.0/10
 - [ ] All agents have:
@@ -631,7 +631,7 @@ graph TD
 **Impact**: LOW (easy to resolve)
 **Mitigation**:
 - Merge order: Git agent → Style agent (chronological)
-- Both create new files in `installer/global/agents/` (no conflicts expected)
+- Both create new files in `installer/core/agents/` (no conflicts expected)
 - Keep backup branch for rollback if needed
 
 ---

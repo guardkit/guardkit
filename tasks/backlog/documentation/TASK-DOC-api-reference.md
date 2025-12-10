@@ -6,7 +6,7 @@
 
 ## Problem
 
-Users need comprehensive reference documentation for all GuardKit commands, their parameters, flags, and behaviors. While command .md files exist in `installer/global/commands/`, they need to be consolidated and presented in a user-friendly format in MkDocs.
+Users need comprehensive reference documentation for all GuardKit commands, their parameters, flags, and behaviors. While command .md files exist in `installer/core/commands/`, they need to be consolidated and presented in a user-friendly format in MkDocs.
 
 ## Command Categories
 
@@ -107,6 +107,6 @@ Status: BACKLOG
 
 ## References
 
-- installer/global/commands/*.md
+- installer/core/commands/*.md
 - Existing command documentation
 - README.md command examples

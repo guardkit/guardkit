@@ -216,8 +216,8 @@ def _run_initial(self, agent_file: Path, template_dir: Path):
 
 import pytest
 from pathlib import Path
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
-from installer.global.lib.agent_enhancement.applier import EnhancementApplier
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.lib.agent_enhancement.applier import EnhancementApplier
 
 class TestProgressiveDisclosureSplit:
 
@@ -303,10 +303,10 @@ Basic agent stub.
 
 ## Files to Modify
 
-1. `installer/global/agents/agent-content-enhancer.md` - Remove Write tool, add JSON output format
-2. `installer/global/lib/agent_enhancement/enhancer.py` - Update _ai_enhancement() to expect JSON
-3. `installer/global/lib/agent_enhancement/orchestrator.py` - Add checkpoint, handle split after AI
-4. `installer/global/lib/agent_enhancement/models.py` - Add enhancement_data field to EnhancementResult
+1. `installer/core/agents/agent-content-enhancer.md` - Remove Write tool, add JSON output format
+2. `installer/core/lib/agent_enhancement/enhancer.py` - Update _ai_enhancement() to expect JSON
+3. `installer/core/lib/agent_enhancement/orchestrator.py` - Add checkpoint, handle split after AI
+4. `installer/core/lib/agent_enhancement/models.py` - Add enhancement_data field to EnhancementResult
 5. `tests/test_progressive_disclosure_split.py` - New test file
 
 ## Testing Strategy
@@ -353,4 +353,4 @@ The core architecture fix has been implemented:
 
 - Review Report: [.claude/reviews/TASK-REV-PD02-review-report.md](.claude/reviews/TASK-REV-PD02-review-report.md)
 - Progressive Disclosure Guide: [docs/guides/progressive-disclosure.md](docs/guides/progressive-disclosure.md)
-- Applier Implementation: [installer/global/lib/agent_enhancement/applier.py](installer/global/lib/agent_enhancement/applier.py)
+- Applier Implementation: [installer/core/lib/agent_enhancement/applier.py](installer/core/lib/agent_enhancement/applier.py)

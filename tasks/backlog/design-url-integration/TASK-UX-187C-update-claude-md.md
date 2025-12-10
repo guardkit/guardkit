@@ -230,10 +230,10 @@ Update to include design-to-code workflow:
 ```markdown
 ## Quick Reference
 
-**Command Specifications:** `installer/global/commands/*.md`
-**Agent Definitions:** `installer/global/agents/*.md`
+**Command Specifications:** `installer/core/commands/*.md`
+**Agent Definitions:** `installer/core/agents/*.md`
 **Workflow Guides:** `docs/guides/*.md` and `docs/workflows/*.md`
-**Stack Templates:** `installer/global/templates/*/`
+**Stack Templates:** `installer/core/templates/*/`
 **Design-to-Code Guide:** `docs/guides/design-to-code-user-guide.md`
 ```
 

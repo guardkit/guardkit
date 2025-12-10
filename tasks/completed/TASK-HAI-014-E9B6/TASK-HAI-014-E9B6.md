@@ -49,7 +49,7 @@ Add discovery metadata to 3 agents in the taskwright-python template. These agen
 
 ### 1. python-cli-specialist.md
 
-**Location**: `installer/global/templates/taskwright-python/agents/`
+**Location**: `installer/core/templates/taskwright-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -82,7 +82,7 @@ collaborates_with:
 
 ### 2. python-architecture-specialist.md
 
-**Location**: `installer/global/templates/taskwright-python/agents/`
+**Location**: `installer/core/templates/taskwright-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -115,7 +115,7 @@ collaborates_with:
 
 ### 3. python-testing-specialist.md
 
-**Location**: `installer/global/templates/taskwright-python/agents/`
+**Location**: `installer/core/templates/taskwright-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -184,7 +184,7 @@ collaborates_with:
 ```python
 python3 -c "
 import frontmatter
-with open('installer/global/templates/taskwright-python/agents/python-cli-specialist.md') as f:
+with open('installer/core/templates/taskwright-python/agents/python-cli-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['stack'] == ['python', 'cli']
     assert agent.metadata['phase'] == 'implementation'
@@ -196,7 +196,7 @@ with open('installer/global/templates/taskwright-python/agents/python-cli-specia
 # Validate architecture specialist uses Sonnet
 python3 -c "
 import frontmatter
-with open('installer/global/templates/taskwright-python/agents/python-architecture-specialist.md') as f:
+with open('installer/core/templates/taskwright-python/agents/python-architecture-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['model'] == 'sonnet'
     print('✅ python-architecture-specialist uses Sonnet')
@@ -205,7 +205,7 @@ with open('installer/global/templates/taskwright-python/agents/python-architectu
 
 **Discovery validation**:
 ```python
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 # Test Python CLI agents
 impl_agents = discover_agents(phase='implementation', stack=['python', 'cli'])
@@ -244,7 +244,7 @@ python3 scripts/validate_template_agents.py taskwright-python
 pytest tests/test_agent_discovery.py::test_taskwright_python_template_agents -v
 
 # Verify no content changes
-git diff --stat installer/global/templates/taskwright-python/agents/
+git diff --stat installer/core/templates/taskwright-python/agents/
 ```
 
 ## Risk Assessment
@@ -263,14 +263,14 @@ git diff --stat installer/global/templates/taskwright-python/agents/
 
 ```bash
 # Revert template agent changes
-git checkout installer/global/templates/taskwright-python/agents/
+git checkout installer/core/templates/taskwright-python/agents/
 ```
 
 **Recovery Time**: <30 seconds
 
 ## Reference Materials
 
-- `installer/global/templates/taskwright-python/agents/*.md` - Existing agents
+- `installer/core/templates/taskwright-python/agents/*.md` - Existing agents
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-002-B47C-create-python-api-specialist.md` - Global Python agent
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema
 - Taskwright's own 16K LOC codebase - Real-world orchestrator patterns

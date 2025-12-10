@@ -194,10 +194,10 @@ print(f"Placeholders: {template.placeholders}")
 ## Files Changed
 
 ### Created
-- `installer/global/lib/template_generator/__init__.py`
-- `installer/global/lib/template_generator/ai_client.py`
-- `installer/global/lib/template_generator/models.py`
-- `installer/global/lib/template_generator/template_generator.py`
+- `installer/core/lib/template_generator/__init__.py`
+- `installer/core/lib/template_generator/ai_client.py`
+- `installer/core/lib/template_generator/models.py`
+- `installer/core/lib/template_generator/template_generator.py`
 - `tests/lib/template_generator/__init__.py`
 - `tests/lib/template_generator/test_template_generator.py`
 - `TASK-008-IMPLEMENTATION-SUMMARY.md`

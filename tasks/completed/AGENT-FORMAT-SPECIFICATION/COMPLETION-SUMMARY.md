@@ -10,19 +10,19 @@ Fully implemented the `/agent-format` command with complete specification, imple
 
 ### Implementation Delivered
 
-1. **Command Specification** (`installer/global/commands/agent-format.md`)
+1. **Command Specification** (`installer/core/commands/agent-format.md`)
    - Complete user-facing documentation
    - All command-line flags and options
    - Usage examples and output samples
    - 305 lines of comprehensive documentation
 
-2. **Command Entry Point** (`installer/global/commands/agent-format.py`)
+2. **Command Entry Point** (`installer/core/commands/agent-format.py`)
    - CLI argument parsing
    - Batch processing support
    - Dry-run and validation modes
    - Comprehensive error handling
 
-3. **Core Library** (`installer/global/lib/agent_formatting/`)
+3. **Core Library** (`installer/core/lib/agent_formatting/`)
    - ✅ `parser.py` - Agent markdown structure parsing
    - ✅ `metrics.py` - Quality metrics calculation (6 metrics)
    - ✅ `transformers.py` - Pattern-based formatting rules
@@ -89,7 +89,7 @@ Fully implemented the `/agent-format` command with complete specification, imple
 
 Command works correctly:
 ```bash
-$ python3 installer/global/commands/agent-format.py --help
+$ python3 installer/core/commands/agent-format.py --help
 usage: agent-format [-h] [--dry-run] [--report] [--validate-only] [--backup]
                     [--no-backup] [--verbose] [--fail-on-warn]
                     path

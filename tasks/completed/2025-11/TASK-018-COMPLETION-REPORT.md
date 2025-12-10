@@ -32,8 +32,8 @@ Audited all 15 global agents and categorized them:
 
 ### 2. File Operations (Completed)
 **Moved:**
-- From: `installer/global/agents/python-mcp-specialist.md`
-- To: `installer/global/templates/python/agents/python-mcp-specialist.md`
+- From: `installer/core/agents/python-mcp-specialist.md`
+- To: `installer/core/templates/python/agents/python-mcp-specialist.md`
 
 **Result:**
 - Global agents: 14 (down from 15)
@@ -98,7 +98,7 @@ ls ~/.agentecflow/agents/python-mcp-specialist.md
 ## Files Modified
 
 1. **Moved:**
-   - `installer/global/agents/python-mcp-specialist.md` → `installer/global/templates/python/agents/python-mcp-specialist.md`
+   - `installer/core/agents/python-mcp-specialist.md` → `installer/core/templates/python/agents/python-mcp-specialist.md`
 
 2. **Updated:**
    - `tasks/backlog/TASK-018-audit-global-vs-template-agents.md` (status: completed)

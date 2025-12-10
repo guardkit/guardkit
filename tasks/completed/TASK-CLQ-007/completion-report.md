@@ -18,7 +18,7 @@ Integrate the clarification module into the `/task-work` command by adding Phase
 
 ### 1. Phase 1.6 Specification Added
 
-Added comprehensive Phase 1.6 specification to `installer/global/commands/task-work.md`:
+Added comprehensive Phase 1.6 specification to `installer/core/commands/task-work.md`:
 
 - **Location**: Between Phase 1 (Requirements Analysis) and Phase 2 (Implementation Planning)
 - **Complexity-Gated Behavior**:
@@ -86,7 +86,7 @@ Added comprehensive examples:
 
 ## Files Modified
 
-- `installer/global/commands/task-work.md` (+339 lines)
+- `installer/core/commands/task-work.md` (+339 lines)
   - Added Phase 1.6 specification (lines 1203-1347)
   - Updated command syntax (line 98)
   - Added Clarifying Questions Flags section (lines 436-611)
@@ -174,8 +174,8 @@ When implementing Phase 1.6, test:
 
 ## Related Documentation
 
-- [Phase 1.6 Specification](../../installer/global/commands/task-work.md#phase-16-clarifying-questions-complexity-gated)
-- [Clarifying Questions Flags](../../installer/global/commands/task-work.md#clarifying-questions-flags-new---task-clq-007)
+- [Phase 1.6 Specification](../../installer/core/commands/task-work.md#phase-16-clarifying-questions-complexity-gated)
+- [Clarifying Questions Flags](../../installer/core/commands/task-work.md#clarifying-questions-flags-new---task-clq-007)
 - [Clarifying Questions Feature](../backlog/clarifying-questions/)
 - [Context C Templates](../../.claude/clarification/templates/context_c_implementation_planning.py)
 

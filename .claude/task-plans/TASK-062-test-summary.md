@@ -40,7 +40,7 @@ exit_code: 0
 ## Template Structure
 
 ```
-Template Location: installer/global/templates/react-fastapi-monorepo/
+Template Location: installer/core/templates/react-fastapi-monorepo/
 
 Files: 11 total
 ├── Configuration (2)
@@ -116,12 +116,12 @@ Missing Placeholders:
 
 **Estimated Fix Time**: 15 minutes
 
-**Location of Issue**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/manifest.json`
+**Location of Issue**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-fastapi-monorepo/manifest.json`
 
 ## Test Verification Files
 
 - **Full Report**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/testing/TASK-062-verification-report.md` (12 KB, comprehensive)
-- **Validation Report**: `installer/global/templates/react-fastapi-monorepo/validation-report.md` (8.4/10 score, 468 lines)
+- **Validation Report**: `installer/core/templates/react-fastapi-monorepo/validation-report.md` (8.4/10 score, 468 lines)
 
 ## Next Steps
 

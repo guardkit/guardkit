@@ -263,7 +263,7 @@ cat tasks/completed/TASK-031-TEST.md
 ### Step 2: Analyze Command Execution
 ```python
 # Check task-work.md command specification
-# installer/global/commands/task-work.md
+# installer/core/commands/task-work.md
 
 # Key questions:
 # 1. Where does it create state files?
@@ -284,10 +284,10 @@ git rev-parse --git-dir
 
 ### Step 4: Review State Management Code
 Files to check:
-- `installer/global/commands/lib/state_manager.py` (if exists)
-- `installer/global/commands/lib/plan_persistence.py`
-- `installer/global/commands/lib/metrics_tracker.py`
-- `installer/global/commands/lib/phase_execution.py`
+- `installer/core/commands/lib/state_manager.py` (if exists)
+- `installer/core/commands/lib/plan_persistence.py`
+- `installer/core/commands/lib/metrics_tracker.py`
+- `installer/core/commands/lib/phase_execution.py`
 
 Look for:
 - Path resolution logic
@@ -508,10 +508,10 @@ Test that fix doesn't break:
 ## Files to Modify
 
 ### Core Implementation
-- `installer/global/commands/task-work.md` (add worktree handling)
-- `installer/global/commands/task-complete.md` (add state validation)
-- `installer/global/commands/lib/path_resolver.py` (worktree-aware paths)
-- `installer/global/commands/lib/state_manager.py` (auto-commit logic)
+- `installer/core/commands/task-work.md` (add worktree handling)
+- `installer/core/commands/task-complete.md` (add state validation)
+- `installer/core/commands/lib/path_resolver.py` (worktree-aware paths)
+- `installer/core/commands/lib/state_manager.py` (auto-commit logic)
 
 ### Documentation
 - `docs/guides/conductor-integration.md` (update with workflow)

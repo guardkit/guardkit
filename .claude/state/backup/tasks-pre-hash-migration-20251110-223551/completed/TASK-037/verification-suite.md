@@ -27,7 +27,7 @@
 ## Detailed Verification Results
 
 ### Acceptance Criterion 1: BDD Agent Files Deleted
-**Requirement**: DELETE .claude/agents/bdd-generator.md, installer/global/instructions/core/bdd-gherkin.md, and all template bdd-generator.md files
+**Requirement**: DELETE .claude/agents/bdd-generator.md, installer/core/instructions/core/bdd-gherkin.md, and all template bdd-generator.md files
 
 **Verification Method**: File existence checks using find and test commands
 
@@ -35,11 +35,11 @@
 ```
 PASS: No bdd-generator.md files found in active codebase
 - .claude/agents/bdd-generator.md: NOT FOUND (CORRECT)
-- installer/global/agents/bdd-generator.md: NOT FOUND (CORRECT)
-- installer/global/templates/*/agents/bdd-generator.md: NOT FOUND (CORRECT) - 0 files
+- installer/core/agents/bdd-generator.md: NOT FOUND (CORRECT)
+- installer/core/templates/*/agents/bdd-generator.md: NOT FOUND (CORRECT) - 0 files
 
 PASS: No bdd-gherkin.md files found
-- installer/global/instructions/core/bdd-gherkin.md: NOT FOUND (CORRECT)
+- installer/core/instructions/core/bdd-gherkin.md: NOT FOUND (CORRECT)
 
 Additional Context:
 - bdd-generator references only found in:
@@ -62,7 +62,7 @@ Additional Context:
 **Results**:
 ```
 PASS: No --mode=bdd flag references found
-- Search: grep -r "mode=bdd" in installer/global/commands/ and .claude/commands/
+- Search: grep -r "mode=bdd" in installer/core/commands/ and .claude/commands/
 - Result: NO MATCHES (CORRECT)
 
 PASS: No BDD Mode section header references found
@@ -70,7 +70,7 @@ PASS: No BDD Mode section header references found
 - Result: NO MATCHES (CORRECT)
 
 Verified Command Specs:
-- installer/global/commands/task-work.md
+- installer/core/commands/task-work.md
 - .claude/commands/task-work.md
 - .claude/commands/task-work-specification.md
 ```
@@ -114,7 +114,7 @@ PASS: No --mode=bdd in either CLAUDE.md
 **Results**:
 ```
 PASS: supports_bdd() function exists and preserved
-- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py
+- File: /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/feature_detection.py
 - Function Location: Line 257
 - Method Location: Line 106 (class method)
 - Status: PRESERVED (CORRECT)
@@ -205,7 +205,7 @@ Historical Documents (Safely Archived):
 
 ## Cross-Reference Verification
 
-### Reference Document: installer/global/agents/test-orchestrator.md
+### Reference Document: installer/core/agents/test-orchestrator.md
 **Status**: VERIFIED
 - References test execution and quality gates
 - Does NOT reference BDD mode (CORRECT)
@@ -220,8 +220,8 @@ Historical Documents (Safely Archived):
 ```
 Deleted from active codebase:
 ✓ .claude/agents/bdd-generator.md
-✓ installer/global/instructions/core/bdd-gherkin.md
-✓ All installer/global/templates/*/agents/bdd-generator.md files
+✓ installer/core/instructions/core/bdd-gherkin.md
+✓ All installer/core/templates/*/agents/bdd-generator.md files
 
 Still Present (Historical/Reference):
 - Task documentation (in tasks/ directory)
@@ -352,10 +352,10 @@ find . -name "*bdd-generator*" -type f | grep -v .git | grep -v .conductor | wc 
 find . -name "*bdd-gherkin*" -type f | grep -v .git | grep -v .conductor | wc -l
 
 # Verify mode=bdd removed (should return 0)
-grep -r "mode=bdd" installer/global/commands/ .claude/commands/ 2>/dev/null | wc -l
+grep -r "mode=bdd" installer/core/commands/ .claude/commands/ 2>/dev/null | wc -l
 
 # Verify supports_bdd() preserved (should return 1+)
-grep -r "def supports_bdd" installer/global/lib/ 2>/dev/null | wc -l
+grep -r "def supports_bdd" installer/core/lib/ 2>/dev/null | wc -l
 
 # Verify CHANGELOG updated
 grep -n "BDD Mode" installer/CHANGELOG.md | head -1

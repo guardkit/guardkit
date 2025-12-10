@@ -152,7 +152,7 @@ Key Principle: Data over intuition
 
 ### Debugging-Specialist Sub-Agent
 
-**Created**: `installer/global/agents/debugging-specialist.md`
+**Created**: `installer/core/agents/debugging-specialist.md`
 
 #### Core Capabilities
 
@@ -275,7 +275,7 @@ Every debugging session produces:
 
 ### /debug Slash Command
 
-**Created**: `installer/global/commands/debug.md`
+**Created**: `installer/core/commands/debug.md`
 
 #### Command Interface
 
@@ -610,7 +610,7 @@ Logs:
 
 ### File Structure
 ```
-installer/global/
+installer/core/
 ├── agents/
 │   └── debugging-specialist.md       # NEW - Debugging agent spec
 └── commands/
@@ -683,7 +683,7 @@ Workflow Integration:
 
 ```bash
 # Add debugging-specialist to .claude/agents/ for active projects
-cp installer/global/agents/debugging-specialist.md .claude/agents/
+cp installer/core/agents/debugging-specialist.md .claude/agents/
 
 # Make /debug command available
 # (Automatically available in global commands)
@@ -693,7 +693,7 @@ cp installer/global/agents/debugging-specialist.md .claude/agents/
 
 **Enhance task-work Phase 4.5**:
 
-Update `installer/global/commands/task-work.md`:
+Update `installer/core/commands/task-work.md`:
 ```yaml
 Phase 4.5: Test Enforcement
   On test failure:
@@ -786,8 +786,8 @@ The debugging-specialist sub-agent addresses a critical gap in the AI-Engineer w
 ### Files Created
 
 ```
-installer/global/agents/debugging-specialist.md     # Debugging agent spec
-installer/global/commands/debug.md                  # /debug command
+installer/core/agents/debugging-specialist.md     # Debugging agent spec
+installer/core/commands/debug.md                  # /debug command
 docs/research/debugging-sub-agent-research.md       # This document
 ```
 

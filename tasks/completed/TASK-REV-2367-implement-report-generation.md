@@ -109,7 +109,7 @@ Implement the report generation system (Phase 4 of the workflow) and the human d
 ### File Structure
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_report_generator.py           # NEW
 ├── review_templates/                    # NEW
 │   ├── architectural_review.md.template
@@ -123,7 +123,7 @@ installer/global/commands/lib/
 ### Report Generator Interface
 
 ```python
-# installer/global/commands/lib/review_report_generator.py
+# installer/core/commands/lib/review_report_generator.py
 
 def generate_review_report(
     review_results: Dict[str, Any],

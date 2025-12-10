@@ -16,7 +16,7 @@ blocks: []
 related_tasks: [TASK-003B, TASK-003C, TASK-005]
 research_documents:
   - docs/research/implementation-plan-review-recommendation.md
-  - installer/global/commands/task-work.md
+  - installer/core/commands/task-work.md
   - TASK-003B-4-DESIGN-SUMMARY.md
   - docs/requirements/draft/REQ-TASK-006_design-first-workflow-flags.md
   - TASK-006-REVISED-IMPLEMENTATION-PLAN.md
@@ -1020,7 +1020,7 @@ Approve portions of design separately:
    - Include decision framework
    - Add workflow examples
 
-2. **installer/global/commands/task-work.md**
+2. **installer/core/commands/task-work.md**
    - Add flags section
    - Document state prerequisites
    - Add usage examples

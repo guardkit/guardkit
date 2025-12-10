@@ -12,8 +12,8 @@ import tempfile
 import shutil
 import sys
 
-# Add installer/global to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global"))
+# Add installer/core to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core"))
 
 from lib.template_generator.template_generator import TemplateGenerator
 from lib.template_generator.claude_md_generator import ClaudeMdGenerator

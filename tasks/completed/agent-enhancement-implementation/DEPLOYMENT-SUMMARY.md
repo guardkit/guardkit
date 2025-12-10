@@ -38,8 +38,8 @@ Deployed agents summary:
 ```
 
 ### Deployment Locations
-- Stack-specific agents: `installer/global/templates/{stack}/agents/`
-- Global agents: `installer/global/agents/`
+- Stack-specific agents: `installer/core/templates/{stack}/agents/`
+- Global agents: `installer/core/agents/`
 
 ### Deployment Scripts Created
 1. `installer/scripts/deploy-agents.sh` - Automated deployment script

@@ -153,7 +153,7 @@ def get_expected_phases(workflow_mode: str) -> int:
 
 **Requirement**: Add validation call before final report generation
 
-**Location**: `installer/global/commands/task-work.md` before "Step 11: Display Completion Summary"
+**Location**: `installer/core/commands/task-work.md` before "Step 11: Display Completion Summary"
 
 **Implementation**:
 ```markdown
@@ -232,7 +232,7 @@ Reason: Protocol violation - required agents not invoked
 ### Phase 1: Create Validation Functions
 
 **Files**:
-- `installer/global/commands/lib/agent_invocation_validator.py` (new file)
+- `installer/core/commands/lib/agent_invocation_validator.py` (new file)
 
 **Implementation**:
 1. Create `validate_agent_invocations()` function
@@ -243,7 +243,7 @@ Reason: Protocol violation - required agents not invoked
 ### Phase 2: Integrate with task-work.md
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add Step 10.5 "Validate Agent Invocations" section
@@ -254,7 +254,7 @@ Reason: Protocol violation - required agents not invoked
 ### Phase 3: Add Error Handling
 
 **Files**:
-- `installer/global/commands/lib/task_state_manager.py` (modify)
+- `installer/core/commands/lib/task_state_manager.py` (modify)
 
 **Implementation**:
 1. Add `move_task_to_blocked()` function if not exists

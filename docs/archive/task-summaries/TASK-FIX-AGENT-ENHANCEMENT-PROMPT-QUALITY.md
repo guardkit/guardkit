@@ -424,9 +424,9 @@ def load_response(self) -> str:
 
 | File | Lines | Change |
 |------|-------|--------|
-| `installer/global/lib/agent_bridge/invoker.py` | 112-131 | Add temp directory logic to `__init__()` |
-| `installer/global/commands/lib/template_create_orchestrator.py` | 971-976 | Remove manual path construction |
-| `installer/global/lib/agent_bridge/invoker.py` | 233-235 | Add cleanup logic |
+| `installer/core/lib/agent_bridge/invoker.py` | 112-131 | Add temp directory logic to `__init__()` |
+| `installer/core/commands/lib/template_create_orchestrator.py` | 971-976 | Remove manual path construction |
+| `installer/core/lib/agent_bridge/invoker.py` | 233-235 | Add cleanup logic |
 
 ---
 

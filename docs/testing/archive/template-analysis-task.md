@@ -1,7 +1,7 @@
 # Template Analysis Task - Ardalis Clean Architecture
 
 **Date**: 2025-01-07
-**Template Location**: `installer/global/templates/ardalis-clean-architecture/`
+**Template Location**: `installer/core/templates/ardalis-clean-architecture/`
 **Generated From**: CleanArchitecture-ardalis repository
 **Execution Metrics**: 98% confidence, 4 minutes execution time
 
@@ -21,7 +21,7 @@ This document provides a comprehensive checklist for analyzing the generated tem
 
 ```bash
 # Navigate to template directory
-cd ~/Projects/Github/guardkit/installer/global/templates/ardalis-clean-architecture/
+cd ~/Projects/Github/guardkit/installer/core/templates/ardalis-clean-architecture/
 
 # Get file structure overview
 find . -type f -name "*.md" -o -name "*.json" -o -name "*.template" | sort
@@ -521,7 +521,7 @@ Imagine you're a developer who:
 
 ```bash
 # Check template structure matches expected format
-cd ~/Projects/Github/guardkit/installer/global/templates/
+cd ~/Projects/Github/guardkit/installer/core/templates/
 
 # Verify directory structure
 ls -la ardalis-clean-architecture/

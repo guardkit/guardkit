@@ -31,7 +31,7 @@ completion_metrics:
 Scan **three agent sources** in priority order to build complete inventory of available agents:
 1. User's custom agents (`.claude/agents/`) - HIGHEST priority
 2. Template agents (from template being used/generated) - HIGH priority
-3. Global built-in agents (`installer/global/agents/`) - MEDIUM priority
+3. Global built-in agents (`installer/core/agents/`) - MEDIUM priority
 
 **Key Principle**: User's custom agents always take precedence
 
@@ -46,7 +46,7 @@ Scan **three agent sources** in priority order to build complete inventory of av
 
 - [x] Scan `.claude/agents/` directory (user's custom agents)
 - [x] Scan template agents if using/generating from template
-- [x] Scan `installer/global/agents/` (built-in agents)
+- [x] Scan `installer/core/agents/` (built-in agents)
 - [x] Parse agent markdown frontmatter (name, description, tools, tags)
 - [x] Return prioritized inventory (user > template > global)
 - [x] Handle missing directories gracefully
@@ -82,7 +82,7 @@ class AgentInventory:
     """Complete inventory of available agents"""
     custom_agents: List[AgentDefinition]  # .claude/agents/
     template_agents: List[AgentDefinition]  # template/agents/
-    global_agents: List[AgentDefinition]  # installer/global/agents/
+    global_agents: List[AgentDefinition]  # installer/core/agents/
 
     def all_agents(self) -> List[AgentDefinition]:
         """Return all agents in priority order"""
@@ -122,7 +122,7 @@ class MultiSourceAgentScanner:
         Args:
             custom_path: Path to .claude/agents/ (default: current project)
             template_path: Path to template/agents/ (default: None if not using template)
-            global_path: Path to installer/global/agents/ (default: auto-detect)
+            global_path: Path to installer/core/agents/ (default: auto-detect)
         """
         self.custom_path = custom_path or Path(".claude/agents")
         self.template_path = template_path  # May be None
@@ -265,11 +265,11 @@ class MultiSourceAgentScanner:
         )
 
     def _find_global_agents_path(self) -> Path:
-        """Auto-detect path to installer/global/agents/"""
+        """Auto-detect path to installer/core/agents/"""
         # Try common locations
         candidates = [
-            Path("installer/global/agents"),
-            Path.cwd() / "installer/global/agents",
+            Path("installer/core/agents"),
+            Path.cwd() / "installer/core/agents",
             Path.home() / ".agentecflow/global/agents",
         ]
 
@@ -278,7 +278,7 @@ class MultiSourceAgentScanner:
                 return path
 
         # Default (may not exist yet)
-        return Path("installer/global/agents")
+        return Path("installer/core/agents")
 
     def _report_duplicates(self, inventory: AgentInventory):
         """Report agents with same name across different sources"""
@@ -493,11 +493,11 @@ def template_create():
 ## Implementation Summary
 
 ### Files Created
-1. `installer/global/lib/agent_scanner/__init__.py` - Package exports
-2. `installer/global/lib/agent_scanner/agent_scanner.py` - Main implementation (87 lines)
+1. `installer/core/lib/agent_scanner/__init__.py` - Package exports
+2. `installer/core/lib/agent_scanner/agent_scanner.py` - Main implementation (87 lines)
 3. `tests/unit/test_multi_source_scanner.py` - Comprehensive test suite (16 tests)
 4. `installer/__init__.py` - Package marker
-5. `installer/global/__init__.py` - Package marker
+5. `installer/core/__init__.py` - Package marker
 
 ### Test Results
 - **Total Tests**: 16

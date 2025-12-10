@@ -287,7 +287,7 @@ Days 4-5 (Sequential - Main Repo):
 
 ```bash
 # Test full audit
-/template-validate ./installer/global/templates/ardalis-clean-architecture
+/template-validate ./installer/core/templates/ardalis-clean-architecture
 
 # Test section selection
 /template-validate ./templates/my-template --sections 1,4,7
@@ -877,18 +877,18 @@ git pull
 ### Implementation Files (After Completion)
 
 **Phase 1**:
-- `installer/global/lib/template_validation/extended_validator.py`
-- `installer/global/lib/template_validation/report_generator.py`
+- `installer/core/lib/template_validation/extended_validator.py`
+- `installer/core/lib/template_validation/report_generator.py`
 
 **Phase 2**:
-- `installer/global/commands/template-validate.md`
-- `installer/global/commands/lib/template_validate_interactive.py`
-- `installer/global/lib/template_validation/comprehensive_auditor.py`
-- `installer/global/lib/template_validation/audit_session.py`
-- `installer/global/lib/template_validation/audit_report_generator.py`
+- `installer/core/commands/template-validate.md`
+- `installer/core/commands/lib/template_validate_interactive.py`
+- `installer/core/lib/template_validation/comprehensive_auditor.py`
+- `installer/core/lib/template_validation/audit_session.py`
+- `installer/core/lib/template_validation/audit_report_generator.py`
 
 **Phase 3**:
-- `installer/global/lib/template_validation/ai_analysis_helpers.py`
+- `installer/core/lib/template_validation/ai_analysis_helpers.py`
 - Updated: `comprehensive_auditor.py` (with AI enhancements)
 
 **Phase 4**:

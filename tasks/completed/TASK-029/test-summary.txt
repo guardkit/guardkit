@@ -12,9 +12,9 @@ Result: ✅ PASSED (98% success rate)
 
 All implementation files compiled successfully with zero errors:
 
-✅ installer/global/commands/lib/plan_modifier.py
-✅ installer/global/commands/lib/plan_persistence.py
-✅ installer/global/commands/lib/checkpoint_display.py
+✅ installer/core/commands/lib/plan_modifier.py
+✅ installer/core/commands/lib/plan_persistence.py
+✅ installer/core/commands/lib/checkpoint_display.py
 
 Command used:
   /opt/homebrew/bin/python3 -m py_compile <file.py>

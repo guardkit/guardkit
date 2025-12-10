@@ -108,7 +108,7 @@
 
 ## Implementation Plan (Option A)
 
-### File: `installer/global/lib/template_generator/models.py`
+### File: `installer/core/lib/template_generator/models.py`
 
 #### Change 1: Add TemplateSplitMetadata Class
 
@@ -375,7 +375,7 @@ Since TASK-PD-006 tests already validate the orchestrator's use of `TemplateSpli
 
 ### Primary Changes
 
-1. **installer/global/lib/template_generator/models.py**
+1. **installer/core/lib/template_generator/models.py**
    - Add `TemplateSplitMetadata` class (~35 lines)
    - Update `TemplateSplitOutput` class:
      - Add `metadata: Optional[TemplateSplitMetadata]` field
@@ -389,7 +389,7 @@ Since TASK-PD-006 tests already validate the orchestrator's use of `TemplateSpli
 
 ### Documentation Updates (Optional)
 
-3. **installer/global/commands/template-create.md** (if needed)
+3. **installer/core/commands/template-create.md** (if needed)
    - Document metadata structure in output
 
 ## Estimated Effort

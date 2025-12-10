@@ -9,7 +9,7 @@ import yaml
 import importlib
 
 # Import from 'global' directory using importlib (global is a Python keyword)
-_markdown_formatter = importlib.import_module('installer.global.lib.agent_generator.markdown_formatter')
+_markdown_formatter = importlib.import_module('installer.core.lib.agent_generator.markdown_formatter')
 format_agent_markdown = _markdown_formatter.format_agent_markdown
 
 

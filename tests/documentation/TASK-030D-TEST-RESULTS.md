@@ -83,7 +83,7 @@ Tests verify that all TASK-030D acceptance criteria are met.
 | 5-Section Template (4.1) | PASS | All 4 cards have: Overview, Quick Reference, Decision Guide, Examples, See Also |
 | Visual Diagrams (4.2) | PASS | State diagrams, flowcharts, code blocks present in 3/4 cards |
 | Decision Trees (4.3) | PASS | All 4 cards contain "When to use" guidance and examples |
-| Cross-References (4.4) | PASS | All 4 cards link to full documentation (installer/global/*, docs/guides/*) |
+| Cross-References (4.4) | PASS | All 4 cards link to full documentation (installer/core/*, docs/guides/*) |
 | MVP Completeness (4.5) | PASS | All 4 required cards present and functional |
 
 **Result**: Acceptance criteria validation 16/16 (100%)
@@ -146,15 +146,15 @@ All cards include decision guidance:
 **Status**: APPROVED
 
 All cards have "See Also" sections referencing:
-- **installer/global/commands/** - Task and command specifications
-- **installer/global/agents/** - AI agent documentation
+- **installer/core/commands/** - Task and command specifications
+- **installer/core/agents/** - AI agent documentation
 - **docs/guides/** - Comprehensive workflow guides
 - **Related cards** - Internal cross-references to other quick reference cards
 
 **Example cross-references**:
-- task-work-cheat-sheet.md → installer/global/commands/task-work.md (Phase 4-4.5)
-- complexity-guide.md → installer/global/commands/task-create.md (Phase 2.5)
-- quality-gates-card.md → installer/global/agents/test-orchestrator.md
+- task-work-cheat-sheet.md → installer/core/commands/task-work.md (Phase 4-4.5)
+- complexity-guide.md → installer/core/commands/task-create.md (Phase 2.5)
+- quality-gates-card.md → installer/core/agents/test-orchestrator.md
 - design-first-workflow-card.md → docs/guides/design-first-workflow.md
 
 ---

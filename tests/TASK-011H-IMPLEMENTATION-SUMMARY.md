@@ -55,7 +55,7 @@ Successfully removed the legacy `maui` template from global templates while pres
 **Duration**: 10 minutes
 
 - ✅ Committed all script/doc changes
-- ✅ Deleted `installer/global/templates/maui/` directory
+- ✅ Deleted `installer/core/templates/maui/` directory
 - ✅ Removed 37 files (agents, templates, config)
 - ✅ Verified no remaining references
 - ✅ Committed deletion with clear message
@@ -100,7 +100,7 @@ Successfully removed the legacy `maui` template from global templates while pres
 3. tests/TASK-011H-IMPLEMENTATION-SUMMARY.md (this file)
 
 ### Files Deleted (37 files)
-- Entire `installer/global/templates/maui/` directory
+- Entire `installer/core/templates/maui/` directory
 - All agents, templates, and configuration for old template
 
 ## Template Structure (Before/After)
@@ -217,7 +217,7 @@ Verified pre/post-deletion invariants:
 git reset --hard 8e393d206f1882b462552080ed53fc5c01cc30c0
 
 # Partial rollback (restore just template)
-git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templates/maui/
+git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/core/templates/maui/
 ```
 
 ## Next Steps

@@ -17,14 +17,14 @@ blocks: [TASK-050]
 
 ## Objective
 
-Implement local agent scanner to discover and catalog existing taskwright agents from `installer/global/agents/` directory, ensuring these battle-tested agents are prioritized in template creation.
+Implement local agent scanner to discover and catalog existing taskwright agents from `installer/core/agents/` directory, ensuring these battle-tested agents are prioritized in template creation.
 
 **Problem:** 15 existing taskwright agents are ignored by current design
 **Solution:** Local-first agent discovery with bonus scoring
 
 ## Acceptance Criteria
 
-- [ ] Scan `installer/global/agents/` directory
+- [ ] Scan `installer/core/agents/` directory
 - [ ] Parse agent markdown files (metadata + capabilities)
 - [ ] Extract: name, description, tools, technology tags, specializations
 - [ ] Catalog all 15+ existing agents
@@ -37,7 +37,7 @@ Implement local agent scanner to discover and catalog existing taskwright agents
 
 ## Existing Agents to Discover
 
-From `installer/global/agents/`:
+From `installer/core/agents/`:
 
 1. **architectural-reviewer.md** - SOLID/DRY/YAGNI compliance review
 2. **bdd-generator.md** - BDD/Gherkin scenario generation
@@ -106,7 +106,7 @@ class LocalAgentScanner:
         Initialize scanner
 
         Args:
-            agent_dir: Directory to scan (defaults to installer/global/agents)
+            agent_dir: Directory to scan (defaults to installer/core/agents)
             use_cache: Whether to use cache
         """
         if agent_dir is None:
@@ -367,7 +367,7 @@ def discover_local_agents() -> List[LocalAgentMetadata]:
 # tests/test_local_agent_scanner.py
 
 def test_scan_global_agents():
-    """Test scanning installer/global/agents directory"""
+    """Test scanning installer/core/agents directory"""
     scanner = LocalAgentScanner()
     result = scanner.scan(force_refresh=True)
 
@@ -440,7 +440,7 @@ def test_cache_functionality():
 ## Definition of Done
 
 - [ ] Local agent scanner implemented
-- [ ] Parses all 15+ existing agents from installer/global/agents
+- [ ] Parses all 15+ existing agents from installer/core/agents
 - [ ] Extracts metadata: name, description, tools, technologies, specializations
 - [ ] Caching implemented (5-minute TTL)
 - [ ] Support for custom agent directories

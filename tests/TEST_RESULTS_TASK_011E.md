@@ -37,8 +37,8 @@ The maui-repository-specialist agent documentation meets all critical acceptance
 - ✅ `test_navigationpage_doc_exists`: Duplicate documentation file exists
 
 **Files Validated:**
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-appshell/agents/maui-repository-specialist.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-navigationpage/agents/maui-repository-specialist.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-appshell/agents/maui-repository-specialist.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-navigationpage/agents/maui-repository-specialist.md`
 
 ### ✅ 2. File Duplication Tests (1/1 passed)
 

@@ -57,8 +57,8 @@ Estimated Time: ~2-3 hours
 📁 CHANGES SUMMARY:
 
   Files to Create/Modify: 5
-    - installer/global/commands/lib/review_modes.py
-    - installer/global/commands/lib/user_interaction.py
+    - installer/core/commands/lib/review_modes.py
+    - installer/core/commands/lib/user_interaction.py
     - (etc.)
 
   External Dependencies: 1
@@ -432,7 +432,7 @@ Your choice (A/M/V/Q/C): a
 ## Related Documentation
 
 - `TASK-003B-2-IMPLEMENTATION-SUMMARY.md` - Implementation details
-- `installer/global/commands/lib/review_modes.py` - Source code
+- `installer/core/commands/lib/review_modes.py` - Source code
 - `tests/integration/test_full_review_demo.py` - Usage examples
 
 ---

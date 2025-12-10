@@ -13,7 +13,7 @@ from io import StringIO
 from pathlib import Path
 
 # Add installer directory to path
-installer_commands_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands"
+installer_commands_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands"
 sys.path.insert(0, str(installer_commands_path))
 
 # Import functions to test

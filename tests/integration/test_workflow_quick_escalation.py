@@ -28,7 +28,7 @@ from unittest.mock import Mock, patch
 import sys
 
 # Add installer lib to path
-installer_lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+installer_lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 if str(installer_lib_path) not in sys.path:
     sys.path.insert(0, str(installer_lib_path))
 

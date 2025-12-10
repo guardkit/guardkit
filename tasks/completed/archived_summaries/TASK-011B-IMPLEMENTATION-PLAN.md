@@ -4,14 +4,14 @@
 
 **Task**: Create/validate all code template files for maui-appshell template
 **Complexity**: 7/10 (Complex - 13 interdependent template files)
-**Current State**: **13 template files ALREADY EXIST** in `/installer/global/templates/maui-appshell/templates/`
+**Current State**: **13 template files ALREADY EXIST** in `/installer/core/templates/maui-appshell/templates/`
 **Actual Scope**: **VALIDATION AND ENHANCEMENT** (not creation from scratch)
 
 ## Critical Discovery
 
 From git status analysis, the following templates **ALREADY EXIST**:
 ```
-installer/global/templates/maui-appshell/templates/
+installer/core/templates/maui-appshell/templates/
 ├── domain/
 │   ├── command-operation.cs.template ✅ EXISTS
 │   └── query-operation.cs.template ✅ EXISTS

@@ -34,7 +34,7 @@ Successfully validated all 14 split global agents across 5 comprehensive validat
 **Command**:
 ```python
 from pathlib import Path
-agents_dir = Path('installer/global/agents')
+agents_dir = Path('installer/core/agents')
 core_files = [f for f in agents_dir.glob('*.md') if not f.stem.endswith('-ext')]
 ext_files = list(agents_dir.glob('*-ext.md'))
 ```
@@ -341,13 +341,13 @@ If critical issues discovered:
 
 ```bash
 # Option 1: Restore from backup files
-for f in installer/global/agents/*.md.bak; do
+for f in installer/core/agents/*.md.bak; do
     mv "$f" "${f%.bak}"
 done
-rm installer/global/agents/*-ext.md
+rm installer/core/agents/*-ext.md
 
 # Option 2: Restore from git commit
-git checkout aeb2d8b -- installer/global/agents/
+git checkout aeb2d8b -- installer/core/agents/
 ```
 
 **Backup commit**: `aeb2d8b` - "Pre-split backup: 14 global agents (TASK-PD-010)"
@@ -476,7 +476,7 @@ All 14 global agents have been validated and are ready for production use. The m
 ```bash
 python3 -c "
 from pathlib import Path
-agents_dir = Path('installer/global/agents')
+agents_dir = Path('installer/core/agents')
 core_files = [f for f in agents_dir.glob('*.md') if not f.stem.endswith('-ext')]
 ext_files = list(agents_dir.glob('*-ext.md'))
 # ... validation logic ...

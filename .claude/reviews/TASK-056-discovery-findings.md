@@ -23,7 +23,7 @@
 10. react
 11. typescript-api
 
-**Discrepancy**: Task specified 9 templates, but 11 directories exist in `installer/global/templates/`
+**Discrepancy**: Task specified 9 templates, but 11 directories exist in `installer/core/templates/`
 
 ---
 

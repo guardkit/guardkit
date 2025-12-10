@@ -144,7 +144,7 @@ specify init my-project --ai gemini
 │ └─────────────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
 │ Command Implementation:                                 │
-│ - installer/global/commands/task-work.md (spec)         │
+│ - installer/core/commands/task-work.md (spec)         │
 │ - Claude Code interprets and executes phases            │
 │ - No separate CLI binary or Python package              │
 │ - State: tasks/{backlog,in_progress,in_review,blocked}/ │
@@ -154,7 +154,7 @@ specify init my-project --ai gemini
         │ Installation (Claude Code-specific)  │
         │ - Bash script: installer/scripts/    │
         │ - Symlinks: ~/.claude → ~/.agentecflow │
-        │ - Templates: installer/global/templates/ │
+        │ - Templates: installer/core/templates/ │
         └──────────────────┬──────────────────┘
                            ↓
     ┌──────────────────────┴────────────────────────┐
@@ -170,13 +170,13 @@ specify init my-project --ai gemini
 ### 2.2 Core Components
 
 **Component 1: Command Specifications** (Markdown)
-- Location: `installer/global/commands/*.md`
+- Location: `installer/core/commands/*.md`
 - Format: Markdown with structured instructions
 - Examples: `task-work.md`, `task-create.md`, `task-status.md`
 - **Portability**: ✅ CLI-agnostic (text-based)
 
 **Component 2: Agent Definitions** (Markdown)
-- Location: `installer/global/agents/*.md`
+- Location: `installer/core/agents/*.md`
 - Format: Markdown prompts for specialized agents
 - Examples: `architectural-reviewer.md`, `test-verifier.md`
 - **Portability**: ✅ CLI-agnostic (all CLIs support prompts)
@@ -187,7 +187,7 @@ specify init my-project --ai gemini
 - **Portability**: ✅ Universal (file-based)
 
 **Component 4: Templates** (Markdown + Code)
-- Location: `installer/global/templates/{react,python,maui,etc.}/`
+- Location: `installer/core/templates/{react,python,maui,etc.}/`
 - Format: Markdown docs + code templates
 - **Portability**: ✅ CLI-agnostic
 

@@ -18,9 +18,9 @@
 - **Files Tested**: 3
 
 ### Files Under Test
-1. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/task-work.md`
-2. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/test-orchestrator.md`
-3. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/agents/test-orchestrator.md`
+1. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/task-work.md`
+2. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/test-orchestrator.md`
+3. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/agents/test-orchestrator.md`
 
 ## Test Results by Category
 

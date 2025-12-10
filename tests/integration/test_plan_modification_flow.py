@@ -17,7 +17,7 @@ from typing import Dict, Any
 
 # Import modules under test
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from plan_modifier import PlanModifier, ModificationCategory
 from plan_persistence import save_plan, load_plan, save_plan_version

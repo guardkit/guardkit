@@ -68,13 +68,13 @@ git checkout claude/task-work-011CUwxnz53DWdVQt5LWazU9
 ### Step 2: Remove Templates from Main
 **Effort**: 1 hour
 **Files**:
-- installer/global/templates/dotnet-aspnetcontroller/ (REMOVE)
-- installer/global/templates/default/ (REMOVE)
+- installer/core/templates/dotnet-aspnetcontroller/ (REMOVE)
+- installer/core/templates/default/ (REMOVE)
 
 ```bash
 # Remove template directories
-git rm -r installer/global/templates/dotnet-aspnetcontroller/
-git rm -r installer/global/templates/default/
+git rm -r installer/core/templates/dotnet-aspnetcontroller/
+git rm -r installer/core/templates/default/
 
 # Commit removal
 git commit -m "chore: Remove dotnet-aspnetcontroller and default templates
@@ -152,7 +152,7 @@ grep -r "default template" docs/ README.md CLAUDE.md .claude/
 ./installer/scripts/install.sh --help
 
 # Verify template list
-ls installer/global/templates/
+ls installer/core/templates/
 ```
 
 ### Step 8: Test Installation
@@ -179,8 +179,8 @@ ls installer/global/templates/
 - CHANGELOG.md
 
 **Directories to REMOVE** (2):
-- installer/global/templates/dotnet-aspnetcontroller/
-- installer/global/templates/default/
+- installer/core/templates/dotnet-aspnetcontroller/
+- installer/core/templates/default/
 
 **Total Changes**: 7 files/directories
 
@@ -200,16 +200,16 @@ ls installer/global/templates/
 
    # Verify templates exist in archive
    git checkout archive/templates-pre-v2.0
-   ls installer/global/templates/ | wc -l  # Should be 10
+   ls installer/core/templates/ | wc -l  # Should be 10
    git checkout claude/task-work-011CUwxnz53DWdVQt5LWazU9
    ```
 
 2. **Removal Verification**
    ```bash
    # Verify templates removed
-   ls installer/global/templates/ | wc -l  # Should be 8
-   ! test -d installer/global/templates/dotnet-aspnetcontroller
-   ! test -d installer/global/templates/default
+   ls installer/core/templates/ | wc -l  # Should be 8
+   ! test -d installer/core/templates/dotnet-aspnetcontroller
+   ! test -d installer/core/templates/default
    ```
 
 3. **Documentation Verification**
@@ -294,8 +294,8 @@ If issues discovered:
 git revert HEAD
 
 # Or restore from archive
-git checkout archive/templates-pre-v2.0 -- installer/global/templates/dotnet-aspnetcontroller
-git checkout archive/templates-pre-v2.0 -- installer/global/templates/default
+git checkout archive/templates-pre-v2.0 -- installer/core/templates/dotnet-aspnetcontroller
+git checkout archive/templates-pre-v2.0 -- installer/core/templates/default
 git commit -m "Rollback: Restore removed templates"
 ```
 

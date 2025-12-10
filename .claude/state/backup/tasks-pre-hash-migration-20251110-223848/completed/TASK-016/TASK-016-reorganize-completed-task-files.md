@@ -454,12 +454,12 @@ fi
    - Features: Discovery, backup, migration, link updating
 
 ### Updated Commands (AI Engineer Project)
-1. **`installer/global/commands/task-complete.md`**
+1. **`installer/core/commands/task-complete.md`**
    - Update completion logic to create subfolders
    - Move task + related files to `tasks/completed/TASK-XXX/`
 
 2. **Helper Functions (Optional)**
-   - `installer/global/commands/lib/task-file-organizer.sh`
+   - `installer/core/commands/lib/task-file-organizer.sh`
    - Reusable functions for file organization
 
 ## Definition of Done
@@ -580,14 +580,14 @@ File Organization:
 
 - Current file structure in ExampleApp: `/Users/richardwoollcott/Projects/appmilla_github/YourApp`
 - Example task with subfolder: `tasks/TASK-061/`
-- Task completion command: `installer/global/commands/task-complete.md`
+- Task completion command: `installer/core/commands/task-complete.md`
 
 ## Implementation Summary
 
 ### What Was Implemented
 
 ✅ **Verified `/task-complete` Command Specification** (15 minutes)
-- Confirmed that `installer/global/commands/task-complete.md` already includes complete logic for:
+- Confirmed that `installer/core/commands/task-complete.md` already includes complete logic for:
   - Creating `tasks/completed/TASK-XXX/` subfolder
   - Moving task file from `in_progress` to subfolder
   - Discovering and moving related files (`TASK-XXX-*.md` pattern)

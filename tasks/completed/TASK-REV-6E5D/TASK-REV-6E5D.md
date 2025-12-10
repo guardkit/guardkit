@@ -218,9 +218,9 @@ This review requires deep analysis of:
 ## Files to Review
 
 ### Core Files
-1. [installer/global/commands/lib/template_create_orchestrator.py](../../installer/global/commands/lib/template_create_orchestrator.py)
-2. [installer/global/lib/agent_bridge/invoker.py](../../installer/global/lib/agent_bridge/invoker.py)
-3. [installer/global/lib/agent_bridge/state_manager.py](../../installer/global/lib/agent_bridge/state_manager.py)
+1. [installer/core/commands/lib/template_create_orchestrator.py](../../installer/core/commands/lib/template_create_orchestrator.py)
+2. [installer/core/lib/agent_bridge/invoker.py](../../installer/core/lib/agent_bridge/invoker.py)
+3. [installer/core/lib/agent_bridge/state_manager.py](../../installer/core/lib/agent_bridge/state_manager.py)
 4. [lib/codebase_analyzer/ai_analyzer.py](../../lib/codebase_analyzer/ai_analyzer.py)
 5. [lib/codebase_analyzer/response_parser.py](../../lib/codebase_analyzer/response_parser.py)
 6. [lib/codebase_analyzer/agent_invoker.py](../../lib/codebase_analyzer/agent_invoker.py)

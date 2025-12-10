@@ -228,11 +228,11 @@ Each template includes:
 
 ### Deep Dive Documentation
 
-- [react-typescript README](../../installer/global/templates/react-typescript/README.md)
-- [fastapi-python README](../../installer/global/templates/fastapi-python/README.md)
-- [nextjs-fullstack README](../../installer/global/templates/nextjs-fullstack/README.md)
-- [react-fastapi-monorepo README](../../installer/global/templates/react-fastapi-monorepo/README.md)
-- [default README](../../installer/global/templates/default/README.md)
+- [react-typescript README](../../installer/core/templates/react-typescript/README.md)
+- [fastapi-python README](../../installer/core/templates/fastapi-python/README.md)
+- [nextjs-fullstack README](../../installer/core/templates/nextjs-fullstack/README.md)
+- [react-fastapi-monorepo README](../../installer/core/templates/react-fastapi-monorepo/README.md)
+- [default README](../../installer/core/templates/default/README.md)
 
 ---
 

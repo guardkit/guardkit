@@ -181,7 +181,7 @@ class TestValidationErrorMessage:
 
         # Import ValidationError from enhancer module
         _test_dir = Path(__file__).resolve().parent
-        _lib_dir = _test_dir.parent.parent.parent / "installer" / "global" / "lib" / "agent_enhancement"
+        _lib_dir = _test_dir.parent.parent.parent / "installer" / "core" / "lib" / "agent_enhancement"
         sys.path.insert(0, str(_lib_dir))
 
         from enhancer import ValidationError
@@ -196,7 +196,7 @@ class TestValidationErrorMessage:
         import sys
 
         _test_dir = Path(__file__).resolve().parent
-        _lib_dir = _test_dir.parent.parent.parent / "installer" / "global" / "lib" / "agent_enhancement"
+        _lib_dir = _test_dir.parent.parent.parent / "installer" / "core" / "lib" / "agent_enhancement"
         sys.path.insert(0, str(_lib_dir))
 
         from enhancer import ValidationError

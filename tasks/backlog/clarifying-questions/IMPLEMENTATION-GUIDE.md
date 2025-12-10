@@ -296,7 +296,7 @@ Day 6: Wave 4 (Polish)
 ## Files Created by This Feature
 
 ```
-installer/global/commands/lib/clarification/
+installer/core/commands/lib/clarification/
 ├── __init__.py                          # Wave 1
 ├── core.py                              # Wave 1 (TASK-CLQ-001)
 ├── detection.py                         # Wave 1 (TASK-CLQ-002)
@@ -311,9 +311,9 @@ installer/global/commands/lib/clarification/
     └── implement_generator.py           # Wave 2 (TASK-CLQ-006)
 
 Modified files:
-├── installer/global/commands/task-work.md      # Wave 3 (TASK-CLQ-007)
-├── installer/global/commands/task-review.md    # Wave 3 (TASK-CLQ-008)
-├── installer/global/commands/feature-plan.md   # Wave 3 (TASK-CLQ-009)
+├── installer/core/commands/task-work.md      # Wave 3 (TASK-CLQ-007)
+├── installer/core/commands/task-review.md    # Wave 3 (TASK-CLQ-008)
+├── installer/core/commands/feature-plan.md   # Wave 3 (TASK-CLQ-009)
 └── CLAUDE.md                                   # Wave 4 (TASK-CLQ-011)
 ```
 

@@ -19,17 +19,17 @@ Successfully converted implementation plan storage from JSON-only format to huma
 ## Deliverables
 
 ### Files Created (8 new files)
-1. ✅ `installer/global/commands/lib/templates/implementation_plan.md.j2` - Jinja2 template (150 lines)
-2. ✅ `installer/global/commands/lib/plan_markdown_renderer.py` - Renderer class (278 lines)
-3. ✅ `installer/global/commands/lib/plan_markdown_parser.py` - Parser class (312 lines)
-4. ✅ `installer/global/commands/lib/test_plan_markdown.py` - Unit tests (342 lines)
-5. ✅ `installer/global/commands/lib/test_plan_integration.py` - Integration tests (286 lines)
-6. ✅ `installer/global/commands/lib/demo_plan_markdown.py` - Demonstration script (142 lines)
+1. ✅ `installer/core/commands/lib/templates/implementation_plan.md.j2` - Jinja2 template (150 lines)
+2. ✅ `installer/core/commands/lib/plan_markdown_renderer.py` - Renderer class (278 lines)
+3. ✅ `installer/core/commands/lib/plan_markdown_parser.py` - Parser class (312 lines)
+4. ✅ `installer/core/commands/lib/test_plan_markdown.py` - Unit tests (342 lines)
+5. ✅ `installer/core/commands/lib/test_plan_integration.py` - Integration tests (286 lines)
+6. ✅ `installer/core/commands/lib/demo_plan_markdown.py` - Demonstration script (142 lines)
 7. ✅ `docs/implementation-plan-markdown-format.md` - Complete documentation (600+ lines)
 8. ✅ `TASK-027-IMPLEMENTATION-SUMMARY.md` - Implementation summary
 
 ### Files Modified (3 files)
-1. ✅ `installer/global/commands/lib/plan_persistence.py` - Updated to save markdown (40 lines changed)
+1. ✅ `installer/core/commands/lib/plan_persistence.py` - Updated to save markdown (40 lines changed)
 2. ✅ `requirements.txt` - Added Jinja2 and python-frontmatter (2 lines added)
 3. ✅ `installer/scripts/install.sh` - Added template copying and dependency installation (24 lines added)
 
@@ -277,7 +277,7 @@ The markdown format provides **significantly better developer experience** with 
 
 ### Production Code
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── plan_markdown_renderer.py          (278 lines)
 ├── plan_markdown_parser.py            (312 lines)
 ├── plan_persistence.py                (217 lines, 40 modified)
@@ -287,7 +287,7 @@ installer/global/commands/lib/
 
 ### Test Code
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── test_plan_markdown.py              (342 lines)
 └── test_plan_integration.py           (286 lines)
 ```
@@ -360,7 +360,7 @@ test_plan_integration.py::TestEdgeCases
 
 ## Appendix C: Example Plan Output
 
-See: `installer/global/commands/lib/docs/state/TASK-027-EXAMPLE/implementation_plan.md`
+See: `installer/core/commands/lib/docs/state/TASK-027-EXAMPLE/implementation_plan.md`
 
 Preview:
 ```markdown
@@ -385,9 +385,9 @@ Convert implementation plan storage from JSON to Markdown for better human reada
 
 ## Files to Create
 
-- `installer/global/commands/lib/templates/implementation_plan.md.j2`
-- `installer/global/commands/lib/plan_markdown_renderer.py`
-- `installer/global/commands/lib/plan_markdown_parser.py`
+- `installer/core/commands/lib/templates/implementation_plan.md.j2`
+- `installer/core/commands/lib/plan_markdown_renderer.py`
+- `installer/core/commands/lib/plan_markdown_parser.py`
 ...
 ```
 

@@ -236,7 +236,7 @@ The TASK-003E implementation (Comprehensive Testing & Documentation) has been th
 #### Day 5: Documentation (8 hours)
 
 **Technical Documentation** (4 hours)
-- Update `installer/global/commands/lib/README.md`
+- Update `installer/core/commands/lib/README.md`
 - Document error handling patterns, fail-safe defaults, edge case behaviors
 - Update module docstrings in core files
 

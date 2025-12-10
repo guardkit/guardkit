@@ -29,7 +29,7 @@ import sys
 import os
 
 # Add lib directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from git_state_helper import get_git_root, resolve_state_dir, commit_state_files
 

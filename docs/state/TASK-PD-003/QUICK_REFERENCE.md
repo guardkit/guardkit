@@ -178,8 +178,8 @@ tests/integration/test_enhancer_split_integration.py (NEW)
 ## Files to Modify
 
 ```
-installer/global/lib/agent_enhancement/enhancer.py        (4 changes)
-installer/global/commands/agent-enhance.md                (3 changes)
+installer/core/lib/agent_enhancement/enhancer.py        (4 changes)
+installer/core/commands/agent-enhance.md                (3 changes)
 ```
 
 ## Success Criteria

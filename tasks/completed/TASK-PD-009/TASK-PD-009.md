@@ -261,7 +261,7 @@ VALIDATION_RULES = {
 def test_categorization_task_manager():
     """Test categorization for task-manager.md."""
     splitter = AgentSplitter()
-    content = Path('installer/global/agents/task-manager.md').read_text()
+    content = Path('installer/core/agents/task-manager.md').read_text()
     sections = splitter._parse_sections(content)
 
     core, extended = splitter._categorize_sections(sections)
@@ -279,7 +279,7 @@ def test_reduction_target():
     """Test that splits achieve target reduction."""
     splitter = AgentSplitter(dry_run=True)
 
-    for agent_file in Path('installer/global/agents').glob('*.md'):
+    for agent_file in Path('installer/core/agents').glob('*.md'):
         if agent_file.stem.endswith('-ext'):
             continue
 

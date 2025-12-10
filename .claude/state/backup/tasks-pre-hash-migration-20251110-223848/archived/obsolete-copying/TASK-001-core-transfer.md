@@ -69,7 +69,7 @@ This task is broken into 8 subtasks, each suitable for `task-work --micro`:
 - Remove references to requirements/BDD in agent prompts
 
 ### TASK-001D: Transfer Implementation Library
-- Copy installer/global/commands/lib/ directory
+- Copy installer/core/commands/lib/ directory
 - Remove requirements-related modules (feature_generator, etc.)
 - Keep quality gate implementation (Phase 2.5, 4.5)
 - Update imports and dependencies
@@ -131,7 +131,7 @@ This task is broken into 8 subtasks, each suitable for `task-work --micro`:
 - figma-react-orchestrator.md
 - zeplin-maui-orchestrator.md
 
-**Library Modules** (installer/global/commands/lib/):
+**Library Modules** (installer/core/commands/lib/):
 - checkpoint_display.py (Phase 2.6)
 - plan_persistence.py (design-first workflow)
 - plan_modifier.py (Phase 2.7)
@@ -421,4 +421,4 @@ mkdir -p docs/adr
 
 - `/docs/research/honest-assessment-sdd-vs-ai-engineer.md` - Strategic rationale
 - `/CLAUDE.md` - Current full system (reference for what to exclude)
-- `/installer/global/manifest.json` - Current capabilities manifest
+- `/installer/core/manifest.json` - Current capabilities manifest

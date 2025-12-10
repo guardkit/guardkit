@@ -46,7 +46,7 @@ design_metadata:
 **Global Orchestrators** (handle design extraction, delegate to UI specialists):
 
 ```
-installer/global/agents/
+installer/core/agents/
 ├── figma-orchestrator.md       # Figma MCP extraction → delegates to UI specialists
 └── zeplin-orchestrator.md      # Zeplin MCP extraction → delegates to UI specialists
 ```
@@ -54,7 +54,7 @@ installer/global/agents/
 **Stack-Specific UI Specialists** (extend existing agents to handle design contexts):
 
 ```
-installer/global/templates/
+installer/core/templates/
 ├── react-typescript/
 │   └── agents/
 │       └── react-ui-specialist.md       # Extended to handle design contexts from orchestrators

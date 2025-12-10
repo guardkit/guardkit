@@ -427,7 +427,7 @@ ls -la tasks/backlog/TASK-AGENT-*
 
 # Verify two-location output
 /template-init --output-location=repo
-ls -la installer/global/templates/
+ls -la installer/core/templates/
 ```
 
 ### After Wave 4 (Week 4)
@@ -446,7 +446,7 @@ echo $?  # Should be 0, 1, or 2 based on quality
 
 ```bash
 # Verify documentation
-cat installer/global/commands/template-init.md
+cat installer/core/commands/template-init.md
 # Should document all 13 features
 
 # Verify test coverage

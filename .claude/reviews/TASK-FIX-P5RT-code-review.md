@@ -330,7 +330,7 @@ git revert <commit-hash>  # Reverts 4-line change
 - **TASK-ENH-D960**: Related enhancement (if applicable)
 
 **Related Files**:
-- [template_create_orchestrator.py:2124-2135](file:///Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py#L2124-L2135) - The fix
+- [template_create_orchestrator.py:2124-2135](file:///Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py#L2124-L2135) - The fix
 - [test_template_create_orchestrator.py:1133-1246](file:///Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_template_create_orchestrator.py#L1133-L1246) - New tests
 - [TASK-FIX-P5RT-phase5-resume-routing-bug.md](file:///Users/richardwoollcott/Projects/appmilla_github/guardkit/tasks/in_progress/TASK-FIX-P5RT-phase5-resume-routing-bug.md) - Task documentation
 

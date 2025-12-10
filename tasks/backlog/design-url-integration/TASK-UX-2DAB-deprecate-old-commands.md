@@ -36,8 +36,8 @@ This is part of Phase 5 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Files to Update
-- **File 1**: `installer/global/commands/figma-to-react.md`
-- **File 2**: `installer/global/commands/zeplin-to-maui.md`
+- **File 1**: `installer/core/commands/figma-to-react.md`
+- **File 2**: `installer/core/commands/zeplin-to-maui.md`
 
 ### Key Changes Required
 
@@ -458,8 +458,8 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 5](../../docs/proposals/design-url-integration-implementation-guide.md#phase-5-deprecate-old-commands)
-- [Existing figma-to-react Command](../../installer/global/commands/figma-to-react.md)
-- [Existing zeplin-to-maui Command](../../installer/global/commands/zeplin-to-maui.md)
+- [Existing figma-to-react Command](../../installer/core/commands/figma-to-react.md)
+- [Existing zeplin-to-maui Command](../../installer/core/commands/zeplin-to-maui.md)
 
 ## Implementation Estimate
 

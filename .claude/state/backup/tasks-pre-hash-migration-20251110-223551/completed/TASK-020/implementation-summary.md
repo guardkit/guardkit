@@ -264,18 +264,18 @@ Result: ALL TESTS PASSED (5/5)
 ## Files Created
 
 ### Production Code
-1. `/installer/global/commands/lib/micro_task_detector.py` (524 lines)
-2. `/installer/global/commands/lib/micro_task_workflow.py` (622 lines)
+1. `/installer/core/commands/lib/micro_task_detector.py` (524 lines)
+2. `/installer/core/commands/lib/micro_task_workflow.py` (622 lines)
 
 ### Tests
-3. `/installer/global/commands/lib/test_micro_task_detector.py` (530 lines)
-4. `/installer/global/commands/lib/test_micro_workflow.py` (458 lines)
-5. `/installer/global/commands/lib/test_micro_basic.py` (198 lines)
+3. `/installer/core/commands/lib/test_micro_task_detector.py` (530 lines)
+4. `/installer/core/commands/lib/test_micro_workflow.py` (458 lines)
+5. `/installer/core/commands/lib/test_micro_basic.py` (198 lines)
 
 ### Documentation
-6. `/installer/global/commands/lib/MICRO_TASK_README.md` (400 lines)
-7. `/installer/global/commands/task-work.md` (updated - added 100+ lines)
-8. `/installer/global/agents/task-manager.md` (updated - added 200+ lines)
+6. `/installer/core/commands/lib/MICRO_TASK_README.md` (400 lines)
+7. `/installer/core/commands/task-work.md` (updated - added 100+ lines)
+8. `/installer/core/agents/task-manager.md` (updated - added 200+ lines)
 9. `/.conductor/almaty/TASK-020-IMPLEMENTATION-SUMMARY.md` (this file)
 
 **Total**: 9 files (6 new, 3 updated)

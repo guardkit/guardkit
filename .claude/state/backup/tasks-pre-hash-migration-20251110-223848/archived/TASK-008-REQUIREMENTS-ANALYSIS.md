@@ -34,7 +34,7 @@ TASK-008 requires enhancing the `/feature-generate-tasks` command to integrate w
 **Integration Points**:
 ```python
 # Expected module structure (from TASK-005/006)
-from installer.global.commands.lib.complexity_evaluator import ComplexityEvaluator
+from installer.core.commands.lib.complexity_evaluator import ComplexityEvaluator
 
 evaluator = ComplexityEvaluator()
 complexity_score = evaluator.evaluate(task_proposal)
@@ -608,7 +608,7 @@ def check_for_duplicates(proposed_task, epic_id, feature_id):
 
 **Expected Interface**:
 ```python
-# Module: installer/global/commands/lib/complexity_evaluator.py
+# Module: installer/core/commands/lib/complexity_evaluator.py
 
 class ComplexityEvaluator:
     def evaluate(self, task_description: str, requirements: List[str] = None,
@@ -1425,7 +1425,7 @@ def test_integration_with_task_create_consistency():
 ### Gap 1: Complexity Evaluation Module Location
 **Status**: UNKNOWN
 **Question**: Where is the complexity evaluation module from TASK-005?
-**Expected Path**: `installer/global/commands/lib/complexity_evaluator.py`
+**Expected Path**: `installer/core/commands/lib/complexity_evaluator.py`
 **Impact**: BLOCKING - Cannot proceed without this module
 **Action Required**: Locate module or implement from scratch
 
@@ -1701,15 +1701,15 @@ def test_integration_with_task_create_consistency():
 
 ```
 # Existing files (expected)
-installer/global/commands/feature-generate-tasks.md
-installer/global/commands/task-create.md
-installer/global/commands/task-work.md
-installer/global/commands/lib/complexity_evaluator.py  # From TASK-005 (location TBD)
-installer/global/commands/lib/task_breakdown.py  # New (to be created)
+installer/core/commands/feature-generate-tasks.md
+installer/core/commands/task-create.md
+installer/core/commands/task-work.md
+installer/core/commands/lib/complexity_evaluator.py  # From TASK-005 (location TBD)
+installer/core/commands/lib/task_breakdown.py  # New (to be created)
 
 # New files (to be created)
-installer/global/commands/lib/duplicate_detector.py
-installer/global/commands/lib/output_formatter.py
+installer/core/commands/lib/duplicate_detector.py
+installer/core/commands/lib/output_formatter.py
 tests/test_feature_generate_tasks_complexity.py
 tests/test_task_breakdown_algorithms.py
 tests/test_duplicate_detection.py
@@ -1718,7 +1718,7 @@ tests/test_quality_gate_integration.py
 tests/test_output_formatting.py
 
 # Documentation updates
-installer/global/commands/feature-generate-tasks.md  # Update with complexity controls
+installer/core/commands/feature-generate-tasks.md  # Update with complexity controls
 docs/guides/FEATURE-GENERATE-TASKS-COMPLEXITY-GUIDE.md  # New guide
 ```
 

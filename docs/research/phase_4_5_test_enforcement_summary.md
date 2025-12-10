@@ -158,7 +158,7 @@ SUCCESS CRITERIA:
 
 ### Primary Change
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Lines Changed**:
 - Lines 166-175: Enhanced Phase 4 prompt (+10 lines)

@@ -23,7 +23,7 @@ The agent system has been redesigned based on key insight: **Claude Code creates
 
 1. User's custom agents (`.claude/agents/`) - HIGHEST priority ⭐⭐⭐
 2. Template agents (template/agents/) - HIGH priority ⭐⭐
-3. Global built-in agents (installer/global/agents/) - MEDIUM priority ⭐
+3. Global built-in agents (installer/core/agents/) - MEDIUM priority ⭐
 4. AI-generated agents (created on-the-fly) - MEDIUM priority ⭐
 5. External community agents (optional) - LOW priority ⭐
 
@@ -85,7 +85,7 @@ The agent system has been redesigned based on key insight: **Claude Code creates
 ```
 ✓ Scan .claude/agents/ (user's custom)
 ✓ Scan template/agents/ (if using template)
-✓ Scan installer/global/agents/ (built-in)
+✓ Scan installer/core/agents/ (built-in)
 ```
 
 ### Phase 2: Analysis (Determine Needs)
@@ -137,7 +137,7 @@ External discovery (opt-in):
 
 **Tasks**:
 - **TASK-003**: Multi-Source Agent Scanner (8h)
-  - Scan .claude/agents/, template/agents/, installer/global/agents/
+  - Scan .claude/agents/, template/agents/, installer/core/agents/
   - Priority-ordered inventory
   - Duplicate detection
   - **File**: [TASK-003-multi-source-agent-scanner.md](TASK-003-multi-source-agent-scanner.md)

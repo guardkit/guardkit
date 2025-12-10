@@ -195,25 +195,25 @@ For implementation details: [README-AGENT-MODES.md](.claude/agents/README-AGENT-
 ## Files to Update (15 Global Agents)
 
 ### Priority 1 (Most Used - Week 1)
-1. `installer/global/agents/task-manager.md` (1,156 lines → ~600 lines target)
-2. `installer/global/agents/code-reviewer.md` (595 lines → ~400 lines target)
-3. `installer/global/agents/architectural-reviewer.md` (867 lines → ~500 lines target)
-4. `installer/global/agents/test-verifier.md` (est. 400 lines → ~300 lines target)
-5. `installer/global/agents/test-orchestrator.md` (est. 300 lines → ~250 lines target)
+1. `installer/core/agents/task-manager.md` (1,156 lines → ~600 lines target)
+2. `installer/core/agents/code-reviewer.md` (595 lines → ~400 lines target)
+3. `installer/core/agents/architectural-reviewer.md` (867 lines → ~500 lines target)
+4. `installer/core/agents/test-verifier.md` (est. 400 lines → ~300 lines target)
+5. `installer/core/agents/test-orchestrator.md` (est. 300 lines → ~250 lines target)
 
 ### Priority 2 (Supporting Agents - Week 2)
-6. `installer/global/agents/build-validator.md`
-7. `installer/global/agents/complexity-evaluator.md`
-8. `installer/global/agents/pattern-advisor.md`
-9. `installer/global/agents/debugging-specialist.md`
-10. `installer/global/agents/software-architect.md`
+6. `installer/core/agents/build-validator.md`
+7. `installer/core/agents/complexity-evaluator.md`
+8. `installer/core/agents/pattern-advisor.md`
+9. `installer/core/agents/debugging-specialist.md`
+10. `installer/core/agents/software-architect.md`
 
 ### Priority 3 (Specialized Agents - Week 3)
-11. `installer/global/agents/qa-tester.md`
-12. `installer/global/agents/devops-specialist.md`
-13. `installer/global/agents/security-specialist.md`
-14. `installer/global/agents/database-specialist.md`
-15. `installer/global/agents/agent-content-enhancer.md`
+11. `installer/core/agents/qa-tester.md`
+12. `installer/core/agents/devops-specialist.md`
+13. `installer/core/agents/security-specialist.md`
+14. `installer/core/agents/database-specialist.md`
+15. `installer/core/agents/agent-content-enhancer.md`
 
 ### New Files to Create
 16. `.claude/agents/README-AGENT-MODES.md` (documentation level reference)
@@ -313,7 +313,7 @@ phase: 2.5|3|4|4.5|5|5.5
 
 #### 2.2: Create New Structure
 
-**Template** (`installer/global/agents/TEMPLATE-NEW-STRUCTURE.md`):
+**Template** (`installer/core/agents/TEMPLATE-NEW-STRUCTURE.md`):
 ```markdown
 ---
 name: [agent-name]
@@ -544,7 +544,7 @@ def validate_agent(file_path: Path) -> dict:
     return results
 
 def main():
-    agents_dir = Path("installer/global/agents")
+    agents_dir = Path("installer/core/agents")
     results = []
     
     for agent_file in agents_dir.glob("*.md"):
@@ -688,7 +688,7 @@ python3 scripts/validate-agent-structure.py
 # Expected: 15/15 agents pass
 
 # 2. Check first code line is early
-for agent in installer/global/agents/*.md; do
+for agent in installer/core/agents/*.md; do
     first_code=$(grep -n '```' "$agent" | head -1 | cut -d: -f1)
     if [ "$first_code" -gt 50 ]; then
         echo "❌ $agent: First code at line $first_code (target: <50)"
@@ -698,7 +698,7 @@ for agent in installer/global/agents/*.md; do
 done
 
 # 3. Check all agents have Boundaries section
-for agent in installer/global/agents/*.md; do
+for agent in installer/core/agents/*.md; do
     if grep -q "## Boundaries" "$agent"; then
         echo "✅ $agent: Has Boundaries"
     else
@@ -707,7 +707,7 @@ for agent in installer/global/agents/*.md; do
 done
 
 # 4. Check Quick Start sections exist
-for agent in installer/global/agents/*.md; do
+for agent in installer/core/agents/*.md; do
     if grep -q "## Quick Start" "$agent"; then
         echo "✅ $agent: Has Quick Start"
     else

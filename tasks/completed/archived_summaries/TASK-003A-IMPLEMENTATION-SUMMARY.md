@@ -88,7 +88,7 @@ Standardized format for Phase 2 implementation plans:
 
 **Lines**: 318 lines
 
-#### Library README (`installer/global/commands/lib/README.md`)
+#### Library README (`installer/core/commands/lib/README.md`)
 Comprehensive documentation:
 - Architecture overview
 - Usage examples
@@ -101,7 +101,7 @@ Comprehensive documentation:
 
 ### 3. Agent Definition (1 new file)
 
-#### Complexity Evaluator Agent (`installer/global/agents/complexity-evaluator.md`)
+#### Complexity Evaluator Agent (`installer/core/agents/complexity-evaluator.md`)
 Phase 2.7 orchestrator agent:
 - Mission statement
 - Core responsibilities
@@ -338,7 +338,7 @@ From Phase 2.5B architectural review (Score 82/100):
 ## Files Created
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── __init__.py (68 lines)
 ├── complexity_models.py (169 lines)
 ├── complexity_factors.py (188 lines)
@@ -348,7 +348,7 @@ installer/global/commands/lib/
 ├── test_complexity.py (365 lines)
 └── README.md (285 lines)
 
-installer/global/agents/
+installer/core/agents/
 └── complexity-evaluator.md (525 lines)
 
 docs/templates/
@@ -358,10 +358,10 @@ docs/templates/
 ## Files Modified
 
 ```
-installer/global/commands/
+installer/core/commands/
 └── task-work.md (~60 lines added/modified)
 
-installer/global/agents/
+installer/core/agents/
 └── task-manager.md (~15 lines added/modified)
 ```
 

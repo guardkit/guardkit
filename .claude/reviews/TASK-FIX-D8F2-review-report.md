@@ -21,7 +21,7 @@ The implementation successfully addresses the root cause identified in TASK-REV-
 
 ### 1.1 StateManager.reset_resume_count() Implementation
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_bridge/state_manager.py` (lines 197-219)
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_bridge/state_manager.py` (lines 197-219)
 
 **Strengths**:
 - ✅ Clear, focused method with single responsibility
@@ -72,7 +72,7 @@ def reset_resume_count(self) -> None:
 
 ### 1.2 Orchestrator Integration (template_create_orchestrator.py)
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
 
 #### Integration Point 1: `_run_from_phase_1()` (lines 320-325)
 
@@ -921,7 +921,7 @@ PASSED tests/unit/test_template_create_orchestrator.py::TestResumeCounterReset::
 
 ### Appendix B: Code Coverage Details
 
-**File**: `installer/global/lib/agent_bridge/state_manager.py`
+**File**: `installer/core/lib/agent_bridge/state_manager.py`
 
 **Overall coverage**: 83%
 
@@ -938,11 +938,11 @@ PASSED tests/unit/test_template_create_orchestrator.py::TestResumeCounterReset::
 ### Appendix C: Files Modified
 
 **Core Implementation** (2 files):
-1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_bridge/state_manager.py`
+1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_bridge/state_manager.py`
    - Lines added: 197-219 (23 lines)
    - New method: `reset_resume_count()`
 
-2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
    - Lines modified: 320-325, 387-392 (12 lines total)
    - Integration: Two reset calls added
 

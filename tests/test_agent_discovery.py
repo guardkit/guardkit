@@ -25,7 +25,7 @@ from unittest.mock import patch, MagicMock
 
 # Import the module under test
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from agent_discovery import (
     discover_agents,

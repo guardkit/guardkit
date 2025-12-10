@@ -67,7 +67,7 @@ Add advanced features to `/template-validate` that enhance usability for complex
 **Implementation**:
 
 ```python
-# File: installer/global/lib/template_validation/session.py
+# File: installer/core/lib/template_validation/session.py
 
 class SessionManager:
     """Manage audit session persistence"""
@@ -199,7 +199,7 @@ class SessionManager:
 **Implementation**:
 
 ```python
-# File: installer/global/lib/template_validation/inline_fixer.py
+# File: installer/core/lib/template_validation/inline_fixer.py
 
 class InlineFixer:
     """Apply automated fixes for common audit issues"""
@@ -334,7 +334,7 @@ class InlineFixer:
 **Implementation**:
 
 ```python
-# File: installer/global/commands/lib/template_validate/orchestrator.py
+# File: installer/core/commands/lib/template_validate/orchestrator.py
 
 class TemplateValidateOrchestrator:
     """Enhanced orchestrator with batch mode support"""
@@ -432,7 +432,7 @@ echo $?
 **Implementation**:
 
 ```python
-# File: installer/global/lib/template_validation/metrics.py
+# File: installer/core/lib/template_validation/metrics.py
 
 @dataclass
 class ValidationMetrics:
@@ -540,19 +540,19 @@ class MetricsTracker:
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/lib/template_validation/session.py` - Session persistence
-- `installer/global/lib/template_validation/inline_fixer.py` - Fix automation
-- `installer/global/lib/template_validation/metrics.py` - Metrics tracking
+- `installer/core/lib/template_validation/session.py` - Session persistence
+- `installer/core/lib/template_validation/inline_fixer.py` - Fix automation
+- `installer/core/lib/template_validation/metrics.py` - Metrics tracking
 - `tests/unit/test_session_manager.py` - Session tests
 - `tests/unit/test_inline_fixer.py` - Fixer tests
 - `tests/unit/test_metrics.py` - Metrics tests
 - `tests/integration/test_batch_mode.py` - Batch mode tests
 
 ### Modified Files
-- `installer/global/commands/lib/template_validate/orchestrator.py` - Add batch mode, fix integration
-- `installer/global/commands/lib/template_validate/config.py` - Add new flags
-- `installer/global/commands/template-validate.md` - Update documentation
-- `installer/global/lib/template_validation/models.py` - Add FixLog, SessionInfo models
+- `installer/core/commands/lib/template_validate/orchestrator.py` - Add batch mode, fix integration
+- `installer/core/commands/lib/template_validate/config.py` - Add new flags
+- `installer/core/commands/template-validate.md` - Update documentation
+- `installer/core/lib/template_validation/models.py` - Add FixLog, SessionInfo models
 
 ---
 

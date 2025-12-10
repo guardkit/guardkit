@@ -418,7 +418,7 @@ def test_complexity_calculation_performance(benchmark, complexity_calculator, co
 **Security Checks**:
 ```bash
 # Run security scanners
-bandit -r installer/global/commands/lib/
+bandit -r installer/core/commands/lib/
 safety check
 pip-audit
 ```
@@ -514,7 +514,7 @@ docs/
 
 ### Production Code Structure (for reference)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── complexity_calculator.py                     # ✅ Core calculation engine
 ├── complexity_models.py                         # ✅ Data models
 ├── complexity_factors.py                        # ⚠️ VERIFY BEFORE PHASE 2
@@ -972,7 +972,7 @@ Content with:
 pip install sphinx sphinx-rtd-theme
 
 # Generate API docs
-sphinx-apidoc -o docs/api installer/global/commands/lib
+sphinx-apidoc -o docs/api installer/core/commands/lib
 
 # Build HTML docs
 cd docs
@@ -1084,14 +1084,14 @@ cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer
 echo "Checking critical dependencies..."
 
 files=(
-    "installer/global/commands/lib/complexity_calculator.py"
-    "installer/global/commands/lib/complexity_models.py"
-    "installer/global/commands/lib/complexity_factors.py"
-    "installer/global/commands/lib/review_modes.py"
-    "installer/global/commands/lib/plan_templates.py"
-    "installer/global/commands/lib/metrics_collector.py"
-    "installer/global/commands/lib/countdown_timer.py"
-    "installer/global/commands/lib/user_interaction.py"
+    "installer/core/commands/lib/complexity_calculator.py"
+    "installer/core/commands/lib/complexity_models.py"
+    "installer/core/commands/lib/complexity_factors.py"
+    "installer/core/commands/lib/review_modes.py"
+    "installer/core/commands/lib/plan_templates.py"
+    "installer/core/commands/lib/metrics_collector.py"
+    "installer/core/commands/lib/countdown_timer.py"
+    "installer/core/commands/lib/user_interaction.py"
 )
 
 for file in "${files[@]}"; do
@@ -1103,8 +1103,8 @@ for file in "${files[@]}"; do
 done
 
 # List all files in lib directory
-echo -e "\nAll files in installer/global/commands/lib/:"
-ls -la installer/global/commands/lib/
+echo -e "\nAll files in installer/core/commands/lib/:"
+ls -la installer/core/commands/lib/
 ```
 
 ### Dependency Actions
@@ -1397,11 +1397,11 @@ check_file() {
     fi
 }
 
-check_file "installer/global/commands/lib/complexity_factors.py"
-check_file "installer/global/commands/lib/review_modes.py"
-check_file "installer/global/commands/lib/plan_templates.py"
-check_file "installer/global/commands/lib/metrics_collector.py"
-check_file "installer/global/commands/lib/countdown_timer.py"
+check_file "installer/core/commands/lib/complexity_factors.py"
+check_file "installer/core/commands/lib/review_modes.py"
+check_file "installer/core/commands/lib/plan_templates.py"
+check_file "installer/core/commands/lib/metrics_collector.py"
+check_file "installer/core/commands/lib/countdown_timer.py"
 
 if [ ${#missing_files[@]} -eq 0 ]; then
     echo -e "\n✅ All dependencies verified"
@@ -1580,7 +1580,7 @@ pytest --count=10 tests/  # Run 10 times to detect flakiness
 ```bash
 # Run complete Phase 2 quality gate check
 pytest tests/ -v \
-    --cov=installer/global/commands/lib \
+    --cov=installer/core/commands/lib \
     --cov-report=term-missing \
     --cov-report=html \
     --cov-report=json \
@@ -1645,7 +1645,7 @@ pre-commit run --all-files
 pytest tests/performance/ --benchmark-only --benchmark-min-rounds=10
 
 # Run security scans
-bandit -r installer/global/commands/lib/ -ll
+bandit -r installer/core/commands/lib/ -ll
 safety check
 pip-audit
 

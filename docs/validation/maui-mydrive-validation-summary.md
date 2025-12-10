@@ -253,8 +253,8 @@ cat ~/.agentecflow/templates/maui-mydrive/agents/dotnet-domain-specialist.md
 **Key files to examine**:
 1. `/Users/richardwoollcott/.agentecflow/templates/maui-mydrive/validation-report.md` (false positive)
 2. `/Users/richardwoollcott/.agentecflow/templates/maui-mydrive/manifest.json` (1 agent listed)
-3. `installer/global/lib/template_creation/phase_6_agent_creation.py` (likely failure point)
-4. `installer/global/lib/template_creation/phase_5_5_validation.py` (validation logic)
+3. `installer/core/lib/template_creation/phase_6_agent_creation.py` (likely failure point)
+4. `installer/core/lib/template_creation/phase_5_5_validation.py` (validation logic)
 
 **Logs to check**:
 - Template creation logs (if any)

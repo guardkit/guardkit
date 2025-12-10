@@ -3,7 +3,7 @@
 ## Executive Summary
 
 **Task**: Add RequireKit validation to `/task-work` BDD mode
-**Implementation**: Modified `installer/global/commands/task-work.md`
+**Implementation**: Modified `installer/core/commands/task-work.md`
 **Test Type**: Code review verification (documentation change)
 **Status**: ✅ ALL VERIFICATION POINTS PASSED
 
@@ -72,7 +72,7 @@ Example:
 **VALIDATE** BDD mode requirements (TASK-BDD-FIX1):
 ```python
 if mode == "bdd":
-    from installer.global.commands.lib.feature_detection import supports_bdd
+    from installer.core.commands.lib.feature_detection import supports_bdd
 
     if not supports_bdd():
         print("""
@@ -537,7 +537,7 @@ elif "--mode=" in user_input:
 
 **TASK-BDD-FIX1 Implementation: VERIFIED ✅**
 
-All required changes have been correctly implemented in `installer/global/commands/task-work.md`:
+All required changes have been correctly implemented in `installer/core/commands/task-work.md`:
 
 1. **Mode flag parsing** correctly handles standard/tdd/bdd modes
 2. **RequireKit validation** blocks BDD mode when RequireKit not installed

@@ -592,8 +592,8 @@ Broken links create poor developer experience and reduce trust in documentation.
 ### Accuracy Tests
 
 **TEST-032-011: File Path Validation**
-- [ ] task-manager.md path correct: installer/global/agents/task-manager.md
-- [ ] pattern-advisor.md path correct: installer/global/agents/pattern-advisor.md
+- [ ] task-manager.md path correct: installer/core/agents/task-manager.md
+- [ ] pattern-advisor.md path correct: installer/core/agents/pattern-advisor.md
 - [ ] New guide path correct: docs/guides/mcp-optimization-guide.md
 - [ ] CLAUDE.md path correct: CLAUDE.md (repo root)
 
@@ -704,14 +704,14 @@ Future MCP integrations will:
 CLAUDE.md (references)
 ├── docs/guides/mcp-optimization-guide.md (new)
 │   └── (references)
-│       ├── installer/global/agents/task-manager.md
-│       ├── installer/global/agents/pattern-advisor.md
+│       ├── installer/core/agents/task-manager.md
+│       ├── installer/core/agents/pattern-advisor.md
 │       ├── figma-react-orchestrator.md (if exists)
 │       └── zeplin-maui-orchestrator.md (if exists)
-├── installer/global/agents/task-manager.md
+├── installer/core/agents/task-manager.md
 │   └── (references)
 │       └── docs/guides/mcp-optimization-guide.md
-└── installer/global/agents/pattern-advisor.md
+└── installer/core/agents/pattern-advisor.md
     └── (references)
         └── docs/guides/mcp-optimization-guide.md
 ```
@@ -819,7 +819,7 @@ CLAUDE.md (references)
 
 ## Appendix A: File Modification Summary
 
-### File 1: installer/global/agents/task-manager.md
+### File 1: installer/core/agents/task-manager.md
 **Change Type**: Addition
 **Location**: After line 73 (end of Context7 MCP Usage section)
 **Lines Added**: ~30-40 lines
@@ -828,7 +828,7 @@ CLAUDE.md (references)
 - When to adjust token budget section
 - Adjustment rationale and examples
 
-### File 2: installer/global/agents/pattern-advisor.md
+### File 2: installer/core/agents/pattern-advisor.md
 **Change Type**: Addition
 **Location**: After line 109 (in find_patterns section)
 **Lines Added**: ~40-50 lines

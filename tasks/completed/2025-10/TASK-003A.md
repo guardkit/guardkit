@@ -461,7 +461,7 @@ def determine_review_mode(complexity_score: int, force_triggers: list) -> str:
 ## File Structure
 
 ```
-installer/global/
+installer/core/
 ├── agents/
 │   ├── task-manager.md                      [UPDATE - Add Phase 2.7]
 │   └── software-architect.md                [UPDATE - Add complexity metadata]

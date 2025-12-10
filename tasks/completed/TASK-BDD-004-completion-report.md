@@ -16,7 +16,7 @@ Successfully implemented BDD workflow routing logic that integrates Taskwright w
 ## Deliverables
 
 ### Files Modified
-- **1 file**: `installer/global/commands/task-work.md`
+- **1 file**: `installer/core/commands/task-work.md`
 - **199 lines added**: Comprehensive BDD workflow integration
 
 ### Implementation Components
@@ -181,7 +181,7 @@ Successfully implemented BDD workflow routing logic that integrates Taskwright w
 - **Implementation Guide**: `tasks/backlog/bdd-restoration/IMPLEMENTATION-GUIDE.md`
 - **Investigation Findings**: `tasks/completed/TASK-BDD-001/TASK-BDD-001-investigation-findings.md`
 - **Flag Implementation**: `tasks/completed/TASK-BDD-003/TASK-BDD-003-restore-mode-flag.md`
-- **Modified File**: `installer/global/commands/task-work.md:836-2259`
+- **Modified File**: `installer/core/commands/task-work.md:836-2259`
 
 ---
 

@@ -10,14 +10,14 @@ Add optional `--name` flag to `/template-create` command allowing users to overr
 
 ## File Changes
 
-### 1. Command Documentation (installer/global/commands/template-create.md)
+### 1. Command Documentation (installer/core/commands/template-create.md)
 - **Lines**: ~30
 - **Changes**:
   - Add `--name` flag to flags section with examples
   - Remove `/template-qa` references (lines ~18)
   - Add usage examples with custom names
 
-### 2. Orchestrator Logic (installer/global/commands/lib/template_create_orchestrator.py)
+### 2. Orchestrator Logic (installer/core/commands/lib/template_create_orchestrator.py)
 - **Lines**: ~35
 - **Changes**:
   - Add `custom_name: Optional[str]` to `OrchestrationConfig`

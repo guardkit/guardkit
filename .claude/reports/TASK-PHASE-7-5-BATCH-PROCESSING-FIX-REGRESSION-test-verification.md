@@ -233,7 +233,7 @@ results.get("reason", "unknown")
 ### Implementation Verification
 
 #### Fix 1: Orchestrator Result Handling
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Lines**: 905-929
 
 ✓ Correctly extracts `status`, `enhanced_count`, `total_count`, `success_rate`, `errors`
@@ -243,7 +243,7 @@ results.get("reason", "unknown")
 ✓ Returns True to not block workflow
 
 #### Fix 2: Error Display Helper
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Lines**: 1411-1423
 
 ✓ New method `_display_enhancement_errors()` added
@@ -252,7 +252,7 @@ results.get("reason", "unknown")
 ✓ Called when errors list is non-empty
 
 #### Fix 3: AgentEnhancer API Contract
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 **Lines**: 103-123
 
 ✓ Structured result dict documented in docstring
@@ -426,12 +426,12 @@ Execution Time: 2.62 seconds
 ## Files Modified & Tested
 
 ### Implementation Files
-1. **installer/global/commands/lib/template_create_orchestrator.py**
+1. **installer/core/commands/lib/template_create_orchestrator.py**
    - Lines 904-929: Phase 7.5 enhancement result handling (MODIFIED)
    - Lines 1411-1423: `_display_enhancement_errors()` helper (ADDED)
    - Status: ✓ All tests passing
 
-2. **installer/global/lib/template_creation/agent_enhancer.py**
+2. **installer/core/lib/template_creation/agent_enhancer.py**
    - Lines 103-123: `enhance_all_agents()` method (VERIFIED - no changes needed)
    - Status: ✓ API contract correctly implemented
 

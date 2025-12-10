@@ -134,7 +134,7 @@ EPIC-001 has **excellent strategic foundation** with the AI-first pivot and wave
 ┌─────────────────────────────────────────────────────────────────┐
 │ Template Discovery                                               │
 │ Input: Template name (string)                                    │
-│ Output: Template (from installer/local/ or installer/global/)   │
+│ Output: Template (from installer/local/ or installer/core/)   │
 │ Status: ✅ EXISTING (minor update needed)                        │
 │ Issues: ⚠️ Local template discovery not yet implemented          │
 └─────────────────────────────────────────────────────────────────┘
@@ -468,7 +468,7 @@ class GreenfieldProvider(AnalysisProvider):
 Agent Priority:
 1. User's custom agents (.claude/agents/) - HIGHEST
 2. Template agents (template/agents/) - HIGH
-3. Global agents (installer/global/agents/) - MEDIUM
+3. Global agents (installer/core/agents/) - MEDIUM
 4. AI-generated agents (on-the-fly) - MEDIUM
 5. External agents (optional) - LOW
 ```
@@ -477,7 +477,7 @@ Agent Priority:
 
 | Component | Status | Issues |
 |-----------|--------|--------|
-| **TASK-003**: Multi-source scanner | ⚠️ PARTIAL | Only scans `installer/global/`, needs `.claude/agents/` and template agents |
+| **TASK-003**: Multi-source scanner | ⚠️ PARTIAL | Only scans `installer/core/`, needs `.claude/agents/` and template agents |
 | **TASK-004A**: AI agent generator | ❌ MISSING | Complete task specification missing |
 | **TASK-004B**: External discovery | ⚠️ DEFERRED | Intentional (Phase 2) |
 | **TASK-009**: Orchestration | ❌ MINIMAL | No orchestration logic defined |
@@ -488,14 +488,14 @@ Agent Priority:
 ```python
 # Current (TASK-003)
 def scan_agents() -> AgentInventory:
-    return scan_directory("installer/global/agents/")  # ❌ 1 source only
+    return scan_directory("installer/core/agents/")  # ❌ 1 source only
 
 # Required
 def scan_all_agent_sources() -> AgentInventory:
     inventory = AgentInventory()
     inventory.add(scan_directory(".claude/agents/"), priority=HIGHEST)  # ❌ Not implemented
     inventory.add(scan_directory("template/agents/"), priority=HIGH)     # ❌ Not implemented
-    inventory.add(scan_directory("installer/global/agents/"), priority=MEDIUM)  # ✅ Exists
+    inventory.add(scan_directory("installer/core/agents/"), priority=MEDIUM)  # ✅ Exists
     return inventory
 ```
 
@@ -635,13 +635,13 @@ class TemplateCreateOrchestrator:
 ```python
 # Current (only global templates)
 def discover_templates():
-    return scan_directory("installer/global/templates/")
+    return scan_directory("installer/core/templates/")
 
 # Required (local + global)
 def discover_templates():
     templates = []
     templates.extend(scan_directory("installer/local/templates/", priority=HIGH))   # NEW
-    templates.extend(scan_directory("installer/global/templates/", priority=MEDIUM)) # Existing
+    templates.extend(scan_directory("installer/core/templates/", priority=MEDIUM)) # Existing
     return deduplicate_by_priority(templates)
 ```
 
@@ -705,7 +705,7 @@ def discover_templates():
 ┌─────────────────────────────────────────────────────────────────┐
 │ Agent Discovery (TASK-003)                                       │
 │ Responsibility: Find existing agents                            │
-│ Scope: .claude/agents/, template/agents/, installer/global/     │
+│ Scope: .claude/agents/, template/agents/, installer/core/     │
 │ Status: ⚠️ Only 1 of 3 sources implemented                      │
 └─────────────────────────────────────────────────────────────────┘
 

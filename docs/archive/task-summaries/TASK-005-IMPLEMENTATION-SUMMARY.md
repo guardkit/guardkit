@@ -15,14 +15,14 @@ Implemented a complete manifest generator that transforms AI-powered codebase an
 
 ## What Was Built
 
-### 1. Data Models (`installer/global/lib/template_creation/models.py`)
+### 1. Data Models (`installer/core/lib/template_creation/models.py`)
 - **TemplateManifest**: Complete manifest structure with 15+ fields
 - **FrameworkInfo**: Framework metadata with version and purpose
 - **PlaceholderInfo**: Intelligent placeholder definitions with validation patterns
 - Pydantic-based validation with proper types and constraints
 - **Coverage**: 100%
 
-### 2. Manifest Generator (`installer/global/lib/template_creation/manifest_generator.py`)
+### 2. Manifest Generator (`installer/core/lib/template_creation/manifest_generator.py`)
 Core functionality:
 - Template identity generation (name, display name, description)
 - Language version inference (Python, .NET, Node.js)
@@ -108,9 +108,9 @@ All core business logic is fully covered.
 
 ## Files Created
 
-1. `installer/global/lib/template_creation/__init__.py` - Package exports
-2. `installer/global/lib/template_creation/models.py` - Data models (265 lines)
-3. `installer/global/lib/template_creation/manifest_generator.py` - Core generator (574 lines)
+1. `installer/core/lib/template_creation/__init__.py` - Package exports
+2. `installer/core/lib/template_creation/models.py` - Data models (265 lines)
+3. `installer/core/lib/template_creation/manifest_generator.py` - Core generator (574 lines)
 4. `tests/unit/test_manifest_generator.py` - Test suite (850+ lines)
 
 ## Example Output

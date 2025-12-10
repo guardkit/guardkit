@@ -27,8 +27,8 @@ import pytest
 import sys
 from pathlib import Path
 
-# Add installer/global/lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global"))
+# Add installer/core/lib to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core"))
 
 from lib.utils.feature_utils import extract_feature_slug
 

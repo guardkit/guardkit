@@ -33,9 +33,9 @@ quality_gates:
   architectural_review: passed
 implementation_summary:
   files_created:
-    - installer/global/commands/lib/user_interaction.py
-    - installer/global/commands/lib/review_modes.py
-    - installer/global/commands/lib/test_quick_review.py
+    - installer/core/commands/lib/user_interaction.py
+    - installer/core/commands/lib/review_modes.py
+    - installer/core/commands/lib/test_quick_review.py
   lines_of_code: 1135
   quality_score: 94
   architecture_score: 95
@@ -439,7 +439,7 @@ class QuickReviewHandler:
 ### Files to Create
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (NEW)
 │   └── QuickReviewHandler class
 └── user_interaction.py (NEW)
@@ -458,7 +458,7 @@ tests/integration/
 ### Files to Modify
 
 ```
-installer/global/agents/task-manager.md (UPDATE)
+installer/core/agents/task-manager.md (UPDATE)
 └── Add Phase 2.8 invocation (quick review mode)
 ```
 

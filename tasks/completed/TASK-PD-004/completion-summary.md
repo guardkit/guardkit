@@ -15,7 +15,7 @@ Successfully implemented agent scanner exclusion logic for extended files (`-ext
 ## Changes Implemented
 
 ### 1. Core Implementation
-**File**: `installer/global/lib/agent_scanner/agent_scanner.py`
+**File**: `installer/core/lib/agent_scanner/agent_scanner.py`
 
 - Added `is_extended_file()` helper function (lines 16-37)
   - Checks if file stem ends with `-ext`
@@ -28,7 +28,7 @@ Successfully implemented agent scanner exclusion logic for extended files (`-ext
   - No changes to agent metadata parsing logic
 
 ### 2. Public API Export
-**File**: `installer/global/lib/agent_scanner/__init__.py`
+**File**: `installer/core/lib/agent_scanner/__init__.py`
 
 - Exported `is_extended_file` function
 - Added to `__all__` list for public API

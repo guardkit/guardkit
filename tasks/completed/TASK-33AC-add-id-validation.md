@@ -75,7 +75,7 @@ Implement comprehensive validation and collision detection for task IDs to preve
 ## Implementation Notes
 
 ### File Location
-Add to: `installer/global/lib/id_generator.py`
+Add to: `installer/core/lib/id_generator.py`
 
 ### Key Functions
 ```python
@@ -166,7 +166,7 @@ ERROR_INVALID_PREFIX = "❌ ERROR: Invalid prefix: {prefix}\n   Expected: 2-4 up
 **Task completed successfully on 2025-11-10**
 
 ### Deliverables
-1. **Validation Module** (installer/global/lib/id_generator.py)
+1. **Validation Module** (installer/core/lib/id_generator.py)
    - Format validation function with regex pattern support
    - Duplicate detection across all task directories
    - ID registry with caching (5-second TTL)

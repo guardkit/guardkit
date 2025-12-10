@@ -78,7 +78,7 @@ templates/
 
 ## Root Cause
 
-**File**: `installer/global/lib/template_generator/template_generator.py` (Lines 392-421)
+**File**: `installer/core/lib/template_generator/template_generator.py` (Lines 392-421)
 
 The `_infer_template_path()` method has a **fundamental flaw**:
 1. It searches for layer names in the file path using string matching
@@ -144,7 +144,7 @@ Fix template file classification to properly organize files by architectural lay
 **Fallback Strategy**: Pattern-based classification from filename
 **Last Resort**: `templates/other/` with warning
 
-**New File**: `installer/global/lib/template_generator/path_resolver.py`
+**New File**: `installer/core/lib/template_generator/path_resolver.py`
 
 ### Implementation Overview
 
@@ -235,7 +235,7 @@ class TemplatePathResolver:
 
 ### 1. Create New File: `path_resolver.py` (~200 lines)
 
-**Location**: `installer/global/lib/template_generator/path_resolver.py`
+**Location**: `installer/core/lib/template_generator/path_resolver.py`
 
 **Contents**:
 - `ClassificationStrategy` protocol
@@ -247,7 +247,7 @@ class TemplatePathResolver:
 
 ### 2. Modify: `template_generator.py` (~10 lines changed)
 
-**Location**: `installer/global/lib/template_generator/template_generator.py`
+**Location**: `installer/core/lib/template_generator/template_generator.py`
 
 **Changes**:
 1. Import `TemplatePathResolver`
@@ -513,7 +513,7 @@ cat /tmp/template-create-output.log | grep "Classification Summary" -A10
 
 - **Architectural Review**: See architectural-reviewer agent output above (complete SOLID analysis)
 - **Original Issue**: User report of templates in `other/` directory
-- **Code Location**: `installer/global/lib/template_generator/template_generator.py:392-421`
+- **Code Location**: `installer/core/lib/template_generator/template_generator.py:392-421`
 
 ---
 

@@ -239,7 +239,7 @@ def test_template_split_output_validation_fails():
 
 ## Files to Modify
 
-1. `installer/global/lib/template_generator/models.py` - Main changes
+1. `installer/core/lib/template_generator/models.py` - Main changes
 
 ## Estimated Effort
 

@@ -57,7 +57,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File 1: installer/global/commands/lib/greenfield_qa_session.py
+### File 1: installer/core/commands/lib/greenfield_qa_session.py
 
 **MODIFY constructor** (around line 203):
 
@@ -463,17 +463,17 @@ def run(self) -> Optional[GreenfieldAnswers]:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+1. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `__init__()` constructor for `validate` flag (~5 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+2. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_validate_placeholder_consistency()` (~40 lines)
    - `_validate_pattern_fidelity()` (~45 lines)
    - `_calculate_overall_quality_score()` (~45 lines)
    - `_generate_validation_report()` (~80 lines)
    - `_run_level2_validation()` (~30 lines)
 
-3. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+3. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `run()` method to add Level 2 validation (~25 lines)
 
 ## Files to NOT Touch

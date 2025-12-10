@@ -45,11 +45,11 @@ Enhance `/template-init` to:
 ### Files to Modify
 
 **Primary**:
-- `installer/global/commands/template-init` (bash script)
-- OR `installer/global/commands/lib/template_init.py` (if Python implementation)
+- `installer/core/commands/template-init` (bash script)
+- OR `installer/core/commands/lib/template_init.py` (if Python implementation)
 
 **Related**:
-- `installer/global/commands/template-init.md` (documentation)
+- `installer/core/commands/template-init.md` (documentation)
 
 ---
 
@@ -186,7 +186,7 @@ print("✅ Template initialization complete!")
 
 ### Step 4: Update Documentation (0.5 hour)
 
-**File**: `installer/global/commands/template-init.md`
+**File**: `installer/core/commands/template-init.md`
 
 **Add Section**: "Agent Registration"
 
@@ -274,7 +274,7 @@ taskwright init react-typescript
 
 - Review Report: .claude/reviews/TASK-REV-9A4E-review-report.md (Finding #4)
 - Agent Discovery Fix: TASK-ENF-P0-1
-- Current Command: installer/global/commands/template-init
+- Current Command: installer/core/commands/template-init
 
 ---
 
@@ -297,8 +297,8 @@ taskwright init react-typescript
 - `tests/test_agent_installer_verification.py` (395 lines, new file)
 
 **Files Modified:**
-- `installer/global/commands/lib/agentic_init/agent_installer.py` (+153 lines)
-- `installer/global/commands/template-init.md` (+52 lines)
+- `installer/core/commands/lib/agentic_init/agent_installer.py` (+153 lines)
+- `installer/core/commands/template-init.md` (+52 lines)
 
 **Tests Written:**
 - 13 comprehensive unit tests

@@ -16,8 +16,8 @@ sys.path.insert(0, str(project_root))
 
 # Import using importlib to bypass 'global' keyword issue
 import importlib
-models_module = importlib.import_module('installer.global.lib.template_generator.models')
-pattern_matcher_module = importlib.import_module('installer.global.lib.template_generator.pattern_matcher')
+models_module = importlib.import_module('installer.core.lib.template_generator.models')
+pattern_matcher_module = importlib.import_module('installer.core.lib.template_generator.pattern_matcher')
 
 CodeTemplate = models_module.CodeTemplate
 TemplateCollection = models_module.TemplateCollection

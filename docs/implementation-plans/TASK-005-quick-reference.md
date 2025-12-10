@@ -34,13 +34,13 @@ SplitRecommendation (NEW)
 
 ### New Files (TASK-005)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── upfront_complexity_adapter.py   # ~100 LOC - Adapter pattern
 ├── task_split_advisor.py           # ~80 LOC - Split logic
 ├── split_models.py                 # ~30 LOC - Data model
 └── upfront_complexity_cli.py       # ~90 LOC - CLI handler
 
-installer/global/commands/
+installer/core/commands/
 └── upfront-complexity-check.sh     # ~10 LOC - Bash bridge
 
 tests/
@@ -51,7 +51,7 @@ tests/
 
 ### Reused Files (TASK-003A)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── complexity_calculator.py        # ~350 LOC - REUSED ✓
 ├── complexity_models.py            # ~225 LOC - REUSED ✓
 └── complexity_factors.py           # ~265 LOC - REUSED ✓
@@ -241,7 +241,7 @@ tests/
 - **ADR**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/adr/ADR-005-upfront-complexity-refactored-architecture.md`
 - **Implementation Plan**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/implementation-plans/TASK-005-revised-plan.md`
 - **Comparison**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/implementation-plans/TASK-005-comparison.md`
-- **TASK-003A Reference**: `installer/global/commands/lib/complexity_*.py`
+- **TASK-003A Reference**: `installer/core/commands/lib/complexity_*.py`
 
 ## Questions/Clarifications
 
@@ -249,7 +249,7 @@ If you have questions about:
 - **Architecture**: See ADR-005
 - **Implementation**: See TASK-005-revised-plan.md
 - **Comparison**: See TASK-005-comparison.md
-- **TASK-003A Code**: See `installer/global/commands/lib/complexity_*.py`
+- **TASK-003A Code**: See `installer/core/commands/lib/complexity_*.py`
 
 ---
 

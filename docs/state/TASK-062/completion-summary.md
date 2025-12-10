@@ -30,7 +30,7 @@
 - Validation status: **FAILED → PASSED** ✅
 
 **Files Modified**:
-- `installer/global/templates/react-fastapi-monorepo/manifest.json`
+- `installer/core/templates/react-fastapi-monorepo/manifest.json`
 - Updated `updated_at` timestamp to 2025-01-09T21:15:00Z
 
 ---
@@ -144,7 +144,7 @@ guardkit-init react-fastapi-monorepo
 
 ### Deliverables - Final
 
-**Template Package** (`installer/global/templates/react-fastapi-monorepo/`):
+**Template Package** (`installer/core/templates/react-fastapi-monorepo/`):
 - ✅ manifest.json (5.7 KB) - **14 placeholders defined**
 - ✅ settings.json (1.7 KB)
 - ✅ CLAUDE.md (18.9 KB, 794 lines)

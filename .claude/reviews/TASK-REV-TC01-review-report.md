@@ -25,7 +25,7 @@ The `/template-create` command run on the kartlog repository **was working befor
 
 ### Root Cause
 
-The `TemplateSplitOutput` model ([models.py:356-379](installer/global/lib/template_generator/models.py#L356-L379)) defines:
+The `TemplateSplitOutput` model ([models.py:356-379](installer/core/lib/template_generator/models.py#L356-L379)) defines:
 ```python
 class TemplateSplitOutput(BaseModel):
     core_content: str       # ← Correct name
@@ -33,7 +33,7 @@ class TemplateSplitOutput(BaseModel):
     reference_content: str  # ← Correct name
 ```
 
-But the orchestrator ([template_create_orchestrator.py:1556-1568](installer/global/commands/lib/template_create_orchestrator.py#L1556-L1568)) accesses:
+But the orchestrator ([template_create_orchestrator.py:1556-1568](installer/core/commands/lib/template_create_orchestrator.py#L1556-L1568)) accesses:
 ```python
 split_output.core        # ← AttributeError
 split_output.patterns    # ← AttributeError

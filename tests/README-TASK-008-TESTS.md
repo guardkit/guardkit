@@ -116,7 +116,7 @@ pip install pytest pytest-cov pytest-mock
 source .venv/bin/activate
 
 # Run all tests with coverage
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 python -m pytest ../../../../tests/test_task_008_comprehensive_fixed.py \
     -v --cov=. --cov-report=term-missing
 ```
@@ -316,7 +316,7 @@ For questions about test results:
 For test execution issues:
 - Ensure Python 3.12+ is installed
 - Verify pytest dependencies are installed
-- Run tests from `installer/global/commands/lib` directory
+- Run tests from `installer/core/commands/lib` directory
 
 ---
 

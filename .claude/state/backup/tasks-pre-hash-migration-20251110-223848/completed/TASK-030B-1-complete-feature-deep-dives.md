@@ -201,9 +201,9 @@ Use this template for each feature (from Phase 2 architectural plan):
 
 Link to command specifications (use placeholders until TASK-030A complete):
 
-- Phase 2.7 details: `../../installer/global/commands/task-work.md#phase-27-complexity-evaluation`
-- Phase 2.8 details: `../../installer/global/commands/task-work.md#phase-28-human-checkpoint`
-- Phase 4.5 details: `../../installer/global/commands/task-work.md#phase-45-test-enforcement`
+- Phase 2.7 details: `../../installer/core/commands/task-work.md#phase-27-complexity-evaluation`
+- Phase 2.8 details: `../../installer/core/commands/task-work.md#phase-28-human-checkpoint`
+- Phase 4.5 details: `../../installer/core/commands/task-work.md#phase-45-test-enforcement`
 
 ### Real-World Examples Sources
 

@@ -120,9 +120,9 @@ taskwright init react-typescript --info
 ```
 
 **Template Documentation**:
-- [react-typescript](installer/global/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
-- [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
-- [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
+- [react-typescript](installer/core/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
+- [fastapi-python](installer/core/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
+- [nextjs-fullstack](installer/core/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
 
 ## Template Creation (EMPHASIZE MORE)
 

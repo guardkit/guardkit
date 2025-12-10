@@ -138,7 +138,7 @@ def _run_from_phase_7(self):
 ### Files Modified
 
 **Primary:**
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
   - Add serialization methods (~30 lines)
   - Add checkpoint before Phase 7.5 (~2 lines)
   - Add resume methods (~60 lines)
@@ -348,8 +348,8 @@ Both needed to be fixed for Phase 7.5 to work.
 
 - **Task**: `/tasks/backlog/TASK-PHASE-7-5-CHECKPOINT.md`
 - **Previous Session**: "Enhanced Agent contents" (agent definition creation)
-- **Agent Enhancer**: `installer/global/lib/template_creation/agent_enhancer.py`
-- **Orchestrator**: `installer/global/commands/lib/template_create_orchestrator.py`
+- **Agent Enhancer**: `installer/core/lib/template_creation/agent_enhancer.py`
+- **Orchestrator**: `installer/core/commands/lib/template_create_orchestrator.py`
 - **Phase 5 Reference**: Lines 210-280 (checkpoint-resume pattern)
 
 ---

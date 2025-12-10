@@ -34,7 +34,7 @@ Successfully implemented AI integration for the agent enhancement workflow by re
 
 ### File Modified
 
-**[installer/global/lib/agent_enhancement/enhancer.py](../../installer/global/lib/agent_enhancement/enhancer.py)**
+**[installer/core/lib/agent_enhancement/enhancer.py](../../installer/core/lib/agent_enhancement/enhancer.py)**
 
 ### Changes Summary
 
@@ -336,7 +336,7 @@ Placeholder warning removed.
 ### 9. Python Syntax Check ✅
 
 ```bash
-$ python3 -m py_compile installer/global/lib/agent_enhancement/enhancer.py
+$ python3 -m py_compile installer/core/lib/agent_enhancement/enhancer.py
 ✅ Syntax check passed
 ```
 
@@ -530,7 +530,7 @@ Successfully implemented AI integration for agent enhancement using the correct 
 
 ## Files Referenced
 
-- **Implementation**: [installer/global/lib/agent_enhancement/enhancer.py](../../installer/global/lib/agent_enhancement/enhancer.py)
+- **Implementation**: [installer/core/lib/agent_enhancement/enhancer.py](../../installer/core/lib/agent_enhancement/enhancer.py)
 - **Task Specification**: [tasks/backlog/TASK-AI-2B37-ai-integration-agent-enhancement.md](../../tasks/backlog/TASK-AI-2B37-ai-integration-agent-enhancement.md)
 - **Previous Review**: [docs/reviews/task-ai-2b37-implementation-review.md](../reviews/task-ai-2b37-implementation-review.md)
 - **Phase 8 Review**: [docs/reviews/phase-8-implementation-review.md](../reviews/phase-8-implementation-review.md)

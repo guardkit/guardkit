@@ -26,7 +26,7 @@ Successfully implemented priority fixes from code quality review (TASK-REV-FB49)
 - Updated `_merge_content()` at line 226 to use new method
 
 **Files Changed**:
-- `installer/global/lib/agent_enhancement/applier.py` (+47 lines)
+- `installer/core/lib/agent_enhancement/applier.py` (+47 lines)
 
 ### 2. JSON Error Message Improvement (Finding 3)
 
@@ -40,7 +40,7 @@ Successfully implemented priority fixes from code quality review (TASK-REV-FB49)
 - Actionable suggestion: "Re-run with --static"
 
 **Files Changed**:
-- `installer/global/lib/agent_enhancement/enhancer.py` (+18 lines)
+- `installer/core/lib/agent_enhancement/enhancer.py` (+18 lines)
 
 ### 3. Python 3.9 Compatibility Fixes
 
@@ -49,8 +49,8 @@ Successfully implemented priority fixes from code quality review (TASK-REV-FB49)
 **Solution**: Added `from __future__ import annotations` and used `Optional[Path]`
 
 **Files Changed**:
-- `installer/global/lib/agent_enhancement/parser.py`
-- `installer/global/lib/agent_enhancement/models.py`
+- `installer/core/lib/agent_enhancement/parser.py`
+- `installer/core/lib/agent_enhancement/models.py`
 
 ## Test Coverage
 
@@ -75,10 +75,10 @@ Successfully implemented priority fixes from code quality review (TASK-REV-FB49)
 ## Files Modified
 
 ### Production Code
-1. `installer/global/lib/agent_enhancement/applier.py` - Fuzzy matching
-2. `installer/global/lib/agent_enhancement/enhancer.py` - Error context
-3. `installer/global/lib/agent_enhancement/parser.py` - Python 3.9 fix
-4. `installer/global/lib/agent_enhancement/models.py` - Python 3.9 fix
+1. `installer/core/lib/agent_enhancement/applier.py` - Fuzzy matching
+2. `installer/core/lib/agent_enhancement/enhancer.py` - Error context
+3. `installer/core/lib/agent_enhancement/parser.py` - Python 3.9 fix
+4. `installer/core/lib/agent_enhancement/models.py` - Python 3.9 fix
 
 ### Test Code
 1. `tests/lib/agent_enhancement/test_applier_duplicate_detection.py` (NEW)

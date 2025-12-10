@@ -131,7 +131,7 @@ Follow same pattern for:
 git checkout main && git pull
 git checkout -b feature/remove-detector
 
-rm installer/global/commands/lib/smart_defaults_detector.py
+rm installer/core/commands/lib/smart_defaults_detector.py
 rm tests/unit/test_smart_defaults_detector.py
 
 # Remove references in orchestrator
@@ -148,11 +148,11 @@ git checkout main && git pull
 git checkout -b feature/rename-legacy
 
 # Rename existing files
-mv installer/global/commands/template-create.md \
-   installer/global/commands/template-create-legacy.md
+mv installer/core/commands/template-create.md \
+   installer/core/commands/template-create-legacy.md
 
-mv installer/global/commands/lib/template_create_orchestrator.py \
-   installer/global/commands/lib/template_create_legacy_orchestrator.py
+mv installer/core/commands/lib/template_create_orchestrator.py \
+   installer/core/commands/lib/template_create_legacy_orchestrator.py
 
 # Build new clean template-create
 # (Apply all fixes from Phases 1-6)
@@ -322,7 +322,7 @@ pytest tests/ -v
 **Issue**: Import errors
 ```bash
 # Set PYTHONPATH
-export PYTHONPATH="/path/to/guardkit:/path/to/guardkit/installer/global"
+export PYTHONPATH="/path/to/guardkit:/path/to/guardkit/installer/core"
 ```
 
 **Issue**: Checkpoint not working

@@ -421,7 +421,7 @@ cd template-nextjs
 7. **Phase 5.5**: Verify completeness (manifest, settings, agents, docs)
 
 **Outputs** (per template):
-- `installer/global/templates/{template-name}/`
+- `installer/core/templates/{template-name}/`
 - Validation report scoring 9+/10
 - README, CLAUDE.md, manifest.json, settings.json
 - AI agents for template
@@ -481,7 +481,7 @@ conductor worktree merge  # For each worktree
 7. **Phase 5.5**: Verify completeness
 
 **Outputs**:
-- `installer/global/templates/react-fastapi-monorepo/`
+- `installer/core/templates/react-fastapi-monorepo/`
 - Monorepo structure with Turborepo + Docker Compose
 - Type generation working
 - Validation report 9+/10

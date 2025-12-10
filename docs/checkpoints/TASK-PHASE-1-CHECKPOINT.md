@@ -46,7 +46,7 @@ Implement checkpoint-resume pattern in Phase 1:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/commands/lib/template_create_orchestrator.py` | MODIFY | Add checkpoint logic to Phase 1 |
+| `installer/core/commands/lib/template_create_orchestrator.py` | MODIFY | Add checkpoint logic to Phase 1 |
 
 ---
 
@@ -57,15 +57,15 @@ Implement checkpoint-resume pattern in Phase 1:
 ```python
 # In template_create_orchestrator.py
 
-from installer.global.lib.agent_bridge.invoker import (
+from installer.core.lib.agent_bridge.invoker import (
     AgentBridgeInvoker,
     CheckpointRequested
 )
-from installer.global.lib.agent_bridge.state_manager import (
+from installer.core.lib.agent_bridge.state_manager import (
     StateManager,
     TemplateCreateState
 )
-from installer.global.lib.template_creation.prompts import (
+from installer.core.lib.template_creation.prompts import (
     PHASE_1_ANALYSIS_PROMPT,
     PHASE_1_CONFIDENCE_THRESHOLD
 )

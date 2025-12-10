@@ -6,7 +6,7 @@
 
 #### 1. prompt_builder.py
 ```
-File: installer/global/lib/codebase_analyzer/prompt_builder.py
+File: installer/core/lib/codebase_analyzer/prompt_builder.py
 Lines Changed: +190 lines (expanded examples and added guidelines)
 ```
 
@@ -36,7 +36,7 @@ Lines Changed: +190 lines (expanded examples and added guidelines)
 
 #### 2. template_create_orchestrator.py
 ```
-File: installer/global/commands/lib/template_create_orchestrator.py
+File: installer/core/commands/lib/template_create_orchestrator.py
 Lines Changed: 2 lines modified (max_files increase)
 ```
 

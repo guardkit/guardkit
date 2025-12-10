@@ -91,7 +91,7 @@ Current MCP integrations:
 ### 1. MCP Tool Invocation Patterns
 ```bash
 # Find all MCP tool references in commands
-grep -r "mcp__" installer/global/commands/
+grep -r "mcp__" installer/core/commands/
 ```
 
 **Questions:**
@@ -124,9 +124,9 @@ Design Patterns: find_patterns, search_patterns, get_pattern_details
 
 ### 4. Command Specification Review
 **Files to review:**
-- `installer/global/commands/task-work.md` - Most critical (main workflow)
-- `installer/global/commands/figma-to-react.md` - Design integration
-- `installer/global/commands/zeplin-to-maui.md` - Design integration
+- `installer/core/commands/task-work.md` - Most critical (main workflow)
+- `installer/core/commands/figma-to-react.md` - Design integration
+- `installer/core/commands/zeplin-to-maui.md` - Design integration
 - Agent specifications that might reference MCPs
 
 ## Test Requirements

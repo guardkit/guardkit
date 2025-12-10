@@ -25,7 +25,7 @@ User types: /template-create
            ↓
 Claude Code reads: ~/.agentecflow/commands/template-create.md
            ↓
-Claude executes: python3 -m installer.global.commands.lib.template_create_orchestrator
+Claude executes: python3 -m installer.core.commands.lib.template_create_orchestrator
            ↓
 Python subprocess runs in isolation
            ↓

@@ -53,7 +53,7 @@ The agent-content-enhancer (TASK-STND-8B4C) successfully generates boundaries se
 
 ### Changes Made
 
-**File 1**: `installer/global/lib/agent_enhancement/applier.py`
+**File 1**: `installer/core/lib/agent_enhancement/applier.py`
 
 1. **Updated `_find_boundaries_insertion_point()` method** (lines 202-240)
    - Prioritizes Quick Start detection first
@@ -166,7 +166,7 @@ Coverage: 96% for applier.py
 
 ### Coverage Report
 ```
-installer/global/lib/agent_enhancement/applier.py: 96% coverage
+installer/core/lib/agent_enhancement/applier.py: 96% coverage
 - Statements: 144 total, 1 missed
 - Branches: 86 total, 8 partial
 ```
@@ -215,7 +215,7 @@ installer/global/lib/agent_enhancement/applier.py: 96% coverage
 
 ## References
 
-1. `installer/global/lib/agent_enhancement/applier.py` - Lines 202-308 (placement logic)
+1. `installer/core/lib/agent_enhancement/applier.py` - Lines 202-308 (placement logic)
 2. `docs/analysis/github-agent-best-practices-analysis.md` - GitHub standards source
 3. `tests/lib/agent_enhancement/test_boundaries_placement.py` - Unit tests
 

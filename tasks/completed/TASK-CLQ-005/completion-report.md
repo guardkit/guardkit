@@ -11,22 +11,22 @@
 ## Files Created
 
 ### Question Templates
-1. **`installer/global/commands/lib/clarification/templates/review_scope.py`**
+1. **`installer/core/commands/lib/clarification/templates/review_scope.py`**
    - 5 question template categories
    - All questions follow Question dataclass structure
    - Categories: focus, depth, priority, concerns, scope
 
 ### Generator Functions
-2. **`installer/global/commands/lib/clarification/generators/review_generator.py`**
+2. **`installer/core/commands/lib/clarification/generators/review_generator.py`**
    - `generate_review_questions()` - Main generator function
    - `get_question_priorities()` - Priority ordering for QUICK mode
    - `filter_questions_by_priority()` - Top N question filtering
 
 ### Module Files
-3. **`installer/global/commands/lib/clarification/templates/__init__.py`**
+3. **`installer/core/commands/lib/clarification/templates/__init__.py`**
    - Proper Python package exports
 
-4. **`installer/global/commands/lib/clarification/generators/__init__.py`**
+4. **`installer/core/commands/lib/clarification/generators/__init__.py`**
    - Proper Python package exports
 
 ## Implementation Details

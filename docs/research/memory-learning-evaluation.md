@@ -220,7 +220,7 @@ rg "architectural review" tasks/*/IMPLEMENTATION-PLAN.md
 **Example:**
 ```bash
 # After completing 5 authentication tasks
-# Update installer/global/templates/typescript-api/patterns/auth.md
+# Update installer/core/templates/typescript-api/patterns/auth.md
 # Future projects get better starting point
 ```
 

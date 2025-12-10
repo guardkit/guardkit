@@ -14,7 +14,7 @@ import importlib.util
 # Load agent-enhance module from absolute path
 def load_agent_enhance_module():
     """Load agent-enhance module for testing."""
-    script_path = Path(__file__).parent.parent / "installer/global/commands/agent-enhance.py"
+    script_path = Path(__file__).parent.parent / "installer/core/commands/agent-enhance.py"
     spec = importlib.util.spec_from_file_location("agent_enhance", script_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

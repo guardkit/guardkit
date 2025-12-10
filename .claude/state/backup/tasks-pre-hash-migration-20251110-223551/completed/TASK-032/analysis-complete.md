@@ -167,8 +167,8 @@ GROUP 4: Integration (4 requirements)
 
 | File | Change Type | Size | Location |
 |------|-------------|------|----------|
-| `installer/global/agents/task-manager.md` | Update | 30-40 lines | After line 73 |
-| `installer/global/agents/pattern-advisor.md` | Update | 40-50 lines | After line 109 |
+| `installer/core/agents/task-manager.md` | Update | 30-40 lines | After line 73 |
+| `installer/core/agents/pattern-advisor.md` | Update | 40-50 lines | After line 109 |
 | `docs/guides/mcp-optimization-guide.md` | New | 310 lines | New file |
 | `CLAUDE.md` | Update | 10-12 lines | After line 326 |
 | **TOTAL** | **-** | **~400 lines** | **-** |

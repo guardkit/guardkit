@@ -53,7 +53,7 @@ tasks/backlog/TASK-4F79B-2-full-review-mode.md
 
 ## Root Cause
 
-The task-work command specification in `installer/global/commands/task-work.md` instructs to:
+The task-work command specification in `installer/core/commands/task-work.md` instructs to:
 ```
 READ tasks/in_progress/TASK-XXX.md
 ```
@@ -176,7 +176,7 @@ The `/task-work TASK-XXX` command should:
 ## Files to Modify
 
 ```
-installer/global/commands/
+installer/core/commands/
 └── task-work.md
     └── Step 1: Load Task Context
         ├── Add glob pattern search

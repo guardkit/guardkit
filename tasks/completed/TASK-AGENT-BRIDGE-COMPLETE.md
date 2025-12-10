@@ -31,8 +31,8 @@ The following infrastructure **already exists and works** - DO NOT RECREATE:
 
 | Component | Location | LOC |
 |-----------|----------|-----|
-| `AgentBridgeInvoker` | `installer/global/lib/agent_bridge/invoker.py` | 266 |
-| `StateManager` | `installer/global/lib/agent_bridge/state_manager.py` | 162 |
+| `AgentBridgeInvoker` | `installer/core/lib/agent_bridge/invoker.py` | 266 |
+| `StateManager` | `installer/core/lib/agent_bridge/state_manager.py` | 162 |
 | `TemplateCreateState` | `state_manager.py` (lines 15-37) | 22 |
 | `AgentRequest/Response` | `invoker.py` (lines 33-83) | 50 |
 
@@ -52,15 +52,15 @@ Wire the orchestrator to use existing infrastructure:
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/lib/agent_bridge/invoker.py` | MODIFY | Add CheckpointRequested exception |
-| `installer/global/lib/codebase_analyzer/agent_invoker.py` | MODIFY | Use existing bridge invoker |
-| `installer/global/commands/lib/template_create_orchestrator.py` | MODIFY | Wire to existing infrastructure |
+| `installer/core/lib/agent_bridge/invoker.py` | MODIFY | Add CheckpointRequested exception |
+| `installer/core/lib/codebase_analyzer/agent_invoker.py` | MODIFY | Use existing bridge invoker |
+| `installer/core/commands/lib/template_create_orchestrator.py` | MODIFY | Wire to existing infrastructure |
 
 ### Files to Create
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/lib/agent_bridge/mock_invoker.py` | CREATE | Mock invoker for testing |
+| `installer/core/lib/agent_bridge/mock_invoker.py` | CREATE | Mock invoker for testing |
 | `tests/unit/agent_bridge/test_integration.py` | CREATE | Integration tests |
 
 ### Files NOT Being Created (Already Exist)
@@ -76,7 +76,7 @@ Wire the orchestrator to use existing infrastructure:
 ### 1. Add CheckpointRequested Exception to Existing invoker.py
 
 ```python
-# ADD to installer/global/lib/agent_bridge/invoker.py (after line 265)
+# ADD to installer/core/lib/agent_bridge/invoker.py (after line 265)
 
 class CheckpointRequested(Exception):
     """
@@ -102,7 +102,7 @@ class CheckpointRequested(Exception):
 ### 2. Update __init__.py Exports
 
 ```python
-# UPDATE installer/global/lib/agent_bridge/__init__.py
+# UPDATE installer/core/lib/agent_bridge/__init__.py
 
 from .invoker import (
     AgentBridgeInvoker,
@@ -117,18 +117,18 @@ from .state_manager import StateManager, TemplateCreateState
 ### 3. Update ArchitecturalReviewerInvoker to Use Existing Infrastructure
 
 ```python
-# MODIFY installer/global/lib/codebase_analyzer/agent_invoker.py
+# MODIFY installer/core/lib/codebase_analyzer/agent_invoker.py
 
 import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from installer.global.lib.agent_bridge.invoker import (
+from installer.core.lib.agent_bridge.invoker import (
     AgentBridgeInvoker,
     CheckpointRequested
 )
-from installer.global.lib.agent_bridge.state_manager import StateManager
+from installer.core.lib.agent_bridge.state_manager import StateManager
 
 
 class ArchitecturalReviewerInvoker:
@@ -200,7 +200,7 @@ class ArchitecturalReviewerInvoker:
     def _build_analysis_prompt(self, samples: List[Dict[str, Any]]) -> str:
         """Build analysis prompt from samples."""
         # Import prompt template (created separately)
-        from installer.global.lib.template_creation.prompts import PHASE_1_ANALYSIS_PROMPT
+        from installer.core.lib.template_creation.prompts import PHASE_1_ANALYSIS_PROMPT
         return PHASE_1_ANALYSIS_PROMPT.format(
             file_samples=json.dumps(samples, indent=2)
         )
@@ -209,7 +209,7 @@ class ArchitecturalReviewerInvoker:
 ### 4. Create Mock Invoker for Testing
 
 ```python
-# CREATE installer/global/lib/agent_bridge/mock_invoker.py
+# CREATE installer/core/lib/agent_bridge/mock_invoker.py
 
 """
 Mock Agent Invoker for Testing
@@ -329,15 +329,15 @@ import pytest
 import json
 from pathlib import Path
 
-from installer.global.lib.agent_bridge.invoker import (
+from installer.core.lib.agent_bridge.invoker import (
     AgentBridgeInvoker,
     CheckpointRequested
 )
-from installer.global.lib.agent_bridge.state_manager import (
+from installer.core.lib.agent_bridge.state_manager import (
     StateManager,
     TemplateCreateState
 )
-from installer.global.lib.agent_bridge.mock_invoker import MockAgentInvoker
+from installer.core.lib.agent_bridge.mock_invoker import MockAgentInvoker
 
 
 class TestCheckpointRequested:
@@ -452,9 +452,9 @@ import pytest
 import json
 from pathlib import Path
 
-from installer.global.lib.agent_bridge.state_manager import StateManager
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
-from installer.global.lib.agent_bridge.mock_invoker import MockAgentInvoker
+from installer.core.lib.agent_bridge.state_manager import StateManager
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.mock_invoker import MockAgentInvoker
 
 
 class TestCheckpointResumeCycle:
@@ -596,4 +596,4 @@ class TestCheckpointResumeCycle:
 **Created**: 2025-11-18
 **Updated**: 2025-11-18 (Rewritten to use existing infrastructure)
 **Phase**: 2 of 8 (Template-Create Redesign)
-**Related**: Uses existing installer/global/lib/agent_bridge/
+**Related**: Uses existing installer/core/lib/agent_bridge/

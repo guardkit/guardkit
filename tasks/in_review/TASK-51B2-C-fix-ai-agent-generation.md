@@ -74,7 +74,7 @@ This is a **critical** feature for complete template functionality.
 
 ### Fix 1: Enhance AI Prompt for Agent Identification
 
-**File**: `installer/global/lib/agent_generator/agent_generator.py`
+**File**: `installer/core/lib/agent_generator/agent_generator.py`
 
 Enhance `_build_ai_analysis_prompt()` method to:
 - Clearly request 7-12 agent recommendations

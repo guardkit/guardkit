@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Add installer path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from template_init.ai_generator import AITemplateGenerator
 from template_init.models import GreenfieldTemplate

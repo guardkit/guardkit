@@ -38,10 +38,10 @@ Consider restoring BDD mode if:
 
 ### Agents (3 files deleted)
 1. `.claude/agents/bdd-generator.md` - Main BDD generation agent
-2. `installer/global/templates/maui-navigationpage/agents/bdd-generator.md` - MAUI template copy
+2. `installer/core/templates/maui-navigationpage/agents/bdd-generator.md` - MAUI template copy
 
 ### Instructions (1 file deleted)
-3. `installer/global/instructions/core/bdd-gherkin.md` - BDD methodology and patterns
+3. `installer/core/instructions/core/bdd-gherkin.md` - BDD methodology and patterns
 
 ### Tasks (2 files deleted)
 4. `tasks/backlog/TASK-037-remove-bdd-mode.md` - The removal task itself
@@ -67,19 +67,19 @@ git checkout -b restore-bdd-feature
 git show 08e6f21~1:.claude/agents/bdd-generator.md > .claude/agents/bdd-generator.md
 
 # Retrieve the BDD instruction file
-git show 08e6f21~1:installer/global/instructions/core/bdd-gherkin.md > installer/global/instructions/core/bdd-gherkin.md
+git show 08e6f21~1:installer/core/instructions/core/bdd-gherkin.md > installer/core/instructions/core/bdd-gherkin.md
 
 # Retrieve MAUI template agent (if using MAUI template)
-git show 08e6f21~1:installer/global/templates/maui-navigationpage/agents/bdd-generator.md > installer/global/templates/maui-navigationpage/agents/bdd-generator.md
+git show 08e6f21~1:installer/core/templates/maui-navigationpage/agents/bdd-generator.md > installer/core/templates/maui-navigationpage/agents/bdd-generator.md
 
 # Verify files restored
 ls -la .claude/agents/bdd-generator.md
-ls -la installer/global/instructions/core/bdd-gherkin.md
+ls -la installer/core/instructions/core/bdd-gherkin.md
 ```
 
 ### Phase 2: Update task-work Command (30 minutes)
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Changes needed**:
 
@@ -210,7 +210,7 @@ def implement_bdd_mode():
 
 **For each template that should support BDD**:
 
-**File**: `installer/global/templates/*/config/manifest.json` or `manifest.json`
+**File**: `installer/core/templates/*/config/manifest.json` or `manifest.json`
 
 **Add to agents array**:
 ```json
@@ -225,11 +225,11 @@ def implement_bdd_mode():
 ```
 
 **Templates to update**:
-- `installer/global/templates/default/manifest.json`
-- `installer/global/templates/react/manifest.json`
-- `installer/global/templates/python/manifest.json`
-- `installer/global/templates/maui-appshell/config/manifest.json`
-- `installer/global/templates/maui-navigationpage/manifest.json`
+- `installer/core/templates/default/manifest.json`
+- `installer/core/templates/react/manifest.json`
+- `installer/core/templates/python/manifest.json`
+- `installer/core/templates/maui-appshell/config/manifest.json`
+- `installer/core/templates/maui-navigationpage/manifest.json`
 - Any other templates supporting BDD
 
 ### Phase 5: Update Documentation (20 minutes)
@@ -330,7 +330,7 @@ For features requiring executable specifications:
 
 ### Phase 6: Update feature_detection.py (5 minutes)
 
-**File**: `installer/global/commands/lib/feature_detection.py`
+**File**: `installer/core/commands/lib/feature_detection.py`
 
 **Current state**: Function `supports_bdd()` still exists (it's a shared file with require-kit)
 
@@ -382,7 +382,7 @@ def supports_bdd() -> bool:
 
 Create BDD scenario template if needed:
 
-**File**: `installer/global/templates/default/templates/bdd-scenario.md`
+**File**: `installer/core/templates/default/templates/bdd-scenario.md`
 
 ```markdown
 # BDD Scenario Template
@@ -535,11 +535,11 @@ test -f ~/.agentecflow/instructions/core/bdd-gherkin.md && echo "✅ BDD instruc
 **Test 4: Template Includes BDD Agent**
 ```bash
 # Check template manifest
-cat installer/global/templates/default/manifest.json | grep bdd-generator
+cat installer/core/templates/default/manifest.json | grep bdd-generator
 # Should find: "bdd-generator.md"
 
 # Verify MAUI template
-cat installer/global/templates/maui-navigationpage/manifest.json | grep bdd-generator
+cat installer/core/templates/maui-navigationpage/manifest.json | grep bdd-generator
 # Should find: "bdd-generator.md"
 ```
 
@@ -547,7 +547,7 @@ cat installer/global/templates/maui-navigationpage/manifest.json | grep bdd-gene
 
 ```bash
 # Search for BDD references (should find them after restoration)
-grep -r "mode=bdd" CLAUDE.md .claude/CLAUDE.md installer/global/commands/
+grep -r "mode=bdd" CLAUDE.md .claude/CLAUDE.md installer/core/commands/
 
 # Verify complete BDD workflow documented
 grep -r "BDD Mode" CLAUDE.md
@@ -609,23 +609,23 @@ git show $RESTORE_COMMIT:.claude/agents/bdd-generator.md > .claude/agents/bdd-ge
 echo "✅ Restored .claude/agents/bdd-generator.md"
 
 # Restore BDD instructions
-git show $RESTORE_COMMIT:installer/global/instructions/core/bdd-gherkin.md > installer/global/instructions/core/bdd-gherkin.md
-echo "✅ Restored installer/global/instructions/core/bdd-gherkin.md"
+git show $RESTORE_COMMIT:installer/core/instructions/core/bdd-gherkin.md > installer/core/instructions/core/bdd-gherkin.md
+echo "✅ Restored installer/core/instructions/core/bdd-gherkin.md"
 
 # Restore MAUI template BDD agent
-mkdir -p installer/global/templates/maui-navigationpage/agents
-git show $RESTORE_COMMIT:installer/global/templates/maui-navigationpage/agents/bdd-generator.md > installer/global/templates/maui-navigationpage/agents/bdd-generator.md
-echo "✅ Restored installer/global/templates/maui-navigationpage/agents/bdd-generator.md"
+mkdir -p installer/core/templates/maui-navigationpage/agents
+git show $RESTORE_COMMIT:installer/core/templates/maui-navigationpage/agents/bdd-generator.md > installer/core/templates/maui-navigationpage/agents/bdd-generator.md
+echo "✅ Restored installer/core/templates/maui-navigationpage/agents/bdd-generator.md"
 
 # Verify restoration
 echo ""
 echo "Verification:"
 test -f .claude/agents/bdd-generator.md && echo "✅ BDD agent exists" || echo "❌ BDD agent missing"
-test -f installer/global/instructions/core/bdd-gherkin.md && echo "✅ BDD instructions exist" || echo "❌ BDD instructions missing"
+test -f installer/core/instructions/core/bdd-gherkin.md && echo "✅ BDD instructions exist" || echo "❌ BDD instructions missing"
 
 echo ""
 echo "⚠️  Manual steps still required:"
-echo "  1. Update installer/global/commands/task-work.md (add BDD mode)"
+echo "  1. Update installer/core/commands/task-work.md (add BDD mode)"
 echo "  2. Update .claude/agents/task-manager.md (add BDD implementation)"
 echo "  3. Update template manifests (add bdd-generator.md)"
 echo "  4. Update CLAUDE.md and documentation"

@@ -458,52 +458,52 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/CHANGELOG.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/__init__.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/__init__.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/agent-content-enhancer.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/task-manager.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-format.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-validate.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-validate.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/agent_discovery.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/constants.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/feature_detection.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_init/ai_generator.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_packager.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/task-create.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/task-status.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/task-work.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/template-create.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/template-init.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/template-qa.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_generator/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_scanner/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/codebase_analyzer/agent_invoker.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/constants.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/external_id_mapper.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/orchestrator_error_messages.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/template_creation/models.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/template_validation/ai_service.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/manifest.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/default/CLAUDE.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/default/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/default/settings.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/fastapi-python/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/fastapi-python/manifest.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/nextjs-fullstack/CLAUDE.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/nextjs-fullstack/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/nextjs-fullstack/manifest.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/manifest.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/validation-report.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/README.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/audit-report.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/manifest.json`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-typescript/validation-report.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/__init__.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/agent-content-enhancer.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/task-manager.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-format.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-validate.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-validate.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/agent_discovery.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/constants.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/feature_detection.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_init/ai_generator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_packager.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/task-create.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/task-status.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/task-work.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/template-create.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/template-init.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/template-qa.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_generator/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_scanner/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/codebase_analyzer/agent_invoker.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/constants.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/external_id_mapper.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/feature_detection.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/orchestrator_error_messages.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/template_creation/models.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/template_validation/ai_service.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/manifest.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/default/CLAUDE.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/default/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/default/settings.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/fastapi-python/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/fastapi-python/manifest.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/nextjs-fullstack/CLAUDE.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/nextjs-fullstack/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/nextjs-fullstack/manifest.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-fastapi-monorepo/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-fastapi-monorepo/manifest.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-fastapi-monorepo/validation-report.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-typescript/README.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-typescript/audit-report.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-typescript/manifest.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-typescript/validation-report.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/guardkit.marker.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/init-project.sh`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/scripts/install.sh`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/mkdocs.yml`
@@ -606,7 +606,7 @@
 ## Files Renamed
 
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit.sln` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit.sln`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/guardkit.marker.json`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/guardkit.marker.json` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/guardkit.marker.json`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/guides/guardkit-workflow.md`
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md` -> `/Users/richardwoollcott/Projects/appmilla_github/guardkit/docs/workflows/guardkit-vs-requirekit.md`
 

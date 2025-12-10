@@ -13,13 +13,13 @@
 
   "files_to_create": [
     {
-      "path": "installer/global/commands/template-qa.md",
+      "path": "installer/core/commands/template-qa.md",
       "loc": 150,
       "purpose": "Command specification and documentation",
       "dependencies": []
     },
     {
-      "path": "installer/global/lib/template_qa_orchestrator.py",
+      "path": "installer/core/lib/template_qa_orchestrator.py",
       "loc": 400,
       "purpose": "Core Q&A logic, config persistence, validation",
       "dependencies": [
@@ -30,7 +30,7 @@
       ]
     },
     {
-      "path": "installer/global/lib/template_config_handler.py",
+      "path": "installer/core/lib/template_config_handler.py",
       "loc": 200,
       "purpose": "Config file I/O, validation, schema management",
       "dependencies": [
@@ -43,7 +43,7 @@
 
   "files_to_modify": [
     {
-      "path": "installer/global/lib/template_create_orchestrator.py",
+      "path": "installer/core/lib/template_create_orchestrator.py",
       "current_loc": 800,
       "changes_description": "Extract Q&A logic (~200 lines removed), add config file loading support (~20 lines added)",
       "net_change_loc": -180,
@@ -85,7 +85,7 @@
       "phase": 3,
       "name": "Command Specification",
       "duration_hours": 1,
-      "files": ["installer/global/commands/template-qa.md"],
+      "files": ["installer/core/commands/template-qa.md"],
       "tasks": [
         "Command documentation (30 min)",
         "Integration examples (30 min)"
@@ -96,7 +96,7 @@
       "phase": 4,
       "name": "Template Create Integration",
       "duration_hours": 1,
-      "files": ["installer/global/lib/template_create_orchestrator.py"],
+      "files": ["installer/core/lib/template_create_orchestrator.py"],
       "tasks": [
         "Remove Q&A logic (30 min)",
         "Update command flow (30 min)"

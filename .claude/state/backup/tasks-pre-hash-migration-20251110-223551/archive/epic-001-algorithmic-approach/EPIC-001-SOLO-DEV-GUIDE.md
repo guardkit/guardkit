@@ -81,7 +81,7 @@ Tasks are organized into **6 waves** based on dependencies:
 
 ┌─────────────────────────────────────────────────────────────────┐
 │ TASK-048B: Local Agent Scanner (4h, Complexity 4/10)            │
-│   • Scan installer/global/agents/ directory                     │
+│   • Scan installer/core/agents/ directory                     │
 │   • Discover 15+ existing guardkit agents                     │
 │   • No dependencies - START IMMEDIATELY                          │
 │   • Worktree: epic001-local-agents                              │

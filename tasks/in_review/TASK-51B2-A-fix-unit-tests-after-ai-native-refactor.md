@@ -115,7 +115,7 @@ Update unit tests to match the AI-native workflow implemented in TASK-51B2, ensu
 
 **New test 1**: `test_phase1_ai_analysis_success`
 ```python
-@patch('installer.global.commands.lib.template_create_orchestrator.CodebaseAnalyzer')
+@patch('installer.core.commands.lib.template_create_orchestrator.CodebaseAnalyzer')
 def test_phase1_ai_analysis_success(mock_analyzer_class):
     """Test AI-native Phase 1 analysis success (TASK-51B2)"""
     # Setup
@@ -157,7 +157,7 @@ def test_phase1_ai_analysis_path_not_exists():
 
 **New test 3**: `test_phase1_ai_analysis_metadata_inference`
 ```python
-@patch('installer.global.commands.lib.template_create_orchestrator.CodebaseAnalyzer')
+@patch('installer.core.commands.lib.template_create_orchestrator.CodebaseAnalyzer')
 def test_phase1_ai_analysis_metadata_inference(mock_analyzer_class):
     """Test AI infers metadata when template_context is None (TASK-51B2)"""
     # Setup
@@ -324,9 +324,9 @@ markers =
 - `tests/integration/test_ai_native_template_creation.py` (verify - already created)
 
 **Reference Implementation**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (AI-native workflow)
-- `installer/global/lib/codebase_analyzer/prompt_builder.py` (metadata inference)
-- `installer/global/lib/codebase_analyzer/ai_analyzer.py` (analyzer interface)
+- `installer/core/commands/lib/template_create_orchestrator.py` (AI-native workflow)
+- `installer/core/lib/codebase_analyzer/prompt_builder.py` (metadata inference)
+- `installer/core/lib/codebase_analyzer/ai_analyzer.py` (analyzer interface)
 
 ## Risk Assessment
 

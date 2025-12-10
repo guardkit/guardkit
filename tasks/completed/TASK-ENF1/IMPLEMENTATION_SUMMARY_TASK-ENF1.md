@@ -16,7 +16,7 @@ This addresses the critical gap identified in TASK-8D3F where completion reports
 
 ### 1. Agent Invocation Validator Module
 
-**File**: `installer/global/commands/lib/agent_invocation_validator.py`
+**File**: `installer/core/commands/lib/agent_invocation_validator.py`
 
 **Key Functions**:
 - `validate_agent_invocations()` - Main validation function that ensures all required agents were invoked
@@ -34,7 +34,7 @@ This addresses the critical gap identified in TASK-8D3F where completion reports
 
 ### 2. Task State Management Enhancement
 
-**File**: `installer/global/commands/lib/task_utils.py`
+**File**: `installer/core/commands/lib/task_utils.py`
 
 **New Function**: `move_task_to_blocked()`
 
@@ -46,7 +46,7 @@ This addresses the critical gap identified in TASK-8D3F where completion reports
 
 ### 3. task-work Command Integration
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **New Section**: Step 6.5 - Validate Agent Invocations
 
@@ -69,7 +69,7 @@ except ValidationError as e:
 
 ### 4. Comprehensive Test Suite
 
-**File**: `installer/global/commands/lib/test_agent_invocation_validator.py`
+**File**: `installer/core/commands/lib/test_agent_invocation_validator.py`
 
 **Test Coverage**: 31 tests, all passing ✅
 
@@ -158,10 +158,10 @@ Reason: Protocol violation - required agents not invoked
 
 ## Files Modified
 
-1. **NEW**: `installer/global/commands/lib/agent_invocation_validator.py` (331 lines)
-2. **MODIFIED**: `installer/global/commands/lib/task_utils.py` (+86 lines)
-3. **MODIFIED**: `installer/global/commands/task-work.md` (+109 lines)
-4. **NEW**: `installer/global/commands/lib/test_agent_invocation_validator.py` (630 lines)
+1. **NEW**: `installer/core/commands/lib/agent_invocation_validator.py` (331 lines)
+2. **MODIFIED**: `installer/core/commands/lib/task_utils.py` (+86 lines)
+3. **MODIFIED**: `installer/core/commands/task-work.md` (+109 lines)
+4. **NEW**: `installer/core/commands/lib/test_agent_invocation_validator.py` (630 lines)
 
 ## Integration Points
 
@@ -296,7 +296,7 @@ except ValidationError as e:
 ## Documentation Updates
 
 ### Updated Files
-1. `installer/global/commands/task-work.md`
+1. `installer/core/commands/task-work.md`
    - Added Step 6.5 with comprehensive documentation
    - Included example error output
    - Documented workflow mode phase counts

@@ -127,7 +127,7 @@ Better: Catch in design phase (50 lines of plan vs 500 lines of code)
 
 ## What `code-reviewer` Agent Currently Checks
 
-Looking at `installer/global/agents/code-reviewer.md`:
+Looking at `installer/core/agents/code-reviewer.md`:
 
 ### ✅ Currently Reviewed (Phase 5)
 1. **Build verification** - Code compiles

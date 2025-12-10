@@ -17,7 +17,7 @@ migrate_my_tasks = importlib.util.module_from_spec(spec)
 sys.modules["migrate_my_tasks"] = migrate_my_tasks
 
 # Add lib directory to path for dependencies
-lib_dir = Path(__file__).parent.parent / "installer" / "global" / "lib"
+lib_dir = Path(__file__).parent.parent / "installer" / "core" / "lib"
 sys.path.insert(0, str(lib_dir.resolve()))
 
 # Execute the module to load functions

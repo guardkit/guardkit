@@ -595,8 +595,8 @@ Enhanced agents automatically include boundary sections that define agent behavi
 ## See Also
 
 - [Incremental Enhancement Workflow](../workflows/incremental-enhancement-workflow.md) - Phase 8 workflow details
-- [Agent Enhance Command](../../installer/global/commands/agent-enhance.md) - Complete command reference
-- [Template Create Command](../../installer/global/commands/template-create.md) - Template creation workflow
+- [Agent Enhance Command](../../installer/core/commands/agent-enhance.md) - Complete command reference
+- [Template Create Command](../../installer/core/commands/template-create.md) - Template creation workflow
 - [Agent Discovery Guide](agent-discovery-guide.md) - How agents are matched to tasks
 - [Template Validation Guide](template-validation-guide.md) - Quality assurance workflows
 

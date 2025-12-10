@@ -21,7 +21,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Add lib to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "lib"))
 
 from feature_detection import FeatureDetector
 

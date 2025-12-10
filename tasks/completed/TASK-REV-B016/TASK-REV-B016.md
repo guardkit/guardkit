@@ -171,17 +171,17 @@ Review whether the following findings from TASK-REV-D4A8 are still relevant:
 ## Files to Review
 
 ### Core Command Files
-- [installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py)
+- [installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py)
 - [lib/settings_generator/generator.py](lib/settings_generator/generator.py)
 - [lib/settings_generator/models.py](lib/settings_generator/models.py)
 
 ### Analysis Components
-- [installer/global/lib/codebase_analyzer/models.py](installer/global/lib/codebase_analyzer/models.py)
-- [installer/global/lib/codebase_analyzer/ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py)
-- [installer/global/lib/codebase_analyzer/response_parser.py](installer/global/lib/codebase_analyzer/response_parser.py)
+- [installer/core/lib/codebase_analyzer/models.py](installer/core/lib/codebase_analyzer/models.py)
+- [installer/core/lib/codebase_analyzer/ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py)
+- [installer/core/lib/codebase_analyzer/response_parser.py](installer/core/lib/codebase_analyzer/response_parser.py)
 
 ### Bridge Components
-- [installer/global/lib/agent_bridge/invoker.py](installer/global/lib/agent_bridge/invoker.py)
+- [installer/core/lib/agent_bridge/invoker.py](installer/core/lib/agent_bridge/invoker.py)
 
 ### Test Files
 - [tests/unit/test_template_create_orchestrator.py](tests/unit/test_template_create_orchestrator.py)

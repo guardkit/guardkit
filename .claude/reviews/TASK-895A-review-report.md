@@ -314,19 +314,19 @@ Add Opus 4.5 ONLY IF:
 **Missing Agents**:
 ```python
 # Python Stack
-installer/global/agents/python-api-specialist.md
+installer/core/agents/python-api-specialist.md
   model: haiku
   tools: Read, Write, Edit, Bash, Grep
   purpose: FastAPI endpoint and Pydantic model generation
 
 # React Stack
-installer/global/agents/react-state-specialist.md
+installer/core/agents/react-state-specialist.md
   model: haiku
   tools: Read, Write, Edit, Bash, Grep
   purpose: React hooks, state management, component generation
 
 # .NET Stack
-installer/global/agents/dotnet-domain-specialist.md
+installer/core/agents/dotnet-domain-specialist.md
   model: haiku
   tools: Read, Write, Edit, Bash, Grep
   purpose: C# domain entities, repositories, services
@@ -356,7 +356,7 @@ installer/global/agents/dotnet-domain-specialist.md
 
 **Refactoring Approach**:
 
-**Create**: `installer/global/lib/model_selection_strategy.py`
+**Create**: `installer/core/lib/model_selection_strategy.py`
 ```python
 class ModelSelectionStrategy:
     """Centralized model selection - single source of truth."""
@@ -732,8 +732,8 @@ This review incorporates information from the following sources:
 **Internal Documentation**:
 - `docs/deep-dives/model-optimization.md` - Current model strategy
 - `tasks/completed/TASK-EE41-optimize-agent-model-configuration.md` - Original optimization (Oct 2025)
-- `installer/global/agents/task-manager.md` - Phase orchestration
-- `installer/global/agents/architectural-reviewer.md` - This review agent
+- `installer/core/agents/task-manager.md` - Phase orchestration
+- `installer/core/agents/architectural-reviewer.md` - This review agent
 
 ---
 

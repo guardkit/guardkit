@@ -11,7 +11,7 @@ Successfully implemented Phase 3 of the `/task-review` command: Report Generatio
 ## Deliverables
 
 ### 1. Review Report Generator Module
-**File**: `installer/global/commands/lib/review_report_generator.py`
+**File**: `installer/core/commands/lib/review_report_generator.py`
 
 **Features**:
 - Three output formats:
@@ -23,7 +23,7 @@ Successfully implemented Phase 3 of the `/task-review` command: Report Generatio
 - Report saving to `docs/state/{task_id}/review-report.md`
 
 ### 2. Report Templates
-**Directory**: `installer/global/commands/lib/review_templates/`
+**Directory**: `installer/core/commands/lib/review_templates/`
 
 **Templates Created**:
 - `architectural_review.md.template` - SOLID/DRY/YAGNI assessment
@@ -145,12 +145,12 @@ Successfully implemented Phase 3 of the `/task-review` command: Report Generatio
 ## Files Created/Modified
 
 ### Created
-- `installer/global/commands/lib/review_report_generator.py` (960 lines)
-- `installer/global/commands/lib/review_templates/architectural_review.md.template`
-- `installer/global/commands/lib/review_templates/code_quality_review.md.template`
-- `installer/global/commands/lib/review_templates/decision_analysis.md.template`
-- `installer/global/commands/lib/review_templates/technical_debt.md.template`
-- `installer/global/commands/lib/review_templates/security_audit.md.template`
+- `installer/core/commands/lib/review_report_generator.py` (960 lines)
+- `installer/core/commands/lib/review_templates/architectural_review.md.template`
+- `installer/core/commands/lib/review_templates/code_quality_review.md.template`
+- `installer/core/commands/lib/review_templates/decision_analysis.md.template`
+- `installer/core/commands/lib/review_templates/technical_debt.md.template`
+- `installer/core/commands/lib/review_templates/security_audit.md.template`
 - `tests/unit/commands/test_review_report_generator.py` (730 lines, 30 tests)
 
 ### Modified

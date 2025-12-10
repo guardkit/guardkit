@@ -2,7 +2,7 @@
 
 **Date:** 2025-10-18
 **Task:** TASK-031 - Fix task-work and task-complete State Loss in Conductor Workspaces
-**Implementation File:** `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/git_state_helper.py`
+**Implementation File:** `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/git_state_helper.py`
 **Test File:** `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/unit/test_git_state_helper.py`
 
 ---
@@ -27,7 +27,7 @@
 ### Step 1.1: Python Compilation Check
 
 ```bash
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/git_state_helper.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/git_state_helper.py
 ```
 
 **Result:** ✅ PASSED - No syntax errors
@@ -43,8 +43,8 @@
 ### Step 1.3: Related Files Compilation
 
 ```bash
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/plan_persistence.py
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/metrics/plan_audit_metrics.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/plan_persistence.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/metrics/plan_audit_metrics.py
 ```
 
 **Result:** ✅ PASSED - All related files compile successfully
@@ -102,7 +102,7 @@ tests/unit/test_git_state_helper.py::TestBackwardCompatibility::test_functions_w
 ```
 Name                                                    Stmts   Miss Branch BrPart  Cover   Missing
 ---------------------------------------------------------------------------------------------------
-installer/global/commands/lib/git_state_helper.py          16      0      0      0   100%
+installer/core/commands/lib/git_state_helper.py          16      0      0      0   100%
 ---------------------------------------------------------------------------------------------------
 ```
 

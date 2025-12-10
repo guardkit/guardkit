@@ -46,8 +46,8 @@ Fast-access documentation for common Agentecflow Lite workflows and concepts. Ea
 
 All quick reference cards link to full documentation using these conventions:
 
-- **Commands**: `installer/global/commands/{command-name}.md`
-- **Agents**: `installer/global/agents/{agent-name}.md`
+- **Commands**: `installer/core/commands/{command-name}.md`
+- **Agents**: `installer/core/agents/{agent-name}.md`
 - **Workflows**: `docs/guides/{workflow-name}.md`
 - **Patterns**: `docs/patterns/{pattern-name}.md`
 

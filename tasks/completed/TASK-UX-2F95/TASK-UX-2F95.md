@@ -86,8 +86,8 @@ Both approaches use the same AI enhancement logic (TASK-AI-2B37).
 ## Implementation Notes
 
 **Files to Modify**:
-1. `installer/global/commands/lib/template_create_orchestrator.py` (Phase 8 output)
-2. `installer/global/commands/template-create.md` (command documentation)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (Phase 8 output)
+2. `installer/core/commands/template-create.md` (command documentation)
 3. `docs/guides/template-creation-guide.md` (if exists)
 
 **Key Output Locations**:
@@ -187,11 +187,11 @@ Both approaches use the same AI enhancement logic (TASK-AI-2B37).
 ## Implementation Complete ✅
 
 **Files Modified**:
-1. `installer/global/commands/lib/template_create_orchestrator.py` (+47 lines)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (+47 lines)
    - Added `_print_agent_enhancement_instructions()` method
    - Updated Phase 8 to call new instruction method
 
-2. `installer/global/commands/template-create.md` (+18 lines, -9 lines)
+2. `installer/core/commands/template-create.md` (+18 lines, -9 lines)
    - Updated Phase 8 workflow description
    - Enhanced `--create-agent-tasks` flag documentation
 

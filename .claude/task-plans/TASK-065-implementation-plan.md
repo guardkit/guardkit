@@ -31,7 +31,7 @@ Remove 12 deprecated template directories and 10 deprecated stack agent director
 - Allows testing of installer before committing
 
 ### AD-3: Preserve Stack Agent Structure
-**Decision**: Keep `installer/global/agents/stacks/` directory with remaining agents
+**Decision**: Keep `installer/core/agents/stacks/` directory with remaining agents
 **Rationale**:
 - Maintains consistent directory structure
 - install.sh expects this structure
@@ -42,11 +42,11 @@ Remove 12 deprecated template directories and 10 deprecated stack agent director
 ### Step 1: Verify Core Templates (Safety Check)
 **Action**: Confirm 5 core templates exist before any deletions
 **Files to Verify**:
-- `installer/global/templates/default/`
-- `installer/global/templates/fastapi-python/`
-- `installer/global/templates/nextjs-fullstack/`
-- `installer/global/templates/react-fastapi-monorepo/`
-- `installer/global/templates/react-typescript/`
+- `installer/core/templates/default/`
+- `installer/core/templates/fastapi-python/`
+- `installer/core/templates/nextjs-fullstack/`
+- `installer/core/templates/react-fastapi-monorepo/`
+- `installer/core/templates/react-typescript/`
 
 **Verification**: Each directory must contain:
 - `CLAUDE.md`
@@ -59,44 +59,44 @@ Remove 12 deprecated template directories and 10 deprecated stack agent director
 ### Step 2: Remove Deprecated Template Directories
 **Action**: Delete 12 deprecated template directories
 **Directories to Remove**:
-1. `installer/global/templates/documentation/`
-2. `installer/global/templates/dotnet-aspnetcontroller/`
-3. `installer/global/templates/dotnet-fastendpoints/`
-4. `installer/global/templates/dotnet-microservice/`
-5. `installer/global/templates/dotnet-minimalapi/`
-6. `installer/global/templates/fullstack/`
-7. `installer/global/templates/maui-appshell/`
-8. `installer/global/templates/maui-navigationpage/`
-9. `installer/global/templates/maui/`
-10. `installer/global/templates/python/`
-11. `installer/global/templates/react/`
-12. `installer/global/templates/typescript-api/`
+1. `installer/core/templates/documentation/`
+2. `installer/core/templates/dotnet-aspnetcontroller/`
+3. `installer/core/templates/dotnet-fastendpoints/`
+4. `installer/core/templates/dotnet-microservice/`
+5. `installer/core/templates/dotnet-minimalapi/`
+6. `installer/core/templates/fullstack/`
+7. `installer/core/templates/maui-appshell/`
+8. `installer/core/templates/maui-navigationpage/`
+9. `installer/core/templates/maui/`
+10. `installer/core/templates/python/`
+11. `installer/core/templates/react/`
+12. `installer/core/templates/typescript-api/`
 
-**Verification**: After deletion, confirm only 5 directories remain in `installer/global/templates/`
+**Verification**: After deletion, confirm only 5 directories remain in `installer/core/templates/`
 
 ### Step 3: Remove Deprecated Stack Agent Directories
 **Action**: Delete 10 deprecated stack agent directories
 **Directories to Remove**:
-1. `installer/global/agents/stacks/dotnet-aspnetcontroller/`
-2. `installer/global/agents/stacks/dotnet-fastendpoints/`
-3. `installer/global/agents/stacks/dotnet-microservice/`
-4. `installer/global/agents/stacks/dotnet-minimalapi/`
-5. `installer/global/agents/stacks/fullstack/`
-6. `installer/global/agents/stacks/maui-appshell/`
-7. `installer/global/agents/stacks/maui-navigationpage/`
-8. `installer/global/agents/stacks/python/`
-9. `installer/global/agents/stacks/react/`
-10. `installer/global/agents/stacks/typescript-api/`
+1. `installer/core/agents/stacks/dotnet-aspnetcontroller/`
+2. `installer/core/agents/stacks/dotnet-fastendpoints/`
+3. `installer/core/agents/stacks/dotnet-microservice/`
+4. `installer/core/agents/stacks/dotnet-minimalapi/`
+5. `installer/core/agents/stacks/fullstack/`
+6. `installer/core/agents/stacks/maui-appshell/`
+7. `installer/core/agents/stacks/maui-navigationpage/`
+8. `installer/core/agents/stacks/python/`
+9. `installer/core/agents/stacks/react/`
+10. `installer/core/agents/stacks/typescript-api/`
 
-**Verification**: After deletion, confirm `installer/global/agents/stacks/` has appropriate remaining directories
+**Verification**: After deletion, confirm `installer/core/agents/stacks/` has appropriate remaining directories
 
 ### Step 4: Count Global Agents
-**Action**: Count actual `.md` files in `installer/global/agents/` (excluding stacks subdirectory)
+**Action**: Count actual `.md` files in `installer/core/agents/` (excluding stacks subdirectory)
 **Purpose**: Get accurate count for install.sh update
 **Expected**: ~17 global agent files (non-stack-specific)
 
 ### Step 5: Count Stack Agents
-**Action**: Count remaining `.md` files in `installer/global/agents/stacks/*/`
+**Action**: Count remaining `.md` files in `installer/core/agents/stacks/*/`
 **Purpose**: Calculate total agent count for install.sh
 **Formula**: Total agents = Global agents + Stack agents
 
@@ -246,30 +246,30 @@ guardkit-init fastapi-python     # Initialize with FastAPI template
 
 ### Files to Delete (22 total)
 **Templates (12)**:
-- `installer/global/templates/documentation/`
-- `installer/global/templates/dotnet-aspnetcontroller/`
-- `installer/global/templates/dotnet-fastendpoints/`
-- `installer/global/templates/dotnet-microservice/`
-- `installer/global/templates/dotnet-minimalapi/`
-- `installer/global/templates/fullstack/`
-- `installer/global/templates/maui-appshell/`
-- `installer/global/templates/maui-navigationpage/`
-- `installer/global/templates/maui/`
-- `installer/global/templates/python/`
-- `installer/global/templates/react/`
-- `installer/global/templates/typescript-api/`
+- `installer/core/templates/documentation/`
+- `installer/core/templates/dotnet-aspnetcontroller/`
+- `installer/core/templates/dotnet-fastendpoints/`
+- `installer/core/templates/dotnet-microservice/`
+- `installer/core/templates/dotnet-minimalapi/`
+- `installer/core/templates/fullstack/`
+- `installer/core/templates/maui-appshell/`
+- `installer/core/templates/maui-navigationpage/`
+- `installer/core/templates/maui/`
+- `installer/core/templates/python/`
+- `installer/core/templates/react/`
+- `installer/core/templates/typescript-api/`
 
 **Stack Agents (10)**:
-- `installer/global/agents/stacks/dotnet-aspnetcontroller/`
-- `installer/global/agents/stacks/dotnet-fastendpoints/`
-- `installer/global/agents/stacks/dotnet-microservice/`
-- `installer/global/agents/stacks/dotnet-minimalapi/`
-- `installer/global/agents/stacks/fullstack/`
-- `installer/global/agents/stacks/maui-appshell/`
-- `installer/global/agents/stacks/maui-navigationpage/`
-- `installer/global/agents/stacks/python/`
-- `installer/global/agents/stacks/react/`
-- `installer/global/agents/stacks/typescript-api/`
+- `installer/core/agents/stacks/dotnet-aspnetcontroller/`
+- `installer/core/agents/stacks/dotnet-fastendpoints/`
+- `installer/core/agents/stacks/dotnet-microservice/`
+- `installer/core/agents/stacks/dotnet-minimalapi/`
+- `installer/core/agents/stacks/fullstack/`
+- `installer/core/agents/stacks/maui-appshell/`
+- `installer/core/agents/stacks/maui-navigationpage/`
+- `installer/core/agents/stacks/python/`
+- `installer/core/agents/stacks/react/`
+- `installer/core/agents/stacks/typescript-api/`
 
 ### Files to Modify (1)
 **installer/scripts/install.sh**:
@@ -285,12 +285,12 @@ guardkit-init fastapi-python     # Initialize with FastAPI template
 1. **Post-deletion verification**: Confirm only 5 templates remain
 2. **Agent count verification**: Confirm agent counts are accurate
 3. **install.sh syntax check**: `bash -n installer/scripts/install.sh`
-4. **Directory structure**: Verify `installer/global/templates/` and `installer/global/agents/stacks/` have expected structure
+4. **Directory structure**: Verify `installer/core/templates/` and `installer/core/agents/stacks/` have expected structure
 5. **No broken references**: grep for deprecated template names
 
 ### Success Criteria
-- ✅ Only 5 templates exist in `installer/global/templates/`
-- ✅ Only appropriate stack agents remain in `installer/global/agents/stacks/`
+- ✅ Only 5 templates exist in `installer/core/templates/`
+- ✅ Only appropriate stack agents remain in `installer/core/agents/stacks/`
 - ✅ install.sh shows correct template count (5)
 - ✅ install.sh shows correct template list (5 core templates)
 - ✅ install.sh help text matches available templates
@@ -315,7 +315,7 @@ guardkit-init fastapi-python     # Initialize with FastAPI template
 ### Rollback Plan
 If issues discovered:
 1. Revert `installer/scripts/install.sh` to previous version
-2. Restore deleted directories from git history: `git checkout HEAD~1 -- installer/global/templates/[name]`
+2. Restore deleted directories from git history: `git checkout HEAD~1 -- installer/core/templates/[name]`
 3. Re-run verification steps
 
 ## Dependencies

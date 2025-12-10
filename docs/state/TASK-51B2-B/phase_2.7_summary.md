@@ -14,13 +14,13 @@
 
 ### Files to Modify (3 files)
 
-1. **installer/global/lib/codebase_analyzer/prompt_builder.py** (~40 LOC)
+1. **installer/core/lib/codebase_analyzer/prompt_builder.py** (~40 LOC)
    - Enhance AI prompt to emphasize template generation purpose
    - Update example_files JSON schema with 5-10 diverse examples
    - Add Template File Selection Guidelines section
    - Add template_category and why_good_template fields
 
-2. **installer/global/commands/lib/template_create_orchestrator.py** (~1 LOC)
+2. **installer/core/commands/lib/template_create_orchestrator.py** (~1 LOC)
    - Increase max_files parameter from 10 to 30 for better AI context
 
 3. **tests/integration/test_ai_native_template_creation.py** (~60 LOC)

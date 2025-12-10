@@ -8,7 +8,7 @@
 
 ## Deliverables
 - Files created: 2
-  - `installer/global/lib/external_id_persistence.py` (implementation)
+  - `installer/core/lib/external_id_persistence.py` (implementation)
   - `tests/lib/test_external_id_persistence.py` (test suite)
 - Tests written: 35
 - Coverage achieved: 90%

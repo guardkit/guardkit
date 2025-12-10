@@ -56,7 +56,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File 1: installer/global/commands/lib/greenfield_qa_session.py
+### File 1: installer/core/commands/lib/greenfield_qa_session.py
 
 **BEFORE** (current - no boundary generation):
 ```python
@@ -282,17 +282,17 @@ def _generate_agent(self, agent_type: str) -> str:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `generate_boundary_sections()` function (~80 lines)
    - `validate_boundary_sections()` function (~30 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `_generate_agent()` method to include boundaries (~15 lines changed)
    - Phase 3 agent generation to validate boundaries
 
 ## Files to NOT Touch
 
-- `installer/global/commands/template-init.md` - No spec changes needed yet (will update in TASK-INIT-010)
+- `installer/core/commands/template-init.md` - No spec changes needed yet (will update in TASK-INIT-010)
 - Any other Q&A session files - Keep focused on agent generation only
 - `agent-content-enhancer.md` - Source of truth, don't modify
 - Existing Q&A phases (1-2, 4) - Working correctly
@@ -439,7 +439,7 @@ If issues arise:
 - **Decision Analysis**: [docs/decisions/template-init-vs-template-create-analysis.md](docs/decisions/template-init-vs-template-create-analysis.md)
 - **Source Feature**: TASK-STND-773D (boundary sections in /template-create)
 - **GitHub Analysis**: [docs/analysis/github-agent-best-practices-analysis.md](docs/analysis/github-agent-best-practices-analysis.md)
-- **Agent Enhancer**: [installer/global/agents/agent-content-enhancer.md](installer/global/agents/agent-content-enhancer.md)
+- **Agent Enhancer**: [installer/core/agents/agent-content-enhancer.md](installer/core/agents/agent-content-enhancer.md)
 
 ## Success Metrics
 

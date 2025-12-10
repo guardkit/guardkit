@@ -139,7 +139,7 @@ No false positives from `upload/` directory observed:
 ## Files to Analyze
 
 ### Core Orchestration
-- [template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py)
+- [template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py)
   - `_run_workflow()` method
   - `_resume_from_checkpoint()` method
   - `_run_from_phase_1()` method
@@ -147,19 +147,19 @@ No false positives from `upload/` directory observed:
   - Checkpoint save/load logic
 
 ### Agent Bridge
-- [invoker.py](installer/global/lib/agent_bridge/invoker.py)
+- [invoker.py](installer/core/lib/agent_bridge/invoker.py)
   - `_cached_response` handling
   - `clear_cache()` method (if exists)
   - Phase-specific invoker instances
 
 ### State Management
-- [models.py](installer/global/lib/codebase_analyzer/models.py)
+- [models.py](installer/core/lib/codebase_analyzer/models.py)
   - `TechnologyInfo` schema
   - `ConfidenceScore` validation
   - State serialization
 
 ### Analysis Modules
-- [ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py)
+- [ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py)
   - AI invocation logic
   - Result caching
 

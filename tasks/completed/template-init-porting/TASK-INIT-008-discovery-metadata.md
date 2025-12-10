@@ -64,7 +64,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File: installer/global/commands/lib/greenfield_qa_session.py
+### File: installer/core/commands/lib/greenfield_qa_session.py
 
 **ADD metadata generation method** (after line 680):
 
@@ -254,16 +254,16 @@ def _generate_agent(self, agent_type: str) -> str:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_generate_agent_metadata()` method (~80 lines)
    - `_format_agent_with_metadata()` method (~25 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `_generate_agent()` method to add metadata (~10 lines)
 
 ## Files to NOT Touch
 
-- Agent discovery system (installer/global/agents/)
+- Agent discovery system (installer/core/agents/)
 - Agent content templates
 - Q&A workflow
 - Boundary sections logic (TASK-INIT-001)
@@ -403,7 +403,7 @@ def test_metadata_matches_template_create_format():
 - **Parent Review**: TASK-5E55
 - **Agent Discovery**: docs/guides/agent-discovery-guide.md
 - **Related Task**: TASK-INIT-001 (boundary sections)
-- **Example Agents**: installer/global/templates/*/agents/*.md
+- **Example Agents**: installer/core/templates/*/agents/*.md
 
 ## Success Metrics
 
@@ -429,7 +429,7 @@ When complete:
 
 ### Code Changes
 - **Files Modified**: 2
-  - `installer/global/commands/lib/greenfield_qa_session.py` (+368 lines, implementation)
+  - `installer/core/commands/lib/greenfield_qa_session.py` (+368 lines, implementation)
   - `tests/unit/test_greenfield_qa_session.py` (+227 lines, tests)
 - **Methods Added**: 2
   - `_generate_agent_metadata()` - Maps Q&A to discovery metadata

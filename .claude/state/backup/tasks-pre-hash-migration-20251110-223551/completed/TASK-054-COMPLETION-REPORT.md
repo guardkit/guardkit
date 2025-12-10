@@ -22,8 +22,8 @@ Implement Section 1 of Q&A flow (Basic Information) with enhanced fields:
 - `.claude/task-plans/TASK-054-implementation-plan.md` - Implementation plan
 
 ### Files Modified
-- `installer/global/commands/lib/template_qa_questions.py` - Added 3 new questions
-- `installer/global/commands/lib/template_qa_session.py` - Enhanced dataclass and validation
+- `installer/core/commands/lib/template_qa_questions.py` - Added 3 new questions
+- `installer/core/commands/lib/template_qa_session.py` - Enhanced dataclass and validation
 
 ### Code Statistics
 - **Lines Added**: ~850 lines
@@ -122,11 +122,11 @@ Status: Pushed to remote ✅
 
 ### Changes Summary
 ```diff
-+++ installer/global/commands/lib/template_qa_questions.py
++++ installer/core/commands/lib/template_qa_questions.py
     - Added 3 new questions to SECTION1_QUESTIONS
     - Configured validation and help text
 
-+++ installer/global/commands/lib/template_qa_session.py
++++ installer/core/commands/lib/template_qa_session.py
     - Updated GreenfieldAnswers dataclass
     - Enhanced _ask_text() validation
     - Updated _build_result() method

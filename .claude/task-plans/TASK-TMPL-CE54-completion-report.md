@@ -17,7 +17,7 @@ Fixed a critical bug where ALL template files were incorrectly placed in `templa
 
 ### Files Created
 1. **path_resolver.py** (260 lines)
-   - Location: `installer/global/lib/template_generator/path_resolver.py`
+   - Location: `installer/core/lib/template_generator/path_resolver.py`
    - Purpose: Strategy pattern implementation for template classification
    - Components:
      - `ClassificationStrategy` protocol

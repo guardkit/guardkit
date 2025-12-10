@@ -11,7 +11,7 @@ Successfully implemented the missing `feature_detection.py` module that enables 
 ## Deliverables
 
 ### 1. Feature Detection Module
-**File**: `/installer/global/commands/lib/feature_detection.py` (207 LOC, executable)
+**File**: `/installer/core/commands/lib/feature_detection.py` (207 LOC, executable)
 
 **Public Functions**:
 - `supports_bdd()` - Returns True if RequireKit installed
@@ -100,7 +100,7 @@ All recommendations from the review of TASK-BDD-FIX1 have been applied:
 
 ### Functional Testing
 ✓ Import works from both import paths:
-  - `from installer.global.commands.lib.feature_detection import supports_bdd`
+  - `from installer.core.commands.lib.feature_detection import supports_bdd`
   - `from lib.feature_detection import supports_bdd, ...`
 
 ✓ Feature detection returns correct values:
@@ -114,7 +114,7 @@ All recommendations from the review of TASK-BDD-FIX1 have been applied:
   - Content: Valid JSON with package info and version
 
 ### Acceptance Criteria
-- [x] Create `installer/global/commands/lib/feature_detection.py`
+- [x] Create `installer/core/commands/lib/feature_detection.py`
 - [x] Implement `supports_bdd()` function with marker file detection
 - [x] Implement `supports_requirements()` function
 - [x] Implement `supports_epics()` function

@@ -115,7 +115,7 @@ Update the `agent-content-enhancer` agent to automatically generate ALWAYS/NEVER
 
 ### Files Modified
 
-1. `installer/global/agents/agent-content-enhancer.md`:
+1. `installer/core/agents/agent-content-enhancer.md`:
    - Lines 310-348: Enhancement Structure (replace "Best Practices" with "Boundaries")
    - Lines 264-273: Quality Enforcement Checklist (add boundary checks)
    - Lines 275-309: Validation Report Schema (add boundary_completeness)
@@ -474,7 +474,7 @@ Before marking this task complete:
 
 - **Implementation Plan**: [TASK-STND-773D-implementation-plan-NEW.md](./TASK-STND-773D-implementation-plan-NEW.md)
 - **GitHub Analysis**: [docs/analysis/github-agent-best-practices-analysis.md](../../docs/analysis/github-agent-best-practices-analysis.md)
-- **Target Agent**: [installer/global/agents/agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md)
+- **Target Agent**: [installer/core/agents/agent-content-enhancer.md](../../installer/core/agents/agent-content-enhancer.md)
 - **Related Tasks**:
   - TASK-AGENT-ENHANCER-20251121-160000 (GitHub standards foundation) - ✅ Completed
   - TASK-UX-B9F7 (agent-enhance flag simplification) - ✅ Completed

@@ -16,7 +16,7 @@
 **Impact**: HIGH - Completely blocks BDD mode functionality
 **Severity**: CRITICAL - TASK-BDD-FIX1 marked as complete but implementation is incomplete
 
-**Recommended Action**: Create `installer/global/commands/lib/feature_detection.py` module with RequireKit detection logic
+**Recommended Action**: Create `installer/core/commands/lib/feature_detection.py` module with RequireKit detection logic
 
 ---
 
@@ -25,8 +25,8 @@
 - **Review Type**: Root cause analysis + decision recommendation
 - **Scope**: BDD mode validation in task-work command
 - **Files Analyzed**:
-  - `installer/global/commands/task-work.md` (lines 603-622)
-  - `installer/global/commands/lib/` (directory scan)
+  - `installer/core/commands/task-work.md` (lines 603-622)
+  - `installer/core/commands/lib/` (directory scan)
 - **Testing Performed**:
   - Marker file existence verification
   - Path resolution testing
@@ -41,14 +41,14 @@
 **Evidence**:
 ```bash
 # task-work.md line 606 references:
-from installer.global.commands.lib.feature_detection import supports_bdd
+from installer.core.commands.lib.feature_detection import supports_bdd
 
 # But the file does not exist:
-$ ls installer/global/commands/lib/feature_detection.py
-ls: installer/global/commands/lib/feature_detection.py: No such file or directory
+$ ls installer/core/commands/lib/feature_detection.py
+ls: installer/core/commands/lib/feature_detection.py: No such file or directory
 
 # grep search confirms no supports_bdd function anywhere:
-$ grep -r "def supports_bdd" installer/global/commands/lib/
+$ grep -r "def supports_bdd" installer/core/commands/lib/
 (no results)
 ```
 
@@ -138,7 +138,7 @@ $ ls -la ~/.agentecflow/require-kit.marker.json
 
 **Implementation**:
 ```python
-# File: installer/global/commands/lib/feature_detection.py
+# File: installer/core/commands/lib/feature_detection.py
 
 """
 Feature detection module for Taskwright/RequireKit integration.
@@ -233,7 +233,7 @@ Replace lines 606-608 in task-work.md:
 ```markdown
 **BEFORE** (current):
 ```python
-from installer.global.commands.lib.feature_detection import supports_bdd
+from installer.core.commands.lib.feature_detection import supports_bdd
 
 if not supports_bdd():
 ```
@@ -282,14 +282,14 @@ if not requirekit_installed:
 
 1. **Create Module** (5 min):
    ```bash
-   touch installer/global/commands/lib/feature_detection.py
+   touch installer/core/commands/lib/feature_detection.py
    # Add code from Option 1 above
    ```
 
 2. **Validate Import** (2 min):
    ```python
    # Test that import works:
-   from installer.global.commands.lib.feature_detection import supports_bdd
+   from installer.core.commands.lib.feature_detection import supports_bdd
    print(supports_bdd())  # Should print True if RequireKit installed
    ```
 
@@ -321,7 +321,7 @@ if not requirekit_installed:
 
 import pytest
 from pathlib import Path
-from installer.global.commands.lib.feature_detection import supports_bdd
+from installer.core.commands.lib.feature_detection import supports_bdd
 
 def test_supports_bdd_with_marker_file(tmp_path, monkeypatch):
     """Test that supports_bdd returns True when marker file exists."""
@@ -402,13 +402,13 @@ richwoollcott@macos ~ % /task-work TASK-308E --mode=bdd
 ### Appendix B: Files Checked
 
 ```bash
-$ ls installer/global/commands/lib/*.py | wc -l
+$ ls installer/core/commands/lib/*.py | wc -l
 76
 
-$ grep -r "feature_detection" installer/global/commands/lib/
+$ grep -r "feature_detection" installer/core/commands/lib/
 (no results - module doesn't exist)
 
-$ grep -r "def supports_bdd" installer/global/commands/
+$ grep -r "def supports_bdd" installer/core/commands/
 (no results - function doesn't exist)
 ```
 

@@ -61,7 +61,7 @@ AttributeError: 'list' object has no attribute 'keys'
 
 ### Phase 1: Update AgentBridgeInvoker (2-3 hours)
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 ```python
 class AgentBridgeInvoker:
@@ -97,7 +97,7 @@ class AgentBridgeInvoker:
 
 ### Phase 2: Update Orchestrator (2-3 hours)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 1. Create separate invokers for Phase 1 and Phase 5:
 ```python
@@ -188,9 +188,9 @@ def test_resume_loads_correct_phase_response():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_bridge/invoker.py` - Phase-specific cache
-2. `installer/global/commands/lib/template_create_orchestrator.py` - Separate invokers
-3. `installer/global/lib/codebase_analyzer/ai_analyzer.py` - Accept invoker parameter
+1. `installer/core/lib/agent_bridge/invoker.py` - Phase-specific cache
+2. `installer/core/commands/lib/template_create_orchestrator.py` - Separate invokers
+3. `installer/core/lib/codebase_analyzer/ai_analyzer.py` - Accept invoker parameter
 4. `lib/agent_generator/agent_generator.py` - Accept invoker parameter (if needed)
 
 ## Testing Checklist
@@ -225,8 +225,8 @@ See [.claude/reviews/TASK-REV-6E5D-review-report.md](../../.claude/reviews/TASK-
 ### Completed: 2025-12-08
 
 **Files Modified:**
-1. `installer/global/lib/agent_bridge/invoker.py` - Phase-specific cache file naming
-2. `installer/global/commands/lib/template_create_orchestrator.py` - Separate phase invokers
+1. `installer/core/lib/agent_bridge/invoker.py` - Phase-specific cache file naming
+2. `installer/core/commands/lib/template_create_orchestrator.py` - Separate phase invokers
 
 **Files Created:**
 1. `tests/unit/lib/agent_bridge/test_multi_phase_cache.py` - 17 comprehensive tests

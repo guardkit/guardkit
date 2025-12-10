@@ -3,7 +3,7 @@
 ## Executive Summary
 
 **Task**: Fix task-work command file resolution
-**Implementation**: Enhanced Step 1 in `/installer/global/commands/task-work.md`
+**Implementation**: Enhanced Step 1 in `/installer/core/commands/task-work.md`
 **Test Type**: Manual Verification (Markdown Specification)
 **Date**: 2025-10-09
 
@@ -421,7 +421,7 @@ Since this is a markdown specification (not executable code), testing requires:
 ## Appendix: Related Documents
 
 - **Full Test Scenarios**: `/docs/tests/TASK-BUG-001-test-scenarios.md`
-- **Implementation Spec**: `/installer/global/commands/task-work.md`
+- **Implementation Spec**: `/installer/core/commands/task-work.md`
 - **Task File**: `/tasks/in_progress/TASK-BUG-001.md` (if exists)
 
 ---

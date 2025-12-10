@@ -169,8 +169,8 @@ def execute_task_work(task_id: str, flags: dict):
 
 ## Files to Modify
 
-1. `installer/global/commands/task-work.md` - Add Phase 1.5 specification
-2. `installer/global/commands/lib/task_work_executor.py` (if exists) - Add integration code
+1. `installer/core/commands/task-work.md` - Add Phase 1.5 specification
+2. `installer/core/commands/lib/task_work_executor.py` (if exists) - Add integration code
 
 ## Why /task-work Method
 

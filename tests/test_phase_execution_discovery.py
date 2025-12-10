@@ -21,7 +21,7 @@ from typing import Dict, Any
 from unittest.mock import patch, MagicMock
 
 # Add lib to path
-lib_path = Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from phase_execution import (

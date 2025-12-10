@@ -43,11 +43,11 @@ Enhance `/agent-enhance` to:
 ### Files to Modify
 
 **Primary**:
-- `installer/global/commands/agent-enhance` (Python script)
-- `installer/global/commands/agent-enhance.md` (documentation)
+- `installer/core/commands/agent-enhance` (Python script)
+- `installer/core/commands/agent-enhance.md` (documentation)
 
 **Related**:
-- `installer/global/agents/agent-content-enhancer.md` (agent instructions)
+- `installer/core/agents/agent-content-enhancer.md` (agent instructions)
 
 ---
 
@@ -217,7 +217,7 @@ def verify_discoverability(agent_path):
 
 ### Step 1: Add Metadata Validation (1 hour)
 
-**File**: `installer/global/commands/agent-enhance`
+**File**: `installer/core/commands/agent-enhance`
 
 **Add Function**:
 ```python
@@ -282,7 +282,7 @@ def verify_discoverability(agent_path):
 
 ### Step 4: Update Documentation (1 hour)
 
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 **Add Section**: "Discovery Metadata Validation"
 
@@ -397,7 +397,7 @@ cat /tmp/test-agent.md
 
 **Options**:
 1. **Lazy Update**: Update agents as they're enhanced (recommended)
-2. **Bulk Update**: Run `/agent-enhance` on all agents in installer/global/agents/
+2. **Bulk Update**: Run `/agent-enhance` on all agents in installer/core/agents/
 3. **Manual Update**: Update high-priority agents only
 
 **Recommendation**: Lazy update (Option 1)
@@ -421,8 +421,8 @@ cat /tmp/test-agent.md
 
 - Review Report: .claude/reviews/TASK-REV-9A4E-review-report.md (Finding #5)
 - Agent Discovery Fix: TASK-ENF-P0-1
-- Current Command: installer/global/commands/agent-enhance
-- Agent Content Enhancer: installer/global/agents/agent-content-enhancer.md
+- Current Command: installer/core/commands/agent-enhance
+- Agent Content Enhancer: installer/core/agents/agent-content-enhancer.md
 
 ---
 

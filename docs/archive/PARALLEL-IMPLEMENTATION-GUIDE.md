@@ -19,7 +19,7 @@ cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 ```
 
 **Task 1.1**: TASK-FIX-9E1A (Task ID uniqueness fix)
-- **File**: `installer/global/commands/lib/template_create_orchestrator.py` (line 963)
+- **File**: `installer/core/commands/lib/template_create_orchestrator.py` (line 963)
 - **Duration**: 30 minutes
 - **Priority**: CRITICAL (prevents task file overwrites)
 - **Dependencies**: None
@@ -81,7 +81,7 @@ cd docs-user-guide
 **Tasks**:
 1. **TASK-D01D-update-documentation** (1-2 hours) - Hash ID docs
    - Update: `CLAUDE.md` (hash ID format, benefits, examples)
-   - Update: `installer/global/commands/task-create.md` (hash ID examples)
+   - Update: `installer/core/commands/task-create.md` (hash ID examples)
    - Update: All workflow guides with hash ID examples
    - Update: Quick reference with new ID format
    - Add: FAQ section for hash IDs
@@ -89,7 +89,7 @@ cd docs-user-guide
 
 **Files Modified**:
 - `CLAUDE.md` (task ID format section)
-- `installer/global/commands/task-create.md`
+- `installer/core/commands/task-create.md`
 - `docs/guides/guardkit-workflow.md`
 - `docs/guides/quick-reference.md`
 
@@ -291,7 +291,7 @@ graph TD
 | `docs/architecture/template-create-architecture.md` | Worktree A | ✅ |
 | `docs/troubleshooting/template-create-troubleshooting.md` | Worktree A | ✅ |
 | `docs/workflows/incremental-enhancement-workflow.md` | Worktree C | ✅ |
-| `installer/global/commands/task-create.md` | Worktree B | ✅ |
+| `installer/core/commands/task-create.md` | Worktree B | ✅ |
 | `docs/guides/guardkit-workflow.md` | Worktree B | ✅ |
 | `docs/guides/quick-reference.md` | Worktree B | ✅ |
 

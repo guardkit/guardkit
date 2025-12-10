@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add installer lib to path
-installer_lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+installer_lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 if installer_lib_path.exists():
     sys.path.insert(0, str(installer_lib_path))
 

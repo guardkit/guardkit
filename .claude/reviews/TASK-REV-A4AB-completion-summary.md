@@ -11,7 +11,7 @@
 ## Deliverables
 
 ### 1. Command Specification ✅
-**File**: `installer/global/commands/task-review.md` (12KB)
+**File**: `installer/core/commands/task-review.md` (12KB)
 - Complete command syntax documentation
 - All 5 workflow phases specified
 - Flag documentation (--mode, --depth, --output)
@@ -19,7 +19,7 @@
 - Integration points documented
 
 ### 2. Core Orchestrator ✅
-**File**: `installer/global/commands/lib/task_review_orchestrator.py` (17KB)
+**File**: `installer/core/commands/lib/task_review_orchestrator.py` (17KB)
 - `execute_task_review()` - Main entry point with validation
 - `load_review_context()` - Phase 1 fully implemented
 - `execute_review_analysis()` - Phase 2 skeleton
@@ -82,8 +82,8 @@ Test Coverage:     All core functionality covered
 
 ## Files Created
 
-1. `installer/global/commands/task-review.md` - Command specification (12KB)
-2. `installer/global/commands/lib/task_review_orchestrator.py` - Core orchestrator (17KB)
+1. `installer/core/commands/task-review.md` - Command specification (12KB)
+2. `installer/core/commands/lib/task_review_orchestrator.py` - Core orchestrator (17KB)
 3. `tasks/review_complete/README.md` - State documentation (1.1KB)
 4. `tests/unit/commands/test_task_review_orchestrator.py` - Unit tests
 5. `tests/integration/test_task_review_workflow.py` - Integration tests

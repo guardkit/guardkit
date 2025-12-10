@@ -212,7 +212,7 @@ Create the research summary document that provides evidence-based positioning fo
 **Terminology Audit:**
 ```bash
 # Extract all key terms from command specs
-grep -h "^\*\*" installer/global/commands/*.md | sort -u > canonical-terms.txt
+grep -h "^\*\*" installer/core/commands/*.md | sort -u > canonical-terms.txt
 
 # Find variations across all docs
 while read term; do

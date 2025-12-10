@@ -589,11 +589,11 @@ The feature represents:
 ## Appendix A: Files Reviewed
 
 ### Core Implementation
-1. `installer/global/commands/lib/template_create_orchestrator.py` (2004 lines)
-2. `installer/global/lib/template_creation/agent_enhancer.py` (1468 lines)
-3. `installer/global/lib/agent_bridge/invoker.py` (266 lines)
-4. `installer/global/lib/agent_bridge/state_manager.py` (161 lines)
-5. `installer/global/agents/agent-content-enhancer.md` (217 lines)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (2004 lines)
+2. `installer/core/lib/template_creation/agent_enhancer.py` (1468 lines)
+3. `installer/core/lib/agent_bridge/invoker.py` (266 lines)
+4. `installer/core/lib/agent_bridge/state_manager.py` (161 lines)
+5. `installer/core/agents/agent-content-enhancer.md` (217 lines)
 
 ### Test Files
 1. `tests/unit/lib/template_creation/test_agent_enhancer.py` (22 tests, all passing)

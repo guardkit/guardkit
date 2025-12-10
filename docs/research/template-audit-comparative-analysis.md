@@ -559,7 +559,7 @@ Reduce from 9 templates to 3 high-quality reference templates (9+/10 score requi
 - Provide migration guides
 
 ### Phase 3: Removal (Week 5+)
-- Remove dotnet-aspnetcontroller and default from installer/global/templates/
+- Remove dotnet-aspnetcontroller and default from installer/core/templates/
 - Archive in docs/archive/deprecated-templates/
 - Update documentation to remove references
 

@@ -69,7 +69,7 @@ Execution Time: 2.30 seconds
 
 ### Module-Level Coverage
 
-**File:** `installer/global/lib/id_generator.py`
+**File:** `installer/core/lib/id_generator.py`
 - Total Statements: 136
 - Statements Covered: 67
 - Statements Missing: 69
@@ -152,14 +152,14 @@ The 45% module coverage is expected because:
 ### Compilation Status: ✅ PASS
 
 ```bash
-$ python -m py_compile installer/global/lib/id_generator.py
+$ python -m py_compile installer/core/lib/id_generator.py
 # No errors
 ```
 
 ### Import Validation: ✅ PASS
 
 ```python
-from installer.global.lib.id_generator import (
+from installer.core.lib.id_generator import (
     validate_prefix,
     infer_prefix,
     register_prefix,
@@ -238,7 +238,7 @@ tests/lib/test_id_generator_prefix_inference.py::TestPrefixValidation::test_vali
 ### Coverage Report
 
 ```
-installer/global/lib/id_generator.py
+installer/core/lib/id_generator.py
 - New Functions: 100% coverage (0 missing lines)
 - All executable code paths tested
 - All error cases covered

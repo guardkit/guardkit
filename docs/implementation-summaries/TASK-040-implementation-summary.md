@@ -20,7 +20,7 @@ Successfully implemented Phase 5.5 Completeness Validation Layer for the `/templ
 ## Components Implemented
 
 ### 1. Data Models (models.py)
-**Modified**: `installer/global/lib/template_generator/models.py` (+117 lines)
+**Modified**: `installer/core/lib/template_generator/models.py` (+117 lines)
 
 **New Models**:
 - `CompletenessIssue`: Represents validation issues (severity, type, entity, operation, layer)
@@ -35,7 +35,7 @@ Successfully implemented Phase 5.5 Completeness Validation Layer for the `/templ
 ---
 
 ### 2. Pattern Matcher (pattern_matcher.py)
-**Created**: `installer/global/lib/template_generator/pattern_matcher.py` (319 lines)
+**Created**: `installer/core/lib/template_generator/pattern_matcher.py` (319 lines)
 
 **CRUDPatternMatcher**:
 ```python
@@ -70,7 +70,7 @@ extract_operations_for_entity(templates, entity) → Set[str]
 ---
 
 ### 3. Completeness Validator (completeness_validator.py)
-**Created**: `installer/global/lib/template_generator/completeness_validator.py` (579 lines)
+**Created**: `installer/core/lib/template_generator/completeness_validator.py` (579 lines)
 
 **Main Methods**:
 
@@ -110,7 +110,7 @@ _calculate_false_negative_score(generated, expected) → float
 ---
 
 ### 4. Orchestrator Integration (template_create_orchestrator.py)
-**Modified**: `installer/global/commands/lib/template_create_orchestrator.py` (+202 lines)
+**Modified**: `installer/core/commands/lib/template_create_orchestrator.py` (+202 lines)
 
 **New Configuration Flags**:
 ```python
@@ -246,8 +246,8 @@ No failures - all tests passed on first run ✅
 ## Files Created/Modified
 
 ### New Files (7)
-1. `installer/global/lib/template_generator/pattern_matcher.py` (319 lines)
-2. `installer/global/lib/template_generator/completeness_validator.py` (579 lines)
+1. `installer/core/lib/template_generator/pattern_matcher.py` (319 lines)
+2. `installer/core/lib/template_generator/completeness_validator.py` (579 lines)
 3. `tests/unit/test_pattern_matcher.py` (429 lines, 22 tests)
 4. `tests/unit/test_completeness_validator.py` (440 lines, 16 tests)
 5. `.claude/task-plans/TASK-040-implementation-plan.md` (650 lines)
@@ -255,8 +255,8 @@ No failures - all tests passed on first run ✅
 7. (Test fixtures not yet created - deferred to integration testing)
 
 ### Modified Files (2)
-1. `installer/global/lib/template_generator/models.py` (+117 lines)
-2. `installer/global/commands/lib/template_create_orchestrator.py` (+202 lines)
+1. `installer/core/lib/template_generator/models.py` (+117 lines)
+2. `installer/core/commands/lib/template_create_orchestrator.py` (+202 lines)
 
 **Total Lines Added**: ~2,736 lines (code + tests + docs)
 
@@ -274,7 +274,7 @@ Used filename prefix matching instead of regex word boundaries to handle CamelCa
 ### 2. Import Workaround
 Used `importlib` to bypass Python's `global` keyword restriction:
 ```python
-_models = importlib.import_module('installer.global.lib.template_generator.models')
+_models = importlib.import_module('installer.core.lib.template_generator.models')
 CodeTemplate = _models.CodeTemplate
 ```
 

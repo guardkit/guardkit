@@ -796,8 +796,8 @@ git commit -m "Enhance testing-specialist"
 ## See Also
 
 - [Agent Enhancement Decision Guide](../guides/agent-enhancement-decision-guide.md) - Choose right enhancement strategy
-- [Template Create Command](../../installer/global/commands/template-create.md) - Complete template creation workflow
-- [Agent Enhance Command](../../installer/global/commands/agent-enhance.md) - Command reference
+- [Template Create Command](../../installer/core/commands/template-create.md) - Complete template creation workflow
+- [Agent Enhance Command](../../installer/core/commands/agent-enhance.md) - Command reference
 - [Agent Discovery Guide](../guides/agent-discovery-guide.md) - How agents are matched to tasks
 - [Template Validation Guide](../guides/template-validation-guide.md) - Quality assurance workflows
 

@@ -10,19 +10,19 @@
 ## Deliverables
 
 ### Files Created (3)
-1. `installer/global/commands/task-refine.md` (537 lines)
+1. `installer/core/commands/task-refine.md` (537 lines)
    - Comprehensive command specification
    - 4 detailed usage examples
    - State requirements and constraints
    - Integration documentation
 
-2. `installer/global/commands/lib/refinement_handler.py` (724 lines)
+2. `installer/core/commands/lib/refinement_handler.py` (724 lines)
    - RefinementHandler orchestration class
    - RefinementRequest/RefinementResult dataclasses
    - Custom exception hierarchy
    - CLI entry point
 
-3. `installer/global/commands/lib/test_refinement_handler.py` (384 lines)
+3. `installer/core/commands/lib/test_refinement_handler.py` (384 lines)
    - 21 unit tests (100% passing)
    - Test coverage: ~85%
    - Tests for all core functionality

@@ -153,8 +153,8 @@ esac
 
 #### Verification Needed ⚠️
 1. ⚠️ **Template directories removed**: Cannot confirm from code review alone
-   - Need to verify: `installer/global/templates/dotnet-aspnetcontroller/` removed
-   - Need to verify: `installer/global/templates/default/` removed
+   - Need to verify: `installer/core/templates/dotnet-aspnetcontroller/` removed
+   - Need to verify: `installer/core/templates/default/` removed
 
 2. ⚠️ **Archive tag created**: References to `v1.9-templates-before-removal` in migration guide
    - Need to verify: Git tag exists
@@ -347,11 +347,11 @@ Are you building a mobile app?
 1. **Template Directory Removal**
    ```bash
    # Verify directories removed
-   ! test -d installer/global/templates/dotnet-aspnetcontroller
-   ! test -d installer/global/templates/default
+   ! test -d installer/core/templates/dotnet-aspnetcontroller
+   ! test -d installer/core/templates/default
 
    # Verify 8 templates remain
-   ls installer/global/templates/ | wc -l  # Should output: 8
+   ls installer/core/templates/ | wc -l  # Should output: 8
    ```
 
 2. **Git Archive Tag**
@@ -360,7 +360,7 @@ Are you building a mobile app?
    git tag | grep v1.9-templates-before-removal
 
    # Verify templates accessible via tag
-   git show v1.9-templates-before-removal:installer/global/templates/dotnet-aspnetcontroller/CLAUDE.md
+   git show v1.9-templates-before-removal:installer/core/templates/dotnet-aspnetcontroller/CLAUDE.md
    ```
 
 3. **Installation Script**

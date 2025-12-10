@@ -14,7 +14,7 @@ from datetime import datetime
 from unittest.mock import Mock, patch
 
 # Add lib directory to path
-lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "global"
+lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "core"
 commands_lib_path = lib_path / "commands" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))

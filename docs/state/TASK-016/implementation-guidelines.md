@@ -758,7 +758,7 @@ tar -tzf backup-manual.tar.gz | head
 Modify the task completion workflow to automatically create subfolders:
 
 ```bash
-# In installer/global/commands/task-complete.md
+# In installer/core/commands/task-complete.md
 # Add logic to create subfolder structure
 
 TASK_ID="TASK-042"

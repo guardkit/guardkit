@@ -8,7 +8,7 @@ This document defines the architecture patterns for .NET MAUI templates in the A
 
 ### Global Templates (Repository-Level)
 
-**Location**: `installer/global/templates/`
+**Location**: `installer/core/templates/`
 
 Two global MAUI templates are available:
 
@@ -447,7 +447,7 @@ public class GetProducts
 mkdir -p .claude/templates/maui-custom
 
 # 2. Copy current patterns
-cp -r installer/global/templates/maui/* .claude/templates/maui-custom/
+cp -r installer/core/templates/maui/* .claude/templates/maui-custom/
 
 # 3. Update manifest to mark as local
 cat > .claude/templates/maui-custom/manifest.json << EOF

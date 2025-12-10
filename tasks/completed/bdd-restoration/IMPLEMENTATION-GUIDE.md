@@ -18,7 +18,7 @@ This guide orchestrates the restoration of BDD mode (`--mode=bdd`) in guardkit f
 - `--mode=bdd` flag from task-work command
 - BDD mode documentation from task-work.md
 - `.claude/agents/bdd-generator.md` (moved to RequireKit)
-- `installer/global/instructions/core/bdd-gherkin.md` (moved to RequireKit)
+- `installer/core/instructions/core/bdd-gherkin.md` (moved to RequireKit)
 - All BDD mode examples and references
 
 ### What We're Restoring
@@ -304,7 +304,7 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 **Implementation**:
 
 ```markdown
-# In installer/global/commands/task-work.md
+# In installer/core/commands/task-work.md
 
 ## Command Syntax
 ```bash
@@ -762,8 +762,8 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - GuardKit_LangGraph_Orchestration_Build_Strategy.md
 
 ### Code References
-- `installer/global/lib/feature_detection.py` (supports_bdd function)
-- `installer/global/commands/task-work.md` (command specification)
+- `installer/core/lib/feature_detection.py` (supports_bdd function)
+- `installer/core/commands/task-work.md` (command specification)
 - `.claude/agents/*.md` (agent format examples)
 
 ---

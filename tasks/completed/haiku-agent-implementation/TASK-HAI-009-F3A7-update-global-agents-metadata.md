@@ -253,7 +253,7 @@ keywords: [complexity, assessment, risk, scoring, checkpoint, evaluation]
 
 **Step 1**: Read existing agent
 ```bash
-cat installer/global/agents/database-specialist.md
+cat installer/core/agents/database-specialist.md
 ```
 
 **Step 2**: Add metadata to frontmatter (preserve all existing fields)
@@ -286,7 +286,7 @@ collaborates_with: [...]
 ```python
 python3 -c "
 import frontmatter
-with open('installer/global/agents/database-specialist.md') as f:
+with open('installer/core/agents/database-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['stack'] in [['cross-stack'], ['python'], ['react'], ['dotnet']]
     assert agent.metadata['phase'] in ['implementation', 'review', 'testing', 'orchestration']
@@ -308,7 +308,7 @@ import frontmatter
 
 def validate_all_agents():
     """Validate all global agents have complete metadata"""
-    agents = glob.glob("installer/global/agents/*.md")
+    agents = glob.glob("installer/core/agents/*.md")
     results = {'valid': [], 'missing': [], 'incomplete': []}
 
     for agent_path in agents:
@@ -383,7 +383,7 @@ python3 scripts/validate_agent_metadata.py
 pytest tests/test_agent_discovery.py::test_discover_all_phases -v
 
 # Verify no content changes
-git diff --stat installer/global/agents/
+git diff --stat installer/core/agents/
 # Should show only frontmatter changes
 ```
 
@@ -405,14 +405,14 @@ git diff --stat installer/global/agents/
 **If metadata errors**:
 ```bash
 # Revert all global agent changes
-git checkout installer/global/agents/*.md
+git checkout installer/core/agents/*.md
 ```
 
 **Recovery Time**: <1 minute
 
 ## Reference Materials
 
-- `installer/global/agents/*.md` - All global agents
+- `installer/core/agents/*.md` - All global agents
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema spec
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-002-B47C-create-python-api-specialist.md` - Example metadata
 

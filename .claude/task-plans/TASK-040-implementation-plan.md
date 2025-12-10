@@ -20,12 +20,12 @@ Implement the Completeness Validation Layer (Phase 5.5) to detect and auto-fix i
 ### Component Structure
 
 ```
-installer/global/lib/template_generator/
+installer/core/lib/template_generator/
 ├── completeness_validator.py    (NEW - 300-400 lines)
 ├── pattern_matcher.py            (NEW - 200-300 lines)
 └── models.py                     (MODIFY - add new models)
 
-installer/global/commands/lib/
+installer/core/commands/lib/
 └── template_create_orchestrator.py (MODIFY - add Phase 5.5)
 
 tests/
@@ -49,7 +49,7 @@ tests/
 
 ### Step 1: Create Data Models (2-3 hours)
 
-**File**: `installer/global/lib/template_generator/models.py` (MODIFY)
+**File**: `installer/core/lib/template_generator/models.py` (MODIFY)
 
 **New Models to Add**:
 
@@ -112,7 +112,7 @@ class ValidationReport:
 
 ### Step 2: Create Pattern Matcher (4-5 hours)
 
-**File**: `installer/global/lib/template_generator/pattern_matcher.py` (NEW)
+**File**: `installer/core/lib/template_generator/pattern_matcher.py` (NEW)
 
 **Classes**:
 
@@ -155,7 +155,7 @@ LAYER_PATTERNS = {
 
 ### Step 3: Create Completeness Validator (6-8 hours)
 
-**File**: `installer/global/lib/template_generator/completeness_validator.py` (NEW)
+**File**: `installer/core/lib/template_generator/completeness_validator.py` (NEW)
 
 **Main Class**: `CompletenessValidator`
 
@@ -262,7 +262,7 @@ LAYER_PATTERNS = {
 
 ### Step 4: Integrate into Orchestrator (3-4 hours)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (MODIFY)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (MODIFY)
 
 **Changes**:
 
@@ -415,8 +415,8 @@ LAYER_PATTERNS = {
 
 ### New Files (7 files)
 
-1. `installer/global/lib/template_generator/completeness_validator.py` (300-400 lines)
-2. `installer/global/lib/template_generator/pattern_matcher.py` (200-300 lines)
+1. `installer/core/lib/template_generator/completeness_validator.py` (300-400 lines)
+2. `installer/core/lib/template_generator/pattern_matcher.py` (200-300 lines)
 3. `tests/unit/test_completeness_validator.py` (500+ lines)
 4. `tests/unit/test_pattern_matcher.py` (200+ lines)
 5. `tests/integration/test_template_create_completeness.py` (300+ lines)
@@ -425,8 +425,8 @@ LAYER_PATTERNS = {
 
 ### Modified Files (2 files)
 
-1. `installer/global/lib/template_generator/models.py` (+100 lines)
-2. `installer/global/commands/lib/template_create_orchestrator.py` (+150 lines)
+1. `installer/core/lib/template_generator/models.py` (+100 lines)
+2. `installer/core/commands/lib/template_create_orchestrator.py` (+150 lines)
 
 ### Documentation Files (3 files)
 
@@ -491,9 +491,9 @@ LAYER_PATTERNS = {
 - pytest-cov (for coverage)
 
 ### Internal Dependencies
-- `installer.global.lib.template_generator.models` (TemplateCollection, CodeTemplate)
-- `installer.global.lib.codebase_analyzer.models` (CodebaseAnalysis)
-- `installer.global.commands.lib.template_create_orchestrator` (orchestration)
+- `installer.core.lib.template_generator.models` (TemplateCollection, CodeTemplate)
+- `installer.core.lib.codebase_analyzer.models` (CodebaseAnalysis)
+- `installer.core.commands.lib.template_create_orchestrator` (orchestration)
 
 ---
 

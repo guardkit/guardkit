@@ -29,8 +29,8 @@ fail() {
 
 # Test 1: Extended file structure exists
 echo "Test 1: Extended file structure..."
-core_count=$(ls installer/global/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l | tr -d ' ')
-ext_count=$(ls installer/global/agents/*-ext.md 2>/dev/null | wc -l | tr -d ' ')
+core_count=$(ls installer/core/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l | tr -d ' ')
+ext_count=$(ls installer/core/agents/*-ext.md 2>/dev/null | wc -l | tr -d ' ')
 echo "  Core files: $core_count"
 echo "  Extended files: $ext_count"
 
@@ -46,10 +46,10 @@ echo "Test 2: Agent discovery excludes -ext.md files..."
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib/agent_scanner')
+sys.path.insert(0, 'installer/core/lib/agent_scanner')
 from agent_scanner import MultiSourceAgentScanner
 
-scanner = MultiSourceAgentScanner(global_path=Path('installer/global/agents'))
+scanner = MultiSourceAgentScanner(global_path=Path('installer/core/agents'))
 inventory = scanner.scan()
 
 # Check for extended files in discovery
@@ -66,7 +66,7 @@ echo "Test 3: Extended file detection function..."
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib/agent_scanner')
+sys.path.insert(0, 'installer/core/lib/agent_scanner')
 from agent_scanner import is_extended_file
 
 # Test cases
@@ -92,7 +92,7 @@ echo ""
 echo "Test 4: Extended files have proper header..."
 valid_ext=0
 invalid_ext=0
-for f in installer/global/agents/*-ext.md; do
+for f in installer/core/agents/*-ext.md; do
     if [ -f "$f" ]; then
         if head -1 "$f" | grep -q "^# "; then
             valid_ext=$((valid_ext + 1))
@@ -118,7 +118,7 @@ import frontmatter
 import sys
 
 errors = []
-for f in Path('installer/global/agents').glob('*.md'):
+for f in Path('installer/core/agents').glob('*.md'):
     if not f.stem.endswith('-ext'):
         try:
             post = frontmatter.load(f)

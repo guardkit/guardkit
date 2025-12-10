@@ -202,7 +202,7 @@ cat > lib/project_detection.sh <<'EOF'
 #!/usr/bin/env bash
 
 detect_project_type() {
-  if [[ -f "installer/global/manifest.json" ]]; then
+  if [[ -f "installer/core/manifest.json" ]]; then
     echo "ai-engineer"
   elif [[ -f "YourApp.sln" ]]; then
     echo "exampleapp"

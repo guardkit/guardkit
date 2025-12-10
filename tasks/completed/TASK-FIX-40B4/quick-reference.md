@@ -7,27 +7,27 @@ Layer classification system for improving template organization in template-crea
 ## Files
 
 ### Created
-- **`installer/global/lib/template_generator/layer_classifier.py`** (380+ lines)
+- **`installer/core/lib/template_generator/layer_classifier.py`** (380+ lines)
   - `ClassificationResult` - Result with confidence scoring
   - `LayerClassificationStrategy` - Abstract base class
   - `JavaScriptLayerClassifier` - JS/TS-specific patterns
   - `GenericLayerClassifier` - Cross-language fallback
   - `LayerClassificationOrchestrator` - Coordinator
 
-- **`installer/global/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md`**
+- **`installer/core/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md`**
   - Comprehensive usage guide
 
 - **`TASK-FIX-40B4-IMPLEMENTATION-SUMMARY.md`**
   - Detailed implementation documentation
 
 ### Modified
-- **`installer/global/lib/template_generator/path_resolver.py`**
+- **`installer/core/lib/template_generator/path_resolver.py`**
   - Added `AIProvidedLayerStrategy` (renamed from `LayerClassificationStrategy`)
   - Added `LayerClassificationOrchestratorStrategy`
   - Updated `TemplatePathResolver` with new strategies
   - Added backward compatibility alias
 
-- **`installer/global/lib/template_generator/__init__.py`**
+- **`installer/core/lib/template_generator/__init__.py`**
   - Exported layer classification classes
 
 ## Key Features
@@ -144,5 +144,5 @@ TemplatePathResolver (main entry point)
 
 See full documentation in:
 - `TASK-FIX-40B4-IMPLEMENTATION-SUMMARY.md` - Detailed implementation
-- `installer/global/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md` - Usage guide
+- `installer/core/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md` - Usage guide
 - Source code inline docstrings for API documentation

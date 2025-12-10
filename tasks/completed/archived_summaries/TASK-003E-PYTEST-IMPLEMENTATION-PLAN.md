@@ -353,9 +353,9 @@ def test_task_state_transition(tmp_path, task_file_factory):
 **Mitigation**:
 1. **Verify existence first**:
    ```bash
-   ls installer/global/commands/lib/modification_session.py
-   ls installer/global/commands/lib/qa_manager.py
-   ls installer/global/commands/lib/version_manager.py
+   ls installer/core/commands/lib/modification_session.py
+   ls installer/core/commands/lib/qa_manager.py
+   ls installer/core/commands/lib/version_manager.py
    ```
 
 2. **If missing, create stubs**:

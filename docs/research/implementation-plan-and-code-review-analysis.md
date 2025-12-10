@@ -993,6 +993,6 @@ task_metrics:
 
 **Related Documents**:
 - `docs/research/honest-assessment-sdd-vs-ai-engineer.md` (Lite approach justification)
-- `installer/global/commands/task-work.md` (current workflow)
-- `installer/global/commands/lib/plan_persistence.py` (current plan storage)
-- `installer/global/agents/code-reviewer.md` (Phase 5 review)
+- `installer/core/commands/task-work.md` (current workflow)
+- `installer/core/commands/lib/plan_persistence.py` (current plan storage)
+- `installer/core/agents/code-reviewer.md` (Phase 5 review)

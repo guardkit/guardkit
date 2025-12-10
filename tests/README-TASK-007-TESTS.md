@@ -56,9 +56,9 @@ cat tests/TASK-007-VALIDATION-SUMMARY.md
 ## What Was Tested
 
 ### Files Validated
-- ✅ `installer/global/commands/task-work.md`
-- ✅ `installer/global/agents/test-orchestrator.md`
-- ✅ `installer/global/templates/maui/agents/test-orchestrator.md`
+- ✅ `installer/core/commands/task-work.md`
+- ✅ `installer/core/agents/test-orchestrator.md`
+- ✅ `installer/core/templates/maui/agents/test-orchestrator.md`
 
 ### Test Categories
 1. **File Existence** (3 tests) - ✅ 100% pass

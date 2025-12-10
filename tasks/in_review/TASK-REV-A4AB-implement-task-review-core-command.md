@@ -38,14 +38,14 @@ Implement the core infrastructure for the `/task-review` command, which provides
 
 ### Deliverables
 
-1. **Command Specification** (`installer/global/commands/task-review.md`)
+1. **Command Specification** (`installer/core/commands/task-review.md`)
    - Command syntax documentation
    - Workflow phases (1-5) specification
    - Flag documentation (--mode, --depth, --output)
    - Execution protocol
    - Integration with task states
 
-2. **Core Orchestrator** (`installer/global/commands/lib/task_review_orchestrator.py`)
+2. **Core Orchestrator** (`installer/core/commands/lib/task_review_orchestrator.py`)
    - `execute_task_review()` - Main entry point
    - `load_review_context()` - Phase 1 implementation
    - `execute_review_analysis()` - Phase 2 skeleton
@@ -116,7 +116,7 @@ Implement the core infrastructure for the `/task-review` command, which provides
 ### File Structure
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── task-review.md                              # Command spec (NEW)
 └── lib/
     ├── task_review_orchestrator.py             # Core orchestrator (NEW)
@@ -127,7 +127,7 @@ installer/global/commands/
 ### Key Functions
 
 ```python
-# installer/global/commands/lib/task_review_orchestrator.py
+# installer/core/commands/lib/task_review_orchestrator.py
 
 def execute_task_review(
     task_id: str,

@@ -58,14 +58,14 @@ TASK-035 successfully updated 5 global agents with documentation level awareness
 From `TASK-035-COMPARISON-WITH-AI-ENGINEER.md`:
 
 **Commands & Documentation**:
-1. **`installer/global/commands/task-work.md`** updates (450+ lines)
+1. **`installer/core/commands/task-work.md`** updates (450+ lines)
    - Step 0: Parse `--docs` flag
    - Step 2.5: Determine documentation level
    - Documentation levels section
    - Configuration hierarchy
    - Agent invocation examples with `<AGENT_CONTEXT>` blocks
 
-2. **`installer/global/instructions/context-parameter-format.md`** (292 lines)
+2. **`installer/core/instructions/context-parameter-format.md`** (292 lines)
    - Standard format for `<AGENT_CONTEXT>` blocks
    - Parsing guidelines with examples
    - Validation rules
@@ -79,11 +79,11 @@ From `TASK-035-COMPARISON-WITH-AI-ENGINEER.md`:
    - Configuration hierarchy
    - Troubleshooting
 
-4. **`installer/global/templates/documentation/minimal-summary-template.md`** (271 lines)
+4. **`installer/core/templates/documentation/minimal-summary-template.md`** (271 lines)
    - Template for minimal mode summaries (~200 lines target)
    - Section structure with examples
 
-5. **`installer/global/templates/documentation/comprehensive-checklist.md`** (336 lines)
+5. **`installer/core/templates/documentation/comprehensive-checklist.md`** (336 lines)
    - Checklist for comprehensive mode (13+ files)
    - Core documents specification
    - Conditional documents
@@ -107,7 +107,7 @@ Following the insight that documentation level control **drastically reduces tim
 
 ### AC1: Command Specification Updates
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 - [ ] Add `--docs` flag specification (minimal|standard|comprehensive|auto)
 - [ ] Add Step 0: Parse documentation level flag
@@ -156,14 +156,14 @@ Following the insight that documentation level control **drastically reduces tim
 
 ### AC4: Templates (ESSENTIAL - But Simplified)
 
-**File 1**: `installer/global/templates/documentation/minimal-summary-template.md`
+**File 1**: `installer/core/templates/documentation/minimal-summary-template.md`
 
 - [ ] Create template for minimal mode summaries
 - [ ] Keep to **~100-150 lines** (vs 271 in ai-engineer)
 - [ ] Focus on structure, not verbose examples
 - [ ] Emphasize JSON/structured data format
 
-**File 2**: `installer/global/templates/documentation/comprehensive-checklist.md`
+**File 2**: `installer/core/templates/documentation/comprehensive-checklist.md`
 
 - [ ] Create checklist for comprehensive mode
 - [ ] Keep to **~150-200 lines** (vs 336 in ai-engineer)
@@ -191,7 +191,7 @@ Following the insight that documentation level control **drastically reduces tim
 
 ### Phase 1: Command Specification (2 hours)
 
-**Step 1.1**: Update `installer/global/commands/task-work.md`
+**Step 1.1**: Update `installer/core/commands/task-work.md`
 - Add `--docs` flag specification to usage section
 - Add Step 0: Parse `--docs` flag (10-20 lines)
 - Add Step 2.5: Determine documentation level (30-50 lines)
@@ -263,12 +263,12 @@ Following the insight that documentation level control **drastically reduces tim
 ## Files to Create/Modify
 
 ### Required Updates (3-4 files)
-1. **`installer/global/commands/task-work.md`** (~200-250 lines added)
-2. **`installer/global/templates/documentation/minimal-summary-template.md`** (NEW, ~100-150 lines)
-3. **`installer/global/templates/documentation/comprehensive-checklist.md`** (NEW, ~150-200 lines)
+1. **`installer/core/commands/task-work.md`** (~200-250 lines added)
+2. **`installer/core/templates/documentation/minimal-summary-template.md`** (NEW, ~100-150 lines)
+3. **`installer/core/templates/documentation/comprehensive-checklist.md`** (NEW, ~150-200 lines)
 
 ### Optional (Defer if not needed)
-4. **`installer/global/instructions/context-parameter-format.md`** (OPTIONAL, ~100 lines)
+4. **`installer/core/instructions/context-parameter-format.md`** (OPTIONAL, ~100 lines)
 5. **`docs/guides/documentation-levels-guide.md`** (OPTIONAL, ~150 lines)
 
 **Total Lines**: ~450-600 lines (vs ~1,788 in ai-engineer - **67% reduction**)
@@ -346,11 +346,11 @@ Following the insight that documentation level control **drastically reduces tim
 - **Comparison Analysis**: `TASK-035-COMPARISON-WITH-AI-ENGINEER.md`
 - **ai-engineer Reference**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/requirements/TASK-035-FINAL-IMPLEMENTATION-SUMMARY.md`
 - **Agent Files (Already Updated)**:
-  - `installer/global/agents/architectural-reviewer.md`
-  - `installer/global/agents/test-orchestrator.md`
-  - `installer/global/agents/code-reviewer.md`
-  - `installer/global/agents/task-manager.md`
-  - `installer/global/agents/test-verifier.md`
+  - `installer/core/agents/architectural-reviewer.md`
+  - `installer/core/agents/test-orchestrator.md`
+  - `installer/core/agents/code-reviewer.md`
+  - `installer/core/agents/task-manager.md`
+  - `installer/core/agents/test-verifier.md`
 
 ## Timeline Estimate
 
@@ -372,7 +372,7 @@ Following the insight that documentation level control **drastically reduces tim
 
 ## Definition of Done
 
-- ✅ `installer/global/commands/task-work.md` updated with `--docs` flag and documentation level logic
+- ✅ `installer/core/commands/task-work.md` updated with `--docs` flag and documentation level logic
 - ✅ Templates created for minimal and comprehensive modes
 - ✅ Context parameter format documented (inline or separate file)
 - ✅ Manual testing completed (minimal, standard, comprehensive modes)

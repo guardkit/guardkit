@@ -11,26 +11,26 @@
 Based on the official guide (`installer/EXTENDING_THE_SYSTEM.md`), here's what needs to be done:
 
 ### Step 1: Create the Agent File ✅
-- [x] **Created**: `installer/global/agents/python-mcp-specialist.md`
+- [x] **Created**: `installer/core/agents/python-mcp-specialist.md`
 - [x] **Size**: 22.3 KB with comprehensive examples
 - [x] **Format**: Proper YAML frontmatter with name, description, tools, model
 - [x] **Content**: Complete expertise areas, patterns, best practices
 
-**Location**: `installer/global/agents/python-mcp-specialist.md`
+**Location**: `installer/core/agents/python-mcp-specialist.md`
 
 ### Step 2: Add Agent to All Templates ❌ (NOT DONE)
 According to the guide, agents should be copied to ALL template directories:
 
 **Required Locations**:
-- [ ] `installer/global/templates/default/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/maui/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/react/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/python/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/dotnet-microservice/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/typescript-api/agents/python-mcp-specialist.md`
-- [ ] `installer/global/templates/fullstack/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/default/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/maui/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/react/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/python/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/dotnet-microservice/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/typescript-api/agents/python-mcp-specialist.md`
+- [ ] `installer/core/templates/fullstack/agents/python-mcp-specialist.md`
 
-**Current Status**: ❌ Only created in `installer/global/agents/`, NOT copied to templates
+**Current Status**: ❌ Only created in `installer/core/agents/`, NOT copied to templates
 
 **Why This Matters**:
 - Templates are what get copied to projects during `agentec-init`
@@ -40,7 +40,7 @@ According to the guide, agents should be copied to ALL template directories:
 ### Step 3: Update Documentation ⚠️ (PARTIAL)
 
 #### 3.1. Python Template CLAUDE.md ✅
-- [x] **Updated**: `installer/global/templates/python/CLAUDE.md`
+- [x] **Updated**: `installer/core/templates/python/CLAUDE.md`
 - [x] **Added**: MCP Server Development section
 - [x] **References**: `python-mcp-specialist` agent
 - [x] **Examples**: MCP server structure and integration patterns
@@ -92,14 +92,14 @@ Some templates include additional specialized agents:
 ## Additional Checks
 
 ### Manifest.json ✅ (NO UPDATE NEEDED)
-- [x] **Reviewed**: `installer/global/manifest.json`
+- [x] **Reviewed**: `installer/core/manifest.json`
 - [x] **Status**: No update needed - manifest doesn't list individual agents
 - [x] **Capabilities**: General capabilities already covered
 
 **Why no update needed**: The manifest tracks system-wide capabilities, not individual agents. MCP development falls under existing "test-orchestration" and Python stack capabilities.
 
 ### Global Agents List ✅ (ALREADY EXISTS)
-- [x] **Location**: `installer/global/agents/python-mcp-specialist.md`
+- [x] **Location**: `installer/core/agents/python-mcp-specialist.md`
 - [x] **Proper location**: This is correct - central source of truth
 
 ### Template-Specific Files ⚠️ (PYTHON TEMPLATE)
@@ -120,8 +120,8 @@ Some templates include additional specialized agents:
    ```bash
    # Copy to all templates
    for template in default maui react python dotnet-microservice typescript-api fullstack; do
-     cp installer/global/agents/python-mcp-specialist.md \
-        installer/global/templates/$template/agents/
+     cp installer/core/agents/python-mcp-specialist.md \
+        installer/core/templates/$template/agents/
    done
    ```
 
@@ -130,7 +130,7 @@ Some templates include additional specialized agents:
    # Check each template has the agent
    for template in default maui react python dotnet-microservice typescript-api fullstack; do
      echo "Checking $template:"
-     ls installer/global/templates/$template/agents/python-mcp-specialist.md
+     ls installer/core/templates/$template/agents/python-mcp-specialist.md
    done
    ```
 
@@ -190,7 +190,7 @@ After completing action items:
 
 ### ✅ Completed
 1. ✅ Gap analysis document created
-2. ✅ Agent specification created (`installer/global/agents/python-mcp-specialist.md`)
+2. ✅ Agent specification created (`installer/core/agents/python-mcp-specialist.md`)
 3. ✅ Python template CLAUDE.md updated
 4. ✅ Implementation summary documented
 5. ✅ Manifest.json reviewed (no changes needed)
@@ -211,7 +211,7 @@ After completing action items:
 **Understanding the Installation Flow**:
 
 1. **Global Installation** (`~/.claude/`)
-   - Source: `installer/global/templates/*/agents/*.md`
+   - Source: `installer/core/templates/*/agents/*.md`
    - Installed by: `./scripts/install-global.sh`
    - Used when: Running `agentec-init`
 
@@ -221,8 +221,8 @@ After completing action items:
    - Command: `agentec-init python`
 
 **The Problem**:
-- ✅ We created `installer/global/agents/python-mcp-specialist.md`
-- ❌ We did NOT copy it to `installer/global/templates/python/agents/`
+- ✅ We created `installer/core/agents/python-mcp-specialist.md`
+- ❌ We did NOT copy it to `installer/core/templates/python/agents/`
 - ❌ Therefore `install-global.sh` won't install it to `~/.claude/templates/python/`
 - ❌ Therefore `agentec-init python` won't copy it to projects
 - ❌ Therefore new Python projects won't have the agent
@@ -243,15 +243,15 @@ cd /Users/richardwoollcott/Projects/appmilla_github/ai-engineer
 # Copy agent to all templates
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
   echo "Copying python-mcp-specialist to $template..."
-  cp installer/global/agents/python-mcp-specialist.md \
-     installer/global/templates/$template/agents/
+  cp installer/core/agents/python-mcp-specialist.md \
+     installer/core/templates/$template/agents/
 done
 
 # Verify copies
 echo ""
 echo "Verifying agent was copied to all templates:"
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
-  if [ -f "installer/global/templates/$template/agents/python-mcp-specialist.md" ]; then
+  if [ -f "installer/core/templates/$template/agents/python-mcp-specialist.md" ]; then
     echo "✅ $template: agent present"
   else
     echo "❌ $template: agent MISSING"

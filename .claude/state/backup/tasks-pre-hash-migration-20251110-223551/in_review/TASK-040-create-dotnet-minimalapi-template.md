@@ -204,7 +204,7 @@ Following `docs/guides/template-creation-workflow.md` principles:
 ### Phase 1: Create Template Structure
 ```bash
 # Create template directory
-mkdir -p installer/global/templates/dotnet-minimalapi/{templates,agents}
+mkdir -p installer/core/templates/dotnet-minimalapi/{templates,agents}
 ```
 
 ### Phase 2: Create Template Files

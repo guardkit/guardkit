@@ -10,12 +10,12 @@
 ## Deliverables
 
 ### Files Created
-1. `installer/global/commands/lib/review_report_generator.py` (960 lines)
-2. `installer/global/commands/lib/review_templates/architectural_review.md.template`
-3. `installer/global/commands/lib/review_templates/code_quality_review.md.template`
-4. `installer/global/commands/lib/review_templates/decision_analysis.md.template`
-5. `installer/global/commands/lib/review_templates/technical_debt.md.template`
-6. `installer/global/commands/lib/review_templates/security_audit.md.template`
+1. `installer/core/commands/lib/review_report_generator.py` (960 lines)
+2. `installer/core/commands/lib/review_templates/architectural_review.md.template`
+3. `installer/core/commands/lib/review_templates/code_quality_review.md.template`
+4. `installer/core/commands/lib/review_templates/decision_analysis.md.template`
+5. `installer/core/commands/lib/review_templates/technical_debt.md.template`
+6. `installer/core/commands/lib/review_templates/security_audit.md.template`
 7. `tests/unit/commands/test_review_report_generator.py` (730 lines)
 
 **Total**: 7 files, 1,690 lines of code

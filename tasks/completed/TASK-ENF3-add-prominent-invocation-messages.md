@@ -36,7 +36,7 @@ completion_metrics:
   acceptance_criteria_total: 9
   template_compliance: 100
 final_deliverables:
-  - file: "installer/global/commands/task-work.md"
+  - file: "installer/core/commands/task-work.md"
     changes: "Added 10 message blocks (5 pre-invocation + 5 post-completion)"
     impact: "Improved agent invocation visibility for all task-work executions"
 quality_metrics:
@@ -295,7 +295,7 @@ Specialization:
 ### Phase 1: Create Display Helper Functions
 
 **Files**:
-- `installer/global/commands/lib/agent_display.py` (new)
+- `installer/core/commands/lib/agent_display.py` (new)
 
 **Implementation**:
 1. Create `display_invocation_message()` function
@@ -307,7 +307,7 @@ Specialization:
 ### Phase 2: Update task-work.md for Phase 2
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add pre-invocation message before Phase 2 INVOKE
@@ -318,7 +318,7 @@ Specialization:
 ### Phase 3: Update task-work.md for Remaining Phases
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add messages to Phase 2.5B (Architectural Review)

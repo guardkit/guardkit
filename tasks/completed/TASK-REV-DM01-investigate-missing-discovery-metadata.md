@@ -55,7 +55,7 @@ The `/agent-enhance` command is not generating discovery metadata (`stack`, `pha
 ### Primary Questions
 
 1. **Is discovery metadata requested in the agent-content-enhancer prompt?**
-   - Check `installer/global/agents/agent-content-enhancer.md`
+   - Check `installer/core/agents/agent-content-enhancer.md`
    - Look for instructions to generate `stack`, `phase`, `capabilities`, `keywords`
 
 2. **Does the AgentResponse schema include discovery metadata fields?**
@@ -63,7 +63,7 @@ The `/agent-enhance` command is not generating discovery metadata (`stack`, `pha
    - Verify if fields are defined but not populated vs not defined at all
 
 3. **Is the orchestrator stripping or ignoring metadata?**
-   - Check `installer/global/lib/agent_enhancement/orchestrator.py`
+   - Check `installer/core/lib/agent_enhancement/orchestrator.py`
    - Look for frontmatter handling logic
 
 4. **What does the agent-content-enhancer actually return?**
@@ -85,10 +85,10 @@ The `/agent-enhance` command is not generating discovery metadata (`stack`, `pha
 
 | File | Purpose |
 |------|---------|
-| `installer/global/agents/agent-content-enhancer.md` | Agent prompt - check for metadata instructions |
-| `installer/global/lib/agent_enhancement/orchestrator.py` | Orchestration logic - check frontmatter handling |
-| `installer/global/lib/agent_bridge/invoker.py` | Request/response handling |
-| `installer/global/commands/agent-enhance.md` | Command specification |
+| `installer/core/agents/agent-content-enhancer.md` | Agent prompt - check for metadata instructions |
+| `installer/core/lib/agent_enhancement/orchestrator.py` | Orchestration logic - check frontmatter handling |
+| `installer/core/lib/agent_bridge/invoker.py` | Request/response handling |
+| `installer/core/commands/agent-enhance.md` | Command specification |
 
 ### Evidence Sources
 

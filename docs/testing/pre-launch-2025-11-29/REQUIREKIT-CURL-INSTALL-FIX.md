@@ -99,8 +99,8 @@ Applied the same architectural fixes that were implemented for GuardKit to ensur
 ### 2. feature_detection.py (Both Repos)
 
 **Files**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/feature_detection.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/require-kit/installer/global/lib/feature_detection.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/feature_detection.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/require-kit/installer/core/lib/feature_detection.py`
 
 **Changes** (lines 81-89):
 ```python
@@ -287,7 +287,7 @@ cat ~/.agentecflow/require-kit.marker.json | grep repo_path
 
 # 3. Verify feature detection
 cd ~/Projects/appmilla_github/guardkit
-python3 -c "from installer.global.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
+python3 -c "from installer.core.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
 # Should output: RequireKit installed: True
 
 # 4. Run verification script

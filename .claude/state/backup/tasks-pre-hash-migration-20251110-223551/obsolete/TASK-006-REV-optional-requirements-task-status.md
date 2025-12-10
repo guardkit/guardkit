@@ -234,7 +234,7 @@ esac
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-status.md installer/global/commands/task-status.md.backup
+cp installer/core/commands/task-status.md installer/core/commands/task-status.md.backup
 ```
 
 ### 2. Add Feature Detection
@@ -402,7 +402,7 @@ Install require-kit: https://github.com/requirekit/require-kit
 
 ### What Was Implemented
 
-While TASK-012 focused primarily on task-create and task-work commands, the feature detection library it provides (`installer/global/lib/feature_detection.py`) can be used to implement conditional filtering in task-status when needed.
+While TASK-012 focused primarily on task-create and task-work commands, the feature detection library it provides (`installer/core/lib/feature_detection.py`) can be used to implement conditional filtering in task-status when needed.
 
 ### Current Status
 
@@ -415,7 +415,7 @@ task-status.md does not currently require modification because:
 
 The feature detection library is available:
 ```python
-from installer.global.lib.feature_detection import supports_epics
+from installer.core.lib.feature_detection import supports_epics
 
 if supports_epics():
     # Show epic/feature columns
@@ -435,7 +435,7 @@ No breaking functionality exists in the current implementation, making this task
 ### If Required Later
 
 If enhanced epic/feature filtering becomes necessary:
-1. Use `installer/global/lib/feature_detection.py`
+1. Use `installer/core/lib/feature_detection.py`
 2. Add conditional help text (show epic/feature filters only if require-kit installed)
 3. Add user-friendly messages when filtering by epic/feature without require-kit
 

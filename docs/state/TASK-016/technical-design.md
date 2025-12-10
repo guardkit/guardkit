@@ -311,9 +311,9 @@ detect_project_type() {
   local cwd=$(pwd)
 
   # Check for ai-engineer specific markers
-  if [[ -f "installer/global/manifest.json" ]] && \
-     [[ -d "installer/global/commands" ]] && \
-     [[ -d "installer/global/agents" ]]; then
+  if [[ -f "installer/core/manifest.json" ]] && \
+     [[ -d "installer/core/commands" ]] && \
+     [[ -d "installer/core/agents" ]]; then
     echo "ai-engineer"
     return 0
   fi

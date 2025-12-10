@@ -69,7 +69,7 @@ Refactor `/template-create` to work non-interactively using smart defaults. Remo
 
 ### Phase 1: Smart Detection Module (2 hours)
 
-**Create**: `installer/global/lib/template_create/detector.py`
+**Create**: `installer/core/lib/template_create/detector.py`
 
 **Language Detection:**
 ```python
@@ -129,7 +129,7 @@ class ConfigResolver:
 
 ### Phase 2: Refactor Orchestrator (2 hours)
 
-**Modify**: `installer/global/lib/template_create/orchestrator.py`
+**Modify**: `installer/core/lib/template_create/orchestrator.py`
 
 **Changes:**
 
@@ -183,7 +183,7 @@ if self.args.skip_qa:
 
 ### Phase 3: Modify Command Interface (1 hour)
 
-**Modify**: `installer/global/commands/template-create.md`
+**Modify**: `installer/core/commands/template-create.md`
 
 **Changes:**
 
@@ -233,12 +233,12 @@ if self.args.skip_qa:
 ## File Inventory
 
 ### Files to Create (2)
-1. `installer/global/lib/template_create/detector.py` (~200 LOC)
+1. `installer/core/lib/template_create/detector.py` (~200 LOC)
 2. `tests/unit/test_template_create_detector.py` (~400 LOC)
 
 ### Files to Modify (3)
-1. `installer/global/lib/template_create/orchestrator.py` (~150 LOC changes)
-2. `installer/global/commands/template-create.md` (documentation)
+1. `installer/core/lib/template_create/orchestrator.py` (~150 LOC changes)
+2. `installer/core/commands/template-create.md` (documentation)
 3. `tests/integration/test_template_create.py` (~70 LOC additions)
 
 **Total Estimated LOC**: ~820 lines (420 code + 400 tests)

@@ -40,7 +40,7 @@ Split the nextjs-fullstack template agents using the automated splitter.
 ## Template Agents
 
 ```
-installer/global/templates/nextjs-fullstack/agents/
+installer/core/templates/nextjs-fullstack/agents/
 └── [agent files]
 ```
 
@@ -98,7 +98,7 @@ python3 scripts/split-agent.py --validate --template nextjs-fullstack
 ### Files Created
 
 ```
-installer/global/templates/nextjs-fullstack/agents/
+installer/core/templates/nextjs-fullstack/agents/
 ├── nextjs-fullstack-specialist.md (core)
 ├── nextjs-fullstack-specialist-ext.md (extended)
 ├── nextjs-server-actions-specialist.md (core)

@@ -60,7 +60,7 @@ The goal is to apply the same techniques to RequireKit to achieve similar benefi
 
 Analyze which GuardKit assets can be reused:
 
-**Scripts** (from `installer/global/lib/`):
+**Scripts** (from `installer/core/lib/`):
 - [ ] `agent_enhancement/applier.py` - Split file creation methods
 - [ ] Progressive disclosure validation logic
 - [ ] Token counting utilities
@@ -130,10 +130,10 @@ Key files to reference during analysis:
 ```
 guardkit/
 ├── docs/guides/progressive-disclosure.md          # Implementation guide
-├── installer/global/lib/agent_enhancement/
+├── installer/core/lib/agent_enhancement/
 │   ├── applier.py                                 # Split file methods
 │   └── models.py                                  # SplitContent dataclass
-└── installer/global/templates/*/
+└── installer/core/templates/*/
     └── agents/*-ext.md                            # Extended file examples
 ```
 

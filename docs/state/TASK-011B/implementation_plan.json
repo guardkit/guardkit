@@ -5,7 +5,7 @@
   "scope": "validation_and_enhancement",
   "files_to_create": [
     {
-      "path": "installer/global/templates/maui-appshell/templates/testing/viewmodel-test.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/testing/viewmodel-test.cs.template",
       "purpose": "ViewModel unit test template with NSubstitute mocking",
       "estimated_loc": 120,
       "estimated_duration_minutes": 90
@@ -13,43 +13,43 @@
   ],
   "files_to_modify": [
     {
-      "path": "installer/global/templates/maui-appshell/templates/domain/command-operation.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/domain/command-operation.cs.template",
       "purpose": "Fix Result.Success syntax error to ErrorOr.Success",
       "lines_affected": "54",
       "estimated_duration_minutes": 5
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/presentation/navigation-service.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/presentation/navigation-service.cs.template",
       "purpose": "Convert to ErrorOr pattern for consistency",
       "lines_affected": "6-55",
       "estimated_duration_minutes": 30
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/presentation/viewmodel.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/presentation/viewmodel.cs.template",
       "purpose": "Inject INavigationService instead of Shell.Current usage",
       "lines_affected": "54",
       "estimated_duration_minutes": 15
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/service/service-implementation.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/service/service-implementation.cs.template",
       "purpose": "Add retry logic with exponential backoff (3 attempts)",
       "lines_affected": "19-58",
       "estimated_duration_minutes": 60
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/domain/command-operation.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/domain/command-operation.cs.template",
       "purpose": "Remove ArgumentNullException (trust DI)",
       "lines_affected": "15",
       "estimated_duration_minutes": 10
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/domain/query-operation.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/domain/query-operation.cs.template",
       "purpose": "Remove ArgumentNullException (trust DI)",
       "lines_affected": "15",
       "estimated_duration_minutes": 10
     },
     {
-      "path": "installer/global/templates/maui-appshell/templates/repository/repository-implementation.cs.template",
+      "path": "installer/core/templates/maui-appshell/templates/repository/repository-implementation.cs.template",
       "purpose": "Remove ArgumentNullException (trust DI)",
       "lines_affected": "16",
       "estimated_duration_minutes": 10

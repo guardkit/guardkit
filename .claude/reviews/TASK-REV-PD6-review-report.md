@@ -122,7 +122,7 @@ No task addresses what happens if:
 
 ### Backup Cleanup (after TASK-PD-024)
 1. Verify all validations pass
-2. Remove backups: `rm installer/global/agents/*.md.bak`
+2. Remove backups: `rm installer/core/agents/*.md.bak`
 ```
 
 **Gap 3.3: Content Preservation Verification**

@@ -193,7 +193,7 @@ taskwright init taskwright-python
 
 ## Verification Checklist
 
-- ✅ Template directory created: `installer/global/templates/taskwright-python/`
+- ✅ Template directory created: `installer/core/templates/taskwright-python/`
 - ✅ Manifest.json includes all required placeholders (7)
 - ✅ Settings.json defines Python CLI patterns
 - ✅ CLAUDE.md provides comprehensive guidance (23KB)

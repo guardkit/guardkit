@@ -125,8 +125,8 @@ Test output files are located in:
 
 3. **Fix Documentation**:
    - `docs/fixes/TASK-FIX-AGENTRESPONSE-FORMAT.md`
-   - `installer/global/commands/agent-enhance.md` (bridge protocol section)
-   - `installer/global/lib/agent_bridge/invoker.py` (defensive handling)
+   - `installer/core/commands/agent-enhance.md` (bridge protocol section)
+   - `installer/core/lib/agent_bridge/invoker.py` (defensive handling)
 
 ### Expected Findings
 
@@ -156,7 +156,7 @@ Generate a review report with:
 ## Related Documentation
 
 - [TASK-FIX-AGENTRESPONSE-FORMAT](../../../docs/fixes/TASK-FIX-AGENTRESPONSE-FORMAT.md) - Agent response format fix documentation
-- [agent-enhance.md](../../../installer/global/commands/agent-enhance.md) - Command spec with bridge protocol
+- [agent-enhance.md](../../../installer/core/commands/agent-enhance.md) - Command spec with bridge protocol
 - [Progressive Disclosure Guide](../../../docs/guides/progressive-disclosure.md) - Expected format documentation
 
 ## Files Modified by Claude During Testing
@@ -167,8 +167,8 @@ These files were created/modified by Claude during the agent-enhance testing pro
 2. **`docs/reviews/progressive-disclosure/invoker.py`** - Claude-modified version of invoker.py with defensive handling
 
 These files may contain the fixes that were later documented in TASK-FIX-AGENTRESPONSE-FORMAT. Compare against:
-- `installer/global/commands/agent-enhance.md` (canonical version)
-- `installer/global/lib/agent_bridge/invoker.py` (canonical version)
+- `installer/core/commands/agent-enhance.md` (canonical version)
+- `installer/core/lib/agent_bridge/invoker.py` (canonical version)
 
 ## Priority Justification
 

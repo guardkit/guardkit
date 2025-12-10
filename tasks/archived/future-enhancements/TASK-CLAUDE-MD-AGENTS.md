@@ -126,7 +126,7 @@ enhanced_info = ai_analyze(f"""
 
 ### Phase 1: Read Agent Files (5 min)
 
-**File**: `installer/global/lib/template_creation/claude_md_generator.py`
+**File**: `installer/core/lib/template_creation/claude_md_generator.py`
 
 **Function**: Add method to read agent metadata
 
@@ -175,7 +175,7 @@ def _enhance_agent_info(self, agent_metadata: Dict[str, Any]) -> Dict[str, str]:
             'when_to_use': 'Specific usage scenarios'
         }
     """
-    from installer.global.lib.ai.ai_client import AIClient
+    from installer.core.lib.ai.ai_client import AIClient
     
     ai = AIClient()
     
@@ -220,7 +220,7 @@ def _enhance_agent_info(self, agent_metadata: Dict[str, Any]) -> Dict[str, str]:
 
 ### Phase 3: Update CLAUDE.md Template (10 min)
 
-**File**: `installer/global/lib/template_creation/claude_md_generator.py`
+**File**: `installer/core/lib/template_creation/claude_md_generator.py`
 
 **Method**: Update `_generate_agent_sections()` to use enhanced info
 
@@ -315,7 +315,7 @@ cat ~/.agentecflow/templates/test-agent-docs/CLAUDE.md | grep -A3 "### repositor
 ## Files to Modify
 
 ### Primary Implementation
-- [ ] `installer/global/lib/template_creation/claude_md_generator.py`
+- [ ] `installer/core/lib/template_creation/claude_md_generator.py`
   - Add `_read_agent_metadata()` method (~15 LOC)
   - Add `_enhance_agent_info()` method (~40 LOC)
   - Update `_generate_agent_sections()` method (~30 LOC modified)

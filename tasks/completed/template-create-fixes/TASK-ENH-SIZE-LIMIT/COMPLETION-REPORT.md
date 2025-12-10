@@ -87,10 +87,10 @@ TemplateCreateOrchestrator.parse_size_limit('abc')     → ValueError ✅
 
 ## Files Modified
 
-1. `installer/global/commands/lib/template_create_orchestrator.py` (+43 lines)
-2. `installer/global/commands/template-create.md` (+6 lines)
-3. `installer/global/lib/template_generator/models.py` (+3 lines)
-4. `installer/global/lib/template_generator/claude_md_generator.py` (+4 lines)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (+43 lines)
+2. `installer/core/commands/template-create.md` (+6 lines)
+3. `installer/core/lib/template_generator/models.py` (+3 lines)
+4. `installer/core/lib/template_generator/claude_md_generator.py` (+4 lines)
 5. `tests/unit/test_orchestrator_split_claude_md.py` (+15 lines)
 
 **Total**: 7 files changed, 92 insertions(+), 19 deletions(-)

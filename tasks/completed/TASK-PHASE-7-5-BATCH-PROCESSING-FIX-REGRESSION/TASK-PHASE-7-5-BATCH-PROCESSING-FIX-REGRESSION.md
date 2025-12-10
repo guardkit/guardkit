@@ -62,7 +62,7 @@ When running `/template-create`:
 
 ### Root Cause Analysis
 
-**Bug Location**: `installer/global/commands/lib/template_create_orchestrator.py`, lines 908-909
+**Bug Location**: `installer/core/commands/lib/template_create_orchestrator.py`, lines 908-909
 
 ```python
 # BROKEN CODE:
@@ -151,7 +151,7 @@ total = len(results)  # BUG: counts dict keys, not agents
 
 ### Fix 1: Orchestrator Result Handling (CRITICAL)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Lines**: 905-916
 
 ```python
@@ -281,7 +281,7 @@ def test_phase7_5_batch_result_interpretation():
 
 ### Fix 3: Add Validation Logging
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 **Method**: `_validate_enhancement`
 
 ```python

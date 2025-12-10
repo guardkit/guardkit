@@ -144,21 +144,21 @@ Modify `_read_agent_metadata_from_file()` to try frontmatter first, then fall ba
 
 ```bash
 # Find where agents are created
-grep -rn "def.*generate.*agent\|class.*AgentGenerator" installer/global/lib
+grep -rn "def.*generate.*agent\|class.*AgentGenerator" installer/core/lib
 
 # Check recent agent files
 ls -la ~/.agentecflow/templates/react-typescript/agents/
 cat ~/.agentecflow/templates/react-typescript/agents/react-query-specialist.md | head -30
 
 # Find agent generation code
-find installer/global -name "*agent*gen*.py" -type f
+find installer/core -name "*agent*gen*.py" -type f
 ```
 
 ### Step 2: Check If Frontmatter Support Exists (5 min)
 
 ```python
 # Check if agent_generator.py supports frontmatter
-grep -A20 "def.*write.*agent\|def.*create.*agent" installer/global/lib/agent_generator/agent_generator.py
+grep -A20 "def.*write.*agent\|def.*create.*agent" installer/core/lib/agent_generator/agent_generator.py
 ```
 
 ### Step 3: Implement Fix (15 min)
@@ -233,17 +233,17 @@ Original: TASK-CLAUDE-MD-AGENTS
 ### Primary Files
 
 1. **Agent Generation** (most likely needs fixing):
-   - `installer/global/lib/agent_generator/agent_generator.py`
+   - `installer/core/lib/agent_generator/agent_generator.py`
    - Look for where agent files are written
    - Ensure frontmatter is included
 
 2. **CLAUDE.md Generation** (already has the code):
-   - `installer/global/lib/template_generator/claude_md_generator.py`
+   - `installer/core/lib/template_generator/claude_md_generator.py`
    - Lines 800-1100: Enhancement code EXISTS
    - May need to ensure `_generate_dynamic_agent_usage()` is called
 
 3. **Orchestrator** (may need to ensure proper flow):
-   - `installer/global/commands/lib/template_create_orchestrator.py`
+   - `installer/core/commands/lib/template_create_orchestrator.py`
    - Ensure agents are generated BEFORE CLAUDE.md
    - Ensure CLAUDE.md generator has access to agent files
 
@@ -352,10 +352,10 @@ Before implementing, verify what's already there:
 
 ```bash
 # Check if code exists (should return results)
-grep -n "_enhance_agent_info_with_ai" installer/global/lib/template_generator/claude_md_generator.py
+grep -n "_enhance_agent_info_with_ai" installer/core/lib/template_generator/claude_md_generator.py
 
 # Check if it's being called (should show call sites)
-grep -n "generate.*agent.*usage\|_generate_dynamic_agent_usage" installer/global/lib/template_generator/claude_md_generator.py
+grep -n "generate.*agent.*usage\|_generate_dynamic_agent_usage" installer/core/lib/template_generator/claude_md_generator.py
 
 # Check agent format (should show frontmatter or just markdown)
 head -20 ~/.agentecflow/templates/react-typescript/agents/react-query-specialist.md

@@ -14,12 +14,12 @@ Successfully updated the `/template-create --create-agent-tasks` command output 
 
 ### Files Modified
 
-1. **installer/global/commands/lib/template_create_orchestrator.py** (+47 lines)
+1. **installer/core/commands/lib/template_create_orchestrator.py** (+47 lines)
    - Added `_print_agent_enhancement_instructions()` method (lines 1486-1527)
    - Updated Phase 8 output to call new method (lines 917-920)
    - Implemented Option A/B display format with duration estimates
 
-2. **installer/global/commands/template-create.md** (+18 lines, -9 lines)
+2. **installer/core/commands/template-create.md** (+18 lines, -9 lines)
    - Updated Phase 8 workflow description (lines 126-133)
    - Enhanced `--create-agent-tasks` flag documentation (lines 210-228)
    - Added references to TASK-UX-2F95

@@ -44,7 +44,7 @@ Create an automated script to split existing agent files into core and extended 
 
 ```bash
 # Split single agent
-python3 scripts/split-agent.py --agent installer/global/agents/task-manager.md
+python3 scripts/split-agent.py --agent installer/core/agents/task-manager.md
 
 # Split all global agents
 python3 scripts/split-agent.py --all-global
@@ -360,7 +360,7 @@ def main():
         print_result(result, args.dry_run)
 
     elif args.all_global:
-        global_agents_dir = Path('installer/global/agents')
+        global_agents_dir = Path('installer/core/agents')
         results = []
         for agent_file in sorted(global_agents_dir.glob('*.md')):
             if agent_file.stem.endswith('-ext'):
@@ -372,7 +372,7 @@ def main():
         print_summary(results)
 
     elif args.template:
-        template_agents_dir = Path(f'installer/global/templates/{args.template}/agents')
+        template_agents_dir = Path(f'installer/core/templates/{args.template}/agents')
         # Similar to --all-global
 
 
@@ -423,7 +423,7 @@ if __name__ == '__main__':
 
 ```bash
 # Test single agent
-python3 scripts/split-agent.py --dry-run --agent installer/global/agents/task-manager.md
+python3 scripts/split-agent.py --dry-run --agent installer/core/agents/task-manager.md
 
 # Verify output shows:
 # - Original size
@@ -433,7 +433,7 @@ python3 scripts/split-agent.py --dry-run --agent installer/global/agents/task-ma
 # - Sections to be moved
 
 # Test validation
-python3 scripts/split-agent.py --validate --agent installer/global/agents/task-manager.md
+python3 scripts/split-agent.py --validate --agent installer/core/agents/task-manager.md
 ```
 
 ## Files to Create

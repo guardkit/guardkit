@@ -84,7 +84,7 @@ Available Templates:
 Remove deprecated template directories and update installer to only install the 5 core templates.
 
 ### Success Criteria
-- [x] Only 5 template directories exist in `installer/global/templates/`
+- [x] Only 5 template directories exist in `installer/core/templates/`
 - [x] Installer shows "Templates: 5" count
 - [x] Installer lists only 5 templates
 - [x] Deprecated stack agents removed (11 stacks → 5 stacks)
@@ -128,21 +128,21 @@ Use **Bash tool**:
 cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
 
 # Remove deprecated template directories
-rm -rf installer/global/templates/documentation
-rm -rf installer/global/templates/dotnet-aspnetcontroller
-rm -rf installer/global/templates/dotnet-fastendpoints
-rm -rf installer/global/templates/dotnet-microservice
-rm -rf installer/global/templates/dotnet-minimalapi
-rm -rf installer/global/templates/fullstack
-rm -rf installer/global/templates/maui-appshell
-rm -rf installer/global/templates/maui-navigationpage
-rm -rf installer/global/templates/maui
-rm -rf installer/global/templates/python
-rm -rf installer/global/templates/react
-rm -rf installer/global/templates/typescript-api
+rm -rf installer/core/templates/documentation
+rm -rf installer/core/templates/dotnet-aspnetcontroller
+rm -rf installer/core/templates/dotnet-fastendpoints
+rm -rf installer/core/templates/dotnet-microservice
+rm -rf installer/core/templates/dotnet-minimalapi
+rm -rf installer/core/templates/fullstack
+rm -rf installer/core/templates/maui-appshell
+rm -rf installer/core/templates/maui-navigationpage
+rm -rf installer/core/templates/maui
+rm -rf installer/core/templates/python
+rm -rf installer/core/templates/react
+rm -rf installer/core/templates/typescript-api
 
 # Verify only 5 templates remain
-ls -1 installer/global/templates/
+ls -1 installer/core/templates/
 # Should show:
 # default
 # fastapi-python
@@ -158,19 +158,19 @@ Use **Bash tool**:
 
 ```bash
 # Remove deprecated stack agent directories
-rm -rf installer/global/agents/stacks/dotnet-aspnetcontroller
-rm -rf installer/global/agents/stacks/dotnet-fastendpoints
-rm -rf installer/global/agents/stacks/dotnet-microservice
-rm -rf installer/global/agents/stacks/dotnet-minimalapi
-rm -rf installer/global/agents/stacks/fullstack
-rm -rf installer/global/agents/stacks/maui-appshell
-rm -rf installer/global/agents/stacks/maui-navigationpage
-rm -rf installer/global/agents/stacks/python
-rm -rf installer/global/agents/stacks/react
-rm -rf installer/global/agents/stacks/typescript-api
+rm -rf installer/core/agents/stacks/dotnet-aspnetcontroller
+rm -rf installer/core/agents/stacks/dotnet-fastendpoints
+rm -rf installer/core/agents/stacks/dotnet-microservice
+rm -rf installer/core/agents/stacks/dotnet-minimalapi
+rm -rf installer/core/agents/stacks/fullstack
+rm -rf installer/core/agents/stacks/maui-appshell
+rm -rf installer/core/agents/stacks/maui-navigationpage
+rm -rf installer/core/agents/stacks/python
+rm -rf installer/core/agents/stacks/react
+rm -rf installer/core/agents/stacks/typescript-api
 
 # Verify only 5 stack agent directories remain
-ls -1 installer/global/agents/stacks/
+ls -1 installer/core/agents/stacks/
 # Should show:
 # default
 # fastapi-python
@@ -242,7 +242,7 @@ Use **Read tool** and **Edit tool** to update the doctor command if it validates
 
 ```bash
 # Find doctor command
-find installer/global/commands -name "*doctor*"
+find installer/core/commands -name "*doctor*"
 ```
 
 Update validation to expect 5 templates.
@@ -301,8 +301,8 @@ git status
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] Only 5 template directories in `installer/global/templates/`
-- [ ] Only 5 stack agent directories in `installer/global/agents/stacks/`
+- [ ] Only 5 template directories in `installer/core/templates/`
+- [ ] Only 5 stack agent directories in `installer/core/agents/stacks/`
 - [ ] Installer shows "Templates: 5"
 - [ ] Installer lists only 5 templates with descriptions
 - [ ] Agent count correct (~33 agents: 14 global + 19 stack)
@@ -368,30 +368,30 @@ taskwright doctor
 ## Files to Modify
 
 ### Templates (DELETE)
-- `installer/global/templates/documentation/`
-- `installer/global/templates/dotnet-aspnetcontroller/`
-- `installer/global/templates/dotnet-fastendpoints/`
-- `installer/global/templates/dotnet-microservice/`
-- `installer/global/templates/dotnet-minimalapi/`
-- `installer/global/templates/fullstack/`
-- `installer/global/templates/maui-appshell/`
-- `installer/global/templates/maui-navigationpage/`
-- `installer/global/templates/maui/`
-- `installer/global/templates/python/`
-- `installer/global/templates/react/`
-- `installer/global/templates/typescript-api/`
+- `installer/core/templates/documentation/`
+- `installer/core/templates/dotnet-aspnetcontroller/`
+- `installer/core/templates/dotnet-fastendpoints/`
+- `installer/core/templates/dotnet-microservice/`
+- `installer/core/templates/dotnet-minimalapi/`
+- `installer/core/templates/fullstack/`
+- `installer/core/templates/maui-appshell/`
+- `installer/core/templates/maui-navigationpage/`
+- `installer/core/templates/maui/`
+- `installer/core/templates/python/`
+- `installer/core/templates/react/`
+- `installer/core/templates/typescript-api/`
 
 ### Stack Agents (DELETE)
-- `installer/global/agents/stacks/dotnet-aspnetcontroller/`
-- `installer/global/agents/stacks/dotnet-fastendpoints/`
-- `installer/global/agents/stacks/dotnet-microservice/`
-- `installer/global/agents/stacks/dotnet-minimalapi/`
-- `installer/global/agents/stacks/fullstack/`
-- `installer/global/agents/stacks/maui-appshell/`
-- `installer/global/agents/stacks/maui-navigationpage/`
-- `installer/global/agents/stacks/python/`
-- `installer/global/agents/stacks/react/`
-- `installer/global/agents/stacks/typescript-api/`
+- `installer/core/agents/stacks/dotnet-aspnetcontroller/`
+- `installer/core/agents/stacks/dotnet-fastendpoints/`
+- `installer/core/agents/stacks/dotnet-microservice/`
+- `installer/core/agents/stacks/dotnet-minimalapi/`
+- `installer/core/agents/stacks/fullstack/`
+- `installer/core/agents/stacks/maui-appshell/`
+- `installer/core/agents/stacks/maui-navigationpage/`
+- `installer/core/agents/stacks/python/`
+- `installer/core/agents/stacks/react/`
+- `installer/core/agents/stacks/typescript-api/`
 
 ### Installer Script (MODIFY)
 - `installer/scripts/install.sh`

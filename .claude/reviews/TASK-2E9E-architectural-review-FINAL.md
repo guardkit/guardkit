@@ -34,7 +34,7 @@
 
 ### Current task-work Command State
 
-**File**: `~/.claude/commands/task-work.md` (and `installer/global/commands/task-work.md`)
+**File**: `~/.claude/commands/task-work.md` (and `installer/core/commands/task-work.md`)
 
 **Available modes** (lines 2376-2394):
 ```markdown
@@ -83,7 +83,7 @@ Verification:
 
 ### Feature Detection Analysis
 
-**File**: `installer/global/lib/feature_detection.py` (lines 106-113)
+**File**: `installer/core/lib/feature_detection.py` (lines 106-113)
 
 ```python
 def supports_bdd(self) -> bool:
@@ -102,7 +102,7 @@ The function exists but nothing calls it because `--mode=bdd` flag was removed.
 
 ### Task-Work Phase 1 Context Loading
 
-**File**: `installer/global/commands/task-work.md` (lines 825, 852, 856)
+**File**: `installer/core/commands/task-work.md` (lines 825, 852, 856)
 
 ```python
 # In Phase 1 context loading (if require-kit installed)
@@ -272,7 +272,7 @@ def execute_implementation_phase(task_context, mode):
 
 **3. No file restoration needed**:
 - ❌ `.claude/agents/bdd-generator.md` → Lives in require-kit only
-- ❌ `installer/global/instructions/core/bdd-gherkin.md` → Lives in require-kit only
+- ❌ `installer/core/instructions/core/bdd-gherkin.md` → Lives in require-kit only
 - ✅ `supports_bdd()` → Already exists in feature_detection.py
 - ✅ BDD scenario loading → Already exists in Phase 1
 
@@ -282,7 +282,7 @@ def execute_implementation_phase(task_context, mode):
 
 ### Phase 1: Restore --mode=bdd Flag (2-3 hours)
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Changes**:
 1. Add BDD mode documentation (lines ~2395-2430)
@@ -338,7 +338,7 @@ def execute_implementation_phase(task_context, mode):
 - BDD mode added by updating the markdown spec
 
 **Option 2**: Python script orchestrates
-- Python script in `installer/global/commands/lib/`
+- Python script in `installer/core/commands/lib/`
 - Parses flags, calls agents based on mode
 - BDD mode requires Python code changes
 
@@ -556,9 +556,9 @@ The effort is justified by:
 **Key Lesson**: Always verify implementation state before recommending docs-only solutions
 
 **Files Analyzed**: 7
-- installer/global/commands/task-work.md
+- installer/core/commands/task-work.md
 - ~/.claude/commands/task-work.md
-- installer/global/lib/feature_detection.py
+- installer/core/lib/feature_detection.py
 - tasks/completed/TASK-037/TASK-037-remove-bdd-mode.md
 - docs/research/bdd-mode-removal-decision.md
 - LangGraph-Native_Orchestration_for_TaskWright_Technical_Architecture.md

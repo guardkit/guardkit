@@ -74,8 +74,8 @@ Successfully removed 2 low-quality templates (`dotnet-aspnetcontroller` and `def
    - Removed default fallback reference
 
 ### Directories Removed (2)
-1. **installer/global/templates/dotnet-aspnetcontroller/** (26 files)
-2. **installer/global/templates/default/** (9 files)
+1. **installer/core/templates/dotnet-aspnetcontroller/** (26 files)
+2. **installer/core/templates/default/** (9 files)
 
 **Total**: 35 template files removed
 

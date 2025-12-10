@@ -30,7 +30,7 @@ Add a new section to agent-enhance.md explaining the two-tier enhancement system
 
 ### Files to Update
 
-1. **installer/global/commands/agent-enhance.md**:
+1. **installer/core/commands/agent-enhance.md**:
    - Add new section "Relationship with /agent-format" after "Enhancement Strategies"
    - Explain two-tier system (template-level vs project-level)
    - Add decision matrix: when to use /agent-format vs /agent-enhance

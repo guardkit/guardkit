@@ -5,8 +5,8 @@ echo "========================================="
 echo ""
 
 echo "1. Checking file compilation..."
-python3 -m py_compile installer/global/lib/agent_enhancement/models.py
-python3 -m py_compile installer/global/lib/agent_enhancement/applier.py
+python3 -m py_compile installer/core/lib/agent_enhancement/models.py
+python3 -m py_compile installer/core/lib/agent_enhancement/applier.py
 if [ $? -eq 0 ]; then
     echo "   ✅ All files compile successfully"
 else
@@ -26,14 +26,14 @@ fi
 echo ""
 
 echo "3. Checking file structure..."
-if [ -f "installer/global/lib/agent_enhancement/models.py" ]; then
+if [ -f "installer/core/lib/agent_enhancement/models.py" ]; then
     echo "   ✅ models.py exists"
 else
     echo "   ❌ models.py missing"
     exit 1
 fi
 
-if [ -f "installer/global/lib/agent_enhancement/applier.py" ]; then
+if [ -f "installer/core/lib/agent_enhancement/applier.py" ]; then
     echo "   ✅ applier.py exists"
 else
     echo "   ❌ applier.py missing"
@@ -56,8 +56,8 @@ fi
 echo ""
 
 echo "5. Counting lines of code..."
-models_lines=$(wc -l < installer/global/lib/agent_enhancement/models.py)
-applier_lines=$(wc -l < installer/global/lib/agent_enhancement/applier.py)
+models_lines=$(wc -l < installer/core/lib/agent_enhancement/models.py)
+applier_lines=$(wc -l < installer/core/lib/agent_enhancement/applier.py)
 echo "   - models.py: $models_lines lines"
 echo "   - applier.py: $applier_lines lines"
 echo ""

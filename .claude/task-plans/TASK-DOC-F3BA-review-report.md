@@ -85,7 +85,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 | Referenced File | Exists? | Status |
 |----------------|---------|--------|
 | [GitHub Agent Best Practices Analysis](../../docs/analysis/github-agent-best-practices-analysis.md) | ✅ Yes | Valid |
-| [agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md) | ✅ Yes | Valid |
+| [agent-content-enhancer.md](../../installer/core/agents/agent-content-enhancer.md) | ✅ Yes | Valid |
 | [Template Philosophy Guide](../../docs/guides/template-philosophy.md) | ✅ Yes | Valid |
 | [Template Validation Guide](../../docs/guides/template-validation-guide.md) | ✅ Yes | Valid |
 | [Creating Local Templates](../../docs/guides/creating-local-templates.md) | ❓ Unknown | **Needs verification** |
@@ -390,7 +390,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Explain two-tier enhancement system (format vs enhance)
 
 **Files to Update**:
-- installer/global/commands/agent-enhance.md
+- installer/core/commands/agent-enhance.md
 
 **Acceptance Criteria**:
 - [ ] New section added after "Enhancement Strategies"
@@ -408,7 +408,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Document review → implementation workflow
 
 **Files to Update**:
-- installer/global/commands/task-review.md
+- installer/core/commands/task-review.md
 
 **Acceptance Criteria**:
 - [ ] New section "Integration with /task-work" added
@@ -426,8 +426,8 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Explain how /task-create detects review tasks and suggests /task-review
 
 **Files to Update**:
-- installer/global/commands/task-review.md
-- installer/global/commands/task-create.md (cross-reference)
+- installer/core/commands/task-review.md
+- installer/core/commands/task-create.md (cross-reference)
 
 **Acceptance Criteria**:
 - [ ] Detection criteria documented (task_type:review, decision_required:true, tags, keywords)
@@ -471,7 +471,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Add detailed discovery metadata documentation
 
 **Files to Update**:
-- installer/global/commands/template-create.md
+- installer/core/commands/template-create.md
 
 **Acceptance Criteria**:
 - [ ] Frontmatter example with all metadata fields (stack, phase, capabilities, keywords)
@@ -489,7 +489,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Create decision matrix in template-create.md
 
 **Files to Update**:
-- installer/global/commands/template-create.md (Phase 5.5 section)
+- installer/core/commands/template-create.md (Phase 5.5 section)
 
 **Acceptance Criteria**:
 - [ ] Decision matrix table added
@@ -507,7 +507,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Add complete frontmatter example with all fields
 
 **Files to Update**:
-- installer/global/commands/agent-enhance.md
+- installer/core/commands/agent-enhance.md
 
 **Acceptance Criteria**:
 - [ ] Complete frontmatter example (stack, phase, capabilities, keywords, name, description)
@@ -524,7 +524,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Show expected validation output format
 
 **Files to Update**:
-- installer/global/commands/agent-enhance.md
+- installer/core/commands/agent-enhance.md
 
 **Acceptance Criteria**:
 - [ ] Complete validation report YAML example
@@ -543,8 +543,8 @@ The documentation for the four core commands (template-create, agent-enhance, te
 
 **Files to Update**:
 - CLAUDE.md (add section)
-- installer/global/commands/template-init.md (add reference)
-- installer/global/commands/template-create.md (add reference)
+- installer/core/commands/template-init.md (add reference)
+- installer/core/commands/template-create.md (add reference)
 
 **Acceptance Criteria**:
 - [ ] Decision flowchart (text or mermaid diagram)
@@ -561,7 +561,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Add "Common Scenarios" section with real-world examples
 
 **Files to Update**:
-- installer/global/commands/task-review.md
+- installer/core/commands/task-review.md
 
 **Acceptance Criteria**:
 - [ ] 5-7 common scenarios documented
@@ -578,7 +578,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Remove "Future Phases" section or update status
 
 **Files to Update**:
-- installer/global/commands/task-review.md
+- installer/core/commands/task-review.md
 
 **Acceptance Criteria**:
 - [ ] Review implementation status (lines 513-525)
@@ -615,7 +615,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Add duration comparison table for Option A vs Option B
 
 **Files to Update**:
-- installer/global/commands/template-create.md
+- installer/core/commands/template-create.md
 
 **Acceptance Criteria**:
 - [ ] Duration comparison table added to Phase 8 section
@@ -632,7 +632,7 @@ The documentation for the four core commands (template-create, agent-enhance, te
 **Scope**: Add .github/workflows/template-quality.yml example
 
 **Files to Update**:
-- installer/global/commands/template-init.md
+- installer/core/commands/template-init.md
 
 **Acceptance Criteria**:
 - [ ] Complete GitHub Actions YAML example

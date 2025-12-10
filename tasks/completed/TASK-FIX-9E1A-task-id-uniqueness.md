@@ -32,7 +32,7 @@ Task ID generation for agent enhancement tasks uses timestamp-based IDs that can
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:963`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:963`
 
 ```python
 timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -74,7 +74,7 @@ task_id = f"TASK-AGENT-{agent_name[:8].upper()}-{timestamp}"
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Line 963: Task ID generation
 
 ### Recommended Implementation
@@ -322,7 +322,7 @@ content_hash = hashlib.sha256(f"{agent_content}:{template_name}".encode()).hexdi
 
 ### Deliverables
 - **Files Modified**: 2
-  - `installer/global/commands/lib/template_create_orchestrator.py` (implementation)
+  - `installer/core/commands/lib/template_create_orchestrator.py` (implementation)
   - `tests/unit/test_task_id_generation.py` (new test file)
 - **Tests Written**: 14
 - **Test Pass Rate**: 100% (14/14 passing)

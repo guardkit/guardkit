@@ -43,7 +43,7 @@ duration_hours: 0.5
 
 ## Description
 
-Update `installer/global/lib/agent_enhancement/enhancer.py` to use the new `apply_with_split()` method from the applier, enabling progressive disclosure output.
+Update `installer/core/lib/agent_enhancement/enhancer.py` to use the new `apply_with_split()` method from the applier, enabling progressive disclosure output.
 
 ## Current State
 
@@ -167,9 +167,9 @@ def test_enhance_single_file_mode():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_enhancement/enhancer.py` - Main changes
-2. `installer/global/lib/agent_enhancement/models.py` - Add EnhancementResult
-3. `installer/global/commands/agent-enhance.md` - Update output documentation
+1. `installer/core/lib/agent_enhancement/enhancer.py` - Main changes
+2. `installer/core/lib/agent_enhancement/models.py` - Add EnhancementResult
+3. `installer/core/commands/agent-enhance.md` - Update output documentation
 
 ## Estimated Effort
 

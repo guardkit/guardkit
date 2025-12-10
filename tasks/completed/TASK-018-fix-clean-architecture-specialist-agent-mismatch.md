@@ -15,7 +15,7 @@ During Section 3 analysis of the `ardalis-clean-architecture` template (generate
 ### The Problem
 
 **CLAUDE.md documents an agent that does not exist:**
-- **File**: `installer/global/templates/ardalis-clean-architecture/CLAUDE.md`
+- **File**: `installer/core/templates/ardalis-clean-architecture/CLAUDE.md`
 - **Lines**: 811-823
 - **Agent Name**: `clean-architecture-specialist`
 
@@ -151,7 +151,7 @@ Example:
 - [ ] **AC1**: Root cause identified and documented in this task
 - [ ] **AC2**: Decision made on solution (Option A, B, or C)
 - [ ] **AC3**: Fix implemented and verified
-- [ ] **AC4**: Template updated in `installer/global/templates/ardalis-clean-architecture/`
+- [ ] **AC4**: Template updated in `installer/core/templates/ardalis-clean-architecture/`
 - [ ] **AC5**: Verification test run: `taskwright init ardalis-clean-architecture` in test directory
 - [ ] **AC6**: Updated CLAUDE.md reviewed for accuracy
 - [ ] **AC7**: If systemic, validation added to `/template-create` command to prevent recurrence
@@ -160,7 +160,7 @@ Example:
 ## Files to Modify
 
 ```
-installer/global/templates/ardalis-clean-architecture/
+installer/core/templates/ardalis-clean-architecture/
 ├── CLAUDE.md (lines 811-823) ← Update or remove agent documentation
 ├── agents/ ← Create agent (if Option B) or verify global agent works
 └── README.md ← Update if agent changes affect README
@@ -186,7 +186,7 @@ installer/global/templates/ardalis-clean-architecture/
 
 ### Related Documentation
 - **Template Analysis**: `docs/testing/template-analysis-task.md` (Section 3.4)
-- **Template Location**: `installer/global/templates/ardalis-clean-architecture/`
+- **Template Location**: `installer/core/templates/ardalis-clean-architecture/`
 - **Source Repository**: `docs/testing/test-repos/CleanArchitecture-ardalis`
 - **AI Confidence**: 98/100 (ironically high despite this critical error)
 
@@ -272,7 +272,7 @@ This task is being closed without implementation for the following reasons:
 #### 1. Template Does Not Exist
 The `ardalis-clean-architecture` template referenced in this task does not exist in the repository:
 ```bash
-$ ls installer/global/templates/ | grep ardalis
+$ ls installer/core/templates/ | grep ardalis
 # No results
 ```
 

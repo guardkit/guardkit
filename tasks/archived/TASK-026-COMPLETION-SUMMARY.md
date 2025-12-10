@@ -22,7 +22,7 @@ All 6 requirements completed:
 ## Files Created
 
 ### 1. Command Specification
-**File**: `installer/global/commands/task-refine.md`
+**File**: `installer/core/commands/task-refine.md`
 - **Lines**: 537
 - **Content**: Comprehensive documentation including:
   - Command syntax and usage
@@ -34,7 +34,7 @@ All 6 requirements completed:
   - Success metrics tracking
 
 ### 2. Core Handler Module
-**File**: `installer/global/commands/lib/refinement_handler.py`
+**File**: `installer/core/commands/lib/refinement_handler.py`
 - **Lines**: 724
 - **Components**:
   - `RefinementRequest` dataclass - Encapsulates refinement parameters
@@ -54,7 +54,7 @@ All 6 requirements completed:
 - `_save_refinement_session()` - Session tracking
 
 ### 3. Unit Tests
-**File**: `installer/global/commands/lib/test_refinement_handler.py`
+**File**: `installer/core/commands/lib/test_refinement_handler.py`
 - **Lines**: 384
 - **Tests**: 21 tests, all passing ✅
 - **Coverage**: ~85%

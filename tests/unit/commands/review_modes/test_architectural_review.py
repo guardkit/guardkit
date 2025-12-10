@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 # Add lib path to sys.path
-lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from review_modes import architectural_review

@@ -44,26 +44,26 @@ Conduct a comprehensive review to:
 
 ### Commands to Review
 
-1. **template-create** ([installer/global/commands/template-create.md](../../../installer/global/commands/template-create.md))
+1. **template-create** ([installer/core/commands/template-create.md](../../../installer/core/commands/template-create.md))
    - Phase 5.5: Agent Enhancement section
    - Boundary sections (ALWAYS/NEVER/ASK) documentation
    - Template validation levels (1-3)
    - Output location flags (--output-location=repo)
    - Agent enhancement task creation (default behavior from TASK-UX-3A8D)
 
-2. **agent-enhance** ([installer/global/commands/agent-enhance.md](../../../installer/global/commands/agent-enhance.md))
+2. **agent-enhance** ([installer/core/commands/agent-enhance.md](../../../installer/core/commands/agent-enhance.md))
    - Boundary sections format and validation
    - Enhancement strategies (ai/static/hybrid)
    - GitHub best practices integration
    - Relationship with /agent-format
 
-3. **template-init** ([installer/global/commands/template-init.md](../../../installer/global/commands/template-init.md))
+3. **template-init** ([installer/core/commands/template-init.md](../../../installer/core/commands/template-init.md))
    - Updated template list (6 templates)
    - Template selection workflow
    - Integration with agent enhancement
    - Repository vs personal template handling
 
-4. **task-review** ([installer/global/commands/task-review.md](../../../installer/global/commands/task-review.md))
+4. **task-review** ([installer/core/commands/task-review.md](../../../installer/core/commands/task-review.md))
    - Five review modes (architectural, code-quality, decision, technical-debt, security)
    - Decision checkpoint system ([A]ccept, [R]evise, [I]mplement, [C]ancel)
    - Review depth levels (quick, standard, comprehensive)
@@ -165,7 +165,7 @@ For each identified documentation gap, create a task specification ready for `/t
 [Detailed description of what needs updating]
 
 **Files to Update**:
-- installer/global/commands/template-create.md
+- installer/core/commands/template-create.md
 - CLAUDE.md
 - docs/guides/template-philosophy.md
 

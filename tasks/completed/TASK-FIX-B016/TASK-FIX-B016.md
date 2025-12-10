@@ -25,7 +25,7 @@ From review TASK-REV-B016: The `/template-create` command fails at Phase 9 when 
 
 ## Root Cause
 
-**Location**: [template_create_orchestrator.py:2300-2305](installer/global/commands/lib/template_create_orchestrator.py#L2300-L2305)
+**Location**: [template_create_orchestrator.py:2300-2305](installer/core/commands/lib/template_create_orchestrator.py#L2300-L2305)
 
 ```python
 def _deserialize_settings(self, data: Optional[dict]) -> Any:
@@ -53,7 +53,7 @@ Phase 9: Package Assembly
 
 ### Changes Made
 
-**File Modified**: [installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py)
+**File Modified**: [installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py)
 
 #### 1. _deserialize_manifest() (lines 2276-2287)
 - Added explicit `to_dict()` method to manifest object

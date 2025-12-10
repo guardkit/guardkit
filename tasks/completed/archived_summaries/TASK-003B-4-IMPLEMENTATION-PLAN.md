@@ -20,7 +20,7 @@ Implement **simplified Q&A mode** for TASK-003B-4 using keyword-based pattern ma
 - **Key Innovation**: Keyword mapping to plan sections instead of AI query processing
 
 ### 1.3 Integration Point
-- **Target File**: `/installer/global/commands/lib/review_modes.py`
+- **Target File**: `/installer/core/commands/lib/review_modes.py`
 - **Target Class**: `FullReviewHandler._handle_question()` (currently stub)
 - **Entry Point**: User presses [Q] at full review checkpoint
 
@@ -31,7 +31,7 @@ Implement **simplified Q&A mode** for TASK-003B-4 using keyword-based pattern ma
 ### 2.1 Class Structure
 
 ```python
-# File: installer/global/commands/lib/qa_manager.py
+# File: installer/core/commands/lib/qa_manager.py
 
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
@@ -594,7 +594,7 @@ __all__ = [
 
 ### 2.2 Integration with FullReviewHandler
 
-**File**: `/installer/global/commands/lib/review_modes.py`
+**File**: `/installer/core/commands/lib/review_modes.py`
 
 ```python
 # Modify FullReviewHandler._handle_question() method (currently stub at line 873)
@@ -661,7 +661,7 @@ def _handle_question(self) -> Optional[FullReviewResult]:
 ### 3.1 New Files
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── qa_manager.py                    [NEW - 400 lines]
 │   ├── QAExchange (dataclass)
 │   ├── QASession (dataclass)
@@ -673,7 +673,7 @@ installer/global/commands/lib/
 ### 3.2 Modified Files
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py                  [MODIFY - 1 method]
 │   └── FullReviewHandler._handle_question()  (line 873)
 │       - Replace stub with QAManager integration
@@ -821,14 +821,14 @@ except KeyboardInterrupt:
 ```python
 import pytest
 from datetime import datetime, UTC
-from installer.global.commands.lib.qa_manager import (
+from installer.core.commands.lib.qa_manager import (
     KeywordMatcher,
     PlanSectionExtractor,
     QAManager,
     QAExchange,
     QASession,
 )
-from installer.global.commands.lib.complexity_models import ImplementationPlan
+from installer.core.commands.lib.complexity_models import ImplementationPlan
 
 
 class TestKeywordMatcher:
@@ -984,8 +984,8 @@ class TestQASession:
 ```python
 import pytest
 from unittest.mock import patch, MagicMock
-from installer.global.commands.lib.qa_manager import QAManager
-from installer.global.commands.lib.complexity_models import ImplementationPlan
+from installer.core.commands.lib.qa_manager import QAManager
+from installer.core.commands.lib.complexity_models import ImplementationPlan
 
 
 class TestQASessionWorkflow:

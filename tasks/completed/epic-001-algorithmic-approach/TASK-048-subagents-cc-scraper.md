@@ -143,7 +143,7 @@ When scraping, the system shall:
 ### Step 1: Create Scraper Module
 
 ```python
-# installer/global/commands/lib/agent_discovery/subagents_cc_scraper.py
+# installer/core/commands/lib/agent_discovery/subagents_cc_scraper.py
 
 import requests
 from bs4 import BeautifulSoup
@@ -447,18 +447,18 @@ def test_cache_freshness():
 
 ```bash
 # Test actual scraping (with rate limiting)
-python installer/global/commands/lib/agent_discovery/subagents_cc_scraper.py --force-refresh
+python installer/core/commands/lib/agent_discovery/subagents_cc_scraper.py --force-refresh
 
 # Test cache usage
-python installer/global/commands/lib/agent_discovery/subagents_cc_scraper.py
+python installer/core/commands/lib/agent_discovery/subagents_cc_scraper.py
 # Should use cache on second run
 ```
 
 ## Files to Create
 
-1. `installer/global/commands/lib/agent_discovery/subagents_cc_scraper.py` - Main scraper (~400 lines)
-2. `installer/global/commands/lib/agent_discovery/agent_metadata.py` - Data models (~100 lines)
-3. `installer/global/commands/lib/agent_discovery/cache_manager.py` - Cache utilities (~150 lines)
+1. `installer/core/commands/lib/agent_discovery/subagents_cc_scraper.py` - Main scraper (~400 lines)
+2. `installer/core/commands/lib/agent_discovery/agent_metadata.py` - Data models (~100 lines)
+3. `installer/core/commands/lib/agent_discovery/cache_manager.py` - Cache utilities (~150 lines)
 4. `tests/unit/test_subagents_cc_scraper.py` - Unit tests (~300 lines)
 5. `tests/integration/test_subagents_cc_live.py` - Live integration test (~100 lines)
 6. `tests/fixtures/subagents_cc_sample.html` - Mock HTML for testing

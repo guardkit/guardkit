@@ -8,10 +8,10 @@ import tempfile
 import importlib
 
 # Use importlib to avoid 'global' keyword syntax issue in Python 3.14+
-_parser = importlib.import_module('installer.global.lib.agent_formatting.parser')
+_parser = importlib.import_module('installer.core.lib.agent_formatting.parser')
 parse_agent = _parser.parse_agent
 
-_metrics = importlib.import_module('installer.global.lib.agent_formatting.metrics')
+_metrics = importlib.import_module('installer.core.lib.agent_formatting.metrics')
 check_time_to_first_example = _metrics.check_time_to_first_example
 calculate_example_density = _metrics.calculate_example_density
 check_boundary_sections = _metrics.check_boundary_sections

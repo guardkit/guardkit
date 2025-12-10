@@ -91,8 +91,8 @@ Document any issues that still occurred despite the documentation fix:
 2. **Core Agent File**: `docs/reviews/progressive-disclosure/agent-enhance-output/svelte5-component-specialist.md`
 3. **Extended Agent File**: `docs/reviews/progressive-disclosure/agent-enhance-output/svelte5-component-specialist-ext.md`
 4. **Documentation Changes**: Files modified in TASK-FIX-AE42
-   - `installer/global/commands/agent-enhance.md`
-   - `installer/global/agents/agent-content-enhancer.md`
+   - `installer/core/commands/agent-enhance.md`
+   - `installer/core/agents/agent-content-enhancer.md`
    - `docs/reference/agent-response-format.md`
 
 ## Expected Outcomes

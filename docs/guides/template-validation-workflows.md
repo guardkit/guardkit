@@ -33,7 +33,7 @@ guardkit init my-template
 /template-create --validate --output-location=repo
 
 # 2. Review validation report
-cat installer/global/templates/my-template/validation-report.md
+cat installer/core/templates/my-template/validation-report.md
 
 # 3. If score ≥8/10, share with team
 # 4. If score <8/10, fix issues and re-validate
@@ -41,7 +41,7 @@ cat installer/global/templates/my-template/validation-report.md
 
 **Validation Level**: 2 (Extended)
 **Duration**: 2-5 minutes
-**Template Location**: `installer/global/templates/`
+**Template Location**: `installer/core/templates/`
 
 ---
 
@@ -55,21 +55,21 @@ cat installer/global/templates/my-template/validation-report.md
 /template-create --validate --output-location=repo
 
 # 2. Run comprehensive audit
-/template-validate installer/global/templates/my-template
+/template-validate installer/core/templates/my-template
 
 # 3. Review audit report
-cat installer/global/templates/my-template/audit-report.md
+cat installer/core/templates/my-template/audit-report.md
 
 # 4. Fix any critical issues
 # 5. Re-run comprehensive audit
-/template-validate installer/global/templates/my-template
+/template-validate installer/core/templates/my-template
 
 # 6. Deploy if all checks pass
 ```
 
 **Validation Level**: 3 (Comprehensive)
 **Duration**: 30-60 minutes (with AI)
-**Template Location**: `installer/global/templates/`
+**Template Location**: `installer/core/templates/`
 
 ---
 
@@ -84,7 +84,7 @@ name: Template Validation
 on:
   pull_request:
     paths:
-      - 'installer/global/templates/**'
+      - 'installer/core/templates/**'
 
 jobs:
   validate:
@@ -116,12 +116,12 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: validation-report
-          path: installer/global/templates/*/validation-report.md
+          path: installer/core/templates/*/validation-report.md
 ```
 
 **Validation Level**: 2 (Extended)
 **Duration**: 2-5 minutes
-**Template Location**: `installer/global/templates/`
+**Template Location**: `installer/core/templates/`
 
 ---
 
@@ -155,7 +155,7 @@ cat ~/.agentecflow/templates/my-template/validation-report.md
 
 **Validation Level**: 2 + 3 (Extended + Comprehensive)
 **Duration**: 1-2 hours
-**Template Location**: `~/.agentecflow/templates/` or `installer/global/templates/`
+**Template Location**: `~/.agentecflow/templates/` or `installer/core/templates/`
 
 ---
 
@@ -264,7 +264,7 @@ cat ~/.agentecflow/templates/my-template/validation-report.md
 ✅ Score ≥8/10
 
 # 2. Run comprehensive audit
-/template-validate installer/global/templates/my-template
+/template-validate installer/core/templates/my-template
 ✅ All sections reviewed
 
 # 3. Verify template works
@@ -277,19 +277,19 @@ npm test  # or pytest, dotnet test, etc.
 ✅ All tests pass
 
 # 5. Review documentation
-cat installer/global/templates/my-template/README.md
+cat installer/core/templates/my-template/README.md
 ✅ Documentation complete and accurate
 
 # 6. Check for security issues
-grep -r "password\|secret\|token" installer/global/templates/my-template/
+grep -r "password\|secret\|token" installer/core/templates/my-template/
 ✅ No hardcoded secrets
 
 # 7. Verify agent references
-grep -r "@agent" installer/global/templates/my-template/
+grep -r "@agent" installer/core/templates/my-template/
 ✅ All agents exist
 
 # 8. Review audit report
-cat installer/global/templates/my-template/audit-report.md
+cat installer/core/templates/my-template/audit-report.md
 ✅ No critical issues
 
 # 9. Ready for release!
@@ -297,7 +297,7 @@ cat installer/global/templates/my-template/audit-report.md
 
 **Validation Level**: 2 + 3 + Manual checks
 **Duration**: 1-2 hours
-**Template Location**: `installer/global/templates/`
+**Template Location**: `installer/core/templates/`
 
 ---
 
@@ -341,14 +341,14 @@ diff -u template-a/audit-report.md template-b/audit-report.md
 - ✅ Always use Level 2 (extended) minimum
 - ✅ Generate quality reports for stakeholders
 - ✅ Use `--output-location=repo` flag
-- ✅ Location: `installer/global/templates/`
+- ✅ Location: `installer/core/templates/`
 
 ### For Production Templates
 - ✅ Use Level 3 (comprehensive) for thorough validation
 - ✅ Review all 16 sections
 - ✅ Fix all critical issues
 - ✅ Achieve ≥8/10 quality score
-- ✅ Location: `installer/global/templates/`
+- ✅ Location: `installer/core/templates/`
 
 ### For CI/CD
 - ✅ Use Level 2 (extended) for automation

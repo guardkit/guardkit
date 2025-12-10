@@ -109,7 +109,7 @@ All landing pages have working internal links to:
 
 ### Known Issues (Non-landing pages)
 The `mkdocs build --strict` command identified 55 warnings, primarily:
-1. Links to excluded installer files (installer/global/commands/, installer/global/agents/)
+1. Links to excluded installer files (installer/core/commands/, installer/core/agents/)
 2. Missing anchors in some guide files
 3. References to files in excluded directories
 
@@ -211,7 +211,7 @@ All landing pages are complete and meet requirements.
 1. Fix 55 mkdocs warnings in supporting documentation files
 2. Add missing anchors in guides/guardkit-workflow.md (#iterative-refinement, #conductor-integration, #task-states, #development-modes)
 3. Add missing anchors in workflows/design-first-workflow.md (#modifying-saved-plans)
-4. Consider adding installer/global/commands/ and installer/global/agents/ to docs via symlinks or copies
+4. Consider adding installer/core/commands/ and installer/core/agents/ to docs via symlinks or copies
 
 ### Next Task Ready
 - [x] All gaps from TASK-957C addressed

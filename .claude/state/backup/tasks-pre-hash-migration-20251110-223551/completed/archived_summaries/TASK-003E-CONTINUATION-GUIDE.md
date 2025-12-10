@@ -64,9 +64,9 @@ plan.display_score = 50  # Required for badge formatting
 The countdown_timer patching needs correct path:
 ```python
 # Try these patch paths:
-@patch('installer.global.commands.lib.review_modes.countdown_timer')
+@patch('installer.core.commands.lib.review_modes.countdown_timer')
 # OR
-@patch('installer.global.commands.lib.user_interaction.countdown_timer')
+@patch('installer.core.commands.lib.user_interaction.countdown_timer')
 ```
 
 ### Task 2: Complete Full Review Mode (2-3 hours)
@@ -233,7 +233,7 @@ pytest tests/unit/test_review_router.py -v
 
 ### Run with Coverage
 ```bash
-pytest tests/unit/ -v --cov=installer/global/commands/lib --cov-report=term
+pytest tests/unit/ -v --cov=installer/core/commands/lib --cov-report=term
 ```
 
 ### Run Specific Test
@@ -412,7 +412,7 @@ tests/
 ### Documentation References
 - TASK-003E-PHASE-2-PROGRESS-REPORT.md
 - TASK-003E-DAY-1-DELIVERY-SUMMARY.md
-- installer/global/commands/lib/*.py (source modules)
+- installer/core/commands/lib/*.py (source modules)
 
 ### If Stuck
 1. Check similar test in existing files

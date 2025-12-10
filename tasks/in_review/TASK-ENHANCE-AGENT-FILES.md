@@ -526,7 +526,7 @@ data access, persistence, or repository patterns.
 
 ### Phase 1: Setup and Safety Checks (10 min)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py` (NEW FILE)
+**File**: `installer/core/lib/template_creation/agent_enhancer.py` (NEW FILE)
 
 **Purpose**: Create dedicated module for agent enhancement (keeps code isolated and testable)
 
@@ -997,7 +997,7 @@ def enhance_all_agents(
 
 **Where to call from**: During template creation, AFTER agents are generated
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Integration** (in Phase 7 - after agent generation):
 
@@ -1011,8 +1011,8 @@ def _phase7_enhance_agents(self) -> None:
     print("  Phase 7: Agent Enhancement")
     print("=" * 60)
     
-    from installer.global.lib.template_creation.agent_enhancer import AgentEnhancer
-    from installer.global.lib.ai.ai_client import AIClient
+    from installer.core.lib.template_creation.agent_enhancer import AgentEnhancer
+    from installer.core.lib.ai.ai_client import AIClient
     
     # Initialize enhancer
     ai_client = AIClient()
@@ -1046,7 +1046,7 @@ def test_no_hard_coding():
     """Verify implementation uses AI, not hard-coding."""
     
     # Read agent_enhancer.py source
-    source_code = Path("installer/global/lib/template_creation/agent_enhancer.py").read_text()
+    source_code = Path("installer/core/lib/template_creation/agent_enhancer.py").read_text()
     
     # Check for forbidden patterns
     is_valid, violations = validate_no_hard_coding(source_code)

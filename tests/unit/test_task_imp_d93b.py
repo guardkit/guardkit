@@ -16,7 +16,7 @@ import logging
 import importlib.util
 spec = importlib.util.spec_from_file_location(
     'template_create_orchestrator',
-    'installer/global/commands/lib/template_create_orchestrator.py'
+    'installer/core/commands/lib/template_create_orchestrator.py'
 )
 orchestrator_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(orchestrator_module)

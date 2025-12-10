@@ -248,12 +248,12 @@ def run(self):
 
 | File | Purpose |
 |------|---------|
-| `installer/global/commands/lib/template_create_orchestrator.py` | Main orchestrator |
-| `installer/global/lib/agent_bridge/invoker.py` | AgentBridgeInvoker class |
-| `installer/global/lib/agent_bridge/state_manager.py` | Checkpoint state management |
-| `installer/global/lib/codebase_analyzer/ai_analyzer.py` | CodebaseAnalyzer |
-| `installer/global/lib/codebase_analyzer/agent_invoker.py` | HeuristicAnalyzer fallback |
-| `installer/global/lib/agent_generator/agent_generator.py` | AIAgentGenerator |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Main orchestrator |
+| `installer/core/lib/agent_bridge/invoker.py` | AgentBridgeInvoker class |
+| `installer/core/lib/agent_bridge/state_manager.py` | Checkpoint state management |
+| `installer/core/lib/codebase_analyzer/ai_analyzer.py` | CodebaseAnalyzer |
+| `installer/core/lib/codebase_analyzer/agent_invoker.py` | HeuristicAnalyzer fallback |
+| `installer/core/lib/agent_generator/agent_generator.py` | AIAgentGenerator |
 
 ---
 

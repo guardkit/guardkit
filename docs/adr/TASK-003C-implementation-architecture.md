@@ -592,7 +592,7 @@ def create_plan_parser(stack: str) -> PlanParser:
 ### 3.1 New Files to Create
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── complexity_calculator.py          # ✅ ALREADY EXISTS (TASK-003A)
 ├── complexity_models.py              # ✅ ALREADY EXISTS (TASK-003A)
 ├── user_interaction.py               # ✅ ALREADY EXISTS (TASK-003B-1)
@@ -618,11 +618,11 @@ tests/integration/
 ### 3.2 Existing Files to Modify
 
 ```
-installer/global/commands/task-work.md
+installer/core/commands/task-work.md
 └── ADD: Phase 2.7 and Phase 2.8 invocation steps
     Between Phase 2 (Planning) and Phase 3 (Implementation)
 
-installer/global/agents/task-manager.md
+installer/core/agents/task-manager.md
 └── ADD: Phase 2.7 and Phase 2.8 orchestration logic
     Including routing, error handling, modification loop
 
@@ -1118,7 +1118,7 @@ Phase 2 Planning Agents (Existing) ────┘
 
 **Already Solved** by TASK-003A ✅
 
-See: `/installer/global/commands/lib/complexity_calculator.py`
+See: `/installer/core/commands/lib/complexity_calculator.py`
 
 **Calculation Logic**:
 ```python
@@ -1666,7 +1666,7 @@ high_complexity_task:
 **Pre-Commit Tests** (fast feedback):
 ```bash
 # Run unit tests only (fast)
-pytest tests/unit/ -v --cov=installer/global/commands/lib --cov-report=term
+pytest tests/unit/ -v --cov=installer/core/commands/lib --cov-report=term
 
 # Expected runtime: <10 seconds
 ```
@@ -1674,7 +1674,7 @@ pytest tests/unit/ -v --cov=installer/global/commands/lib --cov-report=term
 **Pre-Push Tests** (comprehensive):
 ```bash
 # Run all tests (unit + integration)
-pytest tests/ -v --cov=installer/global/commands/lib --cov-report=html
+pytest tests/ -v --cov=installer/core/commands/lib --cov-report=html
 
 # Expected runtime: <30 seconds
 ```
@@ -1824,7 +1824,7 @@ jobs:
 ### A. File Structure Summary
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── complexity_calculator.py          # ✅ EXISTS (TASK-003A)
 ├── complexity_models.py              # ✅ EXISTS (TASK-003A)
 ├── user_interaction.py               # ✅ EXISTS (TASK-003B-1)
@@ -1836,10 +1836,10 @@ installer/global/commands/lib/
 ├── review_commands.py                # 🆕 NEW (TASK-003C)
 └── task_context.py                   # 🆕 NEW (TASK-003C)
 
-installer/global/commands/
+installer/core/commands/
 └── task-work.md                      # 📝 UPDATE (TASK-003C)
 
-installer/global/agents/
+installer/core/agents/
 └── task-manager.md                   # 📝 UPDATE (TASK-003C)
 
 tests/unit/

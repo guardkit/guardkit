@@ -22,7 +22,7 @@ def import_module_from_path(module_name, file_path):
     return module
 
 # Import orchestrator
-orchestrator_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib" / "template_create_orchestrator.py"
+orchestrator_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib" / "template_create_orchestrator.py"
 orchestrator_module = import_module_from_path("template_create_orchestrator", orchestrator_path)
 TemplateCreateOrchestrator = orchestrator_module.TemplateCreateOrchestrator
 OrchestrationConfig = orchestrator_module.OrchestrationConfig

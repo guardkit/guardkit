@@ -12,13 +12,13 @@ from unittest.mock import Mock, MagicMock, patch
 import importlib
 
 # Import using importlib to avoid 'global' keyword issue
-_orchestrator_module = importlib.import_module('installer.global.lib.template_qa_orchestrator')
+_orchestrator_module = importlib.import_module('installer.core.lib.template_qa_orchestrator')
 TemplateQAOrchestrator = _orchestrator_module.TemplateQAOrchestrator
 QAOrchestrationConfig = _orchestrator_module.QAOrchestrationConfig
 QAOrchestrationResult = _orchestrator_module.QAOrchestrationResult
 run_template_qa = _orchestrator_module.run_template_qa
 
-_config_handler_module = importlib.import_module('installer.global.lib.template_config_handler')
+_config_handler_module = importlib.import_module('installer.core.lib.template_config_handler')
 TemplateConfigHandler = _config_handler_module.TemplateConfigHandler
 ConfigValidationError = _config_handler_module.ConfigValidationError
 
@@ -376,7 +376,7 @@ class TestDependencyInjection:
 class TestConvenienceFunction:
     """Test convenience function."""
 
-    @patch('installer.global.lib.template_qa_orchestrator.TemplateQAOrchestrator')
+    @patch('installer.core.lib.template_qa_orchestrator.TemplateQAOrchestrator')
     def test_run_template_qa_function(self, mock_orchestrator_class, temp_config_dir):
         """Test run_template_qa convenience function."""
         # Setup mocks

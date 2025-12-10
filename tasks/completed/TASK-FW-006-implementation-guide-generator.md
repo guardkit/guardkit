@@ -137,7 +137,7 @@ def generate_implementation_guide(
 
 ## Files to Create/Modify
 
-- `installer/global/lib/guide_generator.py` (NEW)
+- `installer/core/lib/guide_generator.py` (NEW)
 
 ## Template Reference
 

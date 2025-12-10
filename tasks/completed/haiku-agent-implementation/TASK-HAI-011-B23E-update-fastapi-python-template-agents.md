@@ -35,7 +35,7 @@ Add discovery metadata to 3 agents in the fastapi-python template. These agents 
 
 ### 1. fastapi-specialist.md
 
-**Location**: `installer/global/templates/fastapi-python/agents/`
+**Location**: `installer/core/templates/fastapi-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -68,7 +68,7 @@ collaborates_with:
 
 ### 2. fastapi-database-specialist.md
 
-**Location**: `installer/global/templates/fastapi-python/agents/`
+**Location**: `installer/core/templates/fastapi-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -101,7 +101,7 @@ collaborates_with:
 
 ### 3. fastapi-testing-specialist.md
 
-**Location**: `installer/global/templates/fastapi-python/agents/`
+**Location**: `installer/core/templates/fastapi-python/agents/`
 
 **Metadata**:
 ```yaml
@@ -169,7 +169,7 @@ collaborates_with:
 ```python
 python3 -c "
 import frontmatter
-with open('installer/global/templates/fastapi-python/agents/fastapi-specialist.md') as f:
+with open('installer/core/templates/fastapi-python/agents/fastapi-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['stack'] == ['python', 'fastapi']
     assert agent.metadata['phase'] == 'implementation'
@@ -181,7 +181,7 @@ with open('installer/global/templates/fastapi-python/agents/fastapi-specialist.m
 
 **Discovery validation**:
 ```python
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 # Test implementation agents
 impl_agents = discover_agents(phase='implementation', stack=['python', 'fastapi'])
@@ -220,7 +220,7 @@ python3 scripts/validate_template_agents.py fastapi-python
 pytest tests/test_agent_discovery.py::test_fastapi_template_agents -v
 
 # Verify no content changes
-git diff --stat installer/global/templates/fastapi-python/agents/
+git diff --stat installer/core/templates/fastapi-python/agents/
 ```
 
 ## Risk Assessment
@@ -239,14 +239,14 @@ git diff --stat installer/global/templates/fastapi-python/agents/
 
 ```bash
 # Revert template agent changes
-git checkout installer/global/templates/fastapi-python/agents/
+git checkout installer/core/templates/fastapi-python/agents/
 ```
 
 **Recovery Time**: <30 seconds
 
 ## Reference Materials
 
-- `installer/global/templates/fastapi-python/agents/*.md` - Existing agents
+- `installer/core/templates/fastapi-python/agents/*.md` - Existing agents
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-002-B47C-create-python-api-specialist.md` - Global Python agent
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema
 

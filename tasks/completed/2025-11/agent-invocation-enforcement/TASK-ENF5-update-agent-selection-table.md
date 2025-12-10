@@ -43,7 +43,7 @@ TASK-REV-9A4E architectural review (Finding #3) identified that this approach of
 ## Original Context (For Reference Only)
 
 **From TASK-8D3F Review**: The agent selection table in `task-work.md` (lines 968-973) contains references to agents that don't exist:
-- `maui-usecase-specialist` - Referenced for MAUI stack but doesn't exist in `installer/global/agents/`
+- `maui-usecase-specialist` - Referenced for MAUI stack but doesn't exist in `installer/core/agents/`
 - `engine-domain-logic-specialist` - Reported in MyDrive TASK-ROE-007g but not a global agent
 
 This creates confusion about:
@@ -56,7 +56,7 @@ This creates confusion about:
 ## Objective
 
 Update the agent selection table to:
-1. Reference only agents that actually exist in `installer/global/agents/`
+1. Reference only agents that actually exist in `installer/core/agents/`
 2. Clearly indicate when fallback to `task-manager` is used
 3. Add a "Notes" column explaining agent selection decisions
 4. Consider creating missing specialists if MAUI requires specialized handling
@@ -91,7 +91,7 @@ Update the agent selection table to:
 
 **Acceptance Criteria**:
 - [ ] All agents in table verified to exist or marked as non-existent
-- [ ] Agent files checked in `installer/global/agents/`
+- [ ] Agent files checked in `installer/core/agents/`
 - [ ] Metadata verified (stack, phase, capabilities)
 - [ ] Audit results documented
 
@@ -161,7 +161,7 @@ See R3 for creating new specialist agent.
 
 ```bash
 # Create agent file
-touch installer/global/agents/maui-usecase-specialist.md
+touch installer/core/agents/maui-usecase-specialist.md
 ```
 
 **Frontmatter Metadata**:
@@ -201,7 +201,7 @@ collaborates_with:
 - Platform-specific code examples
 
 **Acceptance Criteria** (If creating):
-- [ ] Agent file created in `installer/global/agents/`
+- [ ] Agent file created in `installer/core/agents/`
 - [ ] Frontmatter metadata complete and correct
 - [ ] Capabilities cover MAUI-specific patterns
 - [ ] Quick Start examples provided

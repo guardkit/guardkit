@@ -115,7 +115,7 @@ echo ""
 **Find lines ~1256-1383** (symlink creation for Python scripts):
 ```bash
 echo "Creating command symlinks..."
-for script in "$REPO_DIR"/installer/global/commands/*.py; do
+for script in "$REPO_DIR"/installer/core/commands/*.py; do
     script_name=$(basename "$script" .py)
     ln -s "$script" "$BIN_DIR/$script_name"
 done
@@ -124,7 +124,7 @@ done
 **Replace with copy approach**:
 ```bash
 echo "Installing command scripts..."
-for script in "$REPO_DIR"/installer/global/commands/*.py; do
+for script in "$REPO_DIR"/installer/core/commands/*.py; do
     script_name=$(basename "$script" .py)
     cp "$script" "$BIN_DIR/$script_name"
     chmod +x "$BIN_DIR/$script_name"

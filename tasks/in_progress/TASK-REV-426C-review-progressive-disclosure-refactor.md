@@ -70,7 +70,7 @@ Review changes required across 5 major components:
 1. **CLAUDE.md Generator** (`claude_md_generator.py`) - Split generation
 2. **Agent Enhancement Command** (`agent-enhance.md`, `enhancer.py`) - New file creation
 3. **Enhancement Applier** (`applier.py`) - Complete refactor
-4. **Global Agents** (`installer/global/agents/`) - Manual split (10+ files)
+4. **Global Agents** (`installer/core/agents/`) - Manual split (10+ files)
 5. **Template Validation** - Recognize split structure
 
 ### 4. Risk Assessment

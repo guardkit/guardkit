@@ -31,10 +31,10 @@ Update 4 core command specification files to document the recently implemented f
 ## Scope
 
 **Files to Update (4):**
-1. `installer/global/commands/task-create.md` - Add TASK-005 complexity evaluation
-2. `installer/global/commands/task-work.md` - Add TASK-006, TASK-007, TASK-027, TASK-028, TASK-029
-3. `installer/global/commands/feature-generate-tasks.md` - Add TASK-008 complexity-aware generation
-4. `installer/global/commands/task-refine.md` - Verify completeness for TASK-026
+1. `installer/core/commands/task-create.md` - Add TASK-005 complexity evaluation
+2. `installer/core/commands/task-work.md` - Add TASK-006, TASK-007, TASK-027, TASK-028, TASK-029
+3. `installer/core/commands/feature-generate-tasks.md` - Add TASK-008 complexity-aware generation
+4. `installer/core/commands/task-refine.md` - Verify completeness for TASK-026
 
 **Features to Document:**
 - TASK-005: Complexity Evaluation in task-create
@@ -151,20 +151,20 @@ Update 4 core command specification files to document the recently implemented f
 
 ### Files Updated
 
-1. **installer/global/commands/task-create.md** ✅
+1. **installer/core/commands/task-create.md** ✅
    - Added Phase 2.5 Complexity Evaluation (TASK-005)
    - ~130 lines of new documentation (lines 337-473)
 
-2. **installer/global/commands/task-work.md** ✅
+2. **installer/core/commands/task-work.md** ✅
    - Enhanced Phase 2.7 with TASK-027 (Markdown Plans)
    - Enhanced Phase 2.8 with TASK-028 (Rich Visual Display)
    - Added TASK-029 (Interactive Plan Modification)
    - ~190 lines of enhanced documentation
 
-3. **installer/global/commands/feature-generate-tasks.md** ✅
+3. **installer/core/commands/feature-generate-tasks.md** ✅
    - Verified TASK-008 already complete (no changes needed)
 
-4. **installer/global/commands/task-refine.md** ✅
+4. **installer/core/commands/task-refine.md** ✅
    - Verified TASK-026 already complete (no changes needed)
 
 ### All 9 Features Documented

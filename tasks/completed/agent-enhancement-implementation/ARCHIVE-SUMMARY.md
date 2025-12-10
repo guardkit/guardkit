@@ -30,11 +30,11 @@ This folder contained **early planning and draft agents** from the initial agent
 
 The **actual agent implementation** that is currently in use is different and located in:
 
-1. **Global Agents**: `installer/global/agents/`
+1. **Global Agents**: `installer/core/agents/`
    - 16 global agents (architectural-reviewer, task-manager, code-reviewer, etc.)
    - Recently enhanced with `/agent-enhance` command (November 2025)
 
-2. **Template-Specific Agents**: `installer/global/templates/{template}/agents/`
+2. **Template-Specific Agents**: `installer/core/templates/{template}/agents/`
    - **fastapi-python**: fastapi-specialist, fastapi-database-specialist, fastapi-testing-specialist
    - **react-typescript**: feature-architecture-specialist, form-validation-specialist, react-query-specialist
    - **nextjs-fullstack**: nextjs-fullstack-specialist, nextjs-server-actions-specialist, nextjs-server-components-specialist
@@ -75,10 +75,10 @@ This folder documents:
 ## Current Agent Enhancement
 
 For the **current agent enhancement workflow**, see:
-- **Command**: `/agent-enhance` ([installer/global/commands/agent-enhance.md](../../installer/global/commands/agent-enhance.md))
-- **Format Command**: `/agent-format` ([installer/global/commands/agent-format.md](../../installer/global/commands/agent-format.md))
-- **Implementation**: [installer/global/lib/agent_enhancement/](../../installer/global/lib/agent_enhancement/)
-- **Agents**: [installer/global/agents/](../../installer/global/agents/) and [installer/global/templates/*/agents/](../../installer/global/templates/)
+- **Command**: `/agent-enhance` ([installer/core/commands/agent-enhance.md](../../installer/core/commands/agent-enhance.md))
+- **Format Command**: `/agent-format` ([installer/core/commands/agent-format.md](../../installer/core/commands/agent-format.md))
+- **Implementation**: [installer/core/lib/agent_enhancement/](../../installer/core/lib/agent_enhancement/)
+- **Agents**: [installer/core/agents/](../../installer/core/agents/) and [installer/core/templates/*/agents/](../../installer/core/templates/)
 
 ## Recommendation
 

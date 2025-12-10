@@ -2,7 +2,7 @@
 """
 Apply fix for TASK-FIX-PD05: Fix "When to Use" guidance accuracy in reference docs.
 
-This script modifies installer/global/lib/template_generator/claude_md_generator.py to:
+This script modifies installer/core/lib/template_generator/claude_md_generator.py to:
 1. Add a new _categorize_agent_by_keywords method
 2. Update the fallback logic in _enhance_agent_info_with_ai to use proper categorization
 3. Remove the problematic 'view' keyword that causes false positive UI agent categorization
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 def apply_fix():
-    file_path = Path('installer/global/lib/template_generator/claude_md_generator.py')
+    file_path = Path('installer/core/lib/template_generator/claude_md_generator.py')
 
     if not file_path.exists():
         print(f"ERROR: File not found: {file_path}")
@@ -220,7 +220,7 @@ if __name__ == '__main__':
     import os
 
     # Check if we're in the right directory
-    if not Path('installer').exists() or not Path('installer/global').exists():
+    if not Path('installer').exists() or not Path('installer/core').exists():
         print("ERROR: This script must be run from the guardkit project root directory")
         print(f"Current directory: {os.getcwd()}")
         sys.exit(1)

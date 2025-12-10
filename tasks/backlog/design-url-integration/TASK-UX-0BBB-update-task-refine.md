@@ -36,7 +36,7 @@ This is part of Phase 4 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source File
-- **File**: `installer/global/commands/task-refine.md`
+- **File**: `installer/core/commands/task-refine.md`
 
 ### Key Changes Required
 
@@ -464,8 +464,8 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 4](../../docs/proposals/design-url-integration-implementation-guide.md#phase-4-update-task-work)
-- [Existing task-refine Command](../../installer/global/commands/task-refine.md)
-- [Constraint Validation Logic](../../installer/global/agents/figma-orchestrator.md) (Phase 5)
+- [Existing task-refine Command](../../installer/core/commands/task-refine.md)
+- [Constraint Validation Logic](../../installer/core/agents/figma-orchestrator.md) (Phase 5)
 
 ## Implementation Estimate
 

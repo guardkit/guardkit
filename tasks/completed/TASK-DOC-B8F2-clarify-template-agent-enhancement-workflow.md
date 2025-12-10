@@ -155,7 +155,7 @@ done
 **Example Use Cases:**
 ```bash
 # Global agents (15 agents)
-for agent in installer/global/agents/*.md; do
+for agent in installer/core/agents/*.md; do
     /agent-enhance "$agent"
 done
 # Total: ~45 minutes
@@ -222,7 +222,7 @@ taskwright init react-typescript
 **Result**: Pay for AI only when you need it, not during template creation.
 ```
 
-#### 3. Update `installer/global/commands/agent-format.md`
+#### 3. Update `installer/core/commands/agent-format.md`
 
 Add section at the top:
 
@@ -270,7 +270,7 @@ When creating templates:
 ```
 ```
 
-#### 4. Update `installer/global/commands/agent-enhance.md`
+#### 4. Update `installer/core/commands/agent-enhance.md`
 
 Add section:
 
@@ -307,7 +307,7 @@ taskwright init react-typescript
 See: [Agent Enhancement Decision Guide](../../guides/agent-enhancement-decision-guide.md)
 ```
 
-#### 5. Update `installer/global/commands/template-create.md`
+#### 5. Update `installer/core/commands/template-create.md`
 
 Add section:
 
@@ -366,9 +366,9 @@ This approach ensures:
 
 - [ ] **AC-1.1**: `docs/guides/template-philosophy.md` updated with "Agent Enhancement Strategy" section
 - [ ] **AC-1.2**: New `docs/guides/agent-enhancement-decision-guide.md` created with decision matrix
-- [ ] **AC-1.3**: `installer/global/commands/agent-format.md` updated with primary use case explanation
-- [ ] **AC-1.4**: `installer/global/commands/agent-enhance.md` updated with relationship section
-- [ ] **AC-1.5**: `installer/global/commands/template-create.md` updated with Phase 5.5 explanation
+- [ ] **AC-1.3**: `installer/core/commands/agent-format.md` updated with primary use case explanation
+- [ ] **AC-1.4**: `installer/core/commands/agent-enhance.md` updated with relationship section
+- [ ] **AC-1.5**: `installer/core/commands/template-create.md` updated with Phase 5.5 explanation
 
 ### AC-2: User Scenario Coverage
 
@@ -457,9 +457,9 @@ User Enhancement Flow:
 
 1. `docs/guides/template-philosophy.md` - Add agent enhancement strategy
 2. `docs/guides/agent-enhancement-decision-guide.md` - NEW file
-3. `installer/global/commands/agent-format.md` - Add primary use case section
-4. `installer/global/commands/agent-enhance.md` - Add relationship section
-5. `installer/global/commands/template-create.md` - Add Phase 5.5 explanation
+3. `installer/core/commands/agent-format.md` - Add primary use case section
+4. `installer/core/commands/agent-enhance.md` - Add relationship section
+5. `installer/core/commands/template-create.md` - Add Phase 5.5 explanation
 6. `CLAUDE.md` (optional) - Update if agent enhancement workflow referenced
 
 ---

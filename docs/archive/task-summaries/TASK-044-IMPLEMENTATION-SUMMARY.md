@@ -15,7 +15,7 @@ Successfully implemented a comprehensive interactive template validation system 
 
 ## Components Implemented
 
-### Core Library (`installer/global/lib/template_validation/`)
+### Core Library (`installer/core/lib/template_validation/`)
 
 #### 1. Data Models (`models.py`)
 - ✅ `ValidationIssue` - Issue tracking with severity levels
@@ -92,7 +92,7 @@ Successfully implemented a comprehensive interactive template validation system 
 
 ### Command Interface
 
-#### 1. Command Specification (`installer/global/commands/template-validate.md`)
+#### 1. Command Specification (`installer/core/commands/template-validate.md`)
 - ✅ Complete command documentation
 - ✅ Usage examples for all modes
 - ✅ 16-section framework documentation
@@ -102,7 +102,7 @@ Successfully implemented a comprehensive interactive template validation system 
 - ✅ Integration with other commands
 - ✅ Best practices guidance
 
-#### 2. CLI Entry Point (`installer/global/commands/lib/template_validate_cli.py`)
+#### 2. CLI Entry Point (`installer/core/commands/lib/template_validate_cli.py`)
 - ✅ `parse_args()` - Argument parsing
 - ✅ `print_usage()` - Help text
 - ✅ `main()` - CLI entry point
@@ -228,35 +228,35 @@ Successfully implemented a comprehensive interactive template validation system 
 
 ### Full Audit
 ```bash
-python3 installer/global/commands/lib/template_validate_cli.py \
-  installer/global/templates/react-typescript
+python3 installer/core/commands/lib/template_validate_cli.py \
+  installer/core/templates/react-typescript
 ```
 
 ### Specific Sections
 ```bash
-python3 installer/global/commands/lib/template_validate_cli.py \
-  installer/global/templates/my-template \
+python3 installer/core/commands/lib/template_validate_cli.py \
+  installer/core/templates/my-template \
   --sections 1,4,7,12
 ```
 
 ### Section Range
 ```bash
-python3 installer/global/commands/lib/template_validate_cli.py \
-  installer/global/templates/my-template \
+python3 installer/core/commands/lib/template_validate_cli.py \
+  installer/core/templates/my-template \
   --sections 1-7
 ```
 
 ### Resume Session
 ```bash
-python3 installer/global/commands/lib/template_validate_cli.py \
-  installer/global/templates/my-template \
+python3 installer/core/commands/lib/template_validate_cli.py \
+  installer/core/templates/my-template \
   --resume abc12345
 ```
 
 ### Batch Mode
 ```bash
-python3 installer/global/commands/lib/template_validate_cli.py \
-  installer/global/templates/my-template \
+python3 installer/core/commands/lib/template_validate_cli.py \
+  installer/core/templates/my-template \
   --non-interactive \
   --sections 1-13
 ```
@@ -266,7 +266,7 @@ python3 installer/global/commands/lib/template_validate_cli.py \
 ## File Structure
 
 ```
-installer/global/
+installer/core/
 ├── lib/
 │   └── template_validation/
 │       ├── __init__.py                      # Package exports
@@ -325,7 +325,7 @@ installer/global/
 
 ### With Template System
 - Works with personal templates (`~/.agentecflow/templates/`)
-- Works with repository templates (`installer/global/templates/`)
+- Works with repository templates (`installer/core/templates/`)
 - Validates manifest.json structure
 - Checks CLAUDE.md documentation
 - Verifies template file structure

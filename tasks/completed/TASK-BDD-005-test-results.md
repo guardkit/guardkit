@@ -347,7 +347,7 @@ else:
 
 ## Implementation Validation
 
-### ✅ Task-Work Specification (installer/global/commands/task-work.md)
+### ✅ Task-Work Specification (installer/core/commands/task-work.md)
 
 **Status**: ✅ **COMPLETE**
 

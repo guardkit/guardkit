@@ -57,11 +57,11 @@ After running the fix script, verify with:
 ```bash
 # Check that new method exists
 grep -n "_categorize_agent_by_keywords" \
-  installer/global/lib/template_generator/claude_md_generator.py
+  installer/core/lib/template_generator/claude_md_generator.py
 
 # Verify problematic code removed
 grep -n "'view' in desc_lower" \
-  installer/global/lib/template_generator/claude_md_generator.py
+  installer/core/lib/template_generator/claude_md_generator.py
 # Should return: (no results)
 
 # Run tests
@@ -71,7 +71,7 @@ pytest tests/lib/test_claude_md_generator.py -v
 
 ## Files Modified
 
-- `installer/global/lib/template_generator/claude_md_generator.py`
+- `installer/core/lib/template_generator/claude_md_generator.py`
   - Added: `_categorize_agent_by_keywords` method
   - Modified: Fallback logic in `_enhance_agent_info_with_ai`
 

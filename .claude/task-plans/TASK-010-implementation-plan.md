@@ -14,7 +14,7 @@ Update manifest.json and configuration files to reflect guardkit's focus on task
 
 ### Current State
 
-1. **installer/global/manifest.json**: Already correctly updated with:
+1. **installer/core/manifest.json**: Already correctly updated with:
    - Name: "guardkit" ✓
    - Correct capabilities (no requirements-engineering or bdd-generation) ✓
    - Includes architectural-review and test-enforcement ✓

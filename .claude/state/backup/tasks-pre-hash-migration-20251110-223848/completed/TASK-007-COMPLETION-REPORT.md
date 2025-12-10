@@ -19,10 +19,10 @@ Successfully removed Python library modules related to requirements management (
 
 ### Files Removed (4 files, 2,681 lines)
 ✅ **Library Module:**
-- `installer/global/commands/lib/feature_generator.py` (14,139 bytes)
+- `installer/core/commands/lib/feature_generator.py` (14,139 bytes)
 
 ✅ **Test Files:**
-- `installer/global/commands/lib/test_task_008_integration.py`
+- `installer/core/commands/lib/test_task_008_integration.py`
 - `tests/test_task_008_comprehensive.py`
 - `tests/test_task_008_comprehensive_fixed.py`
 
@@ -223,7 +223,7 @@ Part of TASK-000 requirements removal roadmap:
 Removed obsolete Python modules related to requirements management from the codebase. This cleanup reduces complexity and prepares the system for future enhancements. All critical functionality remains intact and verified.
 
 ### Summary for Technical Team
-Successfully removed `feature_generator.py` and related test files (4 files, 2,681 lines) from `installer/global/commands/lib/` with zero impact on quality gate or task management functionality. All import validations passed. Changes committed to `remove-requirements-lib` branch and ready for merge.
+Successfully removed `feature_generator.py` and related test files (4 files, 2,681 lines) from `installer/core/commands/lib/` with zero impact on quality gate or task management functionality. All import validations passed. Changes committed to `remove-requirements-lib` branch and ready for merge.
 
 ---
 

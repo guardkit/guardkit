@@ -72,7 +72,7 @@ From TASK-REV-A36C and TASK-REV-DM01 reviews:
 
 ### Step 1: Update Prompt Builder (prompt_builder.py)
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 
 Add to JSON schema after `boundaries` property (~line 112):
 
@@ -122,7 +122,7 @@ Add prompt instructions (~line 127):
 
 ### Step 2: Update Applier (applier.py)
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 Add new method after `_merge_content()` (~line 255):
 
@@ -169,7 +169,7 @@ if 'frontmatter_metadata' in enhancement:
 
 ### Step 3: Update Parser (parser.py)
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 
 Add validation method (~line 190):
 
@@ -206,7 +206,7 @@ if 'frontmatter_metadata' in enhancement:
 
 ### Step 4: Update Agent Documentation
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 
 Update "Enhancement Structure" section (~line 114) to show:
 
@@ -241,10 +241,10 @@ tags: [relevant, tags]
 
 | File | Changes |
 |------|---------|
-| `installer/global/lib/agent_enhancement/prompt_builder.py` | Add metadata schema + instructions |
-| `installer/global/lib/agent_enhancement/applier.py` | Add `_merge_frontmatter_metadata()` |
-| `installer/global/lib/agent_enhancement/parser.py` | Add `_validate_metadata()` |
-| `installer/global/agents/agent-content-enhancer.md` | Update Enhancement Structure |
+| `installer/core/lib/agent_enhancement/prompt_builder.py` | Add metadata schema + instructions |
+| `installer/core/lib/agent_enhancement/applier.py` | Add `_merge_frontmatter_metadata()` |
+| `installer/core/lib/agent_enhancement/parser.py` | Add `_validate_metadata()` |
+| `installer/core/agents/agent-content-enhancer.md` | Update Enhancement Structure |
 
 ## Testing
 

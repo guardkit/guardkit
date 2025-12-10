@@ -51,7 +51,7 @@ Fix the BDD mode validation bug discovered during VM testing (Step 3.1 of FOCUSE
 ## Implementation Notes
 
 **Files to Modify**:
-1. [task-work.md](../../installer/global/commands/task-work.md:560-618) - Add mode flag parsing and validation
+1. [task-work.md](../../installer/core/commands/task-work.md:560-618) - Add mode flag parsing and validation
 
 **Changes Required** (see bug doc for full details):
 

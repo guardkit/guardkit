@@ -25,7 +25,7 @@
 | Planned | Actual | Status |
 |---------|--------|--------|
 | **Modified Files** | | |
-| installer/global/lib/id_generator.py | ✅ Modified | ✅ Match |
+| installer/core/lib/id_generator.py | ✅ Modified | ✅ Match |
 | **New Files** | | |
 | tests/lib/test_id_generator_prefix_inference.py | ✅ Created | ✅ Match |
 | **Total** | **2** | **2** | ✅ **100%** |
@@ -34,7 +34,7 @@
 
 ### 2.2 File Modification Details
 
-**File 1: installer/global/lib/id_generator.py**
+**File 1: installer/core/lib/id_generator.py**
 - **Status:** ✅ Modified as planned
 - **Planned Lines:** +250 lines
 - **Actual Lines:** +254 lines

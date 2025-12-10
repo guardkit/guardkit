@@ -78,7 +78,7 @@ The `/agent-enhance` command enters an infinite loop due to missing checkpoint-r
 **Git History Confirms** bug existed BEFORE TASK-FIX-A7D3:
 
 ```bash
-$ git show 9aa3a3b^:installer/global/lib/agent_enhancement/enhancer.py | grep -A 5 "invoker.invoke"
+$ git show 9aa3a3b^:installer/core/lib/agent_enhancement/enhancer.py | grep -A 5 "invoker.invoke"
 result_text = invoker.invoke(  # ❌ Same bug existed before
     agent_name="agent-content-enhancer",
     prompt=prompt
@@ -97,7 +97,7 @@ try:
     import json  # Local import required - ensures scope covers all exception handlers (line 341)
     # Use AgentBridgeInvoker for Claude Code integration (same pattern as template-create)
     import importlib
-    _agent_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+    _agent_bridge_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
     AgentBridgeInvoker = _agent_bridge_module.AgentBridgeInvoker
 
     invoker = AgentBridgeInvoker(
@@ -171,7 +171,7 @@ This fix MUST:
 
 ### Change 1: Add response check after invoker creation
 
-**Location**: `installer/global/lib/agent_enhancement/enhancer.py`, lines 263-271
+**Location**: `installer/core/lib/agent_enhancement/enhancer.py`, lines 263-271
 
 **Current Code** (lines 263-271):
 ```python
@@ -212,8 +212,8 @@ This fix MUST:
 ### Expected Diff
 
 ```diff
---- a/installer/global/lib/agent_enhancement/enhancer.py
-+++ b/installer/global/lib/agent_enhancement/enhancer.py
+--- a/installer/core/lib/agent_enhancement/enhancer.py
++++ b/installer/core/lib/agent_enhancement/enhancer.py
 @@ -268,9 +268,17 @@ class SingleAgentEnhancer:
              phase_name="agent_enhancement"
          )
@@ -406,11 +406,11 @@ AI Response Received:
 
 ```bash
 # Check Python syntax
-python3.14 -m py_compile installer/global/lib/agent_enhancement/enhancer.py
+python3.14 -m py_compile installer/core/lib/agent_enhancement/enhancer.py
 echo "✅ Syntax check passed"
 
 # Verify no import errors
-python3.14 -c "from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer"
+python3.14 -c "from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer"
 echo "✅ Import successful"
 ```
 
@@ -489,13 +489,13 @@ echo "✅ No infinite loop - command completes successfully"
 
 2. **Restore original enhancer.py**:
    ```bash
-   git checkout HEAD^ -- installer/global/lib/agent_enhancement/enhancer.py
+   git checkout HEAD^ -- installer/core/lib/agent_enhancement/enhancer.py
    ```
 
 3. **Clear cache**:
    ```bash
-   find installer/global/lib/agent_enhancement -name "*.pyc" -delete
-   find installer/global/lib/agent_enhancement -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+   find installer/core/lib/agent_enhancement -name "*.pyc" -delete
+   find installer/core/lib/agent_enhancement -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
    ```
 
 4. **Workaround for users**:
@@ -536,7 +536,7 @@ def test_agent_enhance_checkpoint_resume():
     result = subprocess.run(
         ["python3.14", "agent-enhance.py", "template/agent", "--hybrid"],
         capture_output=True,
-        cwd="installer/global/commands"
+        cwd="installer/core/commands"
     )
     assert result.returncode == 42  # NEED_AGENT
     assert Path(".agent-request.json").exists()
@@ -554,7 +554,7 @@ def test_agent_enhance_checkpoint_resume():
     result = subprocess.run(
         ["python3.14", "agent-enhance.py", "template/agent", "--hybrid", "--verbose"],
         capture_output=True,
-        cwd="installer/global/commands"
+        cwd="installer/core/commands"
     )
     assert result.returncode == 0  # Success
     assert "✓ Loaded agent response from checkpoint" in result.stdout.decode()
@@ -564,7 +564,7 @@ def test_agent_enhance_checkpoint_resume():
     result = subprocess.run(
         ["python3.14", "agent-enhance.py", "template/agent", "--hybrid"],
         capture_output=True,
-        cwd="installer/global/commands"
+        cwd="installer/core/commands"
     )
     assert result.returncode == 0  # Success
 ```

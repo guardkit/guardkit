@@ -17,7 +17,7 @@ parent_review: TASK-REV-AGENT-GEN
 
 **This is a pre-release blocker requiring a MINIMAL, TARGETED fix.**
 
-- **ONLY MODIFY ONE FILE**: `installer/global/commands/template-create.md`
+- **ONLY MODIFY ONE FILE**: `installer/core/commands/template-create.md`
 - **NO PYTHON CHANGES**: The Python checkpoint-resume infrastructure is working correctly
 - **NO NEW FEATURES**: Only add the missing bridge handler instructions
 - **NO REFACTORING**: Keep existing structure intact
@@ -61,7 +61,7 @@ When Python exits with code 42, Claude sees it exit and falls back to manual beh
 
 ### File to Modify
 
-**Path**: `installer/global/commands/template-create.md`
+**Path**: `installer/core/commands/template-create.md`
 
 **Location**: Replace lines 1117-1127 (the `## Command Execution` section)
 
@@ -277,7 +277,7 @@ User: /template-create --path /my/project
 
 ### AgentRequest Schema
 
-From `installer/global/lib/agent_bridge/invoker.py` lines 37-62:
+From `installer/core/lib/agent_bridge/invoker.py` lines 37-62:
 
 ```python
 @dataclass
@@ -296,7 +296,7 @@ class AgentRequest:
 
 ### AgentResponse Schema
 
-From `installer/global/lib/agent_bridge/invoker.py` lines 65-88:
+From `installer/core/lib/agent_bridge/invoker.py` lines 65-88:
 
 ```python
 @dataclass
@@ -320,7 +320,7 @@ class AgentResponse:
 
 ### Must Pass
 
-1. [ ] **Single File Change**: Only `installer/global/commands/template-create.md` is modified
+1. [ ] **Single File Change**: Only `installer/core/commands/template-create.md` is modified
 2. [ ] **Lines 1117-1127 Replaced**: The `## Command Execution` section contains bridge handler instructions
 3. [ ] **Exit Code 42 Documented**: Instructions for handling NEED_AGENT signal present
 4. [ ] **Request/Response Formats**: JSON schemas documented correctly
@@ -351,11 +351,11 @@ These files should be READ for understanding but NOT MODIFIED:
 
 | File | Purpose | Key Lines |
 |------|---------|-----------|
-| `installer/global/lib/agent_bridge/invoker.py` | Bridge invoker | 37-88 (schemas), 135-196 (invoke), 197-270 (load_response) |
-| `installer/global/lib/agent_bridge/state_manager.py` | State persistence | 16-37 (state schema), 72-122 (save/load) |
-| `installer/global/commands/lib/template_create_orchestrator.py` | Main orchestrator | 174-177 (invoker init), 779-828 (phase 5), 1743-1836 (checkpoint) |
-| `installer/global/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | 87 (bridge passed), 173-214 (fallback) |
-| `installer/global/lib/codebase_analyzer/agent_invoker.py` | Agent invocation | 95-131 (invoke) |
+| `installer/core/lib/agent_bridge/invoker.py` | Bridge invoker | 37-88 (schemas), 135-196 (invoke), 197-270 (load_response) |
+| `installer/core/lib/agent_bridge/state_manager.py` | State persistence | 16-37 (state schema), 72-122 (save/load) |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Main orchestrator | 174-177 (invoker init), 779-828 (phase 5), 1743-1836 (checkpoint) |
+| `installer/core/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | 87 (bridge passed), 173-214 (fallback) |
+| `installer/core/lib/codebase_analyzer/agent_invoker.py` | Agent invocation | 95-131 (invoke) |
 
 ---
 
@@ -365,7 +365,7 @@ These files should be READ for understanding but NOT MODIFIED:
 
 ```bash
 # Verify current state
-head -n 1130 installer/global/commands/template-create.md | tail -n 15
+head -n 1130 installer/core/commands/template-create.md | tail -n 15
 ```
 
 Expected output (lines 1117-1127):
@@ -390,15 +390,15 @@ Replace lines 1117-1127 with the replacement content specified above.
 
 ```bash
 # Verify line count increased
-wc -l installer/global/commands/template-create.md
+wc -l installer/core/commands/template-create.md
 # Expected: ~1213 lines (was 1127)
 
 # Verify bridge instructions present
-grep -c "exit code.*42\|NEED_AGENT\|\.agent-request\.json" installer/global/commands/template-create.md
+grep -c "exit code.*42\|NEED_AGENT\|\.agent-request\.json" installer/core/commands/template-create.md
 # Expected: >= 5
 
 # Verify loop structure documented
-grep "LOOP (max 5 iterations" installer/global/commands/template-create.md
+grep "LOOP (max 5 iterations" installer/core/commands/template-create.md
 # Expected: 1 match
 ```
 
@@ -474,7 +474,7 @@ grep "LOOP (max 5 iterations" installer/global/commands/template-create.md
 
 ## Implementation Summary
 
-**File Modified**: `installer/global/commands/template-create.md`
+**File Modified**: `installer/core/commands/template-create.md`
 
 **Changes**:
 - Replaced lines 1117-1127 (minimal Command Execution section)

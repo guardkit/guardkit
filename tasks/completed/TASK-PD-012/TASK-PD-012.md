@@ -30,7 +30,7 @@ Split the react-typescript template agents using the automated splitter.
 ## Template Agents
 
 ```
-installer/global/templates/react-typescript/agents/
+installer/core/templates/react-typescript/agents/
 ├── feature-architecture-specialist.md
 ├── form-validation-specialist.md
 └── react-query-specialist.md
@@ -113,5 +113,5 @@ python3 scripts/split_agent.py --dry-run --template react-typescript
 python3 scripts/split_agent.py --template react-typescript
 
 # Cleanup (removed -ext-ext.md files created by incorrect validation run)
-rm installer/global/templates/react-typescript/agents/*-ext-ext.md
+rm installer/core/templates/react-typescript/agents/*-ext-ext.md
 ```

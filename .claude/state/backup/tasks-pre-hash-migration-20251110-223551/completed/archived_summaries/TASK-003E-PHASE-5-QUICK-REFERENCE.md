@@ -66,7 +66,7 @@ assert actual == expected
 ```
 
 ### 2. File Write Failure Handling
-**File**: `installer/global/commands/lib/review_modes.py`
+**File**: `installer/core/commands/lib/review_modes.py`
 **Fix**: Graceful degradation in `_move_task_to_backlog()`
 ```python
 try:
@@ -78,7 +78,7 @@ except OSError as e:
 ```
 
 ### 3. Configuration Flag Conflicts
-**File**: `installer/global/commands/lib/review_router.py` (or new `flag_validator.py`)
+**File**: `installer/core/commands/lib/review_router.py` (or new `flag_validator.py`)
 **Fix**: Validate conflicting flags
 ```python
 def validate_user_flags(user_flags: Dict[str, bool]) -> None:
@@ -142,21 +142,21 @@ tests/
 ## Files to Modify
 
 ### Core Implementation
-1. `installer/global/commands/lib/review_modes.py`
+1. `installer/core/commands/lib/review_modes.py`
    - File write failure handling
    - Empty plan section display
    - Modification complexity warnings
 
-2. `installer/global/commands/lib/review_router.py` (or new `flag_validator.py`)
+2. `installer/core/commands/lib/review_router.py` (or new `flag_validator.py`)
    - Configuration flag validation
 
-3. `installer/global/commands/lib/metrics_storage.py`
+3. `installer/core/commands/lib/metrics_storage.py`
    - Corrupted metrics file skipping
 
-4. `installer/global/commands/lib/qa_manager.py`
+4. `installer/core/commands/lib/qa_manager.py`
    - Q&A question limit
 
-5. `installer/global/commands/lib/error_messages.py` (NEW)
+5. `installer/core/commands/lib/error_messages.py` (NEW)
    - User-friendly error formatters
 
 ### Tests to Fix
@@ -172,7 +172,7 @@ tests/
 4. `tests/edge_cases/test_concurrency_state.py` (4 tests)
 
 ### Documentation to Update
-1. `installer/global/commands/lib/README.md`
+1. `installer/core/commands/lib/README.md`
 2. `docs/TROUBLESHOOTING.md` (NEW)
 3. `CLAUDE.md`
 

@@ -21,7 +21,7 @@ Successfully reinstated the `default` template with significant quality improvem
 
 ## Files Created (5)
 
-### 1. installer/global/templates/default/CLAUDE.md (206 lines)
+### 1. installer/core/templates/default/CLAUDE.md (206 lines)
 **Purpose**: Template usage guide with clear when-to-use/when-NOT-to-use guidance
 
 **Key Features**:
@@ -37,7 +37,7 @@ Successfully reinstated the `default` template with significant quality improvem
 - Migration path emphasis
 - Template development guidance
 
-### 2. installer/global/templates/default/settings.json (272 lines)
+### 2. installer/core/templates/default/settings.json (272 lines)
 **Purpose**: Comprehensive configuration with documentation level system
 
 **Key Features**:
@@ -55,7 +55,7 @@ Successfully reinstated the `default` template with significant quality improvem
 - Complete workflow phase mapping
 - Extensibility for custom stacks
 
-### 3. installer/global/templates/default/README.md (434 lines)
+### 3. installer/core/templates/default/README.md (434 lines)
 **Purpose**: Comprehensive usage guide with examples
 
 **Key Sections**:
@@ -78,12 +78,12 @@ Successfully reinstated the `default` template with significant quality improvem
 - Complete reference guide
 - Troubleshooting section
 
-### 4. installer/global/templates/default/agents/.gitkeep
+### 4. installer/core/templates/default/agents/.gitkeep
 **Purpose**: Placeholder for custom agents
 
 **Content**: Brief guidance on adding stack-specific agents
 
-### 5. installer/global/templates/default/templates/.gitkeep
+### 5. installer/core/templates/default/templates/.gitkeep
 **Purpose**: Placeholder for code templates
 
 **Content**: Brief guidance on adding code templates
@@ -247,18 +247,18 @@ Successfully reinstated the `default` template with significant quality improvem
 **Test 1: Template Structure**
 ```bash
 # Verify all files exist
-ls installer/global/templates/default/CLAUDE.md
-ls installer/global/templates/default/README.md
-ls installer/global/templates/default/settings.json
-ls installer/global/templates/default/agents/.gitkeep
-ls installer/global/templates/default/templates/.gitkeep
+ls installer/core/templates/default/CLAUDE.md
+ls installer/core/templates/default/README.md
+ls installer/core/templates/default/settings.json
+ls installer/core/templates/default/agents/.gitkeep
+ls installer/core/templates/default/templates/.gitkeep
 ```
 **Expected**: All files exist
 **Status**: ✅ PASS
 
 **Test 2: JSON Validity**
 ```bash
-python3 -m json.tool installer/global/templates/default/settings.json
+python3 -m json.tool installer/core/templates/default/settings.json
 ```
 **Expected**: Valid JSON, no errors
 **Status**: ✅ PASS

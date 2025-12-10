@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 # Add lib path for imports
-lib_path = Path(__file__).parent / "installer/global/commands/lib"
+lib_path = Path(__file__).parent / "installer/core/commands/lib"
 sys.path.insert(0, str(lib_path))
 
 from complexity_models import (
@@ -31,12 +31,12 @@ def build_implementation_plan() -> ImplementationPlan:
 
     # From implementation plan analysis
     files_to_create = [
-        "installer/global/commands/lib/qa_manager.py"  # 1 new file (~400 lines)
+        "installer/core/commands/lib/qa_manager.py"  # 1 new file (~400 lines)
     ]
 
     # Files to modify (extracted from implementation plan)
     files_to_modify = [
-        "installer/global/commands/lib/review_modes.py"  # 1 method modification (~50 lines)
+        "installer/core/commands/lib/review_modes.py"  # 1 method modification (~50 lines)
     ]
 
     # Combine for total file count

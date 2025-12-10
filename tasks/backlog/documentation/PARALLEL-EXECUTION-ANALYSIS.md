@@ -159,7 +159,7 @@
 
 **Files to Update**:
 1. CLAUDE.md
-2. installer/global/commands/task-create.md
+2. installer/core/commands/task-create.md
 3. docs/guides/guardkit-workflow.md
 4. docs/guides/quick-reference.md
 5. README.md

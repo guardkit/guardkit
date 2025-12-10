@@ -64,15 +64,15 @@ Total extended size: 7,447 bytes (7.3 KB)
 
 ```bash
 # Total markdown files
-ls installer/global/agents/*.md | wc -l
+ls installer/core/agents/*.md | wc -l
 # Result: 28 ✅
 
 # Extended files
-ls installer/global/agents/*-ext.md | wc -l
+ls installer/core/agents/*-ext.md | wc -l
 # Result: 14 ✅
 
 # Backup files
-ls installer/global/agents/*.md.bak | wc -l
+ls installer/core/agents/*.md.bak | wc -l
 # Result: 14 ✅
 ```
 
@@ -188,36 +188,36 @@ All acceptance criteria met:
 ## Files Created
 
 ### Core Agent Files (14)
-- `installer/global/agents/task-manager.md`
-- `installer/global/agents/devops-specialist.md`
-- `installer/global/agents/git-workflow-manager.md`
-- `installer/global/agents/security-specialist.md`
-- `installer/global/agents/database-specialist.md`
-- `installer/global/agents/architectural-reviewer.md`
-- `installer/global/agents/agent-content-enhancer.md`
-- `installer/global/agents/debugging-specialist.md`
-- `installer/global/agents/code-reviewer.md`
-- `installer/global/agents/test-verifier.md`
-- `installer/global/agents/test-orchestrator.md`
-- `installer/global/agents/pattern-advisor.md`
-- `installer/global/agents/complexity-evaluator.md`
-- `installer/global/agents/build-validator.md`
+- `installer/core/agents/task-manager.md`
+- `installer/core/agents/devops-specialist.md`
+- `installer/core/agents/git-workflow-manager.md`
+- `installer/core/agents/security-specialist.md`
+- `installer/core/agents/database-specialist.md`
+- `installer/core/agents/architectural-reviewer.md`
+- `installer/core/agents/agent-content-enhancer.md`
+- `installer/core/agents/debugging-specialist.md`
+- `installer/core/agents/code-reviewer.md`
+- `installer/core/agents/test-verifier.md`
+- `installer/core/agents/test-orchestrator.md`
+- `installer/core/agents/pattern-advisor.md`
+- `installer/core/agents/complexity-evaluator.md`
+- `installer/core/agents/build-validator.md`
 
 ### Extended Agent Files (14)
-- `installer/global/agents/task-manager-ext.md`
-- `installer/global/agents/devops-specialist-ext.md`
-- `installer/global/agents/git-workflow-manager-ext.md`
-- `installer/global/agents/security-specialist-ext.md`
-- `installer/global/agents/database-specialist-ext.md`
-- `installer/global/agents/architectural-reviewer-ext.md`
-- `installer/global/agents/agent-content-enhancer-ext.md`
-- `installer/global/agents/debugging-specialist-ext.md`
-- `installer/global/agents/code-reviewer-ext.md`
-- `installer/global/agents/test-verifier-ext.md`
-- `installer/global/agents/test-orchestrator-ext.md`
-- `installer/global/agents/pattern-advisor-ext.md`
-- `installer/global/agents/complexity-evaluator-ext.md`
-- `installer/global/agents/build-validator-ext.md`
+- `installer/core/agents/task-manager-ext.md`
+- `installer/core/agents/devops-specialist-ext.md`
+- `installer/core/agents/git-workflow-manager-ext.md`
+- `installer/core/agents/security-specialist-ext.md`
+- `installer/core/agents/database-specialist-ext.md`
+- `installer/core/agents/architectural-reviewer-ext.md`
+- `installer/core/agents/agent-content-enhancer-ext.md`
+- `installer/core/agents/debugging-specialist-ext.md`
+- `installer/core/agents/code-reviewer-ext.md`
+- `installer/core/agents/test-verifier-ext.md`
+- `installer/core/agents/test-orchestrator-ext.md`
+- `installer/core/agents/pattern-advisor-ext.md`
+- `installer/core/agents/complexity-evaluator-ext.md`
+- `installer/core/agents/build-validator-ext.md`
 
 ### Backup Files (14)
 - All original files backed up with `.bak` extension
@@ -229,13 +229,13 @@ If issues discovered after commit:
 
 ```bash
 # Option 1: Restore from backup files
-for f in installer/global/agents/*.md.bak; do
+for f in installer/core/agents/*.md.bak; do
     mv "$f" "${f%.bak}"
 done
-rm installer/global/agents/*-ext.md
+rm installer/core/agents/*-ext.md
 
 # Option 2: Restore from git
-git checkout HEAD~1 -- installer/global/agents/
+git checkout HEAD~1 -- installer/core/agents/
 ```
 
 **Current backup commit**: `aeb2d8b` - "Pre-split backup: 14 global agents (TASK-PD-010)"

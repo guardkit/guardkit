@@ -94,8 +94,8 @@ class StateManager:
 - **Maintainability**: Changes to agent invocation don't affect state logic
 
 **Location**:
-- `/template-create`: `installer/global/commands/lib/template_create_orchestrator.py`
-- `/agent-enhance`: `installer/global/lib/agent_enhancement/enhancer.py`
+- `/template-create`: `installer/core/commands/lib/template_create_orchestrator.py`
+- `/agent-enhance`: `installer/core/lib/agent_enhancement/enhancer.py`
 
 ---
 
@@ -1354,7 +1354,7 @@ Use `/template-create` as reference for checkpoint-resume pattern:
 
 ```python
 # Always reference working implementation
-# See: installer/global/commands/lib/template_create_orchestrator.py
+# See: installer/core/commands/lib/template_create_orchestrator.py
 # Lines 1768-1777: Response detection pattern
 # Lines 280-284: State saving before agent invocation
 # Lines 1244-1257: Exit code handling dispatch table
@@ -1449,13 +1449,13 @@ When implementing checkpoint-resume pattern:
 ### Code Locations
 
 **Working Implementation** (`/template-create`):
-- Orchestrator: `installer/global/commands/lib/template_create_orchestrator.py`
-- Agent Bridge: `installer/global/lib/agent_bridge/invoker.py`
-- State Manager: `installer/global/lib/agent_bridge/state_manager.py`
-- Command Wrapper: `installer/global/commands/template-create.md` (lines 1060-1595)
+- Orchestrator: `installer/core/commands/lib/template_create_orchestrator.py`
+- Agent Bridge: `installer/core/lib/agent_bridge/invoker.py`
+- State Manager: `installer/core/lib/agent_bridge/state_manager.py`
+- Command Wrapper: `installer/core/commands/template-create.md` (lines 1060-1595)
 
 **Fixed Implementation** (`/agent-enhance`):
-- Enhancer: `installer/global/lib/agent_enhancement/enhancer.py`
+- Enhancer: `installer/core/lib/agent_enhancement/enhancer.py`
 - Fix Location: Lines 269-280 (response detection logic)
 - Bug Task: `tasks/completed/TASK-FIX-D4E5/TASK-FIX-D4E5.md`
 

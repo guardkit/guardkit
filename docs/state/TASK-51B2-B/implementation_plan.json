@@ -8,7 +8,7 @@
     "to_create": [],
     "to_modify": [
       {
-        "path": "installer/global/lib/codebase_analyzer/prompt_builder.py",
+        "path": "installer/core/lib/codebase_analyzer/prompt_builder.py",
         "purpose": "Enhance AI prompt to emphasize template generation purpose and request diverse example files",
         "estimated_loc": 40,
         "changes": [
@@ -19,7 +19,7 @@
         ]
       },
       {
-        "path": "installer/global/commands/lib/template_create_orchestrator.py",
+        "path": "installer/core/commands/lib/template_create_orchestrator.py",
         "purpose": "Increase file sampling from 10 to 30 for better AI context",
         "estimated_loc": 1,
         "changes": [

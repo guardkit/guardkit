@@ -18,7 +18,7 @@ template_gen.save_templates(self.templates, output_path)
 
 **Original Test Approach** (incorrect):
 ```python
-with patch('installer.global.lib.template_generator.template_generator.TemplateGenerator') as MockTemplateGen:
+with patch('installer.core.lib.template_generator.template_generator.TemplateGenerator') as MockTemplateGen:
 ```
 
 This patches the class in its definition module, but the orchestrator has already imported it into its own namespace at module load time.

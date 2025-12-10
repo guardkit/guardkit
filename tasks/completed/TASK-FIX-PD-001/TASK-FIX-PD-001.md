@@ -11,7 +11,7 @@ tags: [progressive-disclosure, bug-fix, regression, template-create]
 complexity: 2
 related_review: TASK-REV-TC01
 files_modified:
-  - installer/global/commands/lib/template_create_orchestrator.py
+  - installer/core/commands/lib/template_create_orchestrator.py
 ---
 
 # Task: Fix TemplateSplitOutput Attribute Name Mismatch
@@ -24,7 +24,7 @@ Fix a regression bug introduced in Phase 5.6 progressive disclosure work where t
 
 The `TemplateSplitOutput` model defines attributes with `_content` suffix, but the orchestrator accesses them without the suffix.
 
-**Model** ([models.py:356-379](installer/global/lib/template_generator/models.py#L356-L379)):
+**Model** ([models.py:356-379](installer/core/lib/template_generator/models.py#L356-L379)):
 ```python
 class TemplateSplitOutput(BaseModel):
     core_content: str       # ← Correct
@@ -32,7 +32,7 @@ class TemplateSplitOutput(BaseModel):
     reference_content: str  # ← Correct
 ```
 
-**Orchestrator** ([template_create_orchestrator.py:1556-1568](installer/global/commands/lib/template_create_orchestrator.py#L1556-L1568)):
+**Orchestrator** ([template_create_orchestrator.py:1556-1568](installer/core/commands/lib/template_create_orchestrator.py#L1556-L1568)):
 ```python
 split_output.core        # ← Wrong (AttributeError)
 split_output.patterns    # ← Wrong (AttributeError)
@@ -73,7 +73,7 @@ split_output.reference → split_output.reference_content
 
 ## Files to Modify
 
-1. `installer/global/commands/lib/template_create_orchestrator.py` (3 lines)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (3 lines)
 
 ## Complexity
 
@@ -91,7 +91,7 @@ split_output.reference → split_output.reference_content
 
 ### Changes Made
 
-Fixed 3 lines in `_write_claude_md_split()` method in [template_create_orchestrator.py:1556-1568](installer/global/commands/lib/template_create_orchestrator.py#L1556-L1568):
+Fixed 3 lines in `_write_claude_md_split()` method in [template_create_orchestrator.py:1556-1568](installer/core/commands/lib/template_create_orchestrator.py#L1556-L1568):
 
 | Line | Before | After |
 |------|--------|-------|

@@ -18,14 +18,14 @@ After implementing boundaries placement tasks (TASK-STND-0B1A, TASK-STND-783B, T
 
 ### Issue #1: Static Enhancement Missing Boundaries
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Method**: `_static_enhancement()` (lines 379-403)
 
 Static enhancement only returned `related_templates`, no boundaries. When hybrid strategy fell back to static (AI failed), agents had no boundaries.
 
 ### Issue #2: Parser Made Boundaries OPTIONAL
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 **Method**: `_validate_basic_structure()` (line 157)
 
 ```python
@@ -57,7 +57,7 @@ Implemented **two-layer protection** to guarantee boundaries in all modes:
 
 ### Layer 1: Parser Validation (REQUIRED boundaries)
 
-**File Modified**: `installer/global/lib/agent_enhancement/parser.py`
+**File Modified**: `installer/core/lib/agent_enhancement/parser.py`
 **Lines Changed**: 156-170
 
 ```python
@@ -95,7 +95,7 @@ def _validate_basic_structure(self, enhancement: Dict[str, Any]) -> None:
 
 ### Layer 2: Static Enhancement (FALLBACK boundaries)
 
-**File Modified**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File Modified**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Lines Changed**: 385-411
 
 ```python

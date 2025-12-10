@@ -61,8 +61,8 @@ The `--create-agent-tasks` flag is **documented but not implemented** in the orc
 
 **Reviewer**: Code Review Specialist Agent
 **Files Reviewed**:
-- `installer/global/commands/lib/template_create_orchestrator.py`
-- `installer/global/lib/agent_bridge/invoker.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
+- `installer/core/lib/agent_bridge/invoker.py`
 - Generated task files structure
 
 ### Strengths ✅
@@ -271,7 +271,7 @@ task_dir.mkdir(parents=True, exist_ok=True)
 
 ### Agent Communication Protocol (9.0/10)
 
-**Location**: `installer/global/lib/agent_bridge/invoker.py`
+**Location**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Strengths**:
 - Clean protocol design (lines 34-83)

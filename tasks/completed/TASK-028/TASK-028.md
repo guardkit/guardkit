@@ -150,7 +150,7 @@ Your choice (A/V/C/D/R): _
 Extract plan summary from saved implementation plan:
 
 ```python
-# installer/global/commands/lib/checkpoint_display.py
+# installer/core/commands/lib/checkpoint_display.py
 
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -361,7 +361,7 @@ Document enhanced checkpoint:
 ## Implementation Plan
 
 ### Step 1: Create Checkpoint Display Module (30 min)
-File: `installer/global/commands/lib/checkpoint_display.py`
+File: `installer/core/commands/lib/checkpoint_display.py`
 
 Functions:
 - `load_plan_summary(task_id)` - Extract plan summary
@@ -371,7 +371,7 @@ Functions:
 - `format_risk_list(risks)` - Format risks with icons
 
 ### Step 2: Update Phase 2.8 Display Logic (1 hour)
-File: `installer/global/commands/task-work.md`
+File: `installer/core/commands/task-work.md`
 
 Modify Phase 2.8 checkpoint section:
 - Add plan summary loading

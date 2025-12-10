@@ -82,23 +82,23 @@ Review TASK-REV-TC03 identified 3 minor formatting/documentation issues in the a
 ## Implementation Notes
 
 These fixes should be applied to:
-1. `installer/global/agents/agent-content-enhancer.md` - Update enhancement prompts ✅
+1. `installer/core/agents/agent-content-enhancer.md` - Update enhancement prompts ✅
 2. Optionally: Re-run enhancement on kartlog template to verify fixes
 
 ## Implementation Summary
 
 **Files Modified**:
-1. `installer/global/agents/agent-content-enhancer.md`:
+1. `installer/core/agents/agent-content-enhancer.md`:
    - Added explicit "CRITICAL - EMOJI PREFIXES ARE MANDATORY" section with exact format requirements
    - Added new "Critical Content Guidelines" section with:
      - "Use Discovered Paths Only" guidelines with examples
      - "Derive Framework Context From Codebase Analysis" guidelines with examples
 
-2. `installer/global/agents/agent-content-enhancer-ext.md`:
+2. `installer/core/agents/agent-content-enhancer-ext.md`:
    - Updated boundary section with mandatory emoji prefix note
    - Added new "Critical Content Guidelines (TASK-FIX-PD07)" section with detailed requirements
 
-3. `installer/global/lib/agent_enhancement/prompt_builder.py`:
+3. `installer/core/lib/agent_enhancement/prompt_builder.py`:
    - Added 3 new critical notes to the enhancement prompt:
      - Emoji prefixes mandatory
      - Use discovered paths only

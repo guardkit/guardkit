@@ -81,7 +81,7 @@ for key, value in state.config.items():
 
 ## Files Modified
 
-1. **installer/global/commands/lib/template_create_orchestrator.py**
+1. **installer/core/commands/lib/template_create_orchestrator.py**
    - Lines 2124-2135: Added `OPERATIONAL_PARAMS` exclusion set
 
 2. **tests/unit/test_template_create_orchestrator.py**

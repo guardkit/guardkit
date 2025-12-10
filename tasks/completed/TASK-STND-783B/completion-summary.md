@@ -27,7 +27,7 @@ Changed return types from `int | None` → `int` to ensure methods NEVER return 
 ## Deliverables
 
 ### Files Modified
-1. ✅ `installer/global/lib/agent_enhancement/applier.py`
+1. ✅ `installer/core/lib/agent_enhancement/applier.py`
    - Modified `_find_boundaries_insertion_point()` - Changed return type, updated docstring
    - Enhanced `_find_post_description_position()` - Added 3 new priority tiers (23 lines)
    - Simplified `_merge_content()` - Removed None check fallback logic

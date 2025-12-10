@@ -12,7 +12,7 @@ Successfully implemented the "Modify Plan" option for Phase 2.8 checkpoint, allo
 
 ## Files Created
 
-### 1. installer/global/commands/lib/plan_modifier.py (1,103 lines)
+### 1. installer/core/commands/lib/plan_modifier.py (1,103 lines)
 
 **Purpose:** Core modifier module with interactive plan modification capabilities
 
@@ -41,7 +41,7 @@ updated_plan = modifier.run_interactive_session()
 - ✅ Comprehensive input validation
 - ✅ Graceful error handling (Ctrl+C, EOF, invalid input)
 
-### 2. installer/global/commands/lib/README-PLAN-MODIFIER.md (447 lines)
+### 2. installer/core/commands/lib/README-PLAN-MODIFIER.md (447 lines)
 
 **Purpose:** Comprehensive documentation for the Plan Modifier implementation
 
@@ -59,7 +59,7 @@ updated_plan = modifier.run_interactive_session()
 
 ## Files Modified
 
-### 1. installer/global/commands/lib/plan_persistence.py (+111 lines)
+### 1. installer/core/commands/lib/plan_persistence.py (+111 lines)
 
 **Changes:**
 - Added `save_plan_version()` function - Saves plan with version increment and backup
@@ -85,7 +85,7 @@ docs/state/TASK-029/
     └── implementation_plan_v3_20251018_163045.md
 ```
 
-### 2. installer/global/commands/lib/checkpoint_display.py (+88 lines)
+### 2. installer/core/commands/lib/checkpoint_display.py (+88 lines)
 
 **Changes:**
 - Added import for `PlanModifier` and `PlanModificationError`

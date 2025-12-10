@@ -663,14 +663,14 @@ tests/unit/lib/agent_bridge/test_state_manager.py: 17 tests PASS ✅
 
 ### Modified Files
 
-1. **installer/global/lib/agent_bridge/invoker.py**
+1. **installer/core/lib/agent_bridge/invoker.py**
    - Lines changed: ~30
    - Key changes:
      - Phase-specific file naming (Lines 130-138)
      - Enhanced clear_cache() (Lines 310-313)
      - Updated docstrings
 
-2. **installer/global/commands/lib/template_create_orchestrator.py**
+2. **installer/core/commands/lib/template_create_orchestrator.py**
    - Lines changed: ~50
    - Key changes:
      - Separate phase1_invoker and phase5_invoker (Lines 192-201)
@@ -705,7 +705,7 @@ tests/unit/lib/agent_bridge/test_state_manager.py: 17 tests PASS ✅
 - `docs/guides/checkpoint-resume-pattern.md` (if exists)
 
 ### Command Specifications
-- `installer/global/commands/template-create.md`
+- `installer/core/commands/template-create.md`
 
 ---
 

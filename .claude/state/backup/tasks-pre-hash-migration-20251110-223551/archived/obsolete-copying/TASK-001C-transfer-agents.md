@@ -75,7 +75,7 @@ Identify technology stack
 ## Implementation
 
 ```bash
-cd ai-engineer/installer/global/agents
+cd ai-engineer/installer/core/agents
 
 # Copy all agents EXCEPT requirements-analyst and bdd-generator
 for agent in architectural-reviewer.md test-verifier.md test-orchestrator.md \
@@ -84,14 +84,14 @@ for agent in architectural-reviewer.md test-verifier.md test-orchestrator.md \
              database-specialist.md security-specialist.md pattern-advisor.md \
              python-mcp-specialist.md figma-react-orchestrator.md \
              zeplin-maui-orchestrator.md; do
-  cp "$agent" ../../agentecflow/installer/global/agents/
+  cp "$agent" ../../agentecflow/installer/core/agents/
 done
 ```
 
 ## Verification
 
 ```bash
-cd agentecflow/installer/global/agents/
+cd agentecflow/installer/core/agents/
 
 # Verify no requirements references
 grep -i "requirements\|ears\|bdd.*scenario" *.md | \

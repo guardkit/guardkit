@@ -25,7 +25,7 @@ Phase 7.5 (Agent Enhancement) finds 0 templates when it should find 15+ template
 
 **Evidence from logs**:
 ```
-INFO:installer.global.lib.template_creation.agent_enhancer:Found 10 agents and 0 templates
+INFO:installer.core.lib.template_creation.agent_enhancer:Found 10 agents and 0 templates
 ```
 
 **Root Cause**: Templates are generated in Phase 4 (in memory) but not written to disk until Phase 9. Phase 7.5 runs between Phase 7 and Phase 8, but templates don't exist on disk yet, so `AgentEnhancer.enhance_all_agents()` finds 0 templates at line 120.
@@ -70,7 +70,7 @@ Ensure templates aren't written twice:
 
 ## Files to Modify
 
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
   - Add debug logging
   - Move/duplicate template pre-write to correct location
   - Ensure idempotent template writing

@@ -10,18 +10,18 @@
 ## Deliverables
 
 ### Code Files Created (4 modules, 635 lines)
-1. `installer/global/commands/lib/agentic_init/__init__.py` - Module exports
-2. `installer/global/commands/lib/agentic_init/template_discovery.py` - 220 lines
-3. `installer/global/commands/lib/agentic_init/template_selection.py` - 105 lines
-4. `installer/global/commands/lib/agentic_init/agent_installer.py` - 130 lines
-5. `installer/global/commands/lib/agentic_init/command.py` - 180 lines
+1. `installer/core/commands/lib/agentic_init/__init__.py` - Module exports
+2. `installer/core/commands/lib/agentic_init/template_discovery.py` - 220 lines
+3. `installer/core/commands/lib/agentic_init/template_selection.py` - 105 lines
+4. `installer/core/commands/lib/agentic_init/agent_installer.py` - 130 lines
+5. `installer/core/commands/lib/agentic_init/command.py` - 180 lines
 
 ### Test Files Created (2 test suites, 26 tests)
 1. `tests/test_agentic_init_discovery.py` - 15 unit tests
 2. `tests/integration/test_agentic_init_integration.py` - 11 integration tests
 
 ### Documentation Created
-1. `installer/global/commands/agentic-init.md` - Complete command specification
+1. `installer/core/commands/agentic-init.md` - Complete command specification
 
 ## Quality Metrics
 
@@ -34,7 +34,7 @@
 ## Requirements Satisfied (9/9)
 
 1. ✅ Discover templates from `~/.agentecflow/templates/` (personal)
-2. ✅ Discover templates from `installer/global/templates/` (repository)
+2. ✅ Discover templates from `installer/core/templates/` (repository)
 3. ✅ Personal templates take precedence over repository templates
 4. ✅ Display template source during selection (personal vs repository)
 5. ✅ Handle missing directories gracefully
@@ -87,7 +87,7 @@ Total: 26 passed in 0.47s
 
 ### 1. Dual-Source Template Discovery
 - Scans `~/.agentecflow/templates/` (personal, priority)
-- Scans `installer/global/templates/` (repository, fallback)
+- Scans `installer/core/templates/` (repository, fallback)
 - Automatic priority handling (personal overrides repository)
 - Graceful handling of missing directories
 
@@ -158,7 +158,7 @@ Three options when agent already exists:
 5. **Good documentation**: Command spec provides complete reference
 
 ### Challenges Faced
-1. **Import path issue**: Had to use `commands.lib.*` instead of `installer.global.*` due to Python keyword
+1. **Import path issue**: Had to use `commands.lib.*` instead of `installer.core.*` due to Python keyword
 2. **Test fixtures**: Creating realistic test templates required careful setup
 3. **Conflict UI**: Designing intuitive conflict resolution interface
 

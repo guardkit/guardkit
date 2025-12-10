@@ -43,7 +43,7 @@ from state_paths import get_state_file, ...
 
 1. **Development Structure**:
    ```
-   installer/global/lib/
+   installer/core/lib/
    ├── state_paths.py          # Module lives here
    ├── agent_bridge/
    │   ├── invoker.py          # sys.path.insert(0, parent.parent) finds state_paths.py
@@ -68,18 +68,18 @@ from state_paths import get_state_file, ...
    ```
 
 3. **The path calculation differs**:
-   - Dev: `parent.parent` = `installer/global/lib/` (contains `state_paths.py`)
+   - Dev: `parent.parent` = `installer/core/lib/` (contains `state_paths.py`)
    - Prod: `parent.parent` = `~/.agentecflow/` (does NOT contain `state_paths.py`)
 
 ## Files Affected
 
 | File | Current Import | Issue |
 |------|----------------|-------|
-| `installer/global/lib/agent_bridge/invoker.py` | `sys.path.insert(0, parent.parent)` | Wrong path in production |
-| `installer/global/lib/agent_bridge/state_manager.py` | `sys.path.insert(0, parent.parent)` | Wrong path in production |
-| `installer/global/lib/agent_enhancement/orchestrator.py` | `sys.path.insert(0, parent.parent.parent/"lib")` | Wrong path in production |
-| `installer/global/commands/lib/greenfield_qa_session.py` | `sys.path.insert(0, parent.parent.parent/"lib")` | Wrong path in production |
-| `installer/global/lib/template_config_handler.py` | `from .state_paths import ...` | May work (relative import) |
+| `installer/core/lib/agent_bridge/invoker.py` | `sys.path.insert(0, parent.parent)` | Wrong path in production |
+| `installer/core/lib/agent_bridge/state_manager.py` | `sys.path.insert(0, parent.parent)` | Wrong path in production |
+| `installer/core/lib/agent_enhancement/orchestrator.py` | `sys.path.insert(0, parent.parent.parent/"lib")` | Wrong path in production |
+| `installer/core/commands/lib/greenfield_qa_session.py` | `sys.path.insert(0, parent.parent.parent/"lib")` | Wrong path in production |
+| `installer/core/lib/template_config_handler.py` | `from .state_paths import ...` | May work (relative import) |
 
 ## Solution Options
 
@@ -166,7 +166,7 @@ Add `__init__.py` files and install as proper Python package:
 - [x] Validation step passes with no module errors
 
 ### AC2: Imports Work in Both Environments
-- [x] Imports work in development (`installer/global/lib/`)
+- [x] Imports work in development (`installer/core/lib/`)
 - [x] Imports work in production (`~/.agentecflow/lib/`)
 
 ### AC3: Tests Pass
@@ -209,16 +209,16 @@ Add integration test that mimics production structure.
 
 **Files Modified:**
 
-1. **`installer/global/lib/agent_bridge/invoker.py`**
+1. **`installer/core/lib/agent_bridge/invoker.py`**
    - Changed to: `from ..state_paths import get_phase_request_file, get_phase_response_file`
 
-2. **`installer/global/lib/agent_bridge/state_manager.py`**
+2. **`installer/core/lib/agent_bridge/state_manager.py`**
    - Changed to: `from ..state_paths import get_state_file, TEMPLATE_CREATE_STATE`
 
-3. **`installer/global/lib/agent_enhancement/orchestrator.py`**
+3. **`installer/core/lib/agent_enhancement/orchestrator.py`**
    - Changed to: `from ..state_paths import get_state_file, AGENT_ENHANCE_STATE`
 
-4. **`installer/global/commands/lib/greenfield_qa_session.py`**
+4. **`installer/core/commands/lib/greenfield_qa_session.py`**
    - Used try/except pattern for conditional import (production vs development paths differ)
 
 ### Testing Results

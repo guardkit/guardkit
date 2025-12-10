@@ -9,7 +9,7 @@
 
 ### 1. AgentInvocationTracker Class
 
-**File:** `installer/global/commands/lib/agent_invocation_tracker.py`
+**File:** `installer/core/commands/lib/agent_invocation_tracker.py`
 
 **Features:**
 - Track agent invocations with phase, name, source, and timestamp
@@ -28,7 +28,7 @@
 
 ### 2. Agent Source Detection
 
-**File:** `installer/global/commands/lib/agent_discovery.py`
+**File:** `installer/core/commands/lib/agent_discovery.py`
 
 **New Function:** `discover_agent_with_source(phase, stack, keywords)`
 
@@ -41,8 +41,8 @@
 **Source Types:**
 - `local` - From `.claude/agents/` (📁)
 - `user` - From `~/.agentecflow/agents/` (👤)
-- `global` - From `installer/global/agents/` (🌐)
-- `template:name` - From `installer/global/templates/*/agents/` (📦)
+- `global` - From `installer/core/agents/` (🌐)
+- `template:name` - From `installer/core/templates/*/agents/` (📦)
 
 ### 3. Pending Phases Support
 
@@ -104,13 +104,13 @@ AGENT INVOCATIONS LOG
 
 ## Files Modified
 
-1. **installer/global/commands/lib/__init__.py**
+1. **installer/core/commands/lib/__init__.py**
    - Added imports for AgentInvocationTracker
    - Added imports for add_pending_phases
    - Added import for discover_agent_with_source
    - Updated __all__ exports
 
-2. **installer/global/commands/lib/agent_discovery.py**
+2. **installer/core/commands/lib/agent_discovery.py**
    - Added discover_agent_with_source() function
    - Enhanced existing discovery to return source information
 
@@ -262,7 +262,7 @@ tracker.mark_complete(
 Run the interactive demo:
 
 ```bash
-python3 installer/global/commands/lib/demo_agent_tracker_integration.py
+python3 installer/core/commands/lib/demo_agent_tracker_integration.py
 ```
 
 This demonstrates:

@@ -22,7 +22,7 @@ The `/template-create` command bypasses the Python orchestrator because the comm
 ### Finding 1: No Changes Between v0.97 and Current
 
 **Evidence**:
-- `git diff 6c651a3..HEAD -- installer/global/commands/template-create.md` returns empty
+- `git diff 6c651a3..HEAD -- installer/core/commands/template-create.md` returns empty
 - Both versions have identical 1655 lines
 - The bypass behavior has always been a latent risk
 

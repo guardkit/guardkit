@@ -42,7 +42,7 @@ Execute tasks in order:
 **Quick version**:
 ```bash
 # Compare agent files
-comm -12 <(ls guardkit/installer/global/agents/*.md | xargs basename -a | sort) \
+comm -12 <(ls guardkit/installer/core/agents/*.md | xargs basename -a | sort) \
          <(ls ../require-kit/.claude/agents/*.md | xargs basename -a | sort)
 ```
 

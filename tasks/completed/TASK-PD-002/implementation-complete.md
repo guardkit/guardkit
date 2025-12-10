@@ -48,7 +48,7 @@ For detailed examples, comprehensive best practices, and in-depth guidance, see 
 
 ### Files Modified
 
-1. **installer/global/lib/agent_enhancement/applier.py**
+1. **installer/core/lib/agent_enhancement/applier.py**
    - Already implemented in TASK-PD-001 (line 642-669)
    - No additional changes needed
 
@@ -127,8 +127,8 @@ All acceptance criteria met:
 - IMPLEMENTATION_COMPLETE.md (this file)
 
 **Implementation**:
-- installer/global/lib/agent_enhancement/applier.py:642-669 (loading instruction method)
-- installer/global/lib/agent_enhancement/models.py (SplitContent model)
+- installer/core/lib/agent_enhancement/applier.py:642-669 (loading instruction method)
+- installer/core/lib/agent_enhancement/models.py (SplitContent model)
 
 **Tests**:
 - tests/unit/test_applier_split_methods.py (40 tests, all passing)

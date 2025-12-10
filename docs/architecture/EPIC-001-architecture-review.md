@@ -226,7 +226,7 @@ class AgentDiscovery:
     """Discovers and recommends agents"""
 
     def discover_local(self) -> List[Agent]:
-        """Scan installer/global/agents/"""
+        """Scan installer/core/agents/"""
         pass
 
     def recommend_for_stack(self, stack_info) -> List[Agent]:
@@ -692,7 +692,7 @@ def get_template_init_questions() -> List[Question]:
 ### 4.1 Current Agent Discovery Design
 
 **TASK-003: Local Agent Scanner** ✅ **WELL-DEFINED**
-- Scans `installer/global/agents/` directory
+- Scans `installer/core/agents/` directory
 - Parses agent markdown files
 - Extracts metadata (name, description, tools, technologies)
 - Caching with 5-minute TTL
@@ -732,7 +732,7 @@ Section 8: Agent Discovery
 **Inconsistency Identified**: ❌ **CRITICAL**
 
 1. Brownfield references **external sources** (subagents.cc, GitHub repos)
-2. TASK-003 only implements **local scanning** (installer/global/agents/)
+2. TASK-003 only implements **local scanning** (installer/core/agents/)
 3. TASK-004 (external sources config) is **missing**
 4. EPIC-001 states "removed external scraping dependencies" but workflow doc still references them
 
@@ -749,7 +749,7 @@ class AgentDiscovery:
 
     def __init__(self, agent_dirs: List[Path]):
         self.agent_dirs = agent_dirs or [
-            Path("installer/global/agents/"),
+            Path("installer/core/agents/"),
         ]
 
     def discover(self) -> List[Agent]:
@@ -801,7 +801,7 @@ class AgentDiscovery:
         return agents
 
     def _scan_local(self) -> List[Agent]:
-        """Scan installer/global/agents/"""
+        """Scan installer/core/agents/"""
         # TASK-003 implementation
         pass
 

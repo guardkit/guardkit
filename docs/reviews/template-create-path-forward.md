@@ -693,9 +693,9 @@ Result: Enhanced agents incrementally, full control
 - TASK-TMPL-4E89: AI-Powered Agent Detection (8.5/10, 86% coverage)
 
 **Implementation Files**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (2,004 lines)
-- `installer/global/lib/agent_generator/agent_generator.py` (470 lines)
-- `installer/global/lib/template_creation/agent_enhancer.py` (1,468 lines - to be removed)
+- `installer/core/commands/lib/template_create_orchestrator.py` (2,004 lines)
+- `installer/core/lib/agent_generator/agent_generator.py` (470 lines)
+- `installer/core/lib/template_creation/agent_enhancer.py` (1,468 lines - to be removed)
 
 ---
 

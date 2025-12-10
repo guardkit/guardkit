@@ -91,7 +91,7 @@ Create specialized requirement templates for different task types:
 
 ### Phase 1: Template Data Models (2 hours)
 ```python
-# File: installer/global/commands/lib/requirement_templates/__init__.py
+# File: installer/core/commands/lib/requirement_templates/__init__.py
 
 from dataclasses import dataclass
 from typing import List, Dict
@@ -120,7 +120,7 @@ class RequirementTemplate:
 
 ### Phase 2: Bug Fix Template (1 hour)
 ```json
-// File: installer/global/commands/lib/requirement_templates/bug-fix.json
+// File: installer/core/commands/lib/requirement_templates/bug-fix.json
 
 {
   "type": "bug-fix",
@@ -172,7 +172,7 @@ class RequirementTemplate:
 
 ### Phase 3: Feature Template (1 hour)
 ```json
-// File: installer/global/commands/lib/requirement_templates/feature.json
+// File: installer/core/commands/lib/requirement_templates/feature.json
 
 {
   "type": "feature",
@@ -222,7 +222,7 @@ class RequirementTemplate:
 
 ### Phase 4: Refactor Template (1 hour)
 ```json
-// File: installer/global/commands/lib/requirement_templates/refactor.json
+// File: installer/core/commands/lib/requirement_templates/refactor.json
 
 {
   "type": "refactor",
@@ -264,7 +264,7 @@ class RequirementTemplate:
 
 ### Phase 5: Documentation, Performance, Security Templates (1.5 hours)
 ```json
-// File: installer/global/commands/lib/requirement_templates/documentation.json
+// File: installer/core/commands/lib/requirement_templates/documentation.json
 {
   "type": "documentation",
   "name": "Documentation",
@@ -299,7 +299,7 @@ class RequirementTemplate:
   "output_format": "## {requirement_id}: {documentation_title}\n\n**Type**: Documentation\n**Template**: User-Centric\n\n**Target Audience**: {target_audience}\n**Format**: {documentation_format}\n\n**Key Sections**:\n{key_sections}\n\n**Examples**:\n{examples_needed}\n\n**Success Criteria**:\n  ✅ Documentation is clear and concise\n  ✅ All key sections covered\n  ✅ Examples are accurate and helpful\n  ✅ Target audience can understand and use"
 }
 
-// File: installer/global/commands/lib/requirement_templates/performance.json
+// File: installer/core/commands/lib/requirement_templates/performance.json
 {
   "type": "performance",
   "name": "Performance",
@@ -328,7 +328,7 @@ class RequirementTemplate:
   "output_format": "## {requirement_id}: {performance_title}\n\n**Type**: Performance\n**Template**: Metrics-Focused\n\n**Current Performance**:\n{current_metrics}\n\n**Target Performance**:\n{target_metrics}\n\n**Bottlenecks**:\n{bottlenecks}\n\n**Success Criteria**:\n  ✅ Target metrics achieved\n  ✅ No functional regressions\n  ✅ Performance improvements sustained over time"
 }
 
-// File: installer/global/commands/lib/requirement_templates/security.json
+// File: installer/core/commands/lib/requirement_templates/security.json
 {
   "type": "security",
   "name": "Security",
@@ -362,7 +362,7 @@ class RequirementTemplate:
 
 ### Phase 6: Command Integration (1.5 hours)
 ```markdown
-# File: installer/global/commands/gather-requirements.md
+# File: installer/core/commands/gather-requirements.md
 
 ## Template-Based Requirements Gathering (NEW)
 
@@ -476,20 +476,20 @@ def test_refactor_template():
 ## Files to Create
 
 ### Template Files
-- `installer/global/commands/lib/requirement_templates/__init__.py`
-- `installer/global/commands/lib/requirement_templates/bug-fix.json`
-- `installer/global/commands/lib/requirement_templates/feature.json`
-- `installer/global/commands/lib/requirement_templates/refactor.json`
-- `installer/global/commands/lib/requirement_templates/documentation.json`
-- `installer/global/commands/lib/requirement_templates/performance.json`
-- `installer/global/commands/lib/requirement_templates/security.json`
+- `installer/core/commands/lib/requirement_templates/__init__.py`
+- `installer/core/commands/lib/requirement_templates/bug-fix.json`
+- `installer/core/commands/lib/requirement_templates/feature.json`
+- `installer/core/commands/lib/requirement_templates/refactor.json`
+- `installer/core/commands/lib/requirement_templates/documentation.json`
+- `installer/core/commands/lib/requirement_templates/performance.json`
+- `installer/core/commands/lib/requirement_templates/security.json`
 
 ### Test Files
 - `tests/unit/test_requirement_templates.py`
 - `tests/integration/test_requirement_templates.py`
 
 ### Modified Files
-- `installer/global/commands/gather-requirements.md` (add --type flag)
+- `installer/core/commands/gather-requirements.md` (add --type flag)
 
 ## Success Metrics
 

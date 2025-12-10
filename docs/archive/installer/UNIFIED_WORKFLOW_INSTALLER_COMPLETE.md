@@ -6,7 +6,7 @@ The AI Engineer installer system has been successfully updated to include the ne
 
 ## What Was Updated
 
-### 1. Global Commands Directory (`installer/global/commands/`)
+### 1. Global Commands Directory (`installer/core/commands/`)
 Added three new command files that implement the unified workflow:
 
 - **`task-work.md`** - The unified implementation command that combines:
@@ -29,7 +29,7 @@ Added three new command files that implement the unified workflow:
   - Updates project metrics
   - Archives tasks properly
 
-### 2. Template Updates (`installer/global/templates/`)
+### 2. Template Updates (`installer/core/templates/`)
 
 #### Default Template CLAUDE.md
 Updated with comprehensive documentation about:
@@ -181,13 +181,13 @@ The unified workflow is designed to support upcoming features:
 ## Files Created/Modified
 
 ### New Files
-1. `installer/global/commands/task-work.md`
-2. `installer/global/commands/task-create.md`
-3. `installer/global/commands/task-complete.md`
+1. `installer/core/commands/task-work.md`
+2. `installer/core/commands/task-create.md`
+3. `installer/core/commands/task-complete.md`
 4. `installer/UNIFIED_WORKFLOW_UPDATE.md`
 
 ### Modified Files
-1. `installer/global/templates/default/CLAUDE.md`
+1. `installer/core/templates/default/CLAUDE.md`
 2. `installer/CHANGELOG.md`
 
 ### Existing Files (Already Present)

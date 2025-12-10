@@ -52,7 +52,7 @@ Based on analysis of GitHub's blog post about writing effective AGENTS.md files 
 **File**: [tasks/backlog/TASK-AGENT-ENHANCER-20251121-160000.md](../../tasks/backlog/TASK-AGENT-ENHANCER-20251121-160000.md)
 
 **What It Does**:
-Enhances `installer/global/agents/agent-content-enhancer.md` with GitHub best practices, transforming it into a standards-enforcing engine that automatically validates its own output.
+Enhances `installer/core/agents/agent-content-enhancer.md` with GitHub best practices, transforming it into a standards-enforcing engine that automatically validates its own output.
 
 **Key Deliverables**:
 1. Add "GitHub Best Practices" section (~85 lines) to agent-content-enhancer.md
@@ -112,7 +112,7 @@ Creates `/agent-validate` command to check agent files against GitHub best pract
 
 **Expected Output**:
 
-When you run `/agent-validate installer/global/agents/code-reviewer.md`:
+When you run `/agent-validate installer/core/agents/code-reviewer.md`:
 
 ```
 Analyzing: code-reviewer.md (595 lines)
@@ -193,7 +193,7 @@ Creates comprehensive test suite covering enhancement, validation, integration, 
 ### Week 2: Validation Tool (TASK-AGENT-VALIDATE)
 
 **Days 1-3**:
-1. Create command specification (`installer/global/commands/agent-validate.md`)
+1. Create command specification (`installer/core/commands/agent-validate.md`)
 2. Implement core validator (`lib/agent_validator/validator.py`)
 3. Implement 6 check categories (structure, example_density, boundaries, specificity, example_quality, maintenance)
 
@@ -446,7 +446,7 @@ These tasks are **archived** as their goals are now achieved through automated e
 cat tasks/backlog/TASK-AGENT-ENHANCER-20251121-160000.md
 
 # 2. Implement GitHub Best Practices section
-vim installer/global/agents/agent-content-enhancer.md
+vim installer/core/agents/agent-content-enhancer.md
 # Add ~85 lines after line 50
 
 # 3. Create shared validation module
@@ -474,7 +474,7 @@ vim lib/agent_validator/checks/*.py
 # 6 check categories
 
 # 3. Test validation
-/agent-validate installer/global/agents/code-reviewer.md
+/agent-validate installer/core/agents/code-reviewer.md
 # Should output: scores, checks, recommendations
 ```
 
@@ -516,7 +516,7 @@ lib/agent_validator/
   │   └── minimal.py                (~40 lines) - Minimal output
   └── utils.py                      (~50 lines) - Helper functions
 
-installer/global/commands/
+installer/core/commands/
   ├── agent-validate.md             (~100 lines) - Command spec
   └── agent-validate.py             (~80 lines) - Command entry point
 
@@ -533,10 +533,10 @@ docs/implementation/
 ### Modified Files
 
 ```
-installer/global/agents/
+installer/core/agents/
   └── agent-content-enhancer.md     (+85 lines) - GitHub standards
 
-installer/global/commands/
+installer/core/commands/
   └── agent-enhance.md              (+20 lines) - Validation output docs
 
 CLAUDE.md                           (+30 lines) - Agent QA section

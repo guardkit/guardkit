@@ -87,7 +87,7 @@ The user wants to ensure: "we're not using up too much context window" in the CL
 - Agent roles (summary)
 
 **Reference (Can Move to docs/):**
-- Detailed command specifications (already in installer/global/commands/)
+- Detailed command specifications (already in installer/core/commands/)
 - Extended examples
 - Complete feature matrices
 - Historical context
@@ -96,7 +96,7 @@ The user wants to ensure: "we're not using up too much context window" in the CL
 ### 2. Redundancy Analysis
 
 **Potential redundancy:**
-- Command specifications detailed in CLAUDE.md AND installer/global/commands/
+- Command specifications detailed in CLAUDE.md AND installer/core/commands/
 - Workflow examples repeated across sections
 - Extended capability lists that could be summarized
 
@@ -170,7 +170,7 @@ CLAUDE.md (450-500 lines)
 ├── Project Overview (20 lines)
 ├── Core Architecture Principles (30 lines)
 ├── Essential Commands (30 lines)
-│   └── [See installer/global/commands/ for full specs]
+│   └── [See installer/core/commands/ for full specs]
 ├── Key Workflows (40 lines)
 │   ├── Requirements → Implementation (condensed)
 │   └── [See docs/workflows/ for detailed guides]
@@ -300,9 +300,9 @@ None (can be done independently)
 ### What Was Optimized
 
 **1. Command Documentation (Lines 32-94 → 24-69)**
-- Removed detailed command specifications (already in `installer/global/commands/*.md`)
+- Removed detailed command specifications (already in `installer/core/commands/*.md`)
 - Kept essential command signatures with basic flags
-- Added reference: "See installer/global/commands/*.md"
+- Added reference: "See installer/core/commands/*.md"
 
 **2. Agentecflow Lite (Lines 95-274 → 71-115)**
 - Condensed 180-line System Architecture Map to phase list
@@ -330,7 +330,7 @@ None (can be done independently)
 
 **6. Feature-Generate-Tasks (Lines 623-732 → removed)**
 - Completely removed 110-line section
-- Information accessible via command spec: installer/global/commands/feature-generate-tasks.md
+- Information accessible via command spec: installer/core/commands/feature-generate-tasks.md
 - Mentioned briefly in Key Workflows section
 
 **7. Conductor Integration (Lines 838-943 → 231-252)**
@@ -356,7 +356,7 @@ None (can be done independently)
 
 **11. Phase 2.8 Checkpoint (Lines 1182-1275 → removed)**
 - Completely removed 94-line interactive modification section
-- Details in installer/global/commands/task-work.md
+- Details in installer/core/commands/task-work.md
 - Brief mention in Task-Work Workflow Phases
 
 **12. Complete Workflows (Lines 1366-1430 → 364-393)**
@@ -394,10 +394,10 @@ None (can be done independently)
 ### Documentation Structure Created
 
 All detailed content moved to appropriate locations:
-- **Command specs**: `installer/global/commands/*.md` (already existed)
+- **Command specs**: `installer/core/commands/*.md` (already existed)
 - **Workflow guides**: `docs/workflows/*.md` (referenced but may need creation)
 - **Feature guides**: `docs/guides/*.md` (referenced but may need creation)
-- **Agent definitions**: `installer/global/agents/*.md` (already existed)
+- **Agent definitions**: `installer/core/agents/*.md` (already existed)
 
 ### Verification
 

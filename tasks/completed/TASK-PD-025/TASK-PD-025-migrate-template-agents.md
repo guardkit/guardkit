@@ -117,16 +117,16 @@ Both agents still contribute to the overall 65.5% reduction which exceeds the 55
 - `scripts/migrate-agent-content.py` - Added template size targets and improved discovery
 
 ### Template Agent Files (Core - Reduced)
-- `installer/global/templates/react-typescript/agents/*.md` (4 files)
-- `installer/global/templates/fastapi-python/agents/*.md` (3 files)
-- `installer/global/templates/nextjs-fullstack/agents/*.md` (4 files)
-- `installer/global/templates/react-fastapi-monorepo/agents/*.md` (3 files)
+- `installer/core/templates/react-typescript/agents/*.md` (4 files)
+- `installer/core/templates/fastapi-python/agents/*.md` (3 files)
+- `installer/core/templates/nextjs-fullstack/agents/*.md` (4 files)
+- `installer/core/templates/react-fastapi-monorepo/agents/*.md` (3 files)
 
 ### Template Agent Files (Extended - Populated)
-- `installer/global/templates/react-typescript/agents/*-ext.md` (4 files)
-- `installer/global/templates/fastapi-python/agents/*-ext.md` (3 files)
-- `installer/global/templates/nextjs-fullstack/agents/*-ext.md` (4 files)
-- `installer/global/templates/react-fastapi-monorepo/agents/*-ext.md` (3 files)
+- `installer/core/templates/react-typescript/agents/*-ext.md` (4 files)
+- `installer/core/templates/fastapi-python/agents/*-ext.md` (3 files)
+- `installer/core/templates/nextjs-fullstack/agents/*-ext.md` (4 files)
+- `installer/core/templates/react-fastapi-monorepo/agents/*-ext.md` (3 files)
 
 ### Backup Files Created
 - 14 `.md.bak` files in template agent directories

@@ -105,10 +105,10 @@ def infer_layer_mappings(example_files: list) -> dict:
 
 All changes are to the **guardkit** command infrastructure:
 
-1. `installer/global/lib/template_generator/template_generator.py` - Add placeholder injection to template file generation
-2. `installer/global/lib/template_generator/` - Create new `settings_generator.py` or modify existing layer mapping logic
-3. `installer/global/commands/lib/template_create_orchestrator.py` - Phase orchestration
-4. `installer/global/lib/agent_enhancement/` - Extended agent file generation
+1. `installer/core/lib/template_generator/template_generator.py` - Add placeholder injection to template file generation
+2. `installer/core/lib/template_generator/` - Create new `settings_generator.py` or modify existing layer mapping logic
+3. `installer/core/commands/lib/template_create_orchestrator.py` - Phase orchestration
+4. `installer/core/lib/agent_enhancement/` - Extended agent file generation
 
 **Note**: No changes to generated output files - all fixes are to the command/library code that produces the output.
 
@@ -123,4 +123,4 @@ All changes are to the **guardkit** command infrastructure:
 ## Related Documentation
 
 - Review Report: [.claude/reviews/TASK-REV-TC-B7F2-review-report.md](../../.claude/reviews/TASK-REV-TC-B7F2-review-report.md)
-- Template Create Command: [installer/global/commands/template-create.md](../../installer/global/commands/template-create.md)
+- Template Create Command: [installer/core/commands/template-create.md](../../installer/core/commands/template-create.md)

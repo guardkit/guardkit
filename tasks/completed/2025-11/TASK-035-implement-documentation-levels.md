@@ -86,16 +86,16 @@ Task Wright will be split from ai-engineer and will have its own **installer** t
 - ✅ Templates created
 - ✅ Tests written and passing
 - ✅ User documentation complete
-- ✅ 4 core agents updated in ai-engineer/installer/global/agents/
+- ✅ 4 core agents updated in ai-engineer/installer/core/agents/
 
 ### What Needs to be Done (in TaskWright)
-1. **Update 7 global agents** in `installer/global/agents/` with documentation level awareness
+1. **Update 7 global agents** in `installer/core/agents/` with documentation level awareness
 2. **Update template settings.json** with complete documentation configuration (89 lines)
 3. **Create implementation summary** documenting changes
 
 ## TaskWright Global Agents to Update (7 agents)
 
-These agents are in `installer/global/agents/` and will be installed globally by TaskWright's installer:
+These agents are in `installer/core/agents/` and will be installed globally by TaskWright's installer:
 
 1. **requirements-analyst.md** (~80 lines to add)
    - Phase: 1 (Requirements analysis)
@@ -157,7 +157,7 @@ These agents are in `installer/global/agents/` and will be installed globally by
 
 ### AC1: Global Agent Updates (7/7 agents)
 
-Update agents in `installer/global/agents/`:
+Update agents in `installer/core/agents/`:
 
 - [ ] Update `requirements-analyst.md` with documentation level awareness (~80 lines)
 - [ ] Update `architectural-reviewer.md` with documentation level awareness (~75 lines)
@@ -175,7 +175,7 @@ Update agents in `installer/global/agents/`:
 - [ ] Configure complexity thresholds (minimal ≤3, standard 4-10, comprehensive 7-10)
 - [ ] Configure force-comprehensive triggers (security, breaking changes, compliance)
 - [ ] Configure quality gate thresholds (≥80% line, ≥75% branch)
-- [ ] Place in `installer/global/templates/default/settings.json` or equivalent
+- [ ] Place in `installer/core/templates/default/settings.json` or equivalent
 
 ### AC3: Documentation Level Awareness Pattern
 
@@ -187,7 +187,7 @@ Each agent must include a **"Documentation Level Awareness (TASK-035)"** section
 - Quality Gates section (emphasizing what NEVER changes)
 - Agent Collaboration section (if agent reads/writes markdown plans)
 
-**Reference Pattern**: See `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/requirements-analyst.md` for complete example.
+**Reference Pattern**: See `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/requirements-analyst.md` for complete example.
 
 ### AC4: Quality Gates Preservation
 
@@ -354,17 +354,17 @@ For agents that read markdown plans or communicate with other agents:
 
 ## Files to Modify
 
-### Agent Updates (7 files in installer/global/agents/)
-1. `installer/global/agents/requirements-analyst.md` (~80 lines added)
-2. `installer/global/agents/architectural-reviewer.md` (~75 lines added)
-3. `installer/global/agents/test-orchestrator.md` (~145 lines added)
-4. `installer/global/agents/code-reviewer.md` (~95 lines added)
-5. `installer/global/agents/task-manager.md` (~70 lines added)
-6. `installer/global/agents/bdd-generator.md` (~80 lines added)
-7. `installer/global/agents/test-verifier.md` (~120 lines added)
+### Agent Updates (7 files in installer/core/agents/)
+1. `installer/core/agents/requirements-analyst.md` (~80 lines added)
+2. `installer/core/agents/architectural-reviewer.md` (~75 lines added)
+3. `installer/core/agents/test-orchestrator.md` (~145 lines added)
+4. `installer/core/agents/code-reviewer.md` (~95 lines added)
+5. `installer/core/agents/task-manager.md` (~70 lines added)
+6. `installer/core/agents/bdd-generator.md` (~80 lines added)
+7. `installer/core/agents/test-verifier.md` (~120 lines added)
 
 ### Template Configuration (1 file)
-8. `installer/global/templates/default/settings.json` (+89 lines - documentation section) OR create template-specific configuration file
+8. `installer/core/templates/default/settings.json` (+89 lines - documentation section) OR create template-specific configuration file
 
 ### Documentation (1 file)
 9. `TASK-035-TASKWRIGHT-IMPLEMENTATION-SUMMARY.md` (new file)
@@ -511,7 +511,7 @@ Add this complete `documentation` section to template settings.json:
 ## Related Documentation
 
 - **Core Implementation**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/requirements/TASK-035-FINAL-IMPLEMENTATION-SUMMARY.md`
-- **Reference Agents (ai-engineer)**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/`
+- **Reference Agents (ai-engineer)**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/`
 - **User Guide**: `~/.agentecflow/docs/guides/documentation-levels-guide.md`
 - **Context Format**: `~/.agentecflow/instructions/context-parameter-format.md`
 - **Templates**: `~/.agentecflow/templates/documentation/`
@@ -519,7 +519,7 @@ Add this complete `documentation` section to template settings.json:
 ## Success Metrics
 
 ### Implementation Metrics
-- **Agents Updated**: 7/7 (100%) in installer/global/agents/
+- **Agents Updated**: 7/7 (100%) in installer/core/agents/
 - **Lines Added**: ~754 lines
 - **Configuration**: Template settings.json with documentation section (89 lines)
 - **Documentation**: Implementation summary created
@@ -537,7 +537,7 @@ Add this complete `documentation` section to template settings.json:
 
 ## Definition of Done
 
-- [ ] All 7 global agents in installer/global/agents/ updated with documentation level awareness
+- [ ] All 7 global agents in installer/core/agents/ updated with documentation level awareness
 - [ ] Template settings.json updated with complete documentation section
 - [ ] Consistent pattern applied across all agents (matching ai-engineer)
 - [ ] Implementation summary document created
@@ -623,4 +623,4 @@ cat /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.claude/agents/
 - Architectural review: 88/100
 - Zero scope creep
 
-**Apply this exact pattern to TaskWright's 7 agents in `installer/global/agents/`**
+**Apply this exact pattern to TaskWright's 7 agents in `installer/core/agents/`**

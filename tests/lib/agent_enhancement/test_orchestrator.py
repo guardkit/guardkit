@@ -22,7 +22,7 @@ repo_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(repo_root))
 
 # Import using importlib to handle 'global' keyword
-orchestrator_module = importlib.import_module('installer.global.lib.agent_enhancement.orchestrator')
+orchestrator_module = importlib.import_module('installer.core.lib.agent_enhancement.orchestrator')
 AgentEnhanceOrchestrator = orchestrator_module.AgentEnhanceOrchestrator
 OrchestrationState = orchestrator_module.OrchestrationState
 

@@ -22,7 +22,7 @@ curl -sSL https://install.guardkit.dev | bash
 
 **Result**:
 - ❌ Repository files deleted after installation
-- ❌ `/task-create` couldn't find `installer/global/lib/id_generator.py`
+- ❌ `/task-create` couldn't find `installer/core/lib/id_generator.py`
 - ❌ Import failed: "No module named 'id_generator'"
 - ❌ System completely broken
 
@@ -31,7 +31,7 @@ curl -sSL https://install.guardkit.dev | bash
 Commands like `/task-create` are **specification-based** (`.md` files, not `.py` scripts) and execute inline Python code via Claude Code. The spec includes:
 
 ```python
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 ```
 
 This requires:
@@ -182,7 +182,7 @@ sys.path.insert(0, str(guardkit_repo))
 
 ```python
 # Now Python can find the module!
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 ```
 
 Path resolution:
@@ -192,8 +192,8 @@ sys.path = [
     ...
 ]
 
-Import: installer.global.lib.id_generator
-Resolves to: ~/Projects/guardkit/installer/global/lib/id_generator.py
+Import: installer.core.lib.id_generator
+Resolves to: ~/Projects/guardkit/installer/core/lib/id_generator.py
 ✅ SUCCESS
 ```
 
@@ -332,7 +332,7 @@ curl -sSL https://install.guardkit.dev | bash
 
 # Verify
 cat ~/.agentecflow/guardkit.marker.json | grep repo_path
-ls ~/Projects/guardkit/installer/global/lib/id_generator.py
+ls ~/Projects/guardkit/installer/core/lib/id_generator.py
 ```
 
 ### If Installed via Git Clone

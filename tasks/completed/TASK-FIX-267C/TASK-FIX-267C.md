@@ -141,7 +141,7 @@ Claude Code initially omitted:
 
 ### Evidence: AgentResponse Dataclass Schema
 
-From `installer/global/lib/agent_bridge/invoker.py` (lines 59-83):
+From `installer/core/lib/agent_bridge/invoker.py` (lines 59-83):
 
 ```python
 @dataclass
@@ -531,7 +531,7 @@ echo "✅ Valid response file created"
 ```python
 import json
 from pathlib import Path
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker, AgentResponse
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker, AgentResponse
 
 # Test 1: Validate response structure
 with open(".agent-response.json", "r") as f:
@@ -705,7 +705,7 @@ response_data = {
 ### Documentation
 
 Add this format specification to:
-- `installer/global/lib/agent_bridge/README.md` - Agent bridge usage guide
+- `installer/core/lib/agent_bridge/README.md` - Agent bridge usage guide
 - `.claude/docs/agent-response-format.md` - Standalone format reference
 - Agent enhancement workflow documentation
 

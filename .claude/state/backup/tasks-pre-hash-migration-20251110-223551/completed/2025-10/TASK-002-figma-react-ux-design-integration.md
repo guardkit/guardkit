@@ -442,7 +442,7 @@ docs/
 ### Components Delivered
 
 **3 Complete Components**:
-1. ✅ **figma-react-orchestrator** (`installer/global/agents/figma-react-orchestrator.md`)
+1. ✅ **figma-react-orchestrator** (`installer/core/agents/figma-react-orchestrator.md`)
    - 689 lines
    - 6-phase Saga workflow (MCP Verification → Design Extraction → Boundary Documentation → Component Generation → Visual Regression → Constraint Validation)
    - Node ID conversion with 100% accuracy
@@ -457,7 +457,7 @@ docs/
    - Constraint validation enforcement
    - **Note**: Located in stack-specific directory (correct architecture)
 
-3. ✅ **/figma-to-react command** (`installer/global/commands/figma-to-react.md`)
+3. ✅ **/figma-to-react command** (`installer/core/commands/figma-to-react.md`)
    - 723 lines
    - User-facing interface
    - End-to-end orchestration
@@ -512,21 +512,21 @@ react-component-generator (stack-specific - React implementation)
 - **File exists**: `.claude/stacks/react/agents/react-component-generator.md` (888 lines)
 - **Correct location**: Stack-specific directory (not global directory)
 - **Architecture is correct**:
-  - Global agents → `installer/global/agents/` (orchestrator)
+  - Global agents → `installer/core/agents/` (orchestrator)
   - Stack-specific agents → `.claude/stacks/react/agents/` (component generator)
 - **Follows OCP**: Open/Closed Principle from architectural review
 
 **Why the confusion occurred**:
-- Code reviewer searched in `installer/global/agents/` (global directory)
+- Code reviewer searched in `installer/core/agents/` (global directory)
 - File is correctly placed in `.claude/stacks/react/agents/` (stack-specific directory)
 - This separation is intentional and follows the approved three-tier architecture
 
 ### Files Generated
 
 **10 Files (3,906 lines total)**:
-1. `installer/global/agents/figma-react-orchestrator.md` (689 lines)
+1. `installer/core/agents/figma-react-orchestrator.md` (689 lines)
 2. `.claude/stacks/react/agents/react-component-generator.md` (888 lines)
-3. `installer/global/commands/figma-to-react.md` (723 lines)
+3. `installer/core/commands/figma-to-react.md` (723 lines)
 4. `tests/unit/figma-react-orchestrator.test.ts` (427 lines)
 5. `tests/unit/react-component-generator.test.ts` (633 lines)
 6. `tests/integration/figma-to-react-workflow.test.ts` (521 lines)

@@ -69,11 +69,11 @@ More importantly, the RequireKit review (TASK-3E70) discovered that **RequireKit
 **No migration needed from GuardKit perspective.**
 
 Instead, the 5 unused agents should be **removed from RequireKit**:
-- `installer/global/agents/architectural-reviewer.md`
-- `installer/global/agents/test-orchestrator.md`
-- `installer/global/agents/task-manager.md`
-- `installer/global/agents/code-reviewer.md`
-- `installer/global/agents/test-verifier.md`
+- `installer/core/agents/architectural-reviewer.md`
+- `installer/core/agents/test-orchestrator.md`
+- `installer/core/agents/task-manager.md`
+- `installer/core/agents/code-reviewer.md`
+- `installer/core/agents/test-verifier.md`
 
 ### Agent Ownership After Cleanup
 

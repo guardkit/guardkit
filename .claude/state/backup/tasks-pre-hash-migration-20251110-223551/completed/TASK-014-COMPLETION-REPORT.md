@@ -11,8 +11,8 @@
 ## Deliverables
 
 ### Files Modified/Created
-- **Modified**: `installer/global/commands/task-work.md` (+120 lines)
-- **Modified**: `installer/global/agents/task-manager.md` (+52 lines)
+- **Modified**: `installer/core/commands/task-work.md` (+120 lines)
+- **Modified**: `installer/core/agents/task-manager.md` (+52 lines)
 - **Modified**: `CLAUDE.md` (+1 line)
 - **Created**: `docs/workflows/context7-mcp-integration-workflow.md` (+598 lines)
 - **Modified**: Task file (acceptance criteria updated)
@@ -140,8 +140,8 @@
 ## Related Documentation
 
 ### Files Updated
-- `installer/global/commands/task-work.md` - Command specification with Context7 integration
-- `installer/global/agents/task-manager.md` - Agent specification with Context7 usage
+- `installer/core/commands/task-work.md` - Command specification with Context7 integration
+- `installer/core/agents/task-manager.md` - Agent specification with Context7 usage
 - `docs/workflows/context7-mcp-integration-workflow.md` - Complete workflow guide
 - `CLAUDE.md` - Project overview with Context7 reference
 

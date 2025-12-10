@@ -95,7 +95,7 @@ Verify that implementation matched the plan without scope creep, unnecessary fea
 #### Planned Scope
 
 **From Implementation Plan**:
-1. Enumerate all templates in `installer/global/templates/`
+1. Enumerate all templates in `installer/core/templates/`
 2. Run `/template-validate` on each template (16-section framework)
 3. Collect audit reports
 4. Create comparative analysis

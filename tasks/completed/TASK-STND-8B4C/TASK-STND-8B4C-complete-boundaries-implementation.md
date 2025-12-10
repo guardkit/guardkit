@@ -11,7 +11,7 @@ TASK-STND-773D (commit 814d810) was marked as COMPLETED but only partially imple
 
 ### Evidence
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 
 - **Line 80**: Still requests "Best practices for using this agent with these templates"
 - **Line 86**: Still uses `'sections': ['related_templates', 'examples', 'best_practices']`
@@ -151,16 +151,16 @@ The boundaries framework (from `github-agent-best-practices-analysis.md` - analy
 
 ### Files to Modify
 
-1. **installer/global/lib/agent_enhancement/prompt_builder.py**
+1. **installer/core/lib/agent_enhancement/prompt_builder.py**
    - Lines 80, 86, 89: Update to request boundaries instead of best_practices
    - Add boundaries format specification
 
-2. **installer/global/lib/agent_enhancement/parser.py**
+2. **installer/core/lib/agent_enhancement/parser.py**
    - Add `_validate_boundaries()` method
    - Validate ALWAYS (5-7 rules, ✅), NEVER (5-7 rules, ❌), ASK (3-5 scenarios, ⚠️)
    - Backward compatibility: Accept both "boundaries" and "best_practices"
 
-3. **installer/global/lib/agent_enhancement/applier.py**
+3. **installer/core/lib/agent_enhancement/applier.py**
    - Update `_merge_content()` to place boundaries after Quick Start, before Capabilities
    - Handle both "boundaries" and "best_practices" keys
 
@@ -315,9 +315,9 @@ Deploy to test environment first, validate with sample agents before production
 
 ## References
 
-1. `installer/global/agents/agent-content-enhancer.md` - Lines 396-442 (boundaries specification)
+1. `installer/core/agents/agent-content-enhancer.md` - Lines 396-442 (boundaries specification)
 2. `docs/analysis/github-agent-best-practices-analysis.md` - Boundaries framework source
-3. `installer/global/lib/agent_enhancement/prompt_builder.py` - Lines 80, 86, 89 (current state)
+3. `installer/core/lib/agent_enhancement/prompt_builder.py` - Lines 80, 86, 89 (current state)
 4. `/Users/richardwoollcott/.agentecflow/templates/maui-mydrive/agents/maui-mvvm-viewmodel-specialist.md` - Example of current output (has best_practices instead of boundaries)
 
 ## Notes

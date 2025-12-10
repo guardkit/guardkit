@@ -59,7 +59,7 @@ Simplify the `/agent-enhance` command's strategy flag interface from confusing e
 - [x] **AC3.3**: Success message indicates which strategy was used: "✓ Enhanced agent using AI strategy" ✅
 
 ### AC4: Documentation Updates
-- [x] **AC4.1**: Update `installer/global/commands/agent-enhance.md`: ✅
+- [x] **AC4.1**: Update `installer/core/commands/agent-enhance.md`: ✅
   - Remove "Enhancement Strategies" section (3 paragraphs) ✅
   - Add simplified "Quick Start" section with decision tree ✅
   - Update all examples to use new flags ✅
@@ -92,7 +92,7 @@ Simplify the `/agent-enhance` command's strategy flag interface from confusing e
 
 ### Phase 1: Argument Parsing Changes (2 hours)
 
-**File**: `installer/global/commands/agent-enhance.py`
+**File**: `installer/core/commands/agent-enhance.py`
 
 **Changes**:
 ```python
@@ -150,17 +150,17 @@ def main():
 **Verification**:
 ```bash
 # Test argument parsing
-python3 installer/global/commands/agent-enhance.py --help | grep -E "hybrid|static|strategy"
+python3 installer/core/commands/agent-enhance.py --help | grep -E "hybrid|static|strategy"
 # Should show: --hybrid and --static, NOT --strategy
 
 # Test conflicting flags
-python3 installer/global/commands/agent-enhance.py agent-name --hybrid --static
+python3 installer/core/commands/agent-enhance.py agent-name --hybrid --static
 # Should error with clear message
 ```
 
 ### Phase 2: Success Message Updates (30 minutes)
 
-**File**: `installer/global/commands/agent-enhance.py`
+**File**: `installer/core/commands/agent-enhance.py`
 
 **Changes**:
 ```python
@@ -184,7 +184,7 @@ print(f"  Templates referenced: {result['templates_referenced']}")
 
 ### Phase 3: Documentation Updates (2 hours)
 
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 **Before** (confusing, 150 lines):
 ```markdown
@@ -275,7 +275,7 @@ The `--strategy` flag will be removed in v2.0 (6 months).
 1. **tests/unit/test_agent_enhance_args.py** (16 tests, 1 hour)
 ```python
 import pytest
-from installer.global.commands.agent_enhance import resolve_strategy, MockArgs
+from installer.core.commands.agent_enhance import resolve_strategy, MockArgs
 
 class TestArgumentParsing:
     def test_default_strategy_is_ai(self):
@@ -366,7 +366,7 @@ pytest tests/integration/test_agent_enhance_execution.py -v
 pytest tests/regression/test_agent_enhance_regression.py -v
 
 # Full suite with coverage
-pytest tests/ -v --cov=installer/global --cov-report=json --cov-report=term
+pytest tests/ -v --cov=installer/core --cov-report=json --cov-report=term
 python3 scripts/check_coverage.py --threshold=95
 ```
 
@@ -658,14 +658,14 @@ Successfully simplified the `/agent-enhance` command's strategy flag interface f
 
 ### Deliverables
 1. **Code Changes**:
-   - `installer/global/commands/agent-enhance.py`:
+   - `installer/core/commands/agent-enhance.py`:
      - Removed `--strategy` enum
      - Added `--hybrid` and `--static` boolean flags
      - Added `resolve_strategy()` function (27 lines)
      - Added `format_success_message()` function (16 lines)
 
 2. **Documentation**:
-   - `installer/global/commands/agent-enhance.md`:
+   - `installer/core/commands/agent-enhance.md`:
      - Replaced 3-paragraph "Enhancement Strategies" with concise "Quick Start"
      - Added decision tree diagram
      - Updated all examples (6 examples)

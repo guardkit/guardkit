@@ -38,7 +38,7 @@ This is part of Phase 3 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source File
-- **File**: `installer/global/templates/react-typescript/agents/react-ui-specialist.md`
+- **File**: `installer/core/templates/react-typescript/agents/react-ui-specialist.md`
 
 ### Key Changes Required
 
@@ -365,9 +365,9 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 3](../../docs/proposals/design-url-integration-implementation-guide.md#phase-3-extend-ui-specialists-parallel)
-- [Existing React UI Specialist](../../installer/global/templates/react-typescript/agents/react-ui-specialist.md)
-- [Figma Orchestrator](../../installer/global/agents/figma-orchestrator.md) (after UX-003)
-- [Zeplin Orchestrator](../../installer/global/agents/zeplin-orchestrator.md) (after UX-004)
+- [Existing React UI Specialist](../../installer/core/templates/react-typescript/agents/react-ui-specialist.md)
+- [Figma Orchestrator](../../installer/core/agents/figma-orchestrator.md) (after UX-003)
+- [Zeplin Orchestrator](../../installer/core/agents/zeplin-orchestrator.md) (after UX-004)
 
 ## Implementation Estimate
 

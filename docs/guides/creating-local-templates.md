@@ -15,7 +15,7 @@
 
 ```bash
 # 1. Copy existing template as starting point
-cp -r installer/global/templates/maui-appshell installer/local/templates/mycompany-maui
+cp -r installer/core/templates/maui-appshell installer/local/templates/mycompany-maui
 
 # 2. Edit manifest.json
 vim installer/local/templates/mycompany-maui/manifest.json
@@ -211,7 +211,7 @@ Customize quality gates in `manifest.json`:
 
 ### Local vs Global Templates
 
-**Global Templates** (`installer/global/templates/`):
+**Global Templates** (`installer/core/templates/`):
 - Shipped with Agentecflow
 - Technology-agnostic best practices
 - Updated with Agentecflow releases
@@ -1134,10 +1134,10 @@ public class {{ServiceName}} : CompanyApiServiceBase, I{{ServiceName}}
 
 ```bash
 # ✅ Good - Create local template
-cp -r installer/global/templates/maui-appshell installer/local/templates/mycompany-maui
+cp -r installer/core/templates/maui-appshell installer/local/templates/mycompany-maui
 
 # ❌ Bad - Modify global template (changes lost on upgrade)
-vim installer/global/templates/maui-appshell/templates/domain/query-operation.cs.template
+vim installer/core/templates/maui-appshell/templates/domain/query-operation.cs.template
 ```
 
 ### Q: How do I share templates with my team?
@@ -1155,7 +1155,7 @@ See "Distribution and Versioning" section above.
 
 ```
 Local:  installer/local/templates/maui-appshell/templates/domain/query-operation.cs.template
-Global: installer/global/templates/maui-appshell/templates/domain/query-operation.cs.template
+Global: installer/core/templates/maui-appshell/templates/domain/query-operation.cs.template
 
 Result: Local version used (overrides global)
 ```
@@ -1188,10 +1188,10 @@ git push origin main --tags
 
 ```bash
 # Create React template
-cp -r installer/global/templates/react installer/local/templates/mycompany-react
+cp -r installer/core/templates/react installer/local/templates/mycompany-react
 
 # Create Python template
-cp -r installer/global/templates/python installer/local/templates/mycompany-python
+cp -r installer/core/templates/python installer/local/templates/mycompany-python
 ```
 
 Update `manifest.json` with appropriate `technology` value.

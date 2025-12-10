@@ -78,7 +78,7 @@ This is a **review and planning task** to evaluate whether and how to reinstate 
 
 ### Files That Were Removed
 - `.claude/agents/bdd-generator.md` - Main BDD generation agent
-- `installer/global/instructions/core/bdd-gherkin.md` - BDD methodology
+- `installer/core/instructions/core/bdd-gherkin.md` - BDD methodology
 - Template-specific BDD agents (MAUI, etc.)
 
 ## Analysis Required
@@ -274,7 +274,7 @@ def task_work_bdd_mode(task):
 - [BDD Mode Removal Decision](../docs/research/bdd-mode-removal-decision.md)
 - [TASK-037 Removal](../tasks/completed/TASK-037/TASK-037-remove-bdd-mode.md)
 - [Restoration Guide](../docs/research/restoring-bdd-feature.md)
-- [Feature Detection](../installer/global/lib/feature_detection.py)
+- [Feature Detection](../installer/core/lib/feature_detection.py)
 
 ### Commit History
 - Removal: `08e6f21e67983aa731f4ef5dd5415c2bf87587b2`

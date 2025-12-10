@@ -169,12 +169,12 @@ When creating tasks with `/task-create`, the system automatically detects review
 3. Review-related tags: `architecture-review`, `code-review`, `decision-point`, `assessment`
 4. Title keywords: `review`, `analyze`, `evaluate`, `assess`, `audit`, `investigation`
 
-**[Automatic Review Task Detection](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/task-review.md#automatic-review-task-detection)** - Full documentation.
+**[Automatic Review Task Detection](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/task-review.md#automatic-review-task-detection)** - Full documentation.
 
 ---
 
 ## Next Steps
 
 - **Understand**: [Task Review Workflow Guide](workflows/task-review-workflow.md)
-- **Command Reference**: [task-review.md](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/task-review.md)
+- **Command Reference**: [task-review.md](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/task-review.md)
 - **Try It**: Create a review task with `/task-create "Review X" task_type:review`

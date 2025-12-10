@@ -150,31 +150,31 @@ The HEAD version exhibits multiple failures:
 ### Files to Review
 
 **Core Orchestration**:
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
   - Current state (HEAD)
   - v0.97 state
   - Diff of commit 0024640c changes
 
 **Agent Bridge**:
-- `installer/global/lib/agent_bridge/invoker.py`
+- `installer/core/lib/agent_bridge/invoker.py`
   - Agent invocation pattern
   - Response loading
   - Cache management (our changes)
 
 **State Management**:
-- `installer/global/lib/agent_bridge/state_manager.py`
+- `installer/core/lib/agent_bridge/state_manager.py`
   - State saving logic
   - State loading logic
   - Serialization format
 
 **Phase 1 Analysis**:
-- `installer/global/lib/codebase_analyzer/ai_analyzer.py`
+- `installer/core/lib/codebase_analyzer/ai_analyzer.py`
   - How agent request is built
   - File sampling strategy
   - Prompt construction
 
 **Phase 5 Agent Generation**:
-- `installer/global/lib/agent_generator/agent_generator.py`
+- `installer/core/lib/agent_generator/agent_generator.py`
   - Agent identification logic
   - Agent invocation for recommendations
 

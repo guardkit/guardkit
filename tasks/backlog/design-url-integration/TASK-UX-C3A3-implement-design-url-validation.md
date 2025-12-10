@@ -34,7 +34,7 @@ This is the second task in the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Files to Modify
-- `installer/global/commands/task-create.md` - Add validation logic
+- `installer/core/commands/task-create.md` - Add validation logic
 - Task creation script/logic - Implement validation functions
 
 ### Validation Steps

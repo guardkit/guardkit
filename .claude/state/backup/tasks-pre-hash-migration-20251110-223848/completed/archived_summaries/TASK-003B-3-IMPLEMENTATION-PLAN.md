@@ -24,7 +24,7 @@ This implementation adds interactive plan modification and viewing capabilities 
 ### 1. Component Structure
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (EXTEND)
 │   ├── FullReviewHandler._handle_view() (NEW)
 │   └── FullReviewHandler._handle_modify() (NEW)
@@ -219,10 +219,10 @@ complexity_after: 6
 
 ## Files to Create
 
-1. **installer/global/commands/lib/modification_manager.py**
+1. **installer/core/commands/lib/modification_manager.py**
    - Purpose: Manage interactive plan modifications
 
-2. **installer/global/commands/lib/version_manager.py**
+2. **installer/core/commands/lib/version_manager.py**
    - Purpose: Handle plan versioning and history
 
 ## Tests
@@ -247,7 +247,7 @@ complexity_after: 6
 
 ### Phase 1: Pager Display System (2 hours)
 
-**File**: `installer/global/commands/lib/pager_display.py` (NEW)
+**File**: `installer/core/commands/lib/pager_display.py` (NEW)
 
 **Classes**:
 1. `PagerStrategy` (Protocol)
@@ -296,7 +296,7 @@ class PagerDisplay:
 
 ### Phase 2: Version Management System (2 hours)
 
-**File**: `installer/global/commands/lib/version_manager.py` (NEW)
+**File**: `installer/core/commands/lib/version_manager.py` (NEW)
 
 **Data Models**:
 ```python
@@ -421,7 +421,7 @@ def _serialize_plan(self, plan: ImplementationPlan, version: int) -> str:
 
 ### Phase 3: Modification Manager (4 hours)
 
-**File**: `installer/global/commands/lib/modification_manager.py` (NEW)
+**File**: `installer/core/commands/lib/modification_manager.py` (NEW)
 
 **Data Models**:
 ```python
@@ -742,7 +742,7 @@ def _count_tests(self) -> int:
 
 ### Phase 4: FullReviewHandler Integration (1 hour)
 
-**File**: `installer/global/commands/lib/review_modes.py` (UPDATE)
+**File**: `installer/core/commands/lib/review_modes.py` (UPDATE)
 
 **Changes to FullReviewHandler**:
 
@@ -981,10 +981,10 @@ action: Literal["approve", "modify", "view", "question", "cancel", "escalate_to_
 ```python
 import pytest
 from pathlib import Path
-from installer.global.commands.lib.modification_manager import (
+from installer.core.commands.lib.modification_manager import (
     ModificationManager, ModificationSession, ModifiedPlanResult
 )
-from installer.global.commands.lib.complexity_models import (
+from installer.core.commands.lib.complexity_models import (
     ImplementationPlan, ComplexityScore, ReviewMode
 )
 
@@ -1199,7 +1199,7 @@ def test_version_history_tracking():
 ## File Structure Summary
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (EXTEND)
 │   ├── FullReviewHandler._handle_view() (NEW)
 │   └── FullReviewHandler._handle_modification() (NEW)

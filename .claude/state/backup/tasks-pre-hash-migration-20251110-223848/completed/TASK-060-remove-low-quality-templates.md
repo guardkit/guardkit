@@ -97,7 +97,7 @@ git push origin v1.9-final-before-template-overhaul
 TEMPLATE_NAME="maui-navigationpage"
 
 # Remove template directory
-git rm -r installer/global/templates/$TEMPLATE_NAME/
+git rm -r installer/core/templates/$TEMPLATE_NAME/
 
 # Commit removal
 git commit -m "chore: Remove $TEMPLATE_NAME template (scored <8/10 in audit)
@@ -180,7 +180,7 @@ If you need the old templates, they are archived:
 git checkout archive/templates-pre-v2.0
 
 # Or download specific template
-git show archive/templates-pre-v2.0:installer/global/templates/template-a/ > template-a-archive.tar
+git show archive/templates-pre-v2.0:installer/core/templates/template-a/ > template-a-archive.tar
 ```
 
 ### Support
@@ -329,12 +329,12 @@ Old templates archived in `archive/templates-pre-v2.0` branch.
 ### Verification Tests
 ```bash
 # 1. Verify templates removed
-ls installer/global/templates/
+ls installer/core/templates/
 # Expected: Only react-typescript, fastapi-python, nextjs-fullstack
 
 # 2. Verify archive exists
 git checkout archive/templates-pre-v2.0
-ls installer/global/templates/
+ls installer/core/templates/
 # Expected: All 9 original templates
 
 # 3. Verify installation script works

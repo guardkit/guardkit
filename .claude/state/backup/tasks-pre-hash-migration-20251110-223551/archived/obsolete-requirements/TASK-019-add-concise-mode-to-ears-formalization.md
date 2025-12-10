@@ -62,7 +62,7 @@ Add `--concise` flag to `/formalize-ears` command that:
 
 ### Phase 1: Command Enhancement (1 hour)
 ```markdown
-# File: installer/global/commands/formalize-ears.md
+# File: installer/core/commands/formalize-ears.md
 
 ## Command Syntax
 
@@ -121,7 +121,7 @@ the system shall perform the following sequence of operations:
 
 ### Phase 2: Agent Integration (1 hour)
 ```markdown
-# File: installer/global/agents/requirements-analyst.md
+# File: installer/core/agents/requirements-analyst.md
 
 ## Concise Mode Guidelines (when --concise flag used)
 
@@ -148,7 +148,7 @@ Display word count after each requirement:
 
 ### Phase 3: Validation Logic (30 minutes)
 ```python
-# File: installer/global/commands/lib/requirement_validator.py
+# File: installer/core/commands/lib/requirement_validator.py
 
 def validate_concise_requirement(text: str, max_words: int = 500) -> ValidationResult:
     """Validate requirement against concise mode constraints."""
@@ -186,12 +186,12 @@ def validate_concise_requirement(text: str, max_words: int = 500) -> ValidationR
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/commands/lib/requirement_validator.py`
+- `installer/core/commands/lib/requirement_validator.py`
 - `tests/unit/test_requirement_validator.py`
 
 ### Modified Files
-- `installer/global/commands/formalize-ears.md` (add --concise flag)
-- `installer/global/agents/requirements-analyst.md` (add concise guidelines)
+- `installer/core/commands/formalize-ears.md` (add --concise flag)
+- `installer/core/agents/requirements-analyst.md` (add concise guidelines)
 
 ## Example Output
 

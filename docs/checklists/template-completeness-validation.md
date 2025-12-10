@@ -364,7 +364,7 @@ With fixes: 33/33 × 10 = 10/10
 
 - **Root Cause Analysis**: [TASK-020-root-cause-analysis.md](../analysis/TASK-020-root-cause-analysis.md)
 - **Improvement Proposals**: [TASK-020-improvement-proposals.md](../analysis/TASK-020-improvement-proposals.md)
-- **Template Creation Command**: [template-create.md](../../installer/global/commands/template-create.md)
+- **Template Creation Command**: [template-create.md](../../installer/core/commands/template-create.md)
 
 ---
 

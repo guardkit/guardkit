@@ -37,7 +37,7 @@ estimated_effort:
   justification: "Straightforward deletion and verification task with clear acceptance criteria"
 implementation_summary: |
   Successfully deleted old global MAUI template with zero breaking changes:
-  - Deleted installer/global/templates/maui/ (37 files)
+  - Deleted installer/core/templates/maui/ (37 files)
   - Updated 3 scripts (install.sh, install-global.sh, init-claude-project.sh)
   - Updated 2 documentation files (CLAUDE.md, migration plan)
   - Created comprehensive test suite (8 tests, all passing)
@@ -114,11 +114,11 @@ This task involves removing the deprecated global MAUI template and ensuring the
 ### Current State
 
 **Old Template Location**:
-- `installer/global/templates/maui/` (to be deleted)
+- `installer/core/templates/maui/` (to be deleted)
 
 **New Templates** (already created):
-- `installer/global/templates/maui-appshell/`
-- `installer/global/templates/maui-navigationpage/`
+- `installer/core/templates/maui-appshell/`
+- `installer/core/templates/maui-navigationpage/`
 
 **Local Template** (for ExampleApp):
 - `.claude/templates/maui-custom/` (in ExampleApp project)
@@ -126,7 +126,7 @@ This task involves removing the deprecated global MAUI template and ensuring the
 ### Changes Required
 
 1. **Delete Old Template Directory**
-   - Remove `installer/global/templates/maui/` completely
+   - Remove `installer/core/templates/maui/` completely
    - Verify no other files reference this path
 
 2. **Update Installer Scripts**
@@ -157,11 +157,11 @@ This task involves removing the deprecated global MAUI template and ensuring the
 
 ### Phase 1: Template Directory Cleanup
 - [ ] **Delete Old Template Directory**
-  - [ ] Remove `installer/global/templates/maui/` directory completely
-  - [ ] Verify directory is deleted: `[ ! -d "installer/global/templates/maui/" ]`
+  - [ ] Remove `installer/core/templates/maui/` directory completely
+  - [ ] Verify directory is deleted: `[ ! -d "installer/core/templates/maui/" ]`
   - [ ] Ensure new templates exist:
-    - [ ] Verify `installer/global/templates/maui-appshell/` exists
-    - [ ] Verify `installer/global/templates/maui-navigationpage/` exists
+    - [ ] Verify `installer/core/templates/maui-appshell/` exists
+    - [ ] Verify `installer/core/templates/maui-navigationpage/` exists
 
 - [ ] **Search for Remaining References**
   - [ ] Search entire codebase for hardcoded `templates/maui/` paths
@@ -371,11 +371,11 @@ This task involves removing the deprecated global MAUI template and ensuring the
 
 ```bash
 # 1. Verify old template removed
-ls -la installer/global/templates/maui/  # Should fail
+ls -la installer/core/templates/maui/  # Should fail
 
 # 2. Verify new templates exist
-ls -la installer/global/templates/maui-appshell/
-ls -la installer/global/templates/maui-navigationpage/
+ls -la installer/core/templates/maui-appshell/
+ls -la installer/core/templates/maui-navigationpage/
 
 # 3. Search for remaining references
 grep -r "templates/maui\"" installer/
@@ -403,12 +403,12 @@ If issues are discovered:
 
 1. **Preserve Old Template** (before deletion):
    ```bash
-   cp -r installer/global/templates/maui installer/global/templates/.maui-backup
+   cp -r installer/core/templates/maui installer/core/templates/.maui-backup
    ```
 
 2. **Restore if Needed**:
    ```bash
-   cp -r installer/global/templates/.maui-backup installer/global/templates/maui
+   cp -r installer/core/templates/.maui-backup installer/core/templates/maui
    ```
 
 3. **Revert Script Changes**:

@@ -199,8 +199,8 @@ technologies: C#, MAUI, MVVM
 ## Root Cause Analysis
 
 **Likely Location**: Phase 5 agent file writing in `/template-create` orchestrator
-- File: `installer/global/commands/lib/template_create_orchestrator.py` (Phase 5 section)
-- OR: `installer/global/lib/agent_generator/*.py` (agent file writer)
+- File: `installer/core/commands/lib/template_create_orchestrator.py` (Phase 5 section)
+- OR: `installer/core/lib/agent_generator/*.py` (agent file writer)
 
 **Hypothesis**:
 - AI returns JSON array with agent objects (correct)
@@ -247,9 +247,9 @@ technologies: C#, MAUI, MVVM
 **Phase 5 Agent Generation Code**:
 ```bash
 # Primary locations to investigate:
-installer/global/commands/lib/template_create_orchestrator.py  # Phase 5 section
-installer/global/lib/agent_generator/                          # Agent file writing
-installer/global/lib/agent_generator/generator.py              # Likely culprit
+installer/core/commands/lib/template_create_orchestrator.py  # Phase 5 section
+installer/core/lib/agent_generator/                          # Agent file writing
+installer/core/lib/agent_generator/generator.py              # Likely culprit
 ```
 
 **What to Fix**:
@@ -272,7 +272,7 @@ for agent in agents:
 **Fixed (Correct)**:
 ```python
 # Import or create markdown formatter
-from installer.global.lib.agent_generator.markdown_formatter import format_agent_markdown
+from installer.core.lib.agent_generator.markdown_formatter import format_agent_markdown
 
 for agent in agents:
     agent_file = f"{agent['name']}.md"

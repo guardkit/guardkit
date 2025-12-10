@@ -44,7 +44,7 @@ This document provides a **detailed implementation plan** for fixing template ge
 
 #### CompletenessValidator
 
-**File**: `installer/global/lib/template_generator/completeness_validator.py`
+**File**: `installer/core/lib/template_generator/completeness_validator.py`
 
 **Responsibilities**:
 - Validate CRUD operation completeness
@@ -132,7 +132,7 @@ class TemplateRecommendation:
 
 #### Pattern Matcher
 
-**File**: `installer/global/lib/template_generator/pattern_matcher.py`
+**File**: `installer/core/lib/template_generator/pattern_matcher.py`
 
 **Purpose**: Extract operations and patterns from template collection
 
@@ -185,7 +185,7 @@ class CRUDPatternMatcher:
 
 ### 1.2 Orchestrator Integration
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Modifications**:
 
@@ -240,7 +240,7 @@ class TemplateCreateOrchestrator:
         """
         self._print_phase_header("Phase 5.5: Completeness Validation")
 
-        from installer.global.lib.template_generator.completeness_validator import (
+        from installer.core.lib.template_generator.completeness_validator import (
             CompletenessValidator
         )
 
@@ -517,7 +517,7 @@ def test_phase_5_5_auto_fix_completes_templates():
 
 #### StratifiedSampler
 
-**File**: `installer/global/lib/codebase_analyzer/stratified_sampler.py`
+**File**: `installer/core/lib/codebase_analyzer/stratified_sampler.py`
 
 **Purpose**: Replace random sampling with pattern-aware stratified sampling
 
@@ -638,7 +638,7 @@ class CRUDCompletenessChecker:
 
 ### 2.2 Integration into AI Analyzer
 
-**File**: `installer/global/lib/codebase_analyzer/ai_analyzer.py`
+**File**: `installer/core/lib/codebase_analyzer/ai_analyzer.py`
 
 **Changes**:
 
@@ -675,7 +675,7 @@ class CodebaseAnalyzer:
         logger.debug("Collecting file samples...")
 
         if self.use_stratified_sampling:
-            from installer.global.lib.codebase_analyzer.stratified_sampler import (
+            from installer.core.lib.codebase_analyzer.stratified_sampler import (
                 StratifiedSampler
             )
             sampler = StratifiedSampler(codebase_path, max_files=self.max_files)
@@ -761,7 +761,7 @@ def test_crud_completeness_checker_adds_missing():
 
 ### 3.1 Prompt Enhancements
 
-**File**: `installer/global/lib/template_generator/template_generator.py`
+**File**: `installer/core/lib/template_generator/template_generator.py`
 
 **Update `_create_extraction_prompt`**:
 
@@ -812,7 +812,7 @@ Remember: Users need COMPLETE CRUD operations, not representative samples.
 """
 ```
 
-**File**: `installer/global/lib/template_generator/claude_md_generator.py`
+**File**: `installer/core/lib/template_generator/claude_md_generator.py`
 
 **Add Validation Section**:
 
@@ -1039,7 +1039,7 @@ Week 4: Validation & Documentation
 
 1. `docs/guides/template-quality-validation.md` (NEW)
 2. `docs/checklists/template-completeness-validation.md` (Already created)
-3. `installer/global/commands/template-create.md` (Update with Phase 5.5)
+3. `installer/core/commands/template-create.md` (Update with Phase 5.5)
 4. `docs/workflows/template-creation-workflow.md` (Add validation step)
 
 ---

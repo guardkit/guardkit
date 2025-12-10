@@ -378,7 +378,7 @@ Your question (or 'back'): back
 
 ### Enhanced Phase 2.7: Plan Generation + Complexity Calculation
 
-Add to `installer/global/commands/task-work.md`:
+Add to `installer/core/commands/task-work.md`:
 
 ```markdown
 ## Phase 2.7: Implementation Plan Generation + Complexity Analysis

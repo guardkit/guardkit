@@ -30,7 +30,7 @@ Implement comprehensive validation and collision detection for task IDs to preve
 
 ### Module Structure
 ```
-installer/global/lib/id_generator.py
+installer/core/lib/id_generator.py
 ├── Existing functions (unchanged)
 │   ├── generate_task_id()
 │   ├── count_existing_tasks()
@@ -288,7 +288,7 @@ def check_duplicate_threadsafe(task_id: str) -> Optional[str]:
 ## File Changes
 
 ### Modified Files
-1. **installer/global/lib/id_generator.py** (~200 lines added)
+1. **installer/core/lib/id_generator.py** (~200 lines added)
    - Add validation functions
    - Add error message constants
    - Add registry caching logic

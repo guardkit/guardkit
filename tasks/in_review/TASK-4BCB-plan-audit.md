@@ -85,7 +85,7 @@ Document the **Plan Audit** feature (Phase 5.5 of task-work command) - scope cre
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 5.5)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 5.5)
 - TASK-69D9 examples (Plan Audit implementation)
 - Hubbard research: `docs/research/hubbard-workflow-and-agentecflow-lite.md` (Step 6)
 

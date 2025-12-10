@@ -101,8 +101,8 @@ TemplateCreateOrchestrator
 **Purpose**: Generate task for guided template creation
 
 **Implementation**:
-- Location: `installer/global/commands/create-template-task.md`
-- Python: `installer/global/commands/lib/create_template_task.py`
+- Location: `installer/core/commands/create-template-task.md`
+- Python: `installer/core/commands/lib/create_template_task.py`
 - ~200 LOC (simple task generator)
 
 **Usage**:
@@ -127,7 +127,7 @@ Create template from {source} that achieves 9+/10 quality score.
    - Wait for completion
 
 3. Run /template-validate
-   - Execute: /template-validate installer/global/templates/{name}
+   - Execute: /template-validate installer/core/templates/{name}
    - Review quality report
 
 4. IF score <9/10:
@@ -178,7 +178,7 @@ agents = await generator.generate_async(analysis)  # Direct Task tool call
 ```
 
 **Task 1.2: Remove Checkpoint-Resume Logic** (2 days)
-- Files: `template_create_orchestrator.py`, `installer/global/lib/agent_bridge/state_manager.py`
+- Files: `template_create_orchestrator.py`, `installer/core/lib/agent_bridge/state_manager.py`
 - Changes:
   - Remove `_run_from_phase_5()`, `_run_from_phase_7()` methods
   - Remove `_resume_from_checkpoint()` method
@@ -239,8 +239,8 @@ agents = await generator.generate_async(analysis)  # Direct Task tool call
 
 **Task 2.1: Create `/create-template-task` Command** (3 days)
 - Files:
-  - `installer/global/commands/create-template-task.md` (command spec)
-  - `installer/global/commands/lib/create_template_task.py` (implementation)
+  - `installer/core/commands/create-template-task.md` (command spec)
+  - `installer/core/commands/lib/create_template_task.py` (implementation)
 - Features:
   - Parse arguments (`--source`, `--name`, `--priority`)
   - Generate task markdown from template
@@ -283,7 +283,7 @@ def create_template_task(
 ```
 
 **Task 2.2: Task Template Content** (1 day)
-- Files: `installer/global/commands/lib/task_templates/template_creation.md`
+- Files: `installer/core/commands/lib/task_templates/template_creation.md`
 - Based on: TASK-057, TASK-058, TASK-059, TASK-062 (proven workflow)
 - Sections:
   - Objectives
@@ -595,7 +595,7 @@ The hybrid approach provides the best balance:
 
 **Review Document**: [template-create-pivot-review.md](../reviews/template-create-pivot-review.md)
 **Completed Tasks**: TASK-057, TASK-058, TASK-059, TASK-062
-**Current Implementation**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Current Implementation**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 ---
 

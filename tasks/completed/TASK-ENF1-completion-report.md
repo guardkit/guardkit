@@ -10,12 +10,12 @@
 ## Deliverables
 
 ### Files Created (4)
-1. `installer/global/commands/lib/agent_invocation_validator.py` (331 lines)
+1. `installer/core/commands/lib/agent_invocation_validator.py` (331 lines)
    - Core validation logic with workflow-aware phase counting
    - Detailed error message generation
    - Support for all workflow modes (standard, micro, design-only, implement-only)
 
-2. `installer/global/commands/lib/test_agent_invocation_validator.py` (630 lines)
+2. `installer/core/commands/lib/test_agent_invocation_validator.py` (630 lines)
    - Comprehensive test suite with 31 test cases
    - Tests for all workflow modes and edge cases
    - 100% test pass rate
@@ -28,12 +28,12 @@
 4. Task completion report (this file)
 
 ### Files Modified (2)
-1. `installer/global/commands/task-work.md` (+109 lines)
+1. `installer/core/commands/task-work.md` (+109 lines)
    - Added Step 6.5: Validate Agent Invocations
    - Comprehensive documentation with examples
    - Clear success/failure behavior
 
-2. `installer/global/commands/lib/task_utils.py` (+86 lines)
+2. `installer/core/commands/lib/task_utils.py` (+86 lines)
    - Added `move_task_to_blocked()` function
    - Handles task state transitions on validation failure
 

@@ -405,7 +405,7 @@ install_global_files() {
         print_success "Installed project templates"
     fi
     
-    # Copy Python libraries from installer/global/lib (for imports like 'from lib.id_generator')
+    # Copy Python libraries from installer/core/lib (for imports like 'from lib.id_generator')
     if [ -d "$INSTALLER_DIR/global/lib" ]; then
         mkdir -p "$INSTALL_DIR/commands/lib"
 

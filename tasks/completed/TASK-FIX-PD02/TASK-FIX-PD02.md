@@ -46,7 +46,7 @@ The manifest generation logic doesn't check the detected language before setting
 
 ## Files Modified
 
-- `installer/global/lib/template_creation/manifest_generator.py` - Line 547-549: Split TypeScript/JavaScript condition
+- `installer/core/lib/template_creation/manifest_generator.py` - Line 547-549: Split TypeScript/JavaScript condition
 - `tests/unit/test_manifest_generator.py` - Added two new test methods
 
 ## Implementation Summary

@@ -57,24 +57,24 @@ TASK-9038 (Q&A Command)
 
 **TASK-9037** (Build Artifacts):
 ```
-installer/global/lib/template_creation/exclusions.py          (NEW)
-installer/global/lib/codebase_analyzer/ai_analyzer.py         (MODIFY)
+installer/core/lib/template_creation/exclusions.py          (NEW)
+installer/core/lib/codebase_analyzer/ai_analyzer.py         (MODIFY)
 tests/unit/test_exclusions.py                                 (NEW)
 tests/integration/test_build_artifact_exclusion.py            (NEW)
 ```
 
 **TASK-9038** (Q&A Command):
 ```
-installer/global/commands/template-qa.md                      (NEW)
-installer/global/commands/lib/template_qa_orchestrator.py     (NEW)
-installer/global/lib/template_creation/qa_session.py          (EXTRACT from orchestrator)
+installer/core/commands/template-qa.md                      (NEW)
+installer/core/commands/lib/template_qa_orchestrator.py     (NEW)
+installer/core/lib/template_creation/qa_session.py          (EXTRACT from orchestrator)
 tests/unit/test_template_qa_orchestrator.py                   (NEW)
 ```
 
 **TASK-9039** (Remove Q&A):
 ```
-installer/global/commands/lib/template_create_orchestrator.py (MODIFY)
-installer/global/lib/template_creation/smart_defaults.py      (NEW)
+installer/core/commands/lib/template_create_orchestrator.py (MODIFY)
+installer/core/lib/template_creation/smart_defaults.py      (NEW)
 tests/unit/test_smart_defaults.py                             (NEW)
 tests/integration/test_template_create_non_interactive.py     (NEW)
 ```
@@ -282,7 +282,7 @@ git push origin main
 git pull origin main
 
 # Verify TASK-9037 changes merged
-ls installer/global/lib/template_creation/exclusions.py
+ls installer/core/lib/template_creation/exclusions.py
 # Should exist ✅
 
 # Test on real project (AI-native mode)
@@ -536,10 +536,10 @@ git commit -m "Resolve merge conflicts"
 **Prevention**:
 ```bash
 # Before starting TASK-9039, verify:
-ls installer/global/lib/template_creation/qa_session.py
+ls installer/core/lib/template_creation/qa_session.py
 # Should exist ✅
 
-ls installer/global/commands/template-qa.md
+ls installer/core/commands/template-qa.md
 # Should exist ✅
 
 # If files don't exist, WAIT for TASK-9038 merge
@@ -721,7 +721,7 @@ echo $PYTHONPATH
 
 # If not set, add to shell profile
 export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit:$PYTHONPATH"
-export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global:$PYTHONPATH"
+export PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core:$PYTHONPATH"
 
 # Re-run tests
 pytest tests/unit/test_exclusions.py -v
@@ -764,7 +764,7 @@ git checkout main
 git pull origin main
 
 # Verify qa_session.py exists
-ls installer/global/lib/template_creation/qa_session.py
+ls installer/core/lib/template_creation/qa_session.py
 
 # Restart TASK-9039
 /task-work TASK-9039

@@ -189,7 +189,7 @@ Successfully changed `/template-create` to create agent enhancement tasks by def
 
 ### Compilation Testing ✅
 ```bash
-python3 installer/global/commands/lib/template_create_orchestrator.py
+python3 installer/core/commands/lib/template_create_orchestrator.py
 # Result: No syntax errors, imports successful
 ```
 

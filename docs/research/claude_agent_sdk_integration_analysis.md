@@ -234,7 +234,7 @@ The Task tool provides:
 User: /gather-requirements
 
 Claude Code:
-  1. Reads: installer/global/commands/gather-requirements.md
+  1. Reads: installer/core/commands/gather-requirements.md
   2. Invokes: Task tool with requirements-analyst agent
   3. Agent calls: agentecflow-requirements-mcp.gather_requirements()
   4. Agent processes: Interactive Q&A
@@ -249,7 +249,7 @@ Claude Code:
 User: /task-work TASK-042
 
 Claude Code:
-  1. Reads: installer/global/commands/task-work.md
+  1. Reads: installer/core/commands/task-work.md
   2. Detects stack: Reads .claude/settings.json → "typescript-api"
   3. Loads task: tasks/in_progress/TASK-042.md
 

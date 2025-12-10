@@ -129,12 +129,12 @@ This task creates a production-ready MkDocs configuration file (`mkdocs.yml`) us
          - Complexity Management: docs/workflows/complexity-management-workflow.md
      - Templates:
          - Overview: docs/guides/template-philosophy.md
-         - React TypeScript: installer/global/templates/react-typescript/README.md
-         - FastAPI Python: installer/global/templates/fastapi-python/README.md
-         - Next.js Full-Stack: installer/global/templates/nextjs-fullstack/README.md
-         - React-FastAPI Monorepo: installer/global/templates/react-fastapi-monorepo/README.md
-         - GuardKit Python: installer/global/templates/guardkit-python/README.md
-         - Default Template: installer/global/templates/default/README.md
+         - React TypeScript: installer/core/templates/react-typescript/README.md
+         - FastAPI Python: installer/core/templates/fastapi-python/README.md
+         - Next.js Full-Stack: installer/core/templates/nextjs-fullstack/README.md
+         - React-FastAPI Monorepo: installer/core/templates/react-fastapi-monorepo/README.md
+         - GuardKit Python: installer/core/templates/guardkit-python/README.md
+         - Default Template: installer/core/templates/default/README.md
          - Creating Custom Templates: docs/guides/creating-local-templates.md
      - Advanced Topics:
          - MCP Integration:
@@ -405,12 +405,12 @@ All files referenced in navigation must exist. Key files to verify:
 - `docs/mcp-setup/zeplin-mcp-setup.md`
 
 **Templates**:
-- `installer/global/templates/react-typescript/README.md`
-- `installer/global/templates/fastapi-python/README.md`
-- `installer/global/templates/nextjs-fullstack/README.md`
-- `installer/global/templates/react-fastapi-monorepo/README.md`
-- `installer/global/templates/guardkit-python/README.md`
-- `installer/global/templates/default/README.md`
+- `installer/core/templates/react-typescript/README.md`
+- `installer/core/templates/fastapi-python/README.md`
+- `installer/core/templates/nextjs-fullstack/README.md`
+- `installer/core/templates/react-fastapi-monorepo/README.md`
+- `installer/core/templates/guardkit-python/README.md`
+- `installer/core/templates/default/README.md`
 
 ### Python Dependencies
 ```txt
@@ -441,7 +441,7 @@ mkdocs-material>=9.5.0
 
 2. **Missing Files**: If any referenced files don't exist during implementation, they should be flagged for creation in subsequent tasks.
 
-3. **Template READMEs**: All 6 template READMEs are referenced from `installer/global/templates/*/README.md` - verify these exist.
+3. **Template READMEs**: All 6 template READMEs are referenced from `installer/core/templates/*/README.md` - verify these exist.
 
 4. **Future Enhancements**: After initial configuration works, consider:
    - Git revision date plugin

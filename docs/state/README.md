@@ -42,13 +42,13 @@ Stores the structured implementation plan generated in Phase 2 and saved during 
   "version": 1,
   "plan": {
     "files_to_create": [
-      "installer/global/commands/lib/phase_execution.py",
-      "installer/global/commands/lib/plan_persistence.py"
+      "installer/core/commands/lib/phase_execution.py",
+      "installer/core/commands/lib/plan_persistence.py"
     ],
     "files_to_modify": [
-      "installer/global/commands/task-work.md",
-      "installer/global/agents/task-manager.md",
-      "installer/global/commands/lib/flag_validator.py"
+      "installer/core/commands/task-work.md",
+      "installer/core/agents/task-manager.md",
+      "installer/core/commands/lib/flag_validator.py"
     ],
     "external_dependencies": [],
     "estimated_duration": "4-6 hours",
@@ -290,10 +290,10 @@ Potential future enhancements (not in TASK-006 scope):
 
 ## Related Documentation
 
-- [/installer/global/commands/task-work.md](../../installer/global/commands/task-work.md) - Task work command spec
-- [/installer/global/agents/task-manager.md](../../installer/global/agents/task-manager.md) - Task manager agent
-- [/installer/global/commands/lib/plan_persistence.py](../../installer/global/commands/lib/plan_persistence.py) - Plan persistence module
-- [/installer/global/commands/lib/phase_execution.py](../../installer/global/commands/lib/phase_execution.py) - Phase execution module
+- [/installer/core/commands/task-work.md](../../installer/core/commands/task-work.md) - Task work command spec
+- [/installer/core/agents/task-manager.md](../../installer/core/agents/task-manager.md) - Task manager agent
+- [/installer/core/commands/lib/plan_persistence.py](../../installer/core/commands/lib/plan_persistence.py) - Plan persistence module
+- [/installer/core/commands/lib/phase_execution.py](../../installer/core/commands/lib/phase_execution.py) - Phase execution module
 - [/tasks/in_progress/TASK-006-design-first-workflow-flags.md](../../tasks/in_progress/TASK-006-design-first-workflow-flags.md) - Original task specification
 
 ## Support

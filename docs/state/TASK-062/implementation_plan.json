@@ -89,71 +89,71 @@
       "purpose": "Type-safe API client using @hey-api/openapi-ts"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/manifest.json",
+      "path": "installer/core/templates/react-fastapi-monorepo/manifest.json",
       "purpose": "Template metadata and configuration"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/settings.json",
+      "path": "installer/core/templates/react-fastapi-monorepo/settings.json",
       "purpose": "Naming conventions and placeholder definitions"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/CLAUDE.md",
+      "path": "installer/core/templates/react-fastapi-monorepo/CLAUDE.md",
       "purpose": "AI guidance for monorepo patterns and architecture"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/README.md",
+      "path": "installer/core/templates/react-fastapi-monorepo/README.md",
       "purpose": "Human-readable template documentation"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/component.tsx.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/component.tsx.template",
       "purpose": "React component template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template",
       "purpose": "Type-safe API hook template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/test.test.tsx.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/test.test.tsx.template",
       "purpose": "Frontend test template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/router.py.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/backend/router.py.template",
       "purpose": "FastAPI router template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/schema.py.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/backend/schema.py.template",
       "purpose": "Pydantic schema template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/crud.py.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/backend/crud.py.template",
       "purpose": "CRUD operations template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/apps/backend/test.py.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/apps/backend/test.py.template",
       "purpose": "Backend test template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/docker-compose.yml.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/docker/docker-compose.yml.template",
       "purpose": "Docker Compose template for new services"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/frontend.Dockerfile.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/docker/frontend.Dockerfile.template",
       "purpose": "Frontend Dockerfile template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/templates/docker/backend.Dockerfile.template",
+      "path": "installer/core/templates/react-fastapi-monorepo/templates/docker/backend.Dockerfile.template",
       "purpose": "Backend Dockerfile template"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/agents/react-fastapi-monorepo-specialist.md",
+      "path": "installer/core/templates/react-fastapi-monorepo/agents/react-fastapi-monorepo-specialist.md",
       "purpose": "Monorepo architecture specialist agent"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/agents/monorepo-type-safety-specialist.md",
+      "path": "installer/core/templates/react-fastapi-monorepo/agents/monorepo-type-safety-specialist.md",
       "purpose": "Type generation and safety specialist agent"
     },
     {
-      "path": "installer/global/templates/react-fastapi-monorepo/agents/docker-orchestration-specialist.md",
+      "path": "installer/core/templates/react-fastapi-monorepo/agents/docker-orchestration-specialist.md",
       "purpose": "Docker Compose and containerization specialist agent"
     }
   ],

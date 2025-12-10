@@ -42,13 +42,13 @@ For MyDrive repository (309 files, 11 frameworks, 11 patterns, 9 layers), the co
 
 ## Files Modified
 
-1. **claude_md_generator.py** (installer/global/lib/template_generator/)
+1. **claude_md_generator.py** (installer/core/lib/template_generator/)
    - Lines 69-82: Added `summary_only` parameter
    - Lines 216-239: Created `_generate_technology_stack_summary()`
    - Lines 233-265: Added `max_depth` parameter
    - Lines 1470-1484: Updated `_generate_core()`
 
-2. **models.py** (installer/global/lib/template_generator/)
+2. **models.py** (installer/core/lib/template_generator/)
    - Lines 409-430: Enhanced `validate_size_constraints()`
 
 ## Test Results

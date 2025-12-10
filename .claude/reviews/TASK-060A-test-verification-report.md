@@ -144,7 +144,7 @@ Template Migration Guide:
 **Status**: PASS
 
 Acceptance criteria verification:
-- AC1: Template location (installer/global/templates/default/) ✓
+- AC1: Template location (installer/core/templates/default/) ✓
 - AC3: All required files present (CLAUDE.md, README.md, settings.json, agents/, templates/) ✓
 - AC4: Language-agnostic guidance with Go, Rust, Ruby, etc. ✓
 - AC6: Clear actionable guidance in CLAUDE.md ✓
@@ -266,11 +266,11 @@ For documentation-based tasks, compilation verification focuses on:
 
 | Deliverable | Status | Quality |
 |------------|--------|---------|
-| installer/global/templates/default/CLAUDE.md | Created | 10/10 |
-| installer/global/templates/default/README.md | Created | 10/10 |
-| installer/global/templates/default/settings.json | Created | 10/10 |
-| installer/global/templates/default/agents/.gitkeep | Created | 10/10 |
-| installer/global/templates/default/templates/.gitkeep | Created | 10/10 |
+| installer/core/templates/default/CLAUDE.md | Created | 10/10 |
+| installer/core/templates/default/README.md | Created | 10/10 |
+| installer/core/templates/default/settings.json | Created | 10/10 |
+| installer/core/templates/default/agents/.gitkeep | Created | 10/10 |
+| installer/core/templates/default/templates/.gitkeep | Created | 10/10 |
 | Root CLAUDE.md updated | Updated | 9/10* |
 | Root README.md updated | Updated | 9/10* |
 | Template migration guide updated | Updated | 8/10* |

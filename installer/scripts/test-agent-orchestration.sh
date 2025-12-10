@@ -35,29 +35,29 @@ test_agent() {
 
 # Test .NET Microservice agents
 echo "📦 Testing .NET Microservice Agents:"
-test_agent "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md" "API Specialist"
-test_agent "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md" "Domain Specialist"
-test_agent "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents/dotnet-testing-specialist.md" "Testing Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents/dotnet-api-specialist.md" "API Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents/dotnet-domain-specialist.md" "Domain Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents/dotnet-testing-specialist.md" "Testing Specialist"
 echo ""
 
 # Test MAUI agents
 echo "📱 Testing MAUI Agents:"
-test_agent "$PROJECT_ROOT/installer/global/templates/maui/agents/maui-usecase-specialist.md" "UseCase Specialist"
-test_agent "$PROJECT_ROOT/installer/global/templates/maui/agents/maui-viewmodel-specialist.md" "ViewModel Specialist"
-test_agent "$PROJECT_ROOT/installer/global/templates/maui/agents/maui-ui-specialist.md" "UI Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/maui/agents/maui-usecase-specialist.md" "UseCase Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/maui/agents/maui-viewmodel-specialist.md" "ViewModel Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/maui/agents/maui-ui-specialist.md" "UI Specialist"
 echo ""
 
 # Test React agents
 echo "⚛️  Testing React Agents:"
-test_agent "$PROJECT_ROOT/installer/global/templates/react/agents/react-state-specialist.md" "State Specialist"
-test_agent "$PROJECT_ROOT/installer/global/templates/react/agents/react-testing-specialist.md" "Testing Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/react/agents/react-state-specialist.md" "State Specialist"
+test_agent "$PROJECT_ROOT/installer/core/templates/react/agents/react-testing-specialist.md" "Testing Specialist"
 echo ""
 
 # Test Global agents
 echo "🌍 Testing Global Specialist Agents:"
-test_agent "$PROJECT_ROOT/installer/global/agents/devops-specialist.md" "DevOps Specialist"
-test_agent "$PROJECT_ROOT/installer/global/agents/security-specialist.md" "Security Specialist"
-test_agent "$PROJECT_ROOT/installer/global/agents/database-specialist.md" "Database Specialist"
+test_agent "$PROJECT_ROOT/installer/core/agents/devops-specialist.md" "DevOps Specialist"
+test_agent "$PROJECT_ROOT/installer/core/agents/security-specialist.md" "Security Specialist"
+test_agent "$PROJECT_ROOT/installer/core/agents/database-specialist.md" "Database Specialist"
 echo ""
 
 # Test orchestration patterns
@@ -65,13 +65,13 @@ echo "🎭 Testing Orchestration Patterns:"
 
 # Check if agents have collaboration points
 echo "  Checking collaboration points..."
-if grep -q "collaborates_with:" "$PROJECT_ROOT/installer/global/agents/devops-specialist.md"; then
+if grep -q "collaborates_with:" "$PROJECT_ROOT/installer/core/agents/devops-specialist.md"; then
     echo "  ✅ Global agents have collaboration metadata"
 else
     echo "  ⚠️  Missing collaboration metadata in global agents"
 fi
 
-if grep -q "orchestration:" "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md"; then
+if grep -q "orchestration:" "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents/dotnet-api-specialist.md"; then
     echo "  ✅ Stack agents have orchestration metadata"
 else
     echo "  ⚠️  Missing orchestration metadata in stack agents"

@@ -27,8 +27,8 @@ The code review cannot proceed as specified because the described implementation
 The task specification requires the following changes:
 
 1. **Files to be modified:**
-   - `installer/global/lib/agent_enhancement/models.py` (NEW - should contain updated EnhancementResult)
-   - `installer/global/lib/agent_enhancement/enhancer.py` (should have updated enhance() method with split_output support)
+   - `installer/core/lib/agent_enhancement/models.py` (NEW - should contain updated EnhancementResult)
+   - `installer/core/lib/agent_enhancement/enhancer.py` (should have updated enhance() method with split_output support)
 
 2. **Test files to be created:**
    - `tests/unit/test_enhancer_split_output.py` (8 tests)
@@ -42,7 +42,7 @@ The task specification requires the following changes:
 
 ### 1. Critical Implementation Gap: EnhancementResult Class
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/enhancer.py`
 **Lines**: 34-44
 
 **Current Definition**:
@@ -81,7 +81,7 @@ class EnhancementResult:
 
 **Verification Command**:
 ```bash
-grep -A 10 "class EnhancementResult" installer/global/lib/agent_enhancement/enhancer.py
+grep -A 10 "class EnhancementResult" installer/core/lib/agent_enhancement/enhancer.py
 ```
 
 **Status**: ❌ MISSING - Structure completely different from specification
@@ -92,13 +92,13 @@ grep -A 10 "class EnhancementResult" installer/global/lib/agent_enhancement/enha
 
 ### 2. Critical Implementation Gap: models.py Module
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/models.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/models.py`
 
 **Current State**: File does not exist
 
 **Verification Command**:
 ```bash
-ls -la installer/global/lib/agent_enhancement/models.py
+ls -la installer/core/lib/agent_enhancement/models.py
 # Result: No such file or directory
 ```
 
@@ -123,7 +123,7 @@ ls -la installer/global/lib/agent_enhancement/models.py
 
 ### 3. Critical Implementation Gap: enhance() Method Signature
 
-**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/enhancer.py`
 **Lines**: 106-110
 
 **Current Signature**:
@@ -188,7 +188,7 @@ return EnhancementResult(
 
 **Verification**:
 ```bash
-grep -n "apply_with_split" installer/global/lib/agent_enhancement/applier.py
+grep -n "apply_with_split" installer/core/lib/agent_enhancement/applier.py
 # Result: No matches found
 ```
 
@@ -310,7 +310,7 @@ Before code can be written and reviewed, these must be completed:
 
 ### 1. TASK-PD-001 Completion (BLOCKING)
 
-Must implement in `installer/global/lib/agent_enhancement/applier.py`:
+Must implement in `installer/core/lib/agent_enhancement/applier.py`:
 
 ```python
 def create_extended_file(self, agent_path: Path, extended_content: str) -> Path:
@@ -369,7 +369,7 @@ Only after PD-001 and PD-002 are complete.
 When ready to implement TASK-PD-003:
 
 - [ ] Verify TASK-PD-001 is complete and merged
-- [ ] Create `installer/global/lib/agent_enhancement/models.py`
+- [ ] Create `installer/core/lib/agent_enhancement/models.py`
 - [ ] Move EnhancementResult to models.py with new fields
 - [ ] Update imports in enhancer.py
 - [ ] Add split_output parameter to enhance() method

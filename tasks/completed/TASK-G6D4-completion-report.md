@@ -10,7 +10,7 @@
 ## Deliverables
 
 ### Files Deleted (26 files)
-- `installer/global/templates/taskwright-python/` (entire directory)
+- `installer/core/templates/taskwright-python/` (entire directory)
 - Template configuration, agents, Python code structure
 - 3,278 lines removed
 
@@ -42,7 +42,7 @@
 
 ### Phase 1: Template Removal
 **Duration**: 5 minutes
-**Action**: Deleted `installer/global/templates/taskwright-python/` directory
+**Action**: Deleted `installer/core/templates/taskwright-python/` directory
 
 **Result**: Template successfully removed with all associated files
 

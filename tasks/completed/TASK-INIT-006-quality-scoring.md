@@ -65,7 +65,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File: installer/global/commands/lib/greenfield_qa_session.py
+### File: installer/core/commands/lib/greenfield_qa_session.py
 
 **ADD QualityScorer class** (after line 730):
 
@@ -376,10 +376,10 @@ def run(self) -> Optional[GreenfieldAnswers]:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - QualityScorer class (~200 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `run()` method to add quality scoring (~20 lines)
 
 ## Acceptance Criteria

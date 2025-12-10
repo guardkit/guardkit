@@ -16,7 +16,7 @@ Successfully implemented intelligent prefix inference for task IDs, enabling aut
 
 ### Code Changes
 - **Files Modified:** 1
-  - `installer/global/lib/id_generator.py` (+254 lines)
+  - `installer/core/lib/id_generator.py` (+254 lines)
 - **Files Created:** 1
   - `tests/lib/test_id_generator_prefix_inference.py` (322 lines)
 

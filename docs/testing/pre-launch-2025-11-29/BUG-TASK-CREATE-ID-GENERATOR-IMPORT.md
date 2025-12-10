@@ -20,16 +20,16 @@ This breaks task creation entirely, making the system unusable.
 
 ## Root Cause
 
-The `/task-create` command is specification-based ([task-create.md](../../../installer/global/commands/task-create.md)) and executes Python code inline via Claude Code. The spec includes:
+The `/task-create` command is specification-based ([task-create.md](../../../installer/core/commands/task-create.md)) and executes Python code inline via Claude Code. The spec includes:
 
 ```python
-from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
+from installer.core.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 ```
 
 **Problem**: This import assumes Python can find the `installer/` package, but:
 
 1. When running from a user project (e.g., `~/Projects/test-api-service`), the guardkit repo is NOT in Python's sys.path
-2. The `id_generator.py` module exists at `~/Projects/appmilla_github/guardkit/installer/global/lib/id_generator.py`
+2. The `id_generator.py` module exists at `~/Projects/appmilla_github/guardkit/installer/core/lib/id_generator.py`
 3. Python doesn't know where to find it
 
 **Unlike Python command scripts** (e.g., `agent-enhance.py`) which use `__file__` to resolve the repo path, **inline spec execution** doesn't have `__file__` available.
@@ -40,7 +40,7 @@ from installer.global.lib.id_generator import generate_task_id, validate_task_id
 
 ### Fix 1: Add Repository Root Resolution to task-create.md
 
-**File**: [task-create.md](../../../installer/global/commands/task-create.md:207-263)
+**File**: [task-create.md](../../../installer/core/commands/task-create.md:207-263)
 
 **Added path resolution before import**:
 
@@ -100,13 +100,13 @@ if str(guardkit_repo) not in sys.path:
     sys.path.insert(0, str(guardkit_repo))
 # === END: Repository Root Resolution ===
 
-from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
+from installer.core.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 ```
 
 **How it works**:
 1. Checks `~/.agentecflow/guardkit.marker.json` for `repo_path` field (most reliable)
 2. Falls back to common installation paths
-3. Verifies path contains `installer/global/lib/id_generator.py`
+3. Verifies path contains `installer/core/lib/id_generator.py`
 4. Adds repo root to `sys.path`
 5. Imports normally
 
@@ -139,7 +139,7 @@ EOF
 ```
 
 **Why this is needed**:
-- Marker file already exists for feature detection ([feature_detection.py](../../../installer/global/lib/feature_detection.py))
+- Marker file already exists for feature detection ([feature_detection.py](../../../installer/core/lib/feature_detection.py))
 - Adding `repo_path` provides a **reliable, installation-agnostic** way to find the repo
 - Works whether installed via git clone or curl script
 
@@ -191,7 +191,7 @@ cat ~/.agentecflow/guardkit.marker.json | grep repo_path
 # Should output: "repo_path": "/Users/[username]/Projects/guardkit"
 
 # Verify repository exists
-ls ~/Projects/guardkit/installer/global/lib/id_generator.py
+ls ~/Projects/guardkit/installer/core/lib/id_generator.py
 # Should exist
 
 # Try task creation
@@ -249,10 +249,10 @@ cd ~/Projects/another-project
 
 ## Related Files
 
-- **Spec**: [task-create.md](../../../installer/global/commands/task-create.md)
-- **Module**: [id_generator.py](../../../installer/global/lib/id_generator.py)
+- **Spec**: [task-create.md](../../../installer/core/commands/task-create.md)
+- **Module**: [id_generator.py](../../../installer/core/lib/id_generator.py)
 - **Installation**: [install.sh](../../../installer/scripts/install.sh)
-- **Feature Detection**: [feature_detection.py](../../../installer/global/lib/feature_detection.py)
+- **Feature Detection**: [feature_detection.py](../../../installer/core/lib/feature_detection.py)
 
 ---
 
@@ -268,7 +268,7 @@ cd ~/Projects/another-project
 - `/task-complete` - Check for module imports
 - `/task-refine` - Check for module imports
 
-**Action**: Search for `from installer.global.` in all `.md` command specs and add repository resolution pattern if found.
+**Action**: Search for `from installer.core.` in all `.md` command specs and add repository resolution pattern if found.
 
 ### Alternative Solution: Convert to Python Script
 

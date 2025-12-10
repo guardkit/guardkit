@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add installer path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from review_report_generator import (
     generate_review_report,

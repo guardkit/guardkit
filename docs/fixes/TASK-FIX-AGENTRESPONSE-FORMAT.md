@@ -241,8 +241,8 @@ except TypeError as e:
 
 ## Files Modified
 
-1. `/installer/global/commands/agent-enhance.md` - Added "Bridge Protocol for AI Invocation" section
-2. `/installer/global/lib/agent_bridge/invoker.py` - Added defensive auto-wrapping for raw enhancement content
+1. `/installer/core/commands/agent-enhance.md` - Added "Bridge Protocol for AI Invocation" section
+2. `/installer/core/lib/agent_bridge/invoker.py` - Added defensive auto-wrapping for raw enhancement content
 
 ### Changes Made
 
@@ -328,6 +328,6 @@ python3 ~/.agentecflow/bin/agent-enhance kartlog/repository-pattern-specialist -
 
 ## References
 
-- `installer/global/lib/agent_bridge/invoker.py` - AgentResponse dataclass
-- `installer/global/commands/template-create.md` - Working bridge protocol example
+- `installer/core/lib/agent_bridge/invoker.py` - AgentResponse dataclass
+- `installer/core/commands/template-create.md` - Working bridge protocol example
 - `docs/reference/agent-response-format.md` - Format specification

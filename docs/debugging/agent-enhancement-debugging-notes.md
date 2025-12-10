@@ -31,11 +31,11 @@ The `/template-create` command uses a checkpoint-resume pattern for long-running
 
 | File | Purpose |
 |------|---------|
-| `installer/global/commands/template-create.md` | Claude Code command - handles checkpoint-resume loop |
-| `installer/global/commands/lib/template_create_orchestrator.py` | Python orchestrator - runs all phases |
-| `installer/global/lib/template_creation/agent_enhancer.py` | Agent enhancement logic for Phase 7.5 |
-| `installer/global/lib/agent_bridge/invoker.py` | Bridge between Python and Claude Code |
-| `installer/global/agents/agent-content-enhancer.md` | Agent definition for enhancement |
+| `installer/core/commands/template-create.md` | Claude Code command - handles checkpoint-resume loop |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Python orchestrator - runs all phases |
+| `installer/core/lib/template_creation/agent_enhancer.py` | Agent enhancement logic for Phase 7.5 |
+| `installer/core/lib/agent_bridge/invoker.py` | Bridge between Python and Claude Code |
+| `installer/core/agents/agent-content-enhancer.md` | Agent definition for enhancement |
 
 ### Phase Flow
 
@@ -596,7 +596,7 @@ def _finalize_template_location(self, build_path: Path) -> Path:
 
     # Determine final destination
     if self.config.output_location == 'repo':
-        final_dest = Path("installer/global/templates") / self.manifest.name
+        final_dest = Path("installer/core/templates") / self.manifest.name
     else:
         final_dest = Path.home() / ".agentecflow" / "templates" / self.manifest.name
 

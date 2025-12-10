@@ -13,7 +13,7 @@ The checkpoint-resume pattern for agent invocation in `/template-create` failed 
 
 ### 1. Orchestrator Provides Correct Absolute Path
 
-**File**: `installer/global/lib/agent_bridge/invoker.py:185`
+**File**: `installer/core/lib/agent_bridge/invoker.py:185`
 
 ```python
 request = AgentRequest(
@@ -43,7 +43,7 @@ Response file exists: False
 
 ### 4. Contradictory Instructions in Command File
 
-**File**: `installer/global/commands/template-create.md:1254-1259` (BEFORE fix)
+**File**: `installer/core/commands/template-create.md:1254-1259` (BEFORE fix)
 
 ```markdown
 Line 1254: "DO NOT write to a relative path like .agent-response.json"
@@ -121,7 +121,7 @@ This makes it crystal clear that:
 
 ### Changes Made
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 #### Change 1: Fixed Example Pattern (Lines 1258-1261)
 
@@ -181,7 +181,7 @@ Path(absolute_response_path).write_text(response_json)
 
 ```bash
 cd /path/to/test-codebase
-python3 -m installer.global.commands.lib.template_create_orchestrator \
+python3 -m installer.core.commands.lib.template_create_orchestrator \
     --codebase-path . \
     --output-location global
 ```

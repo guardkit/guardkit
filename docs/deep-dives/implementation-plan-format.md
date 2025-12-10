@@ -218,7 +218,7 @@ JSON editing risks syntax errors:
 ### Saving Plans
 
 ```python
-from installer.global.commands.lib.plan_persistence import save_plan
+from installer.core.commands.lib.plan_persistence import save_plan
 
 plan = {
     "summary": "Implement feature X",
@@ -234,7 +234,7 @@ plan_path = save_plan("TASK-042", plan)
 ### Loading Plans
 
 ```python
-from installer.global.commands.lib.plan_persistence import load_plan
+from installer.core.commands.lib.plan_persistence import load_plan
 
 # Loads markdown (or falls back to legacy JSON)
 plan = load_plan("TASK-042")
@@ -247,7 +247,7 @@ print(plan["plan"]["summary"])  # Implement feature X
 
 ```python
 from pathlib import Path
-from installer.global.commands.lib.plan_markdown_parser import PlanMarkdownParser
+from installer.core.commands.lib.plan_markdown_parser import PlanMarkdownParser
 
 parser = PlanMarkdownParser()
 plan = parser.parse_file(Path("docs/state/TASK-042/implementation_plan.md"))
@@ -263,7 +263,7 @@ print(plan["plan"]["files_to_create"])  # ["src/feature.py", ...]
 ### Rendering Plans
 
 ```python
-from installer.global.commands.lib.plan_markdown_renderer import PlanMarkdownRenderer
+from installer.core.commands.lib.plan_markdown_renderer import PlanMarkdownRenderer
 
 renderer = PlanMarkdownRenderer()
 
@@ -454,10 +454,10 @@ except PlanMarkdownRendererError as e:
 
 - Task: TASK-027
 - Research: `docs/research/implementation-plan-and-code-review-analysis.md`
-- Template: `installer/global/commands/lib/templates/implementation_plan.md.j2`
-- Renderer: `installer/global/commands/lib/plan_markdown_renderer.py`
-- Parser: `installer/global/commands/lib/plan_markdown_parser.py`
-- Tests: `installer/global/commands/lib/test_plan_markdown.py`
+- Template: `installer/core/commands/lib/templates/implementation_plan.md.j2`
+- Renderer: `installer/core/commands/lib/plan_markdown_renderer.py`
+- Parser: `installer/core/commands/lib/plan_markdown_parser.py`
+- Tests: `installer/core/commands/lib/test_plan_markdown.py`
 
 ## Version History
 

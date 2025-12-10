@@ -600,7 +600,7 @@ class MCPMonitor:
 - Transparency for users/developers
 
 **Implementation**:
-1. Create `MCPMonitor` class in `installer/global/lib/mcp_monitor.py`
+1. Create `MCPMonitor` class in `installer/core/lib/mcp_monitor.py`
 2. Integrate with Context7 and design-patterns MCP wrappers
 3. Log metrics to `.claude/metrics/mcp-usage.jsonl`
 4. Add summary report to task completion output

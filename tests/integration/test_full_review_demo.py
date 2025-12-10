@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add lib to path and parent for package imports
-lib_path = Path(__file__).parent.parent.parent / "installer/global/commands"
+lib_path = Path(__file__).parent.parent.parent / "installer/core/commands"
 sys.path.insert(0, str(lib_path))
 
 from lib.complexity_models import (
@@ -74,9 +74,9 @@ def create_mock_implementation_plan():
     return ImplementationPlan(
         task_id="TASK-DEMO",
         files_to_create=[
-            "installer/global/commands/lib/review_modes.py",
-            "installer/global/commands/lib/user_interaction.py",
-            "installer/global/commands/lib/complexity_models.py",
+            "installer/core/commands/lib/review_modes.py",
+            "installer/core/commands/lib/user_interaction.py",
+            "installer/core/commands/lib/complexity_models.py",
             "tests/unit/test_full_review.py",
             "tests/integration/test_full_review_demo.py"
         ],

@@ -43,7 +43,7 @@ The orchestrator currently instantiates `AIAgentGenerator` without an `ai_invoke
 
 ### Files to Modify
 
-1. `installer/global/commands/lib/template_create_orchestrator.py` (~100 lines changed)
+1. `installer/core/commands/lib/template_create_orchestrator.py` (~100 lines changed)
 
 ### Files to Create
 
@@ -53,8 +53,8 @@ The orchestrator currently instantiates `AIAgentGenerator` without an `ai_invoke
 
 #### Step 1: Add Imports (5 min)
 ```python
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
-from installer.global.lib.agent_bridge.state_manager import StateManager, TemplateCreateState
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.state_manager import StateManager, TemplateCreateState
 ```
 
 #### Step 2: Modify OrchestrationConfig (10 min)
@@ -220,7 +220,7 @@ def _phase6_agent_recommendation(self, analysis: Any) -> List[Any]:
     self._print_phase_header("Phase 6: Agent Recommendation")
 
     try:
-        from installer.global.lib.agent_scanner import scan_agents
+        from installer.core.lib.agent_scanner import scan_agents
 
         inventory = scan_agents()
 
@@ -293,7 +293,7 @@ def _deserialize_analysis(self, data: dict) -> Any:
     """Convert dict back to analysis object"""
     # Recreate the analysis object structure
     # This depends on the CodebaseAnalysis class structure
-    from installer.global.lib.codebase_analyzer.models import CodebaseAnalysis
+    from installer.core.lib.codebase_analyzer.models import CodebaseAnalysis
     return CodebaseAnalysis(**data)
 
 # Similar for manifest, settings, templates...
@@ -378,4 +378,4 @@ pytest tests/integration/lib/test_orchestrator_bridge_integration.py -v
 ## References
 
 - [Technical Specification](../../docs/proposals/python-claude-bridge-technical-spec.md#component-3-orchestrator-integration)
-- [Orchestrator File](../../installer/global/commands/lib/template_create_orchestrator.py)
+- [Orchestrator File](../../installer/core/commands/lib/template_create_orchestrator.py)

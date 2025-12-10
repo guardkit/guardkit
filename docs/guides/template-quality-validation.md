@@ -513,7 +513,7 @@ name: Template Quality Check
 on:
   pull_request:
     paths:
-      - 'installer/global/templates/**'
+      - 'installer/core/templates/**'
 
 jobs:
   validate:
@@ -523,7 +523,7 @@ jobs:
 
       - name: Run quality check
         run: |
-          for template in installer/global/templates/*/; do
+          for template in installer/core/templates/*/; do
             ./scripts/template-quality-check.sh "$template"
           done
 

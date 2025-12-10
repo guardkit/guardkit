@@ -14,14 +14,14 @@ After reviewing both implementations, here are the identified duplications and r
 - execute-tests.md
 - update-state.md
 
-**New Location**: `installer/global/commands/`
+**New Location**: `installer/core/commands/`
 - gather-requirements.md (simpler version)
 - formalize-ears.md (simpler version)
 - generate-bdd.md (simpler version)
 
 **Resolution**: 
 - Keep BOTH but with different purposes:
-  - `installer/global/commands/` = Global reference (installed to ~/.agentic-flow/)
+  - `installer/core/commands/` = Global reference (installed to ~/.agentic-flow/)
   - `.claude/commands/` = Project-specific enhanced versions
 
 ### Methodology Files
@@ -32,13 +32,13 @@ After reviewing both implementations, here are the identified duplications and r
 - 03-testing.md
 - 04-workflow.md
 
-**New Location**: `installer/global/instructions/core/`
+**New Location**: `installer/core/instructions/core/`
 - ears-requirements.md (similar to 01-requirements.md)
 - bdd-gherkin.md (similar to 02-bdd.md)
 - test-orchestration.md (similar to 03-testing.md)
 
 **Resolution**:
-- Move `.claude/methodology/` content to `installer/global/instructions/core/`
+- Move `.claude/methodology/` content to `installer/core/instructions/core/`
 - Delete `.claude/methodology/` after migration
 - Projects will reference global methodology
 
@@ -52,7 +52,7 @@ After reviewing both implementations, here are the identified duplications and r
 **New Location**: Not created in installer yet
 
 **Resolution**:
-- Move templates to `installer/global/templates/default/templates/`
+- Move templates to `installer/core/templates/default/templates/`
 - Remove from `.claude/templates/`
 
 ### Setup Scripts
@@ -111,9 +111,9 @@ ai-engineer/
 ### Step 1: Consolidate Methodology
 ```bash
 # Move methodology to global instructions
-cp .claude/methodology/00-overview.md installer/global/instructions/core/
-cp .claude/methodology/01-requirements.md installer/global/instructions/core/requirements-engineering.md
-cp .claude/methodology/04-workflow.md installer/global/instructions/core/development-workflow.md
+cp .claude/methodology/00-overview.md installer/core/instructions/core/
+cp .claude/methodology/01-requirements.md installer/core/instructions/core/requirements-engineering.md
+cp .claude/methodology/04-workflow.md installer/core/instructions/core/development-workflow.md
 
 # Remove duplicates
 rm -rf .claude/methodology/
@@ -122,10 +122,10 @@ rm -rf .claude/methodology/
 ### Step 2: Consolidate Templates
 ```bash
 # Create template directory in global
-mkdir -p installer/global/templates/default/templates/
+mkdir -p installer/core/templates/default/templates/
 
 # Move templates to global
-cp .claude/templates/* installer/global/templates/default/templates/
+cp .claude/templates/* installer/core/templates/default/templates/
 
 # Remove from project
 rm -rf .claude/templates/

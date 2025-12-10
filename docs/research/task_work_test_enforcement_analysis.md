@@ -229,19 +229,19 @@ Based on Phase 4.5 final results:
 
 ### Files to Modify
 
-1. **installer/global/commands/task-work.md**
+1. **installer/core/commands/task-work.md**
    - Add Phase 4.5 (Fix Loop) after Phase 4
    - Update Phase 4 testing prompt (compilation check)
    - Update Step 6 state determination
    - Add max retry limit (3 attempts)
 
-2. **installer/global/agents/test-verifier.md** (if used)
+2. **installer/core/agents/test-verifier.md** (if used)
    - Add explicit compilation check step
    - Clarify test failure reporting format
 
 ### Code Changes (Minimal)
 
-**Location**: `installer/global/commands/task-work.md` lines 155-203
+**Location**: `installer/core/commands/task-work.md` lines 155-203
 
 **Change Summary**:
 - Insert ~50 lines for Phase 4.5 (Fix Loop)

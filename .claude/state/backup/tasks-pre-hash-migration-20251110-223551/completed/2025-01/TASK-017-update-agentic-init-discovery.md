@@ -36,15 +36,15 @@ Update `agentic-init` command to discover templates from both personal and repos
 **From Template Lifecycle Review & TASK-068**:
 - EPIC-001 adds two template creation commands
 - TASK-068: Templates default to `~/.agentecflow/templates/` (personal, immediate use)
-- Use `--output-location=repo` flag to create in `installer/global/templates/` (repository, distribution)
-- Existing `agentic-init` only checks `installer/global/templates/`
+- Use `--output-location=repo` flag to create in `installer/core/templates/` (repository, distribution)
+- Existing `agentic-init` only checks `installer/core/templates/`
 - Need to discover both locations with proper priority
 
 **Current Behavior**:
 ```python
 # Only checks repository templates
 def discover_templates():
-    return scan_directory("installer/global/templates/")
+    return scan_directory("installer/core/templates/")
 ```
 
 **New Behavior**:
@@ -52,14 +52,14 @@ def discover_templates():
 # Check personal first, then repository
 def discover_templates():
     personal = scan_directory("~/.agentecflow/templates/")  # Priority 1
-    repo = scan_directory("installer/global/templates/")  # Priority 2
+    repo = scan_directory("installer/core/templates/")  # Priority 2
     return merge_with_priority(personal, repo)
 ```
 
 ## Acceptance Criteria
 
 - [ ] Discover templates from `~/.agentecflow/templates/` (personal, user-created)
-- [ ] Discover templates from `installer/global/templates/` (repository, built-in)
+- [ ] Discover templates from `installer/core/templates/` (repository, built-in)
 - [ ] Personal templates take precedence over repository templates (same name)
 - [ ] Display template source during selection (personal vs repository)
 - [ ] Handle missing directories gracefully (personal directory may not exist yet)
@@ -103,10 +103,10 @@ class TemplateDiscovery:
 
         Args:
             personal_path: Path to personal templates (default: ~/.agentecflow/templates)
-            repo_path: Path to repository templates (default: installer/global/templates)
+            repo_path: Path to repository templates (default: installer/core/templates)
         """
         self.personal_path = personal_path or Path.home() / ".agentecflow/templates"
-        self.repo_path = repo_path or Path("installer/global/templates")
+        self.repo_path = repo_path or Path("installer/core/templates")
 
     def discover(self) -> List[TemplateInfo]:
         """
@@ -468,7 +468,7 @@ def agentic_init(template_name: Optional[str] = None):
     # Step 3: Display template info
     print(f"\n📋 Template: {template.name}")
     print(f"   Version: {template.version}")
-    print(f"   Source: {template.source} ({'~/.agentecflow/templates/' if template.source == 'personal' else 'installer/global/templates/'})")
+    print(f"   Source: {template.source} ({'~/.agentecflow/templates/' if template.source == 'personal' else 'installer/core/templates/'})")
     if template.language:
         print(f"   Language: {template.language}")
     if template.architecture:
@@ -704,7 +704,7 @@ def test_agent_conflict_detection():
 
 This task has been updated to reflect the TASK-068 implementation:
 - **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
-- **Repository templates**: `installer/global/templates/` (distribution, requires install.sh)
+- **Repository templates**: `installer/core/templates/` (distribution, requires install.sh)
 - All references to `installer/local/templates/` have been updated to `~/.agentecflow/templates/`
 - Terminology updated from "local/global" to "personal/repository" for clarity
 
@@ -718,15 +718,15 @@ This task has been updated to reflect the TASK-068 implementation:
 
 ### What Was Implemented
 
-1. **Template Discovery Module** (`installer/global/commands/lib/agentic_init/template_discovery.py`)
+1. **Template Discovery Module** (`installer/core/commands/lib/agentic_init/template_discovery.py`)
    - `TemplateDiscovery` class with dual-source scanning
    - Personal templates: `~/.agentecflow/templates/` (priority)
-   - Repository templates: `installer/global/templates/` (fallback)
+   - Repository templates: `installer/core/templates/` (fallback)
    - Priority-based filtering (personal overrides repository)
    - Graceful handling of missing directories
    - Manifest parsing with validation
 
-2. **Template Selection Module** (`installer/global/commands/lib/agentic_init/template_selection.py`)
+2. **Template Selection Module** (`installer/core/commands/lib/agentic_init/template_selection.py`)
    - Interactive selection UI with grouped display
    - Personal templates listed first
    - Repository templates labeled as "(Built-in)"
@@ -734,7 +734,7 @@ This task has been updated to reflect the TASK-068 implementation:
    - Selection by number or name
    - Quit option and retry on invalid input
 
-3. **Agent Installer Module** (`installer/global/commands/lib/agentic_init/agent_installer.py`)
+3. **Agent Installer Module** (`installer/core/commands/lib/agentic_init/agent_installer.py`)
    - Agent installation with conflict detection
    - Three conflict resolution options:
      - Keep existing (recommended)
@@ -743,7 +743,7 @@ This task has been updated to reflect the TASK-068 implementation:
    - Agent verification utilities
    - Agent listing functionality
 
-4. **Command Entry Point** (`installer/global/commands/lib/agentic_init/command.py`)
+4. **Command Entry Point** (`installer/core/commands/lib/agentic_init/command.py`)
    - 5-phase initialization workflow
    - Template discovery → Selection → Info → Structure → Agents
    - Direct mode (specify template name)
@@ -757,7 +757,7 @@ This task has been updated to reflect the TASK-068 implementation:
    - **Coverage**: All core functionality tested
 
 6. **Documentation**
-   - Command specification: `installer/global/commands/agentic-init.md`
+   - Command specification: `installer/core/commands/agentic-init.md`
    - Complete workflow documentation
    - Usage examples and troubleshooting
    - API documentation
@@ -765,7 +765,7 @@ This task has been updated to reflect the TASK-068 implementation:
 ### Acceptance Criteria Status
 
 - [x] Discover templates from `~/.agentecflow/templates/` (personal, user-created)
-- [x] Discover templates from `installer/global/templates/` (repository, built-in)
+- [x] Discover templates from `installer/core/templates/` (repository, built-in)
 - [x] Personal templates take precedence over repository templates (same name)
 - [x] Display template source during selection (personal vs repository)
 - [x] Handle missing directories gracefully (personal directory may not exist yet)
@@ -777,14 +777,14 @@ This task has been updated to reflect the TASK-068 implementation:
 ### Files Created
 
 ```
-installer/global/commands/lib/agentic_init/
+installer/core/commands/lib/agentic_init/
 ├── __init__.py
 ├── template_discovery.py       # 220 lines
 ├── template_selection.py       # 105 lines
 ├── agent_installer.py          # 130 lines
 └── command.py                  # 180 lines
 
-installer/global/commands/
+installer/core/commands/
 └── agentic-init.md             # Complete command specification
 
 tests/

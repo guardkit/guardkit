@@ -27,7 +27,7 @@ All agent enhancement tasks are created with fixed priority "MEDIUM" regardless 
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:969`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:969`
 
 ```python
 priority: MEDIUM  # Fixed for all agents
@@ -67,7 +67,7 @@ priority: MEDIUM  # Fixed for all agents
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Add `_determine_task_priority` method
 - Update task creation to use dynamic priority
 

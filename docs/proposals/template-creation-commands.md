@@ -297,7 +297,7 @@ async def {{function_name}}(
 **Agent Discovery Implementation**:
 
 ```python
-# installer/global/commands/lib/agent_discovery.py
+# installer/core/commands/lib/agent_discovery.py
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional
@@ -814,7 +814,7 @@ Next Steps:
 ### Agent Discovery Architecture
 
 ```python
-# installer/global/commands/lib/agent_discovery.py
+# installer/core/commands/lib/agent_discovery.py
 
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -1026,7 +1026,7 @@ class VoltAgentAwesomeParser:
 ### Pattern Extraction Engine
 
 ```python
-# installer/global/commands/lib/pattern_extraction.py
+# installer/core/commands/lib/pattern_extraction.py
 
 from typing import List, Dict, Optional
 import ast

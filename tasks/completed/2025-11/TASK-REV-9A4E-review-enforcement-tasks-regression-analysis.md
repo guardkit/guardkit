@@ -72,14 +72,14 @@ Analyze the 5 enforcement tasks to:
    - `tasks/backlog/agent-invocation-enforcement/README.md`
 
 3. **Affected Commands**:
-   - `installer/global/commands/template-create.md`
-   - `installer/global/commands/template-init.md`
-   - `installer/global/commands/agent-enhance.md`
-   - `installer/global/commands/task-work.md` (agent selection table)
+   - `installer/core/commands/template-create.md`
+   - `installer/core/commands/template-init.md`
+   - `installer/core/commands/agent-enhance.md`
+   - `installer/core/commands/task-work.md` (agent selection table)
 
 4. **Agent Discovery System**:
    - `docs/guides/agent-discovery-guide.md`
-   - `installer/global/commands/lib/agent_discovery.py` (if exists)
+   - `installer/core/commands/lib/agent_discovery.py` (if exists)
    - Template-generated agent structure
 
 ## Review Questions
@@ -109,8 +109,8 @@ Analyze the 5 enforcement tasks to:
 
 **Investigation Areas**:
 - **Agent Sources**: Where does discovery look for agents?
-  - Global: `installer/global/agents/*.md`
-  - Template: `installer/global/templates/*/agents/*.md`
+  - Global: `installer/core/agents/*.md`
+  - Template: `installer/core/templates/*/agents/*.md`
   - **User/Local**: `.claude/agents/*.md` (created by template-init)
 - **Discovery Priority**: Which source takes precedence?
 - **Metadata Requirements**: Do template agents have discovery metadata?
@@ -120,10 +120,10 @@ Analyze the 5 enforcement tasks to:
 # Agent Discovery Flow (from agent-discovery-guide.md)
 def discover_agents(phase, stack, keywords):
     # 1. Scan global agents
-    global_agents = scan("installer/global/agents/*.md")
+    global_agents = scan("installer/core/agents/*.md")
 
     # 2. Scan template agents
-    template_agents = scan("installer/global/templates/*/agents/*.md")
+    template_agents = scan("installer/core/templates/*/agents/*.md")
 
     # 3. Scan user agents
     user_agents = scan("~/.agentecflow/agents/*.md")  # ← LOCAL AGENTS
@@ -164,7 +164,7 @@ taskwright init react-typescript
 
 # Question: Which agent is invoked?
 # Option A: .claude/agents/react-state-specialist.md (local)
-# Option B: installer/global/agents/react-state-specialist.md (global)
+# Option B: installer/core/agents/react-state-specialist.md (global)
 # Option C: task-manager (fallback if discovery fails)
 ```
 
@@ -208,7 +208,7 @@ taskwright init react-typescript
 
 **Scenario**:
 ```
-Global: installer/global/agents/react-state-specialist.md (stack: [react])
+Global: installer/core/agents/react-state-specialist.md (stack: [react])
 Local:  .claude/agents/react-state-specialist.md (stack: [react])
 
 Task: React stack detected, Phase 3 (Implementation)
@@ -245,7 +245,7 @@ D. Explicit priority in discovery config
 taskwright init react-typescript
 
 # 1. Copy agents
-cp installer/global/templates/react-typescript/agents/*.md .claude/agents/
+cp installer/core/templates/react-typescript/agents/*.md .claude/agents/
 
 # 2. Register agents for discovery (?)
 # Question: Is there a registration step?

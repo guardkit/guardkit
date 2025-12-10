@@ -69,7 +69,7 @@ Add `/regenerate TASK-XXX` command that:
 
 ### Phase 1: Annotation System (4 hours)
 ```python
-# File: installer/global/commands/lib/code_annotator.py
+# File: installer/core/commands/lib/code_annotator.py
 
 from dataclasses import dataclass
 from typing import List
@@ -181,7 +181,7 @@ public class AuthService {
 
 ### Phase 2: Regeneration Command (6 hours)
 ```markdown
-# File: installer/global/commands/regenerate.md
+# File: installer/core/commands/regenerate.md
 
 # Regenerate Command
 
@@ -284,7 +284,7 @@ Next steps:
 
 ### Phase 3: Preservation Logic (4 hours)
 ```python
-# File: installer/global/commands/lib/manual_preservation.py
+# File: installer/core/commands/lib/manual_preservation.py
 
 class ManualPreserver:
     def __init__(self, annotator: CodeAnnotator):
@@ -333,7 +333,7 @@ class ManualPreserver:
 
 ### Phase 4: Diff Reporting (3 hours)
 ```python
-# File: installer/global/commands/lib/regeneration_reporter.py
+# File: installer/core/commands/lib/regeneration_reporter.py
 
 @dataclass
 class RegenerationReport:
@@ -374,7 +374,7 @@ Next steps:
 
 ### Phase 5: Integration with Task Manager (2 hours)
 ```markdown
-# File: installer/global/agents/task-manager.md
+# File: installer/core/agents/task-manager.md
 
 ## Regeneration Workflow (when /regenerate command used)
 
@@ -443,17 +443,17 @@ def test_full_regeneration_workflow():
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/commands/regenerate.md`
-- `installer/global/commands/lib/code_annotator.py`
-- `installer/global/commands/lib/manual_preservation.py`
-- `installer/global/commands/lib/regeneration_reporter.py`
+- `installer/core/commands/regenerate.md`
+- `installer/core/commands/lib/code_annotator.py`
+- `installer/core/commands/lib/manual_preservation.py`
+- `installer/core/commands/lib/regeneration_reporter.py`
 - `tests/unit/test_code_annotator.py`
 - `tests/unit/test_manual_preservation.py`
 - `tests/integration/test_regeneration.py`
 
 ### Modified Files
-- `installer/global/agents/task-manager.md` (add regeneration workflow)
-- `installer/global/commands/task-work.md` (integrate annotation system)
+- `installer/core/agents/task-manager.md` (add regeneration workflow)
+- `installer/core/commands/task-work.md` (integrate annotation system)
 
 ## Success Metrics
 

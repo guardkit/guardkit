@@ -41,7 +41,7 @@
    - Added PM tool integration feature
    - Updated all examples to use hash-based IDs
 
-3. **installer/global/commands/task-create.md** (34 lines modified)
+3. **installer/core/commands/task-create.md** (34 lines modified)
    - All examples updated to hash-based format
    - Subtask examples updated
    - Error message examples updated

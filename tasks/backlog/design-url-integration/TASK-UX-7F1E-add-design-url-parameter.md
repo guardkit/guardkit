@@ -33,7 +33,7 @@ This is the first task in the Design URL Integration project (see [design-url-in
 ## Implementation Notes
 
 ### Files to Modify
-- `installer/global/commands/task-create.md` - Update command specification
+- `installer/core/commands/task-create.md` - Update command specification
 - Task creation script/logic - Add design URL parameter parsing
 
 ### Task Frontmatter Extension

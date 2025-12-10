@@ -35,7 +35,7 @@ Integrate AI discovery algorithm into Phase 3 of `/task-work` command to automat
 
 ## Objectives
 
-1. Modify `installer/global/commands/lib/phase_execution.py` Phase 3 logic
+1. Modify `installer/core/commands/lib/phase_execution.py` Phase 3 logic
 2. Add task context analysis (detect stack from files, keywords)
 3. Call `discover_agents()` to find specialists
 4. Use specialist if found, fallback to task-manager if not
@@ -58,7 +58,7 @@ def execute_phase_3(task_id: str, plan: Dict) -> Dict:
 
 **New Flow** (after integration):
 ```python
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 def execute_phase_3(task_id: str, plan: Dict) -> Dict:
     """Phase 3: Implementation with specialist discovery"""
@@ -78,7 +78,7 @@ def execute_phase_3(task_id: str, plan: Dict) -> Dict:
         agent = specialists[0]  # Highest relevance
         logger.info(f"Using specialist: {agent['name']} (stack: {agent['stack']})")
     else:
-        agent = {'name': 'task-manager', 'path': 'installer/global/agents/task-manager.md'}
+        agent = {'name': 'task-manager', 'path': 'installer/core/agents/task-manager.md'}
         logger.info("No specialist found, using task-manager")
 
     # Step 4: Execute implementation
@@ -386,7 +386,7 @@ else:
 **If integration fails**:
 ```bash
 # Revert phase_execution.py changes
-git checkout installer/global/commands/lib/phase_execution.py
+git checkout installer/core/commands/lib/phase_execution.py
 
 # Discovery module (HAI-005) remains but unused
 # System reverts to task-manager for all tasks
@@ -396,13 +396,13 @@ git checkout installer/global/commands/lib/phase_execution.py
 
 ## Reference Materials
 
-- `installer/global/commands/lib/phase_execution.py` - Phase 3 current implementation
+- `installer/core/commands/lib/phase_execution.py` - Phase 3 current implementation
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-005-7A2E-implement-ai-discovery-algorithm.md` - Discovery algorithm
 - `docs/deep-dives/model-optimization.md` - Model selection strategy
 
 ## Deliverables
 
-1. Modified: `installer/global/commands/lib/phase_execution.py`
+1. Modified: `installer/core/commands/lib/phase_execution.py`
 2. New function: `analyze_task_context()`
 3. Integration tests: `tests/integration/test_phase3_integration.py`
 4. User feedback: Stack/specialist detection messages

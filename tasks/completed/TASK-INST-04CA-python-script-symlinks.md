@@ -35,10 +35,10 @@ Python-based slash commands (e.g., `/agent-enhance`, `/template-create`) fail wh
 ```bash
 # User in: ~/Projects/DeCUK.Mobile.MyDrive/
 # Runs: /agent-enhance maui-mydrive/test-agent
-# Error: Can't find ~/Projects/DeCUK.Mobile.MyDrive/installer/global/commands/agent-enhance.py
+# Error: Can't find ~/Projects/DeCUK.Mobile.MyDrive/installer/core/commands/agent-enhance.py
 ```
 
-**Root Cause**: Commands execute `python3 installer/global/commands/agent-enhance.py` which resolves relative to **current working directory** instead of the taskwright installation.
+**Root Cause**: Commands execute `python3 installer/core/commands/agent-enhance.py` which resolves relative to **current working directory** instead of the taskwright installation.
 
 **Impact**:
 - ❌ Commands only work from taskwright repository directory
@@ -54,7 +54,7 @@ Create **global Python script symlinks** in `~/.agentecflow/bin/` that point to 
 ```
 ~/.agentecflow/
 ├── bin/              # NEW: Python script symlinks
-│   ├── agent-enhance -> {REPO}/installer/global/commands/agent-enhance.py
+│   ├── agent-enhance -> {REPO}/installer/core/commands/agent-enhance.py
 │   ├── template-create-orchestrator -> {REPO}/.../template_create_orchestrator.py
 │   └── ...
 ├── commands/         # Existing: Command markdown files
@@ -79,8 +79,8 @@ Create **global Python script symlinks** in `~/.agentecflow/bin/` that point to 
 
 - [ ] **AC1.1**: Add `setup_python_bin_symlinks()` function to install.sh after line 1238
 - [ ] **AC1.2**: Function creates `~/.agentecflow/bin/` directory if it doesn't exist
-- [ ] **AC1.3**: Function finds all `*.py` files in `installer/global/commands/` (excluding subdirectories)
-- [ ] **AC1.4**: Function finds all `*.py` files in `installer/global/commands/lib/` (including nested)
+- [ ] **AC1.3**: Function finds all `*.py` files in `installer/core/commands/` (excluding subdirectories)
+- [ ] **AC1.4**: Function finds all `*.py` files in `installer/core/commands/lib/` (including nested)
 - [ ] **AC1.5**: Function creates symlinks with names converted from underscores to hyphens (e.g., `template_create_orchestrator.py` → `template-create-orchestrator`)
 - [ ] **AC1.6**: Function makes symlinks executable (`chmod +x`)
 - [ ] **AC1.7**: Function provides clear user feedback (created/updated/skipped/errors)
@@ -102,9 +102,9 @@ Create **global Python script symlinks** in `~/.agentecflow/bin/` that point to 
 
 ### AC4: Command Definition Updates
 
-- [ ] **AC4.1**: Update `installer/global/commands/agent-enhance.md` with execution section
-- [ ] **AC4.2**: Update `installer/global/commands/template-create.md` with execution section
-- [ ] **AC4.3**: Update `installer/global/commands/template-validate.md` with execution section
+- [ ] **AC4.1**: Update `installer/core/commands/agent-enhance.md` with execution section
+- [ ] **AC4.2**: Update `installer/core/commands/template-create.md` with execution section
+- [ ] **AC4.3**: Update `installer/core/commands/template-validate.md` with execution section
 - [ ] **AC4.4**: Commands use absolute symlink paths: `python3 ~/.agentecflow/bin/{name}`
 
 ### AC5: Documentation
@@ -262,7 +262,7 @@ setup_python_bin_symlinks  # NEW: Add this line
 
 #### agent-enhance.md
 
-Add to end of `installer/global/commands/agent-enhance.md`:
+Add to end of `installer/core/commands/agent-enhance.md`:
 
 ```markdown
 ---
@@ -279,7 +279,7 @@ python3 ~/.agentecflow/bin/agent-enhance "$@"
 
 #### template-create.md
 
-Add to end of `installer/global/commands/template-create.md`:
+Add to end of `installer/core/commands/template-create.md`:
 
 ```markdown
 ---
@@ -296,7 +296,7 @@ python3 ~/.agentecflow/bin/template-create-orchestrator "$@"
 
 #### template-validate.md
 
-Add to end of `installer/global/commands/template-validate.md`:
+Add to end of `installer/core/commands/template-validate.md`:
 
 ```markdown
 ---
@@ -436,13 +436,13 @@ cd ../taskwright-test
 ```bash
 # Modify source script
 cd ~/Projects/appmilla_github/taskwright
-echo "# Test comment" >> installer/global/commands/agent-enhance.py
+echo "# Test comment" >> installer/core/commands/agent-enhance.py
 
 # Check symlink reflects change
 grep -q "Test comment" ~/.agentecflow/bin/agent-enhance && echo "✓ Updates propagate"
 
 # Cleanup
-git checkout installer/global/commands/agent-enhance.py
+git checkout installer/core/commands/agent-enhance.py
 ```
 
 **Expected**: Changes to source visible through symlink
@@ -502,9 +502,9 @@ rm ~/.agentecflow/bin/agent-enhance
 ## Files Modified
 
 1. `installer/scripts/install.sh` - Add function and integration
-2. `installer/global/commands/agent-enhance.md` - Add execution section
-3. `installer/global/commands/template-create.md` - Add execution section
-4. `installer/global/commands/template-validate.md` - Add execution section
+2. `installer/core/commands/agent-enhance.md` - Add execution section
+3. `installer/core/commands/template-create.md` - Add execution section
+4. `installer/core/commands/template-validate.md` - Add execution section
 5. `CLAUDE.md` - Update installation and troubleshooting sections
 
 ## Success Metrics

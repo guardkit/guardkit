@@ -25,8 +25,8 @@
 - ✅ CLAUDE.md (MODIFY)
 - ✅ .claude/CLAUDE.md (VERIFY - no changes needed)
 - ✅ CHANGELOG.md (MODIFY - created as didn't exist)
-- ✅ installer/global/templates/dotnet-aspnetcontroller/ (REMOVE)
-- ✅ installer/global/templates/default/ (REMOVE)
+- ✅ installer/core/templates/dotnet-aspnetcontroller/ (REMOVE)
+- ✅ installer/core/templates/default/ (REMOVE)
 
 **Additional Files** (not in plan but justified):
 - ✅ README.md (MODIFY) - Necessary for user-facing documentation

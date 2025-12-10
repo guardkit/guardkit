@@ -201,7 +201,7 @@ All files in `.claude/agents/`:
 
 - **GitHub Best Practices**: docs/analysis/github-agent-best-practices-analysis.md
 - **Agent Discovery**: docs/guides/agent-discovery-guide.md
-- **Template Examples**: installer/global/agents/*.md (reference implementations)
+- **Template Examples**: installer/core/agents/*.md (reference implementations)
 - **Related Reviews**: TASK-D3A1, TASK-BAA5
 
 ## Success Metrics

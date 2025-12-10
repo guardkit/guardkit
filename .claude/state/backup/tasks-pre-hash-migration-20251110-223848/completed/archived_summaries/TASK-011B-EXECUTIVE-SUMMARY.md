@@ -254,7 +254,7 @@ The existing templates are **production-ready with minor fixes**. The codebase d
 For questions or clarifications regarding this analysis:
 - Review the detailed implementation plan for phase-by-phase breakdown
 - Review the validation report for template-specific issues
-- Refer to existing templates in `/installer/global/templates/maui-appshell/templates/`
+- Refer to existing templates in `/installer/core/templates/maui-appshell/templates/`
 
 ---
 

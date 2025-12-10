@@ -1157,7 +1157,7 @@ class BaseQASession:
 ### Completed Work
 
 **Files Created:**
-1. `installer/global/commands/lib/greenfield_qa_session.py` - Main implementation
+1. `installer/core/commands/lib/greenfield_qa_session.py` - Main implementation
    - `GreenfieldAnswers` dataclass (all 10 sections)
    - `TemplateInitQASession` class (interactive Q&A flow)
    - Session persistence (save/load functionality)
@@ -1173,7 +1173,7 @@ class BaseQASession:
 
 **Files Modified:**
 1. `requirements.txt` - Added `inquirer>=3.1.0` dependency
-2. `installer/global/commands/lib/__init__.py` - Exported new classes
+2. `installer/core/commands/lib/__init__.py` - Exported new classes
 
 ### Test Results
 
@@ -1257,11 +1257,11 @@ if answers:
 
 ### Deliverables
 - **Files created**: 2
-  - `installer/global/commands/lib/greenfield_qa_session.py` (540 lines)
+  - `installer/core/commands/lib/greenfield_qa_session.py` (540 lines)
   - `tests/unit/test_greenfield_qa_session.py` (715 lines)
 - **Files modified**: 2
   - `requirements.txt` (added inquirer dependency)
-  - `installer/global/commands/lib/__init__.py` (exported new classes)
+  - `installer/core/commands/lib/__init__.py` (exported new classes)
 - **Tests written**: 31
 - **Coverage achieved**: 100% test success rate
 - **Requirements satisfied**: 12/12 acceptance criteria met

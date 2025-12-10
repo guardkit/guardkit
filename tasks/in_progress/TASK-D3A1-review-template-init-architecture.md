@@ -24,8 +24,8 @@ During TASK-C2F8 implementation, a fundamental architectural question arose: **S
 **Original confusion**:
 1. TASK-C2F8 "fixed" the issue by copying 5 cross-stack agents into `guardkit-python` template
 2. This created duplication - same agents existed in:
-   - `installer/global/agents/` (source of truth)
-   - `installer/global/templates/guardkit-python/agents/` (duplicate)
+   - `installer/core/agents/` (source of truth)
+   - `installer/core/templates/guardkit-python/agents/` (duplicate)
 3. This pattern would have needed to repeat for EVERY template (react-typescript, fastapi-python, etc.)
 
 **Fundamental question**: Is this duplication the right design?
@@ -50,7 +50,7 @@ During TASK-C2F8 implementation, a fundamental architectural question arose: **S
 
 **Before TASK-C2F8**:
 ```
-installer/global/templates/guardkit-python/agents/
+installer/core/templates/guardkit-python/agents/
 ├── python-architecture-specialist.md
 ├── python-cli-specialist.md
 └── python-testing-specialist.md
@@ -58,7 +58,7 @@ installer/global/templates/guardkit-python/agents/
 
 **After TASK-C2F8** (temporary fix, later removed):
 ```
-installer/global/templates/guardkit-python/agents/
+installer/core/templates/guardkit-python/agents/
 ├── architectural-reviewer.md          ← DUPLICATED from global
 ├── code-reviewer.md                   ← DUPLICATED from global
 ├── python-architecture-specialist.md
@@ -84,7 +84,7 @@ installer/global/templates/guardkit-python/agents/
 
 **Option B: Global Sourcing (Proposed Alternative)**
 - Templates only include template-specific agents
-- Init script copies cross-stack agents from `installer/global/agents/`
+- Init script copies cross-stack agents from `installer/core/agents/`
 - Pros: Single source of truth, no duplication, easier maintenance
 - Cons: Init script needs to know which agents are cross-stack vs template-specific
 
@@ -115,7 +115,7 @@ Current `init-project.sh` logic (from TASK-C2F8):
 
 **Question**: Should it instead:
 1. Copy template-specific agents from `template/agents/`
-2. Copy cross-stack agents from `installer/global/agents/`
+2. Copy cross-stack agents from `installer/core/agents/`
 3. Use manifest to declare which agents are needed (not copy them into template)
 
 ## Analysis Required
@@ -221,7 +221,7 @@ After analysis, recommend one of the following:
 
 ### Decision 2: Global Sourcing Model (Revert TASK-C2F8, Redesign Init)
 - Remove duplicated agents from guardkit-python template
-- Modify `init-project.sh` to copy cross-stack agents from `installer/global/agents/`
+- Modify `init-project.sh` to copy cross-stack agents from `installer/core/agents/`
 - Add manifest field to declare which cross-stack agents are required
 
 ### Decision 3: Manifest-Based Assembly (New Design)
@@ -259,8 +259,8 @@ After analysis, recommend one of the following:
 - **TASK-C2F8**: Fix guardkit-python template (implemented duplication)
 - **TASK-BAA5**: Review of template application (identified deletion issue)
 - **Current init script**: installer/scripts/init-project.sh
-- **Template directory**: installer/global/templates/
-- **Global agents**: installer/global/agents/
+- **Template directory**: installer/core/templates/
+- **Global agents**: installer/core/agents/
 
 ## Questions for Review
 

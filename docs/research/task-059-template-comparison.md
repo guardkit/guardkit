@@ -42,7 +42,7 @@ Both achieve the same 9.2/10 quality score but differ significantly in structure
 ### Main Branch Structure (18 files)
 
 ```
-installer/global/templates/nextjs-fullstack/
+installer/core/templates/nextjs-fullstack/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md (702 lines)
@@ -75,7 +75,7 @@ installer/global/templates/nextjs-fullstack/
 ### Branch Structure (22 files)
 
 ```
-.conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/
+.conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md (596 lines)
@@ -613,7 +613,7 @@ If you choose to enhance the main branch version with templates from the branch,
 
 ### 1. app/error.tsx.template
 
-**Location**: `.conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/error.tsx.template`
+**Location**: `.conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/error.tsx.template`
 
 **Purpose**: Error boundary for app routes
 
@@ -662,7 +662,7 @@ export default function Error({
 
 ### 2. app/layout.tsx.template
 
-**Location**: `.conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/layout.tsx.template`
+**Location**: `.conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/layout.tsx.template`
 
 **Purpose**: Root layout wrapper for app
 
@@ -712,7 +712,7 @@ export default function RootLayout({
 
 ### 3. app/loading.tsx.template
 
-**Location**: `.conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/loading.tsx.template`
+**Location**: `.conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/loading.tsx.template`
 
 **Purpose**: Loading state for app routes
 
@@ -744,7 +744,7 @@ export default function Loading() {
 
 ### 4. lib/auth.ts.template
 
-**Location**: `.conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/lib/auth.ts.template`
+**Location**: `.conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/lib/auth.ts.template`
 
 **Purpose**: NextAuth.js configuration
 
@@ -820,26 +820,26 @@ If you decide to enhance the main branch version with the 4 templates from the b
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 
 # Create app directory if it doesn't exist
-mkdir -p installer/global/templates/nextjs-fullstack/templates/app
+mkdir -p installer/core/templates/nextjs-fullstack/templates/app
 
 # Copy app templates
-cp .conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/error.tsx.template \
-   installer/global/templates/nextjs-fullstack/templates/app/
+cp .conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/error.tsx.template \
+   installer/core/templates/nextjs-fullstack/templates/app/
 
-cp .conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/layout.tsx.template \
-   installer/global/templates/nextjs-fullstack/templates/app/
+cp .conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/layout.tsx.template \
+   installer/core/templates/nextjs-fullstack/templates/app/
 
-cp .conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/app/loading.tsx.template \
-   installer/global/templates/nextjs-fullstack/templates/app/
+cp .conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/app/loading.tsx.template \
+   installer/core/templates/nextjs-fullstack/templates/app/
 
 # Copy auth template
-cp .conductor/cheyenne-v3/installer/global/templates/nextjs-fullstack/templates/lib/auth.ts.template \
-   installer/global/templates/nextjs-fullstack/templates/lib/
+cp .conductor/cheyenne-v3/installer/core/templates/nextjs-fullstack/templates/lib/auth.ts.template \
+   installer/core/templates/nextjs-fullstack/templates/lib/
 ```
 
 #### Step 2: Update manifest.json
 
-Add to the `patterns` array in `installer/global/templates/nextjs-fullstack/manifest.json`:
+Add to the `patterns` array in `installer/core/templates/nextjs-fullstack/manifest.json`:
 
 ```json
 {
@@ -954,7 +954,7 @@ npm test
 
 ```bash
 # Run extended validation
-/template-validate installer/global/templates/nextjs-fullstack --sections 1-16
+/template-validate installer/core/templates/nextjs-fullstack --sections 1-16
 
 # Expected result: 9.3-9.5/10 (improved from 9.2)
 ```

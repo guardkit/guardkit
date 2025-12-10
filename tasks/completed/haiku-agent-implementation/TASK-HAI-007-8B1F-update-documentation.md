@@ -158,8 +158,8 @@ Taskwright uses AI-powered agent discovery to automatically match tasks to appro
    - Project structure (package.json, requirements.txt, *.csproj)
 
 2. **Agent Scanning**: Find all agents with metadata
-   - Global agents: `installer/global/agents/*.md`
-   - Template agents: `installer/global/templates/*/agents/*.md`
+   - Global agents: `installer/core/agents/*.md`
+   - Template agents: `installer/core/templates/*/agents/*.md`
    - User agents: `~/.agentecflow/agents/*.md`
 
 3. **Metadata Matching**: Filter and rank
@@ -300,13 +300,13 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 **This is normal** during migration. Agents without metadata are skipped, system uses fallback. To fix:
 ```bash
-/agent-enhance installer/global/agents/my-agent.md
+/agent-enhance installer/core/agents/my-agent.md
 ```
 
 ## Advanced: Discovery API
 
 ```python
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 # Find all implementation agents
 agents = discover_agents(phase='implementation')
@@ -332,7 +332,7 @@ print(agents[0]['name'])  # Highest ranked agent
 - [CLAUDE.md - Core AI Agents](../../CLAUDE.md#core-ai-agents)
 ```
 
-### 5. installer/global/commands/agent-enhance.md
+### 5. installer/core/commands/agent-enhance.md
 
 **Section**: Add "Discovery Metadata" section
 
@@ -378,7 +378,7 @@ keywords: [fastapi, async, endpoints, router, dependency-injection]
 - [ ] `docs/deep-dives/model-optimization.md` includes cost impact table
 - [ ] `README.md` mentions AI agent discovery in features
 - [ ] `docs/guides/agent-discovery-guide.md` created (comprehensive guide)
-- [ ] `installer/global/commands/agent-enhance.md` explains discovery metadata
+- [ ] `installer/core/commands/agent-enhance.md` explains discovery metadata
 - [ ] All documentation links are valid
 - [ ] Code examples are accurate
 - [ ] Terminology is consistent across all files
@@ -443,7 +443,7 @@ git checkout CLAUDE.md README.md docs/
 2. Updated: `docs/deep-dives/model-optimization.md` (implementation status)
 3. Updated: `README.md` (features section)
 4. Created: `docs/guides/agent-discovery-guide.md` (comprehensive guide)
-5. Updated: `installer/global/commands/agent-enhance.md` (metadata section)
+5. Updated: `installer/core/commands/agent-enhance.md` (metadata section)
 
 ## Success Metrics
 

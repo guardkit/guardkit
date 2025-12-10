@@ -51,7 +51,7 @@ Document dynamic agent discovery in `/task-work` to:
 
 **Requirement**: Add section explaining how agent discovery works
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Content to Add**:
 ```markdown
@@ -84,12 +84,12 @@ Agents are discovered from 4 sources in priority order:
    - Available across all projects
    - Overrides global agents with same name
 
-3. **Global** (`installer/global/agents/`)
+3. **Global** (`installer/core/agents/`)
    - Built-in Taskwright agents
    - Shared across all users
    - Overridden by local/user agents
 
-4. **Template** (`installer/global/templates/*/agents/`) - Lowest priority
+4. **Template** (`installer/core/templates/*/agents/`) - Lowest priority
    - Template-provided agents (before initialization)
    - Only used if agent not found in higher-priority sources
    - Replaced by local agents after `taskwright init`
@@ -213,7 +213,7 @@ Agents are selected dynamically based on metadata matching. The system:
 **To view available agents**: Run `/agent-list` or check:
 - Local: `.claude/agents/`
 - User: `~/.agentecflow/agents/`
-- Global: `installer/global/agents/`
+- Global: `installer/core/agents/`
 ```
 
 **Acceptance Criteria**:
@@ -273,7 +273,7 @@ Agents are selected dynamically based on metadata matching. The system:
 **Discovery Process**:
 1. Phase: `review` (architectural)
 2. Scan agents:
-   - Global `installer/global/agents/architectural-reviewer.md` ✅ Match
+   - Global `installer/core/agents/architectural-reviewer.md` ✅ Match
    - Metadata: `stack: [cross-stack]`, `phase: review`, `keywords: [solid, dry, yagni, architecture]`
 3. **Selected**: `architectural-reviewer 🌐 (source: global)`
 
@@ -329,8 +329,8 @@ AGENT INVOCATIONS LOG
 **Source Icons**:
 - 📁 **Local** - Agent from `.claude/agents/` (template or custom)
 - 👤 **User** - Agent from `~/.agentecflow/agents/` (personal)
-- 🌐 **Global** - Agent from `installer/global/agents/` (built-in)
-- 📦 **Template** - Agent from `installer/global/templates/*/agents/` (before init)
+- 🌐 **Global** - Agent from `installer/core/agents/` (built-in)
+- 📦 **Template** - Agent from `installer/core/templates/*/agents/` (before init)
 
 **Why Source Matters**:
 - **Local agents override global** - Verify template customizations working
@@ -350,7 +350,7 @@ AGENT INVOCATIONS LOG
 
 ### Phase 1: Write Dynamic Discovery Section
 
-**Files**: `installer/global/commands/task-work.md`
+**Files**: `installer/core/commands/task-work.md`
 
 **Implementation**:
 1. Add "Agent Discovery System" section (R1)
@@ -363,7 +363,7 @@ AGENT INVOCATIONS LOG
 
 ### Phase 2: Remove/Update Static Table
 
-**Files**: `installer/global/commands/task-work.md`
+**Files**: `installer/core/commands/task-work.md`
 
 **Implementation**:
 1. Locate static agent selection table (search for "| Stack |")
@@ -375,7 +375,7 @@ AGENT INVOCATIONS LOG
 
 ### Phase 3: Add Discovery Examples
 
-**Files**: `installer/global/commands/task-work.md`
+**Files**: `installer/core/commands/task-work.md`
 
 **Implementation**:
 1. Add "Agent Discovery Examples" section (R3)
@@ -387,7 +387,7 @@ AGENT INVOCATIONS LOG
 
 ### Phase 4: Document Source Logging
 
-**Files**: `installer/global/commands/task-work.md`
+**Files**: `installer/core/commands/task-work.md`
 
 **Implementation**:
 1. Add "Agent Source Indicators" section (R4)
@@ -501,7 +501,7 @@ AGENT INVOCATIONS LOG
 - Acknowledges dynamic discovery system design
 
 **Documentation Location**:
-- Primary: `installer/global/commands/task-work.md`
+- Primary: `installer/core/commands/task-work.md`
 - Reference: `docs/guides/agent-discovery-guide.md` (updated in TASK-ENF-P0-2)
 
 **User Benefits**:
@@ -532,14 +532,14 @@ All requirements successfully implemented:
 - Added template override behavior with example
 - Included metadata requirements table
 - Documented fallback behavior
-- Location: `installer/global/commands/task-work.md` (lines 2558-2747)
+- Location: `installer/core/commands/task-work.md` (lines 2558-2747)
 
 #### ✅ R2: Remove/Update Static Agent Table
 - Removed static agent selection table from Step 3
 - Replaced with dynamic discovery explanation
 - Changed Step 3 title from "Select Agents for Stack" to "Agent Discovery (Automatic)"
 - Added reference to Agent Discovery System section
-- Location: `installer/global/commands/task-work.md` (lines 964-981)
+- Location: `installer/core/commands/task-work.md` (lines 964-981)
 
 #### ✅ R3: Add Agent Discovery Examples
 - Example 1: Python API Implementation (metadata matching)
@@ -547,14 +547,14 @@ All requirements successfully implemented:
 - Example 3: Architectural Review (cross-stack global agent)
 - Example 4: Fallback to Task-Manager (no specialist available)
 - All examples show step-by-step discovery process with source indicators
-- Location: `installer/global/commands/task-work.md` (lines 2665-2727)
+- Location: `installer/core/commands/task-work.md` (lines 2665-2727)
 
 #### ✅ R4: Document Agent Source Logging
 - Added "Agent Source Indicators" section
 - Showed example invocation log with source icons
 - Documented source icons (📁 local, 👤 user, 🌐 global, 📦 template)
 - Explained why source matters (debugging, precedence, troubleshooting)
-- Location: `installer/global/commands/task-work.md` (lines 2638-2663)
+- Location: `installer/core/commands/task-work.md` (lines 2638-2663)
 
 #### ✅ Additional: Troubleshooting & Stack Details
 - Added troubleshooting section for discovery issues
@@ -590,7 +590,7 @@ All requirements successfully implemented:
 ### Changes Summary
 
 **Files Modified**:
-- `installer/global/commands/task-work.md` (~200 lines added, 15 lines removed)
+- `installer/core/commands/task-work.md` (~200 lines added, 15 lines removed)
 
 **Sections Added**:
 1. Agent Discovery System (main section)

@@ -128,7 +128,7 @@ When analyzing package files, the system shall:
 ### Step 1: Create Detection Module Structure
 
 ```python
-# installer/global/commands/lib/stack_detection.py
+# installer/core/commands/lib/stack_detection.py
 
 from dataclasses import dataclass
 from typing import List, Optional, Dict
@@ -380,18 +380,18 @@ def test_detect_vitest():
 
 ```bash
 # Test with real projects
-python installer/global/commands/lib/stack_detection.py /path/to/react-project
-python installer/global/commands/lib/stack_detection.py /path/to/python-project
-python installer/global/commands/lib/stack_detection.py /path/to/maui-project
+python installer/core/commands/lib/stack_detection.py /path/to/react-project
+python installer/core/commands/lib/stack_detection.py /path/to/python-project
+python installer/core/commands/lib/stack_detection.py /path/to/maui-project
 ```
 
 ## Files to Create
 
-1. `installer/global/commands/lib/stack_detection.py` - Main detection module (~400 lines)
-2. `installer/global/commands/lib/stack_detection/__init__.py` - Package init
-3. `installer/global/commands/lib/stack_detection/language_detector.py` - Language detection (~150 lines)
-4. `installer/global/commands/lib/stack_detection/framework_detector.py` - Framework detection (~250 lines)
-5. `installer/global/commands/lib/stack_detection/testing_detector.py` - Testing detection (~150 lines)
+1. `installer/core/commands/lib/stack_detection.py` - Main detection module (~400 lines)
+2. `installer/core/commands/lib/stack_detection/__init__.py` - Package init
+3. `installer/core/commands/lib/stack_detection/language_detector.py` - Language detection (~150 lines)
+4. `installer/core/commands/lib/stack_detection/framework_detector.py` - Framework detection (~250 lines)
+5. `installer/core/commands/lib/stack_detection/testing_detector.py` - Testing detection (~150 lines)
 6. `tests/unit/test_stack_detection.py` - Unit tests (~300 lines)
 7. `tests/integration/test_stack_detection_real_projects.py` - Integration tests (~150 lines)
 8. `tests/fixtures/` - Test project fixtures

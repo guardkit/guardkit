@@ -141,9 +141,9 @@ Based on [analysis of 2,500+ repositories](https://github.blog/ai-and-ml/github-
 
 ## Commands
 
-- **[/agent-format](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-format.md)**: Format agent to template standards
-- **[/agent-enhance](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-enhance.md)**: Project-specific enhancement
-- **[/agent-validate](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/agent-validate.md)**: Quality validation
+- **[/agent-format](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/agent-format.md)**: Format agent to template standards
+- **[/agent-enhance](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/agent-enhance.md)**: Project-specific enhancement
+- **[/agent-validate](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/agent-validate.md)**: Quality validation
 
 ---
 

@@ -50,7 +50,7 @@ Implement intelligent prefix support for task IDs, including automatic inference
 ### 3.1 Architecture
 
 **Pattern:** Function-based with data-driven mappings
-**Location:** `installer/global/lib/id_generator.py`
+**Location:** `installer/core/lib/id_generator.py`
 **Dependencies:** `re`, `typing` (already imported)
 
 **Design Principles:**
@@ -236,7 +236,7 @@ def register_prefix(prefix: str, description: str) -> None
 ## 6. File Changes Summary
 
 ### Modified Files
-1. **installer/global/lib/id_generator.py**
+1. **installer/core/lib/id_generator.py**
    - Add 3 new dictionaries
    - Add 3 new functions
    - Enhance is_valid_prefix()

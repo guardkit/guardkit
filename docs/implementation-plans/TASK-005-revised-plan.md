@@ -18,7 +18,7 @@
 
 ### Reused Components (TASK-003A)
 
-**From** `installer/global/commands/lib/`:
+**From** `installer/core/commands/lib/`:
 - `complexity_calculator.py` - Core scoring engine (1-10 scale, 3 factors)
 - `complexity_models.py` - Data models (ComplexityScore, FactorScore, ReviewMode)
 - `complexity_factors.py` - Strategy pattern factors (File, Pattern, Risk)
@@ -28,7 +28,7 @@
 ### New Components (TASK-005)
 
 #### 1. UpfrontComplexityAdapter
-**File**: `installer/global/commands/lib/upfront_complexity_adapter.py`
+**File**: `installer/core/commands/lib/upfront_complexity_adapter.py`
 
 ```python
 """
@@ -99,7 +99,7 @@ class UpfrontComplexityAdapter:
 **Complexity**: ~100 LOC, straightforward heuristics
 
 #### 2. TaskSplitAdvisor
-**File**: `installer/global/commands/lib/task_split_advisor.py`
+**File**: `installer/core/commands/lib/task_split_advisor.py`
 
 ```python
 """
@@ -157,7 +157,7 @@ class TaskSplitAdvisor:
 **Complexity**: ~80 LOC, simple heuristics
 
 #### 3. SplitRecommendation Model
-**File**: `installer/global/commands/lib/split_models.py`
+**File**: `installer/core/commands/lib/split_models.py`
 
 ```python
 """Data model for task splitting recommendations."""
@@ -186,7 +186,7 @@ class SplitRecommendation:
 **Complexity**: ~30 LOC, simple data class
 
 #### 4. CLI Handler
-**File**: `installer/global/commands/lib/upfront_complexity_cli.py`
+**File**: `installer/core/commands/lib/upfront_complexity_cli.py`
 
 ```python
 """CLI entry point for upfront complexity evaluation command."""
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 **Complexity**: ~90 LOC, straightforward CLI handling
 
 #### 5. Bash Bridge
-**File**: `installer/global/commands/upfront-complexity-check.sh`
+**File**: `installer/core/commands/upfront-complexity-check.sh`
 
 ```bash
 #!/bin/bash
@@ -346,7 +346,7 @@ python3 "$PYTHON_CLI" "$@"
 
 ### Phase 1: Adapter Layer (1.5 hours)
 
-**File**: `installer/global/commands/lib/upfront_complexity_adapter.py`
+**File**: `installer/core/commands/lib/upfront_complexity_adapter.py`
 
 **Tasks**:
 1. Implement `UpfrontComplexityAdapter` class
@@ -371,7 +371,7 @@ python3 "$PYTHON_CLI" "$@"
 
 ### Phase 2: Split Advisor (1 hour)
 
-**File**: `installer/global/commands/lib/task_split_advisor.py`
+**File**: `installer/core/commands/lib/task_split_advisor.py`
 
 **Tasks**:
 1. Implement `TaskSplitAdvisor` class
@@ -391,9 +391,9 @@ python3 "$PYTHON_CLI" "$@"
 
 ### Phase 3: Models & CLI (1 hour)
 
-**File**: `installer/global/commands/lib/split_models.py`
-**File**: `installer/global/commands/lib/upfront_complexity_cli.py`
-**File**: `installer/global/commands/upfront-complexity-check.sh`
+**File**: `installer/core/commands/lib/split_models.py`
+**File**: `installer/core/commands/lib/upfront_complexity_cli.py`
+**File**: `installer/core/commands/upfront-complexity-check.sh`
 
 **Tasks**:
 1. Implement `SplitRecommendation` dataclass
@@ -471,7 +471,7 @@ python3 "$PYTHON_CLI" "$@"
 
 ### Phase 6: Documentation (0.5 hours)
 
-**File**: `installer/global/commands/upfront-complexity-check.md`
+**File**: `installer/core/commands/upfront-complexity-check.md`
 
 ```markdown
 # /upfront-complexity-check
@@ -509,7 +509,7 @@ See `.claude/settings.json` for customization options.
 ## File Structure (Final)
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── lib/
 │   ├── complexity_calculator.py           # TASK-003A (reused) ✓
 │   ├── complexity_models.py               # TASK-003A (reused) ✓

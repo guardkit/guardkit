@@ -123,8 +123,8 @@ Update any command indexes or references:
 ## Files to Modify
 
 - `CLAUDE.md`
-- `installer/global/commands/task-review.md`
-- `installer/global/commands/feature-plan.md`
+- `installer/core/commands/task-review.md`
+- `installer/core/commands/feature-plan.md`
 - `README.md` (if command reference exists)
 
 ## Test Plan

@@ -204,7 +204,7 @@ done
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-work.md installer/global/commands/task-work.md.backup
+cp installer/core/commands/task-work.md installer/core/commands/task-work.md.backup
 ```
 
 ### 2. Add Feature Detection
@@ -381,14 +381,14 @@ Install require-kit for requirements features: https://github.com/requirekit/req
 
 TASK-012 implemented the complete bidirectional optional integration approach, which includes all the functionality planned in this task:
 
-1. ✅ **Feature Detection** - `installer/global/lib/feature_detection.py` provides `supports_requirements()`
+1. ✅ **Feature Detection** - `installer/core/lib/feature_detection.py` provides `supports_requirements()`
 2. ✅ **Conditional Phase 1** - Requirements/epic/feature loading only when require-kit installed
 3. ✅ **Agent Selection** - Uses `requirements-analyst` OR `task-manager` based on detection
 4. ✅ **Display Logic** - Shows requirements info only when available
 
 ### Implementation Location
 
-- **File Modified**: `installer/global/commands/task-work.md`
+- **File Modified**: `installer/core/commands/task-work.md`
 - **Changes**: 
   - Phase 1: Conditional extraction of requirements/epic/feature fields
   - Step 3: Separate agent selection tables (with/without require-kit)
@@ -399,7 +399,7 @@ TASK-012 implemented the complete bidirectional optional integration approach, w
 
 **Agent Selection Logic:**
 ```python
-from installer.global.lib.feature_detection import supports_requirements
+from installer.core.lib.feature_detection import supports_requirements
 
 if supports_requirements():
     analysis_agent = "requirements-analyst"

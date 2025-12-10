@@ -9,7 +9,7 @@ def main():
     from pathlib import Path
 
     # Working file
-    file_path = Path('installer/global/lib/template_generator/claude_md_generator.py')
+    file_path = Path('installer/core/lib/template_generator/claude_md_generator.py')
 
     if not file_path.exists():
         print(f"ERROR: File not found: {file_path}", file=sys.stderr)

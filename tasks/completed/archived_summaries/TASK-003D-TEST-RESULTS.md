@@ -199,7 +199,7 @@ The 16 failed tests are **NOT from TASK-003D** implementation. They are from:
 ### Configuration Fixed
 
 Fixed import issues by:
-1. Created `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/lib/__init__.py`
+1. Created `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/lib/__init__.py`
 2. Changed relative imports to absolute imports in source code
 3. Added conftest.py to configure Python path for tests
 

@@ -33,7 +33,7 @@ completion_metrics:
 
 Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This refactors the `/template-create` command to default to the global location (`~/.agentecflow/templates/`) for immediate use while supporting an optional `--output-location` flag to write templates to the repository location for team/public distribution.
 
-**Background**: Currently, `/template-create` always writes templates to the repository location (`installer/global/templates/`), requiring users to run `install.sh` before templates become available. This creates friction for solo developers creating personal templates while working well for team/public distribution.
+**Background**: Currently, `/template-create` always writes templates to the repository location (`installer/core/templates/`), requiring users to run `install.sh` before templates become available. This creates friction for solo developers creating personal templates while working well for team/public distribution.
 
 **Related Investigation**: [TASK-021](tasks/backlog/TASK-021-evaluate-template-creation-location-strategy.md)
 
@@ -41,7 +41,7 @@ Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This ref
 
 ### Core Functionality
 - [x] **AC1**: Default behavior writes templates to `~/.agentecflow/templates/` (global location)
-- [x] **AC2**: `--output-location=repo` flag writes templates to `installer/global/templates/` (repository location)
+- [x] **AC2**: `--output-location=repo` flag writes templates to `installer/core/templates/` (repository location)
 - [x] **AC3**: Short form `-o repo` works as alias for `--output-location=repo`
 - [x] **AC4**: `--output-location=global` explicitly specifies global location (same as default)
 - [x] **AC5**: Templates created in global location are immediately usable without running `install.sh`
@@ -80,7 +80,7 @@ Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This ref
 1. Refactor target directory selection:
    ```bash
    if [[ "$OUTPUT_LOCATION" == "repo" ]]; then
-       TEMPLATE_DIR="installer/global/templates/$TEMPLATE_NAME"
+       TEMPLATE_DIR="installer/core/templates/$TEMPLATE_NAME"
        LOCATION_TYPE="distribution"
    else
        TEMPLATE_DIR="$HOME/.agentecflow/templates/$TEMPLATE_NAME"
@@ -105,17 +105,17 @@ Implement **Solution C: Hybrid with Flag** from TASK-021 investigation. This ref
    ```
    ✅ Template created successfully
 
-   📁 Location: installer/global/templates/my-template/
+   📁 Location: installer/core/templates/my-template/
    📦 Type: Distribution (requires installation)
 
    📝 Next Steps:
-      git add installer/global/templates/my-template/
+      git add installer/core/templates/my-template/
       git commit -m "Add my-template"
       ./installer/scripts/install.sh
    ```
 
 ### Phase 4: Documentation Updates
-1. Update `installer/global/commands/template-create.md`:
+1. Update `installer/core/commands/template-create.md`:
    - Add flag documentation
    - Add usage examples for both modes
    - Clarify when to use each mode
@@ -154,7 +154,7 @@ guardkit init my-template  # Should work immediately
 
 # Scenario 2: Team Lead (Distribution Template)
 /template-create -o repo  # Write to repo
-git add installer/global/templates/my-team-template/
+git add installer/core/templates/my-team-template/
 git commit -m "Add team template"
 ./installer/scripts/install.sh
 guardkit init my-team-template
@@ -177,14 +177,14 @@ guardkit init test-template  # Test immediately
 4. **Flexibility**: Supports both personal and team workflows
 
 ### Migration Considerations
-- Existing templates in `installer/global/templates/` remain valid
+- Existing templates in `installer/core/templates/` remain valid
 - `install.sh` continues to work for repo-based templates
 - No breaking changes to existing workflows
 - New default is opt-in (existing scripts with explicit paths unchanged)
 
 ### Files to Modify
 ```
-installer/global/commands/
+installer/core/commands/
 └── template-create.md ← Add --output-location flag
 
 CLAUDE.md ← Update default behavior documentation
@@ -202,7 +202,7 @@ docs/guides/
 
 - **Investigation Task**: [TASK-021](tasks/backlog/TASK-021-evaluate-template-creation-location-strategy.md) - Complete analysis and solution comparison
 - **Solution Details**: Solution C (lines 293-316 in TASK-021)
-- **Command Spec**: `installer/global/commands/template-create.md`
+- **Command Spec**: `installer/core/commands/template-create.md`
 - **Installation Script**: `installer/scripts/install.sh`
 
 ## Questions to Resolve
@@ -225,7 +225,7 @@ docs/guides/
 
 2. **Directory Selection Logic** (`template_create_orchestrator.py:662-677`)
    - Global location: `~/.agentecflow/templates/{template_name}`
-   - Repo location: `installer/global/templates/{template_name}`
+   - Repo location: `installer/core/templates/{template_name}`
    - Custom location: Uses deprecated `output_path` if provided
 
 3. **User Feedback** (`template_create_orchestrator.py:826-870`)
@@ -248,7 +248,7 @@ docs/guides/
 
 **Acceptance Criteria Status**:
 - ✅ AC1: Default behavior writes templates to `~/.agentecflow/templates/`
-- ✅ AC2: `--output-location=repo` flag writes templates to `installer/global/templates/`
+- ✅ AC2: `--output-location=repo` flag writes templates to `installer/core/templates/`
 - ✅ AC3: Short form `-o repo` supported (implementation-ready)
 - ✅ AC4: `--output-location=global` explicitly specifies global location
 - ✅ AC5: Templates created in global location are immediately usable (no install.sh required)
@@ -268,7 +268,7 @@ docs/guides/
 
 **Next Steps** (for manual testing):
 1. Test personal workflow: `/template-create` → verify output in `~/.agentecflow/templates/`
-2. Test team workflow: `/template-create -o repo` → verify output in `installer/global/templates/`
+2. Test team workflow: `/template-create -o repo` → verify output in `installer/core/templates/`
 3. Test immediate usage: Create personal template → `guardkit init {template}` without `install.sh`
 4. Test distribution: Create repo template → `install.sh` → `guardkit init {template}`
 

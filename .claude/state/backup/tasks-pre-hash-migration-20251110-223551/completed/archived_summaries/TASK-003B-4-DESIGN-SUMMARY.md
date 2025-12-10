@@ -102,7 +102,7 @@ Record in QASession.exchanges[]
 ### New Files (1 file, ~400 lines)
 
 ```python
-installer/global/commands/lib/qa_manager.py  [NEW]
+installer/core/commands/lib/qa_manager.py  [NEW]
 ```
 
 Contains:
@@ -115,7 +115,7 @@ Contains:
 ### Modified Files (1 file, 1 method)
 
 ```python
-installer/global/commands/lib/review_modes.py  [MODIFY]
+installer/core/commands/lib/review_modes.py  [MODIFY]
 ```
 
 Changes:

@@ -27,7 +27,7 @@ The task content template is embedded as a 44-line f-string in the code, making 
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:966-1009`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:966-1009`
 
 ```python
 task_content = f"""---
@@ -52,7 +52,7 @@ complexity: 5
 
 ### 1. External Template File
 - [ ] Template moved to separate file (e.g., `agent_enhancement_task.md.j2`)
-- [ ] File location: `installer/global/commands/lib/templates/`
+- [ ] File location: `installer/core/commands/lib/templates/`
 - [ ] Jinja2 syntax for variables
 - [ ] Template readable and well-formatted
 - [ ] Comments in template explain sections
@@ -84,13 +84,13 @@ complexity: 5
 
 ### Files to Create
 
-**1. `installer/global/commands/lib/templates/agent_enhancement_task.md.j2`**
+**1. `installer/core/commands/lib/templates/agent_enhancement_task.md.j2`**
 
 New Jinja2 template file.
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Remove embedded f-string (lines 966-1009)
 - Add template loading and rendering logic
 - Add error handling for template operations
@@ -99,7 +99,7 @@ New Jinja2 template file.
 
 #### Step 1: Create Template File
 
-**File**: `installer/global/commands/lib/templates/agent_enhancement_task.md.j2`
+**File**: `installer/core/commands/lib/templates/agent_enhancement_task.md.j2`
 
 ```jinja2
 ---

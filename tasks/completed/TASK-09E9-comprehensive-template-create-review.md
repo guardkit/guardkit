@@ -120,11 +120,11 @@ A **clear, actionable decision** with supporting analysis:
 ### 2. Code Review (@code-reviewer)
 
 **Review**:
-- [template_create_orchestrator.py](../../installer/global/commands/lib/template_create_orchestrator.py) (Phase 7.5 logic)
-- [agent_enhancer.py](../../installer/global/lib/template_creation/agent_enhancer.py) (Enhancement logic)
-- [invoker.py](../../installer/global/lib/agent_bridge/invoker.py) (Bridge pattern)
-- [agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md) (Agent spec)
-- [template-create.md](../../installer/global/commands/template-create.md) (Command spec)
+- [template_create_orchestrator.py](../../installer/core/commands/lib/template_create_orchestrator.py) (Phase 7.5 logic)
+- [agent_enhancer.py](../../installer/core/lib/template_creation/agent_enhancer.py) (Enhancement logic)
+- [invoker.py](../../installer/core/lib/agent_bridge/invoker.py) (Bridge pattern)
+- [agent-content-enhancer.md](../../installer/core/agents/agent-content-enhancer.md) (Agent spec)
+- [template-create.md](../../installer/core/commands/template-create.md) (Command spec)
 
 **Focus Areas**:
 - Code complexity (cyclomatic complexity, nesting levels)

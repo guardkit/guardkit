@@ -10,7 +10,7 @@
 
 **Problem**: Users getting `ModuleNotFoundError: No module named 'installer'` when running `/template-create` from their project directories.
 
-**Root Cause**: The `/template-create` command invoked the Python orchestrator using `python3 -m installer.global...`, but didn't set PYTHONPATH to include the taskwright directory.
+**Root Cause**: The `/template-create` command invoked the Python orchestrator using `python3 -m installer.core...`, but didn't set PYTHONPATH to include the taskwright directory.
 
 **Solution**: Added PYTHONPATH discovery and setup logic to the command file before executing the orchestrator.
 
@@ -27,7 +27,7 @@
    - Modified orchestrator execution to prepend PYTHONPATH (line 1084)
    - Restructured file: moved documentation before Python code block
 
-2. **`installer/global/commands/template-create.md`** (repository source)
+2. **`installer/core/commands/template-create.md`** (repository source)
    - Applied identical changes to repository source
    - Changes tracked in git
 

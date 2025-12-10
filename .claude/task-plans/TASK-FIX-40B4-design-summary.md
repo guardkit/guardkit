@@ -183,7 +183,7 @@ src/components/Button.js            → presentation (0.90)  ✓
 ### Component Structure
 
 ```
-installer/global/lib/template_generator/
+installer/core/lib/template_generator/
 ├── layer_classifier.py (NEW)
 │   ├── ClassificationResult (dataclass)
 │   ├── LayerClassificationStrategy (ABC)
@@ -202,7 +202,7 @@ installer/global/lib/template_generator/
 └── __init__.py (UPDATED)
     └── exports new classes
 
-installer/global/lib/codebase_analyzer/
+installer/core/lib/codebase_analyzer/
 ├── response_parser.py (MODIFIED)
 │   └── Handle confidence scores in layer classification
 │

@@ -27,7 +27,7 @@ Checkpoint state files have no version identifier. Future format changes will br
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:1688-1694`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:1688-1694`
 
 ```python
 state = {
@@ -73,7 +73,7 @@ state = {
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Lines 1688-1694: Add version to state dict
 - Checkpoint load method: Add version validation
 - Add migration logic (future-proofing)

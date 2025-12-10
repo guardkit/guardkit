@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 # Add lib directory to path for imports
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from checkpoint_display import display_phase28_checkpoint
@@ -31,7 +31,7 @@ def demo_simple_plan():
             "version": 1,
             "plan": {
                 "files_to_create": [
-                    "installer/global/commands/lib/checkpoint_display.py",
+                    "installer/core/commands/lib/checkpoint_display.py",
                     "tests/unit/test_checkpoint_display.py"
                 ],
                 "external_dependencies": ["pytest"],

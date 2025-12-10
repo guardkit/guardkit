@@ -15,7 +15,7 @@ python3 verify_task_003d.py
 ### 1. Configuration
 
 ```python
-from installer.global.lib.config import PlanReviewConfig
+from installer.core.lib.config import PlanReviewConfig
 
 config = PlanReviewConfig()
 
@@ -29,7 +29,7 @@ if config.is_enabled():
 ### 2. Track Metrics
 
 ```python
-from installer.global.lib.metrics import PlanReviewMetrics
+from installer.core.lib.metrics import PlanReviewMetrics
 
 metrics = PlanReviewMetrics()
 
@@ -54,7 +54,7 @@ metrics.track_decision(
 ### 3. View Dashboard
 
 ```python
-from installer.global.lib.metrics import PlanReviewDashboard
+from installer.core.lib.metrics import PlanReviewDashboard
 
 dashboard = PlanReviewDashboard()
 dashboard.print_dashboard(days=30)
@@ -151,7 +151,7 @@ config.reload()  # Force reload from all sources
 
 - **Config**: `.claude/settings.json`
 - **Metrics**: `docs/state/metrics/plan_review_metrics.jsonl`
-- **Modules**: `installer/global/lib/`
+- **Modules**: `installer/core/lib/`
 
 ## Examples
 

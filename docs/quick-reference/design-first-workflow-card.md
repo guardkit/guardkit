@@ -265,9 +265,9 @@ design:
 ## See Also
 
 **Full Documentation**:
-- Task work command: `installer/global/commands/task-work.md` (Phase 2.9)
+- Task work command: `installer/core/commands/task-work.md` (Phase 2.9)
 - Design-first guide: `docs/guides/design-first-workflow.md`
-- Plan persistence: `installer/global/commands/lib/plan_persistence.py`
+- Plan persistence: `installer/core/commands/lib/plan_persistence.py`
 
 **Related Cards**:
 - [task-work-cheat-sheet.md](task-work-cheat-sheet.md) - Complete workflow reference

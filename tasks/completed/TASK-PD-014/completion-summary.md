@@ -41,7 +41,7 @@ Successfully split all 4 nextjs-fullstack template agents into core and extended
 ## Files Created
 
 ```
-installer/global/templates/nextjs-fullstack/agents/
+installer/core/templates/nextjs-fullstack/agents/
 ├── nextjs-fullstack-specialist.md (29KB)
 ├── nextjs-fullstack-specialist-ext.md (3.6KB)
 ├── nextjs-server-actions-specialist.md (29KB)
@@ -96,7 +96,7 @@ python3 scripts/split_agent.py --dry-run --template nextjs-fullstack
 python3 scripts/split_agent.py --template nextjs-fullstack
 
 # Cleanup (manual)
-rm -f installer/global/templates/nextjs-fullstack/agents/*-ext-ext.md
+rm -f installer/core/templates/nextjs-fullstack/agents/*-ext-ext.md
 ```
 
 ## Impact

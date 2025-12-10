@@ -224,7 +224,7 @@ design:
 | Link Type | Count | Examples |
 |-----------|-------|----------|
 | Cross-file refs | 3 | `./complexity-management-workflow.md` |
-| Command refs | 3 | `../../installer/global/commands/task-work.md` |
+| Command refs | 3 | `../../installer/core/commands/task-work.md` |
 | Internal anchors | 2 | `#flag-validation-rules` |
 
 ✓ Cross-file references are bidirectional and complementary
@@ -502,8 +502,8 @@ Both files reference:
 
 Both files reference:
 - `docs/shared/common-thresholds.md` ✓ (exists)
-- `installer/global/commands/feature-generate-tasks.md` ✓ (referenced)
-- `installer/global/commands/task-work.md` ✓ (referenced)
+- `installer/core/commands/feature-generate-tasks.md` ✓ (referenced)
+- `installer/core/commands/task-work.md` ✓ (referenced)
 
 ---
 

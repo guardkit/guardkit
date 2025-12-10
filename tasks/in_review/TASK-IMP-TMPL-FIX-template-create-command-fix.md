@@ -22,7 +22,7 @@ This task implements the fix recommended by review task TASK-REV-TMPL-CMD. The `
 
 ## Root Cause (from TASK-REV-TMPL-CMD)
 
-The file `installer/global/commands/template-create.md` had ambiguous structure:
+The file `installer/core/commands/template-create.md` had ambiguous structure:
 
 ```
 Lines 1-1118:    Documentation (OK)
@@ -46,7 +46,7 @@ Claude would read the Python pseudocode and interpret it as "what to do" rather 
 
 ### Exact Changes
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Deleted**: Lines 1119-1648 (530 lines)
 
@@ -82,7 +82,7 @@ python3 ~/.agentecflow/bin/template-create-orchestrator "$@"
 ### File Structure After Fix
 
 ```
-installer/global/commands/template-create.md (1126 lines)
+installer/core/commands/template-create.md (1126 lines)
 ├── Lines 1-50:      Usage and command syntax
 ├── Lines 52-200:    Complete Workflow (8 phases)
 ├── Lines 201-400:   Output Structure and Command Options
@@ -100,15 +100,15 @@ installer/global/commands/template-create.md (1126 lines)
 
 ```bash
 # Verify line count
-wc -l installer/global/commands/template-create.md
+wc -l installer/core/commands/template-create.md
 # Expected: 1126
 
 # Verify single Command Execution section
-grep -n "## Execution\|## Command Execution" installer/global/commands/template-create.md
+grep -n "## Execution\|## Command Execution" installer/core/commands/template-create.md
 # Expected: 1119:## Command Execution
 
 # Verify no Python function definitions in file
-grep -c "^def \|^class " installer/global/commands/template-create.md
+grep -c "^def \|^class " installer/core/commands/template-create.md
 # Expected: 0
 ```
 
@@ -132,7 +132,7 @@ When `/template-create` is invoked, you should see:
 **EXPECTED (Correct)**:
 ```
 ⏺ Bash(PYTHONPATH="..." python3 .../template_create_orchestrator.py --path . --name test)
-  ⎿  INFO:installer.global.lib.codebase_analyzer.ai_analyzer:Analyzing codebase...
+  ⎿  INFO:installer.core.lib.codebase_analyzer.ai_analyzer:Analyzing codebase...
      INFO:lib.codebase_analyzer.stratified_sampler:Starting stratified sampling...
      ... orchestrator output ...
      Exit code: 42 (agent invocation needed)

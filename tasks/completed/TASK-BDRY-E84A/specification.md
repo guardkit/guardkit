@@ -26,7 +26,7 @@ The `agent-content-enhancer` AI agent is not reliably generating boundaries sect
 
 ### AC1: Add JSON Schema to Prompt Builder ✅
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 **Lines**: 83-106
 
 **Change**: Replace natural language "Output Format" with formal JSON schema
@@ -41,7 +41,7 @@ The `agent-content-enhancer` AI agent is not reliably generating boundaries sect
 
 ### AC2: Simplify Agent Instructions ✅
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 **Lines**: 64-95
 
 **Change**: Reduce from 32 lines to ~14 lines
@@ -54,7 +54,7 @@ The `agent-content-enhancer` AI agent is not reliably generating boundaries sect
 
 ### AC3: Update Parser Comment ✅
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 **Lines**: 156-164
 
 **Change**: Update comment to reflect schema enforcement
@@ -67,14 +67,14 @@ The `agent-content-enhancer` AI agent is not reliably generating boundaries sect
 ### AC4: Preserve Workarounds ✅
 
 **Files**:
-- `installer/global/lib/agent_enhancement/enhancer.py` (_ensure_boundaries)
-- `installer/global/lib/agent_enhancement/boundary_utils.py` (generate_generic_boundaries)
+- `installer/core/lib/agent_enhancement/enhancer.py` (_ensure_boundaries)
+- `installer/core/lib/agent_enhancement/boundary_utils.py` (generate_generic_boundaries)
 
 **Action**: **DO NOT MODIFY** - defense-in-depth safety net
 
 ### AC5: Update Agent Documentation ✅
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 **Lines**: 248-300
 
 **Change**: Add schema reference to output format section

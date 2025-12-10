@@ -39,7 +39,7 @@ The architectural review identified many potential risks and edge cases. However
 # Simple duplication check
 echo "Comparing GuardKit and RequireKit agents..."
 
-GUARDKIT="installer/global/agents"
+GUARDKIT="installer/core/agents"
 REQUIREKIT="../require-kit/.claude/agents"
 
 echo "Agents in both repos:"
@@ -72,8 +72,8 @@ gh repo create guardkit/shared-agents --public
 
 # 2. Copy verified agents (from TASK-SHA-001 list)
 mkdir -p agents
-cp guardkit/installer/global/agents/code-reviewer.md agents/
-cp guardkit/installer/global/agents/test-orchestrator.md agents/
+cp guardkit/installer/core/agents/code-reviewer.md agents/
+cp guardkit/installer/core/agents/test-orchestrator.md agents/
 # ... copy other verified agents
 
 # 3. Create simple manifest
@@ -104,7 +104,7 @@ gh release create v1.0.0 shared-agents.tar.gz --title "Initial Release"
 - [ ] Version pinning file created: `installer/shared-agents-version.txt`
 - [ ] Installer downloads and extracts shared-agents
 - [ ] Agents installed to `.claude/agents/universal/`
-- [ ] Duplicate agents removed from `installer/global/agents/`
+- [ ] Duplicate agents removed from `installer/core/agents/`
 
 **Implementation**:
 ```bash

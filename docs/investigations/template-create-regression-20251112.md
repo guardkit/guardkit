@@ -82,7 +82,7 @@ Based on git commit history, the following templates were created over the weeke
 
 **Verification**:
 ```bash
-$ ls -la installer/global/templates/
+$ ls -la installer/core/templates/
 drwxr-xr-x@ 10 richardwoollcott  staff   320 Nov 10 09:00 .
 drwxr-xr-x@ 13 richardwoollcott  staff   416 Nov 10 07:49 ..
 drwxr-xr-x@  7 richardwoollcott  staff   224 Nov  9 14:33 default
@@ -150,21 +150,21 @@ Based on git commits and task completion reports:
 
 #### TASK-BRIDGE-006 Changes (Nov 12, 08:46)
 
-**File**: `installer/global/lib/template_creation/manifest_generator.py`
+**File**: `installer/core/lib/template_creation/manifest_generator.py`
 ```python
 # BEFORE (BROKEN on Python 3.14):
 from codebase_analyzer.models import CodebaseAnalysis, LayerInfo
 
 # AFTER (FIXED):
 import importlib
-_codebase_models = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_codebase_models = importlib.import_module('installer.core.lib.codebase_analyzer.models')
 CodebaseAnalysis = _codebase_models.CodebaseAnalysis
 LayerInfo = _codebase_models.LayerInfo
 ```
 
 **Impact**: ✅ **POSITIVE** - Fixed Python 3.14 `global` keyword compatibility issue that was likely **breaking imports**.
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 ```python
 # ADDED (lines 1400-1437):
 if __name__ == "__main__":
@@ -178,7 +178,7 @@ if __name__ == "__main__":
 
 #### TASK-BRIDGE-005 Changes (Nov 11)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 - Fixed PYTHONPATH discovery code
 - Updated execution protocol
 
@@ -194,7 +194,7 @@ Python 3.14.0 (main, Oct  7 2025, 09:34:52) [Clang 17.0.0]
 
 **Key Finding**: Python 3.14 has stricter keyword restrictions. The word `global` cannot be used as a module name or in import paths, which was **breaking** imports like:
 ```python
-from installer.global.lib.codebase_analyzer.models import ...
+from installer.core.lib.codebase_analyzer.models import ...
 ```
 
 **This was fixed on Nov 12** by TASK-BRIDGE-006.
@@ -388,7 +388,7 @@ ls ~/.agentecflow/agents/ | grep -E "(java|repository|service)"
 ```bash
 # Check if imports work
 cd /tmp
-PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit:/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global" \
+PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit:/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core" \
 python3 -c "
 from lib.codebase_analyzer.models import CodebaseAnalysis
 from lib.template_creation.manifest_generator import ManifestGenerator
@@ -454,7 +454,7 @@ python3 -c "
 import sys
 sys.path.extend([
     '/Users/richardwoollcott/Projects/appmilla_github/guardkit',
-    '/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global'
+    '/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core'
 ])
 from lib.template_creation.manifest_generator import ManifestGenerator
 print('✅ Imports work')
@@ -470,7 +470,7 @@ cat ~/.agentecflow/commands/template-create.md | head -50
 **Test 4: Check orchestrator can run**
 ```bash
 cd /tmp
-python3 -m installer.global.commands.lib.template_create_orchestrator --help
+python3 -m installer.core.commands.lib.template_create_orchestrator --help
 ```
 
 ### Investigation Tasks (If User Cannot Provide Info)
@@ -597,7 +597,7 @@ Nov 12, 08:46: Reference templates updated (personal dir)
 Nov 12, 08:46: TASK-BRIDGE-006 completed (Python 3.14 fix)
 Nov 11, XX:XX: TASK-BRIDGE-005 completed (PYTHONPATH fix)
 Nov 10, 09:22: guardkit-python template created
-Nov 10, 09:00: installer/global/templates/ updated
+Nov 10, 09:00: installer/core/templates/ updated
 Nov 10, 07:12: react-fastapi-monorepo template created
 Nov  9, 20:05: nextjs-fullstack template created
 Nov  9, 16:50: fastapi-python template created
@@ -630,7 +630,7 @@ Nov  9, 14:33: default template created
 └── guardkit-python/
 
 # Repository templates (created Nov 9-10)
-installer/global/templates/
+installer/core/templates/
 ├── default/
 ├── fastapi-python/
 ├── nextjs-fullstack/
@@ -639,10 +639,10 @@ installer/global/templates/
 └── guardkit-python/
 
 # Command file
-~/.agentecflow/commands/template-create.md  # Symlink to installer/global/commands/
+~/.agentecflow/commands/template-create.md  # Symlink to installer/core/commands/
 
 # Orchestrator
-installer/global/commands/lib/template_create_orchestrator.py
+installer/core/commands/lib/template_create_orchestrator.py
 ```
 
 ---

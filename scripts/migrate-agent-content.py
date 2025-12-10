@@ -525,7 +525,7 @@ def main():
     )
     parser.add_argument(
         '--agents-dir',
-        default='installer/global/agents',
+        default='installer/core/agents',
         help='Path to agents directory'
     )
     parser.add_argument(

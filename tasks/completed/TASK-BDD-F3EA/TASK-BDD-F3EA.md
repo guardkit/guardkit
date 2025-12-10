@@ -41,13 +41,13 @@ Create the missing `feature_detection.py` module that was referenced in TASK-BDD
 
 **Background**: Review TASK-REV-4039 identified that TASK-BDD-FIX1 added an import statement to task-work.md but never created the actual Python module. This causes BDD mode to always fail with "RequireKit not installed" even when RequireKit IS installed.
 
-**Root Cause**: Missing file `installer/global/commands/lib/feature_detection.py`
+**Root Cause**: Missing file `installer/core/commands/lib/feature_detection.py`
 
 **Impact**: HIGH - Blocks all BDD mode functionality
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/lib/feature_detection.py`
+- [x] Create `installer/core/commands/lib/feature_detection.py`
 - [x] Implement `supports_bdd()` function with marker file detection
 - [x] Implement `supports_requirements()` function
 - [x] Implement `supports_epics()` function
@@ -60,7 +60,7 @@ Create the missing `feature_detection.py` module that was referenced in TASK-BDD
 
 ### File to Create
 
-**File**: `installer/global/commands/lib/feature_detection.py`
+**File**: `installer/core/commands/lib/feature_detection.py`
 
 **Required Functions**:
 
@@ -150,7 +150,7 @@ def get_requirekit_version() -> Optional[str]:
 
 1. **Test Import**:
    ```python
-   from installer.global.commands.lib.feature_detection import supports_bdd
+   from installer.core.commands.lib.feature_detection import supports_bdd
    print(supports_bdd())  # Should print True if RequireKit installed
    ```
 
@@ -168,7 +168,7 @@ def get_requirekit_version() -> Optional[str]:
 
 3. **Test Each Function**:
    ```python
-   from installer.global.commands.lib.feature_detection import *
+   from installer.core.commands.lib.feature_detection import *
    
    print(f"BDD supported: {supports_bdd()}")
    print(f"Requirements supported: {supports_requirements()}")
@@ -185,7 +185,7 @@ Create `tests/lib/test_feature_detection.py`:
 ```python
 import pytest
 from pathlib import Path
-from installer.global.commands.lib.feature_detection import supports_bdd, supports_requirements, supports_epics
+from installer.core.commands.lib.feature_detection import supports_bdd, supports_requirements, supports_epics
 
 def test_supports_bdd_with_marker_file(tmp_path, monkeypatch):
     """Test that supports_bdd returns True when marker file exists."""
@@ -235,7 +235,7 @@ def test_supports_epics():
 ## Implementation Strategy
 
 1. **Create Module** (5 min):
-   - Create `installer/global/commands/lib/feature_detection.py`
+   - Create `installer/core/commands/lib/feature_detection.py`
    - Copy implementation template above
 
 2. **Test Import** (2 min):

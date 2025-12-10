@@ -16,7 +16,7 @@
 set -euo pipefail
 
 # Configuration
-GUARDKIT_AGENTS_DIR="${GUARDKIT_AGENTS_DIR:-installer/global/agents}"
+GUARDKIT_AGENTS_DIR="${GUARDKIT_AGENTS_DIR:-installer/core/agents}"
 SIMILARITY_THRESHOLD=${SIMILARITY_THRESHOLD:-80}
 MANUAL_REVIEW_LOWER=${MANUAL_REVIEW_LOWER:-50}
 MANUAL_REVIEW_UPPER=${MANUAL_REVIEW_UPPER:-80}
@@ -79,7 +79,7 @@ find_requirekit() {
     for path in "${candidates[@]}"; do
         expanded_path="${path/#\~/$HOME}"
 
-        if [[ -d "$expanded_path/installer/global/agents" ]]; then
+        if [[ -d "$expanded_path/installer/core/agents" ]]; then
             echo "$expanded_path"
             return 0
         fi
@@ -392,10 +392,10 @@ main() {
 
     echo ""
 
-    # Run classification - append installer/global/agents to RequireKit path
+    # Run classification - append installer/core/agents to RequireKit path
     local requirekit_agents_dir=""
     if [[ -n "$requirekit_dir" ]]; then
-        requirekit_agents_dir="$requirekit_dir/installer/global/agents"
+        requirekit_agents_dir="$requirekit_dir/installer/core/agents"
     fi
     classify_agents "$GUARDKIT_AGENTS_DIR" "$requirekit_agents_dir"
 

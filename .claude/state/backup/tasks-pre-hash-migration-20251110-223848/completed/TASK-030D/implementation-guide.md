@@ -19,7 +19,7 @@ Before you start, confirm you have:
   - [ ] TASK-005 through TASK-029 (implementation specs)
   - [ ] docs/guides/agentecflow-lite-workflow.md
   - [ ] docs/workflows/*.md files
-  - [ ] installer/global/commands/*.md files
+  - [ ] installer/core/commands/*.md files
 
 ---
 
@@ -29,7 +29,7 @@ Before you start, confirm you have:
 **Scope**: Most comprehensive - covers ALL phases and flags
 
 **Source Material**:
-- installer/global/commands/task-work.md (primary)
+- installer/core/commands/task-work.md (primary)
 - TASK-005: Complexity evaluation (Phase 2.7 details)
 - TASK-006: Design-first flags (--design-only, --implement-only)
 - TASK-007: Test enforcement (Phase 4.5 details)

@@ -18,7 +18,7 @@ After implementing boundaries placement tasks (TASK-STND-0B1A, TASK-STND-783B, T
 
 ## Root Cause Analysis
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Method**: `_static_enhancement()` (lines 379-403)
 
 **Problem**: The method returned:
@@ -39,7 +39,7 @@ return {
 
 ## The Fix
 
-**File Modified**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File Modified**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Lines Changed**: 385-411 (5-line code change as predicted by debugging agent)
 
 **Changes Made**:

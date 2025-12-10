@@ -41,7 +41,7 @@ Integrate all pattern extraction components into cohesive `/template-create` com
 ## Implementation
 
 ```python
-# installer/global/commands/template-create.py
+# installer/core/commands/template-create.py
 
 class TemplateCreateCommand:
     def execute(self, template_name, options):

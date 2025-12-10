@@ -240,7 +240,7 @@ python3 -m pytest \
   tests/unit/commands/test_review_edge_cases.py \
   tests/integration/test_task_review_workflow.py \
   tests/integration/test_review_regression.py \
-  -v --cov=installer/global/commands/lib
+  -v --cov=installer/core/commands/lib
 
 # Performance tests (slow)
 python3 -m pytest tests/performance/ -v -m "slow"

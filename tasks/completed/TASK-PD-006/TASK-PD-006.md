@@ -188,8 +188,8 @@ def test_template_create_single_file_mode():
 
 ## Files to Modify
 
-1. `installer/global/lib/template_generator/template_create_orchestrator.py` - Main changes
-2. `installer/global/commands/template-create.md` - Document new output structure
+1. `installer/core/lib/template_generator/template_create_orchestrator.py` - Main changes
+2. `installer/core/commands/template-create.md` - Document new output structure
 
 ## Validation Checkpoint
 

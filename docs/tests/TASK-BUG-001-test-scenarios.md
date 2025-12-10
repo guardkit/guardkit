@@ -2,7 +2,7 @@
 
 ## Test Suite Overview
 
-**Implementation Under Test**: Enhanced Step 1 in `/installer/global/commands/task-work.md`
+**Implementation Under Test**: Enhanced Step 1 in `/installer/core/commands/task-work.md`
 
 **Test Type**: Manual Verification Scenarios (Markdown specification - no executable code)
 

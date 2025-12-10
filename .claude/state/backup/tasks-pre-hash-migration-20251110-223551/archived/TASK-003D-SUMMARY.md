@@ -12,7 +12,7 @@
 ## What Was Implemented
 
 ### 1. Utilities Module (DRY Foundation)
-**Location**: `installer/global/lib/utils/`
+**Location**: `installer/core/lib/utils/`
 
 Three shared utility modules to avoid code duplication:
 
@@ -23,7 +23,7 @@ Three shared utility modules to avoid code duplication:
 **Key Feature**: All file operations are atomic and gracefully degrade on errors.
 
 ### 2. Configuration Module (4-Layer Precedence)
-**Location**: `installer/global/lib/config/`
+**Location**: `installer/core/lib/config/`
 
 Complete configuration management system:
 
@@ -40,7 +40,7 @@ Complete configuration management system:
 **Key Feature**: Stack-specific threshold overrides for python, typescript, react, dotnet.
 
 ### 3. Metrics Module (JSONL Storage + Terminal Dashboard)
-**Location**: `installer/global/lib/metrics/`
+**Location**: `installer/core/lib/metrics/`
 
 Metrics tracking and visualization:
 
@@ -108,7 +108,7 @@ Following architectural review recommendations (73/100):
 ### Core Implementation (12 Python files)
 
 ```
-installer/global/lib/
+installer/core/lib/
 ├── utils/
 │   ├── __init__.py                 (6 lines)
 │   ├── json_serializer.py          (117 lines)
@@ -172,7 +172,7 @@ ALL CHECKS PASSED
 ### Configuration
 
 ```python
-from installer.global.lib.config import PlanReviewConfig
+from installer.core.lib.config import PlanReviewConfig
 
 config = PlanReviewConfig()
 
@@ -193,7 +193,7 @@ if config.is_enabled():
 ### Metrics Tracking
 
 ```python
-from installer.global.lib.metrics import PlanReviewMetrics
+from installer.core.lib.metrics import PlanReviewMetrics
 
 metrics = PlanReviewMetrics()
 
@@ -229,7 +229,7 @@ metrics.track_outcome(
 ### Dashboard
 
 ```python
-from installer.global.lib.metrics import PlanReviewDashboard
+from installer.core.lib.metrics import PlanReviewDashboard
 
 dashboard = PlanReviewDashboard()
 dashboard.print_dashboard(days=30)
@@ -266,8 +266,8 @@ reject                         ████████░░░░░░░░�
 
 ```python
 # In task-work workflow
-from installer.global.lib.config import PlanReviewConfig
-from installer.global.lib.metrics import PlanReviewMetrics
+from installer.core.lib.config import PlanReviewConfig
+from installer.core.lib.metrics import PlanReviewMetrics
 
 config = PlanReviewConfig()
 metrics = PlanReviewMetrics()

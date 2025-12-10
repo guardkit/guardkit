@@ -20,14 +20,14 @@ Remove requirements management references from CLAUDE.md files in all stack temp
 ## Templates to Update
 
 ```
-installer/global/templates/default/CLAUDE.md
-installer/global/templates/react/CLAUDE.md
-installer/global/templates/python/CLAUDE.md
-installer/global/templates/typescript-api/CLAUDE.md
-installer/global/templates/maui-appshell/CLAUDE.md
-installer/global/templates/maui-navigationpage/CLAUDE.md
-installer/global/templates/dotnet-microservice/CLAUDE.md
-installer/global/templates/fullstack/CLAUDE.md
+installer/core/templates/default/CLAUDE.md
+installer/core/templates/react/CLAUDE.md
+installer/core/templates/python/CLAUDE.md
+installer/core/templates/typescript-api/CLAUDE.md
+installer/core/templates/maui-appshell/CLAUDE.md
+installer/core/templates/maui-navigationpage/CLAUDE.md
+installer/core/templates/dotnet-microservice/CLAUDE.md
+installer/core/templates/fullstack/CLAUDE.md
 ```
 
 ## Changes for Each Template
@@ -99,8 +99,8 @@ cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
 # Backup all CLAUDE.md files
 for template in default react python typescript-api maui-appshell \
                 maui-navigationpage dotnet-microservice fullstack; do
-  cp installer/global/templates/$template/CLAUDE.md \
-     installer/global/templates/$template/CLAUDE.md.backup
+  cp installer/core/templates/$template/CLAUDE.md \
+     installer/core/templates/$template/CLAUDE.md.backup
 done
 ```
 
@@ -117,7 +117,7 @@ For each template:
 
 ```bash
 # Check for forbidden references in each template
-for template in installer/global/templates/*/CLAUDE.md; do
+for template in installer/core/templates/*/CLAUDE.md; do
   echo "Checking $template..."
   grep -i "epic.*create\|feature.*create\|gather.*requirements\|formalize.*ears\|generate.*bdd" "$template" \
     | grep -v "# Historical" && echo "⚠ Found references in $template"
@@ -201,7 +201,7 @@ done
 ```bash
 # Should return empty (except historical context)
 grep -r "EARS\|epic.*hierarchy\|feature.*hierarchy" \
-  installer/global/templates/*/CLAUDE.md | grep -v "Historical"
+  installer/core/templates/*/CLAUDE.md | grep -v "Historical"
 ```
 
 ## Acceptance Criteria
@@ -269,13 +269,13 @@ grep -r "EARS\|epic.*hierarchy\|feature.*hierarchy" \
 - ✅ Workflow examples updated to unified system
 
 ### Files Changed
-- installer/global/templates/default/CLAUDE.md
-- installer/global/templates/react/CLAUDE.md
-- installer/global/templates/typescript-api/CLAUDE.md
-- installer/global/templates/fullstack/CLAUDE.md
+- installer/core/templates/default/CLAUDE.md
+- installer/core/templates/react/CLAUDE.md
+- installer/core/templates/typescript-api/CLAUDE.md
+- installer/core/templates/fullstack/CLAUDE.md
 
 ### Files Unchanged (Already Clean)
-- installer/global/templates/python/CLAUDE.md
-- installer/global/templates/maui-appshell/CLAUDE.md
-- installer/global/templates/maui-navigationpage/CLAUDE.md
-- installer/global/templates/dotnet-microservice/CLAUDE.md
+- installer/core/templates/python/CLAUDE.md
+- installer/core/templates/maui-appshell/CLAUDE.md
+- installer/core/templates/maui-navigationpage/CLAUDE.md
+- installer/core/templates/dotnet-microservice/CLAUDE.md

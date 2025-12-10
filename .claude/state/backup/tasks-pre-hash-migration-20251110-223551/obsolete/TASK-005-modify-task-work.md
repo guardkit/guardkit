@@ -79,7 +79,7 @@ Simplify task-work.md by removing EARS requirements loading, BDD scenario valida
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-work.md installer/global/commands/task-work.md.backup
+cp installer/core/commands/task-work.md installer/core/commands/task-work.md.backup
 ```
 
 ### 2. Edit Phase 1 Section
@@ -95,7 +95,7 @@ Rewrite Phase 1 instructions to:
 Search and remove/update:
 ```bash
 # Find agent references
-grep -n "requirements-analyst\|bdd-generator" installer/global/commands/task-work.md
+grep -n "requirements-analyst\|bdd-generator" installer/core/commands/task-work.md
 
 # Remove or comment out these orchestration calls
 ```
@@ -113,7 +113,7 @@ Ensure all quality gate phases (2.5, 2.6, 2.7, 4.5, 5.5) remain intact:
 ```bash
 # Verify phases present
 grep -i "phase 2\.5\|phase 2\.6\|phase 2\.7\|phase 4\.5\|phase 5\.5" \
-  installer/global/commands/task-work.md
+  installer/core/commands/task-work.md
 ```
 
 ## Validation Checklist

@@ -146,7 +146,7 @@ When technology is selected, the system shall:
 ### Step 1: Define Core Data Structures
 
 ```python
-# installer/global/commands/lib/template_init/qa_flow.py
+# installer/core/commands/lib/template_init/qa_flow.py
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Callable
@@ -577,9 +577,9 @@ def test_session_persistence():
 
 ## Files to Create
 
-1. `installer/global/commands/lib/template_init/qa_flow.py` - Flow manager (~500 lines)
-2. `installer/global/commands/lib/template_init/sections.py` - Section definitions (~600 lines)
-3. `installer/global/commands/lib/template_init/validators.py` - Input validators (~150 lines)
+1. `installer/core/commands/lib/template_init/qa_flow.py` - Flow manager (~500 lines)
+2. `installer/core/commands/lib/template_init/sections.py` - Section definitions (~600 lines)
+3. `installer/core/commands/lib/template_init/validators.py` - Input validators (~150 lines)
 4. `tests/unit/test_qa_flow.py` - Unit tests (~400 lines)
 5. `tests/fixtures/qa_flow_sessions/` - Session fixtures for testing
 

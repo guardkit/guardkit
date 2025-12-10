@@ -33,13 +33,13 @@ Add documentation to task-review.md explaining the review task detection system,
 
 ### Files to Update
 
-1. **installer/global/commands/task-review.md**:
+1. **installer/core/commands/task-review.md**:
    - Add new section "Automatic Review Task Detection"
    - Document detection criteria (task_type, decision_required, tags, keywords)
    - Show suggestion behavior with example output
    - Cross-reference to task-create.md
 
-2. **installer/global/commands/task-create.md** (optional):
+2. **installer/core/commands/task-create.md** (optional):
    - Add cross-reference to task-review.md detection section
 
 ## Acceptance Criteria

@@ -17,7 +17,7 @@
 **Critical Finding**: The Python import path issue (TASK-FIX-A7B3) represents a **fundamental architectural flaw** that will cause **100% failure rate** for curl installations when executing any Python-based commands. This MUST be fixed before public launch.
 
 **Key Issues Identified**:
-1. ❌ **Python imports use absolute paths** (`from installer.global.lib.X`) that don't exist after curl installation
+1. ❌ **Python imports use absolute paths** (`from installer.core.lib.X`) that don't exist after curl installation
 2. ❌ **"global" is a Python reserved keyword** causing syntax errors even if paths were fixed
 3. ❌ **Repository path resolution is implemented but not used effectively** - code finds repo but still uses broken imports
 4. ❌ **Symlink architecture creates fragile dependencies** on repository location
@@ -40,7 +40,7 @@
 
 **Severity**: 🔴 CRITICAL (blocks all Python commands)
 
-**Issue**: Commands embed Python code that uses `from installer.global.lib.X` imports, but:
+**Issue**: Commands embed Python code that uses `from installer.core.lib.X` imports, but:
 - Files are copied to `~/.agentecflow/commands/lib/` during installation
 - The `installer/` directory doesn't exist in the installed location
 - `global` is a Python reserved keyword causing syntax errors
@@ -48,14 +48,14 @@
 
 **Evidence from Code Review**:
 
-File: `installer/global/commands/task-create.md`
+File: `installer/core/commands/task-create.md`
 ```python
 # Lines 207-263: Repository resolution code (works)
 taskwright_repo = _find_taskwright_repo()
 sys.path.insert(0, taskwright_repo_str)
 
 # Line 265: But still uses absolute import that will fail
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 #              ^^^^^^ Python keyword - syntax error!
 ```
 
@@ -77,7 +77,7 @@ curl -sSL https://raw.githubusercontent.com/.../install.sh | bash
 
 # FAILS WITH:
 # File "<string>", line 1
-#   from installer.global.lib.id_generator import generate_task_id
+#   from installer.core.lib.id_generator import generate_task_id
 #                  ^
 # SyntaxError: invalid syntax
 ```
@@ -208,7 +208,7 @@ def _find_taskwright_repo():
 
 1. **CLAUDE.md** shows import examples that won't work:
 ```python
-from installer.global.lib.id_generator import generate_task_id  # Broken!
+from installer.core.lib.id_generator import generate_task_id  # Broken!
 ```
 
 2. **No troubleshooting guide** for import errors
@@ -252,14 +252,14 @@ I evaluated the three proposed solutions from TASK-FIX-A7B3:
 **Implementation**:
 ```python
 # BEFORE (broken):
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 
 # AFTER (works):
 from lib.id_generator import generate_task_id
 ```
 
 **How it works**:
-- Install script copies `installer/global/lib/*.py` to `~/.agentecflow/commands/lib/`
+- Install script copies `installer/core/lib/*.py` to `~/.agentecflow/commands/lib/`
 - Python code uses relative imports: `from lib.X import Y`
 - No path manipulation needed
 - Works identically for curl and git clone
@@ -300,7 +300,7 @@ with open(marker_path) as f:
     sys.path.insert(0, repo_path)
 
 # Then use existing imports:
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 ```
 
 **Pros**:
@@ -315,7 +315,7 @@ from installer.global.lib.id_generator import generate_task_id
 - ❌ **Error handling complexity** - what if marker missing/corrupted?
 - ❌ **DRY violation** - bootstrap code duplicated everywhere
 
-**Critical Flaw**: Even with bootstrap, `from installer.global.lib` still fails because `global` is a Python keyword!
+**Critical Flaw**: Even with bootstrap, `from installer.core.lib` still fails because `global` is a Python keyword!
 
 **Verdict**: Adds complexity without solving the core problem
 
@@ -494,7 +494,7 @@ python3 -c "from lib.id_generator import generate_task_id" || {
 
 ```python
 # This works in NEITHER context:
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 #              ^^^^^^ Syntax error (global is keyword)
 #      ^^^^^^^^^ Path doesn't exist in installed location
 ```
@@ -614,7 +614,7 @@ from lib.id_generator import generate_task_id
 1. Remove symlink creation for Python scripts (install.sh lines 1256-1383)
 2. Copy Python scripts instead:
 ```bash
-for script in "$REPO_DIR"/installer/global/commands/*.py; do
+for script in "$REPO_DIR"/installer/core/commands/*.py; do
     cp "$script" "$BIN_DIR/"
     chmod +x "$BIN_DIR/$(basename "$script")"
 done
@@ -678,7 +678,7 @@ echo "✅ Installation validated successfully"
 **Example Update**:
 ```markdown
 # BEFORE:
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 
 # AFTER:
 from lib.id_generator import generate_task_id
@@ -716,7 +716,7 @@ jobs:
 
 **Step 1: Update task-create.md**
 
-File: `installer/global/commands/task-create.md`
+File: `installer/core/commands/task-create.md`
 
 **Remove lines 207-263** (repository resolution code):
 ```python
@@ -728,7 +728,7 @@ def _find_taskwright_repo():
 **Update line 265** (and similar import lines):
 ```python
 # BEFORE:
-from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
+from installer.core.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 
 # AFTER:
 from lib.id_generator import generate_task_id, validate_task_id, check_duplicate
@@ -741,11 +741,11 @@ from lib.id_generator import generate_task_id, validate_task_id, check_duplicate
 ```bash
 # Find all files with problematic imports:
 cd ~/Projects/appmilla_github/taskwright
-grep -r "from installer\.global\.lib" installer/global/commands/
+grep -r "from installer\.global\.lib" installer/core/commands/
 
 # Expected output:
-# installer/global/commands/task-create.md:from installer.global.lib.id_generator import...
-# installer/global/commands/agent-enhance.md:from installer.global.lib.X import...
+# installer/core/commands/task-create.md:from installer.core.lib.id_generator import...
+# installer/core/commands/agent-enhance.md:from installer.core.lib.X import...
 # (etc.)
 ```
 
@@ -780,7 +780,7 @@ For `.py` files (like `agent-enhance.py`), update imports:
 **Before**:
 ```python
 sys.path.insert(0, taskwright_repo)
-from installer.global.lib.agent_utils import load_agent_file
+from installer.core.lib.agent_utils import load_agent_file
 ```
 
 **After**:
@@ -1095,15 +1095,15 @@ Option 1 (relative imports) is a **well-understood, battle-tested pattern** used
 ### Appendix A: Files Requiring Updates
 
 **Command Markdown Files**:
-- `installer/global/commands/task-create.md` - Lines 207-285
-- `installer/global/commands/agent-enhance.md` - Check for imports
-- `installer/global/commands/template-create.md` - Check for imports
+- `installer/core/commands/task-create.md` - Lines 207-285
+- `installer/core/commands/agent-enhance.md` - Check for imports
+- `installer/core/commands/template-create.md` - Check for imports
 - Any other command files with embedded Python
 
 **Python Scripts**:
-- `installer/global/commands/agent-enhance.py`
-- `installer/global/commands/agent-format.py`
-- `installer/global/commands/agent-validate.py`
+- `installer/core/commands/agent-enhance.py`
+- `installer/core/commands/agent-format.py`
+- `installer/core/commands/agent-validate.py`
 - Any other `.py` files in commands/
 
 **Documentation**:
@@ -1138,7 +1138,7 @@ Option 1 (relative imports) is a **well-understood, battle-tested pattern** used
 **Example Import Update**:
 
 ```python
-# BEFORE (installer/global/commands/task-create.md):
+# BEFORE (installer/core/commands/task-create.md):
 import sys
 import os
 import json
@@ -1168,7 +1168,7 @@ taskwright_repo = _find_taskwright_repo()
 sys.path.insert(0, taskwright_repo)
 
 # Now import works
-from installer.global.lib.id_generator import generate_task_id  # STILL BROKEN!
+from installer.core.lib.id_generator import generate_task_id  # STILL BROKEN!
 
 # AFTER:
 from lib.id_generator import generate_task_id  # WORKS!
@@ -1179,14 +1179,14 @@ from lib.id_generator import generate_task_id  # WORKS!
 ```bash
 # BEFORE (installer/scripts/install.sh):
 echo "Creating command symlinks..."
-for script in "$REPO_DIR"/installer/global/commands/*.py; do
+for script in "$REPO_DIR"/installer/core/commands/*.py; do
     script_name=$(basename "$script" .py)
     ln -s "$script" "$BIN_DIR/$script_name"  # FRAGILE!
 done
 
 # AFTER:
 echo "Copying command scripts..."
-for script in "$REPO_DIR"/installer/global/commands/*.py; do
+for script in "$REPO_DIR"/installer/core/commands/*.py; do
     script_name=$(basename "$script" .py)
     cp "$script" "$BIN_DIR/$script_name"  # ROBUST!
     chmod +x "$BIN_DIR/$script_name"

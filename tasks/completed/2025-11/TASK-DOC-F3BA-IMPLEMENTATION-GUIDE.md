@@ -136,9 +136,9 @@ Update CLAUDE.md Essential Commands section to add three missing commands:
 3. Add cross-references to command markdown files
 4. Follow existing command format (syntax, description, cross-reference)
 
-Reference: installer/global/commands/agent-format.md (if exists)
-Reference: installer/global/commands/agent-validate.md (if exists)
-Reference: installer/global/commands/template-validate.md (if exists)
+Reference: installer/core/commands/agent-format.md (if exists)
+Reference: installer/core/commands/agent-validate.md (if exists)
+Reference: installer/core/commands/template-validate.md (if exists)
 
 Requirements from TASK-DOC-0801:
 - Consistent formatting with existing commands
@@ -162,7 +162,7 @@ Requirements from TASK-DOC-0801:
 
 **Prompt**:
 ```
-Add "Automatic Review Task Detection" section to installer/global/commands/task-review.md.
+Add "Automatic Review Task Detection" section to installer/core/commands/task-review.md.
 
 Location: After "Overview" section, before "Examples" section
 
@@ -204,7 +204,7 @@ Requirements:
 
 **Prompt**:
 ```
-Add "Relationship with /agent-format" section to installer/global/commands/agent-enhance.md.
+Add "Relationship with /agent-format" section to installer/core/commands/agent-enhance.md.
 
 Location: After "Enhancement Strategies" section
 
@@ -239,7 +239,7 @@ Requirements:
 
 **Prompt**:
 ```
-Add "Integration with /task-work" section to installer/global/commands/task-review.md.
+Add "Integration with /task-work" section to installer/core/commands/task-review.md.
 
 Location: After "Review Modes (Detailed)" section, before "Task States and Transitions"
 
@@ -282,8 +282,8 @@ Files to create:
 Content outlines provided in TASK-DOC-83F0 (complete markdown structure).
 
 After creating files, update cross-references in:
-- installer/global/commands/template-create.md
-- installer/global/commands/agent-enhance.md
+- installer/core/commands/template-create.md
+- installer/core/commands/agent-enhance.md
 
 Requirements:
 - Follow existing guide formatting in docs/guides/ and docs/workflows/
@@ -462,7 +462,7 @@ conductor delete-worktree docs-missing-guides
    # After merge, validate no broken links
    mkdocs build
    # Check for broken markdown
-   markdownlint docs/ installer/global/commands/
+   markdownlint docs/ installer/core/commands/
    ```
 
 ---
@@ -515,7 +515,7 @@ cd docs-review-detection
 # [Provide prompt from Wave 1, Worktree 2]
 
 # After completion
-git add installer/global/commands/task-review.md
+git add installer/core/commands/task-review.md
 git commit -m "docs: add review task detection section to task-review.md
 
 - Document detection criteria (4 triggers)
@@ -554,7 +554,7 @@ cd docs-agent-format
 # [Provide prompt from Wave 2, Worktree 1]
 
 # After completion
-git add installer/global/commands/agent-enhance.md
+git add installer/core/commands/agent-enhance.md
 git commit -m "docs: add relationship with agent-format to agent-enhance.md
 
 - Explain two-tier enhancement system
@@ -573,7 +573,7 @@ cd docs-task-work
 # [Provide prompt from Wave 2, Worktree 2]
 
 # After completion
-git add installer/global/commands/task-review.md
+git add installer/core/commands/task-review.md
 git commit -m "docs: add task-work integration section to task-review.md
 
 - Document review → implementation workflow (6 steps)
@@ -594,8 +594,8 @@ cd docs-missing-guides
 # After completion
 git add docs/guides/agent-enhancement-decision-guide.md
 git add docs/workflows/incremental-enhancement-workflow.md
-git add installer/global/commands/template-create.md
-git add installer/global/commands/agent-enhance.md
+git add installer/core/commands/template-create.md
+git add installer/core/commands/agent-enhance.md
 git commit -m "docs: create missing guide documents
 
 - Add agent-enhancement-decision-guide.md
@@ -651,14 +651,14 @@ After all waves complete:
 
 ```bash
 # Check for broken links
-grep -r "\[.*\](.*\.md)" docs/ installer/global/commands/ | \
+grep -r "\[.*\](.*\.md)" docs/ installer/core/commands/ | \
   while read line; do
     # Extract link and verify file exists
     # [Manual validation or use link checker]
   done
 
 # Validate markdown formatting
-markdownlint docs/ installer/global/commands/ CLAUDE.md
+markdownlint docs/ installer/core/commands/ CLAUDE.md
 
 # Optional: Build docs to verify no issues
 cd ~/Projects/appmilla_github/taskwright
@@ -762,7 +762,7 @@ Requirements from TASK-DOC-0801:
 
 ### Wave 1, Worktree 2 (TASK-DOC-443B)
 ```
-Add "Automatic Review Task Detection" section to installer/global/commands/task-review.md.
+Add "Automatic Review Task Detection" section to installer/core/commands/task-review.md.
 
 Location: After "Overview", before "Examples"
 
@@ -779,7 +779,7 @@ Reference: TASK-DOC-443B for complete content outline.
 
 ### Wave 2, Worktree 1 (TASK-DOC-9FFC)
 ```
-Add "Relationship with /agent-format" section to installer/global/commands/agent-enhance.md.
+Add "Relationship with /agent-format" section to installer/core/commands/agent-enhance.md.
 
 Location: After "Enhancement Strategies"
 
@@ -795,7 +795,7 @@ Reference: TASK-DOC-9FFC for complete content outline.
 
 ### Wave 2, Worktree 2 (TASK-DOC-EDB0)
 ```
-Add "Integration with /task-work" section to installer/global/commands/task-review.md.
+Add "Integration with /task-work" section to installer/core/commands/task-review.md.
 
 Location: After "Review Modes", before "Task States"
 
@@ -817,8 +817,8 @@ Create two new guide documents:
 2. docs/workflows/incremental-enhancement-workflow.md
 
 Then update cross-references in:
-- installer/global/commands/template-create.md
-- installer/global/commands/agent-enhance.md
+- installer/core/commands/template-create.md
+- installer/core/commands/agent-enhance.md
 
 Reference: TASK-DOC-83F0 for complete content outlines.
 Follow existing guide formatting in docs/guides/ and docs/workflows/.

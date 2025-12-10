@@ -26,13 +26,13 @@ Currently, the Python orchestrator (`template_create_orchestrator.py`) cannot in
 
 ## Acceptance Criteria
 
-- [x] `AgentBridgeInvoker` class created in `installer/global/lib/agent_bridge/invoker.py`
+- [x] `AgentBridgeInvoker` class created in `installer/core/lib/agent_bridge/invoker.py`
   - [x] `invoke()` method writes request to `.agent-request.json` and exits with code 42
   - [x] `load_response()` method reads `.agent-response.json` and caches result
   - [x] Proper error handling for missing/malformed files
   - [x] Type hints and docstrings for all public methods
 
-- [x] `StateManager` class created in `installer/global/lib/agent_bridge/state_manager.py`
+- [x] `StateManager` class created in `installer/core/lib/agent_bridge/state_manager.py`
   - [x] `save_state()` method writes orchestrator state to `.template-create-state.json`
   - [x] `load_state()` method reads and deserializes state
   - [x] Proper validation of state format
@@ -58,9 +58,9 @@ Currently, the Python orchestrator (`template_create_orchestrator.py`) cannot in
 
 ### Files to Create
 
-1. `installer/global/lib/agent_bridge/__init__.py`
-2. `installer/global/lib/agent_bridge/invoker.py` (~250 lines)
-3. `installer/global/lib/agent_bridge/state_manager.py` (~150 lines)
+1. `installer/core/lib/agent_bridge/__init__.py`
+2. `installer/core/lib/agent_bridge/invoker.py` (~250 lines)
+3. `installer/core/lib/agent_bridge/state_manager.py` (~150 lines)
 4. `tests/unit/lib/agent_bridge/__init__.py`
 5. `tests/unit/lib/agent_bridge/test_invoker.py` (~200 lines)
 6. `tests/unit/lib/agent_bridge/test_state_manager.py` (~150 lines)
@@ -68,7 +68,7 @@ Currently, the Python orchestrator (`template_create_orchestrator.py`) cannot in
 ### Implementation Steps
 
 #### Step 1: Create Package Structure (15 min)
-- Create `installer/global/lib/agent_bridge/` directory
+- Create `installer/core/lib/agent_bridge/` directory
 - Create `__init__.py` with exports
 - Create test directory structure
 
@@ -191,7 +191,7 @@ Currently, the Python orchestrator (`template_create_orchestrator.py`) cannot in
 
 ```bash
 # Run unit tests
-pytest tests/unit/lib/agent_bridge/ -v --cov=installer/global/lib/agent_bridge --cov-report=term
+pytest tests/unit/lib/agent_bridge/ -v --cov=installer/core/lib/agent_bridge --cov-report=term
 
 # Expected: 85%+ coverage, all tests pass
 ```

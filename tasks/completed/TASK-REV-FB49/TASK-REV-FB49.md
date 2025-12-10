@@ -87,9 +87,9 @@ The applier had to clean up duplicate content in the core file (21 lines removed
 
 ## Related Documentation
 
-- [Agent Enhance Command](installer/global/commands/agent-enhance.md)
-- [Agent Content Enhancer](installer/global/agents/agent-content-enhancer.md)
-- [Applier Module](installer/global/lib/agent_enhancement/applier.py)
+- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
+- [Agent Content Enhancer](installer/core/agents/agent-content-enhancer.md)
+- [Applier Module](installer/core/lib/agent_enhancement/applier.py)
 
 ## Review Mode
 

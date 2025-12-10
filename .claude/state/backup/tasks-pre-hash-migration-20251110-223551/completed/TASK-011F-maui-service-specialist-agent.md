@@ -66,8 +66,8 @@ approved_by: "system"
 approved_at: "2025-10-13T00:00:00Z"
 related_documents:
   - docs/shared/maui-template-architecture.md
-  - installer/global/templates/maui/templates/Service.cs
-  - installer/global/templates/maui/agents/maui-usecase-specialist.md
+  - installer/core/templates/maui/templates/Service.cs
+  - installer/core/templates/maui/agents/maui-usecase-specialist.md
 ---
 
 # Task: Create maui-service-specialist agent for external systems
@@ -87,8 +87,8 @@ The service layer handles:
 ## Requirements
 
 ### Agent File Creation
-- Create `installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
-- Create `installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md` (identical content)
+- Create `installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
+- Create `installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md` (identical content)
 - Both files should have exactly the same content (services are navigation-agnostic)
 
 ### Agent Definition Requirements
@@ -600,8 +600,8 @@ public class InMemoryCacheServiceTests
 
 ## Acceptance Criteria
 
-- [x] Agent markdown file created at `installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
-- [x] Agent markdown file created at `installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md`
+- [x] Agent markdown file created at `installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
+- [x] Agent markdown file created at `installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md`
 - [x] Both files contain identical content
 - [x] Agent follows standard agent format (frontmatter with metadata)
 - [x] Core expertise clearly defined for:

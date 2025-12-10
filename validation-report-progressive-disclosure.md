@@ -237,13 +237,13 @@ If critical issues discovered:
 
 ```bash
 # Option 1: Restore from backup files
-for f in installer/global/agents/*.md.bak; do
+for f in installer/core/agents/*.md.bak; do
     mv "$f" "${f%.bak}"
 done
-rm installer/global/agents/*-ext.md
+rm installer/core/agents/*-ext.md
 
 # Option 2: Restore from git commit
-git checkout aeb2d8b -- installer/global/agents/
+git checkout aeb2d8b -- installer/core/agents/
 ```
 
 **Backup commit**: `aeb2d8b` - "Pre-split backup: 14 global agents (TASK-PD-010)"

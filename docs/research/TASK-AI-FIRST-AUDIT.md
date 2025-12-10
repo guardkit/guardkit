@@ -55,20 +55,20 @@ Complete audit of codebase to identify all AI-first principle violations and cre
 ### Files to Audit
 
 **High Priority** (template-create related):
-- `installer/global/lib/smart_defaults/detector.py` - TASK-9039 (531 LOC)
-- `installer/global/commands/template-create.md` - JSON parsing (125 LOC)
-- `installer/global/lib/agent_generator/agent_generator.py` - Hard-coded patterns
-- `installer/global/commands/lib/template_create_orchestrator.py` - Orchestration logic
+- `installer/core/lib/smart_defaults/detector.py` - TASK-9039 (531 LOC)
+- `installer/core/commands/template-create.md` - JSON parsing (125 LOC)
+- `installer/core/lib/agent_generator/agent_generator.py` - Hard-coded patterns
+- `installer/core/commands/lib/template_create_orchestrator.py` - Orchestration logic
 
 **Medium Priority** (related components):
-- `installer/global/lib/codebase_analyzer/*.py` - Analysis logic
-- `installer/global/lib/template_generator/*.py` - Template generation
-- `installer/global/lib/template_creation/*.py` - Creation components
+- `installer/core/lib/codebase_analyzer/*.py` - Analysis logic
+- `installer/core/lib/template_generator/*.py` - Template generation
+- `installer/core/lib/template_creation/*.py` - Creation components
 
 **Low Priority** (other commands):
-- `installer/global/commands/template-validate.md` - Validation logic
-- `installer/global/commands/template-init.md` - Init logic
-- `installer/global/commands/task-create.md` - Task creation
+- `installer/core/commands/template-validate.md` - Validation logic
+- `installer/core/commands/template-init.md` - Init logic
+- `installer/core/commands/task-create.md` - Task creation
 
 ### Violation Categories
 
@@ -190,7 +190,7 @@ class AIFirstAuditor:
 ```bash
 # Run audit
 python scripts/audit_ai_first_compliance.py \
-    --path installer/global \
+    --path installer/core \
     --output docs/investigations/ai-first-audit-2025-11-14.md \
     --format markdown
 ```
@@ -363,7 +363,7 @@ Auditor: Claude
 ```bash
 # 1. Test on known violations
 python scripts/audit_ai_first_compliance.py \
-    --path installer/global/lib/smart_defaults \
+    --path installer/core/lib/smart_defaults \
     --test-mode
 
 # Expected: Detect all violations in SmartDefaultsDetector
@@ -388,19 +388,19 @@ Based on forensic analysis, expect to find:
 
 ### High Priority Violations (656+ LOC)
 1. **SmartDefaultsDetector** (531 LOC)
-   - File: `installer/global/lib/smart_defaults/detector.py`
+   - File: `installer/core/lib/smart_defaults/detector.py`
    - Violations: File extension checks, dependency matching
    - Impact: Critical (maintenance burden)
    - Cleanup: 8-10 hours
 
 2. **JSON Parsing Logic** (125 LOC)
-   - File: `installer/global/commands/template-create.md`
+   - File: `installer/core/commands/template-create.md`
    - Violations: Multi-strategy parsing, regex fallbacks
    - Impact: High (complexity)
    - Cleanup: 3-4 hours
 
 3. **Agent Detection** (Unknown LOC)
-   - File: `installer/global/lib/agent_generator/agent_generator.py`
+   - File: `installer/core/lib/agent_generator/agent_generator.py`
    - Violations: Pattern name hard-coding (5 patterns)
    - Impact: Critical (defeats purpose)
    - Cleanup: 2-3 hours
@@ -448,11 +448,11 @@ Based on forensic analysis, expect to find:
 ### Known Files to Check
 
 **Definitely check**:
-- ✅ `installer/global/lib/smart_defaults/detector.py` (TASK-9039)
-- ✅ `installer/global/commands/template-create.md` (TASK-E8F4)
-- ✅ `installer/global/lib/agent_generator/agent_generator.py` (TASK-TMPL-4E89)
-- ❓ `installer/global/commands/lib/template_create_orchestrator.py`
-- ❓ `installer/global/lib/codebase_analyzer/*.py`
+- ✅ `installer/core/lib/smart_defaults/detector.py` (TASK-9039)
+- ✅ `installer/core/commands/template-create.md` (TASK-E8F4)
+- ✅ `installer/core/lib/agent_generator/agent_generator.py` (TASK-TMPL-4E89)
+- ❓ `installer/core/commands/lib/template_create_orchestrator.py`
+- ❓ `installer/core/lib/codebase_analyzer/*.py`
 
 **May have issues**:
 - Build artifact exclusion code

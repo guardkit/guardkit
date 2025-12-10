@@ -38,7 +38,7 @@ Phase 9.5: Extended Validation (optional, with --validate)
 ### 2. Where Agent-Enhance Instructions Appear
 
 #### Location in Code
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Method**: `_print_agent_enhancement_instructions()` (lines 1523-1561)
 
 #### When Called
@@ -78,7 +78,7 @@ Both approaches use the same AI enhancement logic.
 
 **Branch**: `agent-boundary-sections`
 
-**Modified File**: `installer/global/agents/agent-content-enhancer.md`
+**Modified File**: `installer/core/agents/agent-content-enhancer.md`
 
 **Changes Made**:
 1. Added "Boundaries" section requirement to agent enhancement output
@@ -288,7 +288,7 @@ Option A - Fast Enhancement (Recommended): 2-5 minutes per agent
 ### 7. Where Instructions Are Defined
 
 #### Command Specification
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 **Section**: Lines 126-134 (Phase 8 description)
 
 ```markdown
@@ -305,7 +305,7 @@ Phase 8: Agent Task Creation (TASK-PHASE-8-INCREMENTAL, TASK-UX-2F95, TASK-UX-3A
 **This is documentation ONLY** - not displayed to user during execution.
 
 #### Actual Display Logic
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Method**: `_print_agent_enhancement_instructions()` (lines 1523-1561)
 
 **Current implementation** (lines 1540-1561):
@@ -336,7 +336,7 @@ print(f"{'='*70}\n")
 ### 8. Integration with Agent-Enhance Command
 
 #### Agent-Enhance Command Spec
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 **Lines 127-154**: Validation Report Section (added in TASK-STND-773D scope)
 ```markdown
@@ -475,22 +475,22 @@ If multiple users report confusion, consider adding a brief "What's New" note me
 ### File References
 
 **Template-Create Orchestrator**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
   - Lines 904-932: Phase 8 execution
   - Lines 1523-1561: `_print_agent_enhancement_instructions()`
 
 **Agent-Enhance Command Spec**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.md`
   - Lines 127-154: Validation report documentation
 
 **Agent-Content-Enhancer**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/agent-content-enhancer.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/agent-content-enhancer.md`
   - Lines 59-88: Boundary sections specification (TASK-STND-773D changes)
   - Lines 138-169: Self-validation protocol
   - Lines 263-295: Validation output format
 
 **Template-Create Command Spec**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/template-create.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/template-create.md`
   - Lines 126-134: Phase 8 documentation
 
 ### Change History

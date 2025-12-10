@@ -281,7 +281,7 @@ You can create your own:
 The `/task-create` command automatically:
 
 1. **Generates Hash-Based ID**
-   - Uses `installer/global/lib/id_generator.py`
+   - Uses `installer/core/lib/id_generator.py`
    - Produces 4-6 character hash (e.g., `a3f8`, `b2c4`)
 
 2. **Applies Prefix Inference** (Priority Order)
@@ -583,8 +583,8 @@ TASK-E01-a3f8.3: Add MFA support
 ### Files Modified/Created
 
 **Core Implementation**:
-- `installer/global/lib/id_generator.py` (522 lines, 96% coverage)
-- `installer/global/lib/external_id_persistence.py` (448 lines, 90% coverage)
+- `installer/core/lib/id_generator.py` (522 lines, 96% coverage)
+- `installer/core/lib/external_id_persistence.py` (448 lines, 90% coverage)
 - `scripts/migrate-my-tasks.py` (442 lines, migration tool)
 
 **Tests**:
@@ -593,7 +593,7 @@ TASK-E01-a3f8.3: Add MFA support
 - `tests/lib/test_external_id_persistence.py` (35 tests)
 
 **Documentation**:
-- `installer/global/commands/task-create.md` (updated with prefix syntax)
+- `installer/core/commands/task-create.md` (updated with prefix syntax)
 - This document: `docs/research/hash-id-migration-and-prefix-grouping.md`
 
 ### Test Coverage

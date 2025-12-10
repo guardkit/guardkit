@@ -81,19 +81,19 @@ cd ~/Projects/appmilla_github/guardkit
 cd ~/conductor-worktrees/guardkit-validator
 /task-create "Implement ExtendedValidator class (TASK-043)"
 /task-work TASK-XXX
-# → Focus: installer/global/lib/template_validation/extended_validator.py
+# → Focus: installer/core/lib/template_validation/extended_validator.py
 
 # Worktree 2: Report Generator Implementation
 cd ~/conductor-worktrees/guardkit-reports
 /task-create "Implement ValidationReportGenerator class (TASK-043)"
 /task-work TASK-YYY
-# → Focus: installer/global/lib/template_validation/report_generator.py
+# → Focus: installer/core/lib/template_validation/report_generator.py
 
 # Worktree 3: Orchestrator Integration
 cd ~/conductor-worktrees/guardkit-orchestrator
 /task-create "Integrate --validate flag into orchestrator (TASK-043)"
 /task-work TASK-ZZZ
-# → Focus: installer/global/commands/lib/template_create_orchestrator.py
+# → Focus: installer/core/commands/lib/template_create_orchestrator.py
 ```
 
 **Conductor Setup**:
@@ -994,7 +994,7 @@ git worktree prune
 ### After TASK-043
 
 ```
-installer/global/
+installer/core/
 ├── commands/
 │   ├── template-create.md (updated with --validate flag)
 │   └── lib/
@@ -1014,7 +1014,7 @@ tests/
 ### After TASK-044
 
 ```
-installer/global/
+installer/core/
 ├── commands/
 │   ├── template-validate.md (NEW)
 │   └── lib/
@@ -1035,7 +1035,7 @@ tests/
 ### After TASK-045
 
 ```
-installer/global/
+installer/core/
 └── lib/
     └── template_validation/
         ├── ai_analysis_helpers.py (NEW)
@@ -1098,7 +1098,7 @@ git pull
 **Files to Modify**:
 - `CLAUDE.md` - Add validation section
 - `README.md` - Link to validation guides
-- `installer/global/commands/template-create.md` - Document `--validate` flag
+- `installer/core/commands/template-create.md` - Document `--validate` flag
 - `docs/guides/template-commands-getting-started.md` - Reference validation
 - `docs/workflows/template-creation-workflow.md` - Add validation step
 

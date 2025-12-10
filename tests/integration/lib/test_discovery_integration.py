@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 # Add the library to the path
-lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from agent_discovery import (
@@ -46,7 +46,7 @@ def project_root():
 @pytest.fixture
 def agents_dir(project_root):
     """Get the global agents directory."""
-    return project_root / "installer" / "global" / "agents"
+    return project_root / "installer" / "core" / "agents"
 
 
 def agent_file_exists(agents_dir: Path, agent_name: str) -> bool:
@@ -365,13 +365,13 @@ class TestAgentLocationDiscovery:
     """Test that agent locations are correctly identified."""
 
     def test_global_agents_discovered(self, agents_dir):
-        """Should discover agents from installer/global/agents/."""
+        """Should discover agents from installer/core/agents/."""
         results = list_discoverable_agents()
 
         # Check that at least some agents are from the global location
         global_agents = [
             r for r in results
-            if 'installer/global/agents' in r.get('path', '')
+            if 'installer/core/agents' in r.get('path', '')
         ]
 
         # May be 0 if running in isolated test environment
@@ -379,7 +379,7 @@ class TestAgentLocationDiscovery:
 
     def test_template_agents_discovered(self, project_root):
         """Should discover agents from templates directories."""
-        templates_dir = project_root / "installer" / "global" / "templates"
+        templates_dir = project_root / "installer" / "core" / "templates"
 
         if not templates_dir.exists():
             pytest.skip("Templates directory not found")

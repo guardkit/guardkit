@@ -38,7 +38,7 @@ After comprehensive multi-agent analysis, we discovered that the reported "regre
 4. Hybrid fallback strategy (AI → static) ✅
 
 **TASK-AI-2B37 Implementation**:
-- File: `installer/global/lib/agent_enhancement/enhancer.py`
+- File: `installer/core/lib/agent_enhancement/enhancer.py`
 - Changes: Replaced placeholder with actual Task API
 - Quality: 9.2/10 (excellent code quality)
 - Status: ✅ **COMPLETE AND CORRECT**
@@ -122,9 +122,9 @@ Phase 8: Individual Enhancement (/agent-enhance command)
 **Evidence**:
 ```bash
 # Search Phase 6/7 code for enhancer imports
-$ grep -r "from.*agent_enhancement" installer/global/commands/lib/
-$ grep -r "import.*enhancer" installer/global/commands/lib/
-$ grep -r "SingleAgentEnhancer" installer/global/commands/lib/
+$ grep -r "from.*agent_enhancement" installer/core/commands/lib/
+$ grep -r "import.*enhancer" installer/core/commands/lib/
+$ grep -r "SingleAgentEnhancer" installer/core/commands/lib/
 
 # Result: ZERO matches
 ```
@@ -133,7 +133,7 @@ $ grep -r "SingleAgentEnhancer" installer/global/commands/lib/
 ```python
 # Line 26 in template_create_orchestrator.py
 _agent_gen_module = importlib.import_module(
-    'installer.global.lib.agent_generator.agent_generator'
+    'installer.core.lib.agent_generator.agent_generator'
 )
 AIAgentGenerator = _agent_gen_module.AIAgentGenerator
 ```
@@ -579,8 +579,8 @@ done
 ## Part 8: Files Referenced
 
 ### Implementation Files
-- [installer/global/lib/agent_enhancement/enhancer.py](installer/global/lib/agent_enhancement/enhancer.py) - TASK-AI-2B37 modified this
-- [installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) - Phase 6/7 implementation
+- [installer/core/lib/agent_enhancement/enhancer.py](installer/core/lib/agent_enhancement/enhancer.py) - TASK-AI-2B37 modified this
+- [installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) - Phase 6/7 implementation
 
 ### Generated Template Files
 - [~/.agentecflow/templates/maui-mydrive/agents/](~/.agentecflow/templates/maui-mydrive/agents/) - 7 agent files

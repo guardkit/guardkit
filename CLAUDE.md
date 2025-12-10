@@ -77,7 +77,7 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 - **Complete documentation** - README + Implementation Guide generated
 - **95% time savings** - <1 minute vs 15-30 minutes manual setup
 
-**See**: `installer/global/commands/feature-plan.md` for complete documentation
+**See**: `installer/core/commands/feature-plan.md` for complete documentation
 
 ### Agent & Template Management
 ```bash
@@ -103,7 +103,7 @@ See `tasks/backlog/design-url-integration/` for implementation status.
 /debug  # Troubleshoot issues
 ```
 
-**See**: `installer/global/commands/*.md` for complete command specifications.
+**See**: `installer/core/commands/*.md` for complete command specifications.
 
 ## Hash-Based Task IDs
 
@@ -628,7 +628,7 @@ GuardKit provides a 3-level validation system for template quality assurance.
 # Personal templates (default: ~/.agentecflow/templates/)
 /template-create --validate
 
-# Repository templates (installer/global/templates/)
+# Repository templates (installer/core/templates/)
 /template-create --validate --output-location=repo
 ```
 - All Level 1 checks
@@ -646,7 +646,7 @@ GuardKit provides a 3-level validation system for template quality assurance.
 /template-validate ~/.agentecflow/templates/my-template
 
 # Repository templates
-/template-validate installer/global/templates/react-typescript
+/template-validate installer/core/templates/react-typescript
 ```
 - Interactive 16-section audit
 - Section selection
@@ -692,7 +692,7 @@ Reports include:
 
 **Template Locations**:
 - **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
-- **Repository templates**: `installer/global/templates/` (team/public distribution, requires `--output-location=repo` flag)
+- **Repository templates**: `installer/core/templates/` (team/public distribution, requires `--output-location=repo` flag)
 
 Validation works with templates in either location.
 
@@ -866,7 +866,7 @@ Phase 8 enables **incremental agent enhancement** - you can improve agent files 
 
 **See Also**:
 - [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
-- [Agent Enhance Command](installer/global/commands/agent-enhance.md)
+- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
 
 ## Project Structure
 
@@ -887,7 +887,7 @@ docs/                       # Documentation
 ├── guides/                # Workflow guides
 └── workflows/             # Detailed workflows
 
-installer/global/           # Global resources
+installer/core/           # Global resources
 ├── agents/                # Core AI agents
 ├── commands/              # Command specs
 └── templates/             # Stack templates
@@ -1051,11 +1051,11 @@ guardkit init react-typescript --info
 ```
 
 **Template Documentation:**
-- [react-typescript](installer/global/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
-- [fastapi-python](installer/global/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
-- [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
-- [react-fastapi-monorepo](installer/global/templates/react-fastapi-monorepo/README.md) - React + FastAPI monorepo (9.2/10)
-- [default](installer/global/templates/default/README.md) - Language-agnostic foundation
+- [react-typescript](installer/core/templates/react-typescript/README.md) - From Bulletproof React (28.5k stars)
+- [fastapi-python](installer/core/templates/fastapi-python/README.md) - From FastAPI Best Practices (12k+ stars)
+- [nextjs-fullstack](installer/core/templates/nextjs-fullstack/README.md) - Next.js App Router + production patterns
+- [react-fastapi-monorepo](installer/core/templates/react-fastapi-monorepo/README.md) - React + FastAPI monorepo (9.2/10)
+- [default](installer/core/templates/default/README.md) - Language-agnostic foundation
 
 **See Also:**
 - [Template Philosophy Guide](docs/guides/template-philosophy.md) - Why these 5 templates?
@@ -1325,8 +1325,8 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 
 **References**:
 - [GitHub Agent Best Practices Analysis](docs/analysis/github-agent-best-practices-analysis.md)
-- [agent-content-enhancer.md](installer/global/agents/agent-content-enhancer.md)
-- [template-create.md - Understanding Boundary Sections](installer/global/commands/template-create.md#understanding-boundary-sections)
+- [agent-content-enhancer.md](installer/core/agents/agent-content-enhancer.md)
+- [template-create.md - Understanding Boundary Sections](installer/core/commands/template-create.md#understanding-boundary-sections)
 
 ---
 
@@ -1356,7 +1356,7 @@ Stack-specific agents are now in templates - see [Stack-Specific Implementation 
 
 **Note**: All agents include ALWAYS/NEVER/ASK boundary sections. See [Agent Enhancement with Boundary Sections](#agent-enhancement-with-boundary-sections) for details.
 
-**See**: `installer/global/agents/*.md` for cross-stack agent specifications.
+**See**: `installer/core/agents/*.md` for cross-stack agent specifications.
 
 ## MCP Integration Best Practices
 
@@ -1482,10 +1482,10 @@ All plans saved as human-readable Markdown in `.claude/task-plans/{task_id}-impl
 
 ## Quick Reference
 
-**Command Specifications:** `installer/global/commands/*.md`
-**Agent Definitions:** `installer/global/agents/*.md`
+**Command Specifications:** `installer/core/commands/*.md`
+**Agent Definitions:** `installer/core/agents/*.md`
 **Workflow Guides:** `docs/guides/*.md` and `docs/workflows/*.md`
-**Stack Templates:** `installer/global/templates/*/`
+**Stack Templates:** `installer/core/templates/*/`
 
 ## Troubleshooting
 

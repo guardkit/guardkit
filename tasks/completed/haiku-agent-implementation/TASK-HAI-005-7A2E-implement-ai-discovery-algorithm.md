@@ -35,7 +35,7 @@ Create AI-powered agent discovery system that matches task context to appropriat
 
 ## Objectives
 
-1. Create `installer/global/commands/lib/agent_discovery.py`
+1. Create `installer/core/commands/lib/agent_discovery.py`
 2. Implement metadata-based agent scanning and matching
 3. Add graceful degradation (handle agents without metadata)
 4. Support multi-stack matching and phase filtering
@@ -73,8 +73,8 @@ def discover_agents(
 # Scan both locations
 agents = []
 agents.extend(glob.glob("~/.agentecflow/agents/*.md"))
-agents.extend(glob.glob("installer/global/agents/*.md"))
-agents.extend(glob.glob("installer/global/templates/*/agents/*.md"))
+agents.extend(glob.glob("installer/core/agents/*.md"))
+agents.extend(glob.glob("installer/core/templates/*/agents/*.md"))
 ```
 
 **Phase 2: Extract Metadata**
@@ -142,7 +142,7 @@ return results
 
 ## Acceptance Criteria
 
-- [ ] Module created at `installer/global/commands/lib/agent_discovery.py`
+- [ ] Module created at `installer/core/commands/lib/agent_discovery.py`
 - [ ] `discover_agents()` function implements 4-phase algorithm
 - [ ] Graceful degradation: skips agents without `phase` field
 - [ ] Multi-location scanning: global + template agents
@@ -160,7 +160,7 @@ return results
 
 ```python
 import pytest
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 def test_discover_by_phase_only():
     """Should find all implementation agents"""
@@ -335,7 +335,7 @@ logger.warning(f"Skipped {skipped_count} agents without metadata")
 **If discovery fails**:
 ```bash
 # Revert the module
-rm installer/global/commands/lib/agent_discovery.py
+rm installer/core/commands/lib/agent_discovery.py
 
 # Phase 3 integration (HAI-006) not yet merged
 # System continues using task-manager as before
@@ -345,14 +345,14 @@ rm installer/global/commands/lib/agent_discovery.py
 
 ## Reference Materials
 
-- `installer/global/commands/lib/phase_execution.py` - Phase 3 orchestration
-- `installer/global/agents/*.md` - Global agent examples
-- `installer/global/templates/*/agents/*.md` - Template agent examples
+- `installer/core/commands/lib/phase_execution.py` - Phase 3 orchestration
+- `installer/core/agents/*.md` - Global agent examples
+- `installer/core/templates/*/agents/*.md` - Template agent examples
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema specification
 
 ## Deliverables
 
-1. Module: `installer/global/commands/lib/agent_discovery.py`
+1. Module: `installer/core/commands/lib/agent_discovery.py`
 2. Tests: `tests/test_agent_discovery.py` (>90% coverage)
 3. Integration test: `tests/integration/test_discovery_integration.py`
 4. Performance validated: <500ms for 30+ agents
@@ -381,7 +381,7 @@ rm installer/global/commands/lib/agent_discovery.py
 
 ### Deliverables
 
-#### 1. Module: `installer/global/commands/lib/agent_discovery.py`
+#### 1. Module: `installer/core/commands/lib/agent_discovery.py`
 
 **Lines of Code**: ~540 lines
 **Functions Implemented**:
@@ -441,7 +441,7 @@ rm installer/global/commands/lib/agent_discovery.py
 
 ### Acceptance Criteria Status
 
-- [x] Module created at `installer/global/commands/lib/agent_discovery.py`
+- [x] Module created at `installer/core/commands/lib/agent_discovery.py`
 - [x] `discover_agents()` function implements 4-phase algorithm
 - [x] Graceful degradation: skips agents without `phase` field
 - [x] Multi-location scanning: global + template agents
@@ -453,7 +453,7 @@ rm installer/global/commands/lib/agent_discovery.py
 
 ### Integration Points
 
-**Module exports added to `installer/global/commands/lib/__init__.py`**:
+**Module exports added to `installer/core/commands/lib/__init__.py`**:
 - `discover_agents`
 - `get_agent_by_name`
 - `list_discoverable_agents`

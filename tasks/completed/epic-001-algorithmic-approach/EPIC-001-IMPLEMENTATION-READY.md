@@ -50,7 +50,7 @@ All recommended enhancements from the comprehensive review have been implemented
 ### 2. Agent Integration Tasks (2 new tasks)
 
 ✅ **TASK-048B: Local Agent Scanner** (4h, Complexity 4/10)
-- Scans `installer/global/agents/` directory
+- Scans `installer/core/agents/` directory
 - Discovers 15+ existing taskwright agents
 - Parses agent metadata (tools, technologies, specializations)
 - Caching with 5-minute TTL

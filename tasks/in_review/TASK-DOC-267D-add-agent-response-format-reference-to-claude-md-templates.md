@@ -16,7 +16,7 @@ TASK-FIX-267C created comprehensive documentation for the `.agent-response.json`
 - `docs/reference/agent-response-format.md` - Complete format specification
 - `docs/validation/agent-response-format-test.py` - Validation test suite
 
-The reference has been added to `installer/global/commands/agent-enhance.md`, but it's not yet in `CLAUDE.md` (project instructions that Claude Code sees).
+The reference has been added to `installer/core/commands/agent-enhance.md`, but it's not yet in `CLAUDE.md` (project instructions that Claude Code sees).
 
 ## Problem
 
@@ -36,7 +36,7 @@ This ensures the reference appears regardless of how the project was initialized
 
 ## Acceptance Criteria
 
-1. ✅ Reference added to all template CLAUDE.md files in `installer/global/templates/*/CLAUDE.md`
+1. ✅ Reference added to all template CLAUDE.md files in `installer/core/templates/*/CLAUDE.md`
 2. ✅ Reference added to `/template-create` generation logic (CLAUDE.md generator)
 3. ✅ Reference includes link to format specification document
 4. ✅ Reference mentions TASK-FIX-267C for traceability
@@ -50,11 +50,11 @@ This ensures the reference appears regardless of how the project was initialized
 ### Option 1: Update Individual Template Files (Simple)
 
 Update each template's CLAUDE.md file:
-- `installer/global/templates/react-typescript/CLAUDE.md`
-- `installer/global/templates/fastapi-python/CLAUDE.md`
-- `installer/global/templates/nextjs-fullstack/CLAUDE.md`
-- `installer/global/templates/react-fastapi-monorepo/CLAUDE.md`
-- `installer/global/templates/default/CLAUDE.md`
+- `installer/core/templates/react-typescript/CLAUDE.md`
+- `installer/core/templates/fastapi-python/CLAUDE.md`
+- `installer/core/templates/nextjs-fullstack/CLAUDE.md`
+- `installer/core/templates/react-fastapi-monorepo/CLAUDE.md`
+- `installer/core/templates/default/CLAUDE.md`
 
 Add section (suggested location: near MCP Integration or Agent sections):
 
@@ -78,7 +78,7 @@ See the specification for complete schema and examples.
 Modify `/template-create` to inject this reference automatically when generating CLAUDE.md.
 
 **Files to Update**:
-- `installer/global/lib/template_creation/claude_md_generator.py` (or equivalent)
+- `installer/core/lib/template_creation/claude_md_generator.py` (or equivalent)
 - Look for CLAUDE.md generation code
 - Add agent-response format section to generated output
 
@@ -147,7 +147,7 @@ See the specification for complete schema and examples.
 This is a follow-up to TASK-FIX-267C, which created the format specification.
 
 **Why both options are needed**:
-- Users who run `guardkit init` get templates from `installer/global/templates/` (Option 1)
+- Users who run `guardkit init` get templates from `installer/core/templates/` (Option 1)
 - Users who run `/template-create` get generated CLAUDE.md from their codebase (Option 2)
 - Both groups need access to the format specification when using `/agent-enhance`
 

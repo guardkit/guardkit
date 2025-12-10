@@ -50,7 +50,7 @@ Delete the hard-coded detection code now that AI-powered phases handle all detec
 
 | File | LOC | Description |
 |------|-----|-------------|
-| `installer/global/commands/lib/smart_defaults_detector.py` | 531 | Hard-coded detectors |
+| `installer/core/commands/lib/smart_defaults_detector.py` | 531 | Hard-coded detectors |
 | `tests/unit/test_smart_defaults_detector.py` | 514 | Tests for deleted code |
 | **Total** | **1,045** | |
 
@@ -58,7 +58,7 @@ Delete the hard-coded detection code now that AI-powered phases handle all detec
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/commands/lib/template_create_orchestrator.py` | MODIFY | Remove imports and references |
+| `installer/core/commands/lib/template_create_orchestrator.py` | MODIFY | Remove imports and references |
 
 ---
 
@@ -133,7 +133,7 @@ done
 
 ```bash
 # 1. Verify files deleted
-test ! -f installer/global/commands/lib/smart_defaults_detector.py
+test ! -f installer/core/commands/lib/smart_defaults_detector.py
 test ! -f tests/unit/test_smart_defaults_detector.py
 
 # 2. Verify no dangling imports
@@ -194,7 +194,7 @@ If AI phases prove insufficient:
 
 ```bash
 # Emergency rollback
-git checkout HEAD~1 -- installer/global/commands/lib/smart_defaults_detector.py
+git checkout HEAD~1 -- installer/core/commands/lib/smart_defaults_detector.py
 git checkout HEAD~1 -- tests/unit/test_smart_defaults_detector.py
 ```
 

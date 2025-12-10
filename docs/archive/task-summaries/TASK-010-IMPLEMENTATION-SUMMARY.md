@@ -14,7 +14,7 @@ Successfully implemented the `/template-create` command orchestrator that coordi
 ## Deliverables
 
 ### 1. Command Specification
-**File**: `installer/global/commands/template-create.md` (348 lines)
+**File**: `installer/core/commands/template-create.md` (348 lines)
 
 Comprehensive command specification including:
 - Complete 8-phase workflow description
@@ -26,7 +26,7 @@ Comprehensive command specification including:
 - Command-line options documentation
 
 ### 2. Orchestrator Implementation
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (646 lines)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (646 lines)
 
 Core orchestration logic implementing:
 - `OrchestrationConfig` - Configuration dataclass with all options
@@ -178,7 +178,7 @@ class OrchestrationResult:
 ### Programmatic Usage
 ```python
 from pathlib import Path
-from installer.global.commands.lib.template_create_orchestrator import run_template_create
+from installer.core.commands.lib.template_create_orchestrator import run_template_create
 
 result = run_template_create(
     codebase_path=Path("~/projects/my-app"),

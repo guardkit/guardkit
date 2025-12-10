@@ -10,8 +10,8 @@ import importlib
 from pathlib import Path
 
 # Import using importlib to bypass 'global' keyword issue
-_pattern_matcher = importlib.import_module('installer.global.lib.template_generator.pattern_matcher')
-_models = importlib.import_module('installer.global.lib.template_generator.models')
+_pattern_matcher = importlib.import_module('installer.core.lib.template_generator.pattern_matcher')
+_models = importlib.import_module('installer.core.lib.template_generator.models')
 
 CRUDPatternMatcher = _pattern_matcher.CRUDPatternMatcher
 OperationExtractor = _pattern_matcher.OperationExtractor
@@ -363,7 +363,7 @@ class TestMinimumOperationThreshold:
 
     def test_single_operation_entity_invalid(self):
         """Entities with only 1 operation should be filtered out."""
-        _validator = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
+        _validator = importlib.import_module('installer.core.lib.template_generator.completeness_validator')
         CompletenessValidator = _validator.CompletenessValidator
 
         validator = CompletenessValidator()
@@ -374,7 +374,7 @@ class TestMinimumOperationThreshold:
 
     def test_two_operations_entity_valid(self):
         """Entities with 2+ operations should be considered valid."""
-        _validator = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
+        _validator = importlib.import_module('installer.core.lib.template_generator.completeness_validator')
         CompletenessValidator = _validator.CompletenessValidator
 
         validator = CompletenessValidator()
@@ -385,7 +385,7 @@ class TestMinimumOperationThreshold:
 
     def test_complete_crud_entity_valid(self):
         """Entities with all CRUD operations should be valid."""
-        _validator = importlib.import_module('installer.global.lib.template_generator.completeness_validator')
+        _validator = importlib.import_module('installer.core.lib.template_generator.completeness_validator')
         CompletenessValidator = _validator.CompletenessValidator
 
         validator = CompletenessValidator()

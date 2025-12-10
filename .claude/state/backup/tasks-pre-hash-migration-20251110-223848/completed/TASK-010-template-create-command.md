@@ -22,8 +22,8 @@ test_results:
   failing: 0
   coverage: "Integration tests only (100%)"
 deliverables:
-  - installer/global/commands/template-create.md
-  - installer/global/commands/lib/template_create_orchestrator.py
+  - installer/core/commands/template-create.md
+  - installer/core/commands/lib/template_create_orchestrator.py
   - tests/integration/test_template_create_orchestrator_integration.py
   - TASK-010-IMPLEMENTATION-SUMMARY.md
 completion_metrics:

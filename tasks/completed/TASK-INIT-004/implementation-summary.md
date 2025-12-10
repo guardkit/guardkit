@@ -15,7 +15,7 @@ Successfully ported Level 2 extended validation from `/template-create` (TASK-04
 
 ### 1. Modified `greenfield_qa_session.py`
 
-**File**: `installer/global/commands/lib/greenfield_qa_session.py`
+**File**: `installer/core/commands/lib/greenfield_qa_session.py`
 
 #### Constructor Update (Line ~375)
 - Added `validate: bool = False` parameter
@@ -51,7 +51,7 @@ Successfully ported Level 2 extended validation from `/template-create` (TASK-04
 
 ### 2. Modified `template_init/command.py`
 
-**File**: `installer/global/commands/lib/template_init/command.py`
+**File**: `installer/core/commands/lib/template_init/command.py`
 
 #### Constructor Update (Line ~58)
 - Added `validate: bool = False` parameter
@@ -204,7 +204,7 @@ All validation methods tested and working:
 
 ### Programmatic Usage
 ```python
-from installer.global.commands.lib.template_init.command import template_init
+from installer.core.commands.lib.template_init.command import template_init
 
 # Without validation
 success = template_init()
@@ -253,12 +253,12 @@ Reports saved in template directory:
 
 ## Files Modified
 
-1. `installer/global/commands/lib/greenfield_qa_session.py`
+1. `installer/core/commands/lib/greenfield_qa_session.py`
    - Constructor: +3 lines
    - Validation methods: +312 lines
    - Total: +315 lines
 
-2. `installer/global/commands/lib/template_init/command.py`
+2. `installer/core/commands/lib/template_init/command.py`
    - Constructor: +2 lines
    - Execute method: +11 lines
    - Phase 4.5 method: +71 lines

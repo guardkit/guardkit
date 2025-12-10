@@ -66,7 +66,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File 1: installer/global/commands/lib/greenfield_qa_session.py
+### File 1: installer/core/commands/lib/greenfield_qa_session.py
 
 **AFTER Phase 4** (add new Phase 5 around line 976):
 
@@ -318,11 +318,11 @@ def __init__(self, no_create_agent_tasks: bool = False):
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_create_agent_enhancement_tasks()` method (~60 lines)
    - `_display_enhancement_options()` method (~50 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `__init__()` constructor for flag support (~5 lines)
    - `run()` method to add Phase 5 (~20 lines)
 
@@ -450,7 +450,7 @@ def test_phase5_creates_tasks_after_save():
 - **Parent Review**: TASK-5E55
 - **Source Feature**: TASK-UX-3A8D (agent task creation in /template-create)
 - **Boundary Sections**: TASK-DOC-1C5A (boundary sections announcement)
-- **Agent Enhancement**: installer/global/commands/agent-enhance.py
+- **Agent Enhancement**: installer/core/commands/agent-enhance.py
 
 ## Success Metrics
 
@@ -475,13 +475,13 @@ When complete:
 ## Deliverables
 
 ### Files Modified
-1. **installer/global/commands/lib/greenfield_qa_session.py**
+1. **installer/core/commands/lib/greenfield_qa_session.py**
    - Added `_create_agent_enhancement_tasks()` method (112 lines)
    - Added `_display_enhancement_options()` method (55 lines)
    - Updated `__init__()` with `no_create_agent_tasks` flag
    - Total: +169 lines
 
-2. **installer/global/commands/lib/template_init/command.py**
+2. **installer/core/commands/lib/template_init/command.py**
    - Added `_phase5_create_agent_tasks()` method (59 lines)
    - Updated `_phase4_save_template()` to return Path
    - Updated `__init__()` and `template_init()` for flag support

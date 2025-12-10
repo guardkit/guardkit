@@ -356,10 +356,10 @@ validation with fast response times."
 
 ```bash
 # Revert single agent
-git checkout HEAD -- installer/global/agents/requirements-analyst.md
+git checkout HEAD -- installer/core/agents/requirements-analyst.md
 
 # Revert all agents
-git checkout HEAD -- installer/global/agents/*.md
+git checkout HEAD -- installer/core/agents/*.md
 
 # Result: ✅ Successfully tested, rollback works
 ```
@@ -473,23 +473,23 @@ TASK-017 implementation is **comprehensively validated** and ready for:
 
 **Modified Files (17)**:
 ```
-installer/global/agents/architectural-reviewer.md
-installer/global/agents/bdd-generator.md
-installer/global/agents/build-validator.md
-installer/global/agents/code-reviewer.md
-installer/global/agents/complexity-evaluator.md
-installer/global/agents/database-specialist.md
-installer/global/agents/debugging-specialist.md
-installer/global/agents/devops-specialist.md
-installer/global/agents/figma-react-orchestrator.md
-installer/global/agents/pattern-advisor.md
-installer/global/agents/python-mcp-specialist.md
-installer/global/agents/requirements-analyst.md
-installer/global/agents/security-specialist.md
-installer/global/agents/task-manager.md
-installer/global/agents/test-orchestrator.md
-installer/global/agents/test-verifier.md
-installer/global/agents/zeplin-maui-orchestrator.md
+installer/core/agents/architectural-reviewer.md
+installer/core/agents/bdd-generator.md
+installer/core/agents/build-validator.md
+installer/core/agents/code-reviewer.md
+installer/core/agents/complexity-evaluator.md
+installer/core/agents/database-specialist.md
+installer/core/agents/debugging-specialist.md
+installer/core/agents/devops-specialist.md
+installer/core/agents/figma-react-orchestrator.md
+installer/core/agents/pattern-advisor.md
+installer/core/agents/python-mcp-specialist.md
+installer/core/agents/requirements-analyst.md
+installer/core/agents/security-specialist.md
+installer/core/agents/task-manager.md
+installer/core/agents/test-orchestrator.md
+installer/core/agents/test-verifier.md
+installer/core/agents/zeplin-maui-orchestrator.md
 ```
 
 **Created Documentation (4)**:

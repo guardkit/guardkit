@@ -8,7 +8,7 @@ import tempfile
 import importlib
 
 # Use importlib to avoid 'global' keyword syntax issue in Python 3.14+
-_parser = importlib.import_module('installer.global.lib.agent_formatting.parser')
+_parser = importlib.import_module('installer.core.lib.agent_formatting.parser')
 extract_frontmatter = _parser.extract_frontmatter
 find_sections = _parser.find_sections
 find_code_blocks = _parser.find_code_blocks

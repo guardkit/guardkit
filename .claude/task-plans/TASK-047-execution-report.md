@@ -89,7 +89,7 @@ Successfully implemented comprehensive ID validation and collision detection sys
 ## Implementation Details
 
 ### Files Modified
-1. **installer/global/lib/id_generator.py**
+1. **installer/core/lib/id_generator.py**
    - Added 6 new functions
    - Added constants and caching infrastructure
    - Updated module exports
@@ -172,7 +172,7 @@ tests/unit/test_id_generator.py::29 tests                            PASSED
 ```
 Name                                    Stmts   Miss  Branch  BrPart  Cover
 ---------------------------------------------------------------------------
-installer/global/lib/id_generator.py     101      4      42       2    96%
+installer/core/lib/id_generator.py     101      4      42       2    96%
 ---------------------------------------------------------------------------
 ```
 

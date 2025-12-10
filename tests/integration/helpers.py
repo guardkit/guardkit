@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 from unittest.mock import Mock, patch
 
 # Add the library to the path
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from agent_discovery import (

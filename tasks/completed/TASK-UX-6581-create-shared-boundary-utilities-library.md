@@ -56,7 +56,7 @@ Comprehensive analysis completed by software-architect agent identified:
 
 ### Architecture
 
-**Create**: `installer/global/lib/agent_enhancement/boundary_utils.py`
+**Create**: `installer/core/lib/agent_enhancement/boundary_utils.py`
 
 **Exports**:
 1. `find_boundaries_insertion_point(lines)` - Placement logic (extracted from `applier.py`)
@@ -73,7 +73,7 @@ Comprehensive analysis completed by software-architect agent identified:
 
 ### AC-1: Shared Library Creation
 
-- [ ] **AC-1.1**: Create `boundary_utils.py` in `installer/global/lib/agent_enhancement/`
+- [ ] **AC-1.1**: Create `boundary_utils.py` in `installer/core/lib/agent_enhancement/`
 - [ ] **AC-1.2**: Extract `find_boundaries_insertion_point()` from `applier.py` (107 lines)
 - [ ] **AC-1.3**: Extract validation logic into `validate_boundaries_format()` from `parser.py` (59 lines)
 - [ ] **AC-1.4**: Implement `generate_generic_boundaries()` with 5 role-specific templates
@@ -140,20 +140,20 @@ Comprehensive analysis completed by software-architect agent identified:
 ### ✅ IN SCOPE
 
 **File to Create**:
-- `installer/global/lib/agent_enhancement/boundary_utils.py` (NEW - shared library)
+- `installer/core/lib/agent_enhancement/boundary_utils.py` (NEW - shared library)
 
 **Files to Modify**:
-1. `installer/global/lib/agent_enhancement/applier.py`
+1. `installer/core/lib/agent_enhancement/applier.py`
    - Line 169: Change to `from .boundary_utils import find_boundaries_insertion_point`
    - Line 169-176: Replace `self._find_boundaries_insertion_point(new_lines)` with `find_boundaries_insertion_point(new_lines)`
    - Lines 203-309: DELETE (moved to boundary_utils.py)
 
-2. `installer/global/lib/agent_enhancement/parser.py`
+2. `installer/core/lib/agent_enhancement/parser.py`
    - Add import: `from .boundary_utils import validate_boundaries_format`
    - Lines 153-258: REPLACE with call to `validate_boundaries_format()`
    - Keep error handling wrapper
 
-3. `installer/global/lib/agent_formatting/transformers.py`
+3. `installer/core/lib/agent_formatting/transformers.py`
    - Add imports: `find_boundaries_insertion_point`, `validate_boundaries_format`, `generate_generic_boundaries`
    - Lines 115-187: UPDATE to use shared functions
    - Replace `BOUNDARY_TEMPLATE` constant with `generate_generic_boundaries()` calls
@@ -164,13 +164,13 @@ Comprehensive analysis completed by software-architect agent identified:
 ### ❌ OUT OF SCOPE (CRITICAL - Prevent Scope Creep)
 
 **DO NOT MODIFY**:
-1. `installer/global/lib/agent_enhancement/prompt_builder.py`
+1. `installer/core/lib/agent_enhancement/prompt_builder.py`
    - AI boundary generation logic unchanged
    - Prompt templates unchanged
 
 2. Command specification files:
-   - `installer/global/commands/agent-enhance.md` (documentation only if needed)
-   - `installer/global/commands/agent-format.md` (documentation only if needed)
+   - `installer/core/commands/agent-enhance.md` (documentation only if needed)
+   - `installer/core/commands/agent-format.md` (documentation only if needed)
 
 3. Existing test files:
    - DO NOT modify existing tests
@@ -716,7 +716,7 @@ pytest tests/lib/agent_formatting/ -v
 """Tests for shared boundary utilities."""
 
 import pytest
-from installer.global.lib.agent_enhancement.boundary_utils import (
+from installer.core.lib.agent_enhancement.boundary_utils import (
     find_boundaries_insertion_point,
     validate_boundaries_format,
     generate_generic_boundaries,
@@ -994,21 +994,21 @@ class TestGenerateGenericBoundaries:
 
 ### Files to Read
 
-1. [applier.py:203-309](installer/global/lib/agent_enhancement/applier.py#L203-L309) - Placement logic source
-2. [parser.py:153-258](installer/global/lib/agent_enhancement/parser.py#L153-L258) - Validation logic source
-3. [transformers.py:115-187](installer/global/lib/agent_formatting/transformers.py#L115-L187) - Current `/agent-format` implementation
+1. [applier.py:203-309](installer/core/lib/agent_enhancement/applier.py#L203-L309) - Placement logic source
+2. [parser.py:153-258](installer/core/lib/agent_enhancement/parser.py#L153-L258) - Validation logic source
+3. [transformers.py:115-187](installer/core/lib/agent_formatting/transformers.py#L115-L187) - Current `/agent-format` implementation
 4. [GitHub Best Practices](docs/analysis/github-agent-best-practices-analysis.md) - Gap #4 analysis
 
 ### Files to Create
 
-1. `installer/global/lib/agent_enhancement/boundary_utils.py` (NEW - 350 lines estimated)
+1. `installer/core/lib/agent_enhancement/boundary_utils.py` (NEW - 350 lines estimated)
 2. `tests/lib/agent_enhancement/test_boundary_utils.py` (NEW - 150 lines estimated)
 
 ### Files to Modify
 
-1. `installer/global/lib/agent_enhancement/applier.py` (delete 107 lines, add 2 lines)
-2. `installer/global/lib/agent_enhancement/parser.py` (replace 106 lines with 10 lines)
-3. `installer/global/lib/agent_formatting/transformers.py` (replace 73 lines with 40 lines)
+1. `installer/core/lib/agent_enhancement/applier.py` (delete 107 lines, add 2 lines)
+2. `installer/core/lib/agent_enhancement/parser.py` (replace 106 lines with 10 lines)
+3. `installer/core/lib/agent_formatting/transformers.py` (replace 73 lines with 40 lines)
 
 ---
 

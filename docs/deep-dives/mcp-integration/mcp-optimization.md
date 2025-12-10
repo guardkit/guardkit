@@ -1109,10 +1109,10 @@ class PersistentMCPCache:
 ## References
 
 - **TASK-012**: MCP Usage Audit Report (`tasks/in_review/TASK-012-MCP-AUDIT-REPORT.md`)
-- **task-manager.md**: Context7 usage guidelines (`installer/global/agents/task-manager.md`)
-- **pattern-advisor.md**: Design Patterns usage guidelines (`installer/global/agents/pattern-advisor.md`)
-- **figma-react-orchestrator.md**: Figma MCP workflow (`installer/global/agents/figma-react-orchestrator.md`)
-- **zeplin-maui-orchestrator.md**: Zeplin MCP workflow (`installer/global/agents/zeplin-maui-orchestrator.md`)
+- **task-manager.md**: Context7 usage guidelines (`installer/core/agents/task-manager.md`)
+- **pattern-advisor.md**: Design Patterns usage guidelines (`installer/core/agents/pattern-advisor.md`)
+- **figma-react-orchestrator.md**: Figma MCP workflow (`installer/core/agents/figma-react-orchestrator.md`)
+- **zeplin-maui-orchestrator.md**: Zeplin MCP workflow (`installer/core/agents/zeplin-maui-orchestrator.md`)
 
 ---
 

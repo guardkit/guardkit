@@ -23,7 +23,7 @@ A complete end-to-end workflow system that:
 ### Three Components Delivered
 
 #### 1. figma-react-orchestrator Agent
-**File**: `installer/global/agents/figma-react-orchestrator.md` (689 lines)
+**File**: `installer/core/agents/figma-react-orchestrator.md` (689 lines)
 
 **Responsibilities**:
 - **Phase 0**: MCP Verification (ensure Figma MCP tools available)
@@ -66,7 +66,7 @@ A complete end-to-end workflow system that:
 - NO extra props for "flexibility"
 
 #### 3. /figma-to-react Command
-**File**: `installer/global/commands/figma-to-react.md` (723 lines)
+**File**: `installer/core/commands/figma-to-react.md` (723 lines)
 
 **User Interface**:
 ```bash
@@ -371,13 +371,13 @@ interface DesignMetadata {
 ### Agent Definitions (Markdown)
 | File | Lines | Purpose |
 |------|-------|---------|
-| `installer/global/agents/figma-react-orchestrator.md` | 689 | Workflow orchestration (6 phases) |
+| `installer/core/agents/figma-react-orchestrator.md` | 689 | Workflow orchestration (6 phases) |
 | `.claude/stacks/react/agents/react-component-generator.md` | 801 | Component + test generation |
 
 ### Command Definitions (Markdown)
 | File | Lines | Purpose |
 |------|-------|---------|
-| `installer/global/commands/figma-to-react.md` | 723 | User-facing command |
+| `installer/core/commands/figma-to-react.md` | 723 | User-facing command |
 
 ### Test Files (TypeScript)
 | File | Lines | Tests | Purpose |

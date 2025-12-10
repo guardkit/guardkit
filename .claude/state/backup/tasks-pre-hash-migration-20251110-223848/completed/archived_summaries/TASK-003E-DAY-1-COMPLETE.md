@@ -26,7 +26,7 @@ Fix all 7 failing tests to establish a clean baseline before implementing missin
 ## 📊 Test Fixes Breakdown
 
 ### Fix 1: `test_metrics_survive_config_reload` ✅
-**File**: `installer/global/lib/metrics/plan_review_dashboard.py`
+**File**: `installer/core/lib/metrics/plan_review_dashboard.py`
 **Issue**: `TypeError: unsupported format string passed to NoneType.__format__`
 **Root Cause**: `avg_score` in dashboard rendering could be `None`, causing formatting error
 **Solution**: Added defensive None-checking and safe formatting for stack metrics
@@ -96,7 +96,7 @@ lines.append(f"{stack_name:15s} Count: {count:3d}  Avg Score: {score_str}")
 
 ### Fix 5: `test_move_task_to_backlog` ✅
 **Files**:
-- `installer/global/commands/lib/review_modes.py` (implementation fix)
+- `installer/core/commands/lib/review_modes.py` (implementation fix)
 - `tests/unit/test_full_review.py` (test expectation fix)
 
 **Issue**: `AssertionError: assert False` - backlog file not found at expected location
@@ -128,7 +128,7 @@ backlog_dir = tasks_dir / "backlog"  # Relative to task file location
 ---
 
 ### Fix 6: `test_safe_save_file_creates_parent_dir` ✅
-**File**: `installer/global/lib/utils/json_serializer.py`
+**File**: `installer/core/lib/utils/json_serializer.py`
 **Issue**: `AssertionError: assert False is True` - function failed to save file
 **Root Cause**: `safe_save_file` didn't create parent directories, causing save to fail
 **Solution**: Added `path.parent.mkdir(parents=True, exist_ok=True)` before write
@@ -231,9 +231,9 @@ Test now correctly expects the `safe_append` message, not the unreachable except
 ## 🛠️ Files Modified
 
 ### Implementation Files (3)
-1. `installer/global/lib/metrics/plan_review_dashboard.py` - Defensive None handling
-2. `installer/global/commands/lib/review_modes.py` - Relative path for backlog moves
-3. `installer/global/lib/utils/json_serializer.py` - Parent directory creation
+1. `installer/core/lib/metrics/plan_review_dashboard.py` - Defensive None handling
+2. `installer/core/commands/lib/review_modes.py` - Relative path for backlog moves
+3. `installer/core/lib/utils/json_serializer.py` - Parent directory creation
 
 ### Test Files (2)
 1. `tests/unit/test_full_review.py` - Mock strategy for 3 stub tests + backlog path fix

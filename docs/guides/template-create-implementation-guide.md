@@ -128,7 +128,7 @@ def _generate_enhancement(...) -> dict:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                  TemplateCreateOrchestrator                  │
-│  (installer/global/commands/lib/template_create_orchestrator.py)
+│  (installer/core/commands/lib/template_create_orchestrator.py)
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         ├─ Phase 1-7 (existing)
@@ -496,8 +496,8 @@ state = {
 **Deliverables**:
 - ✅ Updated `CLAUDE.md` with incremental enhancement section (~50 lines)
 - ✅ New workflow guide: `docs/workflows/incremental-agent-enhancement.md` (~500 lines)
-- ✅ Updated command spec: `installer/global/commands/template-create.md` (~30 lines)
-- ✅ New command spec: `installer/global/commands/agent-enhance.md` (~200 lines)
+- ✅ Updated command spec: `installer/core/commands/template-create.md` (~30 lines)
+- ✅ New command spec: `installer/core/commands/agent-enhance.md` (~200 lines)
 - ✅ Comparison table (Phase 7.5 vs Phase 8)
 - ✅ Troubleshooting guide and FAQ
 
@@ -807,7 +807,7 @@ graph TD
 **Approach**: Replace placeholder, add retry logic, test thoroughly
 
 **Key Files to Modify**:
-1. `installer/global/lib/agent_enhancement/enhancer.py`:
+1. `installer/core/lib/agent_enhancement/enhancer.py`:
    - `_ai_enhancement()` method (lines 212-243)
    - Add `_ai_enhancement_with_retry()` wrapper
    - Update hybrid strategy to call retry wrapper
@@ -883,8 +883,8 @@ graph TD
 **Key Files to Modify/Create**:
 1. `CLAUDE.md` (update ~line 180-220)
 2. `docs/workflows/incremental-agent-enhancement.md` (new, ~500 lines)
-3. `installer/global/commands/template-create.md` (add ~30 lines)
-4. `installer/global/commands/agent-enhance.md` (new, ~200 lines)
+3. `installer/core/commands/template-create.md` (add ~30 lines)
+4. `installer/core/commands/agent-enhance.md` (new, ~200 lines)
 
 **Documentation Structure**:
 - Overview and quick start
@@ -1104,7 +1104,7 @@ See: [Incremental Agent Enhancement Workflow](docs/workflows/incremental-agent-e
 
 #### 7.3.1 Update `/template-create` Command Spec
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Add Section** (~30 lines):
 ```markdown
@@ -1131,7 +1131,7 @@ Individual tasks are created by default for each agent to enhance incrementally.
 
 #### 7.3.2 Create `/agent-enhance` Command Spec
 
-**File**: `installer/global/commands/agent-enhance.md` (new, ~200 lines)
+**File**: `installer/core/commands/agent-enhance.md` (new, ~200 lines)
 
 **Structure**:
 1. Usage
@@ -1334,11 +1334,11 @@ Individual tasks are created by default for each agent to enhance incrementally.
 ## Appendix A: File Locations
 
 **Core Implementation**:
-- `installer/global/commands/lib/template_create_orchestrator.py` - Main orchestrator
-- `installer/global/lib/agent_enhancement/enhancer.py` - SingleAgentEnhancer
-- `installer/global/lib/agent_enhancement/prompt_builder.py` - Prompt generation
-- `installer/global/lib/agent_enhancement/parser.py` - Response parsing
-- `installer/global/lib/agent_enhancement/applier.py` - File modification
+- `installer/core/commands/lib/template_create_orchestrator.py` - Main orchestrator
+- `installer/core/lib/agent_enhancement/enhancer.py` - SingleAgentEnhancer
+- `installer/core/lib/agent_enhancement/prompt_builder.py` - Prompt generation
+- `installer/core/lib/agent_enhancement/parser.py` - Response parsing
+- `installer/core/lib/agent_enhancement/applier.py` - File modification
 
 **Tests**:
 - `tests/unit/lib/agent_enhancement/test_enhancer.py` - Enhancer unit tests
@@ -1351,8 +1351,8 @@ Individual tasks are created by default for each agent to enhance incrementally.
 **Documentation**:
 - `CLAUDE.md` - Main documentation
 - `docs/workflows/incremental-agent-enhancement.md` - Workflow guide
-- `installer/global/commands/template-create.md` - Template create command spec
-- `installer/global/commands/agent-enhance.md` - Agent enhance command spec
+- `installer/core/commands/template-create.md` - Template create command spec
+- `installer/core/commands/agent-enhance.md` - Agent enhance command spec
 
 **Tasks**:
 - `tasks/backlog/TASK-AI-2B37-ai-integration-agent-enhancement.md`
@@ -1368,7 +1368,7 @@ Individual tasks are created by default for each agent to enhance incrementally.
 ```bash
 # Run tests with coverage
 pytest tests/unit/lib/agent_enhancement/ tests/integration/ \
-  --cov=installer.global.lib.agent_enhancement \
+  --cov=installer.core.lib.agent_enhancement \
   --cov-report=term \
   --cov-report=html
 

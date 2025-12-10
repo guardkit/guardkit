@@ -273,14 +273,14 @@ Command-line interface:
 
 ### Implementation Files
 
-- [ ] `installer/global/commands/agent-format.md` - Command specification
-- [ ] `installer/global/commands/agent-format.py` - Command entry point
-- [ ] `installer/global/lib/agent_formatting/__init__.py` - Library init
-- [ ] `installer/global/lib/agent_formatting/parser.py` - Markdown parser
-- [ ] `installer/global/lib/agent_formatting/metrics.py` - Quality metrics calculator
-- [ ] `installer/global/lib/agent_formatting/transformers.py` - Formatting transformers
-- [ ] `installer/global/lib/agent_formatting/validator.py` - Validation logic
-- [ ] `installer/global/lib/agent_formatting/reporter.py` - Report generator
+- [ ] `installer/core/commands/agent-format.md` - Command specification
+- [ ] `installer/core/commands/agent-format.py` - Command entry point
+- [ ] `installer/core/lib/agent_formatting/__init__.py` - Library init
+- [ ] `installer/core/lib/agent_formatting/parser.py` - Markdown parser
+- [ ] `installer/core/lib/agent_formatting/metrics.py` - Quality metrics calculator
+- [ ] `installer/core/lib/agent_formatting/transformers.py` - Formatting transformers
+- [ ] `installer/core/lib/agent_formatting/validator.py` - Validation logic
+- [ ] `installer/core/lib/agent_formatting/reporter.py` - Report generator
 
 ### Test Files
 
@@ -335,7 +335,7 @@ Command-line interface:
 
 - **Full Specification**: `tasks/backlog/AGENT-FORMAT-SPECIFICATION.md`
 - **GitHub Research**: `docs/analysis/github-agent-best-practices-analysis.md`
-- **Agent Content Enhancer**: `installer/global/agents/agent-content-enhancer.md` (lines 32-175)
+- **Agent Content Enhancer**: `installer/core/agents/agent-content-enhancer.md` (lines 32-175)
 - **Conversation Research**: User conversation analyzed GitHub best practices, evaluated approaches, and designed comprehensive solution
 
 ## Next Steps

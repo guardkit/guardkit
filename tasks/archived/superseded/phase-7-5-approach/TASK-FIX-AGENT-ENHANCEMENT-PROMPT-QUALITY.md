@@ -123,7 +123,7 @@ Add checks for:
 
 ### Phase 1: Enhance Prompt with Few-Shot Example (45 minutes)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 **Location**: `_build_batch_prompt()` after line 1166
 
 Add complete example output showing:
@@ -579,7 +579,7 @@ def _validate_content_quality(self, content: str) -> bool:
 
 For future maintainability, consider extracting prompts to:
 ```
-installer/global/lib/template_creation/
+installer/core/lib/template_creation/
     prompts/
         agent_enhancement_example.md
         agent_enhancement_negative.md

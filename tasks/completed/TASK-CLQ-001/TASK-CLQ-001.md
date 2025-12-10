@@ -24,8 +24,8 @@ Create the core infrastructure for the unified clarification module. This includ
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/lib/clarification/__init__.py` with module exports
-- [x] Create `installer/global/commands/lib/clarification/core.py` with:
+- [x] Create `installer/core/commands/lib/clarification/__init__.py` with module exports
+- [x] Create `installer/core/commands/lib/clarification/core.py` with:
   - [x] `ClarificationContext` dataclass (explicit_decisions, assumed_defaults, metadata)
   - [x] `Decision` dataclass (category, question, answer, is_default, confidence, rationale)
   - [x] `Question` dataclass (id, category, text, options, default, rationale)
@@ -98,8 +98,8 @@ def should_clarify(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/__init__.py`
-2. `installer/global/commands/lib/clarification/core.py`
+1. `installer/core/commands/lib/clarification/__init__.py`
+2. `installer/core/commands/lib/clarification/core.py`
 3. `tests/unit/lib/clarification/test_core.py`
 
 ## Dependencies

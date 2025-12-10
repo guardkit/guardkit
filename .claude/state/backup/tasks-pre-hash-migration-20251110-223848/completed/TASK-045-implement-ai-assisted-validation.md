@@ -39,7 +39,7 @@ Enhance `/template-validate` command with AI-assisted analysis for manual sectio
 - Generated insights and recommendations
 - Faster comprehensive audits
 - Higher quality analysis
-- Works with templates in both personal (`~/.agentecflow/templates/`) and repository (`installer/global/templates/`) locations
+- Works with templates in both personal (`~/.agentecflow/templates/`) and repository (`installer/core/templates/`) locations
 
 ---
 
@@ -453,12 +453,12 @@ class MarketComparisonSection(AuditSection):
 ### Files to Modify
 
 #### 1. Comprehensive Auditor
-**File**: `installer/global/lib/template_validation/comprehensive_auditor.py`
+**File**: `installer/core/lib/template_validation/comprehensive_auditor.py`
 
 **Changes**: Enhance sections 8, 11, 12, 13 with AI assistance
 
 #### 2. New AI Utilities
-**File**: `installer/global/lib/template_validation/ai_analysis_helpers.py`
+**File**: `installer/core/lib/template_validation/ai_analysis_helpers.py`
 
 **Purpose**: Reusable AI analysis utilities
 

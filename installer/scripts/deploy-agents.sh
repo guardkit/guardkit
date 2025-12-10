@@ -29,36 +29,36 @@ deploy_agents() {
 # Deploy stack-specific agents
 deploy_agents \
     "$PROJECT_ROOT/tasks/agent-enhancement-implementation/agents/dotnet" \
-    "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents" \
+    "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents" \
     ".NET Microservice"
 
 deploy_agents \
     "$PROJECT_ROOT/tasks/agent-enhancement-implementation/agents/maui" \
-    "$PROJECT_ROOT/installer/global/templates/maui/agents" \
+    "$PROJECT_ROOT/installer/core/templates/maui/agents" \
     "MAUI"
 
 deploy_agents \
     "$PROJECT_ROOT/tasks/agent-enhancement-implementation/agents/react" \
-    "$PROJECT_ROOT/installer/global/templates/react/agents" \
+    "$PROJECT_ROOT/installer/core/templates/react/agents" \
     "React"
 
 deploy_agents \
     "$PROJECT_ROOT/tasks/agent-enhancement-implementation/agents/python" \
-    "$PROJECT_ROOT/installer/global/templates/python/agents" \
+    "$PROJECT_ROOT/installer/core/templates/python/agents" \
     "Python"
 
 # Deploy global agents
 deploy_agents \
     "$PROJECT_ROOT/tasks/agent-enhancement-implementation/agents/global" \
-    "$PROJECT_ROOT/installer/global/agents" \
+    "$PROJECT_ROOT/installer/core/agents" \
     "Global Specialist"
 
 echo ""
 echo "✨ Agent deployment complete!"
 echo ""
 echo "Deployed agents summary:"
-echo "  - .NET Microservice: $(ls -1 "$PROJECT_ROOT/installer/global/templates/dotnet-microservice/agents"/*.md 2>/dev/null | wc -l) agents"
-echo "  - MAUI: $(ls -1 "$PROJECT_ROOT/installer/global/templates/maui/agents"/*.md 2>/dev/null | wc -l) agents"
-echo "  - React: $(ls -1 "$PROJECT_ROOT/installer/global/templates/react/agents"/*.md 2>/dev/null | wc -l) agents"
-echo "  - Python: $(ls -1 "$PROJECT_ROOT/installer/global/templates/python/agents"/*.md 2>/dev/null | wc -l) agents"
-echo "  - Global: $(ls -1 "$PROJECT_ROOT/installer/global/agents"/*.md 2>/dev/null | wc -l) agents"
+echo "  - .NET Microservice: $(ls -1 "$PROJECT_ROOT/installer/core/templates/dotnet-microservice/agents"/*.md 2>/dev/null | wc -l) agents"
+echo "  - MAUI: $(ls -1 "$PROJECT_ROOT/installer/core/templates/maui/agents"/*.md 2>/dev/null | wc -l) agents"
+echo "  - React: $(ls -1 "$PROJECT_ROOT/installer/core/templates/react/agents"/*.md 2>/dev/null | wc -l) agents"
+echo "  - Python: $(ls -1 "$PROJECT_ROOT/installer/core/templates/python/agents"/*.md 2>/dev/null | wc -l) agents"
+echo "  - Global: $(ls -1 "$PROJECT_ROOT/installer/core/agents"/*.md 2>/dev/null | wc -l) agents"

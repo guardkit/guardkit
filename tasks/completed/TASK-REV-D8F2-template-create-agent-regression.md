@@ -118,18 +118,18 @@ class AgentBridgeInvoker:
 
 ### Primary Files
 
-1. **[installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py)**
+1. **[installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py)**
    - Phase 1 AI invocation logic (lines ~634-700)
    - Phase 5 agent recommendation (lines ~1200-1350)
    - Resume path routing (lines ~250-270)
    - Checkpoint save/restore logic
 
-2. **[installer/global/lib/agent_bridge/invoker.py](installer/global/lib/agent_bridge/invoker.py)**
+2. **[installer/core/lib/agent_bridge/invoker.py](installer/core/lib/agent_bridge/invoker.py)**
    - `_cached_response` handling
    - Phase-specific cache file logic (added in TASK-FIX-7B74)
    - Resume attempt counter
 
-3. **[installer/global/lib/codebase_analyzer/agent_invoker.py](installer/global/lib/codebase_analyzer/agent_invoker.py)**
+3. **[installer/core/lib/codebase_analyzer/agent_invoker.py](installer/core/lib/codebase_analyzer/agent_invoker.py)**
    - Bridge invoker usage in Phase 1
 
 ### Related Commits

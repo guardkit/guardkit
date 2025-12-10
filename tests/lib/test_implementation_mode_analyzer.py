@@ -347,7 +347,7 @@ class TestAssignImplementationModes:
                 "id": "TASK-FW-001",
                 "title": "Create /feature-plan command (markdown orchestration)",
                 "description": "Create /feature-plan command",
-                "files": ["installer/global/commands/feature-plan.md"],
+                "files": ["installer/core/commands/feature-plan.md"],
                 "complexity": 3
             },
             {

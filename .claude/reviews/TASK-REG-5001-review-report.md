@@ -24,8 +24,8 @@
 ### 1. Phase 2.8 Checkpoint Modification
 
 **Files Affected**:
-- `installer/global/commands/lib/checkpoint_display.py` (20KB, 12 functions)
-- `installer/global/commands/lib/phase_execution.py` (34KB)
+- `installer/core/commands/lib/checkpoint_display.py` (20KB, 12 functions)
+- `installer/core/commands/lib/phase_execution.py` (34KB)
 
 **Current Implementation**:
 - Phase 2.8 triggers on: complexity ≥7 OR architectural review <60
@@ -51,7 +51,7 @@
 ### 2. Task File Frontmatter Changes
 
 **Files Affected**:
-- `installer/global/commands/lib/task_utils.py` (10KB)
+- `installer/core/commands/lib/task_utils.py` (10KB)
 
 **Current Implementation**:
 - `parse_task_frontmatter()` handles unknown fields gracefully

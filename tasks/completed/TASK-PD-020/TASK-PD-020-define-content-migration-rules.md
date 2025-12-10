@@ -166,20 +166,20 @@ build-validator-ext.md (12KB)
 
 ```bash
 # 1. Create backup before any changes
-cp installer/global/agents/{agent}.md installer/global/agents/{agent}.md.bak
+cp installer/core/agents/{agent}.md installer/core/agents/{agent}.md.bak
 
 # 2. Verify backup is readable
-head -20 installer/global/agents/{agent}.md.bak
+head -20 installer/core/agents/{agent}.md.bak
 ```
 
 ### If Issues Detected
 
 ```bash
 # 1. Restore from backup
-cp installer/global/agents/{agent}.md.bak installer/global/agents/{agent}.md
+cp installer/core/agents/{agent}.md.bak installer/core/agents/{agent}.md
 
 # 2. Verify restoration
-wc -c installer/global/agents/{agent}.md  # Should match original size
+wc -c installer/core/agents/{agent}.md  # Should match original size
 
 # 3. Re-run migration with adjusted rules
 ```
@@ -193,7 +193,7 @@ wc -c installer/global/agents/{agent}.md  # Should match original size
 
 # 2. Verify token reduction target met
 # 3. Remove backups
-rm installer/global/agents/*.md.bak
+rm installer/core/agents/*.md.bak
 ```
 
 **Important**: Backups MUST be retained until TASK-PD-024 validates all migrations.

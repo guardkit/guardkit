@@ -146,7 +146,7 @@ cd wave-2-phase-gates && /task-work TASK-ENF4
 ## Related Documentation
 
 - [TASK-8D3F Review Report](/.claude/reviews/TASK-8D3F-review-report.md) - Comprehensive review findings
-- [task-work.md](/installer/global/commands/task-work.md) - Command being enhanced
+- [task-work.md](/installer/core/commands/task-work.md) - Command being enhanced
 - [Agent Discovery Guide](/docs/guides/agent-discovery-guide.md) - How agent selection works
 - [Conductor Documentation](https://conductor.build) - Parallel worktree management
 

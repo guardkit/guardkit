@@ -122,7 +122,7 @@ Coverage: 1/7 = 14%
 
 **Why Other Agents Weren't Detected**:
 ```python
-# installer/global/lib/agent_generator/agent_generator.py (Lines 120-235)
+# installer/core/lib/agent_generator/agent_generator.py (Lines 120-235)
 # BEFORE TASK-TMPL-4E89 FIX:
 
 def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
@@ -162,10 +162,10 @@ def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
 ### Architectural Assessment
 
 **Files Analyzed**:
-- `installer/global/commands/template-create.md` (900 lines)
-- `installer/global/commands/lib/template_create_orchestrator.py` (2004 lines)
-- `installer/global/lib/agent_generator/agent_generator.py` (470 lines after TASK-TMPL-4E89)
-- `installer/global/lib/agent_bridge/*.py` (checkpoint-resume pattern)
+- `installer/core/commands/template-create.md` (900 lines)
+- `installer/core/commands/lib/template_create_orchestrator.py` (2004 lines)
+- `installer/core/lib/agent_generator/agent_generator.py` (470 lines after TASK-TMPL-4E89)
+- `installer/core/lib/agent_bridge/*.py` (checkpoint-resume pattern)
 
 **SOLID Compliance**: 6.5/10
 
@@ -285,7 +285,7 @@ Real-World Test (.NET MAUI):
 ```bash
 1. Clone/analyze source codebase
 2. Execute: /template-create --validate --output-location=repo
-3. Run: /template-validate installer/global/templates/{name}
+3. Run: /template-validate installer/core/templates/{name}
 4. IF score <9/10: Refine → Re-validate
 5. WHEN score ≥9/10: Complete
 ```
@@ -352,7 +352,7 @@ Missing (6-8 agents):
 
 ### The Limitation
 
-**File**: `installer/global/lib/agent_generator/agent_generator.py` (Lines 120-235 before fix)
+**File**: `installer/core/lib/agent_generator/agent_generator.py` (Lines 120-235 before fix)
 
 **Problem**: Hard-coded pattern detection with only 5 checks
 
@@ -551,7 +551,7 @@ Recommendation: Verify user has fix deployed, re-run /template-create
    ```bash
    # Check agent_generator.py for AI method
    grep -n "_identify_capability_needs_ai" \
-     installer/global/lib/agent_generator/agent_generator.py
+     installer/core/lib/agent_generator/agent_generator.py
 
    # Expected: Method exists (line ~240)
    # If missing: TASK-TMPL-4E89 not deployed
@@ -613,7 +613,7 @@ Recommendation: Verify user has fix deployed, re-run /template-create
 **Objective**: Update documentation to reflect simplified architecture
 
 **Task 3.1: Update Command Spec**:
-- `installer/global/commands/template-create.md`
+- `installer/core/commands/template-create.md`
 - Remove agent bridge references
 - Remove checkpoint-resume documentation
 - Update execution protocol
@@ -968,8 +968,8 @@ Recommendation:
 - TASK-9040: Regression Investigation (Root cause confirmed)
 
 **Current Implementation**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (2004 lines)
-- `installer/global/lib/agent_generator/agent_generator.py` (470 lines post-fix)
+- `installer/core/commands/lib/template_create_orchestrator.py` (2004 lines)
+- `installer/core/lib/agent_generator/agent_generator.py` (470 lines post-fix)
 
 ---
 

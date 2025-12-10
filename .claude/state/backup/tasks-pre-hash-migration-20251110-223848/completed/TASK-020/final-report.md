@@ -160,27 +160,27 @@ Result: ALL TESTS PASSED (5/5 sanity tests)
 ## Files Delivered
 
 ### Production Code (2 files)
-1. `/installer/global/commands/lib/micro_task_detector.py` (524 lines)
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/`
+1. `/installer/core/commands/lib/micro_task_detector.py` (524 lines)
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/`
    - Status: ✅ Complete, tested, documented
 
-2. `/installer/global/commands/lib/micro_task_workflow.py` (622 lines)
-   - Location: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/`
+2. `/installer/core/commands/lib/micro_task_workflow.py` (622 lines)
+   - Location: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/`
    - Status: ✅ Complete, tested, documented
 
 ### Test Code (3 files)
-3. `/installer/global/commands/lib/test_micro_task_detector.py` (530 lines, 33 tests)
-4. `/installer/global/commands/lib/test_micro_workflow.py` (458 lines, 25 tests)
-5. `/installer/global/commands/lib/test_micro_basic.py` (198 lines, 5 tests)
+3. `/installer/core/commands/lib/test_micro_task_detector.py` (530 lines, 33 tests)
+4. `/installer/core/commands/lib/test_micro_workflow.py` (458 lines, 25 tests)
+5. `/installer/core/commands/lib/test_micro_basic.py` (198 lines, 5 tests)
 
 ### Documentation (4 files)
-6. `/installer/global/commands/lib/MICRO_TASK_README.md` (400 lines)
-7. `/installer/global/commands/task-work.md` (updated, +100 lines)
-8. `/installer/global/agents/task-manager.md` (updated, +200 lines)
+6. `/installer/core/commands/lib/MICRO_TASK_README.md` (400 lines)
+7. `/installer/core/commands/task-work.md` (updated, +100 lines)
+8. `/installer/core/agents/task-manager.md` (updated, +200 lines)
 9. `/.conductor/almaty/TASK-020-IMPLEMENTATION-SUMMARY.md` (500+ lines)
 
 ### Supporting Files (2 files)
-10. `/installer/global/commands/lib/verify_micro_implementation.sh` (verification script)
+10. `/installer/core/commands/lib/verify_micro_implementation.sh` (verification script)
 11. `/.conductor/almaty/TASK-020-FINAL-REPORT.md` (this file)
 
 **Total**: 11 files (6 new, 3 updated, 2 support)
@@ -375,20 +375,20 @@ All files are located in the project directory:
 **Base**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/`
 
 ### Production Code
-- `installer/global/commands/lib/micro_task_detector.py`
-- `installer/global/commands/lib/micro_task_workflow.py`
+- `installer/core/commands/lib/micro_task_detector.py`
+- `installer/core/commands/lib/micro_task_workflow.py`
 
 ### Test Code
-- `installer/global/commands/lib/test_micro_task_detector.py`
-- `installer/global/commands/lib/test_micro_workflow.py`
-- `installer/global/commands/lib/test_micro_basic.py`
+- `installer/core/commands/lib/test_micro_task_detector.py`
+- `installer/core/commands/lib/test_micro_workflow.py`
+- `installer/core/commands/lib/test_micro_basic.py`
 
 ### Documentation
-- `installer/global/commands/lib/MICRO_TASK_README.md`
-- `installer/global/commands/task-work.md` (updated)
-- `installer/global/agents/task-manager.md` (updated)
+- `installer/core/commands/lib/MICRO_TASK_README.md`
+- `installer/core/commands/task-work.md` (updated)
+- `installer/core/agents/task-manager.md` (updated)
 - `.conductor/almaty/TASK-020-IMPLEMENTATION-SUMMARY.md`
 - `.conductor/almaty/TASK-020-FINAL-REPORT.md` (this file)
 
 ### Supporting Files
-- `installer/global/commands/lib/verify_micro_implementation.sh`
+- `installer/core/commands/lib/verify_micro_implementation.sh`

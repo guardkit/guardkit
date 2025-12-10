@@ -172,7 +172,7 @@ self._save_checkpoint("agents_written", phase=WorkflowPhase.PHASE_7)
 - Test error handling for unknown phase numbers
 
 **Files to Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (lines 62+, 188-196, and all phase number literals)
+- `installer/core/commands/lib/template_create_orchestrator.py` (lines 62+, 188-196, and all phase number literals)
 - Add test file: `tests/unit/lib/template_creation/test_resume_routing.py`
 
 ---
@@ -231,7 +231,7 @@ except Exception as e:
 - Verify retry behavior after normal exception
 
 **Files to Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (lines 419-423)
+- `installer/core/commands/lib/template_create_orchestrator.py` (lines 419-423)
 - `tests/unit/lib/template_creation/test_ensure_templates_on_disk.py` (add SystemExit tests)
 
 ---
@@ -320,7 +320,7 @@ if self._write_templates_to_disk(templates, output_path):
 - Verify SystemExit and exception handling
 
 **Files to Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (add method, update lines 415-417, 1138-1141)
+- `installer/core/commands/lib/template_create_orchestrator.py` (add method, update lines 415-417, 1138-1141)
 - Add test file: `tests/unit/lib/template_creation/test_write_templates_to_disk.py`
 
 ---
@@ -456,7 +456,7 @@ def _serialize_value(self, value: Any) -> Any:
 - Test round-trip serialization/deserialization
 
 **Files to Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (lines 1643-1680, add `_serialize_value()` method)
+- `installer/core/commands/lib/template_create_orchestrator.py` (lines 1643-1680, add `_serialize_value()` method)
 - Add test file: `tests/unit/lib/template_creation/test_agent_serialization.py`
 
 ---
@@ -495,7 +495,7 @@ if not self.templates or self.templates.total_count == 0:
 if self.config.output_path:
     output_path = self.config.output_path
 elif self.config.output_location == 'repo':
-    output_path = Path("installer/global/templates") / self.manifest.name
+    output_path = Path("installer/core/templates") / self.manifest.name
 else:
     output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
 
@@ -503,7 +503,7 @@ else:
 if self.config.output_path:
     output_path = self.config.output_path
 elif self.config.output_location == 'repo':
-    output_path = Path("installer/global/templates") / self.manifest.name
+    output_path = Path("installer/core/templates") / self.manifest.name
 else:
     output_path = Path.home() / ".agentecflow" / "templates" / self.manifest.name
 ```
@@ -539,7 +539,7 @@ def _get_output_path(self) -> Path:
     manifest_name = getattr(self.manifest, 'name', 'unknown-template')
 
     if self.config.output_location == 'repo':
-        return Path("installer/global/templates") / manifest_name
+        return Path("installer/core/templates") / manifest_name
     else:
         return Path.home() / ".agentecflow" / "templates" / manifest_name
 
@@ -566,7 +566,7 @@ output_path = self._get_output_path()
 - Verify all call sites use new method
 
 **Files to Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (add method, update lines 301, 329)
+- `installer/core/commands/lib/template_create_orchestrator.py` (add method, update lines 301, 329)
 - Add test file: `tests/unit/lib/template_creation/test_get_output_path.py`
 
 ---
@@ -580,8 +580,8 @@ output_path = self._get_output_path()
 **Search Pattern**:
 ```bash
 # Find all hardcoded phase numbers
-grep -n "phase.*=" installer/global/commands/lib/template_create_orchestrator.py | grep -E "[0-9]"
-grep -n "== [0-9]" installer/global/commands/lib/template_create_orchestrator.py
+grep -n "phase.*=" installer/core/commands/lib/template_create_orchestrator.py | grep -E "[0-9]"
+grep -n "== [0-9]" installer/core/commands/lib/template_create_orchestrator.py
 ```
 
 **Affected Lines** (approximate):
@@ -678,7 +678,7 @@ grep -n "== [0-9]" installer/global/commands/lib/template_create_orchestrator.py
 
 1. **Compilation Check**
    ```bash
-   python -m py_compile installer/global/commands/lib/template_create_orchestrator.py
+   python -m py_compile installer/core/commands/lib/template_create_orchestrator.py
    ```
 
 2. **Test Execution**
@@ -735,7 +735,7 @@ grep -n "== [0-9]" installer/global/commands/lib/template_create_orchestrator.py
 
 ### Primary File
 ```
-installer/global/commands/lib/template_create_orchestrator.py
+installer/core/commands/lib/template_create_orchestrator.py
   - Add WorkflowPhase constants class (after line 62)
   - Fix 2: Lines 188-196 (resume routing)
   - Fix 3: Lines 419-423 (SystemExit handling)

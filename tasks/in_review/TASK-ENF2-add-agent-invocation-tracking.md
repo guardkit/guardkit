@@ -64,7 +64,7 @@ Create an agent invocation tracking system that:
 
 **Implementation**:
 ```python
-# File: installer/global/commands/lib/agent_invocation_tracker.py
+# File: installer/core/commands/lib/agent_invocation_tracker.py
 
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -212,7 +212,7 @@ class AgentInvocationTracker:
 ```
 
 **Acceptance Criteria**:
-- [ ] Tracker class created in `installer/global/commands/lib/agent_invocation_tracker.py`
+- [ ] Tracker class created in `installer/core/commands/lib/agent_invocation_tracker.py`
 - [ ] `record_invocation()` method adds new invocation with "in_progress" status and agent source
 - [ ] `mark_complete()` method updates status to "completed" with timing info
 - [ ] `mark_skipped()` method records skipped phases for validation errors
@@ -226,7 +226,7 @@ class AgentInvocationTracker:
 
 **Implementation**:
 ```python
-# File: installer/global/commands/lib/agent_discovery.py (or similar)
+# File: installer/core/commands/lib/agent_discovery.py (or similar)
 
 def discover_agent_with_source(phase: str, stack: str, keywords: List[str]) -> Tuple[str, str]:
     """
@@ -245,12 +245,12 @@ def discover_agent_with_source(phase: str, stack: str, keywords: List[str]) -> T
     if user_agent:
         return (user_agent.name, "user")
 
-    # Phase 3: Scan global agents (installer/global/agents/)
+    # Phase 3: Scan global agents (installer/core/agents/)
     global_agent = scan_global_agents(phase, stack, keywords)
     if global_agent:
         return (global_agent.name, "global")
 
-    # Phase 4: Scan template agents (installer/global/templates/*/agents/)
+    # Phase 4: Scan template agents (installer/core/templates/*/agents/)
     template_agent = scan_template_agents(phase, stack, keywords)
     if template_agent:
         return (template_agent.name, "template")
@@ -271,7 +271,7 @@ def discover_agent_with_source(phase: str, stack: str, keywords: List[str]) -> T
 
 **Requirement**: Integrate tracker throughout task-work execution flow
 
-**Locations**: Update each phase section in `installer/global/commands/task-work.md`
+**Locations**: Update each phase section in `installer/core/commands/task-work.md`
 
 **Phase 2 Example**:
 ```markdown
@@ -351,8 +351,8 @@ AGENT INVOCATIONS LOG
 **Source Icons**:
 - 📁 `local` - Agent from `.claude/agents/` (highest priority)
 - 👤 `user` - Agent from `~/.agentecflow/agents/`
-- 🌐 `global` - Agent from `installer/global/agents/`
-- 📦 `template` - Agent from `installer/global/templates/*/agents/` (lowest priority)
+- 🌐 `global` - Agent from `installer/core/agents/`
+- 📦 `template` - Agent from `installer/core/templates/*/agents/` (lowest priority)
 
 **Acceptance Criteria**:
 - [ ] Log displayed after each phase completes
@@ -408,8 +408,8 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 ### Phase 1: Create Tracker Class with Source Tracking
 
 **Files**:
-- `installer/global/commands/lib/agent_invocation_tracker.py` (new)
-- `installer/global/commands/lib/__init__.py` (modify - add import)
+- `installer/core/commands/lib/agent_invocation_tracker.py` (new)
+- `installer/core/commands/lib/__init__.py` (modify - add import)
 
 **Implementation**:
 1. Create `AgentInvocationTracker` class with source tracking
@@ -422,8 +422,8 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 ### Phase 2: Implement Agent Source Detection
 
 **Files**:
-- `installer/global/commands/lib/agent_discovery.py` (modify or create)
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/lib/agent_discovery.py` (modify or create)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add `discover_agent_with_source()` function
@@ -436,7 +436,7 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 ### Phase 3: Integrate with task-work.md
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add tracker initialization before Phase 2
@@ -451,7 +451,7 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 ### Phase 4: Add Visual Display with Source Icons
 
 **Files**:
-- `installer/global/commands/lib/agent_invocation_tracker.py` (modify)
+- `installer/core/commands/lib/agent_invocation_tracker.py` (modify)
 
 **Implementation**:
 1. Implement `display_log()` method with formatted output
@@ -565,7 +565,7 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 ### ✅ All Requirements Met
 
 **R1: Agent Invocation Tracker Class**
-- ✅ Tracker class created in `installer/global/commands/lib/agent_invocation_tracker.py`
+- ✅ Tracker class created in `installer/core/commands/lib/agent_invocation_tracker.py`
 - ✅ `record_invocation()` method with agent source tracking
 - ✅ `mark_complete()` method with timing info
 - ✅ `mark_skipped()` method for validation errors
@@ -635,8 +635,8 @@ def add_pending_phases(tracker: AgentInvocationTracker, workflow_mode: str):
 - `TASK-ENF2-IMPLEMENTATION-SUMMARY.md` (detailed documentation)
 
 **Files Modified:**
-- `installer/global/commands/lib/__init__.py` (added exports)
-- `installer/global/commands/lib/agent_discovery.py` (added discover_agent_with_source)
+- `installer/core/commands/lib/__init__.py` (added exports)
+- `installer/core/commands/lib/agent_discovery.py` (added discover_agent_with_source)
 
 **Test Coverage:**
 - ✅ 12/12 unit tests passing

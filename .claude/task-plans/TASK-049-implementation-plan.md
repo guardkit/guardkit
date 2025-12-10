@@ -24,7 +24,7 @@ Implement a bidirectional mapping system between GuardKit's internal hash-based 
 
 ### 2.1 Module Structure
 ```
-installer/global/lib/
+installer/core/lib/
 ├── external_id_mapper.py       (NEW - core mapper)
 └── id_generator.py            (EXISTING - hash ID generation)
 
@@ -64,7 +64,7 @@ Use `threading.Lock()` for atomic counter increments across concurrent operation
 ## 3. Implementation Steps
 
 ### Phase 3.1: Core Mapper Class (30 min)
-**File:** `installer/global/lib/external_id_mapper.py`
+**File:** `installer/core/lib/external_id_mapper.py`
 
 **Components:**
 1. `ExternalIDMapper` class with in-memory storage
@@ -274,7 +274,7 @@ def _format_github_id(self, number: int) -> str:
 ## 6. Integration Points
 
 ### Current Dependencies
-- `installer/global/lib/id_generator.py` - Hash ID format understanding
+- `installer/core/lib/id_generator.py` - Hash ID format understanding
 
 ### Future Dependencies (TASK-050)
 - JSON persistence layer for mappings

@@ -30,8 +30,8 @@ The purpose is to test:
 ## Review Scope
 
 Review the task-review orchestrator implementation:
-- Command specification (`installer/global/commands/task-review.md`)
-- Core orchestrator (`installer/global/commands/lib/task_review_orchestrator.py`)
+- Command specification (`installer/core/commands/task-review.md`)
+- Core orchestrator (`installer/core/commands/lib/task_review_orchestrator.py`)
 - Phase 1 context loading implementation
 - Skeleton phase implementations
 - State management for `review_complete` state

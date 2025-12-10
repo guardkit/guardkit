@@ -51,7 +51,7 @@ Create and execute a verification script that compares agents between GuardKit a
 
 set -e
 
-GUARDKIT_AGENTS="installer/global/agents"
+GUARDKIT_AGENTS="installer/core/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
 echo "======================================================================="
@@ -150,7 +150,7 @@ Create `docs/verified-universal-agents.md`:
 Based on verification script output:
 
 1. **agent-name.md** - XX% similarity
-   - GuardKit: installer/global/agents/agent-name.md
+   - GuardKit: installer/core/agents/agent-name.md
    - RequireKit: .claude/agents/agent-name.md
    - Status: ✅ Verified duplicate
 
@@ -232,8 +232,8 @@ The proposal assumes these 4 agents are universal:
 4. `code-reviewer.md`
 
 However:
-- `test-orchestrator.md` exists in GuardKit `installer/global/agents/` ✅
-- `code-reviewer.md` exists in GuardKit `installer/global/agents/` ✅
+- `test-orchestrator.md` exists in GuardKit `installer/core/agents/` ✅
+- `code-reviewer.md` exists in GuardKit `installer/core/agents/` ✅
 - `requirements-analyst.md` may be RequireKit-only ⚠️
 - `bdd-generator.md` may be RequireKit-only ⚠️
 

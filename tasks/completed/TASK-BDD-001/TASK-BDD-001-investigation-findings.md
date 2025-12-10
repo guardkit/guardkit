@@ -28,7 +28,7 @@ The `/task-work` command is a **pure slash command** (prompt-based), NOT a Pytho
 
 ### 1.1 Where `--mode=tdd` is Parsed
 
-**Location**: `installer/global/commands/task-work.md:2743-2762`
+**Location**: `installer/core/commands/task-work.md:2743-2762`
 
 ```markdown
 ### Development Modes
@@ -74,7 +74,7 @@ task-manager.md agent routing logic (prompt-based)
 Different workflow phases based on mode
 ```
 
-**Evidence**: No Python file `task-work.py` exists in `installer/global/commands/`
+**Evidence**: No Python file `task-work.py` exists in `installer/core/commands/`
 
 ---
 
@@ -114,13 +114,13 @@ Phase 5: Code Review
 Phase 5.5: Plan Audit
 ```
 
-**Location**: `installer/global/commands/task-work.md:2753-2760`
+**Location**: `installer/core/commands/task-work.md:2753-2760`
 
 **Key Difference**: TDD mode splits Phase 3 into RED-GREEN-REFACTOR cycle, where **tests are written BEFORE implementation**.
 
 ### 2.2 Agent Selection Logic
 
-**Location**: `installer/global/commands/task-work.md:1910-1955` (Phase 3 implementation)
+**Location**: `installer/core/commands/task-work.md:1910-1955` (Phase 3 implementation)
 
 **Standard Mode**:
 ```markdown
@@ -166,7 +166,7 @@ phase: 2.5B
 ..."
 ```
 
-**Location**: `installer/global/commands/task-work.md:1169-1203`
+**Location**: `installer/core/commands/task-work.md:1169-1203`
 
 ### 3.2 How Agents are Selected
 
@@ -180,8 +180,8 @@ phase: 2.5B
 2. **Scan agent sources** (precedence order):
    - Local: `.claude/agents/`
    - User: `~/.agentecflow/agents/`
-   - Global: `installer/global/agents/`
-   - Template: `installer/global/templates/*/agents/`
+   - Global: `installer/core/agents/`
+   - Template: `installer/core/templates/*/agents/`
 
 3. **Match based on metadata**:
    - Stack compatibility
@@ -193,7 +193,7 @@ phase: 2.5B
 
 ### 3.3 Where require-kit Integration Happens
 
-**Location**: `installer/global/lib/feature_detection.py:106-113`
+**Location**: `installer/core/lib/feature_detection.py:106-113`
 
 ```python
 def supports_bdd(self) -> bool:
@@ -537,7 +537,7 @@ Task State: BACKLOG → IN_REVIEW
 
 ### 6.1 Command Specification
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 | Section | Lines | Purpose |
 |---------|-------|---------|
@@ -562,7 +562,7 @@ Task State: BACKLOG → IN_REVIEW
 
 ### 6.2 Agent Files
 
-**File**: `installer/global/agents/task-manager.md`
+**File**: `installer/core/agents/task-manager.md`
 
 | Section | Lines | Purpose |
 |---------|-------|---------|
@@ -570,18 +570,18 @@ Task State: BACKLOG → IN_REVIEW
 | Model Rationale | 6 | "TDD, BDD, standard modes" (already mentions BDD) |
 | Capabilities | 11-16 | "Workflow orchestration (TDD, BDD, standard)" |
 
-**File**: `installer/global/agents/architectural-reviewer.md`
+**File**: `installer/core/agents/architectural-reviewer.md`
 - No changes required (already reviews all implementations)
 
-**File**: `installer/global/agents/test-orchestrator.md`
+**File**: `installer/core/agents/test-orchestrator.md`
 - No changes required (already runs all test types)
 
-**File**: `installer/global/agents/code-reviewer.md`
+**File**: `installer/core/agents/code-reviewer.md`
 - No changes required (already reviews all code)
 
 ### 6.3 Feature Detection Library
 
-**File**: `installer/global/lib/feature_detection.py`
+**File**: `installer/core/lib/feature_detection.py`
 
 | Section | Lines | Purpose |
 |---------|-------|---------|
@@ -652,10 +652,10 @@ if mode == "bdd":
 ### 7.3 Where to Add New Code
 
 **Primary Changes**:
-1. `installer/global/commands/task-work.md:2762` - Add BDD mode documentation
-2. `installer/global/commands/task-work.md:400-800` - Add Phase 1 BDD logic
-3. `installer/global/commands/task-work.md:1750-1800` - Add Phase 3-BDD section
-4. `installer/global/agents/task-manager.md` - Add BDD routing logic
+1. `installer/core/commands/task-work.md:2762` - Add BDD mode documentation
+2. `installer/core/commands/task-work.md:400-800` - Add Phase 1 BDD logic
+3. `installer/core/commands/task-work.md:1750-1800` - Add Phase 3-BDD section
+4. `installer/core/agents/task-manager.md` - Add BDD routing logic
 
 **Secondary Changes**:
 - Update CLAUDE.md to document BDD mode
@@ -799,10 +799,10 @@ The investigation reveals a **clean, prompt-driven architecture** where:
 ## Appendix A: File Locations Quick Reference
 
 ```
-installer/global/commands/task-work.md       # Primary integration point
-installer/global/agents/task-manager.md      # Workflow routing logic
-installer/global/agents/bdd-generator.md     # BDD test generation (require-kit)
-installer/global/lib/feature_detection.py    # supports_bdd() function
+installer/core/commands/task-work.md       # Primary integration point
+installer/core/agents/task-manager.md      # Workflow routing logic
+installer/core/agents/bdd-generator.md     # BDD test generation (require-kit)
+installer/core/lib/feature_detection.py    # supports_bdd() function
 ~/.agentecflow/require-kit.marker           # Detection marker file
 ~/.agentecflow/scenarios/*.md                # Gherkin scenario storage
 ```

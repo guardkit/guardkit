@@ -69,7 +69,7 @@
    git log --since="2025-11-09" --stat
 
    # Show diffs for template-create changes
-   git log --since="2025-11-09" -p -- installer/global/commands/lib/template_create*
+   git log --since="2025-11-09" -p -- installer/core/commands/lib/template_create*
    ```
 
 2. **Find completed tasks**
@@ -85,7 +85,7 @@
    ```bash
    # What templates exist?
    ls -la ~/.agentecflow/templates/
-   ls -la installer/global/templates/
+   ls -la installer/core/templates/
 
    # When were they created?
    ls -la --time-style=full-iso ~/.agentecflow/templates/*/
@@ -122,8 +122,8 @@
 3. **Compare code differences**
    ```bash
    # Compare working vs broken
-   git diff <weekend_commit> HEAD -- installer/global/commands/lib/template_create*
-   git diff <weekend_commit> HEAD -- installer/global/lib/codebase_analyzer/
+   git diff <weekend_commit> HEAD -- installer/core/commands/lib/template_create*
+   git diff <weekend_commit> HEAD -- installer/core/lib/codebase_analyzer/
    ```
 
 ### Phase 3: Environment Check (30 min)

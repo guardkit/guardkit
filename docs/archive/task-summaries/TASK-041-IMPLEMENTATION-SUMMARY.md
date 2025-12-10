@@ -15,7 +15,7 @@ Successfully implemented stratified sampling (Phase 2 of TASK-020) to replace ra
 
 ## What Was Implemented
 
-### 1. **StratifiedSampler Module** (`installer/global/lib/codebase_analyzer/stratified_sampler.py`)
+### 1. **StratifiedSampler Module** (`installer/core/lib/codebase_analyzer/stratified_sampler.py`)
    - **Lines of Code**: 850+ lines
    - **Components**:
      - `PatternCategory` - Enum for pattern categories
@@ -67,7 +67,7 @@ Successfully implemented stratified sampling (Phase 2 of TASK-020) to replace ra
    - **Scoring**: 0-100 scale
    - **Usage**: Fill remaining slots after proportional allocation
 
-### 6. **AI Analyzer Integration** (`installer/global/lib/codebase_analyzer/ai_analyzer.py`)
+### 6. **AI Analyzer Integration** (`installer/core/lib/codebase_analyzer/ai_analyzer.py`)
    - **Changes**:
      - Added `use_stratified_sampling: bool = True` parameter
      - Increased `max_files` from 10 to 20
@@ -245,11 +245,11 @@ Successfully implemented stratified sampling (Phase 2 of TASK-020) to replace ra
 ## Files Modified/Created
 
 ### New Files
-1. `installer/global/lib/codebase_analyzer/stratified_sampler.py` (850+ lines)
+1. `installer/core/lib/codebase_analyzer/stratified_sampler.py` (850+ lines)
 2. `tests/unit/test_stratified_sampler.py` (700+ lines)
 
 ### Modified Files
-1. `installer/global/lib/codebase_analyzer/ai_analyzer.py`
+1. `installer/core/lib/codebase_analyzer/ai_analyzer.py`
    - Added `use_stratified_sampling` parameter
    - Updated `max_files` default to 20
    - Added stratified sampling logic with fallback

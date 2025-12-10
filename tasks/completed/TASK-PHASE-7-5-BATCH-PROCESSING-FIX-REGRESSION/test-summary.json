@@ -112,7 +112,7 @@
   },
   "implementation_verification": {
     "fix_1_orchestrator_result_handling": {
-      "file": "installer/global/commands/lib/template_create_orchestrator.py",
+      "file": "installer/core/commands/lib/template_create_orchestrator.py",
       "lines": "905-929",
       "status": "VERIFIED",
       "checks": [
@@ -124,7 +124,7 @@
       ]
     },
     "fix_2_error_display_helper": {
-      "file": "installer/global/commands/lib/template_create_orchestrator.py",
+      "file": "installer/core/commands/lib/template_create_orchestrator.py",
       "lines": "1411-1423",
       "method": "_display_enhancement_errors",
       "status": "VERIFIED",
@@ -136,7 +136,7 @@
       ]
     },
     "fix_3_agent_enhancer_api": {
-      "file": "installer/global/lib/template_creation/agent_enhancer.py",
+      "file": "installer/core/lib/template_creation/agent_enhancer.py",
       "lines": "103-123",
       "status": "VERIFIED",
       "checks": [

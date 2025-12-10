@@ -133,7 +133,7 @@ public interface IRepository<T> where T : class
 
 ## Root Cause Analysis
 
-**Location**: `installer/global/lib/template_creation/agent_enhancer.py`
+**Location**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 ### The Bug (Lines 828-867)
 
@@ -219,7 +219,7 @@ Without code context, AI cannot:
 
 ### Phase 1: Add Template Code Reading Method (30 minutes)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 **Insert after line 867** (after `_build_template_catalog`):
 
@@ -389,7 +389,7 @@ def test_batch_prompt_handles_empty_code_samples()
 
 ### Phase 4: Update MCP Timeout (5 minutes)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 **Line**: 760 (in `_batch_enhance_agents`)
 
 **Change**:

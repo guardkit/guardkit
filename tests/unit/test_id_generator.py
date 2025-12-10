@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 # Import the module using importlib to avoid 'global' keyword issue
 spec = importlib.util.spec_from_file_location(
     "id_generator",
-    os.path.join(os.path.dirname(__file__), '../../installer/global/lib/id_generator.py')
+    os.path.join(os.path.dirname(__file__), '../../installer/core/lib/id_generator.py')
 )
 id_generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(id_generator)

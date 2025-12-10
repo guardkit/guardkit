@@ -14,8 +14,8 @@ import pytest
 import sys
 from pathlib import Path
 
-# Add installer/global/lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "lib"))
+# Add installer/core/lib to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "lib"))
 
 from id_generator import (
     validate_prefix,

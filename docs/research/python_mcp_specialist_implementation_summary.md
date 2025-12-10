@@ -24,7 +24,7 @@
 - **Impact**: Would significantly slow Agentecflow MCP server development
 
 ### 2. ✅ New Agent: `python-mcp-specialist`
-**File**: `installer/global/agents/python-mcp-specialist.md`
+**File**: `installer/core/agents/python-mcp-specialist.md`
 
 **Capabilities**:
 - MCP protocol fundamentals and server-client architecture
@@ -52,7 +52,7 @@
 - `software-architect` - System design
 
 ### 3. ✅ Updated Python Template
-**File**: `installer/global/templates/python/CLAUDE.md`
+**File**: `installer/core/templates/python/CLAUDE.md`
 
 **Changes**:
 - Added new "MCP Server Development" section
@@ -294,11 +294,11 @@ async def test_mcp_tool_via_client():
 
 1. **New Files Created**:
    - `docs/research/python_capabilities_gap_analysis_for_mcp_servers.md` (5.7 KB)
-   - `installer/global/agents/python-mcp-specialist.md` (22.3 KB)
+   - `installer/core/agents/python-mcp-specialist.md` (22.3 KB)
    - `docs/research/python_mcp_specialist_implementation_summary.md` (this file)
 
 2. **Existing Files Modified**:
-   - `installer/global/templates/python/CLAUDE.md` (updated MCP section)
+   - `installer/core/templates/python/CLAUDE.md` (updated MCP section)
 
 3. **Supporting Documents**:
    - `docs/research/agentecflow_langgraph_mcp_architecture_recommendation.md` (created earlier, provides context)

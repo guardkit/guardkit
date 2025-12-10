@@ -23,7 +23,7 @@ test_results:
 
 ## Problem Statement
 
-The `/template-create` command specification (`installer/global/commands/template-create.md`) is **outdated** and does not match the current Python implementation. This mismatch causes Claude to potentially mishandle the bridge protocol for Phase 5 agent invocations.
+The `/template-create` command specification (`installer/core/commands/template-create.md`) is **outdated** and does not match the current Python implementation. This mismatch causes Claude to potentially mishandle the bridge protocol for Phase 5 agent invocations.
 
 ### Root Cause
 
@@ -81,7 +81,7 @@ The Python code IS using phase-specific files, but the command specification sti
 
 ### File to Modify
 
-`installer/global/commands/template-create.md`
+`installer/core/commands/template-create.md`
 
 ### Section 1: Update "Step 2: Handle Exit Code 42" (Lines ~1184-1248)
 
@@ -307,11 +307,11 @@ After implementation, verify:
 
 ```bash
 # Verify phase-specific patterns documented
-grep -c "agent-request-phase" installer/global/commands/template-create.md
+grep -c "agent-request-phase" installer/core/commands/template-create.md
 # Expected: >= 6 occurrences
 
 # Verify no generic patterns remain
-grep -c '\.agent-request\.json' installer/global/commands/template-create.md
+grep -c '\.agent-request\.json' installer/core/commands/template-create.md
 # Expected: 0 occurrences (or only in "before" examples)
 ```
 
@@ -331,8 +331,8 @@ Without this documentation, Claude may:
 
 ### Related Documentation
 
-- `installer/global/lib/agent_bridge/invoker.py` - Source of truth for file patterns
-- `installer/global/commands/lib/template_create_orchestrator.py` - Uses two separate invokers
+- `installer/core/lib/agent_bridge/invoker.py` - Source of truth for file patterns
+- `installer/core/commands/lib/template_create_orchestrator.py` - Uses two separate invokers
 - `docs/reviews/progressive-disclosure/main-vs-progressive-disclosure-analysis.md` - Analysis document (now outdated)
 
 ## Notes

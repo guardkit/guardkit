@@ -12,7 +12,7 @@ Successfully implemented AI agent invocation integration for the template-create
 
 ### Phase 1: Update ai_analyzer.py (✓ Complete)
 
-**File**: `installer/global/lib/codebase_analyzer/ai_analyzer.py`
+**File**: `installer/core/lib/codebase_analyzer/ai_analyzer.py`
 
 **Changes**:
 1. Added `bridge_invoker` parameter to `CodebaseAnalyzer.__init__()` (line 70)
@@ -30,7 +30,7 @@ Successfully implemented AI agent invocation integration for the template-create
 
 ### Phase 2: Update agent_invoker.py (✓ Complete)
 
-**File**: `installer/global/lib/codebase_analyzer/agent_invoker.py`
+**File**: `installer/core/lib/codebase_analyzer/agent_invoker.py`
 
 **Changes**:
 
@@ -63,7 +63,7 @@ Successfully implemented AI agent invocation integration for the template-create
 
 ### Phase 3: Update template_create_orchestrator.py (✓ Complete)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes**:
 1. Updated `_phase1_ai_analysis()` method (lines 366-369)
@@ -172,9 +172,9 @@ tests/unit/test_template_create_orchestrator.py
 
 ## Files Modified
 
-1. `installer/global/lib/codebase_analyzer/ai_analyzer.py` (~15 LOC)
-2. `installer/global/lib/codebase_analyzer/agent_invoker.py` (~40 LOC)
-3. `installer/global/commands/lib/template_create_orchestrator.py` (~10 LOC)
+1. `installer/core/lib/codebase_analyzer/ai_analyzer.py` (~15 LOC)
+2. `installer/core/lib/codebase_analyzer/agent_invoker.py` (~40 LOC)
+3. `installer/core/commands/lib/template_create_orchestrator.py` (~10 LOC)
 
 **Total Lines Changed**: ~65 LOC
 
@@ -208,7 +208,7 @@ Heuristic analysis with better context
 ## References
 
 - **Reference Pattern**: TASK-51B2-C (agent generation phase)
-- **AgentBridgeInvoker**: `installer/global/lib/agent_bridge/invoker.py`
+- **AgentBridgeInvoker**: `installer/core/lib/agent_bridge/invoker.py`
 - **Implementation Plan**: TASK-769D (3-phase plan)
 
 ## Conclusion

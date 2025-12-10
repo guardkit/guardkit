@@ -191,8 +191,8 @@ Options:
 ## See Also
 
 **Full Documentation**:
-- Task creation: `installer/global/commands/task-create.md` (Phase 2.5)
-- Feature generation: `installer/global/commands/feature-generate-tasks.md`
+- Task creation: `installer/core/commands/task-create.md` (Phase 2.5)
+- Feature generation: `installer/core/commands/feature-generate-tasks.md`
 - Complexity workflow: `docs/guides/complexity-management-workflow.md`
 
 **Related Cards**:

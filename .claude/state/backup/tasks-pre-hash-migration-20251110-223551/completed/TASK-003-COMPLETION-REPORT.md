@@ -8,10 +8,10 @@
 
 ## Deliverables
 - Files deleted: 2
-  - `installer/global/agents/requirements-analyst.md`
-  - `installer/global/agents/bdd-generator.md`
+  - `installer/core/agents/requirements-analyst.md`
+  - `installer/core/agents/bdd-generator.md`
 - Files modified: 1
-  - `installer/global/agents/pattern-advisor.md` (removed obsolete reference)
+  - `installer/core/agents/pattern-advisor.md` (removed obsolete reference)
 - Agents remaining: 15 (verified)
 - References cleaned: 1
 
@@ -69,15 +69,15 @@ Removed: 2 agents ✅
 
 ### Reference Check
 ```bash
-grep -r "requirements-analyst|bdd-generator" installer/global/agents/
+grep -r "requirements-analyst|bdd-generator" installer/core/agents/
 Result: No matches found ✅
 ```
 
 ### Git Status
 ```
-deleted:    installer/global/agents/bdd-generator.md
-deleted:    installer/global/agents/requirements-analyst.md
-modified:   installer/global/agents/pattern-advisor.md
+deleted:    installer/core/agents/bdd-generator.md
+deleted:    installer/core/agents/requirements-analyst.md
+modified:   installer/core/agents/pattern-advisor.md
 ```
 
 ## Related Tasks

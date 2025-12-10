@@ -17,7 +17,7 @@ Successfully implemented stratified sampling to replace random file sampling (10
 ## Deliverables
 
 ### Files Created
-- ✅ `installer/global/lib/codebase_analyzer/stratified_sampler.py` (850+ lines)
+- ✅ `installer/core/lib/codebase_analyzer/stratified_sampler.py` (850+ lines)
   - PatternCategory enum
   - PatternCategoryDetector (90%+ accuracy)
   - CRUDCompletenessChecker
@@ -35,7 +35,7 @@ Successfully implemented stratified sampling to replace random file sampling (10
   - Next steps and recommendations
 
 ### Files Modified
-- ✅ `installer/global/lib/codebase_analyzer/ai_analyzer.py`
+- ✅ `installer/core/lib/codebase_analyzer/ai_analyzer.py`
   - Added `use_stratified_sampling` parameter
   - Increased `max_files` default from 10 to 20
   - Integrated stratified sampling with fallback
@@ -63,7 +63,7 @@ Successfully implemented stratified sampling to replace random file sampling (10
 ### Code Coverage: ✅ EXCEEDS THRESHOLD
 - **Target**: ≥85% line coverage
 - **Achieved**: 87% line coverage
-- **Module**: `installer/global/lib/codebase_analyzer/stratified_sampler.py`
+- **Module**: `installer/core/lib/codebase_analyzer/stratified_sampler.py`
 
 ### Pattern Detection Accuracy: ✅ MEETS TARGET
 - **Target**: ≥90% accuracy
@@ -321,8 +321,8 @@ Ready for integration testing and validation!
 - [TASK-020 Parent Investigation](./docs/implementation-plans/TASK-020-completeness-improvement-plan.md)
 
 ### Code References
-- Main implementation: `installer/global/lib/codebase_analyzer/stratified_sampler.py:1`
-- Integration point: `installer/global/lib/codebase_analyzer/ai_analyzer.py:124`
+- Main implementation: `installer/core/lib/codebase_analyzer/stratified_sampler.py:1`
+- Integration point: `installer/core/lib/codebase_analyzer/ai_analyzer.py:124`
 - Test suite: `tests/unit/test_stratified_sampler.py:1`
 
 ### Related Tasks

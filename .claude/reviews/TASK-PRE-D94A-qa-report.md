@@ -185,7 +185,7 @@ The task correctly documents the new discovery behavior. The 5 precedence exampl
 - FR5: Pseudo-code update - Before/after shown
 
 **Missing Elements**:
-- No mention of updating installer/global/commands/task-work.md (may be needed)
+- No mention of updating installer/core/commands/task-work.md (may be needed)
 - Could add "When to use each source" guidance
 
 #### Testability: 15/20 ⚠️

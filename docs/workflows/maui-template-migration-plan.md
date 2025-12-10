@@ -17,7 +17,7 @@ This document outlines the migration from ExampleApp-specific MAUI template to a
 
 ## Current State Analysis
 
-### Existing MAUI Template (`installer/global/templates/maui/`)
+### Existing MAUI Template (`installer/core/templates/maui/`)
 
 **Issues**:
 - ❌ ExampleApp-specific namespace (`YourApp`)
@@ -102,8 +102,8 @@ ExampleApp/.claude/templates/maui-custom/
 ### Phase 1: Create Global Templates ✅
 
 **Tasks**:
-1. Create `installer/global/templates/maui-appshell/`
-2. Create `installer/global/templates/maui-navigationpage/`
+1. Create `installer/core/templates/maui-appshell/`
+2. Create `installer/core/templates/maui-navigationpage/`
 3. Implement Domain pattern (verb-based, no suffix)
 4. Separate Repository (database) from Service (API/hardware)
 5. Create manifest.json for each template
@@ -197,7 +197,7 @@ expertise:
 set -e
 
 PROJECT_ROOT="/Users/richardwoollcott/Projects/appmilla_github/YourApp"
-SOURCE_TEMPLATE="installer/global/templates/maui"
+SOURCE_TEMPLATE="installer/core/templates/maui"
 LOCAL_TEMPLATE="$PROJECT_ROOT/.claude/templates/maui-custom"
 
 echo "Migrating ExampleApp to local template..."
@@ -449,7 +449,7 @@ If issues arise after deleting the old `maui` template, use this git-based recov
 git reset --hard 8e393d206f1882b462552080ed53fc5c01cc30c0
 
 # Or, restore just the old template
-git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templates/maui/
+git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/core/templates/maui/
 ```
 
 ### Checkpoint Information
@@ -466,7 +466,7 @@ git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templa
 5. Document issue for future resolution
 
 ### Verification After Rollback
-- Old `maui` template exists at `installer/global/templates/maui/`
+- Old `maui` template exists at `installer/core/templates/maui/`
 - Scripts reference old `maui` template in completions
 - ExampleApp workflow functions correctly
 - New templates (`maui-appshell`, `maui-navigationpage`) still exist

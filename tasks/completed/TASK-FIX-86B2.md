@@ -32,7 +32,7 @@ completion_metrics:
 
 **CRITICAL LAUNCH BLOCKER**: This task implements the fix for 100% curl installation failure rate identified in comprehensive architectural review TASK-REV-DEF4.
 
-**Review Finding**: Python imports use `from installer.global.lib.X` which causes syntax errors because:
+**Review Finding**: Python imports use `from installer.core.lib.X` which causes syntax errors because:
 1. `global` is a Python reserved keyword
 2. `installer/` directory doesn't exist in installed location
 3. Repository path resolution exists but doesn't solve the core problem
@@ -50,7 +50,7 @@ Convert all Python imports from absolute repository paths to relative installed 
 **Change Pattern**:
 ```python
 # BEFORE (broken):
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 
 # AFTER (works):
 from lib.id_generator import generate_task_id
@@ -62,7 +62,7 @@ from lib.id_generator import generate_task_id
 
 ### Step 1: Update task-create.md (Primary Fix)
 
-**File**: `installer/global/commands/task-create.md`
+**File**: `installer/core/commands/task-create.md`
 
 **Action 1**: Remove repository path resolution code
 - **Delete lines 207-263** (entire `_find_taskwright_repo()` function)
@@ -71,7 +71,7 @@ from lib.id_generator import generate_task_id
 **Action 2**: Update import statement
 - **Find line ~265**:
   ```python
-  from installer.global.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
+  from installer.core.lib.id_generator import generate_task_id, validate_task_id, check_duplicate
   ```
 - **Replace with**:
   ```python
@@ -85,7 +85,7 @@ from lib.id_generator import generate_task_id
 **Command**:
 ```bash
 cd ~/Projects/appmilla_github/taskwright
-grep -rn "from installer\.global\.lib" installer/global/commands/
+grep -rn "from installer\.global\.lib" installer/core/commands/
 ```
 
 **Expected Files**:
@@ -102,11 +102,11 @@ grep -rn "from installer\.global\.lib" installer/global/commands/
 **Files to Check**:
 ```bash
 # Find Python scripts with problematic imports
-grep -rn "from installer\.global\.lib" installer/global/commands/*.py
-grep -rn "from installer\.global\.lib" installer/global/lib/*.py
+grep -rn "from installer\.global\.lib" installer/core/commands/*.py
+grep -rn "from installer\.global\.lib" installer/core/lib/*.py
 ```
 
-**Example**: `installer/global/commands/agent-enhance.py`
+**Example**: `installer/core/commands/agent-enhance.py`
 
 **BEFORE** (lines ~19-31):
 ```python
@@ -119,7 +119,7 @@ def _find_taskwright_repo():
 taskwright_repo = _find_taskwright_repo()
 sys.path.insert(0, taskwright_repo)
 
-from installer.global.lib.agent_utils import load_agent_file
+from installer.core.lib.agent_utils import load_agent_file
 ```
 
 **AFTER**:
@@ -225,9 +225,9 @@ taskwright --version
 
 ## Acceptance Criteria
 
-- [x] All `from installer.global.lib.X` imports changed to `from lib.X`
+- [x] All `from installer.core.lib.X` imports changed to `from lib.X`
 - [x] All repository path resolution code removed
-- [x] Install script updated to copy installer/global/lib files
+- [x] Install script updated to copy installer/core/lib files
 - [x] Install script updated to copy subdirectories (like mcp/)
 - [x] Python imports tested and working
 - [ ] Fresh curl installation succeeds (clean VM test) - PENDING USER TEST
@@ -241,30 +241,30 @@ taskwright --version
 
 ### Files Modified
 
-1. **installer/global/commands/task-create.md** (lines 207-265)
+1. **installer/core/commands/task-create.md** (lines 207-265)
    - Removed repository path resolution code (_find_taskwright_repo function)
-   - Updated import from `installer.global.lib.id_generator` to `lib.id_generator`
+   - Updated import from `installer.core.lib.id_generator` to `lib.id_generator`
 
-2. **installer/global/lib/id_generator.py** (docstrings)
-   - Updated 3 import examples from `installer.global.lib` to `lib`
+2. **installer/core/lib/id_generator.py** (docstrings)
+   - Updated 3 import examples from `installer.core.lib` to `lib`
 
-3. **installer/global/lib/external_id_mapper.py** (docstring)
-   - Updated import example from `installer.global.lib` to `lib`
+3. **installer/core/lib/external_id_mapper.py** (docstring)
+   - Updated import example from `installer.core.lib` to `lib`
 
-4. **installer/global/lib/external_id_persistence.py** (docstring)
-   - Updated import example from `installer.global.lib` to `lib`
+4. **installer/core/lib/external_id_persistence.py** (docstring)
+   - Updated import example from `installer.core.lib` to `lib`
 
-5. **installer/global/lib/mcp/detail_level.py** (docstring)
-   - Updated import example from `installer.global.lib` to `lib`
+5. **installer/core/lib/mcp/detail_level.py** (docstring)
+   - Updated import example from `installer.core.lib` to `lib`
 
-6. **installer/global/lib/mcp/context7_client.py** (docstring)
-   - Updated import example from `installer.global.lib` to `lib`
+6. **installer/core/lib/mcp/context7_client.py** (docstring)
+   - Updated import example from `installer.core.lib` to `lib`
 
-7. **installer/global/commands/lib/template_create_orchestrator.py** (comment)
-   - Updated commented import from `installer.global.lib` to `lib`
+7. **installer/core/commands/lib/template_create_orchestrator.py** (comment)
+   - Updated commented import from `installer.core.lib` to `lib`
 
 8. **installer/scripts/install.sh** (lines 351-383)
-   - Added section to copy `installer/global/lib/*.py` to `~/.agentecflow/commands/lib/`
+   - Added section to copy `installer/core/lib/*.py` to `~/.agentecflow/commands/lib/`
    - Added subdirectory copying logic for `mcp/` and other subdirectories
    - Excludes test files, cache, and __pycache__ directories
 
@@ -288,7 +288,7 @@ taskwright --version
 ```
 Repository: /path/to/taskwright/
 Commands: Run from any directory
-Import: from installer.global.lib.id_generator import X
+Import: from installer.core.lib.id_generator import X
 Result: ❌ SyntaxError (global is reserved keyword)
 ```
 
@@ -313,14 +313,14 @@ Result: ✅ Works correctly
 ## Files to Modify
 
 ### Confirmed Changes:
-1. **installer/global/commands/task-create.md**
+1. **installer/core/commands/task-create.md**
    - Remove lines 207-263 (path resolution)
    - Update line 265 (import statement)
 
 ### To Check and Potentially Update:
-2. **installer/global/commands/*.md** (any with Python imports)
-3. **installer/global/commands/*.py** (Python scripts)
-4. **installer/global/lib/*.py** (library modules importing other libs)
+2. **installer/core/commands/*.md** (any with Python imports)
+3. **installer/core/commands/*.py** (Python scripts)
+4. **installer/core/lib/*.py** (library modules importing other libs)
 
 ---
 
@@ -374,8 +374,8 @@ Result: ✅ Works correctly
 
 The install script copies files as follows:
 ```
-installer/global/lib/id_generator.py  →  ~/.agentecflow/commands/lib/id_generator.py
-installer/global/commands/task-create.md  →  ~/.agentecflow/commands/task-create.md
+installer/core/lib/id_generator.py  →  ~/.agentecflow/commands/lib/id_generator.py
+installer/core/commands/task-create.md  →  ~/.agentecflow/commands/task-create.md
 ```
 
 When Python code in `task-create.md` executes:
@@ -443,7 +443,7 @@ After implementation:
 
 ## 📊 Summary
 
-Successfully fixed critical launch blocker preventing curl installations from working due to incorrect Python import paths. All imports updated from `installer.global.lib.X` to `lib.X`, repository path resolution code removed, and install script enhanced to copy library files correctly.
+Successfully fixed critical launch blocker preventing curl installations from working due to incorrect Python import paths. All imports updated from `installer.core.lib.X` to `lib.X`, repository path resolution code removed, and install script enhanced to copy library files correctly.
 
 ## 📈 Deliverables
 
@@ -501,12 +501,12 @@ task_id = generate_task_id(prefix='TEST')
 ### Challenges Faced
 1. **Hidden Imports**: Had to search multiple times to find all instances
 2. **Subdirectory Copying**: Install script needed enhancement for mcp/ folder
-3. **Global vs Commands Lib**: Discovered installer/global/lib/ wasn't being copied
+3. **Global vs Commands Lib**: Discovered installer/core/lib/ wasn't being copied
 
 ### Solutions Applied
 1. **Thorough Search**: Used multiple grep patterns to find all imports
 2. **Enhanced Install Script**: Added loop to copy subdirectories recursively
-3. **Dual-Layer Copying**: Copy from both installer/global/lib/ and installer/global/commands/lib/
+3. **Dual-Layer Copying**: Copy from both installer/core/lib/ and installer/core/commands/lib/
 
 ### Improvements for Next Time
 1. **Pre-Search**: Could have done more comprehensive search upfront

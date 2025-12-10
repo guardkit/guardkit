@@ -252,14 +252,14 @@ tests/
 ## Key Files to Modify
 
 ### Implementation Files (3 files)
-1. `/installer/global/commands/lib/review_modes.py`
+1. `/installer/core/commands/lib/review_modes.py`
    - `FullReviewDisplay._display_implementation_order()` - Add None handling
    - `FullReviewHandler._apply_modifications_and_return()` - Add complexity warning
 
-2. `/installer/global/commands/lib/pager_display.py`
+2. `/installer/core/commands/lib/pager_display.py`
    - `PagerDisplay.format_section()` - Add None handling
 
-3. `/installer/global/commands/lib/qa_manager.py`
+3. `/installer/core/commands/lib/qa_manager.py`
    - `QAManager.run_qa_session()` - Add question limit
 
 ### Test Files (2 files)

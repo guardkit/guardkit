@@ -70,15 +70,15 @@ Review findings from TASK-REV-FB49:
 
 ### Files to Modify
 
-1. `installer/global/lib/agent_enhancement/applier.py`
+1. `installer/core/lib/agent_enhancement/applier.py`
    - Add `_section_exists()` method with fuzzy matching
    - Update `_merge_content()` to use new method
 
-2. `installer/global/lib/agent_enhancement/enhancer.py`
+2. `installer/core/lib/agent_enhancement/enhancer.py`
    - Improve `json.JSONDecodeError` handler (lines 401-405)
    - Add context extraction and actionable suggestions
 
-3. `installer/global/lib/agent_enhancement/parser.py`
+3. `installer/core/lib/agent_enhancement/parser.py`
    - Add `_attempt_partial_recovery()` method
    - Integrate into `parse()` as final fallback
 

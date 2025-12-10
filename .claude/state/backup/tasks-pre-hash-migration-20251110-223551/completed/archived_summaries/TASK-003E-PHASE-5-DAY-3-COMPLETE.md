@@ -89,7 +89,7 @@ Followed Phase 2.5B architectural review recommendations (score 73/100):
 
 ### Files Modified (1 file)
 
-#### 1. `installer/global/commands/lib/pager_display.py`
+#### 1. `installer/core/commands/lib/pager_display.py`
 **Changes**: Added `format_plan_section()` function for empty section handling
 
 **Function added**:

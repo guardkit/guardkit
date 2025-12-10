@@ -43,7 +43,7 @@
 | `test_required_directories_exist` | Verify all subdirectories (templates/*, agents) exist | ✅ PASS |
 
 **Coverage**:
-- ✅ Root directory: `/installer/global/templates/maui-appshell/`
+- ✅ Root directory: `/installer/core/templates/maui-appshell/`
 - ✅ Configuration files: 4/4 (manifest.json, settings.json, CLAUDE.md, README.md)
 - ✅ Template directories: 5/5 (domain, repository, service, presentation, testing)
 - ✅ Agent directory: 1/1
@@ -271,7 +271,7 @@ As per MANDATORY RULE #1 from `test-orchestrator.md`, the following compilation 
 
 ### Directory Structure Verification
 ```
-✅ installer/global/templates/maui-appshell/
+✅ installer/core/templates/maui-appshell/
    ✅ manifest.json (valid JSON)
    ✅ settings.json (valid JSON)
    ✅ CLAUDE.md (valid Markdown)
@@ -449,4 +449,4 @@ The template structure meets all quality requirements and is ready for:
 **Test Report Generated**: 2025-10-12
 **Report File**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/TEST-REPORT-TASK-011A.md`
 **Test Suite**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/tests/templates/test_maui_appshell_structure.py`
-**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-appshell/`
+**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-appshell/`

@@ -211,7 +211,7 @@ The fix appears to be working - agents are being enhanced with AI-powered conten
    This agent failed AI enhancement and fell back to static (evident from generic boundaries).
 
 2. **Fix response file naming bug**
-   Create task to fix `installer/global/lib/agent_bridge/invoker.py`:
+   Create task to fix `installer/core/lib/agent_bridge/invoker.py`:
    - Orchestrator should look for `.agent-response-phase8.json` when using phase 8 invoker
    - OR: Agent should write to `.agent-response.json` regardless of phase
 

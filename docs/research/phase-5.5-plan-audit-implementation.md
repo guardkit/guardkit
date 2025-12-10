@@ -47,7 +47,7 @@ Task State: IN_REVIEW
 ### 1.2 Module Structure
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── plan_audit.py                 # Core audit logic (NEW)
 ├── plan_persistence.py           # Load saved plans (EXISTING)
 ├── phase_execution.py            # Orchestrate phases (MODIFY)
@@ -83,7 +83,7 @@ graph TD
 
 ### 2.1 Files to Create
 
-#### File 1: `installer/global/commands/lib/plan_audit.py` (Core Module)
+#### File 1: `installer/core/commands/lib/plan_audit.py` (Core Module)
 
 **Purpose:** Core audit logic for comparing planned vs actual implementation
 
@@ -636,7 +636,7 @@ __all__ = [
 
 ---
 
-#### File 2: `installer/global/commands/lib/metrics/plan_audit_metrics.py` (Metrics Tracking)
+#### File 2: `installer/core/commands/lib/metrics/plan_audit_metrics.py` (Metrics Tracking)
 
 **Purpose:** Track audit outcomes for complexity model improvement
 
@@ -755,7 +755,7 @@ __all__ = ["PlanAuditMetricsTracker"]
 
 ### 2.2 Files to Modify
 
-#### Modification 1: `installer/global/commands/lib/phase_execution.py`
+#### Modification 1: `installer/core/commands/lib/phase_execution.py`
 
 **Changes:**
 1. Add Phase 5.5 to `execute_implementation_phases()` function
@@ -976,7 +976,7 @@ def _find_task_file(task_id: str) -> Optional[Path]:
 
 ---
 
-#### Modification 2: `installer/global/commands/task-work.md`
+#### Modification 2: `installer/core/commands/task-work.md`
 
 **Changes:**
 1. Add Phase 5.5 description to phase list
@@ -1176,7 +1176,7 @@ None - uses existing Python standard library and project modules.
 
 ### 2.5 Documentation Updates
 
-#### File 1: `installer/global/commands/task-work.md` (Modified)
+#### File 1: `installer/core/commands/task-work.md` (Modified)
 - Add Phase 5.5 section (see Modification 2 above)
 - Update phase list diagram
 - Add audit decision examples

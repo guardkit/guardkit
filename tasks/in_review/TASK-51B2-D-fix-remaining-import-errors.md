@@ -38,12 +38,12 @@ complexity_evaluation:
 
 After TASK-51B2-C fixed import errors in `codebase_analyzer/` directory, `/template-create` still fails with module import errors. Investigation revealed 13 additional files across multiple directories still using `from lib.` imports that fail when running from user's project directory.
 
-**Root Cause**: Python reserved keyword `global` in path `installer.global.lib` causes `SyntaxError: invalid syntax` when used in import statements.
+**Root Cause**: Python reserved keyword `global` in path `installer.core.lib` causes `SyntaxError: invalid syntax` when used in import statements.
 
 **Error Example**:
 ```
 File "<string>", line 1
-  from installer.global.commands.lib import template_create_orchestrator
+  from installer.core.commands.lib import template_create_orchestrator
                           ^^^^^^
 SyntaxError: invalid syntax
 ```
@@ -62,17 +62,17 @@ SyntaxError: invalid syntax
 **Files Modified**: 11 files across 5 directories
 
 ### Modified Files:
-1. installer/global/lib/agent_bridge/__init__.py
-2. installer/global/lib/template_generator/__init__.py
-3. installer/global/lib/template_generator/template_generator.py
-4. installer/global/lib/agent_orchestration/__init__.py
-5. installer/global/lib/agent_orchestration/agent_orchestration.py
-6. installer/global/lib/agent_orchestration/external_discovery.py
-7. installer/global/lib/settings_generator/__init__.py
-8. installer/global/lib/settings_generator/generator.py
-9. installer/global/lib/settings_generator/validator.py
-10. installer/global/lib/codebase_analyzer/serializer.py
-11. installer/global/lib/codebase_analyzer/response_parser.py
+1. installer/core/lib/agent_bridge/__init__.py
+2. installer/core/lib/template_generator/__init__.py
+3. installer/core/lib/template_generator/template_generator.py
+4. installer/core/lib/agent_orchestration/__init__.py
+5. installer/core/lib/agent_orchestration/agent_orchestration.py
+6. installer/core/lib/agent_orchestration/external_discovery.py
+7. installer/core/lib/settings_generator/__init__.py
+8. installer/core/lib/settings_generator/generator.py
+9. installer/core/lib/settings_generator/validator.py
+10. installer/core/lib/codebase_analyzer/serializer.py
+11. installer/core/lib/codebase_analyzer/response_parser.py
 
 **Pattern Applied**:
 ```python
@@ -81,32 +81,32 @@ from lib.codebase_analyzer.models import CodebaseAnalysis
 
 # AFTER
 import importlib
-_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
 CodebaseAnalysis = _models_module.CodebaseAnalysis
 ```
 
 ## Affected Files
 
 ### Directory: agent_bridge/
-- `installer/global/lib/agent_bridge/__init__.py` ✅
+- `installer/core/lib/agent_bridge/__init__.py` ✅
 
 ### Directory: template_generator/
-- `installer/global/lib/template_generator/__init__.py` ✅
-- `installer/global/lib/template_generator/template_generator.py` ✅
+- `installer/core/lib/template_generator/__init__.py` ✅
+- `installer/core/lib/template_generator/template_generator.py` ✅
 
 ### Directory: agent_orchestration/
-- `installer/global/lib/agent_orchestration/__init__.py` ✅
-- `installer/global/lib/agent_orchestration/agent_orchestration.py` ✅
-- `installer/global/lib/agent_orchestration/external_discovery.py` ✅
+- `installer/core/lib/agent_orchestration/__init__.py` ✅
+- `installer/core/lib/agent_orchestration/agent_orchestration.py` ✅
+- `installer/core/lib/agent_orchestration/external_discovery.py` ✅
 
 ### Directory: settings_generator/
-- `installer/global/lib/settings_generator/__init__.py` ✅
-- `installer/global/lib/settings_generator/generator.py` ✅
-- `installer/global/lib/settings_generator/validator.py` ✅
+- `installer/core/lib/settings_generator/__init__.py` ✅
+- `installer/core/lib/settings_generator/generator.py` ✅
+- `installer/core/lib/settings_generator/validator.py` ✅
 
 ### Directory: codebase_analyzer/ (remaining issues)
-- `installer/global/lib/codebase_analyzer/serializer.py` ✅
-- `installer/global/lib/codebase_analyzer/response_parser.py` ✅
+- `installer/core/lib/codebase_analyzer/serializer.py` ✅
+- `installer/core/lib/codebase_analyzer/response_parser.py` ✅
 
 ## Testing Results
 

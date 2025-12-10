@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 import pytest
 
-# Add the installer/global/commands directory to the path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "installer" / "global" / "commands"))
+# Add the installer/core/commands directory to the path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "installer" / "core" / "commands"))
 
 from lib.clarification.core import Question, ClarificationMode
 from lib.clarification.generators.planning_generator import (

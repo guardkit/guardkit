@@ -52,8 +52,8 @@ Update `docs/guides/agent-discovery-guide.md`:
 ### 4. Update Template Documentation
 
 Ensure template READMEs document their agents:
-- `installer/global/templates/react-typescript/README.md`
-- `installer/global/templates/nextjs-fullstack/README.md`
+- `installer/core/templates/react-typescript/README.md`
+- `installer/core/templates/nextjs-fullstack/README.md`
 
 ## Acceptance Criteria
 
@@ -91,13 +91,13 @@ Ensure template READMEs document their agents:
    - Updated MCP section - Design MCPs now "Coming Soon"
    - Updated Design System Detection section to "Coming Soon"
 
-5. **installer/global/templates/react-typescript/README.md**
+5. **installer/core/templates/react-typescript/README.md**
    - Updated agent list from 3 to 4 agents (added react-state-specialist)
 
-6. **installer/global/templates/nextjs-fullstack/README.md**
+6. **installer/core/templates/nextjs-fullstack/README.md**
    - Updated agent list from 3 to 4 agents (added react-state-specialist)
 
-7. **installer/global/templates/react-fastapi-monorepo/README.md**
+7. **installer/core/templates/react-fastapi-monorepo/README.md**
    - Added new Specialized AI Agents section with 3 agents
 
 ### Validation Results

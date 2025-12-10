@@ -56,7 +56,7 @@ The reported 35 failures have been resolved through two key fixes:
 #### Fix #1: RecursionError Resolution (20 failures)
 **Problem**: The `visited` parameter in `_serialize_value()` was not threaded through recursive calls.
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py` (lines 1755-1855)
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py` (lines 1755-1855)
 
 **Solution Applied**:
 ```python
@@ -363,7 +363,7 @@ The code is production-ready with:
 
 **Test Analysis**: [TASK-PHASE-7-5-FIX-FOUNDATION-test-analysis.md]
 **JSON Results**: [TASK-PHASE-7-5-FIX-FOUNDATION-test-results.json]
-**Implementation**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Implementation**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Tests**: `tests/unit/lib/template_creation/`
 
 ---

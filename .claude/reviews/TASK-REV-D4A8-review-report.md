@@ -38,7 +38,7 @@
 
 ### Finding 1: TechnologyInfo Schema Incomplete (CRITICAL)
 
-**Location**: [models.py:64-93](installer/global/lib/codebase_analyzer/models.py#L64-L93)
+**Location**: [models.py:64-93](installer/core/lib/codebase_analyzer/models.py#L64-L93)
 
 **Evidence**:
 ```python
@@ -84,7 +84,7 @@ class TechnologyInfo(BaseModel):
 
 ### Finding 2: ConfidenceScore Validation Too Strict (HIGH)
 
-**Location**: [models.py:30-51](installer/global/lib/codebase_analyzer/models.py#L30-L51)
+**Location**: [models.py:30-51](installer/core/lib/codebase_analyzer/models.py#L30-L51)
 
 **Evidence**:
 ```python
@@ -118,7 +118,7 @@ Value error, Medium percentage (70-89) requires MEDIUM confidence level
 
 ### Finding 3: Phase Resume Routing Bug (CRITICAL)
 
-**Location**: [template_create_orchestrator.py:2146-2176](installer/global/commands/lib/template_create_orchestrator.py#L2146-L2176)
+**Location**: [template_create_orchestrator.py:2146-2176](installer/core/commands/lib/template_create_orchestrator.py#L2146-L2176)
 
 **Evidence**:
 ```python
@@ -174,7 +174,7 @@ else:
 
 ### Finding 4: Entity Detection False Positives (HIGH)
 
-**Location**: [pattern_matcher.py:149-211](installer/global/lib/template_generator/pattern_matcher.py#L149-L211)
+**Location**: [pattern_matcher.py:149-211](installer/core/lib/template_generator/pattern_matcher.py#L149-L211)
 
 **Evidence**:
 ```
@@ -212,7 +212,7 @@ The TASK-FIX-6855 guard clause in `identify_entity()` calls `identify_crud_opera
 
 ### Finding 5: Template Naming Malformed (HIGH)
 
-**Location**: [completeness_validator.py](installer/global/lib/template_generator/completeness_validator.py)
+**Location**: [completeness_validator.py](installer/core/lib/template_generator/completeness_validator.py)
 
 **Evidence**:
 ```

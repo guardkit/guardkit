@@ -69,33 +69,33 @@ Taskwright focuses on task workflow with quality gates. Requirements-specific ag
 cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
 
 # Find requirements-related agents
-find installer/global/agents -name "*requirements*.md"
-find installer/global/agents -name "*bdd*.md"
+find installer/core/agents -name "*requirements*.md"
+find installer/core/agents -name "*bdd*.md"
 ```
 
 ### 2. Remove Agent Files
 
 ```bash
-rm -f installer/global/agents/requirements-analyst.md
-rm -f installer/global/agents/bdd-generator.md
+rm -f installer/core/agents/requirements-analyst.md
+rm -f installer/core/agents/bdd-generator.md
 ```
 
 ### 3. Verify Remaining Agents
 
 ```bash
 # List remaining agents
-ls installer/global/agents/*.md
+ls installer/core/agents/*.md
 
 # Count should be 15
-ls -1 installer/global/agents/*.md | wc -l
+ls -1 installer/core/agents/*.md | wc -l
 ```
 
 ### 4. Check for References
 
 ```bash
 # Search for references to removed agents in remaining files
-grep -r "requirements-analyst" installer/global/agents/
-grep -r "bdd-generator" installer/global/agents/
+grep -r "requirements-analyst" installer/core/agents/
+grep -r "bdd-generator" installer/core/agents/
 
 # Should return empty
 ```

@@ -9,7 +9,7 @@ AI prompt didn't emphasize that example_files are for template generation, only 
 
 #### 1. Enhanced AI Prompt (prompt_builder.py)
 
-**File**: `installer/global/lib/codebase_analyzer/prompt_builder.py`
+**File**: `installer/core/lib/codebase_analyzer/prompt_builder.py`
 
 **Changes**:
 - **Lines 268-339**: Expanded `example_files` section from 1 to 10 diverse examples
@@ -40,7 +40,7 @@ These files will become `.template` files with placeholders like {{ProjectName}}
 
 #### 2. Increased File Sampling (template_create_orchestrator.py)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Change**: Line 364-365
 ```python
@@ -96,8 +96,8 @@ tests/unit/test_template_create_orchestrator.py - 18 tests PASSED ✅
 
 #### Code Quality
 ```bash
-python3 -m py_compile installer/global/lib/codebase_analyzer/prompt_builder.py ✅
-python3 -m py_compile installer/global/commands/lib/template_create_orchestrator.py ✅
+python3 -m py_compile installer/core/lib/codebase_analyzer/prompt_builder.py ✅
+python3 -m py_compile installer/core/commands/lib/template_create_orchestrator.py ✅
 python3 -m py_compile tests/integration/test_ai_native_template_creation.py ✅
 ```
 
@@ -105,12 +105,12 @@ python3 -m py_compile tests/integration/test_ai_native_template_creation.py ✅
 
 ### Files Modified
 
-1. `installer/global/lib/codebase_analyzer/prompt_builder.py`
+1. `installer/core/lib/codebase_analyzer/prompt_builder.py`
    - Expanded example_files from 1 to 10 examples
    - Added 50-line "Template File Selection Guidelines" section
    - Total changes: ~130 lines added
 
-2. `installer/global/commands/lib/template_create_orchestrator.py`
+2. `installer/core/commands/lib/template_create_orchestrator.py`
    - Changed max_files from 10 to 30
    - Added explanatory comment
    - Total changes: 2 lines modified

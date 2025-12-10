@@ -129,7 +129,7 @@ All 3 error scenarios validated:
 1. ✅ `docs/guides/bdd-workflow-for-agentic-systems.md`
 2. ✅ `CLAUDE.md` (root)
 3. ✅ `.claude/CLAUDE.md` (project)
-4. ✅ `installer/global/commands/task-work.md`
+4. ✅ `installer/core/commands/task-work.md`
 
 **Validation Results**:
 - All error messages match implementation ✅
@@ -350,7 +350,7 @@ The following scenarios require RequireKit to be installed and were deferred:
 - [BDD Workflow Guide](../../../docs/guides/bdd-workflow-for-agentic-systems.md)
 - [CLAUDE.md (Root)](../../../CLAUDE.md)
 - [.claude/CLAUDE.md (Project)](../../../.claude/CLAUDE.md)
-- [task-work.md Specification](../../../installer/global/commands/task-work.md)
+- [task-work.md Specification](../../../installer/core/commands/task-work.md)
 
 **Related Tasks**:
 - [TASK-BDD-002](./TASK-BDD-002-create-bdd-documentation.md)

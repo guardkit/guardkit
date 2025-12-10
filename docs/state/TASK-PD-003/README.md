@@ -72,13 +72,13 @@ This directory contains comprehensive implementation planning documentation for 
 
 ### What Gets Changed
 
-**File 1**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File 1**: `installer/core/lib/agent_enhancement/enhancer.py`
 - Add 3 fields + 1 property to EnhancementResult dataclass
 - Add `split_output` parameter to enhance() method
 - Implement branching logic for split vs single-file modes
 - Update docstring with new behavior
 
-**File 2**: `installer/global/commands/agent-enhance.md`
+**File 2**: `installer/core/commands/agent-enhance.md`
 - Update output format examples (split + single-file)
 - Add usage examples for both modes
 - Document new command-line flags
@@ -156,10 +156,10 @@ Before starting implementation, verify these methods exist:
 
 ```bash
 # Check TASK-PD-001 completion
-grep -n "def apply_with_split" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/applier.py
+grep -n "def apply_with_split" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/applier.py
 
 # Check TASK-PD-002 completion
-grep -n "def generate_loading_instruction" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/applier.py
+grep -n "def generate_loading_instruction" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/applier.py
 ```
 
 Both commands must return a result line number. If not found, dependencies are incomplete.
@@ -167,8 +167,8 @@ Both commands must return a result line number. If not found, dependencies are i
 ## File Locations
 
 ### Implementation Files
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/enhancer.py`
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/agent-enhance.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/enhancer.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/agent-enhance.md`
 
 ### Test Files to Create
 - `/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_enhancer_split_output.py`

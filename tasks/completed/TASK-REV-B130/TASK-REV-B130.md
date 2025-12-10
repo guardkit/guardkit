@@ -106,10 +106,10 @@ Investigate the feasibility and value of introducing a "clarifying questions" ph
 
 ## Related Files
 
-- `installer/global/commands/task-work.md` - Main task-work command
+- `installer/core/commands/task-work.md` - Main task-work command
 - `.claude/commands/task-work-specification.md` - Internal spec
 - `docs/workflows/complexity-management-workflow.md` - Existing checkpoint patterns
-- `installer/global/commands/task-review.md` - Interactive checkpoint patterns
+- `installer/core/commands/task-review.md` - Interactive checkpoint patterns
 
 ## External References
 

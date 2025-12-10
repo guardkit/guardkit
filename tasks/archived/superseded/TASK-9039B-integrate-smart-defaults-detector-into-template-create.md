@@ -61,7 +61,7 @@ TASK-9039 created a high-quality smart defaults detector module with:
 
 ### Phase 1: Orchestrator Integration (1.5 hours)
 
-**File**: `installer/global/lib/codebase_analyzer/template_create_orchestrator.py`
+**File**: `installer/core/lib/codebase_analyzer/template_create_orchestrator.py`
 
 **Changes**:
 1. Import `SmartDefaultsDetector`, `LanguageDetector`, `FrameworkDetector`, `ConfigResolver`
@@ -89,7 +89,7 @@ TASK-9039 created a high-quality smart defaults detector module with:
 
 ### Phase 2: Documentation Update (1 hour)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Changes**:
 1. Update command description (non-interactive by default)
@@ -129,8 +129,8 @@ TASK-9039 created a high-quality smart defaults detector module with:
 
 ## Files to Modify
 
-1. `installer/global/lib/codebase_analyzer/template_create_orchestrator.py` (+50 LOC)
-2. `installer/global/commands/template-create.md` (+100 lines)
+1. `installer/core/lib/codebase_analyzer/template_create_orchestrator.py` (+50 LOC)
+2. `installer/core/commands/template-create.md` (+100 lines)
 3. `tests/integration/test_template_create_integration.py` (+300 LOC) - NEW
 
 **Total**: ~450 LOC

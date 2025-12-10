@@ -265,7 +265,7 @@ This enhancement addresses patterns observed in production usage where:
 
 ### Phase 1: Add Decision Detection to Planning Phase
 
-**File**: `installer/global/commands/lib/task_work_orchestrator.py` (or equivalent)
+**File**: `installer/core/commands/lib/task_work_orchestrator.py` (or equivalent)
 
 **Location**: Phase 2 (Implementation Planning) - after plan is generated but before Phase 2.8 checkpoint
 
@@ -642,18 +642,18 @@ def test_full_workflow_with_decision_points():
 
 ## Files to Create (Estimated)
 
-1. `installer/global/commands/lib/decision_detection.py` - Decision point detection logic
-2. `installer/global/commands/lib/decision_capture.py` - Interactive decision capture workflow
+1. `installer/core/commands/lib/decision_detection.py` - Decision point detection logic
+2. `installer/core/commands/lib/decision_capture.py` - Interactive decision capture workflow
 3. `tests/unit/test_decision_detection.py` - Unit tests for detection
 4. `tests/unit/test_decision_capture.py` - Unit tests for capture workflow
 5. `tests/integration/test_decision_workflow.py` - End-to-end integration tests
 
 ## Files to Modify (Estimated)
 
-1. `installer/global/commands/lib/task_work_orchestrator.py` - Add decision detection to Phase 2
-2. `installer/global/commands/lib/phase_28_checkpoint.py` - Enhance checkpoint display and options
-3. `installer/global/commands/lib/task_file_manager.py` - Add decision points to frontmatter
-4. `installer/global/commands/task-work.md` - Update documentation
+1. `installer/core/commands/lib/task_work_orchestrator.py` - Add decision detection to Phase 2
+2. `installer/core/commands/lib/phase_28_checkpoint.py` - Enhance checkpoint display and options
+3. `installer/core/commands/lib/task_file_manager.py` - Add decision points to frontmatter
+4. `installer/core/commands/task-work.md` - Update documentation
 5. `docs/guides/agentecflow-lite-workflow.md` - Document decision handling
 
 ---
@@ -733,6 +733,6 @@ def test_full_workflow_with_decision_points():
 ## References
 
 - Analysis Document: `docs/research/ANALYSIS-human-in-the-loop-pattern.md`
-- Current Phase 2.8: `installer/global/commands/lib/phase_28_checkpoint.py` (if exists)
+- Current Phase 2.8: `installer/core/commands/lib/phase_28_checkpoint.py` (if exists)
 - Agentecflow Lite Guide: `docs/guides/agentecflow-lite-workflow.md`
-- Task Work Command: `installer/global/commands/task-work.md`
+- Task Work Command: `installer/core/commands/task-work.md`

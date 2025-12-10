@@ -103,12 +103,12 @@ Successfully updated the `agent-content-enhancer` agent to automatically generat
 ### Agent-Content-Enhancer Changes
 ```bash
 # Boundaries sections exist
-$ grep -n "## Boundaries" installer/global/agents/agent-content-enhancer.md
+$ grep -n "## Boundaries" installer/core/agents/agent-content-enhancer.md
 73:## Boundaries
 413:## Boundaries
 
 # Boundary validation exists
-$ grep -n "boundary_sections" installer/global/agents/agent-content-enhancer.md
+$ grep -n "boundary_sections" installer/core/agents/agent-content-enhancer.md
 184:  boundary_sections: ["ALWAYS", "NEVER", "ASK"] ✅
 273:        "boundary_sections": {"value": ["ALWAYS", "NEVER", "ASK"], "threshold": 3, "status": "PASS"},
 323:  boundary_sections: [<sections_found>] <status_emoji>
@@ -141,7 +141,7 @@ $ grep -n "boundary_sections" installer/global/agents/agent-content-enhancer.md
 
 ## Files Modified
 
-1. **installer/global/agents/agent-content-enhancer.md**
+1. **installer/core/agents/agent-content-enhancer.md**
    - Lines 73-134: Boundaries section with ALWAYS/NEVER/ASK rules
    - Lines 184: Validation report example with boundary_sections
    - Lines 273: Validation schema with boundary checks

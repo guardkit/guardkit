@@ -56,7 +56,7 @@ We are approaching **public launch** and have discovered critical installation i
 ### Issue 2: Python Import Path Failures (CURRENT)
 **Problem**: After curl installation, `/task-create` command fails in Claude Code with Python import errors.
 
-**Root Cause**: Documentation and code use `from installer.global.lib.X` imports, but:
+**Root Cause**: Documentation and code use `from installer.core.lib.X` imports, but:
 - `global` is a Python reserved keyword (causes syntax errors)
 - The `installer/` directory doesn't exist in `~/.agentecflow/` after installation
 - Python doesn't know to look in the repository path from marker file
@@ -83,7 +83,7 @@ We are approaching **public launch** and have discovered critical installation i
 
 **Analysis Required**:
 - Audit all Python imports in both Taskwright and RequireKit
-- Verify `installer.global.lib` vs `lib` vs path manipulation approaches
+- Verify `installer.core.lib` vs `lib` vs path manipulation approaches
 - Test proposed solution on fresh curl installation
 - Ensure solution works from both Claude Code and shell
 
@@ -159,8 +159,8 @@ We are approaching **public launch** and have discovered critical installation i
 ### Taskwright
 ```
 installer/scripts/install.sh                    # Installation script
-installer/global/lib/id_generator.py            # Example Python module with import issues
-installer/global/commands/task-create.md        # Command with Python import documentation
+installer/core/lib/id_generator.py            # Example Python module with import issues
+installer/core/commands/task-create.md        # Command with Python import documentation
 tasks/backlog/TASK-FIX-A7B3-*.md               # Fix task for Python imports
 .agentecflow/taskwright.marker.json             # Marker file with repo_path
 CLAUDE.md                                        # Installation documentation

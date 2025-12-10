@@ -70,13 +70,13 @@ Source: `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_anal
 
 **Evidence from Code**:
 
-`installer/global/lib/codebase_analyzer/ai_analyzer.py` (line 119):
+`installer/core/lib/codebase_analyzer/ai_analyzer.py` (line 119):
 ```python
 file_collector = FileCollector(codebase_path, max_files=self.max_files)
 file_samples = file_collector.collect_samples()
 ```
 
-`installer/global/commands/lib/template_create_orchestrator.py` (line 242):
+`installer/core/commands/lib/template_create_orchestrator.py` (line 242):
 ```python
 analyzer = CodebaseAnalyzer(max_files=10)
 ```
@@ -396,7 +396,7 @@ DELETE /products/{id}    → DeleteProductHandler → ??? (No endpoint to call i
 
 **Evidence Sources**:
 - Template creation output: `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/template_creation_output.md`
-- Generated template: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/ardalis-clean-architecture`
+- Generated template: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/ardalis-clean-architecture`
 - Source repository: `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/CleanArchitecture-ardalis`
 
 **Related Tasks**:

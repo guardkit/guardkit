@@ -43,7 +43,7 @@ The `/template-create` command currently uses a complex AI-orchestration impleme
 
 ### Current `/template-create` Implementation
 
-**Located at**: `installer/global/commands/template-create.md` and `installer/global/commands/lib/template_create_orchestrator.py`
+**Located at**: `installer/core/commands/template-create.md` and `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Architecture**:
 - 8-phase orchestration workflow
@@ -157,8 +157,8 @@ Critically evaluate whether pivoting from the current AI-orchestration implement
 Review the /template-create command architecture and evaluate a proposed pivot.
 
 CURRENT IMPLEMENTATION:
-- File: installer/global/commands/template-create.md (command spec)
-- File: installer/global/commands/lib/template_create_orchestrator.py (orchestrator)
+- File: installer/core/commands/template-create.md (command spec)
+- File: installer/core/commands/lib/template_create_orchestrator.py (orchestrator)
 - Architecture: 8-phase orchestration with agent bridge, checkpoint-resume, exit code 42
 
 PROPOSED PIVOT:
@@ -213,9 +213,9 @@ OUTPUT: Architectural review findings in markdown format
 Review the code quality of /template-create implementation and evaluate pivot approach.
 
 FILES TO REVIEW:
-- installer/global/commands/lib/template_create_orchestrator.py
-- Related: installer/global/lib/agent_bridge/*.py
-- Related: installer/global/lib/template_creation/*.py
+- installer/core/commands/lib/template_create_orchestrator.py
+- Related: installer/core/lib/agent_bridge/*.py
+- Related: installer/core/lib/template_creation/*.py
 
 CODE QUALITY ANALYSIS:
 1. Complexity metrics
@@ -430,8 +430,8 @@ OUTPUT: Debugging and reliability analysis with pivot recommendations
 ### Architecture
 
 #### Command Implementation
-- Location: `installer/global/commands/create-template-task.md`
-- Python: `installer/global/commands/lib/create_template_task.py`
+- Location: `installer/core/commands/create-template-task.md`
+- Python: `installer/core/commands/lib/create_template_task.py`
 - Responsibilities:
   - Validate input arguments
   - Generate task description from template
@@ -582,13 +582,13 @@ This is a research and analysis task with no code implementation, so testing foc
 ### Key Files to Analyze
 
 **Command Specification**:
-- `installer/global/commands/template-create.md` (command documentation)
+- `installer/core/commands/template-create.md` (command documentation)
 
 **Implementation**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (main orchestrator)
-- `installer/global/lib/agent_bridge/invoker.py` (agent invocation)
-- `installer/global/lib/agent_bridge/state_manager.py` (state persistence)
-- `installer/global/lib/template_creation/*.py` (phase implementations)
+- `installer/core/commands/lib/template_create_orchestrator.py` (main orchestrator)
+- `installer/core/lib/agent_bridge/invoker.py` (agent invocation)
+- `installer/core/lib/agent_bridge/state_manager.py` (state persistence)
+- `installer/core/lib/template_creation/*.py` (phase implementations)
 
 **Completed Tasks**:
 - `.claude/state/backup/tasks-pre-hash-migration-20251110-223551/completed/TASK-057/`

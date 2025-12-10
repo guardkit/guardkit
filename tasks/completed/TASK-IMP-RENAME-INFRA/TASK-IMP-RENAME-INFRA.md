@@ -48,7 +48,7 @@ Part of the GuardKit → GuardKit rename initiative. This task updates the criti
 
 | Current | New |
 |---------|-----|
-| `installer/global/templates/guardkit.marker.json` | `installer/global/templates/guardkit.marker.json` |
+| `installer/core/templates/guardkit.marker.json` | `installer/core/templates/guardkit.marker.json` |
 | Runtime: `~/.agentecflow/guardkit.marker.json` | Runtime: `~/.agentecflow/guardkit.marker.json` |
 
 **Content Changes**:
@@ -68,8 +68,8 @@ Part of the GuardKit → GuardKit rename initiative. This task updates the criti
 ### 4. Update Detection Logic
 
 Files with marker detection:
-- `installer/global/commands/lib/feature_detection.py`
-- `installer/global/commands/lib/distribution_helpers.py`
+- `installer/core/commands/lib/feature_detection.py`
+- `installer/core/commands/lib/distribution_helpers.py`
 
 ## Acceptance Criteria
 
@@ -100,9 +100,9 @@ cat ~/.agentecflow/guardkit.marker.json
 
 - `installer/scripts/install.sh` (63 occurrences)
 - `installer/scripts/init-project.sh` (16 occurrences)
-- `installer/global/templates/guardkit.marker.json` → rename
-- `installer/global/commands/lib/feature_detection.py`
-- `installer/global/commands/lib/distribution_helpers.py`
+- `installer/core/templates/guardkit.marker.json` → rename
+- `installer/core/commands/lib/feature_detection.py`
+- `installer/core/commands/lib/distribution_helpers.py`
 
 ## Estimated Effort
 

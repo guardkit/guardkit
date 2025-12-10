@@ -43,39 +43,39 @@
 
 ## Files Modified
 
-1. **installer/global/templates/default/CLAUDE.md**
+1. **installer/core/templates/default/CLAUDE.md**
    - Removed requirements workflow sections
    - Updated to 3-command task system
    - Simplified quick start examples
 
-2. **installer/global/templates/react/CLAUDE.md**
+2. **installer/core/templates/react/CLAUDE.md**
    - Added task workflow section
    - Enhanced with state management patterns
    - Removed requirements references
 
-3. **installer/global/templates/typescript-api/CLAUDE.md**
+3. **installer/core/templates/typescript-api/CLAUDE.md**
    - Replaced requirements workflow with unified task workflow
    - Updated implementation steps
    - Cleaned workflow integration section
 
-4. **installer/global/templates/fullstack/CLAUDE.md**
+4. **installer/core/templates/fullstack/CLAUDE.md**
    - Updated from epic/feature system to unified task workflow
    - Simplified development workflow section
    - Retained full-stack testing guidance
 
 ## Files Verified (No Changes Needed)
 
-1. **installer/global/templates/python/CLAUDE.md** - Already clean
-2. **installer/global/templates/maui-appshell/CLAUDE.md** - Already clean
-3. **installer/global/templates/maui-navigationpage/CLAUDE.md** - Already clean
-4. **installer/global/templates/dotnet-microservice/CLAUDE.md** - Already clean
+1. **installer/core/templates/python/CLAUDE.md** - Already clean
+2. **installer/core/templates/maui-appshell/CLAUDE.md** - Already clean
+3. **installer/core/templates/maui-navigationpage/CLAUDE.md** - Already clean
+4. **installer/core/templates/dotnet-microservice/CLAUDE.md** - Already clean
 
 ## Verification Results
 
 ### Grep Verification
 ```bash
 # Command executed:
-for template in installer/global/templates/*/CLAUDE.md; do
+for template in installer/core/templates/*/CLAUDE.md; do
   grep -i "/gather-requirements|/formalize-ears|/generate-bdd|/epic-create|/feature-create" "$template"
 done
 

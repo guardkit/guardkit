@@ -56,7 +56,7 @@ cd ~/conductor/guardkit-artifact-filter
 **Output**: `exclusion_patterns.py` module with filtering logic
 
 **Deliverables**:
-- `installer/global/lib/codebase_analyzer/exclusion_patterns.py`
+- `installer/core/lib/codebase_analyzer/exclusion_patterns.py`
 - `tests/unit/codebase_analyzer/test_exclusion_patterns.py`
 - Modified `stratified_sampler.py`
 
@@ -76,8 +76,8 @@ cd ~/conductor/guardkit-agent-bridge
 **Output**: Complete checkpoint-resume infrastructure
 
 **Deliverables**:
-- `installer/global/lib/agent_bridge/checkpoint_manager.py`
-- `installer/global/lib/agent_bridge/mock_invoker.py`
+- `installer/core/lib/agent_bridge/checkpoint_manager.py`
+- `installer/core/lib/agent_bridge/mock_invoker.py`
 - `tests/unit/agent_bridge/test_checkpoint_manager.py`
 - `tests/integration/test_agent_workflow.py`
 

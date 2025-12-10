@@ -21,7 +21,7 @@ if str(repo_root) not in sys.path:
 
 # Now import using importlib to avoid 'global' keyword issue
 import importlib
-_orchestrator_module = importlib.import_module('installer.global.commands.lib.template_create_orchestrator')
+_orchestrator_module = importlib.import_module('installer.core.commands.lib.template_create_orchestrator')
 TemplateCreateOrchestrator = _orchestrator_module.TemplateCreateOrchestrator
 OrchestrationConfig = _orchestrator_module.OrchestrationConfig
 

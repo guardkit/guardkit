@@ -15,23 +15,23 @@ Successfully implemented optimal model configuration across 17 global agents, ba
 
 ### Files Modified (17 agent files)
 
-1. ✅ `installer/global/agents/architectural-reviewer.md` - sonnet
-2. ✅ `installer/global/agents/bdd-generator.md` - haiku
-3. ✅ `installer/global/agents/build-validator.md` - haiku
-4. ✅ `installer/global/agents/code-reviewer.md` - sonnet
-5. ✅ `installer/global/agents/complexity-evaluator.md` - sonnet
-6. ✅ `installer/global/agents/database-specialist.md` - sonnet
-7. ✅ `installer/global/agents/debugging-specialist.md` - sonnet
-8. ✅ `installer/global/agents/devops-specialist.md` - sonnet
-9. ✅ `installer/global/agents/figma-react-orchestrator.md` - sonnet
-10. ✅ `installer/global/agents/pattern-advisor.md` - sonnet
-11. ✅ `installer/global/agents/python-mcp-specialist.md` - sonnet
-12. ✅ `installer/global/agents/requirements-analyst.md` - haiku
-13. ✅ `installer/global/agents/security-specialist.md` - sonnet
-14. ✅ `installer/global/agents/task-manager.md` - sonnet
-15. ✅ `installer/global/agents/test-orchestrator.md` - haiku
-16. ✅ `installer/global/agents/test-verifier.md` - haiku
-17. ✅ `installer/global/agents/zeplin-maui-orchestrator.md` - sonnet
+1. ✅ `installer/core/agents/architectural-reviewer.md` - sonnet
+2. ✅ `installer/core/agents/bdd-generator.md` - haiku
+3. ✅ `installer/core/agents/build-validator.md` - haiku
+4. ✅ `installer/core/agents/code-reviewer.md` - sonnet
+5. ✅ `installer/core/agents/complexity-evaluator.md` - sonnet
+6. ✅ `installer/core/agents/database-specialist.md` - sonnet
+7. ✅ `installer/core/agents/debugging-specialist.md` - sonnet
+8. ✅ `installer/core/agents/devops-specialist.md` - sonnet
+9. ✅ `installer/core/agents/figma-react-orchestrator.md` - sonnet
+10. ✅ `installer/core/agents/pattern-advisor.md` - sonnet
+11. ✅ `installer/core/agents/python-mcp-specialist.md` - sonnet
+12. ✅ `installer/core/agents/requirements-analyst.md` - haiku
+13. ✅ `installer/core/agents/security-specialist.md` - sonnet
+14. ✅ `installer/core/agents/task-manager.md` - sonnet
+15. ✅ `installer/core/agents/test-orchestrator.md` - haiku
+16. ✅ `installer/core/agents/test-verifier.md` - haiku
+17. ✅ `installer/core/agents/zeplin-maui-orchestrator.md` - sonnet
 
 ### Files Created (1 documentation file)
 
@@ -242,13 +242,13 @@ If issues detected:
 
 ```bash
 # Revert all agent changes
-git checkout HEAD -- installer/global/agents/*.md
+git checkout HEAD -- installer/core/agents/*.md
 
 # Or revert specific agent
-git checkout HEAD -- installer/global/agents/requirements-analyst.md
+git checkout HEAD -- installer/core/agents/requirements-analyst.md
 
 # Or revert to specific commit (before TASK-017)
-git checkout <previous-commit> -- installer/global/agents/
+git checkout <previous-commit> -- installer/core/agents/
 ```
 
 **No data loss risk**: All changes tracked in git, easy rollback.
@@ -282,23 +282,23 @@ git checkout <previous-commit> -- installer/global/agents/
 
 ### Modified Files (for git diff review)
 ```bash
-installer/global/agents/architectural-reviewer.md
-installer/global/agents/bdd-generator.md
-installer/global/agents/build-validator.md
-installer/global/agents/code-reviewer.md
-installer/global/agents/complexity-evaluator.md
-installer/global/agents/database-specialist.md
-installer/global/agents/debugging-specialist.md
-installer/global/agents/devops-specialist.md
-installer/global/agents/figma-react-orchestrator.md
-installer/global/agents/pattern-advisor.md
-installer/global/agents/python-mcp-specialist.md
-installer/global/agents/requirements-analyst.md
-installer/global/agents/security-specialist.md
-installer/global/agents/task-manager.md
-installer/global/agents/test-orchestrator.md
-installer/global/agents/test-verifier.md
-installer/global/agents/zeplin-maui-orchestrator.md
+installer/core/agents/architectural-reviewer.md
+installer/core/agents/bdd-generator.md
+installer/core/agents/build-validator.md
+installer/core/agents/code-reviewer.md
+installer/core/agents/complexity-evaluator.md
+installer/core/agents/database-specialist.md
+installer/core/agents/debugging-specialist.md
+installer/core/agents/devops-specialist.md
+installer/core/agents/figma-react-orchestrator.md
+installer/core/agents/pattern-advisor.md
+installer/core/agents/python-mcp-specialist.md
+installer/core/agents/requirements-analyst.md
+installer/core/agents/security-specialist.md
+installer/core/agents/task-manager.md
+installer/core/agents/test-orchestrator.md
+installer/core/agents/test-verifier.md
+installer/core/agents/zeplin-maui-orchestrator.md
 ```
 
 ### Created Files (for review)

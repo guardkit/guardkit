@@ -36,7 +36,7 @@ This is part of Phase 4 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source File
-- **File**: `installer/global/commands/task-work.md`
+- **File**: `installer/core/commands/task-work.md`
 
 ### Key Changes Required
 
@@ -112,7 +112,7 @@ def execute_orchestrated_implementation(
     if not orchestrator_exists(orchestrator_name):
         raise OrchestratorNotFoundError(
             f"Orchestrator '{orchestrator_name}' not found.\n"
-            f"Expected location: installer/global/agents/{orchestrator_name}.md\n"
+            f"Expected location: installer/core/agents/{orchestrator_name}.md\n"
             f"Please ensure UX-003 or UX-004 tasks are completed."
         )
 
@@ -121,7 +121,7 @@ def execute_orchestrated_implementation(
     if not ui_specialist_exists(ui_specialist_name, stack):
         raise UISpecialistNotFoundError(
             f"UI specialist '{ui_specialist_name}' not found for stack '{stack}'.\n"
-            f"Expected location: installer/global/templates/{stack}-*/agents/{ui_specialist_name}.md\n"
+            f"Expected location: installer/core/templates/{stack}-*/agents/{ui_specialist_name}.md\n"
             f"Please ensure the template includes a UI specialist, or create one via /template-create."
         )
 
@@ -304,9 +304,9 @@ def orchestrator_exists(orchestrator_name: str) -> bool:
     """
     Check if orchestrator agent exists.
 
-    Expected location: installer/global/agents/{orchestrator_name}.md
+    Expected location: installer/core/agents/{orchestrator_name}.md
     """
-    orchestrator_path = Path("installer/global/agents") / f"{orchestrator_name}.md"
+    orchestrator_path = Path("installer/core/agents") / f"{orchestrator_name}.md"
     return orchestrator_path.exists()
 
 
@@ -315,11 +315,11 @@ def ui_specialist_exists(ui_specialist_name: str, stack: str) -> bool:
     Check if UI specialist exists for stack.
 
     Expected locations:
-    - installer/global/templates/{stack}-*/agents/{ui_specialist_name}.md
+    - installer/core/templates/{stack}-*/agents/{ui_specialist_name}.md
     - ~/.agentecflow/templates/{stack}-*/agents/{ui_specialist_name}.md
     """
     # Check in global templates
-    global_templates = Path("installer/global/templates")
+    global_templates = Path("installer/core/templates")
     for template_dir in global_templates.glob(f"{stack}-*"):
         specialist_path = template_dir / "agents" / f"{ui_specialist_name}.md"
         if specialist_path.exists():
@@ -494,9 +494,9 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 4](../../docs/proposals/design-url-integration-implementation-guide.md#phase-4-update-task-work)
-- [Existing task-work Command](../../installer/global/commands/task-work.md)
-- [Figma Orchestrator](../../installer/global/agents/figma-orchestrator.md) (after UX-003)
-- [Zeplin Orchestrator](../../installer/global/agents/zeplin-orchestrator.md) (after UX-004)
+- [Existing task-work Command](../../installer/core/commands/task-work.md)
+- [Figma Orchestrator](../../installer/core/agents/figma-orchestrator.md) (after UX-003)
+- [Zeplin Orchestrator](../../installer/core/agents/zeplin-orchestrator.md) (after UX-004)
 
 ## Implementation Estimate
 

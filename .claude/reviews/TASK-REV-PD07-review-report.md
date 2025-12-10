@@ -32,8 +32,8 @@ The progressive disclosure system is **functioning correctly** for all 7 enhance
 | File | Status | Location |
 |------|--------|----------|
 | `invoker.py` (modified) | HAS FIX | `docs/reviews/progressive-disclosure/invoker.py` |
-| `invoker.py` (canonical) | MISSING FIX | `installer/global/lib/agent_bridge/invoker.py` |
-| `agent-enhance.md` | NO BRIDGE PROTOCOL | `installer/global/commands/agent-enhance.md` |
+| `invoker.py` (canonical) | MISSING FIX | `installer/core/lib/agent_bridge/invoker.py` |
+| `agent-enhance.md` | NO BRIDGE PROTOCOL | `installer/core/commands/agent-enhance.md` |
 
 ### What Happened
 
@@ -262,8 +262,8 @@ Comparing pre-enhancement stub files (~500 bytes) vs post-enhancement:
    **See**: [TASK-FIX-PD08](../../tasks/backlog/TASK-FIX-PD08-apply-agentresponse-format-fix.md)
 
    **Files to modify**:
-   - `installer/global/lib/agent_bridge/invoker.py` - Add defensive auto-wrapping
-   - `installer/global/commands/agent-enhance.md` - Add bridge protocol (optional)
+   - `installer/core/lib/agent_bridge/invoker.py` - Add defensive auto-wrapping
+   - `installer/core/commands/agent-enhance.md` - Add bridge protocol (optional)
 
    Priority: **CRITICAL** (blocking all AI enhancements)
 

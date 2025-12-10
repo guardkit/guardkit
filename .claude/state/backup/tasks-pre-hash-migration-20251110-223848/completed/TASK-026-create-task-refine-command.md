@@ -34,9 +34,9 @@ requirements:
 
 # Deliverables
 files_created:
-  - installer/global/commands/task-refine.md (17,177 bytes)
-  - installer/global/commands/lib/refinement_handler.py
-  - installer/global/commands/lib/refinement_session.py
+  - installer/core/commands/task-refine.md (17,177 bytes)
+  - installer/core/commands/lib/refinement_handler.py
+  - installer/core/commands/lib/refinement_session.py
   - tests/unit/test_refinement_handler.py
 ---
 
@@ -100,7 +100,7 @@ Create `/task-refine` command that enables **lightweight, iterative refinement**
 ## Acceptance Criteria
 
 ### 1. Command Specification
-File: `installer/global/commands/task-refine.md`
+File: `installer/core/commands/task-refine.md`
 
 ```markdown
 # Task Refine - Iterative Code Refinement Command
@@ -139,7 +139,7 @@ Acceptance criteria:
 - [ ] Integration with task-work workflow documented
 
 ### 2. Refinement Handler Module
-File: `installer/global/commands/lib/refinement_handler.py`
+File: `installer/core/commands/lib/refinement_handler.py`
 
 ```python
 from pathlib import Path
@@ -489,7 +489,7 @@ Acceptance criteria:
 - [ ] Add `refinement_count` metric
 
 ### 11. Documentation
-- [ ] Create `installer/global/commands/task-refine.md`
+- [ ] Create `installer/core/commands/task-refine.md`
 - [ ] Update `docs/workflows/task-workflow.md` with refinement section
 - [ ] Add examples to `docs/research/implementation-plan-and-code-review-analysis.md`
 - [ ] Update CLAUDE.md with refinement workflow

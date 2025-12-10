@@ -28,7 +28,7 @@ Phase 7.5 (Agent Enhancement) is currently disabled because the implementation a
 
 ### What the AgentEnhancer Does
 
-The `AgentEnhancer` (already implemented in `installer/global/lib/template_creation/agent_enhancer.py`) performs two AI-powered operations:
+The `AgentEnhancer` (already implemented in `installer/core/lib/template_creation/agent_enhancer.py`) performs two AI-powered operations:
 
 1. **Template Discovery** (Phase 1)
    - Analyzes agent metadata (name, description, technologies)
@@ -52,12 +52,12 @@ The `AgentEnhancer` was designed to use an `AIClient` with a `generate(prompt, m
 
 ```python
 # In orchestrator - tried to import from non-existent location
-_ai_client_module = importlib.import_module('installer.global.lib.ai.ai_client')
+_ai_client_module = importlib.import_module('installer.core.lib.ai.ai_client')
 AIClient = _ai_client_module.AIClient
 ai_client = AIClient()  # Would raise NotImplementedError even if imported
 ```
 
-The `AIClient` at `installer.global.lib.template_generator.ai_client` is a mock that raises `NotImplementedError` - it's not meant for production use.
+The `AIClient` at `installer.core.lib.template_generator.ai_client` is a mock that raises `NotImplementedError` - it's not meant for production use.
 
 ### The Agent Bridge Pattern
 
@@ -98,7 +98,7 @@ This pattern is already used by:
 
 **Implementation Steps**:
 
-1. **Create Agent Definition** (`installer/global/agents/agent-content-enhancer.md`)
+1. **Create Agent Definition** (`installer/core/agents/agent-content-enhancer.md`)
    ```markdown
    ---
    name: agent-content-enhancer
@@ -197,11 +197,11 @@ When implemented, the system should:
 ## Files Involved
 
 **Existing**:
-- `installer/global/lib/template_creation/agent_enhancer.py` (needs bridge integration)
-- `installer/global/commands/lib/template_create_orchestrator.py` (Phase 7.5 disabled)
+- `installer/core/lib/template_creation/agent_enhancer.py` (needs bridge integration)
+- `installer/core/commands/lib/template_create_orchestrator.py` (Phase 7.5 disabled)
 
 **New**:
-- `installer/global/agents/agent-content-enhancer.md` (agent definition)
+- `installer/core/agents/agent-content-enhancer.md` (agent definition)
 - Tests for bridge integration
 
 
@@ -210,9 +210,9 @@ When implemented, the system should:
 
 ## Related Documentation
 
-- Agent Bridge Pattern: `installer/global/lib/agent_bridge/README.md`
-- Architectural Reviewer Example: `installer/global/lib/codebase_analyzer/agent_invoker.py`
-- Agent Enhancer Implementation: `installer/global/lib/template_creation/agent_enhancer.py`
+- Agent Bridge Pattern: `installer/core/lib/agent_bridge/README.md`
+- Architectural Reviewer Example: `installer/core/lib/codebase_analyzer/agent_invoker.py`
+- Agent Enhancer Implementation: `installer/core/lib/template_creation/agent_enhancer.py`
 - TASK-ENHANCE-AGENT-FILES: Original enhancement task (partial completion)
 
 ---

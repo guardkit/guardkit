@@ -98,9 +98,9 @@ Create missing landing pages (index.md, section landing pages, etc.) that provid
 
 ### Agent System Section (NEW 2025-11-23)
 - [ ] Overview of agent enhancement workflow
-- [ ] Link to `/agent-enhance` command (installer/global/commands/agent-enhance.md)
-- [ ] Link to `/agent-format` command (installer/global/commands/agent-format.md)
-- [ ] Link to `/agent-validate` command (installer/global/commands/agent-validate.md)
+- [ ] Link to `/agent-enhance` command (installer/core/commands/agent-enhance.md)
+- [ ] Link to `/agent-format` command (installer/core/commands/agent-format.md)
+- [ ] Link to `/agent-validate` command (installer/core/commands/agent-validate.md)
 - [ ] Explain agent boundary sections (ALWAYS/NEVER/ASK)
 - [ ] Link to GitHub agent best practices analysis
 

@@ -36,15 +36,15 @@ This is part of Phase 2 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source and Target Files
-- **Source**: `installer/global/agents/figma-react-orchestrator.md`
-- **Target**: `installer/global/agents/figma-orchestrator.md`
+- **Source**: `installer/core/agents/figma-react-orchestrator.md`
+- **Target**: `installer/core/agents/figma-orchestrator.md`
 
 ### Key Changes Required
 
 **1. Rename File**
 ```bash
-mv installer/global/agents/figma-react-orchestrator.md \
-   installer/global/agents/figma-orchestrator.md
+mv installer/core/agents/figma-react-orchestrator.md \
+   installer/core/agents/figma-orchestrator.md
 ```
 
 **2. Update Agent Metadata**
@@ -233,7 +233,7 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 2](../../docs/proposals/design-url-integration-implementation-guide.md#phase-2-refactor-orchestrators-parallel)
-- [Existing Figma React Orchestrator](../../installer/global/agents/figma-react-orchestrator.md)
+- [Existing Figma React Orchestrator](../../installer/core/agents/figma-react-orchestrator.md)
 
 ## Implementation Estimate
 

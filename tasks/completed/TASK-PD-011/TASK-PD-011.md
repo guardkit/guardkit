@@ -47,7 +47,7 @@ Comprehensive validation of all split global agents before proceeding to templat
 python3 -c "
 from pathlib import Path
 
-agents_dir = Path('installer/global/agents')
+agents_dir = Path('installer/core/agents')
 core_files = [f for f in agents_dir.glob('*.md') if not f.stem.endswith('-ext')]
 ext_files = list(agents_dir.glob('*-ext.md'))
 
@@ -76,11 +76,11 @@ for ext in ext_files:
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import AgentScanner
 
 scanner = AgentScanner()
-agents = scanner.scan_agents(Path('installer/global/agents'))
+agents = scanner.scan_agents(Path('installer/core/agents'))
 
 print(f'Discovered agents: {len(agents)}')
 print()
@@ -128,7 +128,7 @@ from pathlib import Path
 
 def validate_sizes():
     """Validate split file sizes meet targets."""
-    agents_dir = Path('installer/global/agents')
+    agents_dir = Path('installer/core/agents')
     results = []
 
     for core_file in agents_dir.glob('*.md'):
@@ -213,7 +213,7 @@ if __name__ == '__main__':
 
 ```bash
 # Check all core files have loading instruction
-for f in installer/global/agents/*.md; do
+for f in installer/core/agents/*.md; do
     if [[ ! "$f" == *"-ext.md" ]]; then
         if ! grep -q "## Extended Reference" "$f"; then
             echo "MISSING loading instruction: $f"
@@ -226,10 +226,10 @@ done
 
 ```bash
 # Test that an agent can be loaded and extended content accessed
-cat installer/global/agents/task-manager.md | head -50
+cat installer/core/agents/task-manager.md | head -50
 # Should show core content ending with loading instruction
 
-cat installer/global/agents/task-manager-ext.md | head -20
+cat installer/core/agents/task-manager-ext.md | head -20
 # Should show extended header and detailed content
 ```
 

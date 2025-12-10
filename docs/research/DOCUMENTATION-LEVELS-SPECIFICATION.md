@@ -498,7 +498,7 @@ Complexity-based rules     (intelligent fallback)
 
 ### 1. Command Parser Updates
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Add Flag**:
 ```markdown
@@ -539,10 +539,10 @@ Complexity-based rules     (intelligent fallback)
 ### 3. Agent Prompt Updates
 
 **Files to Update**:
-- `installer/global/agents/requirements-analyst.md`
-- `installer/global/agents/architectural-reviewer.md`
-- `installer/global/agents/test-orchestrator.md`
-- `installer/global/agents/code-reviewer.md`
+- `installer/core/agents/requirements-analyst.md`
+- `installer/core/agents/architectural-reviewer.md`
+- `installer/core/agents/test-orchestrator.md`
+- `installer/core/agents/code-reviewer.md`
 - Stack-specific planning agents (maui-usecase-specialist, etc.)
 
 **Add to Each Agent**:
@@ -1043,7 +1043,7 @@ Multiple standalone documents (150-200 pages total):
 - Add recommended defaults
 - Add override examples
 
-### 3. installer/global/commands/task-work.md
+### 3. installer/core/commands/task-work.md
 - Add --docs flag specification
 - Add configuration hierarchy
 - Add decision tree diagram

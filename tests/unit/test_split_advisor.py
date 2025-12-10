@@ -21,7 +21,7 @@ def import_from_path(module_path, module_name):
     spec.loader.exec_module(module)
     return module
 
-lib_path = installer_path / "global" / "commands" / "lib"
+lib_path = installer_path / "core" / "commands" / "lib"
 
 # Import modules
 advisor_module = import_from_path(

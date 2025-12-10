@@ -1560,9 +1560,9 @@ From 132 completed tasks:
 ### Technical Documentation
 
 **Command Specifications**:
-- `installer/global/commands/task-work.md` - Complete workflow documentation
-- `installer/global/commands/task-refine.md` - Iterative refinement
-- `installer/global/commands/task-create.md` - Task creation with complexity
+- `installer/core/commands/task-work.md` - Complete workflow documentation
+- `installer/core/commands/task-refine.md` - Iterative refinement
+- `installer/core/commands/task-create.md` - Task creation with complexity
 
 **Workflow Guides**:
 - `docs/guides/agentecflow-lite-workflow.md` - Complete workflow guide

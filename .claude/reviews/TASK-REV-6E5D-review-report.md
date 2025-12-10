@@ -543,12 +543,12 @@ def parse_analysis_response(self, response: str, ...):
 
 ### A. Files Modified by Recommended Fixes
 
-1. `installer/global/lib/agent_bridge/invoker.py` - Phase-specific cache
-2. `installer/global/lib/codebase_analyzer/models.py` - Schema updates
-3. `installer/global/lib/codebase_analyzer/response_parser.py` - Validation relaxation
-4. `installer/global/lib/codebase_analyzer/agent_invoker.py` - Layer detection
-5. `installer/global/lib/template_generator/pattern_matcher.py` - Entity detection
-6. `installer/global/lib/template_generator/completeness_validator.py` - Template naming
+1. `installer/core/lib/agent_bridge/invoker.py` - Phase-specific cache
+2. `installer/core/lib/codebase_analyzer/models.py` - Schema updates
+3. `installer/core/lib/codebase_analyzer/response_parser.py` - Validation relaxation
+4. `installer/core/lib/codebase_analyzer/agent_invoker.py` - Layer detection
+5. `installer/core/lib/template_generator/pattern_matcher.py` - Entity detection
+6. `installer/core/lib/template_generator/completeness_validator.py` - Template naming
 
 ### B. Architecture Score Breakdown
 

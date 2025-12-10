@@ -15,14 +15,14 @@ Successfully updated template creation orchestrator to support progressive discl
 ## Changes Implemented
 
 ### 1. Configuration Enhancement
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 - Added `split_claude_md: bool = True` to `OrchestrationConfig` (line 124)
 - Default behavior: Progressive disclosure enabled
 - Clear comment explaining feature purpose
 
 ### 2. New Methods Added
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (+120 lines)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (+120 lines)
 
 **`_write_claude_md_split(output_path: Path) -> bool`** (lines 1501-1560):
 - Generates split content using `ClaudeMdGenerator.generate_split()`
@@ -48,7 +48,7 @@ Successfully updated template creation orchestrator to support progressive discl
 - Consistent error handling
 
 ### 3. Phase 9 Routing Logic
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (lines 1475-1482)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (lines 1475-1482)
 
 - Conditional routing based on `split_claude_md` config flag
 - Split mode: Calls `_write_claude_md_split()`
@@ -56,7 +56,7 @@ Successfully updated template creation orchestrator to support progressive discl
 - Warnings appended to orchestrator state on failure
 
 ### 4. CLI Integration
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 - Added `--no-split-claude-md` CLI argument (lines 2456-2458)
 - Default: split mode enabled (True)

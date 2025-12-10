@@ -14,7 +14,7 @@ Implement `/template-init` command orchestrator for greenfield template creation
 
 ### 1. Core Command Structure
 
-**Location**: `installer/global/commands/lib/template_init/`
+**Location**: `installer/core/commands/lib/template_init/`
 
 Created complete module with:
 - `__init__.py` - Module exports
@@ -25,7 +25,7 @@ Created complete module with:
 
 ### 2. GreenfieldTemplate Model
 
-**File**: `installer/global/commands/lib/template_init/models.py`
+**File**: `installer/core/commands/lib/template_init/models.py`
 
 **Features**:
 - Complete data model for generated templates
@@ -41,7 +41,7 @@ Created complete module with:
 
 ### 3. Error Handling System
 
-**File**: `installer/global/commands/lib/template_init/errors.py`
+**File**: `installer/core/commands/lib/template_init/errors.py`
 
 **Exception Hierarchy**:
 ```
@@ -56,7 +56,7 @@ TemplateInitError (base)
 
 ### 4. AI Template Generator (Stub)
 
-**File**: `installer/global/commands/lib/template_init/ai_generator.py`
+**File**: `installer/core/commands/lib/template_init/ai_generator.py`
 
 **Features**:
 - Template generation from Q&A answers
@@ -73,7 +73,7 @@ TemplateInitError (base)
 
 ### 5. Command Orchestrator
 
-**File**: `installer/global/commands/lib/template_init/command.py`
+**File**: `installer/core/commands/lib/template_init/command.py`
 
 **4-Phase Workflow**:
 
@@ -105,7 +105,7 @@ TemplateInitError (base)
 
 ### 6. Command Specification
 
-**File**: `installer/global/commands/template-init.md`
+**File**: `installer/core/commands/template-init.md`
 
 **Comprehensive documentation**:
 - Command overview and usage
@@ -172,7 +172,7 @@ TemplateInitError (base)
 ## File Structure Created
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── lib/
 │   └── template_init/
 │       ├── __init__.py          # Module exports
@@ -374,8 +374,8 @@ The 9 failing tests are low-impact mocking issues that don't affect functionalit
 
 **Git Commands**:
 ```bash
-git add installer/global/commands/lib/template_init/
-git add installer/global/commands/template-init.md
+git add installer/core/commands/lib/template_init/
+git add installer/core/commands/template-init.md
 git add tests/test_template_init/
 git commit -m "feat: Implement /template-init command orchestrator (TASK-011)
 

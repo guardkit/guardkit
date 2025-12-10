@@ -56,13 +56,13 @@
 - **Target**: TypeScript React components with Tailwind CSS
 - **Testing**: Playwright visual regression (>95% similarity)
 - **MCP**: `@figma/mcp-server`
-- **Prerequisites**: See [figma-to-react.md](../../installer/global/commands/figma-to-react.md#prerequisites)
+- **Prerequisites**: See [figma-to-react.md](../../installer/core/commands/figma-to-react.md#prerequisites)
 
 #### Zeplin → .NET MAUI
 - **Target**: XAML ContentView components with C# code-behind
 - **Testing**: Platform-specific validation (iOS, Android, Windows, macOS)
 - **MCP**: `@zeplin/mcp-server`
-- **Prerequisites**: See [zeplin-to-maui.md](../../installer/global/commands/zeplin-to-maui.md#prerequisites)
+- **Prerequisites**: See [zeplin-to-maui.md](../../installer/core/commands/zeplin-to-maui.md#prerequisites)
 
 ### 6-Phase Saga Workflow
 
@@ -1008,11 +1008,11 @@ See design system documentation for font configuration.
 
 ## Related Documentation
 
-- [Figma to React Command](../../installer/global/commands/figma-to-react.md) - Figma-specific implementation details
-- [Zeplin to MAUI Command](../../installer/global/commands/zeplin-to-maui.md) - Zeplin and MAUI-specific details
+- [Figma to React Command](../../installer/core/commands/figma-to-react.md) - Figma-specific implementation details
+- [Zeplin to MAUI Command](../../installer/core/commands/zeplin-to-maui.md) - Zeplin and MAUI-specific details
 - [Design-to-Code Common Patterns](../shared/design-to-code-common.md) - Shared patterns across all design systems
 - [Common Thresholds](../shared/common-thresholds.md) - Quality threshold definitions
-- [Task Work Command](../../installer/global/commands/task-work.md) - Integration with task workflow
+- [Task Work Command](../../installer/core/commands/task-work.md) - Integration with task workflow
 
 ---
 

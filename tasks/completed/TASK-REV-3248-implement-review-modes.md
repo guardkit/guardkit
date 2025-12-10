@@ -112,7 +112,7 @@ Enhance the skeleton `execute_review_analysis()` function to support 5 distinct 
 ### File Structure
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes/
 │   ├── __init__.py
 │   ├── architectural_review.py          # Mode 1
@@ -152,7 +152,7 @@ class ReviewMode(Protocol):
 ### Updated Orchestrator Function
 
 ```python
-# installer/global/commands/lib/task_review_orchestrator.py
+# installer/core/commands/lib/task_review_orchestrator.py
 
 def execute_review_analysis(
     task_context: Dict[str, Any],
@@ -171,7 +171,7 @@ def execute_review_analysis(
         Structured review results with findings
     """
     # Import mode-specific modules
-    from installer.global.commands.lib.review_modes import (
+    from installer.core.commands.lib.review_modes import (
         architectural_review,
         code_quality_review,
         decision_analysis,
@@ -198,9 +198,9 @@ def execute_review_analysis(
 ### Example: Architectural Review Implementation
 
 ```python
-# installer/global/commands/lib/review_modes/architectural_review.py
+# installer/core/commands/lib/review_modes/architectural_review.py
 
-from installer.global.lib.agent_bridge.invoker import AgentInvoker
+from installer.core.lib.agent_bridge.invoker import AgentInvoker
 
 def execute(task_context: Dict[str, Any], depth: str) -> Dict[str, Any]:
     """Execute architectural review."""

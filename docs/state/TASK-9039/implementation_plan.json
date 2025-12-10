@@ -63,7 +63,7 @@
         "name": "Smart Detection Module",
         "duration_hours": 2,
         "files_created": [
-          "installer/global/lib/template_create/detector.py"
+          "installer/core/lib/template_create/detector.py"
         ],
         "estimated_loc": 200
       },
@@ -72,7 +72,7 @@
         "name": "Refactor Orchestrator",
         "duration_hours": 2,
         "files_modified": [
-          "installer/global/lib/template_create/orchestrator.py"
+          "installer/core/lib/template_create/orchestrator.py"
         ],
         "estimated_loc": 150
       },
@@ -81,7 +81,7 @@
         "name": "Update Documentation",
         "duration_hours": 1,
         "files_modified": [
-          "installer/global/commands/template-create.md"
+          "installer/core/commands/template-create.md"
         ],
         "estimated_loc": 0
       },
@@ -104,7 +104,7 @@
   "files": {
     "to_create": [
       {
-        "path": "installer/global/lib/template_create/detector.py",
+        "path": "installer/core/lib/template_create/detector.py",
         "type": "module",
         "estimated_loc": 200,
         "purpose": "Language/framework detection with priority resolution"
@@ -118,13 +118,13 @@
     ],
     "to_modify": [
       {
-        "path": "installer/global/lib/template_create/orchestrator.py",
+        "path": "installer/core/lib/template_create/orchestrator.py",
         "type": "module",
         "estimated_loc": 150,
         "purpose": "Remove Q&A, add config resolution"
       },
       {
-        "path": "installer/global/commands/template-create.md",
+        "path": "installer/core/commands/template-create.md",
         "type": "documentation",
         "estimated_loc": 0,
         "purpose": "Update usage, document --config flag"

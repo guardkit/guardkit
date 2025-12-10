@@ -13,7 +13,7 @@
 
 ## Overview
 
-Enhance `installer/global/agents/agent-content-enhancer.md` to incorporate GitHub's industry best practices (from analysis of 2,500+ repositories), transforming it from a general-purpose content generator into a **standards-enforcing enhancement engine** that automatically applies quality thresholds.
+Enhance `installer/core/agents/agent-content-enhancer.md` to incorporate GitHub's industry best practices (from analysis of 2,500+ repositories), transforming it from a general-purpose content generator into a **standards-enforcing enhancement engine** that automatically applies quality thresholds.
 
 **Key Innovation**: The AI agent becomes a **self-validating quality system** - it checks its own output against measurable thresholds and iteratively refines until quality gates pass.
 
@@ -89,7 +89,7 @@ Enhance `installer/global/agents/agent-content-enhancer.md` to incorporate GitHu
 
 ### AC5: Documentation Updated
 
-- [ ] **AC5.1**: `installer/global/commands/agent-enhance.md` updated with validation output example
+- [ ] **AC5.1**: `installer/core/commands/agent-enhance.md` updated with validation output example
 - [ ] **AC5.2**: Reference link to analysis doc added
 - [ ] **AC5.3**: No changes to command syntax or flags
 
@@ -99,7 +99,7 @@ Enhance `installer/global/agents/agent-content-enhancer.md` to incorporate GitHu
 
 ### Step 1: Add GitHub Best Practices Section (2 hours)
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 
 **Location**: After line 50 (after "Why This Agent Exists")
 
@@ -255,20 +255,20 @@ validation_report:
 **Verification**:
 ```bash
 # Check section exists and has correct line count
-grep -A 85 "## GitHub Best Practices" installer/global/agents/agent-content-enhancer.md | wc -l
+grep -A 85 "## GitHub Best Practices" installer/core/agents/agent-content-enhancer.md | wc -l
 # Expected: ~85 lines
 
 # Check all 6 thresholds mentioned
-grep -c "Time to First Example\|Example Density\|Boundary Sections\|Commands-First\|Specificity Score\|Code-to-Text Ratio" installer/global/agents/agent-content-enhancer.md
+grep -c "Time to First Example\|Example Density\|Boundary Sections\|Commands-First\|Specificity Score\|Code-to-Text Ratio" installer/core/agents/agent-content-enhancer.md
 # Expected: 6
 
 # Check validation protocol present
-grep -q "Self-Validation Protocol" installer/global/agents/agent-content-enhancer.md && echo "✅ Validation protocol found"
+grep -q "Self-Validation Protocol" installer/core/agents/agent-content-enhancer.md && echo "✅ Validation protocol found"
 ```
 
 ### Step 2: Update Output Format Section (30 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 
 **Location**: Existing "Output Format" section (around line 120)
 
@@ -325,10 +325,10 @@ validation_report:
 **Verification**:
 ```bash
 # Check checklist added
-grep -q "Quality Enforcement Checklist" installer/global/agents/agent-content-enhancer.md && echo "✅ Checklist found"
+grep -q "Quality Enforcement Checklist" installer/core/agents/agent-content-enhancer.md && echo "✅ Checklist found"
 
 # Check YAML format specified
-grep -q "validation_report:" installer/global/agents/agent-content-enhancer.md && echo "✅ YAML format found"
+grep -q "validation_report:" installer/core/agents/agent-content-enhancer.md && echo "✅ YAML format found"
 ```
 
 ### Step 3: Create Shared Validation Module (1 hour)
@@ -605,7 +605,7 @@ python3 -m py_compile .claude/commands/shared/agent_validation.py && echo "✅ N
 
 ### Step 4: Update Command Documentation (30 minutes)
 
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 **Location**: After "Expected Output" section
 
@@ -644,8 +644,8 @@ If validation fails after 3 iterations, you'll receive the best attempt with det
 **Verification**:
 ```bash
 # Check documentation updated
-grep -q "Validation Report" installer/global/commands/agent-enhance.md && echo "✅ Validation section added"
-grep -q "github-agent-best-practices-analysis" installer/global/commands/agent-enhance.md && echo "✅ Reference link added"
+grep -q "Validation Report" installer/core/commands/agent-enhance.md && echo "✅ Validation section added"
+grep -q "github-agent-best-practices-analysis" installer/core/commands/agent-enhance.md && echo "✅ Reference link added"
 ```
 
 ---
@@ -658,7 +658,7 @@ grep -q "github-agent-best-practices-analysis" installer/global/commands/agent-e
 
 ```python
 import pytest
-from installer.global.lib.agent_validation import (
+from installer.core.lib.agent_validation import (
     validate_enhanced_content,
     _calculate_example_density,
     _check_boundary_sections,
@@ -774,7 +774,7 @@ code here
 
 ```python
 import pytest
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
 
 
 def test_enhancement_includes_validation():
@@ -961,8 +961,8 @@ Before marking this task complete:
   - `tests/lib/agent_enhancement/test_validation.py` (372 lines, 17 tests)
   - `tests/lib/agent_enhancement/__init__.py`
 - **Files Modified**: 2
-  - `installer/global/agents/agent-content-enhancer.md` (+150 lines)
-  - `installer/global/commands/agent-enhance.md` (+28 lines)
+  - `installer/core/agents/agent-content-enhancer.md` (+150 lines)
+  - `installer/core/commands/agent-enhance.md` (+28 lines)
 - **Tests Written**: 17 (340% of requirement)
 - **Coverage**: 100% for validation module
 - **Acceptance Criteria**: 5/5 met (100%)
@@ -1036,8 +1036,8 @@ Before marking this task complete:
 ### Files Changed
 ```
 .claude/commands/shared/agent_validation.py (new)
-installer/global/agents/agent-content-enhancer.md (modified)
-installer/global/commands/agent-enhance.md (modified)
+installer/core/agents/agent-content-enhancer.md (modified)
+installer/core/commands/agent-enhance.md (modified)
 tests/lib/agent_enhancement/__init__.py (new)
 tests/lib/agent_enhancement/test_validation.py (new)
 ```

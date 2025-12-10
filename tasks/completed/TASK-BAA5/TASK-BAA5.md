@@ -257,7 +257,7 @@ git reset --hard HEAD
 
 ## References
 
-- **Template**: installer/global/templates/taskwright-python/
+- **Template**: installer/core/templates/taskwright-python/
 - **Tag**: v0.96 (pre-template-init baseline)
 - **Agent Discovery**: docs/guides/agent-discovery-guide.md
 - **Boundary Sections**: CLAUDE.md - Agent Enhancement with Boundary Sections

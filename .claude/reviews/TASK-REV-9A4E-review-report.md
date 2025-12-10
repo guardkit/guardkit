@@ -97,10 +97,10 @@ From `docs/guides/agent-discovery-guide.md`:
 # Discovery Flow (documented)
 def discover_agents(phase, stack, keywords):
     # 1. Scan global agents
-    global_agents = scan("installer/global/agents/*.md")
+    global_agents = scan("installer/core/agents/*.md")
 
     # 2. Scan template agents
-    template_agents = scan("installer/global/templates/*/agents/*.md")
+    template_agents = scan("installer/core/templates/*/agents/*.md")
 
     # 3. Scan user agents
     user_agents = scan("~/.agentecflow/agents/*.md")
@@ -126,7 +126,7 @@ def discover_agents(phase, stack, keywords):
 
 **Evidence**:
 From `tasks/backlog/agent-invocation-enforcement/TASK-ENF5-update-agent-selection-table.md`:
-- Updates `task-work.md` agent table to reference `installer/global/agents/` paths
+- Updates `task-work.md` agent table to reference `installer/core/agents/` paths
 - Suggests using `dotnet-domain-specialist` for MAUI
 - Does NOT account for template-generated local agents
 
@@ -164,7 +164,7 @@ task-work.md: "MAUI → dotnet-domain-specialist"
 
 **Evidence**:
 Agent discovery guide does NOT specify precedence when duplicates exist:
-- `installer/global/agents/react-state-specialist.md` (global)
+- `installer/core/agents/react-state-specialist.md` (global)
 - `.claude/agents/react-state-specialist.md` (local, from template)
 
 **Impact**:
@@ -183,7 +183,7 @@ Agent discovery guide does NOT specify precedence when duplicates exist:
 **Issue**: `/template-init` copies agents but doesn't register them for discovery
 
 **Evidence**:
-From `installer/global/commands/template-init.md`:
+From `installer/core/commands/template-init.md`:
 - Copies agents from template to `.claude/agents/`
 - No registration step mentioned
 - Assumes discovery will "just work"
@@ -204,7 +204,7 @@ From `installer/global/commands/template-init.md`:
 **Issue**: `/agent-enhance` may not add required discovery metadata (stack, phase, capabilities, keywords)
 
 **Evidence**:
-From `installer/global/commands/agent-enhance.md`:
+From `installer/core/commands/agent-enhance.md`:
 - Adds ALWAYS/NEVER/ASK boundary sections
 - Template conformance validation
 - Does NOT explicitly mention adding discovery metadata
@@ -269,11 +269,11 @@ From `tasks/backlog/agent-invocation-enforcement/TASK-ENF2-add-agent-invocation-
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
 │  Phase 1: Scan Global Agents                                │
-│  ├─ installer/global/agents/*.md                            │
+│  ├─ installer/core/agents/*.md                            │
 │  └─ Example: react-state-specialist.md                      │
 │                                                              │
 │  Phase 2: Scan Template Agents (TEMPLATES, not initialized) │
-│  ├─ installer/global/templates/*/agents/*.md                │
+│  ├─ installer/core/templates/*/agents/*.md                │
 │  └─ Example: react-typescript/agents/react-state-specialist.md
 │                                                              │
 │  Phase 3: Scan User Agents                                  │
@@ -314,11 +314,11 @@ PROBLEM: When template-init copies agents to .claude/agents/,
 │  └─ Example: custom-specialist.md                           │
 │                                                              │
 │  Phase 3: Scan Global Agents                                │
-│  ├─ installer/global/agents/*.md                            │
+│  ├─ installer/core/agents/*.md                            │
 │  └─ Example: react-state-specialist.md (canonical)          │
 │                                                              │
 │  Phase 4: Scan Template Agents (lowest priority)            │
-│  ├─ installer/global/templates/*/agents/*.md                │
+│  ├─ installer/core/templates/*/agents/*.md                │
 │  └─ Only used if agent not found in local/user/global       │
 │                                                              │
 │  Phase 5: Remove Duplicates (by agent name)                 │
@@ -352,12 +352,12 @@ SOLUTION: Scan .claude/agents/ FIRST with HIGHEST precedence
    - Cross-project customizations
    - Overrides global
 
-3. **Global** (`installer/global/agents/`) - Standard priority
+3. **Global** (`installer/core/agents/`) - Standard priority
    - Canonical agent definitions
    - System defaults
    - Fallback for missing local/user
 
-4. **Template** (`installer/global/templates/*/agents/`) - Lowest priority
+4. **Template** (`installer/core/templates/*/agents/`) - Lowest priority
    - Source definitions before initialization
    - Only used if agent not found elsewhere
    - Rarely invoked (templates copy to local on init)
@@ -377,8 +377,8 @@ SOLUTION: Scan .claude/agents/ FIRST with HIGHEST precedence
 ```markdown
 | Stack | Phase | Agent |
 |-------|-------|-------|
-| React | Implementation | installer/global/agents/react-state-specialist.md |
-| MAUI | Implementation | installer/global/agents/dotnet-domain-specialist.md |
+| React | Implementation | installer/core/agents/react-state-specialist.md |
+| MAUI | Implementation | installer/core/agents/dotnet-domain-specialist.md |
 ```
 
 **Problems**:
@@ -408,7 +408,7 @@ implementation agent based on:
 **Discovery Process**:
 1. Scan local agents (.claude/agents/) - Highest priority
 2. Scan user agents (~/.agentecflow/agents/)
-3. Scan global agents (installer/global/agents/)
+3. Scan global agents (installer/core/agents/)
 4. Rank by relevance (stack + phase + keywords)
 5. Invoke best match OR task-manager (fallback)
 
@@ -488,7 +488,7 @@ Template-initialized agents (`.claude/agents/`) take precedence.
 taskwright init react-typescript
 
 # Copies agents from template to .claude/agents/
-cp installer/global/templates/react-typescript/agents/*.md .claude/agents/
+cp installer/core/templates/react-typescript/agents/*.md .claude/agents/
 ```
 
 **Required Changes**:
@@ -775,7 +775,7 @@ ls .claude/agents/react-state-specialist.md  # Should exist
 
 # 4. Verify local agent selected
 # Expected: .claude/agents/react-state-specialist.md invoked
-# NOT: installer/global/agents/react-state-specialist.md
+# NOT: installer/core/agents/react-state-specialist.md
 ```
 
 ---
@@ -972,7 +972,7 @@ cat .claude/agents/react-state-specialist.md
 
 # 6. Verify local agent invoked (not global)
 # Expected: Logs show ".claude/agents/react-state-specialist.md" invoked
-#           NOT "installer/global/agents/react-state-specialist.md"
+#           NOT "installer/core/agents/react-state-specialist.md"
 ```
 
 **Expected Outcome**: ✅ Local agent discovered and invoked
@@ -995,7 +995,7 @@ taskwright init react-typescript
 echo "Custom capability: form-validation" >> .claude/agents/react-state-specialist.md
 
 # 3. Verify global agent still exists
-ls installer/global/agents/react-state-specialist.md
+ls installer/core/agents/react-state-specialist.md
 # Expected: Exists and unchanged
 
 # 4. Run task workflow
@@ -1004,7 +1004,7 @@ ls installer/global/agents/react-state-specialist.md
 
 # 5. Check which agent invoked
 # Expected: Local agent (.claude/agents/) with custom capability
-#           NOT global agent (installer/global/agents/)
+#           NOT global agent (installer/core/agents/)
 ```
 
 **Expected Outcome**: ✅ Local agent takes precedence
@@ -1091,11 +1091,11 @@ def discover_agents(phase: str, stack: str, keywords: list) -> list:
     all_agents = []
 
     # Scan global agents
-    global_agents = glob("installer/global/agents/*.md")
+    global_agents = glob("installer/core/agents/*.md")
     all_agents.extend(parse_agents(global_agents))
 
     # Scan template agents (TEMPLATES, not initialized)
-    template_agents = glob("installer/global/templates/*/agents/*.md")
+    template_agents = glob("installer/core/templates/*/agents/*.md")
     all_agents.extend(parse_agents(template_agents))
 
     # Scan user agents
@@ -1143,13 +1143,13 @@ def discover_agents(phase: str, stack: str, keywords: list) -> list:
             agent_sources[agent.name] = (agent, "user", PRIORITY_USER)
 
     # Scan global agents
-    global_agents = glob("installer/global/agents/*.md")
+    global_agents = glob("installer/core/agents/*.md")
     for agent in parse_agents(global_agents):
         if agent.name not in agent_sources:
             agent_sources[agent.name] = (agent, "global", PRIORITY_GLOBAL)
 
     # Scan template agents (lowest priority)
-    template_agents = glob("installer/global/templates/*/agents/*.md")
+    template_agents = glob("installer/core/templates/*/agents/*.md")
     for agent in parse_agents(template_agents):
         if agent.name not in agent_sources:
             agent_sources[agent.name] = (agent, "template", PRIORITY_TEMPLATE)
@@ -1185,7 +1185,7 @@ def discover_agents(phase: str, stack: str, keywords: list) -> list:
 
 **Setup**:
 ```
-installer/global/agents/react-state-specialist.md (global)
+installer/core/agents/react-state-specialist.md (global)
 .claude/agents/react-state-specialist.md (local, from template)
 ```
 
@@ -1204,7 +1204,7 @@ Selected: react-state-specialist (source: local)
 
 **Setup**:
 ```
-installer/global/agents/python-api-specialist.md (global)
+installer/core/agents/python-api-specialist.md (global)
 ~/.agentecflow/agents/python-api-specialist.md (user custom)
 ```
 
@@ -1223,7 +1223,7 @@ Selected: python-api-specialist (source: user)
 
 **Setup**:
 ```
-installer/global/agents/dotnet-domain-specialist.md (global)
+installer/core/agents/dotnet-domain-specialist.md (global)
 ~/.agentecflow/agents/dotnet-domain-specialist.md (user)
 .claude/agents/dotnet-domain-specialist.md (local, project-specific)
 ```
@@ -1243,7 +1243,7 @@ Selected: dotnet-domain-specialist (source: local)
 
 **Setup**:
 ```
-installer/global/agents/react-state-specialist.md (global)
+installer/core/agents/react-state-specialist.md (global)
 .claude/agents/ (empty, no local agents)
 ```
 
@@ -1262,7 +1262,7 @@ Selected: react-state-specialist (source: global)
 
 **Setup**:
 ```
-installer/global/agents/ (no Go specialists)
+installer/core/agents/ (no Go specialists)
 .claude/agents/ (no Go specialists)
 ```
 

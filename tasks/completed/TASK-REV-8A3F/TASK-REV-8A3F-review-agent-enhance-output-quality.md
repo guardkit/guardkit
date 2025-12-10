@@ -50,11 +50,11 @@ The `/agent-enhance` and `/template-create` commands are producing empty or miss
 ### Files to Analyze
 
 **Agent-Enhance Command**:
-- `installer/global/commands/agent-enhance.md` - Command specification
-- Related Python scripts in `installer/global/commands/lib/`
+- `installer/core/commands/agent-enhance.md` - Command specification
+- Related Python scripts in `installer/core/commands/lib/`
 
 **Template-Create Command**:
-- `installer/global/commands/template-create.md` - Command specification
+- `installer/core/commands/template-create.md` - Command specification
 - Phase 6-8 agent generation logic
 
 **Evidence of Problem**:
@@ -63,8 +63,8 @@ The `/agent-enhance` and `/template-create` commands are producing empty or miss
 - `tasks/completed/TASK-REV-7C49/review-report.md` - Review assumed content existed
 
 **Reference (Working Examples)**:
-- `installer/global/agents/devops-specialist.md` (~111 lines core)
-- `installer/global/agents/devops-specialist-ext.md` (~2327 lines extended)
+- `installer/core/agents/devops-specialist.md` (~111 lines core)
+- `installer/core/agents/devops-specialist-ext.md` (~2327 lines extended)
 - These show what properly enhanced agents should look like
 
 ## Acceptance Criteria

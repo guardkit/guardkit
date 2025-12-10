@@ -299,7 +299,7 @@ python3 -m pytest tests/test_template_qa_validator.py -v
 python3 -m pytest tests/test_template_qa_session.py -v
 
 # All Q&A tests with coverage
-python3 -m pytest tests/test_template_qa_*.py -v --cov=installer/global/commands/lib
+python3 -m pytest tests/test_template_qa_*.py -v --cov=installer/core/commands/lib
 
 # Validation script (no pytest required)
 python3 validate_task_001b.py

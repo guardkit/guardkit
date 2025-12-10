@@ -54,7 +54,7 @@ completion_metrics:
 4. **Updated Workflow**: `_complete_workflow()` - Executes phases 7 → 8 → 9 in correct order
 
 ### Files Modified:
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
 
 ### Test Results:
 - Tests Passed: 24/29 (82.76%)
@@ -89,7 +89,7 @@ The issue has **three interconnected problems**:
 
 ### Issue 1: `output_path` Not Passed to ClaudeMdGenerator
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:599`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:599`
 
 ```python
 # CURRENT (INCORRECT):
@@ -202,7 +202,7 @@ Phase 8: CLAUDE.md generation → reads agent files from disk (now exist!) ✅
 ## Files Modified
 
 ### Primary Changes (IMPLEMENTED ✅)
-- [x] `installer/global/commands/lib/template_create_orchestrator.py`
+- [x] `installer/core/commands/lib/template_create_orchestrator.py`
   - **Phase 7**: Extracted agent writing logic into new `_phase7_write_agents()` method
   - **Phase 8**: Updated `_phase8_claude_md_generation()` to pass `output_path` parameter
   - **Phase 9**: Renamed `_phase7_package_assembly()` → `_phase9_package_assembly()`
@@ -211,7 +211,7 @@ Phase 8: CLAUDE.md generation → reads agent files from disk (now exist!) ✅
   - Updated `_complete_workflow()` to call phases in correct order
 
 ### No Changes Needed
-- ✅ `installer/global/lib/template_generator/claude_md_generator.py`
+- ✅ `installer/core/lib/template_generator/claude_md_generator.py`
   - Already has AI-enhanced metadata extraction (`_enhance_agent_info_with_ai()`)
   - Already reads from disk when `output_path` is provided
   - Already has `_read_agent_metadata_from_file()` method
@@ -339,7 +339,7 @@ The `claude_md_generator.py` already has AI-powered enhancement in `_enhance_age
 ### Deliverables
 
 ✅ **Files Modified**: 1
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/template_create_orchestrator.py`
 
 ✅ **Implementation Changes**:
 - New `_phase7_write_agents()` method (67 lines)

@@ -42,7 +42,7 @@
 
 **Prompt**:
 ```
-Please analyze the documentation structure in docs/ and installer/global/ folders.
+Please analyze the documentation structure in docs/ and installer/core/ folders.
 Create a content organization plan that categorizes all 325+ markdown files into:
 - User-facing documentation (for GitHub Pages)
 - Developer/contributor documentation
@@ -162,9 +162,9 @@ Update the following files to clarify the /agent-format vs /agent-enhance workfl
 
 1. docs/guides/template-philosophy.md - Add "Agent Enhancement Strategy" section
 2. docs/guides/agent-enhancement-decision-guide.md - CREATE new file with decision matrix
-3. installer/global/commands/agent-format.md - Add "Primary Use Case" section
-4. installer/global/commands/agent-enhance.md - Add "Relationship with /agent-format" section
-5. installer/global/commands/template-create.md - Add "Phase 5.5: Agent Enhancement" section
+3. installer/core/commands/agent-format.md - Add "Primary Use Case" section
+4. installer/core/commands/agent-enhance.md - Add "Relationship with /agent-format" section
+5. installer/core/commands/template-create.md - Add "Phase 5.5: Agent Enhancement" section
 
 Key messages:
 - /agent-format for templates (6/10 quality, fast, generic)
@@ -220,9 +220,9 @@ Update CLAUDE.md to add:
 4. Examples and use cases for Phase 8
 5. Cross-references to:
    - docs/workflows/incremental-enhancement-workflow.md
-   - installer/global/commands/agent-enhance.md
-   - installer/global/commands/agent-format.md
-   - installer/global/commands/agent-validate.md
+   - installer/core/commands/agent-enhance.md
+   - installer/core/commands/agent-format.md
+   - installer/core/commands/agent-validate.md
 
 Reference TASK-DOC-9C4E for detailed requirements.
 Current status: PARTIALLY COMPLETE (has /agent-enhance mention, missing /agent-format and /agent-validate)

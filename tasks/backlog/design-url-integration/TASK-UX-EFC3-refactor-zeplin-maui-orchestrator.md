@@ -36,15 +36,15 @@ This is part of Phase 2 of the Design URL Integration project (see [design-url-i
 ## Implementation Notes
 
 ### Source and Target Files
-- **Source**: `installer/global/agents/zeplin-maui-orchestrator.md`
-- **Target**: `installer/global/agents/zeplin-orchestrator.md`
+- **Source**: `installer/core/agents/zeplin-maui-orchestrator.md`
+- **Target**: `installer/core/agents/zeplin-orchestrator.md`
 
 ### Key Changes Required
 
 **1. Rename File**
 ```bash
-mv installer/global/agents/zeplin-maui-orchestrator.md \
-   installer/global/agents/zeplin-orchestrator.md
+mv installer/core/agents/zeplin-maui-orchestrator.md \
+   installer/core/agents/zeplin-orchestrator.md
 ```
 
 **2. Update Agent Metadata**
@@ -280,7 +280,7 @@ After completing this task:
 
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide - Phase 2](../../docs/proposals/design-url-integration-implementation-guide.md#phase-2-refactor-orchestrators-parallel)
-- [Existing Zeplin MAUI Orchestrator](../../installer/global/agents/zeplin-maui-orchestrator.md)
+- [Existing Zeplin MAUI Orchestrator](../../installer/core/agents/zeplin-maui-orchestrator.md)
 
 ## Implementation Estimate
 

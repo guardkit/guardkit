@@ -56,23 +56,23 @@ All 4 issues from TASK-REV-6E5D have been successfully addressed:
 
 ## Files Modified
 
-1. **installer/global/lib/codebase_analyzer/models.py**
+1. **installer/core/lib/codebase_analyzer/models.py**
    - Added `FrameworkInfo` Pydantic model for rich metadata
    - Updated `TechnologyInfo.frameworks` to `List[Union[str, FrameworkInfo]]`
    - Added `framework_list` property for backward compatibility
    - Fixed `get_summary()` to use `framework_list` property
 
-2. **installer/global/lib/codebase_analyzer/agent_invoker.py**
+2. **installer/core/lib/codebase_analyzer/agent_invoker.py**
    - Added `EXTENDED_LAYER_PATTERNS` constant with 14 directory patterns
    - Added `_detect_extended_patterns()` method for heuristic layer detection
 
-3. **installer/global/lib/template_generator/pattern_matcher.py**
+3. **installer/core/lib/template_generator/pattern_matcher.py**
    - Enhanced `identify_crud_operation()` to prevent false positives
    - Added guard clause requiring pattern followed by entity name
    - Modified path matching to only match patterns ≥6 chars with proper delimiters
    - Added guard clause in `identify_entity()` to check CRUD operation first
 
-4. **installer/global/lib/template_generator/completeness_validator.py**
+4. **installer/core/lib/template_generator/completeness_validator.py**
    - Added `TEMPLATE_SUFFIX` constant (DRY principle)
    - Added `_separate_template_suffix()` helper method
    - Rewrote `_estimate_file_path()` to correctly handle compound extensions

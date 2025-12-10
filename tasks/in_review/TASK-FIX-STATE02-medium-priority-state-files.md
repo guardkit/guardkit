@@ -42,14 +42,14 @@ Fix the remaining medium priority state file path issues and introduce a shared 
 
 | File | Line(s) | Current | Change To |
 |------|---------|---------|-----------|
-| `installer/global/lib/template_config_handler.py` | 42, 52-53 | `Path.cwd()` based | Use shared helper |
-| `installer/global/commands/lib/greenfield_qa_session.py` | 1263, 1286, 1300 | Relative paths | Use shared helper |
+| `installer/core/lib/template_config_handler.py` | 42, 52-53 | `Path.cwd()` based | Use shared helper |
+| `installer/core/commands/lib/greenfield_qa_session.py` | 1263, 1286, 1300 | Relative paths | Use shared helper |
 
 ### New File to Create
 
 | File | Purpose |
 |------|---------|
-| `installer/global/lib/state_paths.py` | Shared helper for state file paths |
+| `installer/core/lib/state_paths.py` | Shared helper for state file paths |
 
 ### State Files Affected
 
@@ -63,7 +63,7 @@ Fix the remaining medium priority state file path issues and introduce a shared 
 
 ### 1. Create Shared Helper (state_paths.py)
 
-**New file**: `installer/global/lib/state_paths.py`
+**New file**: `installer/core/lib/state_paths.py`
 
 ```python
 """
@@ -150,7 +150,7 @@ TEMPLATE_PARTIAL_SESSION = ".template-init-partial-session.json"
 
 ### 2. Update template_config_handler.py
 
-**Location**: `installer/global/lib/template_config_handler.py` lines 42, 52-53
+**Location**: `installer/core/lib/template_config_handler.py` lines 42, 52-53
 
 **Current**:
 ```python
@@ -174,7 +174,7 @@ else:
 
 ### 3. Update greenfield_qa_session.py
 
-**Location**: `installer/global/commands/lib/greenfield_qa_session.py` lines 1263, 1286, 1300
+**Location**: `installer/core/commands/lib/greenfield_qa_session.py` lines 1263, 1286, 1300
 
 **Current**:
 ```python

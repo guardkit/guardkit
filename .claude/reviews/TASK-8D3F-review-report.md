@@ -61,7 +61,7 @@ Long specification files (25,406 tokens) may result in critical instructions bei
 **Tertiary Cause: Ambiguity in Agent Selection**
 
 The agent selection table (line 968-973) references agents that don't exist:
-- `maui-usecase-specialist` → Does not exist in `installer/global/agents/`
+- `maui-usecase-specialist` → Does not exist in `installer/core/agents/`
 - `engine-domain-logic-specialist` → Does not exist
 
 This creates confusion about which agent should actually be invoked, potentially leading to the decision to skip invocation entirely.
@@ -242,7 +242,7 @@ The agent selection table in `task-work.md` (lines 968-973) references agents th
 
 **Missing MAUI Specialist**:
 - Table references `maui-usecase-specialist`
-- No such agent in `installer/global/agents/`
+- No such agent in `installer/core/agents/`
 - Closest match: `dotnet-domain-specialist` (stack: [dotnet])
 - Alternative: `zeplin-maui-orchestrator` (different purpose - UX design integration)
 
@@ -723,7 +723,7 @@ If MAUI requires specialized handling beyond `dotnet-domain-specialist`:
 
 ```bash
 # Create new agent
-/agent-enhance installer/global/agents/maui-usecase-specialist.md
+/agent-enhance installer/core/agents/maui-usecase-specialist.md
 
 # Add frontmatter metadata
 stack: [maui, dotnet]
@@ -999,9 +999,9 @@ This exact pattern is repeating with agent invocations.
 
 ## References
 
-- [task-work.md](../../installer/global/commands/task-work.md) - Command specification
+- [task-work.md](../../installer/core/commands/task-work.md) - Command specification
 - [Agent Discovery Guide](../../docs/guides/agent-discovery-guide.md) - Discovery system documentation
-- [Agent Metadata Examples](../../installer/global/agents/) - Specialist agent files with frontmatter
+- [Agent Metadata Examples](../../installer/core/agents/) - Specialist agent files with frontmatter
 - TASK-5F8A - Related implementation task for enforcement improvements
 - TASK-3F47 - Historical test enforcement fix (October 2025)
 - TASK-EE41 - Historical agent model configuration (October 2025)

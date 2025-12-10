@@ -16,36 +16,36 @@ Successfully implemented AI-powered codebase analysis system following the **sim
 
 ### Core Module (8 files as specified)
 
-1. **`installer/global/lib/codebase_analyzer/__init__.py`** (58 lines)
+1. **`installer/core/lib/codebase_analyzer/__init__.py`** (58 lines)
    - Module exports and convenience functions
    - Clean public API
 
-2. **`installer/global/lib/codebase_analyzer/models.py`** (234 lines)
+2. **`installer/core/lib/codebase_analyzer/models.py`** (234 lines)
    - Pydantic data models with validation
    - Split into TechnologyInfo, ArchitectureInfo, QualityInfo (SRP)
    - Confidence scores with level validation
 
-3. **`installer/global/lib/codebase_analyzer/agent_invoker.py`** (478 lines)
+3. **`installer/core/lib/codebase_analyzer/agent_invoker.py`** (478 lines)
    - ArchitecturalReviewerInvoker for agent communication
    - HeuristicAnalyzer for graceful fallback
    - Protocol-based design (DIP)
 
-4. **`installer/global/lib/codebase_analyzer/prompt_builder.py`** (477 lines)
+4. **`installer/core/lib/codebase_analyzer/prompt_builder.py`** (477 lines)
    - PromptBuilder with template context integration
    - FileCollector for representative file sampling
    - Smart file prioritization (domain/service/repository patterns)
 
-5. **`installer/global/lib/codebase_analyzer/response_parser.py`** (277 lines)
+5. **`installer/core/lib/codebase_analyzer/response_parser.py`** (277 lines)
    - ResponseParser for JSON extraction and validation
    - FallbackResponseBuilder for heuristic mode
    - Robust error handling
 
-6. **`installer/global/lib/codebase_analyzer/serializer.py`** (352 lines)
+6. **`installer/core/lib/codebase_analyzer/serializer.py`** (352 lines)
    - AnalysisSerializer for save/load/export
    - Markdown report generation
    - Cache management
 
-7. **`installer/global/lib/codebase_analyzer/ai_analyzer.py`** (380 lines)
+7. **`installer/core/lib/codebase_analyzer/ai_analyzer.py`** (380 lines)
    - CodebaseAnalyzer orchestrator
    - Dependency injection for testability
    - Graceful fallback strategy

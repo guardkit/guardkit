@@ -32,7 +32,7 @@ Implement 4 critical error handling edge cases to make the system robust and use
 
 ### Implementation 1: File Write Failure Graceful Degradation ✅
 
-**File Modified**: `installer/global/commands/lib/review_modes.py`
+**File Modified**: `installer/core/commands/lib/review_modes.py`
 **Function**: `FullReviewHandler._move_task_to_backlog()`
 **Lines Changed**: 1493-1510 (18 lines)
 
@@ -73,7 +73,7 @@ except OSError as e:
 
 ### Implementation 2: Configuration Flag Conflict Detection ✅
 
-**File Created**: `installer/global/commands/lib/flag_validator.py` (190 lines)
+**File Created**: `installer/core/commands/lib/flag_validator.py` (190 lines)
 **Classes**: `FlagValidator`, `FlagConflictError`
 **Functions**: `validate()`, `get_enabled_flags()`, `validate_and_summarize()`
 
@@ -115,7 +115,7 @@ Solution: Choose only one flag based on your need.
 
 ### Implementation 3: Corrupted Metrics File Handling ✅
 
-**File Modified**: `installer/global/commands/lib/metrics/metrics_storage.py`
+**File Modified**: `installer/core/commands/lib/metrics/metrics_storage.py`
 **Function**: `MetricsStorage.read_all_metrics()`
 **Lines Changed**: 74-87 (13 lines)
 
@@ -160,7 +160,7 @@ Warning: Skipping corrupted metric at line 42: Expecting ',' delimiter: line 1 c
 
 ### Implementation 4: User-Friendly Error Message Wrappers ✅
 
-**File Created**: `installer/global/commands/lib/error_messages.py` (190 lines)
+**File Created**: `installer/core/commands/lib/error_messages.py` (190 lines)
 **Functions**: 3 error formatters + 1 helper
 
 **Problem Solved**:
@@ -256,12 +256,12 @@ Solution: Check that the implementation plan includes all required fields (files
 ## 📦 Files Created/Modified
 
 ### Files Created (3)
-1. `installer/global/commands/lib/flag_validator.py` - 190 lines
+1. `installer/core/commands/lib/flag_validator.py` - 190 lines
    - FlagValidator class
    - FlagConflictError exception
    - validate_flags() convenience function
 
-2. `installer/global/commands/lib/error_messages.py` - 190 lines
+2. `installer/core/commands/lib/error_messages.py` - 190 lines
    - format_file_error() function
    - format_validation_error() function
    - format_calculation_error() function
@@ -272,15 +272,15 @@ Solution: Check that the implementation plan includes all required fields (files
    - Full coverage of Day 2 implementations
 
 ### Files Modified (2)
-1. `installer/global/commands/lib/review_modes.py`
+1. `installer/core/commands/lib/review_modes.py`
    - Added file write failure handling (18 lines)
    - Graceful degradation on OSError
 
-2. `installer/global/commands/lib/metrics/metrics_storage.py`
+2. `installer/core/commands/lib/metrics/metrics_storage.py`
    - Enhanced corrupted line handling (13 lines)
    - Line number tracking and logging
 
-3. `installer/global/commands/lib/__init__.py`
+3. `installer/core/commands/lib/__init__.py`
    - Added flag_validator imports/exports
    - Added error_messages imports/exports
 
@@ -337,7 +337,7 @@ Solution: Check that the implementation plan includes all required fields (files
 
 ### Flag Validator Integration
 ```python
-from installer.global.commands.lib import validate_flags, FlagConflictError
+from installer.core.commands.lib import validate_flags, FlagConflictError
 
 user_flags = {"skip_review": True, "force_review": True}
 try:
@@ -348,7 +348,7 @@ except FlagConflictError as e:
 
 ### Error Message Integration
 ```python
-from installer.global.commands.lib import format_file_error
+from installer.core.commands.lib import format_file_error
 
 try:
     path.write_text(content)
@@ -359,7 +359,7 @@ except OSError as e:
 
 ### Metrics Storage Integration
 ```python
-from installer.global.commands.lib import MetricsStorage
+from installer.core.commands.lib import MetricsStorage
 
 storage = MetricsStorage()
 metrics = storage.read_all_metrics()

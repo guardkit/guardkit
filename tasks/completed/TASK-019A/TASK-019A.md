@@ -98,7 +98,7 @@ Phase 8: Package Assembly
 - [ ] All phase descriptions reflect correct dependencies
 
 ### AC2: Orchestrator Code Updated
-- [ ] `installer/global/commands/lib/template_create_orchestrator.py` phase execution reordered
+- [ ] `installer/core/commands/lib/template_create_orchestrator.py` phase execution reordered
 - [ ] Phase 5 (Template File Generation) executes before Phase 6 (Agent Recommendation)
 - [ ] Phase 6 (Agent Recommendation) executes before Phase 7 (CLAUDE.md Generation)
 - [ ] Progress messages display correct phase numbers
@@ -125,7 +125,7 @@ Phase 8: Package Assembly
 - [ ] Verification: New template has 100% agent documentation accuracy
 
 ### AC6: Documentation Updated
-- [ ] `installer/global/commands/template-create.md` updated (lines 45-100)
+- [ ] `installer/core/commands/template-create.md` updated (lines 45-100)
 - [ ] Output structure documentation reflects new phase order (lines 102-122)
 - [ ] Component generation section updated (lines 267-404)
 - [ ] Examples updated with correct phase numbers
@@ -140,7 +140,7 @@ Phase 8: Package Assembly
 ## Implementation Plan
 
 ### Step 1: Update Command Documentation (30 min)
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 Update sections:
 - Lines 45-100: Complete Workflow (renumber phases)
@@ -149,7 +149,7 @@ Update sections:
 - Lines 390-404: Agent Recommendation (note it now runs before CLAUDE.md)
 
 ### Step 2: Update Orchestrator Code (2-3 hours)
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 Changes needed:
 ```python
@@ -180,7 +180,7 @@ def execute_template_creation(context: CreationContext) -> TemplatePackage:
 ```
 
 ### Step 3: Enhance CLAUDE.md Generator (1-2 hours)
-**File**: `installer/global/lib/template_generator/claude_md_generator.py`
+**File**: `installer/core/lib/template_generator/claude_md_generator.py`
 
 Add new function:
 ```python
@@ -250,15 +250,15 @@ ls .claude/agents/*.md | wc -l          # Should match CLAUDE.md references
 ## Files to Modify
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── template-create.md                           ← Update documentation
 └── lib/
     └── template_create_orchestrator.py         ← Reorder phase execution
 
-installer/global/lib/template_generator/
+installer/core/lib/template_generator/
 └── claude_md_generator.py                      ← Add agent directory reading
 
-installer/global/templates/ardalis-clean-architecture/
+installer/core/templates/ardalis-clean-architecture/
 └── CLAUDE.md                                   ← Immediate fix (remove lines 811-823)
 
 tests/

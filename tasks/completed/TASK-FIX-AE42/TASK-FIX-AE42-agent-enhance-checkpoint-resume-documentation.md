@@ -137,7 +137,7 @@ This allows eventual success but:
 
 ## Files Modified
 
-### 1. `installer/global/commands/agent-enhance.md`
+### 1. `installer/core/commands/agent-enhance.md`
 
 Added new section "Handling Exit Code 42 (Agent Invocation Needed)" after Exit Codes section:
 - Step-by-step instructions for handling exit code 42
@@ -147,7 +147,7 @@ Added new section "Handling Exit Code 42 (Agent Invocation Needed)" after Exit C
 - Enhancement content format explanation
 - Quick reference checklist
 
-### 2. `installer/global/agents/agent-content-enhancer.md`
+### 2. `installer/core/agents/agent-content-enhancer.md`
 
 Added explicit clarification after the example JSON format:
 - "CRITICAL: `frontmatter_metadata` Location" section
@@ -221,6 +221,6 @@ The backward compatibility code in `invoker.py` should remain as a safety net bu
 - Evidence (pre-fix): `docs/reviews/progressive-disclosure/agent-enhance-output/output.md` (original firestore-crud-specialist run)
 - Verification (post-fix): `docs/reviews/progressive-disclosure/agent-enhance-output/output.md` (svelte5-component-specialist run)
 - Agent Response Format Spec: `docs/reference/agent-response-format.md`
-- Agent Content Enhancer: `installer/global/agents/agent-content-enhancer.md`
-- Agent Enhance Command: `installer/global/commands/agent-enhance.md`
-- Invoker Implementation: `installer/global/lib/agent_bridge/invoker.py`
+- Agent Content Enhancer: `installer/core/agents/agent-content-enhancer.md`
+- Agent Enhance Command: `installer/core/commands/agent-enhance.md`
+- Invoker Implementation: `installer/core/lib/agent_bridge/invoker.py`

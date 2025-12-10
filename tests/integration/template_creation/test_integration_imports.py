@@ -18,7 +18,7 @@ class TestIntegrationImports:
         """Test complete import chain from orchestrator to codebase_analyzer"""
         # 1. Import orchestrator using importlib
         orchestrator_module = importlib.import_module(
-            'installer.global.commands.lib.template_create_orchestrator'
+            'installer.core.commands.lib.template_create_orchestrator'
         )
         assert orchestrator_module is not None
 
@@ -28,7 +28,7 @@ class TestIntegrationImports:
 
         # 3. Import codebase_analyzer.models directly
         codebase_models = importlib.import_module(
-            'installer.global.lib.codebase_analyzer.models'
+            'installer.core.lib.codebase_analyzer.models'
         )
         CodebaseAnalysis = codebase_models.CodebaseAnalysis
         LayerInfo = codebase_models.LayerInfo
@@ -40,7 +40,7 @@ class TestIntegrationImports:
         """Test orchestrator can instantiate and use ManifestGenerator"""
         # Use importlib pattern
         orchestrator_module = importlib.import_module(
-            'installer.global.commands.lib.template_create_orchestrator'
+            'installer.core.commands.lib.template_create_orchestrator'
         )
         ManifestGenerator = orchestrator_module.ManifestGenerator
 
@@ -52,7 +52,7 @@ class TestIntegrationImports:
         """Test manifest_generator successfully imports codebase_analyzer.models"""
         # Import manifest_generator module
         manifest_gen_module = importlib.import_module(
-            'installer.global.lib.template_creation.manifest_generator'
+            'installer.core.lib.template_creation.manifest_generator'
         )
 
         # Should have CodebaseAnalysis and LayerInfo available
@@ -62,9 +62,9 @@ class TestIntegrationImports:
     def test_no_import_errors_on_module_load(self):
         """Test all modules load without ImportError"""
         modules_to_test = [
-            'installer.global.lib.codebase_analyzer.models',
-            'installer.global.lib.template_creation.manifest_generator',
-            'installer.global.commands.lib.template_create_orchestrator'
+            'installer.core.lib.codebase_analyzer.models',
+            'installer.core.lib.template_creation.manifest_generator',
+            'installer.core.commands.lib.template_create_orchestrator'
         ]
 
         for module_name in modules_to_test:
@@ -81,7 +81,7 @@ class TestIntegrationCommandExecution:
     def test_module_execution_shows_help(self):
         """Test python -m execution shows help"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -94,7 +94,7 @@ class TestIntegrationCommandExecution:
     def test_module_execution_recognizes_all_flags(self):
         """Test that module execution recognizes all command flags"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -121,7 +121,7 @@ class TestIntegrationCommandExecution:
     def test_module_execution_with_invalid_flag_fails_gracefully(self):
         """Test that invalid flags produce error"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--invalid-flag'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--invalid-flag'],
             capture_output=True,
             text=True,
             timeout=10
@@ -135,7 +135,7 @@ class TestIntegrationCommandExecution:
         project_root = Path(__file__).parent.parent.parent.parent
 
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10,
@@ -152,13 +152,13 @@ class TestIntegrationEdgeCases:
     def test_importlib_pattern_handles_missing_module_gracefully(self):
         """Test that importlib.import_module handles missing modules correctly"""
         with pytest.raises(ModuleNotFoundError):
-            importlib.import_module('installer.global.lib.nonexistent.module')
+            importlib.import_module('installer.core.lib.nonexistent.module')
 
     def test_python_314_global_keyword_not_used_as_identifier(self):
         """Test that 'global' keyword is not used as identifier (Python 3.14+ compatibility)"""
         files_to_check = [
-            'installer/global/lib/template_creation/manifest_generator.py',
-            'installer/global/commands/lib/template_create_orchestrator.py'
+            'installer/core/lib/template_creation/manifest_generator.py',
+            'installer/core/commands/lib/template_create_orchestrator.py'
         ]
 
         for file_path in files_to_check:
@@ -170,21 +170,21 @@ class TestIntegrationEdgeCases:
 
             # Should use importlib pattern, not direct import with 'global' in path
             # Check that imports use importlib.import_module
-            if 'installer.global.' in content:
-                # If the path contains 'installer.global.', it should be in importlib.import_module
+            if 'installer.core.' in content:
+                # If the path contains 'installer.core.', it should be in importlib.import_module
                 for line in content.splitlines():
-                    if 'installer.global.' in line and 'import' in line:
+                    if 'installer.core.' in line and 'import' in line:
                         if line.strip().startswith('#'):
                             continue  # Skip comments
                         # Should be using importlib pattern
                         assert 'importlib.import_module' in line or 'import importlib' in line, \
-                            f"Line uses 'installer.global.' without importlib in {file_path}: {line}"
+                            f"Line uses 'installer.core.' without importlib in {file_path}: {line}"
 
     def test_all_imports_compile_successfully(self):
         """Test that all Python files compile without syntax errors"""
         files_to_compile = [
-            'installer/global/lib/template_creation/manifest_generator.py',
-            'installer/global/commands/lib/template_create_orchestrator.py'
+            'installer/core/lib/template_creation/manifest_generator.py',
+            'installer/core/commands/lib/template_create_orchestrator.py'
         ]
 
         for file_path in files_to_compile:
@@ -204,8 +204,8 @@ class TestIntegrationAcceptanceCriteria:
     def test_code_compiles_without_errors(self):
         """Acceptance: Code compiles without errors"""
         files = [
-            'installer/global/lib/template_creation/manifest_generator.py',
-            'installer/global/commands/lib/template_create_orchestrator.py'
+            'installer/core/lib/template_creation/manifest_generator.py',
+            'installer/core/commands/lib/template_create_orchestrator.py'
         ]
 
         for file_path in files:
@@ -222,21 +222,21 @@ class TestIntegrationAcceptanceCriteria:
         """Acceptance: Imports resolve correctly"""
         # Test manifest_generator imports
         manifest_gen = importlib.import_module(
-            'installer.global.lib.template_creation.manifest_generator'
+            'installer.core.lib.template_creation.manifest_generator'
         )
         assert hasattr(manifest_gen, 'CodebaseAnalysis')
         assert hasattr(manifest_gen, 'LayerInfo')
 
         # Test orchestrator imports
         orchestrator = importlib.import_module(
-            'installer.global.commands.lib.template_create_orchestrator'
+            'installer.core.commands.lib.template_create_orchestrator'
         )
         assert hasattr(orchestrator, 'ManifestGenerator')
 
     def test_module_executable_with_m_flag(self):
         """Acceptance: Module executable with -m flag"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -247,7 +247,7 @@ class TestIntegrationAcceptanceCriteria:
     def test_argument_parser_handles_all_flags(self):
         """Acceptance: Argument parser handles all flags"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -267,7 +267,7 @@ class TestIntegrationAcceptanceCriteria:
 
         # Test from project root
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10,

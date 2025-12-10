@@ -19,14 +19,14 @@ The `/template-create` command was classifying 80% of JavaScript files as "other
 ### Files Created
 | File | Lines | Description |
 |------|-------|-------------|
-| `installer/global/lib/template_generator/layer_classifier.py` | 516 | Core classification system |
+| `installer/core/lib/template_generator/layer_classifier.py` | 516 | Core classification system |
 | `tests/lib/template_generator/test_layer_classifier.py` | 1064 | Comprehensive test suite |
 
 ### Files Modified
 | File | Changes |
 |------|---------|
-| `installer/global/lib/template_generator/path_resolver.py` | Added orchestrator integration |
-| `installer/global/lib/template_generator/__init__.py` | Exported new classes |
+| `installer/core/lib/template_generator/path_resolver.py` | Added orchestrator integration |
+| `installer/core/lib/template_generator/__init__.py` | Exported new classes |
 
 ## JavaScript Layer Patterns Implemented
 

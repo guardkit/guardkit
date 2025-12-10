@@ -552,7 +552,7 @@ class VersionManager:
 ### Files to Modify
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (UPDATE)
 │   ├── Add ModificationManager class
 │   └── Update FullReviewHandler with [M]/[V] handlers

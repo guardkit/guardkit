@@ -44,7 +44,7 @@
 
 ### Finding 1: Phase 5 Resume Routing Bug (CRITICAL)
 
-**Location**: [template_create_orchestrator.py:236-280](installer/global/commands/lib/template_create_orchestrator.py#L236-L280)
+**Location**: [template_create_orchestrator.py:236-280](installer/core/commands/lib/template_create_orchestrator.py#L236-L280)
 
 **Evidence from Test Output** (lines 1186-1205):
 ```

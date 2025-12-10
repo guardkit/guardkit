@@ -845,9 +845,9 @@ Generate 2-4 alternative approaches like agentecflow_platform (Phase 2).
 - [Architectural Review Implementation Summary](../../docs/research/architectural_review_implementation_summary.md) - Pattern reference
 
 ### Existing System Files
-- `installer/global/commands/task-work.md` - To be updated
-- `installer/global/agents/task-manager.md` - To be updated
-- `installer/global/agents/architectural-reviewer.md` - Pattern reference
+- `installer/core/commands/task-work.md` - To be updated
+- `installer/core/agents/task-manager.md` - To be updated
+- `installer/core/agents/architectural-reviewer.md` - Pattern reference
 - Stack specialist agents - To be updated
 
 ### External Research

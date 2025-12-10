@@ -174,26 +174,26 @@ TASK-4F79B-2 (Full Review Display + Approve/Cancel)
 All sub-tasks share common files but add incrementally:
 
 **Created by TASK-4F79B-1**:
-- `installer/global/commands/lib/review_modes.py` (QuickReviewHandler)
-- `installer/global/commands/lib/user_interaction.py` (countdown_timer, prompts)
+- `installer/core/commands/lib/review_modes.py` (QuickReviewHandler)
+- `installer/core/commands/lib/user_interaction.py` (countdown_timer, prompts)
 - `tests/unit/test_countdown_timer.py`
 - `tests/unit/test_quick_review.py`
 
 **Extended by TASK-4F79B-2**:
-- `installer/global/commands/lib/review_modes.py` (add FullReviewHandler)
-- `installer/global/commands/lib/user_interaction.py` (add display_full_checkpoint)
+- `installer/core/commands/lib/review_modes.py` (add FullReviewHandler)
+- `installer/core/commands/lib/user_interaction.py` (add display_full_checkpoint)
 - `tests/unit/test_full_review.py`
 - `tests/integration/test_review_escalation.py`
 
 **Extended by TASK-4F79B-3**:
-- `installer/global/commands/lib/review_modes.py` (add ModificationManager)
-- `installer/global/commands/lib/version_manager.py` (new file)
+- `installer/core/commands/lib/review_modes.py` (add ModificationManager)
+- `installer/core/commands/lib/version_manager.py` (new file)
 - `tests/unit/test_modification.py`
 - `tests/integration/test_modification_loop.py`
 
 **Extended by TASK-4F79B-4**:
-- `installer/global/commands/lib/review_modes.py` (add QAManager)
-- `installer/global/commands/lib/qa_interface.py` (new file)
+- `installer/core/commands/lib/review_modes.py` (add QAManager)
+- `installer/core/commands/lib/qa_interface.py` (new file)
 - `tests/unit/test_qa.py`
 - `tests/integration/test_qa_workflow.py`
 

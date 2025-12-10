@@ -32,13 +32,13 @@ fullstack/
 ## Implementation
 
 ```bash
-cd ai-engineer/installer/global/templates
+cd ai-engineer/installer/core/templates
 
 # Copy all templates
 cp -r default/ react/ python/ typescript-api/ \
       maui-appshell/ maui-navigationpage/ \
       dotnet-microservice/ fullstack/ \
-      ../../agentecflow/installer/global/templates/
+      ../../agentecflow/installer/core/templates/
 ```
 
 ## Modifications for Each Template
@@ -139,7 +139,7 @@ To:
 ## Verification
 
 ```bash
-cd agentecflow/installer/global/templates
+cd agentecflow/installer/core/templates
 
 # Verify all templates exist
 for template in default react python typescript-api maui-appshell \

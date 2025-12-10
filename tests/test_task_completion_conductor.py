@@ -21,7 +21,7 @@ import tempfile
 
 # Add lib directory to path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from task_completion_helper import (
     find_task_file,

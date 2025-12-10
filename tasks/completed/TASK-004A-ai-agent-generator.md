@@ -668,9 +668,9 @@ This is a test agent.
 ## Implementation Summary
 
 ### Files Created
-1. `installer/global/lib/agent_generator/__init__.py` - Package exports
-2. `installer/global/lib/agent_generator/agent_generator.py` - Main implementation (150 lines)
-3. `installer/global/lib/agent_generator/README.md` - Comprehensive documentation
+1. `installer/core/lib/agent_generator/__init__.py` - Package exports
+2. `installer/core/lib/agent_generator/agent_generator.py` - Main implementation (150 lines)
+3. `installer/core/lib/agent_generator/README.md` - Comprehensive documentation
 4. `tests/unit/test_ai_agent_generator.py` - Test suite (20 tests)
 
 ### Test Results

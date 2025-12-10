@@ -72,7 +72,7 @@ Remove Phase 7.5 agent enhancement and the agent bridge infrastructure entirely 
 
 ### 1. Remove Entire File: `agent_enhancer.py`
 
-**Location**: `installer/global/lib/template_creation/agent_enhancer.py`
+**Location**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 **Lines**: 1,468 lines
 
@@ -88,7 +88,7 @@ This file contains the failed agent bridge implementation that:
 
 ### 2. Remove Agent Bridge Infrastructure
 
-**Location**: `installer/global/lib/agent_bridge/invoker.py`
+**Location**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Action**: Keep file (used elsewhere?) but remove Phase 7.5 usage
 
@@ -98,14 +98,14 @@ This file contains the failed agent bridge implementation that:
 
 ### 3. Modify: `template_create_orchestrator.py`
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes Required**:
 
 **A. Remove Phase 7.5 Import** (lines 61-63):
 ```python
 # REMOVE:
-_agent_enhancer_module = importlib.import_module('installer.global.lib.template_creation.agent_enhancer')
+_agent_enhancer_module = importlib.import_module('installer.core.lib.template_creation.agent_enhancer')
 AgentEnhancer = _agent_enhancer_module.AgentEnhancer
 ```
 
@@ -154,7 +154,7 @@ except SystemExit as e:
 
 ### 4. Update: `constants.py`
 
-**Location**: `installer/global/lib/template_creation/constants.py`
+**Location**: `installer/core/lib/template_creation/constants.py`
 
 **Changes**:
 ```python
@@ -189,10 +189,10 @@ class WorkflowPhase:
 **1.1: AgentBridgeInvoker Usage Verification** (15 minutes) ⚠️ CRITICAL
 ```bash
 # Check Phase 6 usage
-rg "AgentBridgeInvoker" installer/global/commands/lib/template_create_orchestrator.py -A 5 -B 5
+rg "AgentBridgeInvoker" installer/core/commands/lib/template_create_orchestrator.py -A 5 -B 5
 
 # Check architectural-reviewer agent invocation
-rg "architectural-reviewer" installer/global/commands/lib/template_create_orchestrator.py -A 10
+rg "architectural-reviewer" installer/core/commands/lib/template_create_orchestrator.py -A 10
 
 # Decision criteria:
 # - If ONLY Phase 7.5 uses it: DELETE invoker.py entirely
@@ -267,8 +267,8 @@ pytest tests/unit/lib/template_creation/ --cov --cov-report=term --cov-report=js
 ```bash
 # Backup critical files (just in case)
 mkdir -p /tmp/taskwright-simp-9abe-backup
-cp installer/global/lib/template_creation/agent_enhancer.py /tmp/taskwright-simp-9abe-backup/
-cp installer/global/commands/lib/template_create_orchestrator.py /tmp/taskwright-simp-9abe-backup/
+cp installer/core/lib/template_creation/agent_enhancer.py /tmp/taskwright-simp-9abe-backup/
+cp installer/core/commands/lib/template_create_orchestrator.py /tmp/taskwright-simp-9abe-backup/
 
 # Backup test files
 cp tests/lib/template_creation/test_agent_enhancer.py /tmp/taskwright-simp-9abe-backup/ 2>/dev/null || true
@@ -278,10 +278,10 @@ cp tests/lib/template_creation/test_agent_enhancer.py /tmp/taskwright-simp-9abe-
 
 ```bash
 # Remove file
-rm installer/global/lib/template_creation/agent_enhancer.py
+rm installer/core/lib/template_creation/agent_enhancer.py
 
 # Stage deletion
-git add installer/global/lib/template_creation/agent_enhancer.py
+git add installer/core/lib/template_creation/agent_enhancer.py
 ```
 
 #### Step 2.3: Remove Test Files (3 minutes)
@@ -301,11 +301,11 @@ git add tests/lib/template_creation/test_agent_enhancement_with_code_samples.py 
 **Only if Step 1.1 determined Scenario B (Phase 7.5 only)**:
 ```bash
 # Remove agent bridge infrastructure
-rm installer/global/lib/agent_bridge/invoker.py
-rm installer/global/lib/agent_bridge/state_manager.py  # If Phase 7.5 only
+rm installer/core/lib/agent_bridge/invoker.py
+rm installer/core/lib/agent_bridge/state_manager.py  # If Phase 7.5 only
 
 # Stage deletions
-git add installer/global/lib/agent_bridge/
+git add installer/core/lib/agent_bridge/
 ```
 
 **If Step 1.1 determined Scenario A (Phase 6 also uses it)**:
@@ -365,13 +365,13 @@ Related: TASK-SIMP-9ABE, TASK-09E9"
 
 **Testing**: After each change, run:
 ```bash
-python3 -c "from installer.global.commands.lib.template_create_orchestrator import TemplateCreateOrchestrator"
+python3 -c "from installer.core.commands.lib.template_create_orchestrator import TemplateCreateOrchestrator"
 ```
 
 ### Step 4: Update constants.py (5 minutes)
 
 ```python
-# File: installer/global/lib/template_creation/constants.py
+# File: installer/core/lib/template_creation/constants.py
 
 class WorkflowPhase:
     """Template creation workflow phases."""
@@ -426,7 +426,7 @@ def test_template_creation_full_workflow():
    - Update workflow description
    - Add note about incremental enhancement coming soon
 
-2. **template-create command spec** (`installer/global/commands/template-create.md`):
+2. **template-create command spec** (`installer/core/commands/template-create.md`):
    - Remove Phase 7.5 description
    - Update expected output (no enhanced agents)
    - Add note about TASK-PHASE-8-INCREMENTAL
@@ -524,7 +524,7 @@ def test_basic_agents_created():
 def test_template_create_end_to_end():
     """Test complete workflow without Phase 7.5."""
     result = subprocess.run([
-        "python3", "-m", "installer.global.commands.template-create",
+        "python3", "-m", "installer.core.commands.template-create",
         "--name", "test-e2e",
         "--codebase-path", TEST_PROJECT_PATH
     ], capture_output=True, text=True)
@@ -556,7 +556,7 @@ def test_coverage_maintained():
     """
     result = subprocess.run([
         "pytest", "tests/unit/lib/template_creation/",
-        "--cov=installer.global.lib.template_creation",
+        "--cov=installer.core.lib.template_creation",
         "--cov-report=json",
         "--cov-report=term"
     ], capture_output=True, text=True)
@@ -679,7 +679,7 @@ If removal causes unexpected issues:
 **Step 1: Immediate Rollback**
 ```bash
 # Restore agent_enhancer.py
-cp /tmp/agent_enhancer.py.backup installer/global/lib/template_creation/agent_enhancer.py
+cp /tmp/agent_enhancer.py.backup installer/core/lib/template_creation/agent_enhancer.py
 
 # Revert orchestrator changes
 git revert <commit-hash>
@@ -714,7 +714,7 @@ git revert <commit-hash>
 - The `/template-create` command registration is unchanged
 - Phase 7.5 removal is an internal implementation detail
 - Command interface and behavior remain compatible
-- Entry point (`installer.global.commands.template_create`) unchanged
+- Entry point (`installer.core.commands.template_create`) unchanged
 
 **Verification**:
 ```bash
@@ -738,7 +738,7 @@ grep "^import\|^from" /tmp/taskwright-simp-9abe-backup/agent_enhancer.py | sort 
 # Cross-reference with other files
 for module in $(grep "^import\|^from" /tmp/taskwright-simp-9abe-backup/agent_enhancer.py | awk '{print $2}' | cut -d. -f1 | sort -u); do
     echo "Checking $module..."
-    rg "import $module|from $module" installer/global/ --files-with-matches | grep -v agent_enhancer
+    rg "import $module|from $module" installer/core/ --files-with-matches | grep -v agent_enhancer
 done
 ```
 
@@ -754,7 +754,7 @@ done
    - Update workflow diagram (if exists)
    - Update expected output examples
 
-2. **`installer/global/commands/template-create.md`**
+2. **`installer/core/commands/template-create.md`**
    - Update command description
    - Remove Phase 7.5 from phase list
    - Update success message example:

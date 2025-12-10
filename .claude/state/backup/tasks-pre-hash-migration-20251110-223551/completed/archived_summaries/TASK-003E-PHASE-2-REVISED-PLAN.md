@@ -637,9 +637,9 @@ def test_full_review_approval():
 ```bash
 # Run integration tests with coverage
 pytest tests/integration/ -v \
-    --cov=installer/global/commands/lib/review_modes \
-    --cov=installer/global/commands/lib/review_router \
-    --cov=installer/global/commands/lib/plan_templates \
+    --cov=installer/core/commands/lib/review_modes \
+    --cov=installer/core/commands/lib/review_router \
+    --cov=installer/core/commands/lib/plan_templates \
     --cov-report=term-missing \
     --cov-report=html \
     --cov-fail-under=80
@@ -719,7 +719,7 @@ pytest tests/integration/ --collect-only | grep "test session"
 
 # 2. Run all integration tests with coverage
 pytest tests/integration/ -v \
-    --cov=installer/global/commands/lib \
+    --cov=installer/core/commands/lib \
     --cov-report=term-missing \
     --cov-report=html \
     --cov-fail-under=80

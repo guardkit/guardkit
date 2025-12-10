@@ -74,8 +74,8 @@ ls ~/.agentecflow/require-kit.marker.json  # Should exist
 
 ---
 
-### 2. installer/global/commands/task-work.md (Error Messages)
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/commands/task-work.md`
+### 2. installer/core/commands/task-work.md (Error Messages)
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/core/commands/task-work.md`
 
 **Changes needed**:
 - Line 3024: Update BDD mode prerequisites documentation
@@ -462,7 +462,7 @@ If issues arise, rollback is simple:
    ```bash
    git checkout HEAD -- CLAUDE.md
    git checkout HEAD -- .claude/CLAUDE.md
-   git checkout HEAD -- installer/global/commands/task-work.md
+   git checkout HEAD -- installer/core/commands/task-work.md
    ```
 
 2. **Revert test changes**:

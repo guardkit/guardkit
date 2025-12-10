@@ -56,7 +56,7 @@
 │     (wherever user ran the command from)                          │
 │                                                                     │
 │  4. Orchestrator line 20 executes:                                │
-│     importlib.import_module('installer.global.commands.lib.template_qa_session')
+│     importlib.import_module('installer.core.commands.lib.template_qa_session')
 │                              ^^^^^^^^^^^^^^^^                      │
 │                              Needs to resolve this path            │
 │                                                                     │
@@ -70,13 +70,13 @@
 │                                                                     │
 │  7. With PYTHONPATH="/path/to/guardkit":                        │
 │     - Searches: /path/to/guardkit/installer/  ✅ Found!        │
-│     - Imports: installer.global.commands.lib.template_qa_session  │
+│     - Imports: installer.core.commands.lib.template_qa_session  │
 │     - Success! ✅                                                 │
 │                                                                     │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-## Why Import Uses 'installer.global.*' Pattern
+## Why Import Uses 'installer.core.*' Pattern
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -87,31 +87,31 @@
 │           locations in the repo:                                   │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐ │
-│  │ From: installer/global/commands/lib/                         │ │
+│  │ From: installer/core/commands/lib/                         │ │
 │  │   - template_qa_session.py                                   │ │
 │  │                                                               │ │
-│  │ From: installer/global/lib/codebase_analyzer/               │ │
+│  │ From: installer/core/lib/codebase_analyzer/               │ │
 │  │   - ai_analyzer.py                                           │ │
 │  │   - serializer.py                                            │ │
 │  │   - models.py                                                │ │
 │  │                                                               │ │
-│  │ From: installer/global/lib/template_generator/              │ │
+│  │ From: installer/core/lib/template_generator/              │ │
 │  │   - template_generator.py                                    │ │
 │  │   - completeness_validator.py                                │ │
 │  │   - extended_validator.py                                    │ │
 │  │   - models.py                                                │ │
 │  │                                                               │ │
-│  │ From: installer/global/lib/agent_generator/                 │ │
+│  │ From: installer/core/lib/agent_generator/                 │ │
 │  │   - agent_generator.py                                       │ │
 │  │   - markdown_formatter.py                                    │ │
 │  │                                                               │ │
-│  │ From: installer/global/lib/agent_bridge/                    │ │
+│  │ From: installer/core/lib/agent_bridge/                    │ │
 │  │   - invoker.py                                               │ │
 │  │   - state_manager.py                                         │ │
 │  └──────────────────────────────────────────────────────────────┘ │
 │                                                                     │
 │  SOLUTION: Use absolute imports from 'installer' root:            │
-│            installer.global.lib.codebase_analyzer.ai_analyzer     │
+│            installer.core.lib.codebase_analyzer.ai_analyzer     │
 │                                                                     │
 │  REQUIRES: PYTHONPATH includes guardkit repo directory          │
 │                                                                     │
@@ -150,7 +150,7 @@
 │  4. Bash executes with PYTHONPATH set:                            │
 │     PYTHONPATH="/path/to/guardkit" python3 orchestrator.py      │
 │           ↓                                                         │
-│  5. Orchestrator imports installer.global.* modules ✅            │
+│  5. Orchestrator imports installer.core.* modules ✅            │
 │           ↓                                                         │
 │  6. Template creation completes ✅                                │
 │                                                                     │
@@ -173,7 +173,7 @@
 │  5. Claude Code directly executes (NO PYTHONPATH):                │
 │     python3 orchestrator.py --name test                            │
 │           ↓                                                         │
-│  6. Orchestrator tries to import installer.global.* ❌            │
+│  6. Orchestrator tries to import installer.core.* ❌            │
 │           ↓                                                         │
 │  7. ModuleNotFoundError: No module named 'installer' ❌           │
 │                                                                     │
@@ -214,13 +214,13 @@
 │  │                                                               │ │
 │  │     raise ImportError("Cannot find guardkit")             │ │
 │  │                                                               │ │
-│  │ # Run BEFORE any installer.global imports                   │ │
+│  │ # Run BEFORE any installer.core imports                   │ │
 │  │ _setup_pythonpath()                                         │ │
 │  │                                                               │ │
 │  │ # NOW safe to import                                         │ │
 │  │ import importlib                                             │ │
 │  │ _template_qa_module = importlib.import_module(              │ │
-│  │     'installer.global.commands.lib.template_qa_session'     │ │
+│  │     'installer.core.commands.lib.template_qa_session'     │ │
 │  │ )                                                            │ │
 │  └──────────────────────────────────────────────────────────────┘ │
 │                                                                     │
@@ -259,15 +259,15 @@
 │     ]                                                               │
 │                                                                     │
 │  4. Import statement executes:                                     │
-│     importlib.import_module('installer.global.commands.lib.template_qa_session')
+│     importlib.import_module('installer.core.commands.lib.template_qa_session')
 │     ↓                                                               │
 │     Python searches sys.path[0]:                                   │
 │     /Users/user/Projects/appmilla_github/guardkit/installer/    │
 │     ↓                                                               │
 │     Found! ✅                                                      │
-│     /Users/.../guardkit/installer/global/commands/lib/template_qa_session.py
+│     /Users/.../guardkit/installer/core/commands/lib/template_qa_session.py
 │                                                                     │
-│  5. All subsequent installer.global.* imports work ✅             │
+│  5. All subsequent installer.core.* imports work ✅             │
 │                                                                     │
 └────────────────────────────────────────────────────────────────────┘
 ```

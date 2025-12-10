@@ -48,11 +48,11 @@ Create two comprehensive guide documents that fix broken links and provide clear
 
 ### Files to Update (Cross-references)
 
-3. **installer/global/commands/template-create.md**:
+3. **installer/core/commands/template-create.md**:
    - Add link to agent-enhancement-decision-guide.md
    - Add link to incremental-enhancement-workflow.md
 
-4. **installer/global/commands/agent-enhance.md**:
+4. **installer/core/commands/agent-enhance.md**:
    - Add link to agent-enhancement-decision-guide.md
    - Add link to incremental-enhancement-workflow.md
 
@@ -129,12 +129,12 @@ Create two comprehensive guide documents that fix broken links and provide clear
 
 ### Files Updated
 
-3. **installer/global/commands/template-create.md**
+3. **installer/core/commands/template-create.md**
    - Added organized "See Also" section
    - Links to both new guides with correct relative paths
    - Categorized cross-references (Command Docs, Workflow Guides, Implementation Tasks)
 
-4. **installer/global/commands/agent-enhance.md**
+4. **installer/core/commands/agent-enhance.md**
    - Enhanced "See Also" section with categorization
    - Links to both new guides with correct relative paths
    - Organized into: Command Documentation, Workflow Guides, Reference Documentation, Implementation Tasks
@@ -142,7 +142,7 @@ Create two comprehensive guide documents that fix broken links and provide clear
 ### Link Validation
 All cross-references validated:
 - From command files: `../../../docs/guides/` and `../../../docs/workflows/`
-- From guide files: `../../installer/global/commands/` and `../workflows/`
+- From guide files: `../../installer/core/commands/` and `../workflows/`
 - All referenced files exist and are accessible
 - No broken links introduced
 

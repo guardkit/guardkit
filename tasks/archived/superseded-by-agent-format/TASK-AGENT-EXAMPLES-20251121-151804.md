@@ -255,7 +255,7 @@ def count_lines(file_path: Path) -> dict:
         "status": "✅ PASS" if ratio >= 0.40 else "❌ FAIL"
     }
 
-agents_dir = Path("installer/global/agents")
+agents_dir = Path("installer/core/agents")
 results = []
 
 for agent_file in agents_dir.glob("*.md"):
@@ -370,7 +370,7 @@ From example library, choose 20-30 examples relevant to agent:
 #### 3.3: Verify Density Target
 
 ```bash
-python3 scripts/count-example-density.py installer/global/agents/code-reviewer.md
+python3 scripts/count-example-density.py installer/core/agents/code-reviewer.md
 # Target: ≥40% (was 30%, now should be 40%+)
 ```
 
@@ -434,15 +434,15 @@ python3 scripts/count-example-density.py
 **Automated Check**:
 ```bash
 # Check all examples have language specifiers
-grep -A 1 '```' installer/global/agents/*.md | \
+grep -A 1 '```' installer/core/agents/*.md | \
 grep -v '^```[a-z]' | \
 grep '```' | \
 wc -l
 # Expected: 0 (all code blocks have language)
 
 # Check ✅/❌ format usage
-grep -c '### ✅' installer/global/agents/*.md
-grep -c '### ❌' installer/global/agents/*.md
+grep -c '### ✅' installer/core/agents/*.md
+grep -c '### ❌' installer/core/agents/*.md
 # Expected: Equal counts (paired examples)
 ```
 
@@ -473,14 +473,14 @@ grep -c '### ❌' installer/global/agents/*.md
 ## Files to Update
 
 ### Priority 1 (Lowest Current Density - Week 1)
-1. `installer/global/agents/task-manager.md` (15% → 40%, add 40 examples)
-2. `installer/global/agents/code-reviewer.md` (30% → 40%, add 30 examples)
-3. `installer/global/agents/test-verifier.md` (est. 25% → 40%, add 35 examples)
+1. `installer/core/agents/task-manager.md` (15% → 40%, add 40 examples)
+2. `installer/core/agents/code-reviewer.md` (30% → 40%, add 30 examples)
+3. `installer/core/agents/test-verifier.md` (est. 25% → 40%, add 35 examples)
 
 ### Priority 2 (Medium Density - Week 2)
-4. `installer/global/agents/test-orchestrator.md` (35% → 45%, add 20 examples)
-5. `installer/global/agents/complexity-evaluator.md` (est. 30% → 40%, add 25 examples)
-6. `installer/global/agents/build-validator.md` (est. 30% → 40%, add 25 examples)
+4. `installer/core/agents/test-orchestrator.md` (35% → 45%, add 20 examples)
+5. `installer/core/agents/complexity-evaluator.md` (est. 30% → 40%, add 25 examples)
+6. `installer/core/agents/build-validator.md` (est. 30% → 40%, add 25 examples)
 
 ### Priority 3 (Close to Target - Week 3)
 7-15. Remaining agents (add 10-15 examples each to reach 40-50%)

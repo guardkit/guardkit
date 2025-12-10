@@ -23,19 +23,19 @@
 All 5 implementation modules verified to compile/build successfully:
 
 ```bash
-$ python3 -m py_compile installer/global/commands/lib/task_breakdown.py
+$ python3 -m py_compile installer/core/commands/lib/task_breakdown.py
 ✓ COMPILED SUCCESSFULLY - 0 errors
 
-$ python3 -m py_compile installer/global/commands/lib/breakdown_strategies.py
+$ python3 -m py_compile installer/core/commands/lib/breakdown_strategies.py
 ✓ COMPILED SUCCESSFULLY - 0 errors
 
-$ python3 -m py_compile installer/global/commands/lib/duplicate_detector.py
+$ python3 -m py_compile installer/core/commands/lib/duplicate_detector.py
 ✓ COMPILED SUCCESSFULLY - 0 errors
 
-$ python3 -m py_compile installer/global/commands/lib/visualization.py
+$ python3 -m py_compile installer/core/commands/lib/visualization.py
 ✓ COMPILED SUCCESSFULLY - 0 errors
 
-$ python3 -m py_compile installer/global/commands/lib/feature_generator.py
+$ python3 -m py_compile installer/core/commands/lib/feature_generator.py
 ✓ COMPILED SUCCESSFULLY - 0 errors
 ```
 

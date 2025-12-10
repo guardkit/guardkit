@@ -52,7 +52,7 @@ Update AI prompts in template generation to explicitly state CRUD completeness r
 ### Files to Modify
 
 #### 1. Template Generator Prompts
-**File**: `installer/global/lib/template_generator/template_generator.py`
+**File**: `installer/core/lib/template_generator/template_generator.py`
 
 **Method to Update**: `_create_extraction_prompt()`
 
@@ -106,7 +106,7 @@ Remember: Users need COMPLETE CRUD operations, not representative samples.
 ```
 
 #### 2. CLAUDE.md Generator
-**File**: `installer/global/lib/template_generator/claude_md_generator.py`
+**File**: `installer/core/lib/template_generator/claude_md_generator.py`
 
 **Method to Update**: `generate()`
 
@@ -155,7 +155,7 @@ for detailed checklist.
 ```
 
 #### 3. Phase 2 Analysis Prompts
-**File**: `installer/global/lib/codebase_analyzer/prompt_builder.py`
+**File**: `installer/core/lib/codebase_analyzer/prompt_builder.py`
 
 **Method to Update**: `build_analysis_prompt()` or similar
 
@@ -257,9 +257,9 @@ When analyzing this codebase:
 ## Deliverables
 
 ### Code Files
-- [ ] `installer/global/lib/template_generator/template_generator.py` (modified, +50 lines)
-- [ ] `installer/global/lib/template_generator/claude_md_generator.py` (modified, +60 lines)
-- [ ] `installer/global/lib/codebase_analyzer/prompt_builder.py` (modified, +30 lines)
+- [ ] `installer/core/lib/template_generator/template_generator.py` (modified, +50 lines)
+- [ ] `installer/core/lib/template_generator/claude_md_generator.py` (modified, +60 lines)
+- [ ] `installer/core/lib/codebase_analyzer/prompt_builder.py` (modified, +30 lines)
 - [ ] `tests/integration/test_enhanced_prompting.py` (200+ lines)
 
 ### Documentation Files
@@ -448,9 +448,9 @@ After Phase 1+2+3: 8.5/10 (100% CRUD completeness) - Prompts guide AI
 ### Deliverables
 
 **Code Files Modified (3)**:
-- `installer/global/lib/template_generator/template_generator.py` (+50 lines)
-- `installer/global/lib/template_generator/claude_md_generator.py` (+60 lines)
-- `installer/global/lib/codebase_analyzer/prompt_builder.py` (+30 lines)
+- `installer/core/lib/template_generator/template_generator.py` (+50 lines)
+- `installer/core/lib/template_generator/claude_md_generator.py` (+60 lines)
+- `installer/core/lib/codebase_analyzer/prompt_builder.py` (+30 lines)
 
 **Test Files Created (1)**:
 - `tests/integration/test_enhanced_prompting.py` (440 lines, 20 tests)
@@ -538,7 +538,7 @@ Result: False Negative Score ≥8/10
 5. All tests pass on first complete run
 
 **Challenges Faced**:
-1. Python import path handling (`installer.global.lib` → `lib`)
+1. Python import path handling (`installer.core.lib` → `lib`)
 2. Pydantic validation requirements (ConfidenceScore level/percentage matching)
 3. f-string escaping for JSON in prompts (needed double braces)
 

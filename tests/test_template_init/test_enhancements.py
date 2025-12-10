@@ -848,4 +848,4 @@ class TestEdgeCases:
 # =============================================================================
 
 if __name__ == '__main__':
-    pytest.main([__file__, '-v', '--cov=installer.global.commands.lib.greenfield_qa_session'])
+    pytest.main([__file__, '-v', '--cov=installer.core.commands.lib.greenfield_qa_session'])

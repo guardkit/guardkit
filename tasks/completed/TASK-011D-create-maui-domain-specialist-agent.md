@@ -66,8 +66,8 @@ Create the `maui-domain-specialist` agent for both MAUI templates (maui-appshell
 ## Requirements
 
 ### Agent File Creation
-- [x] Create `installer/global/templates/maui-appshell/agents/maui-domain-specialist.md`
-- [x] Create `installer/global/templates/maui-navigationpage/agents/maui-domain-specialist.md` (identical content)
+- [x] Create `installer/core/templates/maui-appshell/agents/maui-domain-specialist.md`
+- [x] Create `installer/core/templates/maui-navigationpage/agents/maui-domain-specialist.md` (identical content)
 - [x] Follow standard agent format (role, expertise, responsibilities, patterns, anti-patterns)
 
 ### Agent Expertise Definition
@@ -194,47 +194,47 @@ Create the `maui-domain-specialist` agent for both MAUI templates (maui-appshell
 
 ### Reference Documents
 - `docs/shared/maui-template-architecture.md` - Architecture definition
-- `installer/global/templates/maui-appshell/agents/maui-repository-specialist.md` - Repository collaboration
-- `installer/global/templates/maui-appshell/agents/maui-service-specialist.md` - Service collaboration
-- `installer/global/templates/maui-appshell/agents/maui-viewmodel-specialist.md` - ViewModel handoff
+- `installer/core/templates/maui-appshell/agents/maui-repository-specialist.md` - Repository collaboration
+- `installer/core/templates/maui-appshell/agents/maui-service-specialist.md` - Service collaboration
+- `installer/core/templates/maui-appshell/agents/maui-viewmodel-specialist.md` - ViewModel handoff
 
 ### Will Be Deprecated (DO NOT USE)
-- `installer/global/templates/maui-appshell/agents/maui-usecase-specialist.md` - Old pattern, reference only
+- `installer/core/templates/maui-appshell/agents/maui-usecase-specialist.md` - Old pattern, reference only
 
 ## Testing Strategy
 
 ### Agent Documentation Tests
 ```bash
 # Verify agent files exist
-test -f installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
-test -f installer/global/templates/maui-navigationpage/agents/maui-domain-specialist.md
+test -f installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
+test -f installer/core/templates/maui-navigationpage/agents/maui-domain-specialist.md
 
 # Verify content is identical
-diff installer/global/templates/maui-appshell/agents/maui-domain-specialist.md \
-     installer/global/templates/maui-navigationpage/agents/maui-domain-specialist.md
+diff installer/core/templates/maui-appshell/agents/maui-domain-specialist.md \
+     installer/core/templates/maui-navigationpage/agents/maui-domain-specialist.md
 
 # Verify no UseCase/Engine suffix in naming examples
-! grep -i "UseCase\|Engine" installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+! grep -i "UseCase\|Engine" installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 
 # Verify verb-based naming present
 grep -E "Get[A-Z]|Create[A-Z]|Update[A-Z]|Delete[A-Z]" \
-     installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+     installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 
 # Verify ErrorOr pattern documented
-grep "ErrorOr" installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+grep "ErrorOr" installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 ```
 
 ### Pattern Validation Tests
 ```bash
 # Verify correct namespace pattern
-grep -E "namespace.*\.Domain" installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+grep -E "namespace.*\.Domain" installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 
 # Verify anti-patterns documented
-grep -E "❌.*UseCase|❌.*Engine" installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+grep -E "❌.*UseCase|❌.*Engine" installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 
 # Verify collaboration documented
 grep -E "repository-specialist|service-specialist|viewmodel-specialist" \
-     installer/global/templates/maui-appshell/agents/maui-domain-specialist.md
+     installer/core/templates/maui-appshell/agents/maui-domain-specialist.md
 ```
 
 ## Expected Agent Content Structure

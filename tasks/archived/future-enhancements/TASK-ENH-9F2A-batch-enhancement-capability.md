@@ -26,7 +26,7 @@ Currently, `/agent-enhance` enhances one agent at a time. For templates with 10+
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/agent_enhancement/enhancer.py`
+**Location**: `installer/core/commands/lib/agent_enhancement/enhancer.py`
 
 **Current API**:
 ```python
@@ -72,11 +72,11 @@ def enhance(self, agent_file: Path, template_dir: Path) -> EnhancementResult:
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/agent_enhancement/enhancer.py`**
+**1. `installer/core/commands/lib/agent_enhancement/enhancer.py`**
 - Add `enhance_batch` method
 - Add parallel processing logic
 
-**2. `installer/global/commands/agent-enhance` (if exists)**
+**2. `installer/core/commands/agent-enhance` (if exists)**
 - Add batch mode flag
 - Add glob pattern support
 

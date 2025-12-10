@@ -64,7 +64,7 @@ CodebaseAnalyzer → Analysis Object (comprehensive)
 
 ### Phase 1: AI Integration Method
 
-**File**: `installer/global/lib/agent_generator/agent_generator.py`
+**File**: `installer/core/lib/agent_generator/agent_generator.py`
 
 **New Method**: `_ai_identify_all_agents(analysis)`
 
@@ -278,7 +278,7 @@ def _parse_ai_agent_response(self, response: str, analysis: Any) -> List[Capabil
 
 **Orchestrator Integration**:
 
-File: `installer/global/orchestrators/template_create_orchestrator.py`
+File: `installer/core/orchestrators/template_create_orchestrator.py`
 
 ```python
 # Phase 5: Generate agents
@@ -442,7 +442,7 @@ class TestAgentGeneratorIntegration:
 ## Files to Modify
 
 ### 1. Core Implementation
-**File**: `installer/global/lib/agent_generator/agent_generator.py` (Lines 120-235)
+**File**: `installer/core/lib/agent_generator/agent_generator.py` (Lines 120-235)
 
 **Changes**:
 - Add `_ai_identify_all_agents()` method (new, ~80 lines)

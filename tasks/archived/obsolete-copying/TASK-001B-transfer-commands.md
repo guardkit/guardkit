@@ -21,8 +21,8 @@ Copy core task workflow commands from ai-engineer to agentecflow, removing all r
 ### Core Commands (COPY with modifications)
 
 ```
-Source: ai-engineer/installer/global/commands/
-Target: agentecflow/installer/global/commands/
+Source: ai-engineer/installer/core/commands/
+Target: agentecflow/installer/core/commands/
 
 FILES:
 ✓ task-create.md       - MODIFY (remove epic/feature/requirements frontmatter)
@@ -199,20 +199,20 @@ subtasks: []
 cd ai-engineer
 
 # Copy core commands
-cp installer/global/commands/task-create.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/task-work.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/task-complete.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/task-status.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/task-refine.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/debug.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/figma-to-react.md ../agentecflow/installer/global/commands/
-cp installer/global/commands/zeplin-to-maui.md ../agentecflow/installer/global/commands/
+cp installer/core/commands/task-create.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/task-work.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/task-complete.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/task-status.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/task-refine.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/debug.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/figma-to-react.md ../agentecflow/installer/core/commands/
+cp installer/core/commands/zeplin-to-maui.md ../agentecflow/installer/core/commands/
 ```
 
 ### Step 2: Modify task-create.md
 
 ```bash
-cd ../agentecflow/installer/global/commands/
+cd ../agentecflow/installer/core/commands/
 
 # Edit task-create.md
 # Remove:
@@ -268,10 +268,10 @@ grep -i "epic\|feature\|requirement\|ears\|bdd" task-refine.md
 
 ```bash
 # These should be unchanged
-diff ../ai-engineer/installer/global/commands/task-complete.md task-complete.md
-diff ../ai-engineer/installer/global/commands/debug.md debug.md
-diff ../ai-engineer/installer/global/commands/figma-to-react.md figma-to-react.md
-diff ../ai-engineer/installer/global/commands/zeplin-to-maui.md zeplin-to-maui.md
+diff ../ai-engineer/installer/core/commands/task-complete.md task-complete.md
+diff ../ai-engineer/installer/core/commands/debug.md debug.md
+diff ../ai-engineer/installer/core/commands/figma-to-react.md figma-to-react.md
+diff ../ai-engineer/installer/core/commands/zeplin-to-maui.md zeplin-to-maui.md
 ```
 
 ## Testing Checklist
@@ -303,7 +303,7 @@ echo "Just verify it starts without errors - don't need to complete"
 
 ```bash
 # Check no requirements features leaked through
-cd agentecflow/installer/global/commands/
+cd agentecflow/installer/core/commands/
 grep -r "epic" *.md | grep -v "# Historical" | grep -v "# Related"
 grep -r "feature" *.md | grep -v "# Historical" | grep -v "# Related"
 grep -r "requirement" *.md | grep -v "# Historical"

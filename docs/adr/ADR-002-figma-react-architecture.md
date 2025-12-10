@@ -62,7 +62,7 @@ TASK-002 requires implementing a Figma → React UX design integration system th
 #### 2. Orchestration Layer (New Agent)
 
 **Agent**: `figma-react-orchestrator`
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/figma-react-orchestrator.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/figma-react-orchestrator.md`
 
 **Responsibilities:**
 - Phase 0: MCP tool verification and setup validation
@@ -140,7 +140,7 @@ interface DesignMetadata {
 #### 3. Stack Implementation Layer (New Agent)
 
 **Agent**: `react-component-generator`
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/react-component-generator.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/react-component-generator.md`
 
 **Responsibilities:**
 - React component code generation
@@ -171,7 +171,7 @@ src/
 ### Command Structure
 
 **New Command**: `/figma-to-react`
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/figma-to-react.md`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/figma-to-react.md`
 
 **Workflow Phases:**
 
@@ -539,7 +539,7 @@ Run '/figma-to-react --verify-setup' to test configuration.
 ### New Files to Create
 
 ```
-installer/global/
+installer/core/
 ├── agents/
 │   ├── figma-react-orchestrator.md         # Orchestration layer agent
 │   └── react-component-generator.md        # Stack implementation agent
@@ -758,8 +758,8 @@ reliability_metrics:
 
 - EARS Requirements: `/docs/requirements/approved/REQ-FIGMA-*.md`
 - Requirements Analysis: Task file frontmatter (16 functional requirements identified)
-- Agentecflow Workflow: `/installer/global/commands/task-work.md`
-- Architectural Review: `/installer/global/agents/architectural-reviewer.md`
+- Agentecflow Workflow: `/installer/core/commands/task-work.md`
+- Architectural Review: `/installer/core/agents/architectural-reviewer.md`
 
 ---
 

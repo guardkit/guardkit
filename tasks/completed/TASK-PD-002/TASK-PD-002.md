@@ -161,8 +161,8 @@ def test_loading_instruction_in_split_output():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_enhancement/applier.py` - Add loading instruction integration
-2. `installer/global/lib/agent_enhancement/templates.py` - New file for instruction template (optional)
+1. `installer/core/lib/agent_enhancement/applier.py` - Add loading instruction integration
+2. `installer/core/lib/agent_enhancement/templates.py` - New file for instruction template (optional)
 
 ## Estimated Effort
 

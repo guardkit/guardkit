@@ -20,13 +20,13 @@ Create a new **optional** command `/template-qa` that runs an interactive Q&A se
 ## Files to Create (3 files)
 
 ### 1. Command Specification
-- **Path**: `installer/global/commands/template-qa.md`
+- **Path**: `installer/core/commands/template-qa.md`
 - **LOC**: ~150 lines
 - **Purpose**: Command specification and documentation
 - **Dependencies**: None
 
 ### 2. Q&A Orchestrator
-- **Path**: `installer/global/lib/template_qa_orchestrator.py`
+- **Path**: `installer/core/lib/template_qa_orchestrator.py`
 - **LOC**: ~400 lines
 - **Purpose**: Core Q&A logic, config persistence, validation
 - **Dependencies**:
@@ -34,7 +34,7 @@ Create a new **optional** command `/template-qa` that runs an interactive Q&A se
   - Standard library: `json`, `pathlib`, `typing`
 
 ### 3. Config Handler
-- **Path**: `installer/global/lib/template_config_handler.py`
+- **Path**: `installer/core/lib/template_config_handler.py`
 - **LOC**: ~200 lines
 - **Purpose**: Config file I/O, validation, schema management
 - **Dependencies**:
@@ -46,7 +46,7 @@ Create a new **optional** command `/template-qa` that runs an interactive Q&A se
 ## Files to Modify (2 files)
 
 ### 1. Template Create Orchestrator
-- **Path**: `installer/global/lib/template_create_orchestrator.py`
+- **Path**: `installer/core/lib/template_create_orchestrator.py`
 - **Current LOC**: ~800 lines (estimated)
 - **Changes**:
   - Extract Q&A logic (~200 lines removed)
@@ -110,7 +110,7 @@ Create a new **optional** command `/template-qa` that runs an interactive Q&A se
 
 ### Phase 3: Command Specification (1 hour)
 
-**Files**: `installer/global/commands/template-qa.md`
+**Files**: `installer/core/commands/template-qa.md`
 
 1. **Command Documentation** (30 min)
    - Usage examples
@@ -128,7 +128,7 @@ Create a new **optional** command `/template-qa` that runs an interactive Q&A se
 
 ### Phase 4: Template Create Integration (1 hour)
 
-**Files**: `installer/global/lib/template_create_orchestrator.py`
+**Files**: `installer/core/lib/template_create_orchestrator.py`
 
 1. **Remove Q&A Logic** (30 min)
    - Delete extracted Q&A code

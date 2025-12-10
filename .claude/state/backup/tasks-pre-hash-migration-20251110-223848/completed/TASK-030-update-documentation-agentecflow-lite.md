@@ -211,25 +211,25 @@ Based on research in:
 **Priority**: Critical
 
 **Files to update:**
-1. `installer/global/commands/task-create.md`
+1. `installer/core/commands/task-create.md`
    - Add Phase 2.5: Complexity Evaluation section
    - Document split recommendations and thresholds
    - Include interactive mode examples
    - Add complexity scoring factors
 
-2. `installer/global/commands/task-work.md`
+2. `installer/core/commands/task-work.md`
    - Update Phase 4.5: Enhanced with fix loop details
    - Add Phase 5.5: Plan Audit section
    - Document `--design-only` and `--implement-only` flags
    - Update state transition diagrams
 
-3. `installer/global/commands/feature-generate-tasks.md`
+3. `installer/core/commands/feature-generate-tasks.md`
    - Add complexity-aware generation section
    - Document automatic breakdown behavior
    - Include complexity visualization examples
    - Add `--interactive` mode documentation
 
-4. `installer/global/commands/task-refine.md` (verify complete)
+4. `installer/core/commands/task-refine.md` (verify complete)
    - Review command specification completeness
    - Add usage examples for common scenarios
    - Document refinement workflow integration

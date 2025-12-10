@@ -10,61 +10,61 @@
 
   "files_to_create": [
     {
-      "path": "installer/global/templates/maui-navigationpage/templates/Navigation/INavigationService.cs",
+      "path": "installer/core/templates/maui-navigationpage/templates/Navigation/INavigationService.cs",
       "type": "interface",
       "loc": 40,
       "purpose": "Navigation service interface with type-safe methods"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/templates/Navigation/NavigationService.cs",
+      "path": "installer/core/templates/maui-navigationpage/templates/Navigation/NavigationService.cs",
       "type": "implementation",
       "loc": 150,
       "purpose": "NavigationService implementation with page resolution and DI"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/templates/Navigation/MauiProgram.Navigation.cs",
+      "path": "installer/core/templates/maui-navigationpage/templates/Navigation/MauiProgram.Navigation.cs",
       "type": "configuration",
       "loc": 60,
       "purpose": "DI registration extension methods for navigation"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/config/manifest.json",
+      "path": "installer/core/templates/maui-navigationpage/config/manifest.json",
       "type": "config",
       "loc": 80,
       "purpose": "Template metadata and configuration"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/config/settings.json",
+      "path": "installer/core/templates/maui-navigationpage/config/settings.json",
       "type": "config",
       "loc": 120,
       "purpose": "Navigation and pattern configuration"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/config/.gitignore",
+      "path": "installer/core/templates/maui-navigationpage/config/.gitignore",
       "type": "config",
       "loc": 15,
       "purpose": "Template-specific git ignores"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/docs/CLAUDE.md",
+      "path": "installer/core/templates/maui-navigationpage/docs/CLAUDE.md",
       "type": "documentation",
       "loc": 300,
       "purpose": "Agent instructions and template guidance"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/docs/README.md",
+      "path": "installer/core/templates/maui-navigationpage/docs/README.md",
       "type": "documentation",
       "loc": 400,
       "purpose": "Developer quick start and API reference"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/docs/MIGRATION.md",
+      "path": "installer/core/templates/maui-navigationpage/docs/MIGRATION.md",
       "type": "documentation",
       "loc": 200,
       "purpose": "AppShell to NavigationPage migration guide"
     },
     {
-      "path": "installer/global/templates/maui-navigationpage/tests/validate-template.sh",
+      "path": "installer/core/templates/maui-navigationpage/tests/validate-template.sh",
       "type": "test",
       "loc": 100,
       "purpose": "Bash validation script for acceptance criteria"
@@ -73,43 +73,43 @@
 
   "files_to_copy": [
     {
-      "source": "installer/global/templates/maui/agents/maui-api-specialist.md",
-      "destination": "installer/global/templates/maui-navigationpage/agents/maui-api-specialist.md",
+      "source": "installer/core/templates/maui/agents/maui-api-specialist.md",
+      "destination": "installer/core/templates/maui-navigationpage/agents/maui-api-specialist.md",
       "loc": 400
     },
     {
-      "source": "installer/global/templates/maui/agents/maui-domain-specialist.md",
-      "destination": "installer/global/templates/maui-navigationpage/agents/maui-domain-specialist.md",
+      "source": "installer/core/templates/maui/agents/maui-domain-specialist.md",
+      "destination": "installer/core/templates/maui-navigationpage/agents/maui-domain-specialist.md",
       "loc": 450
     },
     {
-      "source": "installer/global/templates/maui/agents/maui-testing-specialist.md",
-      "destination": "installer/global/templates/maui-navigationpage/agents/maui-testing-specialist.md",
+      "source": "installer/core/templates/maui/agents/maui-testing-specialist.md",
+      "destination": "installer/core/templates/maui-navigationpage/agents/maui-testing-specialist.md",
       "loc": 500
     },
     {
-      "source": "installer/global/templates/maui/templates/Domain/",
-      "destination": "installer/global/templates/maui-navigationpage/templates/Domain/",
+      "source": "installer/core/templates/maui/templates/Domain/",
+      "destination": "installer/core/templates/maui-navigationpage/templates/Domain/",
       "loc": 60
     },
     {
-      "source": "installer/global/templates/maui/templates/Repository/",
-      "destination": "installer/global/templates/maui-navigationpage/templates/Repository/",
+      "source": "installer/core/templates/maui/templates/Repository/",
+      "destination": "installer/core/templates/maui-navigationpage/templates/Repository/",
       "loc": 105
     },
     {
-      "source": "installer/global/templates/maui/templates/Service/",
-      "destination": "installer/global/templates/maui-navigationpage/templates/Service/",
+      "source": "installer/core/templates/maui/templates/Service/",
+      "destination": "installer/core/templates/maui-navigationpage/templates/Service/",
       "loc": 130
     },
     {
-      "source": "installer/global/templates/maui/templates/ViewModel/",
-      "destination": "installer/global/templates/maui-navigationpage/templates/ViewModel/",
+      "source": "installer/core/templates/maui/templates/ViewModel/",
+      "destination": "installer/core/templates/maui-navigationpage/templates/ViewModel/",
       "loc": 180
     },
     {
-      "source": "installer/global/templates/maui/templates/Page/",
-      "destination": "installer/global/templates/maui-navigationpage/templates/Page/",
+      "source": "installer/core/templates/maui/templates/Page/",
+      "destination": "installer/core/templates/maui-navigationpage/templates/Page/",
       "loc": 110
     }
   ],

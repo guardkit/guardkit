@@ -68,7 +68,7 @@ The system:
 
 ### Issue 1: --mode Flag Not Parsed in Step 0
 
-**File**: [task-work.md](../../../installer/global/commands/task-work.md)
+**File**: [task-work.md](../../../installer/core/commands/task-work.md)
 
 **Location**: Step 0 (Parse and Validate Flags) - lines 560-618
 
@@ -103,7 +103,7 @@ elif "--docs=comprehensive" in user_input:
 
 ### Issue 2: BDD Validation Happens Too Late
 
-**File**: [task-work.md](../../../installer/global/commands/task-work.md)
+**File**: [task-work.md](../../../installer/core/commands/task-work.md)
 
 **Location**: Step 1 (Load Task Context) - lines 836-908
 
@@ -126,14 +126,14 @@ if mode == "bdd":  # ❌ 'mode' variable doesn't exist yet!
 
 ### Issue 3: No RequireKit Installation Check
 
-**File**: [task-work.md](../../../installer/global/commands/task-work.md)
+**File**: [task-work.md](../../../installer/core/commands/task-work.md)
 
 **Expected**: Before loading BDD scenarios, should validate RequireKit is installed:
 
 ```python
 if mode == "bdd":
     # ✅ Should validate RequireKit FIRST
-    from installer.global.lib.feature_detection import supports_bdd
+    from installer.core.lib.feature_detection import supports_bdd
 
     if not supports_bdd():  # Checks ~/.agentecflow/require-kit.marker
         print("""
@@ -212,7 +212,7 @@ cd ~/Projects/test-api-service
 
 ### Fix 1: Parse --mode Flag in Step 0
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 **Section**: Step 0: Parse and Validate Flags (lines 560-618)
 
 **Add**:
@@ -233,7 +233,7 @@ elif "--mode=standard" in user_input:
 ```python
 # Validate BDD mode requirements
 if mode == "bdd":
-    from installer.global.lib.feature_detection import supports_bdd
+    from installer.core.lib.feature_detection import supports_bdd
 
     if not supports_bdd():
         print("""
@@ -264,7 +264,7 @@ ERROR: BDD mode requires RequireKit installation
 
 ### Fix 3: Update Flag Validation
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 **Section**: Step 0 - VALIDATE flag mutual exclusivity
 
 **Update to include mode**:
@@ -303,7 +303,7 @@ else:
 
 ### Fix 5: Remove Incorrect Comment
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 **Line**: 840
 
 **Remove**:
@@ -408,8 +408,8 @@ cd ~/Projects/test-api-service
 
 ## Related Files
 
-- **Spec**: [task-work.md](../../../installer/global/commands/task-work.md)
-- **Feature Detection**: [feature_detection.py](../../../installer/global/lib/feature_detection.py)
+- **Spec**: [task-work.md](../../../installer/core/commands/task-work.md)
+- **Feature Detection**: [feature_detection.py](../../../installer/core/lib/feature_detection.py)
 - **Test Plan**: [PARALLELS-VM-TEST-PLAN-FOCUSED.md](./PARALLELS-VM-TEST-PLAN-FOCUSED.md) (Step 3.1)
 - **BDD Workflow Guide**: [bdd-workflow-for-agentic-systems.md](../../guides/bdd-workflow-for-agentic-systems.md)
 

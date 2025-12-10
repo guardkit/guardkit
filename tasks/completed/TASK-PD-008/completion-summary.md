@@ -195,7 +195,7 @@ parser = argparse.ArgumentParser(
     epilog="""
 Examples:
   # Split single agent
-  python scripts/split-agent.py --agent installer/global/agents/task-manager.md
+  python scripts/split-agent.py --agent installer/core/agents/task-manager.md
 
   # Split all global agents
   python scripts/split-agent.py --all-global
@@ -407,7 +407,7 @@ All acceptance criteria met:
 
 ### Single Agent Split
 ```bash
-python3 scripts/split_agent.py --agent installer/global/agents/task-manager.md
+python3 scripts/split_agent.py --agent installer/core/agents/task-manager.md
 
 [SPLIT] task-manager.md
   Original: 72,465 bytes

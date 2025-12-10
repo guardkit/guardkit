@@ -346,7 +346,7 @@ Leverage TASK-003A's ~400 LOC test suite for core logic ✓
 
 ```bash
 # Ensure TASK-003A code is stable
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 python3 -m pytest test_complexity_calculator.py -v
 python3 -m pytest test_complexity_factors.py -v
 
@@ -508,7 +508,7 @@ pytest tests/test_upfront_complexity_integration.py -v
 ### ✓ Priority 1 (MUST FIX) - COMPLETED
 
 1. **Extract TASK-003A complexity logic to shared module**
-   - ✓ Already exists: `installer/global/commands/lib/complexity_calculator.py`
+   - ✓ Already exists: `installer/core/commands/lib/complexity_calculator.py`
    - ✓ No extraction needed, just reuse as-is
 
 2. **Create adapter for requirements-based input**

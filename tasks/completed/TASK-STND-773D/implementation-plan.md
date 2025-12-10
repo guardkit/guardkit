@@ -4,7 +4,7 @@
 
 ### Step 1.1: Update Enhancement Structure Section (45 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (line 339 - "Best Practices" subsection)
+**File**: `installer/core/agents/agent-content-enhancer.md` (line 339 - "Best Practices" subsection)
 
 **Replace "### 7. Best Practices"** (line 339) from:
 ```markdown
@@ -74,7 +74,7 @@ Explicit behavior rules conforming to GitHub best practices.
 
 ### Step 1.1b: Renumber Enhancement Structure Sections (15 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 314-346)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 314-346)
 
 After replacing "### 7. Best Practices" with "### 4. Boundaries" in the documentation text, update the section numbering:
 
@@ -92,7 +92,7 @@ After replacing "### 7. Best Practices" with "### 4. Boundaries" in the document
 
 **Verification**:
 ```bash
-grep "^### [0-9]" installer/global/agents/agent-content-enhancer.md | head -10
+grep "^### [0-9]" installer/core/agents/agent-content-enhancer.md | head -10
 # Should show: 1. Header, 2. Purpose, 3. When to Use, 4. Boundaries, 5. Capabilities, 6. Related Templates, 7. Code Examples, 8. Common Patterns, 9. Integration Points
 ```
 
@@ -102,7 +102,7 @@ grep "^### [0-9]" installer/global/agents/agent-content-enhancer.md | head -10
 
 ### Step 1.2: Update Quality Enforcement Checklist (30 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 264-273)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 264-273)
 
 **Add** to checklist (after "ALWAYS/NEVER/ASK sections present"):
 ```markdown
@@ -130,7 +130,7 @@ Before returning enhanced content, verify:
 
 ### Step 1.3: Update Validation Report Schema (45 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 274-308)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 274-308)
 
 **Update** validation report format:
 ```yaml
@@ -189,7 +189,7 @@ FAIL_CONDITIONS = [
 
 ### Step 2.1: Add Boundary Validation to Iterative Refinement (45 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 136-176)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 136-176)
 
 **Update** Self-Validation Protocol section:
 
@@ -248,7 +248,7 @@ Before returning enhanced content, this agent MUST:
 
 ### Step 2.2: Document Boundary Placement (30 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md`
+**File**: `installer/core/agents/agent-content-enhancer.md`
 
 **Update** Enhancement Structure section (add after step 3 "When to Use"):
 
@@ -292,7 +292,7 @@ Format:
 
 ### Step 2.3: Add Reference to GitHub Analysis Document (15 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 32-90)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 32-90)
 
 **Update** GitHub Best Practices section:
 
@@ -320,7 +320,7 @@ See [Boundary Sections (REQUIRED)](#3-boundary-sections-required) below for comp
 
 ### Step 3.1: Update Quality Requirements Section (30 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 349-357)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 349-357)
 
 **Replace** Quality Requirements section:
 
@@ -354,7 +354,7 @@ Each enhanced agent must meet these standards:
 
 ### Step 3.2: Update Quality Score Interpretation (15 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 374-381)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 374-381)
 
 **Update** Quality Score Interpretation table:
 
@@ -377,7 +377,7 @@ Each enhanced agent must meet these standards:
 
 ### Step 3.3: Update Fallback Behavior Documentation (15 minutes)
 
-**File**: `installer/global/agents/agent-content-enhancer.md` (lines 383-390)
+**File**: `installer/core/agents/agent-content-enhancer.md` (lines 383-390)
 
 **Update** Fallback Behavior section:
 
@@ -611,7 +611,7 @@ If issues discovered after deployment:
 
 1. **Revert agent-content-enhancer.md**:
    ```bash
-   git checkout HEAD~1 installer/global/agents/agent-content-enhancer.md
+   git checkout HEAD~1 installer/core/agents/agent-content-enhancer.md
    ```
 
 2. **Re-enhance affected agents** (if any were already enhanced):

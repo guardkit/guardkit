@@ -17,8 +17,8 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 5. Path mismatch fixes for CLAUDE.md references
 
 **Key Metrics**:
-- **Total markdown files**: 417 (333 in docs/, 84 in installer/global/)
-- **Top-level directories**: 42 in docs/, 8 in installer/global/
+- **Total markdown files**: 417 (333 in docs/, 84 in installer/core/)
+- **Top-level directories**: 42 in docs/, 8 in installer/core/
 - **Command specifications**: 19 files
 - **Agent definitions**: 19 files
 - **Templates**: 5 with comprehensive READMEs
@@ -68,7 +68,7 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 | **specifications/** | 2 | Developer | Technical specifications | Include in "Reference" |
 | **state/** | 1 | Internal | Task state tracking | Exclude |
 | **tasks/** | 1 | Internal | Task tracking | Exclude |
-| **templates/** | 2 | User-Facing | Template documentation (see installer/global/templates/) | Include in "Templates" |
+| **templates/** | 2 | User-Facing | Template documentation (see installer/core/templates/) | Include in "Templates" |
 | **test_reports/** | 3 | Internal | Test execution reports | Exclude |
 | **testing/** | 10 | Developer | Testing documentation | Include in "Contributing" |
 | **tests/** | 2 | Internal | Test artifacts | Exclude |
@@ -76,7 +76,7 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 | **validation/** | 3 | Developer | Validation documentation | Include in "Reference" |
 | **workflows/** | 14 | User-Facing | Workflow documentation | Include in "Workflows" |
 
-### installer/global/ Directory Structure (84 files, 8 directories)
+### installer/core/ Directory Structure (84 files, 8 directories)
 
 | Directory | Files | Category | Purpose | MkDocs Action |
 |-----------|-------|----------|---------|---------------|
@@ -135,7 +135,7 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 - **figma-mcp-setup.md** - Figma MCP setup
 - **zeplin-mcp-setup.md** - Zeplin MCP setup
 
-#### Commands (19 files in installer/global/commands/)
+#### Commands (19 files in installer/core/commands/)
 - **agent-enhance.md** (12 KB) - Agent enhancement command
 - **agent-format.md** (8.4 KB) - Agent formatting command
 - **agent-validate.md** (85 KB) - Agent validation command
@@ -151,7 +151,7 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 - **zeplin-to-maui.md** - Zeplin to MAUI conversion
 - Plus 6 more command files
 
-#### Agent System (19 files in installer/global/agents/)
+#### Agent System (19 files in installer/core/agents/)
 - **agent-content-enhancer.md** - Agent enhancement agent
 - **architectural-reviewer.md** - Architecture review agent
 - **build-validator.md** - Build validation agent
@@ -174,7 +174,7 @@ The GuardKit repository contains **417 markdown files** across **59 subdirectori
 - **test-verifier.md** - Test verifier
 - **zeplin-maui-orchestrator.md** - Zeplin orchestrator
 
-#### Templates (5 templates in installer/global/templates/)
+#### Templates (5 templates in installer/core/templates/)
 Each template has:
 - README.md (comprehensive documentation)
 - Multiple agent .md files
@@ -248,7 +248,7 @@ Each template has:
 - **index.md** (to create) - Landing page with overview, key features, quick links
 
 ### Getting Started
-- **Installation** (aggregate from README.md + installer/global/instructions/)
+- **Installation** (aggregate from README.md + installer/core/instructions/)
 - **Quickstart** (aggregate from guides/GETTING-STARTED.md)
 - **Your First Task** (new walkthrough or link to guardkit-workflow.md)
 - **Migration Guide** (guides/migration-guide.md)
@@ -268,7 +268,7 @@ Each template has:
 - **Iterative Refinement** (workflows/iterative-refinement-workflow.md)
 
 ### Commands Reference
-Organized by category, linking to installer/global/commands/*.md:
+Organized by category, linking to installer/core/commands/*.md:
 
 #### Core Workflow
 - **/task-create** - Create tasks
@@ -354,7 +354,7 @@ Documentation for all 19+ agents:
 - **Template Lifecycle** (workflows/TEMPLATE-LIFECYCLE-complete-flow.md)
 
 #### Available Templates
-Each with link to installer/global/templates/{name}/README.md:
+Each with link to installer/core/templates/{name}/README.md:
 - **react-typescript** (9.0/10) - Bulletproof React
 - **fastapi-python** (9.0/10) - FastAPI Best Practices
 - **nextjs-fullstack** (8.5/10) - Next.js App Router
@@ -404,7 +404,7 @@ Each with link to installer/global/templates/{name}/README.md:
 
 #### Getting Started
 - **Development Setup** (from README.md)
-- **Installation Scripts** (installer/global/instructions/)
+- **Installation Scripts** (installer/core/instructions/)
 
 #### Architecture
 - **System Architecture** (architecture/ - 4 files)
@@ -514,9 +514,9 @@ Each with link to installer/global/templates/{name}/README.md:
 ✅ **workflows/quality-gates-workflow.md** - Quality gates explained (20 KB)
 ✅ **workflows/task-review-workflow.md** - Task review process (22 KB)
 ✅ **deep-dives/mcp-integration/*.md** - MCP setup guides (70 KB total)
-✅ **installer/global/commands/*.md** - All 19 command specs (comprehensive)
-✅ **installer/global/agents/*.md** - All 19 agent definitions
-✅ **installer/global/templates/*/README.md** - All 6 template docs
+✅ **installer/core/commands/*.md** - All 19 command specs (comprehensive)
+✅ **installer/core/agents/*.md** - All 19 agent definitions
+✅ **installer/core/templates/*/README.md** - All 6 template docs
 
 ### Path Mismatches to Fix (Priority 0 - Critical)
 
@@ -562,9 +562,9 @@ Each with link to installer/global/templates/{name}/README.md:
 - docs/mcp-setup/ (2 files)
 - docs/quick-reference/ (5 files)
 - docs/troubleshooting/ (1 file)
-- installer/global/commands/ (19 files)
-- installer/global/agents/ (19 files)
-- installer/global/templates/ (31 files - 6 READMEs + agents)
+- installer/core/commands/ (19 files)
+- installer/core/agents/ (19 files)
+- installer/core/templates/ (31 files - 6 READMEs + agents)
 - **Total**: ~123 existing files
 
 **Developer** (accessible):
@@ -578,8 +578,8 @@ Each with link to installer/global/templates/{name}/README.md:
 - docs/specifications/ (2 files)
 - docs/checklists/ (1 file)
 - docs/shared/ (3 files)
-- installer/global/lib/ (4 files)
-- installer/global/instructions/ (4 files)
+- installer/core/lib/ (4 files)
+- installer/core/instructions/ (4 files)
 - **Total**: ~49 files
 
 **Total in MkDocs**: ~172 existing files + ~13 new landing pages = **~185 files**
@@ -610,8 +610,8 @@ exclude_docs: |
   tasks/
   test_reports/
   tests/
-  installer/global/docs/
-  installer/global/__pycache__/
+  installer/core/docs/
+  installer/core/__pycache__/
 ```
 
 ### MkDocs Configuration Preview
@@ -684,8 +684,8 @@ exclude_docs: |
   tasks/
   test_reports/
   tests/
-  installer/global/docs/
-  installer/global/__pycache__/
+  installer/core/docs/
+  installer/core/__pycache__/
 
 nav:
   - Home: index.md
@@ -706,24 +706,24 @@ nav:
   - Commands:
       - commands/index.md
       - Core Workflow:
-          - task-create: ../installer/global/commands/task-create.md
-          - task-work: ../installer/global/commands/task-work.md
-          - task-complete: ../installer/global/commands/task-complete.md
-          - task-status: ../installer/global/commands/task-status.md
-          - task-refine: ../installer/global/commands/task-refine.md
-          - task-review: ../installer/global/commands/task-review.md
+          - task-create: ../installer/core/commands/task-create.md
+          - task-work: ../installer/core/commands/task-work.md
+          - task-complete: ../installer/core/commands/task-complete.md
+          - task-status: ../installer/core/commands/task-status.md
+          - task-refine: ../installer/core/commands/task-refine.md
+          - task-review: ../installer/core/commands/task-review.md
       - Template System:
-          - template-create: ../installer/global/commands/template-create.md
-          - template-validate: ../installer/global/commands/template-validate.md
+          - template-create: ../installer/core/commands/template-create.md
+          - template-validate: ../installer/core/commands/template-validate.md
       - Agent System:
-          - agent-enhance: ../installer/global/commands/agent-enhance.md
-          - agent-format: ../installer/global/commands/agent-format.md
-          - agent-validate: ../installer/global/commands/agent-validate.md
+          - agent-enhance: ../installer/core/commands/agent-enhance.md
+          - agent-format: ../installer/core/commands/agent-format.md
+          - agent-validate: ../installer/core/commands/agent-validate.md
       - UX Design:
-          - figma-to-react: ../installer/global/commands/figma-to-react.md
-          - zeplin-to-maui: ../installer/global/commands/zeplin-to-maui.md
+          - figma-to-react: ../installer/core/commands/figma-to-react.md
+          - zeplin-to-maui: ../installer/core/commands/zeplin-to-maui.md
       - Utilities:
-          - debug: ../installer/global/commands/debug.md
+          - debug: ../installer/core/commands/debug.md
   - Workflows:
       - Task Review: workflows/task-review-workflow.md
       - Complexity Management: workflows/complexity-management-workflow.md
@@ -744,30 +744,30 @@ nav:
           - Agent Architecture: agents/architecture.md
           - Boundary Sections: agents/boundary-sections.md
       - Core Agents:
-          - architectural-reviewer: ../installer/global/agents/architectural-reviewer.md
-          - task-manager: ../installer/global/agents/task-manager.md
-          - test-orchestrator: ../installer/global/agents/test-orchestrator.md
-          - test-verifier: ../installer/global/agents/test-verifier.md
-          - code-reviewer: ../installer/global/agents/code-reviewer.md
-          - software-architect: ../installer/global/agents/software-architect.md
-          - pattern-advisor: ../installer/global/agents/pattern-advisor.md
+          - architectural-reviewer: ../installer/core/agents/architectural-reviewer.md
+          - task-manager: ../installer/core/agents/task-manager.md
+          - test-orchestrator: ../installer/core/agents/test-orchestrator.md
+          - test-verifier: ../installer/core/agents/test-verifier.md
+          - code-reviewer: ../installer/core/agents/code-reviewer.md
+          - software-architect: ../installer/core/agents/software-architect.md
+          - pattern-advisor: ../installer/core/agents/pattern-advisor.md
       - Stack-Specific:
-          - python-api-specialist: ../installer/global/agents/python-api-specialist.md
-          - react-state-specialist: ../installer/global/agents/react-state-specialist.md
-          - dotnet-domain-specialist: ../installer/global/agents/dotnet-domain-specialist.md
+          - python-api-specialist: ../installer/core/agents/python-api-specialist.md
+          - react-state-specialist: ../installer/core/agents/react-state-specialist.md
+          - dotnet-domain-specialist: ../installer/core/agents/dotnet-domain-specialist.md
       - Specialists:
-          - devops-specialist: ../installer/global/agents/devops-specialist.md
-          - security-specialist: ../installer/global/agents/security-specialist.md
-          - database-specialist: ../installer/global/agents/database-specialist.md
-          - debugging-specialist: ../installer/global/agents/debugging-specialist.md
-          - git-workflow-manager: ../installer/global/agents/git-workflow-manager.md
-          - qa-tester: ../installer/global/agents/qa-tester.md
+          - devops-specialist: ../installer/core/agents/devops-specialist.md
+          - security-specialist: ../installer/core/agents/security-specialist.md
+          - database-specialist: ../installer/core/agents/database-specialist.md
+          - debugging-specialist: ../installer/core/agents/debugging-specialist.md
+          - git-workflow-manager: ../installer/core/agents/git-workflow-manager.md
+          - qa-tester: ../installer/core/agents/qa-tester.md
       - Orchestrators:
-          - figma-react-orchestrator: ../installer/global/agents/figma-react-orchestrator.md
-          - zeplin-maui-orchestrator: ../installer/global/agents/zeplin-maui-orchestrator.md
-          - build-validator: ../installer/global/agents/build-validator.md
-          - complexity-evaluator: ../installer/global/agents/complexity-evaluator.md
-          - agent-content-enhancer: ../installer/global/agents/agent-content-enhancer.md
+          - figma-react-orchestrator: ../installer/core/agents/figma-react-orchestrator.md
+          - zeplin-maui-orchestrator: ../installer/core/agents/zeplin-maui-orchestrator.md
+          - build-validator: ../installer/core/agents/build-validator.md
+          - complexity-evaluator: ../installer/core/agents/complexity-evaluator.md
+          - agent-content-enhancer: ../installer/core/agents/agent-content-enhancer.md
   - Templates:
       - templates/index.md
       - Overview:
@@ -776,11 +776,11 @@ nav:
           - Template Validation: guides/template-validation-guide.md
           - Template Lifecycle: workflows/TEMPLATE-LIFECYCLE-complete-flow.md
       - Available Templates:
-          - react-typescript: ../installer/global/templates/react-typescript/README.md
-          - fastapi-python: ../installer/global/templates/fastapi-python/README.md
-          - nextjs-fullstack: ../installer/global/templates/nextjs-fullstack/README.md
-          - react-fastapi-monorepo: ../installer/global/templates/react-fastapi-monorepo/README.md
-          - default: ../installer/global/templates/default/README.md
+          - react-typescript: ../installer/core/templates/react-typescript/README.md
+          - fastapi-python: ../installer/core/templates/fastapi-python/README.md
+          - nextjs-fullstack: ../installer/core/templates/nextjs-fullstack/README.md
+          - react-fastapi-monorepo: ../installer/core/templates/react-fastapi-monorepo/README.md
+          - default: ../installer/core/templates/default/README.md
   - Advanced Topics:
       - advanced/index.md
       - MCP Integration:
@@ -801,7 +801,7 @@ nav:
   - Troubleshooting:
       - troubleshooting/index.md
       - Common Issues: troubleshooting/common-issues.md
-      - Debug Command: ../installer/global/commands/debug.md
+      - Debug Command: ../installer/core/commands/debug.md
   - Contributing:
       - Development Setup: contributing/setup.md
       - Architecture:
@@ -814,7 +814,7 @@ nav:
           - Checklists: checklists/
           - Shared Resources: shared/
       - Code Reference:
-          - Library Documentation: ../installer/global/lib/
+          - Library Documentation: ../installer/core/lib/
 ```
 
 ---
@@ -898,7 +898,7 @@ Create 13 landing pages in priority order:
 
 ### Completeness Metrics
 - ✅ All 42 docs/ directories inventoried
-- ✅ All 8 installer/global/ directories inventoried
+- ✅ All 8 installer/core/ directories inventoried
 - ✅ 172 existing user-facing files identified
 - ✅ 49 developer files identified
 - ✅ ~230 internal files marked for exclusion
@@ -1087,7 +1087,7 @@ Create 13 landing pages in priority order:
 
 **By Location**:
 - docs/: 333 files
-- installer/global/: 84 files
+- installer/core/: 84 files
 
 **By Category**:
 - User-Facing: ~100 files (24%)

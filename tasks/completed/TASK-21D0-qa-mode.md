@@ -485,7 +485,7 @@ class SimplifiedQAManager:
 ### Files to Modify
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (UPDATE)
 │   └── Update FullReviewHandler with [Q] handler
 └── qa_manager.py (NEW)

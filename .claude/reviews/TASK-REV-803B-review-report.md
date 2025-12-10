@@ -56,7 +56,7 @@ GITHUB_REPO="https://github.com/taskwright-dev/taskwright"  # Line 21
 | File | Purpose | Change Required |
 |------|---------|-----------------|
 | `~/.agentecflow/taskwright.marker.json` | Package detection | Rename to `guardkit.marker.json` |
-| `installer/global/templates/taskwright.marker.json` | Template marker | Rename to `guardkit.marker.json` |
+| `installer/core/templates/taskwright.marker.json` | Template marker | Rename to `guardkit.marker.json` |
 | `taskwright.sln` | VS Solution file | Rename to `guardkit.sln` |
 
 **Risk**: Marker file migration affects existing installations.
@@ -88,10 +88,10 @@ Current binaries in `~/.agentecflow/bin/`:
 
 | File | References | Purpose |
 |------|------------|---------|
-| `installer/global/lib/constants.py` | 1 | RequireKit config |
-| `installer/global/commands/lib/distribution_helpers.py` | 16 | Package distribution |
-| `installer/global/commands/lib/template_packager.py` | 4 | Template packaging |
-| `installer/global/commands/lib/agent_discovery.py` | 1 | Agent discovery |
+| `installer/core/lib/constants.py` | 1 | RequireKit config |
+| `installer/core/commands/lib/distribution_helpers.py` | 16 | Package distribution |
+| `installer/core/commands/lib/template_packager.py` | 4 | Template packaging |
+| `installer/core/commands/lib/agent_discovery.py` | 1 | Agent discovery |
 | `scripts/audit_requirekit.py` | 3 | Audit script |
 
 #### 4.2 Template Files
@@ -257,20 +257,20 @@ Based on this analysis, create these implementation tasks:
 - `CLAUDE.md`
 - `.claude/CLAUDE.md`
 - `README.md`
-- `installer/global/templates/taskwright.marker.json`
+- `installer/core/templates/taskwright.marker.json`
 - `taskwright.sln`
 
 **High Priority**:
 - `installer/scripts/init-project.sh`
-- `installer/global/commands/*.md`
-- `installer/global/lib/*.py`
+- `installer/core/commands/*.md`
+- `installer/core/lib/*.py`
 - `docs/guides/taskwright-workflow.md`
 - `docs/workflows/taskwright-vs-requirekit.md`
 
 **Medium Priority**:
-- `installer/global/templates/*/manifest.json`
-- `installer/global/templates/*/README.md`
-- `installer/global/agents/*.md`
+- `installer/core/templates/*/manifest.json`
+- `installer/core/templates/*/README.md`
+- `installer/core/agents/*.md`
 - `tests/*.py`
 
 **Low Priority (Historical)**:

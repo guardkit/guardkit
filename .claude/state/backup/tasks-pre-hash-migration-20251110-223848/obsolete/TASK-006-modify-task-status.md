@@ -66,7 +66,7 @@ Simplify task-status.md by removing epic/feature/requirements filtering and visu
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-status.md installer/global/commands/task-status.md.backup
+cp installer/core/commands/task-status.md installer/core/commands/task-status.md.backup
 ```
 
 ### 2. Edit Filter Documentation

@@ -165,8 +165,8 @@ class DocumentationValidator:
         # Expected cross-references
         expected_refs = {
             "UX Design Integration Workflow": "../workflows/ux-design-integration-workflow.md",
-            "Figma-to-React Command": "../../installer/global/commands/figma-to-react.md",
-            "Zeplin-to-MAUI Command": "../../installer/global/commands/zeplin-to-maui.md",
+            "Figma-to-React Command": "../../installer/core/commands/figma-to-react.md",
+            "Zeplin-to-MAUI Command": "../../installer/core/commands/zeplin-to-maui.md",
             "Design-to-Code Common Patterns": "../shared/design-to-code-common.md"
         }
 

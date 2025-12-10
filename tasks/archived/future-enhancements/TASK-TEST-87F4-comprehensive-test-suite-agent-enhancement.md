@@ -139,7 +139,7 @@ Key test categories:
 
 import pytest
 from pathlib import Path
-from installer.global.lib.agent_validation.validator import (
+from installer.core.lib.agent_validation.validator import (
     AgentValidator,
     ValidationResult,
     AgentMetrics
@@ -750,13 +750,13 @@ code()
 **Coverage Commands**:
 ```bash
 # Run with coverage
-pytest tests/unit/ --cov=installer/global/lib --cov-report=term --cov-report=html
+pytest tests/unit/ --cov=installer/core/lib --cov-report=term --cov-report=html
 
 # View HTML report
 open htmlcov/index.html
 
 # Fail if coverage below threshold
-pytest tests/unit/ --cov=installer/global/lib --cov-fail-under=90
+pytest tests/unit/ --cov=installer/core/lib --cov-fail-under=90
 ```
 
 ---
@@ -772,8 +772,8 @@ pytest tests/unit/ --cov=installer/global/lib --cov-fail-under=90
 
 import pytest
 from pathlib import Path
-from installer.global.commands.agent_enhance import main as agent_enhance
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.commands.agent_enhance import main as agent_enhance
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
 
 
 @pytest.mark.integration
@@ -861,7 +861,7 @@ class TestValidationWorkflow:
 
     def test_full_validation_workflow(self, existing_agents):
         """Test full validation workflow on existing agents."""
-        from installer.global.commands.agent_validate import main as agent_validate
+        from installer.core.commands.agent_validate import main as agent_validate
         import sys
 
         for agent_file in existing_agents:
@@ -873,7 +873,7 @@ class TestValidationWorkflow:
 
     def test_batch_validation(self, global_agents_dir):
         """Test batch validation of all agents."""
-        from installer.global.commands.agent_validate import validate_batch
+        from installer.core.commands.agent_validate import validate_batch
 
         results = validate_batch(global_agents_dir)
 
@@ -903,7 +903,7 @@ from pathlib import Path
 @pytest.fixture
 def global_agents():
     """Load all 15 global agents."""
-    agents_dir = Path("installer/global/agents")
+    agents_dir = Path("installer/core/agents")
     return list(agents_dir.glob("*.md"))
 
 
@@ -967,7 +967,7 @@ class TestBaselineValidationScores:
 
     def test_validation_scores_within_variance(self, global_agents):
         """Test that validation scores are within ±0.5 of baseline."""
-        from installer.global.lib.agent_validation.validator import AgentValidator
+        from installer.core.lib.agent_validation.validator import AgentValidator
 
         validator = AgentValidator()
 
@@ -999,8 +999,8 @@ class TestBaselineValidationScores:
 
 import pytest
 from pathlib import Path
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
-from installer.global.lib.agent_validation.validator import AgentValidator
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.lib.agent_validation.validator import AgentValidator
 
 
 class TestImprovementMetrics:
@@ -1083,14 +1083,14 @@ name: Agent Quality Checks
 on:
   pull_request:
     paths:
-      - 'installer/global/agents/**'
-      - 'installer/global/lib/agent_enhancement/**'
-      - 'installer/global/lib/agent_validation/**'
+      - 'installer/core/agents/**'
+      - 'installer/core/lib/agent_enhancement/**'
+      - 'installer/core/lib/agent_validation/**'
   push:
     branches:
       - main
     paths:
-      - 'installer/global/agents/**'
+      - 'installer/core/agents/**'
 
 jobs:
   validate-agents:
@@ -1113,15 +1113,15 @@ jobs:
       - name: Run unit tests
         run: |
           pytest tests/unit/ \
-            --cov=installer/global/lib \
+            --cov=installer/core/lib \
             --cov-report=term \
             --cov-report=json \
             --cov-fail-under=90
 
       - name: Validate all global agents
         run: |
-          python installer/global/commands/agent_validate.py \
-            --batch installer/global/agents/ \
+          python installer/core/commands/agent_validate.py \
+            --batch installer/core/agents/ \
             --threshold 7.0 \
             --format json \
             --output validation-report.json
@@ -1180,12 +1180,12 @@ Taskwright includes comprehensive agent validation:
 
 ### Validate Single Agent
 ```bash
-/agent-validate installer/global/agents/code-reviewer.md
+/agent-validate installer/core/agents/code-reviewer.md
 ```
 
 ### Validate All Agents
 ```bash
-/agent-validate-batch installer/global/agents/ --threshold 7.0
+/agent-validate-batch installer/core/agents/ --threshold 7.0
 ```
 
 ### Quality Metrics
@@ -1400,7 +1400,7 @@ cat tasks/backlog/TASK-TEST-87F4-comprehensive-test-suite-agent-enhancement.md
 pytest tests/ -v
 
 # Run with coverage
-pytest tests/unit/ --cov=installer/global/lib --cov-report=html
+pytest tests/unit/ --cov=installer/core/lib --cov-report=html
 
 # Run integration tests only
 pytest tests/integration/ -v --timeout=600

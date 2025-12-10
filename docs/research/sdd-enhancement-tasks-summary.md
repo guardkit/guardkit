@@ -29,7 +29,7 @@ Created 7 tasks based on recommendations from the Spectrum Driven Development (S
 - Interactive remediation ([R]emove, [A]pprove, [I]gnore)
 
 **Files to Create**:
-- `installer/global/commands/lib/spec_drift_detector.py`
+- `installer/core/commands/lib/spec_drift_detector.py`
 - Tests and agent integration
 
 ---

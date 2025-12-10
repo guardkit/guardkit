@@ -78,8 +78,8 @@ cd .conductor/ux-zeplin-orchestrator
 ```
 
 #### TASK-UX-2A61: Refactor figma-react-orchestrator
-**Source File**: `installer/global/agents/figma-react-orchestrator.md`
-**Target File**: `installer/global/agents/figma-orchestrator.md`
+**Source File**: `installer/core/agents/figma-react-orchestrator.md`
+**Target File**: `installer/core/agents/figma-orchestrator.md`
 
 **Deliverables**:
 - ✅ Remove React-specific naming and references
@@ -98,8 +98,8 @@ cd .conductor/ux-zeplin-orchestrator
 **Dependencies**: None (can start immediately)
 
 #### TASK-UX-EFC3: Refactor zeplin-maui-orchestrator
-**Source File**: `installer/global/agents/zeplin-maui-orchestrator.md`
-**Target File**: `installer/global/agents/zeplin-orchestrator.md`
+**Source File**: `installer/core/agents/zeplin-maui-orchestrator.md`
+**Target File**: `installer/core/agents/zeplin-orchestrator.md`
 
 **Deliverables**:
 - ✅ Remove MAUI-specific naming and references
@@ -139,7 +139,7 @@ cd .conductor/ux-nextjs-specialist
 ```
 
 #### TASK-UX-71BD: Extend react-ui-specialist
-**File**: `installer/global/templates/react-typescript/agents/react-ui-specialist.md`
+**File**: `installer/core/templates/react-typescript/agents/react-ui-specialist.md`
 
 **Deliverables**:
 - ✅ Detect design context from orchestrator
@@ -175,7 +175,7 @@ else:
 **Dependencies**: UX-2A61, UX-EFC3 (orchestrators must be refactored first)
 
 #### TASK-UX-92BF: Extend nextjs-ui-specialist
-**File**: `installer/global/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md`
+**File**: `installer/core/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md`
 
 **Deliverables**:
 - ✅ Detect design context from orchestrator
@@ -201,7 +201,7 @@ else:
 ```
 
 #### TASK-UX-6D04: Update task-work Phase 1
-**File**: `installer/global/commands/task-work.md` (Phase 1 section)
+**File**: `installer/core/commands/task-work.md` (Phase 1 section)
 
 **Deliverables**:
 - ✅ Load `design_url` from task frontmatter
@@ -212,7 +212,7 @@ else:
 **Dependencies**: UX-7F1E, UX-C3A3
 
 #### TASK-UX-7E5E: Update task-work Phase 3
-**File**: `installer/global/commands/task-work.md` (Phase 3 section)
+**File**: `installer/core/commands/task-work.md` (Phase 3 section)
 
 **Deliverables**:
 - ✅ Detect presence of design_url in task
@@ -256,7 +256,7 @@ This task supports design URL updates:
 ```
 
 #### TASK-UX-0BBB: Update task-refine for design context awareness
-**File**: `installer/global/commands/task-refine.md`
+**File**: `installer/core/commands/task-refine.md`
 
 **Deliverables**:
 - ✅ Detect design context from task frontmatter
@@ -287,8 +287,8 @@ This task should only run **after** Phase 3 is complete and tested:
 
 #### TASK-UX-2DAB: Deprecate old commands (figma-to-react, zeplin-to-maui)
 **Files**:
-- `installer/global/commands/figma-to-react.md`
-- `installer/global/commands/zeplin-to-maui.md`
+- `installer/core/commands/figma-to-react.md`
+- `installer/core/commands/zeplin-to-maui.md`
 
 **Deliverables**:
 - ✅ Add deprecation warnings to command headers

@@ -18,8 +18,8 @@ import sys
 from pathlib import Path
 from typing import List
 
-# Add installer/global/lib to path to handle 'global' keyword issue
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "lib"))
+# Add installer/core/lib to path to handle 'global' keyword issue
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "lib"))
 
 from external_id_mapper import (
     ExternalIDMapper,

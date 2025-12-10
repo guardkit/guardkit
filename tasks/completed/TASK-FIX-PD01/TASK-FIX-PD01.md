@@ -51,7 +51,7 @@ The CLAUDE.md template/generation logic uses hardcoded filenames that don't matc
 
 ## Files Modified
 
-- `installer/global/lib/template_generator/claude_md_generator.py` - Fixed 7 occurrences of incorrect file path references
+- `installer/core/lib/template_generator/claude_md_generator.py` - Fixed 7 occurrences of incorrect file path references
 - `tests/lib/test_claude_md_generator.py` - Updated 4 tests to verify correct file paths
 
 ## Implementation Summary

@@ -117,11 +117,11 @@
 - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/workflows/maui-template-migration-plan.md`
 
 ### Deleted Files (Verified)
-- `installer/global/templates/maui/` (37 files) - ✅ Successfully removed
+- `installer/core/templates/maui/` (37 files) - ✅ Successfully removed
 
 ### New Templates (Verified)
-- `installer/global/templates/maui-appshell/` - ✅ Exists
-- `installer/global/templates/maui-navigationpage/` - ✅ Exists
+- `installer/core/templates/maui-appshell/` - ✅ Exists
+- `installer/core/templates/maui-navigationpage/` - ✅ Exists
 
 ### Local Template (Verified)
 - `~/Projects/appmilla_github/YourApp/.claude/templates/maui-custom/` - ✅ Functional

@@ -16,14 +16,14 @@ Phase 9:  Package Assembly ✅ (NOW templates written to disk - too late!)
 ## Evidence from Logs
 
 ```
-Line 125: INFO:installer.global.lib.template_creation.agent_enhancer:Found 10 agents and 0 templates
-Line 262: INFO:installer.global.lib.template_creation.agent_enhancer:No templates found, kept original × 10
+Line 125: INFO:installer.core.lib.template_creation.agent_enhancer:Found 10 agents and 0 templates
+Line 262: INFO:installer.core.lib.template_creation.agent_enhancer:No templates found, kept original × 10
 Lines 312-327: Templates written to disk in Phase 9 (too late!)
 ```
 
 ## The Fix ✅
 
-**Location**: `/installer/global/commands/lib/template_create_orchestrator.py`  
+**Location**: `/installer/core/commands/lib/template_create_orchestrator.py`  
 **Method**: `_complete_workflow()` (lines 355-366)
 
 **What Changed**: Added code to write templates to disk immediately after Phase 7 completes successfully, BEFORE Phase 7.5 runs:

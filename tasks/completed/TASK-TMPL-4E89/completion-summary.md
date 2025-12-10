@@ -38,7 +38,7 @@ Successfully replaced hard-coded pattern detection in `/template-create` with AI
 
 ### Changes Made
 
-**File**: [installer/global/lib/agent_generator/agent_generator.py](installer/global/lib/agent_generator/agent_generator.py)
+**File**: [installer/core/lib/agent_generator/agent_generator.py](installer/core/lib/agent_generator/agent_generator.py)
 
 1. **New AI-Powered Detection** (Lines 146-178)
    - `_ai_identify_all_agents()`: Main AI detection method

@@ -142,11 +142,11 @@ def enhance(
 
 ## Files Modified
 
-1. **installer/global/lib/agent_enhancement/models.py** (+82 lines)
+1. **installer/core/lib/agent_enhancement/models.py** (+82 lines)
    - Added EnhancementResult dataclass with split support
    - Added files property
 
-2. **installer/global/lib/agent_enhancement/enhancer.py** (+137 lines, modified imports)
+2. **installer/core/lib/agent_enhancement/enhancer.py** (+137 lines, modified imports)
    - Updated imports to use EnhancementResult from models
    - Added split_output parameter to enhance() method
    - Implemented split/single-file mode logic

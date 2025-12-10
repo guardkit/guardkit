@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch, MagicMock, call
 from typing import Dict, Any
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/global/commands/lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/core/commands/lib"))
 
 from complexity_models import (
     ComplexityScore,

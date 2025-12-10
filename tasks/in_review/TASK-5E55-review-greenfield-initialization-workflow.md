@@ -49,7 +49,7 @@ The `/template-create` command has undergone significant enhancements including:
 - **Validation levels** (Level 1: automatic, Level 2: extended with `--validate`, Level 3: comprehensive audit)
 - **GitHub best practices integration** (boundary sections from 2,500+ repo analysis)
 - **Quality scoring** (8-10/10 for production templates)
-- **Two-location support** (personal `~/.agentecflow/templates/` and repository `installer/global/templates/`)
+- **Two-location support** (personal `~/.agentecflow/templates/` and repository `installer/core/templates/`)
 - **Template philosophy** (templates as learning resources, not production code)
 
 ### Current Greenfield Workflow
@@ -202,8 +202,8 @@ Review UX considerations:
 ## Related Context
 
 ### Key Files to Review
-- `installer/global/lib/greenfield_qa_session.py` (exists)
-- `installer/global/commands/*.md` (check for greenfield-related commands)
+- `installer/core/lib/greenfield_qa_session.py` (exists)
+- `installer/core/commands/*.md` (check for greenfield-related commands)
 - `installer/scripts/guardkit` or `installer/scripts/guardkit-init` (CLI entry points)
 - Recent changes to `/template-create` (TASK-STND-773D, TASK-UX-3A8D)
 

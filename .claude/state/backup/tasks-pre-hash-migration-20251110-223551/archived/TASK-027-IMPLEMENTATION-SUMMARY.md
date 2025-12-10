@@ -13,7 +13,7 @@ Successfully converted implementation plan storage from JSON-only format to huma
 ### 1. Core Components ✅
 
 #### Markdown Template
-- **File**: `installer/global/commands/lib/templates/implementation_plan.md.j2`
+- **File**: `installer/core/commands/lib/templates/implementation_plan.md.j2`
 - **Features**:
   - Jinja2 template with conditional sections
   - Support for all plan fields (files, dependencies, risks, etc.)
@@ -21,7 +21,7 @@ Successfully converted implementation plan storage from JSON-only format to huma
   - Clean, readable markdown structure
 
 #### Plan Markdown Renderer
-- **File**: `installer/global/commands/lib/plan_markdown_renderer.py`
+- **File**: `installer/core/commands/lib/plan_markdown_renderer.py`
 - **Features**:
   - Renders Python dicts to markdown with frontmatter
   - Jinja2-based template rendering
@@ -30,7 +30,7 @@ Successfully converted implementation plan storage from JSON-only format to huma
   - Saves directly to file
 
 #### Plan Markdown Parser
-- **File**: `installer/global/commands/lib/plan_markdown_parser.py`
+- **File**: `installer/core/commands/lib/plan_markdown_parser.py`
 - **Features**:
   - Parses markdown back to structured dict
   - Frontmatter metadata extraction
@@ -41,7 +41,7 @@ Successfully converted implementation plan storage from JSON-only format to huma
 ### 2. Plan Persistence Updates ✅
 
 #### Updated Functions
-- **File**: `installer/global/commands/lib/plan_persistence.py`
+- **File**: `installer/core/commands/lib/plan_persistence.py`
 
 **Changes**:
 - `save_plan()`: Now saves as markdown only (single source of truth)
@@ -58,7 +58,7 @@ Added to `requirements.txt`:
 ### 4. Testing ✅
 
 #### Unit Tests (15 tests - all passing)
-- **File**: `installer/global/commands/lib/test_plan_markdown.py`
+- **File**: `installer/core/commands/lib/test_plan_markdown.py`
 
 **Coverage**:
 - Renderer initialization and rendering
@@ -71,7 +71,7 @@ Added to `requirements.txt`:
 - Plan persistence integration
 
 #### Integration Tests (11 tests - all passing)
-- **File**: `installer/global/commands/lib/test_plan_integration.py`
+- **File**: `installer/core/commands/lib/test_plan_integration.py`
 
 **Coverage**:
 - Phase 2.7 workflow integration
@@ -100,7 +100,7 @@ Added to `requirements.txt`:
 - Troubleshooting
 
 #### Demonstration Script
-- **File**: `installer/global/commands/lib/demo_plan_markdown.py`
+- **File**: `installer/core/commands/lib/demo_plan_markdown.py`
 - Shows side-by-side comparison of JSON vs Markdown
 - Demonstrates benefits with real data
 
@@ -203,7 +203,7 @@ Total: 26/26 passing
 ### Saving a Plan
 
 ```python
-from installer.global.commands.lib.plan_persistence import save_plan
+from installer.core.commands.lib.plan_persistence import save_plan
 
 plan = {
     "summary": "Implement authentication",
@@ -220,7 +220,7 @@ path = save_plan("TASK-042", plan)
 ### Loading a Plan
 
 ```python
-from installer.global.commands.lib.plan_persistence import load_plan
+from installer.core.commands.lib.plan_persistence import load_plan
 
 # Loads markdown (or JSON fallback)
 plan = load_plan("TASK-042")
@@ -262,16 +262,16 @@ git commit -m "Update plan: extend duration to 6 hours"
 ## Files Created/Modified
 
 ### New Files (6)
-1. `installer/global/commands/lib/templates/implementation_plan.md.j2` - Jinja2 template
-2. `installer/global/commands/lib/plan_markdown_renderer.py` - Renderer class (278 lines)
-3. `installer/global/commands/lib/plan_markdown_parser.py` - Parser class (312 lines)
-4. `installer/global/commands/lib/test_plan_markdown.py` - Unit tests (342 lines)
-5. `installer/global/commands/lib/test_plan_integration.py` - Integration tests (286 lines)
-6. `installer/global/commands/lib/demo_plan_markdown.py` - Demo script (142 lines)
+1. `installer/core/commands/lib/templates/implementation_plan.md.j2` - Jinja2 template
+2. `installer/core/commands/lib/plan_markdown_renderer.py` - Renderer class (278 lines)
+3. `installer/core/commands/lib/plan_markdown_parser.py` - Parser class (312 lines)
+4. `installer/core/commands/lib/test_plan_markdown.py` - Unit tests (342 lines)
+5. `installer/core/commands/lib/test_plan_integration.py` - Integration tests (286 lines)
+6. `installer/core/commands/lib/demo_plan_markdown.py` - Demo script (142 lines)
 7. `docs/implementation-plan-markdown-format.md` - Comprehensive documentation
 
 ### Modified Files (2)
-1. `installer/global/commands/lib/plan_persistence.py` - Updated to use markdown
+1. `installer/core/commands/lib/plan_persistence.py` - Updated to use markdown
 2. `requirements.txt` - Added Jinja2 and python-frontmatter
 
 ### Documentation (1)

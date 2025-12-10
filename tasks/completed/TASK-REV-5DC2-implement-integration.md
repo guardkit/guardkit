@@ -97,7 +97,7 @@ Connect the `/task-review` command to the existing workflow by enhancing `/task-
 
 ### Task Creation Detection Logic
 
-Add to `installer/global/commands/lib/task_create_orchestrator.py`:
+Add to `installer/core/commands/lib/task_create_orchestrator.py`:
 
 ```python
 def detect_review_task(title: str, args: Dict) -> bool:

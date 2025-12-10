@@ -38,8 +38,8 @@ refinements:
     requested_at: 2025-11-30T09:46:00Z
     outcome: success
     files_modified:
-      - installer/global/lib/feature_detection.py
-      - installer/global/lib/constants.py
+      - installer/core/lib/feature_detection.py
+      - installer/core/lib/constants.py
     tests_passed: true
     review_passed: true
 refinement_count: 1
@@ -158,7 +158,7 @@ Look for these patterns in the codebase:
 
 ## References
 - RequireKit installer: https://github.com/requirekit/require-kit/blob/main/installer/scripts/install.sh#L237
-- RequireKit feature detection: https://github.com/requirekit/require-kit/blob/main/installer/global/lib/feature_detection.py#L84-L88
+- RequireKit feature detection: https://github.com/requirekit/require-kit/blob/main/installer/core/lib/feature_detection.py#L84-L88
 
 ## Test Execution Log
 [Automatically populated by /task-work]

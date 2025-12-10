@@ -124,7 +124,7 @@ Each requires:
 ### Phase 1: Documentation Cleanup (30 minutes)
 
 1. **Remove BDD mode from `/task-work` command spec**
-   - File: `installer/global/commands/task-work.md`
+   - File: `installer/core/commands/task-work.md`
    - Remove lines 2317-2344 (BDD mode section)
    - Update examples to show only Standard and TDD modes
 
@@ -148,7 +148,7 @@ Each requires:
    - Update docstring: "BDD generation requires require-kit"
 
 2. **Remove unused BDD templates**
-   - Keep: `installer/global/instructions/core/bdd-gherkin.md` (educational)
+   - Keep: `installer/core/instructions/core/bdd-gherkin.md` (educational)
    - Keep: `bdd-generator` agent (only loads with require-kit)
    - Remove: Any guardkit-specific BDD mode logic
 
@@ -209,8 +209,8 @@ After implementation:
 ## Related Documents
 
 - [Option A Design](./bdd-mode-design-option-a.md) - Full implementation spec if needed later
-- [Feature Detection](../../installer/global/lib/feature_detection.py) - `supports_bdd()` logic
-- [Task Work Command](../../installer/global/commands/task-work.md) - Command specification
+- [Feature Detection](../../installer/core/lib/feature_detection.py) - `supports_bdd()` logic
+- [Task Work Command](../../installer/core/commands/task-work.md) - Command specification
 
 ## Approval
 

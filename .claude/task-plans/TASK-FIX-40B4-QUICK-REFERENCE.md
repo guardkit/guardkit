@@ -10,7 +10,7 @@ Add a `LayerClassificationStrategy` abstraction with language-specific implement
 
 ## Files to Create
 
-### 1. `/installer/global/lib/template_generator/layer_classifier.py`
+### 1. `/installer/core/lib/template_generator/layer_classifier.py`
 
 **What it does**: Defines layer classification strategy for different languages
 
@@ -78,7 +78,7 @@ def test_error_handling()               # None/invalid inputs handled
 
 ## Files to Modify
 
-### 1. `/installer/global/lib/template_generator/pattern_matcher.py`
+### 1. `/installer/core/lib/template_generator/pattern_matcher.py`
 
 **Changes**:
 ```python
@@ -102,7 +102,7 @@ class CRUDPatternMatcher:
 
 ---
 
-### 2. `/installer/global/lib/codebase_analyzer/response_parser.py`
+### 2. `/installer/core/lib/codebase_analyzer/response_parser.py`
 
 **Changes**:
 ```python
@@ -118,7 +118,7 @@ def _parse_example_files(self, files_data: list) -> list:
 
 ---
 
-### 3. `/installer/global/lib/codebase_analyzer/prompt_builder.py`
+### 3. `/installer/core/lib/codebase_analyzer/prompt_builder.py`
 
 **Changes**:
 ```python

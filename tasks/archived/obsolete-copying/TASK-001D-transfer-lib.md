@@ -14,7 +14,7 @@ estimated_hours: 3
 
 ## Description
 
-Copy installer/global/commands/lib/ directory, removing requirements-related modules while keeping all quality gate implementation (Phase 2.5, 4.5).
+Copy installer/core/commands/lib/ directory, removing requirements-related modules while keeping all quality gate implementation (Phase 2.5, 4.5).
 
 ## Files to Transfer
 
@@ -72,12 +72,12 @@ lib/verify_micro_implementation.sh
 ## Implementation
 
 ```bash
-cd ai-engineer/installer/global/commands
+cd ai-engineer/installer/core/commands
 
 # Copy entire lib directory
-cp -r lib/ ../../agentecflow/installer/global/commands/
+cp -r lib/ ../../agentecflow/installer/core/commands/
 
-cd ../../agentecflow/installer/global/commands/lib
+cd ../../agentecflow/installer/core/commands/lib
 
 # Remove requirements features
 rm -f feature_generator.py
@@ -90,7 +90,7 @@ rm -f test_*ears*.py test_*bdd*.py test_*epic*.py test_*feature*.py
 ## Verification
 
 ```bash
-cd agentecflow/installer/global/commands/lib
+cd agentecflow/installer/core/commands/lib
 
 # Check imports (should not import removed modules)
 grep -r "feature_generator" *.py

@@ -117,8 +117,8 @@ Until we fully understand:
 git log --oneline -- docs/reviews/progressive-disclosure/javascript-standard-structure-template/agents/
 
 # Compare main branch implementation
-git diff main..progressive-disclosure -- installer/global/lib/agent_enhancement/
-git diff main..progressive-disclosure -- installer/global/commands/agent-enhance.md
+git diff main..progressive-disclosure -- installer/core/lib/agent_enhancement/
+git diff main..progressive-disclosure -- installer/core/commands/agent-enhance.md
 ```
 
 ### Step 2: Test the Enhancement Flow on Main Branch

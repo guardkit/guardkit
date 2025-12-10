@@ -29,7 +29,7 @@
 
 ## Files to Modify
 
-1. **installer/global/lib/agent_enhancement/applier.py**
+1. **installer/core/lib/agent_enhancement/applier.py**
    - Add `create_extended_file()` method (public)
    - Add `apply_with_split()` method (public)
    - Add `_categorize_sections()` method (private)
@@ -37,7 +37,7 @@
    - Add `_build_extended_content()` method (private)
    - Add `_build_core_content()` method (private)
 
-2. **installer/global/lib/agent_enhancement/models.py**
+2. **installer/core/lib/agent_enhancement/models.py**
    - Add `SplitContent` dataclass
    - Add `AgentEnhancement` TypedDict (type safety)
 
@@ -75,7 +75,7 @@
 
 ### Phase 1: Data Models (1 hour)
 
-**File**: `installer/global/lib/agent_enhancement/models.py`
+**File**: `installer/core/lib/agent_enhancement/models.py`
 
 ```python
 from dataclasses import dataclass
@@ -109,7 +109,7 @@ class SplitContent:
 
 ### Phase 2: Content Categorization (1-2 hours)
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 ```python
 # Constants for section categorization
@@ -261,8 +261,8 @@ def apply_with_split(self, agent_path: Path, enhancement: AgentEnhancement) -> S
 ## Dependencies
 
 **Internal**:
-- `installer/global/lib/agent_enhancement/models.py`
-- `installer/global/lib/agent_enhancement/parser.py`
+- `installer/core/lib/agent_enhancement/models.py`
+- `installer/core/lib/agent_enhancement/parser.py`
 
 **External**: None (Python 3.10+ standard library only)
 

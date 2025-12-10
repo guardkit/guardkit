@@ -692,8 +692,8 @@ If Context7 is unavailable, the system **automatically falls back** to training 
 
 - [Context7 MCP Integration Workflow](../workflows/context7-mcp-integration-workflow.md) - Usage patterns and examples
 - [MCP Optimization Guide](mcp-optimization-guide.md) - Performance and token usage
-- [task-work.md](../../installer/global/commands/task-work.md) - Full command specification
-- [task-manager.md](../../installer/global/agents/task-manager.md) - Task manager agent
+- [task-work.md](../../installer/core/commands/task-work.md) - Full command specification
+- [task-manager.md](../../installer/core/agents/task-manager.md) - Task manager agent
 
 ---
 

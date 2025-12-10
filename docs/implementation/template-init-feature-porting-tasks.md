@@ -246,7 +246,7 @@ class QualityScorer:
 ### Implementation Summary
 - Add `--output-location global|repo` flag
 - Default to `global` (~/.agentecflow/templates/)
-- Support `repo` (installer/global/templates/)
+- Support `repo` (installer/core/templates/)
 - Display location-specific guidance
 
 ### Key Code Changes
@@ -258,7 +258,7 @@ def __init__(self, output_location='global'):
 def _get_template_path(self, template_name):
     """Get path based on location setting."""
     if self.output_location == 'repo':
-        return Path('installer/global/templates') / template_name
+        return Path('installer/core/templates') / template_name
     else:
         return Path.home() / '.agentecflow' / 'templates' / template_name
 ```
@@ -266,7 +266,7 @@ def _get_template_path(self, template_name):
 ### Acceptance Criteria
 - [ ] `--output-location` flag accepts global|repo
 - [ ] Default is global
-- [ ] repo saves to installer/global/templates/
+- [ ] repo saves to installer/core/templates/
 - [ ] Location-specific guidance displayed
 - [ ] Backward compatible
 
@@ -544,5 +544,5 @@ If critical issues:
 
 - **Parent Review**: TASK-5E55
 - **Decision Document**: docs/decisions/template-init-vs-template-create-analysis.md
-- **Source Command**: installer/global/commands/template-create.md
-- **Target Files**: installer/global/commands/lib/greenfield_qa_session.py (984 lines)
+- **Source Command**: installer/core/commands/template-create.md
+- **Target Files**: installer/core/commands/lib/greenfield_qa_session.py (984 lines)

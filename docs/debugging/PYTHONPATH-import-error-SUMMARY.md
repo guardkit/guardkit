@@ -30,7 +30,7 @@
 │ 3. Executes setup: discovers guardkit path               │
 │ 4. Sets PYTHONPATH environment variable                     │
 │ 5. Executes orchestrator with PYTHONPATH                    │
-│ 6. Orchestrator imports installer.global.* successfully ✅  │
+│ 6. Orchestrator imports installer.core.* successfully ✅  │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
@@ -40,7 +40,7 @@
 │ 2. Finds orchestrator path                                  │
 │ 3. ❌ SKIPS PYTHONPATH setup code in markdown               │
 │ 4. Directly executes: python3 orchestrator.py [args]       │
-│ 5. Orchestrator tries to import installer.global.*         │
+│ 5. Orchestrator tries to import installer.core.*         │
 │ 6. ❌ ModuleNotFoundError: No module named 'installer'      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -71,7 +71,7 @@ guardkit/                           # Git repository
 ### Import Pattern
 ```python
 # template_create_orchestrator.py line 20
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 #                                              ^^^^^^^^^^^^^^^^
 #                                              References REPO structure, not installed location
 ```
@@ -79,10 +79,10 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 ### Why It Needs PYTHONPATH
 ```python
 # Python's module resolution:
-import installer.global.commands.lib.template_qa_session
+import installer.core.commands.lib.template_qa_session
 
 # Resolves to:
-{PYTHONPATH}/installer/global/commands/lib/template_qa_session.py
+{PYTHONPATH}/installer/core/commands/lib/template_qa_session.py
 
 # Without PYTHONPATH pointing to guardkit repo:
 ModuleNotFoundError: No module named 'installer'
@@ -101,7 +101,7 @@ ModuleNotFoundError: No module named 'installer'
 Template Create Orchestrator
 
 PYTHONPATH Requirements:
-- Requires guardkit repository in PYTHONPATH to import installer.global modules
+- Requires guardkit repository in PYTHONPATH to import installer.core modules
 - Auto-discovers installation using multiple strategies
 - Falls back to PYTHONPATH environment variable if discovery fails
 """
@@ -111,7 +111,7 @@ from pathlib import Path
 import os
 
 # ============================================================================
-# PYTHONPATH Setup (must run before installer.global imports)
+# PYTHONPATH Setup (must run before installer.core imports)
 # ============================================================================
 
 def _setup_pythonpath():
@@ -189,11 +189,11 @@ except ImportError as e:
     sys.exit(2)
 
 # ============================================================================
-# NOW safe to import installer.global modules
+# NOW safe to import installer.core modules
 # ============================================================================
 
 import importlib
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 # ... rest of imports continue as normal
 ```
 
@@ -252,9 +252,9 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 ### Other Commands
 **Analysis**: No other commands affected
 ```bash
-$ find ~/.agentecflow/commands/lib -name "*.py" -exec grep -l "installer.global" {} \;
+$ find ~/.agentecflow/commands/lib -name "*.py" -exec grep -l "installer.core" {} \;
 /Users/richardwoollcott/.agentecflow/commands/lib/template_create_orchestrator.py
-# Only this file uses installer.global imports
+# Only this file uses installer.core imports
 ```
 
 ---
@@ -336,7 +336,7 @@ mv ~/Projects/appmilla_github/guardkit{.bak,}
 ## Files Affected
 
 ### Primary File
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
   - Add `_setup_pythonpath()` function
   - Call before imports
   - Update docstring
@@ -344,7 +344,7 @@ mv ~/Projects/appmilla_github/guardkit{.bak,}
 ### Documentation Files (for reference)
 - `docs/debugging/PYTHONPATH-import-error-RCA.md` (full root cause analysis)
 - `docs/debugging/PYTHONPATH-import-error-SUMMARY.md` (this file)
-- `installer/global/commands/template-create.md` (update with discovery note)
+- `installer/core/commands/template-create.md` (update with discovery note)
 
 ---
 
@@ -361,7 +361,7 @@ Better to have orchestrator handle its own dependencies.
 
 ### Q: Why not copy all dependent modules to ~/.agentecflow/?
 **A**: Would require:
-- Copying 50+ modules from installer/global/lib/
+- Copying 50+ modules from installer/core/lib/
 - Flattening package structure (lose namespaces)
 - Duplicating 1000+ lines of code
 - Keeping two copies in sync
@@ -372,7 +372,7 @@ Current architecture is cleaner.
 ### Q: Could we use -m module syntax instead?
 **A**: No, because `global` is a Python reserved keyword:
 ```bash
-python3 -m installer.global.commands.lib.orchestrator
+python3 -m installer.core.commands.lib.orchestrator
 # SyntaxError: invalid syntax
 ```
 
@@ -386,7 +386,7 @@ python3 -m installer.global.commands.lib.orchestrator
 The markdown setup code is meant to be executed BY the command processor, not by Claude Code directly.
 
 ### Q: Will this fix affect other commands?
-**A**: No. Only `/template-create` uses `installer.global.*` imports. Other commands:
+**A**: No. Only `/template-create` uses `installer.core.*` imports. Other commands:
 - Are pure markdown (agent workflows)
 - Use relative imports
 - Don't depend on installer package structure

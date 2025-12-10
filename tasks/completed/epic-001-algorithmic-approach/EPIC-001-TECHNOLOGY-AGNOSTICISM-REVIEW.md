@@ -49,7 +49,7 @@ cd my-kotlin-android && /template-create mycompany-kotlin # ✅ Should work
 
 **Current Design**:
 ```python
-# installer/global/commands/lib/stack_detection.py
+# installer/core/commands/lib/stack_detection.py
 
 class Language(Enum):
     TYPESCRIPT = "typescript"

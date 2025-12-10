@@ -51,7 +51,7 @@ This review task will:
    - `CLAUDE.md` (root and `.claude/`)
    - `README.md`
    - All markdown files in `docs/`
-   - Command specifications in `installer/global/commands/`
+   - Command specifications in `installer/core/commands/`
 
 4. **Code References**
    - Python modules and imports

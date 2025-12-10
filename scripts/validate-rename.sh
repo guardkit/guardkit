@@ -75,9 +75,9 @@ echo ""
 echo -e "${BLUE}[2/5]${NC} Checking marker files..."
 
 # Check for OLD marker file (should NOT exist)
-OLD_MARKER="installer/global/templates/taskwright.marker.json"
+OLD_MARKER="installer/core/templates/taskwright.marker.json"
 # Check for NEW marker file (should exist)
-NEW_MARKER="installer/global/templates/guardkit.marker.json"
+NEW_MARKER="installer/core/templates/guardkit.marker.json"
 
 if [[ -f "$OLD_MARKER" ]]; then
     echo -e "${RED}  ✗ CRITICAL: Old marker file still exists: $OLD_MARKER${NC}"

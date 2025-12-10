@@ -80,7 +80,7 @@ tasks/completed/TASK-PD-014/
 ├── completion-summary.md
 └── completion-report.md
 
-installer/global/templates/nextjs-fullstack/agents/
+installer/core/templates/nextjs-fullstack/agents/
 ├── nextjs-fullstack-specialist.md (core)
 ├── nextjs-fullstack-specialist-ext.md (extended)
 ├── nextjs-server-actions-specialist.md (core)

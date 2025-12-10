@@ -9,8 +9,8 @@ priority: high
 tags: [template-creation, agent-generation, ai, core-limitation, enhancement]
 complexity: 8
 affected_files:
-  - installer/global/lib/agent_generator/agent_generator.py
-  - installer/global/commands/lib/template_create_orchestrator.py
+  - installer/core/lib/agent_generator/agent_generator.py
+  - installer/core/commands/lib/template_create_orchestrator.py
 test_results:
   status: passed
   total_tests: 29
@@ -134,7 +134,7 @@ Replace hard-coded pattern detection with **AI-driven analysis** that:
 
 ### Evidence from Code Review
 
-**File**: [agent_generator.py:120-235](installer/global/lib/agent_generator/agent_generator.py#L120-L235)
+**File**: [agent_generator.py:120-235](installer/core/lib/agent_generator/agent_generator.py#L120-L235)
 
 ```python
 def _identify_capability_needs(self, analysis: Any) -> List[CapabilityNeed]:
@@ -202,7 +202,7 @@ Refactor the `AIAgentGenerator` class to use AI for comprehensive agent identifi
 - [ ] Replace `_identify_capability_needs()` with new AI-powered method
 - [ ] Maintain backward compatibility with existing gap analysis (`_find_capability_gaps`)
 - [ ] Preserve existing agent generation logic (`_generate_agent`)
-- [ ] No breaking changes to [template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) integration
+- [ ] No breaking changes to [template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) integration
 
 ### 4. AI Prompt Engineering
 - [ ] Prompt includes: architecture pattern, patterns list, layers with descriptions, frameworks
@@ -226,7 +226,7 @@ Refactor the `AIAgentGenerator` class to use AI for comprehensive agent identifi
 
 ### Current Code Location
 ```
-File: installer/global/lib/agent_generator/agent_generator.py
+File: installer/core/lib/agent_generator/agent_generator.py
 Method: _identify_capability_needs (lines 120-235)
 Issue: Hard-coded pattern detection with only 5 agent types
 ```
@@ -355,7 +355,7 @@ Return comprehensive JSON array of ALL agents this project needs. Include minimu
 - [ ] Write unit tests for AI method
 - [ ] Write integration test with complex codebase analysis
 - [ ] Run regression tests on existing templates
-- [ ] Update documentation in [agent_generator.py](installer/global/lib/agent_generator/agent_generator.py)
+- [ ] Update documentation in [agent_generator.py](installer/core/lib/agent_generator/agent_generator.py)
 - [ ] Test end-to-end: `/template-create` → verify 7+ agents generated
 
 ## Definition of Done
@@ -365,14 +365,14 @@ Return comprehensive JSON array of ALL agents this project needs. Include minimu
 - [ ] Unit tests pass with 80%+ coverage
 - [ ] Integration test passes with real complex codebase analysis
 - [ ] No regression in existing template generation
-- [ ] Documentation updated in [agent_generator.py](installer/global/lib/agent_generator/agent_generator.py)
+- [ ] Documentation updated in [agent_generator.py](installer/core/lib/agent_generator/agent_generator.py)
 - [ ] Code reviewed and approved
 - [ ] Changes committed and pushed
 
 ## Related Files
 
-- [agent_generator.py](installer/global/lib/agent_generator/agent_generator.py) (primary file)
-- [template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) (orchestrator)
+- [agent_generator.py](installer/core/lib/agent_generator/agent_generator.py) (primary file)
+- [template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) (orchestrator)
 - `.claude/agents/` (output directory for generated agents)
 
 ## Estimated Effort
@@ -440,7 +440,7 @@ While this limitation was discovered during MyDrive template creation, **it affe
 4. **Any custom architecture** - Won't detect domain-specific patterns
 5. **Any modern framework** - Won't detect framework-specific specialists
 
-The hard-coded rules in [agent_generator.py:120-235](installer/global/lib/agent_generator/agent_generator.py#L120-L235) are **not extensible** without code changes to the core library.
+The hard-coded rules in [agent_generator.py:120-235](installer/core/lib/agent_generator/agent_generator.py#L120-L235) are **not extensible** without code changes to the core library.
 
 ### User Experience Impact
 

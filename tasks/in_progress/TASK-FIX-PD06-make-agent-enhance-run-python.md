@@ -76,7 +76,7 @@ Claude Code may prioritize markdown command specs over Python scripts. Check:
 
 The symlink exists:
 ```
-~/.agentecflow/bin/agent-enhance → /path/to/guardkit/installer/global/commands/agent-enhance.py
+~/.agentecflow/bin/agent-enhance → /path/to/guardkit/installer/core/commands/agent-enhance.py
 ```
 
 But Claude may not be executing it. Check:
@@ -193,11 +193,11 @@ if result.returncode == 0:
 
 | File | Purpose | Changes Needed |
 |------|---------|----------------|
-| `installer/global/commands/agent-enhance.md` | Command specification (markdown) | Add Python invocation instruction |
-| `installer/global/commands/agent-enhance.py` | Python script with correct logic | Verify works when called directly |
+| `installer/core/commands/agent-enhance.md` | Command specification (markdown) | Add Python invocation instruction |
+| `installer/core/commands/agent-enhance.py` | Python script with correct logic | Verify works when called directly |
 | `~/.agentecflow/bin/agent-enhance` | Symlink to Python script | Verify executable and accessible |
-| `installer/global/lib/agent_enhancement/orchestrator.py` | Orchestrator with split logic | Already correct (TASK-FIX-PD04) |
-| `installer/global/lib/agent_enhancement/applier.py` | Applier with section routing | Already correct (TASK-FIX-PD04) |
+| `installer/core/lib/agent_enhancement/orchestrator.py` | Orchestrator with split logic | Already correct (TASK-FIX-PD04) |
+| `installer/core/lib/agent_enhancement/applier.py` | Applier with section routing | Already correct (TASK-FIX-PD04) |
 
 ## Python Script Verification
 
@@ -289,7 +289,7 @@ There is NO native support for `.py` files as slash command definitions. The Pyt
 
 **Option A was chosen**: Modified `agent-enhance.md` to explicitly invoke Python script first.
 
-Added a "🚨 CRITICAL: Execute Python Script First" section at the **top** of `installer/global/commands/agent-enhance.md` with:
+Added a "🚨 CRITICAL: Execute Python Script First" section at the **top** of `installer/core/commands/agent-enhance.md` with:
 - Explicit bash command: `python3 ~/.agentecflow/bin/agent-enhance {all arguments}`
 - Clear explanation of why Python execution is required
 - List of things Claude must NOT do (invoke agents directly, write to files directly)
@@ -297,7 +297,7 @@ Added a "🚨 CRITICAL: Execute Python Script First" section at the **top** of `
 
 ### Files Modified
 
-1. **`installer/global/commands/agent-enhance.md`**
+1. **`installer/core/commands/agent-enhance.md`**
    - Added critical execution instruction section at top (lines 9-51)
    - Updated "Command Execution" section at bottom (lines 664-690)
    - Updated document status and timestamp

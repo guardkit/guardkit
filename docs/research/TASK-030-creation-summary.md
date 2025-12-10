@@ -183,10 +183,10 @@ Create positioning summary document
 - `docs/research/agentecflow-lite-positioning-summary.md`
 
 ### To Be Updated (by TASK-030 implementation)
-- `installer/global/commands/task-create.md`
-- `installer/global/commands/task-work.md`
-- `installer/global/commands/feature-generate-tasks.md`
-- `installer/global/commands/task-refine.md` (verify complete)
+- `installer/core/commands/task-create.md`
+- `installer/core/commands/task-work.md`
+- `installer/core/commands/feature-generate-tasks.md`
+- `installer/core/commands/task-refine.md` (verify complete)
 - `CLAUDE.md`
 - `docs/workflows/complexity-management-workflow.md`
 - `docs/workflows/design-first-workflow.md`

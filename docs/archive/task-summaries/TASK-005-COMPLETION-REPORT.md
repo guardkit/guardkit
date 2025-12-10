@@ -14,9 +14,9 @@
 ## Deliverables
 
 ### Files Created: 5
-1. `installer/global/lib/template_creation/__init__.py` (20 lines)
-2. `installer/global/lib/template_creation/models.py` (119 lines)
-3. `installer/global/lib/template_creation/manifest_generator.py` (574 lines)
+1. `installer/core/lib/template_creation/__init__.py` (20 lines)
+2. `installer/core/lib/template_creation/models.py` (119 lines)
+3. `installer/core/lib/template_creation/manifest_generator.py` (574 lines)
 4. `tests/unit/test_manifest_generator.py` (679 lines)
 5. `TASK-005-IMPLEMENTATION-SUMMARY.md` (184 lines)
 

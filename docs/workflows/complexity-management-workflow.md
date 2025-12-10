@@ -712,8 +712,8 @@ See [Customizing Complexity Thresholds](#customizing-complexity-thresholds) abov
 ## Related Documentation
 
 - [Design-First Workflow](./design-first-workflow.md) - Separate design and implementation for complex tasks
-- [Feature Generate Tasks](../../installer/global/commands/feature-generate-tasks.md) - Automatic task generation with complexity control
-- [Task Work Command](../../installer/global/commands/task-work.md) - Phase 2.7 complexity evaluation details
+- [Feature Generate Tasks](../../installer/core/commands/feature-generate-tasks.md) - Automatic task generation with complexity control
+- [Task Work Command](../../installer/core/commands/task-work.md) - Phase 2.7 complexity evaluation details
 - [Common Thresholds](../shared/common-thresholds.md) - Shared quality threshold definitions
 
 ---

@@ -10,8 +10,8 @@
 ## Deliverables
 
 - **Files Modified**: 3
-  - `installer/global/commands/lib/template_create_orchestrator.py` (+48 lines)
-  - `installer/global/commands/template-create.md` (+19 lines)
+  - `installer/core/commands/lib/template_create_orchestrator.py` (+48 lines)
+  - `installer/core/commands/template-create.md` (+19 lines)
   - `tests/unit/test_template_create_orchestrator.py` (+148 lines)
 - **Tests Written**: 7 comprehensive unit tests
 - **Coverage Achieved**: 100% on new code
@@ -126,8 +126,8 @@
 **Changes**:
 ```
  .claude/task-plans/TASK-FDB2-implementation-plan.md | 105 +++++++++
- installer/global/commands/lib/template_create_orchestrator.py | 48 ++++
- installer/global/commands/template-create.md | 19 +-
+ installer/core/commands/lib/template_create_orchestrator.py | 48 ++++
+ installer/core/commands/template-create.md | 19 +-
  tasks/in_review/TASK-FDB2-add-name-flag-to-template-create.md | 311 ++++++++++
  tests/unit/test_template_create_orchestrator.py | 148 +++++
  5 files changed, 626 insertions(+), 5 deletions(-)

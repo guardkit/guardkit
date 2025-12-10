@@ -25,7 +25,7 @@ import {
   batchConvert,
   validateIconCode,
   type IconValidationStrategy,
-} from '../../installer/global/utils/icon-converter';
+} from '../../installer/core/utils/icon-converter';
 
 // =============================================================================
 // Test Suite 1: HTML Entity Detection (5 tests)

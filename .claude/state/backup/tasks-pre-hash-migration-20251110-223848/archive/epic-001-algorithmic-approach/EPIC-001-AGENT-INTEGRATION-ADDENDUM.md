@@ -18,7 +18,7 @@ Two critical enhancements to agent discovery system:
 
 ### Current Inventory
 
-**15 Global Agents Already Defined** in `installer/global/agents/`:
+**15 Global Agents Already Defined** in `installer/core/agents/`:
 
 | Agent | Category | Use Case |
 |-------|----------|----------|
@@ -70,7 +70,7 @@ Agent Discovery:
 
 ```
 Phase 1: Local Agent Discovery (NEW)
-├─ Scan installer/global/agents/
+├─ Scan installer/core/agents/
 ├─ Scan .claude/agents/ (project-specific)
 └─→ List[LocalAgent]
 
@@ -102,7 +102,7 @@ Phase 5: Selection with Local Priority
 **Estimated**: 4 hours | **Complexity**: 4/10 | **Priority**: HIGH
 
 **Acceptance Criteria**:
-- [ ] Scans `installer/global/agents/*.md`
+- [ ] Scans `installer/core/agents/*.md`
 - [ ] Scans `.claude/agents/*.md` (project-specific)
 - [ ] Parses agent frontmatter (name, description, tools)
 - [ ] Returns `List[LocalAgent]` compatible with `AgentMetadata`
@@ -111,7 +111,7 @@ Phase 5: Selection with Local Priority
 **Implementation**:
 
 ```python
-# installer/global/commands/lib/agent_discovery/local_scanner.py
+# installer/core/commands/lib/agent_discovery/local_scanner.py
 
 from pathlib import Path
 import frontmatter
@@ -122,7 +122,7 @@ class LocalAgentScanner:
 
         # Scan global agents
         global_agents = self._scan_directory(
-            Path(__file__).parent.parent.parent / "installer/global/agents",
+            Path(__file__).parent.parent.parent / "installer/core/agents",
             source="local_global"
         )
         agents.extend(global_agents)
@@ -324,7 +324,7 @@ sources = [
       "id": "local_global",
       "name": "GuardKit Built-in",
       "type": "local",
-      "path": "installer/global/agents",
+      "path": "installer/core/agents",
       "enabled": true,
       "priority": 1,
       "bonus_score": 20
@@ -402,7 +402,7 @@ sources = [
 **Implementation**:
 
 ```python
-# installer/global/commands/lib/agent_discovery/source_registry.py
+# installer/core/commands/lib/agent_discovery/source_registry.py
 
 from pathlib import Path
 import json
@@ -474,7 +474,7 @@ class AgentSourceRegistry:
                     "id": "local_global",
                     "name": "GuardKit Built-in",
                     "type": "local",
-                    "path": "installer/global/agents",
+                    "path": "installer/core/agents",
                     "enabled": True,
                     "priority": 1,
                     "bonus_score": 20
@@ -505,7 +505,7 @@ class AgentSourceRegistry:
 **Updated Agent Discovery Orchestrator**:
 
 ```python
-# installer/global/commands/lib/agent_discovery/orchestrator.py
+# installer/core/commands/lib/agent_discovery/orchestrator.py
 
 class AgentDiscoveryOrchestrator:
     def __init__(self):

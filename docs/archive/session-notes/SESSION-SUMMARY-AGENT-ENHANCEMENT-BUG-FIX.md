@@ -28,7 +28,7 @@ The implementation was **incomplete** - it assumed infrastructure that doesn't e
 1. **Wrong import path**: 
    ```python
    # Tried to import from:
-   _ai_client_module = importlib.import_module('installer.global.lib.ai.ai_client')
+   _ai_client_module = importlib.import_module('installer.core.lib.ai.ai_client')
    # But this directory doesn't exist: ❌ /lib/ai/ai_client
    ```
 
@@ -233,7 +233,7 @@ To properly implement agent enhancement, you need to make an **architectural dec
 - ⚠️ Requires creating new agent
 
 **Implementation**:
-1. Create agent definition: `installer/global/agents/agent-content-enhancer.md`
+1. Create agent definition: `installer/core/agents/agent-content-enhancer.md`
 2. Modify `AgentEnhancer` to use `AgentBridgeInvoker`
 3. Update orchestrator Phase 7.5
 4. Add checkpoint-resume support
@@ -285,10 +285,10 @@ Trade-off: More complex to implement, but better long-term architecture.
 - `SESSION-SUMMARY-AGENT-ENHANCEMENT-BUG-FIX.md` - This document
 
 ### Modified
-- `installer/global/commands/lib/template_create_orchestrator.py` - Phase 7.5 temporarily disabled
+- `installer/core/commands/lib/template_create_orchestrator.py` - Phase 7.5 temporarily disabled
 
 ### Unchanged (But Relevant)
-- `installer/global/lib/template_creation/agent_enhancer.py` - AI-first implementation (ready to use once infrastructure exists)
+- `installer/core/lib/template_creation/agent_enhancer.py` - AI-first implementation (ready to use once infrastructure exists)
 
 ---
 
@@ -339,8 +339,8 @@ Trade-off: More complex to implement, but better long-term architecture.
 
 - Previous session: [Conversation link](https://claude.ai/chat/3beb9e9c-4b62-4aa9-945e-49e0a574d1fe)
 - Implementation task: `tasks/backlog/TASK-AGENT-BRIDGE-ENHANCEMENT.md`
-- Agent enhancer code: `installer/global/lib/template_creation/agent_enhancer.py`
-- Agent bridge example: `installer/global/lib/codebase_analyzer/agent_invoker.py`
+- Agent enhancer code: `installer/core/lib/template_creation/agent_enhancer.py`
+- Agent bridge example: `installer/core/lib/codebase_analyzer/agent_invoker.py`
 
 ---
 

@@ -441,7 +441,7 @@ Run any of these commands:
 ## Files Modified
 
 ### Core Implementation
-- [installer/global/lib/agent_enhancement/enhancer.py:213-371](installer/global/lib/agent_enhancement/enhancer.py#L213-L371)
+- [installer/core/lib/agent_enhancement/enhancer.py:213-371](installer/core/lib/agent_enhancement/enhancer.py#L213-L371)
 
 ### Documentation
 - [docs/implementation/task-ai-2b37-implementation-summary.md](docs/implementation/task-ai-2b37-implementation-summary.md)

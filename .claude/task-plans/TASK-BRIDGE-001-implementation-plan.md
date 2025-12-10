@@ -44,7 +44,7 @@ Claude detects exit code 42
 ## Components to Implement
 
 ### 1. AgentBridgeInvoker Class
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 **Lines**: ~250
 
 **Responsibilities**:
@@ -69,7 +69,7 @@ Claude detects exit code 42
 - `AgentInvocationError` - Raised when agent invocation fails
 
 ### 2. StateManager Class
-**File**: `installer/global/lib/agent_bridge/state_manager.py`
+**File**: `installer/core/lib/agent_bridge/state_manager.py`
 **Lines**: ~150
 
 **Responsibilities**:
@@ -90,7 +90,7 @@ Claude detects exit code 42
 
 ### 3. Package Structure
 **Files**:
-- `installer/global/lib/agent_bridge/__init__.py` - Package exports
+- `installer/core/lib/agent_bridge/__init__.py` - Package exports
 - `tests/unit/lib/agent_bridge/__init__.py` - Test package init
 
 ---
@@ -98,7 +98,7 @@ Claude detects exit code 42
 ## File Structure
 
 ```
-installer/global/lib/agent_bridge/
+installer/core/lib/agent_bridge/
 ├── __init__.py                    # Package exports
 ├── invoker.py                     # AgentBridgeInvoker
 └── state_manager.py               # StateManager
@@ -114,8 +114,8 @@ tests/unit/lib/agent_bridge/
 ## Implementation Steps
 
 ### Step 1: Create Package Structure (10 min)
-- Create `installer/global/lib/agent_bridge/` directory
-- Create `installer/global/lib/agent_bridge/__init__.py`
+- Create `installer/core/lib/agent_bridge/` directory
+- Create `installer/core/lib/agent_bridge/__init__.py`
 - Export main classes: `AgentBridgeInvoker`, `StateManager`, `AgentInvocationError`
 - Create `tests/unit/lib/agent_bridge/` directory structure
 - Create test `__init__.py` files
@@ -218,7 +218,7 @@ tests/unit/lib/agent_bridge/
 - Verify cleanup behavior
 
 #### 5.2: Run Test Suite and Verify Coverage (15 min)
-- Run: `pytest tests/unit/lib/agent_bridge/ -v --cov=installer/global/lib/agent_bridge --cov-report=term`
+- Run: `pytest tests/unit/lib/agent_bridge/ -v --cov=installer/core/lib/agent_bridge --cov-report=term`
 - Verify ≥85% coverage
 - Fix any failing tests
 - Address coverage gaps
@@ -319,7 +319,7 @@ tests/unit/lib/agent_bridge/
 ```bash
 # Run unit tests with coverage
 pytest tests/unit/lib/agent_bridge/ -v \
-  --cov=installer/global/lib/agent_bridge \
+  --cov=installer/core/lib/agent_bridge \
   --cov-report=term \
   --cov-report=json
 

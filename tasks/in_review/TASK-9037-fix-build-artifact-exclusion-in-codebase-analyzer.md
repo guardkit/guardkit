@@ -79,7 +79,7 @@ cd ~/Projects/DeCUK.Mobile.MyDrive
 ## Implementation Plan
 
 ### Phase 1: Create Exclusions Module (30 min)
-- Create `installer/global/lib/template_creation/exclusions.py`
+- Create `installer/core/lib/template_creation/exclusions.py`
 - Define `DEFAULT_EXCLUSIONS` list
 - Implement `should_exclude_path()` function
 - Implement `get_source_files()` function

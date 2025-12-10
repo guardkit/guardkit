@@ -16,9 +16,9 @@ Analysis identified **2 quick-win optimizations** that reduce execution time by 
 
 Both optimizations have been applied to:
 - ✅ ExampleApp project (`YourApp/.claude/agents/`)
-- ✅ AI-Engineer global templates (`ai-engineer/installer/global/templates/`)
-- ✅ GuardKit global templates (`guardkit/installer/global/templates/`)
-- ✅ GuardKit command specifications (`guardkit/installer/global/commands/task-work.md`)
+- ✅ AI-Engineer global templates (`ai-engineer/installer/core/templates/`)
+- ✅ GuardKit global templates (`guardkit/installer/core/templates/`)
+- ✅ GuardKit command specifications (`guardkit/installer/core/commands/task-work.md`)
 
 ## Task Context: TASK-001 Analysis
 
@@ -69,7 +69,7 @@ The agent correctly rejected these patterns through reasoning, but this wasted t
 
 ### Root Cause
 
-**File**: `installer/global/commands/task-work.md` (Phase 2.5A, line 1383)
+**File**: `installer/core/commands/task-work.md` (Phase 2.5A, line 1383)
 
 **Before**:
 ```markdown
@@ -87,8 +87,8 @@ Example query:
 ### Solution Applied
 
 **Files Updated**:
-- ✅ `ai-engineer/installer/global/commands/task-work.md`
-- ✅ `guardkit/installer/global/commands/task-work.md`
+- ✅ `ai-engineer/installer/core/commands/task-work.md`
+- ✅ `guardkit/installer/core/commands/task-work.md`
 
 **After**:
 ```markdown
@@ -172,8 +172,8 @@ return Task.FromResult(result);
 
 **Files Updated**:
 - ✅ `YourApp/.claude/agents/maui-usecase-specialist.md` (lines 967-1072)
-- ✅ `ai-engineer/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
-- ✅ `guardkit/installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
+- ✅ `ai-engineer/installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
+- ✅ `guardkit/installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md`
 
 **Content Added**: Comprehensive "Testing ErrorOr Patterns" section (106 lines):
 
@@ -347,7 +347,7 @@ Savings: ~250k tokens (19% cheaper)
 
 **Commands Updated** (1 file):
 ```
-installer/global/commands/task-work.md
+installer/core/commands/task-work.md
   └─ Phase 2.5A: Pattern Suggestion (lines 1383-1405)
      ✅ Added programmingLanguage parameter
      ✅ Added stack mapping guide
@@ -357,7 +357,7 @@ installer/global/commands/task-work.md
 
 **Agents Updated** (1 file):
 ```
-installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
+installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md
   └─ Testing Section (lines 987-1092)
      ✅ Added "Testing ErrorOr Patterns" section (106 lines)
      ✅ Common pitfalls documented (3 patterns)
@@ -370,7 +370,7 @@ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
 
 **Commands Updated** (1 file):
 ```
-installer/global/commands/task-work.md
+installer/core/commands/task-work.md
   └─ Phase 2.5A: Pattern Suggestion (lines 771-797)
      ✅ Added programmingLanguage parameter
      ✅ Added stack mapping guide
@@ -380,7 +380,7 @@ installer/global/commands/task-work.md
 
 **Agents Updated** (1 file):
 ```
-installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
+installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md
   └─ Testing Section (lines 905-1010)
      ✅ Added "Testing ErrorOr Patterns" section (106 lines)
      ✅ Common pitfalls documented (3 patterns)
@@ -481,10 +481,10 @@ cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
 **Priority 2**: Apply ErrorOr Guidance to .NET Microservices
 ```bash
 # Files to update:
-ai-engineer/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
-ai-engineer/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md
-guardkit/installer/global/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
-guardkit/installer/global/templates/dotnet-microservice/agents/dotnet-api-specialist.md
+ai-engineer/installer/core/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
+ai-engineer/installer/core/templates/dotnet-microservice/agents/dotnet-api-specialist.md
+guardkit/installer/core/templates/dotnet-microservice/agents/dotnet-domain-specialist.md
+guardkit/installer/core/templates/dotnet-microservice/agents/dotnet-api-specialist.md
 
 # Add same "Testing ErrorOr Patterns" section
 # Estimated effort: 30 minutes
@@ -794,12 +794,12 @@ The `/task-work` workflow now delivers **validated world-class AI-assisted devel
 - [Task-Work Performance Optimizations](../../ai-engineer/docs/optimization/task-work-performance-optimizations.md)
 - [MCP Optimization Guide](../../ai-engineer/docs/guides/mcp-optimization-guide.md)
 - [Agentecflow Lite Workflow](../../ai-engineer/docs/guides/agentecflow-lite-workflow.md)
-- [Task-Work Command Specification](../../ai-engineer/installer/global/commands/task-work.md)
+- [Task-Work Command Specification](../../ai-engineer/installer/core/commands/task-work.md)
 
 **GuardKit Repository**:
 - [Agentecflow Lite Positioning](./agentecflow-lite-positioning-summary.md)
 - [Agent Collaboration and Documentation](./AGENT-COLLABORATION-AND-DOCUMENTATION.md)
-- [Task-Work Command Specification](../installer/global/commands/task-work.md)
+- [Task-Work Command Specification](../installer/core/commands/task-work.md)
 
 **ExampleApp Project**:
 - [MAUI Usecase Specialist Agent](../../YourApp/.claude/agents/maui-usecase-specialist.md)

@@ -112,7 +112,7 @@ Based on comprehensive architectural review (TASK-REV-TMPL-REGRESS), the templat
 4. **Verify baseline state**:
    ```bash
    # Check we're back to v0.97 functionality
-   git diff 6c651a32..HEAD -- installer/global/commands/lib/template_create_orchestrator.py
+   git diff 6c651a32..HEAD -- installer/core/commands/lib/template_create_orchestrator.py
 
    # Should show minimal/no differences in core orchestrator logic
    ```
@@ -152,7 +152,7 @@ Based on comprehensive architectural review (TASK-REV-TMPL-REGRESS), the templat
 **From Commit 09c3cc70** (orchestrator error messages):
 
 ✅ **KEEP - Orchestrator Failure Detection**:
-- File: `installer/global/lib/orchestrator_error_messages.py`
+- File: `installer/core/lib/orchestrator_error_messages.py`
 - Functions:
   - `detect_orchestrator_failure()` - Checks dependencies before execution
   - `display_orchestrator_failure()` - User-friendly error messages
@@ -166,7 +166,7 @@ Based on comprehensive architectural review (TASK-REV-TMPL-REGRESS), the templat
 - **Size**: ~50 lines
 
 ❌ **DISCARD - Import Path Changes**:
-- Changes: `installer.global.lib` → `lib`
+- Changes: `installer.core.lib` → `lib`
 - **Why**: May conflict with existing imports, not essential
 - **Context**: These were likely fixing issues introduced in same commit
 
@@ -187,7 +187,7 @@ Based on comprehensive architectural review (TASK-REV-TMPL-REGRESS), the templat
 - **Why**: Phase 1 doesn't invoke agents, no cache to clear
 
 ✅ **KEEP - Response Type Validation** (defensive programming):
-- File: `installer/global/lib/agent_bridge/invoker.py`
+- File: `installer/core/lib/agent_bridge/invoker.py`
 - Code:
   ```python
   def load_response(self) -> str:
@@ -209,8 +209,8 @@ Based on comprehensive architectural review (TASK-REV-TMPL-REGRESS), the templat
 **Extraction Method**:
 ```bash
 # Create patch files for features to keep
-git show 09c3cc70 -- installer/global/lib/orchestrator_error_messages.py > /tmp/error-detection.patch
-git show 483e9a6c -- installer/global/lib/agent_bridge/invoker.py > /tmp/response-validation.patch
+git show 09c3cc70 -- installer/core/lib/orchestrator_error_messages.py > /tmp/error-detection.patch
+git show 483e9a6c -- installer/core/lib/agent_bridge/invoker.py > /tmp/response-validation.patch
 
 # Review patches
 cat /tmp/error-detection.patch
@@ -230,12 +230,12 @@ cat /tmp/response-validation.patch
 
 #### Step 3.1: Re-apply Orchestrator Error Detection
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes**:
 ```python
 # Add import
-_error_messages_module = importlib.import_module('installer.global.lib.orchestrator_error_messages')
+_error_messages_module = importlib.import_module('installer.core.lib.orchestrator_error_messages')
 detect_orchestrator_failure = _error_messages_module.detect_orchestrator_failure
 display_orchestrator_failure = _error_messages_module.display_orchestrator_failure
 
@@ -268,7 +268,7 @@ def run(self) -> OrchestrationResult:
         # ... existing error handling
 ```
 
-**File**: `installer/global/lib/orchestrator_error_messages.py` (new file)
+**File**: `installer/core/lib/orchestrator_error_messages.py` (new file)
 
 **Create from commit 09c3cc70**:
 - Copy file from commit 09c3cc70
@@ -279,7 +279,7 @@ def run(self) -> OrchestrationResult:
 ```bash
 # Test dependency detection
 mv ~/.agentecflow/bin/agent-enhance ~/.agentecflow/bin/agent-enhance.bak
-python3 installer/global/commands/template-create.py --path ~/kartlog
+python3 installer/core/commands/template-create.py --path ~/kartlog
 
 # Expected: User-friendly error message, graceful failure
 # Restore: mv ~/.agentecflow/bin/agent-enhance.bak ~/.agentecflow/bin/agent-enhance
@@ -287,7 +287,7 @@ python3 installer/global/commands/template-create.py --path ~/kartlog
 
 #### Step 3.2: Re-apply Response Type Validation
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Changes**:
 ```python
@@ -366,7 +366,7 @@ cat > .agent-response.json <<EOF
 EOF
 
 # Run resume
-python3 installer/global/commands/template-create.py --resume
+python3 installer/core/commands/template-create.py --resume
 
 # Expected: Warning logged, dict serialized to markdown JSON, parsing succeeds
 ```
@@ -396,9 +396,9 @@ def run(self) -> OrchestrationResult:
 **Verification**:
 ```bash
 # Search for Phase 0 references
-grep -n "phase == 0" installer/global/commands/lib/template_create_orchestrator.py
-grep -n "_run_from_phase_1" installer/global/commands/lib/template_create_orchestrator.py
-grep -n "before_phase1" installer/global/commands/lib/template_create_orchestrator.py
+grep -n "phase == 0" installer/core/commands/lib/template_create_orchestrator.py
+grep -n "_run_from_phase_1" installer/core/commands/lib/template_create_orchestrator.py
+grep -n "before_phase1" installer/core/commands/lib/template_create_orchestrator.py
 
 # Expected: No results (all Phase 0 logic removed)
 ```
@@ -424,7 +424,7 @@ grep -n "before_phase1" installer/global/commands/lib/template_create_orchestrat
 rm -f .agent-request.json .agent-response.json .template-create-state.json
 
 # Run full workflow
-python3 installer/global/commands/template-create.py \
+python3 installer/core/commands/template-create.py \
     --path ~/path/to/kartlog \
     --output-location repo \
     --verbose \
@@ -485,7 +485,7 @@ cat > .agent-response.json <<EOF
 EOF
 
 # Resume from checkpoint
-python3 installer/global/commands/template-create.py --resume --dry-run
+python3 installer/core/commands/template-create.py --resume --dry-run
 
 # VALIDATION CHECKLIST:
 # [ ] Loads state file successfully
@@ -507,7 +507,7 @@ python3 installer/global/commands/template-create.py --resume --dry-run
 # Test dependency failure detection
 mv ~/.agentecflow/bin/agent-enhance ~/.agentecflow/bin/agent-enhance.bak
 
-python3 installer/global/commands/template-create.py --path ~/kartlog
+python3 installer/core/commands/template-create.py --path ~/kartlog
 
 # VALIDATION CHECKLIST:
 # [ ] Pre-flight check detects missing dependency
@@ -541,7 +541,7 @@ cat > .agent-response.json <<EOF
 EOF
 
 # Resume
-python3 installer/global/commands/template-create.py --resume 2>&1 | tee test-output.log
+python3 installer/core/commands/template-create.py --resume 2>&1 | tee test-output.log
 
 # VALIDATION CHECKLIST:
 # [ ] Warning logged about dict response
@@ -560,10 +560,10 @@ python3 installer/global/commands/template-create.py --resume 2>&1 | tee test-ou
 ```bash
 # Clean environment
 rm -f .agent-request.json .agent-response.json .template-create-state.json
-rm -rf installer/global/templates/javascript-standard-structure-template
+rm -rf installer/core/templates/javascript-standard-structure-template
 
 # Run FULL workflow (not dry-run)
-python3 installer/global/commands/template-create.py \
+python3 installer/core/commands/template-create.py \
     --path ~/path/to/kartlog \
     --output-location repo \
     --verbose
@@ -579,7 +579,7 @@ python3 installer/global/commands/template-create.py \
 # [ ] 20+ template files generated
 # [ ] CLAUDE.md generated with agent documentation
 # [ ] manifest.json, settings.json created
-# [ ] All files in installer/global/templates/<template-name>/
+# [ ] All files in installer/core/templates/<template-name>/
 ```
 
 **Success Criteria**:
@@ -605,9 +605,9 @@ python3 installer/global/commands/template-create.py \
 #### Step 5.1: Commit Selective Re-application
 
 ```bash
-git add installer/global/commands/lib/template_create_orchestrator.py
-git add installer/global/lib/orchestrator_error_messages.py
-git add installer/global/lib/agent_bridge/invoker.py
+git add installer/core/commands/lib/template_create_orchestrator.py
+git add installer/core/lib/orchestrator_error_messages.py
+git add installer/core/lib/agent_bridge/invoker.py
 
 git commit -m "Selective re-application of improvements to v0.97 baseline
 

@@ -46,16 +46,16 @@ This implementation task was created from review findings in TASK-REV-D8F2.
 
 ### Changes Made
 
-1. **StateManager** (`installer/global/lib/agent_bridge/state_manager.py:197-219`):
+1. **StateManager** (`installer/core/lib/agent_bridge/state_manager.py:197-219`):
    - Added `reset_resume_count()` method
    - Resets resume_count to 0 in state file
    - Handles missing state file gracefully (early return)
 
-2. **Orchestrator** (`installer/global/commands/lib/template_create_orchestrator.py:320-325`):
+2. **Orchestrator** (`installer/core/commands/lib/template_create_orchestrator.py:320-325`):
    - Reset counter after Phase 1 success in `_run_from_phase_1()`
    - Resets state file counter, `_resume_count`, and `_force_heuristic`
 
-3. **Orchestrator** (`installer/global/commands/lib/template_create_orchestrator.py:387-393`):
+3. **Orchestrator** (`installer/core/commands/lib/template_create_orchestrator.py:387-393`):
    - Reset counter after Phase 1 success in `_run_all_phases()`
    - Only resets if state exists (conditional check)
 
@@ -73,7 +73,7 @@ This implementation task was created from review findings in TASK-REV-D8F2.
 
 ### Step 1: Add `reset_resume_count()` to StateManager
 
-**File**: `installer/global/lib/agent_bridge/state_manager.py`
+**File**: `installer/core/lib/agent_bridge/state_manager.py`
 
 Add new method after `increment_resume_count()` (around line 195):
 
@@ -95,7 +95,7 @@ def reset_resume_count(self) -> None:
 
 ### Step 2: Reset counter after successful Phase 1
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 In `_run_from_phase_1()` (around line 316), after successful AI analysis:
 
@@ -147,8 +147,8 @@ def test_reset_resume_count():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_bridge/state_manager.py` - Add `reset_resume_count()`
-2. `installer/global/commands/lib/template_create_orchestrator.py` - Reset after Phase 1 success
+1. `installer/core/lib/agent_bridge/state_manager.py` - Add `reset_resume_count()`
+2. `installer/core/commands/lib/template_create_orchestrator.py` - Reset after Phase 1 success
 
 ## Risk Assessment
 

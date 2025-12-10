@@ -31,7 +31,7 @@ Add a unified clarification questions system to GuardKit that asks users targete
 ## Architecture
 
 ```
-installer/global/commands/lib/clarification/
+installer/core/commands/lib/clarification/
 ├── __init__.py              # Module exports
 ├── core.py                  # Shared: ClarificationContext, Decision, Question
 ├── detection.py             # Shared: Ambiguity detection functions

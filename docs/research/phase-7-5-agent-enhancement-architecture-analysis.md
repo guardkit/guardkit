@@ -150,16 +150,16 @@ for agent_file in agent_files:  # ← 10 agents
 
 **Files Reviewed:**
 
-1. **`installer/global/lib/template_creation/agent_enhancer.py` (lines 98-154)**
+1. **`installer/core/lib/template_creation/agent_enhancer.py` (lines 98-154)**
    - ❌ No `processed_agents` list
    - ❌ No loop index tracking
    - ❌ No resume offset logic
 
-2. **`installer/global/lib/agent_bridge/state_manager.py` (lines 16-37)**
+2. **`installer/core/lib/agent_bridge/state_manager.py` (lines 16-37)**
    - ❌ No `loop_state` field in `TemplateCreateState`
    - ❌ No loop progress serialization
 
-3. **`installer/global/lib/agent_bridge/invoker.py` (lines 130-187)**
+3. **`installer/core/lib/agent_bridge/invoker.py` (lines 130-187)**
    - ❌ Bridge creates NEW instance on resume (cached response lost)
    - ❌ No auto-load of `.agent-response.json` on initialization
 
@@ -298,10 +298,10 @@ def _phase7_5_enhance_agents(self, output_path: Path) -> bool:
 **Implementation Time:** 9 hours (including comprehensive testing)
 
 **Files Modified:**
-- `installer/global/lib/agent_bridge/invoker.py` (auto-load response)
-- `installer/global/lib/agent_bridge/state_manager.py` (add loop_state field)
-- `installer/global/lib/template_creation/agent_enhancer.py` (skip processed agents)
-- `installer/global/commands/lib/template_create_orchestrator.py` (save loop state)
+- `installer/core/lib/agent_bridge/invoker.py` (auto-load response)
+- `installer/core/lib/agent_bridge/state_manager.py` (add loop_state field)
+- `installer/core/lib/template_creation/agent_enhancer.py` (skip processed agents)
+- `installer/core/commands/lib/template_create_orchestrator.py` (save loop state)
 
 ---
 
@@ -405,8 +405,8 @@ Return JSON mapping each agent to their relevant templates:
 **Implementation Time:** 1.5 hours (design + implementation + testing)
 
 **Files Modified:**
-- `installer/global/lib/template_creation/agent_enhancer.py` (Lines 98-333 - batch mode)
-- `installer/global/commands/lib/template_create_orchestrator.py` (Lines 806-856 - simplified)
+- `installer/core/lib/template_creation/agent_enhancer.py` (Lines 98-333 - batch mode)
+- `installer/core/commands/lib/template_create_orchestrator.py` (Lines 806-856 - simplified)
 
 ---
 
@@ -497,7 +497,7 @@ Return JSON mapping each agent to their relevant templates:
 
 ### Phase 1: Refactor AgentEnhancer (30 minutes)
 
-**File:** `installer/global/lib/template_creation/agent_enhancer.py`
+**File:** `installer/core/lib/template_creation/agent_enhancer.py`
 
 **Changes:**
 1. Replace `enhance_all_agents()` (lines 98-154) with batch version
@@ -508,7 +508,7 @@ Return JSON mapping each agent to their relevant templates:
 
 ### Phase 2: Update Orchestrator (15 minutes)
 
-**File:** `installer/global/commands/lib/template_create_orchestrator.py`
+**File:** `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes:**
 1. Simplify `_phase7_5_enhance_agents()` (lines 806-856)
@@ -656,10 +656,10 @@ grep -r "templates/" ~/.agentecflow/templates/test-fix/agents/*.md
 
 ### Related Documents
 
-- [Template Create Orchestrator](../../installer/global/commands/lib/template_create_orchestrator.py)
-- [Agent Enhancer](../../installer/global/lib/template_creation/agent_enhancer.py)
-- [Agent Bridge Invoker](../../installer/global/lib/agent_bridge/invoker.py)
-- [State Manager](../../installer/global/lib/agent_bridge/state_manager.py)
+- [Template Create Orchestrator](../../installer/core/commands/lib/template_create_orchestrator.py)
+- [Agent Enhancer](../../installer/core/lib/template_creation/agent_enhancer.py)
+- [Agent Bridge Invoker](../../installer/core/lib/agent_bridge/invoker.py)
+- [State Manager](../../installer/core/lib/agent_bridge/state_manager.py)
 
 ### Related Tasks
 

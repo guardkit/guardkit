@@ -392,9 +392,9 @@ Covers:
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.review_modes import FullReviewHandler
-from installer.global.commands.lib.user_interaction import countdown_timer
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.review_modes import FullReviewHandler
+from installer.core.commands.lib.user_interaction import countdown_timer
 
 
 class TestErrorHandlingEdgeCases:
@@ -404,7 +404,7 @@ class TestErrorHandlingEdgeCases:
         """Test graceful degradation when plan generation fails."""
         # Mock plan generation to raise error
         mocker.patch(
-            'installer.global.commands.lib.agent_utils.invoke_planning_agent',
+            'installer.core.commands.lib.agent_utils.invoke_planning_agent',
             side_effect=RuntimeError("AI service unavailable")
         )
 
@@ -423,7 +423,7 @@ class TestErrorHandlingEdgeCases:
         """Test complexity calculation error handling."""
         # Mock factor evaluation to raise error
         mocker.patch(
-            'installer.global.commands.lib.complexity_factors.FileComplexityFactor.evaluate',
+            'installer.core.commands.lib.complexity_factors.FileComplexityFactor.evaluate',
             side_effect=ValueError("Invalid file count")
         )
 
@@ -440,7 +440,7 @@ class TestErrorHandlingEdgeCases:
         """Test Ctrl+C during countdown cleans up terminal."""
         # Simulate Ctrl+C after 2 seconds
         mocker.patch(
-            'installer.global.commands.lib.user_interaction.time.sleep',
+            'installer.core.commands.lib.user_interaction.time.sleep',
             side_effect=KeyboardInterrupt()
         )
 
@@ -476,7 +476,7 @@ class TestErrorHandlingEdgeCases:
         """Test file write failure logs error but doesn't fail task."""
         # Mock file write to fail
         mocker.patch(
-            'installer.global.commands.lib.user_interaction.FileOperations.atomic_write',
+            'installer.core.commands.lib.user_interaction.FileOperations.atomic_write',
             side_effect=OSError("Disk full")
         )
 
@@ -862,7 +862,7 @@ def test_resolve_project_root_with_git(self, tmp_path):
 
 **File Operation Tests** (2 tests):
 ```python
-# In installer/global/commands/lib/user_interaction.py
+# In installer/core/commands/lib/user_interaction.py
 @staticmethod
 def atomic_write(file_path: Path, content: str, encoding: str = "utf-8") -> None:
     # Create parent directories BEFORE tempfile
@@ -882,7 +882,7 @@ def test_execute_view_stub(self, mocker):
 
     # Mock pager to succeed
     mocker.patch(
-        'installer.global.commands.lib.pager_display.PagerDisplay.show_plan',
+        'installer.core.commands.lib.pager_display.PagerDisplay.show_plan',
         return_value=True
     )
 

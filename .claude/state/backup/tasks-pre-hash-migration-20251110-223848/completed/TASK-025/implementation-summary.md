@@ -17,7 +17,7 @@ Successfully implemented Phase 5.5: Plan Audit, which closes a critical gap in t
 
 ### ✅ Core Modules Created
 
-1. **`installer/global/commands/lib/plan_audit.py` (~700 lines)**
+1. **`installer/core/commands/lib/plan_audit.py` (~700 lines)**
    - `PlanAuditor` class - Main audit logic
    - `PlanAuditReport` dataclass - Audit report structure
    - `Discrepancy` dataclass - Individual discrepancy tracking
@@ -31,20 +31,20 @@ Successfully implemented Phase 5.5: Plan Audit, which closes a critical gap in t
      - Severity calculation (low/medium/high)
      - Actionable recommendations generation
 
-2. **`installer/global/commands/lib/metrics/plan_audit_metrics.py` (~200 lines)**
+2. **`installer/core/commands/lib/metrics/plan_audit_metrics.py` (~200 lines)**
    - `PlanAuditMetricsTracker` class
    - Metrics storage in `docs/state/plan_audit_metrics.json`
    - Summary statistics calculation
    - Feedback loop for complexity model improvement
 
-3. **`installer/global/commands/lib/phase_execution.py` (modified)**
+3. **`installer/core/commands/lib/phase_execution.py` (modified)**
    - Added `execute_phase_5_5_plan_audit()` function
    - Added `prompt_with_timeout()` utility (30-second timeout)
    - Added `handle_audit_decision()` decision handler
    - Added helper functions for task metadata updates
    - Integrated Phase 5.5 into standard and implement-only workflows
 
-4. **`installer/global/commands/task-work.md` (modified)**
+4. **`installer/core/commands/task-work.md` (modified)**
    - Added comprehensive Phase 5.5 documentation (150+ lines)
    - Documented when to execute, objectives, process
    - Added example audit report output
@@ -252,7 +252,7 @@ Phase 5.5 directly addresses this by automatically detecting when AI deviates fr
    - Complete architecture, design, and examples
 
 2. **Command Documentation:**
-   - `installer/global/commands/task-work.md` (Phase 5.5 section)
+   - `installer/core/commands/task-work.md` (Phase 5.5 section)
    - When to execute, process, examples, error handling
 
 3. **Test Documentation:**
@@ -278,13 +278,13 @@ Phase 5.5 directly addresses this by automatically detecting when AI deviates fr
 ## Files Modified/Created
 
 ### Created Files (3)
-1. `installer/global/commands/lib/plan_audit.py`
-2. `installer/global/commands/lib/metrics/plan_audit_metrics.py`
+1. `installer/core/commands/lib/plan_audit.py`
+2. `installer/core/commands/lib/metrics/plan_audit_metrics.py`
 3. `tests/lib/test_plan_auditor.py`
 
 ### Modified Files (2)
-1. `installer/global/commands/lib/phase_execution.py`
-2. `installer/global/commands/task-work.md`
+1. `installer/core/commands/lib/phase_execution.py`
+2. `installer/core/commands/task-work.md`
 
 ### Documentation Files (2)
 1. `docs/research/phase-5.5-plan-audit-implementation.md`

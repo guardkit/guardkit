@@ -19,12 +19,12 @@ blocks: [TASK-019]
 
 ## Objective
 
-Audit all agents in `installer/global/agents/` and move stack-specific agents to their respective template directories. This fixes the bug where Python-specific agents are being copied to .NET projects.
+Audit all agents in `installer/core/agents/` and move stack-specific agents to their respective template directories. This fixes the bug where Python-specific agents are being copied to .NET projects.
 
 ## Problem Statement
 
 **Current Issue**:
-- `python-mcp-specialist.md` is in `/installer/global/agents/`
+- `python-mcp-specialist.md` is in `/installer/core/agents/`
 - This agent gets copied to ALL projects (including dotnet-microservice)
 - Users get irrelevant Python agents in their .NET projects
 
@@ -34,7 +34,7 @@ The installer copies all global agents to every project type, regardless of stac
 ## Expected Organization
 
 ### Global Agents (Cross-Stack)
-These should stay in `installer/global/agents/`:
+These should stay in `installer/core/agents/`:
 - `architectural-reviewer.md` - Works across all stacks
 - `code-reviewer.md` - Works across all stacks
 - `task-manager.md` - Works across all stacks
@@ -53,16 +53,16 @@ These should stay in `installer/global/agents/`:
 ### Template-Specific Agents
 These should move to template directories:
 
-**Python Template** (`installer/global/templates/python/agents/`):
+**Python Template** (`installer/core/templates/python/agents/`):
 - `python-mcp-specialist.md` ← **MOVE THIS**
 - `python-api-specialist.md` (already there)
 - `python-testing-specialist.md` (already there)
 - `python-langchain-specialist.md` (already there)
 
-**React Template** (`installer/global/templates/react/agents/`):
+**React Template** (`installer/core/templates/react/agents/`):
 - Already has stack-specific agents ✓
 
-**TypeScript API Template** (`installer/global/templates/typescript-api/agents/`):
+**TypeScript API Template** (`installer/core/templates/typescript-api/agents/`):
 - Already has stack-specific agents ✓
 
 **.NET Templates** (maui-*, dotnet-microservice):
@@ -83,7 +83,7 @@ These should move to template directories:
 
 ```bash
 # List all global agents
-ls -1 installer/global/agents/*.md
+ls -1 installer/core/agents/*.md
 
 # Expected to find:
 # - python-mcp-specialist.md (NEEDS TO MOVE)
@@ -94,18 +94,18 @@ ls -1 installer/global/agents/*.md
 
 ```bash
 # Move the agent
-mv installer/global/agents/python-mcp-specialist.md \
-   installer/global/templates/python/agents/
+mv installer/core/agents/python-mcp-specialist.md \
+   installer/core/templates/python/agents/
 
 # Verify
-ls installer/global/templates/python/agents/python-mcp-specialist.md
+ls installer/core/templates/python/agents/python-mcp-specialist.md
 ```
 
 ### 3. Verify Template Structure
 
 ```bash
 # Check python template has all its agents
-ls -1 installer/global/templates/python/agents/
+ls -1 installer/core/templates/python/agents/
 
 # Expected:
 # - python-api-specialist.md
@@ -138,8 +138,8 @@ ls .claude/agents/python-mcp-specialist.md
 ## Files to Modify
 
 1. **Move Agent File**:
-   - From: `installer/global/agents/python-mcp-specialist.md`
-   - To: `installer/global/templates/python/agents/python-mcp-specialist.md`
+   - From: `installer/core/agents/python-mcp-specialist.md`
+   - To: `installer/core/templates/python/agents/python-mcp-specialist.md`
 
 2. **No Code Changes Required**:
    - The installer already handles template-specific agents correctly

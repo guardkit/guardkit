@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 from typing import Dict, List, Optional
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/global/commands"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/core/commands"))
 
 from lib.complexity_models import (
     ImplementationPlan,

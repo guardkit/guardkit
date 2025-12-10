@@ -814,7 +814,7 @@ python-fastapi-clean/
 
 4. **Learn More**
    - [Creating Local Templates](./creating-local-templates.md)
-   - [Template Command Specification](../../installer/global/commands/template-create.md)
+   - [Template Command Specification](../../installer/core/commands/template-create.md)
    - [Template Structure Reference](../../docs/architecture/template-structure.md)
 
 ---

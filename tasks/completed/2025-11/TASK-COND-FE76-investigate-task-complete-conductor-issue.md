@@ -143,10 +143,10 @@ Investigate and fix the `/task-complete` command (or the completion logic in `/t
 - Identify why TASK-ENF-P0-3 succeeded but others failed
 
 **Files to Review**:
-- `installer/global/commands/task-complete` (if exists as Python script)
-- `installer/global/commands/task-complete.md` (command specification)
-- `installer/global/commands/task-work` (Phase 5.5 completion logic)
-- `installer/global/commands/lib/state_manager.py` (if exists)
+- `installer/core/commands/task-complete` (if exists as Python script)
+- `installer/core/commands/task-complete.md` (command specification)
+- `installer/core/commands/task-work` (Phase 5.5 completion logic)
+- `installer/core/commands/lib/state_manager.py` (if exists)
 - `.claude/state/` directory structure (symlink target)
 
 **Root Cause Analysis**:

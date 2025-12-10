@@ -18,11 +18,11 @@
 
 **Analysis**:
 - Files to create: 3
-  - `installer/global/commands/template-qa.md` (150 LOC)
-  - `installer/global/lib/template_qa_orchestrator.py` (400 LOC)
-  - `installer/global/lib/template_config_handler.py` (200 LOC)
+  - `installer/core/commands/template-qa.md` (150 LOC)
+  - `installer/core/lib/template_qa_orchestrator.py` (400 LOC)
+  - `installer/core/lib/template_config_handler.py` (200 LOC)
 - Files to modify: 2
-  - `installer/global/lib/template_create_orchestrator.py` (-180 LOC net)
+  - `installer/core/lib/template_create_orchestrator.py` (-180 LOC net)
   - Command registry/index (~20 LOC)
 - **Total files affected**: 5
 

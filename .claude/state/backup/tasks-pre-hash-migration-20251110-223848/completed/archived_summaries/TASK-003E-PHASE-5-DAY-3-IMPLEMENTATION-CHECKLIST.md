@@ -26,7 +26,7 @@
 **Files to Modify**: 2 files
 
 #### Step 1: Update FullReviewDisplay (1 hour)
-**File**: `/installer/global/commands/lib/review_modes.py`
+**File**: `/installer/core/commands/lib/review_modes.py`
 
 - [ ] **Modify `_display_implementation_order()`**
   ```python
@@ -76,7 +76,7 @@
   ```
 
 #### Step 2: Update PagerDisplay (0.5 hours)
-**File**: `/installer/global/commands/lib/pager_display.py`
+**File**: `/installer/core/commands/lib/pager_display.py`
 
 - [ ] **Modify `format_section()` helper**
   ```python
@@ -157,7 +157,7 @@
 **Files to Modify**: 1 file
 
 #### Step 1: Add Score Comparison Logic (2 hours)
-**File**: `/installer/global/commands/lib/review_modes.py`
+**File**: `/installer/core/commands/lib/review_modes.py`
 
 - [ ] **Modify `FullReviewHandler._apply_modifications_and_return()`**
   ```python
@@ -280,7 +280,7 @@
 **Files to Modify**: 1 file
 
 #### Step 1: Add Question Counter (1 hour)
-**File**: `/installer/global/commands/lib/qa_manager.py`
+**File**: `/installer/core/commands/lib/qa_manager.py`
 
 - [ ] **Modify `QAManager.run_qa_session()`**
   ```python
@@ -350,7 +350,7 @@
 
       # Mock AI responses
       mocker.patch(
-          'installer.global.commands.lib.agent_utils.invoke_qa_agent',
+          'installer.core.commands.lib.agent_utils.invoke_qa_agent',
           return_value="Mocked answer"
       )
 
@@ -556,7 +556,7 @@
 
 ### Pre-Implementation Verification
 - [ ] Current test suite passing: `pytest tests/ -v`
-- [ ] Current coverage: `pytest tests/ --cov=installer/global/commands/lib --cov-report=term`
+- [ ] Current coverage: `pytest tests/ --cov=installer/core/commands/lib --cov-report=term`
 - [ ] No uncommitted changes: `git status`
 
 ### During Implementation
@@ -567,7 +567,7 @@
 ### Post-Implementation Verification
 - [ ] Run full test suite: `pytest tests/ -v`
 - [ ] Run edge case tests only: `pytest tests/edge_cases/ -v`
-- [ ] Check coverage: `pytest tests/ --cov=installer/global/commands/lib --cov-report=term`
+- [ ] Check coverage: `pytest tests/ --cov=installer/core/commands/lib --cov-report=term`
 - [ ] Performance check: Ensure total execution time <5 minutes
 
 ---
@@ -575,7 +575,7 @@
 ## Quality Gates
 
 ### Code Quality
-- [ ] PEP 8 compliance: `flake8 installer/global/commands/lib/`
+- [ ] PEP 8 compliance: `flake8 installer/core/commands/lib/`
 - [ ] Type hints present in all new functions
 - [ ] Docstrings complete for all new functions
 - [ ] No commented-out code
@@ -601,8 +601,8 @@
 
 ### Commit 1: Empty Plan Sections (Task 1.1)
 ```bash
-git add installer/global/commands/lib/review_modes.py
-git add installer/global/commands/lib/pager_display.py
+git add installer/core/commands/lib/review_modes.py
+git add installer/core/commands/lib/pager_display.py
 git add tests/edge_cases/test_boundary_conditions.py
 git commit -m "feat(phase5-day3): implement empty plan sections display (REQ-BC-005)
 
@@ -614,7 +614,7 @@ git commit -m "feat(phase5-day3): implement empty plan sections display (REQ-BC-
 
 ### Commit 2: Complexity Increase Warning (Task 1.2)
 ```bash
-git add installer/global/commands/lib/review_modes.py
+git add installer/core/commands/lib/review_modes.py
 git add tests/edge_cases/test_concurrency_state.py
 git commit -m "feat(phase5-day3): add complexity increase warning (REQ-CS-002)
 
@@ -626,7 +626,7 @@ git commit -m "feat(phase5-day3): add complexity increase warning (REQ-CS-002)
 
 ### Commit 3: Q&A Session Limit (Task 1.3)
 ```bash
-git add installer/global/commands/lib/qa_manager.py
+git add installer/core/commands/lib/qa_manager.py
 git add tests/edge_cases/test_concurrency_state.py
 git commit -m "feat(phase5-day3): implement Q&A session limit (REQ-CS-003)
 

@@ -111,11 +111,11 @@ Both packages create marker files in `~/.agentecflow/` upon installation:
 
 ### Feature Detection
 
-**Library:** `installer/global/lib/feature_detection.py` (duplicated in both repos)
+**Library:** `installer/core/lib/feature_detection.py` (duplicated in both repos)
 
 **Usage in guardkit commands:**
 ```python
-from installer.global.lib.feature_detection import supports_requirements
+from installer.core.lib.feature_detection import supports_requirements
 
 if supports_requirements():
     # Full requirements integration

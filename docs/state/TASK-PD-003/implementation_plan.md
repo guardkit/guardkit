@@ -15,7 +15,7 @@
 
 ### 1.1 Current enhancer.py Implementation
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py` (576 lines)
+**File**: `installer/core/lib/agent_enhancement/enhancer.py` (576 lines)
 
 **Key Current Behaviors**:
 - `enhance()` method returns `EnhancementResult` dataclass (lines 34-44)
@@ -49,7 +49,7 @@
 
 ### 1.2 Current Applier Integration Points
 
-**File**: `installer/global/lib/agent_enhancement/applier.py` (253 lines)
+**File**: `installer/core/lib/agent_enhancement/applier.py` (253 lines)
 
 **Current Methods**:
 - `apply(agent_file: Path, enhancement: Dict[str, Any]) -> None` (lines 33-67)
@@ -98,7 +98,7 @@
 ### 1.5 Backward Compatibility Concerns
 
 **Current Usage**:
-1. **Command**: `installer/global/commands/agent-enhance.py` calls `enhancer.enhance()`
+1. **Command**: `installer/core/commands/agent-enhance.py` calls `enhancer.enhance()`
    - Currently expects single return value: `EnhancementResult`
    - Shows basic result status and file list
 
@@ -121,7 +121,7 @@
 
 ### 2.1 File: enhancer.py
 
-**Location**: `installer/global/lib/agent_enhancement/enhancer.py`
+**Location**: `installer/core/lib/agent_enhancement/enhancer.py`
 
 #### Change 2.1.1: Modify EnhancementResult Dataclass Definition
 
@@ -458,7 +458,7 @@ except Exception as e:
 
 ### 2.2 File: models.py
 
-**Location**: `installer/global/lib/agent_enhancement/models.py`
+**Location**: `installer/core/lib/agent_enhancement/models.py`
 
 **Note**: This file may not currently exist. If it doesn't exist, the `EnhancementResult` dataclass is defined directly in `enhancer.py`.
 
@@ -468,7 +468,7 @@ except Exception as e:
 
 ### 2.3 File: agent-enhance.md (Command Documentation)
 
-**Location**: `installer/global/commands/agent-enhance.md`
+**Location**: `installer/core/commands/agent-enhance.md`
 
 #### Change 2.3.1: Update Output Format Section
 
@@ -643,13 +643,13 @@ cat agents/testing-specialist-ext.md
 ### 2.4 Integration Points Summary
 
 **Files Affected**:
-1. `installer/global/lib/agent_enhancement/enhancer.py` - **4 changes**
+1. `installer/core/lib/agent_enhancement/enhancer.py` - **4 changes**
    - EnhancementResult dataclass: Add new fields
    - enhance() signature: Add split_output parameter
    - enhance() docstring: Document new behavior
    - enhance() implementation: Branch logic for split vs single
 
-2. `installer/global/commands/agent-enhance.md` - **3 changes**
+2. `installer/core/commands/agent-enhance.md` - **3 changes**
    - Output format examples for both modes
    - Usage examples for both modes
    - Mode selection options documentation
@@ -963,10 +963,10 @@ def test_dry_run_with_split_output(tmp_path):
 **Verification**:
 ```bash
 # Check apply_with_split method exists
-grep -n "def apply_with_split" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/applier.py
+grep -n "def apply_with_split" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/applier.py
 
 # Check generate_loading_instruction exists
-grep -n "def generate_loading_instruction" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/lib/agent_enhancement/applier.py
+grep -n "def generate_loading_instruction" /Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/lib/agent_enhancement/applier.py
 ```
 
 **Expected Output**:
@@ -979,7 +979,7 @@ grep -n "def generate_loading_instruction" /Users/richardwoollcott/Projects/appm
 
 #### Step 2: Update EnhancementResult Dataclass
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py` (lines 34-44)
+**File**: `installer/core/lib/agent_enhancement/enhancer.py` (lines 34-44)
 
 **Actions**:
 1. Add new fields to dataclass:
@@ -1008,7 +1008,7 @@ assert result.files == [Path("core.md"), Path("core-ext.md")]
 
 #### Step 3: Update enhance() Method Signature and Docstring
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py` (lines 106-120)
+**File**: `installer/core/lib/agent_enhancement/enhancer.py` (lines 106-120)
 
 **Actions**:
 1. Add `split_output: bool = True` parameter
@@ -1030,7 +1030,7 @@ enhancer.enhance(Path("agent.md"), Path("template"), split_output=False)
 
 #### Step 4: Refactor enhance() Implementation
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py` (lines 121-189)
+**File**: `installer/core/lib/agent_enhancement/enhancer.py` (lines 121-189)
 
 **Actions**:
 1. Add enhanced logging showing mode (split vs single)
@@ -1082,7 +1082,7 @@ assert result.split_output is False
 
 #### Step 5: Update Command Documentation
 
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 **Actions**:
 1. Update "Output Format" section (lines 209-233)
@@ -1102,7 +1102,7 @@ assert result.split_output is False
 **Validation**:
 ```bash
 # Verify markdown syntax is valid
-python3 -m markdown installer/global/commands/agent-enhance.md
+python3 -m markdown installer/core/commands/agent-enhance.md
 ```
 
 **Time**: 20 minutes
@@ -1124,7 +1124,7 @@ python3 -m markdown installer/global/commands/agent-enhance.md
 **Execution**:
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
-python3 -m pytest tests/unit/test_enhancer_split_output.py -v --cov=installer/global/lib/agent_enhancement/enhancer
+python3 -m pytest tests/unit/test_enhancer_split_output.py -v --cov=installer/core/lib/agent_enhancement/enhancer
 ```
 
 **Success Criteria**:
@@ -1148,7 +1148,7 @@ python3 -m pytest tests/unit/test_enhancer_split_output.py -v --cov=installer/gl
 **Execution**:
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit
-python3 -m pytest tests/integration/test_enhancer_split_integration.py -v --cov=installer/global/lib/agent_enhancement
+python3 -m pytest tests/integration/test_enhancer_split_integration.py -v --cov=installer/core/lib/agent_enhancement
 ```
 
 **Success Criteria**:
@@ -1166,11 +1166,11 @@ python3 -m pytest tests/integration/test_enhancer_split_integration.py -v --cov=
 **Execution**:
 ```bash
 # Run all tests with coverage
-pytest tests/ -v --cov=installer/global/lib/agent_enhancement \
+pytest tests/ -v --cov=installer/core/lib/agent_enhancement \
     --cov-report=term-missing --cov-report=json
 
 # Generate coverage report
-coverage report -m installer/global/lib/agent_enhancement/enhancer.py
+coverage report -m installer/core/lib/agent_enhancement/enhancer.py
 ```
 
 **Validation Checklist**:
@@ -1488,8 +1488,8 @@ This task is complete when:
 - TASK-REV-426C: Review task
 
 ### Implementation Files
-- `installer/global/lib/agent_enhancement/enhancer.py`
-- `installer/global/commands/agent-enhance.md`
+- `installer/core/lib/agent_enhancement/enhancer.py`
+- `installer/core/commands/agent-enhance.md`
 - `tests/unit/test_enhancer_split_output.py` (new)
 - `tests/integration/test_enhancer_split_integration.py` (new)
 

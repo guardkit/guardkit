@@ -603,7 +603,7 @@ git push origin feature/login-api
 **Solution**:
 ```bash
 # 1. Verify git_state_helper.py is executable
-chmod +x installer/global/lib/git_state_helper.py
+chmod +x installer/core/lib/git_state_helper.py
 
 # 2. Check git root detection works
 git rev-parse --show-toplevel

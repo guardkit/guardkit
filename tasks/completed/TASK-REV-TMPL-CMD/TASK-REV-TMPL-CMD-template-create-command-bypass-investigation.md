@@ -43,7 +43,7 @@ This defeats the entire checkpoint-resume architecture and AI analysis pipeline.
 /template-create --name kartlog-test
 
 ⏺ Bash(PYTHONPATH="..." python3 .../template_create_orchestrator.py --path . --name kartlog-test)
-  ⎿  INFO:installer.global.lib.codebase_analyzer.ai_analyzer:Analyzing codebase...
+  ⎿  INFO:installer.core.lib.codebase_analyzer.ai_analyzer:Analyzing codebase...
      INFO:lib.codebase_analyzer.stratified_sampler:Starting stratified sampling...
      ... orchestrator output ...
      Exit code: 42 (agent invocation needed)
@@ -124,16 +124,16 @@ Review the git history of these files to understand what changed:
 
 ```bash
 # Command file history
-git log --oneline -20 -- installer/global/commands/template-create.md
+git log --oneline -20 -- installer/core/commands/template-create.md
 
 # Check when "Execution" section was added/modified
-git log -p -- installer/global/commands/template-create.md | grep -A 50 "## Execution"
+git log -p -- installer/core/commands/template-create.md | grep -A 50 "## Execution"
 
 # Orchestrator history
-git log --oneline -20 -- installer/global/commands/lib/template_create_orchestrator.py
+git log --oneline -20 -- installer/core/commands/lib/template_create_orchestrator.py
 
 # Check v0.97 baseline (commit 6c651a3)
-git show 6c651a3:installer/global/commands/template-create.md | grep -A 50 "## Execution"
+git show 6c651a3:installer/core/commands/template-create.md | grep -A 50 "## Execution"
 ```
 
 ### 2. Verify v0.97 Working State
@@ -147,10 +147,10 @@ The v0.97 baseline (commit 6c651a3) was confirmed working. Need to understand:
 
 ```bash
 # Diff the command file
-git diff 6c651a3..HEAD -- installer/global/commands/template-create.md
+git diff 6c651a3..HEAD -- installer/core/commands/template-create.md
 
 # Check if Execution section was modified
-git diff 6c651a3..HEAD -- installer/global/commands/template-create.md | grep -A 20 "Execution"
+git diff 6c651a3..HEAD -- installer/core/commands/template-create.md | grep -A 20 "Execution"
 ```
 
 ### 4. Check Other Slash Commands That Work
@@ -165,10 +165,10 @@ What's different about template-create?
 
 | File | Purpose | Check For |
 |------|---------|-----------|
-| `installer/global/commands/template-create.md` | Command spec | Instructions for orchestrator invocation |
-| `installer/global/commands/lib/template_create_orchestrator.py` | Main script | Entry point and arg handling |
-| `installer/global/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | Bridge invoker integration |
-| `installer/global/lib/agent_bridge/invoker.py` | Agent bridge | Checkpoint-resume pattern |
+| `installer/core/commands/template-create.md` | Command spec | Instructions for orchestrator invocation |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Main script | Entry point and arg handling |
+| `installer/core/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | Bridge invoker integration |
+| `installer/core/lib/agent_bridge/invoker.py` | Agent bridge | Checkpoint-resume pattern |
 | `installer/scripts/install.sh` | Installation | Symlink creation |
 
 ## Related Tasks
@@ -202,7 +202,7 @@ python3 ~/.agentecflow/bin/template-create-orchestrator [args]
 If the command file was modified since v0.97, consider reverting it:
 
 ```bash
-git checkout 6c651a3 -- installer/global/commands/template-create.md
+git checkout 6c651a3 -- installer/core/commands/template-create.md
 ```
 
 **Risk**: May lose valid improvements. Need to understand what changed.
@@ -213,7 +213,7 @@ Ensure the symlink is created correctly and discoverable:
 
 ```bash
 # In install.sh
-ln -sf "$GUARDKIT_PATH/installer/global/commands/lib/template_create_orchestrator.py" \
+ln -sf "$GUARDKIT_PATH/installer/core/commands/lib/template_create_orchestrator.py" \
        "$HOME/.agentecflow/bin/template-create-orchestrator"
 ```
 

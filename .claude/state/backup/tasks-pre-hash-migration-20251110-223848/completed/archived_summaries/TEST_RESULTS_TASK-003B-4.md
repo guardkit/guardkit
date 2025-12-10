@@ -12,13 +12,13 @@
 ### ✅ SUCCESS - All files compiled successfully
 
 **Files Verified:**
-- `installer/global/commands/lib/qa_manager.py` - ✅ Compiled
-- `installer/global/commands/lib/review_modes.py` - ✅ Compiled
+- `installer/core/commands/lib/qa_manager.py` - ✅ Compiled
+- `installer/core/commands/lib/review_modes.py` - ✅ Compiled
 
 **Compilation Command:**
 ```bash
-python3 -m py_compile installer/global/commands/lib/qa_manager.py
-python3 -m py_compile installer/global/commands/lib/review_modes.py
+python3 -m py_compile installer/core/commands/lib/qa_manager.py
+python3 -m py_compile installer/core/commands/lib/review_modes.py
 ```
 
 **Result:** No compilation errors detected. All Python syntax valid.

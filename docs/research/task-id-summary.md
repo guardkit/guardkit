@@ -150,14 +150,14 @@ TASK-1ca1 → JIRA: PROJ-100, Azure: 1000, Linear: TEAM-1, GitHub: #1
 ## Implementation Timeline
 
 **Week 1: Core ID Generation**
-- [ ] Implement hash generator (`installer/global/lib/id_generator.py`)
+- [ ] Implement hash generator (`installer/core/lib/id_generator.py`)
 - [ ] Add collision detection and validation
 - [ ] Unit tests (generate 10,000 IDs, verify zero collisions)
 - [ ] Update `/task-create` command to use hash generator
 - [ ] Add prefix support (E01, DOC, FIX, etc.)
 
 **Week 2: PM Tool Mapping**
-- [ ] Implement mapper (`installer/global/lib/external_id_mapper.py`)
+- [ ] Implement mapper (`installer/core/lib/external_id_mapper.py`)
 - [ ] JSON persistence (`.claude/state/external_id_mapping.json`)
 - [ ] Bidirectional lookup (internal ↔ external)
 - [ ] Update task frontmatter schema (add `external_ids` field)

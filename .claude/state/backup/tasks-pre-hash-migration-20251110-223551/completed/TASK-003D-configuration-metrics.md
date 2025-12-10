@@ -581,7 +581,7 @@ class PlanReviewMetrics:
 .claude/
 └── settings.json                            [UPDATE - Add config schema]
 
-installer/global/
+installer/core/
 ├── commands/
 │   ├── plan-review-metrics.md              [NEW - Dashboard]
 │   └── configure-plan-review.md            [NEW - Config UI]

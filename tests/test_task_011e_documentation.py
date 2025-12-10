@@ -17,9 +17,9 @@ from typing import Dict, List, Tuple
 
 
 # Test Data: File Paths
-APPSHELL_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-appshell/agents/maui-repository-specialist.md"
-NAVIGATIONPAGE_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-navigationpage/agents/maui-repository-specialist.md"
-REFERENCE_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-appshell/agents/maui-viewmodel-specialist.md"
+APPSHELL_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-appshell/agents/maui-repository-specialist.md"
+NAVIGATIONPAGE_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-navigationpage/agents/maui-repository-specialist.md"
+REFERENCE_DOC_PATH = "/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-appshell/agents/maui-viewmodel-specialist.md"
 
 
 class TestFileExistence:

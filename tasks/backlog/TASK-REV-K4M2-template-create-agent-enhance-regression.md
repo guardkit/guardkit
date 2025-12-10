@@ -130,7 +130,7 @@ But the correct command (as shown in the template-create output at line 1363) sh
 ## Key Questions
 
 1. **Did the `/agent-enhance` command spec change in progressive-disclosure?**
-   - Compare `installer/global/commands/agent-enhance.md` between main and progressive-disclosure
+   - Compare `installer/core/commands/agent-enhance.md` between main and progressive-disclosure
 
 2. **Is the argument syntax `template/agent` still required?**
    - The output showed `/agent-enhance svelte5-component-specialist --hybrid` without the template prefix
@@ -198,6 +198,6 @@ This explains why `/agent-enhance` failed - the template was never created on th
 The user stated: "The agent-enhance was working in the main branch before the changes for progressive disclosure"
 
 This strongly suggests a regression was introduced. Key areas to compare:
-- `installer/global/commands/agent-enhance.md`
-- `installer/global/commands/lib/agent_enhance*.py` (if exists)
+- `installer/core/commands/agent-enhance.md`
+- `installer/core/commands/lib/agent_enhance*.py` (if exists)
 - Any Python scripts related to agent enhancement

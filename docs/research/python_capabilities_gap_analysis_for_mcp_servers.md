@@ -163,7 +163,7 @@ Agentecflow requires **4 specialized MCP servers**:
 
 ### Option 1: Create New `python-mcp-specialist` Agent ✅ (Recommended)
 
-**Create**: `installer/global/agents/python-mcp-specialist.md`
+**Create**: `installer/core/agents/python-mcp-specialist.md`
 
 **Responsibilities**:
 - MCP server architecture and patterns
@@ -497,7 +497,7 @@ async def test_mcp_integration():
 ## Implementation Roadmap
 
 ### Phase 1: Create Agent (Week 1)
-1. ✅ Create `installer/global/agents/python-mcp-specialist.md`
+1. ✅ Create `installer/core/agents/python-mcp-specialist.md`
 2. ✅ Document MCP server patterns with examples
 3. ✅ Include integration patterns with LangGraph
 4. ✅ Add testing strategies

@@ -60,7 +60,7 @@ Create a bidirectional mapping system between internal hash-based task IDs and e
 ## Implementation Notes
 
 ### File Location
-Create new file: `installer/global/lib/external_id_mapper.py`
+Create new file: `installer/core/lib/external_id_mapper.py`
 
 ### Key Functions
 ```python
@@ -176,7 +176,7 @@ def increment_counter(tool: str, key: str = None) -> int:
 - Duration: 0.90s
 
 **Coverage Details:**
-- File: `installer/global/lib/external_id_mapper.py`
+- File: `installer/core/lib/external_id_mapper.py`
 - Lines Covered: 90/91 (97.7%)
 - Branch Coverage: ~95%
 - Missing: 1 line (non-critical)
@@ -218,7 +218,7 @@ def increment_counter(tool: str, key: str = None) -> int:
 
 **Implementation Details:**
 - Files Created: 2
-  - `installer/global/lib/external_id_mapper.py` (370 lines)
+  - `installer/core/lib/external_id_mapper.py` (370 lines)
   - `tests/lib/test_external_id_mapper.py` (618 lines)
 - PM Tools Supported: 4 (JIRA, Azure DevOps, Linear, GitHub)
 - Thread Safety: Implemented with threading.Lock()
@@ -242,7 +242,7 @@ def increment_counter(tool: str, key: str = None) -> int:
 ### 📊 Summary
 
 **Deliverables:**
-- ✅ Core implementation: `installer/global/lib/external_id_mapper.py` (370 lines)
+- ✅ Core implementation: `installer/core/lib/external_id_mapper.py` (370 lines)
 - ✅ Test suite: `tests/lib/test_external_id_mapper.py` (618 lines)
 - ✅ Implementation plan: `.claude/task-plans/TASK-223C-implementation-plan.md`
 - ✅ Coverage report: `test_coverage_task049.json`
@@ -347,7 +347,7 @@ def increment_counter(tool: str, key: str = None) -> int:
 3. Initial test failure due to case normalization behavior
 
 **Solutions Applied:**
-1. Used `sys.path.insert()` to handle `installer.global.lib` import
+1. Used `sys.path.insert()` to handle `installer.core.lib` import
 2. Normalized project keys to uppercase before counter operations
 3. All files staged for commit (git issue to be resolved separately)
 

@@ -21,13 +21,13 @@
 - ✅ All 16 validation sections score 8+/10
 - ✅ Zero critical issues
 - ✅ README documents template architecture and patterns
-- ✅ Template installed in `installer/global/templates/react-typescript/`
+- ✅ Template installed in `installer/core/templates/react-typescript/`
 - ✅ Documentation updated to reference new template
 
 ## Implementation Summary
 
 ### Template Created
-- **Location**: `installer/global/templates/react/`
+- **Location**: `installer/core/templates/react/`
 - **Name**: react (react-typescript reference template)
 - **Quality Score**: 9.5/10 (Grade: A+)
 - **Validation Status**: APPROVED for production
@@ -132,7 +132,7 @@
 ## Deliverables
 
 ### Primary Deliverable
-- ✅ React + TypeScript reference template at `installer/global/templates/react/`
+- ✅ React + TypeScript reference template at `installer/core/templates/react/`
 
 ### Supporting Deliverables
 - ✅ Comprehensive validation report (9.5/10 score)

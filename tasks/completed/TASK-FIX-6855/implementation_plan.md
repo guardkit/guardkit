@@ -21,10 +21,10 @@ This task addresses 4 HIGH/MEDIUM priority issues from the TASK-REV-6E5D review:
 
 | File | Issue | Changes |
 |------|-------|---------|
-| `installer/global/lib/codebase_analyzer/models.py` | Issue 1 | Add FrameworkInfo model, Union type for frameworks |
-| `installer/global/lib/codebase_analyzer/agent_invoker.py` | Issue 4 | Extend _detect_layers() with 13 directory patterns |
-| `installer/global/lib/template_generator/pattern_matcher.py` | Issue 5 | Add CRUD prefix guard clause to identify_entity() |
-| `installer/global/lib/template_generator/completeness_validator.py` | Issue 6 | Fix _estimate_file_path() to handle .template suffix |
+| `installer/core/lib/codebase_analyzer/models.py` | Issue 1 | Add FrameworkInfo model, Union type for frameworks |
+| `installer/core/lib/codebase_analyzer/agent_invoker.py` | Issue 4 | Extend _detect_layers() with 13 directory patterns |
+| `installer/core/lib/template_generator/pattern_matcher.py` | Issue 5 | Add CRUD prefix guard clause to identify_entity() |
+| `installer/core/lib/template_generator/completeness_validator.py` | Issue 6 | Fix _estimate_file_path() to handle .template suffix |
 
 ## Test Files to Create
 
@@ -39,7 +39,7 @@ This task addresses 4 HIGH/MEDIUM priority issues from the TASK-REV-6E5D review:
 
 ## Issue 1: Framework Schema Fix
 
-### File: `installer/global/lib/codebase_analyzer/models.py`
+### File: `installer/core/lib/codebase_analyzer/models.py`
 
 **Problem**: `TechnologyInfo.frameworks` only accepts `List[str]` but AI returns categorized dict like:
 ```python
@@ -57,7 +57,7 @@ This task addresses 4 HIGH/MEDIUM priority issues from the TASK-REV-6E5D review:
 
 ## Issue 4: Extended Layer Detection
 
-### File: `installer/global/lib/codebase_analyzer/agent_invoker.py`
+### File: `installer/core/lib/codebase_analyzer/agent_invoker.py`
 
 **Problem**: Only Clean Architecture layers detected (domain/, application/, infrastructure/), causing 30% of files to end up in "other/"
 
@@ -73,7 +73,7 @@ This task addresses 4 HIGH/MEDIUM priority issues from the TASK-REV-6E5D review:
 
 ## Issue 5: Entity Detection Fix
 
-### File: `installer/global/lib/template_generator/pattern_matcher.py`
+### File: `installer/core/lib/template_generator/pattern_matcher.py`
 
 **Problem**: Utility files like `query.js`, `firebase.js` detected as entities, causing false CRUD completeness warnings
 
@@ -90,7 +90,7 @@ if operation is None:
 
 ## Issue 6: Template Naming Fix
 
-### File: `installer/global/lib/template_generator/completeness_validator.py`
+### File: `installer/core/lib/template_generator/completeness_validator.py`
 
 **Problem**: Double extensions like `.svelte.svelte.template` and malformed names like `query.j.js.template`
 

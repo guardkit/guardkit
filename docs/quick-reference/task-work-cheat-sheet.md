@@ -174,9 +174,9 @@ Solution:
 ## See Also
 
 **Full Documentation**:
-- Complete specification: `installer/global/commands/task-work.md`
-- Architectural review: `installer/global/agents/architectural-reviewer.md`
-- Test enforcement: `installer/global/agents/test-orchestrator.md`
+- Complete specification: `installer/core/commands/task-work.md`
+- Architectural review: `installer/core/agents/architectural-reviewer.md`
+- Test enforcement: `installer/core/agents/test-orchestrator.md`
 
 **Related Workflows**:
 - Design-first workflow: `docs/guides/design-first-workflow.md`

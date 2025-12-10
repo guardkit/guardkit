@@ -119,8 +119,8 @@ fi
 ## Related Files
 
 - [installer/scripts/init-project.sh](installer/scripts/init-project.sh)
-- [installer/global/agents/](installer/global/agents/) (14 global agents)
-- [installer/global/templates/maui-navigationpage/agents/](installer/global/templates/maui-navigationpage/agents/) (9 template agents)
+- [installer/core/agents/](installer/core/agents/) (14 global agents)
+- [installer/core/templates/maui-navigationpage/agents/](installer/core/templates/maui-navigationpage/agents/) (9 template agents)
 
 ## Testing Strategy
 

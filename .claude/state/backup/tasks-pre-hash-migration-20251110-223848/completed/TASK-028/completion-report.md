@@ -281,7 +281,7 @@ choice = input("Your choice [A/M/C]: ").strip().upper()
 
 ### Created Files (7)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
   checkpoint_display.py                     (490 lines)
   README-CHECKPOINT-DISPLAY.md              (documentation)
 
@@ -302,7 +302,7 @@ Root:
 
 ### Modified Files (1)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
   plan_persistence.py                       (added get_plan_path)
 ```
 

@@ -81,22 +81,22 @@ The response file may be in a different location than expected.
 
 ## Files to Investigate
 
-1. **`installer/global/commands/lib/template_create_orchestrator.py`**
+1. **`installer/core/commands/lib/template_create_orchestrator.py`**
    - `_run_from_phase_1()` method (lines 272-332)
    - `_phase1_ai_analysis()` method (lines 700-707)
    - Phase resume routing (lines 254-260)
    - Checkpoint save logic
 
-2. **`installer/global/lib/agent_bridge/invoker.py`**
+2. **`installer/core/lib/agent_bridge/invoker.py`**
    - `load_response()` method
    - `invoke()` method cached response handling
    - Response file path resolution
 
-3. **`installer/global/lib/codebase_analyzer/ai_analyzer.py`**
+3. **`installer/core/lib/codebase_analyzer/ai_analyzer.py`**
    - How bridge_invoker is used
    - When/if `load_response()` is called
 
-4. **`installer/global/lib/codebase_analyzer/agent_invoker.py`**
+4. **`installer/core/lib/codebase_analyzer/agent_invoker.py`**
    - ArchitecturalReviewerInvoker implementation
    - Bridge invoker integration
 

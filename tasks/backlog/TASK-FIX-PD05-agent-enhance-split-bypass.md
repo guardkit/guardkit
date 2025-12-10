@@ -84,11 +84,11 @@ The agent wrote directly to the file instead of returning JSON for the orchestra
 ## Investigation Notes
 
 ### Key Files
-- `installer/global/commands/agent-enhance.md` - Command specification
-- `installer/global/commands/agent-enhance.py` - Python script (has correct split logic)
-- `installer/global/agents/agent-content-enhancer.md` - Agent definition
-- `installer/global/lib/agent_enhancement/orchestrator.py` - Orchestrator with split logic
-- `installer/global/lib/agent_enhancement/applier.py` - Applier with EXTENDED_SECTIONS
+- `installer/core/commands/agent-enhance.md` - Command specification
+- `installer/core/commands/agent-enhance.py` - Python script (has correct split logic)
+- `installer/core/agents/agent-content-enhancer.md` - Agent definition
+- `installer/core/lib/agent_enhancement/orchestrator.py` - Orchestrator with split logic
+- `installer/core/lib/agent_enhancement/applier.py` - Applier with EXTENDED_SECTIONS
 
 ### agent-content-enhancer Instructions (Ignored)
 The agent file clearly states:

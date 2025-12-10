@@ -44,6 +44,6 @@ complexity: 3
 
 ## Files to Review
 
-- `installer/global/commands/task-review.md`
-- `installer/global/commands/feature-plan.md`
+- `installer/core/commands/task-review.md`
+- `installer/core/commands/feature-plan.md`
 - `CLAUDE.md` (workflow documentation)

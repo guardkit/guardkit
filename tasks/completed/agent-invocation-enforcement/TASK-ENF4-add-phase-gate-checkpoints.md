@@ -56,7 +56,7 @@ Add validation checkpoints after each phase that:
 
 **Implementation**:
 ```python
-# File: installer/global/commands/lib/phase_gate_validator.py
+# File: installer/core/commands/lib/phase_gate_validator.py
 
 from typing import Optional
 from .agent_invocation_tracker import AgentInvocationTracker
@@ -179,7 +179,7 @@ Reason: Phase gate violation - Phase {phase} agent not invoked
 ```
 
 **Acceptance Criteria**:
-- [ ] Validator class created in `installer/global/commands/lib/phase_gate_validator.py`
+- [ ] Validator class created in `installer/core/commands/lib/phase_gate_validator.py`
 - [ ] `validate_phase_completion()` method checks for completed invocations
 - [ ] Method raises `ValidationError` if phase agent not invoked
 - [ ] Error message is detailed and actionable
@@ -304,8 +304,8 @@ Reason: Phase gate violation - Phase 3 agent not invoked
 ### Phase 1: Create Validator Class
 
 **Files**:
-- `installer/global/commands/lib/phase_gate_validator.py` (new)
-- `installer/global/commands/lib/__init__.py` (modify - add import)
+- `installer/core/commands/lib/phase_gate_validator.py` (new)
+- `installer/core/commands/lib/__init__.py` (modify - add import)
 
 **Implementation**:
 1. Create `PhaseGateValidator` class
@@ -317,7 +317,7 @@ Reason: Phase gate violation - Phase 3 agent not invoked
 ### Phase 2: Integrate with Phase 3
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add validator initialization before Phase 2
@@ -328,7 +328,7 @@ Reason: Phase gate violation - Phase 3 agent not invoked
 ### Phase 3: Integrate with All Phases
 
 **Files**:
-- `installer/global/commands/task-work.md` (modify)
+- `installer/core/commands/task-work.md` (modify)
 
 **Implementation**:
 1. Add phase gate after Phase 2
@@ -420,12 +420,12 @@ Reason: Phase gate violation - Phase 3 agent not invoked
 
 ### Deliverables
 - **Files created**: 3
-  - `installer/global/commands/lib/phase_gate_validator.py`
-  - `installer/global/commands/lib/test_phase_gate_validator.py`
-  - `installer/global/commands/lib/demo_phase_gate_integration.py`
+  - `installer/core/commands/lib/phase_gate_validator.py`
+  - `installer/core/commands/lib/test_phase_gate_validator.py`
+  - `installer/core/commands/lib/demo_phase_gate_integration.py`
 - **Files modified**: 2
-  - `installer/global/commands/lib/__init__.py`
-  - `installer/global/commands/task-work.md`
+  - `installer/core/commands/lib/__init__.py`
+  - `installer/core/commands/task-work.md`
 - **Tests written**: 17 (all passing)
 - **Requirements satisfied**: 5/5
 

@@ -22,7 +22,7 @@ sys.path.insert(0, str(project_root))
 
 # Use importlib to avoid 'global' keyword issue
 import importlib
-_invoker = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+_invoker = importlib.import_module('installer.core.lib.agent_bridge.invoker')
 AgentResponse = _invoker.AgentResponse
 
 

@@ -200,8 +200,8 @@ mkdir -p docs/workflows
 
 ```bash
 # Verify Phase 8 is complete
-ls -la installer/global/lib/agent_enhancement/
-ls -la installer/global/commands/agent-enhance.py
+ls -la installer/core/lib/agent_enhancement/
+ls -la installer/core/commands/agent-enhance.py
 # If both exist, Phase 8 is complete
 
 # Move completed tasks
@@ -210,7 +210,7 @@ mv tasks/backlog/TASK-AGENT-BRIDGE-COMPLETE.md tasks/completed/
 mv tasks/backlog/PRE-IMPLEMENTATION-WORK-COMPLETE.md tasks/completed/
 
 # Verify C7A9 is complete before moving
-grep -r "agent metadata" installer/global/ && \
+grep -r "agent metadata" installer/core/ && \
 mv tasks/backlog/TASK-C7A9-REIMPLEMENT-agent-metadata-in-CLAUDE.md tasks/completed/
 
 # Move reviews

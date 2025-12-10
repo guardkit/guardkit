@@ -103,7 +103,7 @@
 ❌ INCORRECT: "Phase 2-3", "Phase 1-2.8" (using hyphen for range)
 ✅ CORRECT: "Phases 2-3", "Phases 1 through 2.8"
 
-Files affected: CLAUDE.md, installer/global/commands/task-work.md
+Files affected: CLAUDE.md, installer/core/commands/task-work.md
 Instances: 4 occurrences
 Severity: Low (documentation clarity)
 ```
@@ -123,7 +123,7 @@ Severity: Low (consistency)
 ❌ INCORRECT: "In Review", "In Progress" (should be underscore format)
 ✅ CORRECT: "in_review", "in_progress" OR "IN_REVIEW", "IN_PROGRESS" (all caps in YAML)
 
-Files affected: installer/global/commands/task-sync.md
+Files affected: installer/core/commands/task-sync.md
 Instances: 1 occurrence (Jira example)
 Severity: Low (example context allows human-readable format)
 ```
@@ -170,7 +170,7 @@ Severity: Low (most are in valid contexts like "task-work command")
 ✅ docs/guides/creating-local-templates.md
 ✅ docs/migration/engine-to-domain.md
 ✅ docs/workflows/complexity-management-workflow.md
-✅ installer/global/commands/task-work.md
+✅ installer/core/commands/task-work.md
 ```
 
 **Broken Links** (Documentation):
@@ -479,13 +479,13 @@ Severity: Low (most are in valid contexts like "task-work command")
 
 ### Command Specifications (7 files)
 ```
-installer/global/commands/task-work.md
-installer/global/commands/task-create.md
-installer/global/commands/task-refine.md
-installer/global/commands/task-complete.md
-installer/global/commands/task-status.md
-installer/global/commands/epic-create.md
-installer/global/commands/feature-generate-tasks.md
+installer/core/commands/task-work.md
+installer/core/commands/task-create.md
+installer/core/commands/task-refine.md
+installer/core/commands/task-complete.md
+installer/core/commands/task-status.md
+installer/core/commands/epic-create.md
+installer/core/commands/feature-generate-tasks.md
 ```
 
 ### Core Documentation (5 files)

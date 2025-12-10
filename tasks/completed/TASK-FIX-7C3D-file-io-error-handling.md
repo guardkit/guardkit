@@ -100,7 +100,7 @@ except PermissionError:
 
 ### AC1: Shared Utility Module
 
-- [ ] **AC1.1**: Create `installer/global/lib/utils/file_io.py` module
+- [ ] **AC1.1**: Create `installer/core/lib/utils/file_io.py` module
 - [ ] **AC1.2**: Implement `safe_read_file(path, encoding='utf-8')` function
 - [ ] **AC1.3**: Implement `safe_write_file(path, content, encoding='utf-8')` function
 - [ ] **AC1.4**: Both functions handle PermissionError, OSError, UnicodeError
@@ -159,7 +159,7 @@ except PermissionError:
 
 ### Shared Utility Module
 
-**File**: `installer/global/lib/utils/file_io.py`
+**File**: `installer/core/lib/utils/file_io.py`
 
 ```python
 """
@@ -395,7 +395,7 @@ frontmatter, frontmatter_end = extract_frontmatter(content)
 
 ### Phase 1: Create Shared Utility (1 hour)
 
-1. Create `installer/global/lib/utils/` directory
+1. Create `installer/core/lib/utils/` directory
 2. Create `__init__.py` in utils/
 3. Implement `file_io.py` with safe_read_file and safe_write_file
 4. Write comprehensive docstrings

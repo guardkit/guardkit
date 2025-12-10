@@ -27,7 +27,7 @@ Complete the validation schema fixes that were partially implemented in TASK-FIX
 
 ### Changes Made
 
-**File: `installer/global/lib/codebase_analyzer/models.py`**
+**File: `installer/core/lib/codebase_analyzer/models.py`**
 
 1. ✅ **Added `TechnologyItemInfo` class** (lines 72-83)
    - New Pydantic model for rich technology metadata
@@ -88,7 +88,7 @@ Complete the validation schema fixes that were partially implemented in TASK-FIX
 
 | File | Change Type | Description |
 |------|-------------|-------------|
-| `installer/global/lib/codebase_analyzer/models.py` | Modified | Added TechnologyItemInfo, updated fields, fixed validator |
+| `installer/core/lib/codebase_analyzer/models.py` | Modified | Added TechnologyItemInfo, updated fields, fixed validator |
 | `tests/unit/lib/codebase_analyzer/__init__.py` | Created | Test package init |
 | `tests/unit/lib/codebase_analyzer/test_models.py` | Created | 31 unit tests |
 

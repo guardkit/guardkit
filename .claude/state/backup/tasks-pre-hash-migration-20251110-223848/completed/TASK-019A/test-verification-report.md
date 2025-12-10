@@ -21,9 +21,9 @@ Comprehensive test suite created and executed for TASK-019A implementation. All 
 ## Build Status
 
 **Compilation Check**: PASSED
-- `installer/global/commands/lib/template_create_orchestrator.py` - Valid Python
-- `installer/global/lib/template_generator/claude_md_generator.py` - Valid Python
-- `installer/global/lib/template_generator/models.py` - Valid Python
+- `installer/core/commands/lib/template_create_orchestrator.py` - Valid Python
+- `installer/core/lib/template_generator/claude_md_generator.py` - Valid Python
+- `installer/core/lib/template_generator/models.py` - Valid Python
 
 All modified files compile without syntax errors.
 
@@ -316,7 +316,7 @@ No test failures detected.
 ### Test Configuration
 - **Config File**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/pytest.ini`
 - **Test Paths**: `tests/`
-- **Coverage Source**: `installer/global/lib`
+- **Coverage Source**: `installer/core/lib`
 - **Markers**: unit, integration
 
 ### Execution Command

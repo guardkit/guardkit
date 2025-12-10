@@ -122,7 +122,7 @@ Implement intelligent routing that balances cost efficiency with quality require
 
 **Component Structure**:
 ```
-installer/global/lib/
+installer/core/lib/
 ├── task_review/
 │   ├── __init__.py
 │   ├── orchestrator.py           # MODIFY: Add model selection
@@ -138,7 +138,7 @@ installer/global/lib/
 
 ### 1. New File: `model_router.py`
 
-**Location**: `installer/global/lib/task_review/model_router.py`
+**Location**: `installer/core/lib/task_review/model_router.py`
 
 **Purpose**: Centralized model selection logic with cost transparency
 
@@ -360,7 +360,7 @@ class ModelRouter:
 
 ### 2. Modify: `orchestrator.py`
 
-**Location**: `installer/global/lib/task_review/orchestrator.py`
+**Location**: `installer/core/lib/task_review/orchestrator.py`
 
 **Changes Required** (MINIMAL SCOPE):
 
@@ -489,7 +489,7 @@ class TaskReviewOrchestrator:
 
 ### 3. Modify: `agent_invoker.py`
 
-**Location**: `installer/global/lib/core/agent_invoker.py`
+**Location**: `installer/core/lib/core/agent_invoker.py`
 
 **Changes Required** (MINIMAL SCOPE):
 
@@ -622,7 +622,7 @@ class AgentInvoker:
 
 ```python
 import pytest
-from installer.global.lib.task_review.model_router import ModelRouter
+from installer.core.lib.task_review.model_router import ModelRouter
 
 OPUS_ID = "claude-opus-4.5-20250514"
 SONNET_ID = "claude-sonnet-4.5-20250929"
@@ -724,7 +724,7 @@ class TestModelRouter:
 
 ```python
 import pytest
-from installer.global.lib.task_review.orchestrator import TaskReviewOrchestrator
+from installer.core.lib.task_review.orchestrator import TaskReviewOrchestrator
 
 class TestTaskReviewOpusIntegration:
     """Integration tests for Opus 4.5 in task reviews."""
@@ -936,7 +936,7 @@ def get_model_for_review(self, mode, depth):
 
 ### User-Facing Documentation
 
-**Update**: `installer/global/commands/task-review.md`
+**Update**: `installer/core/commands/task-review.md`
 
 Add section after "Review Modes (Detailed)":
 
@@ -999,18 +999,18 @@ Document:
 ## Files Changed
 
 ### New Files (1)
-- `installer/global/lib/task_review/model_router.py` (~250 lines)
+- `installer/core/lib/task_review/model_router.py` (~250 lines)
 
 ### Modified Files (2)
-- `installer/global/lib/task_review/orchestrator.py` (~50 lines changed)
-- `installer/global/lib/core/agent_invoker.py` (~30 lines changed)
+- `installer/core/lib/task_review/orchestrator.py` (~50 lines changed)
+- `installer/core/lib/core/agent_invoker.py` (~30 lines changed)
 
 ### Test Files (2)
 - `tests/unit/lib/task_review/test_model_router.py` (new, ~150 lines)
 - `tests/integration/test_task_review_opus_integration.py` (new, ~100 lines)
 
 ### Documentation Files (2)
-- `installer/global/commands/task-review.md` (+30 lines)
+- `installer/core/commands/task-review.md` (+30 lines)
 - `docs/architecture/model-selection-strategy.md` (new, ~200 lines)
 
 **Total**: 7 files (3 new, 2 modified, 2 documentation)

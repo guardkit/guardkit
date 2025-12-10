@@ -437,7 +437,7 @@ Error: Template 'my-template' not found
 ls installer/local/templates/ | grep my-template
 
 # Check global templates
-ls installer/global/templates/ | grep my-template
+ls installer/core/templates/ | grep my-template
 
 # If missing, template wasn't saved
 # Re-run creation:

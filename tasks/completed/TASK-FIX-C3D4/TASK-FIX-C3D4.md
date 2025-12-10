@@ -46,7 +46,7 @@ The checkpoint/resume pattern has a timing issue:
 
 ### Changes Made
 
-**File: `installer/global/commands/lib/template_create_orchestrator.py`**
+**File: `installer/core/commands/lib/template_create_orchestrator.py`**
 
 1. **Line 905-908**: Added checkpoint save at Phase 5 entry
    ```python

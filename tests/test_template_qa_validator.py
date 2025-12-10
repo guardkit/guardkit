@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 # Add installer path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from template_qa_validator import (
     ValidationError,

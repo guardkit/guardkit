@@ -17,7 +17,7 @@ The BDD mode validation in taskwright checked for `~/.agentecflow/require-kit.ma
 ### Phase 1: Documentation Updates
 Updated all documentation to reference the correct `.marker.json` filename:
 - **CLAUDE.md** (2 references updated)
-- **installer/global/commands/task-work.md** (2 references updated)
+- **installer/core/commands/task-work.md** (2 references updated)
 - **docs/guides/bdd-workflow-for-agentic-systems.md** (3 references updated)
 
 ### Phase 2: Test Suite Enhancement
@@ -29,7 +29,7 @@ Added comprehensive test coverage for both marker formats:
 
 ### Phase 3: Constants Module Creation
 Created centralized configuration for RequireKit:
-- **installer/global/lib/constants.py** - NEW FILE
+- **installer/core/lib/constants.py** - NEW FILE
 - `RequireKitConfig` class with `MARKER_PRIMARY` and `MARKER_LEGACY` constants
 - `marker_paths()` helper method for path retrieval
 
@@ -44,13 +44,13 @@ Refactored `feature_detection.py` to use the constants module:
 
 ### Implementation Files (5 files)
 1. **CLAUDE.md** - Documentation updates
-2. **installer/global/commands/task-work.md** - Error message updates
+2. **installer/core/commands/task-work.md** - Error message updates
 3. **docs/guides/bdd-workflow-for-agentic-systems.md** - Workflow documentation
 4. **tests/integration/test_bdd_mode_validation.py** - Test coverage expansion
-5. **installer/global/lib/constants.py** - NEW FILE (centralized config)
+5. **installer/core/lib/constants.py** - NEW FILE (centralized config)
 
 ### Refactoring (1 file)
-6. **installer/global/lib/feature_detection.py** - Refactored to use constants
+6. **installer/core/lib/feature_detection.py** - Refactored to use constants
 
 ## Test Results
 
@@ -115,7 +115,7 @@ All 5 test requirements met:
 **Reason**: Code review identified that the constants module was created but not used - feature_detection.py still had hardcoded marker filenames.
 
 **Changes**:
-- Copied constants.py to `installer/global/lib/` directory
+- Copied constants.py to `installer/core/lib/` directory
 - Refactored `is_require_kit_installed()` method to use `RequireKitConfig.marker_paths()`
 - Added flexible import with try/except for both package and standalone imports
 - Eliminated DRY violation (marker filenames now in one location)
@@ -174,7 +174,7 @@ All 5 test requirements met:
 
 ### External References
 - [RequireKit installer](https://github.com/requirekit/require-kit/blob/main/installer/scripts/install.sh#L237)
-- [RequireKit feature detection](https://github.com/requirekit/require-kit/blob/main/installer/global/lib/feature_detection.py#L84-L88)
+- [RequireKit feature detection](https://github.com/requirekit/require-kit/blob/main/installer/core/lib/feature_detection.py#L84-L88)
 
 ### Implementation Plan
 - [TASK-FIX-BDDVAL Implementation Plan](implementation-plan.md)

@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 import tempfile
 
 # Add lib directory to path
-lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "global"
+lib_path = Path(__file__).parent.parent.parent.parent.parent / "installer" / "core"
 commands_lib_path = lib_path / "commands" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
@@ -107,7 +107,7 @@ class TestGetOutputPathPriority:
 
         result = mock_orchestrator._get_output_path()
 
-        expected = Path("installer/global/templates/my-template")
+        expected = Path("installer/core/templates/my-template")
         assert result == expected
 
     def test_global_location_default(self, mock_orchestrator, mock_manifest):
@@ -256,7 +256,7 @@ class TestGetOutputPathLocationValues:
 
         if location == 'repo':
             result = mock_orchestrator._get_output_path()
-            assert "installer/global/templates" in str(result)
+            assert "installer/core/templates" in str(result)
         else:
             with patch('pathlib.Path.home') as mock_home:
                 mock_home.return_value = Path("/home/user")

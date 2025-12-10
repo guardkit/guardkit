@@ -58,7 +58,7 @@ Consider deriving "When to Use" from:
 
 ## Files to Modify
 
-- `installer/global/commands/lib/template_create_orchestrator.py` - Reference doc generation
+- `installer/core/commands/lib/template_create_orchestrator.py` - Reference doc generation
 - Or the agent categorization logic
 
 ## Test Plan
@@ -74,7 +74,7 @@ Consider deriving "When to Use" from:
 ## Implementation Summary
 
 ### Files Modified
-1. `installer/global/lib/template_generator/claude_md_generator.py`
+1. `installer/core/lib/template_generator/claude_md_generator.py`
    - Added `_categorize_agent_by_keywords()` method (lines 946-1016)
    - Refactored fallback logic in `_enhance_agent_info_with_ai()` (lines 1078-1099)
 

@@ -27,8 +27,8 @@
    - Proper exit code handling
 
 ### Files Modified
-- `installer/global/lib/template_creation/manifest_generator.py` (import fixes)
-- `installer/global/commands/lib/template_create_orchestrator.py` (entry point)
+- `installer/core/lib/template_creation/manifest_generator.py` (import fixes)
+- `installer/core/commands/lib/template_create_orchestrator.py` (entry point)
 
 ### Test Files Created
 - `tests/unit/template_creation/test_manifest_generator_imports.py`

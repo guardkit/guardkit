@@ -229,7 +229,7 @@ This file contains:
 Automated agent file splitter for progressive disclosure.
 
 Usage:
-    python3 scripts/split-agent.py --agent installer/global/agents/task-manager.md
+    python3 scripts/split-agent.py --agent installer/core/agents/task-manager.md
     python3 scripts/split-agent.py --all-global
     python3 scripts/split-agent.py --template react-typescript
     python3 scripts/split-agent.py --dry-run --all-global

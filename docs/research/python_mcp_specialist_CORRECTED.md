@@ -36,8 +36,8 @@ I initially copied `python-mcp-specialist` to **ALL** templates following the gu
 
 ### Agent Location
 **Only in Python template**:
-- ✅ `installer/global/agents/python-mcp-specialist.md` (source)
-- ✅ `installer/global/templates/python/agents/python-mcp-specialist.md` (deployed)
+- ✅ `installer/core/agents/python-mcp-specialist.md` (source)
+- ✅ `installer/core/templates/python/agents/python-mcp-specialist.md` (deployed)
 
 **NOT in other templates** (corrected):
 - ❌ default - removed ✅
@@ -50,7 +50,7 @@ I initially copied `python-mcp-specialist` to **ALL** templates following the gu
 ### Python Template Agents (Complete List)
 
 ```bash
-installer/global/templates/python/agents/
+installer/core/templates/python/agents/
 ├── python-api-specialist.md          # FastAPI development
 ├── python-langchain-specialist.md    # LangChain/LangGraph
 ├── python-mcp-specialist.md          # MCP server development (NEW)
@@ -64,14 +64,14 @@ installer/global/templates/python/agents/
 ## 📋 Updated Installation Checklist
 
 ### Step 1: Create Agent ✅
-- [x] `installer/global/agents/python-mcp-specialist.md`
+- [x] `installer/core/agents/python-mcp-specialist.md`
 
 ### Step 2: Add to Appropriate Template(s) ✅
-- [x] **Python template only**: `installer/global/templates/python/agents/python-mcp-specialist.md`
+- [x] **Python template only**: `installer/core/templates/python/agents/python-mcp-specialist.md`
 - [x] **NOT in other templates** (stack-specific agent)
 
 ### Step 3: Update Documentation ✅
-- [x] `installer/global/templates/python/CLAUDE.md` - Added MCP section
+- [x] `installer/core/templates/python/CLAUDE.md` - Added MCP section
 - [x] Gap analysis, implementation summary, checklists created
 
 ### Step 4: Verify Correct Distribution ✅
@@ -165,17 +165,17 @@ ls .claude/agents/
 
 ### Files Removed (6)
 Removed `python-mcp-specialist.md` from:
-1. ❌ `installer/global/templates/default/agents/`
-2. ❌ `installer/global/templates/maui/agents/`
-3. ❌ `installer/global/templates/react/agents/`
-4. ❌ `installer/global/templates/dotnet-microservice/agents/`
-5. ❌ `installer/global/templates/typescript-api/agents/`
-6. ❌ `installer/global/templates/fullstack/agents/`
+1. ❌ `installer/core/templates/default/agents/`
+2. ❌ `installer/core/templates/maui/agents/`
+3. ❌ `installer/core/templates/react/agents/`
+4. ❌ `installer/core/templates/dotnet-microservice/agents/`
+5. ❌ `installer/core/templates/typescript-api/agents/`
+6. ❌ `installer/core/templates/fullstack/agents/`
 
 ### Files Kept (2)
 Kept `python-mcp-specialist.md` in:
-1. ✅ `installer/global/agents/` (source of truth)
-2. ✅ `installer/global/templates/python/agents/` (deployed to Python projects)
+1. ✅ `installer/core/agents/` (source of truth)
+2. ✅ `installer/core/templates/python/agents/` (deployed to Python projects)
 
 **Result**: Agent is now **correctly scoped** to Python template only.
 
@@ -214,7 +214,7 @@ Kept `python-mcp-specialist.md` in:
 
 ### Python Template (Should Have Agent) ✅
 ```bash
-$ ls installer/global/templates/python/agents/
+$ ls installer/core/templates/python/agents/
 python-api-specialist.md
 python-langchain-specialist.md
 python-mcp-specialist.md          ← Present ✅
@@ -223,7 +223,7 @@ python-testing-specialist.md
 
 ### React Template (Should NOT Have Agent) ✅
 ```bash
-$ ls installer/global/templates/react/agents/
+$ ls installer/core/templates/react/agents/
 react-state-specialist.md
 react-testing-specialist.md
 # No python-mcp-specialist.md ← Correct ✅
@@ -231,7 +231,7 @@ react-testing-specialist.md
 
 ### MAUI Template (Should NOT Have Agent) ✅
 ```bash
-$ ls installer/global/templates/maui/agents/
+$ ls installer/core/templates/maui/agents/
 bdd-generator.md
 code-reviewer.md
 maui-ui-specialist.md
@@ -247,8 +247,8 @@ test-orchestrator.md
 ## 🎯 Final Correct State
 
 **Agent Distribution**: ✅ **CORRECT**
-- Source: `installer/global/agents/python-mcp-specialist.md`
-- Deployed: `installer/global/templates/python/agents/` **only**
+- Source: `installer/core/agents/python-mcp-specialist.md`
+- Deployed: `installer/core/templates/python/agents/` **only**
 - Result: Python projects get the agent, other stacks don't
 
 **Documentation**: ✅ **ACCURATE**

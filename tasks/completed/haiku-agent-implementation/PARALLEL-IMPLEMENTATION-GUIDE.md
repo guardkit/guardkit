@@ -426,7 +426,7 @@ def validate_agentic_help_section(agent_path):
     return True/False
 
 # Run after HAI-009
-agents = glob('installer/global/agents/*.md')
+agents = glob('installer/core/agents/*.md')
 results = [validate_agentic_help_section(a) for a in agents]
 assert all(results), "Validation failed"
 ```

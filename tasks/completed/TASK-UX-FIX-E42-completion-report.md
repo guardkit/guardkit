@@ -8,11 +8,11 @@
 
 ## Deliverables
 - **Files created**: 2
-  - `installer/global/lib/agent_enhancement/orchestrator.py` (~300 LOC)
+  - `installer/core/lib/agent_enhancement/orchestrator.py` (~300 LOC)
   - `tests/lib/agent_enhancement/test_orchestrator.py` (~450 LOC)
 - **Files modified**: 2
-  - `installer/global/commands/agent-enhance.py` (added orchestrator integration)
-  - `installer/global/commands/agent-enhance.md` (added --resume flag documentation)
+  - `installer/core/commands/agent-enhance.py` (added orchestrator integration)
+  - `installer/core/commands/agent-enhance.md` (added --resume flag documentation)
 - **Tests written**: 13 comprehensive unit tests
 - **Coverage achieved**: 73% on orchestrator.py
 - **Commits**: 2
@@ -119,7 +119,7 @@ $ /agent-enhance template/agent --hybrid
 
 ### Challenges Faced
 1. **Git config issue**: `opengpg` typo in ~/.gitconfig required fix
-2. **Import syntax**: Python doesn't like `from installer.global.lib...` - used importlib
+2. **Import syntax**: Python doesn't like `from installer.core.lib...` - used importlib
 3. **Test strategy**: Had to use Mock objects to avoid actual agent invocation
 
 ### Improvements for Next Time

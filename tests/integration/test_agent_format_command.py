@@ -83,7 +83,7 @@ class TestCommandExecution:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(sample_agent_file),
                 '--no-backup',
             ],
@@ -106,7 +106,7 @@ class TestCommandExecution:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(sample_agent_file),
                 '--dry-run',
             ],
@@ -126,7 +126,7 @@ class TestCommandExecution:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(sample_agent_file),
                 '--validate-only',
             ],
@@ -145,7 +145,7 @@ class TestCommandExecution:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(sample_agent_file),
                 '--backup',
             ],
@@ -166,7 +166,7 @@ class TestQualityImprovement:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(sample_agent_file),
                 '--no-backup',
             ],
@@ -195,7 +195,7 @@ class TestQualityImprovement:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(high_quality_agent_file),
                 '--no-backup',
             ],
@@ -235,7 +235,7 @@ Content for agent {i}"""
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 str(tmp_path / '*.md'),
                 '--no-backup',
             ],
@@ -257,7 +257,7 @@ class TestErrorHandling:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 '/nonexistent/file.md',
             ],
             capture_output=True,
@@ -273,7 +273,7 @@ class TestErrorHandling:
         result = subprocess.run(
             [
                 sys.executable,
-                'installer/global/commands/agent-format.py',
+                'installer/core/commands/agent-format.py',
                 '/tmp/nonexistent/*.md',
             ],
             capture_output=True,

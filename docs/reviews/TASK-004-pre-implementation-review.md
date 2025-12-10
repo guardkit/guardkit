@@ -53,11 +53,11 @@
 **TASK-004 Architecture**:
 ```
 Global (design system agnostic):
-  installer/global/agents/
+  installer/core/agents/
     └── design-system-orchestrator.md (UPDATE to add Zeplin routing)
 
 Design System Specific:
-  installer/global/agents/
+  installer/core/agents/
     └── zeplin-design-specialist.md (NEW - parallel to figma-react-orchestrator)
 
 Stack Specific:
@@ -78,12 +78,12 @@ Stack Specific:
 
 **Issues**:
 1. **Typo**: "zeppelin" vs. "zeplin" (product name is Zeplin, not Zeppelin)
-2. **Wrong location**: Should be in `installer/global/agents/` (like figma-react-orchestrator)
+2. **Wrong location**: Should be in `installer/core/agents/` (like figma-react-orchestrator)
 3. **Inconsistent naming**: Should follow figma-react-orchestrator pattern
 
 **Corrected Plan**:
 ```
-installer/global/agents/
+installer/core/agents/
   └── zeplin-maui-orchestrator.md  ✅ CORRECT
     OR
   └── zeplin-design-specialist.md  ✅ ACCEPTABLE (if generic)
@@ -107,7 +107,7 @@ installer/global/agents/
 Create parallel orchestrators instead of updating a shared one:
 
 ```
-installer/global/agents/
+installer/core/agents/
   ├── figma-react-orchestrator.md    (EXISTING - Figma + React)
   └── zeplin-maui-orchestrator.md    (NEW - Zeplin + MAUI)
 
@@ -234,7 +234,7 @@ tests/
 
 **Corrected**:
 ```
-installer/global/agents/zeplin-maui-orchestrator.md
+installer/core/agents/zeplin-maui-orchestrator.md
 .claude/stacks/maui/agents/maui-ux-specialist.md
 ```
 
@@ -252,7 +252,7 @@ installer/global/agents/zeplin-maui-orchestrator.md
 
 **Better Plan**:
 ```
-installer/global/agents/
+installer/core/agents/
   ├── figma-react-orchestrator.md    (EXISTING - don't touch)
   └── zeplin-maui-orchestrator.md    (NEW - standalone)
 ```
@@ -416,14 +416,14 @@ Implementation Metrics:
 
 **With**:
 ```
-installer/global/agents/
+installer/core/agents/
 ├── figma-react-orchestrator.md         [EXISTING - don't modify]
 └── zeplin-maui-orchestrator.md         [NEW - standalone]
 
 .claude/stacks/maui/agents/
 └── maui-ux-specialist.md               [NEW - parallel to react-component-generator]
 
-installer/global/commands/
+installer/core/commands/
 ├── zeplin-to-maui.md                   [NEW - parallel to figma-to-react]
 └── mcp-zeplin.md                       [NEW]
 ```
@@ -522,7 +522,7 @@ installer/global/commands/
 
 ### File Naming Corrections
 - ✅ Use `zeplin-maui-orchestrator.md` (not "zeppelin", not in wrong directory)
-- ✅ Location: `installer/global/agents/` (parallel to figma-react-orchestrator)
+- ✅ Location: `installer/core/agents/` (parallel to figma-react-orchestrator)
 - ✅ Stack-specific: `.claude/stacks/maui/agents/maui-ux-specialist.md`
 
 ### Quality Targets (from TASK-002)

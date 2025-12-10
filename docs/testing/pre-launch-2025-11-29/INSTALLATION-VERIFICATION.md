@@ -61,7 +61,7 @@ ls ~/.agentecflow/require-kit.marker
 - ✅ **File exists** = RequireKit is installed
 - ❌ **File not found** = RequireKit is NOT installed
 
-**This is the definitive check** - GuardKit's BDD mode uses this exact check (see `installer/global/lib/feature_detection.py:76`)
+**This is the definitive check** - GuardKit's BDD mode uses this exact check (see `installer/core/lib/feature_detection.py:76`)
 
 ### Method 2: Check RequireKit Commands
 
@@ -97,7 +97,7 @@ ls ~/.agentecflow/bin/ | grep req
 
 ```bash
 cd ~/Projects/appmilla_github/guardkit
-python3 -c "from installer.global.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
+python3 -c "from installer.core.lib.feature_detection import is_require_kit_installed; print('RequireKit installed:', is_require_kit_installed())"
 ```
 
 **Expected**:
@@ -193,7 +193,7 @@ cd require-kit
 ```bash
 cd ~/Projects/appmilla_github/guardkit
 python3 << 'EOF'
-from installer.global.lib.feature_detection import supports_bdd
+from installer.core.lib.feature_detection import supports_bdd
 print("BDD mode available:", supports_bdd())
 EOF
 ```
@@ -206,7 +206,7 @@ EOF
 
 ```bash
 python3 << 'EOF'
-from installer.global.lib.feature_detection import get_available_features
+from installer.core.lib.feature_detection import get_available_features
 import json
 print(json.dumps(get_available_features(), indent=2))
 EOF
@@ -250,7 +250,7 @@ Before starting the VM test plan, verify:
 
 - [ ] GuardKit marker exists: `ls ~/.agentecflow/guardkit.marker`
 - [ ] RequireKit marker exists: `ls ~/.agentecflow/require-kit.marker`
-- [ ] BDD mode available: `python3 -c "from installer.global.lib.feature_detection import supports_bdd; print(supports_bdd())"`
+- [ ] BDD mode available: `python3 -c "from installer.core.lib.feature_detection import supports_bdd; print(supports_bdd())"`
 - [ ] Both command sets work: `guardkit --version` and `req-create --help`
 
 **If any checks fail**, re-run the respective installer before proceeding with tests.
@@ -268,7 +268,7 @@ Before starting the VM test plan, verify:
 
 **BDD Mode Availability**:
 ```python
-from installer.global.lib.feature_detection import supports_bdd
+from installer.core.lib.feature_detection import supports_bdd
 supports_bdd()  # True = BDD mode works, False = will error
 ```
 

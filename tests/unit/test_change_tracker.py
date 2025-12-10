@@ -15,7 +15,7 @@ from unittest.mock import Mock, patch
 from pathlib import Path
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/global/commands"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer/core/commands"))
 
 from lib.change_tracker import (
     ChangeType,

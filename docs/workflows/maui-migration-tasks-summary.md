@@ -19,7 +19,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 **Status**: BACKLOG
 
 **Deliverables**:
-- Complete `installer/global/templates/maui-appshell/` directory structure
+- Complete `installer/core/templates/maui-appshell/` directory structure
 - manifest.json, CLAUDE.md, settings.json configuration files
 - Domain pattern framework (verb-based naming, no suffix)
 - Repository/Service layer separation
@@ -73,7 +73,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 **Status**: BACKLOG
 
 **Deliverables**:
-- Complete `installer/global/templates/maui-navigationpage/` structure
+- Complete `installer/core/templates/maui-navigationpage/` structure
 - NavigationService.cs and INavigationService.cs (NEW)
 - MauiProgram.cs with NavigationService DI setup
 - Reuse Domain, Repository, Service, ViewModel, Page templates from maui-appshell
@@ -212,7 +212,7 @@ This document summarizes all tasks created for the MAUI template migration from 
 **Status**: BACKLOG
 
 **Deliverables**:
-- Delete `installer/global/templates/maui/` directory completely
+- Delete `installer/core/templates/maui/` directory completely
 - Update installer scripts to remove references
 - Update completion scripts
 - Update documentation

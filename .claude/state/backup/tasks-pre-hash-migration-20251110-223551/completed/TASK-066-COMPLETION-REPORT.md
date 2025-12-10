@@ -193,7 +193,7 @@ guardkit init guardkit-python
 
 ## Verification Checklist
 
-- ✅ Template directory created: `installer/global/templates/guardkit-python/`
+- ✅ Template directory created: `installer/core/templates/guardkit-python/`
 - ✅ Manifest.json includes all required placeholders (7)
 - ✅ Settings.json defines Python CLI patterns
 - ✅ CLAUDE.md provides comprehensive guidance (23KB)

@@ -53,12 +53,12 @@ quality_gates:
 # Deliverables
 deliverables:
   core_modules:
-    - installer/global/commands/lib/plan_audit.py (~700 lines)
-    - installer/global/commands/lib/metrics/plan_audit_metrics.py (~200 lines)
+    - installer/core/commands/lib/plan_audit.py (~700 lines)
+    - installer/core/commands/lib/metrics/plan_audit_metrics.py (~200 lines)
   integrations:
-    - installer/global/commands/lib/phase_execution.py (modified, +250 lines)
+    - installer/core/commands/lib/phase_execution.py (modified, +250 lines)
   documentation:
-    - installer/global/commands/task-work.md (modified, +150 lines)
+    - installer/core/commands/task-work.md (modified, +150 lines)
     - docs/research/phase-5.5-plan-audit-implementation.md (500+ lines)
     - docs/research/TASK-025-implementation-summary.md (300+ lines)
   tests:
@@ -239,13 +239,13 @@ Task State: IN_REVIEW
 ### Files Created/Modified
 
 **Created (3 files):**
-1. `installer/global/commands/lib/plan_audit.py` (~700 lines)
-2. `installer/global/commands/lib/metrics/plan_audit_metrics.py` (~200 lines)
+1. `installer/core/commands/lib/plan_audit.py` (~700 lines)
+2. `installer/core/commands/lib/metrics/plan_audit_metrics.py` (~200 lines)
 3. `tests/lib/test_plan_auditor.py` (420 lines, 32 tests)
 
 **Modified (2 files):**
-1. `installer/global/commands/lib/phase_execution.py` (+250 lines)
-2. `installer/global/commands/task-work.md` (+150 lines)
+1. `installer/core/commands/lib/phase_execution.py` (+250 lines)
+2. `installer/core/commands/task-work.md` (+150 lines)
 
 **Documentation (2 files):**
 1. `docs/research/phase-5.5-plan-audit-implementation.md` (500+ lines)

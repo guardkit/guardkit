@@ -41,24 +41,24 @@ Phase 7: CLAUDE.md Generation (was Phase 5) ← NOW reads actual agents
 
 ### Production Code (4 files)
 
-1. **[installer/global/lib/template_generator/models.py](../../../installer/global/lib/template_generator/models.py)**
+1. **[installer/core/lib/template_generator/models.py](../../../installer/core/lib/template_generator/models.py)**
    - Added `AgentMetadata` Pydantic model
    - Added `TemplateClaude` Pydantic model
    - Provides structured validation for agent data
 
-2. **[installer/global/lib/template_generator/claude_md_generator.py](../../../installer/global/lib/template_generator/claude_md_generator.py)**
+2. **[installer/core/lib/template_generator/claude_md_generator.py](../../../installer/core/lib/template_generator/claude_md_generator.py)**
    - Added optional `agents` parameter (backward compatible)
    - Implemented `_generate_dynamic_agent_usage()` - scans actual agents
    - Implemented `_extract_agent_metadata()` - parses agent frontmatter
    - Implemented `_infer_category()` - categorizes agents by type
 
-3. **[installer/global/commands/lib/template_create_orchestrator.py](../../../installer/global/commands/lib/template_create_orchestrator.py)**
+3. **[installer/core/commands/lib/template_create_orchestrator.py](../../../installer/core/commands/lib/template_create_orchestrator.py)**
    - Renamed `_phase5_claude_md_generation` → `_phase5_template_generation`
    - Renamed `_phase6_template_generation` → `_phase6_agent_recommendation`
    - Created `_phase7_claude_md_generation` method
    - Updated execution flow to correct order
 
-4. **[installer/global/commands/template-create.md](../../../installer/global/commands/template-create.md)**
+4. **[installer/core/commands/template-create.md](../../../installer/core/commands/template-create.md)**
    - Updated phase workflow diagram
    - Updated component generation documentation
    - Added phase reordering rationale

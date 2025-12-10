@@ -72,7 +72,7 @@ The generator will create collision-free IDs using SHA-256 hashing with progress
 ## Implementation Notes
 
 ### File Location
-Create new file: `installer/global/lib/id_generator.py`
+Create new file: `installer/core/lib/id_generator.py`
 
 ### Key Functions
 ```python
@@ -114,7 +114,7 @@ None (pure Python with stdlib only)
 
 ### Test Run: 2025-01-10
 
-**Command**: `python3 -m pytest tests/unit/test_id_generator.py -v --cov=installer/global/lib/id_generator --cov-report=term --cov-report=json`
+**Command**: `python3 -m pytest tests/unit/test_id_generator.py -v --cov=installer/core/lib/id_generator --cov-report=term --cov-report=json`
 
 **Results**:
 - Total Tests: 29
@@ -144,7 +144,7 @@ None (pure Python with stdlib only)
 ## Implementation Summary
 
 **Files Created**:
-1. [installer/global/lib/id_generator.py](installer/global/lib/id_generator.py) - 287 lines
+1. [installer/core/lib/id_generator.py](installer/core/lib/id_generator.py) - 287 lines
 2. [tests/unit/test_id_generator.py](tests/unit/test_id_generator.py) - 581 lines
 
 **Key Functions Implemented**:
@@ -174,7 +174,7 @@ None (pure Python with stdlib only)
 ### Deliverables
 
 **Files Created**: 2
-1. `installer/global/lib/id_generator.py` (287 lines)
+1. `installer/core/lib/id_generator.py` (287 lines)
 2. `tests/unit/test_id_generator.py` (581 lines)
 
 **Functions Implemented**: 6

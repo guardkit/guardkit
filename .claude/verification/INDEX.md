@@ -200,7 +200,7 @@ grep -r "BDD Mode\|BDD/Gherkin" CLAUDE.md .claude/CLAUDE.md
 
 ### Function Preservation Verification
 ```bash
-grep -n "def supports_bdd" installer/global/lib/feature_detection.py
+grep -n "def supports_bdd" installer/core/lib/feature_detection.py
 # Expected: 2 matches at lines 106, 257
 ```
 

@@ -90,28 +90,28 @@ Add `--micro` flag to `/task-work` that:
 ### Files Created (5 files, 2,332 lines total)
 
 **Production Modules (1,146 lines):**
-1. `installer/global/commands/lib/micro_task_detector.py` (524 lines)
+1. `installer/core/commands/lib/micro_task_detector.py` (524 lines)
    - Heuristic-based detection with 41 high-risk keywords
    - Dataclass for structured analysis results
    - Compiled regex patterns for performance
 
-2. `installer/global/commands/lib/micro_task_workflow.py` (622 lines)
+2. `installer/core/commands/lib/micro_task_workflow.py` (622 lines)
    - Streamlined workflow execution (Phases 1, 3, 4, 4.5, 5)
    - Quality gates: compilation + tests (skip coverage)
    - Max 1 fix attempt (vs 3 in standard)
 
 **Test Modules (1,186 lines):**
-3. `installer/global/commands/lib/test_micro_task_detector.py` (530 lines, 36 tests)
-4. `installer/global/commands/lib/test_micro_workflow.py` (458 lines, 27 tests)
-5. `installer/global/commands/lib/test_micro_basic.py` (198 lines, 5 sanity tests)
+3. `installer/core/commands/lib/test_micro_task_detector.py` (530 lines, 36 tests)
+4. `installer/core/commands/lib/test_micro_workflow.py` (458 lines, 27 tests)
+5. `installer/core/commands/lib/test_micro_basic.py` (198 lines, 5 sanity tests)
 
 ### Files Modified (2 files)
 
-6. `installer/global/commands/task-work.md` (+100 lines)
+6. `installer/core/commands/task-work.md` (+100 lines)
    - Added `--micro` flag documentation
    - Documented auto-detection, validation, examples
 
-7. `installer/global/agents/task-manager.md` (+200 lines)
+7. `installer/core/agents/task-manager.md` (+200 lines)
    - Added micro-task workflow orchestration
    - Documented phase skipping logic
 
@@ -176,9 +176,9 @@ Add `--micro` flag to `/task-work` that:
 
 ### Files Locations
 All implementation in: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/`
-- Production: `installer/global/commands/lib/`
-- Tests: `installer/global/commands/lib/test_*.py`
-- Docs: `installer/global/commands/task-work.md`, `installer/global/agents/task-manager.md`
+- Production: `installer/core/commands/lib/`
+- Tests: `installer/core/commands/lib/test_*.py`
+- Docs: `installer/core/commands/task-work.md`, `installer/core/agents/task-manager.md`
 
 ## Workflow Execution Summary
 

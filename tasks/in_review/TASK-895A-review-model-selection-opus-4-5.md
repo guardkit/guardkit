@@ -55,7 +55,7 @@ With the release of Opus 4.5 and its reduced token consumption, we need to evalu
    - Rationale: "Complex workflow coordination, state transitions, quality gate evaluation"
 
 2. **Implementation Gap**: Phase 3 is designed to use Haiku via stack-specific agents, but:
-   - Those agents don't exist yet in `installer/global/agents/`
+   - Those agents don't exist yet in `installer/core/agents/`
    - Implementation currently happens in main Claude session (Sonnet)
    - TASK-EE41 recommended: "Phase 3: Stack implementation agent → haiku (Code generation - 90% quality)"
 
@@ -180,21 +180,21 @@ Review is complete when we have:
 
 **If review recommends changes**:
 1. Create implementation task(s) via `/task-work`
-2. Update agent frontmatter in `installer/global/agents/*.md`
+2. Update agent frontmatter in `installer/core/agents/*.md`
 3. Update model optimization documentation
 4. Add Opus 4.5 references if adopted
 
 **Configuration Files to Review**:
-- `installer/global/agents/task-manager.md`
-- `installer/global/agents/architectural-reviewer.md`
-- `installer/global/agents/code-reviewer.md`
+- `installer/core/agents/task-manager.md`
+- `installer/core/agents/architectural-reviewer.md`
+- `installer/core/agents/code-reviewer.md`
 - `docs/deep-dives/model-optimization.md`
 - `tasks/completed/TASK-EE41/COMPLETION-SUMMARY.md`
 
 ## References
 
 - Original model optimization: TASK-EE41 (completed 2025-10-17)
-- Agent specifications: `installer/global/agents/*.md`
+- Agent specifications: `installer/core/agents/*.md`
 - Model optimization guide: `docs/deep-dives/model-optimization.md`
 - User question: "Are we using Sonnet or Opus for planning?"
 

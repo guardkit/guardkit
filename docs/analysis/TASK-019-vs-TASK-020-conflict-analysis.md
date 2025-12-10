@@ -28,9 +28,9 @@
 - Eliminates agent documentation hallucination
 
 **Files Modified**:
-- `installer/global/commands/template-create.md` (documentation)
-- `installer/global/commands/lib/template_create_orchestrator.py` (orchestrator)
-- `installer/global/lib/template_generator/claude_md_generator.py` (generator)
+- `installer/core/commands/template-create.md` (documentation)
+- `installer/core/commands/lib/template_create_orchestrator.py` (orchestrator)
+- `installer/core/lib/template_generator/claude_md_generator.py` (generator)
 - Tests
 
 ### TASK-020: Improve Template Generation Completeness
@@ -49,10 +49,10 @@
   - Add Phase 6.5 Completeness Validation
 
 **Files Modified** (Future):
-- `installer/global/lib/codebase_analyzer/ai_analyzer.py`
-- `installer/global/lib/template_generator/template_generator.py`
-- `installer/global/commands/template-create.md`
-- `installer/global/commands/lib/template_create_orchestrator.py`
+- `installer/core/lib/codebase_analyzer/ai_analyzer.py`
+- `installer/core/lib/template_generator/template_generator.py`
+- `installer/core/commands/template-create.md`
+- `installer/core/commands/lib/template_create_orchestrator.py`
 
 ---
 

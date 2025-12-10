@@ -188,7 +188,7 @@ TASK-049: GitHub Agent Parsers - REMOVED
 ```
 
 **Current Task Breakdown**:
-- TASK-003: Local Agent Scanner ✅ (scan `installer/global/agents/`)
+- TASK-003: Local Agent Scanner ✅ (scan `installer/core/agents/`)
 - TASK-004: Configurable Agent Sources ⚠️ (supports GitHub, custom sources BUT no implementation)
 
 ### The Inconsistency
@@ -201,7 +201,7 @@ TASK-049: GitHub Agent Parsers - REMOVED
 ### Recommendation: Local-First + Optional External
 
 **Phase 1 (MVP)**: Local agents only
-- TASK-003: Scan `installer/global/agents/` (15+ existing agents)
+- TASK-003: Scan `installer/core/agents/` (15+ existing agents)
 - TASK-009: AI-powered recommendation from local agents
 - No external dependencies, no unreliable web scraping
 

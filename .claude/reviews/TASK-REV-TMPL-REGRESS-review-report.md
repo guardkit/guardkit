@@ -46,7 +46,7 @@ The template-create workflow regressed between v0.97 (6c651a32) and HEAD (483e9a
 ### Root Cause #1: Agent Request Bloat (CRITICAL)
 
 **Commit**: 0024640c (saving state in template create)
-**File**: `installer/global/commands/lib/template_create_orchestrator.py:1779-1817`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py:1779-1817`
 **Location**: `_save_checkpoint()` method
 
 **What Changed**:
@@ -110,7 +110,7 @@ From commit message:
 ### Root Cause #2: Resume Logic Failure (CRITICAL)
 
 **Commit**: 0024640c
-**File**: `installer/global/commands/lib/template_create_orchestrator.py:208-233`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py:208-233`
 **Location**: `run()` method routing logic
 
 **What Changed**:
@@ -186,7 +186,7 @@ From commit message and code comments:
 ### Root Cause #3: Speculative Fixes (MEDIUM)
 
 **Commit**: 483e9a6c (OUR CHANGES)
-**File**: `installer/global/lib/agent_bridge/invoker.py:245-271`
+**File**: `installer/core/lib/agent_bridge/invoker.py:245-271`
 **Location**: `clear_cache()` method and cache clearing calls
 
 **What We Changed**:
@@ -689,7 +689,7 @@ git revert --no-edit eb3f6ad6  # Further orchestrator fixes
 git revert --no-edit 09c3cc70  # Orchestrator error messages
 
 # Verify working state
-python3 installer/global/commands/template-create.py --path ~/path/to/kartlog --dry-run
+python3 installer/core/commands/template-create.py --path ~/path/to/kartlog --dry-run
 ```
 
 #### Step 2: Extract Valid Improvements
@@ -710,7 +710,7 @@ From commit 483e9a6c (our fixes):
 
 #### Step 3: Selective Re-application
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Apply**:
 ```python
@@ -733,7 +733,7 @@ def run(self) -> OrchestrationResult:
     return self._run_all_phases()
 ```
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Apply**:
 ```python
@@ -757,7 +757,7 @@ def load_response(self) -> str:
 **Test 1: Baseline Functionality**
 ```bash
 # Test on kartlog (Svelte 5 + Firebase)
-python3 installer/global/commands/template-create.py \
+python3 installer/core/commands/template-create.py \
     --path ~/kartlog \
     --output-location repo \
     --verbose
@@ -772,7 +772,7 @@ python3 installer/global/commands/template-create.py \
 **Test 2: Resume After Agent Invocation**
 ```bash
 # Run until Phase 5 agent invocation (will exit code 42)
-python3 installer/global/commands/template-create.py \
+python3 installer/core/commands/template-create.py \
     --path ~/kartlog
 
 # Manually create agent response (simulate Claude)
@@ -789,7 +789,7 @@ cat > .agent-response.json <<EOF
 EOF
 
 # Resume from checkpoint
-python3 installer/global/commands/template-create.py --resume
+python3 installer/core/commands/template-create.py --resume
 
 # Expected:
 # ✅ Loads state correctly
@@ -803,7 +803,7 @@ python3 installer/global/commands/template-create.py --resume
 # Test dependency failure detection (mock missing dependencies)
 mv ~/.agentecflow/bin/agent-enhance ~/.agentecflow/bin/agent-enhance.bak
 
-python3 installer/global/commands/template-create.py --path ~/kartlog
+python3 installer/core/commands/template-create.py --path ~/kartlog
 
 # Expected:
 # ✅ Detects missing dependencies
@@ -884,7 +884,7 @@ def test_checkpoint_resume_pattern(tmp_path):
 
 ### 2. Agent Request Size Validation
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 ```python
 MAX_REQUEST_SIZE_TOKENS = 20_000  # Claude Code limit: 25k (with 5k buffer)
@@ -940,7 +940,7 @@ Before merging changes to orchestrator:
 ```bash
 # Step 1: Reproduce baseline success
 git checkout 6c651a32  # v0.97
-python3 installer/global/commands/template-create.py --path ~/kartlog
+python3 installer/core/commands/template-create.py --path ~/kartlog
 
 # Step 2: Document working behavior
 # - Agent request size: ~4k tokens
@@ -1009,7 +1009,7 @@ git diff <breaking-commit>^ <breaking-commit>
 **What We Should Have Done**:
 ```bash
 # Before committing
-python3 installer/global/commands/template-create.py --path ~/kartlog
+python3 installer/core/commands/template-create.py --path ~/kartlog
 
 # Verify:
 # 1. Template creation succeeds
@@ -1163,7 +1163,7 @@ class AgentBridgeInvoker:
 
 2. Modified `template_create_orchestrator.py`:
    - Added pre-flight dependency check in `run()`
-   - Import path changes (`installer.global.lib` → `lib`)
+   - Import path changes (`installer.core.lib` → `lib`)
 
 **Assessment**:
 - ✅ **Valid improvement**: Dependency checking is good UX

@@ -42,10 +42,10 @@
 ## Implementation Plan Summary
 
 ### Files to Create (4)
-1. `installer/global/utils/icon-converter.ts` (~250 LOC)
+1. `installer/core/utils/icon-converter.ts` (~250 LOC)
    - Icon code conversion utility with Result pattern
 
-2. `installer/global/tests/utils/icon-converter.test.ts` (~350 LOC)
+2. `installer/core/tests/utils/icon-converter.test.ts` (~350 LOC)
    - Comprehensive test suite with 25+ test cases
 
 3. `docs/troubleshooting/zeplin-maui-icon-issues.md` (~50 LOC)
@@ -55,13 +55,13 @@
    - Pattern documentation for icon code conversion
 
 ### Files to Modify (3)
-1. `installer/global/agents/zeplin-maui-orchestrator.md`
+1. `installer/core/agents/zeplin-maui-orchestrator.md`
    - Integrate icon conversion in Phase 1
 
-2. `installer/global/commands/zeplin-to-maui.md`
+2. `installer/core/commands/zeplin-to-maui.md`
    - Update command documentation with icon handling
 
-3. `installer/global/commands/mcp-zeplin.md`
+3. `installer/core/commands/mcp-zeplin.md`
    - Reference icon conversion utility
 
 ### Total Estimated LOC: ~725 lines

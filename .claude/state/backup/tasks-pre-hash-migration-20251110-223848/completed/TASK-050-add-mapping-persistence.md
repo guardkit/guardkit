@@ -16,7 +16,7 @@ test_results:
   tests_passed: 35
   tests_failed: 0
   test_file: tests/lib/test_external_id_persistence.py
-  implementation_file: installer/global/lib/external_id_persistence.py
+  implementation_file: installer/core/lib/external_id_persistence.py
 completion_notes: |
   Implemented via Conductor workflow. All 35 tests passing.
   Atomic writes, file locking, and load operations validated.
@@ -207,7 +207,7 @@ def validate_mapping_file(data: dict) -> bool:
 
 **Test Run: 2025-11-10T19:21:00Z**
 - Test file: tests/lib/test_external_id_persistence.py
-- Implementation: installer/global/lib/external_id_persistence.py
+- Implementation: installer/core/lib/external_id_persistence.py
 - Total tests: 35
 - Passed: 35 (100%)
 - Coverage: 90%

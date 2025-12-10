@@ -40,7 +40,7 @@ Create a new global implementation agent specialized in FastAPI endpoint and Pyd
 
 ## Objectives
 
-1. Create `installer/global/agents/python-api-specialist.md`
+1. Create `installer/core/agents/python-api-specialist.md`
 2. Include complete discovery metadata (stack, phase, capabilities, keywords)
 3. Add boundary sections (ALWAYS/NEVER/ASK) following GitHub best practices
 4. Configure model: haiku for cost-effective code generation
@@ -151,7 +151,7 @@ async def get_profile(
 
 ## Acceptance Criteria
 
-- [x] Agent file created at `installer/global/agents/python-api-specialist.md`
+- [x] Agent file created at `installer/core/agents/python-api-specialist.md`
 - [x] Discovery metadata present and validates against HAI-001 schema
 - [x] Stack: [python]
 - [x] Phase: implementation
@@ -180,7 +180,7 @@ async def get_profile(
 # Validate YAML frontmatter parses correctly
 python3 -c "
 import frontmatter
-with open('installer/global/agents/python-api-specialist.md') as f:
+with open('installer/core/agents/python-api-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     
     # Check required fields
@@ -204,13 +204,13 @@ with open('installer/global/agents/python-api-specialist.md') as f:
 
 ```bash
 # Check boundary sections present
-grep -q "### ALWAYS" installer/global/agents/python-api-specialist.md && echo "✅ ALWAYS present"
-grep -q "### NEVER" installer/global/agents/python-api-specialist.md && echo "✅ NEVER present"
-grep -q "### ASK" installer/global/agents/python-api-specialist.md && echo "✅ ASK present"
+grep -q "### ALWAYS" installer/core/agents/python-api-specialist.md && echo "✅ ALWAYS present"
+grep -q "### NEVER" installer/core/agents/python-api-specialist.md && echo "✅ NEVER present"
+grep -q "### ASK" installer/core/agents/python-api-specialist.md && echo "✅ ASK present"
 
 # Count rules
 python3 -c "
-with open('installer/global/agents/python-api-specialist.md') as f:
+with open('installer/core/agents/python-api-specialist.md') as f:
     content = f.read()
     always_count = content.count('✅')
     never_count = content.count('❌')
@@ -227,7 +227,7 @@ with open('installer/global/agents/python-api-specialist.md') as f:
 ## Reference Materials
 
 **Template agents to reference**:
-- `installer/global/templates/fastapi-python/agents/fastapi-specialist.md`
+- `installer/core/templates/fastapi-python/agents/fastapi-specialist.md`
 - `tasks/completed/agent-enhancement-implementation/agents/python/python-api-specialist.md`
 
 **Schema**:
@@ -236,7 +236,7 @@ with open('installer/global/agents/python-api-specialist.md') as f:
 
 ## Deliverables
 
-1. **Agent file**: `installer/global/agents/python-api-specialist.md`
+1. **Agent file**: `installer/core/agents/python-api-specialist.md`
 2. **Validation report**: Metadata and boundary sections validated
 3. **Quick test**: Frontmatter parses without errors
 
@@ -245,7 +245,7 @@ with open('installer/global/agents/python-api-specialist.md') as f:
 **If issues arise**:
 ```bash
 # Delete agent file
-rm installer/global/agents/python-api-specialist.md
+rm installer/core/agents/python-api-specialist.md
 
 # No impact on system (new file, no dependencies)
 ```

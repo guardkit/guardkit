@@ -37,7 +37,7 @@ From the debug output and documentation:
 
 **Evidence from debug output:**
 ```
-2025-11-18 11:32:23,510 - installer.global.lib.codebase_analyzer.ai_analyzer - WARNING - 
+2025-11-18 11:32:23,510 - installer.core.lib.codebase_analyzer.ai_analyzer - WARNING - 
 Agent invocation failed: Unexpected error during agent invocation: 
 Agent invocation not yet implemented. Using fallback heuristics.
 ```
@@ -220,11 +220,11 @@ Create clean main command for open source release:
 
 ```bash
 # Step 1: Rename existing command (keep as fallback)
-mv installer/global/commands/template-create.md \
-   installer/global/commands/template-create-legacy.md
+mv installer/core/commands/template-create.md \
+   installer/core/commands/template-create-legacy.md
 
-mv installer/global/commands/lib/template_create_orchestrator.py \
-   installer/global/commands/lib/template_create_legacy_orchestrator.py
+mv installer/core/commands/lib/template_create_orchestrator.py \
+   installer/core/commands/lib/template_create_legacy_orchestrator.py
 
 # Step 2: Build new template-create with all fixes
 # (Fresh implementation with all improvements)
@@ -299,7 +299,7 @@ Phase 8: Validation ✅ (Working)
 **Solution:** Complete the agent bridge integration
 
 ```python
-# File: installer/global/lib/codebase_analyzer/agent_invoker.py
+# File: installer/core/lib/codebase_analyzer/agent_invoker.py
 
 class AgentBridgeInvoker:
     """Invokes agents using the bridge pattern with checkpoint-resume."""
@@ -347,7 +347,7 @@ class AgentBridgeInvoker:
 ### Build Artifact Filtering
 
 ```python
-# File: installer/global/lib/codebase_analyzer/exclusion_patterns.py
+# File: installer/core/lib/codebase_analyzer/exclusion_patterns.py
 
 DEFAULT_EXCLUSIONS = [
     # Build outputs
@@ -447,7 +447,7 @@ Example:
 **Complete Phase 7.5 checkpoint-resume:**
 
 ```python
-# File: installer/global/commands/lib/template_create_orchestrator.py
+# File: installer/core/commands/lib/template_create_orchestrator.py
 
 def _phase7_5_enhance_agents(self, output_path: Path) -> bool:
     """Phase 7.5: Agent Enhancement with checkpoint-resume."""
@@ -513,8 +513,8 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-ARTIFACT-FILTER
 
 **Files:**
-- Create: `installer/global/lib/codebase_analyzer/exclusion_patterns.py`
-- Modify: `installer/global/lib/codebase_analyzer/stratified_sampler.py`
+- Create: `installer/core/lib/codebase_analyzer/exclusion_patterns.py`
+- Modify: `installer/core/lib/codebase_analyzer/stratified_sampler.py`
 - Create: `tests/unit/test_exclusion_patterns.py`
 
 **Tests:**
@@ -532,8 +532,8 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-AGENT-BRIDGE-COMPLETE
 
 **Files:**
-- Modify: `installer/global/lib/codebase_analyzer/agent_invoker.py`
-- Create: `installer/global/lib/agent_bridge/checkpoint_manager.py`
+- Modify: `installer/core/lib/codebase_analyzer/agent_invoker.py`
+- Create: `installer/core/lib/agent_bridge/checkpoint_manager.py`
 - Create: `tests/unit/test_agent_bridge.py`
 - Create: `tests/integration/test_agent_workflow.py`
 
@@ -561,7 +561,7 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-PHASE-1-CHECKPOINT
 
 **Files:**
-- Modify: `installer/global/commands/lib/template_create_orchestrator.py` (Phase 1)
+- Modify: `installer/core/commands/lib/template_create_orchestrator.py` (Phase 1)
 - Add: `_run_from_phase_1()` method
 - Modify: Resume routing logic
 
@@ -586,7 +586,7 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-PHASE-5-CHECKPOINT
 
 **Files:**
-- Modify: `installer/global/commands/lib/template_create_orchestrator.py` (Phase 5)
+- Modify: `installer/core/commands/lib/template_create_orchestrator.py` (Phase 5)
 - Modify: Agent recommendation logic
 
 **Changes:**
@@ -609,7 +609,7 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-PHASE-7-5-CHECKPOINT (Already exists!)
 
 **Files:**
-- Modify: `installer/global/commands/lib/template_create_orchestrator.py` (Phase 7.5)
+- Modify: `installer/core/commands/lib/template_create_orchestrator.py` (Phase 7.5)
 - Add: `_run_from_phase_7()` method
 - Add: Agent serialization methods
 
@@ -634,7 +634,7 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-REMOVE-DETECTOR
 
 **Files:**
-- Delete: `installer/global/commands/lib/smart_defaults_detector.py` (531 LOC)
+- Delete: `installer/core/commands/lib/smart_defaults_detector.py` (531 LOC)
 - Delete: `tests/unit/test_smart_defaults_detector.py` (514 LOC)
 - Modify: Remove references in orchestrator
 
@@ -657,10 +657,10 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 **Task:** TASK-RENAME-LEGACY-BUILD-NEW
 
 **Files:**
-- Rename: `installer/global/commands/template-create.md` → `template-create-legacy.md`
-- Rename: `installer/global/commands/lib/template_create_orchestrator.py` → `template_create_legacy_orchestrator.py`  
-- Create: `installer/global/commands/template-create.md` (fresh, with all fixes)
-- Create: `installer/global/commands/lib/template_create_orchestrator.py` (fresh, with all fixes)
+- Rename: `installer/core/commands/template-create.md` → `template-create-legacy.md`
+- Rename: `installer/core/commands/lib/template_create_orchestrator.py` → `template_create_legacy_orchestrator.py`  
+- Create: `installer/core/commands/template-create.md` (fresh, with all fixes)
+- Create: `installer/core/commands/lib/template_create_orchestrator.py` (fresh, with all fixes)
 
 **Approach:**
 1. Rename existing files to `-legacy` suffix
@@ -686,7 +686,7 @@ def _run_from_phase_7(self) -> OrchestrationResult:
 
 **Files:**
 - Update: `CLAUDE.md` (add template-create workflow)
-- Update: `installer/global/commands/README.md`
+- Update: `installer/core/commands/README.md`
 - Create: `docs/guides/template-creation-guide.md` (user-facing)
 - Update: `docs/architecture/agent-bridge-pattern.md`
 

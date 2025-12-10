@@ -59,9 +59,9 @@ collecting ... collected 54 items
 ../../../../tests/test_task_008_comprehensive_fixed.py::TestEdgeCases::test_duplicate_detection_100_percent_similarity PASSED [ 94%]
 ../../../../tests/test_task_008_comprehensive_fixed.py::TestEdgeCases::test_invalid_task_data_handling PASSED [ 96%]
 ../../../../tests/test_task_008_comprehensive_fixed.py::TestEdgeCases::test_task_file_generator_auto_id_generation PASSED [ 98%]
-../../../../tests/test_task_008_comprehensive_fixed.py::TestPerformance::test_large_file_list_performance PASSED [100%]/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.venv/lib/python3.12/site-packages/coverage/inorout.py:521: CoverageWarning: Module installer/global/lib was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.10.7/messages.html#warning-module-not-imported
+../../../../tests/test_task_008_comprehensive_fixed.py::TestPerformance::test_large_file_list_performance PASSED [100%]/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.venv/lib/python3.12/site-packages/coverage/inorout.py:521: CoverageWarning: Module installer/core/lib was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.10.7/messages.html#warning-module-not-imported
   self.warn(f"Module {pkg} was never imported.", slug="module-not-imported")
-/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.venv/lib/python3.12/site-packages/coverage/report_core.py:107: CoverageWarning: Couldn't parse Python file '/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/test_complexity_comprehensive.py' (couldnt-parse); see https://coverage.readthedocs.io/en/7.10.7/messages.html#warning-couldnt-parse
+/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/.venv/lib/python3.12/site-packages/coverage/report_core.py:107: CoverageWarning: Couldn't parse Python file '/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/test_complexity_comprehensive.py' (couldnt-parse); see https://coverage.readthedocs.io/en/7.10.7/messages.html#warning-couldnt-parse
   coverage._warn(msg, slug="couldnt-parse")
 
 

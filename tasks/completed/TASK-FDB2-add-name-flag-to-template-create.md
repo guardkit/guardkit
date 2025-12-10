@@ -72,7 +72,7 @@ Additionally, there are references to `/template-qa` command in the documentatio
    ```
 
 4. **Documentation Updates** ✅
-   - Update `installer/global/commands/template-create.md` with `--name` flag
+   - Update `installer/core/commands/template-create.md` with `--name` flag
    - Remove all references to `/template-qa` command
    - Add usage examples with `--name` flag
 
@@ -119,7 +119,7 @@ Additionally, there are references to `/template-qa` command in the documentatio
 
 ### Step 1: Add Command-Line Flag (15 minutes)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 Add to flags section:
 ```markdown
@@ -132,7 +132,7 @@ Add to flags section:
 
 ### Step 2: Implement Name Validation (20 minutes)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 Add validation function:
 ```python
@@ -158,7 +158,7 @@ def _validate_template_name(self, name: str) -> tuple[bool, str]:
 
 ### Step 3: Override AI-Generated Name (25 minutes)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 Add to `OrchestrationConfig`:
 ```python
@@ -188,13 +188,13 @@ def _execute_phase_2_manifest_generation(self):
 ### Step 4: Remove /template-qa References (10 minutes)
 
 **Files to update**:
-- `installer/global/commands/template-create.md` (line 18)
+- `installer/core/commands/template-create.md` (line 18)
 - Any other documentation mentioning `/template-qa`
 
 Search and replace:
 ```bash
-grep -r "template-qa" installer/global/commands/
-grep -r "template_qa" installer/global/commands/
+grep -r "template-qa" installer/core/commands/
+grep -r "template_qa" installer/core/commands/
 ```
 
 Remove or rephrase references to the command.
@@ -236,8 +236,8 @@ def test_custom_name_override():
 ## File Changes Summary
 
 **Files to Modify** (3 files):
-1. `installer/global/commands/template-create.md` - Add flag documentation, remove `/template-qa` references
-2. `installer/global/commands/lib/template_create_orchestrator.py` - Add name validation and override logic
+1. `installer/core/commands/template-create.md` - Add flag documentation, remove `/template-qa` references
+2. `installer/core/commands/lib/template_create_orchestrator.py` - Add name validation and override logic
 3. `tests/unit/test_template_create_orchestrator.py` - Add unit tests for validation and override
 
 **Lines of Code Estimate**: ~80 LOC

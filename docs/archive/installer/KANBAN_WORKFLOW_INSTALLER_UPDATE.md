@@ -7,7 +7,7 @@ The installer scripts have been updated to include the new Kanban task workflow 
 ## Files Updated
 
 ### 1. Manifest File
-**Path**: `installer/global/manifest.json`
+**Path**: `installer/core/manifest.json`
 - Added new capabilities:
   - `kanban-workflow`
   - `task-management`
@@ -30,7 +30,7 @@ The installer scripts have been updated to include the new Kanban task workflow 
 
 ### 3. Global Commands Added
 
-**Path**: `installer/global/commands/`
+**Path**: `installer/core/commands/`
 
 #### Core Task Commands
 - `task.md` - Main task management command with comprehensive documentation
@@ -45,7 +45,7 @@ These commands already existed in the installer:
 
 ### 4. Global Agents Added
 
-**Path**: `installer/global/agents/`
+**Path**: `installer/core/agents/`
 
 #### New Agents
 - `task-manager.md` - Manages tasks through kanban workflow with mandatory test verification

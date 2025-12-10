@@ -47,27 +47,27 @@ Create a production-ready monorepo template combining React frontend and FastAPI
 - `/tmp/react-fastapi-monorepo/packages/shared-types/src/client.ts` - Type-safe API client using @hey-api/openapi-ts
 
 ### Template Metadata (4 files)
-- `installer/global/templates/react-fastapi-monorepo/manifest.json` - Template metadata and configuration
-- `installer/global/templates/react-fastapi-monorepo/settings.json` - Naming conventions and placeholder definitions
-- `installer/global/templates/react-fastapi-monorepo/CLAUDE.md` - AI guidance for monorepo patterns and architecture
-- `installer/global/templates/react-fastapi-monorepo/README.md` - Human-readable template documentation
+- `installer/core/templates/react-fastapi-monorepo/manifest.json` - Template metadata and configuration
+- `installer/core/templates/react-fastapi-monorepo/settings.json` - Naming conventions and placeholder definitions
+- `installer/core/templates/react-fastapi-monorepo/CLAUDE.md` - AI guidance for monorepo patterns and architecture
+- `installer/core/templates/react-fastapi-monorepo/README.md` - Human-readable template documentation
 
 ### Template Files (10 files)
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/component.tsx.template` - React component template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template` - Type-safe API hook template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/frontend/test.test.tsx.template` - Frontend test template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/backend/router.py.template` - FastAPI router template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/backend/schema.py.template` - Pydantic schema template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/backend/crud.py.template` - CRUD operations template
-- `installer/global/templates/react-fastapi-monorepo/templates/apps/backend/test.py.template` - Backend test template
-- `installer/global/templates/react-fastapi-monorepo/templates/docker/docker-compose.yml.template` - Docker Compose template for new services
-- `installer/global/templates/react-fastapi-monorepo/templates/docker/frontend.Dockerfile.template` - Frontend Dockerfile template
-- `installer/global/templates/react-fastapi-monorepo/templates/docker/backend.Dockerfile.template` - Backend Dockerfile template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/component.tsx.template` - React component template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/api-hook.ts.template` - Type-safe API hook template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/frontend/test.test.tsx.template` - Frontend test template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/backend/router.py.template` - FastAPI router template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/backend/schema.py.template` - Pydantic schema template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/backend/crud.py.template` - CRUD operations template
+- `installer/core/templates/react-fastapi-monorepo/templates/apps/backend/test.py.template` - Backend test template
+- `installer/core/templates/react-fastapi-monorepo/templates/docker/docker-compose.yml.template` - Docker Compose template for new services
+- `installer/core/templates/react-fastapi-monorepo/templates/docker/frontend.Dockerfile.template` - Frontend Dockerfile template
+- `installer/core/templates/react-fastapi-monorepo/templates/docker/backend.Dockerfile.template` - Backend Dockerfile template
 
 ### Template Agents (3 files)
-- `installer/global/templates/react-fastapi-monorepo/agents/react-fastapi-monorepo-specialist.md` - Monorepo architecture specialist agent
-- `installer/global/templates/react-fastapi-monorepo/agents/monorepo-type-safety-specialist.md` - Type generation and safety specialist agent
-- `installer/global/templates/react-fastapi-monorepo/agents/docker-orchestration-specialist.md` - Docker Compose and containerization specialist agent
+- `installer/core/templates/react-fastapi-monorepo/agents/react-fastapi-monorepo-specialist.md` - Monorepo architecture specialist agent
+- `installer/core/templates/react-fastapi-monorepo/agents/monorepo-type-safety-specialist.md` - Type generation and safety specialist agent
+- `installer/core/templates/react-fastapi-monorepo/agents/docker-orchestration-specialist.md` - Docker Compose and containerization specialist agent
 
 ---
 

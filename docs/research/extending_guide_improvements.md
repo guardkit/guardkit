@@ -20,7 +20,7 @@ Copy your new agent to all template directories:
 # Copy to all templates
 for template in default maui react python dotnet-microservice; do
   cp performance-optimizer.md \
-    installer/global/templates/$template/agents/
+    installer/core/templates/$template/agents/
 done
 ```
 ```
@@ -172,7 +172,7 @@ Explicit callout of the exact mistake we made:
 ```bash
 # performance-optimizer is language-agnostic
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
-  cp performance-optimizer.md installer/global/templates/$template/agents/
+  cp performance-optimizer.md installer/core/templates/$template/agents/
 done
 ```
 
@@ -180,15 +180,15 @@ done
 ```bash
 # Python-specific agent
 cp python-mcp-specialist.md \
-   installer/global/templates/python/agents/
+   installer/core/templates/python/agents/
 
 # React-specific agent
 cp react-state-specialist.md \
-   installer/global/templates/react/agents/
+   installer/core/templates/react/agents/
 
 # MAUI-specific agent
 cp maui-viewmodel-specialist.md \
-   installer/global/templates/maui/agents/
+   installer/core/templates/maui/agents/
 ```
 
 ---
@@ -220,7 +220,7 @@ This grounds the guidance in actual code, making it more concrete and verifiable
 ```bash
 # Global agents should be in ALL templates
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
-  test -f "installer/global/templates/$template/agents/requirements-analyst.md" && echo "✅ $template" || echo "❌ $template"
+  test -f "installer/core/templates/$template/agents/requirements-analyst.md" && echo "✅ $template" || echo "❌ $template"
 done
 
 # Expected: All ✅
@@ -232,10 +232,10 @@ done
 # Example: python-mcp-specialist should only be in python/
 
 # Should exist in python template
-test -f "installer/global/templates/python/agents/python-mcp-specialist.md" && echo "✅ python" || echo "❌ python"
+test -f "installer/core/templates/python/agents/python-mcp-specialist.md" && echo "✅ python" || echo "❌ python"
 
 # Should NOT exist in other templates
-test -f "installer/global/templates/react/agents/python-mcp-specialist.md" && echo "❌ react (WRONG)" || echo "✅ react (correct)"
+test -f "installer/core/templates/react/agents/python-mcp-specialist.md" && echo "❌ react (WRONG)" || echo "✅ react (correct)"
 ```
 
 ---

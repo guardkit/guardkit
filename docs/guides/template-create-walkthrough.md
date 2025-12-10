@@ -952,7 +952,7 @@ HealthcareAPI/
 
 ### Learn More
 
-- **Command Reference**: [template-create.md](../../installer/global/commands/template-create.md)
+- **Command Reference**: [template-create.md](../../installer/core/commands/template-create.md)
 - **Greenfield Guide**: [template-init-walkthrough.md](./template-init-walkthrough.md)
 - **Troubleshooting**: [template-troubleshooting.md](./template-troubleshooting.md)
 - **Customization**: [creating-local-templates.md](./creating-local-templates.md)

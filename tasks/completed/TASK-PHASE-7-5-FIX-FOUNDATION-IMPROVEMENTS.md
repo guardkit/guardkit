@@ -148,7 +148,7 @@ While the foundation implementation is **functionally correct** and all tests pa
 
 ### Phase 1: Serialization Improvements (20 minutes)
 
-**File**: `installer/global/lib/template_creation/template_create_orchestrator.py`
+**File**: `installer/core/lib/template_creation/template_create_orchestrator.py`
 
 Add explicit Mock handling before `__dict__` check (around line 1845):
 
@@ -267,7 +267,7 @@ This consolidates 3 tests into 1 parametrized test.
 pytest tests/unit/lib/template_creation/test_serialize_value.py \
       tests/unit/lib/template_creation/test_agent_serialization.py \
       tests/unit/lib/template_creation/test_resume_routing.py \
-      -v --cov=installer/global/lib/template_creation
+      -v --cov=installer/core/lib/template_creation
 
 # Expected: 101+ tests passing (may increase with new Mock test)
 ```
@@ -376,7 +376,7 @@ See TASK-PHASE-7-5-FIX-FOUNDATION completion summary for context.
 
 ### Code Changes
 - **Files Modified**: 3
-  - `installer/global/commands/lib/template_create_orchestrator.py` - Mock handling + documentation
+  - `installer/core/commands/lib/template_create_orchestrator.py` - Mock handling + documentation
   - `tests/unit/lib/template_creation/test_serialize_value.py` - Mock tests + fixes
   - `tests/unit/lib/template_creation/test_resume_routing.py` - DRY improvements + parametrize
 
@@ -456,7 +456,7 @@ See TASK-PHASE-7-5-FIX-FOUNDATION completion summary for context.
 ## Files Changed
 
 ```
-installer/global/commands/lib/template_create_orchestrator.py:
+installer/core/commands/lib/template_create_orchestrator.py:
   - Lines 1814-1821: Mock object detection
   - Lines 1830-1833: Private attribute skipping
 

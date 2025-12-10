@@ -15,7 +15,7 @@
 **Agent Hierarchy** (priority order):
 1. **User's Custom Agents** (`.claude/agents/`) - Highest priority
 2. **Template-Specific Agents** (from template being used/generated)
-3. **Global Built-in Agents** (`installer/global/agents/`)
+3. **Global Built-in Agents** (`installer/core/agents/`)
 4. **AI-Generated Agents** (Claude creates on-the-fly)
 5. **External Community Agents** (optional suggestions)
 
@@ -28,7 +28,7 @@
 ### Current Thinking (Too Narrow)
 ```
 Discover agents from:
-- Local agents (installer/global/agents/)
+- Local agents (installer/core/agents/)
 - External sources (subagents.cc, GitHub)
 → Present list to user
 → User selects
@@ -78,7 +78,7 @@ Discover agents from:
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ 3. Scan Global Built-in Agents                              │
-│    Location: installer/global/agents/*.md                   │
+│    Location: installer/core/agents/*.md                   │
 │    Priority: MEDIUM (general-purpose)                       │
 │    Example: architectural-reviewer.md                       │
 └─────────────────────────────────────────────────────────────┘
@@ -246,7 +246,7 @@ installer/local/templates/maui-appshell/agents/
 
 **Example**:
 ```
-installer/global/agents/
+installer/core/agents/
 ├── architectural-reviewer.md
 ├── code-reviewer.md
 ├── test-verifier.md
@@ -461,7 +461,7 @@ $ /template-create "mycompany-maui"
 
 📦 Checking existing agents...
 ✓ Found 3 custom agents in .claude/agents/
-✓ Found 15 global agents in installer/global/agents/
+✓ Found 15 global agents in installer/core/agents/
 
 🤖 Determining agent needs...
 ✓ Need: MAUI AppShell navigation specialist
@@ -580,7 +580,7 @@ def scan_all_agent_sources() -> AgentInventory:
         inventory.add(template_agents, priority=Priority.HIGH, source="template")
 
     # 3. Global built-in agents
-    global_agents = scan_directory(Path("installer/global/agents/"))
+    global_agents = scan_directory(Path("installer/core/agents/"))
     inventory.add(global_agents, priority=Priority.MEDIUM, source="global")
 
     return inventory
@@ -740,7 +740,7 @@ def recommend_agents_for_template(analysis: CodebaseAnalysis) -> AgentRecommenda
 Priority Order:
 1. Check user's custom agents (.claude/agents/) ⭐⭐⭐ HIGHEST
 2. Check template agents (template/agents/) ⭐⭐ HIGH
-3. Check global agents (installer/global/) ⭐ MEDIUM
+3. Check global agents (installer/core/) ⭐ MEDIUM
 4. CREATE needed agents (AI-generated) ⭐ MEDIUM (context-specific)
 5. Suggest external agents (optional) ⭐ LOW (suggestions only)
 ```

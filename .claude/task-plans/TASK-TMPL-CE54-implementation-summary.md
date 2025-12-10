@@ -14,14 +14,14 @@ Fixed fundamental issue where all `.cs.template` files were being placed in `tem
 ## Implementation Details
 
 ### Files Created (1 new file)
-1. **`installer/global/lib/template_generator/path_resolver.py`** (~260 lines)
+1. **`installer/core/lib/template_generator/path_resolver.py`** (~260 lines)
    - `LayerClassificationStrategy` - Uses AI-provided layer info (PRIMARY)
    - `PatternClassificationStrategy` - Infers layer from filename patterns (FALLBACK)
    - `TemplatePathResolver` - Orchestrator with statistics tracking
    - Pattern mappings for 14 common file types (Repository, Service, View, Entity, etc.)
 
 ### Files Modified (2 files)
-1. **`installer/global/lib/template_generator/template_generator.py`** (~20 lines changed)
+1. **`installer/core/lib/template_generator/template_generator.py`** (~20 lines changed)
    - Added `TemplatePathResolver` import
    - Added `path_resolver` initialization
    - Replaced `_infer_template_path()` implementation (now 15 lines vs. original 30 lines)

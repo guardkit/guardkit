@@ -588,6 +588,6 @@ No high-risk issues identified with hybrid approach.
 ## References
 
 - **TASK-EE41**: AI discovery metadata implementation
-- **Agent files**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/*.md`
-- **Discovery system**: `installer/global/commands/lib/agent_discovery.py`
+- **Agent files**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/*.md`
+- **Discovery system**: `installer/core/commands/lib/agent_discovery.py`
 - **GitHub analysis**: `docs/analysis/github-agent-best-practices-analysis.md`

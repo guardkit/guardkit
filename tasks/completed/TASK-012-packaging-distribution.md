@@ -39,10 +39,10 @@ completion_metrics:
   quality_gates_passed: all
   iterations: 1
 deliverables:
-  - installer/global/commands/lib/template_packager.py (11,702 bytes)
-  - installer/global/commands/lib/template_versioning.py (12,610 bytes)
-  - installer/global/commands/lib/template_merger.py (15,564 bytes)
-  - installer/global/commands/lib/distribution_helpers.py (19,683 bytes)
+  - installer/core/commands/lib/template_packager.py (11,702 bytes)
+  - installer/core/commands/lib/template_versioning.py (12,610 bytes)
+  - installer/core/commands/lib/template_merger.py (15,564 bytes)
+  - installer/core/commands/lib/distribution_helpers.py (19,683 bytes)
   - tests/test_template_packager.py (10,619 bytes)
   - tests/test_template_versioning.py (13,942 bytes)
   - tests/test_template_merger.py (13,827 bytes)

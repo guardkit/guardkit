@@ -170,7 +170,7 @@ class TestPhaseRoutingRegression:
         If this test fails, it indicates Phase 7.5 logic has been duplicated.
         """
         from unittest.mock import patch
-        from installer.global.commands.lib.template_create_orchestrator import WorkflowPhase
+        from installer.core.commands.lib.template_create_orchestrator import WorkflowPhase
 
         mock_orchestrator_full.config.resume = True
 

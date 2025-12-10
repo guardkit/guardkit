@@ -19,7 +19,7 @@ related_tasks: []
 related_documents:
   - docs/shared/maui-template-architecture.md
   - docs/workflows/maui-template-migration-plan.md
-  - installer/global/templates/maui/
+  - installer/core/templates/maui/
 test_results:
   validation_passed: true
   test_coverage: 98.4
@@ -70,7 +70,7 @@ plan_review:
 
 ## Description
 
-Create the complete `installer/global/templates/maui-navigationpage/` directory structure following Phase 1.3 specifications from the MAUI template migration plan.
+Create the complete `installer/core/templates/maui-navigationpage/` directory structure following Phase 1.3 specifications from the MAUI template migration plan.
 
 ### Core Components to Create
 
@@ -288,7 +288,7 @@ Create the complete `installer/global/templates/maui-navigationpage/` directory 
 ## Acceptance Criteria
 
 ### 1. Directory Structure
-- [ ] Create `installer/global/templates/maui-navigationpage/` directory
+- [ ] Create `installer/core/templates/maui-navigationpage/` directory
 - [ ] Create `agents/` subdirectory (symlink or copy from maui-appshell)
 - [ ] Create `templates/` subdirectory
 - [ ] All required files present in correct locations
@@ -472,7 +472,7 @@ Create the complete `installer/global/templates/maui-navigationpage/` directory 
 - `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/shared/maui-template-architecture.md`
 
 **Reference Template** (maui-appshell):
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/`
 
 ## Risks and Mitigations
 

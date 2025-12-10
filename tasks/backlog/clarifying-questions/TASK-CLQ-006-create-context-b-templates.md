@@ -21,12 +21,12 @@ Create the question templates and generator for Context B - implementation prefe
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/lib/clarification/templates/implementation_prefs.py` with:
+- [ ] Create `installer/core/commands/lib/clarification/templates/implementation_prefs.py` with:
   - [ ] APPROACH_PREFERENCE_QUESTIONS - Which recommended approach to follow
   - [ ] CONSTRAINT_QUESTIONS - Time/resource constraints
   - [ ] PARALLELIZATION_QUESTIONS - Parallel vs sequential preference
   - [ ] TESTING_DEPTH_QUESTIONS - TDD/standard/minimal
-- [ ] Create `installer/global/commands/lib/clarification/generators/implement_generator.py` with:
+- [ ] Create `installer/core/commands/lib/clarification/generators/implement_generator.py` with:
   - [ ] `generate_implement_questions()` function
   - [ ] Logic to present approach options from review findings
 - [ ] Each question has: id, category, text, options, default, rationale
@@ -167,8 +167,8 @@ def customize_approach_question(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/templates/implementation_prefs.py`
-2. `installer/global/commands/lib/clarification/generators/implement_generator.py`
+1. `installer/core/commands/lib/clarification/templates/implementation_prefs.py`
+2. `installer/core/commands/lib/clarification/generators/implement_generator.py`
 
 ## Why Direct Implementation
 

@@ -223,8 +223,8 @@ def execute_task_review(task_id: str, mode: str, depth: str, flags: dict):
 
 ## Files to Modify
 
-1. `installer/global/commands/task-review.md` - Add clarification specifications
-2. `installer/global/commands/lib/task_review_executor.py` (if exists) - Add integration
+1. `installer/core/commands/task-review.md` - Add clarification specifications
+2. `installer/core/commands/lib/task_review_executor.py` (if exists) - Add integration
 
 ## Why /task-work Method
 

@@ -28,7 +28,7 @@ for key, value in state.config.items():
 
 | File | Change |
 |------|--------|
-| installer/global/commands/lib/template_create_orchestrator.py | Added OPERATIONAL_PARAMS exclusion (4 lines) |
+| installer/core/commands/lib/template_create_orchestrator.py | Added OPERATIONAL_PARAMS exclusion (4 lines) |
 | tests/unit/test_template_create_orchestrator.py | Added TestResumeOperationalParams class (2 tests) |
 
 ## Quality Metrics

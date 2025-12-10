@@ -73,7 +73,7 @@ Add spec drift detection to Phase 5 (Code Review) that performs semantic compari
 ## Implementation Summary
 
 ### Files Created
-1. **installer/global/commands/lib/spec_drift_detector.py** (500+ lines)
+1. **installer/core/commands/lib/spec_drift_detector.py** (500+ lines)
    - `SpecDriftDetector` class with complete drift analysis
    - `Requirement`, `ScopeCreepItem`, `DriftReport` dataclasses
    - `format_drift_report()` function for formatted output
@@ -95,7 +95,7 @@ Add spec drift detection to Phase 5 (Code Review) that performs semantic compari
    - Workflow simulation
 
 ### Files Modified
-1. **installer/global/agents/code-reviewer.md**
+1. **installer/core/agents/code-reviewer.md**
    - Added Step 1: Spec Drift Detection
    - Integrated before automated checks
    - Includes compliance thresholds
@@ -119,7 +119,7 @@ Add spec drift detection to Phase 5 (Code Review) that performs semantic compari
 
 ### Phase 1: Core Detection (2 hours)
 ```python
-# File: installer/global/commands/lib/spec_drift_detector.py
+# File: installer/core/commands/lib/spec_drift_detector.py
 
 class SpecDriftDetector:
     def analyze_drift(self, task_id: str) -> DriftReport:
@@ -145,7 +145,7 @@ class SpecDriftDetector:
 
 ### Phase 2: Agent Integration (1 hour)
 ```markdown
-# File: installer/global/agents/code-reviewer.md
+# File: installer/core/agents/code-reviewer.md
 
 ## Phase 5: Code Review
 
@@ -194,13 +194,13 @@ def handle_drift(drift_report: DriftReport):
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/commands/lib/spec_drift_detector.py`
+- `installer/core/commands/lib/spec_drift_detector.py`
 - `tests/unit/test_spec_drift_detector.py`
 - `tests/integration/test_drift_detection_workflow.py`
 
 ### Modified Files
-- `installer/global/agents/code-reviewer.md` (add drift detection step)
-- `installer/global/commands/task-work.md` (document Phase 5 enhancement)
+- `installer/core/agents/code-reviewer.md` (add drift detection step)
+- `installer/core/commands/task-work.md` (document Phase 5 enhancement)
 
 ## Example Output
 

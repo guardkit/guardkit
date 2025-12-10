@@ -379,7 +379,7 @@ This is actually a JSX syntax issue, not a placeholder issue. The extra brace is
 
 Add 8 new placeholder definitions to the "placeholders" object.
 
-**File**: `installer/global/templates/react-fastapi-monorepo/manifest.json`
+**File**: `installer/core/templates/react-fastapi-monorepo/manifest.json`
 **Lines to modify**: Add entries around line 80 (after existing placeholders)
 **Estimated changes**: ~40 new lines
 

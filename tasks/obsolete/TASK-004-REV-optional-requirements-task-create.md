@@ -166,7 +166,7 @@ fi
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-create.md installer/global/commands/task-create.md.backup
+cp installer/core/commands/task-create.md installer/core/commands/task-create.md.backup
 ```
 
 ### 2. Add Feature Detection Logic
@@ -307,14 +307,14 @@ Install require-kit: https://github.com/requirekit/require-kit
 
 TASK-012 implemented the complete bidirectional optional integration approach, which includes all the functionality planned in this task:
 
-1. ✅ **Feature Detection** - `installer/global/lib/feature_detection.py` provides `supports_requirements()`
+1. ✅ **Feature Detection** - `installer/core/lib/feature_detection.py` provides `supports_requirements()`
 2. ✅ **Conditional Display** - `task-create.md` splits examples into Core vs Integration sections
 3. ✅ **Help Text Adaptation** - Documentation shows which options require require-kit
 4. ✅ **Graceful Warnings** - User sees helpful messages when integration features unavailable
 
 ### Implementation Location
 
-- **File Modified**: `installer/global/commands/task-create.md`
+- **File Modified**: `installer/core/commands/task-create.md`
 - **Changes**: Added bidirectional integration notes, split options into Core and Integration sections
 - **Documentation**: `docs/architecture/bidirectional-integration.md`
 

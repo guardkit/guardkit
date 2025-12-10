@@ -159,7 +159,7 @@ Your choice (A/R/V/D):
 
 ### 1. New Agent: `architectural-reviewer`
 
-**Location**: `installer/global/agents/architectural-reviewer.md`
+**Location**: `installer/core/agents/architectural-reviewer.md`
 **Size**: 22.3 KB
 **Type**: Global agent (all templates)
 
@@ -198,7 +198,7 @@ Your choice (A/R/V/D):
 
 ### 2. Updated Command: `task-work`
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Changes**:
 - Added Phase 2.5 task invocation for architectural-reviewer
@@ -219,7 +219,7 @@ Stack: python
 
 ### 3. Updated Agent: `code-reviewer`
 
-**Location**: `installer/global/agents/code-reviewer.md`
+**Location**: `installer/core/agents/code-reviewer.md`
 
 **Changes**:
 - Added `collaborates_with` metadata (architectural-reviewer, test-verifier, security-specialist)
@@ -693,8 +693,8 @@ This enhancement makes the AI-Engineer system **production-ready for enterprise 
 
 ## References
 
-- **Implementation**: `installer/global/agents/architectural-reviewer.md`
-- **Command**: `installer/global/commands/task-work.md`
+- **Implementation**: `installer/core/agents/architectural-reviewer.md`
+- **Command**: `installer/core/commands/task-work.md`
 - **Gap Analysis**: `docs/research/architectural_review_gap_analysis.md`
 - **Original Discussion**: Context carried forward from previous session
 

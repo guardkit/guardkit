@@ -134,7 +134,7 @@ In Claude Code:
 - [x] `installer/scripts/install.sh` - No taskwright (42 guardkit refs ✅)
 - [x] `CLAUDE.md` - No taskwright
 - [x] `README.md` - No taskwright
-- [x] `installer/global/templates/guardkit.marker.json` - Exists and correct
+- [x] `installer/core/templates/guardkit.marker.json` - Exists and correct
 
 ### Functional Tests (Must Pass)
 - [x] Fresh install works

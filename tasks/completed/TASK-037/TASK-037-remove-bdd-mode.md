@@ -63,12 +63,12 @@ This means removing:
 
 ### Phase 1: Remove BDD Agents and Instructions (20 minutes)
 - [ ] **DELETE** `.claude/agents/bdd-generator.md` (EARS → Gherkin is require-kit only)
-- [ ] **DELETE** `installer/global/instructions/core/bdd-gherkin.md` (move to require-kit if needed)
-- [ ] **DELETE** all `installer/global/templates/*/agents/bdd-generator.md` files
+- [ ] **DELETE** `installer/core/instructions/core/bdd-gherkin.md` (move to require-kit if needed)
+- [ ] **DELETE** all `installer/core/templates/*/agents/bdd-generator.md` files
 - [ ] Find and remove any other BDD-related agents or instruction files
 
 ### Phase 2: Documentation Cleanup (25 minutes)
-- [ ] Remove BDD mode section from `installer/global/commands/task-work.md` (lines 2317-2344)
+- [ ] Remove BDD mode section from `installer/core/commands/task-work.md` (lines 2317-2344)
 - [ ] Remove all `--mode=bdd` examples from task-work.md
 - [ ] Update development modes to list ONLY Standard and TDD
 - [ ] Remove BDD mode references from `CLAUDE.md`
@@ -89,7 +89,7 @@ This means removing:
 
 ### Verification
 - [ ] No BDD agents exist in `.claude/agents/` or template directories
-- [ ] No BDD instructions exist in `installer/global/instructions/`
+- [ ] No BDD instructions exist in `installer/core/instructions/`
 - [ ] No references to `--mode=bdd` in command specs
 - [ ] Grep for "bdd-generator" returns nothing (except in feature_detection comments)
 - [ ] CLAUDE.md clearly states BDD requires require-kit
@@ -104,13 +104,13 @@ This means removing:
    - Remove entire file from taskwright
    - This agent should only exist in require-kit
 
-2. **`installer/global/instructions/core/bdd-gherkin.md`** ❌ DELETE
+2. **`installer/core/instructions/core/bdd-gherkin.md`** ❌ DELETE
    - BDD instruction file not needed in taskwright
    - Delete from taskwright (move to require-kit if they need it)
 
-3. **`installer/global/templates/*/agents/bdd-generator.md`** ❌ DELETE ALL
+3. **`installer/core/templates/*/agents/bdd-generator.md`** ❌ DELETE ALL
    - Find all template-specific copies:
-     - `installer/global/templates/maui-navigationpage/agents/bdd-generator.md`
+     - `installer/core/templates/maui-navigationpage/agents/bdd-generator.md`
      - Any other templates with bdd-generator
    - Delete all copies
 
@@ -120,7 +120,7 @@ This means removing:
 
 ### Files to **MODIFY**
 
-5. **`installer/global/commands/task-work.md`** ✏️ MODIFY
+5. **`installer/core/commands/task-work.md`** ✏️ MODIFY
    - Remove BDD Mode section (~lines 2317-2344)
    - Update development modes to list only Standard and TDD
    - Remove all `--mode=bdd` examples
@@ -136,7 +136,7 @@ This means removing:
    - Keep only Standard and TDD mode implementations
    - Update any references to three modes → two modes
 
-8. **`installer/global/lib/feature_detection.py`** ✏️ MODIFY (minimal)
+8. **`installer/core/lib/feature_detection.py`** ✏️ MODIFY (minimal)
    - **KEEP** `supports_bdd()` function (shared file with require-kit)
    - Update docstring: "BDD generation requires require-kit installation"
    - **NOTE:** This file is duplicated in both repos, changes must sync
@@ -157,21 +157,21 @@ This means removing:
 find . -name "*bdd*" -type f | grep -v node_modules | grep -v .git
 
 # Find all bdd-generator agent files
-find installer/global/templates -name "bdd-generator.md"
+find installer/core/templates -name "bdd-generator.md"
 find .claude/agents -name "bdd-generator.md"
 
 # Find remaining BDD mode references (should find nothing after cleanup)
-grep -r "mode=bdd" installer/global/commands/ .claude/commands/
+grep -r "mode=bdd" installer/core/commands/ .claude/commands/
 grep -r "BDD Mode" CLAUDE.md README.md docs/
 grep -r "bdd-generator" . --exclude-dir=node_modules --exclude-dir=.git
 
 # Verify BDD files are DELETED
 test ! -f .claude/agents/bdd-generator.md && echo "✓ bdd-generator.md removed" || echo "✗ Still exists!"
-test ! -f installer/global/instructions/core/bdd-gherkin.md && echo "✓ bdd-gherkin.md removed" || echo "✗ Still exists!"
-find installer/global/templates -name "bdd-generator.md" | wc -l  # Should output: 0
+test ! -f installer/core/instructions/core/bdd-gherkin.md && echo "✓ bdd-gherkin.md removed" || echo "✗ Still exists!"
+find installer/core/templates -name "bdd-generator.md" | wc -l  # Should output: 0
 
 # Verify feature_detection.py still has supports_bdd() (it's a shared file)
-grep -q "def supports_bdd" installer/global/lib/feature_detection.py && echo "✓ supports_bdd() preserved (shared file)"
+grep -q "def supports_bdd" installer/core/lib/feature_detection.py && echo "✓ supports_bdd() preserved (shared file)"
 ```
 
 ## What Users Lose
@@ -230,7 +230,7 @@ grep -q "def supports_bdd" installer/global/lib/feature_detection.py && echo "�
 
 - [BDD Mode Removal Decision](../docs/research/bdd-mode-removal-decision.md)
 - [Option A Design (for reference)](../docs/research/bdd-mode-design-option-a.md)
-- [Feature Detection](../installer/global/lib/feature_detection.py)
+- [Feature Detection](../installer/core/lib/feature_detection.py)
 
 ## Post-Completion Verification
 
@@ -240,8 +240,8 @@ After running this task, verify complete removal:
 # Should find ZERO matches (except historical docs):
 find . -name "*bdd-generator*" -type f
 find . -name "*bdd-gherkin*" -type f
-grep -r "mode=bdd" CLAUDE.md installer/global/commands/
+grep -r "mode=bdd" CLAUDE.md installer/core/commands/
 
 # Should find ONE match (feature_detection.py shared file):
-grep -r "supports_bdd" installer/global/lib/
+grep -r "supports_bdd" installer/core/lib/
 ```

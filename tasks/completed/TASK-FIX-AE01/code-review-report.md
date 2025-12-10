@@ -624,18 +624,18 @@ The two minor issues identified are documentation enhancements that do not block
 
 ### Files Modified
 
-1. `installer/global/lib/agent_enhancement/applier.py`
+1. `installer/core/lib/agent_enhancement/applier.py`
    - Added `_normalize_section_name()` method (lines 240-252)
    - Added `_section_exists()` method (lines 254-285)
    - Updated `_merge_content()` to use fuzzy matching (line 226)
 
-2. `installer/global/lib/agent_enhancement/enhancer.py`
+2. `installer/core/lib/agent_enhancement/enhancer.py`
    - Improved JSON error handler with context extraction (lines 401-419)
 
-3. `installer/global/lib/agent_enhancement/parser.py`
+3. `installer/core/lib/agent_enhancement/parser.py`
    - Added `from __future__ import annotations` for Python 3.9 (line 9)
 
-4. `installer/global/lib/agent_enhancement/models.py`
+4. `installer/core/lib/agent_enhancement/models.py`
    - Changed `Path | None` to `Optional[Path]` (lines 80, 140-141)
    - Added `from __future__ import annotations` (line 9)
 

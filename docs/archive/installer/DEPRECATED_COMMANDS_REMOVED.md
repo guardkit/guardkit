@@ -10,7 +10,7 @@ All deprecated commands and references have been successfully removed from the A
 
 The following commands have been moved to `.deprecated/` directories:
 
-#### From Global Installer (`installer/global/commands/.deprecated/`)
+#### From Global Installer (`installer/core/commands/.deprecated/`)
 - `task.md` - Old multi-command task interface
 
 #### From Project Commands (`.claude/commands/.deprecated/`)
@@ -51,7 +51,7 @@ All documentation has been updated to remove references to deprecated commands:
 ## The Clean Architecture
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── formalize-ears.md          # Requirements formalization
 ├── gather-requirements.md     # Requirements gathering
 ├── generate-bdd.md           # BDD generation

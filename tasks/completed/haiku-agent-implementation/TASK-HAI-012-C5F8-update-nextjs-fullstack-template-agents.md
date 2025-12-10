@@ -50,9 +50,9 @@ Successfully added discovery metadata to all 3 nextjs-fullstack template agents.
 ### Files Modified
 
 ```
-installer/global/templates/nextjs-fullstack/agents/nextjs-fullstack-specialist.md          (+23/-1)
-installer/global/templates/nextjs-fullstack/agents/nextjs-server-actions-specialist.md     (+23/-1)
-installer/global/templates/nextjs-fullstack/agents/nextjs-server-components-specialist.md  (+23/-1)
+installer/core/templates/nextjs-fullstack/agents/nextjs-fullstack-specialist.md          (+23/-1)
+installer/core/templates/nextjs-fullstack/agents/nextjs-server-actions-specialist.md     (+23/-1)
+installer/core/templates/nextjs-fullstack/agents/nextjs-server-components-specialist.md  (+23/-1)
 ```
 
 ### Discovery Metadata Added
@@ -101,7 +101,7 @@ Add discovery metadata to 3 agents in the nextjs-fullstack template. These agent
 
 ### 1. nextjs-fullstack-specialist.md
 
-**Location**: `installer/global/templates/nextjs-fullstack/agents/`
+**Location**: `installer/core/templates/nextjs-fullstack/agents/`
 
 **Metadata**:
 ```yaml
@@ -134,7 +134,7 @@ collaborates_with:
 
 ### 2. nextjs-server-components-specialist.md
 
-**Location**: `installer/global/templates/nextjs-fullstack/agents/`
+**Location**: `installer/core/templates/nextjs-fullstack/agents/`
 
 **Metadata**:
 ```yaml
@@ -167,7 +167,7 @@ collaborates_with:
 
 ### 3. nextjs-server-actions-specialist.md
 
-**Location**: `installer/global/templates/nextjs-fullstack/agents/`
+**Location**: `installer/core/templates/nextjs-fullstack/agents/`
 
 **Metadata**:
 ```yaml
@@ -304,7 +304,7 @@ nextjs-fullstack-specialist unique:
 
 ## Reference Materials
 
-- `installer/global/templates/nextjs-fullstack/agents/*.md` - Existing agents
+- `installer/core/templates/nextjs-fullstack/agents/*.md` - Existing agents
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-003-45BB-create-react-state-specialist.md` - Global React agent
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema
 

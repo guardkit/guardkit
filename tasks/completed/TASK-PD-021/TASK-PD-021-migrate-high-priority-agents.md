@@ -40,14 +40,14 @@ Migrate content for the two largest agents first to validate the migration appro
 ### Files Created/Modified
 
 **task-manager**:
-- `installer/global/agents/task-manager.md` - Core file (12.6KB)
-- `installer/global/agents/task-manager-ext.md` - Extended file (60.1KB)
-- `installer/global/agents/task-manager.md.bak` - Backup retained
+- `installer/core/agents/task-manager.md` - Core file (12.6KB)
+- `installer/core/agents/task-manager-ext.md` - Extended file (60.1KB)
+- `installer/core/agents/task-manager.md.bak` - Backup retained
 
 **devops-specialist**:
-- `installer/global/agents/devops-specialist.md` - Core file (2.9KB)
-- `installer/global/agents/devops-specialist-ext.md` - Extended file (55.1KB)
-- `installer/global/agents/devops-specialist.md.bak` - Backup retained
+- `installer/core/agents/devops-specialist.md` - Core file (2.9KB)
+- `installer/core/agents/devops-specialist-ext.md` - Extended file (55.1KB)
+- `installer/core/agents/devops-specialist.md.bak` - Backup retained
 
 ### Validation Results
 

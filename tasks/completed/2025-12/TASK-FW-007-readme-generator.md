@@ -117,7 +117,7 @@ Parse review report for:
 
 ## Files to Create/Modify
 
-- `installer/global/lib/readme_generator.py` (NEW)
+- `installer/core/lib/readme_generator.py` (NEW)
 
 ## Test Cases
 
@@ -147,7 +147,7 @@ Can run in parallel with FW-001, FW-002 (Wave 1).
 
 ### Deliverables
 - **Files Created**: 2
-  - `installer/global/lib/readme_generator.py` (358 lines)
+  - `installer/core/lib/readme_generator.py` (358 lines)
   - `tests/lib/test_readme_generator.py` (481 lines)
 - **Tests Written**: 16
 - **Coverage Achieved**: 100% (16/16 tests passing)

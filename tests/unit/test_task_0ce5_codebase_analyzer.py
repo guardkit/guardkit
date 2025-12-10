@@ -24,7 +24,7 @@ import tempfile
 from typing import Dict, Any, Optional
 
 # Add lib directories to path - must be done before imports
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 

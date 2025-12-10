@@ -75,10 +75,10 @@ guardkit init react-typescript --info
 ```
 
 **Template Documentation**:
-- [react-typescript](installer/global/templates/react-typescript/README.md) - Frontend (Bulletproof React)
-- [fastapi-python](installer/global/templates/fastapi-python/README.md) - Backend API (FastAPI Best Practices)
-- [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - JavaScript Full-Stack
-- [react-fastapi-monorepo](installer/global/templates/react-fastapi-monorepo/README.md) - Python Full-Stack Monorepo
+- [react-typescript](installer/core/templates/react-typescript/README.md) - Frontend (Bulletproof React)
+- [fastapi-python](installer/core/templates/fastapi-python/README.md) - Backend API (FastAPI Best Practices)
+- [nextjs-fullstack](installer/core/templates/nextjs-fullstack/README.md) - JavaScript Full-Stack
+- [react-fastapi-monorepo](installer/core/templates/react-fastapi-monorepo/README.md) - Python Full-Stack Monorepo
 
 ## Template Selection Guide (NEW SECTION)
 

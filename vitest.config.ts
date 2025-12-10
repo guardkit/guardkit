@@ -32,8 +32,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
       '@tests': path.resolve(__dirname, './tests'),
-      '@agents': path.resolve(__dirname, './installer/global/agents'),
-      '@commands': path.resolve(__dirname, './installer/global/commands'),
+      '@agents': path.resolve(__dirname, './installer/core/agents'),
+      '@commands': path.resolve(__dirname, './installer/core/commands'),
     },
   },
 });

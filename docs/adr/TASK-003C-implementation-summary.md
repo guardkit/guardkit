@@ -17,7 +17,7 @@ Successfully integrated Phase 2.7 (Implementation Plan Generation & Complexity E
 
 ## Files Modified
 
-### 1. `/installer/global/commands/task-work.md`
+### 1. `/installer/core/commands/task-work.md`
 
 **Changes Made**:
 - Added Phase 2.7 documentation (lines 479-540)
@@ -39,7 +39,7 @@ Successfully integrated Phase 2.7 (Implementation Plan Generation & Complexity E
 
 **Backward Compatibility**: Maintained - existing phases unchanged
 
-### 2. `/installer/global/agents/task-manager.md`
+### 2. `/installer/core/agents/task-manager.md`
 
 **Changes Made**:
 - Replaced stub "Section 3: Evaluate Complexity" with comprehensive Phase 2.7 orchestration (lines 67-256)

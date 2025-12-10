@@ -44,13 +44,13 @@ TASK-003 removed the `requirements-analyst` agent as part of the guardkit/requir
 ## Deliverables
 
 ### Files Modified
-- `installer/global/agents/task-manager.md` - Removed Phase 1 invocation
-- `installer/global/agents/test-orchestrator.md` - Added Rule #0 for empty projects
+- `installer/core/agents/task-manager.md` - Removed Phase 1 invocation
+- `installer/core/agents/test-orchestrator.md` - Added Rule #0 for empty projects
 - `tasks/in_progress/TASK-022-fix-phase1-requirements-dependency.md` - Task tracking
 
 ### Files Deleted
 - `.claude/agents/requirements-analyst.md` - Leftover from incomplete TASK-003
-- `installer/global/templates/maui-navigationpage/agents/requirements-analyst.md` - Template cleanup
+- `installer/core/templates/maui-navigationpage/agents/requirements-analyst.md` - Template cleanup
 
 ### Lines Changed
 - Added: 88 lines (empty project detection logic)

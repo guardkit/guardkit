@@ -206,7 +206,7 @@ This is a review task - no code implementation required. Focus on:
 | **Overall** | **7.5/10** | 1 critical regression bug from Phase 5.6 |
 
 ### Critical Bug (Regression from Progressive Disclosure)
-**Location**: [template_create_orchestrator.py:1556-1568](installer/global/commands/lib/template_create_orchestrator.py#L1556-L1568)
+**Location**: [template_create_orchestrator.py:1556-1568](installer/core/commands/lib/template_create_orchestrator.py#L1556-L1568)
 **Issue**: Attribute name mismatch between model and orchestrator
 - Model defines: `core_content`, `patterns_content`, `reference_content`
 - Orchestrator uses: `core`, `patterns`, `reference`

@@ -52,7 +52,7 @@ The `_fallback_to_hardcoded()` method was marked deprecated but no replacement h
 
 ### File 1: agent_generator.py
 
-**Location**: `installer/global/lib/agent_generator/agent_generator.py`
+**Location**: `installer/core/lib/agent_generator/agent_generator.py`
 
 #### Change 1: Restore heuristic fallback (modify `_identify_capability_needs`, lines 121-148)
 
@@ -154,7 +154,7 @@ def _heuristic_identify_agents(self, analysis: Any) -> List[CapabilityNeed]:
 
 ### File 2: template_create_orchestrator.py
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 #### Change 1: Add diagnostic logging to Phase 5 (modify `_phase5_agent_recommendation`)
 

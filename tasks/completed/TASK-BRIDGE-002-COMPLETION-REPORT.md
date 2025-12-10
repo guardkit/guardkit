@@ -20,7 +20,7 @@ Integrated `AgentBridgeInvoker` and `StateManager` into the template creation or
 ## Deliverables
 
 ### Files Modified
-1. **`installer/global/commands/lib/template_create_orchestrator.py`** (~300 lines changed)
+1. **`installer/core/commands/lib/template_create_orchestrator.py`** (~300 lines changed)
    - Added bridge integration components
    - Implemented checkpoint-resume workflow
    - Fixed Python 'global' keyword import issues
@@ -138,7 +138,7 @@ All acceptance criteria have been met:
 ## Technical Highlights
 
 ### Import Issue Resolution
-**Problem**: Python syntax error with `from installer.global.commands...`
+**Problem**: Python syntax error with `from installer.core.commands...`
 **Solution**: Used `importlib.import_module()` for all imports to avoid reserved keyword
 
 ### State Serialization
@@ -156,9 +156,9 @@ All acceptance criteria have been met:
 ## Integration Points
 
 ### Dependencies
-- ✅ `installer.global.lib.agent_bridge.invoker.AgentBridgeInvoker`
-- ✅ `installer.global.lib.agent_bridge.state_manager.StateManager`
-- ✅ `installer.global.lib.agent_bridge.state_manager.TemplateCreateState`
+- ✅ `installer.core.lib.agent_bridge.invoker.AgentBridgeInvoker`
+- ✅ `installer.core.lib.agent_bridge.state_manager.StateManager`
+- ✅ `installer.core.lib.agent_bridge.state_manager.TemplateCreateState`
 
 ### Next Steps (TASK-BRIDGE-003)
 - Command-level integration (`/template-create --resume`)
@@ -226,10 +226,10 @@ This is internal infrastructure code that will be used by future features. No de
 To test the checkpoint-resume pattern:
 ```bash
 # Will exit with code 42 if agent invocation needed
-python -m installer.global.commands.template_create
+python -m installer.core.commands.template_create
 
 # After agent response, resume
-python -m installer.global.commands.template_create --resume
+python -m installer.core.commands.template_create --resume
 ```
 
 ---

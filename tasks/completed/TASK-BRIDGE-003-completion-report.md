@@ -12,7 +12,7 @@
 ## Deliverables
 
 ### Files Modified: 1
-- `installer/global/commands/template-create.md` (+437 lines)
+- `installer/core/commands/template-create.md` (+437 lines)
 
 ### Documentation Created: 2
 - `.claude/task-plans/TASK-BRIDGE-003-implementation-plan.md`

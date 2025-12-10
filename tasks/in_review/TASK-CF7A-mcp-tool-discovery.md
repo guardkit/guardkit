@@ -90,7 +90,7 @@ Document the **MCP Tool Discovery** feature (Phase 2.8 extension) - automatic de
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 2.8 MCP discovery)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 2.8 MCP discovery)
 - MCP documentation: Context7, Figma, Zeplin servers
 
 ### Discovery Example

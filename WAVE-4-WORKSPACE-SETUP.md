@@ -39,7 +39,7 @@ Each workspace can run independently in parallel. Open 4 terminal sessions:
 # Or navigate to it via terminal (path will vary based on Conductor setup)
 
 # Check template agents
-ls -la installer/global/templates/react-typescript/agents/*.md
+ls -la installer/core/templates/react-typescript/agents/*.md
 
 # Dry run first
 python3 scripts/split_agent.py --dry-run --template react-typescript
@@ -48,7 +48,7 @@ python3 scripts/split_agent.py --dry-run --template react-typescript
 python3 scripts/split_agent.py --template react-typescript
 
 # Verify results
-ls -la installer/global/templates/react-typescript/agents/*.md | wc -l
+ls -la installer/core/templates/react-typescript/agents/*.md | wc -l
 # Should show: original + core + extended + backups
 
 # Commit changes
@@ -62,7 +62,7 @@ git commit -m "TASK-PD-012: Split react-typescript template agents (progressive 
 # Open workspace 'pd-fastapi' in Conductor UI
 
 # Check template agents
-ls -la installer/global/templates/fastapi-python/agents/*.md
+ls -la installer/core/templates/fastapi-python/agents/*.md
 
 # Dry run first
 python3 scripts/split_agent.py --dry-run --template fastapi-python
@@ -71,7 +71,7 @@ python3 scripts/split_agent.py --dry-run --template fastapi-python
 python3 scripts/split_agent.py --template fastapi-python
 
 # Verify results
-ls -la installer/global/templates/fastapi-python/agents/*.md | wc -l
+ls -la installer/core/templates/fastapi-python/agents/*.md | wc -l
 
 # Commit changes
 git add -A
@@ -84,7 +84,7 @@ git commit -m "TASK-PD-013: Split fastapi-python template agents (progressive di
 # Open workspace 'pd-nextjs' in Conductor UI
 
 # Check template agents
-ls -la installer/global/templates/nextjs-fullstack/agents/*.md
+ls -la installer/core/templates/nextjs-fullstack/agents/*.md
 
 # Dry run first
 python3 scripts/split_agent.py --dry-run --template nextjs-fullstack
@@ -93,7 +93,7 @@ python3 scripts/split_agent.py --dry-run --template nextjs-fullstack
 python3 scripts/split_agent.py --template nextjs-fullstack
 
 # Verify results
-ls -la installer/global/templates/nextjs-fullstack/agents/*.md | wc -l
+ls -la installer/core/templates/nextjs-fullstack/agents/*.md | wc -l
 
 # Commit changes
 git add -A
@@ -106,7 +106,7 @@ git commit -m "TASK-PD-014: Split nextjs-fullstack template agents (progressive 
 # Open workspace 'pd-monorepo' in Conductor UI
 
 # Check template agents
-ls -la installer/global/templates/react-fastapi-monorepo/agents/*.md
+ls -la installer/core/templates/react-fastapi-monorepo/agents/*.md
 
 # Dry run first
 python3 scripts/split_agent.py --dry-run --template react-fastapi-monorepo
@@ -115,7 +115,7 @@ python3 scripts/split_agent.py --dry-run --template react-fastapi-monorepo
 python3 scripts/split_agent.py --template react-fastapi-monorepo
 
 # Verify results
-ls -la installer/global/templates/react-fastapi-monorepo/agents/*.md | wc -l
+ls -la installer/core/templates/react-fastapi-monorepo/agents/*.md | wc -l
 
 # Commit changes
 git add -A

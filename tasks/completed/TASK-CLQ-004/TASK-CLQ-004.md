@@ -26,14 +26,14 @@ Create the question templates and generator for Context C - implementation plann
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/lib/clarification/templates/implementation_planning.py` with:
+- [x] Create `installer/core/commands/lib/clarification/templates/implementation_planning.py` with:
   - [x] SCOPE_QUESTIONS (5W: What) - Feature boundary questions (4 questions)
   - [x] USER_QUESTIONS (5W: Who) - User/persona questions (3 questions)
   - [x] TECHNOLOGY_QUESTIONS (5W: How) - Tech choice questions (5 questions)
   - [x] INTEGRATION_QUESTIONS (5W: Where) - Integration point questions (4 questions)
   - [x] TRADEOFF_QUESTIONS (5W: Why) - Priority trade-off questions (4 questions)
   - [x] EDGE_CASE_QUESTIONS - Edge case handling questions (5 questions)
-- [x] Create `installer/global/commands/lib/clarification/generators/planning_generator.py` with:
+- [x] Create `installer/core/commands/lib/clarification/generators/planning_generator.py` with:
   - [x] `generate_planning_questions()` function
   - [x] Logic to select relevant questions based on detection results (5 detection functions)
   - [x] Question prioritization (limit to 7 questions max)
@@ -149,10 +149,10 @@ def generate_planning_questions(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/templates/__init__.py`
-2. `installer/global/commands/lib/clarification/templates/implementation_planning.py`
-3. `installer/global/commands/lib/clarification/generators/__init__.py`
-4. `installer/global/commands/lib/clarification/generators/planning_generator.py`
+1. `installer/core/commands/lib/clarification/templates/__init__.py`
+2. `installer/core/commands/lib/clarification/templates/implementation_planning.py`
+3. `installer/core/commands/lib/clarification/generators/__init__.py`
+4. `installer/core/commands/lib/clarification/generators/planning_generator.py`
 5. `tests/unit/lib/clarification/test_planning_generator.py`
 
 ## Dependencies

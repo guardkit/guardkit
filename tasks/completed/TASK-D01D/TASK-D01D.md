@@ -56,7 +56,7 @@ Update all documentation to reflect the new hash-based task ID system. This incl
 
 **Primary Documentation**:
 1. `CLAUDE.md` - Main project documentation
-2. `installer/global/commands/task-create.md` - Command specification
+2. `installer/core/commands/task-create.md` - Command specification
 3. `docs/guides/taskwright-workflow.md` - Workflow guide
 4. `docs/guides/quick-reference.md` - Quick reference
 
@@ -391,7 +391,7 @@ MkDocs integration complete ✅
 **Documentation Updated** (6 files):
 1. `CLAUDE.md` - Added comprehensive Hash-Based Task IDs section (139 lines)
 2. `README.md` - Updated features section and all examples (19 lines)
-3. `installer/global/commands/task-create.md` - Updated all examples (34 lines)
+3. `installer/core/commands/task-create.md` - Updated all examples (34 lines)
 4. `docs/workflows/complexity-management-workflow.md` - Updated key examples (2 lines)
 5. `docs/concepts.md` - Added Hash-Based Task IDs overview (23 lines)
 6. `mkdocs.yml` - Added new guides to navigation (2 lines)

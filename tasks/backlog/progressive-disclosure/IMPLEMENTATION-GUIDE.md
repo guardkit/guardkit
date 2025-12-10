@@ -120,7 +120,7 @@ python3 scripts/measure-token-usage.py --baseline
 ```bash
 # Claude Code adds generate_loading_instruction() to applier.py
 # Manual verification:
-python3 -c "from installer.global.lib.agent_enhancement.applier import generate_loading_instruction; print(generate_loading_instruction('test', 'test-ext.md'))"
+python3 -c "from installer.core.lib.agent_enhancement.applier import generate_loading_instruction; print(generate_loading_instruction('test', 'test-ext.md'))"
 ```
 
 ---
@@ -159,7 +159,7 @@ python3 -c "from installer.global.lib.agent_enhancement.applier import generate_
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import is_extended_file
 print(is_extended_file(Path('test-ext.md')))  # True
 print(is_extended_file(Path('test.md')))       # False
@@ -249,7 +249,7 @@ ls -la /tmp/test-template/docs/reference/  # Should exist
 ```bash
 # Claude Code creates scripts/split-agent.py
 # Verify with dry run:
-python3 scripts/split-agent.py --dry-run --agent installer/global/agents/task-manager.md
+python3 scripts/split-agent.py --dry-run --agent installer/core/agents/task-manager.md
 ```
 
 ---
@@ -285,7 +285,7 @@ python3 scripts/split-agent.py --dry-run --all-global
 python3 scripts/split-agent.py --all-global
 
 # Verify
-ls installer/global/agents/*.md | wc -l  # Should be 38 (19 core + 19 ext)
+ls installer/core/agents/*.md | wc -l  # Should be 38 (19 core + 19 ext)
 ```
 
 ---
@@ -305,8 +305,8 @@ ls installer/global/agents/*.md | wc -l  # Should be 38 (19 core + 19 ext)
 python3 scripts/split-agent.py --validate --all-global
 
 # Spot check random agents
-cat installer/global/agents/task-manager.md | head -50
-cat installer/global/agents/task-manager-ext.md | head -50
+cat installer/core/agents/task-manager.md | head -50
+cat installer/core/agents/task-manager-ext.md | head -50
 ```
 
 **CHECKPOINT 3**: After PD-011, validate Phase 3:
@@ -315,9 +315,9 @@ cat installer/global/agents/task-manager-ext.md | head -50
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import AgentScanner
-agents = AgentScanner().scan_agents(Path('installer/global/agents'))
+agents = AgentScanner().scan_agents(Path('installer/core/agents'))
 ext_found = [a for a in agents if '-ext' in a.name]
 print(f'Core agents: {len(agents)}')
 print(f'Ext files in discovery: {len(ext_found)}')  # Should be 0
@@ -535,7 +535,7 @@ This wave migrates actual content from core agent files to extended files, achie
 # Keep frontmatter, quick start, boundaries in core
 
 # Validate
-wc -c installer/global/agents/task-manager.md  # Should be ≤25KB
+wc -c installer/core/agents/task-manager.md  # Should be ≤25KB
 ```
 
 **CHECKPOINT**: Review migration quality before proceeding to bulk.
@@ -604,7 +604,7 @@ git worktree add ../guardkit-pd-wave-c wave-c
 # Validate token reduction
 python3 -c "
 from pathlib import Path
-core_total = sum(f.stat().st_size for f in Path('installer/global/agents').glob('*.md') if not f.stem.endswith('-ext'))
+core_total = sum(f.stat().st_size for f in Path('installer/core/agents').glob('*.md') if not f.stem.endswith('-ext'))
 print(f'Core total: {core_total/1024:.1f}KB')
 print(f'Reduction: {(1 - core_total/520806)*100:.1f}%')  # 520806 = baseline
 "

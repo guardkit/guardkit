@@ -144,10 +144,10 @@ PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template
 
 ### Source Files
 ```
-installer/global/commands/lib/template_create_orchestrator.py
+installer/core/commands/lib/template_create_orchestrator.py
 └─ Needs PYTHONPATH setup before imports (line 20)
 
-installer/global/commands/template-create.md
+installer/core/commands/template-create.md
 └─ Contains PYTHONPATH setup (lines 1026-1105) but not executed
 ```
 
@@ -197,7 +197,7 @@ docs/debugging/
 ### Installation Model
 ```
 guardkit/                    # Git repository
-├── installer/global/
+├── installer/core/
 │   ├── commands/lib/
 │   └── lib/
 │       ├── codebase_analyzer/
@@ -223,13 +223,13 @@ guardkit/                    # Git repository
 # Orchestrator uses absolute imports referencing repo structure
 import importlib
 _template_qa_module = importlib.import_module(
-    'installer.global.commands.lib.template_qa_session'
+    'installer.core.commands.lib.template_qa_session'
     #^^^^^^^^^^^^^^^^ Needs PYTHONPATH to resolve this
 )
 ```
 
 ### Why This Pattern?
-Orchestrator imports from multiple `installer/global/lib/` subdirectories:
+Orchestrator imports from multiple `installer/core/lib/` subdirectories:
 - `codebase_analyzer/ai_analyzer.py`
 - `template_generator/template_generator.py`
 - `agent_generator/agent_generator.py`
@@ -299,7 +299,7 @@ mv guardkit{.bak,}
 
 ### For Future Orchestrators
 
-**When creating Python orchestrators that import from `installer.global.*`:**
+**When creating Python orchestrators that import from `installer.core.*`:**
 
 1. **Add PYTHONPATH setup at top**:
    ```python
@@ -325,7 +325,7 @@ mv guardkit{.bak,}
    ```
 
 ### Code Review Checklist
-- [ ] Does orchestrator import `installer.global.*`?
+- [ ] Does orchestrator import `installer.core.*`?
 - [ ] Includes PYTHONPATH setup before imports?
 - [ ] Clear error messages if not found?
 - [ ] Tested from multiple directories?
@@ -339,7 +339,7 @@ mv guardkit{.bak,}
 Check other orchestrators for same issue:
 ```bash
 find ~/.agentecflow/commands/lib -name "*_orchestrator.py" \
-  -exec grep -l "installer.global" {} \;
+  -exec grep -l "installer.core" {} \;
 ```
 
 Result: Only `template_create_orchestrator.py` affected
@@ -361,7 +361,7 @@ A: Manual PYTHONPATH allowed Python to find `installer` package in guardkit repo
 A: Claude Code directly executes orchestrator script without processing markdown setup code.
 
 **Q: Will this affect other commands?**
-A: No, only `/template-create` uses `installer.global.*` imports.
+A: No, only `/template-create` uses `installer.core.*` imports.
 
 **Q: Is this a Claude Code bug?**
 A: More of a feature gap - command processing doesn't handle Python environment setup from markdown.

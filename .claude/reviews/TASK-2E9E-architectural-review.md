@@ -779,7 +779,7 @@ else:
 ### A1: Current Feature Detection Code
 
 ```python
-# installer/global/lib/feature_detection.py (lines 106-113)
+# installer/core/lib/feature_detection.py (lines 106-113)
 def supports_bdd(self) -> bool:
     """
     Check if BDD/Gherkin generation is available.
@@ -801,7 +801,7 @@ def supports_bdd(self) -> bool:
 
 **Key Deletions**:
 - `.claude/agents/bdd-generator.md`
-- `installer/global/instructions/core/bdd-gherkin.md`
+- `installer/core/instructions/core/bdd-gherkin.md`
 - Template-specific BDD agents
 
 **Restoration Effort** (from docs/research/restoring-bdd-feature.md):
@@ -836,7 +836,7 @@ def supports_bdd(self) -> bool:
 - docs/research/bdd-mode-removal-decision.md
 - tasks/completed/TASK-037/TASK-037-remove-bdd-mode.md
 - docs/research/restoring-bdd-feature.md
-- installer/global/lib/feature_detection.py
+- installer/core/lib/feature_detection.py
 
 **Agents Used**:
 - architectural-reviewer (primary)

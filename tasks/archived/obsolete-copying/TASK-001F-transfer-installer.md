@@ -112,7 +112,7 @@ cp install.sh install-global.sh init-project.sh \
    ../../agentecflow/installer/scripts/
 
 # Copy manifest
-cp ../global/manifest.json ../../agentecflow/installer/global/
+cp ../global/manifest.json ../../agentecflow/installer/core/
 ```
 
 ## Testing

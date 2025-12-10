@@ -650,7 +650,7 @@ def qa_mode(plan: dict, task: dict) -> list:
 ## File Structure
 
 ```
-installer/global/
+installer/core/
 ├── agents/
 │   ├── task-manager.md                      [UPDATE - Add Phase 2.8]
 │   └── implementation-planner.md            [NEW - Q&A responses]

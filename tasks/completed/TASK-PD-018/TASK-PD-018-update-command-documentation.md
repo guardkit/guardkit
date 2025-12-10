@@ -132,14 +132,14 @@ cat agents/my-agent-ext.md
 
 ## Files Modified
 
-1. **installer/global/commands/template-create.md**
+1. **installer/core/commands/template-create.md**
    - Updated Output Structure section with Progressive Disclosure subsection
    - Documented split file structure (CLAUDE.md + docs/, agents + -ext.md)
    - Added Single-File Mode section with --no-split flag
    - Documented Size Targets table
    - Added Benefits list
 
-2. **installer/global/commands/agent-enhance.md**
+2. **installer/core/commands/agent-enhance.md**
    - Added new Output Structure section before Output Format
    - Documented Default (Progressive Disclosure) structure
    - Documented core vs extended file contents

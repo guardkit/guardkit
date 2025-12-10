@@ -70,7 +70,7 @@ Implement `--validate` flag that runs extended validation and generates detailed
 ### Files to Modify
 
 #### 1. Command Specification
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Changes**:
 Add `--validate` flag documentation:
@@ -86,7 +86,7 @@ Add `--validate` flag documentation:
 ```
 
 #### 2. Orchestrator Configuration
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes**:
 ```python
@@ -117,7 +117,7 @@ def _phase5_7_extended_validation(
 ### Files to Create
 
 #### 1. Extended Validator
-**File**: `installer/global/lib/template_validation/extended_validator.py`
+**File**: `installer/core/lib/template_validation/extended_validator.py`
 
 **Purpose**: Perform extended validation checks
 
@@ -301,7 +301,7 @@ class ExtendedValidator:
 ```
 
 #### 2. Report Generator
-**File**: `installer/global/lib/template_validation/report_generator.py`
+**File**: `installer/core/lib/template_validation/report_generator.py`
 
 **Purpose**: Generate markdown validation reports
 
@@ -321,7 +321,7 @@ class ValidationReportGenerator:
 
         The report is generated in the template directory, regardless of
         whether the template was created in ~/.agentecflow/templates/
-        (personal use) or installer/global/templates/ (repo distribution).
+        (personal use) or installer/core/templates/ (repo distribution).
 
         Returns: Path to generated report
         """
@@ -534,7 +534,7 @@ echo $?  # 2
 
 # For repository templates (team/public distribution)
 /template-create --validate --output-location=repo
-# → Creates template in installer/global/templates/
+# → Creates template in installer/core/templates/
 # → Generates validation-report.md in template directory
 # → Exit code 0 if ≥8/10
 
@@ -563,7 +563,7 @@ echo $?  # 2
 **Optional**:
 - None
 
-**Note**: TASK-068 will be implemented BEFORE TASK-043, introducing the `--output-location` flag that allows templates to be created in either `~/.agentecflow/templates/` (default, personal use) or `installer/global/templates/` (repository distribution).
+**Note**: TASK-068 will be implemented BEFORE TASK-043, introducing the `--output-location` flag that allows templates to be created in either `~/.agentecflow/templates/` (default, personal use) or `installer/core/templates/` (repository distribution).
 
 ---
 
@@ -628,12 +628,12 @@ After TASK-043:
 ### Deliverables
 
 #### Files Created
-1. `installer/global/lib/template_generator/extended_validator.py` (226 lines)
+1. `installer/core/lib/template_generator/extended_validator.py` (226 lines)
    - ExtendedValidator class with 6 validation methods
    - ExtendedValidationReport dataclass with scoring logic
    - SpotCheckResult dataclass for pattern fidelity checks
 
-2. `installer/global/lib/template_generator/report_generator.py` (82 lines)
+2. `installer/core/lib/template_generator/report_generator.py` (82 lines)
    - ValidationReportGenerator class
    - Markdown report generation with all required sections
 
@@ -646,13 +646,13 @@ After TASK-043:
    - 92% code coverage
 
 #### Files Modified
-1. `installer/global/commands/lib/template_create_orchestrator.py`
+1. `installer/core/commands/lib/template_create_orchestrator.py`
    - Added validate flag to OrchestrationConfig
    - Implemented Phase 5.7 extended validation
    - Extended OrchestrationResult with validation data
    - Updated success messages
 
-2. `installer/global/commands/template-create.md`
+2. `installer/core/commands/template-create.md`
    - Added --validate flag documentation
    - Added Phase 5.7 to workflow
    - Added usage examples

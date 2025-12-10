@@ -48,7 +48,7 @@ Already integrated into `/template-create` orchestrator:
 - Auto-fix capabilities
 - Duration: ~30 seconds
 
-**Location**: [template_create_orchestrator.py:153-157](../../installer/global/commands/lib/template_create_orchestrator.py)
+**Location**: [template_create_orchestrator.py:153-157](../../installer/core/commands/lib/template_create_orchestrator.py)
 
 #### 2. Quality Validation Infrastructure
 
@@ -224,7 +224,7 @@ Quality Score: 9.2/10
 **Command**:
 ```bash
 # Full audit
-/template-validate ./installer/global/templates/ardalis-clean-architecture
+/template-validate ./installer/core/templates/ardalis-clean-architecture
 
 # Specific sections only
 /template-validate ./templates/my-template --sections 1,4,7,12
@@ -346,12 +346,12 @@ Full report saved to: ./templates/ardalis-clean-architecture/audit-report.md
 5. Update command documentation
 
 **Files to Modify**:
-- [template-create.md](../../installer/global/commands/template-create.md) - Add `--validate` flag documentation
-- [template_create_orchestrator.py](../../installer/global/commands/lib/template_create_orchestrator.py) - Add validation phase
+- [template-create.md](../../installer/core/commands/template-create.md) - Add `--validate` flag documentation
+- [template_create_orchestrator.py](../../installer/core/commands/lib/template_create_orchestrator.py) - Add validation phase
 
 **New Files**:
-- `installer/global/lib/template_validation/extended_validator.py`
-- `installer/global/lib/template_validation/report_generator.py`
+- `installer/core/lib/template_validation/extended_validator.py`
+- `installer/core/lib/template_validation/report_generator.py`
 
 **Testing**:
 - Run against existing templates (maui-appshell, ardalis-clean-architecture)
@@ -380,10 +380,10 @@ Full report saved to: ./templates/ardalis-clean-architecture/audit-report.md
 7. Add AI-assisted analysis for applicable sections
 
 **Files to Create**:
-- `installer/global/commands/template-validate.md` - Command specification
-- `installer/global/commands/lib/template_validate_interactive.py` - Interactive orchestrator
-- `installer/global/lib/template_validation/comprehensive_auditor.py` - 16-section implementation
-- `installer/global/lib/template_validation/audit_session.py` - Session management
+- `installer/core/commands/template-validate.md` - Command specification
+- `installer/core/commands/lib/template_validate_interactive.py` - Interactive orchestrator
+- `installer/core/lib/template_validation/comprehensive_auditor.py` - 16-section implementation
+- `installer/core/lib/template_validation/audit_session.py` - Session management
 
 **Testing**:
 - Test all 16 sections independently
@@ -534,7 +534,7 @@ Full report saved to: ./templates/ardalis-clean-architecture/audit-report.md
 ### Production - Global Template Deployment
 ```bash
 # Deep audit before adding to global library
-/template-validate ./installer/global/templates/new-template
+/template-validate ./installer/core/templates/new-template
 
 # Interactive walkthrough of 16 sections
 # Fix issues inline as discovered
@@ -545,7 +545,7 @@ Full report saved to: ./templates/ardalis-clean-architecture/audit-report.md
 # Overall Score: 9.2/10 (Excellent)
 # Recommendation: APPROVE for production
 #
-# Full report: ./installer/global/templates/new-template/audit-report.md
+# Full report: ./installer/core/templates/new-template/audit-report.md
 ```
 
 **User experience**: Systematic validation with decision framework
@@ -935,7 +935,7 @@ Full report saved to: ./templates/ardalis-clean-architecture/audit-report.md
 - [Template Quality Validation Guide](../guides/template-quality-validation.md)
 - [Template Completeness Validation Checklist](../checklists/template-completeness-validation.md)
 - [Template Analysis Task (16 Sections)](../testing/template-analysis-task.md)
-- [Template Create Command](../../installer/global/commands/template-create.md)
+- [Template Create Command](../../installer/core/commands/template-create.md)
 - [TASK-040 Completeness Validation](../../tasks/completed/2025-11/TASK-040-implement-completeness-validation-layer.md)
 
 ---

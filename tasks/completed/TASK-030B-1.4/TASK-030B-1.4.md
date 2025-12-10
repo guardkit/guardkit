@@ -98,8 +98,8 @@ Document the **Architectural Review** feature (Phase 2.5B of task-work command) 
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 2.5B)
-- Architectural reviewer: `installer/global/agents/architectural-reviewer.md`
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 2.5B)
+- Architectural reviewer: `installer/core/agents/architectural-reviewer.md`
 - CLAUDE.md (architectural review section)
 
 ### Scoring Breakdown Example

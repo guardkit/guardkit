@@ -845,11 +845,11 @@ Overall                        85.0%
 ```
 
 ## Files Modified/Created
-- ✨ `installer/global/lib/template_generator/__init__.py` (new)
-- ✨ `installer/global/lib/template_generator/models.py` (new)
-- ✨ `installer/global/lib/template_generator/claude_md_generator.py` (new)
+- ✨ `installer/core/lib/template_generator/__init__.py` (new)
+- ✨ `installer/core/lib/template_generator/models.py` (new)
+- ✨ `installer/core/lib/template_generator/claude_md_generator.py` (new)
 - ✨ `tests/lib/test_claude_md_generator.py` (new)
-- 🔗 `lib` → `installer/global/lib` (symlink for tests)
+- 🔗 `lib` → `installer/core/lib` (symlink for tests)
 
 ## Lessons Learned
 

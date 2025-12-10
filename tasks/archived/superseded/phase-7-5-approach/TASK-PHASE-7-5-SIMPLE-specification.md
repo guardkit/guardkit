@@ -78,11 +78,11 @@ Replace the failed Phase 7.5 agent enhancement system (1,468 lines, 0% success r
 ### File Changes
 
 **Delete**:
-- `installer/global/lib/template_creation/agent_enhancer.py` (1,468 lines)
+- `installer/core/lib/template_creation/agent_enhancer.py` (1,468 lines)
 - `tests/unit/lib/template_creation/test_agent_enhancer.py` (22 tests, all mocking)
 
 **Modify**:
-- `installer/global/commands/lib/template_create_orchestrator.py`:
+- `installer/core/commands/lib/template_create_orchestrator.py`:
   - Remove imports (lines ~36-40, 61-63): `AgentBridgeInvoker`, `StateManager`, `AgentEnhancer`
   - Remove checkpoint logic (lines ~879-943): `_run_from_phase_7`
   - Add new method: `_run_phase_7_5_agent_enhancement_simple` (~50 lines)
@@ -106,7 +106,7 @@ Replace the failed Phase 7.5 agent enhancement system (1,468 lines, 0% success r
 ### Main Method
 
 ```python
-# File: installer/global/commands/lib/template_create_orchestrator.py
+# File: installer/core/commands/lib/template_create_orchestrator.py
 
 async def _run_phase_7_5_agent_enhancement_simple(
     self,
@@ -737,7 +737,7 @@ class TestTemplateCreateSimpleEnhancement:
     async def test_enhance_regenerates_existing_template(self):
         """Test that enhancement works on real reference template."""
         # Arrange
-        template_path = Path("installer/global/templates/react-typescript")
+        template_path = Path("installer/core/templates/react-typescript")
         if not template_path.exists():
             pytest.skip("Reference template not available")
 

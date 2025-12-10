@@ -97,7 +97,7 @@ def assign_implementation_mode(subtask: dict) -> str:
 
 ## Files to Create/Modify
 
-- `installer/global/lib/complexity_analyzer.py` (NEW or extend existing)
+- `installer/core/lib/complexity_analyzer.py` (NEW or extend existing)
 
 ## Test Cases
 

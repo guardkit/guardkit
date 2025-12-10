@@ -131,7 +131,7 @@ class StratifiedSampler:
 
 **New Files**:
 ```
-installer/global/lib/codebase_analyzer/
+installer/core/lib/codebase_analyzer/
 ├── stratified_sampler.py       # NEW
 │   ├── StratifiedSampler
 │   ├── PatternCategoryDetector
@@ -452,7 +452,7 @@ def run(self) -> OrchestrationResult:
 
 **New Files**:
 ```
-installer/global/lib/template_generator/
+installer/core/lib/template_generator/
 ├── completeness_validator.py    # NEW
 │   ├── CompletenessValidator
 │   ├── ValidationReport
@@ -466,7 +466,7 @@ installer/global/lib/template_generator/
 
 **Modified Files**:
 ```
-installer/global/commands/lib/template_create_orchestrator.py
+installer/core/commands/lib/template_create_orchestrator.py
 ├── Add _phase6_5_completeness_validation()
 └── Update run() to call Phase 6.5
 ```

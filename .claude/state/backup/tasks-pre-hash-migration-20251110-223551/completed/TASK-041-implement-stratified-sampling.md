@@ -52,7 +52,7 @@ Replace random/limited sampling (10 files) with pattern-aware stratified samplin
 ### Components to Create
 
 #### 1. StratifiedSampler
-**File**: `installer/global/lib/codebase_analyzer/stratified_sampler.py` (400-500 lines)
+**File**: `installer/core/lib/codebase_analyzer/stratified_sampler.py` (400-500 lines)
 
 **Purpose**: Replace random sampling with pattern-aware stratified sampling
 
@@ -134,7 +134,7 @@ elif 'Spec.cs' in path.name:
 ### Files to Modify
 
 #### 3. AI Analyzer Integration
-**File**: `installer/global/lib/codebase_analyzer/ai_analyzer.py` (+100 lines)
+**File**: `installer/core/lib/codebase_analyzer/ai_analyzer.py` (+100 lines)
 
 **Changes**:
 - Add `use_stratified_sampling: bool = True` parameter to `__init__`
@@ -169,7 +169,7 @@ class CodebaseAnalyzer:
 
         # Step 1: Collect file samples (NEW: Stratified)
         if self.use_stratified_sampling:
-            from installer.global.lib.codebase_analyzer.stratified_sampler import (
+            from installer.core.lib.codebase_analyzer.stratified_sampler import (
                 StratifiedSampler
             )
             sampler = StratifiedSampler(codebase_path, max_files=self.max_files)
@@ -291,8 +291,8 @@ class CodebaseAnalyzer:
 ## Deliverables
 
 ### Code Files
-- [ ] `installer/global/lib/codebase_analyzer/stratified_sampler.py` (400-500 lines)
-- [ ] `installer/global/lib/codebase_analyzer/ai_analyzer.py` (modified, +100 lines)
+- [ ] `installer/core/lib/codebase_analyzer/stratified_sampler.py` (400-500 lines)
+- [ ] `installer/core/lib/codebase_analyzer/ai_analyzer.py` (modified, +100 lines)
 - [ ] `tests/unit/test_stratified_sampler.py` (600+ lines)
 - [ ] `tests/integration/test_stratified_sampling_integration.py` (400+ lines)
 

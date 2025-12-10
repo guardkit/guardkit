@@ -25,25 +25,25 @@ Batch format agent documentation files to meet GitHub best practices for documen
 
 ```bash
 # Format single agent
-/agent-format installer/global/agents/architectural-reviewer.md
+/agent-format installer/core/agents/architectural-reviewer.md
 
 # Format agent with quality report
-/agent-format installer/global/agents/test-verifier.md --report
+/agent-format installer/core/agents/test-verifier.md --report
 
 # Preview changes without applying
-/agent-format installer/global/agents/task-manager.md --dry-run
+/agent-format installer/core/agents/task-manager.md --dry-run
 
 # Batch format all global agents
-/agent-format installer/global/agents/*.md
+/agent-format installer/core/agents/*.md
 
 # Batch format template agents
 /agent-format ~/.agentecflow/templates/react-typescript/agents/*.md
 
 # Format with verbose progress tracking
-/agent-format installer/global/agents/*.md --verbose
+/agent-format installer/core/agents/*.md --verbose
 
 # Validation only (no changes)
-/agent-format installer/global/agents/code-reviewer.md --validate-only
+/agent-format installer/core/agents/code-reviewer.md --validate-only
 ```
 
 ## Command Options
@@ -561,7 +561,7 @@ Summary:
 ### Validation-Only Mode (--validate-only)
 
 ```bash
-$ /agent-format installer/global/agents/task-manager.md --validate-only
+$ /agent-format installer/core/agents/task-manager.md --validate-only
 
 Validation Report: task-manager.md
 
@@ -749,7 +749,7 @@ def format_with_backup(agent_path: Path) -> None:
    - [ ] Dry-run preview support
 
 3. **Compatibility**
-   - [ ] Works with global agents (installer/global/agents/)
+   - [ ] Works with global agents (installer/core/agents/)
    - [ ] Works with template agents (~/.agentecflow/templates/*/agents/)
    - [ ] Works with user agents (any location)
    - [ ] Preserves all markdown flavors
@@ -825,7 +825,7 @@ class TestSelfValidation:
 
 class TestSingleAgentFormatting:
     def test_format_global_agent(self):
-        """Format agent in installer/global/agents/."""
+        """Format agent in installer/core/agents/."""
 
     def test_format_template_agent(self):
         """Format agent in template agents directory."""
@@ -876,7 +876,7 @@ class TestQualityMetrics:
 
     def test_architectural_reviewer_before(self):
         """Baseline metrics for architectural-reviewer.md."""
-        agent = load_agent("installer/global/agents/architectural-reviewer.md")
+        agent = load_agent("installer/core/agents/architectural-reviewer.md")
         metrics = calculate_metrics(agent)
 
         # Before formatting
@@ -885,7 +885,7 @@ class TestQualityMetrics:
 
     def test_architectural_reviewer_after(self):
         """Metrics after formatting."""
-        agent = load_agent("installer/global/agents/architectural-reviewer.md")
+        agent = load_agent("installer/core/agents/architectural-reviewer.md")
         result = format_agent(agent)
 
         # After formatting
@@ -971,7 +971,7 @@ class TestQualityMetrics:
 ### Example 1: Format Single Global Agent
 
 ```bash
-$ /agent-format installer/global/agents/architectural-reviewer.md
+$ /agent-format installer/core/agents/architectural-reviewer.md
 
 ✅ Formatted architectural-reviewer.md
 
@@ -986,13 +986,13 @@ Before → After:
 Overall: PASSED (6/6 checks)
 Iterations: 2
 Changes: 12 sections reordered, 3 sections added
-Backup: installer/global/agents/architectural-reviewer.md.bak
+Backup: installer/core/agents/architectural-reviewer.md.bak
 ```
 
 ### Example 2: Batch Format with Report
 
 ```bash
-$ /agent-format installer/global/agents/*.md --report --verbose
+$ /agent-format installer/core/agents/*.md --report --verbose
 
 Formatting 15 agents...
 
@@ -1008,13 +1008,13 @@ Summary:
   Warnings: 3 (20%)
   Failed: 0 (0%)
   Duration: 7.2 seconds
-  Reports: installer/global/agents/*-format-report.md
+  Reports: installer/core/agents/*-format-report.md
 ```
 
 ### Example 3: Dry-Run Preview
 
 ```bash
-$ /agent-format installer/global/agents/task-manager.md --dry-run
+$ /agent-format installer/core/agents/task-manager.md --dry-run
 
 [DRY RUN] Previewing changes for task-manager.md
 
@@ -1065,18 +1065,18 @@ No formatting needed - agent already meets all quality thresholds!
 ### Python Modules
 
 **Command Entry Point**:
-- `installer/global/commands/agent-format.py` - CLI entry point
+- `installer/core/commands/agent-format.py` - CLI entry point
 
 **Core Modules**:
-- `installer/global/lib/agent_formatting/parser.py` - Markdown parsing
-- `installer/global/lib/agent_formatting/metrics.py` - Quality metrics calculation
-- `installer/global/lib/agent_formatting/transformer.py` - Pattern-based transformations
-- `installer/global/lib/agent_formatting/validator.py` - Self-validation logic
-- `installer/global/lib/agent_formatting/reporter.py` - Report generation
+- `installer/core/lib/agent_formatting/parser.py` - Markdown parsing
+- `installer/core/lib/agent_formatting/metrics.py` - Quality metrics calculation
+- `installer/core/lib/agent_formatting/transformer.py` - Pattern-based transformations
+- `installer/core/lib/agent_formatting/validator.py` - Self-validation logic
+- `installer/core/lib/agent_formatting/reporter.py` - Report generation
 
 **Shared Utilities**:
-- `installer/global/lib/utils/markdown.py` - Markdown utilities
-- `installer/global/lib/utils/file_ops.py` - File operations (backup, restore)
+- `installer/core/lib/utils/markdown.py` - Markdown utilities
+- `installer/core/lib/utils/file_ops.py` - File operations (backup, restore)
 
 ### Dependencies
 
@@ -1092,7 +1092,7 @@ No formatting needed - agent already meets all quality thresholds!
 
 **Default Thresholds** (can be overridden):
 ```python
-# installer/global/lib/agent_formatting/config.py
+# installer/core/lib/agent_formatting/config.py
 
 DEFAULT_THRESHOLDS = {
     "time_to_first_example": {"fail": 50, "warn": 40},
@@ -1111,7 +1111,7 @@ REPORT_FILENAME_PATTERN = "{agent_name}-format-report.md"
 ## See Also
 
 - [GitHub Agent Best Practices Analysis](docs/analysis/github-agent-best-practices-analysis.md) - Research findings
-- [Agent Content Enhancer](installer/global/agents/agent-content-enhancer.md) - Template-specific enhancement
+- [Agent Content Enhancer](installer/core/agents/agent-content-enhancer.md) - Template-specific enhancement
 - [Template Validation Guide](docs/guides/template-validation-guide.md) - 3-level validation system
 
 ---

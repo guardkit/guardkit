@@ -16,14 +16,14 @@ Successfully created a production-ready Next.js 15 full-stack template that **ex
 ## Deliverables
 
 ### Template Location
-**Primary**: `installer/global/templates/nextjs-fullstack/`
+**Primary**: `installer/core/templates/nextjs-fullstack/`
 
 ### Core Files Created
-1. ✅ [manifest.json](../../../installer/global/templates/nextjs-fullstack/manifest.json) - Template metadata
-2. ✅ [settings.json](../../../installer/global/templates/nextjs-fullstack/settings.json) - Naming conventions & configuration
-3. ✅ [CLAUDE.md](../../../installer/global/templates/nextjs-fullstack/CLAUDE.md) - AI documentation (611+ lines, 10 code examples)
-4. ✅ [README.md](../../../installer/global/templates/nextjs-fullstack/README.md) - Human documentation
-5. ✅ [validation-report.md](../../../installer/global/templates/nextjs-fullstack/validation-report.md) - Quality report (9.2/10)
+1. ✅ [manifest.json](../../../installer/core/templates/nextjs-fullstack/manifest.json) - Template metadata
+2. ✅ [settings.json](../../../installer/core/templates/nextjs-fullstack/settings.json) - Naming conventions & configuration
+3. ✅ [CLAUDE.md](../../../installer/core/templates/nextjs-fullstack/CLAUDE.md) - AI documentation (611+ lines, 10 code examples)
+4. ✅ [README.md](../../../installer/core/templates/nextjs-fullstack/README.md) - Human documentation
+5. ✅ [validation-report.md](../../../installer/core/templates/nextjs-fullstack/validation-report.md) - Quality report (9.2/10)
 
 ### Template Files (10 total)
 1. app/page-server-component.tsx.template - Server Component with data fetching
@@ -256,8 +256,8 @@ All task-related files have been organized into `tasks/completed/TASK-059/`:
 1. TASK-059-create-nextjs-reference-template.md (main task file)
 2. completion-report.md (this file)
 
-**Template Location**: `installer/global/templates/nextjs-fullstack/`
-**Validation Report**: `installer/global/templates/nextjs-fullstack/validation-report.md`
+**Template Location**: `installer/core/templates/nextjs-fullstack/`
+**Validation Report**: `installer/core/templates/nextjs-fullstack/validation-report.md`
 
 ---
 

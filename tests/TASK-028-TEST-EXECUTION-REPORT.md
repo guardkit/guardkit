@@ -20,13 +20,13 @@
 
 ### Build Verification
 ```bash
-python3 -m py_compile installer/global/commands/lib/checkpoint_display.py
-python3 -m py_compile installer/global/commands/lib/plan_persistence.py
+python3 -m py_compile installer/core/commands/lib/checkpoint_display.py
+python3 -m py_compile installer/core/commands/lib/plan_persistence.py
 ```
 
 **Result**: ✅ SUCCESS - Both files compile with ZERO errors
 
-**Cross-reference**: installer/global/agents/test-orchestrator.md (MANDATORY RULE #1)
+**Cross-reference**: installer/core/agents/test-orchestrator.md (MANDATORY RULE #1)
 
 ---
 
@@ -119,12 +119,12 @@ Failed workflows:
 
 ```
 /opt/homebrew/lib/python3.11/site-packages/coverage/inorout.py:521: CoverageWarning:
-Module installer/global/commands/lib/checkpoint_display.py was never imported.
+Module installer/core/commands/lib/checkpoint_display.py was never imported.
 ```
 
 **Reason**: Tests import from modified sys.path, coverage runs from project root
 
-**Solution**: Run coverage from installer/global/commands/lib directory OR adjust .coveragerc
+**Solution**: Run coverage from installer/core/commands/lib directory OR adjust .coveragerc
 
 ### Estimated Coverage (Manual Analysis)
 

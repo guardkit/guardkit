@@ -72,8 +72,8 @@
 6. Phase 6: Documentation & Polish (15 minutes)
 
 ### Files to Create/Modify
-- ✅ Create: `installer/global/commands/lib/qa_manager.py` (~400 lines)
-- ✅ Modify: `installer/global/commands/lib/review_modes.py` (~50 lines)
+- ✅ Create: `installer/core/commands/lib/qa_manager.py` (~400 lines)
+- ✅ Modify: `installer/core/commands/lib/review_modes.py` (~50 lines)
 
 ---
 

@@ -25,7 +25,7 @@ This document defines the comprehensive Python implementation approach for enhan
 
 ### 1.1 Existing Modules (REUSE)
 
-#### `/installer/global/commands/lib/complexity_calculator.py`
+#### `/installer/core/commands/lib/complexity_calculator.py`
 **Purpose:** Core complexity calculation engine
 **Reuse Strategy:** Import and use `ComplexityCalculator` class directly
 **Key Classes:**
@@ -35,12 +35,12 @@ This document defines the comprehensive Python implementation approach for enhan
 
 **Integration Point:**
 ```python
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.complexity_models import EvaluationContext, ImplementationPlan
-from installer.global.commands.lib.complexity_factors import DEFAULT_FACTORS
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.complexity_models import EvaluationContext, ImplementationPlan
+from installer.core.commands.lib.complexity_factors import DEFAULT_FACTORS
 ```
 
-#### `/installer/global/commands/lib/complexity_factors.py`
+#### `/installer/core/commands/lib/complexity_factors.py`
 **Purpose:** Individual complexity scoring factors
 **Reuse Strategy:** Use DEFAULT_FACTORS (3 core factors)
 **Key Factors:**
@@ -48,7 +48,7 @@ from installer.global.commands.lib.complexity_factors import DEFAULT_FACTORS
 - `PatternFamiliarityFactor`: 0-2 points based on design patterns
 - `RiskLevelFactor`: 0-3 points based on risk indicators
 
-#### `/installer/global/commands/lib/complexity_models.py`
+#### `/installer/core/commands/lib/complexity_models.py`
 **Purpose:** Type-safe data models
 **Reuse Strategy:** Extend with new models for task breakdown
 **Key Models:**
@@ -59,7 +59,7 @@ from installer.global.commands.lib.complexity_factors import DEFAULT_FACTORS
 
 ### 1.2 New Modules (CREATE)
 
-#### `/installer/global/commands/lib/task_breakdown.py`
+#### `/installer/core/commands/lib/task_breakdown.py`
 **Purpose:** Core task breakdown logic with 4 strategies
 **Estimated LOC:** 400-500 lines
 **Key Classes:**
@@ -125,7 +125,7 @@ class TaskBreakdownEngine:
         pass
 ```
 
-#### `/installer/global/commands/lib/breakdown_strategies.py`
+#### `/installer/core/commands/lib/breakdown_strategies.py`
 **Purpose:** Implementation of 4 breakdown strategies
 **Estimated LOC:** 500-600 lines
 **Key Classes:**
@@ -228,7 +228,7 @@ class BreakdownStrategySelector:
         raise ValueError(f"No strategy for complexity score: {complexity_score}")
 ```
 
-#### `/installer/global/commands/lib/duplicate_detector.py`
+#### `/installer/core/commands/lib/duplicate_detector.py`
 **Purpose:** Detect duplicate tasks before creation
 **Estimated LOC:** 150-200 lines
 **Key Classes:**
@@ -288,7 +288,7 @@ class DuplicateDetector:
         return intersection / union if union > 0 else 0.0
 ```
 
-#### `/installer/global/commands/lib/visualization.py`
+#### `/installer/core/commands/lib/visualization.py`
 **Purpose:** Terminal output formatting and visualization
 **Estimated LOC:** 200-250 lines
 **Key Classes:**
@@ -347,7 +347,7 @@ class TaskVisualization:
         pass
 ```
 
-#### `/installer/global/commands/lib/feature_generator.py`
+#### `/installer/core/commands/lib/feature_generator.py`
 **Purpose:** Main feature-generate-tasks command implementation
 **Estimated LOC:** 300-400 lines
 **Key Classes:**
@@ -1070,7 +1070,7 @@ def colorize_complexity(score: int) -> str:
 ### 5.1 New Files to Create
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── task_breakdown.py                    (400-500 LOC) ⭐ NEW
 ├── breakdown_strategies.py              (500-600 LOC) ⭐ NEW
 ├── duplicate_detector.py                (150-200 LOC) ⭐ NEW
@@ -1083,7 +1083,7 @@ Total New LOC: ~1,800-2,200 lines
 ### 5.2 Existing Files to Reuse (NO MODIFICATION)
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── complexity_calculator.py             (349 LOC) ✅ REUSE AS-IS
 ├── complexity_factors.py                (266 LOC) ✅ REUSE AS-IS
 └── complexity_models.py                 (224 LOC) ✅ REUSE AS-IS
@@ -1092,13 +1092,13 @@ installer/global/commands/lib/
 ### 5.3 Integration Point (Shell Script - MINIMAL MODIFICATION)
 
 ```bash
-# installer/global/commands/feature-generate-tasks.sh
+# installer/core/commands/feature-generate-tasks.sh
 #!/bin/bash
 
 # Existing script... (keep as-is)
 
 # ADD: Call Python implementation
-python3 installer/global/commands/lib/feature_generator.py \
+python3 installer/core/commands/lib/feature_generator.py \
     --feature-id "$FEATURE_ID" \
     --interactive "$INTERACTIVE" \
     --types "$TASK_TYPES" \
@@ -1127,14 +1127,14 @@ Total Test LOC: ~1,350-1,750 lines
 #### test_task_breakdown.py
 ```python
 import pytest
-from installer.global.commands.lib.task_breakdown import (
+from installer.core.commands.lib.task_breakdown import (
     TaskBreakdownEngine,
     BreakdownResult,
     SubTask,
     BreakdownStrategy
 )
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.complexity_models import (
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.complexity_models import (
     EvaluationContext,
     ImplementationPlan
 )
@@ -1276,14 +1276,14 @@ class TestTaskBreakdownEngine:
 #### test_breakdown_strategies.py
 ```python
 import pytest
-from installer.global.commands.lib.breakdown_strategies import (
+from installer.core.commands.lib.breakdown_strategies import (
     NoBreakdownStrategy,
     LogicalUnitsStrategy,
     FileBasedStrategy,
     PhaseBasedStrategy,
     BreakdownStrategySelector
 )
-from installer.global.commands.lib.complexity_models import (
+from installer.core.commands.lib.complexity_models import (
     ImplementationPlan,
     EvaluationContext
 )
@@ -1430,11 +1430,11 @@ class TestFileBasedStrategy:
 #### test_duplicate_detector.py
 ```python
 import pytest
-from installer.global.commands.lib.duplicate_detector import (
+from installer.core.commands.lib.duplicate_detector import (
     DuplicateDetector,
     DuplicateMatch
 )
-from installer.global.commands.lib.task_breakdown import SubTask
+from installer.core.commands.lib.task_breakdown import SubTask
 
 class TestDuplicateDetector:
     """Test suite for duplicate detection."""
@@ -1532,7 +1532,7 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-from installer.global.commands.lib.feature_generator import FeatureTaskGenerator
+from installer.core.commands.lib.feature_generator import FeatureTaskGenerator
 
 class TestFeatureTaskGenerator:
     """End-to-end integration tests."""
@@ -1620,8 +1620,8 @@ Implement JWT-based authentication system
 # tests/conftest.py
 import pytest
 from unittest.mock import Mock
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.complexity_models import ComplexityScore, ReviewMode
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.complexity_models import ComplexityScore, ReviewMode
 
 @pytest.fixture
 def mock_complexity_calculator():
@@ -1694,7 +1694,7 @@ def mock_complexity_calculator():
    - Test data validation
 
 **Deliverables:**
-- `/installer/global/commands/lib/task_breakdown.py` (150-200 LOC)
+- `/installer/core/commands/lib/task_breakdown.py` (150-200 LOC)
 - `/tests/test_task_breakdown.py` (100-150 LOC)
 
 **Dependencies:** None (uses existing modules)
@@ -1728,7 +1728,7 @@ def mock_complexity_calculator():
 5. Comprehensive unit tests for each strategy
 
 **Deliverables:**
-- `/installer/global/commands/lib/breakdown_strategies.py` (500-600 LOC)
+- `/installer/core/commands/lib/breakdown_strategies.py` (500-600 LOC)
 - `/tests/test_breakdown_strategies.py` (400-500 LOC)
 
 **Dependencies:** Phase 1 completed
@@ -1756,7 +1756,7 @@ def mock_complexity_calculator():
    - False negatives
 
 **Deliverables:**
-- `/installer/global/commands/lib/duplicate_detector.py` (150-200 LOC)
+- `/installer/core/commands/lib/duplicate_detector.py` (150-200 LOC)
 - `/tests/test_duplicate_detector.py` (200-250 LOC)
 
 **Dependencies:** Phase 1 completed
@@ -1783,7 +1783,7 @@ def mock_complexity_calculator():
    - Edge cases (0 sub-tasks, 20+ sub-tasks)
 
 **Deliverables:**
-- `/installer/global/commands/lib/visualization.py` (200-250 LOC)
+- `/installer/core/commands/lib/visualization.py` (200-250 LOC)
 - `/tests/test_visualization.py` (150-200 LOC)
 
 **Dependencies:** Phase 1 completed
@@ -1811,7 +1811,7 @@ def mock_complexity_calculator():
 5. End-to-end integration tests
 
 **Deliverables:**
-- `/installer/global/commands/lib/feature_generator.py` (300-400 LOC)
+- `/installer/core/commands/lib/feature_generator.py` (300-400 LOC)
 - `/tests/test_feature_generator.py` (300-400 LOC)
 - Shell script integration
 
@@ -1861,9 +1861,9 @@ from abc import ABC, abstractmethod
 
 ```python
 # Existing complexity evaluation modules
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.complexity_factors import DEFAULT_FACTORS
-from installer.global.commands.lib.complexity_models import (
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.complexity_factors import DEFAULT_FACTORS
+from installer.core.commands.lib.complexity_models import (
     ComplexityScore,
     FactorScore,
     ReviewMode,
@@ -2057,8 +2057,8 @@ class BreakdownStrategyNotFoundError(TaskBreakdownError):
 ```python
 # tests/conftest.py
 import pytest
-from installer.global.commands.lib.complexity_calculator import ComplexityCalculator
-from installer.global.commands.lib.task_breakdown import TaskBreakdownEngine
+from installer.core.commands.lib.complexity_calculator import ComplexityCalculator
+from installer.core.commands.lib.task_breakdown import TaskBreakdownEngine
 
 @pytest.fixture(scope="session")
 def complexity_calculator():

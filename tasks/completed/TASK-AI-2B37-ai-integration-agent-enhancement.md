@@ -249,7 +249,7 @@ def _validate_enhancement(self, enhancement: dict) -> None:
 
 ```python
 # DO NOT DO THIS - This causes 100% failure rate
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
 
 def _ai_enhancement(...) -> dict:
     invoker = AgentBridgeInvoker(phase=1, phase_name="agent_enhancement")
@@ -315,7 +315,7 @@ def _ai_enhancement(...) -> dict:
 
 ```bash
 # Check for AgentBridgeInvoker usage
-cd installer/global/lib/agent_enhancement
+cd installer/core/lib/agent_enhancement
 grep -n "AgentBridgeInvoker" enhancer.py
 
 # Check for sys.exit calls
@@ -336,7 +336,7 @@ grep -n "agent-response" enhancer.py
 
 ```python
 # DELETE: AgentBridgeInvoker import (around line 243-246)
-_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+_bridge_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
 self._AgentBridgeInvoker = _bridge_module.AgentBridgeInvoker
 
 # DELETE: AgentBridgeInvoker instantiation (around line 278-287)
@@ -358,7 +358,7 @@ Then proceed to Step 1 below.
 
 ### Step 1: Implement Direct Task API (30 minutes)
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 
 **Find the `_ai_enhancement` method (around line 210-243)**
 
@@ -825,7 +825,7 @@ def test_real_ai_enhancement():
 
 ## Deliverables
 
-1. ✅ Updated `installer/global/lib/agent_enhancement/enhancer.py` with real AI integration
+1. ✅ Updated `installer/core/lib/agent_enhancement/enhancer.py` with real AI integration
 2. ✅ Retry logic with exponential backoff
 3. ✅ Comprehensive error handling
 4. ✅ Updated unit tests with mocking
@@ -861,7 +861,7 @@ Before merging your implementation, verify ALL of the following:
 ### Code Verification
 
 ```bash
-cd installer/global/lib/agent_enhancement
+cd installer/core/lib/agent_enhancement
 
 # 1. Verify NO AgentBridgeInvoker usage
 grep -n "AgentBridgeInvoker" enhancer.py
@@ -968,13 +968,13 @@ git branch -D ai-agent-enhancement  # Delete old failed branch
 
 # 2. Verify clean state
 cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
-grep -n "AgentBridgeInvoker" installer/global/lib/agent_enhancement/enhancer.py
+grep -n "AgentBridgeInvoker" installer/core/lib/agent_enhancement/enhancer.py
 # Expected: No output (clean)
 ```
 
 ### Implementation Steps
 
-**Step 1**: Open `installer/global/lib/agent_enhancement/enhancer.py`
+**Step 1**: Open `installer/core/lib/agent_enhancement/enhancer.py`
 
 **Step 2**: Find line ~210-243 (the `_ai_enhancement` method with TODO comment)
 
@@ -1007,7 +1007,7 @@ import logging
 ```bash
 # Run ALL verification commands
 
-cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/agent_enhancement
+cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/core/lib/agent_enhancement
 
 # 1. NO AgentBridgeInvoker
 grep -n "AgentBridgeInvoker" enhancer.py
@@ -1061,7 +1061,7 @@ All of these MUST be true before committing:
 
 ```bash
 # If ALL checks pass:
-git add installer/global/lib/agent_enhancement/enhancer.py
+git add installer/core/lib/agent_enhancement/enhancer.py
 git commit -m "feat(TASK-AI-2B37): Implement AI integration with direct Task API
 
 - Replace placeholder with anthropic_sdk.task() invocation
@@ -1084,7 +1084,7 @@ git push origin ai-integration-attempt-3
 
 # Run basic test
 python3 -c "
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
 print('✅ Import successful - no syntax errors')
 "
 ```

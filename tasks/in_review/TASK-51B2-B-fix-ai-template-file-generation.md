@@ -131,7 +131,7 @@ From `prompt_builder.py` lines 268-276:
 
 ### Fix 1: Enhance AI Prompt in PromptBuilder
 
-**File**: `installer/global/lib/codebase_analyzer/prompt_builder.py`
+**File**: `installer/core/lib/codebase_analyzer/prompt_builder.py`
 
 **Update around lines 268-276**:
 
@@ -192,7 +192,7 @@ Aim for 10-20 diverse example files covering the full architecture.
 
 ### Fix 2: Increase File Sampling
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Line 364** (in `_phase1_ai_analysis`):
 ```python
@@ -207,7 +207,7 @@ analyzer = CodebaseAnalyzer(max_files=30)  # Increased for better pattern identi
 
 ### Fix 3: Add Template Selection Guidance
 
-**File**: `installer/global/lib/codebase_analyzer/prompt_builder.py`
+**File**: `installer/core/lib/codebase_analyzer/prompt_builder.py`
 
 **Add new section to prompt** (after line 289):
 ```
@@ -241,12 +241,12 @@ Your 'example_files' will be used to generate reusable .template files. Please i
 ## Files to Modify
 
 ### Primary (AI Prompt Enhancement):
-1. `installer/global/lib/codebase_analyzer/prompt_builder.py`
+1. `installer/core/lib/codebase_analyzer/prompt_builder.py`
    - Enhance `example_files` prompt section (lines 268-289)
    - Add template selection guidelines
    - Update example JSON to show 5-10 diverse files
 
-2. `installer/global/commands/lib/template_create_orchestrator.py`
+2. `installer/core/commands/lib/template_create_orchestrator.py`
    - Increase `max_files` from 10 to 30 (line 364)
 
 ### Secondary (Testing):
@@ -331,9 +331,9 @@ Quality Score: 9.8/10 (Grade A+)
 ## References
 
 - [TASK-51B2 Completion](../completed/TASK-51B2/TASK-51B2.md)
-- [AI Analyzer](../../installer/global/lib/codebase_analyzer/ai_analyzer.py)
-- [Prompt Builder](../../installer/global/lib/codebase_analyzer/prompt_builder.py)
-- [Template Generator](../../installer/global/lib/template_generator/template_generator.py)
+- [AI Analyzer](../../installer/core/lib/codebase_analyzer/ai_analyzer.py)
+- [Prompt Builder](../../installer/core/lib/codebase_analyzer/prompt_builder.py)
+- [Template Generator](../../installer/core/lib/template_generator/template_generator.py)
 
 ## Implementation Estimate
 

@@ -54,7 +54,7 @@ CLAUDE.md **DOES mention** the `/agent-enhance` command (line 526+) and agent bo
 
 **Related Missing Documentation**:
 - No `docs/workflows/incremental-enhancement-workflow.md`
-- No `installer/global/commands/agent-enhance.md`
+- No `installer/core/commands/agent-enhance.md`
 
 ## Acceptance Criteria
 
@@ -286,7 +286,7 @@ Phase 8 enables **incremental agent enhancement** - you can improve agent files 
 
 **See Also**:
 - [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
-- [Agent Enhance Command](installer/global/commands/agent-enhance.md)
+- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
 - [Phase 8 Specification](tasks/backlog/TASK-PHASE-8-INCREMENTAL-specification.md)
 ```
 

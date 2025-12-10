@@ -243,12 +243,12 @@ class QuickReferenceTestSuite:
 
         # Valid paths in codebase
         valid_paths = {
-            "installer/global/commands/task-work.md",
-            "installer/global/commands/task-create.md",
-            "installer/global/commands/feature-generate-tasks.md",
-            "installer/global/agents/architectural-reviewer.md",
-            "installer/global/agents/test-orchestrator.md",
-            "installer/global/agents/code-reviewer.md",
+            "installer/core/commands/task-work.md",
+            "installer/core/commands/task-create.md",
+            "installer/core/commands/feature-generate-tasks.md",
+            "installer/core/agents/architectural-reviewer.md",
+            "installer/core/agents/test-orchestrator.md",
+            "installer/core/agents/code-reviewer.md",
             "docs/guides/design-first-workflow.md",
             "docs/guides/complexity-management-workflow.md",
             "docs/guides/iterative-refinement-guide.md",
@@ -482,7 +482,7 @@ class QuickReferenceTestSuite:
             if "See Also" in content or "See also" in content:
                 # Should have references to full documentation
                 has_references = bool(
-                    re.search(r"installer/global/commands|installer/global/agents|docs/guides", content)
+                    re.search(r"installer/core/commands|installer/core/agents|docs/guides", content)
                 )
                 if has_references:
                     self._pass(test_name, f"✓ {card_file}: References full documentation", "quality")
@@ -639,7 +639,7 @@ class QuickReferenceTestSuite:
             # Look for "See Also" section with proper references
             has_see_also = bool(re.search(r"##\s+See Also|##\s+See also", content))
             has_full_doc_references = bool(
-                re.search(r"installer/global/|docs/guides/|docs/patterns/", content)
+                re.search(r"installer/core/|docs/guides/|docs/patterns/", content)
             )
             has_related_cards = bool(re.search(r"\[.*\.md\]\(.*\.md\)", content))
 

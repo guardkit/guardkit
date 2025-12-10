@@ -46,4 +46,4 @@ CLAUDE.md extensively covers agent boundary sections (ALWAYS/NEVER/ASK framework
 
 - CLAUDE.md (Agent Enhancement with Boundary Sections)
 - docs/analysis/github-agent-best-practices-analysis.md
-- installer/global/agents/agent-content-enhancer.md
+- installer/core/agents/agent-content-enhancer.md

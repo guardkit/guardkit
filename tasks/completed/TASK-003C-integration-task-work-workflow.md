@@ -687,7 +687,7 @@ complexity_metadata:
 ## File Structure
 
 ```
-installer/global/
+installer/core/
 ├── commands/
 │   └── task-work.md                         [UPDATE - Add Phase 2.7/2.8]
 │

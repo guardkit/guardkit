@@ -40,7 +40,7 @@ Phase 1: Requirements Analysis
 ```
 
 **Root Cause**:
-1. TASK-4F79 removed `requirements-analyst` from `installer/global/agents/`
+1. TASK-4F79 removed `requirements-analyst` from `installer/core/agents/`
 2. `task-manager.md` (lines 82-95) still tries to invoke requirements-analyst in Phase 1
 3. This creates a broken workflow - EVERY task execution fails immediately
 
@@ -121,7 +121,7 @@ Copy requirements-analyst from require-kit back to taskwright.
 
 #### 1. task-manager.md - Remove Phase 1 Invocation
 
-**Location**: `installer/global/agents/task-manager.md:82-95` and later references
+**Location**: `installer/core/agents/task-manager.md:82-95` and later references
 
 **Current** (lines 82-95):
 ```markdown
@@ -208,7 +208,7 @@ For formal requirements (EARS, BDD), use require-kit.
 
 #### 4. task-work.md Command Documentation
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Update Phase 1 Section**:
 ```markdown
@@ -400,7 +400,7 @@ done
 
 #### 4. File Cleanup
 - ✅ Removed `.claude/agents/requirements-analyst.md`
-- ✅ Removed `installer/global/templates/maui-navigationpage/agents/requirements-analyst.md`
+- ✅ Removed `installer/core/templates/maui-navigationpage/agents/requirements-analyst.md`
 
 ### Verification
 

@@ -86,8 +86,8 @@ Document the **Test Enforcement Loop** feature (Phase 4.5 of task-work command) 
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 4.5)
-- Test orchestrator: `installer/global/agents/test-orchestrator.md`
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 4.5)
+- Test orchestrator: `installer/core/agents/test-orchestrator.md`
 - TASK-007 examples (test enforcement)
 
 ### Example Outputs

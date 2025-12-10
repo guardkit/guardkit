@@ -219,7 +219,7 @@ Beyond the basic `/task-work` command, these specialized workflows handle specif
 ```bash
 /task-work TASK-XXX --micro    # 3-5 min vs 15+ min, skips planning/review
 ```
-Auto-detected for simple tasks. [Details: task-work.md](../../installer/global/commands/task-work.md#flag---micro)
+Auto-detected for simple tasks. [Details: task-work.md](../../installer/core/commands/task-work.md#flag---micro)
 
 **Iterative Refinement (minor tweaks)**:
 ```bash

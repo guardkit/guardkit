@@ -13,7 +13,7 @@
 ## What Was Implemented
 
 ### 1. Core Q&A Manager Module (`qa_manager.py`)
-**File**: `/installer/global/commands/lib/qa_manager.py`
+**File**: `/installer/core/commands/lib/qa_manager.py`
 **Lines of Code**: ~850 lines
 **Status**: ✅ Complete
 
@@ -36,7 +36,7 @@
 - ✅ Keyboard interrupt (Ctrl+C) support
 
 ### 2. Review Modes Integration
-**File**: `/installer/global/commands/lib/review_modes.py`
+**File**: `/installer/core/commands/lib/review_modes.py`
 **Modified Lines**: ~50 lines
 **Status**: ✅ Complete
 
@@ -280,12 +280,12 @@ Q&A sessions are appended to task frontmatter for:
 ## Files Created/Modified
 
 ### New Files (2)
-1. `/installer/global/commands/lib/qa_manager.py` (~850 lines)
+1. `/installer/core/commands/lib/qa_manager.py` (~850 lines)
 2. `/tests/unit/test_qa_manager.py` (~800 lines)  
 3. `/tests/integration/test_qa_workflow.py` (~350 lines)
 
 ### Modified Files (1)
-1. `/installer/global/commands/lib/review_modes.py` (~50 lines added/modified)
+1. `/installer/core/commands/lib/review_modes.py` (~50 lines added/modified)
 
 ### Total Impact
 - **Production Code**: ~900 lines

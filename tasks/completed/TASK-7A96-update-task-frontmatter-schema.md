@@ -77,7 +77,7 @@ Update the task markdown frontmatter schema to include the new `external_ids` fi
 
 ### Files Created
 
-1. **installer/global/commands/lib/task_utils.py** (276 lines)
+1. **installer/core/commands/lib/task_utils.py** (276 lines)
    - `parse_task_frontmatter()` - Parses with automatic external_ids initialization
    - `write_task_frontmatter()` - Writes with automatic cleanup
    - `update_task_frontmatter()` - Updates with smart merging
@@ -98,15 +98,15 @@ Update the task markdown frontmatter schema to include the new `external_ids` fi
 
 ### Files Modified
 
-1. **installer/global/commands/lib/phase_execution.py**
+1. **installer/core/commands/lib/phase_execution.py**
    - Updated `_update_task_metadata()` to use centralized task_utils
    - Simplified metadata update logic
 
-2. **installer/global/commands/lib/spec_drift_detector.py**
+2. **installer/core/commands/lib/spec_drift_detector.py**
    - Updated `_parse_task_file()` to use centralized task_utils
    - Consistent parsing across codebase
 
-3. **installer/global/commands/lib/qa_manager.py**
+3. **installer/core/commands/lib/qa_manager.py**
    - Updated `save_to_metadata()` to use centralized task_utils
    - Simplified Q&A session storage
 
@@ -308,7 +308,7 @@ tests/unit/test_task_utils.py::TestValidateExternalIds::test_validate_filters_no
 Coverage Report:
 Name                                                 Stmts   Miss Branch BrPart  Cover
 ---------------------------------------------------------------------------------------
-installer/global/commands/lib/task_utils.py            77      3     42      4    92%
+installer/core/commands/lib/task_utils.py            77      3     42      4    92%
 ---------------------------------------------------------------------------------------
 TOTAL                                                  77      3     42      4    92%
 ```
@@ -372,8 +372,8 @@ TOTAL                                                  77      3     42      4  
 
 ## Documentation
 
-- **API Reference**: `installer/global/commands/lib/task_utils.py`
+- **API Reference**: `installer/core/commands/lib/task_utils.py`
 - **Integration Guide**: `docs/guides/external-ids-integration.md`
-- **Command Documentation**: `installer/global/commands/task-create.md`, `installer/global/commands/task-status.md`
+- **Command Documentation**: `installer/core/commands/task-create.md`, `installer/core/commands/task-status.md`
 
 Great work! 🎉

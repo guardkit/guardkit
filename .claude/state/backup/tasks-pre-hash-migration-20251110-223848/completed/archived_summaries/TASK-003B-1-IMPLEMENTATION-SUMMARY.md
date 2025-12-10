@@ -16,7 +16,7 @@ Successfully implemented Quick Review Mode with 10-second countdown timer and pl
 
 ## Files Created
 
-### 1. `/installer/global/commands/lib/user_interaction.py` (9.9 KB)
+### 1. `/installer/core/commands/lib/user_interaction.py` (9.9 KB)
 Platform-agnostic user input handling with non-blocking countdown timer.
 
 **Key Components**:
@@ -37,7 +37,7 @@ Platform-agnostic user input handling with non-blocking countdown timer.
 - Case-insensitive cancel key detection
 - Same-line countdown updates using carriage return (`\r`)
 
-### 2. `/installer/global/commands/lib/review_modes.py` (15 KB)
+### 2. `/installer/core/commands/lib/review_modes.py` (15 KB)
 Quick Review Mode implementation coordinating display and interaction.
 
 **Key Components**:
@@ -55,7 +55,7 @@ Quick Review Mode implementation coordinating display and interaction.
 - Result serialization to JSON for audit trails
 - Metadata updates for task tracking
 
-### 3. `/installer/global/commands/lib/test_quick_review.py` (18 KB)
+### 3. `/installer/core/commands/lib/test_quick_review.py` (18 KB)
 Comprehensive test suite with 14 test cases.
 
 **Test Coverage**:

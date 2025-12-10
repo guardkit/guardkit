@@ -19,7 +19,7 @@ test_results:
 ## Problem Summary
 
 **Bug**: `UnboundLocalError: cannot access local variable 'json' where it is not associated with a value`
-**Location**: `installer/global/lib/agent_enhancement/enhancer.py`, line 341
+**Location**: `installer/core/lib/agent_enhancement/enhancer.py`, line 341
 **Impact**: Agent enhancement fails when AI returns invalid JSON, preventing boundaries workaround
 **Severity**: CRITICAL - Blocks `/agent-enhance` command execution
 
@@ -65,7 +65,7 @@ Moving the import ensures `json` is in scope for ALL exception handlers:
 
 ### Files to Modify
 
-**File**: `installer/global/lib/agent_enhancement/enhancer.py`
+**File**: `installer/core/lib/agent_enhancement/enhancer.py`
 **Function**: `_ai_enhancement()` (lines 213-356)
 
 ### Exact Changes Required
@@ -106,8 +106,8 @@ Moving the import ensures `json` is in scope for ALL exception handlers:
 ### Expected Diff
 
 ```diff
---- a/installer/global/lib/agent_enhancement/enhancer.py
-+++ b/installer/global/lib/agent_enhancement/enhancer.py
+--- a/installer/core/lib/agent_enhancement/enhancer.py
++++ b/installer/core/lib/agent_enhancement/enhancer.py
 @@ -254,6 +254,7 @@ class SingleAgentEnhancer:
              logger.info(f"  Prompt size: {len(prompt)} chars")
 
@@ -115,7 +115,7 @@ Moving the import ensures `json` is in scope for ALL exception handlers:
 +            import json  # Local import for JSON parsing in exception handlers
              # Use AgentBridgeInvoker for Claude Code integration
              import importlib
-             _agent_bridge_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
+             _agent_bridge_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
 @@ -287,8 +288,7 @@ class SingleAgentEnhancer:
                      logger.warning(f"Parser detected missing boundaries (schema violation): {e}")
                      logger.info("Triggering workaround: will add generic boundaries")
@@ -159,8 +159,8 @@ Moving the import ensures `json` is in scope for ALL exception handlers:
 
 ### AC4: Linter Compliance ✅
 
-- [ ] Run `ruff check installer/global/lib/agent_enhancement/enhancer.py`
-- [ ] Run `flake8 installer/global/lib/agent_enhancement/enhancer.py`
+- [ ] Run `ruff check installer/core/lib/agent_enhancement/enhancer.py`
+- [ ] Run `flake8 installer/core/lib/agent_enhancement/enhancer.py`
 - [ ] No F811 warnings (or justified with comment)
 - [ ] No other linter errors
 
@@ -295,15 +295,15 @@ pytest tests/agent_enhancement/test_enhancer.py::test_json_decode_error_nested_h
 ### Step 2: Clear Python Cache
 
 ```bash
-find installer/global/lib/agent_enhancement -name "*.pyc" -delete
-find installer/global/lib/agent_enhancement -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+find installer/core/lib/agent_enhancement -name "*.pyc" -delete
+find installer/core/lib/agent_enhancement -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 ```
 
 ### Step 3: Run Tests
 
 ```bash
 # Run full test suite
-pytest tests/agent_enhancement/test_enhancer.py -v --cov=installer/global/lib/agent_enhancement/enhancer --cov-report=term
+pytest tests/agent_enhancement/test_enhancer.py -v --cov=installer/core/lib/agent_enhancement/enhancer --cov-report=term
 
 # Run specific test for the fix (after adding test)
 pytest tests/agent_enhancement/test_enhancer.py::test_json_decode_error_outer_handler -v
@@ -321,8 +321,8 @@ pytest tests/agent_enhancement/test_enhancer.py::test_json_decode_error_outer_ha
 ### Step 5: Linter Check
 
 ```bash
-ruff check installer/global/lib/agent_enhancement/enhancer.py
-flake8 installer/global/lib/agent_enhancement/enhancer.py
+ruff check installer/core/lib/agent_enhancement/enhancer.py
+flake8 installer/core/lib/agent_enhancement/enhancer.py
 ```
 
 ## Rollback Plan

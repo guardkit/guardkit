@@ -77,11 +77,11 @@ Split and manually validate the 3 largest agents:
 
 ```bash
 # Split task-manager (72KB - largest)
-python3 scripts/split-agent.py --agent installer/global/agents/task-manager.md
+python3 scripts/split-agent.py --agent installer/core/agents/task-manager.md
 
 # Manually review:
-cat installer/global/agents/task-manager.md | head -100
-cat installer/global/agents/task-manager-ext.md | head -50
+cat installer/core/agents/task-manager.md | head -100
+cat installer/core/agents/task-manager-ext.md | head -50
 
 # Verify:
 # - Frontmatter intact
@@ -90,10 +90,10 @@ cat installer/global/agents/task-manager-ext.md | head -50
 # - Loading instruction present
 
 # Repeat for devops-specialist (57KB)
-python3 scripts/split-agent.py --agent installer/global/agents/devops-specialist.md
+python3 scripts/split-agent.py --agent installer/core/agents/devops-specialist.md
 
 # Repeat for git-workflow-manager (50KB)
-python3 scripts/split-agent.py --agent installer/global/agents/git-workflow-manager.md
+python3 scripts/split-agent.py --agent installer/core/agents/git-workflow-manager.md
 ```
 
 ### Step 3: Execute Full Batch
@@ -113,17 +113,17 @@ python3 scripts/split-agent.py --all-global
 
 ```bash
 # Count files
-ls installer/global/agents/*.md | wc -l
+ls installer/core/agents/*.md | wc -l
 # Should be 38 (19 core + 19 extended)
 
 # Verify no -ext in discovery
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import AgentScanner
 scanner = AgentScanner()
-agents = scanner.scan_agents(Path('installer/global/agents'))
+agents = scanner.scan_agents(Path('installer/core/agents'))
 print(f'Discovered agents: {len(agents)}')
 for a in agents:
     if '-ext' in a.name:
@@ -132,14 +132,14 @@ for a in agents:
 # Should show 19 agents, no -ext files
 
 # Check total sizes
-du -sh installer/global/agents/
+du -sh installer/core/agents/
 # Note total size (should be similar to before)
 
 # Check core sizes average
 python3 -c "
 from pathlib import Path
 sizes = []
-for f in Path('installer/global/agents').glob('*.md'):
+for f in Path('installer/core/agents').glob('*.md'):
     if not f.stem.endswith('-ext'):
         sizes.append(f.stat().st_size)
 avg = sum(sizes) / len(sizes)
@@ -191,15 +191,15 @@ If issues discovered:
 
 ```bash
 # Restore from backup files
-for f in installer/global/agents/*.md.bak; do
+for f in installer/core/agents/*.md.bak; do
     mv "$f" "${f%.bak}"
 done
 
 # Remove extended files
-rm installer/global/agents/*-ext.md
+rm installer/core/agents/*-ext.md
 
 # Or restore from git
-git checkout HEAD -- installer/global/agents/
+git checkout HEAD -- installer/core/agents/
 ```
 
 ## Estimated Effort

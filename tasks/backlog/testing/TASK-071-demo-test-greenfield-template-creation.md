@@ -344,7 +344,7 @@ Version? 1.0.0
 
 **Expected Output**:
 ```
-installer/global/templates/graphql-api-starter/
+installer/core/templates/graphql-api-starter/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md
@@ -372,7 +372,7 @@ mv .claude.backup .claude
 
 **Review Validation Report**:
 ```bash
-cat installer/global/templates/graphql-api-starter/validation-report.md
+cat installer/core/templates/graphql-api-starter/validation-report.md
 ```
 
 **Target**: Quality score ≥8.0/10
@@ -812,7 +812,7 @@ The more you reuse, the higher the ROI.
 1. **Greenfield Project** (GraphQL API Starter) - Production-ready
 2. **Build Log** (`build-log.md`) - Day-by-day journey
 3. **Quality Metrics** (`quality-validation.md`) - All metrics documented
-4. **Extracted Template** (`installer/global/templates/graphql-api-starter/`)
+4. **Extracted Template** (`installer/core/templates/graphql-api-starter/`)
 5. **Validation Report** (≥8.0/10 quality)
 6. **Blog Post** (`greenfield-to-template-blog.md`)
 7. **Video Script** (`greenfield-to-template-video.md`) - 15 minutes

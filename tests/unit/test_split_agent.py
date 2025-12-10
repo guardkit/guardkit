@@ -262,7 +262,7 @@ class TestFindAgents:
     def test_find_agents_single_path(self):
         """Test finding single agent by path"""
         # Use a known global agent
-        agents = find_agents('installer/global/agents/task-manager.md')
+        agents = find_agents('installer/core/agents/task-manager.md')
 
         if agents:  # Only check if file exists
             assert len(agents) == 1

@@ -236,19 +236,19 @@ Deleteupdate-sessions-weather.j.js.template
 ### Files to Examine
 
 1. **Validation Schema**:
-   - `installer/global/lib/codebase_analyzer/models.py` - TechnologyInfo, ConfidenceScore
-   - `installer/global/lib/codebase_analyzer/response_parser.py` - Validation logic
+   - `installer/core/lib/codebase_analyzer/models.py` - TechnologyInfo, ConfidenceScore
+   - `installer/core/lib/codebase_analyzer/response_parser.py` - Validation logic
 
 2. **Resume Routing**:
-   - `installer/global/commands/lib/template_create_orchestrator.py` - `_resume_from_checkpoint()`, phase routing
-   - `installer/global/lib/agent_bridge/invoker.py` - `load_response()` for each phase
+   - `installer/core/commands/lib/template_create_orchestrator.py` - `_resume_from_checkpoint()`, phase routing
+   - `installer/core/lib/agent_bridge/invoker.py` - `load_response()` for each phase
 
 3. **Entity Detection**:
-   - `installer/global/lib/template_generator/pattern_matcher.py` - `identify_entity()`, `identify_crud_operation()`
-   - `installer/global/lib/template_generator/completeness_validator.py` - CRUD completeness logic
+   - `installer/core/lib/template_generator/pattern_matcher.py` - `identify_entity()`, `identify_crud_operation()`
+   - `installer/core/lib/template_generator/completeness_validator.py` - CRUD completeness logic
 
 4. **Layer Classification**:
-   - `installer/global/lib/codebase_analyzer/agent_invoker.py` - `_detect_extended_patterns()`
+   - `installer/core/lib/codebase_analyzer/agent_invoker.py` - `_detect_extended_patterns()`
 
 ## Expected Outcomes
 

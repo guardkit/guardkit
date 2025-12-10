@@ -10,7 +10,7 @@ from pathlib import Path
 from datetime import datetime
 
 # Add lib to path for imports (backup in case conftest doesn't run)
-lib_parent_path = Path(__file__).parent.parent.parent / "installer" / "global"
+lib_parent_path = Path(__file__).parent.parent.parent / "installer" / "core"
 if str(lib_parent_path) not in sys.path:
     sys.path.insert(0, str(lib_parent_path))
 

@@ -11,9 +11,9 @@ import shutil
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-# Add installer/global/lib to path
+# Add installer/core/lib to path
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'installer', 'global', 'lib'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'installer', 'core', 'lib'))
 
 from implement_orchestrator import (
     ImplementOrchestrator,

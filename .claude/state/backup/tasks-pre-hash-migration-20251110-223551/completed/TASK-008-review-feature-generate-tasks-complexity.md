@@ -249,7 +249,7 @@ Accept breakdown? [y/n/customize]: y
 
 ### 1. Complexity Evaluation Module
 
-**Location**: `installer/global/commands/lib/complexity_evaluator.py` (if exists) or create new module
+**Location**: `installer/core/commands/lib/complexity_evaluator.py` (if exists) or create new module
 
 **Interface**:
 ```python
@@ -300,9 +300,9 @@ def suggest_task_breakdown(task: Task,
 
 ### 3. File Updates Required
 
-- [x] `installer/global/commands/feature-generate-tasks.md` - Add complexity control documentation
-- [ ] `installer/global/commands/lib/feature_task_generator.py` (if exists) - Integrate complexity logic
-- [ ] `installer/global/commands/lib/complexity_evaluator.py` - Create if doesn't exist, or reference from task-create
+- [x] `installer/core/commands/feature-generate-tasks.md` - Add complexity control documentation
+- [ ] `installer/core/commands/lib/feature_task_generator.py` (if exists) - Integrate complexity logic
+- [ ] `installer/core/commands/lib/complexity_evaluator.py` - Create if doesn't exist, or reference from task-create
 - [ ] `docs/adr/` - Document decision on complexity thresholds and breakdown strategies
 - [ ] Test coverage for complexity-aware generation
 

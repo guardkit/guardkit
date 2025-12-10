@@ -253,8 +253,8 @@ Option B preserves the Progressive Disclosure token savings:
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_bridge/state_manager.py` - Add `reset_resume_count()`
-2. `installer/global/commands/lib/template_create_orchestrator.py` - Reset counter after Phase 1 success
+1. `installer/core/lib/agent_bridge/state_manager.py` - Add `reset_resume_count()`
+2. `installer/core/commands/lib/template_create_orchestrator.py` - Reset counter after Phase 1 success
 
 ## Appendix
 

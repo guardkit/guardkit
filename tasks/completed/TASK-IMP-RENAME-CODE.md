@@ -31,55 +31,55 @@ Part of the GuardKit → GuardKit rename initiative. This task updates Python co
 
 | File | Occurrences | Notes |
 |------|-------------|-------|
-| `installer/global/lib/constants.py` | 1 | RequireKit config |
-| `installer/global/commands/lib/distribution_helpers.py` | 16 | Package distribution |
-| `installer/global/commands/lib/template_packager.py` | 4 | Template packaging |
-| `installer/global/commands/lib/agent_discovery.py` | 1 | Agent discovery |
-| `installer/global/commands/lib/template_create_orchestrator.py` | 4 | Template creation |
-| `installer/global/commands/lib/template_init/ai_generator.py` | 2 | AI generation |
+| `installer/core/lib/constants.py` | 1 | RequireKit config |
+| `installer/core/commands/lib/distribution_helpers.py` | 16 | Package distribution |
+| `installer/core/commands/lib/template_packager.py` | 4 | Template packaging |
+| `installer/core/commands/lib/agent_discovery.py` | 1 | Agent discovery |
+| `installer/core/commands/lib/template_create_orchestrator.py` | 4 | Template creation |
+| `installer/core/commands/lib/template_init/ai_generator.py` | 2 | AI generation |
 | `scripts/audit_requirekit.py` | 3 | Audit script |
-| `installer/global/commands/agent-enhance.py` | 3 | Agent enhancement |
-| `installer/global/commands/agent-format.py` | 1 | Agent formatting |
-| `installer/global/commands/agent-validate.py` | 2 | Agent validation |
+| `installer/core/commands/agent-enhance.py` | 3 | Agent enhancement |
+| `installer/core/commands/agent-format.py` | 1 | Agent formatting |
+| `installer/core/commands/agent-validate.py` | 2 | Agent validation |
 
 ### 2. Command Specification Updates
 
 | File | Occurrences | Notes |
 |------|-------------|-------|
-| `installer/global/commands/task-create.md` | 5 | Task creation spec |
-| `installer/global/commands/task-work.md` | 11 | Task work spec |
-| `installer/global/commands/task-status.md` | 2 | Task status spec |
-| `installer/global/commands/template-create.md` | 9 | Template creation |
-| `installer/global/commands/template-init.md` | 5 | Template init |
-| `installer/global/commands/template-qa.md` | 1 | Template QA |
-| `installer/global/commands/agent-enhance.md` | 1 | Agent enhance |
-| `installer/global/commands/agent-validate.md` | 2 | Agent validate |
+| `installer/core/commands/task-create.md` | 5 | Task creation spec |
+| `installer/core/commands/task-work.md` | 11 | Task work spec |
+| `installer/core/commands/task-status.md` | 2 | Task status spec |
+| `installer/core/commands/template-create.md` | 9 | Template creation |
+| `installer/core/commands/template-init.md` | 5 | Template init |
+| `installer/core/commands/template-qa.md` | 1 | Template QA |
+| `installer/core/commands/agent-enhance.md` | 1 | Agent enhance |
+| `installer/core/commands/agent-validate.md` | 2 | Agent validate |
 
 ### 3. Template Updates
 
 **Template Manifests**:
-- `installer/global/templates/fastapi-python/manifest.json`
-- `installer/global/templates/nextjs-fullstack/manifest.json`
-- `installer/global/templates/react-fastapi-monorepo/manifest.json`
+- `installer/core/templates/fastapi-python/manifest.json`
+- `installer/core/templates/nextjs-fullstack/manifest.json`
+- `installer/core/templates/react-fastapi-monorepo/manifest.json`
 
 **Template READMEs**:
-- `installer/global/templates/fastapi-python/README.md`
-- `installer/global/templates/nextjs-fullstack/README.md`
-- `installer/global/templates/react-fastapi-monorepo/README.md`
+- `installer/core/templates/fastapi-python/README.md`
+- `installer/core/templates/nextjs-fullstack/README.md`
+- `installer/core/templates/react-fastapi-monorepo/README.md`
 
 **Template CLAUDE.md**:
-- `installer/global/templates/nextjs-fullstack/CLAUDE.md`
+- `installer/core/templates/nextjs-fullstack/CLAUDE.md`
 
 **Template Validation Reports**:
-- `installer/global/templates/react-typescript/validation-report.md`
-- `installer/global/templates/react-fastapi-monorepo/validation-report.md`
+- `installer/core/templates/react-typescript/validation-report.md`
+- `installer/core/templates/react-fastapi-monorepo/validation-report.md`
 
 ### 4. Agent Updates
 
 | File | Occurrences | Notes |
 |------|-------------|-------|
-| `installer/global/agents/task-manager.md` | 5 | Task manager agent |
-| `installer/global/agents/agent-content-enhancer.md` | 4 | Content enhancer |
+| `installer/core/agents/task-manager.md` | 5 | Task manager agent |
+| `installer/core/agents/agent-content-enhancer.md` | 4 | Content enhancer |
 
 ### 5. Solution File Rename
 
@@ -95,7 +95,7 @@ Part of the GuardKit → GuardKit rename initiative. This task updates Python co
 - [x] All template READMEs updated
 - [x] Agent files updated
 - [x] Solution file renamed (N/A - no .sln file in this worktree)
-- [x] No "taskwright" in installer/global/**/* (verified)
+- [x] No "taskwright" in installer/core/**/* (verified)
 - [x] Python imports still work correctly (tested)
 
 ## Testing
@@ -109,7 +109,7 @@ python3 -c "from lib.distribution_helpers import *; print('OK')"
 python3 -c "from lib.agent_discovery import *; print('OK')"
 
 # Verify no remaining references
-grep -ri "guardkit" installer/global/ --include="*.py" --include="*.md" --include="*.json"
+grep -ri "guardkit" installer/core/ --include="*.py" --include="*.md" --include="*.json"
 ```
 
 ## Estimated Effort
@@ -128,8 +128,8 @@ grep -ri "guardkit" installer/global/ --include="*.py" --include="*.md" --includ
 
 ### Deliverables
 - Files modified: 2
-  - `installer/global/commands/lib/distribution_helpers.py`
-  - `installer/global/lib/codebase_analyzer/prompt_builder.py`
+  - `installer/core/commands/lib/distribution_helpers.py`
+  - `installer/core/lib/codebase_analyzer/prompt_builder.py`
 - Occurrences updated: 17
   - distribution_helpers.py: 16 references changed
   - prompt_builder.py: 1 reference changed

@@ -217,8 +217,8 @@ ls tasks/
 ### Out of Scope
 
 The following items contain references to requirements directories but were not modified as they are outside the scope of this task:
-- Documentation files (installer/global/docs/*.md)
-- Agent definitions (installer/global/agents/*.md)
+- Documentation files (installer/core/docs/*.md)
+- Agent definitions (installer/core/agents/*.md)
 - Template CLAUDE.md files
 - Workflow instruction files
 
@@ -283,7 +283,7 @@ These references should be addressed in future tasks focused on documentation cl
 - Create follow-up tasks for documentation cleanup immediately
 
 ## Next Steps
-1. Consider creating follow-up task for documentation cleanup (references in installer/global/docs/, agents/, templates/)
+1. Consider creating follow-up task for documentation cleanup (references in installer/core/docs/, agents/, templates/)
 2. Continue with TASK-010: Update installer manifest
 3. Verify installation works correctly with the new structure
 

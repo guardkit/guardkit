@@ -119,16 +119,16 @@ layer_directory = self._infer_layer_directory_from_examples(
 
 | File | Changes | LOC Impact |
 |------|---------|------------|
-| `installer/global/lib/template_generator/template_generator.py` | Enhance placeholder extraction, add validation | +150-200 lines |
-| `installer/global/lib/settings_generator/generator.py` | Fix layer directory inference | +80-100 lines |
-| `installer/global/commands/lib/template_create_orchestrator.py` | Add validation for extended files | +20-30 lines |
+| `installer/core/lib/template_generator/template_generator.py` | Enhance placeholder extraction, add validation | +150-200 lines |
+| `installer/core/lib/settings_generator/generator.py` | Fix layer directory inference | +80-100 lines |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Add validation for extended files | +20-30 lines |
 
 ### Supporting Files
 
 | File | Changes | LOC Impact |
 |------|---------|------------|
-| `installer/global/lib/template_generator/models.py` | Add `PlaceholderValidationResult` model | +20 lines |
-| `installer/global/lib/settings_generator/models.py` | May need updates if layer model changes | +10 lines |
+| `installer/core/lib/template_generator/models.py` | Add `PlaceholderValidationResult` model | +20 lines |
+| `installer/core/lib/settings_generator/models.py` | May need updates if layer model changes | +10 lines |
 
 ---
 
@@ -136,7 +136,7 @@ layer_directory = self._infer_layer_directory_from_examples(
 
 ### 1. Enhanced Placeholder Extraction
 
-**File**: `installer/global/lib/template_generator/template_generator.py`
+**File**: `installer/core/lib/template_generator/template_generator.py`
 
 **Method**: `_fallback_placeholder_extraction(content: str, language: str)`
 
@@ -365,7 +365,7 @@ def _generate_template(self, example_file: ExampleFile) -> Optional[CodeTemplate
 
 ### 2. Layer Mapping Fix
 
-**File**: `installer/global/lib/settings_generator/generator.py`
+**File**: `installer/core/lib/settings_generator/generator.py`
 
 **Method**: `_infer_layer_directory(layer: LayerInfo)`
 
@@ -499,7 +499,7 @@ def _extract_layer_from_path(self, file_path: str) -> Optional[str]:
 
 ### 3. Extended Agent Files Validation
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Method**: `_phase7_write_agents(agents: List[Any], output_path: Path)`
 
@@ -627,13 +627,13 @@ cd ~/Projects/kartlog
 /template-create --validate --output-location=repo
 
 # Verify placeholders
-grep -r "{{" installer/global/templates/kartlog/templates/ | head -10
+grep -r "{{" installer/core/templates/kartlog/templates/ | head -10
 
 # Verify layer mappings
-cat installer/global/templates/kartlog/settings.json | jq '.layer_mappings'
+cat installer/core/templates/kartlog/settings.json | jq '.layer_mappings'
 
 # Verify extended files
-ls installer/global/templates/kartlog/agents/*-ext.md
+ls installer/core/templates/kartlog/agents/*-ext.md
 ```
 
 ### Acceptance Criteria

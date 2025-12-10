@@ -71,7 +71,7 @@ User request: "ensure that we've got instructions to use context7 MCP to make su
 
 ### 1. Update task-work.md Command Specification
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Sections to add/update:**
 
@@ -186,7 +186,7 @@ If Context7 library is not found:
 
 ### 2. Update task-manager Agent Specification
 
-**Location**: `installer/global/agents/task-manager.md`
+**Location**: `installer/core/agents/task-manager.md`
 
 **Section to add:**
 
@@ -245,9 +245,9 @@ Add real-world examples showing Context7 integration.
 ### 4. Update Stack-Specific Agent Specifications
 
 For each stack-specific agent (if they exist):
-- `installer/global/agents/react-state-specialist.md`
-- `installer/global/agents/python-api-specialist.md`
-- `installer/global/agents/maui-viewmodel-specialist.md`
+- `installer/core/agents/react-state-specialist.md`
+- `installer/core/agents/python-api-specialist.md`
+- `installer/core/agents/maui-viewmodel-specialist.md`
 - etc.
 
 Add Context7 usage guidance specific to that stack.
@@ -283,10 +283,10 @@ Add Context7 usage guidance specific to that stack.
 ### Files to Update
 
 1. **Command Specification** (Critical)
-   - `installer/global/commands/task-work.md` - Add MCP Integration section
+   - `installer/core/commands/task-work.md` - Add MCP Integration section
 
 2. **Agent Specifications** (High Priority)
-   - `installer/global/agents/task-manager.md` - Add Context7 usage instructions
+   - `installer/core/agents/task-manager.md` - Add Context7 usage instructions
    - Stack-specific agents (if they exist)
 
 3. **Workflow Documentation** (Medium Priority)

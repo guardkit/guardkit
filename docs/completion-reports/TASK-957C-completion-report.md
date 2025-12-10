@@ -52,8 +52,8 @@
 ## Analysis Metrics
 
 ### Inventory Completed
-- **Directories analyzed**: 50 (42 in docs/, 8 in installer/global/)
-- **Files catalogued**: 417 (333 in docs/, 84 in installer/global/)
+- **Directories analyzed**: 50 (42 in docs/, 8 in installer/core/)
+- **Files catalogued**: 417 (333 in docs/, 84 in installer/core/)
 - **Categorization accuracy**: 100%
 - **Navigation depth**: Max 3 levels (best practice)
 

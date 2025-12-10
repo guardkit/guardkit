@@ -439,7 +439,7 @@ Create task? [Y/n]:
 
 ### Phase 1: Core Command (4-8 hours)
 
-**File**: `installer/global/commands/task-review.md`
+**File**: `installer/core/commands/task-review.md`
 
 **Structure**:
 ```markdown
@@ -455,7 +455,7 @@ Create task? [Y/n]:
 (Similar to task-work but for review)
 ```
 
-**File**: `installer/global/commands/lib/task_review_orchestrator.py`
+**File**: `installer/core/commands/lib/task_review_orchestrator.py`
 
 **Core Functions**:
 ```python
@@ -492,7 +492,7 @@ Implement each review mode with specialized prompts and agent configurations:
 
 ### Phase 3: Report Generation (4-6 hours)
 
-**File**: `installer/global/commands/lib/review_report_generator.py`
+**File**: `installer/core/commands/lib/review_report_generator.py`
 
 **Output Formats**:
 1. **Summary** (1-page executive summary)

@@ -46,7 +46,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 ### File Operation Tests (2 failures) - MEDIUM PRIORITY
 
 - [ ] **Fix parent directory creation in atomic_write**
-  - **File**: `installer/global/commands/lib/user_interaction.py`
+  - **File**: `installer/core/commands/lib/user_interaction.py`
   - **Test**: `test_safe_save_file_creates_parent_dir`
   - **Solution**: Ensure `mkdir(parents=True)` runs before tempfile creation
   - **Estimated Time**: 1 hour
@@ -143,7 +143,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 1. File Write Failure Graceful Degradation (2 hours)
 
 - [ ] **Implement graceful degradation for file write failures**
-  - **File**: `installer/global/commands/lib/review_modes.py`
+  - **File**: `installer/core/commands/lib/review_modes.py`
   - **Function**: `FullReviewHandler._move_task_to_backlog()`
   - **Acceptance Criteria**:
     - File write failure logs error
@@ -165,7 +165,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 2. Configuration Flag Conflict Detection (2 hours)
 
 - [ ] **Implement flag validation function**
-  - **File**: `installer/global/commands/lib/review_router.py` (or new `flag_validator.py`)
+  - **File**: `installer/core/commands/lib/review_router.py` (or new `flag_validator.py`)
   - **Function**: `validate_user_flags(user_flags: Dict[str, bool]) -> None`
   - **Acceptance Criteria**:
     - Detects `--skip-review` + `--force-review` conflict
@@ -189,14 +189,14 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
     ```
 
 - [ ] **Integrate validation into task-work command**
-  - **File**: `installer/global/commands/task-work.py` (or entry point)
+  - **File**: `installer/core/commands/task-work.py` (or entry point)
   - **Call**: `validate_user_flags(user_flags)` before workflow starts
   - **Test Coverage**: Add tests for all conflict scenarios
 
 #### 3. Corrupted Metrics File Skipping (1 hour)
 
 - [ ] **Implement corrupted line skipping**
-  - **File**: `installer/global/commands/lib/metrics_storage.py`
+  - **File**: `installer/core/commands/lib/metrics_storage.py`
   - **Function**: `MetricsStorage.read_all_metrics()`
   - **Acceptance Criteria**:
     - Skips lines with invalid JSON
@@ -230,7 +230,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 4. User-Friendly Error Message Wrappers (3 hours)
 
 - [ ] **Create error message formatter**
-  - **File**: `installer/global/commands/lib/error_messages.py` (new)
+  - **File**: `installer/core/commands/lib/error_messages.py` (new)
   - **Functions**:
     - `format_file_error(error: OSError, context: str) -> str`
     - `format_validation_error(error: ValueError, field: str) -> str`
@@ -272,7 +272,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 1. Empty Plan Section Display (1 hour)
 
 - [ ] **Update display functions to handle None values**
-  - **File**: `installer/global/commands/lib/review_modes.py`
+  - **File**: `installer/core/commands/lib/review_modes.py`
   - **Functions**:
     - `FullReviewDisplay._display_implementation_order()`
     - `FullReviewDisplay._display_risk_assessment()`
@@ -299,7 +299,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 2. Modification Complexity Increase Warning (2 hours)
 
 - [ ] **Add complexity comparison in apply modifications**
-  - **File**: `installer/global/commands/lib/review_modes.py`
+  - **File**: `installer/core/commands/lib/review_modes.py`
   - **Function**: `FullReviewHandler._apply_modifications_and_return()`
   - **Acceptance Criteria**:
     - Compare old vs new complexity scores
@@ -329,7 +329,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 3. Q&A Session Question Limit (2 hours)
 
 - [ ] **Add max_questions parameter to Q&A session**
-  - **File**: `installer/global/commands/lib/qa_manager.py`
+  - **File**: `installer/core/commands/lib/qa_manager.py`
   - **Function**: `QAManager.run_qa_session()`
   - **Acceptance Criteria**:
     - Default limit of 20 questions
@@ -360,7 +360,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 #### 4. Zero-File Task Validation (1 hour)
 
 - [ ] **Verify minimum score enforcement for zero-file tasks**
-  - **File**: `installer/global/commands/lib/complexity_calculator.py`
+  - **File**: `installer/core/commands/lib/complexity_calculator.py`
   - **Function**: `ComplexityCalculator._aggregate_scores()`
   - **Acceptance Criteria**:
     - Score never < 1
@@ -443,7 +443,7 @@ This checklist tracks the implementation of all Phase 5 edge case acceptance cri
 ### Update Technical Documentation (4 hours)
 
 - [ ] **Update README.md with error handling patterns**
-  - **File**: `installer/global/commands/lib/README.md`
+  - **File**: `installer/core/commands/lib/README.md`
   - **Sections**:
     - Error Handling Patterns
     - Fail-Safe Defaults

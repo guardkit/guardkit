@@ -55,7 +55,7 @@ From TASK-REV-AB89 code quality review:
 
 ## Implementation Details
 
-### File: installer/global/lib/agent_enhancement/applier.py
+### File: installer/core/lib/agent_enhancement/applier.py
 
 **Change 1: Update EXTENDED_SECTIONS (lines 48-56)**
 ```python

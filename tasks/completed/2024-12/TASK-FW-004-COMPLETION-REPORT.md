@@ -11,7 +11,7 @@
 ## Deliverables
 
 ### Files Created
-1. **`installer/global/lib/implementation_mode_analyzer.py`** (342 lines)
+1. **`installer/core/lib/implementation_mode_analyzer.py`** (342 lines)
    - `ImplementationModeAnalyzer` class with context-aware risk detection
    - Multi-factor complexity scoring algorithm
    - Decision matrix for mode assignment (manual/task-work/direct)

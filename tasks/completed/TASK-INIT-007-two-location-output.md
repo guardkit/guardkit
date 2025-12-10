@@ -46,24 +46,24 @@ completion_metrics:
 
 `/template-init` only saves to personal location (`~/.agentecflow/templates/`) while `/template-create` supports both personal and repository locations, missing Critical Gap #10 from TASK-5E55.
 
-**Impact**: Teams cannot save greenfield templates to repository location (`installer/global/templates/`) for sharing and distribution.
+**Impact**: Teams cannot save greenfield templates to repository location (`installer/core/templates/`) for sharing and distribution.
 
 ## Solution Implemented
 
 Added `--output-location` flag to `/template-init` command with two-location support:
 - **global** (default): `~/.agentecflow/templates/` - Personal use, local development
-- **repo**: `installer/global/templates/` - Team distribution, public sharing
+- **repo**: `installer/core/templates/` - Team distribution, public sharing
 
 ## Changes Delivered
 
 ### Files Modified (3 files, +173/-9 lines)
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** (+105 lines)
+1. **installer/core/commands/lib/greenfield_qa_session.py** (+105 lines)
    - Added `output_location` parameter to `__init__()` constructor
    - Implemented `_get_template_path()` method for location-based path resolution
    - Implemented `_display_location_guidance()` method for location-specific usage instructions
 
-2. **installer/global/commands/lib/template_init/command.py** (+51 lines)
+2. **installer/core/commands/lib/template_init/command.py** (+51 lines)
    - Updated `TemplateInitCommand.__init__()` to accept `output_location` parameter
    - Updated `template_init()` entry point to accept and pass `output_location`
    - Modified `_phase4_save_template()` to use new path resolution and display guidance
@@ -92,7 +92,7 @@ Tests:
 - [x] --output-location flag accepts 'global' and 'repo'
 - [x] Default location is 'global' (personal)
 - [x] 'global' saves to ~/.agentecflow/templates/
-- [x] 'repo' saves to installer/global/templates/
+- [x] 'repo' saves to installer/core/templates/
 - [x] Location-specific guidance displayed
 - [x] Backward compatible (default unchanged)
 - [x] Template save mechanism unchanged
@@ -141,7 +141,7 @@ def _get_template_path(self, template_name: str) -> Path:
 ### Repository Template
 ```bash
 /template-init --output-location=repo
-# Saves to: installer/global/templates/
+# Saves to: installer/core/templates/
 # Displays git workflow guidance
 ```
 

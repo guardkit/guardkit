@@ -20,10 +20,10 @@ repo_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(repo_root))
 
 # Import using importlib to handle 'global' keyword in module path
-applier_module = importlib.import_module('installer.global.lib.agent_enhancement.applier')
+applier_module = importlib.import_module('installer.core.lib.agent_enhancement.applier')
 EnhancementApplier = applier_module.EnhancementApplier
 
-models_module = importlib.import_module('installer.global.lib.agent_enhancement.models')
+models_module = importlib.import_module('installer.core.lib.agent_enhancement.models')
 SplitContent = models_module.SplitContent
 AgentEnhancement = models_module.AgentEnhancement
 EnhancementResult = models_module.EnhancementResult

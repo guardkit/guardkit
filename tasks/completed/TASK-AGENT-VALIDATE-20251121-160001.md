@@ -115,7 +115,7 @@ Create `/agent-validate` command to check agent files against GitHub best practi
 
 ### Step 1: Command Specification (1 hour)
 
-**File**: `installer/global/commands/agent-validate.md`
+**File**: `installer/core/commands/agent-validate.md`
 
 **Content**: Create command specification with:
 - Purpose and usage
@@ -450,7 +450,7 @@ class ExampleDensityChecks:
 
 ### Step 5: Command Entry Point (1 hour)
 
-**File**: `installer/global/commands/agent-validate.py`
+**File**: `installer/core/commands/agent-validate.py`
 
 **Implementation**:
 
@@ -627,9 +627,9 @@ Successfully implemented the `/agent-validate` command with all core functionali
 12 passed in 0.76s
 
 # Validation Examples
-installer/global/agents/code-reviewer.md: 4.8/10 ❌ poor
-installer/global/agents/task-manager.md: 5.5/10 ❌ poor
-installer/global/agents/architectural-reviewer.md: 4.7/10 ❌ poor
+installer/core/agents/code-reviewer.md: 4.8/10 ❌ poor
+installer/core/agents/task-manager.md: 5.5/10 ❌ poor
+installer/core/agents/architectural-reviewer.md: 4.7/10 ❌ poor
 ```
 
 ### Files Created
@@ -656,7 +656,7 @@ installer/global/agents/architectural-reviewer.md: 4.7/10 ❌ poor
 - `lib/agent_validator/formatters/minimal.py`
 
 **Command (1 file)**:
-- `installer/global/commands/agent-validate.py`
+- `installer/core/commands/agent-validate.py`
 
 **Tests (4 files)**:
 - `tests/agent_validator/__init__.py`
@@ -670,19 +670,19 @@ installer/global/agents/architectural-reviewer.md: 4.7/10 ❌ poor
 
 ```bash
 # Basic validation (console output)
-python3 installer/global/commands/agent-validate.py installer/global/agents/code-reviewer.md
+python3 installer/core/commands/agent-validate.py installer/core/agents/code-reviewer.md
 
 # JSON output for CI/CD
-python3 installer/global/commands/agent-validate.py installer/global/agents/code-reviewer.md --format json
+python3 installer/core/commands/agent-validate.py installer/core/agents/code-reviewer.md --format json
 
 # Minimal one-line output
-python3 installer/global/commands/agent-validate.py installer/global/agents/code-reviewer.md --format minimal
+python3 installer/core/commands/agent-validate.py installer/core/agents/code-reviewer.md --format minimal
 
 # With threshold and exit code
-python3 installer/global/commands/agent-validate.py installer/global/agents/code-reviewer.md --threshold 8.0 --exit-on-fail
+python3 installer/core/commands/agent-validate.py installer/core/agents/code-reviewer.md --threshold 8.0 --exit-on-fail
 
 # Specific checks only
-python3 installer/global/commands/agent-validate.py installer/global/agents/code-reviewer.md --checks structure boundaries
+python3 installer/core/commands/agent-validate.py installer/core/agents/code-reviewer.md --checks structure boundaries
 ```
 
 ### Acceptance Criteria Status

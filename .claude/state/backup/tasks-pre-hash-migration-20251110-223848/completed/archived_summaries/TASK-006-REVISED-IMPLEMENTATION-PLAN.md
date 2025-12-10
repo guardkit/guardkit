@@ -41,7 +41,7 @@
 ### File Structure (5 files total)
 
 ```
-installer/global/agents/
+installer/core/agents/
 ├── task-manager.md                    # Modified: Add phase 2.5 support
 └── architectural-reviewer.md          # Modified: Clarify integration
 
@@ -882,7 +882,7 @@ After (Simplified Plan):
 │   ├── phase-execution.ts       # NEW (~250 LOC)
 │   ├── plan-persistence.ts      # NEW (~80 LOC)
 │   └── task-manager.ts          # MODIFIED (+120 LOC)
-└── installer/global/agents/
+└── installer/core/agents/
     ├── task-manager.md          # MODIFIED (+30 LOC)
     └── architectural-reviewer.md # MODIFIED (+20 LOC)
 

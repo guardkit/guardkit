@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
-# Import from installer/global/commands/lib
+# Import from installer/core/commands/lib
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from greenfield_qa_session import (
     GreenfieldAnswers,
@@ -1368,7 +1368,7 @@ class TestTwoLocationOutput:
         session = TemplateInitQASession(output_location='repo')
         path = session._get_template_path('test-template')
 
-        assert 'installer/global/templates' in str(path)
+        assert 'installer/core/templates' in str(path)
         assert path.name == 'test-template'
 
     @patch('greenfield_qa_session.INQUIRER_AVAILABLE', True)
@@ -1432,7 +1432,7 @@ class TestTwoLocationOutput:
         captured = capsys.readouterr()
         assert '✅ Repository template:' in captured.out
         assert 'Team distribution' in captured.out
-        assert 'git add installer/global/templates/' in captured.out
+        assert 'git add installer/core/templates/' in captured.out
         assert 'guardkit init test-template' in captured.out
 
 

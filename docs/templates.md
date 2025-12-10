@@ -95,7 +95,7 @@ guardkit init react-typescript --info
 ### Template Locations
 
 - **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
-- **Repository templates**: `installer/global/templates/` (team/public distribution)
+- **Repository templates**: `installer/core/templates/` (team/public distribution)
 
 ## Creating Custom Templates
 
@@ -158,11 +158,11 @@ Templates generated via `/template-create` automatically include:
 
 Each reference template includes comprehensive README:
 
-- **[react-typescript](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/react-typescript)**: Frontend best practices from Bulletproof React
-- **[fastapi-python](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/fastapi-python)**: Backend API patterns from FastAPI Best Practices
-- **[nextjs-fullstack](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/nextjs-fullstack)**: Full-stack with Next.js App Router
-- **[react-fastapi-monorepo](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/react-fastapi-monorepo)**: Monorepo structure (9.2/10)
-- **[default](https://github.com/guardkit/guardkit/tree/main/installer/global/templates/default)**: Language-agnostic foundation
+- **[react-typescript](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/react-typescript)**: Frontend best practices from Bulletproof React
+- **[fastapi-python](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/fastapi-python)**: Backend API patterns from FastAPI Best Practices
+- **[nextjs-fullstack](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/nextjs-fullstack)**: Full-stack with Next.js App Router
+- **[react-fastapi-monorepo](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/react-fastapi-monorepo)**: Monorepo structure (9.2/10)
+- **[default](https://github.com/guardkit/guardkit/tree/main/installer/core/templates/default)**: Language-agnostic foundation
 
 ---
 

@@ -71,8 +71,8 @@ Wave 3: Polish (Parallel)
 **Why Sequential**: Foundation for all other work. No parallelization possible.
 
 **Deliverables**:
-- `installer/global/commands/task-review.md` (command spec)
-- `installer/global/commands/lib/task_review_orchestrator.py` (orchestrator)
+- `installer/core/commands/task-review.md` (command spec)
+- `installer/core/commands/lib/task_review_orchestrator.py` (orchestrator)
 - `REVIEW_COMPLETE` state support
 - Skeleton functions for Phases 2-5
 
@@ -132,9 +132,9 @@ def generate_review_report(
 **Integration Point**: Use mock data during parallel development, integrate at end of Wave 2.
 
 **Deliverables**:
-- `installer/global/commands/lib/review_modes/` (5 mode implementations)
-- `installer/global/commands/lib/review_report_generator.py`
-- `installer/global/commands/lib/review_templates/` (5 report templates)
+- `installer/core/commands/lib/review_modes/` (5 mode implementations)
+- `installer/core/commands/lib/review_report_generator.py`
+- `installer/core/commands/lib/review_templates/` (5 report templates)
 - Decision checkpoint implementation
 
 **Success Criteria**:
@@ -396,9 +396,9 @@ cd worktree-foundation
 # Phase 5: Code review
 
 # Step 3: Verify deliverables
-ls installer/global/commands/task-review.md
-ls installer/global/commands/lib/task_review_orchestrator.py
-ls installer/global/commands/lib/review_context_loader.py
+ls installer/core/commands/task-review.md
+ls installer/core/commands/lib/task_review_orchestrator.py
+ls installer/core/commands/lib/review_context_loader.py
 
 # Step 4: Manual testing
 /task-review TASK-09E9 --mode=architectural --depth=quick
@@ -443,11 +443,11 @@ cd worktree-modes
 /task-work TASK-REV-3248
 
 # Implementation focus:
-# - installer/global/commands/lib/review_modes/architectural_review.py
-# - installer/global/commands/lib/review_modes/code_quality_review.py
-# - installer/global/commands/lib/review_modes/decision_analysis.py
-# - installer/global/commands/lib/review_modes/technical_debt_assessment.py
-# - installer/global/commands/lib/review_modes/security_audit.py
+# - installer/core/commands/lib/review_modes/architectural_review.py
+# - installer/core/commands/lib/review_modes/code_quality_review.py
+# - installer/core/commands/lib/review_modes/decision_analysis.py
+# - installer/core/commands/lib/review_modes/technical_debt_assessment.py
+# - installer/core/commands/lib/review_modes/security_audit.py
 # - Update execute_review_analysis() in orchestrator
 
 # Test with mock task
@@ -469,14 +469,14 @@ cd worktree-reports
 /task-work TASK-REV-2367
 
 # Implementation focus:
-# - installer/global/commands/lib/review_report_generator.py
-# - installer/global/commands/lib/review_templates/*.md.template
+# - installer/core/commands/lib/review_report_generator.py
+# - installer/core/commands/lib/review_templates/*.md.template
 # - Update generate_review_report() in orchestrator
 # - Implement present_decision_checkpoint()
 
 # Test with mock data
 python3 -c "
-from installer.global.commands.lib.review_report_generator import generate_review_report
+from installer.core.commands.lib.review_report_generator import generate_review_report
 results = {'mode': 'architectural', 'overall_score': 75, 'findings': [...]}
 report = generate_review_report(results, {}, 'detailed')
 print(report)
@@ -540,7 +540,7 @@ cd worktree-integration
 /task-work TASK-REV-5DC2
 
 # Implementation focus:
-# - Update installer/global/commands/lib/task_create_orchestrator.py
+# - Update installer/core/commands/lib/task_create_orchestrator.py
 #   (add review task detection)
 # - Update CLAUDE.md (add /task-review documentation)
 # - Create docs/workflows/task-review-workflow.md
@@ -576,7 +576,7 @@ pytest tests/unit/commands/test_task_review_orchestrator.py -v
 pytest tests/integration/test_task_review_workflow.py -v
 
 # Check coverage
-pytest tests/ --cov=installer/global/commands/lib/task_review_orchestrator --cov-report=term
+pytest tests/ --cov=installer/core/commands/lib/task_review_orchestrator --cov-report=term
 
 # Complete task
 /task-complete TASK-REV-4DE8
@@ -598,7 +598,7 @@ git merge worktree-integration/feature/task-review-integration
 git merge worktree-testing/feature/task-review-testing
 
 # Final validation
-pytest tests/ --cov=installer/global/commands/lib --cov-report=html
+pytest tests/ --cov=installer/core/commands/lib --cov-report=html
 # Should show ≥80% coverage
 
 # End-to-end manual test
@@ -664,7 +664,7 @@ pytest tests/integration/test_review_modes.py -v
 
 ```bash
 # After TASK-REV-4DE8 complete
-pytest tests/ --cov=installer/global/commands/lib --cov-report=html
+pytest tests/ --cov=installer/core/commands/lib --cov-report=html
 
 # Coverage goals:
 # - Overall: ≥80% lines, ≥75% branches
@@ -705,7 +705,7 @@ pytest tests/integration/test_task_review_workflow.py -v
 **Interface Contract**:
 
 ```python
-# File: installer/global/commands/lib/review_modes/interface.py
+# File: installer/core/commands/lib/review_modes/interface.py
 # Created during Wave 1 (TASK-REV-A4AB)
 
 from typing import TypedDict, List, Dict, Any
@@ -769,7 +769,7 @@ def test_architectural_mode_with_detailed_report():
 ```bash
 # After Wave 1, verify skeleton functions exist
 python3 -c "
-from installer.global.commands.lib.task_review_orchestrator import (
+from installer.core.commands.lib.task_review_orchestrator import (
     execute_review_analysis,  # Skeleton for Wave 2
     generate_review_report    # Skeleton for Wave 2
 )
@@ -823,8 +823,8 @@ cd worktree-modes
 
 ```bash
 # Check what each branch changed
-git diff main worktree-modes/feature/review-modes -- installer/global/commands/lib/task_review_orchestrator.py
-git diff main worktree-reports/feature/report-generation -- installer/global/commands/lib/task_review_orchestrator.py
+git diff main worktree-modes/feature/review-modes -- installer/core/commands/lib/task_review_orchestrator.py
+git diff main worktree-reports/feature/report-generation -- installer/core/commands/lib/task_review_orchestrator.py
 
 # Manual merge (combine both changes)
 # Developer A added: execute_review_analysis() implementation

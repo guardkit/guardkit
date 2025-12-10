@@ -24,7 +24,7 @@ import shutil
 # Import classes under test
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../installer/global/lib/agent_enhancement'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../installer/core/lib/agent_enhancement'))
 
 from applier import EnhancementApplier, CORE_SECTIONS, EXTENDED_SECTIONS
 from models import AgentEnhancement, SplitContent

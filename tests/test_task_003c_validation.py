@@ -17,8 +17,8 @@ from enum import Enum
 # ============================================================================
 
 PROJECT_ROOT = Path("/Users/richardwoollcott/Projects/appmilla_github/ai-engineer")
-TASK_WORK_FILE = PROJECT_ROOT / "installer/global/commands/task-work.md"
-TASK_MANAGER_FILE = PROJECT_ROOT / "installer/global/agents/task-manager.md"
+TASK_WORK_FILE = PROJECT_ROOT / "installer/core/commands/task-work.md"
+TASK_MANAGER_FILE = PROJECT_ROOT / "installer/core/agents/task-manager.md"
 ADR_DIR = PROJECT_ROOT / "docs/adr"
 
 

@@ -41,7 +41,7 @@ Waves represent groups of tasks that can be developed **in parallel** using Cond
 - Progressive length scaling (4→5→6 chars)
 - Collision detection
 - Performance: 1,000 IDs in <1 second
-- **File**: `installer/global/lib/id_generator.py`
+- **File**: `installer/core/lib/id_generator.py`
 - **Use /task-work**: ✅ Yes (includes architectural review + test enforcement)
 
 **Implementation Command**:
@@ -60,7 +60,7 @@ Waves represent groups of tasks that can be developed **in parallel** using Cond
 - Duplicate checking across all directories
 - Subtask validation (dot notation)
 - Thread-safe validation
-- **Enhances**: `installer/global/lib/id_generator.py`
+- **Enhances**: `installer/core/lib/id_generator.py`
 - **Depends on**: TASK-046
 - **Use /task-work**: ✅ Yes
 
@@ -77,8 +77,8 @@ Waves represent groups of tasks that can be developed **in parallel** using Cond
 
 ```bash
 # Verify Wave 0 complete
-pytest installer/global/lib/test_id_generator.py -v
-python3 -c "from installer.global.lib.id_generator import generate_task_id; print(generate_task_id())"
+pytest installer/core/lib/test_id_generator.py -v
+python3 -c "from installer.core.lib.id_generator import generate_task_id; print(generate_task_id())"
 
 # Expected output: TASK-a3f8 (or similar 4-char hash)
 ```
@@ -122,7 +122,7 @@ ls -la hash-id-frontmatter/.claude/
 - Replace sequential ID logic with hash generator
 - Add prefix parameter support
 - Backward compatibility for reading old formats
-- **Modifies**: `installer/global/commands/task-create.md` + implementation
+- **Modifies**: `installer/core/commands/task-create.md` + implementation
 - **Depends on**: TASK-046, TASK-047
 - **Use /task-work**: ✅ Yes
 
@@ -132,7 +132,7 @@ ls -la hash-id-frontmatter/.claude/
 - Manual prefix specification
 - Auto-inference from epic, tags, title
 - Prefix validation and registry
-- **Enhances**: `installer/global/lib/id_generator.py`
+- **Enhances**: `installer/core/lib/id_generator.py`
 - **Depends on**: TASK-046
 - **Use /task-work**: ✅ Yes
 
@@ -169,7 +169,7 @@ conductor worktree merge
 - Bidirectional mapping (internal ↔ external)
 - Support JIRA, Azure DevOps, Linear, GitHub
 - Thread-safe counter management
-- **File**: `installer/global/lib/external_id_mapper.py`
+- **File**: `installer/core/lib/external_id_mapper.py`
 - **Depends on**: TASK-046 (for ID format understanding)
 - **Use /task-work**: ✅ Yes
 

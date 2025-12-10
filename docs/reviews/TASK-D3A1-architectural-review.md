@@ -23,14 +23,14 @@ After comprehensive analysis, I **strongly recommend** adopting the user's propo
 
 ```
 Current Implementation (Post TASK-C2F8):
-├── installer/global/agents/           # Global agents (source of truth)
+├── installer/core/agents/           # Global agents (source of truth)
 │   ├── task-manager.md
 │   ├── architectural-reviewer.md
 │   ├── test-orchestrator.md
 │   ├── code-reviewer.md
 │   └── software-architect.md
 │
-└── installer/global/templates/
+└── installer/core/templates/
     ├── guardkit-python/agents/      # DUPLICATED agents (maintenance burden)
     │   ├── task-manager.md            # Copy of global
     │   ├── architectural-reviewer.md  # Copy of global
@@ -103,7 +103,7 @@ Proposed Implementation:
 │   ├── code-reviewer.md
 │   └── software-architect.md
 │
-├── installer/global/templates/
+├── installer/core/templates/
 │   ├── react-typescript/
 │   │   └── agents/                    # Template-specific only
 │   │       ├── react-state-specialist.md
@@ -235,12 +235,12 @@ fi
 ### Phase 3: Template Cleanup (Day 4)
 ```bash
 # 1. Remove duplicate agents from all templates
-find installer/global/templates -name "task-manager.md" -delete
-find installer/global/templates -name "architectural-reviewer.md" -delete
+find installer/core/templates -name "task-manager.md" -delete
+find installer/core/templates -name "architectural-reviewer.md" -delete
 # ... etc
 
 # 2. Deprecate guardkit-python template
-mv installer/global/templates/guardkit-python installer/global/templates/.deprecated/
+mv installer/core/templates/guardkit-python installer/core/templates/.deprecated/
 
 # 3. Update documentation
 ```

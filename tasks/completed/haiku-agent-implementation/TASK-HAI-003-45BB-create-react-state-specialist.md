@@ -34,7 +34,7 @@ Create a new global implementation agent specialized in React hooks, state manag
 
 ## Objectives
 
-1. Create `installer/global/agents/react-state-specialist.md`
+1. Create `installer/core/agents/react-state-specialist.md`
 2. Include complete discovery metadata (stack, phase, capabilities, keywords)
 3. Add boundary sections (ALWAYS/NEVER/ASK) following GitHub best practices
 4. Configure model: haiku for cost-effective code generation
@@ -102,7 +102,7 @@ collaborates_with:
 
 ## Acceptance Criteria
 
-- [x] Agent file created at `installer/global/agents/react-state-specialist.md`
+- [x] Agent file created at `installer/core/agents/react-state-specialist.md`
 - [x] Discovery metadata validates against HAI-001 schema
 - [x] Stack: [react, typescript]
 - [x] Phase: implementation
@@ -119,7 +119,7 @@ collaborates_with:
 # Validate metadata
 python3 -c "
 import frontmatter
-with open('installer/global/agents/react-state-specialist.md') as f:
+with open('installer/core/agents/react-state-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['stack'] == ['react', 'typescript']
     assert agent.metadata['phase'] == 'implementation'
@@ -130,12 +130,12 @@ with open('installer/global/agents/react-state-specialist.md') as f:
 
 ## Reference Materials
 
-- `installer/global/templates/react-typescript/agents/react-query-specialist.md`
+- `installer/core/templates/react-typescript/agents/react-query-specialist.md`
 - `tasks/completed/agent-enhancement-implementation/agents/react/react-state-specialist.md`
 
 ## Deliverables
 
-1. Agent file: `installer/global/agents/react-state-specialist.md` ✅
+1. Agent file: `installer/core/agents/react-state-specialist.md` ✅
 2. Validation passed ✅
 3. Metadata complete ✅
 
@@ -154,7 +154,7 @@ with open('installer/global/agents/react-state-specialist.md') as f:
 
 ### Deliverables
 
-✅ **Agent File** (`installer/global/agents/react-state-specialist.md`)
+✅ **Agent File** (`installer/core/agents/react-state-specialist.md`)
 - ~380 lines of comprehensive agent documentation
 - Complete discovery metadata (stack, phase, capabilities, keywords)
 - 18 boundary rules (7 ALWAYS, 7 NEVER, 4 ASK)

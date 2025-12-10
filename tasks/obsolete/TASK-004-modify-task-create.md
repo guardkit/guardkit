@@ -90,7 +90,7 @@ Remove or simplify:
 
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/kuwait
-cp installer/global/commands/task-create.md installer/global/commands/task-create.md.backup
+cp installer/core/commands/task-create.md installer/core/commands/task-create.md.backup
 ```
 
 ### 2. Edit task-create.md
@@ -106,7 +106,7 @@ Edit the file to:
 ```bash
 # Check for forbidden references
 grep -i "epic\|feature.*link\|requirement.*trace\|ears\|bdd" \
-  installer/global/commands/task-create.md | \
+  installer/core/commands/task-create.md | \
   grep -v "# Historical" | grep -v "# Related"
 
 # Should return empty or only acceptable historical context

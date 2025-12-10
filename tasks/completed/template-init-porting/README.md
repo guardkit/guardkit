@@ -148,7 +148,7 @@ After each week:
 
 - **Parent Review**: [TASK-5E55](../../tasks/in_review/TASK-5E55-review-greenfield-initialization-workflow.md)
 - **Decision Analysis**: [template-init-vs-template-create-analysis.md](../../docs/decisions/template-init-vs-template-create-analysis.md)
-- **Implementation File**: [installer/global/commands/lib/greenfield_qa_session.py](../../../installer/global/commands/lib/greenfield_qa_session.py)
+- **Implementation File**: [installer/core/commands/lib/greenfield_qa_session.py](../../../installer/core/commands/lib/greenfield_qa_session.py)
 
 ## Questions?
 

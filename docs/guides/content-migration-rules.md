@@ -257,13 +257,13 @@ The extended file includes:
 
 1. **Backup**
    ```bash
-   cp installer/global/agents/{agent}.md installer/global/agents/{agent}.md.bak
+   cp installer/core/agents/{agent}.md installer/core/agents/{agent}.md.bak
    ```
 
 2. **Analyze structure**
    ```bash
-   grep "^##" installer/global/agents/{agent}.md
-   wc -c installer/global/agents/{agent}.md
+   grep "^##" installer/core/agents/{agent}.md
+   wc -c installer/core/agents/{agent}.md
    ```
 
 3. **Identify content to move**
@@ -282,8 +282,8 @@ The extended file includes:
 
 6. **Validate**
    ```bash
-   wc -c installer/global/agents/{agent}.md      # Should be ≤15KB
-   wc -c installer/global/agents/{agent}-ext.md  # Should have moved content
+   wc -c installer/core/agents/{agent}.md      # Should be ≤15KB
+   wc -c installer/core/agents/{agent}-ext.md  # Should have moved content
    ```
 
 ### Validation Checks
@@ -327,20 +327,20 @@ Based on current sizes and 55%+ reduction target:
 
 ```bash
 # Create backup
-cp installer/global/agents/{agent}.md installer/global/agents/{agent}.md.bak
+cp installer/core/agents/{agent}.md installer/core/agents/{agent}.md.bak
 
 # Verify backup
-head -20 installer/global/agents/{agent}.md.bak
+head -20 installer/core/agents/{agent}.md.bak
 ```
 
 ### If Issues Detected
 
 ```bash
 # Restore from backup
-cp installer/global/agents/{agent}.md.bak installer/global/agents/{agent}.md
+cp installer/core/agents/{agent}.md.bak installer/core/agents/{agent}.md
 
 # Verify restoration
-wc -c installer/global/agents/{agent}.md
+wc -c installer/core/agents/{agent}.md
 ```
 
 ### Backup Cleanup (after TASK-PD-024)
@@ -348,7 +348,7 @@ wc -c installer/global/agents/{agent}.md
 Only after all validations pass:
 ```bash
 ./scripts/test-progressive-disclosure.sh
-rm installer/global/agents/*.md.bak
+rm installer/core/agents/*.md.bak
 ```
 
 **Important**: Retain backups until final validation completes.

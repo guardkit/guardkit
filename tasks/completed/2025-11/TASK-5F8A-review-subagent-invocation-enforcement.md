@@ -224,7 +224,7 @@ For trivial tasks, you MAY implement directly IF:
 
 ### Changes to `/task-work` Command
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Section to Add** (after Step 4 execution protocol):
 
@@ -277,7 +277,7 @@ Before generating final report, complete this checklist:
 
 ### Changes to Final Report Template
 
-**Location**: `installer/global/commands/task-work.md` (Step 7)
+**Location**: `installer/core/commands/task-work.md` (Step 7)
 
 **Update "Agents Used" section**:
 

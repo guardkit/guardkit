@@ -16,7 +16,7 @@ TASK-005 requires implementing upfront complexity evaluation with task splitting
 
 TASK-003A has already implemented a robust, production-ready complexity evaluation system:
 
-**Core Components** (`installer/global/commands/lib/`):
+**Core Components** (`installer/core/commands/lib/`):
 - `complexity_calculator.py` - Core scoring engine with 4-factor aggregation
 - `complexity_models.py` - Complete data models (ComplexityScore, FactorScore, ReviewMode, etc.)
 - `complexity_factors.py` - Strategy pattern for factor evaluation (File, Pattern, Risk factors)
@@ -53,7 +53,7 @@ TASK-005 needs to evaluate complexity from **requirements** (earlier in workflow
 
 ### Revised Component Design
 
-#### Shared Library (`installer/global/commands/lib/`)
+#### Shared Library (`installer/core/commands/lib/`)
 
 **No Changes Needed**:
 - `complexity_calculator.py` - Reuse as-is
@@ -139,7 +139,7 @@ class SplitRecommendation:
     complexity_breakdown: ComplexityScore
 ```
 
-#### Command Integration (`installer/global/commands/`)
+#### Command Integration (`installer/core/commands/`)
 
 ```bash
 # upfront-complexity-check.sh (minimal bash bridge)
@@ -221,26 +221,26 @@ JSON Output / Interactive Decision
 
 ### Phase 1: Shared Library Refactoring (1-2 hours)
 
-**File**: `installer/global/commands/lib/upfront_complexity_adapter.py`
+**File**: `installer/core/commands/lib/upfront_complexity_adapter.py`
 - UpfrontComplexityAdapter class
 - Requirements parsing heuristics
 - Pattern/risk detection from requirements text
 
-**File**: `installer/global/commands/lib/task_split_advisor.py`
+**File**: `installer/core/commands/lib/task_split_advisor.py`
 - TaskSplitAdvisor class
 - Split recommendation logic
 - Heuristic split strategies
 
-**File**: `installer/global/commands/lib/split_models.py`
+**File**: `installer/core/commands/lib/split_models.py`
 - SplitRecommendation dataclass
 - Helper methods
 
 ### Phase 2: Command Integration (1 hour)
 
-**File**: `installer/global/commands/upfront-complexity-check.sh`
+**File**: `installer/core/commands/upfront-complexity-check.sh`
 - Bash bridge to Python CLI
 
-**File**: `installer/global/commands/lib/upfront_complexity_cli.py`
+**File**: `installer/core/commands/lib/upfront_complexity_cli.py`
 - CLI argument parsing
 - JSON I/O handling
 - Interactive decision flow
@@ -277,7 +277,7 @@ JSON Output / Interactive Decision
 
 ### Phase 5: Documentation (0.5 hours)
 
-**File**: `installer/global/commands/upfront-complexity-check.md`
+**File**: `installer/core/commands/upfront-complexity-check.md`
 - Command usage documentation
 - Examples
 - Configuration options
@@ -285,7 +285,7 @@ JSON Output / Interactive Decision
 ## File Structure
 
 ```
-installer/global/commands/
+installer/core/commands/
 ├── lib/
 │   ├── complexity_calculator.py           # TASK-003A (reused)
 │   ├── complexity_models.py               # TASK-003A (reused)

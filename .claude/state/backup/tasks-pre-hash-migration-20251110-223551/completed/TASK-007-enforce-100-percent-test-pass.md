@@ -48,7 +48,7 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ### Fix #1: Update task-work.md Phase 4.5 (lines 738-850)
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Changes**:
 - Add explicit "ABSOLUTE REQUIREMENT" header
@@ -59,7 +59,7 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ### Fix #2: Update task-work.md Step 6 (lines 884-905)
 
-**Location**: `installer/global/commands/task-work.md`
+**Location**: `installer/core/commands/task-work.md`
 
 **Changes**:
 - Replace with explicit blocking logic in Python pseudocode
@@ -72,7 +72,7 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ### Fix #3: Update test-orchestrator.md - Add BUILD BEFORE TEST rule
 
-**Location**: `installer/global/agents/test-orchestrator.md`
+**Location**: `installer/core/agents/test-orchestrator.md`
 
 **Changes**:
 - Add at line 17 (after Core Responsibilities)
@@ -85,7 +85,7 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ### Fix #4: Update test-orchestrator.md Quality Gates (lines 72-133)
 
-**Location**: `installer/global/agents/test-orchestrator.md`
+**Location**: `installer/core/agents/test-orchestrator.md`
 
 **Changes**:
 - Replace with zero-tolerance gate definitions
@@ -96,7 +96,7 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ### Fix #5: Add .NET MAUI-specific testing commands
 
-**Location**: `installer/global/templates/maui/agents/test-orchestrator.md`
+**Location**: `installer/core/templates/maui/agents/test-orchestrator.md`
 
 **Changes**:
 - Add MAUI-specific test execution section at line 135
@@ -109,9 +109,9 @@ The task-work command is currently allowing tasks to complete with failing tests
 
 ## Files to Modify
 
-1. `installer/global/commands/task-work.md` (Phase 4.5 and Step 6)
-2. `installer/global/agents/test-orchestrator.md` (BUILD BEFORE TEST rule and quality gates)
-3. `installer/global/templates/maui/agents/test-orchestrator.md` (MAUI-specific commands)
+1. `installer/core/commands/task-work.md` (Phase 4.5 and Step 6)
+2. `installer/core/agents/test-orchestrator.md` (BUILD BEFORE TEST rule and quality gates)
+3. `installer/core/templates/maui/agents/test-orchestrator.md` (MAUI-specific commands)
 
 ## Acceptance Criteria
 
@@ -233,8 +233,8 @@ def evaluate_task_completion(test_results, coverage_results):
 ## Related Documentation
 
 - [CLAUDE.md](../../CLAUDE.md) - Quality Gates section
-- [task-work.md](../../installer/global/commands/task-work.md) - Phase 4.5 and Step 6
-- [test-orchestrator.md](../../installer/global/agents/test-orchestrator.md) - Quality Gates
+- [task-work.md](../../installer/core/commands/task-work.md) - Phase 4.5 and Step 6
+- [test-orchestrator.md](../../installer/core/agents/test-orchestrator.md) - Quality Gates
 
 ## Priority Justification
 

@@ -50,7 +50,7 @@ Expected Flow:
 
 ### Where the Chain Breaks
 
-**File**: [installer/global/commands/template-create.md:1119-1127](installer/global/commands/template-create.md#L1119-L1127)
+**File**: [installer/core/commands/template-create.md:1119-1127](installer/core/commands/template-create.md#L1119-L1127)
 
 The command execution simply says:
 ```bash
@@ -69,7 +69,7 @@ There is **no bridge logic** to:
 
 **Python side (CORRECTLY IMPLEMENTED)**:
 
-1. **[template_create_orchestrator.py:174-177](installer/global/commands/lib/template_create_orchestrator.py#L174-L177)**: Bridge invoker initialized
+1. **[template_create_orchestrator.py:174-177](installer/core/commands/lib/template_create_orchestrator.py#L174-L177)**: Bridge invoker initialized
    ```python
    self.agent_invoker = AgentBridgeInvoker(
        phase=WorkflowPhase.PHASE_6,
@@ -77,12 +77,12 @@ There is **no bridge logic** to:
    )
    ```
 
-2. **[ai_analyzer.py:87](installer/global/lib/codebase_analyzer/ai_analyzer.py#L87)**: Bridge invoker passed to ArchitecturalReviewerInvoker
+2. **[ai_analyzer.py:87](installer/core/lib/codebase_analyzer/ai_analyzer.py#L87)**: Bridge invoker passed to ArchitecturalReviewerInvoker
    ```python
    self.agent_invoker = agent_invoker or ArchitecturalReviewerInvoker(bridge_invoker=bridge_invoker)
    ```
 
-3. **[invoker.py:184-195](installer/global/lib/agent_bridge/invoker.py#L184-L195)**: Exit code 42 generated correctly
+3. **[invoker.py:184-195](installer/core/lib/agent_bridge/invoker.py#L184-L195)**: Exit code 42 generated correctly
    ```python
    print(f"  ⏸️  Requesting agent invocation: {agent_name}")
    print(f"  📝 Request written to: {self.request_file}")
@@ -90,7 +90,7 @@ There is **no bridge logic** to:
    sys.exit(42)  # ← This fires, but nothing catches it!
    ```
 
-4. **[agent_invoker.py:128-131](installer/global/lib/codebase_analyzer/agent_invoker.py#L128-L131)**: Fallback triggered when no bridge response
+4. **[agent_invoker.py:128-131](installer/core/lib/codebase_analyzer/agent_invoker.py#L128-L131)**: Fallback triggered when no bridge response
    ```python
    # TASK-769D: No bridge invoker - raise error to trigger fallback
    raise AgentInvocationError(
@@ -218,7 +218,7 @@ When executing this command, Claude should:
 ### Implementation Scope
 
 **Files to modify**:
-1. `installer/global/commands/template-create.md` - Add bridge execution logic
+1. `installer/core/commands/template-create.md` - Add bridge execution logic
 
 **Testing required**:
 1. Run `/template-create` and verify:
@@ -256,13 +256,13 @@ When executing this command, Claude should:
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| [template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) | Main orchestrator | 2241 |
-| [ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py) | AI analysis | 434 |
-| [invoker.py](installer/global/lib/agent_bridge/invoker.py) | Bridge invoker | 298 |
-| [state_manager.py](installer/global/lib/agent_bridge/state_manager.py) | State persistence | 162 |
-| [agent_invoker.py](installer/global/lib/codebase_analyzer/agent_invoker.py) | Agent invocation | 631 |
-| [agent_generator.py](installer/global/lib/agent_generator/agent_generator.py) | Agent generation | 801 |
-| [template-create.md](installer/global/commands/template-create.md) | Command spec | 1127 |
+| [template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) | Main orchestrator | 2241 |
+| [ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py) | AI analysis | 434 |
+| [invoker.py](installer/core/lib/agent_bridge/invoker.py) | Bridge invoker | 298 |
+| [state_manager.py](installer/core/lib/agent_bridge/state_manager.py) | State persistence | 162 |
+| [agent_invoker.py](installer/core/lib/codebase_analyzer/agent_invoker.py) | Agent invocation | 631 |
+| [agent_generator.py](installer/core/lib/agent_generator/agent_generator.py) | Agent generation | 801 |
+| [template-create.md](installer/core/commands/template-create.md) | Command spec | 1127 |
 
 ---
 

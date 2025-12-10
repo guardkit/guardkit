@@ -25,13 +25,13 @@ Create the question templates and generator for Context A - review scope clarifi
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/lib/clarification/templates/review_scope.py` with:
+- [x] Create `installer/core/commands/lib/clarification/templates/review_scope.py` with:
   - [x] REVIEW_FOCUS_QUESTIONS - What aspects to analyze
   - [x] ANALYSIS_DEPTH_QUESTIONS - How deep to go
   - [x] TRADEOFF_PRIORITY_QUESTIONS - What to optimize for
   - [x] SPECIFIC_CONCERNS_QUESTIONS - User-specified focus areas
   - [x] EXTENSIBILITY_QUESTIONS - Future extensibility consideration
-- [x] Create `installer/global/commands/lib/clarification/generators/review_generator.py` with:
+- [x] Create `installer/core/commands/lib/clarification/generators/review_generator.py` with:
   - [x] `generate_review_questions()` function
   - [x] Logic to select questions based on review mode
   - [x] `get_question_priorities()` function for priority ordering
@@ -145,8 +145,8 @@ def generate_review_questions(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/templates/review_scope.py`
-2. `installer/global/commands/lib/clarification/generators/review_generator.py`
+1. `installer/core/commands/lib/clarification/templates/review_scope.py`
+2. `installer/core/commands/lib/clarification/generators/review_generator.py`
 
 ## Why Direct Implementation
 

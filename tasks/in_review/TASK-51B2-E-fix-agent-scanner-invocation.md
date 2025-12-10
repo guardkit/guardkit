@@ -40,7 +40,7 @@ complexity_evaluation:
 
 After TASK-51B2-D fixed import path errors, `/template-create` still fails to generate template files because the template_create_orchestrator is trying to call a non-existent function `scan_agents()` in the agent_scanner module.
 
-**Root Cause**: Logic error at [installer/global/commands/lib/template_create_orchestrator.py:501](installer/global/commands/lib/template_create_orchestrator.py#L501) - trying to access `_agent_scanner_module.scan_agents` which doesn't exist.
+**Root Cause**: Logic error at [installer/core/commands/lib/template_create_orchestrator.py:501](installer/core/commands/lib/template_create_orchestrator.py#L501) - trying to access `_agent_scanner_module.scan_agents` which doesn't exist.
 
 **Error Manifestation**:
 - AI agent invocation fails
@@ -67,14 +67,14 @@ And `MultiSourceAgentScanner` has a `scan()` method (not a module-level `scan_ag
 ## Implementation Summary
 
 **File Modified**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (lines 500-503)
+- `installer/core/commands/lib/template_create_orchestrator.py` (lines 500-503)
 
 **Changes Made**: 3 lines replaced
 
 ### Before (BROKEN):
 ```python
 # Line 500-503
-_agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner')
+_agent_scanner_module = importlib.import_module('installer.core.lib.agent_scanner')
 scan_agents = _agent_scanner_module.scan_agents  # ← BUG: doesn't exist
 inventory = scan_agents()  # ← This will fail
 ```
@@ -82,7 +82,7 @@ inventory = scan_agents()  # ← This will fail
 ### After (CORRECT):
 ```python
 # Line 500-503
-_agent_scanner_module = importlib.import_module('installer.global.lib.agent_scanner')
+_agent_scanner_module = importlib.import_module('installer.core.lib.agent_scanner')
 MultiSourceAgentScanner = _agent_scanner_module.MultiSourceAgentScanner
 scanner = MultiSourceAgentScanner()
 inventory = scanner.scan()

@@ -27,7 +27,7 @@ The `_serialize_value` method is 113 lines long, making it hard to test individu
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py:1821-1934`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py:1821-1934`
 
 The method handles multiple serialization types in one long function:
 - Pydantic models
@@ -85,7 +85,7 @@ The method handles multiple serialization types in one long function:
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Lines 1821-1934: Refactor `_serialize_value`
 
 ### Recommended Implementation

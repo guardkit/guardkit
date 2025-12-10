@@ -36,7 +36,7 @@ The resume flow fails because:
 
 ### Changes Made
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 1. **Line 213**: Added `self._phase1_cached_response = None` initialization
 2. **Lines 293-298**: Added early return check with logging when cached response available

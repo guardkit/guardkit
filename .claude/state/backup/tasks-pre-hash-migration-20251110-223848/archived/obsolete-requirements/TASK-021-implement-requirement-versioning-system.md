@@ -67,7 +67,7 @@ Add `/refine-requirements` command that:
 
 ### Phase 1: Version Data Model (2 hours)
 ```python
-# File: installer/global/commands/lib/requirement_versioning.py
+# File: installer/core/commands/lib/requirement_versioning.py
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -120,7 +120,7 @@ class RequirementHistory:
 
 ### Phase 2: Refine Requirements Command (3 hours)
 ```markdown
-# File: installer/global/commands/refine-requirements.md
+# File: installer/core/commands/refine-requirements.md
 
 # Refine Requirements Command
 
@@ -211,7 +211,7 @@ Tasks linked to REQ-042: TASK-001, TASK-002 (will use v2 for future work)
 
 ### Phase 3: Version History Storage (2 hours)
 ```python
-# File: installer/global/commands/lib/requirement_storage.py
+# File: installer/core/commands/lib/requirement_storage.py
 
 import json
 from pathlib import Path
@@ -277,7 +277,7 @@ requirements:
 ```
 
 ```python
-# File: installer/global/commands/lib/task_requirement_linker.py
+# File: installer/core/commands/lib/task_requirement_linker.py
 
 def link_task_to_requirement(task_id: str, requirement_id: str, version: int):
     """Link task to specific requirement version."""
@@ -342,16 +342,16 @@ def test_requirement_refinement_workflow():
 ## Files to Create/Modify
 
 ### New Files
-- `installer/global/commands/refine-requirements.md`
-- `installer/global/commands/lib/requirement_versioning.py`
-- `installer/global/commands/lib/requirement_storage.py`
-- `installer/global/commands/lib/task_requirement_linker.py`
+- `installer/core/commands/refine-requirements.md`
+- `installer/core/commands/lib/requirement_versioning.py`
+- `installer/core/commands/lib/requirement_storage.py`
+- `installer/core/commands/lib/task_requirement_linker.py`
 - `tests/unit/test_requirement_versioning.py`
 - `tests/integration/test_requirement_versioning.py`
 
 ### Modified Files
-- `installer/global/commands/task-create.md` (link to requirement versions)
-- `installer/global/commands/formalize-ears.md` (initialize version 1)
+- `installer/core/commands/task-create.md` (link to requirement versions)
+- `installer/core/commands/formalize-ears.md` (initialize version 1)
 
 ## Example Version History
 

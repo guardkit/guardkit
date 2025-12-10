@@ -21,14 +21,14 @@
 ### 1. Old Template Deletion ✅
 **Status**: PASS
 
-- ✅ Old `maui` template directory deleted from `installer/global/templates/maui/`
+- ✅ Old `maui` template directory deleted from `installer/core/templates/maui/`
 - ✅ 37 files removed (agents, templates, configuration)
 - ✅ No remaining physical directory
 
 **Verification**:
 ```bash
-ls installer/global/templates/maui
-# ls: installer/global/templates/maui: No such file or directory
+ls installer/core/templates/maui
+# ls: installer/core/templates/maui: No such file or directory
 ```
 
 ### 2. New Templates Exist ✅
@@ -40,7 +40,7 @@ ls installer/global/templates/maui
 
 **Verification**:
 ```bash
-ls installer/global/templates/
+ls installer/core/templates/
 # maui-appshell/
 # maui-navigationpage/
 ```
@@ -140,7 +140,7 @@ All acceptance criteria from TASK-011H met:
 git reset --hard 8e393d206f1882b462552080ed53fc5c01cc30c0
 
 # Restore just the template
-git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templates/maui/
+git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/core/templates/maui/
 ```
 
 ## Risk Assessment

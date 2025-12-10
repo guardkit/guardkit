@@ -41,7 +41,7 @@
 
 #### 1. Create task_context.py (2 hours)
 
-**File**: `/installer/global/commands/lib/task_context.py`
+**File**: `/installer/core/commands/lib/task_context.py`
 
 - [ ] **Create TaskContext dataclass**
   - [ ] Add fields: task_id, task_file_path, task_metadata
@@ -73,14 +73,14 @@
 **Validation**:
 ```bash
 # Run tests
-pytest tests/unit/test_task_context.py -v --cov=installer/global/commands/lib/task_context
+pytest tests/unit/test_task_context.py -v --cov=installer/core/commands/lib/task_context
 
 # Expected: All tests passing, coverage ≥80%
 ```
 
 #### 2. Create plan_parser.py (4 hours)
 
-**File**: `/installer/global/commands/lib/plan_parser.py`
+**File**: `/installer/core/commands/lib/plan_parser.py`
 
 - [ ] **Create PlanParser base class (Template Pattern)**
   - [ ] Define `parse(raw_plan: str, task_id: str) -> ImplementationPlan` template method
@@ -152,7 +152,7 @@ Estimated Duration: 2-3 hours
 **Validation**:
 ```bash
 # Run tests
-pytest tests/unit/test_plan_parser.py -v --cov=installer/global/commands/lib/plan_parser
+pytest tests/unit/test_plan_parser.py -v --cov=installer/core/commands/lib/plan_parser
 
 # Expected: All tests passing, coverage ≥85%
 ```
@@ -161,7 +161,7 @@ pytest tests/unit/test_plan_parser.py -v --cov=installer/global/commands/lib/pla
 
 #### 3. Create phase_27_handler.py (4 hours)
 
-**File**: `/installer/global/commands/lib/phase_27_handler.py`
+**File**: `/installer/core/commands/lib/phase_27_handler.py`
 
 - [ ] **Create Phase27Handler class**
   - [ ] Add `__init__(self)` method
@@ -207,7 +207,7 @@ pytest tests/unit/test_plan_parser.py -v --cov=installer/global/commands/lib/pla
 **Validation**:
 ```bash
 # Run tests
-pytest tests/unit/test_phase_27_handler.py -v --cov=installer/global/commands/lib/phase_27_handler
+pytest tests/unit/test_phase_27_handler.py -v --cov=installer/core/commands/lib/phase_27_handler
 
 # Expected: All tests passing, coverage ≥90%
 
@@ -226,7 +226,7 @@ print(f'Review Mode: {result.review_mode}')
 **Day 1 End-of-Day Validation**:
 - [ ] All Day 1 tests passing
 - [ ] Coverage reports generated
-- [ ] No linting errors (`flake8 installer/global/commands/lib/`)
+- [ ] No linting errors (`flake8 installer/core/commands/lib/`)
 - [ ] Git commit: "Day 1: Implemented task_context, plan_parser, phase_27_handler"
 
 ---
@@ -237,7 +237,7 @@ print(f'Review Mode: {result.review_mode}')
 
 #### 4. Create review_state_machine.py (3 hours)
 
-**File**: `/installer/global/commands/lib/review_state_machine.py`
+**File**: `/installer/core/commands/lib/review_state_machine.py`
 
 - [ ] **Create ReviewState enum**
   - [ ] AUTO_PROCEED = "auto_proceed"
@@ -277,12 +277,12 @@ print(f'Review Mode: {result.review_mode}')
 
 **Validation**:
 ```bash
-pytest tests/unit/test_review_state_machine.py -v --cov=installer/global/commands/lib/review_state_machine
+pytest tests/unit/test_review_state_machine.py -v --cov=installer/core/commands/lib/review_state_machine
 ```
 
 #### 5. Create review_commands.py (3 hours)
 
-**File**: `/installer/global/commands/lib/review_commands.py`
+**File**: `/installer/core/commands/lib/review_commands.py`
 
 - [ ] **Create ReviewCommand base class**
   - [ ] Define abstract `execute(context: TaskContext) -> TaskContext` method
@@ -314,14 +314,14 @@ pytest tests/unit/test_review_state_machine.py -v --cov=installer/global/command
 
 **Validation**:
 ```bash
-pytest tests/unit/test_review_commands.py -v --cov=installer/global/commands/lib/review_commands
+pytest tests/unit/test_review_commands.py -v --cov=installer/core/commands/lib/review_commands
 ```
 
 ### Afternoon: Phase 2.8 Handler (2 hours)
 
 #### 6. Create phase_28_handler.py (2 hours)
 
-**File**: `/installer/global/commands/lib/phase_28_handler.py`
+**File**: `/installer/core/commands/lib/phase_28_handler.py`
 
 - [ ] **Create Phase28Handler class**
   - [ ] Add `__init__(self)` method
@@ -374,7 +374,7 @@ pytest tests/unit/test_review_commands.py -v --cov=installer/global/commands/lib
 
 **Validation**:
 ```bash
-pytest tests/unit/test_phase_28_handler.py -v --cov=installer/global/commands/lib/phase_28_handler
+pytest tests/unit/test_phase_28_handler.py -v --cov=installer/core/commands/lib/phase_28_handler
 
 # Expected: All tests passing, coverage ≥90%
 ```
@@ -393,7 +393,7 @@ pytest tests/unit/test_phase_28_handler.py -v --cov=installer/global/commands/li
 
 #### 7. Update task-manager.md (3 hours)
 
-**File**: `/installer/global/agents/task-manager.md`
+**File**: `/installer/core/agents/task-manager.md`
 
 - [ ] **Add Phase 2.7 orchestration section** (after Phase 2.5)
   - [ ] Document Phase 2.7 responsibilities
@@ -428,7 +428,7 @@ pytest tests/unit/test_phase_28_handler.py -v --cov=installer/global/commands/li
 
 #### 8. Update task-work.md (2 hours)
 
-**File**: `/installer/global/commands/task-work.md`
+**File**: `/installer/core/commands/task-work.md`
 
 - [ ] **Insert Phase 2.7 invocation** (after Phase 2.5B)
   - [ ] Add section header: `#### Phase 2.7: Plan Generation & Complexity Evaluation (NEW)`
@@ -666,9 +666,9 @@ pytest tests/ -v --cov
   - [ ] Add docstrings where missing
 
 - [ ] **Run linting**
-  - [ ] `flake8 installer/global/commands/lib/`
+  - [ ] `flake8 installer/core/commands/lib/`
   - [ ] Fix all linting errors
-  - [ ] `mypy installer/global/commands/lib/` (if type hints used)
+  - [ ] `mypy installer/core/commands/lib/` (if type hints used)
   - [ ] Fix type errors
 
 - [ ] **Run full test suite**
@@ -684,13 +684,13 @@ pytest tests/ -v --cov
 **Validation**:
 ```bash
 # Linting
-flake8 installer/global/commands/lib/ --max-line-length=120
+flake8 installer/core/commands/lib/ --max-line-length=120
 
 # Type checking
-mypy installer/global/commands/lib/ --ignore-missing-imports
+mypy installer/core/commands/lib/ --ignore-missing-imports
 
 # Full test suite
-pytest tests/ -v --cov=installer/global/commands/lib --cov-report=html
+pytest tests/ -v --cov=installer/core/commands/lib --cov-report=html
 
 # Open coverage report
 open htmlcov/index.html

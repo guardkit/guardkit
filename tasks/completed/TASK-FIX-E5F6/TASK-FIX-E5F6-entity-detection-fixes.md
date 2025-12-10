@@ -200,13 +200,13 @@ def _is_valid_entity(self, entity: str, operations: Set[str]) -> bool:
 
 ## Files to Modify
 
-1. `installer/global/lib/template_generator/pattern_matcher.py`
+1. `installer/core/lib/template_generator/pattern_matcher.py`
    - Add `EXCLUDED_DIRECTORIES` constant
    - Add `EXCLUDED_PREFIXES` constant
    - Update `identify_crud_operation()` with exclusion logic
    - Fix `identify_entity()` extension handling
 
-2. `installer/global/lib/template_generator/completeness_validator.py`
+2. `installer/core/lib/template_generator/completeness_validator.py`
    - Add `_is_valid_entity()` method
    - Filter entities before completeness check
 

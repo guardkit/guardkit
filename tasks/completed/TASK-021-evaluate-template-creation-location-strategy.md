@@ -19,7 +19,7 @@ During template analysis testing, we observed that the `/template-create` comman
 ```
 Step 1: Template Creation (Development)
 ├─ Location: /Users/richwoollcott/Projects/Github/taskwright/
-│            installer/global/templates/ardalis-clean-architecture/
+│            installer/core/templates/ardalis-clean-architecture/
 ├─ Command: /template-create
 └─ Output: Template written to REPOSITORY location
 
@@ -40,7 +40,7 @@ When testing the `ardalis-clean-architecture` template:
 
 ```bash
 # 1. Created template on macOS VM
-/template-create  # Wrote to repo: ~/Projects/Github/taskwright/installer/global/templates/
+/template-create  # Wrote to repo: ~/Projects/Github/taskwright/installer/core/templates/
 
 # 2. Tried to use template immediately
 taskwright init ardalis-clean-architecture
@@ -105,7 +105,7 @@ User creates template from their codebase
 ```bash
 User creates template for team
 └─> Template should be reviewed and tested
-    └─> Goes to repo first (installer/global/templates/)
+    └─> Goes to repo first (installer/core/templates/)
         └─> Team reviews, commits to git
             └─> install.sh distributes to team members
 ```
@@ -165,7 +165,7 @@ taskwright init my-template  # Use immediately
 **Current Workflow** (repo → git → team install):
 ```bash
 /template-create  # Creates in repo
-git add installer/global/templates/team-template/
+git add installer/core/templates/team-template/
 git commit -m "Add team template"
 git push
 # Team members pull and run install.sh
@@ -175,7 +175,7 @@ git push
 **Direct-to-Global Workflow**:
 ```bash
 /template-create --to-repo  # Explicitly write to repo
-git add installer/global/templates/team-template/
+git add installer/core/templates/team-template/
 git commit -m "Add team template"
 git push
 # Team members pull and run install.sh
@@ -191,7 +191,7 @@ git push
 ```bash
 /template-create  # Creates in repo (correct!)
 # Review template quality
-git add installer/global/templates/new-template/
+git add installer/core/templates/new-template/
 git commit -m "Add new template"
 git push
 # Create PR for taskwright repo
@@ -324,10 +324,10 @@ TEMPLATE_DIR="$HOME/.agentecflow/templates/$TEMPLATE_NAME"
 **Implementation Logic**:
 ```bash
 if [[ inside taskwright repo ]]; then
-    OUTPUT_DIR="installer/global/templates/"
+    OUTPUT_DIR="installer/core/templates/"
     echo "📦 Template for distribution (in repo)"
 elif [[ --to-repo flag ]]; then
-    OUTPUT_DIR="installer/global/templates/"
+    OUTPUT_DIR="installer/core/templates/"
     echo "📦 Template for distribution"
 else
     OUTPUT_DIR="$HOME/.agentecflow/templates/"
@@ -381,7 +381,7 @@ cd ~/Projects/taskwright
 
 # Expected: Template in repo for version control
 git status
-# ✅ Should show: installer/global/templates/team-template/
+# ✅ Should show: installer/core/templates/team-template/
 ```
 
 ### Scenario 3: Template Iteration
@@ -406,7 +406,7 @@ installer/
 ~/.agentecflow/
 └── templates/ ← Where taskwright init reads from
 
-installer/global/commands/
+installer/core/commands/
 └── template-create.md ← Command that creates templates
 ```
 
@@ -431,7 +431,7 @@ Use this framework to make the final decision:
 2. Is the extra `install.sh` step acceptable for team/public templates?
 3. Should we optimize for the most common use case?
 4. How important is consistency with the current agent installation model?
-5. Are users aware of the `installer/global/templates/` vs `~/.agentecflow/templates/` distinction?
+5. Are users aware of the `installer/core/templates/` vs `~/.agentecflow/templates/` distinction?
 
 ## Next Steps
 

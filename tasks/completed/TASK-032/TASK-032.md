@@ -110,7 +110,7 @@ Implement the Priority 1 documentation updates identified in the TASK-012 MCP us
 
 ## Implementation Plan
 
-### File 1: `installer/global/agents/task-manager.md`
+### File 1: `installer/core/agents/task-manager.md`
 
 **Location**: Lines 21-73 (Context7 MCP Usage section)
 
@@ -137,7 +137,7 @@ Implement the Priority 1 documentation updates identified in the TASK-012 MCP us
 - **Decrease to 2000**: Testing frameworks (focused docs only)
 ```
 
-### File 2: `installer/global/agents/pattern-advisor.md`
+### File 2: `installer/core/agents/pattern-advisor.md`
 
 **Location**: After line 109 (in "find_patterns" section)
 
@@ -341,8 +341,8 @@ Have Zeplin design URL?
 5. **Validate**: Check all links, examples, and token numbers
 
 ### Files to Modify
-1. `installer/global/agents/task-manager.md` (~30 lines added)
-2. `installer/global/agents/pattern-advisor.md` (~40 lines added)
+1. `installer/core/agents/task-manager.md` (~30 lines added)
+2. `installer/core/agents/pattern-advisor.md` (~40 lines added)
 3. `docs/guides/mcp-optimization-guide.md` (~300 lines, new file)
 4. `CLAUDE.md` (~10 lines added)
 

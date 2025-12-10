@@ -19,7 +19,7 @@ This task is below the complexity threshold and does not require a human checkpo
 ### File Complexity: 1/3 (Low)
 
 **Files Modified:** 1
-- `installer/global/lib/id_generator.py` (+250 lines)
+- `installer/core/lib/id_generator.py` (+250 lines)
 
 **Files Created:** 1
 - `tests/lib/test_id_generator_prefix_inference.py` (~200 lines)

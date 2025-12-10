@@ -381,7 +381,7 @@ class TestConvenienceFunction:
         """Test convenience function uses default paths."""
         # This test would need more setup to properly mock Path.home()
         # For now, just verify it can be called
-        # In real usage, it would use ~/.agentecflow/templates and installer/global/templates
+        # In real usage, it would use ~/.agentecflow/templates and installer/core/templates
         pass
 
 

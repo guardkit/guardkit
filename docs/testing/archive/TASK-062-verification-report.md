@@ -703,7 +703,7 @@ To proceed to production:
 
 ## File Locations
 
-**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/react-fastapi-monorepo/`
+**Template Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/react-fastapi-monorepo/`
 
 **Key Files**:
 - Manifest: `manifest.json` (3.9 KB)

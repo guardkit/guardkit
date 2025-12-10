@@ -13,7 +13,7 @@ import re
 class TestMauiAppShellStructure:
     """Tests for MAUI AppShell template directory structure and configuration."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_template_directory_exists(self):
         """Verify the template root directory exists."""
@@ -58,7 +58,7 @@ class TestMauiAppShellStructure:
 class TestManifestJson:
     """Tests for manifest.json validation."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     @property
     def manifest_path(self) -> Path:
@@ -195,7 +195,7 @@ class TestManifestJson:
 class TestSettingsJson:
     """Tests for settings.json validation."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     @property
     def settings_path(self) -> Path:
@@ -273,7 +273,7 @@ class TestSettingsJson:
 class TestTemplateFiles:
     """Tests for template file existence and structure."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_domain_templates_exist(self):
         """Verify domain template files exist."""
@@ -352,7 +352,7 @@ class TestTemplateFiles:
 class TestAgentSpecifications:
     """Tests for agent specification files."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_agent_files_exist(self):
         """Verify agent specification files exist."""
@@ -397,7 +397,7 @@ class TestAgentSpecifications:
 class TestTemplatePlaceholders:
     """Tests for template placeholder consistency."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def get_placeholders(self, content: str) -> List[str]:
         """Extract all placeholders from template content."""
@@ -482,7 +482,7 @@ class TestTemplatePlaceholders:
 class TestNamingConventions:
     """Tests for naming convention compliance."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_domain_template_naming(self):
         """Verify domain templates follow naming conventions."""
@@ -535,7 +535,7 @@ class TestNamingConventions:
 class TestDocumentationCompleteness:
     """Tests for documentation completeness."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_claude_md_exists_and_complete(self):
         """Verify CLAUDE.md exists and has required sections."""
@@ -575,7 +575,7 @@ class TestDocumentationCompleteness:
 class TestTemplateCompleteness:
     """Tests for overall template completeness."""
 
-    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "global" / "templates" / "maui-appshell"
+    TEMPLATE_ROOT = Path(__file__).parent.parent.parent / "installer" / "core" / "templates" / "maui-appshell"
 
     def test_template_file_count(self):
         """Verify expected number of template files exist."""

@@ -189,7 +189,7 @@ If you have templates created with old Phase 7.5:
 - [ ] **AC4.3**: Include all flags (--dry-run, --strategy, --verbose)
 - [ ] **AC4.4**: Add examples and error scenarios
 
-**File 1**: `installer/global/commands/template-create.md` (add ~30 lines)
+**File 1**: `installer/core/commands/template-create.md` (add ~30 lines)
 
 ```markdown
 ## Incremental Agent Enhancement
@@ -222,7 +222,7 @@ Next steps:
 ```
 ```
 
-**File 2**: `installer/global/commands/agent-enhance.md` (new file, ~200 lines)
+**File 2**: `installer/core/commands/agent-enhance.md` (new file, ~200 lines)
 
 ```markdown
 # /agent-enhance - Enhance Single Agent with Template Context
@@ -435,7 +435,7 @@ docs/workflows/
     ├── Troubleshooting
     └── FAQ
 
-installer/global/commands/
+installer/core/commands/
 ├── template-create.md (updated)
 │   └── --create-agent-tasks flag
 └── agent-enhance.md (new)
@@ -486,8 +486,8 @@ installer/global/commands/
 
 1. ✅ Updated `CLAUDE.md` with incremental enhancement section
 2. ✅ New `docs/workflows/incremental-agent-enhancement.md` guide
-3. ✅ Updated `installer/global/commands/template-create.md`
-4. ✅ New `installer/global/commands/agent-enhance.md`
+3. ✅ Updated `installer/core/commands/template-create.md`
+4. ✅ New `installer/core/commands/agent-enhance.md`
 5. ✅ Comparison table (Phase 7.5 vs Phase 8)
 6. ✅ Troubleshooting guide and FAQ
 

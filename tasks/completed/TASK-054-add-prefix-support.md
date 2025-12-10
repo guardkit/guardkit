@@ -60,7 +60,7 @@ Implement intelligent prefix support for task IDs, including automatic inference
 ## Implementation Notes
 
 ### File Location
-Add to: `installer/global/lib/id_generator.py`
+Add to: `installer/core/lib/id_generator.py`
 
 ### Inference Rules (Priority Order)
 

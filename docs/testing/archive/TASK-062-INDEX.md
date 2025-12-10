@@ -73,7 +73,7 @@
 ---
 
 ### 5. Template Validation Report (Original)
-**File**: `installer/global/templates/react-fastapi-monorepo/validation-report.md`  
+**File**: `installer/core/templates/react-fastapi-monorepo/validation-report.md`  
 **Size**: 14.8 KB | **Sections**: 7  
 **Content**:
 - Validation methodology
@@ -172,7 +172,7 @@
 ## Template Structure
 
 ```
-installer/global/templates/react-fastapi-monorepo/
+installer/core/templates/react-fastapi-monorepo/
 
 Configuration (2 files):
 ├── manifest.json (3.9 KB) - Metadata & placeholders
@@ -324,7 +324,7 @@ Rationale:
 - [Placeholder Analysis](./TASK-062-placeholder-analysis.md)
 - [Test Execution Summary](./TASK-062-test-execution-summary.txt)
 - [Quick Summary](./.claude/task-plans/TASK-062-test-summary.md)
-- [Original Validation Report](../../installer/global/templates/react-fastapi-monorepo/validation-report.md)
+- [Original Validation Report](../../installer/core/templates/react-fastapi-monorepo/validation-report.md)
 
 ---
 

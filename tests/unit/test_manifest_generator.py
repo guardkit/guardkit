@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # Add lib directory to path - must be added to use lib. imports
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 

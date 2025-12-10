@@ -46,7 +46,7 @@ Create the complete `maui-appshell` template directory structure with Domain pat
 ## Requirements
 
 ### Directory Structure
-- [ ] Create `installer/global/templates/maui-appshell/` directory structure
+- [ ] Create `installer/core/templates/maui-appshell/` directory structure
 - [ ] Create `agents/` subdirectory for specialized agents
 - [ ] Create `templates/` subdirectory for code templates
 - [ ] Set up proper directory permissions
@@ -141,7 +141,7 @@ Create the complete `maui-appshell` template directory structure with Domain pat
 
 ### Directory Structure
 ```
-installer/global/templates/maui-appshell/
+installer/core/templates/maui-appshell/
 ├── manifest.json                       # Template metadata
 ├── CLAUDE.md                          # Comprehensive guidance
 ├── settings.json                      # Template configuration

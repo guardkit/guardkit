@@ -623,8 +623,8 @@ TASK-FIX-E5F6: Verify exclusion patterns work on real codebase.
 
 import pytest
 from pathlib import Path
-from installer.global.lib.template_generator.pattern_matcher import CRUDPatternMatcher
-from installer.global.lib.template_generator.models import CodeTemplate
+from installer.core.lib.template_generator.pattern_matcher import CRUDPatternMatcher
+from installer.core.lib.template_generator.models import CodeTemplate
 
 
 class TestKartlogEntityDetection:
@@ -681,8 +681,8 @@ class TestKartlogEntityDetection:
 
     def test_no_malformed_template_names_generated(self):
         """Verify completeness validator doesn't generate malformed template names."""
-        from installer.global.lib.template_generator.completeness_validator import CompletenessValidator
-        from installer.global.lib.template_generator.models import TemplateCollection
+        from installer.core.lib.template_generator.completeness_validator import CompletenessValidator
+        from installer.core.lib.template_generator.models import TemplateCollection
 
         # Simulate kartlog templates
         templates = [
@@ -809,7 +809,7 @@ class TestKartlogEntityDetection:
 
 ## Files to Modify
 
-### 1. `installer/global/lib/template_generator/pattern_matcher.py`
+### 1. `installer/core/lib/template_generator/pattern_matcher.py`
 
 **Changes**:
 - Add `EXCLUDED_DIRECTORIES`, `EXCLUDED_PREFIXES`, `CRUD_LAYERS` constants (+35 lines)
@@ -820,7 +820,7 @@ class TestKartlogEntityDetection:
 
 ---
 
-### 2. `installer/global/lib/template_generator/completeness_validator.py`
+### 2. `installer/core/lib/template_generator/completeness_validator.py`
 
 **Changes**:
 - Add `_is_valid_entity()` method (+30 lines)

@@ -284,7 +284,7 @@ if exit_code == 42:
 
 ### Component 1: AgentBridgeInvoker (Python)
 
-**File**: `installer/global/lib/agent_bridge/invoker.py` (NEW)
+**File**: `installer/core/lib/agent_bridge/invoker.py` (NEW)
 
 ```python
 """
@@ -487,7 +487,7 @@ class AgentInvocationError(Exception):
 
 ### Component 2: State Manager (Python)
 
-**File**: `installer/global/lib/agent_bridge/state_manager.py` (NEW)
+**File**: `installer/core/lib/agent_bridge/state_manager.py` (NEW)
 
 ```python
 """
@@ -601,7 +601,7 @@ class StateManager:
 
 ### Component 3: Orchestrator Integration
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (MODIFY)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (MODIFY)
 
 **Changes Required**:
 
@@ -612,8 +612,8 @@ class StateManager:
 
 ```python
 # Add imports
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
-from installer.global.lib.agent_bridge.state_manager import StateManager, TemplateCreateState
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.state_manager import StateManager, TemplateCreateState
 
 class TemplateCreateOrchestrator:
     def __init__(self, config: OrchestrationConfig, resume: bool = False):
@@ -739,7 +739,7 @@ class TemplateCreateOrchestrator:
         self._print_phase_header("Phase 6: Agent Recommendation")
 
         try:
-            from installer.global.lib.agent_scanner import scan_agents
+            from installer.core.lib.agent_scanner import scan_agents
 
             inventory = scan_agents()
 
@@ -791,7 +791,7 @@ class TemplateCreateOrchestrator:
 
 ### Integration 1: `/template-create` Command (Markdown)
 
-**File**: `installer/global/commands/template-create.md` (MODIFY)
+**File**: `installer/core/commands/template-create.md` (MODIFY)
 
 Add execution loop at the end of the file:
 
@@ -816,7 +816,7 @@ Run orchestrator:
 
 ```bash
 cd <codebase-path>
-python3 -m installer.global.commands.lib.template_create_orchestrator \
+python3 -m installer.core.commands.lib.template_create_orchestrator \
   --path "." \
   --output-location global \
   [other args...]
@@ -842,7 +842,7 @@ Capture exit code.
    - Add metadata (model, tokens)
 4. Re-run orchestrator with `--resume` flag:
    ```bash
-   python3 -m installer.global.commands.lib.template_create_orchestrator \
+   python3 -m installer.core.commands.lib.template_create_orchestrator \
      --resume \
      [original args...]
    ```
@@ -900,7 +900,7 @@ args = parse_template_create_args(user_input)
 # Step 2: Build command
 cmd_parts = [
     "python3", "-m",
-    "installer.global.commands.lib.template_create_orchestrator"
+    "installer.core.commands.lib.template_create_orchestrator"
 ]
 for key, value in args.items():
     if value is True:
@@ -1100,7 +1100,7 @@ def test_template_create_checkpoint_resume():
     """Test complete checkpoint-resume flow"""
     # Run orchestrator (will exit with code 42)
     result = subprocess.run(
-        ["python3", "-m", "installer.global.commands.lib.template_create_orchestrator",
+        ["python3", "-m", "installer.core.commands.lib.template_create_orchestrator",
          "--path", "test_codebase"],
         capture_output=True
     )
@@ -1116,7 +1116,7 @@ def test_template_create_checkpoint_resume():
 
     # Resume orchestrator
     result = subprocess.run(
-        ["python3", "-m", "installer.global.commands.lib.template_create_orchestrator",
+        ["python3", "-m", "installer.core.commands.lib.template_create_orchestrator",
          "--resume"],
         capture_output=True
     )

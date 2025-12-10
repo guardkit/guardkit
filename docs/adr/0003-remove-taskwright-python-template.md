@@ -61,7 +61,7 @@ During architectural review (TASK-D3A1) and post-implementation analysis, the fo
 
 ### Implementation
 
-1. Delete `installer/global/templates/guardkit-python/` directory
+1. Delete `installer/core/templates/guardkit-python/` directory
 2. Update template count from 6 to 5 in all documentation
 3. Add explanation for removal in key documentation files
 4. Create this ADR to document the decision and rationale
@@ -199,7 +199,7 @@ Templates are not the right medium for understanding complex architectures - the
 
 ## Implementation Checklist
 
-- [x] Delete `installer/global/templates/guardkit-python/` directory
+- [x] Delete `installer/core/templates/guardkit-python/` directory
 - [x] Update `CLAUDE.md` template count (6 → 5)
 - [x] Update `CLAUDE.md` Template Philosophy section
 - [x] Add explanation for removal in `CLAUDE.md`

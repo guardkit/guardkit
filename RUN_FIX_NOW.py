@@ -11,7 +11,7 @@ from pathlib import Path
 def apply_task_fix_pd05():
     """Apply the fix for TASK-FIX-PD05"""
 
-    file_path = Path('installer/global/lib/template_generator/claude_md_generator.py')
+    file_path = Path('installer/core/lib/template_generator/claude_md_generator.py')
 
     # Verify we're in the right directory
     if not file_path.exists():

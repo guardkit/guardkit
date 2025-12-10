@@ -8,7 +8,7 @@ Generate IMPLEMENTATION-GUIDE.md files from subtask definitions, following the e
 
 ### 1. Core Function Design
 
-**Module**: `installer/global/lib/guide_generator.py`
+**Module**: `installer/core/lib/guide_generator.py`
 
 **Main Functions**:
 ```python

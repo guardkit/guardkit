@@ -58,7 +58,7 @@ Run template creation and verify:
 
 ## Files Changed
 
-- `installer/global/commands/template-create.md` (3 changes):
+- `installer/core/commands/template-create.md` (3 changes):
   - Lines 1258-1261: Fixed example pattern
   - Lines 1356-1357: Added explicit print statements
   - Lines 1394-1399: Clarified Write tool usage

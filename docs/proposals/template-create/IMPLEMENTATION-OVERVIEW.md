@@ -115,12 +115,12 @@ Detected as: Java ❌ (should be C#)
 
 ### New Files (4,900 LOC)
 ```
-installer/global/lib/agent_bridge/
+installer/core/lib/agent_bridge/
 ├── checkpoint_manager.py        # 200 LOC
 ├── agent_invoker.py             # 150 LOC
 └── response_parser.py           # 100 LOC
 
-installer/global/lib/codebase_analyzer/
+installer/core/lib/codebase_analyzer/
 └── exclusion_patterns.py        # 200 LOC
 
 tests/ (various)                 # 1,200 LOC

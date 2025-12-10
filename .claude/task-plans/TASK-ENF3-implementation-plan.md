@@ -11,7 +11,7 @@
 
 | File | Type | Changes |
 |------|------|---------|
-| `installer/global/commands/task-work.md` | Modify | Add pre/post invocation messages to Phases 2, 2.5B, 3, 4, 5 |
+| `installer/core/commands/task-work.md` | Modify | Add pre/post invocation messages to Phases 2, 2.5B, 3, 4, 5 |
 | `.claude/task-plans/TASK-ENF3-implementation-plan.md` | Create | This plan (reference) |
 
 ---
@@ -20,7 +20,7 @@
 
 ### Phase 2: Add Messages to Phase 2 (Implementation Planning)
 
-**Location**: `installer/global/commands/task-work.md` line ~997
+**Location**: `installer/core/commands/task-work.md` line ~997
 
 **Change**: Insert 2 message blocks around existing Phase 2 INVOKE
 
@@ -61,7 +61,7 @@ Proceeding to Phase 2.5A (Pattern Suggestion)...
 
 ### Phase 3: Add Messages to Phase 2.5B (Architectural Review)
 
-**Location**: `installer/global/commands/task-work.md` line ~1074
+**Location**: `installer/core/commands/task-work.md` line ~1074
 
 **Change**: Insert 2 message blocks around existing Phase 2.5B INVOKE
 
@@ -103,7 +103,7 @@ Proceeding to Phase 2.7 (Complexity Evaluation)...
 
 ### Phase 4: Add Messages to Phase 3 (Implementation)
 
-**Location**: `installer/global/commands/task-work.md` line ~1788
+**Location**: `installer/core/commands/task-work.md` line ~1788
 
 **Change**: Insert 2 message blocks around existing Phase 3 INVOKE
 
@@ -147,7 +147,7 @@ Proceeding to Phase 4 (Testing)...
 
 ### Phase 5: Add Messages to Phase 4 (Testing)
 
-**Location**: `installer/global/commands/task-work.md` line ~1803
+**Location**: `installer/core/commands/task-work.md` line ~1803
 
 **Change**: Insert 2 message blocks around existing Phase 4 INVOKE
 
@@ -191,7 +191,7 @@ Status: Tests {status}
 
 ### Phase 6: Add Messages to Phase 5 (Code Review)
 
-**Location**: `installer/global/commands/task-work.md` line ~1974
+**Location**: `installer/core/commands/task-work.md` line ~1974
 
 **Change**: Insert 2 message blocks around existing Phase 5 INVOKE
 

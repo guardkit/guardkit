@@ -51,19 +51,19 @@ MINIMUM_TOTAL_COVERAGE = 85.0  # Global minimum: 85%
 # --- Module-Specific Targets ---
 
 MODULE_SPECIFIC_TARGETS: Dict[str, Dict[str, float]] = {
-    'installer/global/commands/lib/complexity_calculator.py': {
+    'installer/core/commands/lib/complexity_calculator.py': {
         'line': 95.0,       # Core logic requires higher coverage
         'branch': 90.0,
     },
-    'installer/global/commands/lib/review_modes.py': {
+    'installer/core/commands/lib/review_modes.py': {
         'line': 92.0,
         'branch': 88.0,
     },
-    'installer/global/commands/lib/complexity_factors.py': {
+    'installer/core/commands/lib/complexity_factors.py': {
         'line': 93.0,
         'branch': 88.0,
     },
-    'installer/global/commands/lib/review_router.py': {
+    'installer/core/commands/lib/review_router.py': {
         'line': 90.0,
         'branch': 85.0,
     },
@@ -385,7 +385,7 @@ python_functions = test_*
 
 # Coverage settings
 addopts =
-    --cov=installer/global/commands/lib
+    --cov=installer/core/commands/lib
     --cov=tests
     --cov-report=term-missing
     --cov-report=html:htmlcov
@@ -414,7 +414,7 @@ skip_empty = {COVERAGE_REPORT_CONFIG['skip_empty']}
 
 [coverage:run]
 branch = True
-source = installer/global/commands/lib/
+source = installer/core/commands/lib/
 omit =
     */tests/*
     */test_*.py

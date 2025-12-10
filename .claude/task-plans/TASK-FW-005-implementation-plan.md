@@ -13,7 +13,7 @@ Implement file conflict analysis to detect which subtasks can run in parallel an
 
 ### 2. Implementation Structure
 
-#### Module: `installer/global/lib/parallel_analyzer.py`
+#### Module: `installer/core/lib/parallel_analyzer.py`
 
 **Functions to Implement:**
 1. `detect_parallel_groups(subtasks: list[dict]) -> list[dict]`

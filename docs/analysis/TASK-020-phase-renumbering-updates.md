@@ -121,7 +121,7 @@ Phase 8: Package Assembly
 
 ### Remaining Tasks (Future Implementation)
 When implementing TASK-020, ensure:
-- [ ] Update `installer/global/commands/lib/template_create_orchestrator.py` with correct phase numbers
+- [ ] Update `installer/core/commands/lib/template_create_orchestrator.py` with correct phase numbers
 - [ ] Create test files with updated function names
 - [ ] Update `template-create.md` command documentation with Phase 5.5
 - [ ] Verify workflow diagrams reflect new phase order

@@ -8,7 +8,7 @@ import pytest
 from pathlib import Path
 
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "installer/global/lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "installer/core/lib"))
 
 from state_paths import (
     get_state_dir,

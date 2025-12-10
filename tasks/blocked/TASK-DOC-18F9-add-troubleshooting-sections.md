@@ -45,15 +45,15 @@ The `agent-ehance-output/` directory exists but contains only empty placeholder 
 
 1. **Cancel Task**: If the progressive disclosure review files are no longer needed
 2. **Regenerate Files**: Re-run `/template-create` on the original source project to regenerate the template files
-3. **Apply to Different Files**: Update this task to target different agent -ext.md files that do exist (e.g., in `installer/global/agents/` or template directories)
+3. **Apply to Different Files**: Update this task to target different agent -ext.md files that do exist (e.g., in `installer/core/agents/` or template directories)
 
 ### Recommended Action
 
 **Cancel this task** - The progressive disclosure review was a one-time activity. The template output files are no longer needed and have been cleaned up.
 
 If troubleshooting sections need to be added to actual production agent files, create a new task targeting the existing files in:
-- `installer/global/agents/*-ext.md`
-- `installer/global/templates/*/agents/*-ext.md`
+- `installer/core/agents/*-ext.md`
+- `installer/core/templates/*/agents/*-ext.md`
 
 ---
 

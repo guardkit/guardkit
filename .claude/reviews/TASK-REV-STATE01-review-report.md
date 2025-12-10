@@ -30,7 +30,7 @@
 
 #### 1.1 Orchestrator State File (CRITICAL)
 
-**File**: `installer/global/lib/agent_enhancement/orchestrator.py`
+**File**: `installer/core/lib/agent_enhancement/orchestrator.py`
 **Line**: 76
 
 ```python
@@ -41,7 +41,7 @@ self.state_file = Path(".agent-enhance-state.json")
 
 #### 1.2 Agent Bridge Invoker - Request/Response Files (HIGH)
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 **Lines**: 131, 136
 
 ```python
@@ -64,7 +64,7 @@ This is a copy of the invoker file used for documentation/review purposes. Same 
 
 #### 2.1 State Manager (CRITICAL)
 
-**File**: `installer/global/lib/agent_bridge/state_manager.py`
+**File**: `installer/core/lib/agent_bridge/state_manager.py`
 **Line**: 66
 
 ```python
@@ -75,7 +75,7 @@ def __init__(self, state_file: Path = Path(".template-create-state.json")):
 
 #### 2.2 Template Config Handler (MEDIUM)
 
-**File**: `installer/global/lib/template_config_handler.py`
+**File**: `installer/core/lib/template_config_handler.py`
 **Line**: 42, 52-53
 
 ```python
@@ -89,7 +89,7 @@ self.config_file = self.config_dir / self.CONFIG_FILENAME
 
 #### 2.3 Greenfield QA Session (MEDIUM)
 
-**File**: `installer/global/commands/lib/greenfield_qa_session.py`
+**File**: `installer/core/commands/lib/greenfield_qa_session.py`
 **Lines**: 1263, 1286, 1300
 
 ```python
@@ -103,7 +103,7 @@ session_file = Path(".template-init-partial-session.json")
 
 ### Finding 3: Template Create Orchestrator References
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 **Line**: 189
 
 ```python
@@ -222,8 +222,8 @@ self.state_file = codebase_path / ".template-create-state.json"
 ### Recommendation 1: Fix Critical Files First (Phase 1)
 
 **Files to change**:
-1. `installer/global/lib/agent_enhancement/orchestrator.py` (line 76)
-2. `installer/global/lib/agent_bridge/state_manager.py` (line 66)
+1. `installer/core/lib/agent_enhancement/orchestrator.py` (line 76)
+2. `installer/core/lib/agent_bridge/state_manager.py` (line 66)
 
 **Change**:
 ```python
@@ -243,7 +243,7 @@ def __init__(self, state_file: Path = None):
 
 ### Recommendation 2: Fix Agent Bridge Invoker (Phase 1)
 
-**File**: `installer/global/lib/agent_bridge/invoker.py` (lines 131, 136)
+**File**: `installer/core/lib/agent_bridge/invoker.py` (lines 131, 136)
 
 **Change**:
 ```python
@@ -351,13 +351,13 @@ Create test that:
 
 1. `tasks/backlog/TASK-REV-STATE01-review-checkpoint-resume-regression.md`
 2. `tasks/backlog/TASK-FIX-STATE01-state-file-persistence-issue.md`
-3. `installer/global/lib/agent_enhancement/orchestrator.py`
-4. `installer/global/lib/agent_bridge/invoker.py`
-5. `installer/global/lib/agent_bridge/state_manager.py`
-6. `installer/global/lib/template_config_handler.py`
-7. `installer/global/commands/lib/greenfield_qa_session.py`
-8. `installer/global/commands/lib/template_create_orchestrator.py`
-9. `installer/global/commands/agent-enhance.py`
+3. `installer/core/lib/agent_enhancement/orchestrator.py`
+4. `installer/core/lib/agent_bridge/invoker.py`
+5. `installer/core/lib/agent_bridge/state_manager.py`
+6. `installer/core/lib/template_config_handler.py`
+7. `installer/core/commands/lib/greenfield_qa_session.py`
+8. `installer/core/commands/lib/template_create_orchestrator.py`
+9. `installer/core/commands/agent-enhance.py`
 10. `docs/reviews/progressive-disclosure/regression.md`
 11. `docs/reviews/progressive-disclosure/invoker.py`
 12. `tests/lib/agent_enhancement/test_orchestrator.py`

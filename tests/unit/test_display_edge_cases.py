@@ -16,7 +16,7 @@ from typing import Dict, Any
 from unittest.mock import Mock
 
 # Add installer lib to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from pager_display import PagerDisplay, format_plan_section
 from complexity_models import ImplementationPlan, ComplexityScore, ReviewMode

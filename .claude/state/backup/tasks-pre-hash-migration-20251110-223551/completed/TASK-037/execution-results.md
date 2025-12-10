@@ -29,8 +29,8 @@ TASK-037 (Remove BDD Mode from GuardKit) has been **successfully completed and v
 
 **What Was Verified**:
 - Deletion of `.claude/agents/bdd-generator.md`
-- Deletion of `installer/global/instructions/core/bdd-gherkin.md`
-- Deletion of all `installer/global/templates/*/agents/bdd-generator.md` files
+- Deletion of `installer/core/instructions/core/bdd-gherkin.md`
+- Deletion of all `installer/core/templates/*/agents/bdd-generator.md` files
 
 **Evidence**:
 ```
@@ -62,14 +62,14 @@ Search Results:
 **Evidence**:
 ```
 Search Results:
-- Command: grep -r "mode=bdd" installer/global/commands/ .claude/commands/
+- Command: grep -r "mode=bdd" installer/core/commands/ .claude/commands/
 - Matches Found: 0
 - Expected: 0
 - Result: PASS
 ```
 
 **Files Checked**:
-- `/installer/global/commands/task-work.md` - CLEAN
+- `/installer/core/commands/task-work.md` - CLEAN
 - `/.claude/commands/task-work.md` - CLEAN
 - `/.claude/commands/task-work-specification.md` - CLEAN
 
@@ -119,7 +119,7 @@ Search Results:
 **Evidence**:
 ```
 Search Results:
-- Command: grep -n "def supports_bdd" installer/global/lib/feature_detection.py
+- Command: grep -n "def supports_bdd" installer/core/lib/feature_detection.py
 - Matches Found: 2
 - Expected: 2 (class method + module function)
 - Result: PASS
@@ -228,7 +228,7 @@ Historical (Appropriately Archived):
 ## Cross-Reference Verification
 
 ### Reference Document Analysis
-**Document**: `/installer/global/agents/test-orchestrator.md`
+**Document**: `/installer/core/agents/test-orchestrator.md`
 **Status**: VERIFIED COMPATIBLE
 
 **Findings**:
@@ -262,9 +262,9 @@ Result: All template bdd-generator.md files successfully removed
 
 ```
 Files Checked:
-- installer/global/commands/task-work.md: Consistent
-- installer/global/commands/task-create.md: Consistent
-- installer/global/commands/task-complete.md: Consistent
+- installer/core/commands/task-work.md: Consistent
+- installer/core/commands/task-create.md: Consistent
+- installer/core/commands/task-complete.md: Consistent
 - .claude/commands/task-work.md: Consistent
 - .claude/commands/task-work-specification.md: Consistent
 
@@ -441,13 +441,13 @@ For future verification or validation, use these commands:
 find . -name "*bdd-generator*" -o -name "*bdd-gherkin*" | grep -v .git | grep -v .conductor | wc -l
 
 # Verify mode=bdd removed (should return 0)
-grep -r "mode=bdd" installer/global/commands/ .claude/commands/ 2>/dev/null | wc -l
+grep -r "mode=bdd" installer/core/commands/ .claude/commands/ 2>/dev/null | wc -l
 
 # Verify BDD references removed (should return 0)
 grep -r "BDD Mode" CLAUDE.md .claude/CLAUDE.md 2>/dev/null | wc -l
 
 # Verify supports_bdd() preserved (should return 2+)
-grep -c "def supports_bdd" installer/global/lib/feature_detection.py
+grep -c "def supports_bdd" installer/core/lib/feature_detection.py
 
 # Verify CHANGELOG updated
 grep -n "BDD Mode" installer/CHANGELOG.md | head -1

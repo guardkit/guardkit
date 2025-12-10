@@ -40,7 +40,7 @@ Modify the `/template-create` markdown command to implement a checkpoint-resume 
 
 ### Step 1: Add Execution Section to template-create.md
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 **Location**: End of file (after line 898)
 **Estimated Duration**: 60 minutes
 
@@ -78,7 +78,7 @@ Modify the `/template-create` markdown command to implement a checkpoint-resume 
 
 ## Files to Modify
 
-### 1. `installer/global/commands/template-create.md`
+### 1. `installer/core/commands/template-create.md`
 
 **Type**: Markdown command specification
 **Changes**: Add "Execution" section at end of file
@@ -131,7 +131,7 @@ Since this is a markdown command specification, testing will be manual:
 - ✅ TASK-BRIDGE-002: Orchestrator Integration
 
 ### Required Files
-- `installer/global/commands/lib/template_create_orchestrator.py` (must support --resume)
+- `installer/core/commands/lib/template_create_orchestrator.py` (must support --resume)
 - `.agent-request.json` (created by orchestrator on exit 42)
 - `.agent-response.json` (created by command on agent completion)
 

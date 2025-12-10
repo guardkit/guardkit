@@ -55,4 +55,4 @@ CLAUDE.md has extensive coverage distinguishing `/task-review` from `/task-work`
 
 - CLAUDE.md (Review vs Implementation Workflows)
 - docs/workflows/task-review-workflow.md
-- installer/global/commands/task-review.md
+- installer/core/commands/task-review.md

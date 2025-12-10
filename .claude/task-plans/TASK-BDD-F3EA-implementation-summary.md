@@ -7,7 +7,7 @@ Successfully created the missing `feature_detection.py` module that enables BDD 
 
 ### Files Created
 
-#### 1. `/installer/global/commands/lib/feature_detection.py` (180 LOC)
+#### 1. `/installer/core/commands/lib/feature_detection.py` (180 LOC)
 **Purpose**: Feature detection module for RequireKit integration
 
 **Functions Implemented**:
@@ -81,7 +81,7 @@ return any(path.exists() for path in marker_paths)
 
 #### Module Import
 ✓ Both import styles work:
-- `from installer.global.commands.lib.feature_detection import supports_bdd`
+- `from installer.core.commands.lib.feature_detection import supports_bdd`
 - `from lib.feature_detection import supports_bdd, ...`
 
 #### Functionality Test
@@ -194,7 +194,7 @@ REQUIREMENTS_AVAILABLE = supports_requirements()
 
 ### Acceptance Criteria Status
 
-- [x] Create `installer/global/commands/lib/feature_detection.py`
+- [x] Create `installer/core/commands/lib/feature_detection.py`
 - [x] Implement `supports_bdd()` function with marker file detection
 - [x] Implement `supports_requirements()` function
 - [x] Implement `supports_epics()` function
@@ -209,7 +209,7 @@ REQUIREMENTS_AVAILABLE = supports_requirements()
 
 1. **Run Full Test Suite** (when pytest available)
    ```bash
-   pytest tests/lib/test_feature_detection.py -v --cov=installer/global/commands/lib/feature_detection
+   pytest tests/lib/test_feature_detection.py -v --cov=installer/core/commands/lib/feature_detection
    ```
 
 2. **Update Related Tasks**

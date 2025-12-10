@@ -23,8 +23,8 @@ Create a lightweight, pattern-based command to format agent documentation files 
 **Required:**
 - `path` - Agent file path or glob pattern
   - Single file: `/path/to/agent.md` or `agent.md`
-  - Glob pattern: `installer/global/agents/*.md`
-  - Directory: `installer/global/agents/` (formats all .md files)
+  - Glob pattern: `installer/core/agents/*.md`
+  - Directory: `installer/core/agents/` (formats all .md files)
 
 **Optional Flags:**
 - `--dry-run` - Preview changes without applying (default: false)
@@ -38,19 +38,19 @@ Create a lightweight, pattern-based command to format agent documentation files 
 
 ```bash
 # Format single agent
-/agent-format installer/global/agents/architectural-reviewer.md
+/agent-format installer/core/agents/architectural-reviewer.md
 
 # Format all global agents
-/agent-format installer/global/agents/*.md
+/agent-format installer/core/agents/*.md
 
 # Dry-run preview with report
 /agent-format architectural-reviewer.md --dry-run --report
 
 # Batch format with validation report
-/agent-format installer/global/agents/*.md --report
+/agent-format installer/core/agents/*.md --report
 
 # Validate quality metrics only (no changes)
-/agent-format installer/global/agents/*.md --validate-only
+/agent-format installer/core/agents/*.md --validate-only
 ```
 
 ---
@@ -279,7 +279,7 @@ def calculate_specificity_score(agent_content: str) -> int:
 ### Module Structure
 
 ```
-installer/global/lib/agent_formatting/
+installer/core/lib/agent_formatting/
 ├── __init__.py
 ├── parser.py           # Parse agent markdown structure
 ├── metrics.py          # Calculate quality metrics
@@ -521,7 +521,7 @@ import argparse
 from pathlib import Path
 from glob import glob
 
-from installer.global.lib.agent_formatting import (
+from installer.core.lib.agent_formatting import (
     parse_agent,
     calculate_metrics,
     AgentFormatter,
@@ -831,9 +831,9 @@ Run without --validate-only to apply formatting.
 ## File Locations
 
 **Implementation**:
-- `installer/global/commands/agent-format.md` - Command specification
-- `installer/global/commands/agent-format.py` - Command entry point
-- `installer/global/lib/agent_formatting/` - Core library
+- `installer/core/commands/agent-format.md` - Command specification
+- `installer/core/commands/agent-format.py` - Command entry point
+- `installer/core/lib/agent_formatting/` - Core library
 
 **Tests**:
 - `tests/unit/lib/agent_formatting/` - Unit tests
@@ -848,7 +848,7 @@ Run without --validate-only to apply formatting.
 ## References
 
 - **GitHub Research**: `docs/analysis/github-agent-best-practices-analysis.md`
-- **Agent Content Enhancer**: `installer/global/agents/agent-content-enhancer.md` (lines 32-175)
+- **Agent Content Enhancer**: `installer/core/agents/agent-content-enhancer.md` (lines 32-175)
 - **Template Creation**: `/template-create` workflow documentation
 - **Agent Enhancement**: `/agent-enhance` command specification
 

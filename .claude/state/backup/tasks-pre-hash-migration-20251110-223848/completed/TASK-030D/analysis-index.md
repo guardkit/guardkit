@@ -279,8 +279,8 @@ Practical, hands-on guide for the developer creating the cards.
 - **TASK-030-update-documentation-agentecflow-lite.md** - Full TASK-030 specifications
 
 ### Source Material
-- **installer/global/commands/task-work.md** - Task work command specification
-- **installer/global/commands/task-create.md** - Task creation command
+- **installer/core/commands/task-work.md** - Task work command specification
+- **installer/core/commands/task-create.md** - Task creation command
 - **docs/guides/agentecflow-lite-workflow.md** - Agentecflow Lite comprehensive guide
 - **docs/workflows/*.md** - Workflow guides (6+ files)
 - **CLAUDE.md** - Project instructions and feature overview

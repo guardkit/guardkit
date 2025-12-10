@@ -35,7 +35,7 @@ class DocumentationValidator:
         self.results: List[ValidationResult] = []
         self.readme_path = self.project_root / "README.md"
         self.claude_md_path = self.project_root / "CLAUDE.md"
-        self.commands_dir = self.project_root / "installer/global/commands"
+        self.commands_dir = self.project_root / "installer/core/commands"
         self.docs_dir = self.project_root / "docs"
 
     def validate_all(self) -> Dict:

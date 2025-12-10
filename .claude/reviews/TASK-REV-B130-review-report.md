@@ -757,17 +757,17 @@ clarification:
 
 **Files to Create/Modify**:
 
-1. **`installer/global/commands/lib/clarification_questions.py`** (NEW)
+1. **`installer/core/commands/lib/clarification_questions.py`** (NEW)
    - Question generation logic
    - Ambiguity detection algorithms
    - Response processing
 
-2. **`installer/global/commands/task-work.md`** (MODIFY)
+2. **`installer/core/commands/task-work.md`** (MODIFY)
    - Add Phase 1.5 specification
    - Update Phase 2 to accept clarification context
    - Add flag documentation
 
-3. **`installer/global/commands/lib/question_templates.py`** (NEW)
+3. **`installer/core/commands/lib/question_templates.py`** (NEW)
    - Question templates by category
    - Default value logic
    - Display formatting
@@ -929,7 +929,7 @@ Analyzing the three primary commands reveals **three distinct clarification poin
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                      UNIFIED CLARIFICATION MODULE                            │
-│                  installer/global/commands/lib/clarification/                │
+│                  installer/core/commands/lib/clarification/                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                              │
 │  clarification/                                                              │
@@ -1332,9 +1332,9 @@ external_references:
   - https://github.com/anthropics/claude-code/blob/main/plugins/feature-dev/agents/code-architect.md
   - https://guardkit.ai/concepts/
 internal_references:
-  - require-kit/installer/global/commands/gather-requirements.md
+  - require-kit/installer/core/commands/gather-requirements.md
   - require-kit/.claude/commands/gather-requirements.md
   - require-kit/docs/guides/command_usage_guide.md
-  - guardkit/installer/global/commands/feature-plan.md
-  - guardkit/installer/global/commands/task-review.md
+  - guardkit/installer/core/commands/feature-plan.md
+  - guardkit/installer/core/commands/task-review.md
 ```

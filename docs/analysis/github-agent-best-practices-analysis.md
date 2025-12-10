@@ -641,11 +641,11 @@ phase: 2.5
 ## Files Analyzed
 
 ### Global Agents (5 reviewed)
-1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/task-manager.md` (1,156 lines)
-2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/code-reviewer.md` (595 lines)
-3. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/architectural-reviewer.md` (867 lines)
-4. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/test-orchestrator.md` (est. 300 lines)
-5. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/agents/figma-react-orchestrator.md` (est. 300 lines)
+1. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/task-manager.md` (1,156 lines)
+2. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/code-reviewer.md` (595 lines)
+3. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/architectural-reviewer.md` (867 lines)
+4. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/test-orchestrator.md` (est. 300 lines)
+5. `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/agents/figma-react-orchestrator.md` (est. 300 lines)
 
 ### Template Agents (attempted, not found in expected locations)
 - `~/.agentecflow/templates/maui-mydrive/agents/entity-mapper-specialist.md`

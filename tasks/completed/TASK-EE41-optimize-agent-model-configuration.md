@@ -58,7 +58,7 @@ Optimize the Agentecflow system's agent model configuration to use Claude 4.5 Ha
 ## Acceptance Criteria
 
 ### AC1: Agent Model Configuration Matrix Defined
-**GIVEN** the complete set of global agents in `installer/global/agents/`
+**GIVEN** the complete set of global agents in `installer/core/agents/`
 **WHEN** analyzing each agent's role and complexity requirements
 **THEN** create a configuration matrix specifying optimal model for each agent:
 - Strategic/Planning agents → `model: sonnet`
@@ -73,7 +73,7 @@ Optimize the Agentecflow system's agent model configuration to use Claude 4.5 Ha
 
 ### AC2: Global Agent Definitions Updated
 **GIVEN** the model configuration matrix from AC1
-**WHEN** updating agent frontmatter in `installer/global/agents/*.md`
+**WHEN** updating agent frontmatter in `installer/core/agents/*.md`
 **THEN** all agent files should have correct `model:` configuration:
 - Haiku agents: `model: haiku` (7 execution agents)
 - Sonnet agents: `model: sonnet` (10 strategic agents)
@@ -170,7 +170,7 @@ Based on research and `/task-work` phase analysis:
 
 Global agent definitions to update:
 ```
-installer/global/agents/
+installer/core/agents/
 ├── architectural-reviewer.md       [sonnet] ✓ (already)
 ├── bdd-generator.md                [haiku] ← CHANGE
 ├── build-validator.md              [haiku] ← CHANGE

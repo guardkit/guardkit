@@ -47,7 +47,7 @@ Currently, the `/template-create` command simply runs the Python orchestrator on
 
 ### Files to Modify
 
-1. `installer/global/commands/template-create.md` (Add execution section)
+1. `installer/core/commands/template-create.md` (Add execution section)
 
 ### Implementation Steps
 
@@ -73,7 +73,7 @@ Extract arguments from user command:
 
 Build Python command:
 ```bash
-python3 -m installer.global.commands.lib.template_create_orchestrator \
+python3 -m installer.core.commands.lib.template_create_orchestrator \
   [--path PATH] \
   [--output-location LOCATION] \
   [--skip-qa] \
@@ -100,7 +100,7 @@ resume_flag = False
 # Build initial command
 cmd_parts = [
     "python3", "-m",
-    "installer.global.commands.lib.template_create_orchestrator"
+    "installer.core.commands.lib.template_create_orchestrator"
 ]
 
 # Add user arguments
@@ -407,7 +407,7 @@ Implementation complete. Testing will occur during:
 - Fixed all blocker issues from code review
 
 **Files modified**: 1
-- `installer/global/commands/template-create.md` (+437 lines)
+- `installer/core/commands/template-create.md` (+437 lines)
 
 **See also**:
 - Implementation plan: `.claude/task-plans/TASK-BRIDGE-003-implementation-plan.md`
@@ -426,4 +426,4 @@ Implementation complete. Testing will occur during:
 ## References
 
 - [Technical Specification](../../docs/proposals/python-claude-bridge-technical-spec.md#integration-1-template-create-command-markdown)
-- [Command File](../../installer/global/commands/template-create.md)
+- [Command File](../../installer/core/commands/template-create.md)

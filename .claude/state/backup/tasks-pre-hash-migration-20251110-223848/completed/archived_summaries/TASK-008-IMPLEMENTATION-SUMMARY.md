@@ -217,7 +217,7 @@ Testing high complexity task breakdown:
 
 ### Code Structure
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── task_breakdown.py           # Main orchestration
 ├── breakdown_strategies.py     # Strategy implementations
 ├── duplicate_detector.py       # Duplicate detection

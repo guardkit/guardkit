@@ -177,13 +177,13 @@ Ensured all documentation accurately reflects the new Figma/Zeplin integration a
 
 ### Files Updated (3)
 
-2. **installer/global/commands/figma-to-react.md** (736 lines) ✅
+2. **installer/core/commands/figma-to-react.md** (736 lines) ✅
    - Added Quick Start section (Progressive Disclosure)
    - References shared module for DRY
    - Complete Figma-specific implementation details
    - All sections verified complete
 
-3. **installer/global/commands/zeplin-to-maui.md** (716 lines) ✅
+3. **installer/core/commands/zeplin-to-maui.md** (716 lines) ✅
    - Added Quick Start section (Progressive Disclosure)
    - References shared module for DRY
    - Complete Zeplin/MAUI-specific details
@@ -197,11 +197,11 @@ Ensured all documentation accurately reflects the new Figma/Zeplin integration a
 
 ### Files Verified (2)
 
-5. **installer/global/commands/task-work.md** ✅
+5. **installer/core/commands/task-work.md** ✅
    - Design flags already documented (TASK-006)
    - No updates needed - verified complete
 
-6. **installer/global/commands/feature-generate-tasks.md** ✅
+6. **installer/core/commands/feature-generate-tasks.md** ✅
    - Complexity control already documented (TASK-008)
    - No updates needed - verified complete
 

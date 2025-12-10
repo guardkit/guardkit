@@ -6,10 +6,10 @@ This document summarizes the updates made to the AI Engineer installer system to
 ## Key Changes Implemented
 
 ### 1. New Global Commands Added
-The following commands have been added to `installer/global/commands/`:
+The following commands have been added to `installer/core/commands/`:
 
 #### `/task-work` - The Unified Implementation Command
-- **File**: `installer/global/commands/task-work.md`
+- **File**: `installer/core/commands/task-work.md`
 - **Purpose**: Combines implementation, testing, and verification into a single workflow
 - **Modes**: Standard, TDD, and BDD development modes
 - **Features**:
@@ -20,7 +20,7 @@ The following commands have been added to `installer/global/commands/`:
   - Fix-only mode for blocked tasks
 
 #### `/task-create` - Simplified Task Creation
-- **File**: `installer/global/commands/task-create.md`
+- **File**: `installer/core/commands/task-create.md`
 - **Purpose**: Create tasks with requirements and acceptance criteria
 - **Features**:
   - Links to requirements and BDD scenarios
@@ -29,7 +29,7 @@ The following commands have been added to `installer/global/commands/`:
   - Batch creation support
 
 #### `/task-complete` - Finalize and Archive
-- **File**: `installer/global/commands/task-complete.md`
+- **File**: `installer/core/commands/task-complete.md`
 - **Purpose**: Complete tasks that have passed all quality gates
 - **Features**:
   - Pre-completion validation

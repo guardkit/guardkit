@@ -157,13 +157,13 @@ return Task.FromResult<ErrorOr<IList<T>>>(result);
 
 ### AI-Engineer Repository
 ```
-✅ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
+✅ installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md
    Lines 987-1043: New "Production Code Pattern" section added
 ```
 
 ### GuardKit Repository
 ```
-✅ installer/global/templates/maui-navigationpage/agents/maui-usecase-specialist.md
+✅ installer/core/templates/maui-navigationpage/agents/maui-usecase-specialist.md
    Lines 905-961: New "Production Code Pattern" section added
 ```
 

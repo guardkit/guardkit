@@ -37,7 +37,7 @@ Add discovery metadata to 3 agents in the react-typescript template. These agent
 
 ### 1. feature-architecture-specialist.md
 
-**Location**: `installer/global/templates/react-typescript/agents/`
+**Location**: `installer/core/templates/react-typescript/agents/`
 
 **Metadata**:
 ```yaml
@@ -70,7 +70,7 @@ collaborates_with:
 
 ### 2. form-validation-specialist.md
 
-**Location**: `installer/global/templates/react-typescript/agents/`
+**Location**: `installer/core/templates/react-typescript/agents/`
 
 **Metadata**:
 ```yaml
@@ -102,7 +102,7 @@ collaborates_with:
 
 ### 3. react-query-specialist.md
 
-**Location**: `installer/global/templates/react-typescript/agents/`
+**Location**: `installer/core/templates/react-typescript/agents/`
 
 **Metadata**:
 ```yaml
@@ -169,7 +169,7 @@ collaborates_with:
 ```python
 python3 -c "
 import frontmatter
-with open('installer/global/templates/react-typescript/agents/feature-architecture-specialist.md') as f:
+with open('installer/core/templates/react-typescript/agents/feature-architecture-specialist.md') as f:
     agent = frontmatter.loads(f.read())
     assert agent.metadata['stack'] == ['react', 'typescript']
     assert agent.metadata['phase'] == 'implementation'
@@ -182,7 +182,7 @@ with open('installer/global/templates/react-typescript/agents/feature-architectu
 **Discovery validation**:
 ```python
 # Test discovery finds template agents
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 agents = discover_agents(phase='implementation', stack=['react'])
 names = [a['name'] for a in agents]
@@ -216,7 +216,7 @@ python3 scripts/validate_template_agents.py react-typescript
 pytest tests/test_agent_discovery.py::test_react_template_agents -v
 
 # Verify no content changes
-git diff --stat installer/global/templates/react-typescript/agents/
+git diff --stat installer/core/templates/react-typescript/agents/
 ```
 
 ## Risk Assessment
@@ -235,14 +235,14 @@ git diff --stat installer/global/templates/react-typescript/agents/
 
 ```bash
 # Revert template agent changes
-git checkout installer/global/templates/react-typescript/agents/
+git checkout installer/core/templates/react-typescript/agents/
 ```
 
 **Recovery Time**: <30 seconds
 
 ## Reference Materials
 
-- `installer/global/templates/react-typescript/agents/*.md` - Existing agents
+- `installer/core/templates/react-typescript/agents/*.md` - Existing agents
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-003-45BB-create-react-state-specialist.md` - Global React agent
 - `tasks/backlog/haiku-agent-implementation/TASK-HAI-001-D668-design-discovery-metadata-schema.md` - Schema
 
@@ -274,9 +274,9 @@ git checkout installer/global/templates/react-typescript/agents/
 ### Implementation Results
 
 **Files Modified**: 3
-- `installer/global/templates/react-typescript/agents/feature-architecture-specialist.md`
-- `installer/global/templates/react-typescript/agents/form-validation-specialist.md`
-- `installer/global/templates/react-typescript/agents/react-query-specialist.md`
+- `installer/core/templates/react-typescript/agents/feature-architecture-specialist.md`
+- `installer/core/templates/react-typescript/agents/form-validation-specialist.md`
+- `installer/core/templates/react-typescript/agents/react-query-specialist.md`
 
 **Changes Per File**:
 - Added discovery metadata fields (stack, phase, capabilities, keywords)

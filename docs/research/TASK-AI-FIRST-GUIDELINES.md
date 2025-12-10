@@ -366,7 +366,7 @@ def test_maintainability_score():
 
 ### 6. Integration with /task-create
 
-**Update**: `installer/global/commands/task-create.md`
+**Update**: `installer/core/commands/task-create.md`
 
 **Add section**: "AI-First Design Review"
 - Automatically check task description for pattern matching
@@ -386,7 +386,7 @@ def test_maintainability_score():
 ### Process Integration
 - [ ] `.github/PULL_REQUEST_TEMPLATE.md` - Add AI-first checklist
 - [ ] `.github/workflows/ai-first-check.yml` - Automated checks
-- [ ] `installer/global/commands/task-create.md` - Design review prompt
+- [ ] `installer/core/commands/task-create.md` - Design review prompt
 
 ### Testing
 - [ ] `tests/architecture/test_ai_first_compliance.py` - Architecture tests

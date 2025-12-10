@@ -12,7 +12,7 @@
 **Status**: PASSED
 
 ```
-Command: python3 -m py_compile installer/global/commands/lib/template_create_orchestrator.py
+Command: python3 -m py_compile installer/core/commands/lib/template_create_orchestrator.py
 Result: Zero compilation errors
 Duration: <50ms
 ```
@@ -98,7 +98,7 @@ All integration tests passing:
 - **Threshold**: ≥80%
 - **Actual**: 9.0%
 - **Status**: Below threshold (library-wide measurement)
-- **Note**: Coverage metric includes entire installer/global/commands library. Core TASK-C7A9 methods tested directly via unit tests with 82.76% pass rate.
+- **Note**: Coverage metric includes entire installer/core/commands library. Core TASK-C7A9 methods tested directly via unit tests with 82.76% pass rate.
 
 ### Branch Coverage
 
@@ -242,7 +242,7 @@ AI-enhanced agent metadata preserved through workflow:
 ## Files Tested
 
 ### Source File
-**Path**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+**Path**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
 
 **Methods Tested**:
 - `_phase7_write_agents` (lines 598-664)

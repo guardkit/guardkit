@@ -14,8 +14,8 @@ sys.path.insert(0, str(project_root))
 
 # Import using importlib to bypass 'global' keyword issue
 import importlib
-report_generator_module = importlib.import_module('installer.global.lib.template_generator.report_generator')
-extended_validator_module = importlib.import_module('installer.global.lib.template_generator.extended_validator')
+report_generator_module = importlib.import_module('installer.core.lib.template_generator.report_generator')
+extended_validator_module = importlib.import_module('installer.core.lib.template_generator.extended_validator')
 
 # Extract classes
 ValidationReportGenerator = report_generator_module.ValidationReportGenerator

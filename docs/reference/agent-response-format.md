@@ -343,7 +343,7 @@ python3 docs/validation/agent-response-format-test.py
 
 ```python
 import json
-from installer.global.lib.agent_bridge.invoker import AgentResponse
+from installer.core.lib.agent_bridge.invoker import AgentResponse
 
 # Load response file
 with open(".agent-response.json", "r") as f:
@@ -366,7 +366,7 @@ except json.JSONDecodeError as e:
 
 ## Schema Definition
 
-See `installer/global/lib/agent_bridge/invoker.py` for the authoritative `AgentResponse` dataclass definition:
+See `installer/core/lib/agent_bridge/invoker.py` for the authoritative `AgentResponse` dataclass definition:
 
 ```python
 @dataclass
@@ -391,6 +391,6 @@ class AgentResponse:
 
 ## References
 
-- Implementation: `installer/global/lib/agent_bridge/invoker.py`
+- Implementation: `installer/core/lib/agent_bridge/invoker.py`
 - Validation: `docs/validation/agent-response-format-test.py`
 - Task: `tasks/in_progress/TASK-FIX-267C-fix-claude-code-agent-response-json-format-error.md`

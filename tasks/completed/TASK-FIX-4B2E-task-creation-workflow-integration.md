@@ -27,7 +27,7 @@ The `--create-agent-tasks` flag in `/template-create` is documented but NOT impl
 
 ## Current State
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 The orchestrator has task creation logic (lines 963-1013) but it's NOT integrated with the main workflow:
 
@@ -78,12 +78,12 @@ def _create_agent_enhancement_task(self, agent_name: str, ...):
 
 ### Files to Modify
 
-**1. `installer/global/commands/lib/template_create_orchestrator.py`**
+**1. `installer/core/commands/lib/template_create_orchestrator.py`**
 - Add call to `_create_agent_enhancement_task` in Phase 8 logic
 - Ensure Phase 8 only runs when `--create-agent-tasks` is True
 - Handle errors without blocking template creation
 
-**2. `installer/global/commands/template-create.md`**
+**2. `installer/core/commands/template-create.md`**
 - Verify documentation matches implementation
 - Add examples of task creation output
 

@@ -61,7 +61,7 @@ Taskwright itself (16,254 LOC, 70 Python files, 129 test files) represents a hig
 Create a high-quality Python CLI template based on the Taskwright codebase using `/template-create`, achieving 8+/10 quality score.
 
 ### Success Criteria
-- [ ] Template created at `installer/global/templates/taskwright-python/`
+- [ ] Template created at `installer/core/templates/taskwright-python/`
 - [ ] Template validated with `/template-validate` (8+/10 quality score)
 - [ ] Manifest.json includes all required placeholders (ProjectName, project-name, etc.)
 - [ ] CLAUDE.md provides clear Python CLI guidance
@@ -115,7 +115,7 @@ Use **SlashCommand tool**:
 - Analyzes current Taskwright codebase structure
 - Identifies Python patterns (orchestrator, DI, Pydantic)
 - Generates `manifest.json` with placeholders
-- Creates template files in `installer/global/templates/taskwright-python/`
+- Creates template files in `installer/core/templates/taskwright-python/`
 - Generates `CLAUDE.md` with Python CLI guidance
 - Creates `README.md` with template usage
 - Runs Level 2 validation (`--validate` flag)
@@ -123,7 +123,7 @@ Use **SlashCommand tool**:
 
 **Expected Output Location**:
 ```
-installer/global/templates/taskwright-python/
+installer/core/templates/taskwright-python/
 ├── manifest.json
 ├── settings.json
 ├── CLAUDE.md
@@ -155,7 +155,7 @@ Use **Read tool** to examine the generated validation report:
 
 ```bash
 # Read validation report
-cat installer/global/templates/taskwright-python/validation-report.md
+cat installer/core/templates/taskwright-python/validation-report.md
 ```
 
 **Check for**:
@@ -172,7 +172,7 @@ cat installer/global/templates/taskwright-python/validation-report.md
 If validation score <8.0/10, use **SlashCommand tool** to run Level 3 audit:
 
 ```bash
-/template-validate installer/global/templates/taskwright-python
+/template-validate installer/core/templates/taskwright-python
 ```
 
 **Interactive Audit Sections**:
@@ -205,7 +205,7 @@ Use **Read tool** and **Edit tool** to review and enhance the generated manifest
 
 ```bash
 # Read generated manifest
-cat installer/global/templates/taskwright-python/manifest.json
+cat installer/core/templates/taskwright-python/manifest.json
 ```
 
 **Required Placeholders** (verify these exist):
@@ -259,7 +259,7 @@ Use **Edit tool** to add missing placeholders or improve descriptions:
 Use **Read tool** to review the generated CLAUDE.md:
 
 ```bash
-cat installer/global/templates/taskwright-python/CLAUDE.md
+cat installer/core/templates/taskwright-python/CLAUDE.md
 ```
 
 **Expected Content**:
@@ -310,7 +310,7 @@ class Orchestrator:
 Use **Bash tool** to create stack agent directory:
 
 ```bash
-mkdir -p installer/global/agents/stacks/taskwright-python
+mkdir -p installer/core/agents/stacks/taskwright-python
 ```
 
 Use **Write tool** to create stack-specific agents:
@@ -318,7 +318,7 @@ Use **Write tool** to create stack-specific agents:
 **Agent 1: Python CLI Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-cli-specialist.md
+# File: installer/core/agents/stacks/taskwright-python/python-cli-specialist.md
 ```
 
 ```markdown
@@ -368,7 +368,7 @@ You are a Python CLI development specialist focused on building production-grade
 **Agent 2: Python Testing Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-testing-specialist.md
+# File: installer/core/agents/stacks/taskwright-python/python-testing-specialist.md
 ```
 
 ```markdown
@@ -417,7 +417,7 @@ You are a Python testing specialist focused on comprehensive test coverage using
 **Agent 3: Python Architecture Specialist**
 
 ```bash
-# File: installer/global/agents/stacks/taskwright-python/python-architecture-specialist.md
+# File: installer/core/agents/stacks/taskwright-python/python-architecture-specialist.md
 ```
 
 ```markdown
@@ -628,8 +628,8 @@ Use **Bash tool**:
 ```bash
 cd /Users/richardwoollcott/Projects/appmilla_github/taskwright
 
-git add installer/global/templates/taskwright-python/
-git add installer/global/agents/stacks/taskwright-python/
+git add installer/core/templates/taskwright-python/
+git add installer/core/agents/stacks/taskwright-python/
 git add installer/scripts/install.sh
 git add installer/scripts/init-project.sh
 git add CLAUDE.md
@@ -648,7 +648,7 @@ git status
 ## Acceptance Criteria
 
 ### Functional Requirements
-- [ ] Template created at `installer/global/templates/taskwright-python/`
+- [ ] Template created at `installer/core/templates/taskwright-python/`
 - [ ] Validation report shows quality score ≥8.0/10
 - [ ] Manifest.json includes all required Python CLI placeholders
 - [ ] CLAUDE.md provides Python CLI architecture guidance
@@ -681,7 +681,7 @@ git status
 # Expected: Quality score ≥8.0/10
 
 # Test 2: Level 3 comprehensive audit
-/template-validate installer/global/templates/taskwright-python
+/template-validate installer/core/templates/taskwright-python
 # Expected: Score ≥8.0/10, no critical issues
 ```
 
@@ -726,22 +726,22 @@ pytest tests/ -v --cov=src
 ## Files to Create/Modify
 
 ### Template Files (CREATE)
-- `installer/global/templates/taskwright-python/manifest.json`
-- `installer/global/templates/taskwright-python/settings.json`
-- `installer/global/templates/taskwright-python/CLAUDE.md`
-- `installer/global/templates/taskwright-python/README.md`
-- `installer/global/templates/taskwright-python/validation-report.md`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/__init__.py`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/orchestrator.py`
-- `installer/global/templates/taskwright-python/templates/src/{{project_name}}/di_container.py`
-- `installer/global/templates/taskwright-python/templates/tests/conftest.py`
-- `installer/global/templates/taskwright-python/templates/requirements.txt`
-- `installer/global/templates/taskwright-python/templates/pytest.ini`
+- `installer/core/templates/taskwright-python/manifest.json`
+- `installer/core/templates/taskwright-python/settings.json`
+- `installer/core/templates/taskwright-python/CLAUDE.md`
+- `installer/core/templates/taskwright-python/README.md`
+- `installer/core/templates/taskwright-python/validation-report.md`
+- `installer/core/templates/taskwright-python/templates/src/{{project_name}}/__init__.py`
+- `installer/core/templates/taskwright-python/templates/src/{{project_name}}/orchestrator.py`
+- `installer/core/templates/taskwright-python/templates/src/{{project_name}}/di_container.py`
+- `installer/core/templates/taskwright-python/templates/tests/conftest.py`
+- `installer/core/templates/taskwright-python/templates/requirements.txt`
+- `installer/core/templates/taskwright-python/templates/pytest.ini`
 
 ### Stack Agents (CREATE)
-- `installer/global/agents/stacks/taskwright-python/python-cli-specialist.md`
-- `installer/global/agents/stacks/taskwright-python/python-testing-specialist.md`
-- `installer/global/agents/stacks/taskwright-python/python-architecture-specialist.md`
+- `installer/core/agents/stacks/taskwright-python/python-cli-specialist.md`
+- `installer/core/agents/stacks/taskwright-python/python-testing-specialist.md`
+- `installer/core/agents/stacks/taskwright-python/python-architecture-specialist.md`
 
 ### Installer Scripts (MODIFY)
 - `installer/scripts/install.sh` - Add template to list, update count to 6
@@ -758,7 +758,7 @@ pytest tests/ -v --cov=src
 After running `/template-create --validate --output-location=repo`:
 
 ```
-installer/global/templates/taskwright-python/
+installer/core/templates/taskwright-python/
 ├── manifest.json                 # Template metadata + placeholders
 ├── settings.json                 # Template configuration
 ├── CLAUDE.md                     # AI guidance for Python CLI

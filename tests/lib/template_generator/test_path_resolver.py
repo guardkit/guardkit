@@ -9,8 +9,8 @@ import pytest
 import importlib
 
 # Import using importlib to avoid 'global' keyword issue
-_path_resolver_module = importlib.import_module('installer.global.lib.template_generator.path_resolver')
-_models_module = importlib.import_module('installer.global.lib.codebase_analyzer.models')
+_path_resolver_module = importlib.import_module('installer.core.lib.template_generator.path_resolver')
+_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
 
 LayerClassificationStrategy = _path_resolver_module.LayerClassificationStrategy
 PatternClassificationStrategy = _path_resolver_module.PatternClassificationStrategy

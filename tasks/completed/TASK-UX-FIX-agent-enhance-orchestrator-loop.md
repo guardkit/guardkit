@@ -189,7 +189,7 @@ Create a thin orchestration wrapper around `SingleAgentEnhancer.enhance()`:
 
 **File Structure**:
 ```
-installer/global/lib/agent_enhancement/
+installer/core/lib/agent_enhancement/
 ├── enhancer.py (existing - NO CHANGES)
 ├── orchestrator.py (NEW - minimal wrapper)
 └── __init__.py (updated - export orchestrator)
@@ -199,7 +199,7 @@ installer/global/lib/agent_enhancement/
 
 ### Phase 1: Create Orchestrator Wrapper (~100 lines)
 
-**File**: `installer/global/lib/agent_enhancement/orchestrator.py`
+**File**: `installer/core/lib/agent_enhancement/orchestrator.py`
 
 ```python
 """
@@ -220,11 +220,11 @@ import json
 import logging
 from datetime import datetime
 
-from installer.global.lib.agent_enhancement.enhancer import (
+from installer.core.lib.agent_enhancement.enhancer import (
     SingleAgentEnhancer,
     EnhancementResult
 )
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +494,7 @@ class AgentEnhanceOrchestrator:
 
 ### Phase 2: Update Command Entry Point (~10 lines)
 
-**File**: `installer/global/commands/agent-enhance` (Python script)
+**File**: `installer/core/commands/agent-enhance` (Python script)
 
 **Current Code** (lines ~90-95):
 ```python
@@ -511,7 +511,7 @@ result = enhancer.enhance(agent_file, template_dir)
 
 **New Code**:
 ```python
-from installer.global.lib.agent_enhancement.orchestrator import AgentEnhanceOrchestrator
+from installer.core.lib.agent_enhancement.orchestrator import AgentEnhanceOrchestrator
 
 # Create enhancer
 enhancer = SingleAgentEnhancer(
@@ -533,7 +533,7 @@ result = orchestrator.run(agent_file, template_dir)
 
 ### Phase 3: Add `--resume` Flag to Command Spec (~5 lines)
 
-**File**: `installer/global/commands/agent-enhance.md`
+**File**: `installer/core/commands/agent-enhance.md`
 
 Add to "Optional Flags" section:
 
@@ -618,21 +618,21 @@ parser.add_argument(
 ## Implementation Plan
 
 ### Step 1: Create Orchestrator (~2 hours)
-1. Create `installer/global/lib/agent_enhancement/orchestrator.py`
+1. Create `installer/core/lib/agent_enhancement/orchestrator.py`
 2. Implement `AgentEnhanceOrchestrator` class
 3. Add `_save_state()`, `_load_state()`, `_cleanup_state()` methods
 4. Add `_run_initial()`, `_run_with_resume()` routing
 5. Add comprehensive docstrings and type hints
 
 ### Step 2: Update Command Entry Point (~30 minutes)
-1. Update `installer/global/commands/agent-enhance` Python script
+1. Update `installer/core/commands/agent-enhance` Python script
 2. Import `AgentEnhanceOrchestrator`
 3. Replace direct `enhancer.enhance()` call with orchestrator
 4. Add `--resume` flag to argparse
 5. Test basic invocation
 
 ### Step 3: Update Command Specification (~15 minutes)
-1. Update `installer/global/commands/agent-enhance.md`
+1. Update `installer/core/commands/agent-enhance.md`
 2. Add `--resume` flag documentation
 3. Update usage examples to show checkpoint-resume flow
 4. Add troubleshooting section for state file issues
@@ -654,7 +654,7 @@ parser.add_argument(
 import pytest
 from pathlib import Path
 import json
-from installer.global.lib.agent_enhancement.orchestrator import (
+from installer.core.lib.agent_enhancement.orchestrator import (
     AgentEnhanceOrchestrator,
     OrchestrationState
 )
@@ -773,9 +773,9 @@ def test_checkpoint_resume_cycle(tmp_path, monkeypatch):
 ## References
 
 ### Code Locations
-- **AgentBridgeInvoker**: `installer/global/lib/agent_bridge/invoker.py` (lines 85-265)
-- **Template Create Orchestrator**: `installer/global/commands/lib/template_create_orchestrator.py` (lines 197-230, 1725-1777)
-- **Agent Enhance (Current)**: `installer/global/lib/agent_enhancement/enhancer.py` (lines 269-283)
+- **AgentBridgeInvoker**: `installer/core/lib/agent_bridge/invoker.py` (lines 85-265)
+- **Template Create Orchestrator**: `installer/core/commands/lib/template_create_orchestrator.py` (lines 197-230, 1725-1777)
+- **Agent Enhance (Current)**: `installer/core/lib/agent_enhancement/enhancer.py` (lines 269-283)
 - **Best Practices Doc**: `docs/code-review/orchestrator-loop-pattern-best-practices.md`
 
 ### Related Tasks

@@ -26,7 +26,7 @@ react-component-generator (React artifacts)
 
 ### Components Implemented
 
-1. **figma-react-orchestrator** (`installer/global/agents/figma-react-orchestrator.md`)
+1. **figma-react-orchestrator** (`installer/core/agents/figma-react-orchestrator.md`)
    - Phase 0: MCP Verification
    - Phase 1: Design Extraction (Figma MCP integration)
    - Phase 2: Boundary Documentation
@@ -38,7 +38,7 @@ react-component-generator (React artifacts)
    - Phase 4: Visual Regression Testing (Playwright)
    - Consumes: DesignElements, DesignConstraints, DesignMetadata interfaces
 
-3. **/figma-to-react** (`installer/global/commands/figma-to-react.md`)
+3. **/figma-to-react** (`installer/core/commands/figma-to-react.md`)
    - User-facing command
    - End-to-end workflow orchestration
    - Accepts: Figma URL or node-id
@@ -298,7 +298,7 @@ npm run test:watch       # Watch mode
 
 ### Agent Definitions (Markdown)
 ```
-installer/global/agents/
+installer/core/agents/
 └── figma-react-orchestrator.md       (689 lines) ✅
 
 .claude/stacks/react/agents/
@@ -307,7 +307,7 @@ installer/global/agents/
 
 ### Command Definitions (Markdown)
 ```
-installer/global/commands/
+installer/core/commands/
 └── figma-to-react.md                 (723 lines) ✅
 ```
 

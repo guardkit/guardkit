@@ -572,7 +572,7 @@ class FullReviewHandler:
 ### Files to Modify (from TASK-4F79B-1)
 
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── review_modes.py (UPDATE)
 │   └── Add FullReviewHandler class
 └── user_interaction.py (UPDATE)

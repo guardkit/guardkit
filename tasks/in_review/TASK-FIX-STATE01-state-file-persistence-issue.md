@@ -30,9 +30,9 @@ Fix the critical state file persistence issue that blocks both agent-enhance and
 
 | File | Change |
 |------|--------|
-| `installer/global/lib/agent_enhancement/orchestrator.py` | State file now at `~/.agentecflow/state/.agent-enhance-state.json` |
-| `installer/global/lib/agent_bridge/state_manager.py` | Default state file now at `~/.agentecflow/state/.template-create-state.json` |
-| `installer/global/lib/agent_bridge/invoker.py` | Request/response files now at `~/.agentecflow/state/.agent-request-phase{N}.json` |
+| `installer/core/lib/agent_enhancement/orchestrator.py` | State file now at `~/.agentecflow/state/.agent-enhance-state.json` |
+| `installer/core/lib/agent_bridge/state_manager.py` | Default state file now at `~/.agentecflow/state/.template-create-state.json` |
+| `installer/core/lib/agent_bridge/invoker.py` | Request/response files now at `~/.agentecflow/state/.agent-request-phase{N}.json` |
 
 ### State Files Location
 

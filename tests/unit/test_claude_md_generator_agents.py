@@ -16,7 +16,7 @@ from typing import List, Optional
 import sys
 
 # Add lib directories to path
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 

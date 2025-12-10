@@ -27,9 +27,9 @@
 
 Files verified:
 ```bash
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/plan_modifier.py
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/plan_persistence.py
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/checkpoint_display.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/plan_modifier.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/plan_persistence.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/checkpoint_display.py
 ```
 
 **Result**: Zero compilation errors. All files produce valid Python bytecode.
@@ -138,7 +138,7 @@ The function uses a relative import inside the method body, which fails in the t
 
 ### Files Covered
 
-**Primary Module**: `installer/global/commands/lib/plan_modifier.py`
+**Primary Module**: `installer/core/commands/lib/plan_modifier.py`
 - **Lines**: 307/500 (61%)
 - **Branches**: 159/182 (87%)
 - **Functions**: All major functions covered

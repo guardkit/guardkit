@@ -40,7 +40,7 @@ Split the fastapi-python template agents using the automated splitter.
 ## Template Agents
 
 ```
-installer/global/templates/fastapi-python/agents/
+installer/core/templates/fastapi-python/agents/
 ├── fastapi-database-specialist.md (28KB → 27KB core + 1.6KB ext)
 ├── fastapi-specialist.md (20KB → 19KB core + 1.4KB ext)
 └── fastapi-testing-specialist.md (19KB → 18KB core + 1.3KB ext)

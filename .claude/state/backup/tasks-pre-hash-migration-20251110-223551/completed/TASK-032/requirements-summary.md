@@ -26,7 +26,7 @@ TASK-032 implements documentation improvements identified during the TASK-012 MC
 ### Group 1: Context7 Token Budgets (REQ-032-001, REQ-032-002)
 **What**: Document token allocation by implementation phase
 **Why**: Developers need explicit guidance to optimize context window usage
-**Where**: `installer/global/agents/task-manager.md`
+**Where**: `installer/core/agents/task-manager.md`
 
 | Phase | Budget | Use Case |
 |-------|--------|----------|
@@ -37,7 +37,7 @@ TASK-032 implements documentation improvements identified during the TASK-012 MC
 ### Group 2: Design Patterns MCP Guidance (REQ-032-003, REQ-032-004)
 **What**: Explain token limits and efficiency patterns for pattern queries
 **Why**: Pattern queries can waste 30k tokens if misused (fetching all details)
-**Where**: `installer/global/agents/pattern-advisor.md`
+**Where**: `installer/core/agents/pattern-advisor.md`
 
 **Efficient Pattern** (8k tokens):
 1. Use find_patterns to get 5-10 patterns

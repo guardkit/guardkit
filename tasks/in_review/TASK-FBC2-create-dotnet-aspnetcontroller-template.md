@@ -145,7 +145,7 @@ Following `docs/guides/template-creation-workflow.md` principles:
 ### Phase 1: Create Template Structure
 ```bash
 # Create template directory
-mkdir -p installer/global/templates/dotnet-aspnetcontroller/{templates,agents}
+mkdir -p installer/core/templates/dotnet-aspnetcontroller/{templates,agents}
 ```
 
 ### Phase 2: Create Template Files

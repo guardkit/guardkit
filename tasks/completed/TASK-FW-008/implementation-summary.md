@@ -11,13 +11,13 @@
 ## Deliverables
 
 ### 1. Core Implementation
-- **File**: `installer/global/lib/implement_orchestrator.py`
+- **File**: `installer/core/lib/implement_orchestrator.py`
 - **Lines**: 228 lines of Python code
 - **Classes**: `ImplementOrchestrator`
 - **Functions**: `handle_implement_option()`, `extract_feature_slug()`
 
 ### 2. Documentation Updates
-- **File**: `installer/global/commands/task-review.md`
+- **File**: `installer/core/commands/task-review.md`
 - **Changes**: Enhanced [I]mplement flow section with complete examples
 - **Added**: "What [I]mplement Does" section
 - **Added**: "Enhanced [I]mplement Benefits" comparison
@@ -259,7 +259,7 @@ All Wave 2 dependencies are complete and integrated:
 
 ### Phase 1: Command Integration
 ```python
-# In installer/global/commands/task-review script:
+# In installer/core/commands/task-review script:
 from lib.implement_orchestrator import handle_implement_option
 
 # When user chooses [I]mplement:
@@ -311,8 +311,8 @@ if user_choice == "I":
 **Message**: "feat: Orchestrate enhanced [I]mplement flow (TASK-FW-008)"
 
 **Files Changed**:
-- `installer/global/lib/implement_orchestrator.py` (new, 228 lines)
-- `installer/global/commands/task-review.md` (enhanced, +156 lines)
+- `installer/core/lib/implement_orchestrator.py` (new, 228 lines)
+- `installer/core/commands/task-review.md` (enhanced, +156 lines)
 - `tests/test_implement_orchestrator.py` (new, 320 lines)
 - `coverage.json` (updated)
 

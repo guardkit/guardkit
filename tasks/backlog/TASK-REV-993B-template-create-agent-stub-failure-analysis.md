@@ -98,7 +98,7 @@ Expected agent stubs for this stack would include:
 - Is `example_files` properly populated but agent specs missing `reason`/`technologies`?
 
 ### 2. Agent Stub Generation Logic
-- Check `installer/global/commands/lib/template_create_orchestrator.py`
+- Check `installer/core/commands/lib/template_create_orchestrator.py`
 - Check agent recommendation/creation functions
 - Verify the expected JSON schema for agent specs
 
@@ -114,9 +114,9 @@ Expected agent stubs for this stack would include:
 
 ## Files to Review
 
-- `installer/global/commands/lib/template_create_orchestrator.py`
-- `installer/global/commands/lib/codebase_analyzer/`
-- `installer/global/commands/lib/template_generator/`
+- `installer/core/commands/lib/template_create_orchestrator.py`
+- `installer/core/commands/lib/codebase_analyzer/`
+- `installer/core/commands/lib/template_generator/`
 - Agent-related prompts and response parsers
 
 ## Test Requirements
@@ -171,7 +171,7 @@ The design on `main` was **intentional** - the comment explicitly states:
 
 ### Files Affected (TASK-ENH-D960 changes)
 
-1. **[installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py)**
+1. **[installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py)**
    - Lines 707-713: Changed `bridge_invoker=None` to `bridge_invoker=self.agent_invoker`
    - Lines 254-257: Added new Phase 1 resume path
 

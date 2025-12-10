@@ -505,8 +505,8 @@ Both files reference:
 - `docs/workflows/complexity-management-workflow.md` (validated)
 - `docs/workflows/design-first-workflow.md` (validated)
 - `docs/shared/common-thresholds.md` (referenced, not modified)
-- `installer/global/commands/feature-generate-tasks.md` (referenced)
-- `installer/global/commands/task-work.md` (referenced)
+- `installer/core/commands/feature-generate-tasks.md` (referenced)
+- `installer/core/commands/task-work.md` (referenced)
 
 ---
 

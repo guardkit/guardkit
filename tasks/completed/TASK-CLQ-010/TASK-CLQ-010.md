@@ -223,8 +223,8 @@ def get_clarification_summary(task_path: Path) -> str:
 
 ## Files to Modify
 
-1. `installer/global/commands/lib/clarification/core.py` - Add persistence functions
-2. `installer/global/commands/lib/task_work_executor.py` - Integrate persistence calls
+1. `installer/core/commands/lib/clarification/core.py` - Add persistence functions
+2. `installer/core/commands/lib/task_work_executor.py` - Integrate persistence calls
 
 ## Files to Create
 

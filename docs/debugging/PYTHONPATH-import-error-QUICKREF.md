@@ -24,7 +24,7 @@ Command markdown (template-create.md)
   └─ Contains PYTHONPATH setup code (lines 1026-1105)
        └─ ❌ Claude Code skips this code
             └─ Directly executes: python3 orchestrator.py
-                 └─ Orchestrator imports 'installer.global.*'
+                 └─ Orchestrator imports 'installer.core.*'
                       └─ ❌ Python can't find 'installer' package
                            └─ Error: ModuleNotFoundError
 ```
@@ -33,7 +33,7 @@ Command markdown (template-create.md)
 
 ## The Fix (Solution 2)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Add this at top** (before all imports):
 
@@ -75,7 +75,7 @@ _setup_pythonpath()
 
 # NOW safe to import
 import importlib
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 # ... rest of imports
 ```
 
@@ -120,15 +120,15 @@ mv guardkit{.bak,}
 
 ## Architecture Context
 
-**Why imports use 'installer.global.*' pattern:**
+**Why imports use 'installer.core.*' pattern:**
 
 ```
 Orchestrator imports from multiple repo locations:
-├── installer/global/commands/lib/template_qa_session.py
-├── installer/global/lib/codebase_analyzer/ai_analyzer.py
-├── installer/global/lib/template_generator/template_generator.py
-├── installer/global/lib/agent_generator/agent_generator.py
-└── installer/global/lib/agent_bridge/invoker.py
+├── installer/core/commands/lib/template_qa_session.py
+├── installer/core/lib/codebase_analyzer/ai_analyzer.py
+├── installer/core/lib/template_generator/template_generator.py
+├── installer/core/lib/agent_generator/agent_generator.py
+└── installer/core/lib/agent_bridge/invoker.py
 
 Can't use relative imports (would need to copy 50+ modules to ~/.agentecflow/)
 MUST use absolute imports from 'installer' package root
@@ -154,7 +154,7 @@ REQUIRES PYTHONPATH pointing to guardkit repo directory
 ## Files
 
 **Primary**:
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/commands/lib/template_create_orchestrator.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/commands/lib/template_create_orchestrator.py`
 
 **Documentation**:
 - `docs/debugging/PYTHONPATH-import-error-RCA.md` (full analysis)
@@ -184,7 +184,7 @@ REQUIRES PYTHONPATH pointing to guardkit repo directory
 **A**: Breaks user template creation, wrong separation of concerns
 
 **Q**: Will this affect other commands?
-**A**: No, only `/template-create` uses `installer.global.*` imports
+**A**: No, only `/template-create` uses `installer.core.*` imports
 
 ---
 

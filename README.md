@@ -378,7 +378,7 @@ docs/                       # Documentation
 ├── guides/                # Workflow guides
 └── workflows/             # Detailed workflows
 
-installer/global/           # Global resources
+installer/core/           # Global resources
 ├── agents/                # Core AI agents
 ├── commands/              # Command specs
 └── templates/             # Stack templates

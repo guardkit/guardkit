@@ -248,7 +248,7 @@ GATE 3: Usability
 └─ ✓ Example discoverability (clearly marked with ✅ and ❌)
 
 GATE 4: Accuracy
-├─ ✓ File paths (installer/global/agents/*, docs/guides/*)
+├─ ✓ File paths (installer/core/agents/*, docs/guides/*)
 ├─ ✓ Context7 budgets (3-4k, 5k, 2-3k match TASK-012)
 └─ ✓ Design Patterns limits (5, 10, 1-2 match audit)
 

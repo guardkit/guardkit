@@ -4,7 +4,7 @@ import pytest
 import sys
 from pathlib import Path
 
-lib_path = Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"
 sys.path.insert(0, str(lib_path))
 
 from review_mode_executor import execute_review_analysis
@@ -49,7 +49,7 @@ def test_architectural_review_integration():
     """Test architectural review end-to-end."""
     task_context = {
         "task_id": "TASK-INT-003",
-        "review_scope": ["installer/global/commands/lib/review_modes/"]
+        "review_scope": ["installer/core/commands/lib/review_modes/"]
     }
 
     results = execute_review_analysis(task_context, "architectural", "quick")
@@ -64,7 +64,7 @@ def test_code_quality_review_integration():
     """Test code quality review end-to-end."""
     task_context = {
         "task_id": "TASK-INT-004",
-        "review_scope": ["installer/global/commands/lib/review_modes/"]
+        "review_scope": ["installer/core/commands/lib/review_modes/"]
     }
 
     results = execute_review_analysis(task_context, "code-quality", "quick")
@@ -107,7 +107,7 @@ def test_technical_debt_assessment_integration():
     """Test technical debt assessment end-to-end."""
     task_context = {
         "task_id": "TASK-INT-006",
-        "review_scope": ["installer/global/commands/lib/"]
+        "review_scope": ["installer/core/commands/lib/"]
     }
 
     results = execute_review_analysis(task_context, "technical-debt", "quick")
@@ -123,7 +123,7 @@ def test_security_audit_integration():
     """Test security audit end-to-end."""
     task_context = {
         "task_id": "TASK-INT-007",
-        "review_scope": ["installer/global/commands/lib/review_modes/"]
+        "review_scope": ["installer/core/commands/lib/review_modes/"]
     }
 
     results = execute_review_analysis(task_context, "security", "quick")
@@ -166,7 +166,7 @@ def test_multiple_modes_same_context():
     """Test running multiple modes on same task context."""
     task_context = {
         "task_id": "TASK-INT-010",
-        "review_scope": ["installer/global/commands/lib/review_modes/"]
+        "review_scope": ["installer/core/commands/lib/review_modes/"]
     }
 
     arch_results = execute_review_analysis(task_context, "architectural", "quick")

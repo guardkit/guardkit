@@ -81,7 +81,7 @@ Implement Phase 5.5 Completeness Validation in the `/template-create` workflow t
 ### Components to Create
 
 #### 1. CompletenessValidator
-**File**: `installer/global/lib/template_generator/completeness_validator.py` (300-400 lines)
+**File**: `installer/core/lib/template_generator/completeness_validator.py` (300-400 lines)
 
 **Responsibilities**:
 - Validate CRUD operation completeness
@@ -125,7 +125,7 @@ class TemplateRecommendation:
 ```
 
 #### 2. Pattern Matcher
-**File**: `installer/global/lib/template_generator/pattern_matcher.py` (200-300 lines)
+**File**: `installer/core/lib/template_generator/pattern_matcher.py` (200-300 lines)
 
 **Purpose**: Extract operations and patterns from template collection
 
@@ -144,7 +144,7 @@ class CRUDPatternMatcher:
 ### Files to Modify
 
 #### 3. Orchestrator Integration
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (+150 lines)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (+150 lines)
 
 **Changes**:
 - Add `_phase5_5_completeness_validation()` method
@@ -266,9 +266,9 @@ agents = self._phase6_agent_recommendation(analysis)
 ## Deliverables
 
 ### Code Files
-- [ ] `installer/global/lib/template_generator/completeness_validator.py` (300-400 lines)
-- [ ] `installer/global/lib/template_generator/pattern_matcher.py` (200-300 lines)
-- [ ] `installer/global/commands/lib/template_create_orchestrator.py` (modified, +150 lines)
+- [ ] `installer/core/lib/template_generator/completeness_validator.py` (300-400 lines)
+- [ ] `installer/core/lib/template_generator/pattern_matcher.py` (200-300 lines)
+- [ ] `installer/core/commands/lib/template_create_orchestrator.py` (modified, +150 lines)
 - [ ] `tests/unit/test_completeness_validator.py` (500+ lines)
 - [ ] `tests/unit/test_pattern_matcher.py` (200+ lines)
 - [ ] `tests/integration/test_template_create_completeness.py` (300+ lines)

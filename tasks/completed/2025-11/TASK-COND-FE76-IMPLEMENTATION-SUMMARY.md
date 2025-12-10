@@ -24,7 +24,7 @@ The `/task-complete` command exhibited inconsistent behavior in Conductor worksp
 
 ### Primary Issue: Relative Path Resolution
 
-**Location**: `installer/global/commands/lib/task_review_orchestrator.py:130`
+**Location**: `installer/core/commands/lib/task_review_orchestrator.py:130`
 
 **Problem Code**:
 ```python
@@ -78,7 +78,7 @@ def find_task_file(task_id: str, base_dir: Optional[Path] = None) -> Optional[Pa
 
 ### 2. Comprehensive Task Completion Module
 
-**New File**: `installer/global/commands/lib/task_completion_helper.py`
+**New File**: `installer/core/commands/lib/task_completion_helper.py`
 
 **Features Implemented**:
 
@@ -167,14 +167,14 @@ def complete_task(task_id_or_path: str) -> dict:
 
 ### Modified Files
 
-1. **`installer/global/commands/lib/task_review_orchestrator.py`**
+1. **`installer/core/commands/lib/task_review_orchestrator.py`**
    - Added import: `from git_state_helper import get_git_root`
    - Updated `find_task_file()`: Now uses git root for path resolution
    - Updated `load_review_context()`: Signature change for consistency
 
 ### New Files Created
 
-2. **`installer/global/commands/lib/task_completion_helper.py`** (361 lines)
+2. **`installer/core/commands/lib/task_completion_helper.py`** (361 lines)
    - `find_task_file()`: Conductor-aware task lookup
    - `archive_task_documents()`: Document archival with pattern matching
    - `move_task_to_completed()`: Task file organization

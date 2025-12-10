@@ -67,30 +67,38 @@ This guide organizes implementation into **3 waves** with clear guidance on whet
 **Conductor workspaces**: `template-fix-wave2-layer`, `template-fix-wave2-flag`
 **Prerequisite**: Wave 1 complete (for integration testing)
 
-### TASK-FIX-LAYER-CLASS: Add C# Layer Classification
+### TASK-FIX-LAYER-CLASS: AI-Powered Layer Classification
 
 | Attribute | Value |
 |-----------|-------|
 | **Method** | **Direct** |
-| **Complexity** | 4/10 |
-| **Est. LOC** | 80-100 |
+| **Complexity** | 5/10 |
+| **Est. LOC** | 120-150 |
 | **Files** | 1 (`layer_classifier.py`) |
 | **Conductor Workspace** | `template-fix-wave2-layer` |
 
-**Why Direct**: Single file, pattern-based addition, low risk, follows existing pattern.
+**Why Direct**: Single file, follows established AI-first pattern from `agent_generator.py`.
+
+**Approach**: Technology-agnostic using AI-first + generic heuristic fallback (same pattern as `_heuristic_identify_agents()`).
 
 **Execution**:
 ```bash
 # Direct implementation with Claude Code
-# Add CSharpLayerClassifier class following JavaScriptLayerClassifier pattern
-# Register in ChainedLayerClassifier.__init__
+# Add _ai_classify_layer() method
+# Add _heuristic_classify_layer() with generic folder patterns
+# Update main classify() to use AI-first approach
+# Deprecate per-language classifiers (JavaScriptLayerClassifier)
 ```
 
 **Quick Start**:
-1. Open `installer/global/lib/template_generator/layer_classifier.py`
-2. Add `CSharpLayerClassifier` class after `JavaScriptLayerClassifier`
-3. Add to `ChainedLayerClassifier` strategies list
-4. Run unit tests: `pytest tests/lib/template_generator/test_layer_classifier.py -v`
+1. Open `installer/core/lib/template_generator/layer_classifier.py`
+2. Add `_ai_classify_layer()` method that prompts AI with file path + analysis
+3. Add `_heuristic_classify_layer()` with generic patterns (`/tests/`, `/services/`, etc.)
+4. Update `classify()` to try AI first, fall back to heuristics
+5. Deprecate `JavaScriptLayerClassifier` (keep for backward compat, return None)
+6. Run unit tests: `pytest tests/lib/template_generator/test_layer_classifier.py -v`
+
+**Key Principle**: NO hardcoded language-specific patterns. Use folder conventions that work across ALL languages.
 
 ---
 
@@ -127,7 +135,7 @@ This guide organizes implementation into **3 waves** with clear guidance on whet
 **Parallel execution**: No - requires test freeze
 **Prerequisite**: Full test suite passing, no active development
 
-### TASK-RENAME-GLOBAL: Rename installer/global Directory
+### TASK-RENAME-GLOBAL: Rename installer/core Directory
 
 | Attribute | Value |
 |-----------|-------|
@@ -159,7 +167,7 @@ pytest      # All tests pass
 git checkout -b backup/pre-rename-global
 
 # Step 3: Rename directory
-git mv installer/global installer/core
+git mv installer/core installer/core
 
 # Step 4: Update all references
 find . -name "*.py" -exec sed -i '' 's/installer\.global/installer.core/g' {} \;
@@ -172,7 +180,7 @@ pytest  # All tests should pass
 
 # Step 6: Commit
 git add -A
-git commit -m "refactor: rename installer/global to installer/core
+git commit -m "refactor: rename installer/core to installer/core
 
 Eliminates Python reserved keyword issue and importlib workarounds.
 
@@ -211,18 +219,17 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 │   ┌─────────────────────┐     ┌─────────────────────┐              │
 │   │ TASK-FIX-LAYER-     │     │ TASK-ENH-SIZE-      │              │
 │   │      CLASS          │     │      LIMIT          │              │
-│   │ Direct              │     │ Direct              │              │
-│   │ Workspace: wave2-   │     │ Workspace: wave2-   │              │
-│   │            layer    │     │            flag     │              │
+│   │ Direct (AI-native)  │     │ ✅ COMPLETED        │              │
+│   │ Workspace: wave2-   │     │                     │              │
+│   │            layer    │     │                     │              │
 │   └─────────────────────┘     └─────────────────────┘              │
-│              │                          │                          │
-│              └──────────┬───────────────┘                          │
-│                         ▼                                          │
-│              ┌─────────────────────┐                               │
-│              │ Verification Test   │                               │
-│              │ C# classification   │                               │
-│              │ + flag behavior     │                               │
-│              └─────────────────────┘                               │
+│              │                                                     │
+│              ▼                                                     │
+│   ┌─────────────────────┐                                          │
+│   │ Verification Test   │                                          │
+│   │ Generic layer       │                                          │
+│   │ classification      │                                          │
+│   └─────────────────────┘                                          │
 │                         │                                          │
 └─────────────────────────┼──────────────────────────────────────────┘
                           ▼
@@ -251,10 +258,12 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>"
 
 ### After Wave 2
 
-- [ ] `MauiProgram.cs` classified as "bootstrap"
-- [ ] `*Tests.cs` files classified as "testing"
-- [ ] `--claude-md-size-limit 50KB` works correctly
-- [ ] Default behavior unchanged (10KB limit)
+- [ ] `MauiProgram.cs` classified as "infrastructure" (via AI or `program.` heuristic)
+- [ ] `*Tests.cs` files classified as "testing" (via `/tests/` or `Tests.` heuristic)
+- [ ] `*Mapper.cs` files classified as "mapping" (via AI or `mapper.` heuristic)
+- [x] `--claude-md-size-limit 50KB` works correctly ✅
+- [x] Default behavior unchanged (10KB limit) ✅
+- [ ] Classification works for ANY language (Python, Go, Rust, etc.) without code changes
 
 ### After Wave 3
 

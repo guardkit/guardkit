@@ -25,9 +25,9 @@
 
 ### File Count Analysis
 - **Files to Create**: 1 file
-  - `installer/global/commands/lib/qa_manager.py` (~400 lines)
+  - `installer/core/commands/lib/qa_manager.py` (~400 lines)
 - **Files to Modify**: 1 file
-  - `installer/global/commands/lib/review_modes.py` (~50 lines modification)
+  - `installer/core/commands/lib/review_modes.py` (~50 lines modification)
 - **Total Files**: 2 files
 
 ### Design Patterns Detected

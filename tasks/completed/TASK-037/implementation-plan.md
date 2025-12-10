@@ -34,8 +34,8 @@ Remove BDD mode functionality from taskwright while preserving the supports_bdd(
 **Objective**: Remove BDD-specific agent and instruction files
 
 **Files to Delete**:
-- `installer/global/agents/bdd-generator.md` (if exists)
-- `installer/global/instructions/bdd-workflow.md` (if exists)
+- `installer/core/agents/bdd-generator.md` (if exists)
+- `installer/core/instructions/bdd-workflow.md` (if exists)
 
 **Steps**:
 1. Verify files exist before deletion
@@ -51,7 +51,7 @@ Remove BDD mode functionality from taskwright while preserving the supports_bdd(
 **Objective**: Remove BDD mode references from command specification
 
 **Files to Modify**:
-1. `installer/global/commands/task-work.md`
+1. `installer/core/commands/task-work.md`
    - Remove BDD mode section (~lines 2336-2344)
    - Update development modes table
    - Remove BDD examples from usage section
@@ -135,7 +135,7 @@ Remove BDD mode functionality from taskwright while preserving the supports_bdd(
 ## Files to Modify
 
 ### High Priority (Must Change)
-1. `installer/global/commands/task-work.md` - Remove BDD mode documentation
+1. `installer/core/commands/task-work.md` - Remove BDD mode documentation
 2. `CLAUDE.md` - Update command syntax and features
 3. `.claude/CLAUDE.md` - Update workflow description
 4. `CHANGELOG.md` - Add migration notes
@@ -147,8 +147,8 @@ Remove BDD mode functionality from taskwright while preserving the supports_bdd(
 1. Shared code files - Verify supports_bdd() not removed
 
 ## Files to Delete
-1. `installer/global/agents/bdd-generator.md` (if exists)
-2. `installer/global/instructions/bdd-workflow.md` (if exists)
+1. `installer/core/agents/bdd-generator.md` (if exists)
+2. `installer/core/instructions/bdd-workflow.md` (if exists)
 
 ## External Dependencies
 None - This is a pure documentation and cleanup task

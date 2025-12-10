@@ -39,8 +39,8 @@ Includes exact line numbers, before/after examples, and verification steps.
 ## Key Findings
 
 ### Documentation Metrics
-- **Total markdown files**: 417 (333 in docs/, 84 in installer/global/)
-- **Top-level directories**: 42 in docs/, 8 in installer/global/
+- **Total markdown files**: 417 (333 in docs/, 84 in installer/core/)
+- **Top-level directories**: 42 in docs/, 8 in installer/core/
 - **User-facing content**: ~172 files (41% of total)
 - **Developer content**: ~49 files (12% of total)
 - **Internal artifacts**: ~230 files (55% of total)
@@ -181,7 +181,7 @@ All documented with fix instructions in `path-fixes-required.md`.
 ## Acceptance Criteria Met
 
 ### Documentation Inventory ✅
-- ✅ All 42 docs/ + 8 installer/global/ directories catalogued
+- ✅ All 42 docs/ + 8 installer/core/ directories catalogued
 - ✅ Each directory categorized (User/Developer/Internal)
 - ✅ File count per directory noted
 - ✅ Key files in each directory identified

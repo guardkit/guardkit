@@ -29,7 +29,7 @@ The `agent-enhance.py` files are **byte-for-byte identical** between `main` and 
 
 ```bash
 # Verification command
-GIT_CONFIG_GLOBAL=/dev/null git show main:installer/global/commands/agent-enhance.py
+GIT_CONFIG_GLOBAL=/dev/null git show main:installer/core/commands/agent-enhance.py
 ```
 
 No changes were made to:
@@ -88,7 +88,7 @@ The `/agent-enhance` command expects either:
 
 When the user provided `svelte5-component-specialist` without a slash, Claude's interpretation (not the Python script) searched for a template named `svelte5` instead of finding the agent within `kartlog`.
 
-**Python Code Behavior** ([agent-enhance.py:336-341](installer/global/commands/agent-enhance.py#L336-L341)):
+**Python Code Behavior** ([agent-enhance.py:336-341](installer/core/commands/agent-enhance.py#L336-L341)):
 ```python
 else:
     raise ValueError(
@@ -258,8 +258,8 @@ Do NOT use just the agent name without the template prefix.
 - [docs/reviews/progressive-disclosure/agent-ehance-output/agent-enhance.md](docs/reviews/progressive-disclosure/agent-ehance-output/agent-enhance.md) - 57 lines
 
 ### Source Code
-- [installer/global/commands/agent-enhance.py](installer/global/commands/agent-enhance.py) - Identical between branches
-- [installer/global/commands/agent-enhance.md](installer/global/commands/agent-enhance.md) - Command specification
+- [installer/core/commands/agent-enhance.py](installer/core/commands/agent-enhance.py) - Identical between branches
+- [installer/core/commands/agent-enhance.md](installer/core/commands/agent-enhance.md) - Command specification
 
 ### Analysis Documents
 - [docs/reviews/progressive-disclosure/main-vs-progressive-disclosure-analysis.md](docs/reviews/progressive-disclosure/main-vs-progressive-disclosure-analysis.md) - OUTDATED (cache issue already fixed)

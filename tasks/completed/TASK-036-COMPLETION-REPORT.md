@@ -10,12 +10,12 @@
 ## Deliverables
 
 ### Files Created (3)
-1. `installer/global/templates/documentation/minimal-summary-template.md` (~150 lines)
-2. `installer/global/templates/documentation/comprehensive-checklist.md` (~200 lines)
+1. `installer/core/templates/documentation/minimal-summary-template.md` (~150 lines)
+2. `installer/core/templates/documentation/comprehensive-checklist.md` (~200 lines)
 3. `tasks/in_progress/TASK-036-IMPLEMENTATION-SUMMARY.md` (~297 lines)
 
 ### Files Modified (1)
-1. `installer/global/commands/task-work.md` (+240 lines)
+1. `installer/core/commands/task-work.md` (+240 lines)
    - Command syntax updated with `--docs` flag
    - Step 0: Parse `--docs` flag (15 lines)
    - Step 2.5: Determine documentation level (90 lines)

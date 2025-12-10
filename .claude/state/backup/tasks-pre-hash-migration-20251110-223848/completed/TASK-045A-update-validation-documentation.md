@@ -92,7 +92,7 @@ GuardKit provides a 3-level validation system for template quality assurance.
 # Personal templates (default: ~/.agentecflow/templates/)
 /template-create --validate
 
-# Repository templates (installer/global/templates/)
+# Repository templates (installer/core/templates/)
 /template-create --validate --output-location=repo
 ```
 - All Level 1 checks
@@ -110,7 +110,7 @@ GuardKit provides a 3-level validation system for template quality assurance.
 /template-validate ~/.agentecflow/templates/my-template
 
 # Repository templates
-/template-validate installer/global/templates/react-typescript
+/template-validate installer/core/templates/react-typescript
 ```
 - Interactive 16-section audit
 - Section selection
@@ -156,7 +156,7 @@ Reports include:
 
 **Template Locations** (TASK-068):
 - **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
-- **Repository templates**: `installer/global/templates/` (team/public distribution, requires `--output-location=repo` flag)
+- **Repository templates**: `installer/core/templates/` (team/public distribution, requires `--output-location=repo` flag)
 
 Validation works with templates in either location.
 
@@ -167,7 +167,7 @@ Validation works with templates in either location.
 
 #### template-create.md
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Section to Update**: "Command Options"
 
@@ -199,7 +199,7 @@ Example:
 
 #### New: template-validate.md
 
-**File**: `installer/global/commands/template-validate.md`
+**File**: `installer/core/commands/template-validate.md`
 
 **Status**: Already created in TASK-044
 **Update Required**: Add links to user guides
@@ -382,9 +382,9 @@ Run all sections? [Y/n/select]:
 | Scenario | Level | Why | Template Location |
 |----------|-------|-----|-------------------|
 | Personal template | 1 (Auto) | Quick, no ceremony | `~/.agentecflow/templates/` |
-| Team template | 2 (Extended) | Quality report for stakeholders | `installer/global/templates/` (use `--output-location=repo`) |
-| Global deployment | 3 (Comprehensive) | Thorough validation required | `installer/global/templates/` |
-| CI/CD integration | 2 (Extended) | Exit codes, reports | `installer/global/templates/` |
+| Team template | 2 (Extended) | Quality report for stakeholders | `installer/core/templates/` (use `--output-location=repo`) |
+| Global deployment | 3 (Comprehensive) | Thorough validation required | `installer/core/templates/` |
+| CI/CD integration | 2 (Extended) | Exit codes, reports | `installer/core/templates/` |
 | Troubleshooting | 3 (Comprehensive) | Deep analysis needed | Either location |
 
 ## Examples
@@ -476,10 +476,10 @@ A: Yes! Use `--validate` flag and check exit codes:
 A: Review the validation report recommendations and use `/template-validate` for deeper analysis.
 
 **Q: Where are templates created by default?**
-A: After TASK-068, templates are created in `~/.agentecflow/templates/` by default for immediate personal use. Use `--output-location=repo` flag to create templates in `installer/global/templates/` for team/public distribution.
+A: After TASK-068, templates are created in `~/.agentecflow/templates/` by default for immediate personal use. Use `--output-location=repo` flag to create templates in `installer/core/templates/` for team/public distribution.
 
 **Q: Can I validate templates in either location?**
-A: Yes! Both `/template-create --validate` and `/template-validate` work with templates in either `~/.agentecflow/templates/` (personal) or `installer/global/templates/` (repository) locations.
+A: Yes! Both `/template-create --validate` and `/template-validate` work with templates in either `~/.agentecflow/templates/` (personal) or `installer/core/templates/` (repository) locations.
 ```
 
 ---
@@ -584,7 +584,7 @@ ls -la audit-report.md
 ### Modify
 - `CLAUDE.md` (add validation section)
 - `README.md` (link to validation guides)
-- `installer/global/commands/template-create.md` (add `--validate` docs)
+- `installer/core/commands/template-create.md` (add `--validate` docs)
 - `docs/guides/template-commands-getting-started.md` (reference validation)
 - `docs/workflows/template-creation-workflow.md` (add validation step)
 

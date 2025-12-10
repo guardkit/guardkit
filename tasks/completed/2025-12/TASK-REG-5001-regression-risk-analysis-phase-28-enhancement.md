@@ -67,17 +67,17 @@ Analyze the regression risk of implementing TASK-P28-D102 (Enhance Phase 2.8 wit
 Identify all files and components that TASK-P28-D102 would modify:
 
 **Files to Create** (5 new files):
-- `installer/global/commands/lib/decision_detection.py`
-- `installer/global/commands/lib/decision_capture.py`
+- `installer/core/commands/lib/decision_detection.py`
+- `installer/core/commands/lib/decision_capture.py`
 - `tests/unit/test_decision_detection.py`
 - `tests/unit/test_decision_capture.py`
 - `tests/integration/test_decision_workflow.py`
 
 **Files to Modify** (5 existing files):
-- `installer/global/commands/lib/task_work_orchestrator.py` - Add decision detection to Phase 2
-- `installer/global/commands/lib/phase_28_checkpoint.py` - Enhance checkpoint display and options
-- `installer/global/commands/lib/task_file_manager.py` - Add decision points to frontmatter
-- `installer/global/commands/task-work.md` - Update documentation
+- `installer/core/commands/lib/task_work_orchestrator.py` - Add decision detection to Phase 2
+- `installer/core/commands/lib/phase_28_checkpoint.py` - Enhance checkpoint display and options
+- `installer/core/commands/lib/task_file_manager.py` - Add decision points to frontmatter
+- `installer/core/commands/task-work.md` - Update documentation
 - `docs/guides/guardkit-workflow.md` - Document decision handling
 
 ### 2. Risk Categories to Evaluate

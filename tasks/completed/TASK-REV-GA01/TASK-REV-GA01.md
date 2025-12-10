@@ -128,7 +128,7 @@ These agents clutter the project and could confuse the agent discovery system.
 ## Files to Review
 
 - `installer/scripts/install.sh` - Installation logic
-- `installer/global/agents/*.md` - All global agents
+- `installer/core/agents/*.md` - All global agents
 - Template manifest structure
 - Agent discovery implementation
 

@@ -129,7 +129,7 @@ This task complements TASK-1FDF by providing the second immediate business need:
 ### Phase 1: Zeplin Integration (3-4 hours)
 
 - [ ] **Zeplin-MAUI Orchestrator Agent**
-  - [ ] Create `installer/global/agents/zeplin-maui-orchestrator.md` (CORRECT location - parallel to figma-react-orchestrator)
+  - [ ] Create `installer/core/agents/zeplin-maui-orchestrator.md` (CORRECT location - parallel to figma-react-orchestrator)
   - [ ] **NOT** `.claude/agents/zeppelin-design-specialist.md` (WRONG - typo "zeppelin" + wrong directory)
   - [ ] Implements 6-phase Saga workflow (parallel to figma-react-orchestrator):
     - Phase 0: MCP Verification
@@ -235,7 +235,7 @@ This task complements TASK-1FDF by providing the second immediate business need:
 ### Phase 3: Commands & Integration (1-2 hours)
 
 - [ ] **Zeplin-to-MAUI Command**
-  - [ ] Create `installer/global/commands/zeplin-to-maui.md` (parallel to figma-to-react.md)
+  - [ ] Create `installer/core/commands/zeplin-to-maui.md` (parallel to figma-to-react.md)
   - [ ] Accept Zeplin URL with project/screen/component IDs
   - [ ] Accept IDs directly (project-id, screen-id parameters)
   - [ ] Optional stack parameter (default: MAUI)
@@ -243,7 +243,7 @@ This task complements TASK-1FDF by providing the second immediate business need:
   - [ ] Success/failure reporting
 
 - [ ] **MCP Reference Command**
-  - [ ] Create `installer/global/commands/mcp-zeplin.md`
+  - [ ] Create `installer/core/commands/mcp-zeplin.md`
   - [ ] Document all Zeplin MCP tools with examples
   - [ ] URL ID extraction reference
   - [ ] Troubleshooting guide
@@ -389,14 +389,14 @@ public partial class DesignComponent : ContentView
 ### File Structure (CORRECTED based on TASK-1FDF learnings)
 
 ```
-installer/global/agents/
+installer/core/agents/
 ├── figma-react-orchestrator.md         [EXISTING - DO NOT MODIFY]
 └── zeplin-maui-orchestrator.md         [NEW - standalone, parallel to figma-react]
 
 .claude/stacks/maui/agents/
 └── maui-ux-specialist.md               [NEW - stack-specific, parallel to react-component-generator]
 
-installer/global/commands/
+installer/core/commands/
 ├── figma-to-react.md                   [EXISTING - DO NOT MODIFY]
 ├── zeplin-to-maui.md                   [NEW - parallel to figma-to-react]
 └── mcp-zeplin.md                       [NEW - Zeplin MCP reference]
@@ -619,7 +619,7 @@ maui-ux-specialist (stack-specific - MAUI implementation)
 
 **1. File Naming Fixed**:
 - ❌ **WRONG**: `.claude/agents/zeppelin-design-specialist.md` (typo + wrong directory)
-- ✅ **CORRECT**: `installer/global/agents/zeplin-maui-orchestrator.md`
+- ✅ **CORRECT**: `installer/core/agents/zeplin-maui-orchestrator.md`
 
 **2. Architecture Approach Changed**:
 - ❌ **WRONG**: Update existing `design-system-orchestrator.md` (risk breaking TASK-1FDF)
@@ -710,9 +710,9 @@ maui-ux-specialist (stack-specific - MAUI implementation)
 ### Reference Files for Copy/Adapt 📋
 
 **From TASK-1FDF** (completed 2025-10-09):
-- `installer/global/agents/figma-react-orchestrator.md` → Adapt for Zeplin
+- `installer/core/agents/figma-react-orchestrator.md` → Adapt for Zeplin
 - `.claude/stacks/react/agents/react-component-generator.md` → Adapt for MAUI
-- `installer/global/commands/figma-to-react.md` → Adapt for Zeplin-to-MAUI
+- `installer/core/commands/figma-to-react.md` → Adapt for Zeplin-to-MAUI
 - `tests/unit/figma-react-orchestrator.test.ts` → Adapt for zeplin-maui
 - `tests/unit/react-component-generator.test.ts` → Adapt for maui-ux
 - `tests/integration/figma-to-react-workflow.test.ts` → Adapt for zeplin-maui

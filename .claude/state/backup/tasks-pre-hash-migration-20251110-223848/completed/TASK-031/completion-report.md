@@ -48,16 +48,16 @@ Successfully fixed critical bug where state files were lost when using `/task-wo
 ## Implementation Summary
 
 ### Files Created (1)
-- `installer/global/commands/lib/git_state_helper.py` (125 lines)
+- `installer/core/commands/lib/git_state_helper.py` (125 lines)
   - 3 utility functions for git state management
   - 100% test coverage
   - Cross-platform compatible
 
 ### Files Modified (4)
-- `installer/global/commands/lib/plan_persistence.py` (+12 lines)
-- `installer/global/commands/lib/metrics/plan_audit_metrics.py` (+11 lines)
-- `installer/global/commands/task-work.md` (+54 lines documentation)
-- `installer/global/commands/task-complete.md` (+54 lines documentation)
+- `installer/core/commands/lib/plan_persistence.py` (+12 lines)
+- `installer/core/commands/lib/metrics/plan_audit_metrics.py` (+11 lines)
+- `installer/core/commands/task-work.md` (+54 lines documentation)
+- `installer/core/commands/task-complete.md` (+54 lines documentation)
 
 ### Tests Created (1)
 - `tests/unit/test_git_state_helper.py` (450+ lines, 25 tests)

@@ -62,7 +62,7 @@ Reinstate the `default` template that was removed in TASK-060, but with signific
 ## Acceptance Criteria
 
 ### Core Functionality
-- [x] **AC1**: Default template reinstated at `installer/global/templates/default/`
+- [x] **AC1**: Default template reinstated at `installer/core/templates/default/`
 - [x] **AC2**: Template scores ≥8.0/10 on quality audit (improved from 6.0/10)
 - [x] **AC3**: Contains all required files (CLAUDE.md, settings.json, agents/, templates/)
 - [x] **AC4**: Language-agnostic guidance (no stack-specific assumptions)
@@ -279,7 +279,7 @@ guardkit init --help
 
 ### Files to Create (Reinstated)
 ```
-installer/global/templates/default/
+installer/core/templates/default/
 ├── CLAUDE.md (IMPROVED: clear guidance, use cases, 8+/10 quality)
 ├── settings.json (IMPROVED: simplified, language-agnostic defaults)
 ├── agents/

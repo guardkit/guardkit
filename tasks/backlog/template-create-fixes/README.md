@@ -13,7 +13,7 @@ The `/template-create` command fails for complex codebases:
 1. **CLAUDE.md not generated**: Core content (36.95KB) exceeds 10KB limit
 2. **No agents directory**: Phase 5 fails silently, no fallback triggered
 3. **Miscategorized templates**: C#/.NET files placed in "other" category
-4. **Technical debt**: `installer/global/` naming causes Python import issues
+4. **Technical debt**: `installer/core/` naming causes Python import issues
 
 ## Impact
 
@@ -27,9 +27,11 @@ The `/template-create` command fails for complex codebases:
 |------|---------|----------|----------|
 | TASK-FIX-CLMD-SIZE | 36.95KB > 10KB limit | Truncate + summarize content | Critical |
 | TASK-FIX-AGENT-GEN | No agents generated | Add heuristic fallback | High |
-| TASK-FIX-LAYER-CLASS | Files in "other" | Add C# classifier | Medium |
-| TASK-ENH-SIZE-LIMIT | No override option | Add `--claude-md-size-limit` flag | Low |
+| TASK-FIX-LAYER-CLASS | Files in "other" | AI-native + generic heuristics | Medium |
+| TASK-ENH-SIZE-LIMIT | No override option | Add `--claude-md-size-limit` flag | Low (✅ Done) |
 | TASK-RENAME-GLOBAL | Python keyword issue | Rename directory | Medium |
+
+**Note**: All solutions are **technology-agnostic** - no hardcoded language-specific patterns. Layer classification uses AI-first approach with generic folder heuristics that work across any language.
 
 ## Success Criteria
 
@@ -54,13 +56,13 @@ cd ~/Projects/MyDrive
 
 | File | Tasks |
 |------|-------|
-| `installer/global/lib/template_generator/claude_md_generator.py` | FIX-CLMD-SIZE |
-| `installer/global/lib/template_generator/models.py` | FIX-CLMD-SIZE, ENH-SIZE-LIMIT |
-| `installer/global/lib/agent_generator/agent_generator.py` | FIX-AGENT-GEN |
-| `installer/global/commands/lib/template_create_orchestrator.py` | FIX-AGENT-GEN, ENH-SIZE-LIMIT |
-| `installer/global/lib/template_generator/layer_classifier.py` | FIX-LAYER-CLASS |
-| `installer/global/commands/template-create.md` | ENH-SIZE-LIMIT |
-| `installer/global/*` (directory rename) | RENAME-GLOBAL |
+| `installer/core/lib/template_generator/claude_md_generator.py` | FIX-CLMD-SIZE |
+| `installer/core/lib/template_generator/models.py` | FIX-CLMD-SIZE, ENH-SIZE-LIMIT |
+| `installer/core/lib/agent_generator/agent_generator.py` | FIX-AGENT-GEN |
+| `installer/core/commands/lib/template_create_orchestrator.py` | FIX-AGENT-GEN, ENH-SIZE-LIMIT |
+| `installer/core/lib/template_generator/layer_classifier.py` | FIX-LAYER-CLASS |
+| `installer/core/commands/template-create.md` | ENH-SIZE-LIMIT |
+| `installer/core/*` (directory rename) | RENAME-GLOBAL |
 
 ## Testing Strategy
 
@@ -71,5 +73,5 @@ cd ~/Projects/MyDrive
 ## Related Documentation
 
 - [Progressive Disclosure Guide](../../../docs/guides/progressive-disclosure.md)
-- [Template Create Command](../../../installer/global/commands/template-create.md)
-- [Agent Generator](../../../installer/global/lib/agent_generator/agent_generator.py)
+- [Template Create Command](../../../installer/core/commands/template-create.md)
+- [Agent Generator](../../../installer/core/lib/agent_generator/agent_generator.py)

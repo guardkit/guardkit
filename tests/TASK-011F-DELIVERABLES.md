@@ -104,8 +104,8 @@ python3 -m pytest tests/test_task_011f_validation.py -v
 ## Test Coverage Summary
 
 ### Files Validated
-✅ `installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
-✅ `installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md`
+✅ `installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
+✅ `installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md`
 
 ### Validation Categories
 

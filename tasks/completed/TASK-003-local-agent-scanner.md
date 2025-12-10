@@ -17,13 +17,13 @@ blocks: [TASK-009]
 
 ## Objective
 
-Scan `installer/global/agents/` directory to discover existing taskwright agents (architectural-reviewer, code-reviewer, test-orchestrator, etc.) for inclusion in templates.
+Scan `installer/core/agents/` directory to discover existing taskwright agents (architectural-reviewer, code-reviewer, test-orchestrator, etc.) for inclusion in templates.
 
 **Note**: Kept from original approach - implementation is sound and valuable.
 
 ## Acceptance Criteria
 
-- [ ] Scan `installer/global/agents/` directory
+- [ ] Scan `installer/core/agents/` directory
 - [ ] Parse agent markdown files
 - [ ] Extract metadata: name, description, tools, technologies, specializations
 - [ ] Discover 15+ existing agents
@@ -43,7 +43,7 @@ Key components:
 
 ## Definition of Done
 
-- [ ] Scanner discovers 15+ agents from `installer/global/agents/`
+- [ ] Scanner discovers 15+ agents from `installer/core/agents/`
 - [ ] Metadata extraction working
 - [ ] Caching implemented
 - [ ] Unit tests passing

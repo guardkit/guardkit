@@ -35,7 +35,7 @@ See docs/tasks/TASK-BDRY-SCHEMA-spec.md for full specification.
 ## Acceptance Criteria
 
 ### AC1: Add JSON Schema to Prompt Builder ✅
-- [ ] File: `installer/global/lib/agent_enhancement/prompt_builder.py`
+- [ ] File: `installer/core/lib/agent_enhancement/prompt_builder.py`
 - [ ] Lines: 83-106 (replace existing output format section)
 - [ ] Add `required: ["sections", "related_templates", "examples", "boundaries"]`
 - [ ] Add pattern validation: `"pattern": "## Boundaries.*### ALWAYS.*### NEVER.*### ASK"`
@@ -43,7 +43,7 @@ See docs/tasks/TASK-BDRY-SCHEMA-spec.md for full specification.
 - [ ] Include example valid response
 
 ### AC2: Simplify Agent Instructions ✅
-- [ ] File: `installer/global/agents/agent-content-enhancer.md`
+- [ ] File: `installer/core/agents/agent-content-enhancer.md`
 - [ ] Lines: 64-95 (Boundary Sections section)
 - [ ] Reduce from 32 lines to ~14 lines
 - [ ] Remove redundant examples (schema is source of truth)
@@ -51,20 +51,20 @@ See docs/tasks/TASK-BDRY-SCHEMA-spec.md for full specification.
 - [ ] Reference schema for structural requirements
 
 ### AC3: Update Parser Validation Comment ✅
-- [ ] File: `installer/global/lib/agent_enhancement/parser.py`
+- [ ] File: `installer/core/lib/agent_enhancement/parser.py`
 - [ ] Lines: 156-164
 - [ ] Change from "RECOMMENDED" to "REQUIRED by JSON schema"
 - [ ] Update error message to hint at schema violation
 - [ ] NO functional logic changes (only comment update)
 
 ### AC4: Preserve Workarounds ✅
-- [ ] DO NOT MODIFY: `installer/global/lib/agent_enhancement/enhancer.py` (_ensure_boundaries)
-- [ ] DO NOT MODIFY: `installer/global/lib/agent_enhancement/boundary_utils.py` (generate_generic_boundaries)
+- [ ] DO NOT MODIFY: `installer/core/lib/agent_enhancement/enhancer.py` (_ensure_boundaries)
+- [ ] DO NOT MODIFY: `installer/core/lib/agent_enhancement/boundary_utils.py` (generate_generic_boundaries)
 - [ ] Verify workarounds still functional after changes
 - [ ] These provide defense-in-depth safety net
 
 ### AC5: Update Agent Documentation ✅
-- [ ] File: `installer/global/agents/agent-content-enhancer.md`
+- [ ] File: `installer/core/agents/agent-content-enhancer.md`
 - [ ] Lines: 248-300 (Output Format section)
 - [ ] Add schema reference to output format documentation
 - [ ] Highlight that `boundaries` field is REQUIRED by schema
@@ -119,9 +119,9 @@ See docs/tasks/TASK-BDRY-SCHEMA-spec.md for full specification.
 
 ## Deliverables
 - Files modified: 6
-  - `installer/global/lib/agent_enhancement/prompt_builder.py` (JSON schema added)
-  - `installer/global/agents/agent-content-enhancer.md` (simplified boundary section)
-  - `installer/global/lib/agent_enhancement/parser.py` (validation comments updated)
+  - `installer/core/lib/agent_enhancement/prompt_builder.py` (JSON schema added)
+  - `installer/core/agents/agent-content-enhancer.md` (simplified boundary section)
+  - `installer/core/lib/agent_enhancement/parser.py` (validation comments updated)
   - Test files updated to match new schema format
 - Tests written: 44 boundary-related tests
 - Coverage achieved: 89% (boundary_utils.py)

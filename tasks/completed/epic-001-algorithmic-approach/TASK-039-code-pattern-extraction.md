@@ -79,7 +79,7 @@ When analyzing external service integrations, extract:
 ### Step 1: Create Pattern Extractor
 
 ```python
-# installer/global/commands/lib/pattern_extraction/code_extractor.py
+# installer/core/commands/lib/pattern_extraction/code_extractor.py
 
 from dataclasses import dataclass
 from typing import List, Dict, Optional
@@ -306,10 +306,10 @@ def test_extract_react_component():
 
 ## Files to Create
 
-1. `installer/global/commands/lib/pattern_extraction/code_extractor.py` (~600 lines)
-2. `installer/global/commands/lib/pattern_extraction/react_parser.py` (~300 lines)
-3. `installer/global/commands/lib/pattern_extraction/dotnet_parser.py` (~300 lines)
-4. `installer/global/commands/lib/pattern_extraction/python_parser.py` (~250 lines)
+1. `installer/core/commands/lib/pattern_extraction/code_extractor.py` (~600 lines)
+2. `installer/core/commands/lib/pattern_extraction/react_parser.py` (~300 lines)
+3. `installer/core/commands/lib/pattern_extraction/dotnet_parser.py` (~300 lines)
+4. `installer/core/commands/lib/pattern_extraction/python_parser.py` (~250 lines)
 5. `tests/unit/test_code_extractor.py` (~400 lines)
 
 ## Definition of Done

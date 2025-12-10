@@ -77,14 +77,14 @@ Commit `eb2e94c64d470da5eea9dddd932fd3d92685df8b` represents the last "good" sta
 ### ✅ Step 1: Deleted Detector Code (1,045 LOC)
 
 **Files Deleted**:
-- `installer/global/commands/lib/smart_defaults_detector.py` (531 LOC)
+- `installer/core/commands/lib/smart_defaults_detector.py` (531 LOC)
 - `tests/unit/test_smart_defaults_detector.py` (514 LOC)
 
 **Verification**: No references to `smart_defaults_detector` remain (only in task files and coverage artifacts).
 
 ### ✅ Step 2: Removed Phase 1 Q&A from Orchestrator
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Changes Completed**:
 1. Removed detector imports
@@ -163,7 +163,7 @@ def _run_all_phases(self) -> OrchestrationResult:
 ### ✅ Step 8: Updated Documentation
 
 **Files Updated**:
-1. `installer/global/commands/template-create.md`:
+1. `installer/core/commands/template-create.md`:
    - Removed `--skip-qa` and `--config` flags
    - Added "AI-Native Codebase Analysis (Phase 1)" section
    - Updated workflow phases (1-7 instead of 1-8)
@@ -237,9 +237,9 @@ def _run_all_phases(self) -> OrchestrationResult:
 - **Net Change**: -925 LOC (significant simplification!)
 
 **Files Modified**:
-- `installer/global/commands/lib/template_create_orchestrator.py` (major refactor)
-- `installer/global/lib/codebase_analyzer/prompt_builder.py` (enhanced AI prompt)
-- `installer/global/commands/template-create.md` (documentation)
+- `installer/core/commands/lib/template_create_orchestrator.py` (major refactor)
+- `installer/core/lib/codebase_analyzer/prompt_builder.py` (enhanced AI prompt)
+- `installer/core/commands/template-create.md` (documentation)
 - `CLAUDE.md` (documentation)
 - `tests/unit/test_template_create_orchestrator.py` (partial updates)
 
@@ -247,7 +247,7 @@ def _run_all_phases(self) -> OrchestrationResult:
 - `tests/integration/test_ai_native_template_creation.py` (new integration tests)
 
 **Files Deleted**:
-- `installer/global/commands/lib/smart_defaults_detector.py`
+- `installer/core/commands/lib/smart_defaults_detector.py`
 - `tests/unit/test_smart_defaults_detector.py`
 
 ---

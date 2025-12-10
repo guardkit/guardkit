@@ -122,14 +122,14 @@ This is pure research - no code changes in this task.
 
 ```bash
 # Search for mode flag references
-grep -r "mode=tdd" installer/global/commands/
+grep -r "mode=tdd" installer/core/commands/
 grep -r "mode.*tdd" .claude/commands/
 
 # Find Python scripts
-find installer/global/commands/lib -name "*.py" | xargs grep -l "mode"
+find installer/core/commands/lib -name "*.py" | xargs grep -l "mode"
 
 # Check command spec
-head -n 200 installer/global/commands/task-work.md
+head -n 200 installer/core/commands/task-work.md
 ```
 
 ### Step 2: Analyze Command Structure
@@ -143,20 +143,20 @@ head -n 200 installer/global/commands/task-work.md
 
 ```bash
 # Search for agent invocation patterns
-grep -r "invoke_agent" installer/global/
-grep -r "bdd-generator" installer/global/
-grep -r "task-manager" installer/global/
+grep -r "invoke_agent" installer/core/
+grep -r "bdd-generator" installer/core/
+grep -r "task-manager" installer/core/
 ```
 
 ### Step 4: Trace Feature Detection
 
 ```bash
 # Find supports_bdd() usage
-grep -r "supports_bdd" installer/global/
-grep -r "require-kit.marker" installer/global/
+grep -r "supports_bdd" installer/core/
+grep -r "require-kit.marker" installer/core/
 
 # Read feature detection
-cat installer/global/lib/feature_detection.py
+cat installer/core/lib/feature_detection.py
 ```
 
 ### Step 5: Document Integration Points
@@ -270,8 +270,8 @@ Based on findings, document:
 - [Implementation Guide](./IMPLEMENTATION-GUIDE.md)
 - [TASK-2E9E Architectural Review](./../../../.claude/reviews/TASK-2E9E-architectural-review-FINAL.md)
 - [BDD Restoration Guide](../../../docs/research/restoring-bdd-feature.md)
-- `installer/global/commands/task-work.md`
-- `installer/global/lib/feature_detection.py`
+- `installer/core/commands/task-work.md`
+- `installer/core/lib/feature_detection.py`
 
 ## Notes
 

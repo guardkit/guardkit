@@ -4,7 +4,7 @@
 
 ### 1.1 Existing Implementation Review
 
-**File: `installer/global/lib/agent_enhancement/applier.py`** (253 lines)
+**File: `installer/core/lib/agent_enhancement/applier.py`** (253 lines)
 
 **Current state**:
 - Has `apply()` and `generate_diff()` methods for single-file enhancement
@@ -38,7 +38,7 @@
 
 ### 2.1 Constants Definition
 
-**Location**: `installer/global/lib/agent_enhancement/applier.py`
+**Location**: `installer/core/lib/agent_enhancement/applier.py`
 
 **Add at module level** (after imports, before class):
 
@@ -65,7 +65,7 @@ EXTENDED_SECTIONS = [
 
 ### 2.2 Model Class
 
-**Location**: `installer/global/lib/agent_enhancement/models.py`
+**Location**: `installer/core/lib/agent_enhancement/models.py`
 
 **Add SplitContent dataclass**:
 
@@ -116,9 +116,9 @@ All tests already written in `tests/unit/test_applier_split_methods.py`
 
 ### 4.1 Step 1: Add Constants and Model (5 minutes)
 
-1. Open `installer/global/lib/agent_enhancement/applier.py`
+1. Open `installer/core/lib/agent_enhancement/applier.py`
 2. Add `CORE_SECTIONS` and `EXTENDED_SECTIONS` constants after imports
-3. Open `installer/global/lib/agent_enhancement/models.py`
+3. Open `installer/core/lib/agent_enhancement/models.py`
 4. Add `SplitContent` dataclass
 5. Update imports in applier.py to include `SplitContent`
 
@@ -148,7 +148,7 @@ Implement in this order (simple to complex):
 ### 4.6 Step 6: Run Tests (5 minutes)
 
 ```bash
-python -m pytest tests/unit/test_applier_split_methods.py -v --cov=installer.global.lib.agent_enhancement.applier --cov-report=term
+python -m pytest tests/unit/test_applier_split_methods.py -v --cov=installer.core.lib.agent_enhancement.applier --cov-report=term
 ```
 
 ### 4.7 Step 7: Fix Test Failures (15 minutes)
@@ -350,14 +350,14 @@ This extended documentation follows progressive disclosure principles to keep th
 
 ### 9.1 Primary Changes
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 - Add `CORE_SECTIONS` constant (7 items)
 - Add `EXTENDED_SECTIONS` constant (7 items)
 - Add 9 new methods (~150 lines total)
 - Import `SplitContent` from models
 
-**File**: `installer/global/lib/agent_enhancement/models.py`
+**File**: `installer/core/lib/agent_enhancement/models.py`
 
 - Add `SplitContent` dataclass (~10 lines)
 

@@ -24,7 +24,7 @@ Apply the TASK-FIX-AGENTRESPONSE-FORMAT fix that was documented and tested but *
 During the TASK-REV-PD07 review, it was discovered that:
 1. Claude created fixed versions of files during testing
 2. The fixes exist in `docs/reviews/progressive-disclosure/` (test directory)
-3. The canonical files in `installer/global/` DO NOT have the fixes
+3. The canonical files in `installer/core/` DO NOT have the fixes
 4. This causes `/agent-enhance` to fall back to static enhancement (poor quality)
 
 ### Root Cause Analysis
@@ -75,7 +75,7 @@ The 5 high-quality agents were enhanced AFTER Claude manually applied the fix du
 
 ### AC1: Apply Defensive Handling to invoker.py
 
-- [x] Add the auto-wrapping code block to `installer/global/lib/agent_bridge/invoker.py`
+- [x] Add the auto-wrapping code block to `installer/core/lib/agent_bridge/invoker.py`
 - [x] Insert at line ~227 (before the existing response field validation)
 - [x] Code must detect raw enhancement content (`sections` present, `request_id` absent)
 - [x] Log warning when auto-wrapping is triggered
@@ -134,7 +134,7 @@ if "sections" in response_data and "request_id" not in response_data:
 
 ### Step 1: Update invoker.py
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Location**: Insert after line 225 (after `response_data = json.loads(...)`)
 
@@ -195,8 +195,8 @@ Check the enhanced agent file has:
 
 | File | Change | Priority |
 |------|--------|----------|
-| `installer/global/lib/agent_bridge/invoker.py` | Add auto-wrapping logic | CRITICAL |
-| `installer/global/commands/agent-enhance.md` | Add bridge protocol docs | RECOMMENDED |
+| `installer/core/lib/agent_bridge/invoker.py` | Add auto-wrapping logic | CRITICAL |
+| `installer/core/commands/agent-enhance.md` | Add bridge protocol docs | RECOMMENDED |
 
 ## Reference Files
 

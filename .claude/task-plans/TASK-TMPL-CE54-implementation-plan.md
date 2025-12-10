@@ -13,7 +13,7 @@ Fix template directory classification to use AI-provided layer information inste
 
 ## Files to Create/Modify
 
-### 1. Create: `installer/global/lib/template_generator/path_resolver.py`
+### 1. Create: `installer/core/lib/template_generator/path_resolver.py`
 **Lines**: ~200
 **Purpose**: Strategy pattern implementation for template path resolution
 
@@ -29,7 +29,7 @@ Fix template directory classification to use AI-provided layer information inste
 - `TemplatePathResolver.resolve(example_file, analysis) -> str`
 - `TemplatePathResolver.get_classification_summary() -> str`
 
-### 2. Modify: `installer/global/lib/template_generator/template_generator.py`
+### 2. Modify: `installer/core/lib/template_generator/template_generator.py`
 **Lines Changed**: ~15
 **Changes**:
 1. Import `TemplatePathResolver` (line ~10)
@@ -127,12 +127,12 @@ if self.path_resolver.warnings:
 **Test Structure**:
 ```python
 import pytest
-from installer.global.lib.template_generator.path_resolver import (
+from installer.core.lib.template_generator.path_resolver import (
     LayerClassificationStrategy,
     PatternClassificationStrategy,
     TemplatePathResolver
 )
-from installer.global.lib.codebase_analyzer.models import ExampleFile, CodebaseAnalysis
+from installer.core.lib.codebase_analyzer.models import ExampleFile, CodebaseAnalysis
 
 @pytest.fixture
 def example_file_with_layer():
@@ -152,7 +152,7 @@ def test_layer_classification_with_repository(example_file_with_layer):
 
 ### Unit Tests (10 minutes)
 ```bash
-pytest tests/lib/template_generator/test_path_resolver.py -v --cov=installer/global/lib/template_generator/path_resolver.py
+pytest tests/lib/template_generator/test_path_resolver.py -v --cov=installer/core/lib/template_generator/path_resolver.py
 ```
 
 **Expected Coverage**: ≥90%

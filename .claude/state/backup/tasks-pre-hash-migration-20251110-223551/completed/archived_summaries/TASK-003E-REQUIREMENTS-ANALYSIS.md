@@ -506,14 +506,14 @@ This requirements analysis provides a structured evaluation of TASK-003E accepta
 ### 5.1 Critical Dependencies (TASK-003A, 003B, 003C, 003D)
 
 **DEP-001: ComplexityCalculator (TASK-003A)**
-- **Location**: `installer/global/commands/lib/complexity_calculator.py`
+- **Location**: `installer/core/commands/lib/complexity_calculator.py`
 - **Status**: ✅ IMPLEMENTED
 - **Impact**: Critical - Core calculation engine being tested
 - **Requirements Affected**: REQ-003E-001.1 (all unit tests depend on this)
 - **Risk**: LOW - Stable implementation, well-documented
 
 **DEP-002: ComplexityModels (TASK-003A)**
-- **Location**: `installer/global/commands/lib/complexity_models.py`
+- **Location**: `installer/core/commands/lib/complexity_models.py`
 - **Status**: ✅ IMPLEMENTED
 - **Impact**: Critical - Data structures used throughout tests
 - **Key Types**:
@@ -526,7 +526,7 @@ This requirements analysis provides a structured evaluation of TASK-003E accepta
 - **Risk**: LOW - Stable data models, frozen dataclasses
 
 **DEP-003: ComplexityFactors (TASK-003A)**
-- **Location**: `installer/global/commands/lib/complexity_factors.py`
+- **Location**: `installer/core/commands/lib/complexity_factors.py`
 - **Status**: ✅ IMPLEMENTED (assumed from imports)
 - **Impact**: HIGH - Factor evaluation logic needs testing
 - **Key Components**:
@@ -536,7 +536,7 @@ This requirements analysis provides a structured evaluation of TASK-003E accepta
 - **Action Required**: 🔍 Verify factor implementations in Phase 2
 
 **DEP-004: Review Mode Handlers (TASK-003B)**
-- **Location**: `installer/global/commands/lib/review_modes.py` (assumed)
+- **Location**: `installer/core/commands/lib/review_modes.py` (assumed)
 - **Status**: ⚠️ ASSUMED (not verified)
 - **Impact**: HIGH - Review mode behavior needs testing
 - **Requirements Affected**: REQ-003E-001.2 (review mode tests)
@@ -544,7 +544,7 @@ This requirements analysis provides a structured evaluation of TASK-003E accepta
 - **Action Required**: 🔍 Verify review mode handler implementations in Phase 2
 
 **DEP-005: Plan Templates (TASK-003B)**
-- **Location**: `installer/global/commands/lib/plan_templates.py` (assumed)
+- **Location**: `installer/core/commands/lib/plan_templates.py` (assumed)
 - **Status**: ⚠️ ASSUMED (not verified)
 - **Impact**: HIGH - Template rendering needs testing
 - **Requirements Affected**: REQ-003E-001.4 (template tests)
@@ -552,7 +552,7 @@ This requirements analysis provides a structured evaluation of TASK-003E accepta
 - **Action Required**: 🔍 Verify template implementations in Phase 2
 
 **DEP-006: Metrics Collection (TASK-003C or 003D)**
-- **Location**: `installer/global/commands/lib/metrics_*.py` (assumed)
+- **Location**: `installer/core/commands/lib/metrics_*.py` (assumed)
 - **Status**: ⚠️ ASSUMED (not verified)
 - **Impact**: MEDIUM - Metrics collection needs testing
 - **Requirements Affected**: REQ-003E-001.5 (metrics tests)
@@ -565,16 +565,16 @@ Before starting Phase 2, verify the following implementations exist:
 
 ```bash
 # Critical files that must exist:
-[ ] installer/global/commands/lib/complexity_factors.py
-[ ] installer/global/commands/lib/review_modes.py
-[ ] installer/global/commands/lib/plan_templates.py
-[ ] installer/global/commands/lib/metrics_collector.py
-[ ] installer/global/commands/lib/countdown_timer.py
+[ ] installer/core/commands/lib/complexity_factors.py
+[ ] installer/core/commands/lib/review_modes.py
+[ ] installer/core/commands/lib/plan_templates.py
+[ ] installer/core/commands/lib/metrics_collector.py
+[ ] installer/core/commands/lib/countdown_timer.py
 
 # Optional but expected:
-[ ] installer/global/commands/lib/plan_generator.py
-[ ] installer/global/commands/lib/metrics_reporter.py
-[ ] installer/global/commands/lib/user_interaction.py
+[ ] installer/core/commands/lib/plan_generator.py
+[ ] installer/core/commands/lib/metrics_reporter.py
+[ ] installer/core/commands/lib/user_interaction.py
 ```
 
 **Mitigation Strategy**: If any critical dependency is missing:
@@ -809,10 +809,10 @@ Before starting Phase 2, verify the following implementations exist:
 - **Command**:
   ```bash
   # Check if critical files exist
-  ls -la installer/global/commands/lib/complexity_factors.py
-  ls -la installer/global/commands/lib/review_modes.py
-  ls -la installer/global/commands/lib/plan_templates.py
-  ls -la installer/global/commands/lib/metrics_collector.py
+  ls -la installer/core/commands/lib/complexity_factors.py
+  ls -la installer/core/commands/lib/review_modes.py
+  ls -la installer/core/commands/lib/plan_templates.py
+  ls -la installer/core/commands/lib/metrics_collector.py
   ```
 
 **REC-002: Install Test Dependencies**
@@ -833,7 +833,7 @@ Before starting Phase 2, verify the following implementations exist:
 - **Command**:
   ```bash
   pytest tests/unit/test_complexity_calculation_comprehensive.py -v \
-      --cov=installer/global/commands/lib/complexity_calculator \
+      --cov=installer/core/commands/lib/complexity_calculator \
       --cov-report=term-missing \
       --cov-report=html
   ```
@@ -933,7 +933,7 @@ Before starting Phase 2, verify the following implementations exist:
 - **Benefit**: Documentation stays in sync with code
 - **Command**:
   ```bash
-  sphinx-apidoc -o docs/api installer/global/commands/lib
+  sphinx-apidoc -o docs/api installer/core/commands/lib
   ```
 
 ### 8.4 Phase 4 Recommendations
@@ -1153,11 +1153,11 @@ Before starting Phase 2, verify the following implementations exist:
 **ACTION-001: Verify Dependency Implementations** (CRITICAL)
 ```bash
 # Run these commands before starting Phase 2
-ls -la installer/global/commands/lib/complexity_factors.py
-ls -la installer/global/commands/lib/review_modes.py
-ls -la installer/global/commands/lib/plan_templates.py
-ls -la installer/global/commands/lib/metrics_collector.py
-ls -la installer/global/commands/lib/countdown_timer.py
+ls -la installer/core/commands/lib/complexity_factors.py
+ls -la installer/core/commands/lib/review_modes.py
+ls -la installer/core/commands/lib/plan_templates.py
+ls -la installer/core/commands/lib/metrics_collector.py
+ls -la installer/core/commands/lib/countdown_timer.py
 ```
 If any file is missing, adjust test scope accordingly.
 
@@ -1169,7 +1169,7 @@ pip install pytest pytest-cov pytest-mock coverage pytest-benchmark
 **ACTION-003: Run Phase 1 Verification** (HIGH)
 ```bash
 pytest tests/unit/test_complexity_calculation_comprehensive.py -v \
-    --cov=installer/global/commands/lib/complexity_calculator \
+    --cov=installer/core/commands/lib/complexity_calculator \
     --cov-report=term-missing \
     --cov-report=html
 ```

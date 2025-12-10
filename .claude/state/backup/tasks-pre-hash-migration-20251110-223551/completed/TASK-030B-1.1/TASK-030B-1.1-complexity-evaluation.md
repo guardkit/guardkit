@@ -139,7 +139,7 @@ Document the **Complexity Evaluation** feature (Phase 2.7 of task-work command) 
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 2.7)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 2.7)
 - Complexity workflow: `docs/workflows/complexity-management-workflow.md`
 - Implementation plan: From Phase 2 of TASK-030B-1
 

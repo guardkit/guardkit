@@ -196,7 +196,7 @@ FORMAT: The [system] shall [behavior]
 ## See Also
 - [Card Name](../quick-reference/card-name.md)
 - [Workflow Guide](../workflows/workflow-name.md)
-- [Command Spec](../../installer/global/commands/command-name.md)
+- [Command Spec](../../installer/core/commands/command-name.md)
 ```
 
 ---

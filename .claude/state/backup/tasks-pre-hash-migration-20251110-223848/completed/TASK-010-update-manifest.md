@@ -28,7 +28,7 @@ Update manifest.json and any configuration files to reflect guardkit's focus on 
 
 ## Files to Update
 
-### installer/global/manifest.json
+### installer/core/manifest.json
 
 **Current (likely)**:
 ```json
@@ -132,7 +132,7 @@ find . -name "settings.json"
 ### 2. Update manifest.json
 
 ```bash
-# Edit installer/global/manifest.json
+# Edit installer/core/manifest.json
 # Update name, description, capabilities as shown above
 ```
 
@@ -140,7 +140,7 @@ find . -name "settings.json"
 
 ```bash
 # Check each template for settings.json
-for template in installer/global/templates/*/; do
+for template in installer/core/templates/*/; do
   if [ -f "$template/settings.json" ]; then
     echo "Found settings in $template"
   fi
@@ -198,7 +198,7 @@ done
 # Test manifest loading
 python3 -c "
 import json
-with open('installer/global/manifest.json') as f:
+with open('installer/core/manifest.json') as f:
     manifest = json.load(f)
     print(f\"Name: {manifest['name']}\")
     print(f\"Capabilities: {', '.join(manifest['capabilities'])}\")

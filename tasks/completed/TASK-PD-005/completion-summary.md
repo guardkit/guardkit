@@ -15,7 +15,7 @@ Successfully implemented progressive disclosure functionality for CLAUDE.md gene
 ## Changes Implemented
 
 ### 1. Data Model Enhancement
-**File**: `installer/global/lib/template_generator/models.py` (+68 lines)
+**File**: `installer/core/lib/template_generator/models.py` (+68 lines)
 
 - Added `TemplateSplitOutput` dataclass (lines 310-376)
 - Implemented size calculation methods:
@@ -27,7 +27,7 @@ Successfully implemented progressive disclosure functionality for CLAUDE.md gene
   - `validate_size_constraints()` - Enforces core ≤10KB limit
 
 ### 2. Generator Enhancement
-**File**: `installer/global/lib/template_generator/claude_md_generator.py` (+247 lines)
+**File**: `installer/core/lib/template_generator/claude_md_generator.py` (+247 lines)
 
 **Public Methods**:
 - `generate_split()` - Main entry point for split generation (lines 1349-1372)

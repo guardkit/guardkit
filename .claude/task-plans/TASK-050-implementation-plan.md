@@ -25,7 +25,7 @@ Add persistent JSON storage for external ID mappings and counters from TASK-049,
 
 ### 2.1 Module Structure
 ```
-installer/global/lib/
+installer/core/lib/
 ├── external_id_mapper.py          (EXISTING - from TASK-049)
 └── external_id_persistence.py     (NEW - persistence layer)
 
@@ -88,7 +88,7 @@ Use `fcntl` (Unix) with .lock files for cross-process synchronization.
 ## 3. Implementation Steps
 
 ### Phase 3.1: Core Persistence Module (45 min)
-**File:** `installer/global/lib/external_id_persistence.py`
+**File:** `installer/core/lib/external_id_persistence.py`
 
 **Components:**
 1. `ExternalIDPersistence` class
@@ -417,7 +417,7 @@ class ExternalIDMapper:
 - ✅ TASK-049: ExternalIDMapper (completed)
 
 ### Integration Changes Needed
-**File:** `installer/global/lib/external_id_mapper.py`
+**File:** `installer/core/lib/external_id_mapper.py`
 - Add `persistence` parameter to `__init__()`
 - Call `persistence.save_mappings()` after mapping creation
 - Call `persistence.save_counters()` after counter increment

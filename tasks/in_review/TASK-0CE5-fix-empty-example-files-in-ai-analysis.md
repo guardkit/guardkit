@@ -104,10 +104,10 @@ template_generator.py (L58-64)
 
 ### Key Files
 
-- `installer/global/lib/codebase_analyzer/prompt_builder.py` - Prompt construction
-- `installer/global/lib/codebase_analyzer/response_parser.py` - Response parsing
-- `installer/global/lib/codebase_analyzer/ai_analyzer.py` - Agent invocation
-- `installer/global/lib/template_generator/template_generator.py` - Template generation
+- `installer/core/lib/codebase_analyzer/prompt_builder.py` - Prompt construction
+- `installer/core/lib/codebase_analyzer/response_parser.py` - Response parsing
+- `installer/core/lib/codebase_analyzer/ai_analyzer.py` - Agent invocation
+- `installer/core/lib/template_generator/template_generator.py` - Template generation
 
 ---
 

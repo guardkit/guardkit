@@ -33,7 +33,7 @@ assert not old_template.exists()
 ```
 
 **Findings**:
-- Directory `installer/global/templates/maui/` successfully deleted
+- Directory `installer/core/templates/maui/` successfully deleted
 - 37 files removed (agents, templates, configuration)
 - No remaining physical directory
 - No broken symbolic links
@@ -41,10 +41,10 @@ assert not old_template.exists()
 
 **Verification Commands**:
 ```bash
-$ ls installer/global/templates/maui
-ls: installer/global/templates/maui: No such file or directory
+$ ls installer/core/templates/maui
+ls: installer/core/templates/maui: No such file or directory
 
-$ git log --oneline --follow installer/global/templates/maui/ | head -5
+$ git log --oneline --follow installer/core/templates/maui/ | head -5
 # Shows deletion commit with clear message
 ```
 
@@ -72,14 +72,14 @@ assert navpage_template.exists()
 **Findings**:
 
 **maui-appshell Template**:
-- Location: `installer/global/templates/maui-appshell/`
+- Location: `installer/core/templates/maui-appshell/`
 - Structure: Complete (agents, templates, CLAUDE.md, manifest.json)
 - Agents: 5 specialist agents (domain, repository, service, viewmodel, ui)
 - Templates: AppShell navigation patterns
 - Documentation: Comprehensive CLAUDE.md with usage examples
 
 **maui-navigationpage Template**:
-- Location: `installer/global/templates/maui-navigationpage/`
+- Location: `installer/core/templates/maui-navigationpage/`
 - Structure: Complete (agents, templates, CLAUDE.md, manifest.json)
 - Agents: Same 5 specialist agents as AppShell
 - Templates: NavigationPage stack patterns with NavigationService
@@ -87,11 +87,11 @@ assert navpage_template.exists()
 
 **Verification Commands**:
 ```bash
-$ ls -la installer/global/templates/ | grep maui
+$ ls -la installer/core/templates/ | grep maui
 drwxr-xr-x  maui-appshell
 drwxr-xr-x  maui-navigationpage
 
-$ cat installer/global/templates/maui-appshell/manifest.json
+$ cat installer/core/templates/maui-appshell/manifest.json
 # Valid JSON, template metadata present
 ```
 
@@ -270,7 +270,7 @@ with open(migration_plan, 'r') as f:
 git reset --hard 8e393d206f1882b462552080ed53fc5c01cc30c0
 
 # Restore just the template
-git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/global/templates/maui/
+git checkout 8e393d206f1882b462552080ed53fc5c01cc30c0 -- installer/core/templates/maui/
 ```
 
 **Verification Checklist Included**:

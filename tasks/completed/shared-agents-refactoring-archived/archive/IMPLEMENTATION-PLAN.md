@@ -49,7 +49,7 @@ This implementation plan provides a detailed task breakdown for migrating univer
 # scripts/verify-agent-duplication.sh
 
 # Compare agents between repos
-GUARDKIT_AGENTS="installer/global/agents"
+GUARDKIT_AGENTS="installer/core/agents"
 REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
 # For each agent in GuardKit
@@ -349,7 +349,7 @@ VERIFIED_AGENTS=(
 )
 
 for agent in "${VERIFIED_AGENTS[@]}"; do
-    cp "guardkit/installer/global/agents/$agent" "shared-agents/agents/"
+    cp "guardkit/installer/core/agents/$agent" "shared-agents/agents/"
     echo "✅ Migrated: $agent"
 done
 ```
@@ -525,7 +525,7 @@ done
 
 ### TASK-SHA-P2-004: Remove Duplicate Agents
 
-**Description**: Remove agents from `installer/global/agents/` that are now in shared-agents.
+**Description**: Remove agents from `installer/core/agents/` that are now in shared-agents.
 
 **Acceptance Criteria**:
 - [ ] Duplicate agents removed (verified list from TASK-SHA-000)
@@ -569,8 +569,8 @@ AGENT_SOURCES = [
     ('local', '.claude/agents'),
     ('user', '~/.agentecflow/agents'),
     ('universal', '.claude/agents/universal'),  # NEW
-    ('global', 'installer/global/agents'),
-    ('template', 'installer/global/templates/*/agents')
+    ('global', 'installer/core/agents'),
+    ('template', 'installer/core/templates/*/agents')
 ]
 ```
 

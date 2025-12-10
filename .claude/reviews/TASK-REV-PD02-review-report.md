@@ -345,9 +345,9 @@ rm ~/.agentecflow/templates/kartlog/agents/svelte5-component-specialist-ext.md
 - `docs/reviews/progressive-disclosure/agent-enhance-output/pwa-service-worker-specialist.md`
 
 ### Infrastructure Files
-- `installer/global/commands/agent-enhance.py` - Command entry point
-- `installer/global/lib/agent_enhancement/enhancer.py` - Core enhancement logic
-- `installer/global/lib/agent_enhancement/orchestrator.py` - Orchestration and split logic
+- `installer/core/commands/agent-enhance.py` - Command entry point
+- `installer/core/lib/agent_enhancement/enhancer.py` - Core enhancement logic
+- `installer/core/lib/agent_enhancement/orchestrator.py` - Orchestration and split logic
 
 ### Reference
 - `docs/reviews/progressive-disclosure/template_create_output.md` - Template creation context

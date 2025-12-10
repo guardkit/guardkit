@@ -12,8 +12,8 @@
 **Evidence**:
 ```python
 # From template_create_orchestrator.py (lines 37-40):
-_agent_bridge_invoker_module = importlib.import_module('installer.global.lib.agent_bridge.invoker')
-_agent_bridge_state_module = importlib.import_module('installer.global.lib.agent_bridge.state_manager')
+_agent_bridge_invoker_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
+_agent_bridge_state_module = importlib.import_module('installer.core.lib.agent_bridge.state_manager')
 AgentBridgeInvoker = _agent_bridge_invoker_module.AgentBridgeInvoker
 StateManager = _agent_bridge_state_module.StateManager
 
@@ -92,15 +92,15 @@ self.agent_invoker = AgentBridgeInvoker(
 - docs/research/phase-7-5-agent-enhancement-architecture-analysis.md
 
 **Production Code (modify)**:
-- `installer/global/commands/lib/template_create_orchestrator.py` ⚠️ CRITICAL
-- `installer/global/lib/agent_bridge/invoker.py` ⚠️ VERIFY
-- `installer/global/lib/template_creation/agent_enhancer.py` ✅ DELETE
+- `installer/core/commands/lib/template_create_orchestrator.py` ⚠️ CRITICAL
+- `installer/core/lib/agent_bridge/invoker.py` ⚠️ VERIFY
+- `installer/core/lib/template_creation/agent_enhancer.py` ✅ DELETE
 
 **Command Spec (modify)**:
-- `installer/global/commands/template-create.md`
+- `installer/core/commands/template-create.md`
 
 **Agent Spec (modify)**:
-- `installer/global/agents/agent-content-enhancer.md`
+- `installer/core/agents/agent-content-enhancer.md`
 
 **Tests (delete/modify)**:
 - tests/unit/lib/template_creation/test_agent_enhancer.py ✅ DELETE
@@ -146,21 +146,21 @@ Phase 7.5 Tests: 41+ tests (all passing)
 ## 6. Files to Modify Summary
 
 ### Delete Entirely (3 files):
-1. ✅ `installer/global/lib/template_creation/agent_enhancer.py` (1,468 lines)
+1. ✅ `installer/core/lib/template_creation/agent_enhancer.py` (1,468 lines)
 2. ✅ `tests/unit/lib/template_creation/test_agent_enhancer.py`
 3. ✅ `tests/unit/lib/template_creation/test_phase_7_5_template_prewrite.py`
 4. ✅ `tests/integration/test_agent_enhancement_with_code_samples.py`
 5. ✅ `.agent-request.json` (orphaned file)
 
 ### Modify (High Priority):
-1. ⚠️ `installer/global/commands/lib/template_create_orchestrator.py`
+1. ⚠️ `installer/core/commands/lib/template_create_orchestrator.py`
    - Remove Phase 7.5 import (lines 61-63)
    - Remove `_phase7_5_enhance_agents()` method (~150 lines)
    - Remove Phase 7.5 from dispatcher
    - Remove exit code 42 handling
    - Remove .agent-request.json / .agent-response.json handling
 
-2. ⚠️ `installer/global/lib/template_creation/constants.py`
+2. ⚠️ `installer/core/lib/template_creation/constants.py`
    - Remove PHASE_7_5 constant
 
 3. ⚠️ `tests/unit/lib/template_creation/test_template_create_orchestrator.py`
@@ -170,8 +170,8 @@ Phase 7.5 Tests: 41+ tests (all passing)
 ### Update Documentation (Medium Priority):
 1. `CLAUDE.md` (root)
 2. `.claude/CLAUDE.md`
-3. `installer/global/commands/template-create.md`
-4. `installer/global/agents/agent-content-enhancer.md`
+3. `installer/core/commands/template-create.md`
+4. `installer/core/agents/agent-content-enhancer.md`
 
 ### Review (Low Priority):
 - Other test files that reference Phase 7.5 (may just need expectations updated)

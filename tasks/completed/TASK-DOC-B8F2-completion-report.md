@@ -16,13 +16,13 @@
    - Explained progressive enhancement workflow
    - Added cross-reference to decision guide
 
-2. **installer/global/commands/agent-format.md**
+2. **installer/core/commands/agent-format.md**
    - Added "Primary Use Case: Template Agent Libraries" section
    - Explained why templates use `/agent-format` over `/agent-enhance`
    - Documented template vs project boundaries comparison
    - Added "See Also" section with cross-references
 
-3. **installer/global/commands/template-create.md**
+3. **installer/core/commands/template-create.md**
    - Added Phase 5.5 to workflow diagram
    - Added detailed "Agent Formatting (Phase 5.5) [AUTOMATIC]" section
    - Documented quality tier system
@@ -115,11 +115,11 @@
 - ✅ `docs/guides/agent-enhancement-decision-guide.md` - Listed in nav
 
 ### Won't be Published (excluded by installer/)
-- ℹ️ `installer/global/commands/agent-format.md` - Excluded
-- ℹ️ `installer/global/commands/agent-enhance.md` - Excluded
-- ℹ️ `installer/global/commands/template-create.md` - Excluded
+- ℹ️ `installer/core/commands/agent-format.md` - Excluded
+- ℹ️ `installer/core/commands/agent-enhance.md` - Excluded
+- ℹ️ `installer/core/commands/template-create.md` - Excluded
 
-Command docs are in `installer/global/commands/` which is excluded by mkdocs.yml line 187.
+Command docs are in `installer/core/commands/` which is excluded by mkdocs.yml line 187.
 
 ## Git Commit
 

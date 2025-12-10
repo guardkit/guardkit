@@ -13,7 +13,7 @@
 1. `tests/integration/test_bdd_mode_validation.py` - Comprehensive test suite (446 lines)
 
 ### Files Modified
-1. `installer/global/commands/task-work.md` - Command syntax and BDD documentation
+1. `installer/core/commands/task-work.md` - Command syntax and BDD documentation
 2. `tasks/completed/TASK-BDD-003/TASK-BDD-003-restore-mode-flag.md` - Task metadata and completion summary
 
 ### Documentation Added

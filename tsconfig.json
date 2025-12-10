@@ -35,8 +35,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@tests/*": ["./tests/*"],
-      "@agents/*": ["./installer/global/agents/*"],
-      "@commands/*": ["./installer/global/commands/*"]
+      "@agents/*": ["./installer/core/agents/*"],
+      "@commands/*": ["./installer/core/commands/*"]
     },
     "types": ["vitest/globals", "node"]
   },

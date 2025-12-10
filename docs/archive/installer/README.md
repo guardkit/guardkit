@@ -10,7 +10,7 @@ All files were last modified on 2025-11-03 and archived on 2025-11-26 after comp
 
 1. **MIGRATION_COMPLETE.md**
    - Documents template and methodology consolidation
-   - Templates moved from `.claude/templates/` to `installer/global/templates/default/templates/`
+   - Templates moved from `.claude/templates/` to `installer/core/templates/default/templates/`
    - Methodology files consolidated into global instructions
 
 2. **DEPRECATED_COMMANDS_REMOVED.md**
@@ -36,8 +36,8 @@ All files were last modified on 2025-11-03 and archived on 2025-11-26 after comp
 ### Analysis Documents
 
 6. **DUPLICATION_ANALYSIS.md**
-   - Analysis of command/agent duplication between `.claude/` and `installer/global/`
-   - Resolution: consolidated to single source in `installer/global/`
+   - Analysis of command/agent duplication between `.claude/` and `installer/core/`
+   - Resolution: consolidated to single source in `installer/core/`
    - Identified and resolved duplicated files
 
 ### Superseded Documentation

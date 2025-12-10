@@ -230,7 +230,7 @@ def execute_feature_plan(description: str, flags: dict):
 
 ## Files to Modify
 
-1. `installer/global/commands/feature-plan.md` - Add clarification documentation
+1. `installer/core/commands/feature-plan.md` - Add clarification documentation
 
 ## Why Direct Implementation
 

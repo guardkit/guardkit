@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Add installer/global/lib to Python path for imports
+# Add installer/core/lib to Python path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "installer" / "global" / "lib"))
 
 from id_generator import generate_task_id, validate_task_id

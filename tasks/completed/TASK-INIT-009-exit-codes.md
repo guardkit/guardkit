@@ -77,7 +77,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File: installer/global/commands/lib/greenfield_qa_session.py
+### File: installer/core/commands/lib/greenfield_qa_session.py
 
 **MODIFY run() method** (around line 1000):
 
@@ -175,7 +175,7 @@ def main() -> None:
     Handles exit code propagation for CI/CD.
 
     Usage:
-        python -m installer.global.commands.lib.greenfield_qa_session
+        python -m installer.core.commands.lib.greenfield_qa_session
 
     Returns exit code based on template quality:
         0: High quality (≥8/10)
@@ -222,10 +222,10 @@ if __name__ == "__main__":
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+1. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `run()` method return type and exit code calculation (~15 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+2. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_display_exit_code_info()` method (~30 lines)
    - `main()` entry point (~20 lines)
 

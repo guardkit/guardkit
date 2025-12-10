@@ -15,8 +15,8 @@ Successfully implemented **Solution C (Hybrid with Flag)** from TASK-021 investi
 
 ### Code Changes
 - **Files Modified**: 2
-  - `installer/global/commands/lib/template_create_orchestrator.py`
-  - `installer/global/commands/template-create.md`
+  - `installer/core/commands/lib/template_create_orchestrator.py`
+  - `installer/core/commands/template-create.md`
 - **Files Created**: 2
   - `test_task_068.py` (initial test - has import issues)
   - `test_task_068_simple.py` (working verification tests)
@@ -27,7 +27,7 @@ Successfully implemented **Solution C (Hybrid with Flag)** from TASK-021 investi
 ### Features Implemented
 1. **New `--output-location` Parameter**
    - Default: `'global'` → `~/.agentecflow/templates/`
-   - Option: `'repo'` → `installer/global/templates/`
+   - Option: `'repo'` → `installer/core/templates/`
    - Backward compatible with deprecated `--output PATH`
 
 2. **Directory Selection Logic**
@@ -60,7 +60,7 @@ Successfully implemented **Solution C (Hybrid with Flag)** from TASK-021 investi
 
 ### Core Functionality (5/5)
 - ✅ AC1: Default writes to global location
-- ✅ AC2: Repo flag writes to installer/global/templates
+- ✅ AC2: Repo flag writes to installer/core/templates
 - ✅ AC3: Short form `-o repo` supported
 - ✅ AC4: Explicit `--output-location=global` works
 - ✅ AC5: Global templates immediately usable
@@ -102,7 +102,7 @@ class OrchestrationConfig:
 2. **Directory Selection** (lines 662-677)
 ```python
 if self.config.output_location == 'repo':
-    output_path = Path("installer/global/templates") / manifest.name
+    output_path = Path("installer/core/templates") / manifest.name
     location_type = "distribution"
 else:
     output_path = Path.home() / ".agentecflow" / "templates" / manifest.name

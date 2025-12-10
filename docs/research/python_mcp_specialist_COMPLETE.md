@@ -13,22 +13,22 @@
 - **Status**: Complete - identified critical MCP server development gap
 
 ### 2. Agent Creation ✅
-- **File**: `installer/global/agents/python-mcp-specialist.md`
+- **File**: `installer/core/agents/python-mcp-specialist.md`
 - **Size**: 22.3 KB with comprehensive patterns
 - **Content**: Production-ready examples, testing strategies, integration patterns
 
 ### 3. Template Distribution ✅
 **Agent copied to ALL templates**:
-- ✅ `installer/global/templates/default/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/maui/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/react/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/python/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/dotnet-microservice/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/typescript-api/agents/python-mcp-specialist.md`
-- ✅ `installer/global/templates/fullstack/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/default/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/maui/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/react/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/python/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/dotnet-microservice/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/typescript-api/agents/python-mcp-specialist.md`
+- ✅ `installer/core/templates/fullstack/agents/python-mcp-specialist.md`
 
 ### 4. Documentation Updates ✅
-- ✅ `installer/global/templates/python/CLAUDE.md` - Added MCP Server Development section
+- ✅ `installer/core/templates/python/CLAUDE.md` - Added MCP Server Development section
 - ✅ `docs/research/python_mcp_specialist_implementation_summary.md` - Complete summary
 - ✅ `docs/research/python_mcp_specialist_installation_checklist.md` - Installation verification
 - ✅ `docs/research/agentecflow_langgraph_mcp_architecture_recommendation.md` - Architecture context
@@ -86,14 +86,14 @@ code .
 ## 📋 What Was Created
 
 ### New Files Created (5)
-1. `installer/global/agents/python-mcp-specialist.md` - Agent specification (22.3 KB)
+1. `installer/core/agents/python-mcp-specialist.md` - Agent specification (22.3 KB)
 2. `docs/research/python_capabilities_gap_analysis_for_mcp_servers.md` - Gap analysis (5.7 KB)
 3. `docs/research/python_mcp_specialist_implementation_summary.md` - Implementation summary (8.2 KB)
 4. `docs/research/python_mcp_specialist_installation_checklist.md` - Installation checklist (7.1 KB)
 5. `docs/research/python_mcp_specialist_COMPLETE.md` - This file (completion summary)
 
 ### Modified Files (1)
-1. `installer/global/templates/python/CLAUDE.md` - Added MCP Server Development section
+1. `installer/core/templates/python/CLAUDE.md` - Added MCP Server Development section
 
 ### Files Copied (7)
 Agent distributed to all 7 template directories:
@@ -156,7 +156,7 @@ The `python-mcp-specialist` agent provides:
 ## 📊 Verification Checklist
 
 ### Pre-Deployment Verification ✅
-- [x] Agent file exists in `installer/global/agents/`
+- [x] Agent file exists in `installer/core/agents/`
 - [x] Agent copied to all 7 template directories
 - [x] Python template CLAUDE.md updated with MCP section
 - [x] Documentation complete (gap analysis, summary, checklist)
@@ -176,7 +176,7 @@ The `python-mcp-specialist` agent provides:
 ### Unit Test: Agent Content
 ```bash
 # Verify agent has proper frontmatter
-head -10 installer/global/agents/python-mcp-specialist.md
+head -10 installer/core/agents/python-mcp-specialist.md
 
 # Should show YAML frontmatter with:
 # - name: python-mcp-specialist
@@ -189,7 +189,7 @@ head -10 installer/global/agents/python-mcp-specialist.md
 ```bash
 # Verify agent in all templates
 for template in default maui react python dotnet-microservice typescript-api fullstack; do
-  test -f "installer/global/templates/$template/agents/python-mcp-specialist.md" && echo "✅ $template" || echo "❌ $template"
+  test -f "installer/core/templates/$template/agents/python-mcp-specialist.md" && echo "✅ $template" || echo "❌ $template"
 done
 
 # Expected: All ✅

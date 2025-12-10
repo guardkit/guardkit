@@ -26,8 +26,8 @@
 **Objective**: Extract actual best practices from figma and zeplin orchestrators
 
 **Files to Review**:
-- [ ] `installer/global/agents/figma-react-orchestrator.md` (if exists)
-- [ ] `installer/global/agents/zeplin-maui-orchestrator.md` (if exists)
+- [ ] `installer/core/agents/figma-react-orchestrator.md` (if exists)
+- [ ] `installer/core/agents/zeplin-maui-orchestrator.md` (if exists)
 
 **Information to Extract**:
 - Lazy loading patterns (command-specific loading)
@@ -44,8 +44,8 @@
 **Objective**: Verify all file paths are correct and accessible
 
 **Files to Verify**:
-- [ ] `installer/global/agents/task-manager.md` (existing)
-- [ ] `installer/global/agents/pattern-advisor.md` (existing)
+- [ ] `installer/core/agents/task-manager.md` (existing)
+- [ ] `installer/core/agents/pattern-advisor.md` (existing)
 - [ ] `docs/guides/mcp-optimization-guide.md` (will create)
 - [ ] `CLAUDE.md` (existing, at repo root)
 

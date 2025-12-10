@@ -25,7 +25,7 @@
 ### Step 1: Verify Code Compiles
 
 ```bash
-/opt/homebrew/bin/python3 -m py_compile installer/global/commands/lib/git_state_helper.py
+/opt/homebrew/bin/python3 -m py_compile installer/core/commands/lib/git_state_helper.py
 ```
 
 **Result:** ✅ PASSED - Zero compilation errors
@@ -71,7 +71,7 @@ python -m pytest tests/unit/test_git_state_helper.py -v --tb=short \
 ```
 Name                                                    Stmts   Miss   Cover
 ---------------------------------------------------------------------------
-installer/global/commands/lib/git_state_helper.py          16      0   100%
+installer/core/commands/lib/git_state_helper.py          16      0   100%
 ---------------------------------------------------------------------------
 ```
 

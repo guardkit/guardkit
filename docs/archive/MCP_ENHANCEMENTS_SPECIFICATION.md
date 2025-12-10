@@ -45,7 +45,7 @@ This specification defines two critical MCP enhancements that will significantly
 #### 1.2.1 Class Structure
 
 ```python
-# File: installer/global/commands/lib/mcp/context7_client.py
+# File: installer/core/commands/lib/mcp/context7_client.py
 
 from dataclasses import dataclass
 from enum import Enum
@@ -284,7 +284,7 @@ class Context7Error(Exception):
 #### 1.2.2 Integration with task-manager Agent
 
 ```python
-# File: installer/global/commands/lib/mcp/phase_context7_integration.py
+# File: installer/core/commands/lib/mcp/phase_context7_integration.py
 
 from typing import Optional, List
 from .context7_client import Context7Client, DetailLevel, Context7Request
@@ -419,8 +419,8 @@ Parse task description and acceptance criteria for library/framework mentions:
 **STEP 2: Fetch Summary Documentation (NEW - Progressive Disclosure)**
 
 ```python
-from installer.global.commands.lib.mcp.context7_client import Context7Client
-from installer.global.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
+from installer.core.commands.lib.mcp.context7_client import Context7Client
+from installer.core.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
 
 # Initialize client with monitor (see Enhancement #2)
 client = Context7Client(monitor=mcp_monitor)
@@ -556,7 +556,7 @@ response = client.get_documentation(request)
 
 ```python
 import pytest
-from installer.global.commands.lib.mcp.context7_client import (
+from installer.core.commands.lib.mcp.context7_client import (
     Context7Client, Context7Request, Context7Response,
     DetailLevel, Context7Error
 )
@@ -636,11 +636,11 @@ class TestContext7Client:
             return "# Documentation\n\nSample content." * 100
 
         monkeypatch.setattr(
-            "installer.global.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
+            "installer.core.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
             mock_resolve
         )
         monkeypatch.setattr(
-            "installer.global.commands.lib.mcp.context7_client.mcp__context7__get_library_docs",
+            "installer.core.commands.lib.mcp.context7_client.mcp__context7__get_library_docs",
             mock_get_docs
         )
 
@@ -704,7 +704,7 @@ class TestContext7Client:
             raise Exception("Library not found")
 
         monkeypatch.setattr(
-            "installer.global.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
+            "installer.core.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
             mock_resolve_error
         )
 
@@ -782,8 +782,8 @@ class TestPhaseContext7Integration:
 
 ```python
 import pytest
-from installer.global.commands.lib.mcp.context7_client import Context7Client
-from installer.global.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
+from installer.core.commands.lib.mcp.context7_client import Context7Client
+from installer.core.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
 
 @pytest.mark.mcp
 @pytest.mark.skipif(not has_context7_mcp(), reason="Context7 MCP not available")
@@ -850,14 +850,14 @@ class TestProgressiveDisclosureAcceptance:
 
     def test_AC1_summary_level_exists(self):
         """AC1: DetailLevel.SUMMARY exists with 500-1000 token budget."""
-        from installer.global.commands.lib.mcp.context7_client import DetailLevel
+        from installer.core.commands.lib.mcp.context7_client import DetailLevel
 
         assert hasattr(DetailLevel, 'SUMMARY')
         assert 500 <= DetailLevel.SUMMARY.token_budget <= 1000
 
     def test_AC2_backward_compatibility(self):
         """AC2: Existing code works without modifications."""
-        from installer.global.commands.lib.mcp.context7_client import Context7Request, DetailLevel
+        from installer.core.commands.lib.mcp.context7_client import Context7Request, DetailLevel
 
         # Old-style usage (no detail_level parameter)
         request = Context7Request(
@@ -871,8 +871,8 @@ class TestProgressiveDisclosureAcceptance:
 
     def test_AC3_phase2_uses_summary(self):
         """AC3: Phase 2 (Planning) uses SUMMARY detail level."""
-        from installer.global.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
-        from installer.global.commands.lib.mcp.context7_client import Context7Client, DetailLevel
+        from installer.core.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
+        from installer.core.commands.lib.mcp.context7_client import Context7Client, DetailLevel
 
         client = Context7Client()
         integration = PhaseContext7Integration(client, {"task_id": "TEST"})
@@ -884,8 +884,8 @@ class TestProgressiveDisclosureAcceptance:
 
     def test_AC4_phase3_uses_detailed(self):
         """AC4: Phase 3 (Implementation) uses DETAILED detail level."""
-        from installer.global.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
-        from installer.global.commands.lib.mcp.context7_client import Context7Client
+        from installer.core.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
+        from installer.core.commands.lib.mcp.context7_client import Context7Client
 
         client = Context7Client()
         integration = PhaseContext7Integration(client, {"task_id": "TEST"})
@@ -895,7 +895,7 @@ class TestProgressiveDisclosureAcceptance:
 
     def test_AC5_token_savings_achievable(self):
         """AC5: Token savings of 50-70% are achievable."""
-        from installer.global.commands.lib.mcp.context7_client import DetailLevel
+        from installer.core.commands.lib.mcp.context7_client import DetailLevel
 
         # Calculate theoretical savings
         summary_budget = DetailLevel.SUMMARY.token_budget
@@ -946,7 +946,7 @@ class TestProgressiveDisclosureAcceptance:
 ```python
 # Test script: scripts/verify_backward_compatibility.py
 
-from installer.global.commands.lib.mcp.context7_client import Context7Client, Context7Request
+from installer.core.commands.lib.mcp.context7_client import Context7Client, Context7Request
 
 def test_existing_code_patterns():
     """Verify all existing code patterns still work."""
@@ -1043,7 +1043,7 @@ if __name__ == "__main__":
 #### 2.2.1 Class Structure
 
 ```python
-# File: installer/global/commands/lib/mcp/mcp_monitor.py
+# File: installer/core/commands/lib/mcp/mcp_monitor.py
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
@@ -1432,7 +1432,7 @@ class MCPMonitor:
 **BEFORE** starting workflow phases, initialize MCP monitoring:
 
 ```python
-from installer.global.commands.lib.mcp.mcp_monitor import MCPMonitor
+from installer.core.commands.lib.mcp.mcp_monitor import MCPMonitor
 
 # Initialize monitor for this task
 mcp_monitor = MCPMonitor(task_id=task_id)
@@ -1444,7 +1444,7 @@ mcp_monitor.set_phase("initialization")
 **Pass monitor to all MCP clients:**
 
 ```python
-from installer.global.commands.lib.mcp.context7_client import Context7Client
+from installer.core.commands.lib.mcp.context7_client import Context7Client
 
 # Initialize Context7 client with monitor
 context7_client = Context7Client(monitor=mcp_monitor)
@@ -1502,9 +1502,9 @@ Report saved: docs/state/TASK-001/mcp_usage_report.json
 ```python
 # Example: Complete task workflow with MCP monitoring
 
-from installer.global.commands.lib.mcp.mcp_monitor import MCPMonitor
-from installer.global.commands.lib.mcp.context7_client import Context7Client
-from installer.global.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
+from installer.core.commands.lib.mcp.mcp_monitor import MCPMonitor
+from installer.core.commands.lib.mcp.context7_client import Context7Client
+from installer.core.commands.lib.mcp.phase_context7_integration import PhaseContext7Integration
 
 # Initialize monitor
 monitor = MCPMonitor(task_id="TASK-001")
@@ -1584,7 +1584,7 @@ except Exception as e:
 ```python
 import pytest
 from datetime import datetime
-from installer.global.commands.lib.mcp.mcp_monitor import (
+from installer.core.commands.lib.mcp.mcp_monitor import (
     MCPMonitor, MCPRequest, MCPResponse, MCPError,
     PhaseUsageSummary, TaskUsageReport
 )
@@ -1825,8 +1825,8 @@ class TestMCPMonitor:
 
 ```python
 import pytest
-from installer.global.commands.lib.mcp.mcp_monitor import MCPMonitor
-from installer.global.commands.lib.mcp.context7_client import Context7Client
+from installer.core.commands.lib.mcp.mcp_monitor import MCPMonitor
+from installer.core.commands.lib.mcp.context7_client import Context7Client
 
 class TestMCPMonitorIntegration:
     """Test MCPMonitor integration with Context7Client."""
@@ -1844,11 +1844,11 @@ class TestMCPMonitorIntegration:
             return "# Documentation\n" * 100  # ~2000 chars = ~500 tokens
 
         monkeypatch.setattr(
-            "installer.global.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
+            "installer.core.commands.lib.mcp.context7_client.mcp__context7__resolve_library_id",
             mock_resolve
         )
         monkeypatch.setattr(
-            "installer.global.commands.lib.mcp.context7_client.mcp__context7__get_library_docs",
+            "installer.core.commands.lib.mcp.context7_client.mcp__context7__get_library_docs",
             mock_get_docs
         )
 
@@ -2022,8 +2022,8 @@ response = client.get_detailed("/library/id", "topic")
    - Test backward compatibility (1 hour)
 
 **Deliverables**:
-- ✅ `installer/global/commands/lib/mcp/context7_client.py`
-- ✅ `installer/global/commands/lib/mcp/mcp_monitor.py`
+- ✅ `installer/core/commands/lib/mcp/context7_client.py`
+- ✅ `installer/core/commands/lib/mcp/mcp_monitor.py`
 - ✅ `tests/unit/test_context7_client.py`
 - ✅ `tests/unit/test_mcp_monitor.py`
 - ✅ All tests passing
@@ -2048,8 +2048,8 @@ response = client.get_detailed("/library/id", "topic")
    - Test multi-phase workflows (1 hour)
 
 **Deliverables**:
-- ✅ `installer/global/commands/lib/mcp/phase_context7_integration.py`
-- ✅ Updated `installer/global/agents/task-manager.md`
+- ✅ `installer/core/commands/lib/mcp/phase_context7_integration.py`
+- ✅ Updated `installer/core/agents/task-manager.md`
 - ✅ `tests/integration/test_context7_workflow.py`
 - ✅ `tests/integration/test_mcp_monitor_integration.py`
 - ✅ All tests passing
@@ -2137,7 +2137,7 @@ response = client.get_detailed("/library/id", "topic")
 ## File Structure
 
 ```
-installer/global/commands/lib/mcp/
+installer/core/commands/lib/mcp/
 ├── __init__.py
 ├── context7_client.py          # Enhancement #1: Progressive disclosure
 ├── phase_context7_integration.py  # Enhancement #1: Orchestration

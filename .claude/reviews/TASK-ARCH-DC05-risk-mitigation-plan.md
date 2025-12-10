@@ -94,7 +94,7 @@ This risk mitigation plan addresses all risks identified in the architectural re
    #!/bin/bash
    # scripts/verify-agent-duplication.sh
 
-   TASKWRIGHT_AGENTS="installer/global/agents"
+   TASKWRIGHT_AGENTS="installer/core/agents"
    REQUIREKIT_AGENTS="../require-kit/.claude/agents"
 
    echo "=== Agent Duplication Verification ==="

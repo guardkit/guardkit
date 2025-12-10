@@ -8,7 +8,7 @@ Successfully implemented the SIMPLIFIED design for fixing task-work and task-com
 
 ### 1. Core Module: git_state_helper.py
 
-**Location**: `/installer/global/commands/lib/git_state_helper.py`
+**Location**: `/installer/core/commands/lib/git_state_helper.py`
 
 **Purpose**: Provides three simple utility functions for managing task state in git repositories with worktree support.
 
@@ -40,7 +40,7 @@ Successfully implemented the SIMPLIFIED design for fixing task-work and task-com
 
 ### 2. Integration Point #1: plan_persistence.py
 
-**Location**: `/installer/global/commands/lib/plan_persistence.py`
+**Location**: `/installer/core/commands/lib/plan_persistence.py`
 
 **Changes**:
 - Added import for `commit_state_files`
@@ -61,7 +61,7 @@ commit_state_files(task_id, f"Save implementation plan for {task_id}")
 
 ### 3. Integration Point #2: plan_audit_metrics.py
 
-**Location**: `/installer/global/commands/lib/metrics/plan_audit_metrics.py`
+**Location**: `/installer/core/commands/lib/metrics/plan_audit_metrics.py`
 
 **Changes**:
 - Added import for `commit_state_files`
@@ -83,7 +83,7 @@ commit_state_files("_global", "Update plan audit metrics")
 
 ### 4. Integration Point #3: task-work.md
 
-**Location**: `/installer/global/commands/task-work.md`
+**Location**: `/installer/core/commands/task-work.md`
 
 **Changes**:
 - Added new "Step 8: Commit State Files to Git"
@@ -93,7 +93,7 @@ commit_state_files("_global", "Update plan audit metrics")
 
 **Integration Point**:
 ```python
-from installer.global.commands.lib.git_state_helper import commit_state_files
+from installer.core.commands.lib.git_state_helper import commit_state_files
 
 commit_state_files(
     task_id="{task_id}",
@@ -108,7 +108,7 @@ commit_state_files(
 
 ### 5. Integration Point #4: task-complete.md
 
-**Location**: `/installer/global/commands/task-complete.md`
+**Location**: `/installer/core/commands/task-complete.md`
 
 **Changes**:
 - Added new section "Git State Commit (REQUIRED for Conductor Support)"
@@ -117,7 +117,7 @@ commit_state_files(
 
 **Integration Point**:
 ```python
-from installer.global.commands.lib.git_state_helper import commit_state_files
+from installer.core.commands.lib.git_state_helper import commit_state_files
 
 commit_state_files(
     task_id="{task_id}",
@@ -212,11 +212,11 @@ The implementation includes:
 
 ## Files Modified
 
-1. **NEW**: `installer/global/commands/lib/git_state_helper.py` (125 lines)
-2. **MODIFIED**: `installer/global/commands/lib/plan_persistence.py` (+12 lines)
-3. **MODIFIED**: `installer/global/commands/lib/metrics/plan_audit_metrics.py` (+11 lines)
-4. **MODIFIED**: `installer/global/commands/task-work.md` (+54 lines)
-5. **MODIFIED**: `installer/global/commands/task-complete.md` (+54 lines)
+1. **NEW**: `installer/core/commands/lib/git_state_helper.py` (125 lines)
+2. **MODIFIED**: `installer/core/commands/lib/plan_persistence.py` (+12 lines)
+3. **MODIFIED**: `installer/core/commands/lib/metrics/plan_audit_metrics.py` (+11 lines)
+4. **MODIFIED**: `installer/core/commands/task-work.md` (+54 lines)
+5. **MODIFIED**: `installer/core/commands/task-complete.md` (+54 lines)
 
 **Total**: 1 new file, 4 modified files, ~256 lines added
 

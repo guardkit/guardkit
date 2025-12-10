@@ -151,10 +151,10 @@ ACCEPTANCE          : [PASS]  16/ 16 (100.0%)
 - ✓ design-first-workflow-card.md: When to use design-first, workflow patterns (4 examples)
 
 #### Criterion 4: Cross-References (4/4 PASS)
-- ✓ task-work-cheat-sheet.md: References installer/global/commands/, docs/guides/
-- ✓ complexity-guide.md: References installer/global/commands/, docs/guides/
-- ✓ quality-gates-card.md: References installer/global/agents/, docs/guides/
-- ✓ design-first-workflow-card.md: References installer/global/commands/, docs/guides/
+- ✓ task-work-cheat-sheet.md: References installer/core/commands/, docs/guides/
+- ✓ complexity-guide.md: References installer/core/commands/, docs/guides/
+- ✓ quality-gates-card.md: References installer/core/agents/, docs/guides/
+- ✓ design-first-workflow-card.md: References installer/core/commands/, docs/guides/
 
 #### Criterion 5: MVP Completeness (1/1 PASS)
 - ✓ All 4 required cards present and fully functional
@@ -280,8 +280,8 @@ Quick Reference Cards (This Task)
 ├── 79-274 line quick-access guides
 ├── Terminal-viewable format
 └── Links to comprehensive docs
-    ├── installer/global/commands/ (detailed specifications)
-    ├── installer/global/agents/ (agent documentation)
+    ├── installer/core/commands/ (detailed specifications)
+    ├── installer/core/agents/ (agent documentation)
     └── docs/guides/ (comprehensive workflow guides)
 ```
 

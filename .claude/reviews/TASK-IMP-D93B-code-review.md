@@ -536,7 +536,7 @@ None.
 
 ### Modified Files
 
-1. **`installer/global/commands/lib/template_create_orchestrator.py`**
+1. **`installer/core/commands/lib/template_create_orchestrator.py`**
    - Lines 213: Initialization
    - Lines 293-298: Early return check
    - Lines 2131-2150: Enhanced error handling

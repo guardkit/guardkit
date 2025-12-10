@@ -101,7 +101,7 @@ Remember: Users need COMPLETE CRUD operations, not representative samples.
 
 ## Implementation Location
 
-**File**: `installer/global/lib/template_generator/template_generator.py`
+**File**: `installer/core/lib/template_generator/template_generator.py`
 
 **Method**: `_create_extraction_prompt()`
 
@@ -235,7 +235,7 @@ Test full workflow:
 ### Manual Testing
 ```bash
 # Generate templates with enhanced prompts
-python -m installer.global.lib.template_generator.cli \
+python -m installer.core.lib.template_generator.cli \
   --codebase /path/to/test/repo \
   --output /tmp/templates
 
@@ -282,7 +282,7 @@ grep -i "completeness" /tmp/templates/generation.log
 - [TASK-020 Implementation Plan](../implementation-plans/TASK-020-completeness-improvement-plan.md) - Lines 750-876
 - [TASK-020 Improvement Proposals](../analysis/TASK-020-improvement-proposals.md)
 - [Prompt Engineering Best Practices](https://docs.anthropic.com/claude/docs/prompt-engineering)
-- [Template Generator Implementation](../../installer/global/lib/template_generator/template_generator.py)
+- [Template Generator Implementation](../../installer/core/lib/template_generator/template_generator.py)
 
 ## Change Log
 

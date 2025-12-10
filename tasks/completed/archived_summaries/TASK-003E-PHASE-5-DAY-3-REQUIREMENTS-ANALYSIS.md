@@ -635,7 +635,7 @@ def test_long_qa_session_10_plus_questions_limited(mocker, capsys):
 
     # Mock AI responses
     mocker.patch(
-        'installer.global.commands.lib.agent_utils.invoke_qa_agent',
+        'installer.core.commands.lib.agent_utils.invoke_qa_agent',
         return_value="Mocked answer"
     )
 
@@ -832,8 +832,8 @@ tests/
 **Impact**: HIGH - User-facing display issue
 **Effort**: 2 hours
 **Files to Modify**:
-- `installer/global/commands/lib/review_modes.py` (FullReviewDisplay class)
-- `installer/global/commands/lib/pager_display.py` (PagerDisplay class)
+- `installer/core/commands/lib/review_modes.py` (FullReviewDisplay class)
+- `installer/core/commands/lib/pager_display.py` (PagerDisplay class)
 
 **Clarifications Needed**:
 1. Which plan fields need None-to-friendly-message conversion?
@@ -852,7 +852,7 @@ tests/
 **Impact**: HIGH - User experience issue
 **Effort**: 3 hours
 **Files to Modify**:
-- `installer/global/commands/lib/review_modes.py` (FullReviewHandler._apply_modifications_and_return)
+- `installer/core/commands/lib/review_modes.py` (FullReviewHandler._apply_modifications_and_return)
 
 **Clarifications Needed**:
 1. At what threshold should we warn? (Any increase? +2 or more?)
@@ -867,7 +867,7 @@ tests/
 **Impact**: HIGH - Resource control issue
 **Effort**: 2 hours
 **Files to Modify**:
-- `installer/global/commands/lib/qa_manager.py` (QAManager.run_qa_session)
+- `installer/core/commands/lib/qa_manager.py` (QAManager.run_qa_session)
 
 **Clarifications Needed**:
 1. What is the appropriate question limit? (Recommended: 20)
@@ -882,8 +882,8 @@ tests/
 **Impact**: MEDIUM - Feature incompleteness
 **Effort**: 4 hours
 **Files to Modify**:
-- `installer/global/commands/lib/complexity_factors.py` (new DependencyComplexityFactor class)
-- `installer/global/commands/lib/complexity_calculator.py` (register new factor)
+- `installer/core/commands/lib/complexity_factors.py` (new DependencyComplexityFactor class)
+- `installer/core/commands/lib/complexity_calculator.py` (register new factor)
 
 **Clarifications Needed**:
 1. Should we implement dependency complexity factor as part of this task?
@@ -899,7 +899,7 @@ tests/
 **Impact**: LOW - Rare edge case
 **Effort**: 3 hours
 **Files to Modify**:
-- `installer/global/commands/lib/user_interaction.py` (FileOperations.atomic_write)
+- `installer/core/commands/lib/user_interaction.py` (FileOperations.atomic_write)
 
 **Clarifications Needed**:
 1. Is timeout handling necessary for this phase? (Nice-to-have vs must-have)

@@ -857,10 +857,10 @@ collection = template_gen.generate_with_review(
 ### Deliverables
 
 **Core Modules Created** (3 files, 329 lines):
-- `installer/global/lib/template_generator/template_generator.py` (244 lines)
-- `installer/global/lib/template_generator/ai_client.py` (45 lines)
-- `installer/global/lib/template_generator/models.py` (40 lines)
-- `installer/global/lib/template_generator/__init__.py` (5 lines)
+- `installer/core/lib/template_generator/template_generator.py` (244 lines)
+- `installer/core/lib/template_generator/ai_client.py` (45 lines)
+- `installer/core/lib/template_generator/models.py` (40 lines)
+- `installer/core/lib/template_generator/__init__.py` (5 lines)
 
 **Test Suite** (2 files, 700+ lines):
 - `tests/lib/template_generator/test_template_generator.py` (39 tests)
@@ -1007,7 +1007,7 @@ Coverage Breakdown:
 ### Files Changed
 
 **Created** (7 files):
-- installer/global/lib/template_generator/ (4 files)
+- installer/core/lib/template_generator/ (4 files)
 - tests/lib/template_generator/ (2 files)
 - TASK-008-IMPLEMENTATION-SUMMARY.md
 

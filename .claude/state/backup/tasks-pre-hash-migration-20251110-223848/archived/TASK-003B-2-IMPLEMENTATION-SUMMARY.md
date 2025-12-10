@@ -36,7 +36,7 @@ Implemented Full Review Mode for Phase 2.6 architectural checkpoint system. This
 
 ### 1. Extended ImplementationPlan Model
 
-**File**: `installer/global/commands/lib/complexity_models.py`
+**File**: `installer/core/commands/lib/complexity_models.py`
 
 ```python
 @dataclass
@@ -59,7 +59,7 @@ class ImplementationPlan:
 
 ### 2. FileOperations Utility
 
-**File**: `installer/global/commands/lib/user_interaction.py`
+**File**: `installer/core/commands/lib/user_interaction.py`
 
 ```python
 class FileOperations:
@@ -76,7 +76,7 @@ class FileOperations:
 
 ### 3. FullReviewDisplay Class
 
-**File**: `installer/global/commands/lib/review_modes.py`
+**File**: `installer/core/commands/lib/review_modes.py`
 
 **Display Sections** (6 total):
 1. **Header**: Task ID, title, complexity score, escalation indicator, duration
@@ -94,7 +94,7 @@ class FileOperations:
 
 ### 4. FullReviewHandler Class
 
-**File**: `installer/global/commands/lib/review_modes.py`
+**File**: `installer/core/commands/lib/review_modes.py`
 
 **Action Handlers**:
 - **[A]pprove**: Updates metadata, proceeds to Phase 3
@@ -161,15 +161,15 @@ class FileOperations:
 ## Files Modified/Created
 
 ### Modified Files
-1. `installer/global/commands/lib/complexity_models.py`
+1. `installer/core/commands/lib/complexity_models.py`
    - Extended ImplementationPlan with 6 optional fields
    - Maintained backward compatibility
 
-2. `installer/global/commands/lib/user_interaction.py`
+2. `installer/core/commands/lib/user_interaction.py`
    - Added FileOperations utility class
    - Exported FileOperations in __all__
 
-3. `installer/global/commands/lib/review_modes.py`
+3. `installer/core/commands/lib/review_modes.py`
    - Added FullReviewDisplay class (6 display methods)
    - Added FullReviewHandler class (execute, prompt, approve, cancel, move)
    - Added FullReviewResult dataclass

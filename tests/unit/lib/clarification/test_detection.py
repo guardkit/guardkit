@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add lib directory to path
-lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "global" / "commands" / "lib"
+lib_path = Path(__file__).parent.parent.parent.parent / "installer" / "core" / "commands" / "lib"
 if str(lib_path) not in sys.path:
     sys.path.insert(0, str(lib_path))
 

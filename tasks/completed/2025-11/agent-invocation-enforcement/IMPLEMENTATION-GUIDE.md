@@ -350,9 +350,9 @@ cd wave-2-phase-gates
 **Branch**: `feature/agent-invocation-tracking`
 
 **Files Modified**:
-- `installer/global/commands/lib/agent_invocation_tracker.py` (NEW)
-- `installer/global/commands/lib/__init__.py` (add import)
-- `installer/global/commands/task-work.md` (add tracker initialization, calls)
+- `installer/core/commands/lib/agent_invocation_tracker.py` (NEW)
+- `installer/core/commands/lib/__init__.py` (add import)
+- `installer/core/commands/task-work.md` (add tracker initialization, calls)
 - Tests: `tests/test_agent_invocation_tracker.py` (NEW)
 
 **Execution**:
@@ -381,8 +381,8 @@ conductor merge wave-1-tracking  # Merge to main
 **Branch**: `feature/prominent-invocation-messages`
 
 **Files Modified**:
-- `installer/global/commands/lib/agent_display.py` (NEW)
-- `installer/global/commands/task-work.md` (modify Phase 2, 2.5B, 3, 4, 5 sections)
+- `installer/core/commands/lib/agent_display.py` (NEW)
+- `installer/core/commands/task-work.md` (modify Phase 2, 2.5B, 3, 4, 5 sections)
 - Tests: `tests/test_agent_display.py` (NEW)
 
 **Execution**:
@@ -411,8 +411,8 @@ conductor merge wave-1-messages  # Merge to main
 **Branch**: `feature/update-agent-table`
 
 **Files Modified**:
-- `installer/global/commands/task-work.md` (modify agent selection table, lines 968-980)
-- `installer/global/agents/maui-usecase-specialist.md` (NEW - if decision is to create)
+- `installer/core/commands/task-work.md` (modify agent selection table, lines 968-980)
+- `installer/core/agents/maui-usecase-specialist.md` (NEW - if decision is to create)
 
 **Execution**:
 ```bash
@@ -478,9 +478,9 @@ git push
 **Branch**: `feature/pre-report-validation`
 
 **Files Modified**:
-- `installer/global/commands/lib/agent_invocation_validator.py` (NEW)
-- `installer/global/commands/task-work.md` (add Step 10.5 validation)
-- `installer/global/commands/lib/task_state_manager.py` (modify - add BLOCKED state handling)
+- `installer/core/commands/lib/agent_invocation_validator.py` (NEW)
+- `installer/core/commands/task-work.md` (add Step 10.5 validation)
+- `installer/core/commands/lib/task_state_manager.py` (modify - add BLOCKED state handling)
 - Tests: `tests/test_agent_invocation_validator.py` (NEW)
 
 **Dependencies**: TASK-ENF2 (requires `AgentInvocationTracker`)
@@ -512,8 +512,8 @@ conductor merge wave-2-validation
 **Branch**: `feature/phase-gate-checkpoints`
 
 **Files Modified**:
-- `installer/global/commands/lib/phase_gate_validator.py` (NEW)
-- `installer/global/commands/task-work.md` (add phase gates after each phase)
+- `installer/core/commands/lib/phase_gate_validator.py` (NEW)
+- `installer/core/commands/task-work.md` (add phase gates after each phase)
 - Tests: `tests/test_phase_gate_validator.py` (NEW)
 
 **Dependencies**: TASK-ENF2 (requires `AgentInvocationTracker`)

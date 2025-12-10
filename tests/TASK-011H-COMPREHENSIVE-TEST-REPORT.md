@@ -62,7 +62,7 @@
 
 | # | Test Name | Status | Details |
 |---|-----------|--------|---------|
-| 1 | Old template deleted | ✅ PASS | Verified `installer/global/templates/maui/` removed |
+| 1 | Old template deleted | ✅ PASS | Verified `installer/core/templates/maui/` removed |
 | 2 | New templates exist | ✅ PASS | Both `maui-appshell` and `maui-navigationpage` present |
 | 3 | Template count correct | ✅ PASS | 8 templates expected, 8 found |
 | 4 | No old template refs | ✅ PASS | Completion scripts updated correctly |
@@ -137,7 +137,7 @@ Pass Rate:    100%
 
 **Verification**:
 ```bash
-$ test ! -d "installer/global/templates/maui"
+$ test ! -d "installer/core/templates/maui"
 ✓ OLD TEMPLATE REMOVED
 ```
 

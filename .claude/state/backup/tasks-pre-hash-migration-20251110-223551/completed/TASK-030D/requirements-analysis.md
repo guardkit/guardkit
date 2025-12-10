@@ -452,7 +452,7 @@ TASK-030D requires creating 8 quick reference cards that provide at-a-glance inf
 ### Related Documentation
 - `docs/guides/agentecflow-lite-workflow.md` - Main workflow documentation
 - `docs/workflows/*.md` - Workflow guides to reference
-- `installer/global/commands/*.md` - Command specifications
+- `installer/core/commands/*.md` - Command specifications
 - CLAUDE.md sections - Agentecflow Lite overview
 
 ---

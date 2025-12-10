@@ -7,7 +7,7 @@ for progressive disclosure. Supports single agent, batch processing, and dry-run
 
 Usage:
     # Single agent
-    python scripts/split-agent.py --agent installer/global/agents/task-manager.md
+    python scripts/split-agent.py --agent installer/core/agents/task-manager.md
 
     # All global agents
     python scripts/split-agent.py --all-global
@@ -16,7 +16,7 @@ Usage:
     python scripts/split-agent.py --template react-typescript
 
     # Dry run (preview without writing)
-    python scripts/split-agent.py --agent installer/global/agents/task-manager.md --dry-run
+    python scripts/split-agent.py --agent installer/core/agents/task-manager.md --dry-run
 
     # Validate splits
     python scripts/split-agent.py --all-global --validate
@@ -560,7 +560,7 @@ def main():
         epilog="""
 Examples:
   # Split single agent
-  python scripts/split-agent.py --agent installer/global/agents/task-manager.md
+  python scripts/split-agent.py --agent installer/core/agents/task-manager.md
 
   # Split all global agents
   python scripts/split-agent.py --all-global

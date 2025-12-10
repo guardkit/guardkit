@@ -50,7 +50,7 @@
           "test_agent_serialization.py (19 tests)"
         ],
         "implementation_fix": {
-          "file": "installer/global/commands/lib/template_create_orchestrator.py",
+          "file": "installer/core/commands/lib/template_create_orchestrator.py",
           "method": "_serialize_value",
           "lines": "1755-1855",
           "fix_description": "All recursive calls now properly pass visited set parameter",
@@ -135,7 +135,7 @@
   ],
   "implementation_validation": {
     "serialize_value_method": {
-      "location": "installer/global/commands/lib/template_create_orchestrator.py:1755-1855",
+      "location": "installer/core/commands/lib/template_create_orchestrator.py:1755-1855",
       "validation": "PASSED",
       "cycle_detection": "WORKING",
       "recursive_depth": "No limit reached in tests",
@@ -188,14 +188,14 @@
       ]
     },
     "serialize_agents_method": {
-      "location": "installer/global/commands/lib/template_create_orchestrator.py:1857-1870",
+      "location": "installer/core/commands/lib/template_create_orchestrator.py:1857-1870",
       "validation": "PASSED",
       "delegates_to": "_serialize_value()",
       "json_serializable": true,
       "round_trip_compatible": true
     },
     "run_method_routing": {
-      "location": "installer/global/commands/lib/template_create_orchestrator.py:213-248",
+      "location": "installer/core/commands/lib/template_create_orchestrator.py:213-248",
       "validation": "PASSED",
       "phases_supported": [
         {

@@ -398,7 +398,7 @@ template-name/
 │          ↓                                                   │
 │  [Discover templates]                                        │
 │    - Check installer/local/templates/                       │
-│    - Check installer/global/templates/                      │
+│    - Check installer/core/templates/                      │
 │          ↓                                                   │
 │  [Load template]                                             │
 │    - Read manifest.json, settings.json, CLAUDE.md           │
@@ -424,14 +424,14 @@ template-name/
   ↓
 [Scan existing agents]
   - .claude/agents/ (user's custom)
-  - installer/global/agents/ (built-in)
+  - installer/core/agents/ (built-in)
   ↓
 [Generate missing agents]
   ↓
 [Save to template]
   installer/local/templates/myapp/agents/
     ├── custom-agent.md (from .claude/agents/)
-    ├── global-agent.md (from installer/global/agents/)
+    ├── global-agent.md (from installer/core/agents/)
     └── generated-agent.md (AI-created)
 ```
 
@@ -511,7 +511,7 @@ $ agentic-init team-backend
 
 ```bash
 # Global template
-installer/global/templates/react/
+installer/core/templates/react/
 
 # User creates local template
 $ /template-create "react"
@@ -596,12 +596,12 @@ alias agentic-init='guardkit'
 ```
 Priority:
 1. installer/local/templates/ (user/team templates)
-2. installer/global/templates/ (built-in templates)
+2. installer/core/templates/ (built-in templates)
 
 Agent Priority (within project):
 1. .claude/agents/ (user's custom)
 2. Template agents (from template)
-3. installer/global/agents/ (built-in)
+3. installer/core/agents/ (built-in)
 ```
 
 ---
@@ -662,7 +662,7 @@ def discover_templates():
         templates.extend(scan_directory(local_path, source="local"))
 
     # Check global
-    global_path = Path("installer/global/templates")
+    global_path = Path("installer/core/templates")
     if global_path.exists():
         templates.extend(scan_directory(global_path, source="global"))
 

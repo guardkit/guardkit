@@ -93,7 +93,7 @@ Document the **Human Checkpoints** feature (Phase 2.8 of task-work command) - co
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 2.8)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 2.8)
 - TASK-028/029 examples (Phase 2.8 enhancements)
 
 ### Interactive Checkpoint Example

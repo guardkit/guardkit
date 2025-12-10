@@ -156,13 +156,13 @@ The design-to-code system converts Figma and Zeplin designs into production-read
 ```
 
 **Tier 1: Orchestrators** (Global, Technology-Agnostic)
-- Location: `installer/global/agents/`
+- Location: `installer/core/agents/`
 - Purpose: Handle design extraction, constraint validation
 - Examples: `figma-orchestrator.md`, `zeplin-orchestrator.md`
 - Tools: MCP servers (figma-dev-mode, zeplin)
 
 **Tier 2: UI Specialists** (Template-Specific, Stack-Aware)
-- Location: `installer/global/templates/{stack}/agents/`
+- Location: `installer/core/templates/{stack}/agents/`
 - Purpose: Generate code in stack-appropriate format
 - Examples: `react-ui-specialist.md`, `nextjs-ui-specialist.md`
 - Tools: Code generation, visual regression testing
@@ -647,7 +647,7 @@ To add support for a new stack (e.g., Flutter):
 
 **Step 1: Create UI Specialist File**
 
-Location: `installer/global/templates/flutter-*/agents/flutter-ui-specialist.md`
+Location: `installer/core/templates/flutter-*/agents/flutter-ui-specialist.md`
 
 **Step 2: Implement Design Context Detection**
 
@@ -693,7 +693,7 @@ To add support for a new design source (e.g., Sketch):
 
 **Step 1: Create Orchestrator File**
 
-Location: `installer/global/agents/sketch-orchestrator.md`
+Location: `installer/core/agents/sketch-orchestrator.md`
 
 **Step 2: Implement 6-Phase Saga**
 
@@ -881,7 +881,7 @@ test('Generated component matches design', async ({ page }) => {
 
 ### Creating a UI Specialist Example
 
-**File: `installer/global/templates/flutter-ui-specialist/agents/flutter-ui-specialist.md`**
+**File: `installer/core/templates/flutter-ui-specialist/agents/flutter-ui-specialist.md`**
 
 ```markdown
 ---
@@ -1184,10 +1184,10 @@ After completing this task:
 - [Design URL Integration Proposal](../../docs/proposals/design-url-integration-proposal.md)
 - [Implementation Guide](../../docs/proposals/design-url-integration-implementation-guide.md)
 - [Design-to-Code User Guide](../../docs/guides/design-to-code-user-guide.md)
-- [Figma Orchestrator](../../installer/global/agents/figma-orchestrator.md)
-- [Zeplin Orchestrator](../../installer/global/agents/zeplin-orchestrator.md)
-- [React UI Specialist](../../installer/global/templates/react-typescript/agents/react-ui-specialist.md)
-- [Next.js UI Specialist](../../installer/global/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md)
+- [Figma Orchestrator](../../installer/core/agents/figma-orchestrator.md)
+- [Zeplin Orchestrator](../../installer/core/agents/zeplin-orchestrator.md)
+- [React UI Specialist](../../installer/core/templates/react-typescript/agents/react-ui-specialist.md)
+- [Next.js UI Specialist](../../installer/core/templates/nextjs-fullstack/agents/nextjs-ui-specialist.md)
 
 ## Implementation Estimate
 

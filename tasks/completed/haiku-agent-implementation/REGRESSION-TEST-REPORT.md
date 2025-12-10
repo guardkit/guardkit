@@ -26,12 +26,12 @@ The HAI (Haiku Agent Implementation) epic has been successfully completed with:
 ## Test 1: File Existence ✅
 
 ### New HAI Agents Created (3/3)
-- ✅ `installer/global/agents/python-api-specialist.md`
-- ✅ `installer/global/agents/react-state-specialist.md`
-- ✅ `installer/global/agents/dotnet-domain-specialist.md`
+- ✅ `installer/core/agents/python-api-specialist.md`
+- ✅ `installer/core/agents/react-state-specialist.md`
+- ✅ `installer/core/agents/dotnet-domain-specialist.md`
 
 ### Discovery System Files
-- ✅ `installer/global/commands/lib/agent_discovery.py`
+- ✅ `installer/core/commands/lib/agent_discovery.py`
 - ✅ `docs/guides/agent-discovery-guide.md`
 
 ### Documentation Updates

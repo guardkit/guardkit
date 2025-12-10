@@ -146,7 +146,7 @@ Understand expected behavior:
 
 ```bash
 # Find task-complete command spec
-ls -la installer/global/commands/task-complete.md
+ls -la installer/core/commands/task-complete.md
 
 # If it's a Python script, check implementation
 find . -name "*task-complete*" -type f
@@ -365,7 +365,7 @@ Create: `.claude/task-plans/TASK-DEBUG-A21C-investigation-report.md`
 - `.claude/` directory structure
 - `~/.agentecflow/state/` directory
 - `installer/scripts/install.sh`
-- `installer/global/commands/task-complete.md`
+- `installer/core/commands/task-complete.md`
 
 **Git History**:
 - Recent commits to .claude/

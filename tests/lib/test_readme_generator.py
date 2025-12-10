@@ -31,8 +31,8 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-# Add installer/global/lib to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global"))
+# Add installer/core/lib to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core"))
 
 from lib.readme_generator import (
     ReviewReportParser,

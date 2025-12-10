@@ -14,8 +14,8 @@
 1. **Root Cause Identified**: The `init-project.sh` script copies ALL global agents unconditionally (lines 209-223), ignoring the `stack` metadata already present in agent frontmatter.
 
 2. **Deeper Architectural Issue Discovered**: Stack-specific agents exist in **TWO places**:
-   - **Global agents** (`installer/global/agents/`): `python-api-specialist`, `react-state-specialist`, `dotnet-domain-specialist`, etc.
-   - **Template agents** (`installer/global/templates/*/agents/`): `fastapi-specialist`, `feature-architecture-specialist`, etc.
+   - **Global agents** (`installer/core/agents/`): `python-api-specialist`, `react-state-specialist`, `dotnet-domain-specialist`, etc.
+   - **Template agents** (`installer/core/templates/*/agents/`): `fastapi-specialist`, `feature-architecture-specialist`, etc.
 
 3. **Redundancy Concern**: There's overlap between global and template agents:
    - `python-api-specialist` (global) vs `fastapi-specialist` (fastapi-python template)
@@ -34,7 +34,7 @@
 |-----------|---------------|
 | Installation script | `installer/scripts/install.sh` |
 | Project init script | `installer/scripts/init-project.sh` |
-| Global agents | 19 agents in `installer/global/agents/` |
+| Global agents | 19 agents in `installer/core/agents/` |
 | Template manifests | 4 manifest.json files |
 | Agent discovery docs | `docs/guides/agent-discovery-guide.md` |
 
@@ -213,7 +213,7 @@ The deeper question raised during review revision:
 ### Current Architecture
 
 ```
-installer/global/
+installer/core/
 ├── agents/                          # Global agents (19 total)
 │   ├── task-manager.md             # cross-stack ✓
 │   ├── architectural-reviewer.md    # cross-stack ✓
@@ -261,7 +261,7 @@ The global stack-specific agents likely exist for:
 ### Alternative Architecture: Templates Own Stack Agents
 
 ```
-installer/global/
+installer/core/
 ├── agents/                          # ONLY cross-stack agents (14 total)
 │   ├── task-manager.md             # orchestration
 │   ├── architectural-reviewer.md    # review
@@ -333,17 +333,17 @@ After analyzing overlap between global and template agents, the refined recommen
 ### Implementation Plan (Final)
 
 **Phase 1: Delete Redundant Agents** (30 min)
-- Delete `installer/global/agents/python-api-specialist.md`
-- Delete `installer/global/agents/dotnet-domain-specialist.md`
+- Delete `installer/core/agents/python-api-specialist.md`
+- Delete `installer/core/agents/dotnet-domain-specialist.md`
 
 **Phase 2: Archive Design Integration Agents** (30 min)
 - Create `tasks/backlog/design-url-integration/` directory
-- Move `installer/global/agents/figma-react-orchestrator.md` → archive
-- Move `installer/global/agents/zeplin-maui-orchestrator.md` → archive
+- Move `installer/core/agents/figma-react-orchestrator.md` → archive
+- Move `installer/core/agents/zeplin-maui-orchestrator.md` → archive
 - Create task to remove documentation references
 
 **Phase 3: Move React Agent to Template** (30 min)
-- Move `installer/global/agents/react-state-specialist.md` → `installer/global/templates/react-typescript/agents/`
+- Move `installer/core/agents/react-state-specialist.md` → `installer/core/templates/react-typescript/agents/`
 - Also copy to `nextjs-fullstack/agents/` (Next.js uses React)
 
 **Phase 4: Update init-project.sh** (0 hours)
@@ -454,7 +454,7 @@ For templates without manifest or with unknown stacks, install ALL agents (curre
 ### Files Modified (If Implementing)
 
 1. `installer/scripts/init-project.sh` - Add stack filtering logic
-2. (Optional) `installer/global/lib/stack_filter.py` - Parser utility
+2. (Optional) `installer/core/lib/stack_filter.py` - Parser utility
 
 ### Agent Stack Matrix (Complete)
 

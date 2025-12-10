@@ -30,7 +30,7 @@ Split the react-fastapi-monorepo template agents using the automated splitter.
 ## Template Agents
 
 ```
-installer/global/templates/react-fastapi-monorepo/agents/
+installer/core/templates/react-fastapi-monorepo/agents/
 └── [agent files]
 ```
 

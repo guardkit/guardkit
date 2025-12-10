@@ -14,8 +14,8 @@ from typing import Dict, List, Tuple
 
 # File paths
 BASE_DIR = Path(__file__).parent.parent
-FILE_APPSHELL = BASE_DIR / "installer/global/templates/maui-appshell/agents/maui-service-specialist.md"
-FILE_NAVPAGE = BASE_DIR / "installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md"
+FILE_APPSHELL = BASE_DIR / "installer/core/templates/maui-appshell/agents/maui-service-specialist.md"
+FILE_NAVPAGE = BASE_DIR / "installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md"
 
 
 class ValidationResult:

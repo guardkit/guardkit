@@ -46,7 +46,7 @@ This phase must CREATE agents to fill gaps, not just recommend from a list.
 
 | File | Action | Description |
 |------|--------|-------------|
-| `installer/global/commands/lib/template_create_orchestrator.py` | MODIFY | Replace hard-coded detection with AI creation |
+| `installer/core/commands/lib/template_create_orchestrator.py` | MODIFY | Replace hard-coded detection with AI creation |
 
 ---
 
@@ -57,15 +57,15 @@ This phase must CREATE agents to fill gaps, not just recommend from a list.
 ```python
 # In template_create_orchestrator.py
 
-from installer.global.lib.agent_bridge.invoker import (
+from installer.core.lib.agent_bridge.invoker import (
     AgentBridgeInvoker,
     CheckpointRequested
 )
-from installer.global.lib.agent_bridge.state_manager import (
+from installer.core.lib.agent_bridge.state_manager import (
     StateManager,
     TemplateCreateState
 )
-from installer.global.lib.template_creation.prompts import (
+from installer.core.lib.template_creation.prompts import (
     PHASE_4_AGENT_CREATION_PROMPT,
     PHASE_4_CONFIDENCE_THRESHOLD
 )
@@ -201,7 +201,7 @@ def _inventory_existing_agents(self) -> Dict[str, List[Dict]]:
                     inventory["template"].append(metadata)
 
     # 3. Global built-in agents
-    global_agents_path = Path("installer/global/agents")
+    global_agents_path = Path("installer/core/agents")
     if global_agents_path.exists():
         for agent_file in global_agents_path.glob("*.md"):
             metadata = self._parse_agent_metadata(agent_file)

@@ -8,7 +8,7 @@
 ### 1. File Complexity (0-3 points): **1 point**
 
 **Files to Create/Modify**:
-- New: `installer/global/lib/id_generator.py` (~150 lines)
+- New: `installer/core/lib/id_generator.py` (~150 lines)
 - New: `tests/test_id_generator.py` (~400 lines)
 - Modified: None
 

@@ -16,14 +16,14 @@ class TestOrchestratorEntryPoint:
 
     def test_orchestrator_module_has_main_block(self):
         """Test that orchestrator module has __main__ block"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         assert 'if __name__ == "__main__":' in content
 
     def test_orchestrator_has_argument_parser(self):
         """Test that orchestrator has argument parser setup"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         assert 'import argparse' in content
@@ -31,7 +31,7 @@ class TestOrchestratorEntryPoint:
 
     def test_orchestrator_argument_parser_has_all_flags(self):
         """Test that all required flags are in argument parser"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # All flags from acceptance criteria
@@ -53,7 +53,7 @@ class TestOrchestratorEntryPoint:
     def test_orchestrator_module_executable(self):
         """Test that orchestrator module is executable with -m flag"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -65,7 +65,7 @@ class TestOrchestratorEntryPoint:
     def test_orchestrator_help_shows_all_flags(self):
         """Test that --help output shows all flags"""
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -90,7 +90,7 @@ class TestOrchestratorEntryPoint:
 
     def test_orchestrator_calls_run_template_create(self):
         """Test that __main__ block calls run_template_create"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Find __main__ block
@@ -104,7 +104,7 @@ class TestOrchestratorEntryPoint:
 
     def test_orchestrator_passes_args_to_run_template_create(self):
         """Test that parsed args are passed to run_template_create"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Find __main__ block
@@ -129,7 +129,7 @@ class TestOrchestratorEntryPoint:
 
     def test_orchestrator_returns_proper_exit_code(self):
         """Test that orchestrator returns exit code based on result"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         main_block_start = content.find('if __name__ == "__main__":')
@@ -144,7 +144,7 @@ class TestOrchestratorModuleImports:
 
     def test_orchestrator_uses_importlib_for_all_imports(self):
         """Test that orchestrator uses importlib pattern for all module imports"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Should use importlib pattern
@@ -156,7 +156,7 @@ class TestOrchestratorModuleImports:
     def test_orchestrator_module_loads_without_errors(self):
         """Test that orchestrator module loads successfully"""
         orchestrator_module = importlib.import_module(
-            'installer.global.commands.lib.template_create_orchestrator'
+            'installer.core.commands.lib.template_create_orchestrator'
         )
 
         assert orchestrator_module is not None
@@ -165,11 +165,11 @@ class TestOrchestratorModuleImports:
 
     def test_orchestrator_does_not_use_global_keyword(self):
         """Test that orchestrator doesn't use 'global' as identifier in imports"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Should NOT have broken import pattern
-        assert 'from installer.global.' not in content.split('import importlib')[0]
+        assert 'from installer.core.' not in content.split('import importlib')[0]
 
 
 class TestOrchestratorPathAgnostic:
@@ -182,7 +182,7 @@ class TestOrchestratorPathAgnostic:
         monkeypatch.chdir(project_root)
 
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10
@@ -198,7 +198,7 @@ class TestOrchestratorPathAgnostic:
         project_root = Path(__file__).parent.parent.parent.parent
 
         result = subprocess.run(
-            [sys.executable, '-m', 'installer.global.commands.lib.template_create_orchestrator', '--help'],
+            [sys.executable, '-m', 'installer.core.commands.lib.template_create_orchestrator', '--help'],
             capture_output=True,
             text=True,
             timeout=10,
@@ -214,7 +214,7 @@ class TestOrchestratorArguments:
 
     def test_orchestrator_output_location_choices(self):
         """Test that output-location has correct choices"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Find output-location argument
@@ -222,7 +222,7 @@ class TestOrchestratorArguments:
 
     def test_orchestrator_boolean_flags_are_store_true(self):
         """Test that boolean flags use store_true action"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         boolean_flags = ['skip-qa', 'dry-run', 'validate', 'no-agents', 'resume', 'verbose']
@@ -248,7 +248,7 @@ class TestOrchestratorArguments:
 
     def test_orchestrator_max_templates_is_integer(self):
         """Test that max-templates accepts integer"""
-        orchestrator_path = Path('installer/global/commands/lib/template_create_orchestrator.py')
+        orchestrator_path = Path('installer/core/commands/lib/template_create_orchestrator.py')
         content = orchestrator_path.read_text()
 
         # Find __main__ block

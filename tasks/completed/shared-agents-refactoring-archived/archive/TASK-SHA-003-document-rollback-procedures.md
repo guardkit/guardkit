@@ -339,7 +339,7 @@ cat installer/shared-agents-version.txt
    # Restore agents from git (if in version control)
    git checkout HEAD -- .claude/agents/
 
-   # Or copy from installer/global/agents/
+   # Or copy from installer/core/agents/
    # (for agents that were removed during migration)
    ```
 

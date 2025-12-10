@@ -82,12 +82,12 @@ What is the regression risk of implementing clarifying-questions just before pub
 ## Files to Analyze
 
 ### Primary (Modification Targets)
-- `installer/global/commands/task-work.md`
-- `installer/global/commands/task-review.md`
-- `installer/global/commands/feature-plan.md`
+- `installer/core/commands/task-work.md`
+- `installer/core/commands/task-review.md`
+- `installer/core/commands/feature-plan.md`
 
 ### Secondary (Potential Conflict Areas)
-- `installer/global/commands/lib/complexity_*.py`
+- `installer/core/commands/lib/complexity_*.py`
 - Existing Phase 2.7/2.8 checkpoint logic
 - CLAUDE.md workflow documentation
 

@@ -168,7 +168,7 @@ fi
 
 ### Package Manifests
 
-**guardkit/installer/global/manifest.json**:
+**guardkit/installer/core/manifest.json**:
 ```json
 {
   "name": "guardkit",
@@ -186,7 +186,7 @@ fi
 }
 ```
 
-**require-kit/installer/global/manifest.json**:
+**require-kit/installer/core/manifest.json**:
 ```json
 {
   "name": "require-kit",
@@ -426,29 +426,29 @@ The bidirectional optional integration has been successfully implemented for gua
 
 ### Files Created/Modified
 
-1. **`installer/global/lib/feature_detection.py`** - NEW ✨
+1. **`installer/core/lib/feature_detection.py`** - NEW ✨
    - Copied from require-kit (designed for duplication)
    - Provides `supports_requirements()`, `supports_epics()`, `supports_features()`, `supports_bdd()`
    - Detects installed packages via marker files in `~/.agentecflow/`
 
-2. **`installer/global/commands/lib/spec_drift_detector.py`** - MODIFIED 🔧
+2. **`installer/core/commands/lib/spec_drift_detector.py`** - MODIFIED 🔧
    - Added graceful degradation for missing require-kit
    - Returns empty requirements list if `supports_requirements()` is False
    - Updated `format_drift_report()` to show appropriate message when requirements unavailable
 
-3. **`installer/global/commands/task-work.md`** - MODIFIED 🔧
+3. **`installer/core/commands/task-work.md`** - MODIFIED 🔧
    - Phase 1: Conditional extraction of requirements/epic/feature fields
    - Step 3: Two agent selection tables (with/without require-kit)
    - Phase 1 invocation: Uses `analysis_agent` (requirements-analyst or task-manager)
    - Display logic: Shows requirements info only when require-kit installed
 
-4. **`installer/global/commands/task-create.md`** - MODIFIED 🔧
+4. **`installer/core/commands/task-create.md`** - MODIFIED 🔧
    - Split examples into "Core" (always available) and "Integration" (require-kit required)
    - Split options into "Core Options" and "Integration Options"
    - Added installation instructions for require-kit
    - Added bidirectional integration note at top
 
-5. **`installer/global/templates/guardkit.marker.json`** - NEW ✨
+5. **`installer/core/templates/guardkit.marker.json`** - NEW ✨
    - Marker file template for installation scripts
    - Declares optional_integration with require-kit
    - Lists all provided capabilities
@@ -474,7 +474,7 @@ The bidirectional optional integration has been successfully implemented for gua
 
 **Feature Detection Pattern:**
 ```python
-from installer.global.lib.feature_detection import supports_requirements
+from installer.core.lib.feature_detection import supports_requirements
 
 if supports_requirements():
     # Full integration: Load requirements, epics, features

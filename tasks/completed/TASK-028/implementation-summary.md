@@ -8,7 +8,7 @@ Successfully implemented enhanced Phase 2.8 checkpoint display with implementati
 
 ### Files Created
 
-1. **installer/global/commands/lib/checkpoint_display.py** (342 lines)
+1. **installer/core/commands/lib/checkpoint_display.py** (342 lines)
    - Dataclasses: FileChange, Dependency, Risk, RiskLevel (enum), EffortEstimate, PlanSummary
    - Function: load_plan_summary(task_id, plan_path=None) -> Optional[PlanSummary]
    - Function: format_plan_summary(summary, max_files=5, max_deps=3) -> str
@@ -59,7 +59,7 @@ Successfully implemented enhanced Phase 2.8 checkpoint display with implementati
 
 ### Files Modified
 
-1. **installer/global/commands/lib/plan_persistence.py**
+1. **installer/core/commands/lib/plan_persistence.py**
    - Added get_plan_path(task_id) function
    - Updated __all__ exports
 
@@ -207,13 +207,13 @@ Duration: 0.15s
 ## Files Summary
 
 ### Created Files (4)
-- installer/global/commands/lib/checkpoint_display.py (342 lines)
+- installer/core/commands/lib/checkpoint_display.py (342 lines)
 - tests/unit/test_checkpoint_display.py (468 lines)
 - tests/integration/test_plan_loading.py (317 lines)
 - tests/e2e/test_phase28_checkpoint.py (374 lines)
 
 ### Modified Files (1)
-- installer/global/commands/lib/plan_persistence.py (added get_plan_path function)
+- installer/core/commands/lib/plan_persistence.py (added get_plan_path function)
 
 ### Total Lines of Code
 - Production Code: 342 lines

@@ -16,7 +16,7 @@ Successfully implemented a comprehensive review report parser that automatically
 
 ### Files Created
 
-1. **`installer/global/lib/review_parser.py`** (NEW) - 419 lines
+1. **`installer/core/lib/review_parser.py`** (NEW) - 419 lines
    - `SubtaskExtractor` class with comprehensive parsing logic
    - `extract_subtasks_from_review()` main entry point
    - Support for 3 recommendation formats (table, numbered, bulleted)
@@ -87,7 +87,7 @@ Successfully implemented a comprehensive review report parser that automatically
 
 - ✅ Explicit paths: `src/components/Button.tsx`
 - ✅ Component names: "Button component" → `src/components/Button.tsx`
-- ✅ Command references: "/feature-plan command" → `installer/global/commands/feature-plan.md`
+- ✅ Command references: "/feature-plan command" → `installer/core/commands/feature-plan.md`
 - ✅ Backtick-wrapped: `` `lib/utils.py` ``
 - ✅ Automatic deduplication
 
@@ -148,7 +148,7 @@ TestEdgeCases:
 ### Coverage Report
 
 ```
-installer/global/lib/review_parser.py       145     11     60     13    87%
+installer/core/lib/review_parser.py       145     11     60     13    87%
 ```
 
 **Missed Lines**: 11 statements (mainly error handling edge cases and alternative code paths)
@@ -198,7 +198,7 @@ subtasks = extract_subtasks_from_review(
 #         "id": "TASK-FW-001",
 #         "title": "Create /feature-plan command (markdown orchestration)",
 #         "description": "Create /feature-plan command",
-#         "files": ["installer/global/commands/feature-plan.md"],
+#         "files": ["installer/core/commands/feature-plan.md"],
 #         "complexity": 3,
 #         "implementation_mode": "direct",
 #         "parallel_group": None,

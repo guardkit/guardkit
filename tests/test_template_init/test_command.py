@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 # Add installer path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
 
 from template_init.command import (
     TemplateInitCommand,

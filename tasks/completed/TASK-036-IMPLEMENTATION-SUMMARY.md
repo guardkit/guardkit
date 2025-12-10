@@ -14,7 +14,7 @@ Added complete documentation level support to the `/task-work` command, achievin
 
 ### Files Modified (1 file)
 
-1. **`installer/global/commands/task-work.md`** (+240 lines)
+1. **`installer/core/commands/task-work.md`** (+240 lines)
    - Added `--docs` flag to command syntax
    - Added documentation level control section (60 lines)
    - Updated Step 0 to parse `--docs=minimal|standard|comprehensive` flag (15 lines)
@@ -23,14 +23,14 @@ Added complete documentation level support to the `/task-work` command, achievin
 
 ### Files Created (2 files)
 
-2. **`installer/global/templates/documentation/minimal-summary-template.md`** (~150 lines)
+2. **`installer/core/templates/documentation/minimal-summary-template.md`** (~150 lines)
    - Template structure for minimal mode
    - YAML/JSON structured data format
    - Validation checklist
    - Example minimal summary
    - Agent guidance for minimal mode
 
-3. **`installer/global/templates/documentation/comprehensive-checklist.md`** (~200 lines)
+3. **`installer/core/templates/documentation/comprehensive-checklist.md`** (~200 lines)
    - Core documents (6 required)
    - Conditional documents (7 optional, 13 total)
    - Decision tree for mode selection
@@ -253,16 +253,16 @@ All agents receive consistent `<AGENT_CONTEXT>` blocks with documentation_level 
 ## Files Changed Summary
 
 ```
-installer/global/commands/task-work.md                                  | +240 lines
-installer/global/templates/documentation/minimal-summary-template.md    | +150 lines (NEW)
-installer/global/templates/documentation/comprehensive-checklist.md     | +200 lines (NEW)
+installer/core/commands/task-work.md                                  | +240 lines
+installer/core/templates/documentation/minimal-summary-template.md    | +150 lines (NEW)
+installer/core/templates/documentation/comprehensive-checklist.md     | +200 lines (NEW)
 ---
 Total: 3 files, 590 lines added
 ```
 
 ## Definition of Done
 
-- [x] `installer/global/commands/task-work.md` updated with `--docs` flag and documentation level logic
+- [x] `installer/core/commands/task-work.md` updated with `--docs` flag and documentation level logic
 - [x] Templates created for minimal and comprehensive modes
 - [x] Context parameter format documented inline
 - [x] Manual testing completed (minimal, standard, comprehensive modes)

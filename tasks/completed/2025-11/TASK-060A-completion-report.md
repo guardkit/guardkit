@@ -15,25 +15,25 @@ Successfully reinstated the `default` template that was removed in TASK-060, wit
 ## Deliverables
 
 ### Files Created (5)
-1. **installer/global/templates/default/CLAUDE.md** (207 lines)
+1. **installer/core/templates/default/CLAUDE.md** (207 lines)
    - Clear when-to-use / when-NOT-to-use guidance
    - Language-agnostic positioning
    - Migration path to custom templates
 
-2. **installer/global/templates/default/settings.json** (272 lines)
+2. **installer/core/templates/default/settings.json** (272 lines)
    - Complete documentation level configuration
    - Quality gates system
    - Workflow phase definitions
 
-3. **installer/global/templates/default/README.md** (435 lines)
+3. **installer/core/templates/default/README.md** (435 lines)
    - Comprehensive usage guide
    - 6+ language examples (Go, Rust, Elixir, PHP, Kotlin, Swift)
    - Troubleshooting section
 
-4. **installer/global/templates/default/agents/.gitkeep**
+4. **installer/core/templates/default/agents/.gitkeep**
    - Placeholder for custom agents
 
-5. **installer/global/templates/default/templates/.gitkeep**
+5. **installer/core/templates/default/templates/.gitkeep**
    - Placeholder for code templates
 
 ### Files Modified (3)

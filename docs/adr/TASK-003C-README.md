@@ -325,12 +325,12 @@
 
 ### Dependencies (Already Completed)
 - **TASK-003A**: Complexity Calculation Logic
-  - `installer/global/commands/lib/complexity_calculator.py`
-  - `installer/global/commands/lib/complexity_models.py`
+  - `installer/core/commands/lib/complexity_calculator.py`
+  - `installer/core/commands/lib/complexity_models.py`
 
 - **TASK-003B-1**: Quick Review Mode
-  - `installer/global/commands/lib/user_interaction.py`
-  - `installer/global/commands/lib/review_modes.py`
+  - `installer/core/commands/lib/user_interaction.py`
+  - `installer/core/commands/lib/review_modes.py`
 
 ### Blocked Tasks (Waiting for TASK-003C)
 - **TASK-003B-2**: Full Review Mode Complete
@@ -378,7 +378,7 @@ docs/adr/
 
 ### Implementation Files (To Be Created)
 ```
-installer/global/commands/lib/
+installer/core/commands/lib/
 ├── task_context.py                              # Day 1
 ├── plan_parser.py                               # Day 1
 ├── phase_27_handler.py                          # Day 1
@@ -389,8 +389,8 @@ installer/global/commands/lib/
 
 ### Files to Update
 ```
-installer/global/agents/task-manager.md          # Day 3
-installer/global/commands/task-work.md           # Day 3
+installer/core/agents/task-manager.md          # Day 3
+installer/core/commands/task-work.md           # Day 3
 CLAUDE.md                                        # Day 4
 ```
 

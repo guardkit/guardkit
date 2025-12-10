@@ -204,13 +204,13 @@ Successfully implemented and validated comprehensive testing for the `/task-revi
 ```
 Module                                               Coverage
 ----------------------------------------------------------------
-installer/global/commands/lib/                           5%
+installer/core/commands/lib/                           5%
   task_review_orchestrator.py                         (HIGH)
   review_modes/*                                      (HIGH)
   task_utils.py                                       (MEDIUM)
 ```
 
-**Note:** Overall 5% coverage is due to testing against entire `installer/global/commands/lib/` directory. When focused on review-specific modules, coverage is significantly higher.
+**Note:** Overall 5% coverage is due to testing against entire `installer/core/commands/lib/` directory. When focused on review-specific modules, coverage is significantly higher.
 
 ### Focused Coverage (review modules only)
 
@@ -380,7 +380,7 @@ python3 -m pytest \
   tests/unit/commands/test_review_edge_cases.py \
   tests/integration/test_task_review_workflow.py \
   tests/integration/test_review_regression.py \
-  -v --cov=installer/global/commands/lib
+  -v --cov=installer/core/commands/lib
 ```
 
 ### Full Test Run (Include Performance Tests)
@@ -393,7 +393,7 @@ python3 -m pytest \
   tests/unit/commands/test_review_edge_cases.py \
   tests/integration/test_review_regression.py \
   tests/performance/test_review_performance.py \
-  -v -m "slow" --cov=installer/global/commands/lib
+  -v -m "slow" --cov=installer/core/commands/lib
 ```
 
 ### Performance Tests Only
@@ -410,7 +410,7 @@ python3 -m pytest tests/performance/ -v -m "slow"
 python3 -m pytest \
   tests/unit/commands/review_modes/ \
   tests/unit/commands/test_review_state_manager.py \
-  --cov=installer/global/commands/lib \
+  --cov=installer/core/commands/lib \
   --cov-report=html \
   --cov-report=term-missing
 ```
@@ -469,7 +469,7 @@ $ python3 -m pytest tests/unit/commands/review_modes/ \
   tests/unit/commands/test_review_edge_cases.py \
   tests/integration/test_task_review_workflow.py \
   tests/integration/test_review_regression.py \
-  -v --cov=installer/global/commands/lib
+  -v --cov=installer/core/commands/lib
 
 ============================= test session starts ==============================
 platform darwin -- Python 3.14.0, pytest-8.4.2, pluggy-1.6.0

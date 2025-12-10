@@ -26,7 +26,7 @@ The `/template-create` command successfully generates 25 template files but fail
 
 ### Finding 1: Single Cached Response Causes Cross-Phase Data Leakage (CRITICAL)
 
-**Location**: [installer/global/lib/agent_bridge/invoker.py:133](installer/global/lib/agent_bridge/invoker.py#L133)
+**Location**: [installer/core/lib/agent_bridge/invoker.py:133](installer/core/lib/agent_bridge/invoker.py#L133)
 
 **Evidence**:
 ```python
@@ -53,7 +53,7 @@ class AgentBridgeInvoker:
 
 ### Finding 2: Schema Mismatch Between Phase 1 and Phase 5 Responses
 
-**Location**: [installer/global/lib/agent_generator/agent_generator.py:427-431](installer/global/lib/agent_generator/agent_generator.py#L427-L431)
+**Location**: [installer/core/lib/agent_generator/agent_generator.py:427-431](installer/core/lib/agent_generator/agent_generator.py#L427-L431)
 
 **Phase 1 Response Schema** (Codebase Analysis):
 ```json
@@ -94,7 +94,7 @@ The parsing logic attempted to interpret the `layers` array (6 items) as agent s
 
 ### Finding 3: Agent Scanner Reports Zero Agents
 
-**Location**: [installer/global/commands/lib/template_create_orchestrator.py:901-904](installer/global/commands/lib/template_create_orchestrator.py#L901-L904)
+**Location**: [installer/core/commands/lib/template_create_orchestrator.py:901-904](installer/core/commands/lib/template_create_orchestrator.py#L901-L904)
 
 **Log Evidence**:
 ```
@@ -116,7 +116,7 @@ This is expected behavior for new templates, but worth noting.
 
 ### Finding 4: Phase 5 Never Actually Invokes AI
 
-**Location**: [installer/global/lib/agent_bridge/invoker.py:165-167](installer/global/lib/agent_bridge/invoker.py#L165-L167)
+**Location**: [installer/core/lib/agent_bridge/invoker.py:165-167](installer/core/lib/agent_bridge/invoker.py#L165-L167)
 
 **Evidence**: In the resume flow, Phase 5 never writes a new `.agent-request.json` because:
 ```python
@@ -262,9 +262,9 @@ def test_phase5_receives_agent_format_after_resume():
 
 | File | Change Type | Priority |
 |------|-------------|----------|
-| [installer/global/lib/agent_bridge/invoker.py](installer/global/lib/agent_bridge/invoker.py) | Major refactor | P0 |
-| [installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py) | Minor update | P0 |
-| [installer/global/lib/agent_generator/agent_generator.py](installer/global/lib/agent_generator/agent_generator.py) | Validation | P1 |
+| [installer/core/lib/agent_bridge/invoker.py](installer/core/lib/agent_bridge/invoker.py) | Major refactor | P0 |
+| [installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py) | Minor update | P0 |
+| [installer/core/lib/agent_generator/agent_generator.py](installer/core/lib/agent_generator/agent_generator.py) | Validation | P1 |
 
 ---
 

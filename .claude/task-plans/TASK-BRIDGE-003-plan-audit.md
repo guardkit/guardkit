@@ -9,10 +9,10 @@
 ## 1. File Count Match
 
 **Planned Files**: 1
-- `installer/global/commands/template-create.md`
+- `installer/core/commands/template-create.md`
 
 **Actual Files Modified**: 1
-- ✅ `installer/global/commands/template-create.md`
+- ✅ `installer/core/commands/template-create.md`
 
 **Match**: 100% ✅
 
@@ -205,7 +205,7 @@ From task file (lines 29-39):
 ## 8. Documentation Updates
 
 **Updated Files**:
-1. ✅ `installer/global/commands/template-create.md` - Added complete Execution section
+1. ✅ `installer/core/commands/template-create.md` - Added complete Execution section
 
 **Documentation Includes**:
 - ✅ Argument parsing
@@ -285,7 +285,7 @@ The implementation fully meets requirements, addresses all critical issues from 
 ## Changes Summary
 
 **Files Modified**: 1
-- `installer/global/commands/template-create.md` (+437 lines)
+- `installer/core/commands/template-create.md` (+437 lines)
 
 **Key Additions**:
 - Complete Execution section with checkpoint-resume loop

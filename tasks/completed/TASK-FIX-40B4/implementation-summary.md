@@ -18,7 +18,7 @@ Implemented a comprehensive layer classification system that improves template o
 
 ## Files Created
 
-### 1. `installer/global/lib/template_generator/layer_classifier.py` (380+ lines)
+### 1. `installer/core/lib/template_generator/layer_classifier.py` (380+ lines)
 
 Core implementation with four main components:
 
@@ -74,7 +74,7 @@ Cross-language fallback patterns:
 
 ## Files Modified
 
-### 1. `installer/global/lib/template_generator/path_resolver.py`
+### 1. `installer/core/lib/template_generator/path_resolver.py`
 
 **Changes**:
 1. Added import for `LayerClassificationOrchestrator`
@@ -104,7 +104,7 @@ Cross-language fallback patterns:
    └─ Used when all strategies fail
 ```
 
-### 2. `installer/global/lib/template_generator/__init__.py`
+### 2. `installer/core/lib/template_generator/__init__.py`
 
 **Changes**:
 1. Updated module docstring with layer classification details
@@ -119,7 +119,7 @@ Cross-language fallback patterns:
 
 ## Documentation Created
 
-### `installer/global/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md`
+### `installer/core/lib/template_generator/LAYER_CLASSIFICATION_GUIDE.md`
 
 Comprehensive guide covering:
 - Architecture overview (diagram)

@@ -32,7 +32,7 @@ Create a new slash command `/feature-plan` that orchestrates the feature plannin
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/feature-plan.md`
+- [x] Create `installer/core/commands/feature-plan.md`
 - [x] Command accepts feature description as argument
 - [x] Automatically executes `/task-create` with `task_type:review` flag
 - [x] Captures task ID from output
@@ -83,7 +83,7 @@ The review will present findings and decision options:
 
 ## Files to Create/Modify
 
-- `installer/global/commands/feature-plan.md` (NEW)
+- `installer/core/commands/feature-plan.md` (NEW)
 
 ## Test Plan
 
@@ -109,7 +109,7 @@ Can be completed in 0.5 days.
 
 ### Deliverables
 - **Files Created**: 1
-  - `installer/global/commands/feature-plan.md` (603 lines, 17KB)
+  - `installer/core/commands/feature-plan.md` (603 lines, 17KB)
 - **Acceptance Criteria**: 7/7 met ✅
 - **Documentation**: Comprehensive (examples, error handling, best practices)
 

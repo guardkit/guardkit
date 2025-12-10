@@ -40,8 +40,8 @@ related_to: TASK-REV-9A4E
 ### Current Behavior (BROKEN)
 
 Agent discovery scans:
-1. `installer/global/agents/*.md` (global agents)
-2. `installer/global/templates/*/agents/*.md` (template sources, before init)
+1. `installer/core/agents/*.md` (global agents)
+2. `installer/core/templates/*/agents/*.md` (template sources, before init)
 3. `~/.agentecflow/agents/*.md` (user agents)
 
 **Missing**: `.claude/agents/*.md` (where template-init copies local agents)
@@ -51,8 +51,8 @@ Agent discovery scans:
 Agent discovery should scan in this order with explicit precedence:
 1. **`.claude/agents/*.md`** (LOCAL - highest priority) ← **NEW**
 2. `~/.agentecflow/agents/*.md` (USER)
-3. `installer/global/agents/*.md` (GLOBAL)
-4. `installer/global/templates/*/agents/*.md` (TEMPLATE - lowest priority)
+3. `installer/core/agents/*.md` (GLOBAL)
+4. `installer/core/templates/*/agents/*.md` (TEMPLATE - lowest priority)
 
 **Precedence Rule**: Local > User > Global > Template
 
@@ -76,7 +76,7 @@ Fix the agent discovery system to:
 ### In Scope
 
 **Files to Modify**:
-- `installer/global/commands/lib/agent_discovery.py` (primary implementation)
+- `installer/core/commands/lib/agent_discovery.py` (primary implementation)
 - Unit tests: `tests/test_agent_discovery.py`
 - Integration tests: Template initialization → discovery verification
 
@@ -131,8 +131,8 @@ if os.path.exists(local_agent_dir):
 **Precedence Order**:
 1. **Local** (`.claude/agents/`) - Priority: 1 (highest)
 2. **User** (`~/.agentecflow/agents/`) - Priority: 2
-3. **Global** (`installer/global/agents/`) - Priority: 3
-4. **Template** (`installer/global/templates/*/agents/`) - Priority: 4 (lowest)
+3. **Global** (`installer/core/agents/`) - Priority: 3
+4. **Template** (`installer/core/templates/*/agents/`) - Priority: 4 (lowest)
 
 **Implementation**:
 ```python
@@ -224,7 +224,7 @@ else:
 
 ### Phase 1: Update Discovery Function (1-1.5 hours)
 
-**File**: `installer/global/commands/lib/agent_discovery.py`
+**File**: `installer/core/commands/lib/agent_discovery.py`
 
 **Changes**:
 1. Add priority constants

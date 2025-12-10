@@ -122,7 +122,7 @@ import os
 import re
 import yaml
 from pathlib import Path
-from installer.global.lib.id_generator import generate_task_id
+from installer.core.lib.id_generator import generate_task_id
 
 def backup_tasks():
     """Create backup before migration."""

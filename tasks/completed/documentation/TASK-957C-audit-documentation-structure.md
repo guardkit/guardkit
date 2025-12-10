@@ -50,14 +50,14 @@ completion_metrics:
 
 ## Context
 
-The Taskwright repository has **59 subdirectories** with **325+ markdown files** in the docs/ folder, plus **81 markdown files** in installer/global/, mixing:
+The Taskwright repository has **59 subdirectories** with **325+ markdown files** in the docs/ folder, plus **81 markdown files** in installer/core/, mixing:
 - **User-facing documentation** (guides/, workflows/, patterns/)
 - **Development artifacts** (implementation/, test_reports/, fixes/)
 - **Architecture decisions** (adr/, adrs/)
 - **Internal research** (research/, analysis/, deep-dives/)
-- **Command specifications** (installer/global/commands/ - 19 command files)
-- **Agent definitions** (installer/global/agents/)
-- **Template documentation** (installer/global/templates/ - 6 templates)
+- **Command specifications** (installer/core/commands/ - 19 command files)
+- **Agent definitions** (installer/core/agents/)
+- **Template documentation** (installer/core/templates/ - 6 templates)
 
 An external review (ChatGPT) suggested setting up MkDocs + Material for GitHub Pages, but the suggested navigation was too simplistic for our actual structure.
 
@@ -293,11 +293,11 @@ Home (index.md)
 
 ### Key Metrics
 
-- **Total markdown files**: 406 (325 in docs/, 81 in installer/global/)
+- **Total markdown files**: 406 (325 in docs/, 81 in installer/core/)
 - **Total subdirectories**: 59
 - **Command specifications**: 19 files
 - **Templates documented**: 6
-- **Agent definitions**: Multiple in installer/global/agents/
+- **Agent definitions**: Multiple in installer/core/agents/
 - **Workflow guides**: 14 documented
 - **Deep-dive guides**: 3+ in mcp-integration/
 

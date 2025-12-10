@@ -1171,8 +1171,8 @@ Compliance Scorecard:
 ```
 
 **Files to Modify**:
-- `installer/global/agents/code-reviewer.md` (add drift detection step)
-- `installer/global/commands/lib/spec_drift_detector.py` (new module)
+- `installer/core/agents/code-reviewer.md` (add drift detection step)
+- `installer/core/commands/lib/spec_drift_detector.py` (new module)
 
 **Effort**: 4-6 hours
 **Impact**: High (prevents hallucination, saves rework time)
@@ -1212,8 +1212,8 @@ When valid credentials submitted, system shall:
 ```
 
 **Files to Modify**:
-- `installer/global/commands/formalize-ears.md` (add --concise flag)
-- `installer/global/agents/requirements-analyst.md` (add concise guidelines)
+- `installer/core/commands/formalize-ears.md` (add --concise flag)
+- `installer/core/agents/requirements-analyst.md` (add concise guidelines)
 
 **Effort**: 2-3 hours
 **Impact**: Medium (improves readability, reduces AI token usage)
@@ -1256,8 +1256,8 @@ Task State: BACKLOG → IN_REVIEW
 - Low risk (documentation, typos, cosmetic changes)
 
 **Files to Modify**:
-- `installer/global/commands/task-work.md` (add --micro flag)
-- `installer/global/agents/task-manager.md` (add micro-task workflow)
+- `installer/core/commands/task-work.md` (add --micro flag)
+- `installer/core/agents/task-manager.md` (add micro-task workflow)
 
 **Effort**: 3-4 hours
 **Impact**: Medium (improves efficiency for small changes)
@@ -1354,8 +1354,8 @@ Tasks linked to REQ-042: TASK-001, TASK-002 (will use v2 for future work)
 ```
 
 **Files to Create**:
-- `installer/global/commands/refine-requirements.md`
-- `installer/global/commands/lib/requirement_versioning.py`
+- `installer/core/commands/refine-requirements.md`
+- `installer/core/commands/lib/requirement_versioning.py`
 
 **Effort**: 8-10 hours
 **Impact**: Medium (enables iterative requirement improvement)
@@ -1434,7 +1434,7 @@ Templates:
 ```
 
 **Files to Create**:
-- `installer/global/commands/lib/requirement_templates/` (folder)
+- `installer/core/commands/lib/requirement_templates/` (folder)
   - `bug-fix.json`
   - `feature.json`
   - `refactor.json`
@@ -1559,9 +1559,9 @@ public class AuthService {
 ```
 
 **Files to Create**:
-- `installer/global/commands/regenerate.md`
-- `installer/global/commands/lib/spec_regenerator.py`
-- `installer/global/commands/lib/manual_preservation.py`
+- `installer/core/commands/regenerate.md`
+- `installer/core/commands/lib/spec_regenerator.py`
+- `installer/core/commands/lib/manual_preservation.py`
 
 **Effort**: 16-20 hours
 **Impact**: High (enables true spec-as-source workflow)
@@ -1636,9 +1636,9 @@ Recommendations:
 ```
 
 **Files to Modify**:
-- `installer/global/commands/task-complete.md` (add compliance analysis)
-- `installer/global/commands/lib/compliance_scorer.py` (new module)
-- `installer/global/agents/code-reviewer.md` (integrate compliance scoring)
+- `installer/core/commands/task-complete.md` (add compliance analysis)
+- `installer/core/commands/lib/compliance_scorer.py` (new module)
+- `installer/core/agents/code-reviewer.md` (integrate compliance scoring)
 
 **Effort**: 12-16 hours
 **Impact**: High (quantifies quality, prevents scope creep)

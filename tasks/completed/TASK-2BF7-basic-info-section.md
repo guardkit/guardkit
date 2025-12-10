@@ -66,8 +66,8 @@ Coverage:       100% of new code
 
 ### Files Changed
 
-- `installer/global/commands/lib/template_qa_questions.py` (+28 lines)
-- `installer/global/commands/lib/template_qa_session.py` (+9 lines, reordered)
+- `installer/core/commands/lib/template_qa_questions.py` (+28 lines)
+- `installer/core/commands/lib/template_qa_session.py` (+9 lines, reordered)
 - `tests/test_task_054_basic_info.py` (+450 lines, NEW)
 - `.claude/task-plans/TASK-2BF7-implementation-plan.md` (+367 lines, NEW)
 

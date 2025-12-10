@@ -527,7 +527,7 @@ After completing enhancement:
 
 - [Template Creation Workflow](template-create.md)
 - [Template Validation Guide](template-validation-guide.md)
-- [Agent Enhance Command](../../../installer/global/commands/agent-enhance.md)
+- [Agent Enhance Command](../../../installer/core/commands/agent-enhance.md)
 - [Phase 8 Specification](../../../tasks/backlog/TASK-PHASE-8-INCREMENTAL-specification.md)
 ```
 

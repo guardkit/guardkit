@@ -3,8 +3,8 @@
 **Purpose**: Shared documentation for design system integration commands (Figma, Zeplin) to maintain DRY principles and consistency across all design-to-code workflows.
 
 **Referenced By**:
-- `installer/global/commands/figma-to-react.md`
-- `installer/global/commands/zeplin-to-maui.md`
+- `installer/core/commands/figma-to-react.md`
+- `installer/core/commands/zeplin-to-maui.md`
 
 ---
 
@@ -778,7 +778,7 @@ All design-to-code command documentation follows this structure:
 
 **File References**:
 - Use absolute paths from project root
-- Example: `installer/global/commands/figma-to-react.md`
+- Example: `installer/core/commands/figma-to-react.md`
 
 **External References**:
 - Full URLs with link text

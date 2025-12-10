@@ -14,12 +14,12 @@ Successfully implemented progressive disclosure architecture for agent enhanceme
 ## What Was Implemented
 
 ### New Files
-1. **installer/global/lib/agent_enhancement/models.py**
+1. **installer/core/lib/agent_enhancement/models.py**
    - `AgentEnhancement` TypedDict (type-safe enhancement data)
    - `SplitContent` dataclass (split file metadata)
 
 ### Modified Files
-1. **installer/global/lib/agent_enhancement/applier.py**
+1. **installer/core/lib/agent_enhancement/applier.py**
    - Added 10 new methods for progressive disclosure
    - Added section categorization constants
    - Zero modifications to existing methods (100% backward compatible)
@@ -129,7 +129,7 @@ Comprehensive workflow test with realistic FastAPI agent enhancement:
 ## Files Modified
 
 ```
-installer/global/lib/agent_enhancement/
+installer/core/lib/agent_enhancement/
 ├── models.py (NEW - 80 lines)
 └── applier.py (MODIFIED - added 456 lines, changed 0 existing lines)
 

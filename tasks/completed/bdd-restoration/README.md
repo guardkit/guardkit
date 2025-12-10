@@ -251,7 +251,7 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - `tasks/backlog/bdd-restoration/TASK-BDD-005-test-results.md` (TASK-BDD-005)
 
 ### Code Changes (via tasks)
-- `installer/global/commands/task-work.md` (TASK-BDD-003, TASK-BDD-004)
+- `installer/core/commands/task-work.md` (TASK-BDD-003, TASK-BDD-004)
 - `CLAUDE.md` (TASK-BDD-002)
 - `.claude/CLAUDE.md` (TASK-BDD-007)
 - Mode parsing logic (TASK-BDD-003)
@@ -273,8 +273,8 @@ conductor create-workspace bdd-wave3-testing TASK-BDD-005
 - GuardKit_LangGraph_Orchestration_Build_Strategy.md
 
 ### Code References
-- `installer/global/lib/feature_detection.py`
-- `installer/global/commands/task-work.md`
+- `installer/core/lib/feature_detection.py`
+- `installer/core/commands/task-work.md`
 - `.claude/agents/*.md` (agent format examples)
 
 ---

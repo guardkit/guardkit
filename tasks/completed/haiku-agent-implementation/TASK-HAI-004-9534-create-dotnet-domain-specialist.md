@@ -34,7 +34,7 @@ Create a new global implementation agent specialized in .NET domain models, enti
 
 ## Objectives
 
-1. Create `installer/global/agents/dotnet-domain-specialist.md`
+1. Create `installer/core/agents/dotnet-domain-specialist.md`
 2. Include complete discovery metadata (stack, phase, capabilities, keywords)
 3. Add boundary sections (ALWAYS/NEVER/ASK) following GitHub best practices
 4. Configure model: haiku for cost-effective code generation
@@ -42,7 +42,7 @@ Create a new global implementation agent specialized in .NET domain models, enti
 
 ## Acceptance Criteria
 
-- [x] Agent file created at `installer/global/agents/dotnet-domain-specialist.md`
+- [x] Agent file created at `installer/core/agents/dotnet-domain-specialist.md`
 - [x] Discovery metadata validates against HAI-001 schema
 - [x] Stack: [dotnet, csharp]
 - [x] Phase: implementation
@@ -55,7 +55,7 @@ Create a new global implementation agent specialized in .NET domain models, enti
 
 ## Deliverables
 
-1. Agent file: `installer/global/agents/dotnet-domain-specialist.md`
+1. Agent file: `installer/core/agents/dotnet-domain-specialist.md`
 2. Validation passed
 3. Metadata complete
 
@@ -74,7 +74,7 @@ Create a new global implementation agent specialized in .NET domain models, enti
 ## Deliverables
 
 - Files created: 1
-  - `installer/global/agents/dotnet-domain-specialist.md`
+  - `installer/core/agents/dotnet-domain-specialist.md`
 - Agent content:
   - Discovery metadata (stack, phase, capabilities, keywords)
   - Model: haiku with rationale

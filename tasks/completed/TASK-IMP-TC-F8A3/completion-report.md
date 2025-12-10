@@ -6,7 +6,7 @@ Successfully implemented fixes for the `/template-create` command to address cri
 ## Implementation Details
 
 ### 1. Placeholder Substitution (NEW MODULE)
-**File**: `installer/global/lib/template_generator/placeholder_patterns.py`
+**File**: `installer/core/lib/template_generator/placeholder_patterns.py`
 
 Created centralized placeholder pattern system:
 - `PlaceholderPatterns` class with language-specific regex patterns
@@ -21,7 +21,7 @@ Created centralized placeholder pattern system:
 - C# (namespaces, classes, interfaces, records)
 
 ### 2. Layer Mapping Fixes
-**File**: `installer/global/lib/settings_generator/generator.py`
+**File**: `installer/core/lib/settings_generator/generator.py`
 
 Added methods to derive actual paths from `example_files`:
 - `_extract_layer_directories()` - Groups files by layer, finds common paths
@@ -30,7 +30,7 @@ Added methods to derive actual paths from `example_files`:
 - Falls back to synthetic paths only when no example files exist
 
 ### 3. Extended File Validation
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 Added validation for progressive disclosure completeness:
 - `_validate_extended_files()` method scans agents directory
@@ -38,7 +38,7 @@ Added validation for progressive disclosure completeness:
 - Non-blocking to avoid breaking template creation
 
 ### 4. Integration
-**File**: `installer/global/lib/template_generator/template_generator.py`
+**File**: `installer/core/lib/template_generator/template_generator.py`
 
 - Added `manifest` parameter to `__init__`
 - Updated `_fallback_placeholder_extraction()` to use `PlaceholderExtractor`
@@ -48,8 +48,8 @@ Added validation for progressive disclosure completeness:
 - **Total Tests**: 44 passed
 - **Coverage**: 95% for placeholder_patterns.py, 78% for settings_generator
 - **Test Files**:
-  - `installer/global/lib/template_generator/tests/test_placeholder_patterns.py` (28 tests)
-  - `installer/global/lib/settings_generator/tests/test_generator.py` (16 tests)
+  - `installer/core/lib/template_generator/tests/test_placeholder_patterns.py` (28 tests)
+  - `installer/core/lib/settings_generator/tests/test_generator.py` (16 tests)
 
 ## Code Review
 - **Score**: 8.5/10
@@ -61,12 +61,12 @@ Added validation for progressive disclosure completeness:
   - High test coverage
 
 ## Files Changed
-1. `installer/global/lib/template_generator/placeholder_patterns.py` (NEW)
-2. `installer/global/lib/template_generator/template_generator.py` (MODIFIED)
-3. `installer/global/lib/settings_generator/generator.py` (MODIFIED)
-4. `installer/global/commands/lib/template_create_orchestrator.py` (MODIFIED)
-5. `installer/global/lib/template_generator/tests/test_placeholder_patterns.py` (NEW)
-6. `installer/global/lib/settings_generator/tests/test_generator.py` (NEW)
+1. `installer/core/lib/template_generator/placeholder_patterns.py` (NEW)
+2. `installer/core/lib/template_generator/template_generator.py` (MODIFIED)
+3. `installer/core/lib/settings_generator/generator.py` (MODIFIED)
+4. `installer/core/commands/lib/template_create_orchestrator.py` (MODIFIED)
+5. `installer/core/lib/template_generator/tests/test_placeholder_patterns.py` (NEW)
+6. `installer/core/lib/settings_generator/tests/test_generator.py` (NEW)
 
 ## Duration
 - Started: 2025-12-08

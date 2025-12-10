@@ -10,7 +10,7 @@ import sys
 import os
 
 # Add lib directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../installer/global/lib/agent_scanner'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../installer/core/lib/agent_scanner'))
 
 from agent_scanner import is_extended_file, MultiSourceAgentScanner
 

@@ -248,9 +248,9 @@ Prevention: Use dependency injection for testability
 ## See Also
 
 **Full Documentation**:
-- Task workflow: `installer/global/commands/task-work.md` (Phase 4-4.5)
-- Test orchestration: `installer/global/agents/test-orchestrator.md`
-- Code review: `installer/global/agents/code-reviewer.md`
+- Task workflow: `installer/core/commands/task-work.md` (Phase 4-4.5)
+- Test orchestration: `installer/core/agents/test-orchestrator.md`
+- Code review: `installer/core/agents/code-reviewer.md`
 
 **Related Cards**:
 - [task-work-cheat-sheet.md](task-work-cheat-sheet.md) - Complete workflow phases

@@ -35,13 +35,13 @@ requirements:
 
 # Deliverables
 files_created:
-  - installer/global/commands/lib/plan_markdown_renderer.py (8,446 bytes)
-  - installer/global/commands/lib/plan_markdown_parser.py
-  - installer/global/commands/lib/templates/implementation_plan.md.j2
+  - installer/core/commands/lib/plan_markdown_renderer.py (8,446 bytes)
+  - installer/core/commands/lib/plan_markdown_parser.py
+  - installer/core/commands/lib/templates/implementation_plan.md.j2
   - tests/unit/test_plan_markdown_renderer.py
   - tests/unit/test_plan_markdown_parser.py
 files_modified:
-  - installer/global/commands/lib/plan_persistence.py (markdown-first logic)
+  - installer/core/commands/lib/plan_persistence.py (markdown-first logic)
 ---
 
 # Convert Implementation Plan Storage from JSON to Markdown
@@ -192,7 +192,7 @@ docs/state/TASK-042/
 ### 1. Markdown Template
 Create template for plan rendering:
 
-File: `installer/global/commands/lib/templates/implementation_plan.md.j2`
+File: `installer/core/commands/lib/templates/implementation_plan.md.j2`
 
 ```markdown
 # Implementation Plan: {{ task_id }}
@@ -260,7 +260,7 @@ Acceptance criteria:
 ### 2. Markdown Renderer
 Create renderer module:
 
-File: `installer/global/commands/lib/plan_markdown_renderer.py`
+File: `installer/core/commands/lib/plan_markdown_renderer.py`
 
 ```python
 from pathlib import Path
@@ -326,7 +326,7 @@ Acceptance criteria:
 Modify `plan_persistence.py` to save markdown only:
 
 ```python
-# installer/global/commands/lib/plan_persistence.py
+# installer/core/commands/lib/plan_persistence.py
 
 from .plan_markdown_renderer import PlanMarkdownRenderer
 
@@ -371,7 +371,7 @@ Acceptance criteria:
 Add parser to read markdown back:
 
 ```python
-# installer/global/commands/lib/plan_markdown_parser.py
+# installer/core/commands/lib/plan_markdown_parser.py
 
 import frontmatter
 from pathlib import Path
@@ -580,12 +580,12 @@ Acceptance criteria:
 ## Implementation Plan
 
 ### Step 1: Create Markdown Template (1 hour)
-File: `installer/global/commands/lib/templates/implementation_plan.md.j2`
+File: `installer/core/commands/lib/templates/implementation_plan.md.j2`
 
 Design clean, readable markdown structure with frontmatter support.
 
 ### Step 2: Create Markdown Renderer (1.5 hours)
-File: `installer/global/commands/lib/plan_markdown_renderer.py`
+File: `installer/core/commands/lib/plan_markdown_renderer.py`
 
 Implement Jinja2-based renderer with frontmatter integration.
 
@@ -596,7 +596,7 @@ Modify `plan_persistence.py`:
 - Simplify save_plan() function
 
 ### Step 4: Create Markdown Parser (1 hour)
-File: `installer/global/commands/lib/plan_markdown_parser.py`
+File: `installer/core/commands/lib/plan_markdown_parser.py`
 
 Parse markdown back to dict using frontmatter and section extraction.
 

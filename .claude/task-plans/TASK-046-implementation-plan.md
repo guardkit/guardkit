@@ -15,7 +15,7 @@ Implement a collision-free hash-based task ID generator using SHA-256 with progr
 
 ### 2.1 File Structure
 ```
-installer/global/lib/
+installer/core/lib/
 ├── id_generator.py          # Main implementation (NEW)
 └── __init__.py             # May need update for exports
 
@@ -252,7 +252,7 @@ def generate_task_id(
 pytest tests/test_id_generator.py -v
 
 # With coverage
-pytest tests/test_id_generator.py -v --cov=installer/global/lib/id_generator --cov-report=term --cov-report=html
+pytest tests/test_id_generator.py -v --cov=installer/core/lib/id_generator --cov-report=term --cov-report=html
 
 # Performance only
 pytest tests/test_id_generator.py -v -k performance
@@ -339,7 +339,7 @@ pytest tests/test_id_generator.py -v -k performance
 ## 11. Files to Create/Modify
 
 ### New Files
-1. `installer/global/lib/id_generator.py` (~150 lines)
+1. `installer/core/lib/id_generator.py` (~150 lines)
 2. `tests/test_id_generator.py` (~400 lines)
 
 ### Modified Files

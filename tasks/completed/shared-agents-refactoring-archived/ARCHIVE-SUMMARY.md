@@ -30,11 +30,11 @@ These tasks are no longer needed:
 Instead of the original 6-task plan, a single task in RequireKit is needed:
 
 **Remove 5 unused agents from RequireKit:**
-- `installer/global/agents/architectural-reviewer.md`
-- `installer/global/agents/test-orchestrator.md`
-- `installer/global/agents/task-manager.md`
-- `installer/global/agents/code-reviewer.md`
-- `installer/global/agents/test-verifier.md`
+- `installer/core/agents/architectural-reviewer.md`
+- `installer/core/agents/test-orchestrator.md`
+- `installer/core/agents/task-manager.md`
+- `installer/core/agents/code-reviewer.md`
+- `installer/core/agents/test-verifier.md`
 
 ## Evidence
 

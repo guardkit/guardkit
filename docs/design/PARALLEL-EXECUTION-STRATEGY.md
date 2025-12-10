@@ -4,7 +4,7 @@
 
 ### TASK-018 (Audit agents - 1h)
 **Files Modified:**
-- Move: `installer/global/agents/python-mcp-specialist.md` → `installer/global/templates/python/agents/`
+- Move: `installer/core/agents/python-mcp-specialist.md` → `installer/core/templates/python/agents/`
 - **No conflicts with any other task**
 
 ### TASK-019 (Remove folders - 1h)
@@ -28,9 +28,9 @@
 
 ### TASK-022 (Fix Phase 1 - 2h) ⭐ CRITICAL
 **Files Modified:**
-- Edit: `installer/global/agents/task-manager.md` (lines 82-95, workflow section)
+- Edit: `installer/core/agents/task-manager.md` (lines 82-95, workflow section)
 - Edit: `CLAUDE.md` (phase list section)
-- Edit: `installer/global/commands/task-work.md` (Phase 1 section)
+- Edit: `installer/core/commands/task-work.md` (Phase 1 section)
 - Edit: `README.md` (workflow section)
 - **Conflicts with:** TASK-020 (CLAUDE.md + README.md)
 

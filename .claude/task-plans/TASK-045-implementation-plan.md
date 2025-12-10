@@ -25,7 +25,7 @@ Enhance `/template-validate` command with AI-assisted analysis for sections 8, 1
 ## 2. Current State Analysis
 
 ### Existing Infrastructure
-- **Location**: `installer/global/lib/template_validation/`
+- **Location**: `installer/core/lib/template_validation/`
 - **Sections Implemented**: 16 sections (1-16)
 - **Sections Requiring Enhancement**: 3 sections (8, 11, 12)
 - **Section Deferred**: Section 13 (Market Comparison) → TASK-045B
@@ -59,7 +59,7 @@ Enhance `/template-validate` command with AI-assisted analysis for sections 8, 1
 ### 3.1 New Components
 
 #### AI Analysis Service (Protocol)
-**File**: `installer/global/lib/template_validation/ai_service.py`
+**File**: `installer/core/lib/template_validation/ai_service.py`
 
 **Purpose**: Abstraction layer for AI analysis (enables testing and extensibility)
 
@@ -75,7 +75,7 @@ class AIAnalysisService(Protocol):
 ```
 
 #### AI Analysis Helpers
-**File**: `installer/global/lib/template_validation/ai_analysis_helpers.py`
+**File**: `installer/core/lib/template_validation/ai_analysis_helpers.py`
 
 **Purpose**: Reusable AI utilities for template validation
 
@@ -161,7 +161,7 @@ def calculate_confidence_score(response: Dict) -> float:
 ## 4. Implementation Steps
 
 ### Step 1: AI Service Protocol (0.25 day)
-**File**: `installer/global/lib/template_validation/ai_service.py`
+**File**: `installer/core/lib/template_validation/ai_service.py`
 
 **Tasks**:
 1. Create `AIAnalysisService` protocol
@@ -171,7 +171,7 @@ def calculate_confidence_score(response: Dict) -> float:
 **Estimated Lines**: ~100 lines
 
 ### Step 2: AI Utilities Module (0.25 day)
-**File**: `installer/global/lib/template_validation/ai_analysis_helpers.py`
+**File**: `installer/core/lib/template_validation/ai_analysis_helpers.py`
 
 **Tasks**:
 1. Create module file
@@ -183,7 +183,7 @@ def calculate_confidence_score(response: Dict) -> float:
 **Estimated Lines**: ~150-200 lines
 
 ### Step 3: Enhance Section 8 - Source Comparison (0.5 day)
-**File**: `installer/global/lib/template_validation/sections/section_08_comparison.py`
+**File**: `installer/core/lib/template_validation/sections/section_08_comparison.py`
 
 **Tasks**:
 1. Inject `AIAnalysisService` into constructor
@@ -196,7 +196,7 @@ def calculate_confidence_score(response: Dict) -> float:
 **Estimated Lines**: ~150-200 lines added
 
 ### Step 4: Enhance Section 11 - Detailed Findings (0.5 day)
-**File**: `installer/global/lib/template_validation/sections/section_11_findings.py`
+**File**: `installer/core/lib/template_validation/sections/section_11_findings.py`
 
 **Tasks**:
 1. Implement finding aggregation from previous sections
@@ -209,7 +209,7 @@ def calculate_confidence_score(response: Dict) -> float:
 **Estimated Lines**: ~150-200 lines added
 
 ### Step 5: Enhance Section 12 - Validation Testing (0.5 day)
-**File**: `installer/global/lib/template_validation/sections/section_12_testing.py`
+**File**: `installer/core/lib/template_validation/sections/section_12_testing.py`
 
 **Tasks**:
 1. Inject `AIAnalysisService` into constructor
@@ -221,7 +221,7 @@ def calculate_confidence_score(response: Dict) -> float:
 **Estimated Lines**: ~100-150 lines added
 
 ### Step 6: Update Orchestrator (0.25 day)
-**File**: `installer/global/lib/template_validation/orchestrator.py`
+**File**: `installer/core/lib/template_validation/orchestrator.py`
 
 **Tasks**:
 1. Create `TaskAgentService` instance
@@ -262,7 +262,7 @@ def calculate_confidence_score(response: Dict) -> float:
 ### Step 8: Documentation (0.5 day)
 
 **Files to Update**:
-1. `installer/global/commands/template-validate.md` - Document AI features
+1. `installer/core/commands/template-validate.md` - Document AI features
 2. `tasks/in_progress/TASK-045-*.md` - Update completion status
 3. Update TASK-045A for documentation enhancement
 
@@ -369,21 +369,21 @@ def calculate_confidence_score(response: Dict) -> float:
 ## 8. Files Modified
 
 ### New Files (2)
-1. `installer/global/lib/template_validation/ai_service.py` (~100 lines) - Protocol + concrete implementation
-2. `installer/global/lib/template_validation/ai_analysis_helpers.py` (~200 lines) - AI utilities
+1. `installer/core/lib/template_validation/ai_service.py` (~100 lines) - Protocol + concrete implementation
+2. `installer/core/lib/template_validation/ai_analysis_helpers.py` (~200 lines) - AI utilities
 
 ### Modified Files (4)
-1. `installer/global/lib/template_validation/sections/section_08_comparison.py` (+200 lines)
-2. `installer/global/lib/template_validation/sections/section_11_findings.py` (+200 lines)
-3. `installer/global/lib/template_validation/sections/section_12_testing.py` (+150 lines)
-4. `installer/global/lib/template_validation/orchestrator.py` (+75 lines) - Service injection
+1. `installer/core/lib/template_validation/sections/section_08_comparison.py` (+200 lines)
+2. `installer/core/lib/template_validation/sections/section_11_findings.py` (+200 lines)
+3. `installer/core/lib/template_validation/sections/section_12_testing.py` (+150 lines)
+4. `installer/core/lib/template_validation/orchestrator.py` (+75 lines) - Service injection
 
 ### New Test Files (2)
 1. `tests/unit/test_ai_assisted_validation.py` (~400 lines)
 2. `tests/integration/test_ai_validation_e2e.py` (~300 lines)
 
 ### Documentation Files (1)
-1. `installer/global/commands/template-validate.md` (update)
+1. `installer/core/commands/template-validate.md` (update)
 
 **Total New Lines**: ~1,300-1,400 lines
 **Total Modified Lines**: ~625 lines

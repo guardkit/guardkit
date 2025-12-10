@@ -134,7 +134,7 @@ def generate_workspace_names(subtasks: list[dict], feature_slug: str) -> dict:
 
 ## Files to Create/Modify
 
-- `installer/global/lib/parallel_analyzer.py` (NEW)
+- `installer/core/lib/parallel_analyzer.py` (NEW)
 
 ## Test Cases
 
@@ -179,7 +179,7 @@ Consider using networkx library if available for graph operations.
 **Status:** ✅ Complete and approved for merge
 
 **Files Created:**
-- `installer/global/lib/parallel_analyzer.py` (398 lines, 96% coverage)
+- `installer/core/lib/parallel_analyzer.py` (398 lines, 96% coverage)
 - `tests/test_parallel_analyzer.py` (576 lines, 42 tests)
 
 **Test Results:**

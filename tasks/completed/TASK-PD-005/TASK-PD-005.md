@@ -38,7 +38,7 @@ code_review:
 
 ## Description
 
-Refactor `installer/global/lib/template_generator/claude_md_generator.py` to produce split output: a core CLAUDE.md (~8KB) and separate pattern/reference files.
+Refactor `installer/core/lib/template_generator/claude_md_generator.py` to produce split output: a core CLAUDE.md (~8KB) and separate pattern/reference files.
 
 ## Current State
 
@@ -243,8 +243,8 @@ def test_backward_compatibility():
 
 ## Files to Modify
 
-1. `installer/global/lib/template_generator/claude_md_generator.py` - Main refactor
-2. `installer/global/lib/template_generator/models.py` - Add TemplateSplitOutput
+1. `installer/core/lib/template_generator/claude_md_generator.py` - Main refactor
+2. `installer/core/lib/template_generator/models.py` - Add TemplateSplitOutput
 
 ## Estimated Effort
 

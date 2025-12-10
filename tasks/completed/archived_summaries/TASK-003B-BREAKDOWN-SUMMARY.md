@@ -189,8 +189,8 @@ TASK-003B-2 (Full Review Display + Approve/Cancel)
 All sub-tasks share and build upon common files:
 
 ### Created by TASK-003B-1
-- `installer/global/commands/lib/review_modes.py` (QuickReviewHandler)
-- `installer/global/commands/lib/user_interaction.py` (countdown_timer)
+- `installer/core/commands/lib/review_modes.py` (QuickReviewHandler)
+- `installer/core/commands/lib/user_interaction.py` (countdown_timer)
 - `tests/unit/test_countdown_timer.py`
 - `tests/unit/test_quick_review.py`
 - `tests/integration/test_quick_review_flow.py`

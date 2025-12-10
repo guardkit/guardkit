@@ -59,7 +59,7 @@ Create React + TypeScript reference template from bulletproof-react repository t
 - [x] All 16 validation sections score 8+/10
 - [x] Zero critical issues
 - [x] README documents template architecture and patterns
-- [x] Template installed in `installer/global/templates/react-typescript/`
+- [x] Template installed in `installer/core/templates/react-typescript/`
 - [x] Documentation updated to reference new template
 
 ---
@@ -98,13 +98,13 @@ Use **Read tool** to analyze key files:
 Use SlashCommand tool to invoke: /template-create --validate --output-location=repo
 ```
 
-**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/global/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
+**Note**: The `--output-location=repo` (or `-o repo`) flag writes the template directly to `installer/core/templates/` for team/public distribution. This flag is required for reference templates that will be included in the Taskwright repository. (TASK-068 changed the default behavior to write to `~/.agentecflow/templates/` for personal use.)
 
 The command will:
 1. Run interactive Q&A (answer as specified below)
 2. Analyze the bulletproof-react codebase
 3. Generate manifest.json, settings.json, CLAUDE.md, templates/, agents/
-4. Write directly to `installer/global/templates/react-typescript/` (repo location)
+4. Write directly to `installer/core/templates/react-typescript/` (repo location)
 5. Run extended validation (TASK-043)
 6. Generate validation-report.md
 
@@ -117,14 +117,14 @@ The command will:
 - **Testing**: Vitest (unit), Playwright (e2e), Testing Library (integration)
 - **Generate custom agents**: Yes
 
-**Expected Output**: Template created at `installer/global/templates/react-typescript/` with initial validation score of 7-8/10
+**Expected Output**: Template created at `installer/core/templates/react-typescript/` with initial validation score of 7-8/10
 
 ### Step 3: Review Initial Validation Report
 
 Use **Read tool** to review the validation report:
 
 ```
-Read: installer/global/templates/react-typescript/validation-report.md
+Read: installer/core/templates/react-typescript/validation-report.md
 ```
 
 Identify issues in these categories:
@@ -139,7 +139,7 @@ Identify issues in these categories:
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate installer/global/templates/react-typescript --sections 1-16
+Use SlashCommand tool to invoke: /template-validate installer/core/templates/react-typescript --sections 1-16
 ```
 
 This runs the 16-section audit framework with AI assistance for sections 8, 11, 12, 13.
@@ -204,10 +204,10 @@ Use **Bash tool**:
 
 ```bash
 # Move to final location
-mv ./templates/react-typescript installer/global/templates/
+mv ./templates/react-typescript installer/core/templates/
 
 # Verify structure
-ls -la installer/global/templates/react-typescript/
+ls -la installer/core/templates/react-typescript/
 ```
 
 ### Step 8: Final Validation at Installer Location
@@ -215,7 +215,7 @@ ls -la installer/global/templates/react-typescript/
 **Execute using SlashCommand tool**:
 
 ```
-Use SlashCommand tool to invoke: /template-validate installer/global/templates/react-typescript --sections 1-16
+Use SlashCommand tool to invoke: /template-validate installer/core/templates/react-typescript --sections 1-16
 ```
 
 **Acceptance Criteria**:
@@ -254,7 +254,7 @@ If any tests fail, return to Step 5 and fix issues in the template.
 ## Template Structure (Expected)
 
 ```
-installer/global/templates/react-typescript/
+installer/core/templates/react-typescript/
 ├── manifest.json                    # Template metadata
 ├── settings.json                    # Naming conventions, patterns
 ├── CLAUDE.md                        # AI guidance for React/TypeScript
@@ -398,7 +398,7 @@ function ErrorFallback({ error, resetErrorBoundary }) {
 ### Template Validation Tests
 ```bash
 # Comprehensive validation
-/template-validate installer/global/templates/react-typescript
+/template-validate installer/core/templates/react-typescript
 
 # Expected results:
 # Overall Score: ≥9.0/10
@@ -529,7 +529,7 @@ Excellent React + TypeScript reference implementation demonstrating:
 
 **Report Generated**: 2025-01-XX
 **Validation Duration**: 45 minutes
-**Template Location**: installer/global/templates/react-typescript/
+**Template Location**: installer/core/templates/react-typescript/
 ```
 
 ---

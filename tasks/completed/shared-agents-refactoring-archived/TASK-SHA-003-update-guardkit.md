@@ -25,7 +25,7 @@ Update GuardKit's installer to download shared-agents from the new repository in
 - [ ] Version pinning file created: `installer/shared-agents-version.txt`
 - [ ] Installer function added to download shared-agents
 - [ ] Agents installed to `.claude/agents/universal/`
-- [ ] Duplicate agents removed from `installer/global/agents/`
+- [ ] Duplicate agents removed from `installer/core/agents/`
 - [ ] Installer tested successfully
 
 ## Implementation
@@ -76,11 +76,11 @@ install_shared_agents || echo "Warning: Shared agents installation failed"
 # (Based on verified list from TASK-SHA-001)
 
 # Example:
-rm installer/global/agents/code-reviewer.md
-rm installer/global/agents/test-orchestrator.md
+rm installer/core/agents/code-reviewer.md
+rm installer/core/agents/test-orchestrator.md
 # ... remove others from verified list
 
-git add installer/global/agents/
+git add installer/core/agents/
 git commit -m "refactor: Move universal agents to shared-agents repo"
 ```
 

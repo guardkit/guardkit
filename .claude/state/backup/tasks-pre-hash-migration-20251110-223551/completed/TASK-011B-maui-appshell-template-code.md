@@ -76,7 +76,7 @@ Create all code template files for the maui-appshell global template following t
 
 ### Template Files to Create
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui-appshell/templates/`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui-appshell/templates/`
 
 #### Domain Layer
 1. **Domain.cs** - Business logic class with verb-based naming
@@ -594,7 +594,7 @@ public async Task AddAsync_WhenProductValid_InsertsProduct()
 
 **Required Completions**:
 - ✅ `docs/shared/maui-template-architecture.md` (architecture guide exists)
-- ✅ Existing MAUI template structure (installer/global/templates/maui/)
+- ✅ Existing MAUI template structure (installer/core/templates/maui/)
 
 **Optional Enhancements**:
 - maui-appshell agents (can be created after templates)
@@ -619,8 +619,8 @@ public async Task AddAsync_WhenProductValid_InsertsProduct()
 ## Related Documents
 
 - **Architecture Guide**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/shared/maui-template-architecture.md`
-- **Existing MAUI Template**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/`
-- **MAUI Template CLAUDE.md**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/CLAUDE.md`
+- **Existing MAUI Template**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/`
+- **MAUI Template CLAUDE.md**: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/CLAUDE.md`
 
 ## Future Enhancements (Not in Scope)
 

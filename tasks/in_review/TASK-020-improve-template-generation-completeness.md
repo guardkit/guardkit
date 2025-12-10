@@ -41,7 +41,7 @@ During Section 8 analysis (Comparison with Source Repository) of the ardalis-cle
 I've copied the guardkit repo from the macos virtual machine running under parallels to 
 /Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/guardkit.
 
-The template was created in this repo guardkit/installer/global/templates/ardalis-clean-architecture
+The template was created in this repo guardkit/installer/core/templates/ardalis-clean-architecture
 
 I've copied the original repo we cloned from GitHub to /Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/CleanArchitecture-ardalis for reference
 
@@ -295,7 +295,7 @@ template_discovery:
 - `/Users/richardwoollcott/Projects/Appmilla/Ai/agentec_flow/template_analysis_test/CleanArchitecture-ardalis`
 
 **Generated Template:**
-- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/global/templates/ardalis-clean-architecture`
+- `/Users/richardwoollcott/Projects/appmilla_github/guardkit/installer/core/templates/ardalis-clean-architecture`
 
 **Analysis Documentation:**
 - Section 8.6: False Negative Detection (this session)

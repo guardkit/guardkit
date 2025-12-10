@@ -26,7 +26,7 @@ Create the detection module that analyzes task context to identify areas of ambi
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/lib/clarification/detection.py` with:
+- [ ] Create `installer/core/commands/lib/clarification/detection.py` with:
   - [ ] `detect_scope_ambiguity()` - Find unclear feature boundaries
   - [ ] `detect_technology_choices()` - Find technology decisions needed
   - [ ] `detect_integration_points()` - Find external system connections
@@ -132,7 +132,7 @@ def detect_integration_points(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/detection.py`
+1. `installer/core/commands/lib/clarification/detection.py`
 2. `tests/unit/lib/clarification/test_detection.py`
 
 ## Dependencies

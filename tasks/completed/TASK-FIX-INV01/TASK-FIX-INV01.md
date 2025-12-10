@@ -94,7 +94,7 @@ The orchestrator creates phase-specific request files but the `has_response()` c
 **Test Coverage**: 100% pass rate (17/17 tests)
 
 ### Files Modified
-- `installer/global/lib/agent_enhancement/orchestrator.py` (2 changes)
+- `installer/core/lib/agent_enhancement/orchestrator.py` (2 changes)
 
 ### Tests Added
 - `tests/lib/agent_enhancement/test_orchestrator.py` (3 new test methods)

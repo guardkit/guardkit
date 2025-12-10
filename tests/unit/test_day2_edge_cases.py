@@ -17,8 +17,8 @@ import pytest
 
 # Import modules under test
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "commands" / "lib"))
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "global" / "lib" / "metrics"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "commands" / "lib"))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "installer" / "core" / "lib" / "metrics"))
 
 from flag_validator import FlagValidator, FlagConflictError, validate_flags
 from metrics_storage import MetricsStorage

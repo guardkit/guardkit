@@ -36,14 +36,14 @@ architectural_review:
   yagni_compliance: 64%
 
 files_created:
-  - installer/global/commands/lib/plan_modifier.py (1,103 lines)
+  - installer/core/commands/lib/plan_modifier.py (1,103 lines)
   - tests/unit/test_plan_modifier.py (46 tests)
   - tests/integration/test_plan_modification_flow.py (10 tests)
-  - installer/global/commands/lib/README-PLAN-MODIFIER.md
+  - installer/core/commands/lib/README-PLAN-MODIFIER.md
 
 files_modified:
-  - installer/global/commands/lib/plan_persistence.py (+111 lines)
-  - installer/global/commands/lib/checkpoint_display.py (+88 lines)
+  - installer/core/commands/lib/plan_persistence.py (+111 lines)
+  - installer/core/commands/lib/checkpoint_display.py (+88 lines)
 
 # Source
 source: implementation-plan-and-code-review-analysis.md
@@ -204,7 +204,7 @@ Acceptance criteria:
 Interactive menu for plan modifications:
 
 ```python
-# installer/global/commands/lib/plan_modifier.py
+# installer/core/commands/lib/plan_modifier.py
 
 def modify_plan_interactive(task_id: str, plan: Dict[str, Any]) -> Dict[str, Any]:
     """Interactive plan modification menu."""
@@ -550,7 +550,7 @@ Acceptance criteria:
 ## Implementation Plan
 
 ### Step 1: Create Plan Modifier Module (2 hours)
-File: `installer/global/commands/lib/plan_modifier.py`
+File: `installer/core/commands/lib/plan_modifier.py`
 
 Functions:
 - `modify_plan_interactive()` - Main menu loop

@@ -115,9 +115,9 @@ HAI-001 (Schema)
 git revert <commit-range>
 
 # Option B: Manual cleanup
-rm installer/global/agents/{python-api-specialist,react-state-specialist,dotnet-domain-specialist}.md
-rm installer/global/commands/lib/agent_discovery.py
-git checkout installer/global/commands/lib/phase_execution.py CLAUDE.md
+rm installer/core/agents/{python-api-specialist,react-state-specialist,dotnet-domain-specialist}.md
+rm installer/core/commands/lib/agent_discovery.py
+git checkout installer/core/commands/lib/phase_execution.py CLAUDE.md
 ```
 
 **Total Recovery Time**: < 5 minutes
@@ -148,7 +148,7 @@ git checkout installer/global/commands/lib/phase_execution.py CLAUDE.md
 Existing agents can be enhanced with discovery metadata incrementally:
 
 ```bash
-/agent-enhance installer/global/agents/database-specialist.md
+/agent-enhance installer/core/agents/database-specialist.md
 ```
 
 **Benefits**:

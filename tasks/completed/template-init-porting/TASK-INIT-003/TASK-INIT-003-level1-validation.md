@@ -61,7 +61,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File 1: installer/global/commands/lib/greenfield_qa_session.py
+### File 1: installer/core/commands/lib/greenfield_qa_session.py
 
 **ADD new validation functions** (after line 430):
 
@@ -301,13 +301,13 @@ def run(self) -> Optional[GreenfieldAnswers]:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_validate_crud_completeness()` method (~40 lines)
    - `_validate_layer_symmetry()` method (~40 lines)
    - `_generate_autofix_recommendations()` method (~20 lines)
    - `_run_level1_validation()` method (~20 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `run()` method to add Phase 3.5 (~30 lines)
 
 ## Files to NOT Touch

@@ -36,13 +36,13 @@ The TASK-AI-2B37 implementation in the `ai-agent-enhancement` worktree (`.conduc
 
 ### What Was Implemented
 
-**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/zurich-v1/installer/global/lib/agent_enhancement/enhancer.py`
+**Location**: `/Users/richardwoollcott/Projects/appmilla_github/guardkit/.conductor/zurich-v1/installer/core/lib/agent_enhancement/enhancer.py`
 
 **Lines 278-298**:
 ```python
 # Import AgentBridgeInvoker
 _bridge_module = importlib.import_module(
-    'installer.global.lib.agent_bridge.invoker'
+    'installer.core.lib.agent_bridge.invoker'
 )
 AgentBridgeInvoker = _bridge_module.AgentBridgeInvoker
 
@@ -63,7 +63,7 @@ result_text = invoker.invoke(
 
 ### The Problem
 
-**From `installer/global/lib/agent_bridge/invoker.py:175-187`**:
+**From `installer/core/lib/agent_bridge/invoker.py:175-187`**:
 
 ```python
 def invoke(self, agent_name: str, prompt: str) -> str:
@@ -179,7 +179,7 @@ def _ai_enhancement(
 # Lazy-load AgentBridgeInvoker
 if not hasattr(self, '_AgentBridgeInvoker'):
     _bridge_module = importlib.import_module(
-        'installer.global.lib.agent_bridge.invoker'
+        'installer.core.lib.agent_bridge.invoker'
     )
     self._AgentBridgeInvoker = _bridge_module.AgentBridgeInvoker
 
@@ -401,7 +401,7 @@ result = task(
 ### 7.2 What Was Actually Implemented
 
 ```python
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
 
 invoker = AgentBridgeInvoker(
     phase=1,
@@ -543,7 +543,7 @@ result_text = invoker.invoke(
 **DELETE** (lines 243-246):
 ```python
 _bridge_module = importlib.import_module(
-    'installer.global.lib.agent_bridge.invoker'
+    'installer.core.lib.agent_bridge.invoker'
 )
 self._AgentBridgeInvoker = _bridge_module.AgentBridgeInvoker
 ```
@@ -680,12 +680,12 @@ from pathlib import Path
 import json
 import time
 
-from installer.global.lib.agent_enhancement.enhancer import SingleAgentEnhancer
+from installer.core.lib.agent_enhancement.enhancer import SingleAgentEnhancer
 
 class TestAIEnhancement:
     """Test AI enhancement with direct Task tool invocation."""
 
-    @patch('installer.global.lib.agent_enhancement.enhancer.task')
+    @patch('installer.core.lib.agent_enhancement.enhancer.task')
     def test_ai_enhancement_success(self, mock_task, agent_metadata):
         """Test successful AI enhancement via direct API."""
 
@@ -716,7 +716,7 @@ class TestAIEnhancement:
         assert "examples" in result
         assert "best_practices" in result
 
-    @patch('installer.global.lib.agent_enhancement.enhancer.task')
+    @patch('installer.core.lib.agent_enhancement.enhancer.task')
     def test_ai_enhancement_timeout(self, mock_task, agent_metadata):
         """Test AI enhancement timeout handling."""
 
@@ -734,7 +734,7 @@ class TestAIEnhancement:
 
         assert "timed out" in str(exc_info.value)
 
-    @patch('installer.global.lib.agent_enhancement.enhancer.task')
+    @patch('installer.core.lib.agent_enhancement.enhancer.task')
     def test_ai_enhancement_invalid_json(self, mock_task, agent_metadata):
         """Test AI enhancement with malformed response."""
 
@@ -855,7 +855,7 @@ git stash   # Stash current changes
 ```
 
 **Step 2: Rewrite Implementation** (2 hours)
-- Open `installer/global/lib/agent_enhancement/enhancer.py`
+- Open `installer/core/lib/agent_enhancement/enhancer.py`
 - Delete lines 243-298 (AgentBridgeInvoker usage)
 - Implement direct `anthropic_sdk.task()` call (see Section 9.1)
 - Update docstrings to remove checkpoint-resume references

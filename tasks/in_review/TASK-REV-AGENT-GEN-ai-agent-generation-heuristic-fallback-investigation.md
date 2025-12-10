@@ -82,8 +82,8 @@ The command output shows Claude:
 The `CodebaseAnalyzer` in `lib/codebase_analyzer/ai_analyzer.py` may not be invoking the AI analysis path:
 
 **Files to investigate**:
-- `installer/global/lib/codebase_analyzer/ai_analyzer.py` - Lines 80-100 (agent_invoker initialization)
-- `installer/global/lib/agent_bridge/invoker.py` - Bridge invoker integration
+- `installer/core/lib/codebase_analyzer/ai_analyzer.py` - Lines 80-100 (agent_invoker initialization)
+- `installer/core/lib/agent_bridge/invoker.py` - Bridge invoker integration
 
 **Known previous issue** (commit 93955e7):
 ```python
@@ -103,9 +103,9 @@ The agent bridge pattern requires exit code 42 to signal "agent invocation neede
 - Falls back to heuristic generation
 
 **Files to investigate**:
-- `installer/global/commands/lib/template_create_orchestrator.py` - Exit code handling
-- `installer/global/lib/agent_bridge/invoker.py` - Exit code 42 generation
-- `installer/global/lib/agent_bridge/state_manager.py` - State persistence
+- `installer/core/commands/lib/template_create_orchestrator.py` - Exit code handling
+- `installer/core/lib/agent_bridge/invoker.py` - Exit code 42 generation
+- `installer/core/lib/agent_bridge/state_manager.py` - State persistence
 
 ### Hypothesis 3: Environment/Path Issues
 
@@ -115,7 +115,7 @@ The orchestrator may not be finding required modules or configurations:
 - Fallback to heuristic when AI import fails
 
 **Files to investigate**:
-- `installer/global/commands/lib/template_create_orchestrator.py` - Lines 20-60 (imports)
+- `installer/core/commands/lib/template_create_orchestrator.py` - Lines 20-60 (imports)
 - `installer/scripts/install.sh` - Symlink creation
 
 ### Hypothesis 4: Agent Response Not Being Processed
@@ -126,7 +126,7 @@ If the orchestrator runs but doesn't process the agent response correctly:
 - But orchestrator doesn't read/use it
 
 **Files to investigate**:
-- `installer/global/commands/lib/template_create_orchestrator.py` - `--resume` handling
+- `installer/core/commands/lib/template_create_orchestrator.py` - `--resume` handling
 - `.agent-response.json` format validation
 
 ## REQUIRED INVESTIGATION
@@ -200,16 +200,16 @@ Reference commit 6c651a3 (v0.97 baseline) and compare:
 
 ```bash
 # Diff the key files
-git diff 6c651a3..HEAD -- installer/global/lib/codebase_analyzer/ai_analyzer.py
-git diff 6c651a3..HEAD -- installer/global/lib/agent_bridge/invoker.py
-git diff 6c651a3..HEAD -- installer/global/commands/lib/template_create_orchestrator.py
+git diff 6c651a3..HEAD -- installer/core/lib/codebase_analyzer/ai_analyzer.py
+git diff 6c651a3..HEAD -- installer/core/lib/agent_bridge/invoker.py
+git diff 6c651a3..HEAD -- installer/core/commands/lib/template_create_orchestrator.py
 ```
 
 ### Phase 4: Test with Isolated Components
 
 1. **Test AI analyzer directly**:
    ```python
-   from installer.global.lib.codebase_analyzer.ai_analyzer import CodebaseAnalyzer
+   from installer.core.lib.codebase_analyzer.ai_analyzer import CodebaseAnalyzer
    analyzer = CodebaseAnalyzer(path="./test-project")
    result = analyzer.analyze()
    print(f"Method used: {result.method}")  # Should be 'ai', not 'heuristic'
@@ -217,7 +217,7 @@ git diff 6c651a3..HEAD -- installer/global/commands/lib/template_create_orchestr
 
 2. **Test agent bridge directly**:
    ```python
-   from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+   from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
    invoker = AgentBridgeInvoker()
    # Should write .agent-request.json and return exit code 42
    ```
@@ -226,11 +226,11 @@ git diff 6c651a3..HEAD -- installer/global/commands/lib/template_create_orchestr
 
 | File | Purpose | Check For |
 |------|---------|-----------|
-| `installer/global/commands/lib/template_create_orchestrator.py` | Main orchestrator | AI vs heuristic branching |
-| `installer/global/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | Agent invoker initialization |
-| `installer/global/lib/agent_bridge/invoker.py` | Bridge pattern | Exit code 42 generation |
-| `installer/global/lib/agent_bridge/state_manager.py` | State persistence | Request/response handling |
-| `installer/global/agents/architectural-reviewer.md` | Agent definition | Invocation requirements |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Main orchestrator | AI vs heuristic branching |
+| `installer/core/lib/codebase_analyzer/ai_analyzer.py` | AI analysis | Agent invoker initialization |
+| `installer/core/lib/agent_bridge/invoker.py` | Bridge pattern | Exit code 42 generation |
+| `installer/core/lib/agent_bridge/state_manager.py` | State persistence | Request/response handling |
+| `installer/core/agents/architectural-reviewer.md` | Agent definition | Invocation requirements |
 
 ## Acceptance Criteria
 

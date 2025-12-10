@@ -12,14 +12,14 @@
 **Total**: 10 files
 
 **Implementation** (5 files):
-1. `installer/global/commands/lib/template_init/__init__.py` - Module exports
-2. `installer/global/commands/lib/template_init/models.py` - GreenfieldTemplate model
-3. `installer/global/commands/lib/template_init/errors.py` - Error hierarchy
-4. `installer/global/commands/lib/template_init/ai_generator.py` - AI generator stub
-5. `installer/global/commands/lib/template_init/command.py` - Main orchestrator
+1. `installer/core/commands/lib/template_init/__init__.py` - Module exports
+2. `installer/core/commands/lib/template_init/models.py` - GreenfieldTemplate model
+3. `installer/core/commands/lib/template_init/errors.py` - Error hierarchy
+4. `installer/core/commands/lib/template_init/ai_generator.py` - AI generator stub
+5. `installer/core/commands/lib/template_init/command.py` - Main orchestrator
 
 **Documentation** (1 file):
-6. `installer/global/commands/template-init.md` - Command specification
+6. `installer/core/commands/template-init.md` - Command specification
 
 **Tests** (4 files):
 7. `tests/test_template_init/test_models.py` - Model tests

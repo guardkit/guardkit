@@ -95,5 +95,5 @@ The error suggests a schema mismatch between:
 
 - TASK-FIX-PD03: [Progressive Disclosure Architecture Fix](../tasks/completed/TASK-FIX-PD03/)
 - TASK-REV-PD02: [Code Quality Review Report](../.claude/reviews/TASK-REV-PD02-review-report.md)
-- Agent Enhancement Applier: [applier.py](../installer/global/lib/agent_enhancement/applier.py)
+- Agent Enhancement Applier: [applier.py](../installer/core/lib/agent_enhancement/applier.py)
 - Agent Response Format: [docs/reference/agent-response-format.md](../docs/reference/agent-response-format.md)

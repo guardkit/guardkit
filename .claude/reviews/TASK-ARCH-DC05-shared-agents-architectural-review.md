@@ -181,7 +181,7 @@ fi
 **Evidence**:
 ```bash
 # Before (duplication)
-taskwright/installer/global/agents/requirements-analyst.md
+taskwright/installer/core/agents/requirements-analyst.md
 require-kit/.claude/agents/requirements-analyst.md
 
 # After (single source)
@@ -196,8 +196,8 @@ The proposal claims these 4 agents are "universal":
 4. `code-reviewer.md`
 
 **However**, based on current TaskWright architecture:
-- `test-orchestrator.md` is ALREADY in `installer/global/agents/` (universal)
-- `code-reviewer.md` is ALREADY in `installer/global/agents/` (universal)
+- `test-orchestrator.md` is ALREADY in `installer/core/agents/` (universal)
+- `code-reviewer.md` is ALREADY in `installer/core/agents/` (universal)
 - `requirements-analyst.md` is NOT in TaskWright (RequireKit-only)
 - `bdd-generator.md` is NOT in TaskWright (RequireKit-only)
 
@@ -210,7 +210,7 @@ The proposal claims these 4 agents are "universal":
 **Recommendation**: Verify actual duplication before migration. Use:
 ```bash
 # Find duplicated agents
-diff -q taskwright/installer/global/agents/ require-kit/.claude/agents/
+diff -q taskwright/installer/core/agents/ require-kit/.claude/agents/
 ```
 
 ---
@@ -380,8 +380,8 @@ install_shared_agents() {
 **Current Agent Discovery** (from agent-discovery-guide.md):
 1. Local (`.claude/agents/`)
 2. User (`~/.agentecflow/agents/`)
-3. Global (`installer/global/agents/`)
-4. Template (`installer/global/templates/*/agents/`)
+3. Global (`installer/core/agents/`)
+4. Template (`installer/core/templates/*/agents/`)
 
 **Question**: Where do shared-agents fit in precedence?
 
@@ -395,8 +395,8 @@ install_shared_agents() {
 1. Local (.claude/agents/)                    # Project-specific
 2. User (~/.agentecflow/agents/)              # Personal customizations
 3. Shared (.claude/agents/universal/)         # Shared agents (new level)
-4. Global (installer/global/agents/)          # Built-in agents
-5. Template (installer/global/templates/*/agents/)
+4. Global (installer/core/agents/)          # Built-in agents
+5. Template (installer/core/templates/*/agents/)
 ```
 
 **Implementation**: Update `lib/agent_discovery.py` to recognize `universal/` subdirectory as separate precedence tier.
@@ -981,7 +981,7 @@ taskwright-dev/shared-resources/
 1. **Verify Agent Duplication**
    ```bash
    # Identify actual duplicated agents
-   diff -q taskwright/installer/global/agents/ require-kit/.claude/agents/
+   diff -q taskwright/installer/core/agents/ require-kit/.claude/agents/
    # Only migrate agents that appear in BOTH repositories
    ```
 
@@ -1021,8 +1021,8 @@ taskwright-dev/shared-resources/
        'local',     # .claude/agents/
        'user',      # ~/.agentecflow/agents/
        'universal', # .claude/agents/universal/
-       'global',    # installer/global/agents/
-       'template'   # installer/global/templates/*/agents/
+       'global',    # installer/core/agents/
+       'template'   # installer/core/templates/*/agents/
    ]
    ```
 
@@ -1174,25 +1174,25 @@ taskwright-dev/shared-resources/
 **Before migrating agents, verify**:
 
 ### Requirements Analyst
-- [ ] Present in TaskWright: `installer/global/agents/requirements-analyst.md`
+- [ ] Present in TaskWright: `installer/core/agents/requirements-analyst.md`
 - [ ] Present in RequireKit: `.claude/agents/requirements-analyst.md`
 - [ ] Files are substantially similar (>80% match)
 - [ ] Both actively used (not deprecated)
 
 ### BDD Generator
-- [ ] Present in TaskWright: `installer/global/agents/bdd-generator.md`
+- [ ] Present in TaskWright: `installer/core/agents/bdd-generator.md`
 - [ ] Present in RequireKit: `.claude/agents/bdd-generator.md`
 - [ ] Files are substantially similar (>80% match)
 - [ ] Both actively used (not deprecated)
 
 ### Test Orchestrator
-- [ ] Present in TaskWright: `installer/global/agents/test-orchestrator.md`
+- [ ] Present in TaskWright: `installer/core/agents/test-orchestrator.md`
 - [ ] Present in RequireKit: `.claude/agents/test-orchestrator.md`
 - [ ] Files are substantially similar (>80% match)
 - [ ] Both actively used (not deprecated)
 
 ### Code Reviewer
-- [ ] Present in TaskWright: `installer/global/agents/code-reviewer.md`
+- [ ] Present in TaskWright: `installer/core/agents/code-reviewer.md`
 - [ ] Present in RequireKit: `.claude/agents/code-reviewer.md`
 - [ ] Files are substantially similar (>80% match)
 - [ ] Both actively used (not deprecated)

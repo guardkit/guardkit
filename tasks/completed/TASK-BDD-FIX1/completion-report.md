@@ -46,7 +46,7 @@ Three related issues were identified:
 ## Files Modified
 
 ### Primary File
-- **installer/global/commands/task-work.md**
+- **installer/core/commands/task-work.md**
   - Step 0: Parse and Validate Flags section
   - Line 893: Comment correction
   - ~100 lines added/modified
@@ -237,7 +237,7 @@ From architectural review - not blocking, but worth considering:
 
 - **Bug Report**: [BUG-BDD-MODE-VALIDATION.md](../../docs/testing/pre-launch-2025-11-29/BUG-BDD-MODE-VALIDATION.md)
 - **Test Verification**: [test-verification.md](./test-verification.md)
-- **Modified File**: [installer/global/commands/task-work.md](../../../installer/global/commands/task-work.md)
+- **Modified File**: [installer/core/commands/task-work.md](../../../installer/core/commands/task-work.md)
 
 ---
 

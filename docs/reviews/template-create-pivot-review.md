@@ -29,10 +29,10 @@ After analyzing the `/template-create` orchestrator (~2000 LOC), four completed 
 ### Architectural Assessment
 
 **Files Analyzed**:
-- `installer/global/commands/template-create.md` (900 lines - command spec)
-- `installer/global/commands/lib/template_create_orchestrator.py` (2004 lines - orchestrator)
-- `installer/global/lib/template_creation/*.py` (generators)
-- `installer/global/lib/agent_bridge/*.py` (checkpoint-resume pattern)
+- `installer/core/commands/template-create.md` (900 lines - command spec)
+- `installer/core/commands/lib/template_create_orchestrator.py` (2004 lines - orchestrator)
+- `installer/core/lib/template_creation/*.py` (generators)
+- `installer/core/lib/agent_bridge/*.py` (checkpoint-resume pattern)
 
 **SOLID Compliance**: 6.5/10
 
@@ -222,7 +222,7 @@ Weaknesses:
 
 3. Run /template-validate
    Tool: SlashCommand
-   Command: /template-validate installer/global/templates/{name}
+   Command: /template-validate installer/core/templates/{name}
 
 4. IF score <9/10:
    - Analyze validation report
@@ -473,8 +473,8 @@ Weaknesses:
 
 **Tasks**:
 1. **Create `/create-template-task` Command** (3 days)
-   - Command spec: `installer/global/commands/create-template-task.md`
-   - Python: `installer/global/commands/lib/create_template_task.py`
+   - Command spec: `installer/core/commands/create-template-task.md`
+   - Python: `installer/core/commands/lib/create_template_task.py`
    - Task template based on TASK-057/058/059/062 workflow
    - Generates task markdown with proven steps
 
@@ -637,9 +637,9 @@ Weaknesses:
 ## References
 
 **Code Analysis**:
-- `installer/global/commands/template-create.md` (900 lines)
-- `installer/global/commands/lib/template_create_orchestrator.py` (2004 lines)
-- `installer/global/lib/agent_bridge/*.py` (checkpoint-resume implementation)
+- `installer/core/commands/template-create.md` (900 lines)
+- `installer/core/commands/lib/template_create_orchestrator.py` (2004 lines)
+- `installer/core/lib/agent_bridge/*.py` (checkpoint-resume implementation)
 
 **Completed Tasks**:
 - TASK-057: React + TypeScript (9.5/10, ~1 hour)

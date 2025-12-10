@@ -12,12 +12,12 @@
 ## Deliverables
 
 ### Files Created/Modified (8 files)
-1. ✅ `installer/global/agents/architectural-reviewer.md` (+138 lines)
-2. ✅ `installer/global/agents/test-orchestrator.md` (+132 lines)
-3. ✅ `installer/global/agents/code-reviewer.md` (+181 lines)
-4. ✅ `installer/global/agents/task-manager.md` (+187 lines)
-5. ✅ `installer/global/agents/test-verifier.md` (+163 lines)
-6. ✅ `installer/global/templates/default/settings.json` (NEW, 89 lines)
+1. ✅ `installer/core/agents/architectural-reviewer.md` (+138 lines)
+2. ✅ `installer/core/agents/test-orchestrator.md` (+132 lines)
+3. ✅ `installer/core/agents/code-reviewer.md` (+181 lines)
+4. ✅ `installer/core/agents/task-manager.md` (+187 lines)
+5. ✅ `installer/core/agents/test-verifier.md` (+163 lines)
+6. ✅ `installer/core/templates/default/settings.json` (NEW, 89 lines)
 7. ✅ `TASK-035-GUARDKIT-IMPLEMENTATION-SUMMARY.md` (NEW)
 8. ✅ `TASK-035-COMPARISON-WITH-AI-ENGINEER.md` (NEW)
 
@@ -197,7 +197,7 @@ TaskWright differs from ai-engineer in two key ways:
 3. ✅ Created comprehensive comparison with ai-engineer
 
 ### Next Steps (TASK-036)
-1. ⏭️ Update `installer/global/commands/task-work.md` with `--docs` flag
+1. ⏭️ Update `installer/core/commands/task-work.md` with `--docs` flag
 2. ⏭️ Create minimal templates (minimal-summary, comprehensive-checklist)
 3. ⏭️ Test documentation level modes (minimal, standard, comprehensive)
 4. ⏭️ Complete parity with ai-engineer

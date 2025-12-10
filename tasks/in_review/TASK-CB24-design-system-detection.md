@@ -82,7 +82,7 @@ Document the **Design System Detection** feature (Phase 2.8 extension) - automat
 ### Source Material
 
 **Primary References**:
-- `/task-work` command: `installer/global/commands/task-work.md` (Phase 2.8 URL detection)
+- `/task-work` command: `installer/core/commands/task-work.md` (Phase 2.8 URL detection)
 - UX Design Integration: `docs/workflows/ux-design-integration-workflow.md`
 - `/figma-to-react` command spec
 - `/zeplin-to-maui` command spec

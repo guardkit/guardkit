@@ -27,7 +27,7 @@
 - ✅ CLAUDE.md references all 6 templates
 - ✅ README.md references all 6 templates
 - ✅ Template Philosophy guide documents all 6 (docs/guides/template-philosophy.md)
-- ✅ All template READMEs exist in installer/global/templates/
+- ✅ All template READMEs exist in installer/core/templates/
 - ✅ Template selection guidance updated
 
 **Completed By**: TASK-074 (November 2025)
@@ -100,10 +100,10 @@ taskwright init react-typescript --info
 ```
 
 **Template Documentation**:
-- [react-typescript](installer/global/templates/react-typescript/README.md) - Frontend (Bulletproof React)
-- [fastapi-python](installer/global/templates/fastapi-python/README.md) - Backend API (FastAPI Best Practices)
-- [nextjs-fullstack](installer/global/templates/nextjs-fullstack/README.md) - JavaScript Full-Stack
-- [react-fastapi-monorepo](installer/global/templates/react-fastapi-monorepo/README.md) - Python Full-Stack Monorepo
+- [react-typescript](installer/core/templates/react-typescript/README.md) - Frontend (Bulletproof React)
+- [fastapi-python](installer/core/templates/fastapi-python/README.md) - Backend API (FastAPI Best Practices)
+- [nextjs-fullstack](installer/core/templates/nextjs-fullstack/README.md) - JavaScript Full-Stack
+- [react-fastapi-monorepo](installer/core/templates/react-fastapi-monorepo/README.md) - Python Full-Stack Monorepo
 
 ## Template Selection Guide (NEW SECTION)
 

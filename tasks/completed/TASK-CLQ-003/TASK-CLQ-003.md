@@ -24,7 +24,7 @@ Create the display module that handles UI formatting for clarification questions
 
 ## Acceptance Criteria
 
-- [x] Create `installer/global/commands/lib/clarification/display.py` with:
+- [x] Create `installer/core/commands/lib/clarification/display.py` with:
   - [x] `display_full_questions()` - Comprehensive question display
   - [x] `display_quick_questions()` - Brief display with timeout
   - [x] `display_skip_message()` - Message when skipping clarification
@@ -122,7 +122,7 @@ def display_skip_message(
 
 ## Files to Create
 
-1. `installer/global/commands/lib/clarification/display.py`
+1. `installer/core/commands/lib/clarification/display.py`
 
 ## Why Direct Implementation
 

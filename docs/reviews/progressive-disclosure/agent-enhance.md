@@ -447,7 +447,7 @@ The command supports two path formats:
 **Resolution Logic**:
 1. Split by `/` to get template_name and agent_name
 2. Look in global templates: `~/.agentecflow/templates/{template_name}/`
-3. If not found, look in repo templates: `installer/global/templates/{template_name}/`
+3. If not found, look in repo templates: `installer/core/templates/{template_name}/`
 4. Agent file: `{template_dir}/agents/{agent_name}.md`
 
 ### Format 2: Absolute Path
@@ -629,13 +629,13 @@ Solution: This is a bug - please report it
 ### Python Modules
 
 **Command Entry Point**:
-- `installer/global/commands/agent-enhance.py` - Command implementation
+- `installer/core/commands/agent-enhance.py` - Command implementation
 
 **Core Modules**:
-- `installer/global/lib/agent_enhancement/enhancer.py` - SingleAgentEnhancer class
-- `installer/global/lib/agent_enhancement/prompt_builder.py` - AI prompt generation
-- `installer/global/lib/agent_enhancement/parser.py` - Response parsing
-- `installer/global/lib/agent_enhancement/applier.py` - File modification
+- `installer/core/lib/agent_enhancement/enhancer.py` - SingleAgentEnhancer class
+- `installer/core/lib/agent_enhancement/prompt_builder.py` - AI prompt generation
+- `installer/core/lib/agent_enhancement/parser.py` - Response parsing
+- `installer/core/lib/agent_enhancement/applier.py` - File modification
 
 ### Dependencies
 - Python 3.8+ (stdlib for file operations)

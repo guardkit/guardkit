@@ -48,7 +48,7 @@ There has been confusion about "Phase 1" in GuardKit due to two different concep
 - **Essential for all task workflows**
 - **Not related to requirements analysis**
 
-**Implementation:** See `installer/global/commands/task-work.md` lines 547-723
+**Implementation:** See `installer/core/commands/task-work.md` lines 547-723
 
 **Substeps:**
 ```
@@ -101,12 +101,12 @@ Phase 1: Requirements Analysis
    - Graceful handling of empty projects (prevents false failures)
 
 **Files Modified:**
-- `installer/global/agents/task-manager.md` - Removed Phase 1 invocation
-- `installer/global/agents/test-orchestrator.md` - Added empty project detection
+- `installer/core/agents/task-manager.md` - Removed Phase 1 invocation
+- `installer/core/agents/test-orchestrator.md` - Added empty project detection
 
 **Files Deleted:**
 - `.claude/agents/requirements-analyst.md` - Leftover cleanup
-- `installer/global/templates/maui-navigationpage/agents/requirements-analyst.md` - Template cleanup
+- `installer/core/templates/maui-navigationpage/agents/requirements-analyst.md` - Template cleanup
 
 **Net Result:**
 - Added: 88 lines (empty project detection logic)

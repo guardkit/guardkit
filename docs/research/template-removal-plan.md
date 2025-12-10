@@ -24,7 +24,7 @@ Based on the comprehensive template audit (TASK-056), this plan outlines the rem
 ### 1. dotnet-aspnetcontroller (6.5/10)
 
 **Current Status**:
-- Path: `installer/global/templates/dotnet-aspnetcontroller/`
+- Path: `installer/core/templates/dotnet-aspnetcontroller/`
 - Technology: .NET + ASP.NET Core Controllers + MVC pattern + ErrorOr
 - Created: 2024-01-01 (estimated)
 - Last Updated: 2025-11-08 (manifest.json added during audit)
@@ -55,7 +55,7 @@ Based on the comprehensive template audit (TASK-056), this plan outlines the rem
 ### 2. default (6.0/10)
 
 **Current Status**:
-- Path: `installer/global/templates/default/`
+- Path: `installer/core/templates/default/`
 - Technology: Language-agnostic
 - Created: 2024-01-01 (estimated)
 - Last Updated: 2025-11-08 (manifest.json added during audit)
@@ -220,7 +220,7 @@ $ /agentic-init dotnet-aspnetcontroller
 ### Phase 3: Hard Deprecation (Week 4) - 2025-12-02 to 2025-12-08
 
 **Actions**:
-- [ ] Move templates to `.deprecated/` directory within installer/global/templates/
+- [ ] Move templates to `.deprecated/` directory within installer/core/templates/
 - [ ] Block new project creation with deprecated templates
 - [ ] Allow existing projects to continue (no breaking changes to running code)
 - [ ] Final migration reminder
@@ -244,7 +244,7 @@ $ /agentic-init dotnet-aspnetcontroller
 ### Phase 4: Removal (Week 5+) - 2025-12-09 onwards
 
 **Actions**:
-- [ ] Remove templates from installer/global/templates/
+- [ ] Remove templates from installer/core/templates/
 - [ ] Archive in docs/archive/deprecated-templates/
 - [ ] Update all documentation to remove references
 - [ ] Update installer scripts (if applicable)
@@ -377,7 +377,7 @@ Rollback if:
 4. Improve migration guides
 
 **If triggered during Phase 4** (Week 5+):
-1. Restore from archive: docs/archive/deprecated-templates/ → installer/global/templates/
+1. Restore from archive: docs/archive/deprecated-templates/ → installer/core/templates/
 2. Update documentation
 3. Announce restoration
 4. Create action plan to address root cause

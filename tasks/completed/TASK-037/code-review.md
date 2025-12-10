@@ -136,7 +136,7 @@ This is a **documentation cleanup task** (complexity 1/10) involving removal of 
 ### Consistency ✅
 
 **Documentation Files Updated**:
-1. `installer/global/commands/task-work.md` - BDD mode section removed
+1. `installer/core/commands/task-work.md` - BDD mode section removed
 2. `CLAUDE.md` (root) - Command syntax updated, no BDD references
 3. `.claude/CLAUDE.md` (local) - Workflow description cleaned
 4. `.claude/settings.json` - Testing spec changed to "automated"
@@ -310,7 +310,7 @@ When performing human review, focus on:
 2. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/task-plans/TASK-037-implementation-plan.md` - Implementation plan
 3. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/.claude/verification/TASK-037-verification-suite.md` - Verification results
 4. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/CHANGELOG.md` - Migration documentation
-5. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/feature_detection.py` - Backward compatibility code
+5. `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/core/lib/feature_detection.py` - Backward compatibility code
 
 **Verification Commands**:
 ```bash
@@ -318,10 +318,10 @@ When performing human review, focus on:
 find . -name "*bdd-generator*" -type f | grep -v .git | grep -v .conductor | wc -l
 
 # Verify mode=bdd removed (should return 0)
-grep -r "mode=bdd" installer/global/commands/ .claude/commands/ 2>/dev/null | wc -l
+grep -r "mode=bdd" installer/core/commands/ .claude/commands/ 2>/dev/null | wc -l
 
 # Verify supports_bdd() preserved (should return 1+)
-grep -r "def supports_bdd" installer/global/lib/ 2>/dev/null | wc -l
+grep -r "def supports_bdd" installer/core/lib/ 2>/dev/null | wc -l
 ```
 
 ## Reviewer Sign-Off

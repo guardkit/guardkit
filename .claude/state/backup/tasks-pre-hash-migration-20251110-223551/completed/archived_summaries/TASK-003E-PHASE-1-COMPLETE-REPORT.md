@@ -359,7 +359,7 @@ pytest tests/unit/test_complexity_calculation_comprehensive.py -v
 ### With Coverage Report
 ```bash
 pytest tests/unit/test_complexity_calculation_comprehensive.py -v \
-    --cov=installer/global/commands/lib/complexity_calculator \
+    --cov=installer/core/commands/lib/complexity_calculator \
     --cov-report=term-missing \
     --cov-report=html
 ```

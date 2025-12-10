@@ -134,7 +134,7 @@ for agent_file in agent_files:  # 10 agents
 
 ### Phase 1: Batch Request Builder (2 hours)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 1. **Create Batch Request Structure**
    ```python
@@ -195,7 +195,7 @@ for agent_file in agent_files:  # 10 agents
 
 ### Phase 2: Batch Invocation (2 hours)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 1. **Replace Loop with Batch Call**
    ```python
@@ -272,7 +272,7 @@ for agent_file in agent_files:  # 10 agents
 
 ### Phase 3: Response Parsing (2 hours)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 1. **Parse Batch Response**
    ```python
@@ -386,7 +386,7 @@ for agent_file in agent_files:  # 10 agents
 
 ### Phase 4: Result Handling (1 hour)
 
-**File**: `installer/global/lib/template_creation/agent_enhancer.py`
+**File**: `installer/core/lib/template_creation/agent_enhancer.py`
 
 1. **Create Result Objects**
    ```python
@@ -829,15 +829,15 @@ See `docs/research/phase-7-5-agent-enhancement-architecture-analysis.md` Section
 
 ### Files Modified
 
-1. **Created**: `installer/global/lib/template_creation/constants.py` (52 lines)
+1. **Created**: `installer/core/lib/template_creation/constants.py` (52 lines)
    - Moved `WorkflowPhase` class to break circular import
    - Provides semantic phase constants for workflow orchestration
 
-2. **Modified**: `installer/global/commands/lib/template_create_orchestrator.py`
+2. **Modified**: `installer/core/commands/lib/template_create_orchestrator.py`
    - Updated to import `WorkflowPhase` from constants module
    - Fixed circular import issue with agent_enhancer.py
 
-3. **Modified**: `installer/global/lib/template_creation/agent_enhancer.py` (+568 lines)
+3. **Modified**: `installer/core/lib/template_creation/agent_enhancer.py` (+568 lines)
    - Added `_batch_enhance_agents()` method (main batch processing)
    - Added `_build_batch_enhancement_request()` method
    - Added `_build_template_catalog()` method (token optimization)

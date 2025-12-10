@@ -15,7 +15,7 @@ Successfully implemented minimal changes to add `TemplateSplitMetadata` for vali
 ## Changes Implemented
 
 ### 1. Data Model Enhancement
-**File**: `installer/global/lib/template_generator/models.py` (+99 lines)
+**File**: `installer/core/lib/template_generator/models.py` (+99 lines)
 
 **Added TemplateSplitMetadata class** (lines 310-353):
 ```python
@@ -41,7 +41,7 @@ class TemplateSplitMetadata(BaseModel):
 - Maintains 100% backward compatibility
 
 ### 2. Orchestrator Integration
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (+5 lines)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (+5 lines)
 
 **Enhanced `_log_split_sizes()` method** (lines 1588-1593):
 ```python

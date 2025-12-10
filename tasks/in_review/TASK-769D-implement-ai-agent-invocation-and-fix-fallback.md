@@ -39,7 +39,7 @@ workflow_completed: true
 **Root Cause Analysis**:
 
 **PRIMARY ISSUE** (Root Cause):
-- [agent_invoker.py:129](installer/global/lib/codebase_analyzer/agent_invoker.py#L129) - Agent invocation always raises "not yet implemented"
+- [agent_invoker.py:129](installer/core/lib/codebase_analyzer/agent_invoker.py#L129) - Agent invocation always raises "not yet implemented"
 - AI agent (`architectural-reviewer`) is never actually invoked
 - System immediately falls back to heuristics
 
@@ -89,9 +89,9 @@ When AI is unavailable, use already-collected file samples instead of re-scannin
 
 **Strategy**: Reuse the existing `AgentBridgeInvoker` pattern (already working in Phase 5/TASK-51B2-C)
 
-**Reference Implementation**: [installer/global/lib/agent_bridge/invoker.py](installer/global/lib/agent_bridge/invoker.py#L85-L159)
+**Reference Implementation**: [installer/core/lib/agent_bridge/invoker.py](installer/core/lib/agent_bridge/invoker.py#L85-L159)
 
-**File 1**: [installer/global/lib/codebase_analyzer/ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py#L94-L125)
+**File 1**: [installer/core/lib/codebase_analyzer/ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py#L94-L125)
 
 Modify `CodebaseAnalyzer.__init__()` to accept optional `agent_invoker`:
 ```python
@@ -112,13 +112,13 @@ class CodebaseAnalyzer:
             self.agent_invoker_bridge = agent_invoker  # Bridge invoker
         else:
             # Fallback to old agent_invoker (for backward compatibility)
-            _agent_invoker_module = importlib.import_module('installer.global.lib.codebase_analyzer.agent_invoker')
+            _agent_invoker_module = importlib.import_module('installer.core.lib.codebase_analyzer.agent_invoker')
             AgentInvoker = _agent_invoker_module.AgentInvoker
             self.agent_invoker_bridge = None
             self.agent_invoker = AgentInvoker()  # Old implementation
 ```
 
-**File 2**: [installer/global/lib/codebase_analyzer/ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py#L171-L178)
+**File 2**: [installer/core/lib/codebase_analyzer/ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py#L171-L178)
 
 Modify agent invocation to use bridge if available:
 ```python
@@ -139,7 +139,7 @@ if self.use_agent:
             )
 ```
 
-**File 3**: [installer/global/commands/lib/template_create_orchestrator.py](installer/global/commands/lib/template_create_orchestrator.py#L338-L372)
+**File 3**: [installer/core/commands/lib/template_create_orchestrator.py](installer/core/commands/lib/template_create_orchestrator.py#L338-L372)
 
 Pass bridge invoker to `CodebaseAnalyzer` (same pattern as Phase 5):
 ```python
@@ -170,7 +170,7 @@ def _phase1_ai_analysis(self, codebase_path: Path) -> Optional[Any]:
 
 ### Part 2: Fix Heuristic Fallback (SECONDARY)
 
-**File 1**: [installer/global/lib/codebase_analyzer/agent_invoker.py](installer/global/lib/codebase_analyzer/agent_invoker.py#L193-L268)
+**File 1**: [installer/core/lib/codebase_analyzer/agent_invoker.py](installer/core/lib/codebase_analyzer/agent_invoker.py#L193-L268)
 
 Modify `HeuristicAnalyzer`:
 ```python
@@ -206,7 +206,7 @@ class HeuristicAnalyzer:
         } for sample in self.file_samples[:20]]  # Limit to 20 files
 ```
 
-**File 2**: [installer/global/lib/codebase_analyzer/ai_analyzer.py](installer/global/lib/codebase_analyzer/ai_analyzer.py#L226-L253)
+**File 2**: [installer/core/lib/codebase_analyzer/ai_analyzer.py](installer/core/lib/codebase_analyzer/ai_analyzer.py#L226-L253)
 
 Modify `_fallback_analysis()`:
 ```python

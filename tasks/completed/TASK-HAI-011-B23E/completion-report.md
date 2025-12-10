@@ -54,9 +54,9 @@ All validation tests passed:
 
 ## Files Modified
 
-- `installer/global/templates/fastapi-python/agents/fastapi-specialist.md`
-- `installer/global/templates/fastapi-python/agents/fastapi-database-specialist.md`
-- `installer/global/templates/fastapi-python/agents/fastapi-testing-specialist.md`
+- `installer/core/templates/fastapi-python/agents/fastapi-specialist.md`
+- `installer/core/templates/fastapi-python/agents/fastapi-database-specialist.md`
+- `installer/core/templates/fastapi-python/agents/fastapi-testing-specialist.md`
 
 ## Epic Progress
 

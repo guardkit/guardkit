@@ -52,7 +52,7 @@ If `guardkit init` fails:
 guardkit init --list
 
 # Verify template exists
-ls -la installer/global/templates/
+ls -la installer/core/templates/
 
 # Re-run with verbose output
 /debug
@@ -228,7 +228,7 @@ Use `/debug` to diagnose configuration issues:
 - Task state directory
 - Test runner setup
 
-**[/debug Command Reference](https://github.com/guardkit/guardkit/blob/main/installer/global/commands/debug.md)**
+**[/debug Command Reference](https://github.com/guardkit/guardkit/blob/main/installer/core/commands/debug.md)**
 
 ## Getting Help
 
@@ -264,4 +264,4 @@ Use `/debug` to diagnose configuration issues:
 
 - **Run Diagnostics**: Use `/debug` to check your setup
 - **Review Workflow**: [GuardKit Workflow Guide](guides/guardkit-workflow.md)
-- **Check Commands**: [Command Reference](https://github.com/guardkit/guardkit/tree/main/installer/global/commands)
+- **Check Commands**: [Command Reference](https://github.com/guardkit/guardkit/tree/main/installer/core/commands)

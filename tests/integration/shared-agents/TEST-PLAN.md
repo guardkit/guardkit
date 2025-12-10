@@ -739,7 +739,7 @@ rm -rf .claude/
 3. **Verify pre-migration state restored**:
    ```bash
    # Check agents are back in original location
-   ls -la installer/global/agents/
+   ls -la installer/core/agents/
    # Should contain agents that were migrated
 
    # Check universal directory removed

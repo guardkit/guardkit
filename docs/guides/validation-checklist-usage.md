@@ -215,7 +215,7 @@ done
 
 ```python
 # validate_completeness.py (TASK-040)
-from installer.global.lib.validation import validate_template_completeness
+from installer.core.lib.validation import validate_template_completeness
 
 result = validate_template_completeness(
     template_path="/path/to/template",
@@ -250,7 +250,7 @@ else:
 
 ### Adding Custom Checklist Items
 
-Edit `installer/global/lib/template_generator/claude_md_generator.py`:
+Edit `installer/core/lib/template_generator/claude_md_generator.py`:
 
 ```python
 def _generate_validation_checklist(self) -> List[str]:
@@ -311,7 +311,7 @@ def _generate_validation_checklist(self) -> List[str]:
 **Solution**:
 ```bash
 # Regenerate CLAUDE.md with enhanced version
-python -m installer.global.lib.template_generator.claude_md_generator \
+python -m installer.core.lib.template_generator.claude_md_generator \
   --template /path/to/template \
   --regenerate
 ```
@@ -401,7 +401,7 @@ Before using this template, verify:
 ## Reference
 
 - [Enhanced Prompt Format](../specifications/enhanced-prompt-format.md)
-- [Template Generator Implementation](../../installer/global/lib/template_generator/)
+- [Template Generator Implementation](../../installer/core/lib/template_generator/)
 - [Completeness Validation (TASK-040)](../../tasks/completed/TASK-040-*.md)
 - [TASK-020 Implementation Plan](../implementation-plans/TASK-020-completeness-improvement-plan.md)
 

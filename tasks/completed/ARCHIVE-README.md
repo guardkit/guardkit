@@ -32,15 +32,15 @@ This section contains **historical backlog tasks and planning documents** from t
 
 The **actual implementation** that replaced these plans:
 
-1. **Templates**: `installer/global/templates/`
+1. **Templates**: `installer/core/templates/`
    - 6 production templates (react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, taskwright-python, default)
    - Each with 3 specialized agents
 
-2. **Global Agents**: `installer/global/agents/`
+2. **Global Agents**: `installer/core/agents/`
    - 16 global agents (architectural-reviewer, task-manager, code-reviewer, etc.)
    - Enhanced with `/agent-enhance` command
 
-3. **Commands**: `installer/global/commands/`
+3. **Commands**: `installer/core/commands/`
    - `/template-create` - Template generation
    - `/agent-enhance` - AI-powered agent enhancement
    - `/agent-format` - Pattern-based agent formatting

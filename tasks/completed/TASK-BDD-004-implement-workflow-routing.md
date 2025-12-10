@@ -367,7 +367,7 @@ TaskWright should discover it via metadata matching (same as other agents).
 
 ### Changes Made
 
-All changes made to: `installer/global/commands/task-work.md`
+All changes made to: `installer/core/commands/task-work.md`
 
 #### 1. Phase 1.5: BDD Scenario Loading (Lines 836-908)
 
@@ -440,7 +440,7 @@ def detect_bdd_framework(project_path: Path) -> str:
 
 ### Files Modified
 
-1. `installer/global/commands/task-work.md`
+1. `installer/core/commands/task-work.md`
    - Phase 1.5: +73 lines (scenario loading + framework detection)
    - Phase 2: +14 lines (planning context)
    - Phase 3-BDD: +94 lines (new phase)

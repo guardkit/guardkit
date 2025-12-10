@@ -50,7 +50,7 @@ Fix the agent generation failure in `/template-create` by clearing the `AgentBri
 
 ### Step 1: Add `clear_cache()` method to AgentBridgeInvoker
 
-**File**: `installer/global/lib/agent_bridge/invoker.py`
+**File**: `installer/core/lib/agent_bridge/invoker.py`
 
 **Location**: After `has_response()` method (around line 286)
 
@@ -69,7 +69,7 @@ def clear_cache(self) -> None:
 
 ### Step 2: Call `clear_cache()` in Phase 5
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 **Location**: At the start of `_phase5_agent_recommendation()` method (around line 892)
 
@@ -93,7 +93,7 @@ def _phase5_agent_recommendation(self, analysis: Any) -> List[Any]:
 
 ### Step 3: Update Phase 5 checkpoint handling
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 Ensure checkpoint is saved BEFORE `clear_cache()` is called, so that on resume we still have the Phase 1 analysis data but can make a fresh Phase 5 AI request.
 
@@ -144,8 +144,8 @@ def test_clear_cache_enables_new_invocation():
 
 | File | Change |
 |------|--------|
-| `installer/global/lib/agent_bridge/invoker.py` | Add `clear_cache()` method |
-| `installer/global/commands/lib/template_create_orchestrator.py` | Call `clear_cache()` in Phase 5 |
+| `installer/core/lib/agent_bridge/invoker.py` | Add `clear_cache()` method |
+| `installer/core/commands/lib/template_create_orchestrator.py` | Call `clear_cache()` in Phase 5 |
 
 ## Architecture Documentation
 

@@ -22,7 +22,7 @@ TASK-STND-0B1A implemented boundaries section enhancement with **92% failure rat
 
 ### Root Cause Analysis
 
-The `_find_boundaries_insertion_point()` method in [applier.py:202-237](installer/global/lib/agent_enhancement/applier.py#L202-L237) uses a **2-tier fallback strategy** that returns `None` when neither "## Capabilities" nor "## Quick Start" sections exist.
+The `_find_boundaries_insertion_point()` method in [applier.py:202-237](installer/core/lib/agent_enhancement/applier.py#L202-L237) uses a **2-tier fallback strategy** that returns `None` when neither "## Capabilities" nor "## Quick Start" sections exist.
 
 When `None` is returned, the `_merge_content()` method's fallback logic appends boundaries at the **end of file**, violating GitHub's early placement recommendation.
 
@@ -45,7 +45,7 @@ When `None` is returned, the `_merge_content()` method's fallback logic appends 
 
 ### Current Buggy Implementation
 
-**File**: [installer/global/lib/agent_enhancement/applier.py:202-237](installer/global/lib/agent_enhancement/applier.py#L202-L237)
+**File**: [installer/core/lib/agent_enhancement/applier.py:202-237](installer/core/lib/agent_enhancement/applier.py#L202-L237)
 
 ```python
 def _find_boundaries_insertion_point(self, lines: list[str]) -> int | None:
@@ -231,7 +231,7 @@ def _find_boundaries_insertion_point(self, lines: list[str]) -> int:
 ### ✅ IN SCOPE
 
 **File to Modify**:
-- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/global/lib/agent_enhancement/applier.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/taskwright/installer/core/lib/agent_enhancement/applier.py`
   - Lines 202-237: `_find_boundaries_insertion_point()` method
   - Update method docstring
   - Update return type annotation: `int | None` → `int`
@@ -249,12 +249,12 @@ def _find_boundaries_insertion_point(self, lines: list[str]) -> int:
 ### ❌ OUT OF SCOPE
 
 **DO NOT MODIFY**:
-1. `installer/global/lib/agent_enhancement/prompt_builder.py`
+1. `installer/core/lib/agent_enhancement/prompt_builder.py`
    - Boundaries generation logic is working correctly
    - Content quality is 9.5/10
    - DO NOT touch this file
 
-2. `installer/global/lib/agent_enhancement/parser.py`
+2. `installer/core/lib/agent_enhancement/parser.py`
    - Boundaries validation logic is working correctly
    - ALWAYS/NEVER/ASK validation is perfect
    - DO NOT touch this file
@@ -733,7 +733,7 @@ If issues arise:
 
 ### Files to Review
 
-1. [applier.py:202-237](installer/global/lib/agent_enhancement/applier.py#L202-L237) - Current buggy implementation
+1. [applier.py:202-237](installer/core/lib/agent_enhancement/applier.py#L202-L237) - Current buggy implementation
 2. [TASK-STND-0B1A](tasks/backlog/TASK-STND-0B1A-fix-boundaries-placement-agent-enhancer.md) - Original fix attempt
 3. [TASK-STND-8B4C Completion](tasks/completed/TASK-STND-8B4C/completion-summary.md) - Boundaries content implementation
 4. [GitHub Best Practices Analysis](docs/analysis/github-agent-best-practices-analysis.md) - Source of 80-150 line recommendation

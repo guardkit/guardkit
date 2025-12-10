@@ -118,18 +118,18 @@ Updated all three core files to generate, validate, and apply boundaries section
 
 ### Core Implementation (3 files)
 
-1. **installer/global/lib/agent_enhancement/prompt_builder.py**
+1. **installer/core/lib/agent_enhancement/prompt_builder.py**
    - Lines 80, 86, 89: Updated to request boundaries instead of best_practices
    - Added boundaries format specification with examples
    - Coverage: 100% line, 100% branch
 
-2. **installer/global/lib/agent_enhancement/parser.py**
+2. **installer/core/lib/agent_enhancement/parser.py**
    - Added `_validate_boundaries()` method (lines 153-211)
    - Added helper methods: `_extract_subsection()`, `_count_rules()`
    - Strict validation: ALWAYS (5-7 ✅), NEVER (5-7 ❌), ASK (3-5 ⚠️)
    - Coverage: 100% line, 100% branch
 
-3. **installer/global/lib/agent_enhancement/applier.py**
+3. **installer/core/lib/agent_enhancement/applier.py**
    - Fixed bug: Now preserves all original content
    - Added `_find_boundaries_insertion_point()` method
    - Smart placement: After Quick Start, before Capabilities

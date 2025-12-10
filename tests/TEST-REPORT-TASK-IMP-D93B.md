@@ -76,7 +76,7 @@ except Exception as e:
 ### Compilation Check
 ✅ **PASSED** - Python syntax validation
 ```bash
-python3 -m py_compile installer/global/commands/lib/template_create_orchestrator.py
+python3 -m py_compile installer/core/commands/lib/template_create_orchestrator.py
 ```
 Result: No compilation errors
 
@@ -86,7 +86,7 @@ Result: No compilation errors
 import importlib.util
 spec = importlib.util.spec_from_file_location(
     'template_create_orchestrator',
-    'installer/global/commands/lib/template_create_orchestrator.py'
+    'installer/core/commands/lib/template_create_orchestrator.py'
 )
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -169,7 +169,7 @@ python3 -m pytest tests/unit/test_task_imp_d93b.py -v
 ### Run with coverage:
 ```bash
 python3 -m pytest tests/unit/test_task_imp_d93b.py -v \
-  --cov=installer/global/commands/lib/template_create_orchestrator \
+  --cov=installer/core/commands/lib/template_create_orchestrator \
   --cov-report=term
 ```
 

@@ -12,9 +12,9 @@ This is a DOCUMENTATION-ONLY task. The "tests" verify:
 3. Consistency across files (cross-references are accurate)
 
 Files under test:
-- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/task-work.md
-- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/test-orchestrator.md
-- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/templates/maui/agents/test-orchestrator.md
+- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/task-work.md
+- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/test-orchestrator.md
+- /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/templates/maui/agents/test-orchestrator.md
 """
 
 import os
@@ -23,9 +23,9 @@ from pathlib import Path
 
 # File paths
 BASE_DIR = Path("/Users/richardwoollcott/Projects/appmilla_github/ai-engineer")
-TASK_WORK_FILE = BASE_DIR / "installer/global/commands/task-work.md"
-TEST_ORCHESTRATOR_FILE = BASE_DIR / "installer/global/agents/test-orchestrator.md"
-MAUI_TEST_ORCHESTRATOR_FILE = BASE_DIR / "installer/global/templates/maui/agents/test-orchestrator.md"
+TASK_WORK_FILE = BASE_DIR / "installer/core/commands/task-work.md"
+TEST_ORCHESTRATOR_FILE = BASE_DIR / "installer/core/agents/test-orchestrator.md"
+MAUI_TEST_ORCHESTRATOR_FILE = BASE_DIR / "installer/core/templates/maui/agents/test-orchestrator.md"
 
 
 class TestResults:
@@ -582,7 +582,7 @@ def test_task_work_references_test_orchestrator():
     references = [
         "test-orchestrator.md",
         "See test-orchestrator.md",
-        "installer/global/agents/test-orchestrator.md"
+        "installer/core/agents/test-orchestrator.md"
     ]
 
     found = sum(1 for ref in references if ref in content)

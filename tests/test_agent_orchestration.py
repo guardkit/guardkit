@@ -98,7 +98,7 @@ def mock_inventory():
         tools=["Read", "Analyze"],
         tags=["architecture"],
         source="global",
-        source_path=Path("installer/global/agents/architectural-reviewer.md"),
+        source_path=Path("installer/core/agents/architectural-reviewer.md"),
         priority=1,
         full_definition="---\nname: architectural-reviewer\n---\n# Architectural Reviewer"
     )

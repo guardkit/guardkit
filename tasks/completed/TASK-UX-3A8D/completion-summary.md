@@ -19,7 +19,7 @@ Successfully changed `/template-create` to create agent enhancement tasks by def
 
 ### Code Changes (3 locations)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py`
+**File**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 1. **Line 85** - Dataclass default value:
    ```python

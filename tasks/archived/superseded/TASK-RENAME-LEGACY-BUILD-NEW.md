@@ -38,10 +38,10 @@ Rename existing to `template-create-legacy` (undocumented fallback), build fixed
 
 | Step | File | Action |
 |------|------|--------|
-| 1 | `installer/global/commands/template-create.md` | RENAME to template-create-legacy.md |
-| 2 | `installer/global/commands/lib/template_create_orchestrator.py` | RENAME to template_create_legacy_orchestrator.py |
-| 3 | `installer/global/commands/template-create.md` | CREATE (new clean version) |
-| 4 | `installer/global/commands/lib/template_create_orchestrator.py` | CREATE (with all Phase 1-6 fixes) |
+| 1 | `installer/core/commands/template-create.md` | RENAME to template-create-legacy.md |
+| 2 | `installer/core/commands/lib/template_create_orchestrator.py` | RENAME to template_create_legacy_orchestrator.py |
+| 3 | `installer/core/commands/template-create.md` | CREATE (new clean version) |
+| 4 | `installer/core/commands/lib/template_create_orchestrator.py` | CREATE (with all Phase 1-6 fixes) |
 
 ---
 
@@ -51,18 +51,18 @@ Rename existing to `template-create-legacy` (undocumented fallback), build fixed
 
 ```bash
 # Rename command spec
-mv installer/global/commands/template-create.md \
-   installer/global/commands/template-create-legacy.md
+mv installer/core/commands/template-create.md \
+   installer/core/commands/template-create-legacy.md
 
 # Rename orchestrator
-mv installer/global/commands/lib/template_create_orchestrator.py \
-   installer/global/commands/lib/template_create_legacy_orchestrator.py
+mv installer/core/commands/lib/template_create_orchestrator.py \
+   installer/core/commands/lib/template_create_legacy_orchestrator.py
 ```
 
 ### Step 2: Update Legacy Command Spec
 
 ```markdown
-<!-- installer/global/commands/template-create-legacy.md -->
+<!-- installer/core/commands/template-create-legacy.md -->
 ---
 name: template-create-legacy
 description: Legacy template creation (use /template-create instead)
@@ -78,7 +78,7 @@ description: Legacy template creation (use /template-create instead)
 ### Step 3: Create New Command Spec
 
 ```markdown
-<!-- installer/global/commands/template-create.md -->
+<!-- installer/core/commands/template-create.md -->
 ---
 name: template-create
 description: Create a template from an existing codebase using AI analysis
@@ -143,7 +143,7 @@ Create a reusable template from your existing codebase. Uses AI-powered analysis
 The new orchestrator integrates all Phase 1-6 fixes:
 
 ```python
-# installer/global/commands/lib/template_create_orchestrator.py
+# installer/core/commands/lib/template_create_orchestrator.py
 
 """
 Template Create Orchestrator (v2)
@@ -167,13 +167,13 @@ import uuid
 import logging
 
 from .exclusion_patterns import filter_files
-from installer.global.lib.agent_bridge.checkpoint_manager import (
+from installer.core.lib.agent_bridge.checkpoint_manager import (
     CheckpointManager,
     CheckpointRequested,
     TemplateCreateState,
     CHECKPOINT_EXIT_CODE
 )
-from installer.global.lib.agent_bridge.invoker import AgentBridgeInvoker
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
 from docs.proposals.template_create.AI_PROMPTS_SPECIFICATION import (
     PHASE_1_ANALYSIS_PROMPT,
     PHASE_4_AGENT_CREATION_PROMPT,

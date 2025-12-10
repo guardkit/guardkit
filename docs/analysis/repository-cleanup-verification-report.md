@@ -51,7 +51,7 @@ All debug files, temporary scripts, coverage JSON files, and session documents h
 - docs/ (documentation)
 - examples/ (example files)
 - installer/ (installation scripts)
-- lib/ (symlink to installer/global/lib)
+- lib/ (symlink to installer/core/lib)
 - scripts/ (utility scripts)
 - tasks/ (task management)
 - tests/ (test suite)

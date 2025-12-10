@@ -165,7 +165,7 @@ Following architectural review feedback, **NO external dependencies** used:
 
 ### Interactive Mode
 ```bash
-$ python3 installer/global/commands/lib/demo_template_qa.py
+$ python3 installer/core/commands/lib/demo_template_qa.py
 # Choose option 1 for full Q&A
 ```
 
@@ -231,10 +231,10 @@ python3 -m pytest tests/test_template_qa_validator.py -v
 python3 -m pytest tests/test_template_qa_session.py -v
 
 # Run all Q&A tests
-python3 -m pytest tests/test_template_qa_*.py -v --cov=installer/global/commands/lib
+python3 -m pytest tests/test_template_qa_*.py -v --cov=installer/core/commands/lib
 
 # Run demo script
-python3 installer/global/commands/lib/demo_template_qa.py
+python3 installer/core/commands/lib/demo_template_qa.py
 ```
 
 ## Acceptance Criteria Status

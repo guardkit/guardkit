@@ -111,10 +111,10 @@ Update template-create workflow documentation and end-user instructions to commu
 
 ### Files Modified
 
-1. `installer/global/commands/lib/template_create_orchestrator.py`:
+1. `installer/core/commands/lib/template_create_orchestrator.py`:
    - Lines 1523-1561: `_print_agent_enhancement_instructions()` method
 
-2. `installer/global/commands/template-create.md`:
+2. `installer/core/commands/template-create.md`:
    - Phase 6 description (Agent Recommendation section)
    - Phase 8 description (Agent Task Creation section)
    - New subsection: "Understanding Boundary Sections"
@@ -132,7 +132,7 @@ Update template-create workflow documentation and end-user instructions to commu
 
 #### Step 1.1: Modify `_print_agent_enhancement_instructions()` (45 minutes)
 
-**File**: `installer/global/commands/lib/template_create_orchestrator.py` (lines 1523-1561)
+**File**: `installer/core/commands/lib/template_create_orchestrator.py` (lines 1523-1561)
 
 **Update method** to include boundary sections announcement:
 
@@ -161,7 +161,7 @@ def _print_agent_enhancement_instructions(
     print("   - ✅ ALWAYS prefix")
     print("   - ❌ NEVER prefix")
     print("   - ⚠️ ASK prefix\n")
-    print("   📖 See: installer/global/agents/agent-content-enhancer.md for details")
+    print("   📖 See: installer/core/agents/agent-content-enhancer.md for details")
     print(f"   {'─'*68}\n")
 
     # Option A: Fast Enhancement (Recommended)
@@ -216,7 +216,7 @@ def _print_agent_enhancement_instructions(
 
 #### Step 2.1: Update Phase 6 Description (15 minutes)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Locate** Phase 6 (Agent Recommendation) section and **update**:
 
@@ -240,7 +240,7 @@ Generate specialized AI agents for this template based on codebase patterns.
 
 #### Step 2.2: Update Phase 8 Description (15 minutes)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Locate** Phase 8 (Agent Task Creation) section and **update**:
 
@@ -277,7 +277,7 @@ See [Understanding Boundary Sections](#understanding-boundary-sections) for deta
 
 #### Step 2.3: Add "Understanding Boundary Sections" Subsection (15 minutes)
 
-**File**: `installer/global/commands/template-create.md`
+**File**: `installer/core/commands/template-create.md`
 
 **Add new subsection** after Phase 8 description:
 
@@ -397,7 +397,7 @@ GitHub analysis of 2,500+ repositories identified explicit boundaries as **Criti
 
 **References**:
 - [GitHub Agent Best Practices Analysis](../../docs/analysis/github-agent-best-practices-analysis.md)
-- [agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md) (detailed specification)
+- [agent-content-enhancer.md](../../installer/core/agents/agent-content-enhancer.md) (detailed specification)
 - [TASK-STND-773D](../../tasks/backlog/TASK-STND-773D-standardize-agent-boundary-sections.md) (implementation task)
 ```
 
@@ -529,8 +529,8 @@ When you run `/agent-enhance` or `/template-create`, boundary sections are autom
 
 **References**:
 - [GitHub Agent Best Practices Analysis](docs/analysis/github-agent-best-practices-analysis.md)
-- [agent-content-enhancer.md](installer/global/agents/agent-content-enhancer.md)
-- [template-create.md - Understanding Boundary Sections](installer/global/commands/template-create.md#understanding-boundary-sections)
+- [agent-content-enhancer.md](installer/core/agents/agent-content-enhancer.md)
+- [template-create.md - Understanding Boundary Sections](installer/core/commands/template-create.md#understanding-boundary-sections)
 ```
 
 **Action**: Delete old note from "MCP Integration Best Practices" section
@@ -690,8 +690,8 @@ grep -r "template-create.md" CLAUDE.md
 
 # Verify files exist
 ls docs/analysis/github-agent-best-practices-analysis.md
-ls installer/global/agents/agent-content-enhancer.md
-ls installer/global/commands/template-create.md
+ls installer/core/agents/agent-content-enhancer.md
+ls installer/core/commands/template-create.md
 ```
 
 **Success Criteria**:
@@ -925,8 +925,8 @@ Successfully updated all user-facing documentation to communicate the ALWAYS/NEV
 
 ### Deliverables
 - **Files Modified**: 3
-  - `installer/global/commands/lib/template_create_orchestrator.py` (+21 lines)
-  - `installer/global/commands/template-create.md` (+120 lines)
+  - `installer/core/commands/lib/template_create_orchestrator.py` (+21 lines)
+  - `installer/core/commands/template-create.md` (+120 lines)
   - `CLAUDE.md` (+116 lines)
 - **Total Lines Added**: 257
 - **Documentation Sections Added**: 3 major sections
@@ -972,6 +972,6 @@ e8be5b8 docs: Add ALWAYS/NEVER/ASK boundary sections documentation
 
 - **Related Task**: [TASK-STND-773D](../../tasks/in_progress/TASK-STND-773D-standardize-agent-boundary-sections.md) (agent-content-enhancer update)
 - **GitHub Analysis**: [docs/analysis/github-agent-best-practices-analysis.md](../../docs/analysis/github-agent-best-practices-analysis.md)
-- **Target Agent**: [installer/global/agents/agent-content-enhancer.md](../../installer/global/agents/agent-content-enhancer.md)
-- **Command Spec**: [installer/global/commands/template-create.md](../../installer/global/commands/template-create.md)
+- **Target Agent**: [installer/core/agents/agent-content-enhancer.md](../../installer/core/agents/agent-content-enhancer.md)
+- **Command Spec**: [installer/core/commands/template-create.md](../../installer/core/commands/template-create.md)
 - **User Guide**: [CLAUDE.md](../../CLAUDE.md)

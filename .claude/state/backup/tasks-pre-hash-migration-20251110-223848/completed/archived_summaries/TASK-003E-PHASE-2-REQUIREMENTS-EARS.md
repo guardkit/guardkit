@@ -645,11 +645,11 @@ tests/
 **ACTION-001: Verify Module Dependencies**
 ```bash
 # Check required files exist
-ls -la installer/global/commands/lib/review_router.py        # ✅ EXISTS
-ls -la installer/global/commands/lib/review_modes.py         # ✅ EXISTS
-ls -la installer/global/commands/lib/modification_session.py # ⚠️ VERIFY
-ls -la installer/global/commands/lib/qa_manager.py           # ⚠️ VERIFY
-ls -la installer/global/commands/lib/version_manager.py      # ⚠️ VERIFY
+ls -la installer/core/commands/lib/review_router.py        # ✅ EXISTS
+ls -la installer/core/commands/lib/review_modes.py         # ✅ EXISTS
+ls -la installer/core/commands/lib/modification_session.py # ⚠️ VERIFY
+ls -la installer/core/commands/lib/qa_manager.py           # ⚠️ VERIFY
+ls -la installer/core/commands/lib/version_manager.py      # ⚠️ VERIFY
 ```
 
 **ACTION-002: Create Test Fixtures**

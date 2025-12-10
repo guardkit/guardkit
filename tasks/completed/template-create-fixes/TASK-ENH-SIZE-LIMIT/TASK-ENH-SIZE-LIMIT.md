@@ -40,7 +40,7 @@ Users with complex codebases may want to override the 10KB core content limit fo
 
 ### File 1: template-create.md
 
-**Location**: `installer/global/commands/template-create.md`
+**Location**: `installer/core/commands/template-create.md`
 
 #### Change: Add flag documentation (in Optional Options section)
 
@@ -54,7 +54,7 @@ Users with complex codebases may want to override the 10KB core content limit fo
 
 ### File 2: template_create_orchestrator.py
 
-**Location**: `installer/global/commands/lib/template_create_orchestrator.py`
+**Location**: `installer/core/commands/lib/template_create_orchestrator.py`
 
 #### Change 1: Add config field (modify `OrchestrationConfig` dataclass, ~line 105)
 
@@ -147,7 +147,7 @@ def _write_claude_md_split(self, output_path: Path) -> bool:
 
 ### File 3: models.py
 
-**Location**: `installer/global/lib/template_generator/models.py`
+**Location**: `installer/core/lib/template_generator/models.py`
 
 #### Change: Make limit configurable in `validate_size_constraints` (lines 409-422)
 
@@ -176,7 +176,7 @@ def validate_size_constraints(self, max_core_size: int = 10 * 1024) -> tuple[boo
 
 ### File 4: claude_md_generator.py
 
-**Location**: `installer/global/lib/template_generator/claude_md_generator.py`
+**Location**: `installer/core/lib/template_generator/claude_md_generator.py`
 
 #### Change: Accept limit in `generate_split` method
 

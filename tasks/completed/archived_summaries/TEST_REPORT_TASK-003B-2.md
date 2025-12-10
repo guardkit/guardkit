@@ -19,10 +19,10 @@ All Python files compiled successfully without syntax errors:
 
 ```bash
 python3 -m py_compile:
-  ✓ installer/global/commands/lib/complexity_models.py
-  ✓ installer/global/commands/lib/user_interaction.py
-  ✓ installer/global/commands/lib/review_modes.py
-  ✓ installer/global/commands/lib/test_full_review.py
+  ✓ installer/core/commands/lib/complexity_models.py
+  ✓ installer/core/commands/lib/user_interaction.py
+  ✓ installer/core/commands/lib/review_modes.py
+  ✓ installer/core/commands/lib/test_full_review.py
 ```
 
 **Result:** All files pass Python 3.12 syntax validation
@@ -302,12 +302,12 @@ Uncovered lines are primarily:
 ## Files Tested
 
 ### Source Files (with absolute paths)
-1. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/complexity_models.py`
-2. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/user_interaction.py`
-3. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/review_modes.py`
+1. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/complexity_models.py`
+2. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/user_interaction.py`
+3. `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/review_modes.py`
 
 ### Test File
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/lib/test_full_review.py`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/lib/test_full_review.py`
 
 ---
 
@@ -362,7 +362,7 @@ The implementation meets all critical success criteria:
 source .venv-test/bin/activate
 
 # Run tests with coverage
-cd installer/global/commands/lib
+cd installer/core/commands/lib
 python3 -m pytest test_full_review.py --cov=. --cov-report=term --cov-report=json -v
 
 # Results:

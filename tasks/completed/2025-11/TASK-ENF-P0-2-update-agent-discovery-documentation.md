@@ -47,7 +47,7 @@ Update `docs/guides/agent-discovery-guide.md` to:
 
 **Secondary** (if references need updating):
 - `CLAUDE.md` (Agent Discovery System section)
-- `installer/global/commands/task-work.md` (agent selection references)
+- `installer/core/commands/task-work.md` (agent selection references)
 
 ---
 
@@ -73,12 +73,12 @@ The agent discovery system scans 4 sources in priority order:
    - Cross-project customizations
    - Overrides global agents
 
-3. **Global** (`installer/global/agents/`)
+3. **Global** (`installer/core/agents/`)
    - Canonical agent definitions
    - System defaults
    - Fallback for missing local/user
 
-4. **Template** (`installer/global/templates/*/agents/`)
+4. **Template** (`installer/core/templates/*/agents/`)
    - Source definitions before initialization
    - Only used if agent not found elsewhere
    - Rarely invoked (templates copy to local on init)
@@ -122,7 +122,7 @@ The first agent found (highest priority) is used, and duplicates from lower prio
 ├────────────────────────────────────────────────┤
 │  1. Scan Local (.claude/agents/) ← HIGHEST     │
 │  2. Scan User (~/.agentecflow/agents/)         │
-│  3. Scan Global (installer/global/agents/)     │
+│  3. Scan Global (installer/core/agents/)     │
 │  4. Scan Template (templates/*/agents/)        │
 │  5. Remove duplicates (keep highest priority)  │
 │  6. Rank by relevance (stack + phase + keys)   │
@@ -161,10 +161,10 @@ The first agent found (highest priority) is used, and duplicates from lower prio
 ```python
 def discover_agents(phase, stack, keywords):
     # 1. Scan global agents
-    global_agents = scan("installer/global/agents/*.md")
+    global_agents = scan("installer/core/agents/*.md")
 
     # 2. Scan template agents (TEMPLATES, not initialized)
-    template_agents = scan("installer/global/templates/*/agents/*.md")
+    template_agents = scan("installer/core/templates/*/agents/*.md")
 
     # 3. Scan user agents
     user_agents = scan("~/.agentecflow/agents/*.md")
@@ -189,13 +189,13 @@ def discover_agents(phase, stack, keywords):
             agent_sources[agent.name] = (agent, "user", PRIORITY_USER)
 
     # 3. Scan global agents
-    global_agents = scan("installer/global/agents/*.md")
+    global_agents = scan("installer/core/agents/*.md")
     for agent in global_agents:
         if agent.name not in agent_sources:
             agent_sources[agent.name] = (agent, "global", PRIORITY_GLOBAL)
 
     # 4. Scan template agents (lowest priority)
-    template_agents = scan("installer/global/templates/*/agents/*.md")
+    template_agents = scan("installer/core/templates/*/agents/*.md")
     for agent in template_agents:
         if agent.name not in agent_sources:
             agent_sources[agent.name] = (agent, "template", PRIORITY_TEMPLATE)

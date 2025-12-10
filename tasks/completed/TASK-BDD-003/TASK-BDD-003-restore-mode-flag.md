@@ -63,7 +63,7 @@ This task does NOT implement the workflow routing - just the flag and validation
 
 #### 1. Update task-work.md Command Syntax
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Location**: Line 98
 
@@ -78,7 +78,7 @@ This task does NOT implement the workflow routing - just the flag and validation
 
 #### 2. Add BDD Mode Documentation
 
-**File**: `installer/global/commands/task-work.md`
+**File**: `installer/core/commands/task-work.md`
 
 **Location**: After TDD mode section (around line 2395)
 
@@ -327,12 +327,12 @@ if mode == "bdd" and not supports_bdd():
 ### Completed Changes
 
 #### 1. Command Syntax Update ✅
-- **File**: `installer/global/commands/task-work.md:98`
+- **File**: `installer/core/commands/task-work.md:98`
 - **Change**: Added `--mode=standard|tdd|bdd` to command syntax
 - **Status**: Complete
 
 #### 2. BDD Mode Documentation ✅
-- **File**: `installer/global/commands/task-work.md:2762-2851`
+- **File**: `installer/core/commands/task-work.md:2762-2851`
 - **Added**: Complete BDD mode section with:
   - Purpose and prerequisites
   - Use cases (agentic systems, safety-critical workflows)
@@ -344,7 +344,7 @@ if mode == "bdd" and not supports_bdd():
 - **Status**: Complete
 
 #### 3. Feature Detection Validation ✅
-- **File**: `installer/global/lib/feature_detection.py:106-113`
+- **File**: `installer/core/lib/feature_detection.py:106-113`
 - **Verified**: `supports_bdd()` function exists and checks marker file
 - **Status**: Complete (no changes needed)
 
@@ -418,7 +418,7 @@ This implementation follows the **pure slash command pattern** discovered in TAS
 
 ### Files Changed
 
-1. `installer/global/commands/task-work.md` - Command syntax and BDD documentation
+1. `installer/core/commands/task-work.md` - Command syntax and BDD documentation
 2. `tests/integration/test_bdd_mode_validation.py` - Comprehensive test suite (NEW)
 3. `tasks/in_progress/TASK-BDD-003-restore-mode-flag.md` - Task status update
 
@@ -436,5 +436,5 @@ RequireKit detection using marker file pattern.
 
 - [Implementation Guide](./IMPLEMENTATION-GUIDE.md)
 - [BDD Restoration Guide](../../../docs/research/restoring-bdd-feature.md) (Phase 2, lines 80-137)
-- [Feature Detection](../../../installer/global/lib/feature_detection.py)
+- [Feature Detection](../../../installer/core/lib/feature_detection.py)
 - [TASK-BDD-001 Investigation Findings](../../completed/TASK-BDD-001/TASK-BDD-001-investigation-findings.md)

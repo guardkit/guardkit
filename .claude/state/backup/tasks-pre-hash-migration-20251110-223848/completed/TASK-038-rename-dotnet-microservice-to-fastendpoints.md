@@ -16,7 +16,7 @@ The current `dotnet-microservice` template is opinionated towards FastEndpoints 
 
 ## Current State
 
-**Template Location**: `installer/global/templates/dotnet-microservice/`
+**Template Location**: `installer/core/templates/dotnet-microservice/`
 
 **Current Features**:
 - FastEndpoints framework
@@ -38,7 +38,7 @@ The current `dotnet-microservice` template is opinionated towards FastEndpoints 
 ## Files to Update
 
 ### 1. Rename Template Directory
-- [ ] Rename: `installer/global/templates/dotnet-microservice/` → `dotnet-fastendpoints/`
+- [ ] Rename: `installer/core/templates/dotnet-microservice/` → `dotnet-fastendpoints/`
 - [ ] Update `template.json` inside the renamed directory
 
 ### 2. Installer Scripts (install.sh)
@@ -70,7 +70,7 @@ Update post-installation messages shown to users:
 
 ### 6. Stack-Specific Agent References
 Search for agents that reference "dotnet-microservice":
-- [ ] Check `installer/global/agents/*.md` files
+- [ ] Check `installer/core/agents/*.md` files
 - [ ] Update any hardcoded template references
 
 ## Implementation Checklist
@@ -79,7 +79,7 @@ Following the template creation guide principles:
 
 **Step 1**: Rename Directory
 ```bash
-cd installer/global/templates/
+cd installer/core/templates/
 mv dotnet-microservice dotnet-fastendpoints
 ```
 

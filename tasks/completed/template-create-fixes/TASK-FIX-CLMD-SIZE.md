@@ -50,7 +50,7 @@ The `_generate_core()` method in `claude_md_generator.py` includes:
 
 ### File 1: claude_md_generator.py
 
-**Location**: `installer/global/lib/template_generator/claude_md_generator.py`
+**Location**: `installer/core/lib/template_generator/claude_md_generator.py`
 
 #### Change 1: Modify `_generate_architecture_overview()` (lines 69-156)
 
@@ -146,7 +146,7 @@ def _generate_technology_stack_summary(self) -> str:
 
 ### File 2: models.py
 
-**Location**: `installer/global/lib/template_generator/models.py`
+**Location**: `installer/core/lib/template_generator/models.py`
 
 #### Change: Add graceful degradation to `validate_size_constraints()` (lines 409-422)
 

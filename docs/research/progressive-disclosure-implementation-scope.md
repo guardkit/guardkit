@@ -292,7 +292,7 @@ class EnhancementApplier:
 
 ---
 
-### 4. Global Agents (`installer/global/agents/`)
+### 4. Global Agents (`installer/core/agents/`)
 
 **Current**: Large monolithic agent files (16-44KB each)
 
@@ -346,7 +346,7 @@ Required:
 - Existing built-in templates need manual migration:
 
 ```
-installer/global/templates/
+installer/core/templates/
 ├── react-typescript/agents/
 │   ├── react-query-specialist.md → split needed
 │   └── form-validation-specialist.md → split needed
@@ -503,7 +503,7 @@ extended_context:
 ### Files to Modify
 
 ```
-installer/global/lib/
+installer/core/lib/
 ├── agent_enhancement/
 │   ├── enhancer.py              # Major: new file creation behavior
 │   └── applier.py               # Major: complete refactor
@@ -512,7 +512,7 @@ installer/global/lib/
 └── template_creation/
     └── template_create_orchestrator.py  # Medium: write split files
 
-installer/global/commands/
+installer/core/commands/
 ├── agent-enhance.md             # Documentation update
 ├── template-create.md           # Documentation update
 └── template-init.md             # Documentation update
@@ -521,7 +521,7 @@ installer/global/commands/
 ### Files to Create (for each existing large agent)
 
 ```
-installer/global/agents/
+installer/core/agents/
 ├── architectural-reviewer-ext.md    # New
 ├── code-reviewer-ext.md             # New
 ├── test-orchestrator-ext.md         # New
@@ -531,7 +531,7 @@ installer/global/agents/
 ### Files to Modify (existing agents)
 
 ```
-installer/global/agents/
+installer/core/agents/
 ├── architectural-reviewer.md    # Add loading instruction
 ├── code-reviewer.md             # Add loading instruction
 ├── test-orchestrator.md         # Add loading instruction

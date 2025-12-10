@@ -97,13 +97,13 @@ head -20 /tmp/test-template/agents/test-specialist-ext.md
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import AgentScanner
 
 scanner = AgentScanner()
 
 # Test global agents
-global_agents = scanner.scan_agents(Path('installer/global/agents'))
+global_agents = scanner.scan_agents(Path('installer/core/agents'))
 print(f'Global agents: {len(global_agents)}')
 for a in global_agents:
     if '-ext' in a.name:
@@ -111,7 +111,7 @@ for a in global_agents:
         sys.exit(1)
 
 # Test template agents
-template_agents = scanner.scan_agents(Path('installer/global/templates/react-typescript/agents'))
+template_agents = scanner.scan_agents(Path('installer/core/templates/react-typescript/agents'))
 print(f'Template agents: {len(template_agents)}')
 for a in template_agents:
     if '-ext' in a.name:
@@ -154,12 +154,12 @@ from pathlib import Path
 
 # Calculate original sizes
 original_size = 0
-for f in Path('installer/global/agents').glob('*.md.bak'):
+for f in Path('installer/core/agents').glob('*.md.bak'):
     original_size += f.stat().st_size
 
 # Calculate core sizes
 core_size = 0
-for f in Path('installer/global/agents').glob('*.md'):
+for f in Path('installer/core/agents').glob('*.md'):
     if not f.stem.endswith('-ext'):
         core_size += f.stat().st_size
 
@@ -203,8 +203,8 @@ echo ""
 
 # Test 1: Global agent structure
 echo "Test 1: Global agent structure..."
-core_count=$(ls installer/global/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l)
-ext_count=$(ls installer/global/agents/*-ext.md 2>/dev/null | wc -l)
+core_count=$(ls installer/core/agents/*.md 2>/dev/null | grep -v "\-ext" | wc -l)
+ext_count=$(ls installer/core/agents/*-ext.md 2>/dev/null | wc -l)
 echo "  Core files: $core_count"
 echo "  Extended files: $ext_count"
 if [ "$core_count" -eq "$ext_count" ]; then
@@ -218,7 +218,7 @@ echo ""
 # Test 2: Loading instructions
 echo "Test 2: Loading instructions..."
 missing=0
-for f in installer/global/agents/*.md; do
+for f in installer/core/agents/*.md; do
     if [[ ! "$f" == *"-ext.md" ]]; then
         if ! grep -q "## Extended Reference" "$f"; then
             echo "  Missing: $f"
@@ -239,10 +239,10 @@ echo "Test 3: Discovery exclusion..."
 python3 -c "
 from pathlib import Path
 import sys
-sys.path.insert(0, 'installer/global/lib')
+sys.path.insert(0, 'installer/core/lib')
 from agent_scanner import AgentScanner
 scanner = AgentScanner()
-agents = scanner.scan_agents(Path('installer/global/agents'))
+agents = scanner.scan_agents(Path('installer/core/agents'))
 ext_found = [a for a in agents if '-ext' in a.name]
 if ext_found:
     print(f'  ❌ FAILED: Extended files in discovery: {[a.name for a in ext_found]}')
@@ -257,7 +257,7 @@ echo "Test 4: Size validation..."
 python3 -c "
 from pathlib import Path
 oversized = []
-for f in Path('installer/global/agents').glob('*.md'):
+for f in Path('installer/core/agents').glob('*.md'):
     if not f.stem.endswith('-ext'):
         size = f.stat().st_size
         if size > 20 * 1024:
@@ -297,11 +297,11 @@ Generate comprehensive report:
 
 ## Files Changed
 
-- installer/global/agents/*.md (38 files)
-- installer/global/templates/*/agents/*.md
-- installer/global/lib/agent_enhancement/applier.py
-- installer/global/lib/agent_enhancement/enhancer.py
-- installer/global/lib/template_generator/claude_md_generator.py
+- installer/core/agents/*.md (38 files)
+- installer/core/templates/*/agents/*.md
+- installer/core/lib/agent_enhancement/applier.py
+- installer/core/lib/agent_enhancement/enhancer.py
+- installer/core/lib/template_generator/claude_md_generator.py
 - scripts/split-agent.py (new)
 - CLAUDE.md
 - Command documentation

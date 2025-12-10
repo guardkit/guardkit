@@ -47,7 +47,7 @@ cd agentecflow
 ### 3. Create Directory Structure
 
 ```bash
-mkdir -p installer/global/{commands,agents,instructions,templates}
+mkdir -p installer/core/{commands,agents,instructions,templates}
 mkdir -p installer/scripts
 mkdir -p docs
 mkdir -p tests

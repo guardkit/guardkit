@@ -130,8 +130,8 @@ def test_is_extended_file():
 
 ## Files to Modify
 
-1. `installer/global/lib/agent_scanner/agent_scanner.py` - Add exclusion logic
-2. `installer/global/lib/agent_scanner/__init__.py` - Export helper function (optional)
+1. `installer/core/lib/agent_scanner/agent_scanner.py` - Add exclusion logic
+2. `installer/core/lib/agent_scanner/__init__.py` - Export helper function (optional)
 
 ## Validation Checkpoint
 

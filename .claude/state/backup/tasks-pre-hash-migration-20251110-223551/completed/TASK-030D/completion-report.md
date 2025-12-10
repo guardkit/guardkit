@@ -108,7 +108,7 @@ Successfully created a comprehensive quick reference card system for Agentecflow
 - ✅ Consistent structure - 5-section template applied to all cards
 
 ### Content Standards (4/4 ✅)
-- ✅ Extracted from command specs - All details from installer/global/commands/
+- ✅ Extracted from command specs - All details from installer/core/commands/
 - ✅ Accurate technical details - Terminology consistency: 100%
 - ✅ Common scenarios covered - 2-3 examples per card minimum
 - ✅ Cross-references to full docs - All cards link to comprehensive documentation

@@ -269,7 +269,7 @@ contain any hard links, symlinks and total size is less than 10GB.
 **Before:**
 ```markdown
 - [Implementation Details](../../tasks/completed/TASK-031/)
-- [Git State Helper](../../installer/global/lib/git_state_helper.py)
+- [Git State Helper](../../installer/core/lib/git_state_helper.py)
 ```
 
 **After:**

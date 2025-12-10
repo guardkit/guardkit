@@ -3,8 +3,8 @@
 **Generated**: 2025-10-10
 **Task**: Integration with Task-Work Workflow
 **Files Modified**:
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/task-work.md`
-- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/task-manager.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/task-work.md`
+- `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/task-manager.md`
 
 ---
 

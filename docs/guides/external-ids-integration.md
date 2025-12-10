@@ -45,7 +45,7 @@ external_ids:
 External IDs can be added or updated after task creation:
 
 ```python
-from installer.global.commands.lib.task_utils import update_task_frontmatter
+from installer.core.commands.lib.task_utils import update_task_frontmatter
 from pathlib import Path
 
 # Add Jira ID to existing task
@@ -72,7 +72,7 @@ update_task_frontmatter(
 ### Reading External IDs
 
 ```python
-from installer.global.commands.lib.task_utils import read_task_file
+from installer.core.commands.lib.task_utils import read_task_file
 from pathlib import Path
 
 # Read task file
@@ -160,7 +160,7 @@ Only these tool names are accepted:
 ### Validation Function
 
 ```python
-from installer.global.commands.lib.task_utils import validate_external_ids
+from installer.core.commands.lib.task_utils import validate_external_ids
 
 # Valid external IDs
 external_ids = {
@@ -377,7 +377,7 @@ Test categories:
 Existing tasks work without changes. To add external IDs:
 
 ```python
-from installer.global.commands.lib.task_utils import update_task_frontmatter
+from installer.core.commands.lib.task_utils import update_task_frontmatter
 from pathlib import Path
 import glob
 
@@ -421,7 +421,7 @@ See [RequireKit Documentation](https://github.com/requirekit/require-kit) for PM
 **Solution**: Ensure you're using the latest task_utils module:
 
 ```python
-from installer.global.commands.lib.task_utils import parse_task_frontmatter
+from installer.core.commands.lib.task_utils import parse_task_frontmatter
 
 frontmatter = parse_task_frontmatter(content)
 print(frontmatter.get("external_ids", {}))  # Should always return dict
@@ -459,7 +459,7 @@ frontmatter["external_ids"] = {"github": "234"}  # Replaces all
 
 ## Related Documentation
 
-- [Task Create Command](../installer/global/commands/task-create.md)
-- [Task Status Command](../installer/global/commands/task-status.md)
-- [Task Utils API](../installer/global/commands/lib/task_utils.py)
+- [Task Create Command](../installer/core/commands/task-create.md)
+- [Task Status Command](../installer/core/commands/task-status.md)
+- [Task Utils API](../installer/core/commands/lib/task_utils.py)
 - [RequireKit Integration](https://github.com/requirekit/require-kit)

@@ -22,7 +22,7 @@ upload/upload-sessions.js → classified as "other" (should be "scripts/utilitie
 
 ### Current Layer Classification System
 
-**Location**: `/installer/global/lib/template_generator/pattern_matcher.py`
+**Location**: `/installer/core/lib/template_generator/pattern_matcher.py`
 
 **Current Implementation**:
 ```python
@@ -43,17 +43,17 @@ LAYER_PATTERNS = {
 
 ### Integration Points
 
-**Response Parser** (`installer/global/lib/codebase_analyzer/response_parser.py`):
+**Response Parser** (`installer/core/lib/codebase_analyzer/response_parser.py`):
 - Parses AI-generated layer classification in `example_files` section
 - Accepts `layer` field: `"layer": "Domain"`, `"layer": "other"`, etc.
 - No fallback for unclassified files
 
-**Prompt Builder** (`installer/global/lib/codebase_analyzer/prompt_builder.py`):
+**Prompt Builder** (`installer/core/lib/codebase_analyzer/prompt_builder.py`):
 - Provides layer examples (Domain, Application, Infrastructure, Presentation, Testing)
 - Uses `CRUDPatternMatcher.identify_layer()` indirectly
 - No JavaScript-specific guidance
 
-**Pattern Matcher** (`installer/global/lib/template_generator/pattern_matcher.py`):
+**Pattern Matcher** (`installer/core/lib/template_generator/pattern_matcher.py`):
 - Core layer detection via `identify_layer()` static method
 - Returns `Optional[str]` (layer name or None)
 - Used by `OperationExtractor.extract_operations_by_layer()`
@@ -114,7 +114,7 @@ Map JavaScript patterns to standard architectural layers:
 ### Phase 1: Core Implementation (4 hours)
 
 **Step 1.1**: Create `LayerClassificationStrategy` abstraction
-- **File**: `/installer/global/lib/template_generator/layer_classifier.py` (NEW)
+- **File**: `/installer/core/lib/template_generator/layer_classifier.py` (NEW)
 - **Responsibility**: Abstract interface for language-specific classification
 - **Pattern**: Strategy pattern with factory
 
@@ -294,13 +294,13 @@ class TestJavaScriptLayerClassifier:
 ## Files to Create/Modify
 
 ### Create (NEW)
-1. `/installer/global/lib/template_generator/layer_classifier.py` - Strategy implementation
+1. `/installer/core/lib/template_generator/layer_classifier.py` - Strategy implementation
 2. `/tests/lib/template_generator/test_layer_classifier.py` - Comprehensive tests
 
 ### Modify (EXISTING)
-1. `/installer/global/lib/template_generator/pattern_matcher.py` - Integrate classifier, maintain backward compatibility
-2. `/installer/global/lib/codebase_analyzer/response_parser.py` - Handle confidence scores
-3. `/installer/global/lib/codebase_analyzer/prompt_builder.py` - Add JavaScript guidance
+1. `/installer/core/lib/template_generator/pattern_matcher.py` - Integrate classifier, maintain backward compatibility
+2. `/installer/core/lib/codebase_analyzer/response_parser.py` - Handle confidence scores
+3. `/installer/core/lib/codebase_analyzer/prompt_builder.py` - Add JavaScript guidance
 4. `/CLAUDE.md` - Document JavaScript classification capability
 
 ## Success Criteria

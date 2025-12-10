@@ -335,10 +335,10 @@ If you absolutely need the old templates, they are preserved in git history.
 git checkout v1.9-templates-before-removal
 
 # View template directory
-ls installer/global/templates/
+ls installer/core/templates/
 
 # Copy specific template if needed
-cp -r installer/global/templates/dotnet-aspnetcontroller ~/my-backup/
+cp -r installer/core/templates/dotnet-aspnetcontroller ~/my-backup/
 
 # Return to current branch
 git checkout main
@@ -348,10 +348,10 @@ git checkout main
 
 ```bash
 # Extract from git history
-git show v1.9-templates-before-removal:installer/global/templates/dotnet-aspnetcontroller/CLAUDE.md > dotnet-aspnetcontroller-CLAUDE.md
+git show v1.9-templates-before-removal:installer/core/templates/dotnet-aspnetcontroller/CLAUDE.md > dotnet-aspnetcontroller-CLAUDE.md
 
 # Or extract entire directory
-git archive v1.9-templates-before-removal installer/global/templates/dotnet-aspnetcontroller | tar -x
+git archive v1.9-templates-before-removal installer/core/templates/dotnet-aspnetcontroller | tar -x
 ```
 
 ---

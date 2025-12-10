@@ -20,12 +20,12 @@ All acceptance criteria for TASK-011F have been successfully validated. Both imp
 
 ### Files Under Test
 1. **AppShell Template**:
-   - Path: `/installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
+   - Path: `/installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
    - Size: 1,654 lines
    - Checksum: Verified identical
 
 2. **NavigationPage Template**:
-   - Path: `/installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md`
+   - Path: `/installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md`
    - Size: 1,654 lines
    - Checksum: Verified identical
 
@@ -573,8 +573,8 @@ The documentation is ready for:
 ## Test Artifacts
 
 ### Files Validated
-1. `/installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
-2. `/installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md`
+1. `/installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
+2. `/installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md`
 
 ### Validation Scripts
 1. `/tests/validate_task_011f.py` - Comprehensive validation suite

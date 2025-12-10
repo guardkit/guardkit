@@ -122,7 +122,7 @@ Stack-Specific:                1 agent  (5.9%)
 
 - **Comprehensive Guide**: `docs/guides/model-optimization-guide.md` (400+ lines)
 - **Implementation Summary**: `TASK-017-IMPLEMENTATION-SUMMARY.md`
-- **Agent Files**: `installer/global/agents/*.md`
+- **Agent Files**: `installer/core/agents/*.md`
 
 ## Maintenance
 
@@ -130,7 +130,7 @@ Stack-Specific:                1 agent  (5.9%)
 
 ```bash
 # 1. Edit agent frontmatter
-vim installer/global/agents/[agent-name].md
+vim installer/core/agents/[agent-name].md
 
 # 2. Change model field
 model: sonnet  # or haiku
@@ -139,7 +139,7 @@ model: sonnet  # or haiku
 model_rationale: "Clear reasoning for change"
 
 # 4. Commit changes
-git add installer/global/agents/[agent-name].md
+git add installer/core/agents/[agent-name].md
 git commit -m "Update [agent-name] to use [model]"
 ```
 
@@ -147,10 +147,10 @@ git commit -m "Update [agent-name] to use [model]"
 
 ```bash
 # Revert specific agent
-git checkout HEAD -- installer/global/agents/[agent-name].md
+git checkout HEAD -- installer/core/agents/[agent-name].md
 
 # Revert all agents
-git checkout HEAD -- installer/global/agents/*.md
+git checkout HEAD -- installer/core/agents/*.md
 ```
 
 ---

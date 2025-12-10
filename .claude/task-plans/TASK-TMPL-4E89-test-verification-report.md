@@ -15,7 +15,7 @@ All 29 tests executed successfully with 100% pass rate. Code coverage exceeds re
 
 All Python source files compile successfully without syntax errors:
 
-- `installer/global/lib/agent_generator/agent_generator.py` - OK
+- `installer/core/lib/agent_generator/agent_generator.py` - OK
 - `tests/unit/lib/agent_generator/test_ai_agent_generator.py` - OK
 - `tests/integration/lib/test_agent_generator_integration.py` - OK
 
@@ -112,7 +112,7 @@ Validates: Graceful degradation on AI failure, fallback pattern detection
 
 ## Code Coverage Analysis
 
-### Target File: `installer/global/lib/agent_generator/agent_generator.py`
+### Target File: `installer/core/lib/agent_generator/agent_generator.py`
 
 **Coverage Metrics**:
 
@@ -210,7 +210,7 @@ The 41 uncovered statements are primarily:
 ### Files Modified/Created
 
 **Modified**:
-- `installer/global/lib/agent_generator/agent_generator.py` (+225 lines)
+- `installer/core/lib/agent_generator/agent_generator.py` (+225 lines)
   - Added AI-powered agent identification
   - Replaced hard-coded detection with AI analysis
   - Maintained backward compatibility fallback

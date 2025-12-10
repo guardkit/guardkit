@@ -31,7 +31,7 @@ FILES DELIVERED:
      - File count boundaries: 0, 1, 50, 100 files
      - Dependency boundaries: 0, 1, 10, 50 dependencies
 
-  4. installer/global/commands/lib/pager_display.py (modified)
+  4. installer/core/commands/lib/pager_display.py (modified)
      - Added format_plan_section() function
      - Integrated into _format_plan() method
      - User-friendly messages for empty sections

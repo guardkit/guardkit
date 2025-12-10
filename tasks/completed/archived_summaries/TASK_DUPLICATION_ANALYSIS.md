@@ -234,12 +234,12 @@ When implementing task ID generation:
 ## Related Files to Update
 
 ### ai-engineer Repo
-- `/installer/global/commands/feature-generate-tasks.md`
-- `/installer/global/commands/task-create.md`
-- `/installer/global/commands/task-work.md`
-- `/installer/global/commands/task-complete.md`
-- `/installer/global/commands/task-status.md`
-- `/installer/global/commands/task-sync.md`
+- `/installer/core/commands/feature-generate-tasks.md`
+- `/installer/core/commands/task-create.md`
+- `/installer/core/commands/task-work.md`
+- `/installer/core/commands/task-complete.md`
+- `/installer/core/commands/task-status.md`
+- `/installer/core/commands/task-sync.md`
 
 ### Documentation
 - `CLAUDE.md` (project instructions)

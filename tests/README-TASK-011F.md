@@ -15,8 +15,8 @@ Expected output: **58/58 tests passed**
 The validation suite comprehensively tests the `maui-service-specialist` agent documentation created in TASK-011F:
 
 ### Files Under Test
-- `installer/global/templates/maui-appshell/agents/maui-service-specialist.md`
-- `installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md`
+- `installer/core/templates/maui-appshell/agents/maui-service-specialist.md`
+- `installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md`
 
 ### Test Categories (58 Total Tests)
 
@@ -205,14 +205,14 @@ For comprehensive test results and analysis, see:
 1. **File not found**
    ```
    Ensure files exist:
-   - installer/global/templates/maui-appshell/agents/maui-service-specialist.md
-   - installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md
+   - installer/core/templates/maui-appshell/agents/maui-service-specialist.md
+   - installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md
    ```
 
 2. **Files not identical**
    ```bash
-   diff installer/global/templates/maui-appshell/agents/maui-service-specialist.md \
-        installer/global/templates/maui-navigationpage/agents/maui-service-specialist.md
+   diff installer/core/templates/maui-appshell/agents/maui-service-specialist.md \
+        installer/core/templates/maui-navigationpage/agents/maui-service-specialist.md
    ```
 
 3. **Section missing**

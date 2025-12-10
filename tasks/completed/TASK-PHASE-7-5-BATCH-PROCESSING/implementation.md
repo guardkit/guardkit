@@ -7,7 +7,7 @@ Successfully implemented batch processing for Phase 7.5 Agent Enhancement follow
 ## Changes Made
 
 ### File Modified
-- `installer/global/lib/template_creation/agent_enhancer.py`
+- `installer/core/lib/template_creation/agent_enhancer.py`
   - **Original**: 685 lines
   - **New**: 1,253 lines
   - **Added**: 568 lines (~71% of planned 800 LOC)
@@ -18,7 +18,7 @@ Successfully implemented batch processing for Phase 7.5 Agent Enhancement follow
 ```python
 # Import WorkflowPhase for semantic phase identification (TASK-PHASE-7-5-FIX-FOUNDATION)
 import importlib
-_orchestrator_module = importlib.import_module('installer.global.commands.lib.template_create_orchestrator')
+_orchestrator_module = importlib.import_module('installer.core.commands.lib.template_create_orchestrator')
 WorkflowPhase = _orchestrator_module.WorkflowPhase
 ```
 
@@ -358,7 +358,7 @@ The implementation is ready for comprehensive testing:
 
 ## Files Modified
 
-1. **installer/global/lib/template_creation/agent_enhancer.py**
+1. **installer/core/lib/template_creation/agent_enhancer.py**
    - Added WorkflowPhase import
    - Added _templates_written_to_disk flag
    - Replaced enhance_all_agents() with batch processing

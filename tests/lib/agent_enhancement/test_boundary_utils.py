@@ -8,9 +8,9 @@ import pytest
 import sys
 from pathlib import Path
 
-# Add the installer.global.lib.agent_enhancement directory to Python path
+# Add the installer.core.lib.agent_enhancement directory to Python path
 _test_dir = Path(__file__).resolve().parent
-_lib_dir = _test_dir.parent.parent.parent / "installer" / "global" / "lib" / "agent_enhancement"
+_lib_dir = _test_dir.parent.parent.parent / "installer" / "core" / "lib" / "agent_enhancement"
 sys.path.insert(0, str(_lib_dir))
 
 from boundary_utils import (

@@ -30,7 +30,7 @@ TASK-STND-773D was marked complete (commit 814d810) but only updated documentati
 
 ### Evidence of Incomplete Implementation
 
-**File: `installer/global/lib/agent_enhancement/prompt_builder.py`**
+**File: `installer/core/lib/agent_enhancement/prompt_builder.py`**
 ```python
 # Lines 80, 86, 89 - INCORRECT (still requesting best_practices)
 3. Best practices for using this agent with these templates
@@ -46,13 +46,13 @@ TASK-STND-773D was marked complete (commit 814d810) but only updated documentati
     "boundaries": "## Boundaries\\n\\n### ALWAYS\\n- ✅ Rule 1\\n..."
 ```
 
-**File: `installer/global/lib/agent_enhancement/parser.py`**
+**File: `installer/core/lib/agent_enhancement/parser.py`**
 - No validation for boundaries section structure
 - No validation for ALWAYS/NEVER/ASK subsections
 - No validation for rule counts (5-7/5-7/3-5)
 - No validation for emoji prefixes (✅/❌/⚠️)
 
-**File: `installer/global/lib/agent_enhancement/applier.py`**
+**File: `installer/core/lib/agent_enhancement/applier.py`**
 - Section insertion logic is generic (line 156)
 - No special handling for boundaries placement (should be after line 12, before Related Templates)
 - No validation of boundaries format
@@ -125,7 +125,7 @@ Impact of Missing Boundaries:
 
 ### 1. Prompt Builder Updates
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 
 ✅ **AC-1.1**: Lines 80, 86, 89 updated to request "boundaries" instead of "best_practices"
 
@@ -149,7 +149,7 @@ Impact of Missing Boundaries:
 
 ### 2. Parser Validation
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 
 ✅ **AC-2.1**: Add `_validate_boundaries()` method with structure checks:
 - Presence of all three subsections (ALWAYS/NEVER/ASK)
@@ -181,7 +181,7 @@ def parse(self, response: str) -> Dict[str, Any]:
 
 ### 3. Applier Placement Logic
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 ✅ **AC-3.1**: Update `_merge_content()` to handle boundaries placement:
 ```python
@@ -358,7 +358,7 @@ validation_report:
 
 ### Phase 1: Prompt Builder Update (2 hours)
 
-**File**: `installer/global/lib/agent_enhancement/prompt_builder.py`
+**File**: `installer/core/lib/agent_enhancement/prompt_builder.py`
 
 **Changes**:
 1. Line 80: `3. Boundaries for this agent (ALWAYS do, NEVER do, ASK first)`
@@ -385,7 +385,7 @@ validation_report:
 
 ### Phase 2: Parser Validation (4 hours)
 
-**File**: `installer/global/lib/agent_enhancement/parser.py`
+**File**: `installer/core/lib/agent_enhancement/parser.py`
 
 **New Methods**:
 
@@ -531,7 +531,7 @@ def parse(self, response: str) -> Dict[str, Any]:
 
 ### Phase 3: Applier Placement Logic (3 hours)
 
-**File**: `installer/global/lib/agent_enhancement/applier.py`
+**File**: `installer/core/lib/agent_enhancement/applier.py`
 
 **Update `_merge_content()` method**:
 
@@ -825,7 +825,7 @@ def test_full_boundaries_pipeline():
    - Explain ALWAYS/NEVER/ASK framework
    - Note migration from best_practices
 
-3. **installer/global/agents/agent-content-enhancer.md** (30 min):
+3. **installer/core/agents/agent-content-enhancer.md** (30 min):
    - Already updated in TASK-STND-773D
    - Verify alignment with implementation
    - Add note that implementation is now complete
@@ -898,7 +898,7 @@ def test_full_boundaries_pipeline():
 
 ```bash
 # Run all enhancement tests
-pytest tests/unit/lib/agent_enhancement/ -v --cov=installer/global/lib/agent_enhancement --cov-report=term
+pytest tests/unit/lib/agent_enhancement/ -v --cov=installer/core/lib/agent_enhancement --cov-report=term
 
 # Run boundaries-specific tests
 pytest tests/unit/lib/agent_enhancement/test_boundaries_validation.py -v
@@ -907,7 +907,7 @@ pytest tests/unit/lib/agent_enhancement/test_boundaries_validation.py -v
 pytest tests/integration/lib/agent_enhancement/test_boundaries_e2e.py -v
 
 # Generate coverage report
-pytest tests/ --cov=installer/global/lib/agent_enhancement --cov-report=html
+pytest tests/ --cov=installer/core/lib/agent_enhancement --cov-report=html
 ```
 
 ---
@@ -1079,10 +1079,10 @@ pytest tests/ --cov=installer/global/lib/agent_enhancement --cov-report=html
 
 ### Internal Dependencies
 
-- `installer/global/lib/agent_enhancement/prompt_builder.py` (exists)
-- `installer/global/lib/agent_enhancement/parser.py` (exists)
-- `installer/global/lib/agent_enhancement/applier.py` (exists)
-- `installer/global/agents/agent-content-enhancer.md` (updated in TASK-STND-773D)
+- `installer/core/lib/agent_enhancement/prompt_builder.py` (exists)
+- `installer/core/lib/agent_enhancement/parser.py` (exists)
+- `installer/core/lib/agent_enhancement/applier.py` (exists)
+- `installer/core/agents/agent-content-enhancer.md` (updated in TASK-STND-773D)
 
 ### External Dependencies
 
@@ -1115,7 +1115,7 @@ pytest tests/ --cov=installer/global/lib/agent_enhancement --cov-report=html
 ### Related Work
 
 - **GitHub Analysis** (docs/analysis/github-agent-best-practices-analysis.md): Identified Critical Gap #4
-- **Agent Content Enhancer** (installer/global/agents/agent-content-enhancer.md): Specifies boundaries format
+- **Agent Content Enhancer** (installer/core/agents/agent-content-enhancer.md): Specifies boundaries format
 
 ---
 
@@ -1139,7 +1139,7 @@ pytest tests/ --cov=installer/global/lib/agent_enhancement --cov-report=html
 ### Context from TASK-STND-773D
 
 Original task (commit 814d810) updated:
-- ✅ `installer/global/agents/agent-content-enhancer.md` (lines 64-92, 395-436)
+- ✅ `installer/core/agents/agent-content-enhancer.md` (lines 64-92, 395-436)
 - ✅ Quality requirements (lines 148-167, 302-314)
 - ❌ **Missing**: Implementation in prompt_builder.py, parser.py, applier.py
 

@@ -45,7 +45,7 @@ Main Repo (guardkit)
 **Execution**:
 ```bash
 # Direct Claude Code implementation
-# Create installer/global/commands/feature-plan.md
+# Create installer/core/commands/feature-plan.md
 ```
 
 **This is the QUICK WIN** - gives single-command UX immediately!
@@ -65,7 +65,7 @@ Main Repo (guardkit)
 **Execution**:
 ```bash
 # Direct Claude Code implementation
-# Add to installer/global/lib/feature_utils.py
+# Add to installer/core/lib/feature_utils.py
 ```
 
 ---
@@ -83,16 +83,16 @@ Main Repo (guardkit)
 **Execution**:
 ```bash
 # Direct Claude Code implementation
-# Create installer/global/lib/readme_generator.py
+# Create installer/core/lib/readme_generator.py
 ```
 
 **CHECKPOINT 1**: After Wave 1, verify:
 ```bash
 # Test /feature-plan command exists
-ls installer/global/commands/feature-plan.md
+ls installer/core/commands/feature-plan.md
 
 # Test slug extraction
-python3 -c "from installer.global.lib.feature_utils import extract_feature_slug; print(extract_feature_slug('Plan: dark mode'))"
+python3 -c "from installer.core.lib.feature_utils import extract_feature_slug; print(extract_feature_slug('Plan: dark mode'))"
 # Expected: dark-mode
 ```
 
@@ -176,16 +176,16 @@ python3 -c "from installer.global.lib.feature_utils import extract_feature_slug;
 **CHECKPOINT 2**: After Wave 2, verify all components work independently:
 ```bash
 # Test subtask extraction
-python3 -c "from installer.global.lib.review_parser import extract_subtasks_from_review; ..."
+python3 -c "from installer.core.lib.review_parser import extract_subtasks_from_review; ..."
 
 # Test mode assignment
-python3 -c "from installer.global.lib.complexity_analyzer import assign_implementation_mode; ..."
+python3 -c "from installer.core.lib.complexity_analyzer import assign_implementation_mode; ..."
 
 # Test parallel detection
-python3 -c "from installer.global.lib.parallel_analyzer import detect_parallel_groups; ..."
+python3 -c "from installer.core.lib.parallel_analyzer import detect_parallel_groups; ..."
 
 # Test guide generation
-python3 -c "from installer.global.lib.guide_generator import generate_implementation_guide; ..."
+python3 -c "from installer.core.lib.guide_generator import generate_implementation_guide; ..."
 ```
 
 ---

@@ -90,9 +90,9 @@ All links verified to point to existing or future-created files:
 - ✅ [docs/guides/agentecflow-lite-workflow.md](../../docs/guides/agentecflow-lite-workflow.md)
 - ✅ [docs/workflows/design-first-workflow.md](../../docs/workflows/design-first-workflow.md)
 - ✅ [docs/workflows/complexity-management-workflow.md](../../docs/workflows/complexity-management-workflow.md)
-- ✅ [installer/global/commands/task-work.md](../../installer/global/commands/task-work.md)
-- ✅ [installer/global/commands/task-create.md](../../installer/global/commands/task-create.md)
-- ✅ [installer/global/commands/epic-create.md](../../installer/global/commands/epic-create.md)
+- ✅ [installer/core/commands/task-work.md](../../installer/core/commands/task-work.md)
+- ✅ [installer/core/commands/task-create.md](../../installer/core/commands/task-create.md)
+- ✅ [installer/core/commands/epic-create.md](../../installer/core/commands/epic-create.md)
 
 ---
 

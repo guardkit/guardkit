@@ -32,7 +32,7 @@ def temp_agent_dirs():
 
     # Create directory structure
     custom_dir = Path(temp_dir) / ".claude/agents"
-    global_dir = Path(temp_dir) / "installer/global/agents"
+    global_dir = Path(temp_dir) / "installer/core/agents"
 
     custom_dir.mkdir(parents=True, exist_ok=True)
     global_dir.mkdir(parents=True, exist_ok=True)

@@ -184,17 +184,17 @@ Create a pragmatic, lightweight AI-assisted development system that:
 ### Automated Checks
 ```bash
 # No requirements references
-grep -r "EARS\|epic.*create\|feature.*create" installer/global/commands/ \
+grep -r "EARS\|epic.*create\|feature.*create" installer/core/commands/ \
   | grep -v "backup\|Historical"
 
 # Command count
-ls -1 installer/global/commands/*.md | wc -l  # Should be 8
+ls -1 installer/core/commands/*.md | wc -l  # Should be 8
 
 # Agent count
-ls -1 installer/global/agents/*.md | wc -l    # Should be 15
+ls -1 installer/core/agents/*.md | wc -l    # Should be 15
 
 # No broken imports
-python3 -c "import installer.global.commands.lib.*"
+python3 -c "import installer.core.commands.lib.*"
 ```
 
 ### Manual Testing

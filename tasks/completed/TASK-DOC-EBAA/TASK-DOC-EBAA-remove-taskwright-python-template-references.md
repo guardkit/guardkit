@@ -46,7 +46,7 @@ This task involves:
 - README.md (primary file with known references)
 - CLAUDE.md (root and .claude/ versions)
 - docs/ directory (all markdown files)
-- installer/global/templates/*/README.md (template documentation)
+- installer/core/templates/*/README.md (template documentation)
 - Any other documentation files that might reference templates
 
 ## Implementation Notes

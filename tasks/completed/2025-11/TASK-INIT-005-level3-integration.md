@@ -57,7 +57,7 @@ From TASK-5E55 review:
 
 ## Code Changes Required
 
-### File 1: installer/global/commands/lib/greenfield_qa_session.py
+### File 1: installer/core/commands/lib/greenfield_qa_session.py
 
 **ADD compatibility function** (after line 680):
 
@@ -192,11 +192,11 @@ def run(self) -> Optional[GreenfieldAnswers]:
 
 ## Files to Modify
 
-1. **installer/global/commands/lib/greenfield_qa_session.py** - ADD
+1. **installer/core/commands/lib/greenfield_qa_session.py** - ADD
    - `_ensure_validation_compatibility()` method (~50 lines)
    - `_display_validation_guidance()` method (~30 lines)
 
-2. **installer/global/commands/lib/greenfield_qa_session.py** - MODIFY
+2. **installer/core/commands/lib/greenfield_qa_session.py** - MODIFY
    - `run()` method to add compatibility step (~5 lines)
 
 ## Files to NOT Touch
@@ -338,8 +338,8 @@ When complete:
 
 ### Deliverables
 - **Files Modified**: 3
-  - `installer/global/commands/lib/greenfield_qa_session.py` (+87 lines)
-  - `installer/global/commands/lib/template_init/command.py` (+10 lines)
+  - `installer/core/commands/lib/greenfield_qa_session.py` (+87 lines)
+  - `installer/core/commands/lib/template_init/command.py` (+10 lines)
   - `tests/unit/test_greenfield_qa_session.py` (+180 lines)
 - **Tests Written**: 7 comprehensive unit tests
 - **Coverage Achieved**: 100% for new methods
@@ -393,8 +393,8 @@ When complete:
 
 ### Files Changed
 ```
-installer/global/commands/lib/greenfield_qa_session.py   |  87 ++++++++++
-installer/global/commands/lib/template_init/command.py   |  10 ++
+installer/core/commands/lib/greenfield_qa_session.py   |  87 ++++++++++
+installer/core/commands/lib/template_init/command.py   |  10 ++
 tests/unit/test_greenfield_qa_session.py                 | 180 +++++++++++++++++++++
 ```
 

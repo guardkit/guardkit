@@ -719,7 +719,7 @@ A: No, MCP servers are required for design extraction. They provide the bridge b
 - ✓ Automatic testing
 - ✓ Full traceability
 
-See: [Deprecation Notice](../../installer/global/commands/figma-to-react.md)
+See: [Deprecation Notice](../../installer/core/commands/figma-to-react.md)
 
 ---
 

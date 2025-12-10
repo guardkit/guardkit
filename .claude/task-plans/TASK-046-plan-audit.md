@@ -18,13 +18,13 @@
 ## 1. File Count Verification
 
 ### Planned Files (from implementation plan)
-1. `installer/global/lib/id_generator.py` (NEW)
+1. `installer/core/lib/id_generator.py` (NEW)
 2. `tests/unit/test_id_generator.py` (NEW)
 
 **Total Planned**: 2 new files
 
 ### Actual Files Created
-1. ✅ `installer/global/lib/id_generator.py` (CREATED)
+1. ✅ `installer/core/lib/id_generator.py` (CREATED)
 2. ✅ `tests/unit/test_id_generator.py` (CREATED)
 
 **Total Created**: 2 files

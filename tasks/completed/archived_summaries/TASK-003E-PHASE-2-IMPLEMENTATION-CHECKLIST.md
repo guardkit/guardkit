@@ -20,9 +20,9 @@ pytest tests/unit/test_review_router.py -v
 # Expected: 40+ tests passing
 
 # 2. Verify dependency modules exist
-ls -la installer/global/commands/lib/review_modes.py
-ls -la installer/global/commands/lib/review_router.py
-ls -la installer/global/commands/lib/complexity_models.py
+ls -la installer/core/commands/lib/review_modes.py
+ls -la installer/core/commands/lib/review_router.py
+ls -la installer/core/commands/lib/complexity_models.py
 
 # 3. Verify fixtures exist
 ls -la tests/fixtures/data_fixtures.py
@@ -310,7 +310,7 @@ mkdir -p tests/integration
 - [ ] Run full integration suite with coverage:
   ```bash
   pytest tests/integration/ -v \
-      --cov=installer/global/commands/lib \
+      --cov=installer/core/commands/lib \
       --cov-report=term-missing \
       --cov-report=html \
       --cov-report=json \
@@ -417,7 +417,7 @@ pytest tests/integration/ -v
 
 # 2. Run with coverage
 pytest tests/integration/ \
-    --cov=installer/global/commands/lib \
+    --cov=installer/core/commands/lib \
     --cov-report=term-missing \
     --cov-report=html \
     --cov-fail-under=80

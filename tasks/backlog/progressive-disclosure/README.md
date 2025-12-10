@@ -116,7 +116,7 @@ This folder contains the implementation tasks for progressive disclosure in Guar
 
 **Checkpoint**: Token reduction ≥55% achieved, all agents migrated
 
-**Note**: Phase 6 focuses on **global agents only** (14 agents in `installer/global/agents/`). Template agents (28 files across 4 templates) are deferred to Phase 7 to keep Phase 6 focused and manageable.
+**Note**: Phase 6 focuses on **global agents only** (14 agents in `installer/core/agents/`). Template agents (28 files across 4 templates) are deferred to Phase 7 to keep Phase 6 focused and manageable.
 
 ### Phase 7: Template Agent Migration (0.5-1.5 days) - ✅ COMPLETE
 

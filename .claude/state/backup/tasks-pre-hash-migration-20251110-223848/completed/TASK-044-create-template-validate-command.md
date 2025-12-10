@@ -66,18 +66,18 @@ test_results:
 
 **Files Created**: ~25 files
 - Core infrastructure:
-  - `installer/global/lib/template_validation/models.py`
-  - `installer/global/lib/template_validation/comprehensive_auditor.py`
-  - `installer/global/lib/template_validation/orchestrator.py`
-  - `installer/global/lib/template_validation/audit_session.py`
-  - `installer/global/lib/template_validation/audit_report_generator.py`
+  - `installer/core/lib/template_validation/models.py`
+  - `installer/core/lib/template_validation/comprehensive_auditor.py`
+  - `installer/core/lib/template_validation/orchestrator.py`
+  - `installer/core/lib/template_validation/audit_session.py`
+  - `installer/core/lib/template_validation/audit_report_generator.py`
 - 16 section implementations:
-  - `installer/global/lib/template_validation/sections/section_01_manifest.py`
-  - `installer/global/lib/template_validation/sections/section_02_settings.py`
+  - `installer/core/lib/template_validation/sections/section_01_manifest.py`
+  - `installer/core/lib/template_validation/sections/section_02_settings.py`
   - ... (sections 3-16)
 - Command interface:
-  - `installer/global/commands/template-validate.md`
-  - `installer/global/commands/lib/template_validate_cli.py`
+  - `installer/core/commands/template-validate.md`
+  - `installer/core/commands/lib/template_validate_cli.py`
 - Test suite:
   - `tests/unit/test_template_validation_models.py` (28 tests)
   - `tests/unit/test_template_validation_session.py` (26 tests)

@@ -16,8 +16,8 @@ GuardKit uses AI-powered agent discovery to automatically match tasks to appropr
 2. **Agent Scanning**: Find all agents with metadata (in precedence order)
    - **Local agents**: `.claude/agents/*.md` *(Highest priority)*
    - User agents: `~/.agentecflow/agents/*.md`
-   - Global agents: `installer/global/agents/*.md`
-   - Template agents: `installer/global/templates/*/agents/*.md` *(Lowest priority)*
+   - Global agents: `installer/core/agents/*.md`
+   - Template agents: `installer/core/templates/*/agents/*.md` *(Lowest priority)*
 
 3. **Metadata Matching**: Filter and rank
    - Phase match: Required (implementation/review/testing/orchestration)
@@ -63,12 +63,12 @@ The agent discovery system scans 4 sources in priority order:
    - Cross-project customizations
    - Overrides global and template agents
 
-3. **Global** (`installer/global/agents/`)
+3. **Global** (`installer/core/agents/`)
    - Cross-stack agents only (orchestration, review, testing, debugging)
    - No stack-specific implementation agents
    - Fallback when local/user agents missing
 
-4. **Template** (`installer/global/templates/*/agents/`)
+4. **Template** (`installer/core/templates/*/agents/`)
    - Source definitions before initialization
    - Rarely invoked (templates copy to local on init)
    - Lowest priority
@@ -84,21 +84,21 @@ The first agent found (highest priority) is used, and duplicates from lower prio
 **Example 1: Local overrides template**
 ```
 Local:    .claude/agents/fastapi-specialist.md (custom version)
-Template: installer/global/templates/fastapi-python/agents/fastapi-specialist.md
+Template: installer/core/templates/fastapi-python/agents/fastapi-specialist.md
 Result:   Uses local version
 ```
 
 **Example 2: User overrides template**
 ```
 User:     ~/.agentecflow/agents/react-state-specialist.md (custom)
-Template: installer/global/templates/react-typescript/agents/react-state-specialist.md
+Template: installer/core/templates/react-typescript/agents/react-state-specialist.md
 Result:   Uses user version
 ```
 
 **Example 3: Fallback to cross-stack global**
 ```
 Local:  (not found for Go stack)
-Global: installer/global/agents/task-manager.md (cross-stack fallback)
+Global: installer/core/agents/task-manager.md (cross-stack fallback)
 Result: Uses task-manager as no Go-specific agent exists
 ```
 
@@ -106,7 +106,7 @@ Result: Uses task-manager as no Go-specific agent exists
 ```
 Project: Uses fastapi-python template
 Local:   (not found)
-Template: installer/global/templates/fastapi-python/agents/fastapi-specialist.md
+Template: installer/core/templates/fastapi-python/agents/fastapi-specialist.md
 Result:   Uses template agent for FastAPI implementation
 ```
 
@@ -243,7 +243,7 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 **Solutions**:
 - Verify `.claude/agents/` directory exists: `ls .claude/agents/`
 - Re-run template init: `guardkit init <template>`
-- Check template has agents: `ls installer/global/templates/<template>/agents/`
+- Check template has agents: `ls installer/core/templates/<template>/agents/`
 
 ### "Wrong agent selected (global instead of local)"
 
@@ -275,13 +275,13 @@ keywords: [keyword1, keyword2, keyword3, keyword4, keyword5]
 
 **This is normal** during migration. Agents without metadata are skipped, system uses fallback. To fix:
 ```bash
-/agent-enhance installer/global/agents/my-agent.md
+/agent-enhance installer/core/agents/my-agent.md
 ```
 
 ## Advanced: Discovery API
 
 ```python
-from installer.global.commands.lib.agent_discovery import discover_agents
+from installer.core.commands.lib.agent_discovery import discover_agents
 
 # Find all implementation agents
 agents = discover_agents(phase='implementation')
@@ -309,14 +309,14 @@ print(agents[0]['name'])  # Highest ranked agent
 
 **Migration Path**:
 1. Create specialist agent with metadata
-2. Deploy to `installer/global/agents/`
+2. Deploy to `installer/core/agents/`
 3. Discovery automatically includes in matching
 4. No code changes required
 
 ## See Also
 
 - [Model Optimization Deep Dive](../deep-dives/model-optimization.md)
-- [Agent Enhancement Command](../../installer/global/commands/agent-enhance.md)
+- [Agent Enhancement Command](../../installer/core/commands/agent-enhance.md)
 - [CLAUDE.md - Core AI Agents](../../CLAUDE.md#core-ai-agents)
 
 ---

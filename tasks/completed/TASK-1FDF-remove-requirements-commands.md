@@ -87,47 +87,47 @@ Taskwright is the "lite" version (formerly Agentecflow Lite) focusing on task wo
 cd /Users/richardwoollcott/Projects/appmilla_github/taskwright/.conductor/kuwait
 
 # Find all requirements-related commands
-find installer/global/commands -name "*requirements*.md"
-find installer/global/commands -name "*ears*.md"
-find installer/global/commands -name "*bdd*.md"
-find installer/global/commands -name "*epic*.md"
-find installer/global/commands -name "*feature*.md"
-find installer/global/commands -name "hierarchy*.md"
-find installer/global/commands -name "portfolio*.md"
-find installer/global/commands -name "*sync*.md"
+find installer/core/commands -name "*requirements*.md"
+find installer/core/commands -name "*ears*.md"
+find installer/core/commands -name "*bdd*.md"
+find installer/core/commands -name "*epic*.md"
+find installer/core/commands -name "*feature*.md"
+find installer/core/commands -name "hierarchy*.md"
+find installer/core/commands -name "portfolio*.md"
+find installer/core/commands -name "*sync*.md"
 ```
 
 ### 2. Remove Command Files
 
 ```bash
 # Remove requirements commands
-rm -f installer/global/commands/gather-requirements.md
-rm -f installer/global/commands/formalize-ears.md
-rm -f installer/global/commands/generate-bdd.md
+rm -f installer/core/commands/gather-requirements.md
+rm -f installer/core/commands/formalize-ears.md
+rm -f installer/core/commands/generate-bdd.md
 
 # Remove epic commands
-rm -f installer/global/commands/epic-create.md
-rm -f installer/global/commands/epic-status.md
-rm -f installer/global/commands/epic-sync.md
-rm -f installer/global/commands/epic-generate-features.md
+rm -f installer/core/commands/epic-create.md
+rm -f installer/core/commands/epic-status.md
+rm -f installer/core/commands/epic-sync.md
+rm -f installer/core/commands/epic-generate-features.md
 
 # Remove feature commands
-rm -f installer/global/commands/feature-create.md
-rm -f installer/global/commands/feature-status.md
-rm -f installer/global/commands/feature-sync.md
-rm -f installer/global/commands/feature-generate-tasks.md
+rm -f installer/core/commands/feature-create.md
+rm -f installer/core/commands/feature-status.md
+rm -f installer/core/commands/feature-sync.md
+rm -f installer/core/commands/feature-generate-tasks.md
 
 # Remove visualization/sync commands
-rm -f installer/global/commands/hierarchy-view.md
-rm -f installer/global/commands/portfolio-dashboard.md
-rm -f installer/global/commands/task-sync.md
+rm -f installer/core/commands/hierarchy-view.md
+rm -f installer/core/commands/portfolio-dashboard.md
+rm -f installer/core/commands/task-sync.md
 ```
 
 ### 3. Verify Removal
 
 ```bash
 # List remaining commands
-ls installer/global/commands/*.md
+ls installer/core/commands/*.md
 
 # Expected files:
 # - task-create.md

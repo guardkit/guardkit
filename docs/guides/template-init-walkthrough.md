@@ -1197,7 +1197,7 @@ If interrupted:
 
 ### Learn More
 
-- **Command Reference**: [template-init.md](../../installer/global/commands/template-init.md)
+- **Command Reference**: [template-init.md](../../installer/core/commands/template-init.md)
 - **Q&A Details**: [template-qa-guide.md](./template-qa-guide.md)
 - **Brownfield Approach**: [template-create-walkthrough.md](./template-create-walkthrough.md)
 - **Troubleshooting**: [template-troubleshooting.md](./template-troubleshooting.md)

@@ -158,7 +158,7 @@ DEFAULT_AGENT_SOURCES = AgentSourceRegistry(
             enabled=True,
             priority=100,
             bonus_score=20,
-            path="installer/global/agents",
+            path="installer/core/agents",
             description="Battle-tested agents included with taskwright",
             tags=["official", "local"]
         ),

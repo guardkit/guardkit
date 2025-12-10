@@ -11,7 +11,7 @@
 
 The `/template-create` command fails with `ModuleNotFoundError: No module named 'installer'` when executed **directly** without PYTHONPATH configuration. The fix exists in the command specification (`template-create.md` lines 1026-1105) but is **not being invoked** by Claude Code's command processing.
 
-**Root Cause**: Claude Code executes Python orchestrator scripts **directly** without processing the command's PYTHONPATH setup code, causing import failures for modules using `installer.global.*` imports.
+**Root Cause**: Claude Code executes Python orchestrator scripts **directly** without processing the command's PYTHONPATH setup code, causing import failures for modules using `installer.core.*` imports.
 
 ---
 
@@ -24,7 +24,7 @@ cd /path/to/any/directory
 
 # Result:
 # File "/Users/richardwoollcott/.agentecflow/commands/lib/template_create_orchestrator.py", line 20
-# _template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+# _template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 # ModuleNotFoundError: No module named 'installer'
 ```
 
@@ -43,11 +43,11 @@ PYTHONPATH="/Users/richardwoollcott/Projects/appmilla_github/guardkit" /template
 ### 1. Initial Failure
 - **What happened**: Command failed with `ModuleNotFoundError: No module named 'installer'`
 - **File location**: `~/.agentecflow/commands/lib/template_create_orchestrator.py:20`
-- **Import statement**: `importlib.import_module('installer.global.commands.lib.template_qa_session')`
+- **Import statement**: `importlib.import_module('installer.core.commands.lib.template_qa_session')`
 
 ### 2. Environment Discovery
 - **Directory check**: `~/.agentecflow/commands/` is a **regular directory** (NOT a symlink)
-- **Install process**: `install.sh` copies files from `installer/global/commands/` to `~/.agentecflow/commands/`
+- **Install process**: `install.sh` copies files from `installer/core/commands/` to `~/.agentecflow/commands/`
 - **Python path**: Does NOT include guardkit repository directory by default
 
 ### 3. PYTHONPATH Setup Discovery
@@ -78,20 +78,20 @@ cmd = f'PYTHONPATH="{guardkit_path}" {cmd_without_env}'
 ### Architectural Context
 
 **Installation Model** (`install.sh`):
-1. Copies files from `guardkit/installer/global/commands/` → `~/.agentecflow/commands/`
+1. Copies files from `guardkit/installer/core/commands/` → `~/.agentecflow/commands/`
 2. Creates symlinks: `~/.claude/commands` → `~/.agentecflow/commands/`
 3. Makes commands available to Claude Code
 
 **Import Pattern** (`template_create_orchestrator.py`):
 ```python
 # Line 20: Uses absolute imports referencing original repository structure
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 ```
 
 **Why This Fails**:
 ```
 File Location:    ~/.agentecflow/commands/lib/template_create_orchestrator.py
-Import Reference: installer.global.commands.lib.template_qa_session
+Import Reference: installer.core.commands.lib.template_qa_session
 Python Working Dir: <user's current directory>
 
 Python cannot resolve 'installer' module because:
@@ -121,9 +121,9 @@ guardkit/                           # PYTHONPATH must point here
 ```
 
 **Import Resolution**:
-- Import: `installer.global.commands.lib.template_qa_session`
-- Requires: Python to find `guardkit/installer/global/commands/lib/template_qa_session.py`
-- Needs: `PYTHONPATH="/path/to/guardkit"` so Python can resolve `installer.global.*`
+- Import: `installer.core.commands.lib.template_qa_session`
+- Requires: Python to find `guardkit/installer/core/commands/lib/template_qa_session.py`
+- Needs: `PYTHONPATH="/path/to/guardkit"` so Python can resolve `installer.core.*`
 
 ---
 
@@ -179,7 +179,7 @@ The command specification includes PYTHONPATH discovery and setup (lines 1026-11
 
 **Issue**: Claude Code likely:
 1. Reads `template-create.md`
-2. Extracts orchestrator path: `installer/global/commands/lib/template_create_orchestrator.py`
+2. Extracts orchestrator path: `installer/core/commands/lib/template_create_orchestrator.py`
 3. **Directly executes**: `python3 template_create_orchestrator.py [args]`
 4. **Skips**: PYTHONPATH discovery/setup code in markdown
 
@@ -194,9 +194,9 @@ The command specification includes PYTHONPATH discovery and setup (lines 1026-11
 - **User Experience**: Poor (requires manual intervention)
 
 ### Affected Commands
-**Analysis**: Only `template_create_orchestrator.py` uses `installer.global.*` imports:
+**Analysis**: Only `template_create_orchestrator.py` uses `installer.core.*` imports:
 ```bash
-$ grep -r "importlib.import_module.*installer.global" ~/.agentecflow/commands/lib/
+$ grep -r "importlib.import_module.*installer.core" ~/.agentecflow/commands/lib/
 # Result: Only template_create_orchestrator.py
 ```
 
@@ -206,7 +206,7 @@ $ grep -r "importlib.import_module.*installer.global" ~/.agentecflow/commands/li
 Most commands are markdown-based agent workflows that:
 1. Don't use Python orchestrators
 2. Use relative imports within `~/.agentecflow/commands/lib/`
-3. Don't reference `installer.global.*` package structure
+3. Don't reference `installer.core.*` package structure
 
 ---
 
@@ -280,9 +280,9 @@ except ImportError as e:
     print(f"❌ {e}")
     sys.exit(2)
 
-# NOW safe to import installer.global modules
+# NOW safe to import installer.core modules
 import importlib
-_template_qa_module = importlib.import_module('installer.global.commands.lib.template_qa_session')
+_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
 # ... rest of imports
 ```
 
@@ -307,11 +307,11 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 **Challenges**:
 1. **Package Structure Mismatch**:
    ```
-   installer/global/lib/codebase_analyzer/  # Source modules
+   installer/core/lib/codebase_analyzer/  # Source modules
    ~/.agentecflow/commands/lib/             # Orchestrator location
    ```
 
-2. **Modules Not Co-located**: Orchestrator imports from multiple `installer/global/lib/` subdirectories
+2. **Modules Not Co-located**: Orchestrator imports from multiple `installer/core/lib/` subdirectories
 
 3. **Would Require**:
    - Copying ALL dependent modules to `~/.agentecflow/commands/lib/`
@@ -334,12 +334,12 @@ _template_qa_module = importlib.import_module('installer.global.commands.lib.tem
 ---
 
 ### Solution 4: Symlink ~/.agentecflow to Repo (ARCHITECTURAL CHANGE)
-**Change**: Make `~/.agentecflow/` a symlink to `guardkit/installer/global/`
+**Change**: Make `~/.agentecflow/` a symlink to `guardkit/installer/core/`
 
 **Implementation**:
 ```bash
 rm -rf ~/.agentecflow
-ln -s ~/Projects/appmilla_github/guardkit/installer/global ~/.agentecflow
+ln -s ~/Projects/appmilla_github/guardkit/installer/core ~/.agentecflow
 ```
 
 **Pros**:
@@ -443,11 +443,11 @@ mv ~/Projects/appmilla_github/guardkit.bak ~/Projects/appmilla_github/guardkit
 
 ### For Future Commands
 
-**When creating Python orchestrators that import from `installer.global.*`**:
+**When creating Python orchestrators that import from `installer.core.*`**:
 
 1. **Add PYTHONPATH setup at top of orchestrator**:
    ```python
-   # Add before any installer.global imports
+   # Add before any installer.core imports
    import sys
    from pathlib import Path
 
@@ -464,7 +464,7 @@ mv ~/Projects/appmilla_github/guardkit.bak ~/Projects/appmilla_github/guardkit
    Orchestrator for /some-command
 
    PYTHONPATH Requirements:
-   - Must be able to import 'installer.global' package
+   - Must be able to import 'installer.core' package
    - Auto-discovers guardkit installation
    - Falls back to PYTHONPATH environment variable
    """
@@ -480,7 +480,7 @@ mv ~/Projects/appmilla_github/guardkit.bak ~/Projects/appmilla_github/guardkit
 ### Code Review Checklist
 
 When reviewing orchestrator PRs:
-- [ ] Does orchestrator import from `installer.global.*`?
+- [ ] Does orchestrator import from `installer.core.*`?
 - [ ] Does it include PYTHONPATH setup before imports?
 - [ ] Are error messages clear if guardkit not found?
 - [ ] Has it been tested from multiple directories?
@@ -495,7 +495,7 @@ When reviewing orchestrator PRs:
 **Other orchestrators that may need PYTHONPATH**:
 ```bash
 find ~/.agentecflow/commands/lib -name "*_orchestrator.py"
-# Check each for installer.global imports
+# Check each for installer.core imports
 ```
 
 **Template QA session** (imported by orchestrator):
@@ -514,7 +514,7 @@ find ~/.agentecflow/commands/lib -name "*_orchestrator.py"
 
 ## Conclusion
 
-**Root Cause**: Claude Code executes Python orchestrators directly without processing PYTHONPATH setup code from command markdown, causing `installer.global.*` imports to fail.
+**Root Cause**: Claude Code executes Python orchestrators directly without processing PYTHONPATH setup code from command markdown, causing `installer.core.*` imports to fail.
 
 **Immediate Fix**: Move PYTHONPATH discovery from markdown to orchestrator header (Solution 2)
 

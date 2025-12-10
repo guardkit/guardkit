@@ -175,8 +175,8 @@ Located in: `/Users/richardwoollcott/Projects/appmilla_github/ai-engineer/docs/q
 
 ### Criterion 4: Cross-References
 ✓ **APPROVED** - All cards link to full documentation:
-- installer/global/commands/* - Task specifications
-- installer/global/agents/* - Agent documentation
+- installer/core/commands/* - Task specifications
+- installer/core/agents/* - Agent documentation
 - docs/guides/* - Comprehensive workflow guides
 - Related cards - Internal quick reference links
 

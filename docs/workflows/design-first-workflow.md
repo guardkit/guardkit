@@ -631,7 +631,7 @@ Beginning implementation phases (3 → 4 → 4.5 → 5)...
 
 **Step 3: Execute Phases 3-5**
 
-See [task-work.md](../../installer/global/commands/task-work.md) for phase execution details.
+See [task-work.md](../../installer/core/commands/task-work.md) for phase execution details.
 
 - Phase 3: Implementation (using saved plan)
 - Phase 4: Testing (using saved test strategy)
@@ -1072,10 +1072,10 @@ For complex tasks (≥7), human approval always required.
 
 ## Related Documentation
 
-- [Task Work Command](../../installer/global/commands/task-work.md) - Complete phase execution details
+- [Task Work Command](../../installer/core/commands/task-work.md) - Complete phase execution details
 - [Complexity Management Workflow](./complexity-management-workflow.md) - Complexity evaluation and routing
 - [Common Thresholds](../shared/common-thresholds.md) - Quality threshold definitions
-- [Feature Generate Tasks](../../installer/global/commands/feature-generate-tasks.md) - Automatic task generation with complexity control
+- [Feature Generate Tasks](../../installer/core/commands/feature-generate-tasks.md) - Automatic task generation with complexity control
 
 ---
 

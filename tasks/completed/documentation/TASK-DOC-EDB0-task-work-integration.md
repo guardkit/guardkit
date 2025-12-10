@@ -37,14 +37,14 @@ Add a comprehensive "Integration with /task-work" section to task-review.md show
 
 ### Files to Update
 
-1. **installer/global/commands/task-review.md**:
+1. **installer/core/commands/task-review.md**:
    - Add new section "Integration with /task-work"
    - Document review → implementation workflow with examples
    - Explain decision checkpoint behavior ([I]mplement creates new task)
    - Show complete workflow from review to verification
    - Cross-reference to CLAUDE.md Review Workflow section
 
-2. **installer/global/commands/task-create.md** (optional):
+2. **installer/core/commands/task-create.md** (optional):
    - Add cross-reference to task-review integration
 
 ## Acceptance Criteria

@@ -72,8 +72,8 @@
 
 | Test Name | Status | Message |
 |-----------|--------|---------|
-| File Exists: task-work.md | ✅ | File found at /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/commands/task-work.md |
-| File Exists: task-manager.md | ✅ | File found at /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/global/agents/task-manager.md |
+| File Exists: task-work.md | ✅ | File found at /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/commands/task-work.md |
+| File Exists: task-manager.md | ✅ | File found at /Users/richardwoollcott/Projects/appmilla_github/ai-engineer/installer/core/agents/task-manager.md |
 | Markdown Syntax: task-work.md | ✅ | All headers properly formatted |
 | Code Blocks: task-work.md | ❌ | Unclosed code block detected (101 backticks) |
 | Markdown Syntax: task-manager.md | ✅ | All headers properly formatted |
