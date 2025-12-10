@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-001
 title: Create clarification module core infrastructure
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T09:00:00Z
+completed: 2025-12-10T09:00:00Z
 priority: high
 tags: [clarifying-questions, core, infrastructure, wave-1]
 complexity: 6
@@ -11,6 +12,8 @@ parent_feature: clarifying-questions
 wave: 1
 conductor_workspace: clarifying-questions-wave1-core
 implementation_method: task-work
+completed_location: tasks/completed/TASK-CLQ-001/
+organized_files: [TASK-CLQ-001.md]
 ---
 
 # Task: Create clarification module core infrastructure
@@ -21,19 +24,19 @@ Create the core infrastructure for the unified clarification module. This includ
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/lib/clarification/__init__.py` with module exports
-- [ ] Create `installer/global/commands/lib/clarification/core.py` with:
-  - [ ] `ClarificationContext` dataclass (explicit_decisions, assumed_defaults, metadata)
-  - [ ] `Decision` dataclass (category, question, answer, is_default, confidence, rationale)
-  - [ ] `Question` dataclass (id, category, text, options, default, rationale)
-  - [ ] `ClarificationMode` enum (SKIP, QUICK, FULL, USE_DEFAULTS)
-  - [ ] `should_clarify()` function with context-specific thresholds
-  - [ ] `process_responses()` function to parse user input
-  - [ ] `format_for_prompt()` function to format context for agent prompts
-  - [ ] `persist_to_frontmatter()` stub for Wave 4
-- [ ] Include type hints for all functions and dataclasses
-- [ ] Add docstrings explaining usage
-- [ ] Create basic unit tests in `tests/unit/lib/clarification/test_core.py`
+- [x] Create `installer/global/commands/lib/clarification/__init__.py` with module exports
+- [x] Create `installer/global/commands/lib/clarification/core.py` with:
+  - [x] `ClarificationContext` dataclass (explicit_decisions, assumed_defaults, metadata)
+  - [x] `Decision` dataclass (category, question, answer, is_default, confidence, rationale)
+  - [x] `Question` dataclass (id, category, text, options, default, rationale)
+  - [x] `ClarificationMode` enum (SKIP, QUICK, FULL, USE_DEFAULTS)
+  - [x] `should_clarify()` function with context-specific thresholds
+  - [x] `process_responses()` function to parse user input
+  - [x] `format_for_prompt()` function to format context for agent prompts
+  - [x] `persist_to_frontmatter()` stub for Wave 4
+- [x] Include type hints for all functions and dataclasses
+- [x] Add docstrings explaining usage
+- [x] Create basic unit tests in `tests/unit/lib/clarification/test_core.py`
 
 ## Technical Specification
 
