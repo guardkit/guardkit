@@ -8,6 +8,15 @@ Orchestrates the feature planning workflow in a single user-facing command by au
 /feature-plan "feature description"
 ```
 
+## Available Flags
+
+| Flag | Description |
+|------|-------------|
+| `--no-questions` | Skip all clarification (review scope + implementation prefs) |
+| `--with-questions` | Force clarification even for simple features |
+| `--defaults` | Use clarification defaults throughout workflow |
+| `--answers="..."` | Inline answers (propagated to task-review and subtask creation) |
+
 ## Overview
 
 The `/feature-plan` command streamlines feature planning by combining task creation and review analysis into a single workflow. It automatically:

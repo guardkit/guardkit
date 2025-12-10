@@ -255,6 +255,121 @@ Phase 5.5: Plan Audit (scope creep detection)
 
 **See**: [Complexity Management Workflow](docs/workflows/complexity-management-workflow.md)
 
+## Clarifying Questions
+
+GuardKit asks targeted clarifying questions before making assumptions during planning. This reduces rework from incorrect assumptions by ~15%.
+
+### When Questions Are Asked
+
+**Complexity Gating:**
+| Complexity | task-work | task-review | feature-plan |
+|------------|-----------|-------------|--------------|
+| 1-2 | Skip | Skip | Skip |
+| 3-4 | Quick (15s timeout) | Skip | Quick |
+| 5-6 | Full (blocking) | Quick | Full |
+| 7+ | Full (blocking) | Full | Full |
+
+### Three Clarification Contexts
+
+| Context | Command | When | Purpose |
+|---------|---------|------|---------|
+| Review Scope | `/task-review`, `/feature-plan` | Before analysis | Guide what to analyze |
+| Implementation Prefs | `/feature-plan` [I]mplement | Before subtask creation | Guide approach & constraints |
+| Implementation Planning | `/task-work` | Before planning (Phase 1.5) | Guide scope, tech, trade-offs |
+
+### Command-Line Flags
+
+All commands support:
+
+| Flag | Effect |
+|------|--------|
+| `--no-questions` | Skip clarification entirely |
+| `--with-questions` | Force clarification even for simple tasks |
+| `--defaults` | Use defaults without prompting |
+| `--answers="1:Y 2:N 3:JWT"` | Inline answers for automation |
+
+### Example: task-work Clarification
+
+```bash
+/task-work TASK-a3f8
+
+Phase 1: Loading context...
+Phase 1.5: Clarifying Questions (complexity: 5)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 CLARIFYING QUESTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Implementation Scope
+    How comprehensive should this implementation be?
+
+    [M]inimal - Core functionality only
+    [S]tandard - With error handling (DEFAULT)
+    [C]omplete - Production-ready with edge cases
+
+    Your choice [M/S/C]: S
+
+Q2. Testing Approach
+    What testing strategy?
+
+    [U]nit tests only
+    [I]ntegration tests included (DEFAULT)
+    [F]ull coverage (unit + integration + e2e)
+
+    Your choice [U/I/F]: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Recorded 2 decisions
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2: Planning implementation with clarifications...
+```
+
+### Example: Skip Clarification
+
+```bash
+# For CI/CD automation
+/task-work TASK-a3f8 --no-questions
+
+# Or use inline answers
+/task-work TASK-a3f8 --answers="scope:standard testing:integration"
+```
+
+### Persistence
+
+Clarification decisions are persisted to task frontmatter:
+
+```yaml
+clarification:
+  context: implementation_planning
+  timestamp: 2025-12-08T14:30:00Z
+  mode: full
+  decisions:
+    - question_id: scope
+      answer: standard
+      default_used: true
+```
+
+This enables:
+- Task resumption without re-asking questions
+- Audit trail of planning decisions
+- Reproducibility of AI behavior
+
+### Troubleshooting
+
+**Questions not appearing?**
+- Check task complexity (must be ≥3 for task-work)
+- Verify not using `--no-questions` flag
+- Check if previous clarification exists in frontmatter
+
+**Want to re-ask questions?**
+```bash
+/task-work TASK-a3f8 --reclarify
+```
+
+**Want to see previous decisions?**
+Check the `clarification` section in task frontmatter.
+
 ## Review vs Implementation Workflows
 
 GuardKit supports two distinct command workflows for different task types:

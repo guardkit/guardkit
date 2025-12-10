@@ -1,7 +1,6 @@
 ---
 id: TASK-CLQ-011
 title: Update documentation (CLAUDE.md)
-status: backlog
 created: 2025-12-08T14:00:00Z
 updated: 2025-12-08T14:00:00Z
 priority: medium
@@ -11,6 +10,9 @@ parent_feature: clarifying-questions
 wave: 4
 conductor_workspace: clarifying-questions-wave4-docs
 implementation_method: direct
+status: completed
+completed: 2025-12-10T08:04:40.012849Z
+completed_location: tasks/completed/TASK-CLQ-011/
 ---
 
 # Task: Update documentation (CLAUDE.md)

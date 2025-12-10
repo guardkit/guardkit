@@ -98,6 +98,21 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 /task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
 ```
 
+## Available Flags
+
+| Flag | Description |
+|------|-------------|
+| `--mode=tdd\|standard\|bdd` | Development mode (default: standard) |
+| `--design-only` | Stop at Phase 2.8 checkpoint, save plan |
+| `--implement-only` | Start at Phase 3 with approved plan |
+| `--micro` | Streamlined workflow for trivial tasks |
+| `--docs=minimal\|standard\|comprehensive` | Documentation level control |
+| `--no-questions` | Skip Phase 1.5 clarification |
+| `--with-questions` | Force Phase 1.5 clarification |
+| `--defaults` | Use clarification defaults without prompting |
+| `--answers="..."` | Inline clarification answers for automation |
+| `--reclarify` | Re-run clarification (ignore saved decisions) |
+
 ## Documentation Level Control (NEW - TASK-036)
 
 Control the verbosity of documentation generated during task execution. This significantly impacts execution time and token consumption.

@@ -8,6 +8,17 @@ Execute structured review and analysis workflows for tasks that require assessme
 /task-review TASK-XXX [--mode=MODE] [--depth=DEPTH] [--output=FORMAT]
 ```
 
+## Available Flags
+
+| Flag | Description |
+|------|-------------|
+| `--mode=MODE` | Review mode (architectural, code-quality, decision, technical-debt, security) |
+| `--depth=DEPTH` | Review depth (quick, standard, comprehensive) |
+| `--output=FORMAT` | Output format (markdown, json, both) |
+| `--no-questions` | Skip review scope clarification |
+| `--with-questions` | Force clarification even for simple reviews |
+| `--defaults` | Use clarification defaults without prompting |
+
 ## Overview
 
 The `/task-review` command provides a dedicated workflow for analysis and decision-making tasks, separate from the implementation-focused `/task-work` command.

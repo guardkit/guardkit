@@ -145,6 +145,38 @@ else:
 
 See [BDD Workflow for Agentic Systems](../docs/guides/bdd-workflow-for-agentic-systems.md) for complete guide.
 
+## Clarifying Questions
+
+GuardKit asks targeted clarifying questions before making assumptions during planning, reducing rework by ~15%.
+
+### When Questions Trigger
+
+Questions are gated by task complexity:
+- **Complexity 1-2**: Skip (simple tasks)
+- **Complexity 3-4**: Quick questions (15s timeout)
+- **Complexity 5+**: Full questions (blocking)
+
+### Three Contexts
+
+1. **Review Scope** (`/task-review`, `/feature-plan`) - Before analysis
+2. **Implementation Prefs** (`/feature-plan` [I]mplement) - Before subtask creation
+3. **Implementation Planning** (`/task-work`) - Before planning (Phase 1.5)
+
+### Control Flags
+
+All commands support:
+- `--no-questions` - Skip clarification
+- `--with-questions` - Force clarification
+- `--defaults` - Use defaults without prompting
+- `--answers="..."` - Inline answers for automation
+- `--reclarify` - Re-run even if saved
+
+### Persistence
+
+Decisions are saved to task frontmatter for audit trail and reproducibility.
+
+See main CLAUDE.md for detailed examples and troubleshooting.
+
 ## Progressive Disclosure
 
 GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
