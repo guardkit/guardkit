@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-003
 title: Create display formatting utilities
-status: in_review
+status: completed
 created: 2025-12-08T14:00:00Z
 updated: 2025-12-10T00:00:00Z
+completed: 2025-12-10T00:00:00Z
 priority: medium
 tags: [clarifying-questions, display, ui, wave-1]
 complexity: 4
@@ -11,6 +12,8 @@ parent_feature: clarifying-questions
 wave: 1
 conductor_workspace: clarifying-questions-wave1-display
 implementation_method: direct
+completed_location: tasks/completed/TASK-CLQ-003/
+organized_files: ["TASK-CLQ-003.md"]
 ---
 
 # Task: Create display formatting utilities
