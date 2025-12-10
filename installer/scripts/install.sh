@@ -64,7 +64,7 @@ print_info() {
 # Download repository if running via curl (files not available locally)
 ensure_repository_files() {
     # Check if we have the required files
-    if [ ! -f "$INSTALLER_DIR/scripts/init-project.sh" ] || [ ! -d "$INSTALLER_DIR/global/templates" ]; then
+    if [ ! -f "$INSTALLER_DIR/scripts/init-project.sh" ] || [ ! -d "$INSTALLER_DIR/core/templates" ]; then
         print_info "Running from curl - cloning repository permanently..."
         INSTALL_METHOD="curl"
 
@@ -386,14 +386,14 @@ install_global_files() {
     print_info "Installing global files..."
     
     # Copy instructions
-    if [ -d "$INSTALLER_DIR/global/instructions" ]; then
-        cp -r "$INSTALLER_DIR/global/instructions/"* "$INSTALL_DIR/instructions/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/instructions" ]; then
+        cp -r "$INSTALLER_DIR/core/instructions/"* "$INSTALL_DIR/instructions/" 2>/dev/null || true
         print_success "Installed methodology instructions"
     fi
     
     # Copy templates with complete structure
-    if [ -d "$INSTALLER_DIR/global/templates" ]; then
-        for template_dir in "$INSTALLER_DIR/global/templates"/*; do
+    if [ -d "$INSTALLER_DIR/core/templates" ]; then
+        for template_dir in "$INSTALLER_DIR/core/templates"/*; do
             if [ -d "$template_dir" ]; then
                 local template_name=$(basename "$template_dir")
                 cp -r "$template_dir" "$INSTALL_DIR/templates/" 2>/dev/null || true
@@ -406,11 +406,11 @@ install_global_files() {
     fi
     
     # Copy Python libraries from installer/core/lib (for imports like 'from lib.id_generator')
-    if [ -d "$INSTALLER_DIR/global/lib" ]; then
+    if [ -d "$INSTALLER_DIR/core/lib" ]; then
         mkdir -p "$INSTALL_DIR/commands/lib"
 
         # Copy Python production files only (exclude test_*, cache, coverage)
-        find "$INSTALLER_DIR/global/lib" \
+        find "$INSTALLER_DIR/core/lib" \
             -maxdepth 1 \
             -type f \
             -name "*.py" \
@@ -419,7 +419,7 @@ install_global_files() {
             -exec cp {} "$INSTALL_DIR/commands/lib/" \; 2>/dev/null || true
 
         # Copy subdirectories (like mcp/) with their Python files
-        for subdir in "$INSTALLER_DIR/global/lib"/*/ ; do
+        for subdir in "$INSTALLER_DIR/core/lib"/*/ ; do
             if [ -d "$subdir" ]; then
                 subdir_name=$(basename "$subdir")
                 # Skip test directories and cache
@@ -440,16 +440,16 @@ install_global_files() {
     fi
 
     # Copy commands
-    if [ -d "$INSTALLER_DIR/global/commands" ]; then
+    if [ -d "$INSTALLER_DIR/core/commands" ]; then
         # Copy markdown command files
-        find "$INSTALLER_DIR/global/commands" -maxdepth 1 -name "*.md" -exec cp {} "$INSTALL_DIR/commands/" \; 2>/dev/null || true
+        find "$INSTALLER_DIR/core/commands" -maxdepth 1 -name "*.md" -exec cp {} "$INSTALL_DIR/commands/" \; 2>/dev/null || true
 
         # Copy lib directory (excluding test files, cache, and artifacts)
-        if [ -d "$INSTALLER_DIR/global/commands/lib" ]; then
+        if [ -d "$INSTALLER_DIR/core/commands/lib" ]; then
             mkdir -p "$INSTALL_DIR/commands/lib"
 
             # Copy Python production files only (exclude test_*, cache, coverage)
-            find "$INSTALLER_DIR/global/commands/lib" \
+            find "$INSTALLER_DIR/core/commands/lib" \
                 -maxdepth 1 \
                 -type f \
                 -name "*.py" \
@@ -458,7 +458,7 @@ install_global_files() {
                 -exec cp {} "$INSTALL_DIR/commands/lib/" \; 2>/dev/null || true
 
             # Copy documentation files (README, API docs)
-            find "$INSTALLER_DIR/global/commands/lib" \
+            find "$INSTALLER_DIR/core/commands/lib" \
                 -maxdepth 1 \
                 -type f \
                 -name "*.md" \
@@ -466,20 +466,20 @@ install_global_files() {
                 -exec cp {} "$INSTALL_DIR/commands/lib/" \; 2>/dev/null || true
 
             # Copy templates directory (for Jinja2 templates)
-            if [ -d "$INSTALLER_DIR/global/commands/lib/templates" ]; then
-                cp -r "$INSTALLER_DIR/global/commands/lib/templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+            if [ -d "$INSTALLER_DIR/core/commands/lib/templates" ]; then
+                cp -r "$INSTALLER_DIR/core/commands/lib/templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
                 print_success "Installed Jinja2 templates for plan rendering"
             fi
 
             # Copy review_modes directory (for task-review command)
-            if [ -d "$INSTALLER_DIR/global/commands/lib/review_modes" ]; then
-                cp -r "$INSTALLER_DIR/global/commands/lib/review_modes" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+            if [ -d "$INSTALLER_DIR/core/commands/lib/review_modes" ]; then
+                cp -r "$INSTALLER_DIR/core/commands/lib/review_modes" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
                 print_success "Installed review_modes for task-review command"
             fi
 
             # Copy review_templates directory (for task-review command)
-            if [ -d "$INSTALLER_DIR/global/commands/lib/review_templates" ]; then
-                cp -r "$INSTALLER_DIR/global/commands/lib/review_templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
+            if [ -d "$INSTALLER_DIR/core/commands/lib/review_templates" ]; then
+                cp -r "$INSTALLER_DIR/core/commands/lib/review_templates" "$INSTALL_DIR/commands/lib/" 2>/dev/null || true
                 print_success "Installed review_templates for task-review command"
             fi
 
@@ -492,8 +492,8 @@ install_global_files() {
     fi
     
     # Copy documentation
-    if [ -d "$INSTALLER_DIR/global/docs" ]; then
-        cp -r "$INSTALLER_DIR/global/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/docs" ]; then
+        cp -r "$INSTALLER_DIR/core/docs/"* "$INSTALL_DIR/docs/" 2>/dev/null || true
         print_success "Installed documentation"
     fi
     
@@ -512,13 +512,13 @@ install_global_agents() {
     print_info "Installing global AI agents..."
 
     # Install core global agents first
-    if [ -d "$INSTALLER_DIR/global/agents" ] && [ "$(ls -A $INSTALLER_DIR/global/agents)" ]; then
-        cp -r "$INSTALLER_DIR/global/agents/"* "$INSTALL_DIR/agents/" 2>/dev/null || true
+    if [ -d "$INSTALLER_DIR/core/agents" ] && [ "$(ls -A $INSTALLER_DIR/core/agents)" ]; then
+        cp -r "$INSTALLER_DIR/core/agents/"* "$INSTALL_DIR/agents/" 2>/dev/null || true
         print_success "Installed core global agents"
     fi
 
     # Install stack-specific agents to global location for template copying
-    for template_dir in "$INSTALLER_DIR/global/templates"/*; do
+    for template_dir in "$INSTALLER_DIR/core/templates"/*; do
         if [ -d "$template_dir/agents" ] && [ "$(ls -A $template_dir/agents)" ]; then
             local template_name=$(basename "$template_dir")
             mkdir -p "$INSTALL_DIR/stack-agents/$template_name"
@@ -1325,8 +1325,8 @@ create_package_marker() {
     print_info "Skipping legacy marker creation (using JSON marker instead)..."
 
     # Only create manifest for compatibility
-    if [ -f "$INSTALLER_DIR/global/manifest.json" ]; then
-        cp "$INSTALLER_DIR/global/manifest.json" "$INSTALL_DIR/guardkit.manifest.json"
+    if [ -f "$INSTALLER_DIR/core/manifest.json" ]; then
+        cp "$INSTALLER_DIR/core/manifest.json" "$INSTALL_DIR/guardkit.manifest.json"
         print_success "Package manifest created"
     fi
 }
@@ -1385,8 +1385,8 @@ setup_python_bin_symlinks() {
     print_info "Setting up Python command script symlinks..."
 
     local BIN_DIR="$INSTALL_DIR/bin"
-    local COMMANDS_DIR="$INSTALLER_DIR/global/commands"
-    local COMMANDS_LIB_DIR="$INSTALLER_DIR/global/commands/lib"
+    local COMMANDS_DIR="$INSTALLER_DIR/core/commands"
+    local COMMANDS_LIB_DIR="$INSTALLER_DIR/core/commands/lib"
 
     # Create bin directory if it doesn't exist
     if [ ! -d "$BIN_DIR" ]; then
