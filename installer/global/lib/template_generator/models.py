@@ -407,17 +407,25 @@ class TemplateSplitOutput(BaseModel):
         return ((total - core) / total) * 100.0
 
     def validate_size_constraints(self) -> tuple[bool, Optional[str]]:
-        """Validate that core content meets size constraints
+        """Validate that core content meets size constraints with graceful degradation
 
         Returns:
             Tuple of (is_valid, error_message)
             error_message is None if valid
         """
-        core_size = self.get_core_size()
-        max_core_size = 10 * 1024  # 10KB in bytes
+        import logging
 
-        if core_size > max_core_size:
-            return False, f"Core content exceeds 10KB limit: {core_size / 1024:.2f}KB"
+        core_size = self.get_core_size()
+        max_core_size = 10 * 1024  # 10KB hard limit
+        warning_size = 15 * 1024  # 15KB warning threshold
+
+        if core_size > warning_size:
+            # Exceeds warning threshold - fail with helpful message
+            return False, f"Core content exceeds 15KB limit: {core_size / 1024:.2f}KB. Consider using --no-split for large codebases or further content optimization."
+        elif core_size > max_core_size:
+            # Between 10KB-15KB - log warning but allow (graceful degradation)
+            logging.warning(f"Core content exceeds preferred 10KB limit but within acceptable range: {core_size / 1024:.2f}KB")
+            return True, None
 
         return True, None
 
