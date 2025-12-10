@@ -1,10 +1,9 @@
 ---
 id: TASK-CLQ-009
 title: Integrate clarification into feature-plan.md
-status: completed
+status: backlog
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-10T07:50:00Z
-completed: 2025-12-10T07:50:00Z
+updated: 2025-12-08T14:00:00Z
 priority: medium
 tags: [clarifying-questions, integration, feature-plan, wave-3]
 complexity: 4
@@ -12,10 +11,6 @@ parent_feature: clarifying-questions
 wave: 3
 conductor_workspace: clarifying-questions-wave3-feature-plan
 implementation_method: direct
-completed_location: tasks/completed/TASK-CLQ-009/
-organized_files: [
-  "TASK-CLQ-009-integrate-feature-plan.md"
-]
 ---
 
 # Task: Integrate clarification into feature-plan.md
