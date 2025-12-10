@@ -1,1 +1,1 @@
-"""Integration tests for lib modules"""
+"""Integration tests for lib modules."""

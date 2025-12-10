@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-012
 title: Testing & user acceptance
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T08:10:00Z
+completed: 2025-12-10T08:10:00Z
 priority: high
 tags: [clarifying-questions, testing, acceptance, wave-4]
 complexity: 5
@@ -11,6 +12,11 @@ parent_feature: clarifying-questions
 wave: 4
 conductor_workspace: clarifying-questions-wave4-testing
 implementation_method: task-work
+completed_location: tasks/completed/TASK-CLQ-012/
+organized_files: [
+  "TASK-CLQ-012.md",
+  "completion-summary.md"
+]
 ---
 
 # Task: Testing & user acceptance

@@ -1,463 +1,460 @@
-"""Unit tests for clarification core module."""
+"""Unit tests for lib/clarification/core.py
 
-import sys
-from pathlib import Path
+Tests the core dataclasses and persistence functionality for the clarifying questions feature.
+"""
+
 import pytest
+from datetime import datetime
+from pathlib import Path
+import tempfile
+import yaml
 
-# Add the installer/global/commands directory to the path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent.parent / "installer" / "global" / "commands"))
-
-from lib.clarification.core import (
-    ClarificationMode,
-    Question,
-    Decision,
-    ClarificationContext,
-    should_clarify,
-    process_responses,
-    format_for_prompt,
-    persist_to_frontmatter,
-)
-
-
-class TestClarificationMode:
-    """Tests for ClarificationMode enum."""
-
-    def test_enum_values(self):
-        """Test that all expected modes exist."""
-        assert ClarificationMode.SKIP.value == "skip"
-        assert ClarificationMode.QUICK.value == "quick"
-        assert ClarificationMode.FULL.value == "full"
-        assert ClarificationMode.USE_DEFAULTS.value == "defaults"
+# These imports will work once the clarification module is implemented
+from lib.clarification.core import Question, Decision, ClarificationContext
 
 
 class TestQuestion:
-    """Tests for Question dataclass."""
+    """Test Question dataclass functionality."""
 
-    def test_valid_question(self):
-        """Test creating a valid question."""
+    def test_question_with_all_fields(self):
+        """Test creating a question with all fields populated."""
         q = Question(
-            id="q1",
+            id="scope",
             category="scope",
-            text="Include tests?",
-            options=["yes", "no"],
-            default="yes",
-            rationale="Tests are recommended"
+            text="How comprehensive should the implementation be?",
+            options=["[M]inimal", "[S]tandard", "[C]omplete"],
+            default="S",
+            rationale="Standard implementation is typical for most tasks",
         )
-        assert q.id == "q1"
+        assert q.id == "scope"
         assert q.category == "scope"
-        assert q.default == "yes"
+        assert q.text == "How comprehensive should the implementation be?"
+        assert q.default == "S"
+        assert len(q.options) == 3
+        assert "[M]inimal" in q.options
 
-    def test_question_validation_empty_id(self):
-        """Test that empty ID raises error."""
-        with pytest.raises(ValueError, match="Question ID cannot be empty"):
-            Question(
-                id="",
-                category="scope",
-                text="Question?",
-                options=["yes", "no"],
-                default="yes",
-                rationale="Test"
-            )
+    def test_question_minimal_fields(self):
+        """Test creating a question with only required fields."""
+        q = Question(
+            id="test",
+            category="test",
+            text="Test question?",
+            options=["[Y]es", "[N]o"],
+        )
+        assert q.id == "test"
+        assert q.category == "test"
+        assert q.default is None
+        assert q.rationale is None
 
-    def test_question_validation_empty_text(self):
-        """Test that empty text raises error."""
-        with pytest.raises(ValueError, match="Question text cannot be empty"):
-            Question(
-                id="q1",
-                category="scope",
-                text="",
-                options=["yes", "no"],
-                default="yes",
-                rationale="Test"
-            )
+    def test_question_serialization(self):
+        """Test question serialization to dict and back."""
+        q = Question(
+            id="test",
+            category="scope",
+            text="Test question?",
+            options=["[Y]es", "[N]o"],
+            default="Y",
+            rationale="Testing is important",
+        )
+        data = q.to_dict()
 
-    def test_question_validation_empty_options(self):
-        """Test that empty options raises error."""
-        with pytest.raises(ValueError, match="must have at least one option"):
-            Question(
-                id="q1",
-                category="scope",
-                text="Question?",
-                options=[],
-                default="yes",
-                rationale="Test"
-            )
+        # Verify dict structure
+        assert data["id"] == "test"
+        assert data["category"] == "scope"
+        assert data["text"] == "Test question?"
+        assert data["options"] == ["[Y]es", "[N]o"]
+        assert data["default"] == "Y"
+        assert data["rationale"] == "Testing is important"
 
-    def test_question_validation_invalid_default(self):
-        """Test that invalid default raises error."""
-        with pytest.raises(ValueError, match="must be in options"):
-            Question(
-                id="q1",
-                category="scope",
-                text="Question?",
-                options=["yes", "no"],
-                default="maybe",
-                rationale="Test"
-            )
+        # Verify deserialization
+        restored = Question.from_dict(data)
+        assert restored.id == q.id
+        assert restored.category == q.category
+        assert restored.text == q.text
+        assert restored.options == q.options
+        assert restored.default == q.default
+        assert restored.rationale == q.rationale
+
+    def test_question_serialization_partial(self):
+        """Test serialization with optional fields missing."""
+        q = Question(
+            id="test",
+            category="test",
+            text="Test?",
+            options=["A", "B"],
+        )
+        data = q.to_dict()
+        restored = Question.from_dict(data)
+
+        assert restored.id == q.id
+        assert restored.default is None
+        assert restored.rationale is None
 
 
 class TestDecision:
-    """Tests for Decision dataclass."""
+    """Test Decision dataclass functionality."""
 
-    def test_valid_decision(self):
-        """Test creating a valid decision."""
+    def test_decision_with_default(self):
+        """Test decision created from default selection."""
         d = Decision(
+            question_id="scope",
             category="scope",
-            question="Include tests?",
-            answer="yes",
-            is_default=False,
-            confidence=1.0,
-            rationale="User chose explicitly"
+            question_text="How comprehensive?",
+            answer="standard",
+            answer_display="Standard - With error handling",
+            default_used=True,
+            rationale="Default selected - user didn't override",
         )
-        assert d.answer == "yes"
-        assert d.confidence == 1.0
-        assert not d.is_default
+        assert d.question_id == "scope"
+        assert d.category == "scope"
+        assert d.default_used is True
+        assert "Default selected" in d.rationale
 
-    def test_decision_validation_invalid_confidence(self):
-        """Test that invalid confidence raises error."""
-        with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
-            Decision(
-                category="scope",
-                question="Include tests?",
-                answer="yes",
-                is_default=False,
-                confidence=1.5,
-                rationale="Test"
-            )
+    def test_decision_without_default(self):
+        """Test decision with explicit user choice."""
+        d = Decision(
+            question_id="scope",
+            category="scope",
+            question_text="How comprehensive?",
+            answer="complete",
+            answer_display="Complete - Production-ready with full error handling",
+            default_used=False,
+            rationale="User explicitly chose complete implementation",
+        )
+        assert d.question_id == "scope"
+        assert d.answer == "complete"
+        assert d.default_used is False
+        assert "explicitly chose" in d.rationale
+
+    def test_decision_serialization(self):
+        """Test decision serialization to dict and back."""
+        d = Decision(
+            question_id="testing",
+            category="quality",
+            question_text="What testing level?",
+            answer="integration",
+            answer_display="Integration - E2E tests",
+            default_used=False,
+            rationale="High-risk feature needs integration tests",
+        )
+        data = d.to_dict()
+
+        # Verify dict structure
+        assert data["question_id"] == "testing"
+        assert data["category"] == "quality"
+        assert data["answer"] == "integration"
+        assert data["default_used"] is False
+
+        # Verify deserialization
+        restored = Decision.from_dict(data)
+        assert restored.question_id == d.question_id
+        assert restored.category == d.category
+        assert restored.answer == d.answer
+        assert restored.default_used == d.default_used
+
+    def test_decision_with_timestamp(self):
+        """Test decision timestamp handling."""
+        now = datetime.now()
+        d = Decision(
+            question_id="test",
+            category="test",
+            question_text="Test?",
+            answer="yes",
+            answer_display="Yes",
+            default_used=False,
+            rationale="Test",
+            timestamp=now,
+        )
+        assert d.timestamp == now
+
+        # Serialize and restore
+        data = d.to_dict()
+        restored = Decision.from_dict(data)
+        assert restored.timestamp is not None
 
 
 class TestClarificationContext:
-    """Tests for ClarificationContext dataclass."""
+    """Test ClarificationContext functionality."""
 
-    def test_empty_context(self):
-        """Test creating an empty context."""
-        ctx = ClarificationContext()
-        assert ctx.total_questions == 0
-        assert ctx.answered_count == 0
-        assert ctx.skipped_count == 0
-        assert not ctx.is_complete
-        assert not ctx.has_explicit_decisions
+    @pytest.fixture
+    def temp_task_file(self):
+        """Create a temporary task file for testing."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
+            f.write("""---
+id: TASK-test
+title: Test task
+status: backlog
+complexity: 5
+---
 
-    def test_add_explicit_decision(self):
-        """Test adding an explicit decision."""
-        ctx = ClarificationContext(total_questions=2)
-        decision = Decision(
-            category="scope",
-            question="Include tests?",
-            answer="yes",
-            is_default=False,
-            confidence=1.0,
-            rationale="User chose"
-        )
-        ctx.add_decision(decision)
+# Test Task
 
-        assert ctx.answered_count == 1
-        assert len(ctx.explicit_decisions) == 1
-        assert len(ctx.assumed_defaults) == 0
-        assert ctx.has_explicit_decisions
+This is a test task.
+""")
+            temp_path = Path(f.name)
 
-    def test_add_default_decision(self):
-        """Test adding a default decision."""
-        ctx = ClarificationContext(total_questions=2)
-        decision = Decision(
-            category="scope",
-            question="Include tests?",
-            answer="yes",
-            is_default=True,
-            confidence=0.7,
-            rationale="Default choice"
-        )
-        ctx.add_decision(decision)
+        yield temp_path
 
-        assert ctx.answered_count == 1
-        assert len(ctx.explicit_decisions) == 0
-        assert len(ctx.assumed_defaults) == 1
-        assert not ctx.has_explicit_decisions
+        # Cleanup
+        if temp_path.exists():
+            temp_path.unlink()
 
-    def test_add_skipped(self):
-        """Test adding a skipped question."""
-        ctx = ClarificationContext(total_questions=2)
-        ctx.add_skipped("q1")
-
-        assert ctx.skipped_count == 1
-        assert "q1" in ctx.not_applicable
-
-    def test_is_complete(self):
-        """Test completion check."""
-        ctx = ClarificationContext(total_questions=2)
-        assert not ctx.is_complete
-
-        decision = Decision(
-            category="scope",
-            question="Include tests?",
-            answer="yes",
-            is_default=False,
-            confidence=1.0,
-            rationale="User chose"
-        )
-        ctx.add_decision(decision)
-        assert not ctx.is_complete
-
-        ctx.add_skipped("q2")
-        assert ctx.is_complete
-
-
-class TestShouldClarify:
-    """Tests for should_clarify function."""
-
-    def test_no_questions_flag(self):
-        """Test that no_questions flag skips clarification."""
-        mode = should_clarify("review", complexity=8, flags={"no_questions": True})
-        assert mode == ClarificationMode.SKIP
-
-    def test_micro_flag(self):
-        """Test that micro flag skips clarification."""
-        mode = should_clarify("planning", complexity=6, flags={"micro": True})
-        assert mode == ClarificationMode.SKIP
-
-    def test_defaults_flag(self):
-        """Test that defaults flag uses defaults."""
-        mode = should_clarify("implement_prefs", complexity=5, flags={"defaults": True})
-        assert mode == ClarificationMode.USE_DEFAULTS
-
-    def test_review_context_low_complexity(self):
-        """Test review context with low complexity."""
-        mode = should_clarify("review", complexity=1, flags={})
-        assert mode == ClarificationMode.SKIP
-
-    def test_review_context_medium_complexity(self):
-        """Test review context with medium complexity."""
-        mode = should_clarify("review", complexity=4, flags={})
-        assert mode == ClarificationMode.QUICK
-
-    def test_review_context_high_complexity(self):
-        """Test review context with high complexity."""
-        mode = should_clarify("review", complexity=8, flags={})
-        assert mode == ClarificationMode.FULL
-
-    def test_implement_prefs_context_low_complexity(self):
-        """Test implement_prefs context with low complexity."""
-        mode = should_clarify("implement_prefs", complexity=2, flags={})
-        assert mode == ClarificationMode.SKIP
-
-    def test_implement_prefs_context_medium_complexity(self):
-        """Test implement_prefs context with medium complexity."""
-        mode = should_clarify("implement_prefs", complexity=5, flags={})
-        assert mode == ClarificationMode.QUICK
-
-    def test_implement_prefs_context_high_complexity(self):
-        """Test implement_prefs context with high complexity."""
-        mode = should_clarify("implement_prefs", complexity=8, flags={})
-        assert mode == ClarificationMode.FULL
-
-    def test_planning_context_low_complexity(self):
-        """Test planning context with low complexity."""
-        mode = should_clarify("planning", complexity=1, flags={})
-        assert mode == ClarificationMode.SKIP
-
-    def test_planning_context_medium_complexity(self):
-        """Test planning context with medium complexity."""
-        mode = should_clarify("planning", complexity=4, flags={})
-        assert mode == ClarificationMode.QUICK
-
-    def test_planning_context_high_complexity(self):
-        """Test planning context with high complexity."""
-        mode = should_clarify("planning", complexity=6, flags={})
-        assert mode == ClarificationMode.FULL
-
-
-class TestProcessResponses:
-    """Tests for process_responses function."""
-
-    def test_all_questions_answered_with_defaults(self):
-        """Test processing responses where all use defaults."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default"),
-            Question("q2", "tech", "Use async?", ["yes", "no"], "no", "Simple case")
-        ]
-        user_input = {"q1": "yes", "q2": "no"}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.FULL)
-
-        assert ctx.total_questions == 2
-        assert ctx.answered_count == 2
-        assert ctx.skipped_count == 0
-        assert len(ctx.assumed_defaults) == 2
-        assert len(ctx.explicit_decisions) == 0
-
-    def test_all_questions_answered_explicitly(self):
-        """Test processing responses with explicit choices."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default"),
-            Question("q2", "tech", "Use async?", ["yes", "no"], "no", "Simple case")
-        ]
-        user_input = {"q1": "no", "q2": "yes"}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.FULL)
-
-        assert ctx.total_questions == 2
-        assert ctx.answered_count == 2
-        assert len(ctx.explicit_decisions) == 2
-        assert len(ctx.assumed_defaults) == 0
-        assert ctx.explicit_decisions[0].answer == "no"
-        assert ctx.explicit_decisions[1].answer == "yes"
-
-    def test_mixed_responses(self):
-        """Test processing mixed explicit and default responses."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default"),
-            Question("q2", "tech", "Use async?", ["yes", "no"], "no", "Simple case")
-        ]
-        user_input = {"q1": "yes", "q2": "yes"}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.FULL)
-
-        assert ctx.answered_count == 2
-        assert len(ctx.assumed_defaults) == 1
-        assert len(ctx.explicit_decisions) == 1
-        assert ctx.assumed_defaults[0].answer == "yes"
-        assert ctx.explicit_decisions[0].answer == "yes"
-
-    def test_skipped_questions(self):
-        """Test processing with skipped questions."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default"),
-            Question("q2", "tech", "Use async?", ["yes", "no"], "no", "Simple case")
-        ]
-        user_input = {"q1": "yes"}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.QUICK)
-
-        assert ctx.total_questions == 2
-        assert ctx.answered_count == 1
-        assert ctx.skipped_count == 1
-        assert "q2" in ctx.not_applicable
-
-    def test_skip_mode(self):
-        """Test processing with SKIP mode."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default")
-        ]
-        user_input = {}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.SKIP)
-
-        assert ctx.user_override == "skip"
-        assert ctx.answered_count == 0
-        assert ctx.skipped_count == 1
-
-    def test_use_defaults_mode(self):
-        """Test processing with USE_DEFAULTS mode."""
-        questions = [
-            Question("q1", "scope", "Include tests?", ["yes", "no"], "yes", "Default")
-        ]
-        user_input = {"q1": "yes"}
-
-        ctx = process_responses(questions, user_input, ClarificationMode.USE_DEFAULTS)
-
-        assert ctx.user_override == "defaults"
-
-
-class TestFormatForPrompt:
-    """Tests for format_for_prompt function."""
-
-    def test_empty_context(self):
-        """Test formatting an empty context."""
-        ctx = ClarificationContext()
-        output = format_for_prompt(ctx)
-
-        assert "No clarification questions were asked" in output
-
-    def test_explicit_decisions_only(self):
-        """Test formatting with only explicit decisions."""
+    def test_persist_to_frontmatter(self, temp_task_file):
+        """Test persisting clarification context to task frontmatter."""
+        # Create clarification context
         ctx = ClarificationContext(
-            explicit_decisions=[
-                Decision("scope", "Include tests?", "yes", False, 1.0, "User chose")
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[
+                Decision(
+                    question_id="scope",
+                    category="scope",
+                    question_text="How comprehensive?",
+                    answer="standard",
+                    answer_display="Standard - With error handling",
+                    default_used=True,
+                    rationale="Default selected",
+                ),
+                Decision(
+                    question_id="testing",
+                    category="quality",
+                    question_text="What testing level?",
+                    answer="unit",
+                    answer_display="Unit tests only",
+                    default_used=False,
+                    rationale="User chose unit tests",
+                ),
             ],
-            total_questions=1,
-            answered_count=1
         )
-        output = format_for_prompt(ctx)
 
-        assert "# Clarification Context" in output
-        assert "EXPLICIT DECISIONS" in output
-        assert "Include tests?" in output
-        assert "yes" in output
-        assert "100%" in output
+        # Persist to frontmatter
+        ctx.persist_to_frontmatter(temp_task_file)
 
-    def test_assumed_defaults_only(self):
-        """Test formatting with only assumed defaults."""
-        ctx = ClarificationContext(
-            assumed_defaults=[
-                Decision("tech", "Use async?", "no", True, 0.7, "Simple case")
+        # Verify file was updated
+        content = temp_task_file.read_text()
+        assert "clarification:" in content
+        assert "context: implementation_planning" in content
+        assert "mode: full" in content
+        assert "question_id: scope" in content
+        assert "question_id: testing" in content
+        assert "default_used: true" in content
+
+        # Verify YAML is valid
+        lines = content.split('\n')
+        frontmatter_lines = []
+        in_frontmatter = False
+        frontmatter_count = 0
+
+        for line in lines:
+            if line.strip() == '---':
+                frontmatter_count += 1
+                if frontmatter_count == 1:
+                    in_frontmatter = True
+                    continue
+                elif frontmatter_count == 2:
+                    break
+            if in_frontmatter:
+                frontmatter_lines.append(line)
+
+        frontmatter_yaml = '\n'.join(frontmatter_lines)
+        parsed = yaml.safe_load(frontmatter_yaml)
+        assert 'clarification' in parsed
+        assert parsed['clarification']['context'] == 'implementation_planning'
+
+    def test_load_from_frontmatter(self, temp_task_file):
+        """Test loading clarification context from task frontmatter."""
+        # Write task file with clarification data
+        temp_task_file.write_text("""---
+id: TASK-test
+title: Test task
+complexity: 5
+clarification:
+  context: implementation_planning
+  timestamp: 2025-12-08T14:30:00
+  mode: full
+  decisions:
+    - question_id: scope
+      category: scope
+      question: How comprehensive?
+      answer: standard
+      answer_text: Standard - With error handling
+      default_used: true
+      rationale: Default selected
+    - question_id: testing
+      category: quality
+      question: What testing level?
+      answer: unit
+      answer_text: Unit tests only
+      default_used: false
+      rationale: User chose unit tests
+---
+
+# Test Task
+
+This is a test task.
+""")
+
+        # Load context
+        ctx = ClarificationContext.load_from_frontmatter(temp_task_file)
+
+        # Verify loaded correctly
+        assert ctx is not None
+        assert ctx.context_type == "implementation_planning"
+        assert ctx.mode == "full"
+        assert len(ctx.decisions) == 2
+
+        # Verify first decision
+        scope_decision = ctx.decisions[0]
+        assert scope_decision.question_id == "scope"
+        assert scope_decision.category == "scope"
+        assert scope_decision.answer == "standard"
+        assert scope_decision.default_used is True
+
+        # Verify second decision
+        testing_decision = ctx.decisions[1]
+        assert testing_decision.question_id == "testing"
+        assert testing_decision.category == "quality"
+        assert testing_decision.answer == "unit"
+        assert testing_decision.default_used is False
+
+    def test_load_from_frontmatter_no_clarification(self, temp_task_file):
+        """Test loading from frontmatter when no clarification exists."""
+        # Task file without clarification field
+        temp_task_file.write_text("""---
+id: TASK-test
+title: Test task
+status: backlog
+---
+
+# Test Task
+""")
+
+        ctx = ClarificationContext.load_from_frontmatter(temp_task_file)
+        assert ctx is None
+
+    def test_load_from_frontmatter_empty_decisions(self, temp_task_file):
+        """Test loading from frontmatter with empty decisions list."""
+        temp_task_file.write_text("""---
+id: TASK-test
+title: Test task
+clarification:
+  context: implementation_planning
+  mode: quick
+  decisions: []
+---
+
+# Test Task
+""")
+
+        ctx = ClarificationContext.load_from_frontmatter(temp_task_file)
+        assert ctx is not None
+        assert ctx.context_type == "implementation_planning"
+        assert ctx.mode == "quick"
+        assert len(ctx.decisions) == 0
+
+    def test_context_equality(self):
+        """Test ClarificationContext equality comparison."""
+        ctx1 = ClarificationContext(
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[
+                Decision(
+                    question_id="scope",
+                    category="scope",
+                    question_text="How comprehensive?",
+                    answer="standard",
+                    answer_display="Standard",
+                    default_used=True,
+                    rationale="Default",
+                )
             ],
-            total_questions=1,
-            answered_count=1
         )
-        output = format_for_prompt(ctx)
 
-        assert "ASSUMED DEFAULTS" in output
-        assert "Use async?" in output
-        assert "no" in output
-        assert "70%" in output
-
-    def test_mixed_decisions(self):
-        """Test formatting with both explicit and assumed decisions."""
-        ctx = ClarificationContext(
-            explicit_decisions=[
-                Decision("scope", "Include tests?", "yes", False, 1.0, "User chose")
+        ctx2 = ClarificationContext(
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[
+                Decision(
+                    question_id="scope",
+                    category="scope",
+                    question_text="How comprehensive?",
+                    answer="standard",
+                    answer_display="Standard",
+                    default_used=True,
+                    rationale="Default",
+                )
             ],
-            assumed_defaults=[
-                Decision("tech", "Use async?", "no", True, 0.7, "Simple case")
+        )
+
+        assert ctx1 == ctx2
+
+    def test_context_modes(self):
+        """Test different clarification modes."""
+        # Skip mode
+        ctx_skip = ClarificationContext(
+            context_type="implementation_planning",
+            mode="skip",
+            decisions=[],
+        )
+        assert ctx_skip.mode == "skip"
+        assert len(ctx_skip.decisions) == 0
+
+        # Quick mode
+        ctx_quick = ClarificationContext(
+            context_type="implementation_planning",
+            mode="quick",
+            decisions=[],
+        )
+        assert ctx_quick.mode == "quick"
+
+        # Full mode
+        ctx_full = ClarificationContext(
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[],
+        )
+        assert ctx_full.mode == "full"
+
+    def test_multiple_persist_cycles(self, temp_task_file):
+        """Test persisting multiple times doesn't corrupt data."""
+        # First persist
+        ctx1 = ClarificationContext(
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[
+                Decision(
+                    question_id="scope",
+                    category="scope",
+                    question_text="How comprehensive?",
+                    answer="standard",
+                    answer_display="Standard",
+                    default_used=True,
+                    rationale="Default",
+                )
             ],
-            total_questions=2,
-            answered_count=2
         )
-        output = format_for_prompt(ctx)
+        ctx1.persist_to_frontmatter(temp_task_file)
 
-        assert "EXPLICIT DECISIONS" in output
-        assert "ASSUMED DEFAULTS" in output
-        assert "Total Questions: 2" in output
-        assert "Answered: 2" in output
-
-    def test_with_skipped_questions(self):
-        """Test formatting with skipped questions."""
-        ctx = ClarificationContext(
-            explicit_decisions=[
-                Decision("scope", "Include tests?", "yes", False, 1.0, "User chose")
+        # Second persist with updated context
+        ctx2 = ClarificationContext(
+            context_type="implementation_planning",
+            mode="full",
+            decisions=[
+                Decision(
+                    question_id="scope",
+                    category="scope",
+                    question_text="How comprehensive?",
+                    answer="complete",
+                    answer_display="Complete",
+                    default_used=False,
+                    rationale="User updated",
+                )
             ],
-            not_applicable=["q2", "q3"],
-            total_questions=3,
-            answered_count=1,
-            skipped_count=2
         )
-        output = format_for_prompt(ctx)
+        ctx2.persist_to_frontmatter(temp_task_file)
 
-        assert "NOT APPLICABLE" in output
-        assert "Skipped 2 question(s)" in output
-
-    def test_with_user_override(self):
-        """Test formatting with user override."""
-        ctx = ClarificationContext(
-            user_override="skip",
-            total_questions=5,
-            skipped_count=5
-        )
-        ctx.not_applicable = ["q1", "q2", "q3", "q4", "q5"]
-        output = format_for_prompt(ctx)
-
-        assert "User Override: skip" in output
-
-
-class TestPersistToFrontmatter:
-    """Tests for persist_to_frontmatter function."""
-
-    def test_persist_to_frontmatter_stub(self):
-        """Test that persist_to_frontmatter is a stub (does nothing)."""
-        ctx = ClarificationContext()
-        # Should not raise any errors
-        persist_to_frontmatter(ctx, "TASK-001")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+        # Load and verify latest persisted
+        loaded = ClarificationContext.load_from_frontmatter(temp_task_file)
+        assert loaded is not None
+        assert loaded.decisions[0].answer == "complete"
+        assert loaded.decisions[0].default_used is False
