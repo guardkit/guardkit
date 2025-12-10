@@ -1,16 +1,22 @@
 ---
 id: TASK-CLQ-007
 title: Integrate clarification into task-work.md
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T00:00:00Z
+completed: 2025-12-10T00:00:00Z
+completed_location: tasks/completed/TASK-CLQ-007/
 priority: high
 tags: [clarifying-questions, integration, task-work, wave-3]
 complexity: 6
 parent_feature: clarifying-questions
 wave: 3
-conductor_workspace: clarifying-questions-wave3-task-work
+conductor_workspace: lagos
 implementation_method: task-work
+organized_files: [
+  "TASK-CLQ-007.md",
+  "completion-report.md"
+]
 ---
 
 # Task: Integrate clarification into task-work.md
