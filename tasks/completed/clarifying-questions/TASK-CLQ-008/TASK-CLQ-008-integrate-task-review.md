@@ -1,9 +1,9 @@
 ---
 id: TASK-CLQ-008
 title: Integrate clarification into task-review.md
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T07:50:30Z
 priority: high
 tags: [clarifying-questions, integration, task-review, wave-3]
 complexity: 6
@@ -11,6 +11,9 @@ parent_feature: clarifying-questions
 wave: 3
 conductor_workspace: clarifying-questions-wave3-task-review
 implementation_method: task-work
+completed: 2025-12-10T07:50:30Z
+completed_location: tasks/completed/clarifying-questions/TASK-CLQ-008/
+organized_files: ["TASK-CLQ-008-integrate-task-review.md"]
 ---
 
 # Task: Integrate clarification into task-review.md
