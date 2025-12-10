@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-005
 title: Create Context A templates (task-review scope clarification)
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T07:20:00Z
+completed: 2025-12-10T07:20:00Z
 priority: medium
 tags: [clarifying-questions, templates, task-review, wave-2]
 complexity: 4
@@ -11,6 +12,9 @@ parent_feature: clarifying-questions
 wave: 2
 conductor_workspace: clarifying-questions-wave2-context-a
 implementation_method: direct
+completed_location: tasks/completed/TASK-CLQ-005/
+organized_files:
+  - TASK-CLQ-005-create-context-a-templates.md
 ---
 
 # Task: Create Context A templates (task-review scope clarification)
@@ -21,16 +25,19 @@ Create the question templates and generator for Context A - review scope clarifi
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/lib/clarification/templates/review_scope.py` with:
-  - [ ] REVIEW_FOCUS_QUESTIONS - What aspects to analyze
-  - [ ] ANALYSIS_DEPTH_QUESTIONS - How deep to go
-  - [ ] TRADEOFF_PRIORITY_QUESTIONS - What to optimize for
-  - [ ] SPECIFIC_CONCERNS_QUESTIONS - User-specified focus areas
-- [ ] Create `installer/global/commands/lib/clarification/generators/review_generator.py` with:
-  - [ ] `generate_review_questions()` function
-  - [ ] Logic to select questions based on review mode
-- [ ] Each question has: id, category, text, options, default, rationale
-- [ ] Limit to 4-5 questions (reviews are lighter weight)
+- [x] Create `installer/global/commands/lib/clarification/templates/review_scope.py` with:
+  - [x] REVIEW_FOCUS_QUESTIONS - What aspects to analyze
+  - [x] ANALYSIS_DEPTH_QUESTIONS - How deep to go
+  - [x] TRADEOFF_PRIORITY_QUESTIONS - What to optimize for
+  - [x] SPECIFIC_CONCERNS_QUESTIONS - User-specified focus areas
+  - [x] EXTENSIBILITY_QUESTIONS - Future extensibility consideration
+- [x] Create `installer/global/commands/lib/clarification/generators/review_generator.py` with:
+  - [x] `generate_review_questions()` function
+  - [x] Logic to select questions based on review mode
+  - [x] `get_question_priorities()` function for priority ordering
+  - [x] `filter_questions_by_priority()` for QUICK mode
+- [x] Each question has: id, category, text, options, default, rationale
+- [x] Limit to 4-5 questions (reviews are lighter weight)
 
 ## Technical Specification
 
