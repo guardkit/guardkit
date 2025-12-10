@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-010
 title: Implement persistence & audit trail
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T00:00:00Z
+completed: 2025-12-10T00:00:00Z
 priority: medium
 tags: [clarifying-questions, persistence, audit, wave-4]
 complexity: 3
@@ -11,6 +12,9 @@ parent_feature: clarifying-questions
 wave: 4
 conductor_workspace: clarifying-questions-wave4-persistence
 implementation_method: direct
+completed_location: tasks/completed/TASK-CLQ-010/
+organized_files:
+  - TASK-CLQ-010.md
 ---
 
 # Task: Implement persistence & audit trail
@@ -21,12 +25,12 @@ Implement persistence of clarification decisions to task frontmatter and create 
 
 ## Acceptance Criteria
 
-- [ ] Define YAML schema for clarification decisions in frontmatter
-- [ ] Implement `persist_to_frontmatter()` function in core.py
-- [ ] Store timestamp, question ID, answer, and rationale
-- [ ] Support loading previous decisions for task resumption
-- [ ] Add `load_from_frontmatter()` function for resuming interrupted tasks
-- [ ] Document schema in CLAUDE.md
+- [x] Define YAML schema for clarification decisions in frontmatter
+- [x] Implement `persist_to_frontmatter()` function in core.py
+- [x] Store timestamp, question ID, answer, and rationale
+- [x] Support loading previous decisions for task resumption
+- [x] Add `load_from_frontmatter()` function for resuming interrupted tasks
+- [x] Document schema in CLAUDE.md
 
 ## Technical Specification
 

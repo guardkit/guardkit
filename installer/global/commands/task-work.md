@@ -95,8 +95,23 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
 ```
+
+## Available Flags
+
+| Flag | Description |
+|------|-------------|
+| `--mode=tdd\|standard\|bdd` | Development mode (default: standard) |
+| `--design-only` | Stop at Phase 2.8 checkpoint, save plan |
+| `--implement-only` | Start at Phase 3 with approved plan |
+| `--micro` | Streamlined workflow for trivial tasks |
+| `--docs=minimal\|standard\|comprehensive` | Documentation level control |
+| `--no-questions` | Skip Phase 1.5 clarification |
+| `--with-questions` | Force Phase 1.5 clarification |
+| `--defaults` | Use clarification defaults without prompting |
+| `--answers="..."` | Inline clarification answers for automation |
+| `--reclarify` | Re-run clarification (ignore saved decisions) |
 
 ## Documentation Level Control (NEW - TASK-036)
 
@@ -432,6 +447,182 @@ This file contains:
 - Test strategy
 - Risk mitigations
 - Architectural review results
+
+## Clarifying Questions Flags (NEW - TASK-CLQ-007)
+
+The task-work command now supports flags to control Phase 1.6 (Clarifying Questions) behavior, enabling flexible clarification workflows for different task complexities and automation scenarios.
+
+### Flag: --no-questions
+
+**Purpose**: Skip Phase 1.6 (Clarifying Questions) entirely and proceed directly from context loading to implementation planning.
+
+**Use cases**:
+- CI/CD automation where human input is not available
+- Re-running tasks with previously clarified scope
+- Tasks with complete specification in description
+- Trivial tasks (complexity 1-2) where clarification adds no value
+- Fast iteration during prototyping
+
+**Example**:
+```bash
+/task-work TASK-a3f8 --no-questions
+```
+
+**Behavior**:
+- Phase 1.6 is skipped regardless of task complexity
+- Implementation planning proceeds with task description as-is
+- Any ambiguities are resolved using default assumptions
+- No user interaction required during execution
+
+### Flag: --with-questions
+
+**Purpose**: Force Phase 1.6 (Clarifying Questions) even for trivial tasks (complexity 1-2).
+
+**Use cases**:
+- Learning mode - understand what clarifications are available
+- High-stakes tasks where even trivial scope needs confirmation
+- Tasks where default assumptions may be incorrect
+- Training new team members on clarification patterns
+
+**Example**:
+```bash
+/task-work TASK-b2c4 --with-questions
+```
+
+**Behavior**:
+- Phase 1.6 executes regardless of complexity score
+- Questions are presented based on detected ambiguity
+- For complexity 1-2: Uses quick mode (15s timeout)
+- For complexity 3+: Uses appropriate mode based on score
+
+### Flag: --defaults
+
+**Purpose**: Proceed through Phase 1.6 using all default answers without prompting user.
+
+**Use cases**:
+- CI/CD pipelines requiring deterministic behavior
+- Batch processing multiple tasks
+- Testing workflows without manual intervention
+- Quick iteration where defaults are acceptable
+
+**Example**:
+```bash
+/task-work TASK-c5d7 --defaults
+```
+
+**Behavior**:
+- Phase 1.6 executes (questions are generated)
+- All questions are answered with their default values automatically
+- No user interaction required
+- Clarification context is still passed to Phase 2
+- Useful for understanding what questions would be asked
+
+### Flag: --answers="1:Y 2:N 3:JWT"
+
+**Purpose**: Provide inline answers to clarifying questions for automation.
+
+**Format**: Space-separated question-answer pairs using question number and answer code.
+
+**Use cases**:
+- CI/CD pipelines with predetermined answers
+- Scripted task execution with known parameters
+- Integration testing of clarification workflows
+- Batch processing with consistent choices
+
+**Example**:
+```bash
+# Answer 3 questions inline
+/task-work TASK-d4e9 --answers="1:S 2:I 3:JWT"
+
+# Breakdown:
+# Q1: Implementation Scope → [S]tandard
+# Q2: Testing Approach → [I]ntegration tests
+# Q3: Auth Strategy → JWT
+```
+
+**Behavior**:
+- Phase 1.6 executes and generates questions
+- System matches provided answers to question numbers
+- Answers are validated against question options
+- If answer invalid or missing: Uses default for that question
+- Clarification context is passed to Phase 2 with provided answers
+
+**Error handling**:
+```bash
+# Invalid answer code
+/task-work TASK-e7f2 --answers="1:X"
+
+# Output:
+⚠️ Warning: Invalid answer 'X' for question 1
+   Valid options: [M]inimal, [S]tandard, [C]omplete
+   Using default: [S]tandard
+```
+
+### Complexity-Based Behavior
+
+Clarification flags interact with task complexity:
+
+| Complexity | Default Behavior | With --no-questions | With --with-questions |
+|------------|------------------|---------------------|----------------------|
+| 1-2 (Trivial) | Skip Phase 1.6 | Skip Phase 1.6 | Execute (quick mode, 15s timeout) |
+| 3-4 (Simple) | Execute (quick mode, 15s) | Skip Phase 1.6 | Execute (quick mode, 15s) |
+| 5+ (Complex) | Execute (full mode, blocking) | Skip Phase 1.6 | Execute (full mode, blocking) |
+
+### Flag Precedence
+
+When multiple clarification flags are present:
+
+1. **--no-questions** (highest priority): Skips Phase 1.6 entirely
+   - Overrides --with-questions, --defaults, --answers
+
+2. **--answers**: Provides inline answers
+   - Overrides --defaults
+   - Compatible with --with-questions
+
+3. **--defaults**: Uses all defaults
+   - Overridden by --answers if both present
+
+4. **--with-questions**: Forces execution
+   - Only effective if --no-questions not present
+
+**Examples**:
+```bash
+# --no-questions overrides everything
+/task-work TASK-f7g2 --no-questions --with-questions
+# Result: Phase 1.6 skipped (--no-questions wins)
+
+# --answers overrides --defaults
+/task-work TASK-h8j3 --defaults --answers="1:C"
+# Result: Q1 uses answer C, others use defaults
+
+# --with-questions forces execution
+/task-work TASK-k3m7 --with-questions
+# Result: Phase 1.6 executes even if complexity is 1-2
+```
+
+### Integration with Design-First Workflow
+
+Clarification flags work with design-first workflow:
+
+```bash
+# Design-only with clarifications
+/task-work TASK-n6p2 --design-only --answers="1:C 2:F"
+
+# Design-only without clarifications (faster)
+/task-work TASK-n6p2 --design-only --no-questions
+
+# Implement-only skips Phase 1.6 automatically
+/task-work TASK-n6p2 --implement-only
+# (uses clarifications from design-only session)
+```
+
+**Note**: When using --implement-only, Phase 1.6 is always skipped because clarifications were already captured during the --design-only session.
+
+### See Also
+
+- [Phase 1.6 Specification](#phase-16-clarifying-questions-complexity-gated) - Complete phase workflow
+- [Clarifying Questions Feature](../../tasks/backlog/clarifying-questions/) - Implementation details
+- [Context C Templates](../../.claude/clarification/templates/context_c_implementation_planning.py) - Question templates
 
 ## Context7 MCP Integration (Library Documentation)
 
@@ -1198,7 +1389,153 @@ validator = PhaseGateValidator(tracker)
 - BDD/Gherkin scenario generation
 - Full requirements traceability
 
-**GuardKit workflow**: Proceed directly to Phase 2 (Implementation Planning).
+**GuardKit workflow**: Proceed to Phase 1.6 (Clarifying Questions), then Phase 2 (Implementation Planning).
+
+#### Phase 1.6: Clarifying Questions (Complexity-Gated)
+
+**Purpose**: Ask targeted clarifying questions before making assumptions in implementation planning.
+
+**Trigger**: After context loading (Phase 1.5), before implementation planning (Phase 2)
+
+**Complexity Gating**:
+
+| Complexity | Behavior |
+|------------|----------|
+| 1-2 (Trivial) | Skip - proceed directly to Phase 2 |
+| 3-4 (Simple) | Quick mode - 15s timeout, then use defaults |
+| 5+ (Complex) | Full mode - blocking, wait for user response |
+
+**Workflow**:
+
+1. **Detect Ambiguity**
+   - Analyze task description for scope ambiguity
+   - Check for technology choices not specified
+   - Identify trade-offs not addressed
+
+2. **Generate Questions**
+   - Select relevant questions from templates (Context C: Implementation Planning)
+   - Customize based on task context
+   - Limit to 3-5 questions maximum
+
+3. **Present to User**
+   - Display questions with options
+   - Show defaults and rationale
+   - Accept answers or timeout (quick mode)
+
+4. **Record Decisions**
+   - Store in ClarificationContext
+   - Pass to Phase 2 for planning
+   - Persist to task frontmatter
+
+**Command-Line Flags**:
+
+| Flag | Effect |
+|------|--------|
+| `--no-questions` | Skip Phase 1.6 entirely |
+| `--with-questions` | Force Phase 1.6 even for complexity 1-2 |
+| `--defaults` | Use all defaults without prompting |
+| `--answers="..."` | Provide answers inline (CI/CD automation) |
+
+**Example Flow**:
+
+```
+/task-work TASK-a3f8
+
+Phase 1.5: Loading context...
+Phase 1.6: Clarifying Questions (complexity: 5)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 CLARIFYING QUESTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Implementation Scope
+    How comprehensive should this implementation be?
+
+    [M]inimal - Core functionality only
+    [S]tandard - With error handling (DEFAULT)
+    [C]omplete - Production-ready with edge cases
+
+    Your choice [M/S/C]: S
+
+Q2. Testing Approach
+    What testing strategy?
+
+    [U]nit tests only
+    [I]ntegration tests included (DEFAULT)
+    [F]ull coverage (unit + integration + e2e)
+
+    Your choice [U/I/F]: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Recorded 2 decisions
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2: Planning implementation with clarifications...
+```
+
+**Integration Code**:
+
+```python
+# In task-work command implementation
+
+from lib.clarification import (
+    ClarificationContext,
+    generate_planning_questions,
+    display_questions_full,
+    display_questions_quick,
+)
+from lib.clarification.detection import detect_ambiguity_level
+
+def execute_task_work(task_id: str, flags: dict):
+    # Phase 1.5: Context Loading
+    task = load_task(task_id)
+    context = load_project_context()
+
+    # Phase 1.6: Clarifying Questions
+    clarification = None
+    if not flags.get('no_questions'):
+        ambiguity = detect_ambiguity_level(task, context)
+        complexity = task.complexity
+
+        if flags.get('with_questions') or complexity >= 3:
+            questions = generate_planning_questions(task, context, ambiguity)
+
+            if flags.get('answers'):
+                clarification = parse_inline_answers(flags['answers'], questions)
+            elif flags.get('defaults'):
+                clarification = apply_defaults(questions)
+            elif complexity >= 5:
+                clarification = display_questions_full(questions)
+            else:
+                clarification = display_questions_quick(questions, timeout=15)
+
+    # Phase 2: Implementation Planning (with clarification context)
+    plan = create_implementation_plan(task, context, clarification)
+
+    # ... continue with phases 2.5-5.5
+```
+
+**Quick Mode Timeout Behavior**:
+
+For complexity 3-4 tasks (simple):
+- Display questions with 15-second countdown
+- If user responds within 15s: Use their answers
+- If timeout expires: Automatically use default values
+- Display: "⏱️ Timeout - using defaults for remaining questions"
+
+For complexity 5+ tasks (complex):
+- No timeout - blocking wait for user response
+- User must answer or cancel with Ctrl+C
+
+**Skip Conditions**:
+
+Phase 1.6 is skipped when:
+- `--no-questions` flag is present
+- Task complexity is 1-2 (trivial)
+- `--design-only` flag is present (design-first workflow)
+- Task is in DESIGN_APPROVED state (implement-only)
+
+**See**: [Clarifying Questions Feature](../../tasks/backlog/clarifying-questions/) for complete implementation details.
 
 #### Phase 2: Implementation Planning
 
@@ -1219,7 +1556,7 @@ Starting agent execution...
 ═══════════════════════════════════════════════════════
 ```
 
-**INVOKE** Task tool with documentation context:
+**INVOKE** Task tool with documentation context and clarification decisions:
 ```
 subagent_type: "{selected_planning_agent_from_table}"
 description: "Plan implementation for TASK-XXX"
@@ -1229,11 +1566,25 @@ complexity_score: {task_context.complexity}
 task_id: {task_id}
 stack: {stack}
 phase: 2
+{if clarification:}
+clarification_context: {clarification}
+{endif}
 </AGENT_CONTEXT>
 
 Design {stack} implementation approach for {task_id}.
 Include architecture decisions, pattern selection, and component structure.
 Consider {stack}-specific best practices and testing strategies.
+
+{if clarification:}
+CLARIFICATION CONTEXT (Phase 1.6 decisions):
+User provided the following clarifications during Phase 1.6:
+{for question, answer in clarification.items():}
+  • {question}: {answer}
+{endfor}
+
+**IMPORTANT**: Incorporate these decisions into your implementation plan.
+Respect the user's choices regarding scope, testing approach, and other clarified aspects.
+{endif}
 
 {if mode == 'bdd':}
 BDD MODE CONTEXT:

@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-004
 title: Create Context C templates (task-work implementation planning)
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-10T07:30:00Z
+completed: 2025-12-10T07:30:00Z
 priority: high
 tags: [clarifying-questions, templates, task-work, wave-2]
 complexity: 6
@@ -11,6 +12,10 @@ parent_feature: clarifying-questions
 wave: 2
 conductor_workspace: clarifying-questions-wave2-context-c
 implementation_method: task-work
+completed_location: tasks/completed/TASK-CLQ-004/
+organized_files: [
+  "TASK-CLQ-004.md"
+]
 ---
 
 # Task: Create Context C templates (task-work implementation planning)
@@ -21,19 +26,19 @@ Create the question templates and generator for Context C - implementation plann
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/global/commands/lib/clarification/templates/implementation_planning.py` with:
-  - [ ] SCOPE_QUESTIONS (5W: What) - Feature boundary questions
-  - [ ] USER_QUESTIONS (5W: Who) - User/persona questions
-  - [ ] TECHNOLOGY_QUESTIONS (5W: How) - Tech choice questions
-  - [ ] INTEGRATION_QUESTIONS (5W: Where) - Integration point questions
-  - [ ] TRADEOFF_QUESTIONS (5W: Why) - Priority trade-off questions
-  - [ ] EDGE_CASE_QUESTIONS - Edge case handling questions
-- [ ] Create `installer/global/commands/lib/clarification/generators/planning_generator.py` with:
-  - [ ] `generate_planning_questions()` function
-  - [ ] Logic to select relevant questions based on detection results
-  - [ ] Question prioritization (limit to 7 questions max)
-- [ ] Each question template has: id, category, text, options, default, rationale
-- [ ] Create unit tests
+- [x] Create `installer/global/commands/lib/clarification/templates/implementation_planning.py` with:
+  - [x] SCOPE_QUESTIONS (5W: What) - Feature boundary questions (4 questions)
+  - [x] USER_QUESTIONS (5W: Who) - User/persona questions (3 questions)
+  - [x] TECHNOLOGY_QUESTIONS (5W: How) - Tech choice questions (5 questions)
+  - [x] INTEGRATION_QUESTIONS (5W: Where) - Integration point questions (4 questions)
+  - [x] TRADEOFF_QUESTIONS (5W: Why) - Priority trade-off questions (4 questions)
+  - [x] EDGE_CASE_QUESTIONS - Edge case handling questions (5 questions)
+- [x] Create `installer/global/commands/lib/clarification/generators/planning_generator.py` with:
+  - [x] `generate_planning_questions()` function
+  - [x] Logic to select relevant questions based on detection results (5 detection functions)
+  - [x] Question prioritization (limit to 7 questions max)
+- [x] Each question template has: id, category, text, options, default, rationale (25 total templates)
+- [x] Create unit tests (34 tests, all passing)
 
 ## Technical Specification
 

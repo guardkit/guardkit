@@ -1,1 +1,1 @@
-"""Integration tests for configuration and metrics system."""
+"""Integration tests for GuardKit."""

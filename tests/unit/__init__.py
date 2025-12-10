@@ -1,1 +1,1 @@
-"""Unit tests for configuration and metrics modules."""
+"""Unit tests for GuardKit."""
