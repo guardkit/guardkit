@@ -1,10 +1,11 @@
 ---
 id: TASK-ENH-SIZE-LIMIT
 title: Add Configurable CLAUDE.md Size Limit Flag
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-10T16:30:00Z
-updated: 2025-12-10T16:30:00Z
+updated: 2025-12-10T17:00:00Z
+completed: 2025-12-10T17:00:00Z
 priority: low
 tags: [template-create, enhancement, configuration]
 complexity: 3
@@ -28,11 +29,11 @@ Users with complex codebases may want to override the 10KB core content limit fo
 
 ## Acceptance Criteria
 
-- [ ] `--claude-md-size-limit 50KB` allows 50KB core content
-- [ ] Flag accepts KB, MB suffixes (case-insensitive)
-- [ ] Default remains 10KB when flag not specified
-- [ ] Invalid format shows helpful error message
-- [ ] Flag documented in template-create.md
+- [x] `--claude-md-size-limit 50KB` allows 50KB core content
+- [x] Flag accepts KB, MB suffixes (case-insensitive)
+- [x] Default remains 10KB when flag not specified
+- [x] Invalid format shows helpful error message
+- [x] Flag documented in template-create.md
 
 ## Technical Specification
 

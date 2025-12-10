@@ -406,18 +406,24 @@ class TemplateSplitOutput(BaseModel):
         core = self.get_core_size()
         return ((total - core) / total) * 100.0
 
-    def validate_size_constraints(self) -> tuple[bool, Optional[str]]:
-        """Validate that core content meets size constraints
+    def validate_size_constraints(self, max_core_size: int = 10 * 1024) -> tuple[bool, Optional[str]]:
+        """
+        Validate that core content doesn't exceed size limit.
+
+        Args:
+            max_core_size: Maximum allowed size in bytes (default 10KB)
 
         Returns:
             Tuple of (is_valid, error_message)
-            error_message is None if valid
         """
         core_size = self.get_core_size()
-        max_core_size = 10 * 1024  # 10KB in bytes
 
         if core_size > max_core_size:
-            return False, f"Core content exceeds 10KB limit: {core_size / 1024:.2f}KB"
+            return False, (
+                f"Core content exceeds {max_core_size / 1024:.0f}KB limit: "
+                f"{core_size / 1024:.2f}KB. "
+                f"Use --claude-md-size-limit to override."
+            )
 
         return True, None
 

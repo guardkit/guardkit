@@ -47,6 +47,21 @@ class MockSplitOutput:
     patterns: str
     reference: str
 
+    @property
+    def core_content(self) -> str:
+        """Alias for core to match actual TemplateSplitOutput."""
+        return self.core
+
+    @property
+    def patterns_content(self) -> str:
+        """Alias for patterns to match actual TemplateSplitOutput."""
+        return self.patterns
+
+    @property
+    def reference_content(self) -> str:
+        """Alias for reference to match actual TemplateSplitOutput."""
+        return self.reference
+
     def get_core_size(self) -> int:
         return len(self.core.encode('utf-8'))
 
