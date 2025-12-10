@@ -122,30 +122,27 @@ class AIAgentGenerator:
         """
         Analyze codebase to identify needed agent capabilities using AI.
 
-        AI-Native approach: No hard-coded fallback. If AI analysis fails,
-        return empty list and let user know AI detection is required.
+        Falls back to heuristic generation if AI fails or returns no results.
 
         Args:
             analysis: Codebase analysis
 
         Returns:
-            List of capability needs (empty if AI fails)
+            List of capability needs
         """
-        # AI-powered detection (AI-native approach - no fallback)
+        # AI-powered detection with heuristic fallback
         try:
             needs = self._ai_identify_all_agents(analysis)
             if needs:  # AI successfully identified agents
                 print(f"  ✓ AI identified {len(needs)} capability needs")
                 return needs
             else:
-                print("  ⚠️  AI returned no capability needs")
-                return []
+                print("  ⚠️  AI returned no capability needs, using heuristic fallback")
+                return self._heuristic_identify_agents(analysis)
         except Exception as e:
-            print(f"  ❌ AI detection failed: {e}")
-            print("  ℹ️  AI-native agent generation requires AI analysis")
-            print("  ℹ️  Please ensure AI invoker is properly configured")
-            # Return empty list instead of falling back to hard-coded
-            return []
+            print(f"  ⚠️  AI detection failed: {e}")
+            print("  → Falling back to heuristic agent generation")
+            return self._heuristic_identify_agents(analysis)
 
     def _ai_identify_all_agents(self, analysis: Any) -> List[CapabilityNeed]:
         """
@@ -453,139 +450,84 @@ Return the JSON array now:"""
             priority=spec.get('priority', 7)  # Default to medium-high priority
         )
 
-    def _fallback_to_hardcoded(self, analysis: Any) -> List[CapabilityNeed]:
+    def _heuristic_identify_agents(self, analysis: Any) -> List[CapabilityNeed]:
         """
-        Hard-coded pattern detection (DEPRECATED).
+        Generate agent needs using heuristic patterns.
 
-        DEPRECATED: This method is no longer used. The AI-native approach
-        does not fall back to hard-coded detection. This method is kept
-        for reference only and will be removed in a future version.
-
-        Use _ai_identify_all_agents() with enhanced prompts instead.
+        Always generates at least 3 agents based on detected:
+        - Primary language
+        - Architecture pattern
+        - Framework (if detected)
 
         Args:
             analysis: Codebase analysis
 
         Returns:
-            List of capability needs
-
-        Raises:
-            DeprecationWarning: Always raised when called
+            List of CapabilityNeed objects (minimum 3)
         """
-        import warnings
-        warnings.warn(
-            "_fallback_to_hardcoded() is deprecated and should not be used. "
-            "The AI-native approach requires proper AI configuration. "
-            "This method will be removed in a future version.",
-            DeprecationWarning,
-            stacklevel=2
-        )
         needs = []
 
-        # Get example files (handle both list and attribute access)
-        example_files = getattr(analysis, 'example_files', [])
-        language = getattr(analysis, 'language', 'Unknown')
-        architecture_pattern = getattr(analysis, 'architecture_pattern', None)
-        layers = getattr(analysis, 'layers', [])
-        quality_assessment = getattr(analysis, 'quality_assessment', '')
-        testing_framework = getattr(analysis, 'testing_framework', None)
+        # Extract analysis data with multiple fallback paths
+        language = getattr(analysis, 'language', None) or \
+                   getattr(getattr(analysis, 'technology', None), 'primary_language', None) or 'unknown'
 
-        # Analyze architecture pattern
-        if architecture_pattern == "MVVM":
-            viewmodel_files = [
-                f for f in example_files
-                if "ViewModel" in str(getattr(f, 'path', f))
-            ]
+        architecture = getattr(analysis, 'architecture_pattern', None) or \
+                      getattr(getattr(analysis, 'architecture', None), 'architectural_style', None) or 'unknown'
+
+        frameworks = getattr(analysis, 'frameworks', []) or \
+                    getattr(getattr(analysis, 'technology', None), 'frameworks', [])
+
+        # 1. Language specialist (always)
+        if language and language.lower() != 'unknown':
+            lang_name = language.lower().replace('#', 'sharp').replace('+', 'plus')
             needs.append(CapabilityNeed(
-                name="mvvm-viewmodel-specialist",
-                description="MVVM ViewModel patterns and INotifyPropertyChanged",
-                reason=f"Project uses {architecture_pattern} architecture",
-                technologies=[language, "MVVM"],
-                example_files=viewmodel_files,
+                name=f"{lang_name}-specialist",
+                description=f"Specialist for {language} development patterns",
+                reason=f"Primary language is {language}",
+                technologies=[language],
+                example_files=[],
                 priority=9
             ))
 
-        # Analyze navigation patterns
-        for layer in layers:
-            layer_name = getattr(layer, 'name', str(layer)).lower()
-            layer_patterns = getattr(layer, 'patterns', [])
+        # 2. Architecture specialist (always)
+        if architecture and architecture.lower() != 'unknown':
+            arch_name = architecture.lower().replace(' ', '-').replace('/', '-')
+            needs.append(CapabilityNeed(
+                name=f"{arch_name}-specialist",
+                description=f"Specialist for {architecture} architecture patterns",
+                reason=f"Uses {architecture} architecture",
+                technologies=[architecture],
+                example_files=[],
+                priority=8
+            ))
 
-            if "navigation" in layer_patterns or "appshell" in layer_name:
-                nav_files = [
-                    f for f in example_files
-                    if any(
-                        p.lower() in str(getattr(f, 'path', f)).lower()
-                        for p in layer_patterns
-                    )
-                ]
+        # 3. Framework specialist (if detected, up to 2)
+        for fw in frameworks[:2]:
+            fw_str = str(fw)
+            fw_name = fw_str.split()[0].lower().replace('.', '-')
+            if fw_name and fw_name not in ['unknown', 'none']:
                 needs.append(CapabilityNeed(
-                    name="navigation-specialist",
-                    description=f"{language} navigation patterns",
-                    reason=f"Project uses {', '.join(layer_patterns)} for navigation",
-                    technologies=[language] + layer_patterns,
-                    example_files=nav_files,
-                    priority=8
-                ))
-
-        # Analyze error handling patterns
-        if "ErrorOr" in quality_assessment or "Result" in quality_assessment:
-            error_files = []
-            for f in example_files:
-                try:
-                    file_path = getattr(f, 'path', f)
-                    if isinstance(file_path, Path) and file_path.exists():
-                        content = file_path.read_text()
-                        if "ErrorOr" in content or "Result" in content:
-                            error_files.append(file_path)
-                except Exception:
-                    continue
-
-            if error_files:
-                needs.append(CapabilityNeed(
-                    name="error-pattern-specialist",
-                    description="Error handling pattern specialist",
-                    reason="Project uses ErrorOr<T> or Result<T> pattern",
-                    technologies=[language, "ErrorOr"],
-                    example_files=error_files,
+                    name=f"{fw_name}-specialist",
+                    description=f"Specialist for {fw_str} framework patterns",
+                    reason=f"Uses {fw_str} framework",
+                    technologies=[fw_str],
+                    example_files=[],
                     priority=7
                 ))
 
-        # Analyze domain operations
-        for layer in layers:
-            layer_name = getattr(layer, 'name', str(layer)).lower()
-            if layer_name == "domain":
-                layer_patterns = getattr(layer, 'patterns', [])
-                layer_dirs = getattr(layer, 'directories', [])
-
-                domain_files = [
-                    f for f in example_files
-                    if "domain" in str(getattr(f, 'path', f)).lower()
-                ]
-                needs.append(CapabilityNeed(
-                    name="domain-operations-specialist",
-                    description=f"Domain operations following {', '.join(layer_patterns)}",
-                    reason=f"Project has domain layer with {len(layer_dirs)} directories",
-                    technologies=[language] + layer_patterns,
-                    example_files=domain_files,
-                    priority=8
-                ))
-
-        # Analyze testing frameworks
-        if testing_framework:
-            test_files = [
-                f for f in example_files
-                if "test" in str(getattr(f, 'path', f)).lower()
-            ]
+        # Ensure minimum 3 agents
+        if len(needs) < 3:
             needs.append(CapabilityNeed(
-                name=f"{testing_framework.lower()}-specialist",
-                description=f"{testing_framework} testing patterns",
-                reason=f"Project uses {testing_framework}",
-                technologies=[language, testing_framework],
-                example_files=test_files,
-                priority=7
+                name="general-specialist",
+                description="General development patterns specialist",
+                reason="Fallback for undetected patterns",
+                technologies=[language if language != 'unknown' else 'general'],
+                example_files=[],
+                priority=5
             ))
 
-        return sorted(needs, key=lambda n: n.priority, reverse=True)
+        print(f"  ✓ Heuristic identified {len(needs)} capability needs")
+        return needs
 
     def _find_capability_gaps(self, needs: List[CapabilityNeed]) -> List[CapabilityNeed]:
         """

@@ -1,17 +1,24 @@
 ---
 id: TASK-FIX-AGENT-GEN
 title: Ensure Agent Generation for Complex Codebases
-status: backlog
+status: completed
 task_type: implementation
-created: 2025-12-10T16:30:00Z
-updated: 2025-12-10T16:30:00Z
+created: 2025-12-10 16:30:00+00:00
+updated: 2025-12-10 16:30:00+00:00
 priority: high
-tags: [template-create, agent-generation, bug-fix]
+tags:
+- template-create
+- agent-generation
+- bug-fix
 complexity: 6
 implementation_mode: task-work
 conductor_workspace: template-fix-wave1-agent
 wave: 1
 parent_review: TASK-REV-TC01
+completed: '2025-12-10T14:45:03Z'
+completed_location: tasks/completed/TASK-FIX-AGENT-GEN/
+organized_files:
+- TASK-FIX-AGENT-GEN.md
 ---
 
 # Ensure Agent Generation for Complex Codebases

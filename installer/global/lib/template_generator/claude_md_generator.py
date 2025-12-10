@@ -66,13 +66,21 @@ class ClaudeMdGenerator:
             confidence_score=self.analysis.overall_confidence.percentage / 100.0,
         )
 
-    def _generate_architecture_overview(self) -> str:
+    def _generate_architecture_overview(self, summary_only: bool = False) -> str:
         """Generate architecture overview section
+
+        Args:
+            summary_only: If True, generate compact summary for core content
 
         Returns:
             Markdown describing architecture patterns and layers
         """
         arch = self.analysis.architecture
+
+        if summary_only:
+            # Compact version for core (target: ~500 bytes)
+            return f"# Architecture Overview\n\nThis template follows **{arch.architectural_style}** architecture.\n\n**For detailed architecture**: See `docs/patterns/README.md`"
+
         overview = [
             "# Architecture Overview",
             "",
@@ -205,8 +213,36 @@ class ClaudeMdGenerator:
         stack.append("")
         return "\n".join(stack)
 
-    def _generate_project_structure(self) -> str:
+    def _generate_technology_stack_summary(self) -> str:
+        """Generate compact technology stack for core content
+
+        Returns:
+            Markdown with abbreviated technology stack
+        """
+        tech = self.analysis.technology
+        stack = [
+            "# Technology Stack",
+            "",
+            f"- **Primary Language**: {tech.primary_language}"
+        ]
+
+        # Show max 3 frameworks
+        if tech.frameworks:
+            fw_names = [str(fw)[:30] for fw in tech.frameworks[:3]]
+            if len(tech.frameworks) > 3:
+                fw_names.append(f"... and {len(tech.frameworks) - 3} more")
+            stack.append(f"- **Frameworks**: {', '.join(fw_names)}")
+
+        stack.append("")
+        stack.append("**For complete stack details**: See `docs/reference/README.md`")
+
+        return "\n".join(stack)
+
+    def _generate_project_structure(self, max_depth: int = None) -> str:
         """Generate project structure section
+
+        Args:
+            max_depth: Maximum directory depth (None = full tree)
 
         Returns:
             Markdown describing folder structure with explanations
@@ -220,7 +256,23 @@ class ClaudeMdGenerator:
         # TASK-FIX-PD03: Use actual directory tree if available
         if self.analysis.project_structure:
             # Use real directory tree from file discovery
-            structure.append(self.analysis.project_structure)
+            structure_text = self.analysis.project_structure
+
+            # Apply truncation if max_depth specified
+            if max_depth:
+                lines = structure_text.split('\n')
+                truncated = []
+                for line in lines:
+                    # Calculate depth based on leading spaces
+                    depth = len(line) - len(line.lstrip())
+                    if depth <= (max_depth * 2):  # 2 spaces per level
+                        truncated.append(line)
+                structure_text = '\n'.join(truncated)
+                # Add truncation notice
+                if len(truncated) < len(lines):
+                    structure_text += f"\n... ({len(lines) - len(truncated)} more directories)\n\n**For full project structure**: See `docs/reference/README.md`"
+
+            structure.append(structure_text)
         elif self.analysis.architecture.layers:
             # Sort layers by typical hierarchy
             sorted_layers = self._sort_layers_hierarchically(self.analysis.architecture.layers)
@@ -1423,9 +1475,9 @@ Respond ONLY with valid JSON."""
         """
         sections = [
             self._generate_loading_instructions(),
-            self._generate_architecture_overview(),
-            self._generate_technology_stack(),
-            self._generate_project_structure(),
+            self._generate_architecture_overview(summary_only=True),  # Compact
+            self._generate_technology_stack_summary(),  # Compact version
+            self._generate_project_structure(max_depth=2),  # Truncated to 2 levels
             self._generate_quality_standards_summary(),
             self._generate_agent_usage_summary()
         ]
