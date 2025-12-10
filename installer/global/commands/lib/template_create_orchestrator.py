@@ -928,6 +928,19 @@ class TemplateCreateOrchestrator:
         """
         self._print_phase_header("Phase 5: Agent Recommendation")
 
+        # Diagnostic: Log analysis state
+        language = getattr(getattr(analysis, 'technology', None), 'primary_language', None) or \
+                   getattr(analysis, 'language', 'unknown')
+        architecture = getattr(getattr(analysis, 'architecture', None), 'architectural_style', None) or \
+                      getattr(analysis, 'architecture_pattern', 'unknown')
+        frameworks = getattr(getattr(analysis, 'technology', None), 'frameworks', []) or \
+                    getattr(analysis, 'frameworks', [])
+
+        logger.info(f"Phase 5 starting with analysis: "
+                    f"language={language}, "
+                    f"architecture={architecture}, "
+                    f"frameworks={len(frameworks)}")
+
         # TASK-FIX-C3D4: Save checkpoint BEFORE agent invocation
         # This ensures resume routing knows we're waiting for Phase 5 response
         # When resuming, state.phase == 5 triggers the correct phase5_invoker
@@ -957,10 +970,16 @@ class TemplateCreateOrchestrator:
             # This may exit with code 42 if agent invocation needed
             agents = generator.generate(analysis)
 
+            # Diagnostic: Log result
             if agents:
                 self._print_info(f"  Generated {len(agents)} custom agents")
+                logger.info(f"Phase 5 complete: Generated {len(agents)} agents")
+                for agent in agents:
+                    logger.debug(f"  - {agent.name} (confidence: {getattr(agent, 'confidence', 'N/A')}%)")
             else:
                 self._print_info("  All capabilities covered by existing agents")
+                logger.warning("Phase 5 complete: No agents generated")
+                logger.warning("This may indicate AI failure or no capability gaps detected")
 
             return agents
 
@@ -1067,6 +1086,8 @@ class TemplateCreateOrchestrator:
         try:
             if not agents:
                 self._print_info("  No agents to write")
+                logger.warning("No agents to write - Phase 5 returned empty list")
+                self.warnings.append("No agents generated - check Phase 5 logs for details")
                 return []
 
             agents_dir = output_path / "agents"

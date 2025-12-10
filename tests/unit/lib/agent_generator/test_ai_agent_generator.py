@@ -446,16 +446,16 @@ class TestCapabilityNeedCreation:
 class TestBackwardCompatibility:
     """Test backward compatibility with hard-coded detection"""
 
-    def test_hardcoded_fallback_still_works(self, mock_inventory, mock_analysis):
-        """Test that hard-coded fallback detection still works"""
+    def test_heuristic_fallback_works(self, mock_inventory, mock_analysis):
+        """Test that heuristic fallback detection works"""
         generator = AIAgentGenerator(inventory=mock_inventory)
 
-        needs = generator._fallback_to_hardcoded(mock_analysis)
+        needs = generator._heuristic_identify_agents(mock_analysis)
 
-        # Should return some needs based on hard-coded patterns
+        # Should return some needs based on heuristic patterns
         assert isinstance(needs, list)
-        # Should identify at least testing framework need
-        assert len(needs) > 0
+        # Should identify at least 3 agents (language, architecture, framework)
+        assert len(needs) >= 3
 
     def test_identify_needs_uses_ai_first(
         self,
@@ -477,12 +477,12 @@ class TestBackwardCompatibility:
         # Verify AI was called
         mock_ai_invoker_valid_json.invoke.assert_called_once()
 
-    def test_identify_needs_returns_empty_on_ai_error(
+    def test_identify_needs_falls_back_on_ai_error(
         self,
         mock_inventory,
         mock_analysis
     ):
-        """Test that _identify_capability_needs returns empty list on AI error (AI-native approach)"""
+        """Test that _identify_capability_needs falls back to heuristics on AI error"""
         # Create failing invoker
         failing_invoker = Mock(spec=AgentInvoker)
         failing_invoker.invoke.side_effect = Exception("AI failed")
@@ -494,9 +494,10 @@ class TestBackwardCompatibility:
 
         needs = generator._identify_capability_needs(mock_analysis)
 
-        # Should return empty list (AI-native approach, no fallback)
+        # Should return heuristic results (fallback approach)
         assert isinstance(needs, list)
-        assert len(needs) == 0
+        # Should have at least 3 agents from heuristic fallback
+        assert len(needs) >= 3
 
 
 class TestIntegration:
