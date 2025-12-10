@@ -1,1 +1,1 @@
-"""Test package initialization."""
+"""GuardKit test suite."""
