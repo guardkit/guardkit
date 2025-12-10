@@ -5,8 +5,17 @@ Orchestrates the feature planning workflow in a single user-facing command by au
 ## Command Syntax
 
 ```bash
-/feature-plan "feature description"
+/feature-plan "feature description" [flags]
 ```
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--no-questions` | Skip all clarification questions (use defaults) |
+| `--with-questions` | Force clarification even for simple features |
+| `--defaults` | Use defaults without prompting |
+| `--answers="..."` | Provide inline answers for automation |
 
 ## Overview
 
@@ -33,6 +42,15 @@ This is a **quick win** command that provides a superior user experience by elim
 
 # Plan security enhancement
 /feature-plan "implement OAuth2 authentication"
+
+# Skip clarification questions (use defaults)
+/feature-plan "add user profile page" --no-questions
+
+# Force clarification for simple features
+/feature-plan "fix typo in homepage" --with-questions
+
+# Automation with inline answers
+/feature-plan "add caching layer" --answers="A,1,M,S"
 ```
 
 ## Execution Flow
@@ -376,6 +394,207 @@ The review findings are preserved for future reference at:
 # - Recommends multi-phase breakdown
 ```
 
+## Clarification Integration
+
+`/feature-plan` orchestrates `/task-review` under the hood, so clarification questions flow automatically through two key phases:
+
+### Phase Flow
+
+```
+/feature-plan "add authentication"
+        │
+        ▼
+┌─────────────────────────────┐
+│ 1. Create Review Task       │
+│    (auto-generated)         │
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 2. Execute Task Review      │◀── Context A: Review Scope
+│    with --mode=decision     │    (What to analyze?)
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 3. Decision Checkpoint      │
+│    [A]ccept/[R]evise/       │
+│    [I]mplement/[C]ancel     │
+└─────────────────────────────┘
+        │
+        ▼ (if [I]mplement)
+┌─────────────────────────────┐
+│ 4. Implementation Prefs     │◀── Context B: Implementation
+│    (approach, parallel,     │    (How to implement?)
+│    testing depth)           │
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 5. Generate Feature         │
+│    Structure with subtasks  │
+│    (uses clarification)     │
+└─────────────────────────────┘
+```
+
+### Command-Line Flags
+
+Control clarification behavior with these flags:
+
+| Flag | Effect |
+|------|--------|
+| `--no-questions` | Skip all clarification (propagates to task-review) |
+| `--with-questions` | Force clarification even for simple features |
+| `--defaults` | Use defaults without prompting |
+| `--answers="..."` | Inline answers for automation |
+
+### Example: Full Clarification Flow
+
+```bash
+/feature-plan "add user authentication"
+
+Creating review task: TASK-REV-a3f8
+Executing review...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 REVIEW SCOPE CLARIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Review Focus
+    What aspects should this review focus on?
+
+    [A]ll aspects
+    [S]pecific area (DEFAULT)
+    [R]isks only
+
+    Your choice [A/S/R]: A
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[Review executes with clarified scope...]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DECISION CHECKPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Review complete. Found 3 approaches:
+1. JWT with refresh tokens (Recommended)
+2. Session-based auth
+3. OAuth 2.0 integration
+
+Options:
+  [A]ccept - Approve findings only
+  [R]evise - Request deeper analysis
+  [I]mplement - Create feature structure
+  [C]ancel - Discard review
+
+Your choice: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 IMPLEMENTATION PREFERENCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Which approach should subtasks follow?
+    [1] JWT with refresh tokens (Recommended)
+    [2] Session-based auth
+    [3] OAuth 2.0 integration
+    [R]ecommend for me
+
+    Your choice: 1
+
+Q2. Parallelization preference?
+    [M]aximize parallel
+    [S]equential
+    [D]etect (DEFAULT)
+
+    Your choice: M
+
+Q3. Testing depth?
+    [F]ull TDD
+    [S]tandard (DEFAULT)
+    [M]inimal
+    [D]efault based on complexity
+
+    Your choice: S
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Generating feature structure...
+
+✅ Created: tasks/backlog/user-authentication/
+├── README.md
+├── IMPLEMENTATION-GUIDE.md (3 parallel waves)
+├── TASK-AUTH-001-setup-jwt-middleware.md
+├── TASK-AUTH-002-create-user-model.md
+├── TASK-AUTH-003-implement-login-endpoint.md
+├── TASK-AUTH-004-implement-refresh-tokens.md
+└── TASK-AUTH-005-add-auth-tests.md
+
+Subtasks configured with:
+  - Approach: JWT with refresh tokens
+  - Execution: Parallel (Conductor workspaces assigned)
+  - Testing: Standard mode
+```
+
+### Example: Skip Clarification
+
+```bash
+/feature-plan "add dark mode" --no-questions
+
+Creating review task: TASK-REV-b4c5
+Executing review... (skipping clarification)
+
+[Review executes with defaults...]
+
+Decision: [I]mplement (skipping preferences)
+
+Generating feature structure with defaults...
+
+✅ Created: tasks/backlog/dark-mode/
+```
+
+### Clarification Propagation
+
+When `/feature-plan` calls `/task-review`, clarification flags are propagated:
+
+```python
+# Pseudo-code for feature-plan orchestration
+def execute_feature_plan(description: str, flags: dict):
+    # Create review task
+    task_id = create_review_task(description)
+
+    # Execute task-review with propagated flags
+    review_flags = {
+        'no_questions': flags.get('no_questions'),
+        'with_questions': flags.get('with_questions'),
+        'defaults': flags.get('defaults'),
+        'answers': flags.get('answers'),
+    }
+
+    # Task-review handles Context A and Context B clarification
+    result = execute_task_review(
+        task_id,
+        mode='decision',
+        depth='standard',
+        flags=review_flags
+    )
+
+    # Generate feature structure using clarification context
+    if result.decision == 'implement':
+        generate_feature_structure(
+            result.findings,
+            result.clarification  # Contains both Context A & B decisions
+        )
+```
+
+### Benefits of Clarification in Feature Planning
+
+✅ **Scope clarity** - Understand what to analyze before spending time
+✅ **Approach alignment** - Choose implementation direction early
+✅ **Parallel efficiency** - Optimize task execution strategy
+✅ **Testing coverage** - Set appropriate test depth upfront
+✅ **Automation support** - `--answers` flag enables CI/CD workflows
+
 ## Integration with Workflow
 
 ### Complete Feature Planning Flow
@@ -614,18 +833,22 @@ When the user runs `/feature-plan "description"`, you MUST:
 
 ### Execution Steps
 
-1. ✅ **Parse feature description** from command arguments
+1. ✅ **Parse feature description and flags** from command arguments
+   - Extract: description, --no-questions, --with-questions, --defaults, --answers
 2. ✅ **Execute `/task-create`** with:
    - Title: "Plan: {description}"
    - Flags: `task_type:review priority:high`
 3. ✅ **Capture task ID** from output (regex: `TASK-[A-Z0-9-]+`)
 4. ✅ **Execute `/task-review`** with captured task ID:
    - Flags: `--mode=decision --depth=standard`
+   - **Propagate clarification flags**: `--no-questions`, `--with-questions`, `--defaults`, `--answers`
 5. ✅ **Present decision checkpoint** (inherited from `/task-review`)
+   - Context A clarification handled by `/task-review` (review scope)
+   - Context B clarification handled at [I]mplement (implementation preferences)
 6. ✅ **Handle user decision**:
    - [A]ccept: Save review, show reference message
    - [R]evise: Re-run review with additional focus
-   - [I]mplement: Create subfolder + subtasks + guide
+   - [I]mplement: Present Context B clarification, then create subfolder + subtasks + guide
    - [C]ancel: Move to cancelled state
 
 ### What NOT to Do
@@ -657,13 +880,33 @@ Claude executes internally:
   1. /task-create "Plan: implement dark mode" task_type:review priority:high
      → Captures: TASK-REV-A3F2
   2. /task-review TASK-REV-A3F2 --mode=decision --depth=standard
-     → Runs analysis, presents options
+     → Presents Context A clarification (review scope)
+     → Runs analysis with clarified scope
+     → Presents decision options
   3. User chooses: I
-  4. Creates structure:
+  4. Presents Context B clarification (implementation preferences):
+     → Approach selection
+     → Parallelization strategy
+     → Testing depth
+  5. Creates structure with clarification context:
      - Feature folder
-     - Subtasks
+     - Subtasks (configured per clarification)
      - Implementation guide
-  5. Shows completion summary
+  6. Shows completion summary
+
+User: /feature-plan "add caching" --no-questions
+
+Claude executes internally:
+  1. /task-create "Plan: add caching" task_type:review priority:high
+     → Captures: TASK-REV-B4C5
+  2. /task-review TASK-REV-B4C5 --mode=decision --depth=standard --no-questions
+     → Skips Context A clarification (uses defaults)
+     → Runs analysis with default scope
+     → Presents decision options
+  3. User chooses: I
+  4. Skips Context B clarification (uses defaults)
+  5. Creates structure with default configuration
+  6. Shows completion summary
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.
