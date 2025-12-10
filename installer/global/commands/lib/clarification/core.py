@@ -6,8 +6,11 @@ preferences, implementation planning).
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal
+import yaml
 
 
 class ClarificationMode(Enum):
@@ -43,22 +46,35 @@ class Question:
 @dataclass
 class Decision:
     """Single clarification decision."""
+    question_id: str           # Unique question identifier (e.g., "scope_01")
     category: str              # "scope", "technology", "trade-off", etc.
-    question: str              # Full question text
-    answer: str                # User's answer or default
-    is_default: bool           # True if user used default
-    confidence: float          # 0-1, lower if assumed
+    question_text: str         # Full question text
+    answer: str                # User's answer or default (short form)
+    answer_display: str        # Full answer text for display
+    default_used: bool         # True if user used default (alias for is_default)
     rationale: str             # Why this default was chosen
+    confidence: float = 1.0    # 0-1, lower if assumed
 
     def __post_init__(self):
         """Validate decision data."""
         if not 0 <= self.confidence <= 1:
             raise ValueError(f"Confidence must be between 0 and 1, got {self.confidence}")
 
+    @property
+    def is_default(self) -> bool:
+        """Backward compatibility alias for default_used."""
+        return self.default_used
+
+    @property
+    def question(self) -> str:
+        """Backward compatibility alias for question_text."""
+        return self.question_text
+
 
 @dataclass
 class ClarificationContext:
     """Context passed to planning/review agents."""
+    context_type: str = "implementation_planning"  # or "review_scope", "implementation_prefs"
     explicit_decisions: List[Decision] = field(default_factory=list)
     assumed_defaults: List[Decision] = field(default_factory=list)
     not_applicable: List[str] = field(default_factory=list)
@@ -67,6 +83,8 @@ class ClarificationContext:
     skipped_count: int = 0
     complexity_triggered: bool = False
     user_override: Optional[str] = None  # "skip", "defaults", etc.
+    timestamp: datetime = field(default_factory=datetime.utcnow)
+    mode: str = "full"  # "skip", "quick", or "full"
 
     def add_decision(self, decision: Decision) -> None:
         """Add a decision to the appropriate list."""
@@ -92,6 +110,110 @@ class ClarificationContext:
     def has_explicit_decisions(self) -> bool:
         """Check if any explicit decisions were made."""
         return len(self.explicit_decisions) > 0
+
+    @property
+    def decisions(self) -> List[Decision]:
+        """Get all decisions (explicit + assumed defaults)."""
+        return self.explicit_decisions + self.assumed_defaults
+
+    def persist_to_frontmatter(self, task_path: Path) -> None:
+        """Persist clarification decisions to task frontmatter.
+
+        Args:
+            task_path: Path to task markdown file
+
+        Raises:
+            ValueError: If task file has invalid frontmatter
+        """
+        # Read existing frontmatter
+        content = task_path.read_text()
+        frontmatter, body = parse_frontmatter(content)
+
+        # Get all decisions (explicit + assumed defaults)
+        all_decisions = self.explicit_decisions + self.assumed_defaults
+
+        # Add clarification section
+        frontmatter['clarification'] = {
+            'context': self.context_type,
+            'timestamp': self.timestamp.isoformat(),
+            'mode': self.mode,
+            'decisions': [
+                {
+                    'question_id': d.question_id,
+                    'category': d.category,
+                    'question': d.question_text,
+                    'answer': d.answer,
+                    'answer_text': d.answer_display,
+                    'default_used': d.default_used,
+                    'rationale': d.rationale,
+                }
+                for d in all_decisions
+            ]
+        }
+
+        # Write back
+        new_content = serialize_frontmatter(frontmatter) + body
+        task_path.write_text(new_content)
+
+    @classmethod
+    def load_from_frontmatter(cls, task_path: Path) -> Optional['ClarificationContext']:
+        """Load previous clarification decisions from task frontmatter.
+
+        Args:
+            task_path: Path to task markdown file
+
+        Returns:
+            ClarificationContext if found, None otherwise
+
+        Examples:
+            >>> from pathlib import Path
+            >>> path = Path("tasks/backlog/TASK-123.md")
+            >>> ctx = ClarificationContext.load_from_frontmatter(path)
+            >>> ctx is None or isinstance(ctx, ClarificationContext)
+            True
+        """
+        if not task_path.exists():
+            return None
+
+        content = task_path.read_text()
+        frontmatter, _ = parse_frontmatter(content)
+
+        if 'clarification' not in frontmatter:
+            return None
+
+        clr = frontmatter['clarification']
+        decisions = []
+
+        for d in clr.get('decisions', []):
+            decision = Decision(
+                question_id=d['question_id'],
+                category=d['category'],
+                question_text=d['question'],
+                answer=d['answer'],
+                answer_display=d['answer_text'],
+                default_used=d['default_used'],
+                rationale=d['rationale'],
+            )
+            decisions.append(decision)
+
+        # Create context with decisions
+        ctx = cls(
+            context_type=clr['context'],
+            timestamp=datetime.fromisoformat(clr['timestamp']),
+            mode=clr['mode'],
+        )
+
+        # Add decisions to appropriate lists
+        for d in decisions:
+            if d.default_used:
+                ctx.assumed_defaults.append(d)
+            else:
+                ctx.explicit_decisions.append(d)
+
+        ctx.total_questions = len(decisions)
+        ctx.answered_count = len(decisions)
+
+        return ctx
 
 
 def should_clarify(
@@ -193,10 +315,12 @@ def process_responses(
 
         # Create decision
         decision = Decision(
+            question_id=question.id,
             category=question.category,
-            question=question.text,
+            question_text=question.text,
             answer=user_answer,
-            is_default=is_default,
+            answer_display=user_answer,  # For now, use same as answer
+            default_used=is_default,
             confidence=confidence,
             rationale=question.rationale if is_default else f"User explicitly chose: {user_answer}"
         )
@@ -296,22 +420,82 @@ def format_for_prompt(context: ClarificationContext) -> str:
     return "\n".join(lines)
 
 
-def persist_to_frontmatter(context: ClarificationContext, task_id: str) -> None:
-    """Persist clarification context to task frontmatter.
-
-    This is a stub for Wave 4 implementation. Currently does nothing.
+def parse_frontmatter(content: str) -> tuple[dict, str]:
+    """Parse YAML frontmatter from markdown content.
 
     Args:
-        context: ClarificationContext to persist
-        task_id: Task ID to update
+        content: Markdown content with frontmatter
 
-    Note:
-        Will be implemented in TASK-CLQ-010 (Wave 4: Persistence)
+    Returns:
+        Tuple of (frontmatter dict, body text)
+
+    Examples:
+        >>> content = "---\\nid: TASK-123\\n---\\nBody text"
+        >>> fm, body = parse_frontmatter(content)
+        >>> fm['id']
+        'TASK-123'
     """
-    # TODO: Implement in Wave 4 (TASK-CLQ-010)
-    # This will:
-    # 1. Load task file
-    # 2. Parse frontmatter
-    # 3. Add clarification_context field
-    # 4. Save back to file
-    pass
+    if not content.startswith('---'):
+        return {}, content
+
+    parts = content.split('---', 2)
+    if len(parts) < 3:
+        return {}, content
+
+    frontmatter = yaml.safe_load(parts[1])
+    body = parts[2]
+    return frontmatter, body
+
+
+def serialize_frontmatter(frontmatter: dict) -> str:
+    """Serialize frontmatter dict to YAML string.
+
+    Args:
+        frontmatter: Dictionary to serialize
+
+    Returns:
+        YAML string with frontmatter delimiters
+
+    Examples:
+        >>> fm = {'id': 'TASK-123', 'title': 'Test'}
+        >>> yaml_str = serialize_frontmatter(fm)
+        >>> yaml_str.startswith('---\\n')
+        True
+    """
+    return '---\n' + yaml.dump(frontmatter, default_flow_style=False, sort_keys=False) + '---\n'
+
+
+def get_clarification_summary(task_path: Path) -> str:
+    """Generate human-readable summary of clarification decisions.
+
+    Args:
+        task_path: Path to task markdown file
+
+    Returns:
+        Human-readable summary string
+
+    Examples:
+        >>> from pathlib import Path
+        >>> path = Path("tasks/backlog/TASK-123.md")
+        >>> summary = get_clarification_summary(path)
+        >>> "No clarification recorded" in summary or "Clarification:" in summary
+        True
+    """
+    ctx = ClarificationContext.load_from_frontmatter(task_path)
+    if not ctx:
+        return "No clarification recorded"
+
+    lines = [
+        f"Clarification: {ctx.context_type}",
+        f"Mode: {ctx.mode}",
+        f"Timestamp: {ctx.timestamp}",
+        f"Decisions ({len(ctx.decisions)}):",
+    ]
+
+    for d in ctx.decisions:
+        default_marker = " (default)" if d.default_used else ""
+        lines.append(f"  - {d.question_id}: {d.answer_display}{default_marker}")
+
+    return "\n".join(lines)
+
+

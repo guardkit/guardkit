@@ -141,6 +141,248 @@ If you want to use `/task-work` for a task that was detected as review:
 /task-review TASK-045 --mode=security --output=detailed
 ```
 
+## Clarification Integration
+
+The `/task-review` command integrates with the clarification module at two key points to gather user preferences before analysis and implementation.
+
+### Context A: Review Scope Clarification (Phase 1)
+
+**Purpose**: Clarify what the review should focus on and what trade-offs to prioritize before analysis begins.
+
+**When Triggered**:
+- Decision mode tasks (always, unless --no-questions)
+- Complexity ≥4 (unless quick depth or --no-questions)
+- User specifies --with-questions flag
+
+**When Skipped**:
+- User specifies --no-questions flag
+- Quick depth reviews (complexity <4)
+- Review scope already well-defined in task description
+
+**Example Flow**:
+
+```bash
+/task-review TASK-b2c4 --mode=decision --depth=standard
+
+Phase 1: Loading context...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 REVIEW SCOPE CLARIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Review Focus
+    What aspects should this analysis focus on?
+
+    [A]ll aspects - Comprehensive analysis
+    [T]echnical only - Focus on technical feasibility
+    [R]chitecture - Architecture and design patterns
+    [P]erformance - Performance and scalability
+    [S]ecurity - Security considerations
+
+    Default: [A]ll aspects
+    Your choice [A/T/R/P/S]: A
+
+Q2. Analysis Depth
+    How deep should the analysis go?
+
+    [Q]uick (surface-level) - 15-30 minutes
+    [S]tandard (recommended) - 1-2 hours
+    [D]eep (comprehensive) - 4-6 hours
+
+    Default: [S]tandard (recommended)
+    Your choice [Q/S/D]: S
+
+Q3. Trade-off Priority
+    What trade-offs are you optimizing for?
+
+    [S]peed of delivery
+    [Q]uality/reliability
+    [C]ost
+    [M]aintainability
+    [B]alanced
+
+    Default: [B]alanced
+    Your choice [S/Q/C/M/B]: Q
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Recorded 3 decisions - proceeding with review
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2: Analyzing with focus: All aspects, Quality/reliability priority...
+```
+
+**Questions Asked** (Context A):
+1. **Review Focus** - What aspects to analyze (all/technical/architecture/performance/security)
+2. **Analysis Depth** - How thorough to be (quick/standard/deep)
+3. **Trade-off Priority** - What to optimize for (speed/quality/cost/maintainability/balanced)
+4. **Specific Concerns** - Any particular areas of concern (free-form, optional)
+5. **Extensibility** - Consider future extensibility? (yes/no/default based on complexity)
+
+**Benefits**:
+- Focuses analysis on what matters most
+- Sets appropriate depth expectations
+- Captures user priorities for decision-making
+- Reduces back-and-forth clarification during review
+
+### Context B: Implementation Preferences ([I]mplement Handler)
+
+**Purpose**: Clarify how subtasks should be created and executed when user chooses to implement review findings.
+
+**When Triggered**:
+- User selects [I]mplement at decision checkpoint
+- Multiple subtasks will be created (≥2)
+- Unless --no-questions flag specified
+
+**When Skipped**:
+- User specifies --no-questions flag
+- Single subtask only
+- User selects [A]ccept, [R]evise, or [C]ancel instead
+
+**Example Flow**:
+
+```bash
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DECISION CHECKPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Review Results:
+  Architecture Score: 72/100
+  Findings: 8
+  Recommendations: 5
+
+Key Recommendations:
+  1. Migrate to JWT-based authentication (Recommended)
+  2. Implement Argon2 password hashing
+  3. Add rate limiting middleware
+  4. Update session management logic
+  5. Add integration tests for auth flow
+
+Decision Options:
+  [A]ccept - Approve findings
+  [R]evise - Request deeper analysis
+  [I]mplement - Create implementation tasks
+  [C]ancel - Discard review
+
+Your choice: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 IMPLEMENTATION PREFERENCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Approach Selection
+    The review identified 3 approaches. Recommended: JWT with refresh tokens.
+    Which should subtasks follow?
+
+    [1] JWT with refresh tokens (Recommended)
+    [2] Session-based auth
+    [3] OAuth 2.0 integration
+    [R]ecommend for me
+
+    Default: [R]ecommend for me
+    Your choice [1/2/3/R]: 1
+
+Q2. Execution Preference
+    How should 5 subtasks be executed?
+
+    [M]aximize parallel - Use Conductor workspaces
+    [S]equential - Simpler execution
+    [D]etect automatically (recommended)
+
+    Default: [D]etect automatically (recommended)
+    Your choice [M/S/D]: M
+
+Q3. Testing Depth
+    What testing depth for subtasks?
+
+    [F]ull TDD (test-first for all subtasks)
+    [S]tandard (quality gates only)
+    [M]inimal (compilation only)
+    [D]efault (based on complexity)
+
+    Default: [D]efault (based on complexity)
+    Your choice [F/S/M/D]: S
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Creating 5 subtasks with preferences:
+  - Approach: JWT with refresh tokens
+  - Execution: Parallel (3 Conductor workspaces)
+  - Testing: Standard (quality gates)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Questions Asked** (Context B):
+1. **Approach Selection** - Which recommended approach to follow (from review options)
+2. **Execution Preference** - Parallel vs sequential execution (Conductor integration)
+3. **Testing Depth** - Testing rigor for subtasks (TDD/standard/minimal/default)
+4. **Constraints** - Any implementation constraints (time/resource/scope/none)
+5. **Workspace Naming** - Conductor workspace naming preference (auto/custom/none)
+
+**Benefits**:
+- Eliminates ambiguity about which approach to implement
+- Optimizes for Conductor parallel execution when beneficial
+- Sets appropriate testing expectations for all subtasks
+- Captures constraints upfront to avoid rework
+
+### Complexity-Based Gating
+
+The clarification module uses task complexity to determine when clarification is needed.
+
+**Context A Gating Rules**:
+
+| Complexity | Review Mode | Clarification Behavior |
+|------------|-------------|------------------------|
+| 0-3 | Any | Skip (unless --with-questions) |
+| 4-6 | decision, architectural | Ask (unless --no-questions) |
+| 4-6 | code-quality, technical-debt, security | Skip (unless --with-questions) |
+| 7-10 | Any | Always ask (unless --no-questions) |
+
+**Context B Gating Rules**:
+
+| Condition | Clarification Behavior |
+|-----------|------------------------|
+| Single subtask | Skip (no parallelization decisions needed) |
+| 2-3 subtasks | Ask approach + testing only |
+| 4-6 subtasks | Ask approach + parallelization + testing |
+| 7+ subtasks | Ask all 5 questions (full preferences) |
+| --no-questions | Skip always |
+
+**Examples**:
+
+```bash
+# Complexity 3, code-quality → No clarification
+/task-review TASK-XXX --mode=code-quality
+# Phase 1: Loads context (no questions)
+# Phase 5: [I]mplement → Uses auto-detection
+
+# Complexity 5, decision → Context A questions
+/task-review TASK-XXX --mode=decision
+# Phase 1: Asks focus, depth, tradeoffs
+# Phase 5: [I]mplement → Context B questions (if 2+ subtasks)
+
+# Complexity 8, architectural → Both contexts
+/task-review TASK-XXX --mode=architectural
+# Phase 1: Asks all Context A questions
+# Phase 5: [I]mplement → Asks all Context B questions
+
+# Override gating with --with-questions
+/task-review TASK-XXX --mode=code-quality --with-questions
+# Phase 1: Forces Context A questions
+# Phase 5: [I]mplement → Forces Context B questions
+
+# Disable all clarification
+/task-review TASK-XXX --mode=decision --no-questions
+# Phase 1: Skips Context A
+# Phase 5: [I]mplement → Skips Context B
+```
+
+**Why Complexity Gating?**
+
+1. **Simple reviews** (0-3): Scope is clear, defaults work fine
+2. **Medium reviews** (4-6): Clarification valuable for decision/architectural modes
+3. **Complex reviews** (7-10): Clarification essential to focus effort correctly
+
+This ensures clarification adds value without creating unnecessary friction.
+
 ## Flags
 
 ### --mode=MODE
@@ -193,13 +435,110 @@ Specifies the output format for the review report.
 /task-review TASK-XXX --output=presentation
 ```
 
+### --no-questions
+
+Disables all clarification questions (Context A and Context B).
+
+**When to Use**:
+- Automated/CI workflows where user input not available
+- Well-defined reviews where defaults are acceptable
+- Quick iterations where minimal friction desired
+
+**Behavior**:
+- Context A: Skipped, uses review mode defaults
+- Context B: Skipped, uses auto-detection for all preferences
+- No prompts shown during review or [I]mplement
+
+**Examples**:
+```bash
+# CI/CD pipeline - no user interaction
+/task-review TASK-XXX --mode=security --no-questions
+
+# Quick review with defaults
+/task-review TASK-XXX --depth=quick --no-questions
+```
+
+### --with-questions
+
+Forces clarification questions to be presented, even for simple reviews.
+
+**When to Use**:
+- Want explicit control over review scope
+- Complex decisions requiring human judgment
+- Learning/exploration mode
+
+**Behavior**:
+- Context A: Always presented (Phase 1)
+- Context B: Always presented (if [I]mplement chosen)
+- Overrides complexity-based gating
+
+**Examples**:
+```bash
+# Force questions for simple review
+/task-review TASK-XXX --mode=code-quality --with-questions
+
+# Explicit control over scope
+/task-review TASK-XXX --mode=architectural --with-questions
+```
+
+### --defaults
+
+Uses default answers for all clarification questions without prompting.
+
+**When to Use**:
+- Testing/validation scenarios
+- Standard workflows where defaults are well-calibrated
+- Batch processing of multiple reviews
+
+**Behavior**:
+- Context A: Default values auto-applied (no prompts)
+- Context B: Default values auto-applied (no prompts)
+- Equivalent to pressing Enter for all questions
+
+**Examples**:
+```bash
+# Use defaults for all questions
+/task-review TASK-XXX --defaults
+
+# Combine with specific mode
+/task-review TASK-XXX --mode=decision --defaults
+```
+
+### Flag Combinations
+
+**Common Patterns**:
+
+```bash
+# Interactive review with full clarification
+/task-review TASK-XXX --mode=architectural --with-questions
+
+# Silent automation (no questions, use defaults)
+/task-review TASK-XXX --no-questions
+
+# Semi-automated (apply defaults without prompts)
+/task-review TASK-XXX --defaults
+
+# Invalid: contradictory flags (--no-questions wins)
+/task-review TASK-XXX --no-questions --with-questions
+```
+
+**Flag Priority**:
+1. `--no-questions` (highest priority - disables all clarification)
+2. `--defaults` (auto-applies defaults without prompts)
+3. `--with-questions` (forces clarification to be presented)
+4. Complexity-based gating (default behavior if no flags)
+
 ## Workflow Phases
 
 The `/task-review` command executes these phases automatically:
 
-### Phase 1: Load Review Context
+### Phase 1: Load Review Context (with Optional Clarification)
 - Read task description and acceptance criteria
-- Identify review scope and objectives
+- **[NEW]** Present review scope clarification questions (Context A)
+  - Triggered for: decision mode, complexity ≥4, or --with-questions flag
+  - Skipped if: --no-questions flag or quick depth
+  - Questions help clarify: focus areas, analysis depth, trade-offs, concerns
+- Identify review scope and objectives (using clarification if provided)
 - Load relevant codebase files/modules
 - Load related design documents and ADRs
 
@@ -222,11 +561,14 @@ The `/task-review` command executes these phases automatically:
 - Provide recommendations with rationale
 - Attach supporting artifacts (diagrams, metrics)
 
-### Phase 5: Human Decision Checkpoint
+### Phase 5: Human Decision Checkpoint (with Optional Implementation Preferences)
 Present findings to user with decision options:
 - **[A]ccept** - Approve findings, mark task as `REVIEW_COMPLETE`
 - **[R]evise** - Request deeper analysis on specific areas
 - **[I]mplement** - Create implementation task based on recommendation
+  - **[NEW]** Presents implementation preferences questions (Context B)
+  - Triggered if: user chooses [I]mplement and --no-questions not set
+  - Questions help clarify: approach selection, parallelization, testing depth, constraints
 - **[C]ancel** - Discard review, return task to backlog
 
 ## Model Selection Strategy
@@ -872,6 +1214,160 @@ review_results:
 ```
 
 ## Implementation Notes
+
+### Clarification Integration Code (TASK-CLQ-008)
+
+The clarification module integrates at two points in the `/task-review` workflow.
+
+**Phase 1: Review Scope Clarification (Context A)**
+
+```python
+from lib.clarification import (
+    generate_review_questions,
+    display_questions_full,
+)
+from lib.clarification.core import ClarificationContext
+
+def execute_phase_1(task_id: str, mode: str, depth: str, flags: dict):
+    """Phase 1: Load context with optional clarification."""
+    # Load task
+    task = load_task(task_id)
+    complexity = task.get("complexity", 5)
+
+    # Determine if clarification needed
+    review_clarification = None
+    should_clarify = (
+        not flags.get("no_questions") and (
+            flags.get("with_questions") or
+            (mode in ["decision", "architectural"] and complexity >= 4) or
+            complexity >= 7
+        )
+    )
+
+    if should_clarify:
+        # Generate questions based on mode and complexity
+        questions = generate_review_questions(
+            task_context=task,
+            review_mode=mode,
+            complexity=complexity
+        )
+
+        if flags.get("defaults"):
+            # Auto-apply defaults without prompting
+            review_clarification = apply_defaults(questions)
+        else:
+            # Display questions and collect answers
+            review_clarification = display_questions_full(
+                questions,
+                context_name="REVIEW SCOPE CLARIFICATION"
+            )
+
+    # Continue with context loading using clarification (if provided)
+    return load_review_context(task, mode, depth, review_clarification)
+```
+
+**Phase 5: Implementation Preferences (Context B)**
+
+```python
+from lib.clarification.generators.implement_generator import (
+    generate_implement_questions,
+)
+
+def handle_decision_checkpoint(findings: dict, task: dict, flags: dict):
+    """Phase 5: Decision checkpoint with optional implementation preferences."""
+    # Display review results
+    decision = present_decision_checkpoint(findings)
+
+    if decision == "implement":
+        # Determine if clarification needed
+        num_subtasks = len(findings.get("recommendations", []))
+        complexity = task.get("complexity", 5)
+
+        impl_clarification = None
+        should_clarify = (
+            not flags.get("no_questions") and
+            num_subtasks >= 2
+        )
+
+        if should_clarify:
+            # Generate implementation preference questions
+            questions = generate_implement_questions(
+                review_findings=findings,
+                num_subtasks=num_subtasks,
+                complexity=complexity
+            )
+
+            if flags.get("defaults"):
+                # Auto-apply defaults
+                impl_clarification = apply_defaults(questions)
+            else:
+                # Display questions and collect answers
+                impl_clarification = display_questions_full(
+                    questions,
+                    context_name="IMPLEMENTATION PREFERENCES"
+                )
+
+        # Create implementation subtasks with preferences
+        from lib.implement_orchestrator import handle_implement_option
+        await handle_implement_option(
+            review_task=task,
+            review_report_path=findings["report_path"],
+            preferences=impl_clarification
+        )
+
+    elif decision == "accept":
+        complete_review_task(task)
+
+    elif decision == "revise":
+        request_deeper_analysis(task, findings)
+
+    elif decision == "cancel":
+        cancel_review(task)
+```
+
+**Complete Integration Example**
+
+```python
+def execute_task_review(task_id: str, mode: str, depth: str, flags: dict):
+    """Complete task-review workflow with clarification integration."""
+
+    # Phase 1: Load Context (with Context A clarification)
+    context = execute_phase_1(task_id, mode, depth, flags)
+
+    # Phase 2: Execute Review Analysis
+    analysis = execute_review_analysis(context, mode, depth)
+
+    # Phase 3: Synthesize Recommendations
+    recommendations = synthesize_recommendations(analysis)
+
+    # Phase 4: Generate Review Report
+    report_path = generate_review_report(
+        task_id=task_id,
+        analysis=analysis,
+        recommendations=recommendations
+    )
+
+    # Phase 5: Decision Checkpoint (with Context B clarification)
+    findings = {
+        "analysis": analysis,
+        "recommendations": recommendations,
+        "report_path": report_path,
+    }
+
+    handle_decision_checkpoint(
+        findings=findings,
+        task=context["task"],
+        flags=flags
+    )
+```
+
+**See**:
+- `lib/clarification/core.py` - Core Question/Answer data structures
+- `lib/clarification/display.py` - Display and input handling
+- `lib/clarification/generators/review_generator.py` - Context A generation
+- `lib/clarification/generators/implement_generator.py` - Context B generation
+- `lib/clarification/templates/review_scope.py` - Context A question templates
+- `lib/clarification/templates/implementation_prefs.py` - Context B question templates
 
 ### Enhanced [I]mplement Flow (TASK-FW-008)
 

@@ -19,8 +19,14 @@ Main Functions:
     - should_clarify(): Determine clarification mode based on complexity
     - process_responses(): Parse user input into decisions
     - format_for_prompt(): Format context for agent prompts
-    - persist_to_frontmatter(): Save context to task metadata (stub for Wave 4)
+    - parse_frontmatter(): Parse YAML frontmatter from markdown
+    - serialize_frontmatter(): Serialize frontmatter to YAML
+    - get_clarification_summary(): Generate human-readable summary
     - detect_*(): Various ambiguity detection functions
+
+ClarificationContext Methods:
+    - persist_to_frontmatter(): Save context to task metadata
+    - load_from_frontmatter(): Load context from task metadata
 
 Usage:
     >>> from lib.clarification import should_clarify, ClarificationMode
@@ -47,7 +53,9 @@ from .core import (
     should_clarify,
     process_responses,
     format_for_prompt,
-    persist_to_frontmatter,
+    parse_frontmatter,
+    serialize_frontmatter,
+    get_clarification_summary,
 )
 
 # Detection algorithms
@@ -83,7 +91,9 @@ __all__ = [
     "should_clarify",
     "process_responses",
     "format_for_prompt",
-    "persist_to_frontmatter",
+    "parse_frontmatter",
+    "serialize_frontmatter",
+    "get_clarification_summary",
     # Detection - Context types
     "TaskContext",
     "CodebaseContext",
