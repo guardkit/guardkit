@@ -122,6 +122,7 @@ class OrchestrationConfig:
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
     create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     split_claude_md: bool = True  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
+    claude_md_size_limit: int = 10 * 1024  # TASK-ENH-SIZE-LIMIT: Default 10KB in bytes
 
 
 @dataclass
@@ -232,6 +233,46 @@ class TemplateCreateOrchestrator:
         # If resuming, load state
         if self.config.resume:
             self._resume_from_checkpoint()
+
+    @staticmethod
+    def parse_size_limit(size_str: str) -> int:
+        """
+        Parse size limit string like '15KB' or '1MB' to bytes.
+
+        Args:
+            size_str: Size string with optional KB/MB suffix
+
+        Returns:
+            Size in bytes
+
+        Raises:
+            ValueError: If format is invalid
+
+        Examples:
+            >>> TemplateCreateOrchestrator.parse_size_limit('15KB')
+            15360
+            >>> TemplateCreateOrchestrator.parse_size_limit('1MB')
+            1048576
+            >>> TemplateCreateOrchestrator.parse_size_limit('10240')
+            10240
+        """
+        size_str = size_str.upper().strip()
+
+        if size_str.endswith('KB'):
+            try:
+                return int(size_str[:-2]) * 1024
+            except ValueError:
+                raise ValueError(f"Invalid size format: {size_str}. Expected NUMBER[KB|MB]")
+        elif size_str.endswith('MB'):
+            try:
+                return int(size_str[:-2]) * 1024 * 1024
+            except ValueError:
+                raise ValueError(f"Invalid size format: {size_str}. Expected NUMBER[KB|MB]")
+        else:
+            try:
+                return int(size_str)  # Assume bytes
+            except ValueError:
+                raise ValueError(f"Invalid size format: {size_str}. Expected NUMBER[KB|MB]")
 
     def run(self) -> OrchestrationResult:
         """
@@ -1692,7 +1733,7 @@ Enhance the {agent_name} agent with template-specific content:
         try:
             # Step 1: Generate split content
             generator = ClaudeMdGenerator(self.analysis, agents=self.agents, output_path=output_path)
-            split_output = generator.generate_split()
+            split_output = generator.generate_split(max_core_size=self.config.claude_md_size_limit)
 
             # Step 2: Create directory structure
             docs_dir = output_path / "docs"

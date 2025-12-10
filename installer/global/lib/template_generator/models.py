@@ -406,28 +406,38 @@ class TemplateSplitOutput(BaseModel):
         core = self.get_core_size()
         return ((total - core) / total) * 100.0
 
-    def validate_size_constraints(self) -> tuple[bool, Optional[str]]:
-        """Validate that core content meets size constraints with graceful degradation
+    def validate_size_constraints(self, max_core_size: int = 10 * 1024) -> tuple[bool, Optional[str]]:
+        """
+        Validate that core content doesn't exceed size limit with graceful degradation.
+
+        Args:
+            max_core_size: Maximum allowed size in bytes (default 10KB)
 
         Returns:
             Tuple of (is_valid, error_message)
-            error_message is None if valid
         """
         import logging
 
         core_size = self.get_core_size()
-        max_core_size = 10 * 1024  # 10KB hard limit
         warning_size = 15 * 1024  # 15KB warning threshold
 
         if core_size > warning_size:
             # Exceeds warning threshold - fail with helpful message
-            return False, f"Core content exceeds 15KB limit: {core_size / 1024:.2f}KB. Consider using --no-split for large codebases or further content optimization."
+            return False, (
+                f"Core content exceeds 15KB limit: {core_size / 1024:.2f}KB. "
+                f"Consider using --no-split for large codebases, --claude-md-size-limit to override, "
+                f"or further content optimization."
+            )
         elif core_size > max_core_size:
-            # Between 10KB-15KB - log warning but allow (graceful degradation)
-            logging.warning(f"Core content exceeds preferred 10KB limit but within acceptable range: {core_size / 1024:.2f}KB")
+            # Between max_core_size and 15KB - log warning but allow (graceful degradation)
+            logging.warning(
+                f"Core content exceeds preferred {max_core_size / 1024:.0f}KB limit "
+                f"but within acceptable range: {core_size / 1024:.2f}KB"
+            )
             return True, None
 
         return True, None
+
 
     def generate_metadata(self) -> 'TemplateSplitMetadata':
         """Generate metadata from current split output state (TASK-PD-007)

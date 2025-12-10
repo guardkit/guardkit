@@ -13,6 +13,7 @@ implementation_mode: direct
 conductor_workspace: template-fix-wave2-flag
 wave: 2
 parent_review: TASK-REV-TC01
+completed_location: tasks/completed/template-create-fixes/TASK-ENH-SIZE-LIMIT/
 ---
 
 # Add Configurable CLAUDE.md Size Limit Flag

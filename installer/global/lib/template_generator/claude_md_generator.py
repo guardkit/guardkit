@@ -1510,14 +1510,18 @@ Respond ONLY with valid JSON."""
         ]
         return "\n\n".join(sections)
 
-    def generate_split(self) -> TemplateSplitOutput:
-        """Generate split CLAUDE.md output with size validation
+    def generate_split(self, max_core_size: int = 10 * 1024) -> TemplateSplitOutput:
+        """
+        Generate split CLAUDE.md output with size validation.
+
+        Args:
+            max_core_size: Maximum allowed core content size in bytes
 
         Returns:
             TemplateSplitOutput with validated core size
 
         Raises:
-            ValueError: If core content exceeds 10KB limit
+            ValueError: If core content exceeds max_core_size
         """
         timestamp = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
@@ -1528,8 +1532,8 @@ Respond ONLY with valid JSON."""
             generated_at=timestamp
         )
 
-        # Validate size constraints
-        is_valid, error_msg = output.validate_size_constraints()
+        # Validate size constraints with configurable limit
+        is_valid, error_msg = output.validate_size_constraints(max_core_size)
         if not is_valid:
             raise ValueError(f"Size validation failed: {error_msg}")
 

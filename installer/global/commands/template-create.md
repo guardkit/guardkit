@@ -303,6 +303,12 @@ None - all options have defaults
 
 --verbose                Show detailed progress and debugging info
                          Default: false
+
+--claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
+                         Format: NUMBER[KB|MB] (e.g., 15KB, 50KB, 1MB)
+                         Default: 10KB
+                         Use for complex codebases that exceed default limit
+                         Example: /template-create --claude-md-size-limit 50KB
 ```
 
 ## AI-Native Codebase Analysis (Phase 1) - TASK-51B2
