@@ -410,27 +410,94 @@ class HeuristicAnalyzer:
 
         return infra
 
+    # Pattern definitions with file glob patterns
+    PATTERN_DETECTION_CONFIG = {
+        'Repository': {
+            'patterns': ["*[Rr]epository*.py", "*[Rr]epository*.ts", "*[Rr]epository*.cs", "*[Rr]epository*.java"],
+            'description': "Data access abstraction layer"
+        },
+        'Factory': {
+            'patterns': ["*[Ff]actory*.py", "*[Ff]actory*.ts", "*[Ff]actory*.cs", "*[Ff]actory*.java"],
+            'description': "Object creation patterns"
+        },
+        'Service Layer': {
+            'patterns': ["*[Ss]ervice*.py", "*[Ss]ervice*.ts", "*[Ss]ervice*.cs", "*[Ss]ervice*.java"],
+            'description': "Business logic services"
+        },
+        'Engine': {
+            'patterns': ["*[Ee]ngine*.py", "*[Ee]ngine*.ts", "*[Ee]ngine*.cs", "*[Ee]ngine*.java"],
+            'description': "Business logic orchestration"
+        },
+        'MVVM': {
+            'patterns': ["*[Vv]iew[Mm]odel*.py", "*[Vv]iew[Mm]odel*.ts", "*[Vv]iew[Mm]odel*.cs", "*[Vv]iew[Mm]odel*.dart"],
+            'description': "Model-View-ViewModel pattern"
+        },
+        'Railway-Oriented Programming': {
+            'patterns': ["*[Ee]rror[Oo]r*.cs", "*[Rr]esult*.cs", "*[Rr]ailway*.py", "*[Ee]ither*.ts"],
+            'description': "Functional error handling"
+        },
+        'Entity': {
+            'patterns': ["*[Ee]ntity*.py", "*[Ee]ntity*.cs", "*[Ee]ntity*.java"],
+            'description': "Domain entities"
+        },
+        'Model': {
+            'patterns': ["*/models/*.py", "*/models/*.ts", "*/model/*.cs"],
+            'description': "Data models"
+        },
+        'Controller': {
+            'patterns': ["*[Cc]ontroller*.py", "*[Cc]ontroller*.ts", "*[Cc]ontroller*.cs", "*[Cc]ontroller*.java"],
+            'description': "Request handlers (MVC)"
+        },
+        'Handler': {
+            'patterns': ["*[Hh]andler*.py", "*[Hh]andler*.ts", "*[Hh]andler*.cs"],
+            'description': "Event/command handlers"
+        },
+        'Validator': {
+            'patterns': ["*[Vv]alidator*.py", "*[Vv]alidator*.ts", "*[Vv]alidator*.cs"],
+            'description': "Input validation"
+        },
+        'Mapper': {
+            'patterns': ["*[Mm]apper*.py", "*[Mm]apper*.ts", "*[Mm]apper*.cs"],
+            'description': "Object mapping/transformation"
+        },
+        'Builder': {
+            'patterns': ["*[Bb]uilder*.py", "*[Bb]uilder*.ts", "*[Bb]uilder*.cs"],
+            'description': "Complex object construction"
+        },
+        'View': {
+            'patterns': ["*/views/*.py", "*/views/*.ts", "*[Vv]iew.cs", "*[Vv]iew.xaml"],
+            'description': "UI views/templates"
+        }
+    }
+
     def _detect_patterns(self) -> list:
-        """Detect design patterns from directory structure."""
-        patterns = []
+        """
+        Detect design patterns from directory structure and file naming.
 
-        # Look for common pattern indicators (case-insensitive)
-        # Check for repository pattern
-        repo_patterns = ["*[Rr]epository*.py", "*[Rr]epository*.ts", "*[Rr]epository*.cs"]
-        if any(any(self.codebase_path.rglob(pattern)) for pattern in repo_patterns):
-            patterns.append("Repository")
+        Returns:
+            List of detected pattern names
 
-        # Check for factory pattern
-        factory_patterns = ["*[Ff]actory*.py", "*[Ff]actory*.ts", "*[Ff]actory*.cs"]
-        if any(any(self.codebase_path.rglob(pattern)) for pattern in factory_patterns):
-            patterns.append("Factory")
+        Note:
+            This is a heuristic fallback when AI analysis is unavailable.
+            It scans the codebase for files matching known pattern conventions.
+        """
+        detected_patterns = []
 
-        # Check for service layer pattern
-        service_patterns = ["*[Ss]ervice*.py", "*[Ss]ervice*.ts", "*[Ss]ervice*.cs"]
-        if any(any(self.codebase_path.rglob(pattern)) for pattern in service_patterns):
-            patterns.append("Service Layer")
+        for pattern_name, config in self.PATTERN_DETECTION_CONFIG.items():
+            file_patterns = config['patterns']
 
-        return patterns
+            # Check if any files match the pattern
+            for file_pattern in file_patterns:
+                try:
+                    matches = list(self.codebase_path.rglob(file_pattern))
+                    if matches:
+                        detected_patterns.append(pattern_name)
+                        logger.debug(f"Detected {pattern_name} pattern: {len(matches)} files")
+                        break  # Found pattern, no need to check other file patterns
+                except Exception as e:
+                    logger.debug(f"Error checking pattern {file_pattern}: {e}")
+
+        return detected_patterns
 
     def _detect_architecture_style(self) -> str:
         """Detect overall architectural style."""

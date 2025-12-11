@@ -232,7 +232,20 @@ Please analyze this codebase and provide a comprehensive architectural assessmen
     }}
   }},
   "architecture": {{
-    "patterns": ["Repository", "Factory", "..."],
+    "patterns": [
+      "Repository",      # Data access abstraction
+      "Factory",         # Object creation
+      "Service Layer",   # Business logic services
+      "Engine",          # Business logic orchestration
+      "MVVM",            # Model-View-ViewModel
+      "Railway-Oriented Programming",  # ErrorOr<T>, Result<T>
+      "Entity",          # Domain entities
+      "Controller",      # Request handlers (MVC)
+      "Handler",         # Event/command handlers
+      "Validator",       # Input validation
+      "Mapper",          # Object transformation (AutoMapper, Mapperly)
+      "Builder"          # Complex object construction
+    ],
     "architectural_style": "Clean Architecture|Layered|...",
     "layers": [
       {{
