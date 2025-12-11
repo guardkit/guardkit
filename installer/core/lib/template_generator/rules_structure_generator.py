@@ -327,12 +327,217 @@ work on relevant files.
         frontmatter = self._generate_frontmatter(paths_filter)
         return frontmatter + content
 
+    def _extract_boundaries(self, content: str) -> str:
+        """
+        Extract ALWAYS/NEVER/ASK boundary sections from enhanced agent content.
+
+        Args:
+            content: Full enhanced agent content
+
+        Returns:
+            Boundaries section as markdown, or empty string if not found
+        """
+        lines = content.split('\n')
+        in_boundaries = False
+        boundaries_lines = []
+
+        for i, line in enumerate(lines):
+            # Start capturing at "## Boundaries"
+            if line.strip() == "## Boundaries":
+                in_boundaries = True
+                boundaries_lines.append(line)
+                continue
+
+            # Stop at next ## heading
+            if in_boundaries and line.startswith("## ") and line.strip() != "## Boundaries":
+                break
+
+            if in_boundaries:
+                boundaries_lines.append(line)
+
+        if boundaries_lines:
+            return '\n'.join(boundaries_lines).strip()
+        return ""
+
+    def _extract_frontmatter_field(self, content: str, field: str) -> str:
+        """
+        Extract a field value from YAML frontmatter.
+
+        Args:
+            content: Content with frontmatter
+            field: Field name to extract (e.g., "description", "technologies")
+
+        Returns:
+            Field value or empty string if not found
+        """
+        if not content.startswith("---"):
+            return ""
+
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            return ""
+
+        frontmatter = parts[1]
+        lines = frontmatter.split('\n')
+
+        for line in lines:
+            if line.strip().startswith(f"{field}:"):
+                # Handle both simple and list formats
+                value = line.split(":", 1)[1].strip()
+                # Remove brackets and quotes for list format
+                value = value.strip("[]'\"")
+                return value
+
+        return ""
+
+    def _extract_section(self, content: str, section_heading: str) -> str:
+        """
+        Extract a markdown section by heading.
+
+        Args:
+            content: Full content
+            section_heading: Section heading to find (e.g., "## Capabilities")
+
+        Returns:
+            Section content or empty string if not found
+        """
+        lines = content.split('\n')
+        in_section = False
+        section_lines = []
+
+        for line in lines:
+            # Start capturing at section heading
+            if line.strip() == section_heading:
+                in_section = True
+                section_lines.append(line)
+                continue
+
+            # Stop at next same-level or higher heading
+            if in_section and line.startswith("## "):
+                break
+
+            if in_section:
+                section_lines.append(line)
+
+        if section_lines:
+            return '\n'.join(section_lines).strip()
+        return ""
+
+    def _extract_capability_summary(self, content: str, max_items: int = 5) -> str:
+        """
+        Extract first N capabilities from agent content.
+
+        Args:
+            content: Full enhanced agent content
+            max_items: Maximum number of capabilities to extract
+
+        Returns:
+            Capability summary as markdown list
+        """
+        # Try to extract from "When to Use This Agent" section first
+        when_section = self._extract_section(content, "## When to Use This Agent")
+        if when_section:
+            # Extract bullet points
+            lines = when_section.split('\n')
+            bullets = [line.strip() for line in lines if line.strip().startswith('-')]
+            if bullets:
+                return '\n'.join(bullets[:max_items])
+
+        # Fallback: extract from frontmatter capabilities
+        capabilities_raw = self._extract_frontmatter_field(content, "capabilities")
+        if capabilities_raw:
+            caps = [cap.strip() for cap in capabilities_raw.split(',')]
+            return '\n'.join([f"- {cap}" for cap in caps[:max_items]])
+
+        return ""
+
+    def _create_slim_guidance(
+        self,
+        agent_name: str,
+        enhanced_content: str,
+        paths_filter: str
+    ) -> str:
+        """
+        Create slim guidance file from enhanced agent content.
+
+        Extracts only essential information:
+        - Boundaries (ALWAYS/NEVER/ASK)
+        - Brief purpose/description
+        - Technology list
+        - Capability summary (first 5 items)
+        - References to full agent files
+
+        Args:
+            agent_name: Name of the agent
+            enhanced_content: Full enhanced agent content
+            paths_filter: Path patterns for conditional loading
+
+        Returns:
+            Slim guidance content (~2-3KB)
+        """
+        agent_slug = self._slugify(agent_name)
+
+        # Extract components
+        description = self._extract_frontmatter_field(enhanced_content, "description")
+        technologies = self._extract_frontmatter_field(enhanced_content, "stack")
+        boundaries = self._extract_boundaries(enhanced_content)
+        capabilities = self._extract_capability_summary(enhanced_content, max_items=5)
+
+        # Build frontmatter
+        frontmatter_parts = [f'paths: {paths_filter}']
+        frontmatter_parts.append(f'applies_when: "Working with {agent_name.replace("-", " ")}"')
+        frontmatter_parts.append(f'agent: {agent_slug}')
+        frontmatter_block = "---\n" + "\n".join(frontmatter_parts) + "\n---\n\n"
+
+        # Build content
+        parts = []
+        parts.append(f"# {agent_name.replace('-', ' ').title()}")
+        parts.append("")
+
+        if description:
+            parts.append("## Purpose")
+            parts.append("")
+            parts.append(description)
+            parts.append("")
+
+        if technologies:
+            parts.append("## Technologies")
+            parts.append("")
+            parts.append(technologies)
+            parts.append("")
+
+        if boundaries:
+            parts.append(boundaries)
+            parts.append("")
+
+        if capabilities:
+            parts.append("## When to Use This Agent")
+            parts.append("")
+            parts.append(capabilities)
+            parts.append("")
+
+        # Add references
+        parts.append("## See Also")
+        parts.append("")
+        parts.append(f"- Full agent: `agents/{agent_slug}.md`")
+
+        # Check if extended file exists
+        agent_ext_file = self.output_path / "agents" / f"{agent_slug}-ext.md"
+        if agent_ext_file.exists():
+            parts.append(f"- Extended reference: `agents/{agent_slug}-ext.md`")
+
+        parts.append("")
+
+        content_body = "\n".join(parts)
+        return frontmatter_block + content_body
+
     def _generate_guidance_rules(self, agent) -> str:
         """
         Generate guidance file for an agent with path inference.
 
-        TASK-RULES-ENHANCE: Now uses enhanced agent content when available,
-        falling back to stub content for non-enhanced agents.
+        TASK-GA-001: Now generates slim guidance files (~2-3KB) that extract
+        only boundaries and essential info from enhanced agents, with references
+        to full agent files for detailed content.
 
         Args:
             agent: Agent metadata object
@@ -342,7 +547,7 @@ work on relevant files.
         """
         agent_slug = self._slugify(agent.name)
 
-        # Try to read enhanced agent content first (TASK-RULES-ENHANCE)
+        # Try to read enhanced agent content first
         enhanced_content = self._read_enhanced_agent_content(agent_slug)
 
         # Get path filter for conditional loading
@@ -353,9 +558,13 @@ work on relevant files.
         )
 
         if enhanced_content:
-            # Use enhanced content with path frontmatter
-            logger.info(f"Using enhanced content for agent: {agent.name}")
-            return self._merge_paths_into_frontmatter(enhanced_content, paths_filter)
+            # Generate slim guidance from enhanced content (TASK-GA-001)
+            logger.info(f"Generating slim guidance for agent: {agent.name}")
+            return self._create_slim_guidance(
+                agent.name,
+                enhanced_content,
+                paths_filter
+            )
 
         # Fallback to stub generation (original behavior)
         logger.debug(f"No enhanced content for agent: {agent.name}, using stub")
