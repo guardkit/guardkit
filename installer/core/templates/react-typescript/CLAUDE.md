@@ -156,11 +156,11 @@ npm run preview # Preview build
 
 This template includes specialized agents for common patterns:
 
-### Agent Rules
-- **react-query**: TanStack Query patterns (`.claude/rules/agents/react-query.md`)
-- **feature-arch**: Feature organization (`.claude/rules/agents/feature-arch.md`)
-- **form-validation**: Forms and validation (`.claude/rules/agents/form-validation.md`)
-- **react-state**: Client state management (`.claude/rules/agents/react-state.md`)
+### Guidance Rules
+- **react-query**: TanStack Query patterns (`.claude/rules/guidance/react-query.md`)
+- **feature-arch**: Feature organization (`.claude/rules/guidance/feature-arch.md`)
+- **form-validation**: Forms and validation (`.claude/rules/guidance/form-validation.md`)
+- **react-state**: Client state management (`.claude/rules/guidance/react-state.md`)
 
 These agents are automatically discovered based on file paths and provide context-specific guidance.
 

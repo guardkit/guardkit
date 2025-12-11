@@ -182,8 +182,8 @@ Rules files use `paths:` frontmatter for conditional loading:
 | `rules/testing.md` | Test files |
 | `rules/patterns/feature-based.md` | `src/features/**` |
 | `rules/patterns/query-patterns.md` | `**/*query*`, `**/*api*` |
-| `rules/agents/react-query.md` | Query/API files |
-| `rules/agents/form-validation.md` | Form/validation files |
+| `rules/guidance/react-query.md` | Query/API files |
+| `rules/guidance/form-validation.md` | Form/validation files |
 
 ### Benefits
 

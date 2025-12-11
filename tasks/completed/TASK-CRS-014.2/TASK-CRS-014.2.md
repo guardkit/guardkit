@@ -1,16 +1,19 @@
 ---
 id: TASK-CRS-014.2
 title: Rename react-typescript rules/agents/ to rules/guidance/
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T15:00:00Z
-updated: 2025-12-11T15:00:00Z
+updated: 2025-12-11T16:55:00Z
+completed: 2025-12-11T16:55:00Z
 priority: high
 tags: [rules-structure, naming, react-typescript]
 complexity: 1
 parent_task: TASK-CRS-014
 implementation_mode: direct
 estimated_hours: 0.25
+completed_location: tasks/completed/TASK-CRS-014.2/
+organized_files: [TASK-CRS-014.2.md]
 ---
 
 # Task: Rename react-typescript rules/agents/ to rules/guidance/
@@ -39,9 +42,9 @@ Check and update any references in:
 
 ## Acceptance Criteria
 
-- [ ] Directory renamed from `rules/agents/` to `rules/guidance/`
-- [ ] All internal references updated
-- [ ] Template still works correctly with rules loading
+- [x] Directory renamed from `rules/agents/` to `rules/guidance/`
+- [x] All internal references updated
+- [x] Template still works correctly with rules loading
 
 ## Verification
 
