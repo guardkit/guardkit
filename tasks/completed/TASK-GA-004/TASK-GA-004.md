@@ -1,10 +1,12 @@
 ---
 id: TASK-GA-004
 title: Add source-of-truth documentation to CLAUDE.md
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T20:00:00Z
-updated: 2025-12-11T20:00:00Z
+updated: 2025-12-11T20:30:00Z
+completed: 2025-12-11T20:30:00Z
+completed_location: tasks/completed/TASK-GA-004/
 priority: medium
 tags: [documentation, claude-md, guidance, source-of-truth]
 complexity: 2
@@ -13,6 +15,7 @@ related_to: [TASK-GA-001, TASK-GA-003]
 implementation_mode: direct
 conductor_workspace: guidance-architecture-wave2-2
 wave: 2
+organized_files: [TASK-GA-004.md]
 ---
 
 # Task: Add Source-of-Truth Documentation to CLAUDE.md
@@ -23,9 +26,9 @@ The CLAUDE.md files need a brief note clarifying that `agents/` is the source of
 
 ## Acceptance Criteria
 
-- [ ] Add brief note to root `CLAUDE.md` in Progressive Disclosure section
-- [ ] Add brief note to `.claude/CLAUDE.md`
-- [ ] Reference the detailed guide in rules-structure-guide.md
+- [x] Add brief note to root `CLAUDE.md` in Progressive Disclosure section
+- [x] Add brief note to `.claude/CLAUDE.md`
+- [x] Reference the detailed guide in rules-structure-guide.md
 
 ## Implementation Details
 

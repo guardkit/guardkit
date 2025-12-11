@@ -1054,7 +1054,15 @@ When creating templates with `/template-create`:
 - Agent files are automatically split during `/agent-enhance`
 - Use `--no-split` flag for single-file output (not recommended)
 
-See [Progressive Disclosure Guide](docs/guides/progressive-disclosure.md) for details.
+### Guidance vs Agent Files
+
+Templates include two types of specialist files:
+- **`agents/{name}.md`**: Full agent context for Task tool execution (source of truth)
+- **`rules/guidance/{slug}.md`**: Slim summary for path-triggered loading (derived)
+
+**Source of Truth**: Always edit `agents/` files. Guidance files are generated summaries.
+
+See [Rules Structure Guide](docs/guides/rules-structure-guide.md#guidance-vs-agent-files) for details.
 
 ## Claude Code Rules Structure
 

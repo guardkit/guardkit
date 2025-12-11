@@ -228,4 +228,12 @@ When creating templates with `/template-create`:
 - Agent files are automatically split during `/agent-enhance`
 - Use `--no-split` flag for single-file output (not recommended)
 
+### Guidance Architecture
+
+When working with templates:
+- **`agents/`** = Source of truth (full content, 6-12KB)
+- **`rules/guidance/`** = Derived summary (slim, <3KB)
+
+Never edit guidance files directly - they are regenerated from agents.
+
 See [Progressive Disclosure Guide](../docs/guides/progressive-disclosure.md) for details.
