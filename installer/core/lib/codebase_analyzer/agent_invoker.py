@@ -203,6 +203,22 @@ class HeuristicAnalyzer:
         "stores/": ("Application", "State management", ["Domain"]),
         "services/": ("Application", "Business services", ["Domain"]),
         "middleware/": ("Infrastructure", "Middleware components", ["Application"]),
+
+        # MVVM ViewModels (TASK-FIX-LAYER-D6E0)
+        "viewmodels/": ("ViewModels", "MVVM ViewModels", ["Domain", "Services"]),
+        "ViewModels/": ("ViewModels", "MVVM ViewModels", ["Domain", "Services"]),
+
+        # Business Logic Engines (TASK-FIX-LAYER-D6E0)
+        "engines/": ("Engines", "Business logic orchestration", ["Domain", "Services", "Data-Access"]),
+        "Engines/": ("Engines", "Business logic orchestration", ["Domain", "Services", "Data-Access"]),
+
+        # Handlers (CQRS) (TASK-FIX-LAYER-D6E0)
+        "handlers/": ("Handlers", "Command/Query handlers", ["Domain", "Services"]),
+        "Handlers/": ("Handlers", "Command/Query handlers", ["Domain", "Services"]),
+
+        # Processors (TASK-FIX-LAYER-D6E0)
+        "processors/": ("Processors", "Data processors", ["Domain", "Services"]),
+        "Processors/": ("Processors", "Data processors", ["Domain", "Services"]),
     }
 
     def __init__(self, codebase_path: Path, file_samples: Optional[List[Dict[str, Any]]] = None):
@@ -565,6 +581,7 @@ class HeuristicAnalyzer:
         Infer architectural layer from file path.
 
         TASK-0CE5: Helper for fallback mode to provide better metadata.
+        TASK-FIX-LAYER-D6E0: Added ViewModels, Engines, Handlers, Processors layers.
 
         Args:
             path: File path
@@ -574,7 +591,24 @@ class HeuristicAnalyzer:
         """
         path_lower = path.lower()
 
-        # Common layer patterns
+        # Check specialized layers first (more specific patterns)
+        # ViewModels layer (TASK-FIX-LAYER-D6E0)
+        if any(x in path_lower for x in ["viewmodel", "viewmodels", "/vm/"]):
+            return "ViewModels"
+
+        # Engines layer (TASK-FIX-LAYER-D6E0)
+        if any(x in path_lower for x in ["engine", "engines", "businesslogic"]):
+            return "Engines"
+
+        # Handlers layer (TASK-FIX-LAYER-D6E0)
+        if any(x in path_lower for x in ["handler", "handlers", "commandhandler", "queryhandler"]):
+            return "Handlers"
+
+        # Processors layer (TASK-FIX-LAYER-D6E0)
+        if any(x in path_lower for x in ["processor", "processors", "pipeline"]):
+            return "Processors"
+
+        # Common layer patterns (existing)
         if any(layer in path_lower for layer in ["domain", "entities", "models"]):
             return "Domain"
         elif any(layer in path_lower for layer in ["application", "usecases", "services"]):

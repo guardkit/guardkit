@@ -189,7 +189,7 @@ class TestAILayerClassifier:
         ("domain/entities/User.cs", "domain", "folder /domain/ + /entities/"),
         ("data/repositories/UserRepo.go", "data-access", "folder /repositories/"),
         ("src/components/Button.vue", "presentation", "folder /components/"),
-        ("pkg/handlers/health.go", "api", "folder /handlers/"),
+        ("pkg/handlers/health.go", "handlers", "folder /handlers/ (TASK-FIX-LAYER-D6E0)"),
 
         # Filename suffix patterns
         ("MauiProgram.cs", "infrastructure", "filename program.cs"),
@@ -330,12 +330,15 @@ class TestAILayerClassifier:
         assert result.layer == "presentation"
 
     def test_classify_viewmodels_folder(self, classifier, csharp_analysis):
-        """Test classification of /viewmodels/ folder."""
+        """Test classification of /viewmodels/ folder.
+
+        TASK-FIX-LAYER-D6E0: ViewModels now classified as separate 'viewmodels' layer.
+        """
         file = ExampleFile(path="src/viewmodels/MainViewModel.cs", purpose="ViewModel")
         result = classifier.classify(file, csharp_analysis)
 
         assert result is not None
-        assert result.layer == "presentation"
+        assert result.layer == "viewmodels"
 
     # API Layer Tests
 
@@ -351,12 +354,15 @@ class TestAILayerClassifier:
         assert result.layer == "api"
 
     def test_classify_handlers_folder(self, classifier, csharp_analysis):
-        """Test classification of /handlers/ folder."""
+        """Test classification of /handlers/ folder.
+
+        TASK-FIX-LAYER-D6E0: Handlers now classified as separate 'handlers' layer.
+        """
         file = ExampleFile(path="pkg/handlers/health.go", purpose="HTTP handler")
         result = classifier.classify(file, csharp_analysis)
 
         assert result is not None
-        assert result.layer == "api"
+        assert result.layer == "handlers"
 
     def test_classify_routes_folder(self, classifier, csharp_analysis):
         """Test classification of /routes/ folder."""
@@ -1458,3 +1464,208 @@ class TestBackwardCompatibility:
 
             assert result is not None
             assert result.layer == expected_layer
+
+
+# TASK-FIX-LAYER-D6E0: Tests for new layers (ViewModels, Engines, Handlers, Processors)
+
+class TestNewLayerDetection:
+    """Tests for newly added layers: ViewModels, Engines, Handlers, Processors."""
+
+    @pytest.fixture
+    def classifier(self):
+        """Create AILayerClassifier instance."""
+        return AILayerClassifier()
+
+    @pytest.fixture
+    def csharp_analysis(self):
+        """Create sample C# codebase analysis for MAUI projects."""
+        return CodebaseAnalysis(
+            codebase_path="/test/maui-project",
+            technology=TechnologyInfo(
+                primary_language="C#",
+                frameworks=[".NET MAUI"],
+                testing_frameworks=["xUnit"],
+                build_tools=["dotnet"],
+                confidence=ConfidenceScore(
+                    level=ConfidenceLevel.HIGH,
+                    percentage=95.0,
+                ),
+            ),
+            architecture=ArchitectureInfo(
+                architectural_style="MVVM with Clean Architecture",
+                patterns=["MVVM", "Repository"],
+                layers=[
+                    LayerInfo(name="ViewModels", description="MVVM ViewModels"),
+                    LayerInfo(name="Engines", description="Business logic orchestration"),
+                    LayerInfo(name="Handlers", description="Command/Query handlers"),
+                    LayerInfo(name="Processors", description="Data processors"),
+                ],
+                dependency_flow="Inward toward domain",
+                confidence=ConfidenceScore(
+                    level=ConfidenceLevel.HIGH,
+                    percentage=90.0,
+                ),
+            ),
+            quality=QualityInfo(
+                overall_score=85.0,
+                solid_compliance=80.0,
+                dry_compliance=82.0,
+                yagni_compliance=78.0,
+                maintainability_index=80.0,
+                test_coverage=75.0,
+                confidence=ConfidenceScore(
+                    level=ConfidenceLevel.HIGH,
+                    percentage=85.0,
+                ),
+            ),
+        )
+
+    def test_classify_viewmodels_folder(self, classifier, csharp_analysis):
+        """Test ViewModels folder detection."""
+        test_paths = [
+            "/MyApp/ViewModels/MainViewModel.cs",
+            "/MyApp/viewmodels/HomeViewModel.cs",
+            "/MyApp/view-models/UserViewModel.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="MVVM ViewModel")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'viewmodels', f"Expected 'viewmodels' for {path}, got {result.layer}"
+
+    def test_classify_viewmodel_file_suffix(self, classifier, csharp_analysis):
+        """Test ViewModel file suffix detection."""
+        test_paths = [
+            "/MyApp/MainViewModel.cs",
+            "/MyApp/HomeViewModel.cs",
+            "/MyApp/Src/UserViewModel.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="MVVM ViewModel")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'viewmodels', f"Expected 'viewmodels' for {path}, got {result.layer}"
+
+    def test_classify_engines_folder(self, classifier, csharp_analysis):
+        """Test Engines folder detection."""
+        test_paths = [
+            "/MyApp/Engines/LoadingEngine.cs",
+            "/MyApp/engines/ScanEngine.cs",
+            "/MyApp/BusinessLogic/ProcessingEngine.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="Business logic engine")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'engines', f"Expected 'engines' for {path}, got {result.layer}"
+
+    def test_classify_engine_file_suffix(self, classifier, csharp_analysis):
+        """Test Engine file suffix detection."""
+        test_paths = [
+            "/MyApp/LoadingEngine.cs",
+            "/MyApp/Src/ScanEngine.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="Business logic engine")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'engines', f"Expected 'engines' for {path}, got {result.layer}"
+
+    def test_classify_handlers_folder(self, classifier, csharp_analysis):
+        """Test Handlers folder detection."""
+        test_paths = [
+            "/MyApp/Handlers/CreateOrderHandler.cs",
+            "/MyApp/handlers/UpdateUserHandler.cs",
+            "/MyApp/CommandHandlers/DeleteProductHandler.cs",
+            "/MyApp/QueryHandlers/GetUserHandler.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="CQRS handler")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'handlers', f"Expected 'handlers' for {path}, got {result.layer}"
+
+    def test_classify_handler_file_suffix(self, classifier, csharp_analysis):
+        """Test Handler file suffix detection."""
+        test_paths = [
+            "/MyApp/CreateOrderHandler.cs",
+            "/MyApp/Src/UpdateUserCommandHandler.cs",
+            "/MyApp/GetProductQueryHandler.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="CQRS handler")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'handlers', f"Expected 'handlers' for {path}, got {result.layer}"
+
+    def test_classify_processors_folder(self, classifier, csharp_analysis):
+        """Test Processors folder detection."""
+        test_paths = [
+            "/MyApp/Processors/ImageProcessor.cs",
+            "/MyApp/processors/DataProcessor.cs",
+            "/MyApp/Pipelines/ValidationPipeline.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="Data processor")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'processors', f"Expected 'processors' for {path}, got {result.layer}"
+
+    def test_classify_processor_file_suffix(self, classifier, csharp_analysis):
+        """Test Processor file suffix detection."""
+        test_paths = [
+            "/MyApp/ImageProcessor.cs",
+            "/MyApp/Src/DataProcessor.cs",
+        ]
+
+        for path in test_paths:
+            file = ExampleFile(path=path, purpose="Data processor")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == 'processors', f"Expected 'processors' for {path}, got {result.layer}"
+
+    def test_classify_maui_project_structure(self, classifier, csharp_analysis):
+        """Integration test for typical .NET MAUI structure."""
+        test_paths = {
+            "/MyApp/ViewModels/HomeViewModel.cs": "viewmodels",
+            "/MyApp/Engines/ScanEngine.cs": "engines",
+            "/MyApp/Services/ApiService.cs": "services",
+            "/MyApp/Repositories/UserRepository.cs": "data-access",
+            "/MyApp/Domain/Entities/User.cs": "domain",
+            "/MyApp/Views/HomePage.xaml": "presentation",
+            "/MyApp.Tests/UserTests.cs": "testing",
+        }
+
+        for path, expected_layer in test_paths.items():
+            file = ExampleFile(path=path, purpose=f"Test {path}")
+            result = classifier.classify(file, csharp_analysis)
+            assert result is not None, f"Failed to classify: {path}"
+            assert result.layer == expected_layer, f"Path {path} should be {expected_layer}, got {result.layer}"
+
+    def test_viewmodels_before_presentation(self, classifier, csharp_analysis):
+        """Test that ViewModels are detected before Presentation layer."""
+        # This ensures the order of pattern matching is correct
+        viewmodel_file = ExampleFile(
+            path="/MyApp/ViewModels/MainViewModel.cs",
+            purpose="MVVM ViewModel"
+        )
+        result = classifier.classify(viewmodel_file, csharp_analysis)
+        assert result is not None
+        assert result.layer == 'viewmodels', "ViewModels should be detected as 'viewmodels', not 'presentation'"
+
+    def test_handlers_not_api(self, classifier, csharp_analysis):
+        """Test that Handlers are detected as handlers, not API layer."""
+        handler_file = ExampleFile(
+            path="/MyApp/Handlers/CreateOrderHandler.cs",
+            purpose="Command handler"
+        )
+        result = classifier.classify(handler_file, csharp_analysis)
+        assert result is not None
+        assert result.layer == 'handlers', "Handlers should be detected as 'handlers', not 'api'"

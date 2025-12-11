@@ -121,8 +121,27 @@ class AILayerClassifier(LayerClassificationStrategy):
     """
 
     VALID_LAYERS = frozenset({
-        'testing', 'presentation', 'api', 'services', 'domain',
-        'data-access', 'infrastructure', 'mapping', 'other'
+        # Core architectural layers
+        'domain',           # Domain entities and business rules
+        'application',      # Application services and use cases
+        'infrastructure',   # External concerns (DB, API clients, etc.)
+        'presentation',     # UI layer (views, pages)
+
+        # Specialized layers
+        'viewmodels',       # MVVM ViewModels
+        'engines',          # Business logic orchestration
+        'services',         # Service layer
+        'api',              # API controllers/endpoints
+        'data-access',      # Repositories and data access
+
+        # Supporting layers
+        'handlers',         # Event/command handlers
+        'processors',       # Data processors
+        'mapping',          # Object mappers
+        'testing',          # Test projects
+
+        # Fallback
+        'other'
     })
 
     def classify(
@@ -326,12 +345,62 @@ class AILayerClassifier(LayerClassificationStrategy):
             if 'test' not in path_lower:
                 return 'infrastructure', 'filename_pattern:Program.cs'
 
+        # ViewModels layer (MVVM pattern) - check before presentation
+        viewmodel_patterns = [
+            '/viewmodel/', '/viewmodels/', '/vm/',
+            '/view-models/', '/view_models/'
+        ]
+        if any(p in path_lower for p in viewmodel_patterns):
+            return 'viewmodels', 'folder_pattern:viewmodel'
+
+        viewmodel_suffixes = ['viewmodel.', 'vm.']
+        if any(s in filename_lower for s in viewmodel_suffixes):
+            return 'viewmodels', 'suffix_pattern:viewmodel'
+
+        # Engines layer (business logic orchestration)
+        engine_patterns = [
+            '/engine/', '/engines/',
+            '/businesslogic/', '/business-logic/',
+            '/orchestration/'
+        ]
+        if any(p in path_lower for p in engine_patterns):
+            return 'engines', 'folder_pattern:engine'
+
+        engine_suffixes = ['engine.']
+        if any(s in filename_lower for s in engine_suffixes):
+            return 'engines', 'suffix_pattern:engine'
+
+        # Handlers layer (CQRS, events)
+        handler_patterns = [
+            '/handler/', '/handlers/',
+            '/commandhandlers/', '/command-handlers/',
+            '/eventhandlers/', '/event-handlers/',
+            '/queryhandlers/', '/query-handlers/'
+        ]
+        if any(p in path_lower for p in handler_patterns):
+            return 'handlers', 'folder_pattern:handler'
+
+        handler_suffixes = ['handler.', 'commandhandler.', 'queryhandler.', 'eventhandler.']
+        if any(s in filename_lower for s in handler_suffixes):
+            return 'handlers', 'suffix_pattern:handler'
+
+        # Processors layer
+        processor_patterns = [
+            '/processor/', '/processors/',
+            '/pipeline/', '/pipelines/'
+        ]
+        if any(p in path_lower for p in processor_patterns):
+            return 'processors', 'folder_pattern:processor'
+
+        processor_suffixes = ['processor.', 'pipeline.']
+        if any(s in filename_lower for s in processor_suffixes):
+            return 'processors', 'suffix_pattern:processor'
+
         # Presentation - universal patterns
         presentation_patterns = [
             '/view/', '/views/', '/ui/', '/components/',
             '/pages/', '/screens/', '/widgets/',
-            '/viewmodel/', '/viewmodels/', '/presenter/',
-            '/presenters/'
+            '/presenter/', '/presenters/'
         ]
         if any(p in path_lower for p in presentation_patterns):
             return 'presentation', 'folder_pattern:presentation'
@@ -344,14 +413,14 @@ class AILayerClassifier(LayerClassificationStrategy):
         # API - universal patterns
         api_patterns = [
             '/controller/', '/controllers/', '/api/',
-            '/routes/', '/handlers/', '/endpoints/',
+            '/routes/', '/endpoints/',
             '/rest/', '/graphql/'
         ]
         if any(p in path_lower for p in api_patterns):
             return 'api', 'folder_pattern:api'
 
         # API - filename patterns
-        api_suffixes = ['controller.', 'handler.', 'endpoint.']
+        api_suffixes = ['controller.', 'endpoint.']
         if any(s in filename_lower for s in api_suffixes):
             return 'api', 'suffix_pattern:api'
 
