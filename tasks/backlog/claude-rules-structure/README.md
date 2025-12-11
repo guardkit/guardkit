@@ -41,6 +41,7 @@ Implement Claude Code's 4-tier memory hierarchy with modular rules:
 | CRS-003 | CLI Flag --use-rules-structure | 3 | direct | 1-2 | ⏳ Backlog | wave3-1 |
 | CRS-004 | Path Pattern Inference | 3 | task-work | 3-4 | ⏳ Backlog | wave3-2 |
 | CRS-005 | template-create Documentation | 3 | direct | 0.5 | ✅ Complete | wave3-3 |
+| CRS-014 | Agent-Enhance Rules Support | 3 | task-review | 3-4 | ⏳ Backlog | wave3-4 |
 | CRS-006 | Refactor fastapi-python | 4 | task-work | 6-8 | ⏳ Backlog | wave4-1 |
 | CRS-007 | Refactor react-typescript | 4 | task-work | 4-6 | ⏳ Backlog | wave4-2 |
 | CRS-008 | Refactor nextjs-fullstack | 4 | task-work | 5-7 | ⏳ Backlog | wave4-3 |
@@ -50,7 +51,7 @@ Implement Claude Code's 4-tier memory hierarchy with modular rules:
 | CRS-012 | Update Root CLAUDE.md | 5 | direct | 3-4 | ⏳ Backlog | wave5-2 |
 | CRS-013 | Update Template READMEs | 5 | direct | 2-3 | ⏳ Backlog | wave5-3 |
 
-**Total Effort**: 40.5-57.5 hours (1/13 tasks complete)
+**Total Effort**: 43.5-61.5 hours (1/14 tasks complete)
 
 ## Implementation Modes
 
@@ -59,6 +60,10 @@ Use `/task-work TASK-CRS-XXX` for:
 - CRS-002: RulesStructureGenerator (core implementation)
 - CRS-004: Path Pattern Inference (complex logic)
 - CRS-006-009: Template refactoring (high impact)
+
+### task-review (Analysis/Decision)
+Use `/task-review TASK-CRS-XXX` for:
+- CRS-014: Agent-Enhance Rules Support (architectural review, may spawn implementation subtasks)
 
 ### direct (Direct Implementation)
 Simple changes that can be implemented directly:

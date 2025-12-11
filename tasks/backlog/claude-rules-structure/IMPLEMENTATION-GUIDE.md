@@ -90,16 +90,17 @@ pytest tests/lib/template_generator/test_orchestrator_split_claude_md.py -v -k s
 
 ## Wave 3: Integration
 
-**Duration**: 5-8 hours total
-**Parallel Opportunities**: HIGH (3 independent tasks)
+**Duration**: 8-12 hours total
+**Parallel Opportunities**: HIGH (4 independent tasks)
 
 ### Conductor Setup
 
 ```bash
-# Create 3 parallel workspaces
+# Create 4 parallel workspaces
 conductor create claude-rules-wave3-1  # CRS-003
 conductor create claude-rules-wave3-2  # CRS-004
 conductor create claude-rules-wave3-3  # CRS-005
+conductor create claude-rules-wave3-4  # CRS-014
 ```
 
 ### TASK-CRS-003: CLI Flag --use-rules-structure
@@ -146,6 +147,33 @@ conductor create claude-rules-wave3-3  # CRS-005
 - Document output structure
 - Add to flags reference
 - Update workflow phases
+
+### TASK-CRS-014: Agent-Enhance Rules Support
+
+**Method**: `/task-review` (architectural review)
+
+**Workspace**: `claude-rules-wave3-4`
+
+```bash
+/task-review TASK-CRS-014 --mode=architectural
+```
+
+**Review Scope**:
+1. Current agent-enhance output behavior (`agents/` directory)
+2. Required changes for rules structure (`rules/agents/` + `paths:` frontmatter)
+3. Path pattern inference for agents (coordinate with CRS-004)
+4. Progressive disclosure compatibility
+5. Backward compatibility approach
+
+**Key Questions**:
+- Auto-detect rules structure or require explicit flag?
+- How to infer `paths:` patterns from agent metadata?
+- Handle existing `agents/` vs new `rules/agents/`?
+
+**Expected Output**:
+- Analysis report with current vs required state
+- Design document for path inference
+- Implementation subtasks if complex (may spawn CRS-014.1, CRS-014.2, etc.)
 
 ---
 
@@ -281,11 +309,11 @@ conductor create claude-rules-wave5-3  # CRS-013
 ```
 Wave 1: 1-2 hours
 Wave 2: 4-6 hours
-Wave 3: 5-8 hours (sum of 3 tasks)
+Wave 3: 8-12 hours (sum of 4 tasks)
 Wave 4: 21-30 hours (sum of 5 tasks)
 Wave 5: 9-13 hours (sum of 3 tasks)
 ─────────────────────
-Total: 40-59 hours
+Total: 43-63 hours
 ```
 
 ### Parallel Path (With Conductor)
@@ -293,11 +321,11 @@ Total: 40-59 hours
 ```
 Wave 1: 1-2 hours (sequential)
 Wave 2: 4-6 hours (sequential)
-Wave 3: 3-4 hours (3 tasks in parallel, max duration)
+Wave 3: 3-4 hours (4 tasks in parallel, max duration)
 Wave 4: 6-8 hours (5 tasks in parallel, max duration)
 Wave 5: 4-6 hours (3 tasks in parallel, max duration)
 ─────────────────────
-Total: 18-26 hours (55% faster)
+Total: 18-26 hours (55-60% faster)
 ```
 
 ---
@@ -311,6 +339,14 @@ Total: 18-26 hours (55% faster)
 - Phase 4.5: Coverage enforcement (≥80%)
 - Phase 5: Code review
 - Phase 5.5: Plan audit
+
+### For `/task-review` Tasks (CRS-014)
+
+- Load context and analyze current implementation
+- Execute architectural review
+- Synthesize recommendations
+- Generate report with decision options
+- Human decision checkpoint ([A]ccept/[I]mplement/[R]evise/[C]ancel)
 
 ### For Direct Tasks (CRS-001, 003, 005, 010-013)
 
