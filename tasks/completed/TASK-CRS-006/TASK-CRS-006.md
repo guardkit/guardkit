@@ -1,10 +1,11 @@
 ---
 id: TASK-CRS-006
 title: Refactor fastapi-python Template to Rules Structure
-status: in_review
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
 updated: 2025-12-11T13:30:00Z
+completed: 2025-12-11T13:45:00Z
 priority: high
 tags: [template-refactor, fastapi-python, rules-structure]
 complexity: 6
@@ -14,6 +15,7 @@ implementation_mode: task-work
 conductor_workspace: claude-rules-wave4-1
 estimated_hours: 6-8
 actual_hours: 1.5
+completed_location: tasks/completed/TASK-CRS-006/
 dependencies:
   - TASK-CRS-002
   - TASK-CRS-003
