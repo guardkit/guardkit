@@ -30,6 +30,15 @@ class RuleFile:
     paths_filter: Optional[str] = None  # paths: frontmatter value
 
 
+@dataclass
+class ValidationIssue:
+    """Represents a validation issue found during template generation."""
+    level: str  # "warning" or "error"
+    file: str
+    message: str
+    suggestion: str = ""
+
+
 class RulesStructureGenerator:
     """
     Generate modular .claude/rules/ structure for Claude Code.
@@ -100,6 +109,41 @@ class RulesStructureGenerator:
             rules[f"rules/guidance/{agent_slug}.md"] = self._generate_guidance_rules(agent)
 
         return rules
+
+    def validate_guidance_sizes(self, rules_dir: Path) -> List[ValidationIssue]:
+        """
+        Validate guidance files stay under size threshold.
+
+        This ensures progressive disclosure benefits are maintained
+        by keeping guidance files slim (path-triggered hints only).
+
+        Args:
+            rules_dir: Path to .claude/rules/ directory
+
+        Returns:
+            List of validation issues (warnings for oversized files)
+        """
+        MAX_GUIDANCE_SIZE = 5 * 1024  # 5KB
+        issues = []
+
+        guidance_dir = rules_dir / "guidance"
+        if not guidance_dir.exists():
+            return issues
+
+        for file in guidance_dir.glob("*.md"):
+            size = file.stat().st_size
+            if size > MAX_GUIDANCE_SIZE:
+                issues.append(ValidationIssue(
+                    level="warning",
+                    file=str(file),
+                    message=f"Guidance file {file.name} exceeds 5KB ({size:,} bytes)",
+                    suggestion=(
+                        "Guidance files should be slim summaries (<3KB). "
+                        "Move detailed content to agents/{name}.md or agents/{name}-ext.md"
+                    )
+                ))
+
+        return issues
 
     def _generate_core_claudemd(self) -> str:
         """
