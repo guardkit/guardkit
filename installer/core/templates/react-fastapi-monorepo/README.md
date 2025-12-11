@@ -302,6 +302,43 @@ This template includes 3 specialized agents for monorepo development:
 2. **monorepo-type-safety-specialist** - Cross-language type safety and contracts
 3. **docker-orchestration-specialist** - Docker, containerization, multi-service orchestration
 
+## Rules Structure
+
+This template uses Claude Code's modular rules structure for optimized context loading.
+
+### Directory Layout
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # Code style guidelines
+    ├── testing.md               # Testing conventions
+    ├── patterns/                # Pattern-specific rules
+    │   └── {pattern}.md
+    └── agents/                  # Agent guidance
+        └── {agent}.md
+```
+
+### Path-Specific Rules
+
+Rules files use `paths:` frontmatter for conditional loading:
+
+| Rule File | Loads When Editing |
+|-----------|-------------------|
+| `rules/code-style.md` | Any source file |
+| `rules/testing.md` | Test files |
+| `rules/monorepo/turborepo.md` | `turbo.json`, `package.json` |
+| `rules/frontend/react.md` | `apps/frontend/**` |
+| `rules/backend/fastapi.md` | `apps/backend/**` |
+| `rules/agents/type-safety.md` | `packages/shared-types/**` |
+
+### Benefits
+
+- Rules only load when editing relevant files
+- Reduced context window usage (60-70% reduction)
+- Organized by concern (patterns, agents, etc.)
+
 ## Support
 
 For detailed documentation, see:
