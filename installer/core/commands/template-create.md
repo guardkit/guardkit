@@ -309,6 +309,12 @@ None - all options have defaults
                          Default: 10KB
                          Use for complex codebases that exceed default limit
                          Example: /template-create --claude-md-size-limit 50KB
+
+--use-rules-structure    Generate modular .claude/rules/ structure (experimental)
+                         Creates separate files for core, stack, quality, workflow, agents
+                         Alternative to single CLAUDE.md file (split or single)
+                         Default: false
+                         Example: /template-create --use-rules-structure
 ```
 
 ## AI-Native Codebase Analysis (Phase 1) - TASK-51B2
@@ -875,6 +881,38 @@ $ echo $?
 - **8-10 (Grade A/B+)**: Production ready - Exit code 0
 - **6-7.9 (Grade B/C)**: Needs improvement - Exit code 1
 - **<6 (Grade F)**: Not ready - Exit code 2
+
+### Modular Rules Structure (Experimental)
+```bash
+$ /template-create --use-rules-structure
+
+# Generates modular .claude/rules/ structure instead of single CLAUDE.md
+# Experimental feature for better organization and maintainability
+
+[... Q&A and generation ...]
+
+✅ Template Package Created Successfully!
+
+📁 Location: ~/.agentecflow/templates/my-template/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── .claude/
+  │   └── rules/
+  │       ├── core.md (8 KB) - Core principles and philosophy
+  │       ├── stack.md (12 KB) - Stack-specific guidance
+  │       ├── quality.md (6 KB) - Quality gates and standards
+  │       ├── workflow.md (10 KB) - Development workflows
+  │       └── agents.md (8 KB) - Agent integration
+  ├── templates/ (15 files)
+  └── agents/ (2 agents)
+
+📝 Next Steps:
+   guardkit init my-template
+
+⚠️  Note: Rules structure is experimental and may change in future versions
+```
 
 ### Basic Usage (Legacy Example)
 ```bash
