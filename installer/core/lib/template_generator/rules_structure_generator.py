@@ -72,7 +72,7 @@ class RulesStructureGenerator:
                 "rules/code-style.md": "---\npaths: **/*.py\n---\n...",
                 "rules/testing.md": "---\npaths: **/*.test.*\n---\n...",
                 "rules/patterns/repository.md": "...",
-                "rules/agents/api-specialist.md": "---\npaths: **/api/**\n---\n..."
+                "rules/guidance/api-specialist.md": "---\npaths: **/api/**\n---\n..."
             }
         """
         rules = {}
@@ -91,10 +91,10 @@ class RulesStructureGenerator:
             pattern_slug = self._slugify(pattern)
             rules[f"rules/patterns/{pattern_slug}.md"] = self._generate_pattern_rules(pattern)
 
-        # 5. Agent rules (one per agent, with path inference)
+        # 5. Agent guidance (one per agent, with path inference)
         for agent in self.agents:
             agent_slug = self._slugify(agent.name)
-            rules[f"rules/agents/{agent_slug}.md"] = self._generate_agent_rules(agent)
+            rules[f"rules/guidance/{agent_slug}.md"] = self._generate_guidance_rules(agent)
 
         return rules
 
@@ -143,7 +143,7 @@ work on relevant files.
 - **Code Style**: `.claude/rules/code-style.md`
 - **Testing**: `.claude/rules/testing.md`
 - **Patterns**: `.claude/rules/patterns/`
-- **Agents**: `.claude/rules/agents/`
+- **Guidance**: `.claude/rules/guidance/`
 
 ## Technology Stack
 
@@ -263,15 +263,15 @@ work on relevant files.
 """
         return content.strip()
 
-    def _generate_agent_rules(self, agent) -> str:
+    def _generate_guidance_rules(self, agent) -> str:
         """
-        Generate rules file for an agent with path inference.
+        Generate guidance file for an agent with path inference.
 
         Args:
             agent: Agent metadata object
 
         Returns:
-            Agent-specific rules content with paths: frontmatter
+            Agent-specific guidance content with paths: frontmatter
         """
         # Use PathPatternInferrer for intelligent path inference
         agent_technologies = getattr(agent, 'technologies', [])
