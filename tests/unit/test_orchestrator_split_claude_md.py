@@ -19,11 +19,11 @@ repo_root = PathlibPath(__file__).resolve().parent.parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-# Now import using importlib to avoid 'global' keyword issue
-import importlib
-_orchestrator_module = importlib.import_module('installer.core.commands.lib.template_create_orchestrator')
-TemplateCreateOrchestrator = _orchestrator_module.TemplateCreateOrchestrator
-OrchestrationConfig = _orchestrator_module.OrchestrationConfig
+# Now import using standard imports
+from installer.core.commands.lib.template_create_orchestrator import (
+    TemplateCreateOrchestrator,
+    OrchestrationConfig
+)
 
 
 # ===== Test Fixtures =====
@@ -154,7 +154,8 @@ def test_write_claude_md_split_creates_correct_structure(
     """Test that split output creates correct directory structure."""
 
     # Mock ClaudeMdGenerator.generate_split() to return mock output
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
         mock_generator.generate_split.return_value = mock_split_output
 
@@ -190,7 +191,8 @@ def test_split_output_size_reduction(
     """Test that split output achieves expected size reduction."""
 
     # Mock ClaudeMdGenerator.generate_split()
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
         mock_generator.generate_split.return_value = mock_split_output
 
@@ -221,7 +223,8 @@ def test_single_file_mode_backward_compatible(
     mock_claude_md = Mock()
 
     # Mock ClaudeMdGenerator.save()
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
 
         # Execute
@@ -247,11 +250,12 @@ def test_split_write_handles_permission_error(
     """Test that split write handles permission errors gracefully."""
 
     # Mock safe_write_file to fail
-    with patch.object(_orchestrator_module, 'safe_write_file') as mock_write:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'safe_write_file') as mock_write:
         mock_write.return_value = (False, "Permission denied")
 
         # Mock ClaudeMdGenerator to avoid exception
-        with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+        with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
             mock_generator = MockGenerator.return_value
             mock_generator.generate_split.return_value = MockSplitOutput(
                 core="test",
@@ -273,7 +277,8 @@ def test_split_write_handles_generator_exception(
     """Test that split write handles ClaudeMdGenerator exceptions."""
 
     # Mock ClaudeMdGenerator.generate_split() to raise exception
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
         mock_generator.generate_split.side_effect = Exception("Generator failed")
 
@@ -337,7 +342,8 @@ def test_config_split_enabled_routes_to_split_method(
     assert orchestrator.config.split_claude_md is True
 
     # Mock ClaudeMdGenerator.generate_split()
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
         mock_generator.generate_split.return_value = mock_split_output
 
@@ -359,7 +365,8 @@ def test_config_split_disabled_routes_to_single_method(
     assert orchestrator_single.config.split_claude_md is False
 
     # Mock ClaudeMdGenerator.save()
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         # Execute single method
         success = orchestrator_single._write_claude_md_single(Mock(), temp_output_dir)
 
@@ -388,7 +395,8 @@ def test_split_content_matches_source(
     )
 
     # Mock ClaudeMdGenerator.generate_split()
-    with patch.object(_orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
+    from installer.core.commands.lib import template_create_orchestrator as orchestrator_module
+    with patch.object(orchestrator_module, 'ClaudeMdGenerator') as MockGenerator:
         mock_generator = MockGenerator.return_value
         mock_generator.generate_split.return_value = mock_output
 

@@ -15,17 +15,14 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import using importlib to bypass 'global' keyword issue
-import importlib
-models_module = importlib.import_module('installer.core.lib.template_generator.models')
-validator_module = importlib.import_module('installer.core.lib.template_generator.completeness_validator')
-
-CodeTemplate = models_module.CodeTemplate
-TemplateCollection = models_module.TemplateCollection
-CompletenessIssue = models_module.CompletenessIssue
-TemplateRecommendation = models_module.TemplateRecommendation
-ValidationReport = models_module.ValidationReport
-CompletenessValidator = validator_module.CompletenessValidator
+from installer.core.lib.template_generator.models import (
+    CodeTemplate,
+    TemplateCollection,
+    CompletenessIssue,
+    TemplateRecommendation,
+    ValidationReport
+)
+from installer.core.lib.template_generator.completeness_validator import CompletenessValidator
 
 
 class TestCompletenessValidator:

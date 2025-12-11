@@ -12,15 +12,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import using importlib to bypass 'global' keyword issue
-import importlib
-report_generator_module = importlib.import_module('installer.core.lib.template_generator.report_generator')
-extended_validator_module = importlib.import_module('installer.core.lib.template_generator.extended_validator')
-
-# Extract classes
-ValidationReportGenerator = report_generator_module.ValidationReportGenerator
-ExtendedValidationReport = extended_validator_module.ExtendedValidationReport
-SpotCheckResult = extended_validator_module.SpotCheckResult
+from installer.core.lib.template_generator.report_generator import ValidationReportGenerator
+from installer.core.lib.template_generator.extended_validator import (
+    ExtendedValidationReport,
+    SpotCheckResult
+)
 
 
 # ===== Fixtures =====

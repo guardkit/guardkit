@@ -13,20 +13,18 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import sys
-import importlib
 
 # Add repository root to path
 repo_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(repo_root))
 
-# Import using importlib to handle 'global' keyword in module path
-applier_module = importlib.import_module('installer.core.lib.agent_enhancement.applier')
-EnhancementApplier = applier_module.EnhancementApplier
-
-models_module = importlib.import_module('installer.core.lib.agent_enhancement.models')
-SplitContent = models_module.SplitContent
-AgentEnhancement = models_module.AgentEnhancement
-EnhancementResult = models_module.EnhancementResult
+# Import using standard imports
+from installer.core.lib.agent_enhancement.applier import EnhancementApplier
+from installer.core.lib.agent_enhancement.models import (
+    SplitContent,
+    AgentEnhancement,
+    EnhancementResult
+)
 
 
 class TestProgressiveDisclosureSplit:

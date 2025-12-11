@@ -32,9 +32,7 @@ from agent_validator import AgentValidator, ValidationConfig
 from agent_validator.formatters import ConsoleFormatter, JSONFormatter, MinimalFormatter
 
 # TASK-FIX-7C3D: Import file I/O utilities
-import importlib
-_file_io_module = importlib.import_module('installer.core.lib.utils.file_io')
-safe_write_file = _file_io_module.safe_write_file
+from installer.core.lib.utils.file_io import safe_write_file
 
 
 def main():

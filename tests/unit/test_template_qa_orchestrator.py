@@ -9,18 +9,17 @@ TASK-9038: Create /template-qa Command for Optional Customization
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_orchestrator_module = importlib.import_module('installer.core.lib.template_qa_orchestrator')
-TemplateQAOrchestrator = _orchestrator_module.TemplateQAOrchestrator
-QAOrchestrationConfig = _orchestrator_module.QAOrchestrationConfig
-QAOrchestrationResult = _orchestrator_module.QAOrchestrationResult
-run_template_qa = _orchestrator_module.run_template_qa
-
-_config_handler_module = importlib.import_module('installer.core.lib.template_config_handler')
-TemplateConfigHandler = _config_handler_module.TemplateConfigHandler
-ConfigValidationError = _config_handler_module.ConfigValidationError
+from installer.core.lib.template_qa_orchestrator import (
+    TemplateQAOrchestrator,
+    QAOrchestrationConfig,
+    QAOrchestrationResult,
+    run_template_qa
+)
+from installer.core.lib.template_config_handler import (
+    TemplateConfigHandler,
+    ConfigValidationError
+)
 
 
 @pytest.fixture

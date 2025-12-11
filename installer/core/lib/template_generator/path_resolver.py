@@ -19,16 +19,9 @@ instead of being organized by architectural layer.
 from pathlib import Path
 from typing import Optional, Protocol, List, Dict
 from collections import defaultdict
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-_layer_classifier_module = importlib.import_module('installer.core.lib.template_generator.layer_classifier')
-
-ExampleFile = _models_module.ExampleFile
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-
-LayerClassificationOrchestrator = _layer_classifier_module.LayerClassificationOrchestrator
+from installer.core.lib.codebase_analyzer.models import ExampleFile, CodebaseAnalysis
+from .layer_classifier import LayerClassificationOrchestrator
 
 
 # Pattern mappings: filename suffix → template subdirectory

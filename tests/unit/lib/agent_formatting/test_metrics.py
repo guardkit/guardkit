@@ -5,21 +5,19 @@ Unit tests for agent_formatting.metrics module
 import pytest
 from pathlib import Path
 import tempfile
-import importlib
 
-# Use importlib to avoid 'global' keyword syntax issue in Python 3.14+
-_parser = importlib.import_module('installer.core.lib.agent_formatting.parser')
-parse_agent = _parser.parse_agent
-
-_metrics = importlib.import_module('installer.core.lib.agent_formatting.metrics')
-check_time_to_first_example = _metrics.check_time_to_first_example
-calculate_example_density = _metrics.calculate_example_density
-check_boundary_sections = _metrics.check_boundary_sections
-check_commands_first = _metrics.check_commands_first
-calculate_code_to_text_ratio = _metrics.calculate_code_to_text_ratio
-calculate_specificity_score = _metrics.calculate_specificity_score
-calculate_metrics = _metrics.calculate_metrics
-QualityMetrics = _metrics.QualityMetrics
+# Import from agent_formatting
+from installer.core.lib.agent_formatting.parser import parse_agent
+from installer.core.lib.agent_formatting.metrics import (
+    check_time_to_first_example,
+    calculate_example_density,
+    check_boundary_sections,
+    check_commands_first,
+    calculate_code_to_text_ratio,
+    calculate_specificity_score,
+    calculate_metrics,
+    QualityMetrics
+)
 
 
 @pytest.fixture

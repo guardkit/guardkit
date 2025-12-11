@@ -14,10 +14,7 @@ import difflib
 import re
 
 # TASK-FIX-7C3D: Import file I/O utilities
-import importlib
-_file_io_module = importlib.import_module('installer.core.lib.utils.file_io')
-safe_read_file = _file_io_module.safe_read_file
-safe_write_file = _file_io_module.safe_write_file
+from installer.core.lib.utils.file_io import safe_read_file, safe_write_file
 
 # TASK-UX-6581: Import shared boundary utilities
 # Handle both package import and direct import

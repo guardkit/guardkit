@@ -8,14 +8,10 @@ TASK-040: Phase 1 - Completeness Validation Layer
 """
 
 import re
-import importlib
 from typing import Dict, Set, Optional, List
 from pathlib import Path
 
-# Import models using importlib to bypass 'global' keyword issue
-_models = importlib.import_module('installer.core.lib.template_generator.models')
-CodeTemplate = _models.CodeTemplate
-TemplateCollection = _models.TemplateCollection
+from .models import CodeTemplate, TemplateCollection
 
 
 # CRUD Operation Patterns (case-insensitive)

@@ -6,11 +6,9 @@ Tests YAML frontmatter formatting and markdown body generation.
 
 import pytest
 import yaml
-import importlib
 
-# Import from 'global' directory using importlib (global is a Python keyword)
-_markdown_formatter = importlib.import_module('installer.core.lib.agent_generator.markdown_formatter')
-format_agent_markdown = _markdown_formatter.format_agent_markdown
+# Import from agent_generator directory
+from installer.core.lib.agent_generator.markdown_formatter import format_agent_markdown
 
 
 def test_format_agent_markdown_basic():

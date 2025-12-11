@@ -20,12 +20,10 @@ except ImportError:
     # Fall back to absolute imports
     from template_config_handler import TemplateConfigHandler, ConfigValidationError
 
-# Import Q&A session using importlib to avoid 'global' keyword issue
-import importlib
-
-_template_qa_module = importlib.import_module('installer.core.commands.lib.template_qa_session')
-TemplateQASession = _template_qa_module.TemplateQASession
-GreenfieldAnswers = _template_qa_module.GreenfieldAnswers
+from installer.core.commands.lib.template_qa_session import (
+    TemplateQASession,
+    GreenfieldAnswers
+)
 
 
 @dataclass

@@ -16,14 +16,9 @@ import logging
 import subprocess
 from pathlib import Path
 from typing import Optional, Protocol, Dict, Any, List
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-_exclusions_module = importlib.import_module('installer.core.lib.codebase_analyzer.exclusions')
-
-AgentInvocationError = _models_module.AgentInvocationError
-get_source_files = _exclusions_module.get_source_files
+from .models import AgentInvocationError
+from .exclusions import get_source_files
 
 logger = logging.getLogger(__name__)
 

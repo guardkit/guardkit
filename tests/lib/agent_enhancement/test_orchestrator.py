@@ -15,16 +15,16 @@ from dataclasses import dataclass
 
 # Import the orchestrator
 import sys
-import importlib
 
 # Add repository root to path
 repo_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(repo_root))
 
-# Import using importlib to handle 'global' keyword
-orchestrator_module = importlib.import_module('installer.core.lib.agent_enhancement.orchestrator')
-AgentEnhanceOrchestrator = orchestrator_module.AgentEnhanceOrchestrator
-OrchestrationState = orchestrator_module.OrchestrationState
+# Import using standard imports
+from installer.core.lib.agent_enhancement.orchestrator import (
+    AgentEnhanceOrchestrator,
+    OrchestrationState
+)
 
 
 @dataclass

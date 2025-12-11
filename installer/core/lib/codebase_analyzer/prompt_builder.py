@@ -12,13 +12,8 @@ Following architectural review recommendations:
 
 from pathlib import Path
 from typing import Dict, List, Optional
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_exclusions_module = importlib.import_module('installer.core.lib.codebase_analyzer.exclusions')
-
-DEFAULT_EXCLUSIONS = _exclusions_module.DEFAULT_EXCLUSIONS
-should_exclude_path = _exclusions_module.should_exclude_path
+from .exclusions import DEFAULT_EXCLUSIONS, should_exclude_path
 
 
 class PromptBuilder:

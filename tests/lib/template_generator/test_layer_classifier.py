@@ -9,29 +9,25 @@ TASK-FIX-LAYER-CLASS: Add AI-powered layer classification with generic fallback
 """
 
 import pytest
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_layer_classifier_module = importlib.import_module('installer.core.lib.template_generator.layer_classifier')
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-
-# Import classes from layer_classifier
-ClassificationResult = _layer_classifier_module.ClassificationResult
-LayerClassificationStrategy = _layer_classifier_module.LayerClassificationStrategy
-AILayerClassifier = _layer_classifier_module.AILayerClassifier  # NEW: AI-first classifier
-JavaScriptLayerClassifier = _layer_classifier_module.JavaScriptLayerClassifier
-GenericLayerClassifier = _layer_classifier_module.GenericLayerClassifier
-LayerClassificationOrchestrator = _layer_classifier_module.LayerClassificationOrchestrator
-
-# Import models
-ExampleFile = _models_module.ExampleFile
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-ArchitectureInfo = _models_module.ArchitectureInfo
-LayerInfo = _models_module.LayerInfo
-TechnologyInfo = _models_module.TechnologyInfo
-QualityInfo = _models_module.QualityInfo
-ConfidenceScore = _models_module.ConfidenceScore
-ConfidenceLevel = _models_module.ConfidenceLevel
+from installer.core.lib.template_generator.layer_classifier import (
+    ClassificationResult,
+    LayerClassificationStrategy,
+    AILayerClassifier,
+    JavaScriptLayerClassifier,
+    GenericLayerClassifier,
+    LayerClassificationOrchestrator
+)
+from installer.core.lib.codebase_analyzer.models import (
+    ExampleFile,
+    CodebaseAnalysis,
+    ArchitectureInfo,
+    LayerInfo,
+    TechnologyInfo,
+    QualityInfo,
+    ConfidenceScore,
+    ConfidenceLevel
+)
 
 
 # Fixtures

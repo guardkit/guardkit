@@ -21,14 +21,9 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 import re
-import importlib
 import os
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-
-ExampleFile = _models_module.ExampleFile
-CodebaseAnalysis = _models_module.CodebaseAnalysis
+from installer.core.lib.codebase_analyzer.models import ExampleFile, CodebaseAnalysis
 
 
 @dataclass

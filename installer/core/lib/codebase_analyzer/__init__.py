@@ -29,26 +29,20 @@ Usage:
     print(f"Quality Score: {analysis.quality.overall_score}")
 """
 
-# Import using importlib to avoid 'global' keyword issue
-import importlib
-
-_ai_analyzer_module = importlib.import_module('installer.core.lib.codebase_analyzer.ai_analyzer')
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-_serializer_module = importlib.import_module('installer.core.lib.codebase_analyzer.serializer')
-
-CodebaseAnalyzer = _ai_analyzer_module.CodebaseAnalyzer
-analyze_codebase = _ai_analyzer_module.analyze_codebase
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-TechnologyInfo = _models_module.TechnologyInfo
-ArchitectureInfo = _models_module.ArchitectureInfo
-QualityInfo = _models_module.QualityInfo
-ExampleFile = _models_module.ExampleFile
-LayerInfo = _models_module.LayerInfo
-ConfidenceScore = _models_module.ConfidenceScore
-ConfidenceLevel = _models_module.ConfidenceLevel
-ParseError = _models_module.ParseError
-AnalysisError = _models_module.AnalysisError
-AnalysisSerializer = _serializer_module.AnalysisSerializer
+from .ai_analyzer import CodebaseAnalyzer, analyze_codebase
+from .models import (
+    CodebaseAnalysis,
+    TechnologyInfo,
+    ArchitectureInfo,
+    QualityInfo,
+    ExampleFile,
+    LayerInfo,
+    ConfidenceScore,
+    ConfidenceLevel,
+    ParseError,
+    AnalysisError
+)
+from .serializer import AnalysisSerializer
 
 __all__ = [
     "CodebaseAnalyzer",

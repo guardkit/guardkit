@@ -5,17 +5,16 @@ Unit tests for agent_formatting.parser module
 import pytest
 from pathlib import Path
 import tempfile
-import importlib
 
-# Use importlib to avoid 'global' keyword syntax issue in Python 3.14+
-_parser = importlib.import_module('installer.core.lib.agent_formatting.parser')
-extract_frontmatter = _parser.extract_frontmatter
-find_sections = _parser.find_sections
-find_code_blocks = _parser.find_code_blocks
-parse_agent = _parser.parse_agent
-AgentStructure = _parser.AgentStructure
-Section = _parser.Section
-CodeBlock = _parser.CodeBlock
+from installer.core.lib.agent_formatting.parser import (
+    extract_frontmatter,
+    find_sections,
+    find_code_blocks,
+    parse_agent,
+    AgentStructure,
+    Section,
+    CodeBlock
+)
 
 
 class TestExtractFrontmatter:

@@ -18,15 +18,12 @@ Example:
         save_agent_to_template(agent, template_dir)
 """
 
-import importlib
-
-# Import using importlib to avoid 'global' keyword issue
-_agent_orchestration_module = importlib.import_module('installer.core.lib.agent_orchestration.agent_orchestration')
-
-AgentOrchestrator = _agent_orchestration_module.AgentOrchestrator
-AgentRecommendation = _agent_orchestration_module.AgentRecommendation
-DiscoveredAgent = _agent_orchestration_module.DiscoveredAgent
-get_agents_for_template = _agent_orchestration_module.get_agents_for_template
+from .agent_orchestration import (
+    AgentOrchestrator,
+    AgentRecommendation,
+    DiscoveredAgent,
+    get_agents_for_template
+)
 
 __all__ = [
     'AgentOrchestrator',

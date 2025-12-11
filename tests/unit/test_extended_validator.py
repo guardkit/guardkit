@@ -13,18 +13,16 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import using importlib to bypass 'global' keyword issue
-import importlib
-extended_validator_module = importlib.import_module('installer.core.lib.template_generator.extended_validator')
-models_module = importlib.import_module('installer.core.lib.template_generator.models')
-
-# Extract classes
-ExtendedValidator = extended_validator_module.ExtendedValidator
-ExtendedValidationReport = extended_validator_module.ExtendedValidationReport
-SpotCheckResult = extended_validator_module.SpotCheckResult
-TemplateCollection = models_module.TemplateCollection
-CodeTemplate = models_module.CodeTemplate
-ValidationReport = models_module.ValidationReport
+from installer.core.lib.template_generator.extended_validator import (
+    ExtendedValidator,
+    ExtendedValidationReport,
+    SpotCheckResult
+)
+from installer.core.lib.template_generator.models import (
+    TemplateCollection,
+    CodeTemplate,
+    ValidationReport
+)
 
 
 # ===== Fixtures =====

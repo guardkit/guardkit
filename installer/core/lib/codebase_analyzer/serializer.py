@@ -14,13 +14,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-AnalysisError = _models_module.AnalysisError
+from .models import CodebaseAnalysis, AnalysisError
 
 
 class AnalysisSerializer:

@@ -9,12 +9,8 @@ TASK-043: Implement Extended Validation Flag (Phase 1)
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-import importlib
 
-# Import using importlib to bypass 'global' keyword issue
-_extended_validator_module = importlib.import_module('installer.core.lib.template_generator.extended_validator')
-ExtendedValidationReport = _extended_validator_module.ExtendedValidationReport
-SpotCheckResult = _extended_validator_module.SpotCheckResult
+from .extended_validator import ExtendedValidationReport, SpotCheckResult
 
 
 class ValidationReportGenerator:

@@ -6,25 +6,23 @@ based on architectural layers and filename patterns.
 """
 
 import pytest
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_path_resolver_module = importlib.import_module('installer.core.lib.template_generator.path_resolver')
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-
-LayerClassificationStrategy = _path_resolver_module.LayerClassificationStrategy
-PatternClassificationStrategy = _path_resolver_module.PatternClassificationStrategy
-TemplatePathResolver = _path_resolver_module.TemplatePathResolver
-PATTERN_MAPPINGS = _path_resolver_module.PATTERN_MAPPINGS
-
-ExampleFile = _models_module.ExampleFile
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-ArchitectureInfo = _models_module.ArchitectureInfo
-LayerInfo = _models_module.LayerInfo
-TechnologyInfo = _models_module.TechnologyInfo
-QualityInfo = _models_module.QualityInfo
-ConfidenceScore = _models_module.ConfidenceScore
-ConfidenceLevel = _models_module.ConfidenceLevel
+from installer.core.lib.template_generator.path_resolver import (
+    LayerClassificationStrategy,
+    PatternClassificationStrategy,
+    TemplatePathResolver,
+    PATTERN_MAPPINGS
+)
+from installer.core.lib.codebase_analyzer.models import (
+    ExampleFile,
+    CodebaseAnalysis,
+    ArchitectureInfo,
+    LayerInfo,
+    TechnologyInfo,
+    QualityInfo,
+    ConfidenceScore,
+    ConfidenceLevel
+)
 
 
 # Fixtures

@@ -14,13 +14,8 @@ from typing import List, Dict, Optional, Tuple, Any
 import re
 import random
 from collections import defaultdict
-import importlib
 
-# Import using importlib to bypass 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.template_generator.models')
-TemplateCollection = _models_module.TemplateCollection
-CodeTemplate = _models_module.CodeTemplate
-ValidationReport = _models_module.ValidationReport
+from .models import TemplateCollection, CodeTemplate, ValidationReport
 
 
 @dataclass

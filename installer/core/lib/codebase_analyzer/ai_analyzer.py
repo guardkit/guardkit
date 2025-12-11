@@ -17,25 +17,13 @@ from __future__ import annotations  # Enable Python 3.10+ type syntax in Python 
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
-import importlib
+import importlib  # Keep for lazy load at line ~138
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-_agent_invoker_module = importlib.import_module('installer.core.lib.codebase_analyzer.agent_invoker')
-_prompt_builder_module = importlib.import_module('installer.core.lib.codebase_analyzer.prompt_builder')
-_response_parser_module = importlib.import_module('installer.core.lib.codebase_analyzer.response_parser')
-_serializer_module = importlib.import_module('installer.core.lib.codebase_analyzer.serializer')
-
-CodebaseAnalysis = _models_module.CodebaseAnalysis
-AgentInvocationError = _models_module.AgentInvocationError
-ParseError = _models_module.ParseError
-ArchitecturalReviewerInvoker = _agent_invoker_module.ArchitecturalReviewerInvoker
-HeuristicAnalyzer = _agent_invoker_module.HeuristicAnalyzer
-PromptBuilder = _prompt_builder_module.PromptBuilder
-FileCollector = _prompt_builder_module.FileCollector
-ResponseParser = _response_parser_module.ResponseParser
-FallbackResponseBuilder = _response_parser_module.FallbackResponseBuilder
-AnalysisSerializer = _serializer_module.AnalysisSerializer
+from .models import CodebaseAnalysis, AgentInvocationError, ParseError
+from .agent_invoker import ArchitecturalReviewerInvoker, HeuristicAnalyzer
+from .prompt_builder import PromptBuilder, FileCollector
+from .response_parser import ResponseParser, FallbackResponseBuilder
+from .serializer import AnalysisSerializer
 
 
 logger = logging.getLogger(__name__)

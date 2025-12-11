@@ -18,13 +18,8 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 from collections import defaultdict
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_exclusions_module = importlib.import_module('installer.core.lib.codebase_analyzer.exclusions')
-
-DEFAULT_EXCLUSIONS = _exclusions_module.DEFAULT_EXCLUSIONS
-get_source_files = _exclusions_module.get_source_files
+from .exclusions import DEFAULT_EXCLUSIONS, get_source_files
 
 logger = logging.getLogger(__name__)
 

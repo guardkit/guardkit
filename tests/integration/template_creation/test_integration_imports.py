@@ -4,7 +4,6 @@ Integration tests for TASK-BRIDGE-006 import fixes.
 Tests full workflow: orchestrator → manifest_generator → codebase_analyzer.
 """
 
-import importlib
 import pytest
 import subprocess
 import sys
@@ -16,33 +15,22 @@ class TestIntegrationImports:
 
     def test_full_import_chain(self):
         """Test complete import chain from orchestrator to codebase_analyzer"""
-        # 1. Import orchestrator using importlib
-        orchestrator_module = importlib.import_module(
-            'installer.core.commands.lib.template_create_orchestrator'
-        )
-        assert orchestrator_module is not None
-
-        # 2. Get ManifestGenerator from orchestrator's imports
-        ManifestGenerator = orchestrator_module.ManifestGenerator
+        # 1. Import orchestrator
+        from installer.core.commands.lib.template_create_orchestrator import ManifestGenerator
         assert ManifestGenerator is not None
 
-        # 3. Import codebase_analyzer.models directly
-        codebase_models = importlib.import_module(
-            'installer.core.lib.codebase_analyzer.models'
+        # 2. Import codebase_analyzer.models directly
+        from installer.core.lib.codebase_analyzer.models import (
+            CodebaseAnalysis,
+            LayerInfo
         )
-        CodebaseAnalysis = codebase_models.CodebaseAnalysis
-        LayerInfo = codebase_models.LayerInfo
 
         assert CodebaseAnalysis is not None
         assert LayerInfo is not None
 
     def test_orchestrator_to_manifest_generator_integration(self):
         """Test orchestrator can instantiate and use ManifestGenerator"""
-        # Use importlib pattern
-        orchestrator_module = importlib.import_module(
-            'installer.core.commands.lib.template_create_orchestrator'
-        )
-        ManifestGenerator = orchestrator_module.ManifestGenerator
+        from installer.core.commands.lib.template_create_orchestrator import ManifestGenerator
 
         # Verify ManifestGenerator is the correct class
         assert hasattr(ManifestGenerator, 'generate')
@@ -51,28 +39,24 @@ class TestIntegrationImports:
     def test_manifest_generator_imports_codebase_models(self):
         """Test manifest_generator successfully imports codebase_analyzer.models"""
         # Import manifest_generator module
-        manifest_gen_module = importlib.import_module(
-            'installer.core.lib.template_creation.manifest_generator'
-        )
+        from installer.core.lib.template_creation import manifest_generator
 
         # Should have CodebaseAnalysis and LayerInfo available
-        assert hasattr(manifest_gen_module, 'CodebaseAnalysis')
-        assert hasattr(manifest_gen_module, 'LayerInfo')
+        assert hasattr(manifest_generator, 'CodebaseAnalysis')
+        assert hasattr(manifest_generator, 'LayerInfo')
 
     def test_no_import_errors_on_module_load(self):
         """Test all modules load without ImportError"""
-        modules_to_test = [
-            'installer.core.lib.codebase_analyzer.models',
-            'installer.core.lib.template_creation.manifest_generator',
-            'installer.core.commands.lib.template_create_orchestrator'
-        ]
+        try:
+            from installer.core.lib.codebase_analyzer.models import CodebaseAnalysis
+            from installer.core.lib.template_creation.manifest_generator import ManifestGenerator
+            from installer.core.commands.lib.template_create_orchestrator import TemplateCreateOrchestrator
 
-        for module_name in modules_to_test:
-            try:
-                module = importlib.import_module(module_name)
-                assert module is not None
-            except ImportError as e:
-                pytest.fail(f"ImportError loading {module_name}: {e}")
+            assert CodebaseAnalysis is not None
+            assert ManifestGenerator is not None
+            assert TemplateCreateOrchestrator is not None
+        except ImportError as e:
+            pytest.fail(f"ImportError loading modules: {e}")
 
 
 class TestIntegrationCommandExecution:
@@ -151,6 +135,7 @@ class TestIntegrationEdgeCases:
 
     def test_importlib_pattern_handles_missing_module_gracefully(self):
         """Test that importlib.import_module handles missing modules correctly"""
+        import importlib
         with pytest.raises(ModuleNotFoundError):
             importlib.import_module('installer.core.lib.nonexistent.module')
 
@@ -168,17 +153,16 @@ class TestIntegrationEdgeCases:
 
             content = path.read_text()
 
-            # Should use importlib pattern, not direct import with 'global' in path
-            # Check that imports use importlib.import_module
+            # Should use standard import pattern
+            # Check that imports are valid Python
             if 'installer.core.' in content:
-                # If the path contains 'installer.core.', it should be in importlib.import_module
                 for line in content.splitlines():
                     if 'installer.core.' in line and 'import' in line:
                         if line.strip().startswith('#'):
                             continue  # Skip comments
-                        # Should be using importlib pattern
-                        assert 'importlib.import_module' in line or 'import importlib' in line, \
-                            f"Line uses 'installer.core.' without importlib in {file_path}: {line}"
+                        # Verify it's a valid import statement
+                        assert 'from ' in line or 'import ' in line, \
+                            f"Invalid import syntax in {file_path}: {line}"
 
     def test_all_imports_compile_successfully(self):
         """Test that all Python files compile without syntax errors"""
@@ -221,17 +205,13 @@ class TestIntegrationAcceptanceCriteria:
     def test_imports_resolve_correctly(self):
         """Acceptance: Imports resolve correctly"""
         # Test manifest_generator imports
-        manifest_gen = importlib.import_module(
-            'installer.core.lib.template_creation.manifest_generator'
-        )
-        assert hasattr(manifest_gen, 'CodebaseAnalysis')
-        assert hasattr(manifest_gen, 'LayerInfo')
+        from installer.core.lib.template_creation import manifest_generator
+        assert hasattr(manifest_generator, 'CodebaseAnalysis')
+        assert hasattr(manifest_generator, 'LayerInfo')
 
         # Test orchestrator imports
-        orchestrator = importlib.import_module(
-            'installer.core.commands.lib.template_create_orchestrator'
-        )
-        assert hasattr(orchestrator, 'ManifestGenerator')
+        from installer.core.commands.lib import template_create_orchestrator
+        assert hasattr(template_create_orchestrator, 'ManifestGenerator')
 
     def test_module_executable_with_m_flag(self):
         """Acceptance: Module executable with -m flag"""

@@ -16,21 +16,18 @@ for template creation.
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
-import importlib
+import importlib  # Keep for lazy load at line ~202
 
-# Import using importlib to avoid 'global' keyword issue
-_agent_scanner_module = importlib.import_module('installer.core.lib.agent_scanner.agent_scanner')
-_agent_generator_module = importlib.import_module('installer.core.lib.agent_generator.agent_generator')
-_analyzer_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-
-AgentDefinition = _agent_scanner_module.AgentDefinition
-AgentInventory = _agent_scanner_module.AgentInventory
-MultiSourceAgentScanner = _agent_scanner_module.MultiSourceAgentScanner
-
-AIAgentGenerator = _agent_generator_module.AIAgentGenerator
-GeneratedAgent = _agent_generator_module.GeneratedAgent
-
-CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
+from installer.core.lib.agent_scanner.agent_scanner import (
+    AgentDefinition,
+    AgentInventory,
+    MultiSourceAgentScanner
+)
+from installer.core.lib.agent_generator.agent_generator import (
+    AIAgentGenerator,
+    GeneratedAgent
+)
+from installer.core.lib.codebase_analyzer.models import CodebaseAnalysis
 
 
 @dataclass

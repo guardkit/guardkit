@@ -14,15 +14,8 @@ import pytest
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-# Import using importlib to bypass 'global' keyword issue
-import importlib
-models_module = importlib.import_module('installer.core.lib.template_generator.models')
-pattern_matcher_module = importlib.import_module('installer.core.lib.template_generator.pattern_matcher')
-
-CodeTemplate = models_module.CodeTemplate
-TemplateCollection = models_module.TemplateCollection
-CRUDPatternMatcher = pattern_matcher_module.CRUDPatternMatcher
-OperationExtractor = pattern_matcher_module.OperationExtractor
+from installer.core.lib.template_generator.models import CodeTemplate, TemplateCollection
+from installer.core.lib.template_generator.pattern_matcher import CRUDPatternMatcher, OperationExtractor
 
 
 class TestCRUDPatternMatcher:

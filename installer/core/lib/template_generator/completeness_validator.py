@@ -11,19 +11,15 @@ TASK-040: Phase 1 - Completeness Validation Layer
 from datetime import datetime
 from typing import List, Dict, Set, Optional
 import logging
-import importlib
 
-# Import modules using importlib to bypass 'global' keyword issue
-_models = importlib.import_module('installer.core.lib.template_generator.models')
-_pattern_matcher = importlib.import_module('installer.core.lib.template_generator.pattern_matcher')
-
-CodeTemplate = _models.CodeTemplate
-TemplateCollection = _models.TemplateCollection
-CompletenessIssue = _models.CompletenessIssue
-TemplateRecommendation = _models.TemplateRecommendation
-ValidationReport = _models.ValidationReport
-CRUDPatternMatcher = _pattern_matcher.CRUDPatternMatcher
-OperationExtractor = _pattern_matcher.OperationExtractor
+from .models import (
+    CodeTemplate,
+    TemplateCollection,
+    CompletenessIssue,
+    TemplateRecommendation,
+    ValidationReport
+)
+from .pattern_matcher import CRUDPatternMatcher, OperationExtractor, CRUD_PATTERNS
 
 
 logger = logging.getLogger(__name__)
@@ -440,7 +436,7 @@ class CompletenessValidator:
         actual_prefix = None
         if ref_operation:
             # Get CRUD_PATTERNS to find the actual prefix used
-            patterns_for_operation = _pattern_matcher.CRUD_PATTERNS.get(ref_operation, [ref_operation])
+            patterns_for_operation = CRUD_PATTERNS.get(ref_operation, [ref_operation])
             for pattern in patterns_for_operation:
                 if base_name.startswith(pattern):
                     actual_prefix = pattern

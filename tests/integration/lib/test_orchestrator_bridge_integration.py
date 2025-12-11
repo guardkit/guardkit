@@ -7,7 +7,6 @@ Tests the checkpoint-resume pattern for agent invocation in template creation.
 import json
 import pytest
 import sys
-import importlib
 from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 from dataclasses import dataclass
@@ -20,15 +19,13 @@ if str(lib_path) not in sys.path:
 if str(commands_lib_path) not in sys.path:
     sys.path.insert(0, str(commands_lib_path))
 
-# Import modules using importlib to avoid 'global' keyword issue
-_orchestrator_module = importlib.import_module('installer.core.commands.lib.template_create_orchestrator')
-_state_manager_module = importlib.import_module('installer.core.lib.agent_bridge.state_manager')
-_invoker_module = importlib.import_module('installer.core.lib.agent_bridge.invoker')
-
-TemplateCreateOrchestrator = _orchestrator_module.TemplateCreateOrchestrator
-OrchestrationConfig = _orchestrator_module.OrchestrationConfig
-StateManager = _state_manager_module.StateManager
-AgentBridgeInvoker = _invoker_module.AgentBridgeInvoker
+# Import modules using standard imports
+from installer.core.commands.lib.template_create_orchestrator import (
+    TemplateCreateOrchestrator,
+    OrchestrationConfig
+)
+from installer.core.lib.agent_bridge.state_manager import StateManager
+from installer.core.lib.agent_bridge.invoker import AgentBridgeInvoker
 
 
 @pytest.fixture
@@ -209,7 +206,7 @@ def test_config_resume_parameter_can_be_set():
 
 def test_convenience_function_accepts_resume_parameter():
     """Test that run_template_create accepts resume parameter"""
-    run_template_create = _orchestrator_module.run_template_create
+    from installer.core.commands.lib.template_create_orchestrator import run_template_create
 
     # Get function signature
     import inspect

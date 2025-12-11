@@ -31,36 +31,26 @@ Usage:
     result = orchestrator.classify(example_file, analysis)
 """
 
-import importlib
-
-# Import using importlib to avoid 'global' keyword issue
-_template_generator_module = importlib.import_module('installer.core.lib.template_generator.template_generator')
-_claude_md_generator_module = importlib.import_module('installer.core.lib.template_generator.claude_md_generator')
-_models_module = importlib.import_module('installer.core.lib.template_generator.models')
-_ai_client_module = importlib.import_module('installer.core.lib.template_generator.ai_client')
-_layer_classifier_module = importlib.import_module('installer.core.lib.template_generator.layer_classifier')
-
-TemplateGenerator = _template_generator_module.TemplateGenerator
-ClaudeMdGenerator = _claude_md_generator_module.ClaudeMdGenerator
-
-CodeTemplate = _models_module.CodeTemplate
-TemplateCollection = _models_module.TemplateCollection
-ValidationResult = _models_module.ValidationResult
-GenerationError = _models_module.GenerationError
-ValidationError = _models_module.ValidationError
-PlaceholderExtractionError = _models_module.PlaceholderExtractionError
-TemplateClaude = _models_module.TemplateClaude
-AgentMetadata = _models_module.AgentMetadata
-
-AIClient = _ai_client_module.AIClient
-MockAIClient = _ai_client_module.MockAIClient
-
-# Layer classification exports (TASK-FIX-40B4)
-LayerClassificationOrchestrator = _layer_classifier_module.LayerClassificationOrchestrator
-JavaScriptLayerClassifier = _layer_classifier_module.JavaScriptLayerClassifier
-GenericLayerClassifier = _layer_classifier_module.GenericLayerClassifier
-ClassificationResult = _layer_classifier_module.ClassificationResult
-LayerClassificationStrategy = _layer_classifier_module.LayerClassificationStrategy
+from .template_generator import TemplateGenerator
+from .claude_md_generator import ClaudeMdGenerator
+from .models import (
+    CodeTemplate,
+    TemplateCollection,
+    ValidationResult,
+    GenerationError,
+    ValidationError,
+    PlaceholderExtractionError,
+    TemplateClaude,
+    AgentMetadata
+)
+from .ai_client import AIClient, MockAIClient
+from .layer_classifier import (
+    LayerClassificationOrchestrator,
+    JavaScriptLayerClassifier,
+    GenericLayerClassifier,
+    ClassificationResult,
+    LayerClassificationStrategy
+)
 
 __all__ = [
     "TemplateGenerator",

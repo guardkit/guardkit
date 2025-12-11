@@ -11,9 +11,7 @@ import re
 import yaml
 
 # TASK-FIX-7C3D: Import file I/O utilities
-import importlib
-_file_io_module = importlib.import_module('installer.core.lib.utils.file_io')
-safe_read_file = _file_io_module.safe_read_file
+from installer.core.lib.utils.file_io import safe_read_file
 
 
 @dataclass

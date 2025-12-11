@@ -10,30 +10,17 @@ TASK-IMP-TC-F8A3: Enhanced placeholder extraction using centralized patterns.
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 import re
-import importlib
 
-# Import using importlib to avoid 'global' keyword issue
-_analyzer_models_module = importlib.import_module('installer.core.lib.codebase_analyzer.models')
-_ai_client_module = importlib.import_module('installer.core.lib.template_generator.ai_client')
-_models_module = importlib.import_module('installer.core.lib.template_generator.models')
-_path_resolver_module = importlib.import_module('installer.core.lib.template_generator.path_resolver')
-_placeholder_module = importlib.import_module('installer.core.lib.template_generator.placeholder_patterns')
-
-CodebaseAnalysis = _analyzer_models_module.CodebaseAnalysis
-ExampleFile = _analyzer_models_module.ExampleFile
-
-AIClient = _ai_client_module.AIClient
-
-CodeTemplate = _models_module.CodeTemplate
-TemplateCollection = _models_module.TemplateCollection
-ValidationResult = _models_module.ValidationResult
-PlaceholderExtractionError = _models_module.PlaceholderExtractionError
-
-TemplatePathResolver = _path_resolver_module.TemplatePathResolver
-
-# TASK-IMP-TC-F8A3: Import placeholder extraction
-PlaceholderExtractor = _placeholder_module.PlaceholderExtractor
-PlaceholderResult = _placeholder_module.PlaceholderResult
+from installer.core.lib.codebase_analyzer.models import CodebaseAnalysis, ExampleFile
+from .ai_client import AIClient
+from .models import (
+    CodeTemplate,
+    TemplateCollection,
+    ValidationResult,
+    PlaceholderExtractionError
+)
+from .path_resolver import TemplatePathResolver
+from .placeholder_patterns import PlaceholderExtractor, PlaceholderResult
 
 
 class TemplateGenerator:

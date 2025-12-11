@@ -5,17 +5,10 @@ Validates TemplateSettings for correctness and completeness.
 """
 
 from typing import List, Optional
-import importlib
 
 from pydantic import ValidationError as PydanticValidationError
 
-# Import using importlib to avoid 'global' keyword issue
-_models_module = importlib.import_module('installer.core.lib.settings_generator.models')
-
-TemplateSettings = _models_module.TemplateSettings
-CaseStyle = _models_module.CaseStyle
-TestLocation = _models_module.TestLocation
-ValidationError = _models_module.ValidationError
+from .models import TemplateSettings, CaseStyle, TestLocation, ValidationError
 
 
 class ValidationResult:

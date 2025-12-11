@@ -45,9 +45,7 @@ from agent_formatting import (
 )
 
 # TASK-FIX-7C3D: Import file I/O utilities
-import importlib
-_file_io_module = importlib.import_module('installer.core.lib.utils.file_io')
-safe_write_file = _file_io_module.safe_write_file
+from installer.core.lib.utils.file_io import safe_write_file
 
 
 def resolve_paths(path_pattern: str) -> list[Path]:
