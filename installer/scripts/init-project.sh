@@ -249,6 +249,13 @@ copy_template_files() {
         fi
     fi
 
+    # Copy .claude/rules/ directory (for Claude Code modular rules)
+    if [ -d "$template_dir/.claude/rules" ]; then
+        mkdir -p .claude/rules
+        cp -r "$template_dir/.claude/rules/"* .claude/rules/ 2>/dev/null || true
+        print_success "Copied rules structure for Claude Code"
+    fi
+
     # Copy other template-specific files
     for file in "$template_dir"/*.md "$template_dir"/*.json; do
         if [ -f "$file" ] && [ "$(basename "$file")" != "CLAUDE.md" ]; then
