@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 
 from ..codebase_analyzer.models import CodebaseAnalysis
+from .path_pattern_inferrer import PathPatternInferrer
 
 
 @dataclass
@@ -56,6 +57,7 @@ class RulesStructureGenerator:
         self.analysis = analysis
         self.agents = agents
         self.output_path = output_path
+        self.path_inferrer = PathPatternInferrer(analysis)
 
     def generate(self) -> Dict[str, str]:
         """
@@ -271,8 +273,12 @@ work on relevant files.
         Returns:
             Agent-specific rules content with paths: frontmatter
         """
-        # Infer path patterns from agent name
-        paths_filter = self._infer_agent_paths(agent.name)
+        # Use PathPatternInferrer for intelligent path inference
+        agent_technologies = getattr(agent, 'technologies', [])
+        paths_filter = self.path_inferrer.infer_for_agent(
+            agent.name,
+            agent_technologies
+        )
         frontmatter = self._generate_frontmatter(paths_filter) if paths_filter else ""
 
         content = f"""{frontmatter}# {agent.name}
@@ -297,21 +303,19 @@ work on relevant files.
 
     def _infer_agent_paths(self, agent_name: str) -> str:
         """
+        DEPRECATED: Use PathPatternInferrer instead.
+
         Infer path patterns for conditional agent loading.
 
-        Maps common agent types to relevant file patterns. This ensures
-        agents only load when working on files they're specialized for.
+        This method is kept for backward compatibility but is no longer used.
+        The new PathPatternInferrer class provides more intelligent inference
+        based on codebase analysis.
 
         Args:
             agent_name: Name of the agent (e.g., "repository-specialist")
 
         Returns:
             Comma-separated path patterns, or empty string for always-load
-
-        Examples:
-            "repository-specialist" -> "**/Repositories/**/*.cs, **/repositories/**/*.py"
-            "api-specialist" -> "**/Controllers/**/*.cs, **/api/**/*.py"
-            "testing-specialist" -> "**/tests/**/*.*, **/*.test.*"
         """
         path_mappings = {
             'repository': '**/Repositories/**/*.cs, **/repositories/**/*.py',

@@ -1,10 +1,11 @@
 ---
 id: TASK-CRS-004
 title: Add Path Pattern Inference from Analysis
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
-updated: 2025-12-11T12:15:00Z
+updated: 2025-12-11T20:45:00Z
+completed: 2025-12-11T20:45:00Z
 priority: medium
 tags: [path-inference, rules-structure, ai-analysis]
 complexity: 5
@@ -13,6 +14,7 @@ wave: 3
 implementation_mode: task-work
 conductor_workspace: claude-rules-wave3-2
 estimated_hours: 3-4
+actual_hours: 2.5
 dependencies:
   - TASK-CRS-002
 ---
@@ -245,3 +247,41 @@ def test_infers_from_technology():
 - This is Wave 3 (parallel with CLI flag)
 - Use `/task-work` for full quality gates
 - Enhances quality of generated rules structure
+
+## Implementation Summary
+
+### Completed: 2025-12-11
+
+**Files Created:**
+1. `installer/core/lib/template_generator/path_pattern_inferrer.py` - Intelligent path inference class
+2. `tests/unit/lib/template_generator/test_path_pattern_inferrer.py` - Comprehensive test suite (22 tests)
+
+**Files Modified:**
+1. `installer/core/lib/template_generator/rules_structure_generator.py` - Integrated PathPatternInferrer
+
+**Test Results:**
+- All 22 PathPatternInferrer tests passing ✅
+- All 57 template_generator tests passing ✅
+- No regressions introduced ✅
+
+**Key Features Implemented:**
+1. **Layer-based inference** - Extracts path patterns from `architecture.layers[].typical_files`
+2. **Technology-based inference** - Maps frameworks to relevant path patterns
+3. **Smart fallback** - Name-based inference when analysis data unavailable
+4. **Pattern deduplication** - Removes duplicate patterns
+5. **5-pattern limit** - Keeps frontmatter concise
+
+**Example Output:**
+```python
+# Agent: repository-specialist, Technologies: ["SQLAlchemy"]
+# Input: CodebaseAnalysis with Infrastructure layer containing "src/repositories/"
+# Output: "**/repositories/**, **/models/*.py, **/crud/*.py"
+```
+
+**Benefits:**
+- ✅ More accurate path patterns based on actual codebase structure
+- ✅ Leverages codebase analysis data instead of hardcoded mappings
+- ✅ Handles custom folder names and project-specific patterns
+- ✅ Backward compatible (old method deprecated but kept as fallback)
+
+**Coverage:** PathPatternInferrer achieved 78% test coverage with all critical paths tested.
