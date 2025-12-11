@@ -1907,6 +1907,23 @@ Enhance the {agent_name} agent with template-specific content:
                 self._print_success_line(f".claude/{rel_path} ({self._file_size(file_path)})")
                 logger.info(f"Created: {file_path}")
 
+            # Validate guidance file sizes (TASK-GA-002)
+            rules_dir = claude_dir / "rules"
+            validation_issues = generator.validate_guidance_sizes(rules_dir)
+
+            if validation_issues:
+                self._print_info("\n  Guidance Size Validation:")
+                for issue in validation_issues:
+                    if issue.level == "warning":
+                        self._print_warning(f"⚠️  Warning: {issue.message}")
+                        if issue.suggestion:
+                            self._print_info(f"   Suggestion: {issue.suggestion}")
+                    # Note: Currently only warnings are generated, but handling errors for future extensibility
+                    elif issue.level == "error":
+                        self._print_error(f"❌  Error: {issue.message}")
+                        if issue.suggestion:
+                            self._print_info(f"   Suggestion: {issue.suggestion}")
+
             return True
 
         except Exception as e:

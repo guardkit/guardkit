@@ -1,10 +1,11 @@
 ---
 id: TASK-GA-002
 title: Add size validation for guidance files
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T20:00:00Z
-updated: 2025-12-11T20:00:00Z
+updated: 2025-12-11T22:30:00Z
+completed: 2025-12-11T22:30:00Z
 priority: medium
 tags: [validation, rules-structure, guidance, template-validation]
 complexity: 3
@@ -13,6 +14,10 @@ related_to: [TASK-GA-001]
 implementation_mode: task-work
 conductor_workspace: guidance-architecture-wave1-2
 wave: 1
+completed_location: tasks/completed/TASK-GA-002/
+organized_files:
+  - TASK-GA-002.md
+  - completion-report.md
 ---
 
 # Task: Add Size Validation for Guidance Files
