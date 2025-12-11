@@ -1,10 +1,11 @@
 ---
 id: TASK-CRS-012
 title: Update Root CLAUDE.md for Rules Structure
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
 updated: 2025-12-11T12:15:00Z
+completed: 2025-12-11T12:30:00Z
 priority: medium
 tags: [documentation, claude-md, rules-structure]
 complexity: 4
@@ -154,14 +155,14 @@ Add mention of rules structure as alternative:
 
 ## Acceptance Criteria
 
-- [ ] Rules Structure section added
-- [ ] Structure overview with directory tree
-- [ ] Command examples for generation
-- [ ] Path-specific loading explained
-- [ ] Benefits listed
-- [ ] Link to detailed guide
-- [ ] Progressive Disclosure section updated
-- [ ] Template Creation section updated
+- [x] Rules Structure section added
+- [x] Structure overview with directory tree
+- [x] Command examples for generation
+- [x] Path-specific loading explained
+- [x] Benefits listed
+- [x] Link to detailed guide
+- [x] Progressive Disclosure section updated
+- [x] Template Creation section updated
 
 ## Notes
 

@@ -930,6 +930,13 @@ Each template demonstrates:
 - ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
 - ✅ High quality standards (all score 8+/10)
 
+### Output Options
+
+| Flag | Output | Use Case |
+|------|--------|----------|
+| (default) | CLAUDE.md + ext files | Most templates |
+| `--use-rules-structure` | rules/ directory | Large templates, path-specific needs |
+
 ### For Production: Use `/template-create`
 
 ```bash
@@ -938,7 +945,13 @@ guardkit init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
-/template-create  # Creates agents + enhancement tasks by default
+
+# Default output (progressive disclosure)
+/template-create
+
+# With rules structure (experimental)
+/template-create --use-rules-structure
+
 guardkit init your-custom-template
 ```
 
@@ -975,6 +988,23 @@ guardkit init your-custom-template
 ## Progressive Disclosure
 
 GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
+
+### Two Approaches
+
+1. **Split Files** (Default)
+   - Core `{name}.md` always loaded
+   - Extended `{name}-ext.md` loaded on-demand
+   - 55-60% token reduction
+
+2. **Rules Structure** (Optional)
+   - Modular `.claude/rules/` directory
+   - Path-specific conditional loading
+   - 60-70% token reduction
+   - Use with `--use-rules-structure` flag
+
+**When to Choose:**
+- Use split files for simpler projects
+- Use rules structure for complex, multi-technology templates
 
 ### How It Works
 
@@ -1024,6 +1054,67 @@ When creating templates with `/template-create`:
 - Use `--no-split` flag for single-file output (not recommended)
 
 See [Progressive Disclosure Guide](docs/guides/progressive-disclosure.md) for details.
+
+## Claude Code Rules Structure
+
+GuardKit templates support Claude Code's modular rules structure for optimized context loading.
+
+### When to Use
+
+| Scenario | Recommendation |
+|----------|---------------|
+| Simple templates (<15KB) | Single CLAUDE.md with split |
+| Complex templates (>15KB) | Rules structure |
+| Path-specific patterns | Rules structure |
+| Universal rules only | Single CLAUDE.md |
+
+### Structure Overview
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # paths: **/*.{ext}
+    ├── testing.md               # paths: **/*.test.*
+    ├── patterns/
+    │   └── {pattern}.md
+    └── agents/
+        └── {agent}.md           # paths: **/relevant/**
+```
+
+### Generating Rules Structure
+
+```bash
+# Generate with rules structure
+/template-create --use-rules-structure
+
+# Default (single CLAUDE.md with progressive disclosure)
+/template-create
+```
+
+### Path-Specific Loading
+
+Rules files can include `paths:` frontmatter for conditional loading:
+
+```markdown
+---
+paths: src/api/**/*.ts, **/router*.py
+---
+
+# API Development Rules
+...
+```
+
+Rules without `paths:` frontmatter load unconditionally.
+
+### Benefits
+
+- **60-70% context reduction** - Rules load only when relevant
+- **Better organization** - Related rules grouped in subdirectories
+- **Conditional agents** - Agent guidance loads for relevant files only
+- **Recursive discovery** - Subdirectories automatically scanned
+
+**See**: [Rules Structure Guide](docs/guides/rules-structure-guide.md)
 
 ## Installation & Setup
 
