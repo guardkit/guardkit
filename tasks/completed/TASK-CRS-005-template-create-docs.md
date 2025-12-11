@@ -1,10 +1,11 @@
 ---
 id: TASK-CRS-005
 title: Update template-create Documentation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
-updated: 2025-12-11T12:15:00Z
+updated: 2025-12-11T16:45:00Z
+completed: 2025-12-11T16:45:00Z
 priority: medium
 tags: [documentation, template-create, rules-structure]
 complexity: 2
@@ -13,6 +14,7 @@ wave: 3
 implementation_mode: direct
 conductor_workspace: claude-rules-wave3-3
 estimated_hours: 1-2
+actual_hours: 0.5
 dependencies:
   - TASK-CRS-003
 ---
@@ -126,16 +128,64 @@ Phase 6: CLAUDE.md Generation (TASK-007)
 
 ## Acceptance Criteria
 
-- [ ] Usage examples include `--use-rules-structure`
-- [ ] Output structure documented with directory tree
-- [ ] Path frontmatter syntax explained
-- [ ] Benefits listed (context reduction, organization)
-- [ ] When-to-use guidance provided
-- [ ] Workflow phase updated
-- [ ] Flag added to reference table
+- [x] Usage examples include `--use-rules-structure`
+- [x] Output structure documented with directory tree
+- [x] Path frontmatter syntax explained
+- [x] Benefits listed (context reduction, organization)
+- [x] When-to-use guidance provided
+- [x] Workflow phase updated
+- [x] Flag added to reference table
 
 ## Notes
 
 - This is Wave 3 (parallel with CLI flag)
 - Direct implementation (documentation only)
 - Keep experimental label until Wave 4 complete
+
+## Implementation Summary
+
+Successfully updated the `/template-create` command documentation to support the new rules structure feature:
+
+### Changes Made
+
+1. **Usage Section** (lines 39-46)
+   - Added 3 usage examples demonstrating `--use-rules-structure` flag
+   - Shows standalone, combined with validation, and with custom name
+
+2. **Rules Structure Output Section** (lines 236-281)
+   - Comprehensive documentation of `.claude/rules/` directory structure
+   - Visual directory tree showing organization
+   - Benefits section highlighting 60-70% context reduction
+   - Path frontmatter syntax explanation with example
+   - When-to-use guidance for different use cases
+
+3. **Workflow Phases** (lines 124-129)
+   - Updated Phase 6 to include optional rules structure generation
+   - Shows nested structure of generated files
+   - Marked as [OPTIONAL] to indicate conditional behavior
+
+4. **Command Options** (lines 369-383)
+   - Added `--use-rules-structure` flag with detailed description
+   - Includes default value, benefits, and use cases
+   - Maintains experimental label as requested
+
+### Files Modified
+
+- `installer/core/commands/template-create.md` (+79 lines)
+
+### Verification
+
+All acceptance criteria met:
+- ✅ Usage examples added (3 variations)
+- ✅ Directory tree documented
+- ✅ Path frontmatter explained with example
+- ✅ Benefits clearly listed
+- ✅ When-to-use guidance provided
+- ✅ Phase 6 workflow updated
+- ✅ Flag added to options section
+
+### Git Commit
+
+```
+aa46008 Update template-create documentation with rules structure support
+```

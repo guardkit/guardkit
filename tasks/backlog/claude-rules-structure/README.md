@@ -34,23 +34,23 @@ Implement Claude Code's 4-tier memory hierarchy with modular rules:
 
 ## Subtasks Summary
 
-| ID | Title | Wave | Mode | Hours | Workspace |
-|----|-------|------|------|-------|-----------|
-| CRS-001 | Increase Size Limit to 25KB | 1 | direct | 1-2 | wave1-1 |
-| CRS-002 | RulesStructureGenerator Class | 2 | task-work | 4-6 | wave2-1 |
-| CRS-003 | CLI Flag --use-rules-structure | 3 | direct | 1-2 | wave3-1 |
-| CRS-004 | Path Pattern Inference | 3 | task-work | 3-4 | wave3-2 |
-| CRS-005 | template-create Documentation | 3 | direct | 1-2 | wave3-3 |
-| CRS-006 | Refactor fastapi-python | 4 | task-work | 6-8 | wave4-1 |
-| CRS-007 | Refactor react-typescript | 4 | task-work | 4-6 | wave4-2 |
-| CRS-008 | Refactor nextjs-fullstack | 4 | task-work | 5-7 | wave4-3 |
-| CRS-009 | Refactor react-fastapi-monorepo | 4 | task-work | 5-7 | wave4-4 |
-| CRS-010 | Refactor default | 4 | direct | 1-2 | wave4-5 |
-| CRS-011 | Quick-Start Guide | 5 | direct | 4-6 | wave5-1 |
-| CRS-012 | Update Root CLAUDE.md | 5 | direct | 3-4 | wave5-2 |
-| CRS-013 | Update Template READMEs | 5 | direct | 2-3 | wave5-3 |
+| ID | Title | Wave | Mode | Hours | Status | Workspace |
+|----|-------|------|------|-------|--------|-----------|
+| CRS-001 | Increase Size Limit to 25KB | 1 | direct | 1-2 | ⏳ Backlog | wave1-1 |
+| CRS-002 | RulesStructureGenerator Class | 2 | task-work | 4-6 | ⏳ Backlog | wave2-1 |
+| CRS-003 | CLI Flag --use-rules-structure | 3 | direct | 1-2 | ⏳ Backlog | wave3-1 |
+| CRS-004 | Path Pattern Inference | 3 | task-work | 3-4 | ⏳ Backlog | wave3-2 |
+| CRS-005 | template-create Documentation | 3 | direct | 0.5 | ✅ Complete | wave3-3 |
+| CRS-006 | Refactor fastapi-python | 4 | task-work | 6-8 | ⏳ Backlog | wave4-1 |
+| CRS-007 | Refactor react-typescript | 4 | task-work | 4-6 | ⏳ Backlog | wave4-2 |
+| CRS-008 | Refactor nextjs-fullstack | 4 | task-work | 5-7 | ⏳ Backlog | wave4-3 |
+| CRS-009 | Refactor react-fastapi-monorepo | 4 | task-work | 5-7 | ⏳ Backlog | wave4-4 |
+| CRS-010 | Refactor default | 4 | direct | 1-2 | ⏳ Backlog | wave4-5 |
+| CRS-011 | Quick-Start Guide | 5 | direct | 4-6 | ⏳ Backlog | wave5-1 |
+| CRS-012 | Update Root CLAUDE.md | 5 | direct | 3-4 | ⏳ Backlog | wave5-2 |
+| CRS-013 | Update Template READMEs | 5 | direct | 2-3 | ⏳ Backlog | wave5-3 |
 
-**Total Effort**: 41-58 hours
+**Total Effort**: 40.5-57.5 hours (1/13 tasks complete)
 
 ## Implementation Modes
 

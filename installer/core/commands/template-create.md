@@ -36,6 +36,15 @@ Automate template creation from brownfield (existing) codebases by:
 /template-create --output-location repo
 /template-create -o repo  # Short form
 
+# Generate rules structure (experimental)
+/template-create --use-rules-structure
+
+# Combined with validation
+/template-create --use-rules-structure --validate
+
+# Custom name with rules structure
+/template-create --name my-template --use-rules-structure
+
 # Analyze specific codebase path
 /template-create --path /path/to/codebase
 
@@ -111,7 +120,13 @@ Phase 6: CLAUDE.md Generation (TASK-007)
 ├─ Template documentation
 ├─ Usage instructions
 ├─ Best practices
-└─ Agent integration guide
+├─ Agent integration guide
+└─ **[OPTIONAL] Rules structure generation (if --use-rules-structure)**
+    ├─ Core CLAUDE.md (~5KB)
+    ├─ rules/code-style.md
+    ├─ rules/testing.md
+    ├─ rules/patterns/*.md
+    └─ rules/agents/*.md (with paths: frontmatter)
 
 Phase 7: Package Assembly
 ├─ Directory structure creation
@@ -224,6 +239,53 @@ Produces single CLAUDE.md and single agent files without progressive disclosure 
 - Faster AI responses from reduced initial context
 - Same comprehensive content available on-demand
 
+### Rules Structure Output (--use-rules-structure)
+
+When using `--use-rules-structure`, the command generates a modular `.claude/rules/` directory:
+
+```
+~/.agentecflow/templates/{template_name}/
+├── .claude/
+│   ├── CLAUDE.md                    # Core documentation (~5KB)
+│   └── rules/
+│       ├── code-style.md            # paths: **/*.{ext}
+│       ├── testing.md               # paths: **/*.test.*, **/tests/**
+│       ├── patterns/
+│       │   ├── repository.md
+│       │   └── service-layer.md
+│       └── agents/
+│           ├── specialist-a.md      # paths: **/relevant/**
+│           └── specialist-b.md
+├── templates/
+└── agents/                          # (legacy location, also generated)
+```
+
+**Benefits:**
+- Path-specific loading: Rules only load when touching relevant files
+- Reduced context window: 60-70% reduction vs single file
+- Better organization: Related rules grouped in subdirectories
+- Conditional agents: Agent guidance loads only when relevant
+
+**Path Frontmatter:**
+
+Rules files can include `paths:` frontmatter for conditional loading:
+
+```markdown
+---
+paths: src/api/**/*.ts, **/router*.py
+---
+
+# API Development Rules
+
+These rules apply only when editing API-related files.
+```
+
+**When to Use:**
+- Large templates (>20KB CLAUDE.md)
+- Complex multi-technology stacks
+- Templates with many specialized agents
+- Performance-critical workflows
+
 ## Command Options
 
 ### Required Options
@@ -303,6 +365,22 @@ None - all options have defaults
 
 --verbose                Show detailed progress and debugging info
                          Default: false
+
+--use-rules-structure    Generate modular .claude/rules/ structure (experimental)
+                         Default: false
+
+                         When enabled:
+                         - Creates .claude/rules/ directory
+                         - Generates rule files with path frontmatter
+                         - Groups patterns and agents in subdirectories
+                         - Core CLAUDE.md reduced to ~5KB
+                         - 60-70% context window reduction
+
+                         Use for:
+                         - Large templates (>20KB CLAUDE.md)
+                         - Complex multi-technology stacks
+                         - Templates with many specialized agents
+                         - Performance-critical workflows
 
 --claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
                          Format: NUMBER[KB|MB] (e.g., 15KB, 50KB, 1MB)
