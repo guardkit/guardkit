@@ -1,16 +1,19 @@
 ---
 id: TASK-CRS-014.3
 title: Rename nextjs-fullstack rules/agents/ to rules/guidance/
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T15:00:00Z
-updated: 2025-12-11T15:00:00Z
+updated: 2025-12-11T16:58:00Z
+completed: 2025-12-11T16:58:00Z
 priority: high
 tags: [rules-structure, naming, nextjs-fullstack]
 complexity: 1
 parent_task: TASK-CRS-014
 implementation_mode: direct
 estimated_hours: 0.25
+completed_location: tasks/completed/TASK-CRS-014.3/
+organized_files: [TASK-CRS-014.3.md]
 ---
 
 # Task: Rename nextjs-fullstack rules/agents/ to rules/guidance/
@@ -40,10 +43,10 @@ Check and update any references in:
 
 ## Acceptance Criteria
 
-- [ ] Directory renamed from `rules/agents/` to `rules/guidance/`
-- [ ] All internal references updated
-- [ ] Links to `agents/` directory (full specialist docs) preserved
-- [ ] Template still works correctly with rules loading
+- [x] Directory renamed from `rules/agents/` to `rules/guidance/`
+- [x] All internal references updated
+- [x] Links to `agents/` directory (full specialist docs) preserved
+- [x] Template still works correctly with rules loading
 
 ## Verification
 

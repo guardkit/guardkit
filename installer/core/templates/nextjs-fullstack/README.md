@@ -248,7 +248,7 @@ Rules files use `paths:` frontmatter for conditional loading:
 | `rules/server/components.md` | `**/app/**/*.tsx` |
 | `rules/server/actions.md` | `**/actions/*.ts` |
 | `rules/database/prisma.md` | `**/prisma/**` |
-| `rules/agents/server-components.md` | App Router files |
+| `rules/guidance/server-components.md` | App Router files |
 
 ### Benefits
 
