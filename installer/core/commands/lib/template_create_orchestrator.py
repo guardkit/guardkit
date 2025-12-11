@@ -122,7 +122,7 @@ class OrchestrationConfig:
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
     create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     split_claude_md: bool = True  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    claude_md_size_limit: int = 10 * 1024  # TASK-ENH-SIZE-LIMIT: Default 10KB in bytes
+    claude_md_size_limit: int = 25 * 1024  # TASK-CRS-001: Default 25KB (increased from 10KB)
 
 
 @dataclass

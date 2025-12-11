@@ -406,19 +406,19 @@ class TemplateSplitOutput(BaseModel):
         core = self.get_core_size()
         return ((total - core) / total) * 100.0
 
-    def validate_size_constraints(self, max_core_size: int = 10 * 1024) -> tuple[bool, Optional[str]]:
+    def validate_size_constraints(self, max_core_size: int = 25 * 1024) -> tuple[bool, Optional[str]]:
         """
         Validate that core content doesn't exceed size limit.
 
         Args:
-            max_core_size: Maximum allowed size in bytes (default 10KB, configurable via --claude-md-size-limit)
+            max_core_size: Maximum allowed size in bytes (default 25KB, configurable via --claude-md-size-limit)
 
         Returns:
             Tuple of (is_valid, error_message)
 
         Note:
-            TASK-FIX-19EA: Removed hard-coded 15KB limit. Now uses only the
-            configurable max_core_size parameter passed from OrchestrationConfig.
+            TASK-CRS-001: Increased from 10KB to 25KB based on real-world template analysis.
+            Complex templates (.NET MAUI, React + FastAPI) typically need 15-25KB.
         """
         core_size = self.get_core_size()
 
