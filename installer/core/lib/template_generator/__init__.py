@@ -33,6 +33,7 @@ Usage:
 
 from .template_generator import TemplateGenerator
 from .claude_md_generator import ClaudeMdGenerator
+from .rules_structure_generator import RulesStructureGenerator, RuleFile
 from .models import (
     CodeTemplate,
     TemplateCollection,
@@ -55,6 +56,8 @@ from .layer_classifier import (
 __all__ = [
     "TemplateGenerator",
     "ClaudeMdGenerator",
+    "RulesStructureGenerator",
+    "RuleFile",
     "CodeTemplate",
     "TemplateCollection",
     "ValidationResult",
