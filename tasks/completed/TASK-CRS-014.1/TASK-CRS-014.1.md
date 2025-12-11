@@ -1,7 +1,7 @@
 ---
 id: TASK-CRS-014.1
 title: Rename rules/agents/ to rules/guidance/ in RulesStructureGenerator
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T15:00:00Z
 updated: 2025-12-11T15:00:00Z
@@ -11,6 +11,8 @@ complexity: 2
 parent_task: TASK-CRS-014
 implementation_mode: direct
 estimated_hours: 0.5
+completed: 2025-12-11T14:42:11Z
+completed_location: tasks/completed/TASK-CRS-014.1/
 ---
 
 # Task: Rename rules/agents/ to rules/guidance/ in RulesStructureGenerator
