@@ -60,6 +60,10 @@ guardkit init your-custom-template
 
 ## Guides
 
+### 🏗️ [Template System Architecture](guides/template-system-architecture.md)
+
+**Start here** - Comprehensive guide to how templates work: CLAUDE.md, agents, manifest.json, settings.json, and progressive disclosure.
+
 ### 📖 [Template Philosophy](guides/template-philosophy.md)
 
 Why these 5 templates? Understanding the learning resource approach.

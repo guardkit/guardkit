@@ -34,7 +34,7 @@ Learn the fundamentals: workflow, complexity evaluation, quality gates, and task
 Design-first workflow, UX integration, iterative refinement, and plan modification.
 
 ### 🎨 [Templates](templates.md)
-React, Python, .NET templates and customization guide.
+React, Python, .NET templates and customization guide. See also [Template System Architecture](guides/template-system-architecture.md) for how templates work internally.
 
 ### 🤖 [Agent System](agents.md)
 AI agent discovery, enhancement workflow, and boundary sections.

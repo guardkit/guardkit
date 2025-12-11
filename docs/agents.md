@@ -123,6 +123,10 @@ All enhanced agents include **ALWAYS/NEVER/ASK boundary sections** (GitHub best 
 
 ## Guides
 
+### 🏗️ [Template System Architecture](guides/template-system-architecture.md)
+
+How agents fit into the broader template system: CLAUDE.md, manifest.json, settings.json, and progressive disclosure.
+
 ### 📖 [Agent Discovery Guide](guides/agent-discovery-guide.md)
 
 Comprehensive documentation on how agent discovery works.

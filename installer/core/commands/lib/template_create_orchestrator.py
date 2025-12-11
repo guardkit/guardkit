@@ -2674,7 +2674,8 @@ def run_template_create(
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
     verbose: bool = False,
-    interactive: Optional[bool] = None  # None = auto-detect TTY, False = non-interactive
+    interactive: Optional[bool] = None,  # None = auto-detect TTY, False = non-interactive
+    claude_md_size_limit: Optional[int] = None  # TASK-FIX-19EA: Size limit in bytes
 ) -> OrchestrationResult:
     """
     Convenience function to run template creation.
@@ -2695,6 +2696,7 @@ def run_template_create(
         split_claude_md: Enable progressive disclosure with split CLAUDE.md (TASK-PD-006)
         verbose: Show detailed progress
         interactive: Interactive mode for prompts (None = auto-detect TTY, False = non-interactive)
+        claude_md_size_limit: Maximum size in bytes for core CLAUDE.md (TASK-FIX-19EA)
 
     Returns:
         OrchestrationResult
@@ -2742,7 +2744,8 @@ def run_template_create(
         custom_name=custom_name,  # TASK-FDB2
         split_claude_md=split_claude_md,  # TASK-PD-006
         verbose=verbose,
-        interactive_validation=interactive  # None = auto-detect TTY
+        interactive_validation=interactive,  # None = auto-detect TTY
+        claude_md_size_limit=claude_md_size_limit if claude_md_size_limit else 10 * 1024  # TASK-FIX-19EA
     )
 
     orchestrator = TemplateCreateOrchestrator(config)
@@ -2785,8 +2788,15 @@ if __name__ == "__main__":
                         help="Show detailed progress")
     parser.add_argument("--non-interactive", action="store_true",
                         help="Disable interactive prompts (auto-fix issues without asking)")
+    parser.add_argument("--claude-md-size-limit", type=str,
+                        help="Maximum size for core CLAUDE.md content (e.g., 50KB, 1MB). Default: 10KB")
 
     args = parser.parse_args()
+
+    # Parse size limit if provided (TASK-FIX-19EA)
+    claude_md_size_limit = None
+    if args.claude_md_size_limit:
+        claude_md_size_limit = TemplateCreateOrchestrator.parse_size_limit(args.claude_md_size_limit)
 
     result = run_template_create(
         codebase_path=Path(args.path) if args.path else None,
@@ -2802,7 +2812,8 @@ if __name__ == "__main__":
         custom_name=args.name,  # TASK-FDB2
         split_claude_md=args.split_claude_md,  # TASK-PD-006
         verbose=args.verbose,
-        interactive=False if args.non_interactive else None  # None = auto-detect TTY
+        interactive=False if args.non_interactive else None,  # None = auto-detect TTY
+        claude_md_size_limit=claude_md_size_limit  # TASK-FIX-19EA
     )
 
     sys.exit(result.exit_code if not result.success else 0)

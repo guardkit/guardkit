@@ -408,33 +408,26 @@ class TemplateSplitOutput(BaseModel):
 
     def validate_size_constraints(self, max_core_size: int = 10 * 1024) -> tuple[bool, Optional[str]]:
         """
-        Validate that core content doesn't exceed size limit with graceful degradation.
+        Validate that core content doesn't exceed size limit.
 
         Args:
-            max_core_size: Maximum allowed size in bytes (default 10KB)
+            max_core_size: Maximum allowed size in bytes (default 10KB, configurable via --claude-md-size-limit)
 
         Returns:
             Tuple of (is_valid, error_message)
+
+        Note:
+            TASK-FIX-19EA: Removed hard-coded 15KB limit. Now uses only the
+            configurable max_core_size parameter passed from OrchestrationConfig.
         """
-        import logging
-
         core_size = self.get_core_size()
-        warning_size = 15 * 1024  # 15KB warning threshold
 
-        if core_size > warning_size:
-            # Exceeds warning threshold - fail with helpful message
+        if core_size > max_core_size:
             return False, (
-                f"Core content exceeds 15KB limit: {core_size / 1024:.2f}KB. "
-                f"Consider using --no-split for large codebases, --claude-md-size-limit to override, "
-                f"or further content optimization."
+                f"Core content exceeds {max_core_size / 1024:.0f}KB limit: "
+                f"{core_size / 1024:.2f}KB. Use --claude-md-size-limit to override "
+                f"(e.g., --claude-md-size-limit 50KB)."
             )
-        elif core_size > max_core_size:
-            # Between max_core_size and 15KB - log warning but allow (graceful degradation)
-            logging.warning(
-                f"Core content exceeds preferred {max_core_size / 1024:.0f}KB limit "
-                f"but within acceptable range: {core_size / 1024:.2f}KB"
-            )
-            return True, None
 
         return True, None
 

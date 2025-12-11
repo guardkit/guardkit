@@ -414,5 +414,53 @@ def test_cli_argument_split_enabled_by_default(orchestrator):
     assert orchestrator.config.split_claude_md is True
 
 
+# ===== Test: Size Limit Flag (TASK-FIX-19EA) =====
+
+def test_claude_md_size_limit_flag_recognized():
+    """Verify --claude-md-size-limit flag appears in help output (TASK-FIX-19EA)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "installer.core.commands.lib.template_create_orchestrator", "--help"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert "--claude-md-size-limit" in result.stdout
+
+
+def test_parse_size_limit_kb():
+    """Test parse_size_limit function with KB suffix."""
+    assert TemplateCreateOrchestrator.parse_size_limit("50KB") == 50 * 1024
+    assert TemplateCreateOrchestrator.parse_size_limit("50kb") == 50 * 1024
+    assert TemplateCreateOrchestrator.parse_size_limit("50Kb") == 50 * 1024
+
+
+def test_parse_size_limit_mb():
+    """Test parse_size_limit function with MB suffix."""
+    assert TemplateCreateOrchestrator.parse_size_limit("1MB") == 1 * 1024 * 1024
+    assert TemplateCreateOrchestrator.parse_size_limit("2mb") == 2 * 1024 * 1024
+
+
+def test_parse_size_limit_bytes():
+    """Test parse_size_limit function with raw bytes."""
+    assert TemplateCreateOrchestrator.parse_size_limit("10240") == 10240
+
+
+def test_config_accepts_claude_md_size_limit():
+    """Test OrchestrationConfig accepts claude_md_size_limit parameter."""
+    config = OrchestrationConfig(
+        split_claude_md=True,
+        claude_md_size_limit=50 * 1024  # 50KB
+    )
+    assert config.claude_md_size_limit == 50 * 1024
+
+
+def test_config_default_size_limit():
+    """Test OrchestrationConfig defaults to 10KB if not specified."""
+    config = OrchestrationConfig(split_claude_md=True)
+    assert config.claude_md_size_limit == 10 * 1024
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
