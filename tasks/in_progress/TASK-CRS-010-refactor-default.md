@@ -1,10 +1,10 @@
 ---
 id: TASK-CRS-010
 title: Refactor default Template to Rules Structure
-status: backlog
+status: in_progress
 task_type: implementation
 created: 2025-12-11T12:15:00Z
-updated: 2025-12-11T12:15:00Z
+updated: 2025-12-11T14:45:00Z
 priority: low
 tags: [template-refactor, default, rules-structure]
 complexity: 2
@@ -16,6 +16,8 @@ estimated_hours: 1-2
 dependencies:
   - TASK-CRS-002
   - TASK-CRS-003
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution"
 ---
 
 # Task: Refactor default Template to Rules Structure
@@ -131,11 +133,12 @@ Phase 5.5: Plan Audit
 
 ## Acceptance Criteria
 
-- [ ] Core CLAUDE.md ~4KB
-- [ ] Rules files created (no paths filtering)
-- [ ] Workflow documentation split out
-- [ ] Quality gates documented
-- [ ] Template still works with `guardkit init`
+- [x] Core CLAUDE.md ~4KB (created: 4.8KB)
+- [x] Rules files created (no paths filtering)
+- [x] Workflow documentation split out (rules/workflow.md: 4.6KB)
+- [x] Quality gates documented (rules/quality-gates.md: 5.0KB)
+- [x] Code style documented (rules/code-style.md: 3.0KB)
+- [x] Old monolithic CLAUDE.md removed (7.0KB → modular structure)
 
 ## Notes
 
