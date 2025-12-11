@@ -1,87 +1,93 @@
 ---
 id: TASK-CRS-014
-title: Update Agent-Enhance Command for Rules Structure Support
-status: backlog
+title: Rename rules/agents/ to rules/guidance/ (Revised Scope)
+status: in_progress
 task_type: review
 created: 2025-12-11T14:30:00Z
-updated: 2025-12-11T14:30:00Z
+updated: 2025-12-11T15:30:00Z
 priority: medium
-tags: [agent-enhance, rules-structure, installer, integration]
-complexity: 5
+tags: [rules-structure, naming, refactor]
+complexity: 3
 parent_feature: claude-rules-structure
 wave: 3
-implementation_mode: task-work
+implementation_mode: task-review
 conductor_workspace: claude-rules-wave3-4
-estimated_hours: 3-4
-dependencies:
-  - TASK-CRS-002
+estimated_hours: 2-3
+review_results:
+  mode: architectural
+  depth: standard
+  score: 90
+  findings_count: 2
+  recommendations_count: 8
+  decision: implement
+  report_path: .claude/reviews/TASK-CRS-014-review-report.md
+  completed_at: 2025-12-11T15:30:00Z
 ---
 
-# Task: Update Agent-Enhance Command for Rules Structure Support
+# Task: Rename rules/agents/ to rules/guidance/ (Revised Scope)
 
-## Description
+## Original Scope (Superseded)
 
-Review and plan updates to the `/agent-enhance` command and related installer components to support the new Claude Code rules structure. Currently, agent-enhance outputs to `agents/` directory with progressive disclosure split. For rules structure compatibility, it needs to optionally output to `rules/agents/` with `paths:` frontmatter for conditional loading.
+The original task assumed `/agent-enhance` needed modification for rules structure support.
 
-## Review Scope
+## Revised Scope (After Review)
 
-### 1. Current Agent-Enhance Behavior
-- Outputs enhanced agents to `agents/` directory
-- Uses progressive disclosure: `{agent}.md` + `{agent}-ext.md`
-- Generates boundary sections (ALWAYS/NEVER/ASK)
-- Supports `--strategy=ai|static|hybrid`
+**Key Finding**: The `/agent-enhance` command does NOT need changes. However, a naming confusion was identified:
 
-### 2. Required Changes for Rules Structure
+- `agents/` directory = Full specialist definitions (for Task tool, /agent-enhance)
+- `.claude/rules/agents/` directory = Path-based contextual guidance (static)
 
-**Output Path Options:**
-- Default: `agents/` (current behavior, backward compatible)
-- Rules mode: `rules/agents/` (when `--use-rules-structure` active)
+**Decision**: Rename `.claude/rules/agents/` to `.claude/rules/guidance/` across all components.
 
-**Paths Frontmatter Generation:**
-- Infer `paths:` patterns from agent capabilities and technologies
-- Example: `fastapi-specialist` → `paths: **/router*.py, **/api/**/*.py`
-- Example: `react-query-specialist` → `paths: **/*query*, **/*api*`
+## Review Summary
 
-**Integration Points:**
-- Detect if template uses rules structure (check for `rules/` directory)
-- Coordinate with `RulesStructureGenerator` from CRS-002
-- Update `PathPatternInferrer` from CRS-004 to support agent paths
+The architectural review (see `.claude/reviews/TASK-CRS-014-review-report.md`) determined:
 
-### 3. Files to Analyze
+1. **No changes needed to /agent-enhance** - It operates on `agents/` directory only
+2. **Naming confusion exists** - Using "agents" for two different concepts
+3. **Solution**: Rename `rules/agents/` → `rules/guidance/`
 
-1. `installer/core/commands/agent-enhance.md` - Command specification
-2. `installer/core/agents/agent-content-enhancer.md` - Enhancement agent
-3. `installer/core/lib/template_generator/` - Template generation utilities
-4. `installer/scripts/install.sh` - Installer script (symlinks)
+## Subtasks Created
 
-### 4. Questions to Answer
+| ID | Title | Priority | Est. Hours |
+|----|-------|----------|------------|
+| CRS-014.1 | Update RulesStructureGenerator to output `rules/guidance/` | High | 0.5 |
+| CRS-014.2 | Rename react-typescript `rules/agents/` → `guidance/` | High | 0.25 |
+| CRS-014.3 | Rename nextjs-fullstack `rules/agents/` → `guidance/` | High | 0.25 |
+| CRS-014.4 | Rename fastapi-python `rules/agents/` → `guidance/` | High | 0.25 |
+| CRS-014.5 | Rename react-fastapi-monorepo `rules/agents/` → `guidance/` | High | 0.25 |
+| CRS-014.7 | Update tests for `rules/guidance/` naming | High | 0.5 |
+| CRS-014.8 | Update documentation for `rules/guidance/` naming | Medium | 0.5 |
 
-1. Should agent-enhance auto-detect rules structure or require explicit flag?
-2. How should path patterns be inferred from agent metadata?
-3. Should existing `agents/` output be migrated to `rules/agents/`?
-4. What happens to extended files (`-ext.md`) in rules structure?
-5. How does this interact with template validation?
+**Total: ~2.5 hours**
+
+**Note**: CRS-014.6 (default template) was removed - that template doesn't have a `rules/agents/` directory.
+
+## Execution Order
+
+1. **CRS-014.1** (RulesStructureGenerator) - Must be first
+2. **CRS-014.2-6** (Template renames) - Can be parallel
+3. **CRS-014.7** (Tests) - After CRS-014.1
+4. **CRS-014.8** (Documentation) - Can be last
+
+## Key Distinction to Document
+
+```
+agents/                    → Full specialist definitions (invokable via Task tool)
+.claude/rules/guidance/    → Path-based contextual guidance (static, auto-loaded)
+```
 
 ## Acceptance Criteria
 
-- [ ] Current agent-enhance behavior documented
-- [ ] Required changes identified and specified
-- [ ] Path pattern inference strategy defined
-- [ ] Integration points with CRS-002 and CRS-004 clarified
-- [ ] Implementation subtasks created if needed
-- [ ] Backward compatibility approach confirmed
-
-## Review Deliverables
-
-1. **Analysis Report**: Current state vs required state
-2. **Design Document**: Path inference algorithm
-3. **Implementation Plan**: Subtasks if complex enough
-4. **Integration Notes**: Coordination with CRS-002, CRS-004
+- [x] Review completed
+- [x] Subtasks created
+- [ ] CRS-014.1: RulesStructureGenerator updated
+- [ ] CRS-014.2-5: All 4 templates renamed (default doesn't need renaming)
+- [ ] CRS-014.7: Tests updated
+- [ ] CRS-014.8: Documentation updated
 
 ## Notes
 
-- This is a **review task** (`task_type: review`)
-- Use `/task-review TASK-CRS-014 --mode=architectural` to execute
-- Wave 3 task (parallel with CRS-003, CRS-004, CRS-005)
-- May spawn implementation subtask(s) based on review findings
-- Consider whether this should be split into multiple implementation tasks
+- Original assumption (agent-enhance changes) was incorrect
+- Conductor worktrees for CRS-006, CRS-009, CRS-010 may need renaming before merge
+- If those tasks are still in worktrees, do rename there to avoid double work

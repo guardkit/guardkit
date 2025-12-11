@@ -393,3 +393,200 @@ conductor create claude-rules-wave3-1
 conductor create claude-rules-wave3-2
 conductor create claude-rules-wave3-3
 ```
+
+---
+
+## Wave 6: Naming Refactor (CRS-014 Subtasks)
+
+**Duration**: 2-3 hours total
+**Parallel Opportunities**: HIGH (template renames can be parallel)
+**Status**: Added after CRS-014 architectural review
+
+### Background
+
+The CRS-014 architectural review identified a naming confusion:
+- `agents/` directory = Full specialist definitions (for Task tool, /agent-enhance)
+- `.claude/rules/agents/` directory = Path-based contextual guidance (static)
+
+**Decision**: Rename `.claude/rules/agents/` to `.claude/rules/guidance/` to clearly distinguish these concepts.
+
+### Wave 6 Overview
+
+```
+Wave 6: Naming Refactor (Parallel: 7 tasks)
+├── CRS-014.1: Update RulesStructureGenerator (MUST BE FIRST)
+├── CRS-014.2: Rename react-typescript rules/agents → guidance
+├── CRS-014.3: Rename nextjs-fullstack rules/agents → guidance
+├── CRS-014.4: Rename fastapi-python rules/agents → guidance
+├── CRS-014.5: Rename react-fastapi-monorepo rules/agents → guidance
+├── CRS-014.7: Update tests for guidance naming
+└── CRS-014.8: Update documentation
+```
+
+**Note**: CRS-014.6 (default template) was removed - that template doesn't have a `rules/agents/` directory.
+
+### Execution Order
+
+1. **CRS-014.1** (RulesStructureGenerator) - **Must be first**
+2. **CRS-014.2-5** (Template renames) - Can be parallel after CRS-014.1
+3. **CRS-014.7** (Tests) - After CRS-014.1
+4. **CRS-014.8** (Documentation) - Can be last
+
+### TASK-CRS-014.1: Update RulesStructureGenerator
+
+**Method**: Direct implementation
+**Duration**: 30 minutes
+**Priority**: HIGH (blocks other subtasks)
+
+**File**: `installer/core/lib/template_generator/rules_structure_generator.py`
+
+**Changes**:
+```python
+# Line 75 (docstring example):
+# Before: "rules/agents/api-specialist.md"
+# After:  "rules/guidance/api-specialist.md"
+
+# Line 97 (output path):
+# Before: rules[f"rules/agents/{agent_slug}.md"]
+# After:  rules[f"rules/guidance/{agent_slug}.md"]
+
+# Line 146 (CLAUDE.md reference):
+# Before: - **Agents**: `.claude/rules/agents/`
+# After:  - **Guidance**: `.claude/rules/guidance/`
+```
+
+### TASK-CRS-014.2-5: Template Renames
+
+**Method**: Direct implementation (git mv)
+**Duration**: 15 minutes each
+**Priority**: HIGH
+
+**Templates to rename** (4 total):
+
+| Task | Template | Command |
+|------|----------|---------|
+| CRS-014.2 | react-typescript | `git mv .claude/rules/agents .claude/rules/guidance` |
+| CRS-014.3 | nextjs-fullstack | `git mv .claude/rules/agents .claude/rules/guidance` |
+| CRS-014.4 | fastapi-python | `git mv .claude/rules/agents .claude/rules/guidance` |
+| CRS-014.5 | react-fastapi-monorepo | `git mv .claude/rules/agents .claude/rules/guidance` |
+
+**For each template**:
+```bash
+cd installer/core/templates/{template-name}
+git mv .claude/rules/agents .claude/rules/guidance
+
+# Update any internal references
+grep -r "rules/agents" .claude/ && echo "UPDATE NEEDED" || echo "No references"
+```
+
+### TASK-CRS-014.7: Update Tests
+
+**Method**: Direct implementation
+**Duration**: 30 minutes
+**Priority**: HIGH
+
+**File**: `installer/core/lib/template_generator/tests/test_rules_generator.py`
+
+**Changes**:
+```python
+# Lines 218-220:
+# Before:
+assert "rules/agents/repository-specialist.md" in rules
+assert "rules/agents/api-specialist.md" in rules
+assert "rules/agents/testing-specialist.md" in rules
+
+# After:
+assert "rules/guidance/repository-specialist.md" in rules
+assert "rules/guidance/api-specialist.md" in rules
+assert "rules/guidance/testing-specialist.md" in rules
+```
+
+**Verification**:
+```bash
+pytest tests/lib/template_generator/test_rules_generator.py -v
+```
+
+### TASK-CRS-014.8: Update Documentation
+
+**Method**: Direct implementation
+**Duration**: 30 minutes
+**Priority**: MEDIUM
+
+**Files to update**:
+- `CLAUDE.md` - Any `rules/agents` references
+- `tasks/backlog/claude-rules-structure/README.md` - Update structure examples
+- `docs/guides/` - Any rules structure guides
+
+**Search command**:
+```bash
+grep -r "rules/agents" . --include="*.md" | grep -v ".git" | grep -v "node_modules"
+```
+
+**Key documentation to add**:
+```markdown
+## Directory Structure Clarification
+
+GuardKit uses two different "agent" concepts:
+
+### `agents/` Directory
+Full specialist agent definitions used by:
+- `/agent-enhance` command for enhancement
+- Task tool for invoking specialists
+- Agent discovery system
+
+### `rules/guidance/` Directory
+Path-based contextual guidance loaded automatically by Claude Code when editing specific files.
+These are lightweight, static rules - NOT invokable agents.
+```
+
+---
+
+## Updated Execution Timeline
+
+### With Wave 6 (Naming Refactor)
+
+```
+Waves 1-5: (previously completed or in progress)
+Wave 6: 2-3 hours
+  - CRS-014.1: 0.5 hours (sequential - must be first)
+  - CRS-014.2-5: 0.5 hours (parallel - 4 renames)
+  - CRS-014.7: 0.5 hours (can parallel with renames)
+  - CRS-014.8: 0.5 hours (last)
+─────────────────────
+Wave 6 Total: 2-3 hours
+```
+
+### Conductor Setup for Wave 6
+
+```bash
+# If using Conductor for parallel template renames:
+conductor create claude-rules-wave6-1  # CRS-014.2 react-typescript
+conductor create claude-rules-wave6-2  # CRS-014.3 nextjs-fullstack
+conductor create claude-rules-wave6-3  # CRS-014.4 fastapi-python
+conductor create claude-rules-wave6-4  # CRS-014.5 react-fastapi-monorepo
+```
+
+**Note**: Template renames are simple enough that Conductor may be overkill. Can be done sequentially in ~15 minutes total.
+
+---
+
+## Wave 6 Verification
+
+After completing all Wave 6 tasks:
+
+```bash
+# 1. Verify no rules/agents directories remain
+find installer/core/templates -type d -name "agents" -path "*rules*"
+# Should return empty
+
+# 2. Verify rules/guidance directories exist
+find installer/core/templates -type d -name "guidance" -path "*rules*"
+# Should return 4 directories
+
+# 3. Verify tests pass
+pytest tests/lib/template_generator/test_rules_generator.py -v
+
+# 4. Verify no orphaned references
+grep -r "rules/agents" . --include="*.md" --include="*.py" | grep -v ".git"
+# Should return empty (or only this guide's historical references)
+```
