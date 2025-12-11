@@ -143,6 +143,123 @@ class OrchestrationResult:
     exit_code: int = 0  # TASK-043: Exit code based on validation score
 
 
+def _generate_agent_rationale(
+    agent_name: str,
+    technologies: list,
+    description: str,
+    detected_patterns: list = None,
+    detected_layers: list = None
+) -> str:
+    """
+    Generate meaningful rationale for why this agent exists in the template.
+
+    Args:
+        agent_name: Name of the agent (e.g., "realm-repository-specialist")
+        technologies: List of technologies the agent handles
+        description: Agent description from frontmatter
+        detected_patterns: Patterns detected in codebase (optional)
+        detected_layers: Layers detected in codebase (optional)
+
+    Returns:
+        Meaningful rationale string
+
+    Examples:
+        "Provides specialized guidance for Realm, ErrorOr implementations.
+         This project uses the Repository pattern with Realm Mobile Database
+         for thread-safe data access."
+    """
+    rationale_parts = []
+
+    # Part 1: Technology expertise
+    if technologies and len(technologies) >= 1:
+        tech_str = ", ".join(technologies[:4])  # Limit to 4 for readability
+        rationale_parts.append(
+            f"Provides specialized guidance for {tech_str} implementations"
+        )
+
+    # Part 2: Pattern relevance (if available)
+    if detected_patterns:
+        # Map agent names to relevant patterns
+        pattern_mappings = {
+            'repository': ['Repository', 'Data Access'],
+            'viewmodel': ['MVVM', 'ViewModel'],
+            'service': ['Service Layer', 'Services'],
+            'engine': ['Engine', 'Business Logic'],
+            'erroror': ['Railway-Oriented Programming', 'ErrorOr'],
+            'testing': ['Testing', 'Unit Tests'],
+            'api': ['API', 'REST', 'HTTP'],
+            'mapper': ['Mapper', 'Mapping'],
+        }
+
+        agent_lower = agent_name.lower()
+        relevant_patterns = []
+        for key, patterns in pattern_mappings.items():
+            if key in agent_lower:
+                relevant_patterns.extend(
+                    p for p in patterns if p in detected_patterns
+                )
+
+        if relevant_patterns:
+            pattern_str = ", ".join(set(relevant_patterns))
+            rationale_parts.append(
+                f"This project uses the {pattern_str} pattern"
+            )
+        elif detected_patterns:
+            # If no specific match but patterns exist, use first pattern
+            pattern_str = detected_patterns[0]
+            rationale_parts.append(
+                f"Provides guidance for projects using the {pattern_str} pattern"
+            )
+
+    # Part 3: Layer relevance (if available)
+    if detected_layers:
+        layer_mappings = {
+            'repository': 'Infrastructure',
+            'viewmodel': 'Presentation',
+            'service': 'Application',
+            'engine': 'Application',
+            'domain': 'Domain',
+            'api': 'API',
+        }
+
+        agent_lower = agent_name.lower()
+        for key, layer in layer_mappings.items():
+            if key in agent_lower and layer in detected_layers:
+                rationale_parts.append(
+                    f"in the {layer} layer"
+                )
+                break
+
+    # Part 4: Extract key insight from description
+    if description and not rationale_parts:
+        # Fall back to description-based rationale
+        # Extract first meaningful phrase (up to 60 chars)
+        desc_clean = description.strip()
+        if len(desc_clean) > 60:
+            # Find a good break point
+            truncated = desc_clean[:60]
+            last_space = truncated.rfind(' ')
+            if last_space > 30:
+                desc_clean = truncated[:last_space] + "..."
+
+        rationale_parts.append(
+            f"Handles {desc_clean}"
+        )
+
+    # Combine parts into coherent rationale
+    if rationale_parts:
+        # Join with appropriate punctuation
+        if len(rationale_parts) == 1:
+            return rationale_parts[0] + "."
+        elif len(rationale_parts) == 2:
+            return f"{rationale_parts[0]}. {rationale_parts[1]}."
+        else:
+            return ". ".join(rationale_parts) + "."
+
+    # Final fallback (should rarely happen)
+    return f"Specialized agent for {agent_name.replace('-', ' ')} patterns."
+
+
 class TemplateCreateOrchestrator:
     """
     Main orchestrator for /template-create command.
@@ -1172,10 +1289,35 @@ class TemplateCreateOrchestrator:
 
                     # TASK-FIX-RESUME: Use getattr for all agent attributes
                     agent_description = getattr(agent, 'description', f"Agent for {agent_name}")
+
+                    # TASK-FIX-RATIONALE-E7F1: Generate meaningful agent rationale
+                    detected_patterns = None
+                    detected_layers = None
+                    if self.analysis:
+                        # Extract patterns from analysis
+                        architecture = getattr(self.analysis, 'architecture', None)
+                        if architecture:
+                            patterns = getattr(architecture, 'patterns', None)
+                            if patterns:
+                                detected_patterns = patterns if isinstance(patterns, list) else [patterns]
+                            layers = getattr(architecture, 'layers', None)
+                            if layers:
+                                # Extract layer names if layers is a list of objects
+                                if isinstance(layers, list):
+                                    detected_layers = [getattr(l, 'name', str(l)) for l in layers]
+                                else:
+                                    detected_layers = [str(layers)]
+
                     agent_dict = {
                         'name': agent_name,
                         'description': agent_description,
-                        'reason': getattr(agent, 'reason', f"Specialized agent for {agent_name.replace('-', ' ')}"),
+                        'reason': getattr(agent, 'reason', None) or _generate_agent_rationale(
+                            agent_name=agent_name,
+                            technologies=tags,
+                            description=agent_description,
+                            detected_patterns=detected_patterns,
+                            detected_layers=detected_layers
+                        ),
                         'technologies': tags,
                         'priority': getattr(agent, 'priority', 7)
                     }
