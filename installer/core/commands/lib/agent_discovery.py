@@ -47,8 +47,18 @@ PRIORITY_TEMPLATE = 4  # installer/core/templates/*/agents/ (lowest priority)
 
 # Valid values for validation
 VALID_STACKS = [
-    'python', 'react', 'dotnet', 'typescript', 'javascript',
-    'go', 'rust', 'java', 'ruby', 'php', 'cross-stack', 'csharp'
+    # Core languages
+    'python', 'javascript', 'typescript', 'csharp', 'java',
+    'go', 'rust', 'ruby', 'php', 'swift', 'kotlin', 'dart',
+
+    # Frameworks/Platforms
+    'react', 'dotnet', 'maui', 'flutter',
+
+    # Technologies
+    'xaml', 'realm',
+
+    # Meta
+    'cross-stack'
 ]
 VALID_PHASES = ['implementation', 'review', 'testing', 'orchestration']
 

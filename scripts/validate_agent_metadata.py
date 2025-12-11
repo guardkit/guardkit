@@ -8,6 +8,10 @@ import glob
 import sys
 from pathlib import Path
 
+# Import VALID_STACKS from the single source of truth
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from installer.core.commands.lib.agent_discovery import VALID_STACKS
+
 
 def parse_frontmatter(content: str) -> dict:
     """Parse YAML frontmatter from markdown file."""
@@ -80,14 +84,13 @@ def validate_agent(agent_path: str) -> tuple[bool, list[str]]:
     if issues:
         return False, issues
 
-    # Validate stack values
-    valid_stacks = ['cross-stack', 'python', 'react', 'dotnet', 'typescript', 'maui', 'xaml']
+    # Validate stack values (using imported VALID_STACKS from agent_discovery.py)
     stack_value = metadata.get('stack', [])
     if isinstance(stack_value, str):
         stack_value = [stack_value]
 
     for stack in stack_value:
-        if stack not in valid_stacks:
+        if stack not in VALID_STACKS:
             issues.append(f"Invalid stack value: {stack}")
 
     # Validate phase values

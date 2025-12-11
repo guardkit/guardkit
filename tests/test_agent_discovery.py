@@ -879,18 +879,41 @@ class TestConstants:
     """Tests for module constants."""
 
     def test_valid_stacks_defined(self):
-        """Should have expected valid stacks."""
-        expected = ['python', 'react', 'dotnet', 'typescript', 'javascript',
-                   'go', 'rust', 'java', 'ruby', 'php', 'cross-stack']
+        """Test that VALID_STACKS contains expected values."""
+        # Core stacks that must always be present
+        required_stacks = [
+            'python', 'javascript', 'typescript', 'csharp', 'java',
+            'go', 'rust', 'ruby', 'php', 'react', 'dotnet', 'cross-stack'
+        ]
 
-        for stack in expected:
-            assert stack in VALID_STACKS
+        # Extended stacks for mobile/specialized development
+        extended_stacks = [
+            'maui', 'xaml', 'realm', 'swift', 'kotlin', 'flutter', 'dart'
+        ]
+
+        for stack in required_stacks:
+            assert stack in VALID_STACKS, f"Required stack '{stack}' missing from VALID_STACKS"
+
+        for stack in extended_stacks:
+            assert stack in VALID_STACKS, f"Extended stack '{stack}' missing from VALID_STACKS"
 
     def test_valid_phases_defined(self):
         """Should have expected valid phases."""
         expected = ['implementation', 'review', 'testing', 'orchestration']
 
         assert set(VALID_PHASES) == set(expected)
+
+    def test_stack_validation_case_insensitive(self):
+        """Test that stack validation is case-insensitive."""
+        from installer.core.commands.lib.agent_discovery import validate_discovery_metadata
+
+        # Should accept lowercase
+        result, errors = validate_discovery_metadata({"stack": ["maui"]})
+        assert not any("Invalid stack value: maui" in e for e in errors), f"Should accept lowercase 'maui', got errors: {errors}"
+
+        # Should accept uppercase
+        result, errors = validate_discovery_metadata({"stack": ["MAUI"]})
+        assert not any("Invalid stack value: MAUI" in e for e in errors), f"Should accept uppercase 'MAUI', got errors: {errors}"
 
 
 # ============================================================================
