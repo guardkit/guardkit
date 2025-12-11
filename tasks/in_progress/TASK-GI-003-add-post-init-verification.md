@@ -1,10 +1,10 @@
 ---
 id: TASK-GI-003
 title: Add post-init verification for rules structure
-status: backlog
+status: in_progress
 priority: low
 created: 2025-12-11T19:45:00Z
-updated: 2025-12-11T19:45:00Z
+updated: 2025-12-11T23:45:00Z
 complexity: 2
 tags: [guardkit-init, verification, ux]
 related_to: [TASK-REV-INIT, TASK-GI-001]
