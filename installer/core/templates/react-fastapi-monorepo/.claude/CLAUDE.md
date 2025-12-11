@@ -156,7 +156,7 @@ Template includes AI agents for:
 2. **type-safety**: OpenAPI → TypeScript generation and type-safe API patterns
 3. **docker**: Multi-service orchestration and container management
 
-See `.claude/rules/agents/*.md` for agent specifications.
+See `.claude/rules/guidance/*.md` for agent specifications.
 
 ## Environment Variables
 

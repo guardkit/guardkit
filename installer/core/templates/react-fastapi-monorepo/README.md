@@ -331,7 +331,7 @@ Rules files use `paths:` frontmatter for conditional loading:
 | `rules/monorepo/turborepo.md` | `turbo.json`, `package.json` |
 | `rules/frontend/react.md` | `apps/frontend/**` |
 | `rules/backend/fastapi.md` | `apps/backend/**` |
-| `rules/agents/type-safety.md` | `packages/shared-types/**` |
+| `rules/guidance/type-safety.md` | `packages/shared-types/**` |
 
 ### Benefits
 
