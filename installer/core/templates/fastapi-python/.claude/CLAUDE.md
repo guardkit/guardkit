@@ -155,9 +155,9 @@ pytest -m asyncio
 
 This template works with the following specialized AI agents:
 
-- **fastapi-specialist**: FastAPI patterns, routing, dependencies (see `.claude/rules/agents/fastapi.md`)
-- **fastapi-database-specialist**: SQLAlchemy, Alembic, database design (see `.claude/rules/agents/database.md`)
-- **fastapi-testing-specialist**: pytest, async testing, fixtures (see `.claude/rules/agents/testing.md`)
+- **fastapi-specialist**: FastAPI patterns, routing, dependencies (see `.claude/rules/guidance/fastapi.md`)
+- **fastapi-database-specialist**: SQLAlchemy, Alembic, database design (see `.claude/rules/guidance/database.md`)
+- **fastapi-testing-specialist**: pytest, async testing, fixtures (see `.claude/rules/guidance/testing.md`)
 
 Use these agents during development for specialized guidance.
 

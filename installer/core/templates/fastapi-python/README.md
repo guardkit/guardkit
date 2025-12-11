@@ -392,8 +392,8 @@ Rules files use `paths:` frontmatter for conditional loading:
 | `rules/testing.md` | Test files |
 | `rules/api/routing.md` | `**/router*.py` |
 | `rules/database/models.md` | `**/models/*.py` |
-| `rules/agents/fastapi.md` | API route files |
-| `rules/agents/database.md` | Model/CRUD files |
+| `rules/guidance/fastapi.md` | API route files |
+| `rules/guidance/database.md` | Model/CRUD files |
 
 ### Benefits
 
