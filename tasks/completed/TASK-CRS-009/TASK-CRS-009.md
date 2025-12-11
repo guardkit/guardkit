@@ -1,10 +1,12 @@
 ---
 id: TASK-CRS-009
 title: Refactor react-fastapi-monorepo Template to Rules Structure
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
-updated: 2025-12-11T12:15:00Z
+updated: 2025-12-11T14:52:00Z
+completed: 2025-12-11T14:52:00Z
+completed_location: tasks/completed/TASK-CRS-009/
 priority: medium
 tags: [template-refactor, react-fastapi-monorepo, rules-structure]
 complexity: 5
@@ -13,9 +15,14 @@ wave: 4
 implementation_mode: task-work
 conductor_workspace: claude-rules-wave4-4
 estimated_hours: 5-7
+actual_hours: 2
 dependencies:
   - TASK-CRS-002
   - TASK-CRS-003
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met - task completion approved"
+organized_files:
+  - TASK-CRS-009.md
 ---
 
 # Task: Refactor react-fastapi-monorepo Template to Rules Structure
@@ -172,12 +179,12 @@ OpenAPI → TypeScript type generation for full-stack type safety.
 
 ## Acceptance Criteria
 
-- [ ] Core CLAUDE.md reduced to ~5KB
-- [ ] Monorepo patterns well-documented
-- [ ] Type generation workflow clear
-- [ ] Docker orchestration rules included
-- [ ] Frontend/backend separation clear
-- [ ] Template still works with `guardkit init`
+- [x] Core CLAUDE.md reduced to ~5KB (achieved: 5015 bytes)
+- [x] Monorepo patterns well-documented (turborepo.md, docker.md, workspaces.md)
+- [x] Type generation workflow clear (types.md with full workflow)
+- [x] Docker orchestration rules included (docker.md in monorepo and agents)
+- [x] Frontend/backend separation clear (separate frontend/ and backend/ rule directories)
+- [x] Template still works with `guardkit init` (structure preserved)
 
 ## Notes
 
