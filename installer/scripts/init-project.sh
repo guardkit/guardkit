@@ -192,8 +192,11 @@ copy_template_files() {
     
     print_info "Using template: $effective_template"
     
-    # Copy CLAUDE.md context file
-    if [ -f "$template_dir/CLAUDE.md" ]; then
+    # Copy CLAUDE.md context file (check both locations, .claude/ takes precedence)
+    if [ -f "$template_dir/.claude/CLAUDE.md" ]; then
+        cp "$template_dir/.claude/CLAUDE.md" .claude/
+        print_success "Copied project context file (from .claude/)"
+    elif [ -f "$template_dir/CLAUDE.md" ]; then
         cp "$template_dir/CLAUDE.md" .claude/
         print_success "Copied project context file"
     fi
