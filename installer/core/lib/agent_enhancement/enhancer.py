@@ -161,7 +161,13 @@ class SingleAgentEnhancer:
                 template_dir
             )
 
-            # 4. Validate enhancement
+            # 4. Post-process metadata (TASK-META-FIX)
+            if self.verbose:
+                logger.info("Post-processing metadata")
+
+            enhancement = self._post_process_metadata(enhancement)
+
+            # 5. Validate enhancement
             if self.verbose:
                 logger.info("Validating enhancement")
 
@@ -620,6 +626,55 @@ class SingleAgentEnhancer:
             return []
 
         return list(templates_subdir.rglob("*.template"))
+
+    def _post_process_metadata(self, enhancement: dict) -> dict:
+        """
+        Post-process enhancement metadata to fix common AI-generated issues.
+
+        TASK-META-FIX: Normalizes stack values and moves library names to keywords.
+
+        This method:
+        1. Normalizes stack values (e.g., 'dotnet-maui' → 'maui')
+        2. Moves library names from stack to keywords (e.g., 'erroror')
+        3. Logs warnings for any corrections made
+
+        Args:
+            enhancement: Enhancement dict from AI or static strategy
+
+        Returns:
+            Enhanced dict with fixed metadata
+        """
+        if not enhancement:
+            return enhancement
+
+        # Check for frontmatter_metadata
+        if "frontmatter_metadata" not in enhancement:
+            return enhancement
+
+        metadata = enhancement.get("frontmatter_metadata", {})
+        if not isinstance(metadata, dict):
+            return enhancement
+
+        # Import metadata validator
+        try:
+            from .metadata_validator import post_process_metadata
+        except ImportError:
+            from metadata_validator import post_process_metadata
+
+        # Process metadata
+        fixed_metadata, warnings = post_process_metadata(metadata)
+
+        # Log warnings
+        for warning in warnings:
+            logger.warning(f"Metadata fix: {warning}")
+
+        # Update enhancement
+        enhancement["frontmatter_metadata"] = fixed_metadata
+
+        if warnings and self.verbose:
+            logger.info(f"Applied {len(warnings)} metadata fixes")
+
+        return enhancement
 
     def _validate_enhancement(self, enhancement: dict) -> None:
         """

@@ -1,7 +1,7 @@
 ---
 id: TASK-CRS-014.7
 title: Update tests for rules/guidance/ naming
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T15:00:00Z
 updated: 2025-12-11T15:00:00Z
@@ -53,9 +53,9 @@ Update all found references.
 
 ## Acceptance Criteria
 
-- [ ] All test assertions updated to use `rules/guidance/`
-- [ ] Tests pass with new naming
-- [ ] No hardcoded `rules/agents` references remain in tests
+- [x] All test assertions updated to use `rules/guidance/`
+- [x] Tests pass with new naming
+- [x] No hardcoded `rules/agents` references remain in tests
 
 ## Verification
 

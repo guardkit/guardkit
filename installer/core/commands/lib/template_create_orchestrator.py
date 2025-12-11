@@ -122,8 +122,8 @@ class OrchestrationConfig:
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
     create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     split_claude_md: bool = True  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    claude_md_size_limit: int = 25 * 1024  # TASK-CRS-001: Default 25KB (increased from 10KB)
-    use_rules_structure: bool = False  # TASK-CRS-003: Generate .claude/rules/ structure instead of single CLAUDE.md
+    claude_md_size_limit: int = 50 * 1024  # TASK-TC-DEFAULT-FLAGS: Default 50KB
+    use_rules_structure: bool = True  # TASK-TC-DEFAULT-FLAGS: Rules structure now default (use --no-rules-structure to opt out)
 
 
 @dataclass
@@ -1871,7 +1871,7 @@ Enhance the {agent_name} agent with template-specific content:
         - output_path/.claude/rules/stack.md
         - output_path/.claude/rules/quality.md
         - output_path/.claude/rules/workflow.md
-        - output_path/.claude/rules/agents.md
+        - output_path/.claude/rules/guidance/*.md
 
         Args:
             output_path: Template output directory
@@ -2872,7 +2872,7 @@ def run_template_create(
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    use_rules_structure: bool = False,  # TASK-CRS-003: Generate .claude/rules/ structure
+    use_rules_structure: bool = True,  # TASK-TC-DEFAULT-FLAGS: Rules structure now default (opt-out via --no-rules-structure)
     verbose: bool = False,
     interactive: Optional[bool] = None,  # None = auto-detect TTY, False = non-interactive
     claude_md_size_limit: Optional[int] = None  # TASK-FIX-19EA: Size limit in bytes
@@ -2947,7 +2947,7 @@ def run_template_create(
         use_rules_structure=use_rules_structure,  # TASK-CRS-003
         verbose=verbose,
         interactive_validation=interactive,  # None = auto-detect TTY
-        claude_md_size_limit=claude_md_size_limit if claude_md_size_limit else 10 * 1024  # TASK-FIX-19EA
+        claude_md_size_limit=claude_md_size_limit if claude_md_size_limit else 50 * 1024  # TASK-TC-DEFAULT-FLAGS: Default 50KB
     )
 
     orchestrator = TemplateCreateOrchestrator(config)
@@ -2984,8 +2984,12 @@ if __name__ == "__main__":
     parser.add_argument("--no-split-claude-md", action="store_false",
                         dest="split_claude_md",
                         help="Disable progressive disclosure (use single CLAUDE.md file)")
-    parser.add_argument("--use-rules-structure", action="store_true",
-                        help="Generate modular .claude/rules/ structure instead of single CLAUDE.md (experimental)")
+    parser.add_argument("--use-rules-structure", action="store_true", default=True,
+                        dest="use_rules_structure",
+                        help="Generate modular .claude/rules/ structure (default: enabled)")
+    parser.add_argument("--no-rules-structure", action="store_false",
+                        dest="use_rules_structure",
+                        help="Use single CLAUDE.md + progressive disclosure instead of rules structure")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
@@ -2993,7 +2997,7 @@ if __name__ == "__main__":
     parser.add_argument("--non-interactive", action="store_true",
                         help="Disable interactive prompts (auto-fix issues without asking)")
     parser.add_argument("--claude-md-size-limit", type=str,
-                        help="Maximum size for core CLAUDE.md content (e.g., 50KB, 1MB). Default: 10KB")
+                        help="Maximum size for core CLAUDE.md content (e.g., 100KB, 1MB). Default: 50KB")
 
     args = parser.parse_args()
 

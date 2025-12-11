@@ -1,7 +1,7 @@
 ---
 id: TASK-CRS-014.8
 title: Update documentation for rules/guidance/ naming
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T15:00:00Z
 updated: 2025-12-11T15:00:00Z
@@ -66,9 +66,9 @@ grep -r "rules/agents" \
 
 ## Acceptance Criteria
 
-- [ ] All documentation references updated to `rules/guidance/`
-- [ ] Clear explanation of `agents/` vs `rules/guidance/` distinction
-- [ ] No orphaned `rules/agents` references in docs
+- [x] All documentation references updated to `rules/guidance/`
+- [x] Clear explanation of `agents/` vs `rules/guidance/` distinction
+- [x] No orphaned `rules/agents` references in active docs (historical task files preserved)
 
 ## Documentation Clarification to Add
 

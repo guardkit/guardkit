@@ -36,14 +36,17 @@ Automate template creation from brownfield (existing) codebases by:
 /template-create --output-location repo
 /template-create -o repo  # Short form
 
-# Generate rules structure (experimental)
-/template-create --use-rules-structure
+# Default behavior (rules structure - TASK-TC-DEFAULT-FLAGS)
+/template-create
+
+# Opt-out to use progressive disclosure instead of rules structure
+/template-create --no-rules-structure
 
 # Combined with validation
-/template-create --use-rules-structure --validate
+/template-create --validate
 
-# Custom name with rules structure
-/template-create --name my-template --use-rules-structure
+# Custom name (uses rules structure by default)
+/template-create --name my-template
 
 # Analyze specific codebase path
 /template-create --path /path/to/codebase
@@ -121,12 +124,12 @@ Phase 6: CLAUDE.md Generation (TASK-007)
 ├─ Usage instructions
 ├─ Best practices
 ├─ Agent integration guide
-└─ **[OPTIONAL] Rules structure generation (if --use-rules-structure)**
+└─ **[DEFAULT] Rules structure generation (use --no-rules-structure to opt out)**
     ├─ Core CLAUDE.md (~5KB)
     ├─ rules/code-style.md
     ├─ rules/testing.md
     ├─ rules/patterns/*.md
-    └─ rules/agents/*.md (with paths: frontmatter)
+    └─ rules/guidance/*.md (with paths: frontmatter)
 
 Phase 7: Package Assembly
 ├─ Directory structure creation
@@ -239,9 +242,9 @@ Produces single CLAUDE.md and single agent files without progressive disclosure 
 - Faster AI responses from reduced initial context
 - Same comprehensive content available on-demand
 
-### Rules Structure Output (--use-rules-structure)
+### Rules Structure Output (Default)
 
-When using `--use-rules-structure`, the command generates a modular `.claude/rules/` directory:
+By default, the command generates a modular `.claude/rules/` directory (use `--no-rules-structure` to opt out):
 
 ```
 ~/.agentecflow/templates/{template_name}/
@@ -366,33 +369,34 @@ None - all options have defaults
 --verbose                Show detailed progress and debugging info
                          Default: false
 
---use-rules-structure    Generate modular .claude/rules/ structure (experimental)
-                         Default: false
+--use-rules-structure    Generate modular .claude/rules/ structure (default: enabled)
+                         Default: true (TASK-TC-DEFAULT-FLAGS)
 
-                         When enabled:
+                         By default:
                          - Creates .claude/rules/ directory
                          - Generates rule files with path frontmatter
                          - Groups patterns and agents in subdirectories
                          - Core CLAUDE.md reduced to ~5KB
                          - 60-70% context window reduction
 
-                         Use for:
-                         - Large templates (>20KB CLAUDE.md)
-                         - Complex multi-technology stacks
-                         - Templates with many specialized agents
-                         - Performance-critical workflows
+                         Benefits:
+                         - Better organization for complex templates
+                         - Path-specific rule loading
+                         - Improved maintainability
+
+--no-rules-structure     Use single CLAUDE.md + progressive disclosure instead
+                         of modular rules/ directory structure
+
+                         Use when:
+                         - Simple templates (<15KB)
+                         - Universal rules only (no path-specific patterns)
+                         - Backward compatibility needed
 
 --claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
-                         Format: NUMBER[KB|MB] (e.g., 15KB, 50KB, 1MB)
-                         Default: 10KB
+                         Format: NUMBER[KB|MB] (e.g., 100KB, 1MB)
+                         Default: 50KB (TASK-TC-DEFAULT-FLAGS)
                          Use for complex codebases that exceed default limit
-                         Example: /template-create --claude-md-size-limit 50KB
-
---use-rules-structure    Generate modular .claude/rules/ structure (experimental)
-                         Creates separate files for core, stack, quality, workflow, agents
-                         Alternative to single CLAUDE.md file (split or single)
-                         Default: false
-                         Example: /template-create --use-rules-structure
+                         Example: /template-create --claude-md-size-limit 100KB
 ```
 
 ## AI-Native Codebase Analysis (Phase 1) - TASK-51B2
@@ -960,12 +964,12 @@ $ echo $?
 - **6-7.9 (Grade B/C)**: Needs improvement - Exit code 1
 - **<6 (Grade F)**: Not ready - Exit code 2
 
-### Modular Rules Structure (Experimental)
+### Modular Rules Structure (Default)
 ```bash
-$ /template-create --use-rules-structure
+$ /template-create
 
-# Generates modular .claude/rules/ structure instead of single CLAUDE.md
-# Experimental feature for better organization and maintainability
+# Default behavior generates modular .claude/rules/ structure
+# TASK-TC-DEFAULT-FLAGS: Rules structure is now the default
 
 [... Q&A and generation ...]
 
@@ -989,7 +993,8 @@ $ /template-create --use-rules-structure
 📝 Next Steps:
    guardkit init my-template
 
-⚠️  Note: Rules structure is experimental and may change in future versions
+# To use progressive disclosure (split files) instead:
+$ /template-create --no-rules-structure
 ```
 
 ### Basic Usage (Legacy Example)

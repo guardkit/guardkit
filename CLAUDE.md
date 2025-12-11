@@ -934,8 +934,8 @@ Each template demonstrates:
 
 | Flag | Output | Use Case |
 |------|--------|----------|
-| (default) | CLAUDE.md + ext files | Most templates |
-| `--use-rules-structure` | rules/ directory | Large templates, path-specific needs |
+| (default) | rules/ directory | Most templates (60-70% context reduction) |
+| `--no-rules-structure` | CLAUDE.md + ext files | Simple templates, universal rules |
 
 ### For Production: Use `/template-create`
 
@@ -946,11 +946,11 @@ guardkit init react-typescript
 # Production workflow (recommended)
 cd your-existing-project
 
-# Default output (progressive disclosure)
+# Default output (rules structure - TASK-TC-DEFAULT-FLAGS)
 /template-create
 
-# With rules structure (experimental)
-/template-create --use-rules-structure
+# Opt-out to progressive disclosure (split files)
+/template-create --no-rules-structure
 
 guardkit init your-custom-template
 ```
@@ -991,20 +991,21 @@ GuardKit uses progressive disclosure to optimize context window usage while main
 
 ### Two Approaches
 
-1. **Split Files** (Default)
-   - Core `{name}.md` always loaded
-   - Extended `{name}-ext.md` loaded on-demand
-   - 55-60% token reduction
-
-2. **Rules Structure** (Optional)
+1. **Rules Structure** (Default - TASK-TC-DEFAULT-FLAGS)
    - Modular `.claude/rules/` directory
    - Path-specific conditional loading
    - 60-70% token reduction
-   - Use with `--use-rules-structure` flag
+   - Use `--no-rules-structure` to opt out
+
+2. **Split Files** (Opt-out)
+   - Core `{name}.md` always loaded
+   - Extended `{name}-ext.md` loaded on-demand
+   - 55-60% token reduction
+   - Use with `--no-rules-structure` flag
 
 **When to Choose:**
-- Use split files for simpler projects
-- Use rules structure for complex, multi-technology templates
+- Use rules structure (default) for most templates
+- Use split files (`--no-rules-structure`) for simpler projects with universal rules
 
 ### How It Works
 
@@ -1085,11 +1086,11 @@ GuardKit templates support Claude Code's modular rules structure for optimized c
 ### Generating Rules Structure
 
 ```bash
-# Generate with rules structure
-/template-create --use-rules-structure
-
-# Default (single CLAUDE.md with progressive disclosure)
+# Default (rules structure - TASK-TC-DEFAULT-FLAGS)
 /template-create
+
+# Opt-out to progressive disclosure (split files)
+/template-create --no-rules-structure
 ```
 
 ### Path-Specific Loading

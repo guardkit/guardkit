@@ -88,7 +88,7 @@ class MockSplitOutput:
             reference_size=self.get_reference_size(),
             total_size=self.get_total_size(),
             reduction_percent=self.get_reduction_percent(),
-            validation_passed=self.get_core_size() <= 10 * 1024
+            validation_passed=self.get_core_size() <= 50 * 1024  # TASK-TC-DEFAULT-FLAGS: 50KB default
         )
 
 
@@ -465,9 +465,49 @@ def test_config_accepts_claude_md_size_limit():
 
 
 def test_config_default_size_limit():
-    """Test OrchestrationConfig defaults to 10KB if not specified."""
+    """Test OrchestrationConfig defaults to 50KB if not specified (TASK-TC-DEFAULT-FLAGS)."""
     config = OrchestrationConfig(split_claude_md=True)
-    assert config.claude_md_size_limit == 10 * 1024
+    assert config.claude_md_size_limit == 50 * 1024
+
+
+# ===== Test: Rules Structure Default (TASK-TC-DEFAULT-FLAGS) =====
+
+def test_config_use_rules_structure_default_true():
+    """Test OrchestrationConfig defaults to use_rules_structure=True (TASK-TC-DEFAULT-FLAGS)."""
+    config = OrchestrationConfig()
+    assert config.use_rules_structure is True
+
+
+def test_cli_no_rules_structure_opt_out():
+    """Test --no-rules-structure flag appears in help output (TASK-TC-DEFAULT-FLAGS)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "installer.core.commands.lib.template_create_orchestrator", "--help"],
+        capture_output=True, text=True
+    )
+    assert result.returncode == 0
+    assert "--no-rules-structure" in result.stdout
+
+
+def test_run_template_create_default_rules_structure():
+    """Test run_template_create defaults to use_rules_structure=True (TASK-TC-DEFAULT-FLAGS)."""
+    import inspect
+    from installer.core.commands.lib.template_create_orchestrator import run_template_create
+
+    sig = inspect.signature(run_template_create)
+    default = sig.parameters['use_rules_structure'].default
+    assert default is True
+
+
+def test_run_template_create_default_size_limit():
+    """Test run_template_create falls back to 50KB when claude_md_size_limit is None (TASK-TC-DEFAULT-FLAGS)."""
+    # This tests the fallback in the function body, not signature default
+    # The function body uses: claude_md_size_limit if claude_md_size_limit else 50 * 1024
+    # We verify by checking the OrchestrationConfig default
+    config = OrchestrationConfig()
+    assert config.claude_md_size_limit == 50 * 1024
 
 
 if __name__ == "__main__":

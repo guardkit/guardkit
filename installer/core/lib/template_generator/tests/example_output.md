@@ -51,7 +51,7 @@ work on relevant files.
 - **Code Style**: `.claude/rules/code-style.md`
 - **Testing**: `.claude/rules/testing.md`
 - **Patterns**: `.claude/rules/patterns/`
-- **Agents**: `.claude/rules/agents/`
+- **Guidance**: `.claude/rules/guidance/`
 
 ## Technology Stack
 
@@ -129,7 +129,7 @@ pytest
 - Mock external dependencies
 ```
 
-## Example: rules/agents/repository-specialist.md
+## Example: rules/guidance/repository-specialist.md
 
 ```markdown
 ---

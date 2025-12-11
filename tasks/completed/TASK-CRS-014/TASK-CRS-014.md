@@ -1,7 +1,7 @@
 ---
 id: TASK-CRS-014
 title: Rename rules/agents/ to rules/guidance/ (Revised Scope)
-status: in_progress
+status: completed
 task_type: review
 created: 2025-12-11T14:30:00Z
 updated: 2025-12-11T15:30:00Z
@@ -81,10 +81,10 @@ agents/                    → Full specialist definitions (invokable via Task t
 
 - [x] Review completed
 - [x] Subtasks created
-- [ ] CRS-014.1: RulesStructureGenerator updated
-- [ ] CRS-014.2-5: All 4 templates renamed (default doesn't need renaming)
-- [ ] CRS-014.7: Tests updated
-- [ ] CRS-014.8: Documentation updated
+- [x] CRS-014.1: RulesStructureGenerator updated
+- [x] CRS-014.2-5: All 4 templates renamed (default doesn't need renaming)
+- [x] CRS-014.7: Tests updated
+- [x] CRS-014.8: Documentation updated
 
 ## Notes
 

@@ -290,6 +290,38 @@ Generate `frontmatter_metadata` object for AI-powered agent matching in `/task-w
 - **capabilities**: Extract from agent description and template patterns
 - **keywords**: Combine agent name parts + technologies + key patterns
 
+### Stack Value Guidelines (TASK-META-FIX)
+
+Use ONLY these exact values for the `stack` field (case-insensitive):
+
+**Core Languages**: `python`, `javascript`, `typescript`, `csharp`, `java`, `go`, `rust`, `ruby`, `php`, `swift`, `kotlin`, `dart`
+
+**Frameworks/Platforms**: `react`, `dotnet`, `maui`, `flutter`
+
+**Technologies**: `xaml`, `realm`
+
+**Meta**: `cross-stack` (for agents that work across all stacks)
+
+**Common Mistakes to Avoid**:
+- ❌ `dotnet-maui` → Use separate values: `["dotnet", "maui"]`
+- ❌ `c#` or `.NET` → Use `csharp` and `dotnet`
+- ❌ `erroror` → This is a library, put in `keywords` instead
+- ❌ `nsubstitute`, `xunit`, `pytest` → These are test libraries, put in `keywords`
+- ❌ `fastapi`, `flask`, `express` → These are frameworks/libraries, put in `keywords`
+- ❌ `realm-db`, `react-query` → These are libraries, put in `keywords`
+
+**Correct Example**:
+```json
+"frontmatter_metadata": {
+  "stack": ["csharp", "maui", "dotnet"],
+  "phase": "implementation",
+  "capabilities": ["Repository pattern", "Error handling", "MVVM"],
+  "keywords": ["erroror", "realm", "nsubstitute", "xunit", "railway-oriented", "result-pattern"]
+}
+```
+
+**Why This Matters**: Stack values are used for agent discovery matching. Invalid values cause validation warnings and may prevent correct agent selection during `/task-work`.
+
 
 ## Key Principles
 

@@ -14,9 +14,12 @@ This generator creates a modular rules directory structure that supports:
 from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass
+import logging
 
 from ..codebase_analyzer.models import CodebaseAnalysis
 from .path_pattern_inferrer import PathPatternInferrer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -263,9 +266,73 @@ work on relevant files.
 """
         return content.strip()
 
+    def _read_enhanced_agent_content(self, agent_name: str) -> Optional[str]:
+        """
+        Read enhanced agent content from disk if available.
+
+        TASK-RULES-ENHANCE: Enables using rich /agent-enhance content in rules/guidance.
+
+        Args:
+            agent_name: Name of the agent (e.g., "repository-specialist")
+
+        Returns:
+            Enhanced agent content or None if not found
+        """
+        # Check agents directory in output path
+        agent_file = self.output_path / "agents" / f"{agent_name}.md"
+        if agent_file.exists():
+            try:
+                content = agent_file.read_text()
+                logger.debug(f"Read enhanced agent content from {agent_file}")
+                return content
+            except Exception as e:
+                logger.warning(f"Failed to read enhanced agent file {agent_file}: {e}")
+        return None
+
+    def _merge_paths_into_frontmatter(
+        self,
+        content: str,
+        paths_filter: str
+    ) -> str:
+        """
+        Merge paths filter into existing frontmatter or add new frontmatter.
+
+        Args:
+            content: Original content (may have frontmatter)
+            paths_filter: Path patterns to add
+
+        Returns:
+            Content with paths in frontmatter
+        """
+        if not paths_filter:
+            return content
+
+        # Check if content has frontmatter
+        if content.startswith("---"):
+            parts = content.split("---", 2)
+            if len(parts) >= 3:
+                existing_fm = parts[1].strip()
+                body = parts[2].strip()
+
+                # Check if paths already in frontmatter
+                if "paths:" in existing_fm:
+                    # Already has paths, return as-is
+                    return content
+
+                # Add paths to existing frontmatter
+                new_fm = f"---\npaths: {paths_filter}\n{existing_fm}\n---\n\n"
+                return new_fm + body
+
+        # No frontmatter - add new one with paths
+        frontmatter = self._generate_frontmatter(paths_filter)
+        return frontmatter + content
+
     def _generate_guidance_rules(self, agent) -> str:
         """
         Generate guidance file for an agent with path inference.
+
+        TASK-RULES-ENHANCE: Now uses enhanced agent content when available,
+        falling back to stub content for non-enhanced agents.
 
         Args:
             agent: Agent metadata object
@@ -273,12 +340,25 @@ work on relevant files.
         Returns:
             Agent-specific guidance content with paths: frontmatter
         """
-        # Use PathPatternInferrer for intelligent path inference
+        agent_slug = self._slugify(agent.name)
+
+        # Try to read enhanced agent content first (TASK-RULES-ENHANCE)
+        enhanced_content = self._read_enhanced_agent_content(agent_slug)
+
+        # Get path filter for conditional loading
         agent_technologies = getattr(agent, 'technologies', [])
         paths_filter = self.path_inferrer.infer_for_agent(
             agent.name,
             agent_technologies
         )
+
+        if enhanced_content:
+            # Use enhanced content with path frontmatter
+            logger.info(f"Using enhanced content for agent: {agent.name}")
+            return self._merge_paths_into_frontmatter(enhanced_content, paths_filter)
+
+        # Fallback to stub generation (original behavior)
+        logger.debug(f"No enhanced content for agent: {agent.name}, using stub")
         frontmatter = self._generate_frontmatter(paths_filter) if paths_filter else ""
 
         content = f"""{frontmatter}# {agent.name}

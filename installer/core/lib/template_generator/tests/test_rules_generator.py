@@ -215,9 +215,9 @@ class TestRulesStructureGenerator:
         )
         rules = generator.generate()
         # Should have rules for each agent
-        assert "rules/agents/repository-specialist.md" in rules
-        assert "rules/agents/api-specialist.md" in rules
-        assert "rules/agents/testing-specialist.md" in rules
+        assert "rules/guidance/repository-specialist.md" in rules
+        assert "rules/guidance/api-specialist.md" in rules
+        assert "rules/guidance/testing-specialist.md" in rules
 
 
 class TestCoreCLAUDEGeneration:
@@ -380,7 +380,7 @@ class TestAgentRulesGeneration:
             output_path=Path("/test/output")
         )
         agent = sample_agents[0]
-        content = generator._generate_agent_rules(agent)
+        content = generator._generate_guidance_rules(agent)
         assert agent.name in content
 
     def test_agent_rules_with_path_inference(self, sample_analysis, sample_agents):
@@ -392,7 +392,7 @@ class TestAgentRulesGeneration:
         )
         # Repository specialist should have repository paths
         agent = MockAgent("repository-specialist")
-        content = generator._generate_agent_rules(agent)
+        content = generator._generate_guidance_rules(agent)
         if "---" in content:  # Has frontmatter
             assert "paths:" in content
 
@@ -405,7 +405,7 @@ class TestAgentRulesGeneration:
         )
         # Generic agent should not have paths frontmatter
         agent = MockAgent("general-agent")
-        content = generator._generate_agent_rules(agent)
+        content = generator._generate_guidance_rules(agent)
         # Should not start with frontmatter
         assert not content.startswith("---\npaths:")
 
@@ -582,3 +582,197 @@ class TestHelperMethods:
         extensions = generator._get_language_extensions("TypeScript")
         assert ".ts" in extensions
         assert ".tsx" in extensions
+
+
+class TestEnhancedAgentContent:
+    """Test enhanced agent content integration (TASK-RULES-ENHANCE)."""
+
+    def test_uses_enhanced_content_when_available(self, sample_analysis, sample_agents, tmp_path):
+        """Test that enhanced agent content is used when file exists."""
+        # Create output directory with enhanced agent file
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        enhanced_content = """---
+name: repository-specialist
+description: Repository pattern specialist
+---
+
+# Repository Specialist
+
+## Purpose
+
+Enhanced purpose with boundaries and detailed guidance.
+
+## Boundaries
+
+### ALWAYS
+- ✅ Use proper patterns for data access
+
+### NEVER
+- ❌ Never expose IQueryable outside repository
+"""
+        (agents_dir / "repository-specialist.md").write_text(enhanced_content)
+
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        agent = MockAgent("repository-specialist")
+        content = generator._generate_guidance_rules(agent)
+
+        # Should use enhanced content
+        assert "Enhanced purpose with boundaries" in content
+        assert "## Boundaries" in content
+        assert "### ALWAYS" in content
+        assert "### NEVER" in content
+
+    def test_adds_paths_to_enhanced_content_without_paths(self, sample_analysis, sample_agents, tmp_path):
+        """Test that paths are added to enhanced content missing paths frontmatter."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        enhanced_content = """---
+name: repository-specialist
+---
+
+# Repository Specialist
+
+## Purpose
+
+Enhanced content without paths.
+"""
+        (agents_dir / "repository-specialist.md").write_text(enhanced_content)
+
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        agent = MockAgent("repository-specialist")
+        content = generator._generate_guidance_rules(agent)
+
+        # Should have paths added to frontmatter
+        assert "paths:" in content
+        assert "Enhanced content without paths" in content
+
+    def test_preserves_existing_paths_in_enhanced_content(self, sample_analysis, sample_agents, tmp_path):
+        """Test that existing paths in enhanced content are preserved."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        enhanced_content = """---
+name: repository-specialist
+paths: **/custom/path/**
+---
+
+# Repository Specialist
+
+Content with custom paths.
+"""
+        (agents_dir / "repository-specialist.md").write_text(enhanced_content)
+
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        agent = MockAgent("repository-specialist")
+        content = generator._generate_guidance_rules(agent)
+
+        # Should preserve existing paths
+        assert "**/custom/path/**" in content
+        assert "Content with custom paths" in content
+
+    def test_falls_back_to_stub_when_no_enhanced_file(self, sample_analysis, sample_agents, tmp_path):
+        """Test fallback to stub content when no enhanced file exists."""
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        agent = MockAgent("nonexistent-agent")
+        content = generator._generate_guidance_rules(agent)
+
+        # Should use stub content
+        assert "nonexistent-agent" in content
+        assert "## Purpose" in content
+        assert "## Capabilities" in content
+
+    def test_read_enhanced_agent_content_returns_none_for_missing_file(self, sample_analysis, sample_agents, tmp_path):
+        """Test _read_enhanced_agent_content returns None when file doesn't exist."""
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        result = generator._read_enhanced_agent_content("nonexistent-agent")
+        assert result is None
+
+    def test_read_enhanced_agent_content_returns_content_for_existing_file(self, sample_analysis, sample_agents, tmp_path):
+        """Test _read_enhanced_agent_content returns content when file exists."""
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "test-agent.md").write_text("# Test Agent\n\nContent here.")
+
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        result = generator._read_enhanced_agent_content("test-agent")
+        assert result == "# Test Agent\n\nContent here."
+
+    def test_merge_paths_into_frontmatter_adds_paths_to_no_frontmatter(self, sample_analysis, sample_agents, tmp_path):
+        """Test _merge_paths_into_frontmatter adds frontmatter to content without it."""
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        content = "# Agent\n\nNo frontmatter content."
+        result = generator._merge_paths_into_frontmatter(content, "**/test/**")
+
+        assert result.startswith("---\npaths: **/test/**")
+        assert "# Agent" in result
+        assert "No frontmatter content" in result
+
+    def test_merge_paths_into_frontmatter_preserves_existing_paths(self, sample_analysis, sample_agents, tmp_path):
+        """Test _merge_paths_into_frontmatter preserves existing paths."""
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        content = """---
+name: test
+paths: **/existing/**
+---
+
+# Agent
+"""
+        result = generator._merge_paths_into_frontmatter(content, "**/new/**")
+
+        # Should keep existing paths, not add new
+        assert "**/existing/**" in result
+        # New paths should NOT be added when existing paths present
+        assert content.count("paths:") == result.count("paths:")
+
+    def test_merge_paths_returns_unchanged_when_no_paths_filter(self, sample_analysis, sample_agents, tmp_path):
+        """Test _merge_paths_into_frontmatter returns unchanged content when no paths filter."""
+        generator = RulesStructureGenerator(
+            analysis=sample_analysis,
+            agents=sample_agents,
+            output_path=tmp_path
+        )
+
+        content = "# Agent\n\nOriginal content."
+        result = generator._merge_paths_into_frontmatter(content, "")
+
+        assert result == content

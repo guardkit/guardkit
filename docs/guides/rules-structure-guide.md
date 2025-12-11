@@ -49,7 +49,7 @@ This automatically:
 - Creates `.claude/rules/` directory structure
 - Splits CLAUDE.md into core (~5KB) + rule files
 - Adds path patterns to rule file frontmatter
-- Organizes agents into rules/agents/
+- Organizes guidance into rules/guidance/
 
 ### 2. Directory Structure Overview
 
@@ -69,7 +69,7 @@ This automatically:
     │   ├── api-patterns.md  # paths: **/api/**, **/endpoints/**
     │   ├── database.md      # paths: **/models/**, **/repositories/**
     │   └── frontend.md      # paths: **/components/**, **/pages/**
-    └── agents/
+    └── guidance/
         ├── api-specialist.md      # paths: **/api/**/*.py
         ├── database-specialist.md # paths: **/models/**
         └── react-specialist.md    # paths: **/*.tsx, **/components/**
@@ -148,7 +148,7 @@ Analyze your CLAUDE.md and identify distinct categories:
   → `rules/patterns/`
 
 - **Agent Guidance**: Specialized agent instructions
-  → `rules/agents/`
+  → `rules/guidance/`
 
 ### Step 2: Extract and Split Content
 
@@ -222,16 +222,16 @@ src/
 - Code style: `.claude/rules/code-style.md`
 - API patterns: `.claude/rules/patterns/api-patterns.md`
 - Testing: `.claude/rules/testing.md`
-- Agents: `.claude/rules/agents/`
+- Guidance: `.claude/rules/guidance/`
 ```
 
 ### Step 4: Organize Agents
 
-Move agent files into rules/agents/ and add path patterns:
+Move agent files into rules/guidance/ and add path patterns:
 
 ```bash
-mkdir -p .claude/rules/agents
-mv .claude/agents/api-specialist.md .claude/rules/agents/
+mkdir -p .claude/rules/guidance
+mv .claude/agents/api-specialist.md .claude/rules/guidance/
 ```
 
 Edit agent frontmatter to add paths:
