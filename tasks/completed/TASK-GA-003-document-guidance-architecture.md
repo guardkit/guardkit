@@ -1,10 +1,10 @@
 ---
 id: TASK-GA-003
 title: Document guidance architecture in rules-structure-guide
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T20:00:00Z
-updated: 2025-12-11T20:00:00Z
+updated: 2025-12-11T21:30:00Z
 priority: medium
 tags: [documentation, rules-structure, guidance, architecture]
 complexity: 2
@@ -13,6 +13,7 @@ related_to: [TASK-GA-001, TASK-GA-004]
 implementation_mode: direct
 conductor_workspace: guidance-architecture-wave2-1
 wave: 2
+completed: 2025-12-11T21:30:00Z
 ---
 
 # Task: Document Guidance Architecture in Rules-Structure-Guide
@@ -23,10 +24,10 @@ The relationship between `agents/` files and `rules/guidance/` files needs forma
 
 ## Acceptance Criteria
 
-- [ ] New section added to `docs/guides/rules-structure-guide.md`
-- [ ] Clear comparison table between agent and guidance files
-- [ ] Source of truth policy documented
-- [ ] Size guidelines documented
+- [x] New section added to `docs/guides/rules-structure-guide.md`
+- [x] Clear comparison table between agent and guidance files
+- [x] Source of truth policy documented
+- [x] Size guidelines documented
 
 ## Implementation Details
 
