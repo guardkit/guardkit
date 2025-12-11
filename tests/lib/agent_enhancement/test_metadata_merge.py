@@ -11,7 +11,7 @@ import frontmatter
 
 # Import the modules to test
 import sys
-lib_path = Path(__file__).parent.parent.parent.parent / 'installer' / 'global' / 'lib' / 'agent_enhancement'
+lib_path = Path(__file__).parent.parent.parent.parent / 'installer' / 'core' / 'lib' / 'agent_enhancement'
 sys.path.insert(0, str(lib_path))
 
 from parser import EnhancementParser
@@ -325,3 +325,134 @@ class TestPromptBuilderMetadata:
         assert "Discovery Metadata" in prompt
         assert "agent matching" in prompt.lower()
         assert "Technology stacks from file extensions" in prompt
+
+
+class TestYAMLSpecialCharacters:
+    """Test handling of YAML special characters in frontmatter.
+
+    TASK-FIX-YAML-A3B7: Fix YAML parsing errors for agent descriptions
+    with colons and other special characters.
+    """
+
+    def test_description_with_colon(self):
+        """Test that descriptions containing colons are properly handled."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: Tests for: unit, integration, e2e
+---
+# Content
+"""
+        metadata = {"stack": ["python"]}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+
+        # Should parse without error
+        post = frontmatter.loads(result)
+        assert "description" in post.metadata
+        assert "stack" in post.metadata
+        assert "Tests for: unit, integration, e2e" in post.metadata["description"]
+
+    def test_description_with_brackets(self):
+        """Test that descriptions with brackets are handled."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: Implements interfaces [A, B, C]
+---
+# Content
+"""
+        metadata = {"stack": ["python"]}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert "description" in post.metadata
+        assert "Implements interfaces [A, B, C]" in post.metadata["description"]
+
+    def test_description_with_angle_brackets(self):
+        """Test ErrorOr<T> style descriptions."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: Uses ErrorOr<T> pattern for railway-oriented programming
+---
+# Content
+"""
+        metadata = {"stack": ["csharp"]}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert "ErrorOr<T>" in post.metadata.get("description", "")
+
+    def test_multiple_colons_in_description(self):
+        """Test complex descriptions with multiple special characters."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: business-logic-engine-specialist
+description: Engine pattern for business logic coordination with Interface Segregation (LoadingEngine implements 5 interfaces: IParcelProcessor, ILoadingSummaryProvider, ILoadingValidator, IOutstandingParcelProvider, ILoadingEngineLifecycle)
+---
+# Content
+"""
+        metadata = {"stack": ["csharp", "maui"], "phase": "implementation"}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert post.metadata.get("name") == "business-logic-engine-specialist"
+        assert "stack" in post.metadata
+        assert "LoadingEngine implements 5 interfaces:" in post.metadata.get("description", "")
+
+    def test_description_already_quoted(self):
+        """Test that already-quoted descriptions are not double-quoted."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: "Already quoted: with colon"
+---
+# Content
+"""
+        metadata = {"stack": ["python"]}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert post.metadata["description"] == "Already quoted: with colon"
+
+    def test_description_with_single_quotes(self):
+        """Test that single-quoted descriptions are preserved."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: 'Single quoted: with colon'
+---
+# Content
+"""
+        metadata = {"stack": ["python"]}
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert post.metadata["description"] == "Single quoted: with colon"
+
+    def test_metadata_values_with_colons(self):
+        """Test that metadata values with special characters are sanitized."""
+        applier = EnhancementApplier()
+
+        content = """---
+name: test-agent
+description: Test agent
+---
+# Content
+"""
+        metadata = {
+            "stack": ["python"],
+            "keywords": ["api:v1", "test:unit", "framework:pytest"]
+        }
+
+        result = applier._merge_frontmatter_metadata_content(content, metadata)
+        post = frontmatter.loads(result)
+        assert "keywords" in post.metadata
+        assert "api:v1" in post.metadata["keywords"]

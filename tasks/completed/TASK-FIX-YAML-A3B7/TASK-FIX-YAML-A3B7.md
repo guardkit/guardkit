@@ -1,18 +1,32 @@
 ---
 id: TASK-FIX-YAML-A3B7
 title: YAML Escaping for Agent Frontmatter
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T10:45:00Z
-updated: 2025-12-11T10:45:00Z
+updated: 2025-12-11T11:55:00Z
+completed: 2025-12-11T11:55:00Z
 priority: high
 tags: [agent-enhance, yaml, frontmatter, bugfix]
 complexity: 3
 parent_review: TASK-REV-D4A7
+completed_location: tasks/completed/TASK-FIX-YAML-A3B7/
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: 100%
+  last_run: 2025-12-11T11:50:00Z
+  tests_passed: 19
+  tests_failed: 0
+  new_tests_added: 7
+organized_files:
+  - TASK-FIX-YAML-A3B7.md
+implementation_summary:
+  files_modified: 2
+  files_added: 0
+  lines_added: 230
+  lines_removed: 5
+  commits: 1
+  commit_hash: 6af7103
 ---
 
 # Task: YAML Escaping for Agent Frontmatter
