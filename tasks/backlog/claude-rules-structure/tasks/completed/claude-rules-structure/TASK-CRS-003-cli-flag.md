@@ -1,10 +1,11 @@
 ---
 id: TASK-CRS-003
 title: Add --use-rules-structure CLI Flag
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-11T12:15:00Z
-updated: 2025-12-11T12:15:00Z
+updated: 2025-12-11T13:15:00Z
+completed: 2025-12-11T13:15:00Z
 priority: high
 tags: [cli, template-create, rules-structure]
 complexity: 3
@@ -13,8 +14,10 @@ wave: 3
 implementation_mode: direct
 conductor_workspace: claude-rules-wave3-1
 estimated_hours: 1-2
+actual_hours: 1
 dependencies:
   - TASK-CRS-002
+commit: 71796d2
 ---
 
 # Task: Add --use-rules-structure CLI Flag
