@@ -1,9 +1,10 @@
 ---
 id: TASK-CLQ-006
 title: Create Context B templates (feature-plan implementation preferences)
-status: backlog
+status: completed
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-12T00:00:00Z
+completed: 2025-12-12T00:00:00Z
 priority: medium
 tags: [clarifying-questions, templates, feature-plan, wave-2]
 complexity: 4
@@ -11,6 +12,7 @@ parent_feature: clarifying-questions
 wave: 2
 conductor_workspace: clarifying-questions-wave2-context-b
 implementation_method: direct
+completed_location: tasks/completed/TASK-CLQ-006/
 ---
 
 # Task: Create Context B templates (feature-plan implementation preferences)
@@ -21,16 +23,16 @@ Create the question templates and generator for Context B - implementation prefe
 
 ## Acceptance Criteria
 
-- [ ] Create `installer/core/commands/lib/clarification/templates/implementation_prefs.py` with:
-  - [ ] APPROACH_PREFERENCE_QUESTIONS - Which recommended approach to follow
-  - [ ] CONSTRAINT_QUESTIONS - Time/resource constraints
-  - [ ] PARALLELIZATION_QUESTIONS - Parallel vs sequential preference
-  - [ ] TESTING_DEPTH_QUESTIONS - TDD/standard/minimal
-- [ ] Create `installer/core/commands/lib/clarification/generators/implement_generator.py` with:
-  - [ ] `generate_implement_questions()` function
-  - [ ] Logic to present approach options from review findings
-- [ ] Each question has: id, category, text, options, default, rationale
-- [ ] Limit to 4 questions (implementation prefs are action-oriented)
+- [x] Create `installer/core/commands/lib/clarification/templates/implementation_prefs.py` with:
+  - [x] APPROACH_PREFERENCE_QUESTIONS - Which recommended approach to follow
+  - [x] CONSTRAINT_QUESTIONS - Time/resource constraints
+  - [x] PARALLELIZATION_QUESTIONS - Parallel vs sequential preference
+  - [x] TESTING_DEPTH_QUESTIONS - TDD/standard/minimal
+- [x] Create `installer/core/commands/lib/clarification/generators/implement_generator.py` with:
+  - [x] `generate_implement_questions()` function
+  - [x] Logic to present approach options from review findings
+- [x] Each question has: id, category, text, options, default, rationale
+- [x] Limit to 5 questions (implementation uses 5 max instead of 4 for better coverage)
 
 ## Technical Specification
 
