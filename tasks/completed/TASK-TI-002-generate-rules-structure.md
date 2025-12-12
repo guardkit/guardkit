@@ -1,9 +1,10 @@
 ---
 id: TASK-TI-002
 title: Generate rules structure in template-init command
-status: in_progress
+status: completed
 created: 2025-12-12T10:45:00Z
-updated: 2025-12-12T12:30:00Z
+updated: 2025-12-12T14:15:00Z
+completed: 2025-12-12T14:15:00Z
 priority: high
 tags: [template-init, rules-structure, python, implementation]
 complexity: 6
