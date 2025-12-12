@@ -441,18 +441,53 @@ class TemplateInitCommand:
                 f.write(template.claude_md)
             print(f"  ✓ Saved: CLAUDE.md")
 
-            # Save agents
+            # Save agents (split into core and extended files)
+            from installer.core.lib.agent_generator.agent_splitter import (
+                split_agent_content,
+                validate_split_sizes
+            )
+
             agents_dir = template_path / "agents"
             agents_dir.mkdir(exist_ok=True)
 
             agent_count = 0
+            warnings = []
             for agent in agents.all_agents():
-                agent_file = agents_dir / f"{agent.name}.md"
-                with open(agent_file, "w", encoding="utf-8") as f:
-                    f.write(agent.full_definition)
-                agent_count += 1
+                # Split agent into core and extended parts
+                try:
+                    core_content, extended_content = split_agent_content(agent.full_definition)
 
-            print(f"  ✓ Saved: {agent_count} agents")
+                    # Save core file
+                    agent_file = agents_dir / f"{agent.name}.md"
+                    with open(agent_file, "w", encoding="utf-8") as f:
+                        f.write(core_content)
+
+                    # Save extended file
+                    extended_file = agents_dir / f"{agent.name}-ext.md"
+                    with open(extended_file, "w", encoding="utf-8") as f:
+                        f.write(extended_content)
+
+                    # Validate sizes
+                    size_warnings = validate_split_sizes(core_content, extended_content)
+                    if size_warnings:
+                        warnings.extend([f"  ⚠️ {agent.name}: {w}" for w in size_warnings])
+
+                    agent_count += 1
+                except Exception as e:
+                    print(f"  ⚠️ Failed to split agent {agent.name}: {e}")
+                    # Fallback: save unsplit agent
+                    agent_file = agents_dir / f"{agent.name}.md"
+                    with open(agent_file, "w", encoding="utf-8") as f:
+                        f.write(agent.full_definition)
+                    agent_count += 1
+
+            print(f"  ✓ Saved: {agent_count} agents (core + extended)")
+
+            # Show size warnings if any
+            if warnings:
+                print("\n  Size Warnings:")
+                for warning in warnings:
+                    print(warning)
 
             # Save code templates (if any)
             if template.code_templates:
