@@ -18,6 +18,7 @@ import logging
 
 from ..codebase_analyzer.models import CodebaseAnalysis
 from .path_pattern_inferrer import PathPatternInferrer
+from ..guidance_generator import generate_guidance_from_agent
 
 logger = logging.getLogger(__name__)
 
@@ -602,12 +603,12 @@ work on relevant files.
         )
 
         if enhanced_content:
-            # Generate slim guidance from enhanced content (TASK-GA-001)
+            # Generate slim guidance from enhanced content (TASK-TI-005)
+            # Use the new guidance_generator module
             logger.info(f"Generating slim guidance for agent: {agent.name}")
-            return self._create_slim_guidance(
-                agent.name,
+            return generate_guidance_from_agent(
                 enhanced_content,
-                paths_filter
+                agent_slug
             )
 
         # Fallback to stub generation (original behavior)
