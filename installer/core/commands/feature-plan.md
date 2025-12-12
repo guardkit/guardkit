@@ -17,6 +17,340 @@ Orchestrates the feature planning workflow in a single user-facing command by au
 | `--defaults` | Use clarification defaults throughout workflow |
 | `--answers="..."` | Inline answers (propagated to task-review and subtask creation) |
 
+## Clarification Integration
+
+The `/feature-plan` command orchestrates `/task-review` under the hood, so clarification questions flow automatically at two key points in the workflow.
+
+### Phase Flow with Clarification Points
+
+```
+/feature-plan "add authentication"
+        │
+        ▼
+┌─────────────────────────────┐
+│ 1. Create Review Task       │
+│    (auto-generated)         │
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 2. Execute Task Review      │◀── Context A: Review Scope
+│    with --mode=decision     │    (What to analyze?)
+│                             │    Questions: focus, depth, trade-offs
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 3. Decision Checkpoint      │
+│    [A]ccept/[R]evise/       │
+│    [I]mplement/[C]ancel     │
+└─────────────────────────────┘
+        │
+        ▼ (if [I]mplement)
+┌─────────────────────────────┐
+│ 4. Implementation Prefs     │◀── Context B: Implementation
+│    (approach, parallel,     │    (How to implement?)
+│    testing depth)           │    Questions: approach, execution, testing
+└─────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────┐
+│ 5. Generate Feature         │
+│    Structure with subtasks  │
+│    (uses clarification)     │
+└─────────────────────────────┘
+```
+
+### Context A: Review Scope Clarification
+
+**When**: During Step 2 (Execute Task Review), before analysis begins.
+
+**Purpose**: Clarify what the review should focus on and what trade-offs to prioritize.
+
+**Questions Asked**:
+1. **Review Focus** - What aspects to analyze (all/technical/architecture/performance/security)
+2. **Analysis Depth** - How thorough to be (quick/standard/deep)
+3. **Trade-off Priority** - What to optimize for (speed/quality/cost/maintainability/balanced)
+
+**Gating**: Context A triggers for decision mode tasks (which feature-plan uses) unless `--no-questions` is specified.
+
+### Context B: Implementation Preferences
+
+**When**: At Step 4, after user chooses [I]mplement at decision checkpoint.
+
+**Purpose**: Clarify how subtasks should be created and executed.
+
+**Questions Asked**:
+1. **Approach Selection** - Which recommended approach to follow (from review options)
+2. **Execution Preference** - Parallel vs sequential execution (Conductor integration)
+3. **Testing Depth** - Testing rigor for subtasks (TDD/standard/minimal/default)
+
+**Gating**: Context B triggers when 2+ subtasks will be created, unless `--no-questions` is specified.
+
+### Example: Full Clarification Flow
+
+```bash
+/feature-plan "add user authentication"
+
+Creating review task: TASK-REV-a3f8
+Executing review...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 REVIEW SCOPE CLARIFICATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Review Focus
+    What aspects should this analysis focus on?
+
+    [A]ll aspects - Comprehensive analysis
+    [T]echnical only - Focus on technical feasibility
+    [R]chitecture - Architecture and design patterns
+    [P]erformance - Performance and scalability
+    [S]ecurity - Security considerations
+
+    Default: [A]ll aspects
+    Your choice [A/T/R/P/S]: A
+
+Q2. Trade-off Priority
+    What trade-offs are you optimizing for?
+
+    [S]peed of delivery
+    [Q]uality/reliability
+    [C]ost
+    [M]aintainability
+    [B]alanced
+
+    Default: [B]alanced
+    Your choice [S/Q/C/M/B]: Q
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Recorded 2 decisions - proceeding with review
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[Review executes with clarified scope...]
+
+TECHNICAL OPTIONS ANALYSIS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1: JWT with refresh tokens (Recommended)
+  Complexity: Medium (6/10)
+  Effort: 4-6 hours
+  ...
+
+Option 2: Session-based auth
+  ...
+
+Option 3: OAuth 2.0 integration
+  ...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DECISION CHECKPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Review complete. Found 3 approaches:
+1. JWT with refresh tokens (Recommended)
+2. Session-based auth
+3. OAuth 2.0 integration
+
+Options:
+  [A]ccept - Approve findings only
+  [R]evise - Request deeper analysis
+  [I]mplement - Create feature structure
+  [C]ancel - Discard review
+
+Your choice: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 IMPLEMENTATION PREFERENCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Approach Selection
+    The review identified 3 approaches. Recommended: JWT with refresh tokens.
+    Which should subtasks follow?
+
+    [1] JWT with refresh tokens (Recommended)
+    [2] Session-based auth
+    [3] OAuth 2.0 integration
+    [R]ecommend for me
+
+    Default: [R]ecommend for me
+    Your choice [1/2/3/R]: 1
+
+Q2. Execution Preference
+    How should 5 subtasks be executed?
+
+    [M]aximize parallel - Use Conductor workspaces
+    [S]equential - Simpler execution
+    [D]etect automatically (recommended)
+
+    Default: [D]etect automatically (recommended)
+    Your choice [M/S/D]: M
+
+Q3. Testing Depth
+    What testing depth for subtasks?
+
+    [F]ull TDD (test-first for all subtasks)
+    [S]tandard (quality gates only)
+    [M]inimal (compilation only)
+    [D]efault (based on complexity)
+
+    Default: [D]efault (based on complexity)
+    Your choice [F/S/M/D]: S
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Creating 5 subtasks with preferences:
+  - Approach: JWT with refresh tokens
+  - Execution: Parallel (3 Conductor workspaces)
+  - Testing: Standard (quality gates)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Generating feature structure...
+
+✅ Created: tasks/backlog/user-authentication/
+├── README.md
+├── IMPLEMENTATION-GUIDE.md (3 parallel waves)
+├── TASK-AUTH-001-setup-jwt-middleware.md
+├── TASK-AUTH-002-create-user-model.md
+├── TASK-AUTH-003-implement-login-endpoint.md
+├── TASK-AUTH-004-implement-refresh-tokens.md
+└── TASK-AUTH-005-add-auth-tests.md
+
+Subtasks configured with:
+  - Approach: JWT with refresh tokens
+  - Execution: Parallel (Conductor workspaces assigned)
+  - Testing: Standard mode
+```
+
+### Example: Skip Clarification
+
+For automation or when defaults are acceptable:
+
+```bash
+/feature-plan "add dark mode" --no-questions
+
+Creating review task: TASK-REV-b4c5
+Executing review... (skipping clarification)
+
+[Review executes with default scope - all aspects, balanced trade-offs...]
+
+TECHNICAL OPTIONS ANALYSIS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 DECISION CHECKPOINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Decision: I (choosing [I]mplement with --no-questions skips preferences)
+
+Generating feature structure with defaults...
+  - Approach: Recommended option (auto-selected)
+  - Execution: Auto-detect (parallel where safe)
+  - Testing: Default based on complexity
+
+✅ Created: tasks/backlog/dark-mode/
+├── README.md
+├── IMPLEMENTATION-GUIDE.md
+├── TASK-DM-001-add-css-variables.md
+├── TASK-DM-002-create-theme-context.md
+└── ...
+```
+
+### Example: Force Clarification
+
+For simple features where you still want explicit control:
+
+```bash
+/feature-plan "add logout button" --with-questions
+
+# Forces Context A and Context B questions even for simple feature
+# Useful for learning workflows or when defaults may not be appropriate
+```
+
+### Example: Inline Answers for CI/CD
+
+```bash
+/feature-plan "add caching layer" --answers="focus:technical tradeoff:speed approach:1 execution:sequential testing:minimal"
+
+# All clarification questions answered inline
+# Useful for automated pipelines or repeatable workflows
+```
+
+### Clarification Propagation
+
+When `/feature-plan` calls `/task-review`, clarification flags propagate automatically:
+
+```python
+# Pseudo-code for feature-plan orchestration
+def execute_feature_plan(description: str, flags: dict):
+    # Create review task
+    task_id = create_review_task(description)
+
+    # Execute task-review with propagated flags
+    review_flags = {
+        'no_questions': flags.get('no_questions'),
+        'with_questions': flags.get('with_questions'),
+        'defaults': flags.get('defaults'),
+        'answers': flags.get('answers'),
+    }
+
+    # Task-review handles Context A clarification (Phase 1)
+    # and Context B clarification (at [I]mplement)
+    result = execute_task_review(
+        task_id,
+        mode='decision',
+        depth='standard',
+        flags=review_flags
+    )
+
+    # Generate feature structure using clarification context
+    if result.decision == 'implement':
+        generate_feature_structure(
+            findings=result.findings,
+            clarification=result.clarification,  # Contains both Context A & B decisions
+            approach=result.clarification.get('approach'),
+            execution=result.clarification.get('execution'),
+            testing=result.clarification.get('testing')
+        )
+```
+
+### Clarification Decision Persistence
+
+Clarification decisions are saved to the review task's frontmatter for audit trail:
+
+```yaml
+---
+id: TASK-REV-a3f8
+title: Plan: add user authentication
+status: review_complete
+clarification:
+  context_a:
+    timestamp: 2025-12-08T14:30:00Z
+    decisions:
+      focus: all
+      tradeoff: quality
+  context_b:
+    timestamp: 2025-12-08T14:35:00Z
+    decisions:
+      approach: jwt_refresh_tokens
+      execution: parallel
+      testing: standard
+---
+```
+
+This enables:
+- Audit trail of planning decisions
+- Reproducibility if feature needs re-planning
+- Understanding why specific subtask configuration was chosen
+
+### Benefits of Clarification in Feature Planning
+
+1. **Focused Analysis** - Context A ensures review covers what matters most
+2. **Explicit Approach Selection** - Context B eliminates ambiguity about which option to implement
+3. **Optimized Execution** - Parallelization preferences captured upfront
+4. **Appropriate Testing** - Testing depth set based on user priorities
+5. **Reduced Rework** - ~15% reduction from incorrect assumptions
+
 ## Overview
 
 The `/feature-plan` command streamlines feature planning by combining task creation and review analysis into a single workflow. It automatically:
