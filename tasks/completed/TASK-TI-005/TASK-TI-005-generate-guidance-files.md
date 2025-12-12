@@ -1,9 +1,11 @@
 ---
 id: TASK-TI-005
 title: Generate guidance files from agents in template-init
-status: backlog
+status: completed
 created: 2025-12-12T10:45:00Z
-updated: 2025-12-12T10:45:00Z
+updated: 2025-12-12T17:30:00Z
+completed: 2025-12-12T17:30:00Z
+completed_location: tasks/completed/TASK-TI-005/
 priority: medium
 tags: [template-init, guidance, rules-structure, python, implementation]
 complexity: 5
@@ -12,6 +14,19 @@ development_mode: tdd
 wave: 3
 conductor_workspace: template-init-rules-wave3-2
 parent_feature: template-init-rules-structure
+test_results:
+  unit_tests: 34 passed
+  integration_tests: 6 passed
+  total_coverage: 93%
+  module_coverage:
+    extractor: 88%
+    generator: 89%
+    path_patterns: 95%
+    validator: 100%
+quality_gates:
+  tests_passing: true
+  coverage_threshold: true
+  integration_verified: true
 ---
 
 # Task: Generate Guidance Files from Agents in template-init
