@@ -219,6 +219,43 @@ This template includes 4 specialized agents:
 3. **nextjs-server-actions-specialist** - Server Actions and mutations
 4. **react-state-specialist** - React hooks and state management
 
+## Rules Structure
+
+This template uses Claude Code's modular rules structure for optimized context loading.
+
+### Directory Layout
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # Code style guidelines
+    ├── testing.md               # Testing conventions
+    ├── patterns/                # Pattern-specific rules
+    │   └── {pattern}.md
+    └── agents/                  # Agent guidance
+        └── {agent}.md
+```
+
+### Path-Specific Rules
+
+Rules files use `paths:` frontmatter for conditional loading:
+
+| Rule File | Loads When Editing |
+|-----------|-------------------|
+| `rules/code-style.md` | Any `.tsx`, `.ts` file |
+| `rules/testing.md` | Test files |
+| `rules/server/components.md` | `**/app/**/*.tsx` |
+| `rules/server/actions.md` | `**/actions/*.ts` |
+| `rules/database/prisma.md` | `**/prisma/**` |
+| `rules/guidance/server-components.md` | App Router files |
+
+### Benefits
+
+- Rules only load when editing relevant files
+- Reduced context window usage (60-70% reduction)
+- Organized by concern (patterns, agents, etc.)
+
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)

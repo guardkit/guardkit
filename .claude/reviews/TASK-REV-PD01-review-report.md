@@ -2,290 +2,263 @@
 
 ## Executive Summary
 
-Analysis of applying progressive disclosure techniques from GuardKit to RequireKit reveals a **moderate opportunity** with **high reusability** of existing GuardKit assets. RequireKit's smaller codebase and specialized focus means the token savings will be proportionally smaller than GuardKit's, but the implementation effort is also significantly reduced.
+**Overall Assessment**: ✅ **PASS** - The progressive disclosure and Claude rules structure implementations are working correctly with minor improvements needed.
 
-**Recommendation**: **[C]ustomize** - Significant savings potential with RequireKit-specific adaptations needed.
-
-**Key Findings**:
-- RequireKit has 53KB of agent/CLAUDE content vs GuardKit's 100KB+
-- 30-40% token reduction achievable (vs 55-60% for GuardKit)
-- 80% of GuardKit scripts are reusable with minor modifications
-- 2-4 hours implementation effort (vs 8-12 hours for original GuardKit implementation)
+| Area | Score | Status |
+|------|-------|--------|
+| Template Create | 9/10 | ✅ Working |
+| Agent Enhance | 8/10 | ✅ Working |
+| Guardkit Init | 9/10 | ✅ Working |
+| Progressive Disclosure | 8/10 | ✅ Implemented |
+| Rules Structure | 9/10 | ✅ Implemented |
 
 ## Review Details
 
-- **Mode**: Architectural Review
-- **Depth**: Standard
-- **Duration**: ~1.5 hours
-- **Reviewer**: architectural-reviewer agent
-
-## 1. Content Inventory
-
-### RequireKit Files Suitable for Progressive Disclosure
-
-| File | Location | Size (bytes) | Lines | Token Est. | Priority |
-|------|----------|--------------|-------|------------|----------|
-| bdd-generator.md | installer/core/agents/ | 17,989 | 606 | ~4,500 | HIGH |
-| requirements-analyst.md | installer/core/agents/ | 12,301 | 388 | ~3,100 | HIGH |
-| bdd-generator.md | .claude/agents/ | 9,705 | 349 | ~2,400 | MEDIUM |
-| requirements-analyst.md | .claude/agents/ | 5,176 | 186 | ~1,300 | LOW |
-| CLAUDE.md | root | 5,953 | 128 | ~1,500 | LOW |
-| CLAUDE.md | .claude/ | 1,891 | 40 | ~475 | SKIP |
-
-**Total Current Load**: ~53KB (~13,275 tokens)
-
-### Files NOT Needing Split
-
-- **Root CLAUDE.md** (5.9KB): Already appropriately sized - mostly essential context
-- **.claude/CLAUDE.md** (1.9KB): Too small to split
-- **.claude/agents/requirements-analyst.md** (5.2KB): Below 6KB threshold
-
-### Primary Candidates for Split
-
-| Agent | Current Size | Recommended Split |
-|-------|--------------|-------------------|
-| bdd-generator.md (global) | 17,989 bytes | 6KB core + 12KB extended |
-| requirements-analyst.md (global) | 12,301 bytes | 5KB core + 7KB extended |
-| bdd-generator.md (local) | 9,705 bytes | 4KB core + 6KB extended |
-
-## 2. Token Usage Analysis
-
-### Current State (Per Task)
-
-| Scenario | Files Loaded | Tokens |
-|----------|--------------|--------|
-| BDD Generation | CLAUDE.md + bdd-generator + requirements-analyst | ~9,100 |
-| Requirements Gathering | CLAUDE.md + requirements-analyst | ~4,975 |
-| Epic/Feature Creation | CLAUDE.md only | ~1,975 |
-
-### Projected State (With Progressive Disclosure)
-
-| Scenario | Core Files Loaded | Tokens | Savings |
-|----------|-------------------|--------|---------|
-| BDD Generation | CLAUDE.md + core agents | ~5,500 | 40% |
-| Requirements Gathering | CLAUDE.md + core analyst | ~3,200 | 36% |
-| Epic/Feature Creation | CLAUDE.md only | ~1,975 | 0% |
-
-**Average Savings Across All Scenarios**: ~32%
-
-## 3. Reusable GuardKit Assets
-
-### Scripts (From `installer/core/lib/agent_enhancement/`)
-
-| Script | Reusability | Modifications Needed |
-|--------|-------------|---------------------|
-| `applier.py` | 90% | Update loading instruction paths |
-| `models.py` | 100% | None - directly reusable |
-| `boundary_utils.py` | 100% | None - directly reusable |
-
-### Key Methods from applier.py
-
-```python
-# Directly reusable methods:
-- create_extended_file()      # Creates {name}-ext.md files
-- apply_with_split()          # Main split orchestration
-- _categorize_sections()      # Core vs extended categorization
-- _build_core_content()       # Core file generation
-- _build_extended_content()   # Extended file generation
-- _truncate_quick_start()     # Limit Quick Start examples
-- _format_loading_instruction() # Generate loading reference
-```
-
-### Section Categorization (Reusable As-Is)
-
-**CORE_SECTIONS** (always loaded):
-- frontmatter, title, quick_start, boundaries, capabilities, phase_integration
-
-**EXTENDED_SECTIONS** (on-demand):
-- detailed_examples, best_practices, anti_patterns, cross_stack, mcp_integration, troubleshooting
-
-### Patterns (From `docs/guides/`)
-
-| Pattern | Applicability |
-|---------|---------------|
-| Split-file architecture (`{name}.md` + `{name}-ext.md`) | Direct apply |
-| Loading instruction format | Direct apply |
-| Core content categorization rules | Direct apply |
-| Boundary section structure | Direct apply |
-
-## 4. RequireKit-Specific Considerations
-
-### EARS Requirements Format
-
-The EARS notation sections in requirements-analyst.md should remain in **core** content because:
-- EARS patterns are essential for every requirements task
-- Pattern templates (5 patterns) are concise (~100 lines total)
-- Removing would degrade quality of formalized requirements
-
-**Recommendation**: Keep all 5 EARS patterns in core, move detailed examples to extended.
-
-### BDD Scenario Structure
-
-Current bdd-generator.md has significant overlap between:
-- installer/core/agents/bdd-generator.md (606 lines)
-- .claude/agents/bdd-generator.md (349 lines)
-
-**Recommendation**: Consolidate to single source + extend pattern:
-1. Core: EARS-to-Gherkin transformation rules, boundaries, quick start
-2. Extended: Framework-specific step definitions (pytest-bdd, SpecFlow, Cucumber.js)
-
-### Cross-Reference Handling
-
-RequireKit has linkages between:
-- Requirements → Epics/Features
-- BDD scenarios → EARS requirements
-- Tasks → Features
-
-These references are **metadata in frontmatter**, not prose - progressive disclosure doesn't affect them.
-
-### Integration with GuardKit
-
-RequireKit detects GuardKit via `~/.agentecflow/guardkit.marker`. Progressive disclosure in RequireKit should:
-- Match GuardKit's file naming convention (`{name}-ext.md`)
-- Use identical loading instructions format
-- Enable seamless cross-repository workflow
-
-## 5. Implementation Feasibility
-
-### Effort Estimate
-
-| Phase | Effort | Description |
-|-------|--------|-------------|
-| Setup & Configuration | 30 min | Copy models.py, update imports |
-| Split bdd-generator.md | 1 hour | Categorize content, create files |
-| Split requirements-analyst.md | 45 min | Simpler structure than bdd-generator |
-| Testing | 1 hour | Verify BDD and EARS workflows |
-| Documentation | 30 min | Update README with progressive disclosure |
-| **Total** | **3-4 hours** | |
-
-### Risk Assessment
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-| Breaking existing workflows | Low | High | Test /generate-bdd and /formalize-ears |
-| Inconsistent split across files | Low | Medium | Use GuardKit categorization constants |
-| Loading instructions ignored | Medium | Low | Add visual indicators (emoji headers) |
-| Duplicate agent files (global vs local) | Medium | Medium | Consolidate before splitting |
-
-### Approach Recommendation
-
-**Incremental Adoption**:
-1. Start with largest file (bdd-generator.md global)
-2. Validate with `/generate-bdd` command
-3. Apply to requirements-analyst.md
-4. Consolidate .claude/agents/ copies with global versions
-
-## 6. Recommended Implementation Approach
-
-### Pre-Implementation Cleanup
-
-**Issue**: RequireKit has duplicate agent files:
-- `installer/core/agents/bdd-generator.md` (606 lines, 18KB)
-- `.claude/agents/bdd-generator.md` (349 lines, 10KB)
-
-**Resolution**: The global version is authoritative (more comprehensive). The local version appears to be a simplified copy. During installation, the global version should be symlinked/copied to .claude/agents/.
-
-**Action**: Before applying progressive disclosure, consolidate to single source to avoid maintaining multiple split files.
-
-### Implementation Steps
-
-1. **Consolidate Agent Files**
-   ```bash
-   # Verify global is superset of local
-   diff installer/core/agents/bdd-generator.md .claude/agents/bdd-generator.md
-   # If global is authoritative, local can be symlink or generated from global
-   ```
-
-2. **Copy Reusable Scripts**
-   ```bash
-   mkdir -p installer/core/lib/agent_enhancement
-   cp <guardkit>/installer/core/lib/agent_enhancement/models.py installer/core/lib/agent_enhancement/
-   cp <guardkit>/installer/core/lib/agent_enhancement/applier.py installer/core/lib/agent_enhancement/
-   ```
-
-3. **Modify applier.py for RequireKit**
-   - Update `_format_loading_instruction()` to use RequireKit paths
-   - Adjust footer text to reference RequireKit
-
-4. **Split bdd-generator.md**
-   - Core: Lines 1-270 (frontmatter through Gherkin Best Practices)
-   - Extended: Lines 271-606 (Framework-specific examples, Advanced Techniques)
-
-5. **Split requirements-analyst.md**
-   - Core: Lines 1-210 (frontmatter through Documentation Level Awareness)
-   - Extended: Lines 211-388 (Detailed gathering process, domain patterns)
-
-6. **Update Loading Instructions**
-   ```markdown
-   ## Extended Documentation
-
-   For framework-specific step definitions and advanced techniques:
-   ```bash
-   cat agents/bdd-generator-ext.md
-   ```
-   ```
-
-### File Structure After Implementation
-
-```
-require-kit/
-├── CLAUDE.md                              # Unchanged (already lean)
-├── installer/core/
-│   ├── agents/
-│   │   ├── bdd-generator.md              # Core (~6KB)
-│   │   ├── bdd-generator-ext.md          # Extended (~12KB)
-│   │   ├── requirements-analyst.md       # Core (~5KB)
-│   │   └── requirements-analyst-ext.md   # Extended (~7KB)
-│   └── lib/agent_enhancement/
-│       ├── models.py                     # From GuardKit
-│       └── applier.py                    # Modified for RequireKit
-```
-
-## 7. Decision Matrix
-
-| Option | Token Savings | Effort | Risk | Recommendation |
-|--------|--------------|--------|------|----------------|
-| **[A]dopt** - Direct copy | 32% | 2h | Low | Not viable - path modifications needed |
-| **[C]ustomize** - Adapt scripts | 32% | 4h | Low | **RECOMMENDED** |
-| **[D]efer** - Wait | 0% | 0h | None | Reasonable if low priority |
-| **[R]eject** - Not applicable | 0% | 0h | None | Not recommended - clear benefits |
-
-## 8. Final Recommendation
-
-### Decision: **[C]ustomize**
-
-**Rationale**:
-1. **Clear ROI**: 32% token savings for 3-4 hours effort
-2. **High Reusability**: 80%+ of GuardKit scripts work with minor modifications
-3. **Low Risk**: RequireKit's simpler structure reduces implementation complexity
-4. **Consistency**: Aligns RequireKit with GuardKit's progressive disclosure architecture
-5. **Future-Proof**: Enables unified tooling for both repositories
-
-### Implementation Priority
-
-| Priority | Task | Value |
-|----------|------|-------|
-| 1 | Consolidate duplicate agent files | Reduces maintenance |
-| 2 | Split bdd-generator.md | Highest token savings |
-| 3 | Split requirements-analyst.md | Complete agent coverage |
-| 4 | Update installation scripts | Ensure correct file distribution |
-
-### Success Criteria
-
-- [ ] BDD generation works correctly with split files
-- [ ] EARS formalization maintains quality
-- [ ] Token usage reduced by ≥30% for typical tasks
-- [ ] No regression in command functionality
-- [ ] Loading instructions followed by Claude consistently
-
-## Appendix: Token Calculation Methodology
-
-**Estimation formula**: `tokens ≈ bytes / 4`
-
-This approximation accounts for markdown formatting overhead and produces estimates within ±10% of actual tokenization for English prose with code blocks.
+- **Mode**: Code Quality Review
+- **Depth**: Comprehensive
+- **Duration**: ~15 minutes
+- **Reviewer**: Automated review via architectural-reviewer
 
 ---
 
-*Review completed: 2025-12-09*
-*Report generated by: architectural-reviewer agent*
-*Mode: architectural | Depth: standard*
+## 1. Template Create Output Analysis
+
+### Verification Checklist
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Rules structure generated by default | ✅ | `.claude/rules/` directory created with modular files |
+| Path-specific loading metadata | ✅ | `paths:` frontmatter in `code-style.md`, `testing.md` |
+| Core CLAUDE.md slim (~5KB target) | ✅ | 757 bytes - well under target |
+| Extended content split into rules | ✅ | `patterns/` (12 files), `guidance/` (9 files) |
+| 60-70% context reduction | ✅ | Core: 757B vs full content would be ~15KB+ (>95% reduction) |
+
+### Findings
+
+**Positive**:
+1. ✅ Rules structure is the default output format (TASK-TC-DEFAULT-FLAGS compliant)
+2. ✅ CLAUDE.md is extremely slim (757 bytes) - excellent context reduction
+3. ✅ Path-specific loading configured correctly (`paths: **/*.cs` in code-style.md)
+4. ✅ Modular organization: `patterns/` and `guidance/` subdirectories
+5. ✅ All 9 agents discovered and stub files created
+
+**Issues**:
+1. ⚠️ Pattern files have minimal content ("No examples found in codebase") - expected for stub generation
+2. ⚠️ Some pattern descriptions are generic (e.g., "Mediates between domain and data mapping layers")
+
+### Template Create Score: 9/10
+
+---
+
+## 2. Agent Enhance Output Analysis
+
+### Boundary Section Verification
+
+| Agent | ALWAYS | NEVER | ASK | Status |
+|-------|--------|-------|-----|--------|
+| realm-repository-specialist | 7 | 7 | 5 | ✅ |
+| business-logic-engine-specialist | 7 | 7 | 5 | ✅ |
+| erroror-railway-oriented-programming-specialist | 7 | 7 | 5 | ✅ |
+| maui-mvvm-viewmodel-specialist | 7 | 7 | 5 | ✅ |
+| maui-xaml-ui-specialist | 7 | 7 | 5 | ✅ |
+| reactive-extensions-rx-specialist | 7 | 7 | 5 | ✅ |
+| riok-mapperly-code-generator-specialist | 7 | 7 | 5 | ✅ |
+| xunit-nsubstitute-testing-specialist | 7 | 7 | 3 | ⚠️ |
+| http-api-service-specialist | 7 | 7 | 5 | ✅ |
+
+### Verification Checklist
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| ALWAYS/NEVER/ASK present | ✅ | All 9 agents have boundary sections |
+| Boundary counts (5-7/5-7/3-5) | ✅ | All meet requirements |
+| Emoji format (✅/❌/⚠️) | ✅ | Consistent across all agents |
+| Quick Start examples template-specific | ✅ | Examples reference actual templates |
+| Progressive disclosure split | ✅ | Core + `-ext.md` files generated |
+| Discovery metadata present | ✅ | `stack`, `phase`, `capabilities`, `keywords` in frontmatter |
+
+### Findings
+
+**Positive**:
+1. ✅ All 9 agents enhanced with comprehensive content
+2. ✅ ALWAYS/NEVER/ASK boundary sections properly formatted with emojis
+3. ✅ Template-specific code examples (not generic)
+4. ✅ Progressive disclosure split: Core (~4KB) + Extended (~7-13KB)
+5. ✅ Discovery metadata enables automatic agent matching
+6. ✅ Integration points documented for cross-agent coordination
+
+**Issues**:
+1. ⚠️ `xunit-nsubstitute-testing-specialist` has only 3 ASK items (minimum is 3, so borderline)
+2. ⚠️ Some extended files are larger than expected (~13KB for erroror specialist)
+
+### Agent Enhance Score: 8/10
+
+---
+
+## 3. Guardkit Init Mydrive Output Analysis
+
+### Verification Checklist
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| `.claude/` directory created | ✅ | Full structure with agents, commands, rules |
+| Rules structure copied | ✅ | 23 rule files verified |
+| CLAUDE.md generated | ✅ | 757 bytes, identical to template |
+| Template agents present | ✅ | 9 template-specific agents |
+| Global agents present | ✅ | 28 global agents added |
+| Commands linked | ✅ | 22 command files in commands/ |
+
+### Init Output Log Analysis
+
+```
+✓ Copied project context file (from .claude/)
+✓ Copied template-specific agents
+✓ Added 28 global agent(s)
+✓ Copied template files
+✓ Copied rules structure for Claude Code
+✓ Linked GuardKit commands
+✓ Rules structure verified (23 rule files)
+```
+
+### Directory Structure
+
+```
+.claude/
+├── agents/           # 48 files (9 template + 28 global × 2 for core/-ext split)
+├── commands/         # 22 command files
+├── rules/
+│   ├── code-style.md       # paths: **/*.cs
+│   ├── testing.md          # paths: **/*.test.*
+│   ├── guidance/           # 9 agent guidance files
+│   └── patterns/           # 12 pattern files
+├── CLAUDE.md         # 757 bytes (slim)
+├── manifest.json     # Template metadata
+└── settings.json     # Project settings
+```
+
+### Findings
+
+**Positive**:
+1. ✅ Complete initialization with all expected components
+2. ✅ Rules structure properly copied and verified (23 files)
+3. ✅ Template agents merged with global agents correctly
+4. ✅ Agent -ext files properly paired with core files
+5. ✅ Path-specific loading enabled in rules files
+
+**Issues**:
+1. ⚠️ `hooks/` and `stacks/` directories are empty (expected for fresh init)
+
+### Guardkit Init Score: 9/10
+
+---
+
+## 4. Progressive Disclosure Analysis
+
+### File Size Distribution
+
+| Agent | Core Size | Extended Size | Reduction |
+|-------|-----------|---------------|-----------|
+| realm-repository-specialist | 4.3KB | 6.8KB | 61% in core |
+| business-logic-engine-specialist | 4.2KB | 9.8KB | 70% reduction |
+| erroror-railway-oriented-programming-specialist | 4.0KB | 12.9KB | 76% reduction |
+| maui-mvvm-viewmodel-specialist | 4.7KB | 9.8KB | 68% reduction |
+| maui-xaml-ui-specialist | 4.3KB | 8.3KB | 66% reduction |
+| reactive-extensions-rx-specialist | 4.6KB | 8.9KB | 66% reduction |
+| riok-mapperly-code-generator-specialist | 3.9KB | 7.4KB | 65% reduction |
+| xunit-nsubstitute-testing-specialist | 4.4KB | 9.8KB | 69% reduction |
+| http-api-service-specialist | 3.8KB | 8.9KB | 70% reduction |
+
+**Average Context Reduction**: ~68% - exceeds target of 55-60%
+
+### Core File Content Structure
+
+All core files include:
+- ✅ Frontmatter with discovery metadata
+- ✅ Purpose section
+- ✅ Why This Agent Exists section
+- ✅ Technologies list
+- ✅ Boundaries (ALWAYS/NEVER/ASK)
+- ✅ Extended Documentation loading instructions
+
+### Progressive Disclosure Score: 8/10
+
+---
+
+## 5. Rules Structure Analysis
+
+### Path-Specific Loading Configuration
+
+| File | Paths | Purpose |
+|------|-------|---------|
+| code-style.md | `**/*.cs` | C# code style guidelines |
+| testing.md | `**/*.test.*, **/tests/**, **/*Test.*` | Test file patterns |
+| guidance/*.md | (no paths - loaded via agents) | Agent quick references |
+| patterns/*.md | (no paths - loaded on-demand) | Pattern references |
+
+### Structure Quality
+
+**Positive**:
+1. ✅ Modular organization follows Claude Code conventions
+2. ✅ Path-specific loading reduces context for non-relevant files
+3. ✅ Guidance files are slim (500-640 bytes) as quick references
+4. ✅ Pattern files provide on-demand details
+
+**Issues**:
+1. ⚠️ Pattern files lack `paths:` frontmatter (would benefit from conditional loading)
+2. ⚠️ Guidance files could include `paths:` for automatic loading when editing related files
+
+### Rules Structure Score: 9/10
+
+---
+
+## Summary of Findings
+
+### What's Working Well
+
+1. **Template Create** generates complete rules structure by default
+2. **Agent Enhance** produces high-quality boundary sections with emoji formatting
+3. **Guardkit Init** successfully merges template and global resources
+4. **Progressive Disclosure** achieves 68% context reduction (exceeds 55-60% target)
+5. **Rules Structure** enables path-specific loading for optimized context
+
+### Issues Requiring Attention
+
+| Priority | Issue | Impact | Recommendation |
+|----------|-------|--------|----------------|
+| Low | Pattern files have minimal content | Reduced guidance | Enhancement tasks will populate |
+| Low | xunit specialist has 3 ASK items | Borderline compliance | Add 1-2 more ASK scenarios |
+| Low | Missing paths: in guidance files | Sub-optimal loading | Add path hints in future iteration |
+
+### Recommendations
+
+1. **Accept Implementation** - Core functionality is working correctly
+2. **Track Enhancement** - Pattern file enrichment via `/agent-enhance`
+3. **Consider Future Enhancement** - Add `paths:` to guidance files for conditional loading
+
+---
+
+## Decision Options
+
+- **[A]ccept** - Approve findings, implementation is correct
+- **[R]evise** - Request deeper analysis on specific areas
+- **[I]mplement** - Create follow-up tasks for improvements
+- **[C]ancel** - Discard review
+
+## Appendix
+
+### Files Reviewed
+
+- `docs/reviews/progressive-disclosure/template-create-output.md`
+- `docs/reviews/progressive-disclosure/agent-enhance-output/` (9 files)
+- `docs/reviews/progressive-disclosure/guardkit-init-mydrive/`
+- `docs/reviews/progressive-disclosure/mydrive/`
+
+### Metrics
+
+| Metric | Value |
+|--------|-------|
+| Total agents enhanced | 9 |
+| Average core file size | 4.2KB |
+| Average extended file size | 9.2KB |
+| Context reduction achieved | 68% |
+| Rules files generated | 23 |

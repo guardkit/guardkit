@@ -122,7 +122,8 @@ class OrchestrationConfig:
     custom_name: Optional[str] = None  # TASK-FDB2: User-provided template name override
     create_agent_tasks: bool = True  # TASK-UX-3A8D: Default ON (opt-out via --no-create-agent-tasks)
     split_claude_md: bool = True  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
-    claude_md_size_limit: int = 10 * 1024  # TASK-ENH-SIZE-LIMIT: Default 10KB in bytes
+    claude_md_size_limit: int = 50 * 1024  # TASK-TC-DEFAULT-FLAGS: Default 50KB
+    use_rules_structure: bool = True  # TASK-TC-DEFAULT-FLAGS: Rules structure now default (use --no-rules-structure to opt out)
 
 
 @dataclass
@@ -1830,8 +1831,12 @@ Enhance the {agent_name} agent with template-specific content:
             settings_gen.save(settings, settings_path)
             self._print_success_line(f"settings.json ({self._file_size(settings_path)})")
 
-            # Save CLAUDE.md (split or single based on config)
-            if self.config.split_claude_md:
+            # Save CLAUDE.md (rules structure, split, or single based on config)
+            if self.config.use_rules_structure:
+                success = self._write_rules_structure(output_path)
+                if not success:
+                    self.warnings.append("Failed to write rules structure")
+            elif self.config.split_claude_md:
                 success = self._write_claude_md_split(output_path)
                 if not success:
                     self.warnings.append("Failed to write split CLAUDE.md files")
@@ -1856,6 +1861,91 @@ Enhance the {agent_name} agent with template-specific content:
             self._print_error(f"Package assembly failed: {e}")
             logger.exception("Package assembly error")
             return None
+
+    def _write_rules_structure(self, output_path: Path) -> bool:
+        """
+        Write modular .claude/rules/ structure (TASK-CRS-003).
+
+        Creates:
+        - output_path/.claude/rules/core.md
+        - output_path/.claude/rules/stack.md
+        - output_path/.claude/rules/quality.md
+        - output_path/.claude/rules/workflow.md
+        - output_path/.claude/rules/guidance/*.md
+
+        Args:
+            output_path: Template output directory
+
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            from lib.template_generator.rules_structure_generator import RulesStructureGenerator
+            from lib.codebase_analyzer.stratified_sampler import StratifiedSampler
+
+            # TASK-PDI-003: Collect file samples for pattern extraction
+            file_samples = []
+            if self.config.codebase_path:
+                try:
+                    sampler = StratifiedSampler(
+                        self.config.codebase_path,
+                        max_files=20  # Same as used in AI analysis
+                    )
+                    file_samples = sampler.collect_stratified_samples()
+                    logger.info(f"Collected {len(file_samples)} file samples for pattern extraction")
+                except Exception as e:
+                    logger.warning(f"Failed to collect file samples: {e}")
+                    file_samples = []
+
+            # Generate rules structure
+            generator = RulesStructureGenerator(
+                analysis=self.analysis,
+                agents=self.agents,
+                output_path=output_path,
+                file_samples=file_samples  # TASK-PDI-003: Pass samples for extraction
+            )
+            rules = generator.generate()
+
+            # Create .claude directory
+            claude_dir = output_path / ".claude"
+            claude_dir.mkdir(parents=True, exist_ok=True)
+
+            # Write each rules file
+            for rel_path, content in rules.items():
+                file_path = claude_dir / rel_path
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                success, error_msg = safe_write_file(file_path, content)
+                if not success:
+                    logger.error(f"Failed to write {file_path}: {error_msg}")
+                    return False
+
+                self._print_success_line(f".claude/{rel_path} ({self._file_size(file_path)})")
+                logger.info(f"Created: {file_path}")
+
+            # Validate guidance file sizes (TASK-GA-002)
+            rules_dir = claude_dir / "rules"
+            validation_issues = generator.validate_guidance_sizes(rules_dir)
+
+            if validation_issues:
+                self._print_info("\n  Guidance Size Validation:")
+                for issue in validation_issues:
+                    if issue.level == "warning":
+                        self._print_warning(f"⚠️  Warning: {issue.message}")
+                        if issue.suggestion:
+                            self._print_info(f"   Suggestion: {issue.suggestion}")
+                    # Note: Currently only warnings are generated, but handling errors for future extensibility
+                    elif issue.level == "error":
+                        self._print_error(f"❌  Error: {issue.message}")
+                        if issue.suggestion:
+                            self._print_info(f"   Suggestion: {issue.suggestion}")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to write rules structure: {e}")
+            self.errors.append(f"Rules structure generation failed: {e}")
+            return False
 
     def _write_claude_md_split(self, output_path: Path) -> bool:
         """
@@ -2815,6 +2905,7 @@ def run_template_create(
     resume: bool = False,  # TASK-BRIDGE-002: Resume from checkpoint
     custom_name: Optional[str] = None,  # TASK-FDB2: Custom template name override
     split_claude_md: bool = True,  # TASK-PD-006: Enable progressive disclosure (split CLAUDE.md)
+    use_rules_structure: bool = True,  # TASK-TC-DEFAULT-FLAGS: Rules structure now default (opt-out via --no-rules-structure)
     verbose: bool = False,
     interactive: Optional[bool] = None,  # None = auto-detect TTY, False = non-interactive
     claude_md_size_limit: Optional[int] = None  # TASK-FIX-19EA: Size limit in bytes
@@ -2836,6 +2927,7 @@ def run_template_create(
         create_agent_tasks: Create individual enhancement tasks for each agent (TASK-PHASE-8-INCREMENTAL)
         custom_name: Custom template name (overrides AI-generated name)
         split_claude_md: Enable progressive disclosure with split CLAUDE.md (TASK-PD-006)
+        use_rules_structure: Generate modular .claude/rules/ structure instead of single CLAUDE.md (TASK-CRS-003)
         verbose: Show detailed progress
         interactive: Interactive mode for prompts (None = auto-detect TTY, False = non-interactive)
         claude_md_size_limit: Maximum size in bytes for core CLAUDE.md (TASK-FIX-19EA)
@@ -2885,9 +2977,10 @@ def run_template_create(
         resume=resume,  # TASK-BRIDGE-002
         custom_name=custom_name,  # TASK-FDB2
         split_claude_md=split_claude_md,  # TASK-PD-006
+        use_rules_structure=use_rules_structure,  # TASK-CRS-003
         verbose=verbose,
         interactive_validation=interactive,  # None = auto-detect TTY
-        claude_md_size_limit=claude_md_size_limit if claude_md_size_limit else 10 * 1024  # TASK-FIX-19EA
+        claude_md_size_limit=claude_md_size_limit if claude_md_size_limit else 50 * 1024  # TASK-TC-DEFAULT-FLAGS: Default 50KB
     )
 
     orchestrator = TemplateCreateOrchestrator(config)
@@ -2924,6 +3017,12 @@ if __name__ == "__main__":
     parser.add_argument("--no-split-claude-md", action="store_false",
                         dest="split_claude_md",
                         help="Disable progressive disclosure (use single CLAUDE.md file)")
+    parser.add_argument("--use-rules-structure", action="store_true", default=True,
+                        dest="use_rules_structure",
+                        help="Generate modular .claude/rules/ structure (default: enabled)")
+    parser.add_argument("--no-rules-structure", action="store_false",
+                        dest="use_rules_structure",
+                        help="Use single CLAUDE.md + progressive disclosure instead of rules structure")
     parser.add_argument("--resume", action="store_true",
                         help="Resume from checkpoint after agent invocation")
     parser.add_argument("--verbose", action="store_true",
@@ -2931,7 +3030,7 @@ if __name__ == "__main__":
     parser.add_argument("--non-interactive", action="store_true",
                         help="Disable interactive prompts (auto-fix issues without asking)")
     parser.add_argument("--claude-md-size-limit", type=str,
-                        help="Maximum size for core CLAUDE.md content (e.g., 50KB, 1MB). Default: 10KB")
+                        help="Maximum size for core CLAUDE.md content (e.g., 100KB, 1MB). Default: 50KB")
 
     args = parser.parse_args()
 
@@ -2953,6 +3052,7 @@ if __name__ == "__main__":
         resume=args.resume,
         custom_name=args.name,  # TASK-FDB2
         split_claude_md=args.split_claude_md,  # TASK-PD-006
+        use_rules_structure=args.use_rules_structure,  # TASK-CRS-003
         verbose=args.verbose,
         interactive=False if args.non_interactive else None,  # None = auto-detect TTY
         claude_md_size_limit=claude_md_size_limit  # TASK-FIX-19EA

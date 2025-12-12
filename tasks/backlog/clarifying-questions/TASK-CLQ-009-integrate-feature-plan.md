@@ -3,10 +3,10 @@ id: TASK-CLQ-009
 title: Integrate clarification into feature-plan.md
 status: backlog
 created: 2025-12-08T14:00:00Z
-updated: 2025-12-08T14:00:00Z
+updated: 2025-12-12T00:00:00Z
 priority: medium
 tags: [clarifying-questions, integration, feature-plan, wave-3]
-complexity: 4
+complexity: 3
 parent_feature: clarifying-questions
 wave: 3
 conductor_workspace: clarifying-questions-wave3-feature-plan
@@ -19,17 +19,35 @@ implementation_method: direct
 
 Update the `/feature-plan` command documentation to show how clarification flows through its orchestrated workflow. Since feature-plan uses task-review under the hood, clarification is mostly inherited - this task documents that flow and adds any feature-plan-specific configuration.
 
+## Implementation Status
+
+**Partially Complete** - Command-line flags are already documented. Remaining work is adding detailed clarification flow documentation.
+
+### Already Done
+- ✅ Command-line flags documented in feature-plan.md (lines 13-18)
+- ✅ Clarification logic implemented in task-review.md (which feature-plan calls)
+- ✅ CLAUDE.md has "Three Clarification Contexts" table referencing feature-plan
+
+### Remaining Work
+Add a "Clarification Integration" section to feature-plan.md showing how clarification flows through the orchestrated workflow.
+
 ## Acceptance Criteria
 
+- [x] Add command-line flag documentation
+  - [x] `--no-questions` - Propagated to task-review
+  - [x] `--with-questions` - Force clarification
+  - [x] `--defaults` - Use defaults throughout
+  - [x] `--answers="..."` - Inline answers for automation
 - [ ] Document clarification flow in feature-plan.md
+  - [ ] Add phase flow diagram showing Context A and Context B integration points
   - [ ] Show how Context A (review scope) applies during review phase
   - [ ] Show how Context B (implementation prefs) applies at [I]mplement
-- [ ] Add command-line flag documentation
-  - [ ] `--no-questions` - Propagated to task-review
-  - [ ] `--with-questions` - Force clarification
-  - [ ] `--defaults` - Use defaults throughout
 - [ ] Add examples showing clarification in feature-plan workflow
+  - [ ] Full clarification flow example with "REVIEW SCOPE CLARIFICATION" output
+  - [ ] Full clarification flow example with "IMPLEMENTATION PREFERENCES" output
+  - [ ] Skip clarification example with --no-questions
 - [ ] Document how clarification decisions flow to subtask generation
+  - [ ] Add "Clarification Propagation" section with pseudo-code
 
 ## Technical Specification
 

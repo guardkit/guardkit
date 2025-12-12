@@ -55,7 +55,7 @@ class TemplateInitCommand:
         enable_external_agents: Enable external agent discovery (Phase 1: False)
     """
 
-    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False, validate: bool = False, output_location: str = 'global'):
+    def __init__(self, template_dir: Optional[Path] = None, enable_external_agents: bool = False, no_create_agent_tasks: bool = False, validate: bool = False, output_location: str = 'global', no_rules_structure: bool = False, claude_md_size_limit: int = 5000):
         """Initialize command
 
         Args:
@@ -64,6 +64,8 @@ class TemplateInitCommand:
             no_create_agent_tasks: Skip agent enhancement task creation (default: False)
             validate: Run extended validation (Level 2) (default: False)
             output_location: Where to save template ('global' or 'repo')
+            no_rules_structure: Skip rules structure generation (default: False)
+            claude_md_size_limit: Maximum size for core CLAUDE.md in bytes (default: 5000)
         """
         if template_dir is None:
             template_dir = Path("installer/local/templates")
@@ -73,6 +75,8 @@ class TemplateInitCommand:
         self.no_create_agent_tasks = no_create_agent_tasks
         self.validate = validate
         self.output_location = output_location
+        self.no_rules_structure = no_rules_structure
+        self.claude_md_size_limit = claude_md_size_limit
 
     def execute(self) -> bool:
         """Execute /template-init command
@@ -99,13 +103,17 @@ class TemplateInitCommand:
             # Phase 4: Save Template
             template_path = self._phase4_save_template(template, agents)
 
-            # Phase 4.5: Level 2 Extended Validation (Optional)
+            # Phase 4.5: Rules Structure Generation
+            if not self.no_rules_structure:
+                self._phase4_5_rules_structure_generation(template_path, answers)
+
+            # Phase 5: Level 2 Extended Validation (Optional)
             exit_code = 0
             if self.validate:
-                exit_code = self._phase4_5_extended_validation(template, template_path)
+                exit_code = self._phase5_extended_validation(template, template_path)
 
-            # Phase 5: Create Agent Enhancement Tasks
-            self._phase5_create_agent_tasks(template, template_path)
+            # Phase 6: Create Agent Enhancement Tasks
+            self._phase6_create_agent_tasks(template, template_path)
 
             # Success
             self._show_success(template, agents)
@@ -433,18 +441,53 @@ class TemplateInitCommand:
                 f.write(template.claude_md)
             print(f"  ✓ Saved: CLAUDE.md")
 
-            # Save agents
+            # Save agents (split into core and extended files)
+            from installer.core.lib.agent_generator.agent_splitter import (
+                split_agent_content,
+                validate_split_sizes
+            )
+
             agents_dir = template_path / "agents"
             agents_dir.mkdir(exist_ok=True)
 
             agent_count = 0
+            warnings = []
             for agent in agents.all_agents():
-                agent_file = agents_dir / f"{agent.name}.md"
-                with open(agent_file, "w", encoding="utf-8") as f:
-                    f.write(agent.full_definition)
-                agent_count += 1
+                # Split agent into core and extended parts
+                try:
+                    core_content, extended_content = split_agent_content(agent.full_definition)
 
-            print(f"  ✓ Saved: {agent_count} agents")
+                    # Save core file
+                    agent_file = agents_dir / f"{agent.name}.md"
+                    with open(agent_file, "w", encoding="utf-8") as f:
+                        f.write(core_content)
+
+                    # Save extended file
+                    extended_file = agents_dir / f"{agent.name}-ext.md"
+                    with open(extended_file, "w", encoding="utf-8") as f:
+                        f.write(extended_content)
+
+                    # Validate sizes
+                    size_warnings = validate_split_sizes(core_content, extended_content)
+                    if size_warnings:
+                        warnings.extend([f"  ⚠️ {agent.name}: {w}" for w in size_warnings])
+
+                    agent_count += 1
+                except Exception as e:
+                    print(f"  ⚠️ Failed to split agent {agent.name}: {e}")
+                    # Fallback: save unsplit agent
+                    agent_file = agents_dir / f"{agent.name}.md"
+                    with open(agent_file, "w", encoding="utf-8") as f:
+                        f.write(agent.full_definition)
+                    agent_count += 1
+
+            print(f"  ✓ Saved: {agent_count} agents (core + extended)")
+
+            # Show size warnings if any
+            if warnings:
+                print("\n  Size Warnings:")
+                for warning in warnings:
+                    print(warning)
 
             # Save code templates (if any)
             if template.code_templates:
@@ -477,8 +520,63 @@ class TemplateInitCommand:
         except Exception as e:
             raise TemplateSaveError(f"Failed to save template: {e}") from e
 
-    def _phase4_5_extended_validation(self, template: GreenfieldTemplate, template_path: Path) -> int:
-        """Phase 4.5: Level 2 Extended Validation (Optional)
+    def _phase4_5_rules_structure_generation(self, template_path: Path, qa_answers: Any) -> None:
+        """Phase 4.5: Rules Structure Generation
+
+        Generates modular .claude/rules/ directory structure based on Q&A session answers.
+
+        Args:
+            template_path: Path to saved template directory
+            qa_answers: Q&A session answers containing language, framework, architecture choices
+
+        Raises:
+            TemplateSaveError: If rules generation fails
+        """
+        print("\n" + "=" * 60)
+        print("  Phase 4.5: Rules Structure Generation")
+        print("=" * 60 + "\n")
+
+        print("📐 Generating rules structure...")
+
+        try:
+            from installer.core.lib.rules_generator import generate_rules_structure
+
+            # Extract Q&A answers into dict format
+            answers_dict = {}
+            if hasattr(qa_answers, 'language'):
+                answers_dict['language'] = qa_answers.language
+            elif hasattr(qa_answers, '__dict__'):
+                # Convert object to dict
+                answers_dict = vars(qa_answers)
+            else:
+                # Already a dict
+                answers_dict = qa_answers
+
+            # Generate rules structure
+            generate_rules_structure(
+                template_dir=str(template_path),
+                qa_answers=answers_dict,
+                claude_md_size_limit=self.claude_md_size_limit
+            )
+
+            print("  ✓ Generated code-style.md")
+            print("  ✓ Generated testing.md")
+            print("  ✓ Generated patterns/")
+
+            print(f"\n✅ Rules structure generated successfully")
+
+        except ValueError as e:
+            # Size limit violation
+            print(f"\n⚠️  Warning: {e}")
+            print("Consider increasing --claude-md-size-limit or moving content to rules/")
+            # Non-fatal - continue without rules structure
+        except Exception as e:
+            print(f"\n⚠️  Warning: Failed to generate rules structure: {e}")
+            print("Template creation will continue without rules structure.")
+            # Non-fatal - template still usable
+
+    def _phase5_extended_validation(self, template: GreenfieldTemplate, template_path: Path) -> int:
+        """Phase 5: Level 2 Extended Validation (Optional)
 
         Runs extended validation checks on generated template and produces quality report.
 
@@ -549,8 +647,8 @@ class TemplateInitCommand:
             traceback.print_exc()
             return 1  # Return warning exit code on failure
 
-    def _phase5_create_agent_tasks(self, template: GreenfieldTemplate, template_path: Path) -> None:
-        """Phase 5: Create agent enhancement tasks
+    def _phase6_create_agent_tasks(self, template: GreenfieldTemplate, template_path: Path) -> None:
+        """Phase 6: Create agent enhancement tasks
 
         Creates one enhancement task per generated agent for incremental improvement.
 

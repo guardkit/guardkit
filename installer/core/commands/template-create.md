@@ -36,6 +36,18 @@ Automate template creation from brownfield (existing) codebases by:
 /template-create --output-location repo
 /template-create -o repo  # Short form
 
+# Default behavior (rules structure - TASK-TC-DEFAULT-FLAGS)
+/template-create
+
+# Opt-out to use progressive disclosure instead of rules structure
+/template-create --no-rules-structure
+
+# Combined with validation
+/template-create --validate
+
+# Custom name (uses rules structure by default)
+/template-create --name my-template
+
 # Analyze specific codebase path
 /template-create --path /path/to/codebase
 
@@ -111,7 +123,13 @@ Phase 6: CLAUDE.md Generation (TASK-007)
 ├─ Template documentation
 ├─ Usage instructions
 ├─ Best practices
-└─ Agent integration guide
+├─ Agent integration guide
+└─ **[DEFAULT] Rules structure generation (use --no-rules-structure to opt out)**
+    ├─ Core CLAUDE.md (~5KB)
+    ├─ rules/code-style.md
+    ├─ rules/testing.md
+    ├─ rules/patterns/*.md
+    └─ rules/guidance/*.md (with paths: frontmatter)
 
 Phase 7: Package Assembly
 ├─ Directory structure creation
@@ -224,6 +242,53 @@ Produces single CLAUDE.md and single agent files without progressive disclosure 
 - Faster AI responses from reduced initial context
 - Same comprehensive content available on-demand
 
+### Rules Structure Output (Default)
+
+By default, the command generates a modular `.claude/rules/` directory (use `--no-rules-structure` to opt out):
+
+```
+~/.agentecflow/templates/{template_name}/
+├── .claude/
+│   ├── CLAUDE.md                    # Core documentation (~5KB)
+│   └── rules/
+│       ├── code-style.md            # paths: **/*.{ext}
+│       ├── testing.md               # paths: **/*.test.*, **/tests/**
+│       ├── patterns/
+│       │   ├── repository.md
+│       │   └── service-layer.md
+│       └── agents/
+│           ├── specialist-a.md      # paths: **/relevant/**
+│           └── specialist-b.md
+├── templates/
+└── agents/                          # (legacy location, also generated)
+```
+
+**Benefits:**
+- Path-specific loading: Rules only load when touching relevant files
+- Reduced context window: 60-70% reduction vs single file
+- Better organization: Related rules grouped in subdirectories
+- Conditional agents: Agent guidance loads only when relevant
+
+**Path Frontmatter:**
+
+Rules files can include `paths:` frontmatter for conditional loading:
+
+```markdown
+---
+paths: src/api/**/*.ts, **/router*.py
+---
+
+# API Development Rules
+
+These rules apply only when editing API-related files.
+```
+
+**When to Use:**
+- Large templates (>20KB CLAUDE.md)
+- Complex multi-technology stacks
+- Templates with many specialized agents
+- Performance-critical workflows
+
 ## Command Options
 
 ### Required Options
@@ -304,11 +369,34 @@ None - all options have defaults
 --verbose                Show detailed progress and debugging info
                          Default: false
 
+--use-rules-structure    Generate modular .claude/rules/ structure (default: enabled)
+                         Default: true (TASK-TC-DEFAULT-FLAGS)
+
+                         By default:
+                         - Creates .claude/rules/ directory
+                         - Generates rule files with path frontmatter
+                         - Groups patterns and agents in subdirectories
+                         - Core CLAUDE.md reduced to ~5KB
+                         - 60-70% context window reduction
+
+                         Benefits:
+                         - Better organization for complex templates
+                         - Path-specific rule loading
+                         - Improved maintainability
+
+--no-rules-structure     Use single CLAUDE.md + progressive disclosure instead
+                         of modular rules/ directory structure
+
+                         Use when:
+                         - Simple templates (<15KB)
+                         - Universal rules only (no path-specific patterns)
+                         - Backward compatibility needed
+
 --claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
-                         Format: NUMBER[KB|MB] (e.g., 15KB, 50KB, 1MB)
-                         Default: 10KB
+                         Format: NUMBER[KB|MB] (e.g., 100KB, 1MB)
+                         Default: 50KB (TASK-TC-DEFAULT-FLAGS)
                          Use for complex codebases that exceed default limit
-                         Example: /template-create --claude-md-size-limit 50KB
+                         Example: /template-create --claude-md-size-limit 100KB
 ```
 
 ## AI-Native Codebase Analysis (Phase 1) - TASK-51B2
@@ -875,6 +963,39 @@ $ echo $?
 - **8-10 (Grade A/B+)**: Production ready - Exit code 0
 - **6-7.9 (Grade B/C)**: Needs improvement - Exit code 1
 - **<6 (Grade F)**: Not ready - Exit code 2
+
+### Modular Rules Structure (Default)
+```bash
+$ /template-create
+
+# Default behavior generates modular .claude/rules/ structure
+# TASK-TC-DEFAULT-FLAGS: Rules structure is now the default
+
+[... Q&A and generation ...]
+
+✅ Template Package Created Successfully!
+
+📁 Location: ~/.agentecflow/templates/my-template/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── .claude/
+  │   └── rules/
+  │       ├── core.md (8 KB) - Core principles and philosophy
+  │       ├── stack.md (12 KB) - Stack-specific guidance
+  │       ├── quality.md (6 KB) - Quality gates and standards
+  │       ├── workflow.md (10 KB) - Development workflows
+  │       └── agents.md (8 KB) - Agent integration
+  ├── templates/ (15 files)
+  └── agents/ (2 agents)
+
+📝 Next Steps:
+   guardkit init my-template
+
+# To use progressive disclosure (split files) instead:
+$ /template-create --no-rules-structure
+```
 
 ### Basic Usage (Legacy Example)
 ```bash

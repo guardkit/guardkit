@@ -364,6 +364,43 @@ This template includes three specialized agents for AI-assisted development:
 
 Invoke these during development for specialized guidance.
 
+## Rules Structure
+
+This template uses Claude Code's modular rules structure for optimized context loading.
+
+### Directory Layout
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # Code style guidelines
+    ├── testing.md               # Testing conventions
+    ├── patterns/                # Pattern-specific rules
+    │   └── {pattern}.md
+    └── agents/                  # Agent guidance
+        └── {agent}.md
+```
+
+### Path-Specific Rules
+
+Rules files use `paths:` frontmatter for conditional loading:
+
+| Rule File | Loads When Editing |
+|-----------|-------------------|
+| `rules/code-style.md` | Any `.py` file |
+| `rules/testing.md` | Test files |
+| `rules/api/routing.md` | `**/router*.py` |
+| `rules/database/models.md` | `**/models/*.py` |
+| `rules/guidance/fastapi.md` | API route files |
+| `rules/guidance/database.md` | Model/CRUD files |
+
+### Benefits
+
+- Rules only load when editing relevant files
+- Reduced context window usage (60-70% reduction)
+- Organized by concern (patterns, agents, etc.)
+
 ## Resources
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)

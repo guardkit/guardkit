@@ -88,6 +88,8 @@ nav:
       - Creating Local Templates: guides/creating-local-templates.md
       - Template Philosophy: guides/template-philosophy.md
       - Template Validation: guides/template-validation-guide.md
+      - Rules Structure: guides/rules-structure-guide.md
+      - Progressive Disclosure: guides/progressive-disclosure.md
       - Hash-Based ID Parallel Development: guides/hash-id-parallel-development.md
       - Hash-Based IDs and PM Tools: guides/hash-id-pm-tools.md
 

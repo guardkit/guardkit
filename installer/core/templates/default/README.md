@@ -76,6 +76,42 @@ All core GuardKit commands work out of the box:
 /debug
 ```
 
+## Rules Structure
+
+This template uses Claude Code's modular rules structure for optimized context loading.
+
+### Directory Layout
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # Code style guidelines
+    ├── testing.md               # Testing conventions
+    ├── patterns/                # Pattern-specific rules
+    │   └── {pattern}.md
+    └── agents/                  # Agent guidance
+        └── {agent}.md
+```
+
+### Path-Specific Rules
+
+Rules files use `paths:` frontmatter for conditional loading:
+
+| Rule File | Loads When Editing |
+|-----------|-------------------|
+| `rules/code-style.md` | All files (no filter) |
+| `rules/workflow.md` | All files (no filter) |
+| `rules/quality-gates.md` | All files (no filter) |
+
+**Note**: The default template provides minimal rules that apply globally. As you customize for your stack, add more specific path filters to optimize context loading.
+
+### Benefits
+
+- Rules only load when editing relevant files
+- Reduced context window usage (60-70% reduction)
+- Organized by concern (patterns, agents, etc.)
+
 ## Installation
 
 ### Initialize Project

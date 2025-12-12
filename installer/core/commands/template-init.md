@@ -21,6 +21,7 @@ Enable users to create custom templates for new projects based on their preferre
 
 ```bash
 /template-init [--validate] [--output-location=global|repo] [--no-create-agent-tasks]
+               [--no-rules-structure] [--claude-md-size-limit SIZE]
 ```
 
 Create greenfield template through interactive Q&A session with automatic quality assessment.
@@ -32,6 +33,9 @@ Create greenfield template through interactive Q&A session with automatic qualit
 | `--validate` | flag | false | Run extended validation (Level 2) with quality report |
 | `--output-location` | global, repo | global | Where to save template |
 | `--no-create-agent-tasks` | flag | false | Skip agent enhancement task creation |
+| `--use-rules-structure` | flag | true | Generate modular .claude/rules/ structure |
+| `--no-rules-structure` | flag | false | Use single CLAUDE.md instead of rules/ |
+| `--claude-md-size-limit` | SIZE | 50KB | Maximum size for core CLAUDE.md content |
 
 ### Output Locations
 
@@ -46,6 +50,39 @@ Create greenfield template through interactive Q&A session with automatic qualit
 - Requires `./installer/scripts/install.sh` before use
 - Shared across projects via version control
 - Suitable for organizational standards
+
+### Rules Structure Flags
+
+```
+--use-rules-structure    Generate modular .claude/rules/ structure (default: enabled)
+                         Default: true
+
+                         By default:
+                         - Creates .claude/rules/ directory
+                         - Generates rule files with path frontmatter
+                         - Groups patterns and agents in subdirectories
+                         - Core CLAUDE.md reduced to ~5KB
+                         - 60-70% context window reduction
+
+                         Benefits:
+                         - Better organization for complex templates
+                         - Path-specific rule loading
+                         - Improved maintainability
+
+--no-rules-structure     Use single CLAUDE.md + progressive disclosure instead
+                         of modular rules/ directory structure
+
+                         Use when:
+                         - Simple templates (<15KB)
+                         - Universal rules only (no path-specific patterns)
+                         - Backward compatibility needed
+
+--claude-md-size-limit SIZE  Maximum size for core CLAUDE.md content
+                         Format: NUMBER[KB|MB] (e.g., 100KB, 1MB)
+                         Default: 50KB
+                         Use for complex codebases that exceed default limit
+                         Example: /template-init --claude-md-size-limit 100KB
+```
 
 ## Features
 
@@ -193,7 +230,59 @@ Save templates to personal or repository location.
 - Consistent structure across both locations
 - Same validation and quality checks
 
-### 6. Discovery Metadata (TASK-INIT-008)
+### 6. Rules Structure Generation (NEW)
+
+Generated templates include modular `.claude/rules/` directory for optimized context loading.
+
+**Generated Files**:
+- `code-style.md` - Language-specific style rules with path patterns
+- `testing.md` - Framework-specific testing guidance
+- `patterns/*.md` - Architecture pattern documentation
+- `guidance/*.md` - Slim agent guidance files
+
+**Benefits**:
+- 60-70% context window reduction
+- Path-specific rule loading
+- Better organization for complex templates
+- Conditional agent guidance loading
+
+**Opt-Out**:
+```bash
+/template-init --no-rules-structure
+# Uses single CLAUDE.md without rules/ directory
+```
+
+See [Rules Structure Guide](../../docs/guides/rules-structure-guide.md) for details.
+
+### 7. Progressive Disclosure Agent Files (NEW)
+
+Generated agents are split into core and extended files:
+
+**Core File** (`{name}.md`, ~6-10KB):
+- Frontmatter and metadata
+- Boundaries (ALWAYS/NEVER/ASK)
+- Quick Start examples (5-10)
+- Capabilities summary
+- Phase integration
+
+**Extended File** (`{name}-ext.md`, ~15-25KB):
+- Detailed code examples (30+)
+- Best practices with explanations
+- Anti-patterns with code samples
+- Technology-specific guidance
+- Troubleshooting scenarios
+
+**Benefits**:
+- 55-60% token reduction in typical tasks
+- Faster AI responses
+- Same comprehensive content when needed
+
+**Loading Extended Content**:
+```bash
+cat agents/{agent-name}-ext.md
+```
+
+### 8. Discovery Metadata (TASK-INIT-008)
 
 Agents include frontmatter for AI-powered discovery during /task-work execution.
 
@@ -219,7 +308,7 @@ keywords: [python, api, fastapi, pydantic, async, endpoints]
 - Extensible for new technology stacks
 - Graceful degradation (agents without metadata skipped)
 
-### 7. Agent Registration Verification (TASK-ENF-P0-3)
+### 9. Agent Registration Verification (TASK-ENF-P0-3)
 
 When initializing a project with `guardkit init`, the system verifies that template agents are properly registered for discovery. This ensures agents will be available during `/task-work` execution.
 
@@ -271,7 +360,7 @@ If agents are missing discovery metadata, you'll see warnings with enhancement s
 - Clear visibility into registered agents
 - Graceful degradation (warnings, not errors)
 
-### 8. Exit Codes (TASK-INIT-009)
+### 10. Exit Codes (TASK-INIT-009)
 
 Quality-based exit codes for CI/CD integration.
 
@@ -344,7 +433,15 @@ Interactive questionnaire covering:
 
 **Duration**: 5-15 seconds
 
-### Phase 3.5: Level 1 Validation (Automatic)
+### Phase 3.5: Agent Split Generation
+- Split generated agents into core + extended files
+- Core: boundaries, quick start, capabilities
+- Extended: detailed examples, best practices
+- Validate size targets (core <15KB, extended <30KB)
+
+**Duration**: 5-10 seconds
+
+### Phase 3.6: Level 1 Validation (Automatic)
 - CRUD completeness check (60% threshold)
 - Layer symmetry validation
 - Display warnings (non-blocking)
@@ -357,22 +454,40 @@ Interactive questionnaire covering:
 - Ensure /template-validate compatibility (marker file)
 - Create directory structure
 - Write manifest, settings, CLAUDE.md, agents
+- Generate rules structure (default) or split files (--no-rules-structure)
 
-**Template Structure:**
+**Template Structure (Default - Rules Structure):**
 ```
 {template-name}/
-├── template-manifest.json      # Template metadata
-├── settings.json               # Default project settings
-├── CLAUDE.md                   # Template-specific AI instructions
-├── agents/                     # Generated agents with frontmatter
-│   ├── testing-agent.md
-│   ├── api-agent.md
-│   └── repository-agent.md
-├── templates/                  # Template files (optional)
-└── .validation-compatible      # Marker for /template-validate
+├── template-manifest.json
+├── settings.json
+├── .claude/
+│   ├── CLAUDE.md              # Core documentation (~5KB)
+│   └── rules/
+│       ├── code-style.md      # paths: **/*.{ext}
+│       ├── testing.md         # paths: **/tests/**
+│       ├── patterns/
+│       │   └── {pattern}.md   # Architecture-specific
+│       └── guidance/
+│           └── {agent}.md     # Agent guidance (slim)
+├── agents/
+│   ├── {name}.md              # Core agent (~8KB)
+│   └── {name}-ext.md          # Extended content (~20KB)
+├── templates/
+└── .validation-compatible
 ```
 
-### Phase 4.5: Quality Scoring
+### Phase 4.5: Rules Structure Generation (Default)
+- Generate `.claude/rules/` directory structure
+- Create code-style.md based on language selection
+- Create testing.md based on testing framework
+- Create patterns/ based on architecture pattern
+- Generate guidance/ from agent files
+- Skip if --no-rules-structure flag set
+
+**Duration**: 10-30 seconds
+
+### Phase 4.6: Quality Scoring
 - Calculate 0-10 quality score from Q&A answers
 - Generate quality-report.md
 - Display score summary with letter grade
@@ -439,6 +554,53 @@ Interactive questionnaire covering:
 # Saves to ~/.agentecflow/templates/ with validation report
 ```
 
+### Complete Output Example (with Rules Structure)
+```bash
+/template-init
+
+[... Q&A session ...]
+
+✅ Template Package Created Successfully!
+
+📁 Location: ~/.agentecflow/templates/my-api/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
+  ├── .claude/
+  │   ├── CLAUDE.md (5 KB, core)
+  │   └── rules/
+  │       ├── code-style.md (3 KB)
+  │       ├── testing.md (2.5 KB)
+  │       ├── patterns/
+  │       │   └── layered.md (2 KB)
+  │       └── guidance/
+  │           └── api-specialist.md (2.5 KB)
+  ├── agents/
+  │   ├── api-specialist.md (8 KB, core)
+  │   └── api-specialist-ext.md (18 KB, extended)
+  └── templates/ (5 files)
+
+📝 Next Steps:
+   guardkit init my-api
+```
+
+### Opt-Out to Progressive Disclosure
+```bash
+/template-init --no-rules-structure
+
+# Uses single CLAUDE.md without rules/ directory
+# Generates split files (core + extended) instead
+```
+
+### Custom CLAUDE.md Size Limit
+```bash
+/template-init --claude-md-size-limit 100KB
+
+# For complex templates that exceed default 50KB limit
+# Larger core file allows more content before splitting
+```
+
 ### Complete CI/CD Pipeline Integration
 ```bash
 #!/bin/bash
@@ -491,12 +653,34 @@ esac
 
 ## Generated Files
 
-### Template Structure
+### Template Structure (Default - Rules Structure)
 ```
 my-template/
 ├── template-manifest.json      # Template metadata
 ├── settings.json               # Project settings
-├── CLAUDE.md                   # AI instructions
+├── .claude/
+│   ├── CLAUDE.md               # Core documentation (~5KB)
+│   └── rules/
+│       ├── code-style.md       # paths: **/*.{ext}
+│       ├── testing.md          # paths: **/*.test.*
+│       ├── patterns/
+│       │   └── {pattern}.md
+│       └── guidance/
+│           └── {agent}.md      # paths: **/relevant/**
+├── agents/                     # Generated agents with frontmatter
+│   ├── testing-agent.md       # With ALWAYS/NEVER/ASK boundaries
+│   ├── api-agent.md
+│   └── repository-agent.md
+├── templates/                  # Template files (optional)
+└── .validation-compatible      # Marker for /template-validate
+```
+
+### Template Structure (--no-rules-structure)
+```
+my-template/
+├── template-manifest.json      # Template metadata
+├── settings.json               # Project settings
+├── CLAUDE.md                   # Full AI instructions (split files)
 ├── agents/                     # Generated agents with frontmatter
 │   ├── testing-agent.md       # With ALWAYS/NEVER/ASK boundaries
 │   ├── api-agent.md
@@ -544,6 +728,9 @@ tasks/backlog/
 | **Output Locations** | ✅ global/repo (TASK-INIT-007) | ✅ global/repo |
 | **Discovery Metadata** | ✅ Yes (TASK-INIT-008) | ✅ Yes |
 | **Exit Codes** | ✅ Yes (TASK-INIT-009) | ✅ Yes |
+| **Rules Structure** | ✅ Default (TASK-TI-001) | ✅ Default |
+| **Progressive Disclosure** | ✅ Yes | ✅ Yes |
+| **Agent Split Files** | ✅ Yes | ✅ Yes |
 | **AI Analysis** | Generated from Q&A | Inferred from codebase |
 | **Template Files** | Optional (starter files) | Extracted from code |
 | **Duration** | 5-15 minutes | 2-10 minutes |
@@ -559,6 +746,8 @@ tasks/backlog/
 - Provide quality scoring and reports
 - Support personal and repository output locations
 - Include CI/CD integration via exit codes
+- Generate modular rules structure by default (opt-out with `--no-rules-structure`)
+- Support progressive disclosure and agent split files
 
 ## Session Resume
 

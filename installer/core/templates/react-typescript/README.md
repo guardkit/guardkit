@@ -154,6 +154,43 @@ This template includes 4 custom AI agents:
 
 These agents provide expert guidance for React/TypeScript development.
 
+## Rules Structure
+
+This template uses Claude Code's modular rules structure for optimized context loading.
+
+### Directory Layout
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # Code style guidelines
+    ├── testing.md               # Testing conventions
+    ├── patterns/                # Pattern-specific rules
+    │   └── {pattern}.md
+    └── agents/                  # Agent guidance
+        └── {agent}.md
+```
+
+### Path-Specific Rules
+
+Rules files use `paths:` frontmatter for conditional loading:
+
+| Rule File | Loads When Editing |
+|-----------|-------------------|
+| `rules/code-style.md` | Any `.tsx`, `.ts` file |
+| `rules/testing.md` | Test files |
+| `rules/patterns/feature-based.md` | `src/features/**` |
+| `rules/patterns/query-patterns.md` | `**/*query*`, `**/*api*` |
+| `rules/guidance/react-query.md` | Query/API files |
+| `rules/guidance/form-validation.md` | Form/validation files |
+
+### Benefits
+
+- Rules only load when editing relevant files
+- Reduced context window usage (60-70% reduction)
+- Organized by concern (patterns, agents, etc.)
+
 ## Getting Started
 
 ### Using with GuardKit

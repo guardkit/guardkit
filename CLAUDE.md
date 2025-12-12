@@ -930,6 +930,13 @@ Each template demonstrates:
 - ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
 - ✅ High quality standards (all score 8+/10)
 
+### Output Options
+
+| Flag | Output | Use Case |
+|------|--------|----------|
+| (default) | rules/ directory | Most templates (60-70% context reduction) |
+| `--no-rules-structure` | CLAUDE.md + ext files | Simple templates, universal rules |
+
 ### For Production: Use `/template-create`
 
 ```bash
@@ -938,7 +945,13 @@ guardkit init react-typescript
 
 # Production workflow (recommended)
 cd your-existing-project
-/template-create  # Creates agents + enhancement tasks by default
+
+# Default output (rules structure - TASK-TC-DEFAULT-FLAGS)
+/template-create
+
+# Opt-out to progressive disclosure (split files)
+/template-create --no-rules-structure
+
 guardkit init your-custom-template
 ```
 
@@ -975,6 +988,24 @@ guardkit init your-custom-template
 ## Progressive Disclosure
 
 GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
+
+### Two Approaches
+
+1. **Rules Structure** (Default - TASK-TC-DEFAULT-FLAGS)
+   - Modular `.claude/rules/` directory
+   - Path-specific conditional loading
+   - 60-70% token reduction
+   - Use `--no-rules-structure` to opt out
+
+2. **Split Files** (Opt-out)
+   - Core `{name}.md` always loaded
+   - Extended `{name}-ext.md` loaded on-demand
+   - 55-60% token reduction
+   - Use with `--no-rules-structure` flag
+
+**When to Choose:**
+- Use rules structure (default) for most templates
+- Use split files (`--no-rules-structure`) for simpler projects with universal rules
 
 ### How It Works
 
@@ -1023,7 +1054,76 @@ When creating templates with `/template-create`:
 - Agent files are automatically split during `/agent-enhance`
 - Use `--no-split` flag for single-file output (not recommended)
 
-See [Progressive Disclosure Guide](docs/guides/progressive-disclosure.md) for details.
+### Guidance vs Agent Files
+
+Templates include two types of specialist files:
+- **`agents/{name}.md`**: Full agent context for Task tool execution (source of truth)
+- **`rules/guidance/{slug}.md`**: Slim summary for path-triggered loading (derived)
+
+**Source of Truth**: Always edit `agents/` files. Guidance files are generated summaries.
+
+See [Rules Structure Guide](docs/guides/rules-structure-guide.md#guidance-vs-agent-files) for details.
+
+## Claude Code Rules Structure
+
+GuardKit templates support Claude Code's modular rules structure for optimized context loading.
+
+### When to Use
+
+| Scenario | Recommendation |
+|----------|---------------|
+| Simple templates (<15KB) | Single CLAUDE.md with split |
+| Complex templates (>15KB) | Rules structure |
+| Path-specific patterns | Rules structure |
+| Universal rules only | Single CLAUDE.md |
+
+### Structure Overview
+
+```
+.claude/
+├── CLAUDE.md                    # Core documentation (~5KB)
+└── rules/
+    ├── code-style.md            # paths: **/*.{ext}
+    ├── testing.md               # paths: **/*.test.*
+    ├── patterns/
+    │   └── {pattern}.md
+    └── agents/
+        └── {agent}.md           # paths: **/relevant/**
+```
+
+### Generating Rules Structure
+
+```bash
+# Default (rules structure - TASK-TC-DEFAULT-FLAGS)
+/template-create
+
+# Opt-out to progressive disclosure (split files)
+/template-create --no-rules-structure
+```
+
+### Path-Specific Loading
+
+Rules files can include `paths:` frontmatter for conditional loading:
+
+```markdown
+---
+paths: src/api/**/*.ts, **/router*.py
+---
+
+# API Development Rules
+...
+```
+
+Rules without `paths:` frontmatter load unconditionally.
+
+### Benefits
+
+- **60-70% context reduction** - Rules load only when relevant
+- **Better organization** - Related rules grouped in subdirectories
+- **Conditional agents** - Agent guidance loads for relevant files only
+- **Recursive discovery** - Subdirectories automatically scanned
+
+**See**: [Rules Structure Guide](docs/guides/rules-structure-guide.md)
 
 ## Installation & Setup
 

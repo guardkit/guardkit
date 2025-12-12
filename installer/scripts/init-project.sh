@@ -192,8 +192,11 @@ copy_template_files() {
     
     print_info "Using template: $effective_template"
     
-    # Copy CLAUDE.md context file
-    if [ -f "$template_dir/CLAUDE.md" ]; then
+    # Copy CLAUDE.md context file (check both locations, .claude/ takes precedence)
+    if [ -f "$template_dir/.claude/CLAUDE.md" ]; then
+        cp "$template_dir/.claude/CLAUDE.md" .claude/
+        print_success "Copied project context file (from .claude/)"
+    elif [ -f "$template_dir/CLAUDE.md" ]; then
         cp "$template_dir/CLAUDE.md" .claude/
         print_success "Copied project context file"
     fi
@@ -249,6 +252,13 @@ copy_template_files() {
         fi
     fi
 
+    # Copy .claude/rules/ directory (for Claude Code modular rules)
+    if [ -d "$template_dir/.claude/rules" ]; then
+        mkdir -p .claude/rules
+        cp -r "$template_dir/.claude/rules/"* .claude/rules/ 2>/dev/null || true
+        print_success "Copied rules structure for Claude Code"
+    fi
+
     # Copy other template-specific files
     for file in "$template_dir"/*.md "$template_dir"/*.json; do
         if [ -f "$file" ] && [ "$(basename "$file")" != "CLAUDE.md" ]; then
@@ -270,6 +280,26 @@ copy_template_files() {
     fi
     
     TEMPLATE="$effective_template"  # Update for later use
+}
+
+# Verify rules structure was copied correctly
+verify_rules_structure() {
+    local template_dir="$1"
+
+    if [ -d "$template_dir/.claude/rules" ]; then
+        if [ -d ".claude/rules" ]; then
+            local template_rules=$(find "$template_dir/.claude/rules" -type f -name "*.md" | wc -l | tr -d ' ')
+            local copied_rules=$(find ".claude/rules" -type f -name "*.md" | wc -l | tr -d ' ')
+
+            if [ "$copied_rules" -ge "$template_rules" ]; then
+                print_success "Rules structure verified ($copied_rules rule files)"
+            else
+                print_warning "Rules structure incomplete: expected $template_rules files, found $copied_rules"
+            fi
+        else
+            print_warning "Rules structure expected but not found - Claude Code context optimization unavailable"
+        fi
+    fi
 }
 
 # Create project configuration
@@ -566,6 +596,7 @@ main() {
     check_existing
     create_project_structure
     copy_template_files
+    verify_rules_structure "$AGENTECFLOW_HOME/templates/$TEMPLATE"
     create_config
     create_initial_files
     print_next_steps
