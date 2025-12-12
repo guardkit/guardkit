@@ -282,6 +282,26 @@ copy_template_files() {
     TEMPLATE="$effective_template"  # Update for later use
 }
 
+# Verify rules structure was copied correctly
+verify_rules_structure() {
+    local template_dir="$1"
+
+    if [ -d "$template_dir/.claude/rules" ]; then
+        if [ -d ".claude/rules" ]; then
+            local template_rules=$(find "$template_dir/.claude/rules" -type f -name "*.md" | wc -l | tr -d ' ')
+            local copied_rules=$(find ".claude/rules" -type f -name "*.md" | wc -l | tr -d ' ')
+
+            if [ "$copied_rules" -ge "$template_rules" ]; then
+                print_success "Rules structure verified ($copied_rules rule files)"
+            else
+                print_warning "Rules structure incomplete: expected $template_rules files, found $copied_rules"
+            fi
+        else
+            print_warning "Rules structure expected but not found - Claude Code context optimization unavailable"
+        fi
+    fi
+}
+
 # Create project configuration
 create_config() {
     print_info "Creating project configuration..."
@@ -576,6 +596,7 @@ main() {
     check_existing
     create_project_structure
     copy_template_files
+    verify_rules_structure "$AGENTECFLOW_HOME/templates/$TEMPLATE"
     create_config
     create_initial_files
     print_next_steps
