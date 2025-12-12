@@ -10,6 +10,10 @@ complexity: 2
 tags: [guardkit-init, claudemd, consistency]
 related_to: [TASK-REV-INIT, TASK-GI-001]
 implementation_mode: direct
+completed_location: tasks/completed/TASK-GI-002/
+organized_files: [
+  "TASK-GI-002.md"
+]
 ---
 
 # Task: Handle Both CLAUDE.md Locations
