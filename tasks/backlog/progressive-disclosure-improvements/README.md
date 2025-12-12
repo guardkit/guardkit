@@ -6,31 +6,30 @@ Created from review task TASK-REV-PD01 which verified the progressive disclosure
 
 ## Problem Statement
 
-While the core progressive disclosure and rules structure implementations are working correctly (overall score 8.5/10), the review identified three minor improvements that would enhance the system further.
+While the core progressive disclosure and rules structure implementations are working correctly (overall score 8.5/10), the review identified two technology-agnostic improvements to the core commands that would enhance the system further.
 
 ## Solution Approach
 
-Three focused improvement tasks to address:
-1. Add path-specific loading to guidance files
-2. Enhance xunit-nsubstitute-testing-specialist ASK section
-3. Enrich pattern file content with codebase examples
+Two focused improvement tasks to address core command behavior:
+1. Add path-specific loading to guidance files (template-create improvement)
+2. Enrich pattern file content with codebase examples (template-create improvement)
+
+**Note**: Template-specific agent improvements (e.g., xunit ASK section) are not tracked here - they will be addressed when `/template-create` and `/agent-enhance` are re-run on specific codebases.
 
 ## Subtasks
 
 | Task ID | Title | Priority | Mode |
 |---------|-------|----------|------|
 | TASK-PDI-001 | Add paths frontmatter to guidance files | Low | direct |
-| TASK-PDI-002 | Enhance xunit testing specialist ASK section | Low | direct |
 | TASK-PDI-003 | Enrich pattern files with codebase examples | Medium | task-work |
 
 ## Execution Strategy
 
-**Wave 1** (Parallel - Low effort):
-- TASK-PDI-001: Add paths frontmatter
-- TASK-PDI-002: Enhance ASK section
+**Wave 1** (Quick Win):
+- TASK-PDI-001: Update template-create to add paths frontmatter to guidance files
 
-**Wave 2** (Sequential - Requires template context):
-- TASK-PDI-003: Pattern file enrichment
+**Wave 2** (Requires planning):
+- TASK-PDI-003: Update template-create to extract pattern examples from source codebase
 
 ## Review Reference
 

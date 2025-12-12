@@ -2,34 +2,30 @@
 
 ## Overview
 
-This guide provides the execution strategy for implementing improvements identified in TASK-REV-PD01.
+This guide provides the execution strategy for implementing technology-agnostic improvements to `/template-create` identified in TASK-REV-PD01.
+
+**Scope**: Core command improvements only. Template-specific agent content will be regenerated when commands are re-run.
 
 ## Wave Breakdown
 
-### Wave 1: Quick Wins (Parallel)
+### Wave 1: Guidance File Paths
 
-**Tasks**: TASK-PDI-001, TASK-PDI-002
-**Estimated Time**: 30 minutes each
-**Mode**: Direct implementation (no /task-work needed)
-**Parallel Execution**: Yes - independent changes
+**Task**: TASK-PDI-001
+**Estimated Time**: 30 minutes
+**Mode**: Direct implementation
+**Target**: Update template-create to generate guidance files with `paths:` frontmatter
 
-#### TASK-PDI-001: Add paths to guidance files
 ```bash
-# Direct edit - update 9 guidance files in mydrive template
-# Then update template-create to include paths in generated guidance files
+# Update the guidance file generation logic in template-create
+# to include path patterns based on agent specialty
 ```
 
-#### TASK-PDI-002: Enhance xunit ASK section
-```bash
-# Direct edit - add 1-2 ASK items to xunit-nsubstitute-testing-specialist.md
-```
-
-### Wave 2: Pattern Enhancement
+### Wave 2: Pattern File Enrichment
 
 **Task**: TASK-PDI-003
 **Estimated Time**: 2-4 hours
 **Mode**: task-work (requires planning)
-**Dependencies**: None (can run independently)
+**Target**: Update template-create to extract pattern examples from source codebase
 
 ```bash
 /task-work TASK-PDI-003
@@ -37,14 +33,9 @@ This guide provides the execution strategy for implementing improvements identif
 
 ## Execution Commands
 
-### Wave 1 (Parallel)
+### Wave 1
 ```bash
-# Can be done in parallel with Conductor
-# Workspace 1:
-# Edit guidance files directly
-
-# Workspace 2:
-# Edit xunit specialist directly
+# Direct implementation - update template-create guidance generation
 ```
 
 ### Wave 2
@@ -56,14 +47,14 @@ This guide provides the execution strategy for implementing improvements identif
 
 After implementation:
 
-1. Run `/template-create` on a test project
+1. Run `/template-create` on a test project (e.g., mydrive codebase)
 2. Verify guidance files have `paths:` frontmatter
-3. Verify pattern files have examples
-4. Run `guardkit init` and check output
+3. Verify pattern files have extracted examples
+4. Run `guardkit init` and check output structure
 
 ## Success Criteria
 
-- [ ] All 9 guidance files have paths
-- [ ] xunit specialist has 4-5 ASK items
-- [ ] 12 pattern files have real examples
+- [ ] Guidance files generated with appropriate `paths:` frontmatter
+- [ ] Pattern files populated with codebase examples (not "No examples found")
 - [ ] No regressions in template-create or guardkit init
+- [ ] Re-running on mydrive produces improved output

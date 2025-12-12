@@ -267,6 +267,116 @@ class TestPathPatternGeneration:
         # Should generate generic patterns (all files or none)
         assert patterns == "" or "**/*" in patterns
 
+    # Tests for technology-agnostic path patterns (TASK-PDI-001)
+    def test_generate_path_patterns_explicit_paths_passthrough(self):
+        """Test that explicit 'paths' field in metadata takes highest priority."""
+        metadata = {
+            "stack": ["dotnet"],
+            "phase": "implementation",
+            "paths": "**/Repositories/**/*.cs, **/*Repository.cs"
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Explicit paths should be returned as-is (passthrough)
+        assert patterns == "**/Repositories/**/*.cs, **/*Repository.cs"
+
+    def test_generate_path_patterns_explicit_paths_override_stack(self):
+        """Test that explicit paths override stack-based patterns."""
+        metadata = {
+            "stack": ["python"],
+            "phase": "testing",
+            "capabilities": ["database"],
+            "paths": "**/custom/path/**/*.py"
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Explicit paths take priority over everything else
+        assert patterns == "**/custom/path/**/*.py"
+        assert "**/*.py" not in patterns or patterns == "**/custom/path/**/*.py"
+
+    def test_generate_path_patterns_api_phase(self):
+        """Test pattern generation for API development phase."""
+        metadata = {
+            "stack": ["python"],
+            "phase": "api"
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Should include API-related patterns
+        assert "**/api/**" in patterns or "**/routes/**" in patterns
+
+    def test_generate_path_patterns_ui_phase(self):
+        """Test pattern generation for UI development phase."""
+        metadata = {
+            "stack": ["typescript"],
+            "phase": "ui"
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Should include UI-related patterns
+        assert "**/components/**" in patterns or "**/views/**" in patterns
+
+    def test_generate_path_patterns_services_capability(self):
+        """Test pattern generation for services capability."""
+        metadata = {
+            "stack": ["python"],
+            "capabilities": ["services"]
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Should include services pattern
+        assert "**/services/**" in patterns
+
+    def test_generate_path_patterns_controllers_capability(self):
+        """Test pattern generation for controllers capability."""
+        metadata = {
+            "stack": ["java"],
+            "capabilities": ["controllers"]
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Should include controllers pattern
+        assert "**/controllers/**" in patterns
+
+    def test_generate_path_patterns_go_stack(self):
+        """Test pattern generation for Go stack."""
+        metadata = {
+            "stack": ["go"]
+        }
+        patterns = generate_path_patterns(metadata)
+
+        assert "**/*.go" in patterns
+
+    def test_generate_path_patterns_rust_stack(self):
+        """Test pattern generation for Rust stack."""
+        metadata = {
+            "stack": ["rust"]
+        }
+        patterns = generate_path_patterns(metadata)
+
+        assert "**/*.rs" in patterns
+
+    def test_generate_path_patterns_java_stack(self):
+        """Test pattern generation for Java stack."""
+        metadata = {
+            "stack": ["java"]
+        }
+        patterns = generate_path_patterns(metadata)
+
+        assert "**/*.java" in patterns
+
+    def test_generate_path_patterns_capability_case_insensitive(self):
+        """Test that capability matching is case-insensitive."""
+        metadata = {
+            "stack": ["python"],
+            "capabilities": ["DATABASE", "Api"]  # Mixed case
+        }
+        patterns = generate_path_patterns(metadata)
+
+        # Should match despite case differences
+        assert "**/models/**" in patterns or "**/repositories/**" in patterns
+        assert "**/api/**" in patterns
+
 
 class TestGuidanceSizeValidation:
     """Test guidance file size validation."""

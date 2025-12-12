@@ -19,6 +19,7 @@ import logging
 from ..codebase_analyzer.models import CodebaseAnalysis
 from .path_pattern_inferrer import PathPatternInferrer
 from ..guidance_generator import generate_guidance_from_agent
+from ..pattern_generator import extract_pattern_examples, CodeExample
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,8 @@ class RulesStructureGenerator:
         self,
         analysis: CodebaseAnalysis,
         agents: List,
-        output_path: Path
+        output_path: Path,
+        file_samples: Optional[List[Dict[str, str]]] = None
     ):
         """
         Initialize the rules structure generator.
@@ -66,11 +68,26 @@ class RulesStructureGenerator:
             analysis: CodebaseAnalysis containing technology stack and architecture info
             agents: List of agent metadata objects
             output_path: Base output path for generated files
+            file_samples: Optional list of file samples for pattern extraction
         """
         self.analysis = analysis
         self.agents = agents
         self.output_path = output_path
+        self.file_samples = file_samples or []
         self.path_inferrer = PathPatternInferrer(analysis)
+
+        # TASK-PDI-003: Extract pattern examples from file samples
+        self.pattern_examples = {}
+        if self.file_samples:
+            try:
+                self.pattern_examples = extract_pattern_examples(
+                    self.file_samples,
+                    max_examples_per_pattern=2
+                )
+                logger.info(f"Extracted examples for {len(self.pattern_examples)} patterns")
+            except Exception as e:
+                logger.warning(f"Failed to extract pattern examples: {e}")
+                self.pattern_examples = {}
 
     def generate(self) -> Dict[str, str]:
         """
@@ -283,6 +300,8 @@ work on relevant files.
         """
         Generate rules for a specific design pattern.
 
+        TASK-PDI-003: Enhanced to include extracted code examples from codebase.
+
         Args:
             pattern: Name of the design pattern (e.g., "Repository Pattern")
 
@@ -290,6 +309,15 @@ work on relevant files.
             Pattern-specific rules content
         """
         pattern_slug = self._slugify(pattern)
+
+        # Check if we have extracted examples for this pattern
+        examples = self.pattern_examples.get(pattern, [])
+
+        # Build examples section
+        examples_section = self._build_examples_section(pattern, examples)
+
+        # Build best practices from extracted examples
+        best_practices = self._build_best_practices_from_examples(pattern, examples)
 
         content = f"""# {pattern}
 
@@ -301,15 +329,95 @@ work on relevant files.
 
 {self._get_pattern_implementation_guide(pattern)}
 
-## Example
-
-{self._get_pattern_example(pattern)}
+{examples_section}
 
 ## Best Practices
 
-{self._get_pattern_best_practices(pattern)}
+{best_practices}
 """
         return content.strip()
+
+    def _build_examples_section(
+        self,
+        pattern: str,
+        examples: List[CodeExample]
+    ) -> str:
+        """
+        Build examples section from extracted code examples.
+
+        Args:
+            pattern: Pattern name
+            examples: List of CodeExample objects
+
+        Returns:
+            Formatted examples section
+        """
+        if not examples:
+            return f"""## Example
+
+No examples found in codebase."""
+
+        sections = ["## Example\n"]
+
+        for i, example in enumerate(examples[:2], 1):  # Max 2 examples
+            if len(examples) > 1:
+                sections.append(f"### Example {i}: {example.context}\n")
+            else:
+                sections.append(f"{example.context}\n")
+
+            sections.append(f"```{example.language}")
+            sections.append(example.snippet)
+            sections.append("```\n")
+
+        return '\n'.join(sections).rstrip()
+
+    def _build_best_practices_from_examples(
+        self,
+        pattern: str,
+        examples: List[CodeExample]
+    ) -> str:
+        """
+        Build best practices section from extracted examples.
+
+        Combines practices from all examples, deduplicates, and adds
+        generic best practices if needed.
+
+        Args:
+            pattern: Pattern name
+            examples: List of CodeExample objects
+
+        Returns:
+            Formatted best practices section
+        """
+        practices = set()
+
+        # Collect practices from all examples
+        for example in examples:
+            practices.update(example.best_practices)
+
+        # Add generic best practices if we have few
+        if len(practices) < 3:
+            practices.update(self._get_generic_best_practices(pattern))
+
+        # Format as bullet list (max 5 practices)
+        practices_list = list(practices)[:5]
+        return '\n'.join(f"- {practice}" for practice in practices_list)
+
+    def _get_generic_best_practices(self, pattern: str) -> List[str]:
+        """
+        Get generic best practices for a pattern.
+
+        Args:
+            pattern: Pattern name
+
+        Returns:
+            List of generic best practices
+        """
+        return [
+            f"Keep {pattern} implementations focused on single responsibility",
+            "Follow SOLID principles",
+            "Write comprehensive unit tests"
+        ]
 
     def _read_enhanced_agent_content(self, agent_name: str) -> Optional[str]:
         """

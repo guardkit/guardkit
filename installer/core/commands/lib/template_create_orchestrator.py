@@ -1881,12 +1881,28 @@ Enhance the {agent_name} agent with template-specific content:
         """
         try:
             from lib.template_generator.rules_structure_generator import RulesStructureGenerator
+            from lib.codebase_analyzer.stratified_sampler import StratifiedSampler
+
+            # TASK-PDI-003: Collect file samples for pattern extraction
+            file_samples = []
+            if self.config.codebase_path:
+                try:
+                    sampler = StratifiedSampler(
+                        self.config.codebase_path,
+                        max_files=20  # Same as used in AI analysis
+                    )
+                    file_samples = sampler.collect_stratified_samples()
+                    logger.info(f"Collected {len(file_samples)} file samples for pattern extraction")
+                except Exception as e:
+                    logger.warning(f"Failed to collect file samples: {e}")
+                    file_samples = []
 
             # Generate rules structure
             generator = RulesStructureGenerator(
                 analysis=self.analysis,
                 agents=self.agents,
-                output_path=output_path
+                output_path=output_path,
+                file_samples=file_samples  # TASK-PDI-003: Pass samples for extraction
             )
             rules = generator.generate()
 
