@@ -230,7 +230,59 @@ Save templates to personal or repository location.
 - Consistent structure across both locations
 - Same validation and quality checks
 
-### 6. Discovery Metadata (TASK-INIT-008)
+### 6. Rules Structure Generation (NEW)
+
+Generated templates include modular `.claude/rules/` directory for optimized context loading.
+
+**Generated Files**:
+- `code-style.md` - Language-specific style rules with path patterns
+- `testing.md` - Framework-specific testing guidance
+- `patterns/*.md` - Architecture pattern documentation
+- `guidance/*.md` - Slim agent guidance files
+
+**Benefits**:
+- 60-70% context window reduction
+- Path-specific rule loading
+- Better organization for complex templates
+- Conditional agent guidance loading
+
+**Opt-Out**:
+```bash
+/template-init --no-rules-structure
+# Uses single CLAUDE.md without rules/ directory
+```
+
+See [Rules Structure Guide](../../docs/guides/rules-structure-guide.md) for details.
+
+### 7. Progressive Disclosure Agent Files (NEW)
+
+Generated agents are split into core and extended files:
+
+**Core File** (`{name}.md`, ~6-10KB):
+- Frontmatter and metadata
+- Boundaries (ALWAYS/NEVER/ASK)
+- Quick Start examples (5-10)
+- Capabilities summary
+- Phase integration
+
+**Extended File** (`{name}-ext.md`, ~15-25KB):
+- Detailed code examples (30+)
+- Best practices with explanations
+- Anti-patterns with code samples
+- Technology-specific guidance
+- Troubleshooting scenarios
+
+**Benefits**:
+- 55-60% token reduction in typical tasks
+- Faster AI responses
+- Same comprehensive content when needed
+
+**Loading Extended Content**:
+```bash
+cat agents/{agent-name}-ext.md
+```
+
+### 8. Discovery Metadata (TASK-INIT-008)
 
 Agents include frontmatter for AI-powered discovery during /task-work execution.
 
@@ -256,7 +308,7 @@ keywords: [python, api, fastapi, pydantic, async, endpoints]
 - Extensible for new technology stacks
 - Graceful degradation (agents without metadata skipped)
 
-### 7. Agent Registration Verification (TASK-ENF-P0-3)
+### 9. Agent Registration Verification (TASK-ENF-P0-3)
 
 When initializing a project with `guardkit init`, the system verifies that template agents are properly registered for discovery. This ensures agents will be available during `/task-work` execution.
 
@@ -308,7 +360,7 @@ If agents are missing discovery metadata, you'll see warnings with enhancement s
 - Clear visibility into registered agents
 - Graceful degradation (warnings, not errors)
 
-### 8. Exit Codes (TASK-INIT-009)
+### 10. Exit Codes (TASK-INIT-009)
 
 Quality-based exit codes for CI/CD integration.
 
@@ -381,7 +433,15 @@ Interactive questionnaire covering:
 
 **Duration**: 5-15 seconds
 
-### Phase 3.5: Level 1 Validation (Automatic)
+### Phase 3.5: Agent Split Generation
+- Split generated agents into core + extended files
+- Core: boundaries, quick start, capabilities
+- Extended: detailed examples, best practices
+- Validate size targets (core <15KB, extended <30KB)
+
+**Duration**: 5-10 seconds
+
+### Phase 3.6: Level 1 Validation (Automatic)
 - CRUD completeness check (60% threshold)
 - Layer symmetry validation
 - Display warnings (non-blocking)
@@ -399,24 +459,35 @@ Interactive questionnaire covering:
 **Template Structure (Default - Rules Structure):**
 ```
 {template-name}/
-├── template-manifest.json      # Template metadata
-├── settings.json               # Default project settings
+├── template-manifest.json
+├── settings.json
 ├── .claude/
-│   ├── CLAUDE.md               # Core documentation (~5KB)
+│   ├── CLAUDE.md              # Core documentation (~5KB)
 │   └── rules/
-│       ├── code-style.md       # paths: **/*.{ext}
-│       ├── testing.md          # paths: **/*.test.*
+│       ├── code-style.md      # paths: **/*.{ext}
+│       ├── testing.md         # paths: **/tests/**
 │       ├── patterns/
+│       │   └── {pattern}.md   # Architecture-specific
 │       └── guidance/
-├── agents/                     # Generated agents with frontmatter
-│   ├── testing-agent.md
-│   ├── api-agent.md
-│   └── repository-agent.md
-├── templates/                  # Template files (optional)
-└── .validation-compatible      # Marker for /template-validate
+│           └── {agent}.md     # Agent guidance (slim)
+├── agents/
+│   ├── {name}.md              # Core agent (~8KB)
+│   └── {name}-ext.md          # Extended content (~20KB)
+├── templates/
+└── .validation-compatible
 ```
 
-### Phase 4.5: Quality Scoring
+### Phase 4.5: Rules Structure Generation (Default)
+- Generate `.claude/rules/` directory structure
+- Create code-style.md based on language selection
+- Create testing.md based on testing framework
+- Create patterns/ based on architecture pattern
+- Generate guidance/ from agent files
+- Skip if --no-rules-structure flag set
+
+**Duration**: 10-30 seconds
+
+### Phase 4.6: Quality Scoring
 - Calculate 0-10 quality score from Q&A answers
 - Generate quality-report.md
 - Display score summary with letter grade
@@ -483,26 +554,35 @@ Interactive questionnaire covering:
 # Saves to ~/.agentecflow/templates/ with validation report
 ```
 
-### Rules Structure Output (Default)
+### Complete Output Example (with Rules Structure)
 ```bash
 /template-init
 
-# Default behavior generates modular .claude/rules/ structure
+[... Q&A session ...]
 
 ✅ Template Package Created Successfully!
 
-📁 Location: ~/.agentecflow/templates/my-template/
-  ├── manifest.json
-  ├── settings.json
+📁 Location: ~/.agentecflow/templates/my-api/
+🎯 Type: Personal use (immediately available)
+
+  ├── manifest.json (15 KB)
+  ├── settings.json (8 KB)
   ├── .claude/
-  │   ├── CLAUDE.md (core, ~5KB)
+  │   ├── CLAUDE.md (5 KB, core)
   │   └── rules/
-  │       ├── code-style.md
-  │       ├── testing.md
+  │       ├── code-style.md (3 KB)
+  │       ├── testing.md (2.5 KB)
   │       ├── patterns/
+  │       │   └── layered.md (2 KB)
   │       └── guidance/
-  ├── templates/
-  └── agents/
+  │           └── api-specialist.md (2.5 KB)
+  ├── agents/
+  │   ├── api-specialist.md (8 KB, core)
+  │   └── api-specialist-ext.md (18 KB, extended)
+  └── templates/ (5 files)
+
+📝 Next Steps:
+   guardkit init my-api
 ```
 
 ### Opt-Out to Progressive Disclosure
