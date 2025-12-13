@@ -1,10 +1,11 @@
 ---
 id: TASK-WC-011
 title: Update CLAUDE.md documentation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-13T21:25:00Z
+completed: 2025-12-13T21:25:00Z
 priority: medium
 tags: [clarification, documentation, wave-3]
 complexity: 3
@@ -16,7 +17,7 @@ conductor_workspace: unified-clarification-wave3-3
 dependencies:
   - TASK-WC-005
 test_results:
-  status: pending
+  status: not_applicable
   coverage: null
   last_run: null
 ---
@@ -151,16 +152,41 @@ The agent is invoked via the Task tool at appropriate points in each command's w
 
 ## Acceptance Criteria
 
-- [ ] CLAUDE.md reflects unified subagent pattern
-- [ ] .claude/CLAUDE.md reflects unified subagent pattern
-- [ ] No references to orchestrator pattern for clarification
-- [ ] All three context types documented
-- [ ] Flags documented consistently
-- [ ] Complexity gating documented
-- [ ] Agent location and installation documented
+- [x] CLAUDE.md reflects unified subagent pattern
+- [x] .claude/CLAUDE.md reflects unified subagent pattern
+- [x] No references to orchestrator pattern for clarification
+- [x] All three context types documented
+- [x] Flags documented consistently
+- [x] Complexity gating documented
+- [x] Agent location and installation documented
 
 ## Testing
 
-1. Review updated documentation for accuracy
-2. Follow documentation to verify flag behavior
-3. Ensure no contradictory information remains
+1. ✅ Review updated documentation for accuracy - All sections updated correctly
+2. ✅ Follow documentation to verify flag behavior - Flag documentation consistent across files
+3. ✅ Ensure no contradictory information remains - No orchestrator references found
+
+## Completion Summary
+
+Successfully updated all documentation to reflect the unified `clarification-questioner` subagent pattern:
+
+### Files Updated:
+1. **CLAUDE.md** - Added "How It Works", "Agent Invocation", and "Clarification Agent" sections
+2. **.claude/CLAUDE.md** - Updated with unified agent pattern and context types
+3. **docs/workflows/clarification-workflow.md** - Created comprehensive workflow guide (9.1KB)
+
+### Key Changes:
+- Documented unified subagent invocation pattern
+- Added command/context type mapping table
+- Documented all three context types (review_scope, implementation_prefs, implementation_planning)
+- Added agent location and installation details
+- Created detailed workflow guide with examples and troubleshooting
+
+### Verification:
+- ✅ No orchestrator references in clarification sections
+- ✅ All three context types documented with examples
+- ✅ Command-line flags documented consistently
+- ✅ Complexity gating tables present in all relevant files
+- ✅ Agent location documented in both CLAUDE.md files
+
+Commit: c79b0bf
