@@ -1,0 +1,382 @@
+{
+  "analysis_date": "2025-12-13T09:45:00Z",
+  "template_name": "fastapi-python",
+  "analysis_type": "template-create dry-run simulation",
+  "metadata": {
+    "template_name": "fastapi-python",
+    "template_type": "Backend API",
+    "primary_language": "Python",
+    "framework": "FastAPI",
+    "framework_version": ">=0.104.0",
+    "architecture_pattern": "Layered (Netflix Dispatch-inspired)",
+    "testing_framework": "pytest",
+    "confidence_score": 95
+  },
+  "technology": {
+    "primary_language": "Python",
+    "frameworks": [
+      "FastAPI",
+      "SQLAlchemy",
+      "Pydantic",
+      "Alembic"
+    ],
+    "testing_frameworks": [
+      "pytest",
+      "pytest-asyncio",
+      "httpx"
+    ],
+    "build_tools": [
+      "pip",
+      "ruff"
+    ],
+    "databases": [
+      "PostgreSQL (via asyncpg)",
+      "SQLAlchemy ORM"
+    ],
+    "infrastructure": [
+      "Docker",
+      "Alembic migrations"
+    ],
+    "confidence": {
+      "level": "high",
+      "percentage": 95.0,
+      "reasoning": "Template has comprehensive manifest.json with explicit framework versions, well-documented settings.json with architectural patterns, and complete template files demonstrating FastAPI best practices from 12k+ star repository."
+    }
+  },
+  "architecture": {
+    "patterns": [
+      "Repository",
+      "Dependency Injection",
+      "CRUD Base Classes",
+      "Service Layer",
+      "Factory Pattern",
+      "Async/Await Patterns",
+      "DTO (Data Transfer Objects)",
+      "Middleware Pattern"
+    ],
+    "architectural_style": "Layered (Netflix Dispatch-inspired feature-based structure)",
+    "layers": [
+      {
+        "name": "API",
+        "description": "HTTP endpoint definitions and request/response handling",
+        "typical_files": ["router.py"],
+        "dependencies": ["schemas", "crud", "dependencies"]
+      },
+      {
+        "name": "Schemas",
+        "description": "Pydantic models for validation and serialization",
+        "typical_files": ["schemas.py"],
+        "dependencies": []
+      },
+      {
+        "name": "Models",
+        "description": "SQLAlchemy ORM database models",
+        "typical_files": ["models.py"],
+        "dependencies": ["db.base"]
+      },
+      {
+        "name": "CRUD",
+        "description": "Database operations and repository pattern",
+        "typical_files": ["crud.py", "crud_base.py"],
+        "dependencies": ["models", "schemas"]
+      },
+      {
+        "name": "Core",
+        "description": "Global configuration, security, logging",
+        "typical_files": ["config.py", "security.py", "logging.py"],
+        "dependencies": []
+      },
+      {
+        "name": "Dependencies",
+        "description": "FastAPI dependency injection functions",
+        "typical_files": ["dependencies.py"],
+        "dependencies": ["db.session", "core.security"]
+      },
+      {
+        "name": "Database",
+        "description": "Database connection and session management",
+        "typical_files": ["session.py", "base.py"],
+        "dependencies": []
+      },
+      {
+        "name": "Testing",
+        "description": "Test infrastructure and fixtures",
+        "typical_files": ["conftest.py", "test_*.py"],
+        "dependencies": ["all layers"]
+      }
+    ],
+    "key_abstractions": [
+      "Router",
+      "Schema (Create/Update/InDB/Public)",
+      "Model (SQLAlchemy)",
+      "CRUD",
+      "AsyncSession",
+      "Dependency"
+    ],
+    "dependency_flow": "API → Dependencies → CRUD → Models/DB (inward toward data layer)",
+    "confidence": {
+      "level": "high",
+      "percentage": 92.0,
+      "reasoning": "Architecture is clearly documented in settings.json layer_mappings, template files demonstrate consistent layer separation, and CLAUDE.md explicitly describes Netflix Dispatch-inspired structure with feature-based organization."
+    }
+  },
+  "quality": {
+    "overall_score": 88.0,
+    "solid_compliance": 90.0,
+    "dry_compliance": 85.0,
+    "yagni_compliance": 88.0,
+    "test_coverage": 85.0,
+    "code_smells": [
+      "No evident code smells in template structure"
+    ],
+    "strengths": [
+      "Clear separation of concerns with well-defined layers",
+      "Comprehensive dependency injection patterns",
+      "Async-first design for I/O-bound operations",
+      "Generic CRUD base classes promote DRY",
+      "Strong type safety with Pydantic v2",
+      "Production-ready patterns (migrations, testing infrastructure)",
+      "Feature-based organization promotes scalability",
+      "Multiple schema types (Create/Update/InDB/Public) for proper data exposure control"
+    ],
+    "improvements": [
+      "Add service layer template for complex business logic orchestration",
+      "Include exception handling template with custom HTTPException hierarchy",
+      "Add middleware template examples (rate limiting, logging, tracing)",
+      "Include background task template examples",
+      "Add WebSocket template for real-time features",
+      "Include comprehensive pagination template (cursor-based + offset-based)",
+      "Add template for API versioning strategy implementation"
+    ],
+    "confidence": {
+      "level": "high",
+      "percentage": 90.0,
+      "reasoning": "Quality scores are explicitly documented in manifest.json, template files follow FastAPI best practices from authoritative source (12k+ star repo), and structure demonstrates strong adherence to SOLID principles with clear layer separation and dependency injection."
+    }
+  },
+  "agent_analysis": {
+    "agents_discovered": [
+      {
+        "name": "fastapi-specialist",
+        "file": "agents/fastapi-specialist.md",
+        "current_quality_score": 8.5,
+        "stack": ["python", "fastapi"],
+        "phase": "implementation",
+        "capabilities": [
+          "FastAPI router organization",
+          "Dependency injection patterns",
+          "Middleware implementation",
+          "Background tasks",
+          "WebSocket support"
+        ],
+        "strengths": [
+          "Comprehensive boundary sections (ALWAYS/NEVER/ASK)",
+          "Well-documented capabilities with 6 major categories",
+          "Clear discovery metadata for agent matching",
+          "Extended file available with detailed examples"
+        ],
+        "gaps": [
+          "Could include more code examples from actual template files",
+          "Missing specific FastAPI v0.104+ feature guidance",
+          "Could reference template-specific patterns more explicitly"
+        ]
+      },
+      {
+        "name": "fastapi-database-specialist",
+        "file": "agents/fastapi-database-specialist.md",
+        "current_quality_score": 8.3,
+        "stack": ["python", "fastapi", "sqlalchemy"],
+        "phase": "implementation",
+        "capabilities": [
+          "SQLAlchemy ORM patterns",
+          "Async database operations",
+          "Alembic migrations",
+          "Database session management"
+        ],
+        "strengths": [
+          "Strong focus on async SQLAlchemy patterns",
+          "Comprehensive migration guidance",
+          "Good coverage of session management"
+        ],
+        "gaps": [
+          "Could include more CRUD base class examples",
+          "Missing repository pattern best practices",
+          "Could add more transaction management examples"
+        ]
+      },
+      {
+        "name": "fastapi-testing-specialist",
+        "file": "agents/fastapi-testing-specialist.md",
+        "current_quality_score": 8.2,
+        "stack": ["python", "fastapi", "pytest"],
+        "phase": "testing",
+        "capabilities": [
+          "pytest-asyncio patterns",
+          "TestClient usage",
+          "Fixture design",
+          "Integration testing"
+        ],
+        "strengths": [
+          "Good async testing patterns",
+          "Clear fixture examples",
+          "httpx.AsyncClient guidance"
+        ],
+        "gaps": [
+          "Could include more conftest.py examples from template",
+          "Missing test database setup patterns from template",
+          "Could add more dependency override examples"
+        ]
+      }
+    ],
+    "overall_agent_quality": 8.33,
+    "enhancement_opportunities": [
+      "Extract actual code examples from template files to enrich agent guidance",
+      "Add cross-references between agents and specific template files",
+      "Include template-specific best practices (Netflix Dispatch patterns)",
+      "Add troubleshooting scenarios based on template usage"
+    ]
+  },
+  "rules_structure_recommendations": {
+    "recommended_structure": [
+      {
+        "file": ".claude/rules/api/routing.md",
+        "paths": ["**/router.py", "**/routers/**/*.py"],
+        "content_focus": "FastAPI router patterns, endpoint design, dependency injection"
+      },
+      {
+        "file": ".claude/rules/api/schemas.md",
+        "paths": ["**/schemas.py", "**/schemas/**/*.py"],
+        "content_focus": "Pydantic schema design, validation patterns, multiple schema types"
+      },
+      {
+        "file": ".claude/rules/database/models.md",
+        "paths": ["**/models.py", "**/models/**/*.py"],
+        "content_focus": "SQLAlchemy models, relationships, constraints, migrations"
+      },
+      {
+        "file": ".claude/rules/database/crud.md",
+        "paths": ["**/crud.py", "**/crud/**/*.py"],
+        "content_focus": "CRUD operations, repository pattern, async database access"
+      },
+      {
+        "file": ".claude/rules/testing.md",
+        "paths": ["**/test_*.py", "**/tests/**/*.py", "**/conftest.py"],
+        "content_focus": "Testing patterns, fixtures, async testing, dependency overrides"
+      },
+      {
+        "file": ".claude/rules/code-style.md",
+        "paths": ["**/*.py"],
+        "content_focus": "Python style guide, async patterns, type hints, docstrings"
+      }
+    ],
+    "current_rules": [
+      ".claude/rules/api/dependencies.md",
+      ".claude/rules/api/routing.md",
+      ".claude/rules/api/schemas.md",
+      ".claude/rules/database/crud.md",
+      ".claude/rules/database/migrations.md",
+      ".claude/rules/database/models.md",
+      ".claude/rules/guidance/database.md",
+      ".claude/rules/guidance/fastapi.md",
+      ".claude/rules/guidance/testing.md",
+      ".claude/rules/code-style.md",
+      ".claude/rules/testing.md"
+    ],
+    "coverage_analysis": {
+      "well_covered": [
+        "API routing patterns",
+        "Database CRUD operations",
+        "Schema validation",
+        "Migration patterns"
+      ],
+      "needs_enhancement": [
+        "Service layer patterns (business logic)",
+        "Exception handling hierarchy",
+        "Middleware implementation",
+        "Background tasks",
+        "WebSocket patterns",
+        "Advanced pagination strategies"
+      ]
+    }
+  },
+  "template_files": {
+    "total_count": 10,
+    "by_layer": {
+      "API": 1,
+      "Schemas": 1,
+      "Models": 1,
+      "CRUD": 2,
+      "Dependencies": 1,
+      "Database": 1,
+      "Core": 1,
+      "Testing": 2
+    },
+    "completeness_score": 85,
+    "missing_templates": [
+      "Service layer template (service.py)",
+      "Custom exception hierarchy",
+      "Middleware template",
+      "Background task template",
+      "WebSocket handler template",
+      "Advanced pagination (cursor-based)",
+      "API versioning implementation"
+    ]
+  },
+  "key_findings": {
+    "1_agent_quality": {
+      "summary": "All three FastAPI agents score 8.2-8.5/10, demonstrating strong foundation",
+      "details": [
+        "Comprehensive boundary sections present (ALWAYS/NEVER/ASK)",
+        "Good discovery metadata for automatic agent matching",
+        "Extended files available with detailed examples",
+        "Clear capability definitions and collaboration patterns"
+      ]
+    },
+    "2_content_gaps": {
+      "summary": "Agents could benefit from more template-specific code examples",
+      "details": [
+        "Current examples are generic FastAPI patterns",
+        "Missing references to actual template files (router.py.template, etc.)",
+        "Could extract patterns from template source code",
+        "Opportunity to showcase Netflix Dispatch-inspired patterns"
+      ]
+    },
+    "3_rules_structure": {
+      "summary": "Well-organized rules structure with path-specific loading",
+      "details": [
+        "11 rule files organized by layer (api/, database/, guidance/)",
+        "Path-specific triggers enable context-optimized loading",
+        "Good coverage of core patterns (routing, CRUD, schemas)",
+        "Opportunity to add service layer and advanced patterns"
+      ]
+    },
+    "4_template_completeness": {
+      "summary": "Strong CRUD foundation (85% complete), missing advanced patterns",
+      "details": [
+        "10 template files covering essential layers",
+        "Complete CRUD workflow (router → schemas → models → crud → tests)",
+        "Missing: service layer, exceptions, middleware, WebSockets",
+        "Opportunity to add production patterns (rate limiting, tracing)"
+      ]
+    }
+  },
+  "recommendations": {
+    "priority_1_immediate": [
+      "Extract code examples from template files to enhance agent guidance",
+      "Add service.py.template for business logic orchestration",
+      "Create exceptions.py.template with HTTPException hierarchy"
+    ],
+    "priority_2_short_term": [
+      "Add middleware.py.template with rate limiting example",
+      "Create background_tasks.py.template",
+      "Add WebSocket handler template",
+      "Enhance rules/code-style.md with async best practices"
+    ],
+    "priority_3_long_term": [
+      "Add cursor-based pagination template",
+      "Create API versioning strategy template",
+      "Add observability templates (logging, tracing, metrics)",
+      "Create integration test examples for complex workflows"
+    ]
+  }
+}

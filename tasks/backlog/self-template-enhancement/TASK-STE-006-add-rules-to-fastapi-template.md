@@ -1,19 +1,20 @@
 ---
 id: TASK-STE-006
 title: Add rules structure to fastapi-python template
-status: backlog
+status: deferred
 created: 2025-12-13T13:00:00Z
-priority: high
-tags: [rules-structure, fastapi, python, conditional-loading]
+priority: low
+tags: [rules-structure, fastapi, python, conditional-loading, deferred]
 parent_task: TASK-REV-1DDD
 implementation_mode: task-work
-wave: 3
-conductor_workspace: self-template-wave3-fastapi-rules
+wave: N/A
+conductor_workspace: N/A
 complexity: 5
 depends_on:
   - TASK-STE-003
   - TASK-STE-004
   - TASK-STE-005
+deferred_reason: FastAPI templates are for users creating FastAPI apps, not for GuardKit development. GuardKit is a Python library/CLI tool. See README.md for revised plan.
 ---
 
 # Task: Add rules structure to fastapi-python template

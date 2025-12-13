@@ -1,18 +1,19 @@
 ---
 id: TASK-STE-005
 title: Enhance fastapi-database-specialist agent
-status: backlog
+status: deferred
 created: 2025-12-13T13:00:00Z
-priority: high
-tags: [agent-enhance, fastapi, python, database, sqlalchemy, progressive-disclosure]
+priority: low
+tags: [agent-enhance, fastapi, python, database, sqlalchemy, progressive-disclosure, deferred]
 parent_task: TASK-REV-1DDD
 implementation_mode: task-work
-wave: 2
-conductor_workspace: self-template-wave2-database
+wave: N/A
+conductor_workspace: N/A
 complexity: 5
 depends_on:
   - TASK-STE-001
   - TASK-STE-002
+deferred_reason: FastAPI templates are for users creating FastAPI apps, not for GuardKit development. GuardKit is a Python library/CLI tool. See README.md for revised plan.
 ---
 
 # Task: Enhance fastapi-database-specialist agent
