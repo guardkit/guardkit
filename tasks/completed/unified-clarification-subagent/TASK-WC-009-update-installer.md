@@ -1,10 +1,11 @@
 ---
 id: TASK-WC-009
 title: Update installer to copy new agent
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-13T23:15:00Z
+completed: 2025-12-13T23:15:00Z
 priority: medium
 tags: [clarification, installer, infrastructure, wave-3]
 complexity: 2
@@ -18,9 +19,9 @@ dependencies:
 supersedes:
   - TASK-WC-003
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: n/a
+  last_run: 2025-12-13T23:15:00Z
 ---
 
 # Task: Update Installer to Copy New Agent
