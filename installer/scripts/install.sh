@@ -511,10 +511,22 @@ install_global_files() {
 install_global_agents() {
     print_info "Installing global AI agents..."
 
+    # Ensure agents directory exists
+    mkdir -p "$INSTALL_DIR/agents"
+
     # Install core global agents first
     if [ -d "$INSTALLER_DIR/core/agents" ] && [ "$(ls -A $INSTALLER_DIR/core/agents)" ]; then
         cp -r "$INSTALLER_DIR/core/agents/"* "$INSTALL_DIR/agents/" 2>/dev/null || true
         print_success "Installed core global agents"
+    fi
+
+    # Copy clarification-questioner agent (explicit for clarity)
+    if [ -f "$INSTALLER_DIR/core/agents/clarification-questioner.md" ]; then
+        cp "$INSTALLER_DIR/core/agents/clarification-questioner.md" \
+           "$INSTALL_DIR/agents/"
+        print_success "  ✓ Installed clarification-questioner agent"
+    else
+        print_warning "  ⚠ Warning: clarification-questioner.md not found"
     fi
 
     # Install stack-specific agents to global location for template copying
@@ -1255,13 +1267,13 @@ print_summary() {
     echo "  📦 Version: $AGENTECFLOW_VERSION"
     echo ""
     echo -e "${BOLD}Installed Components:${NC}"
-    
+
     # Count components
     local agent_count=$(ls -1 "$INSTALL_DIR/agents/"*.md 2>/dev/null | wc -l)
     local template_count=$(ls -1d "$INSTALL_DIR/templates"/*/ 2>/dev/null | wc -l)
     local command_count=$(ls -1 "$INSTALL_DIR/commands/"*.md 2>/dev/null | wc -l)
-    
-    echo "  🤖 AI Agents: $agent_count"
+
+    echo "  🤖 AI Agents: $agent_count (including clarification-questioner)"
     echo "  📋 Templates: $template_count"
     echo "  ⚡ Commands: $command_count"
     echo ""
