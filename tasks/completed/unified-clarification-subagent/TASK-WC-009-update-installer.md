@@ -93,11 +93,26 @@ head -20 ~/.agentecflow/agents/clarification-questioner.md
 
 ## Acceptance Criteria
 
-- [ ] Agent copied during installation
-- [ ] Agent available at `~/.agentecflow/agents/clarification-questioner.md`
-- [ ] Installation script idempotent (can run multiple times safely)
-- [ ] Warning shown if source agent file missing
-- [ ] Installation summary includes agent
+- [x] Agent copied during installation
+- [x] Agent available at `~/.agentecflow/agents/clarification-questioner.md`
+- [x] Installation script idempotent (can run multiple times safely)
+- [x] Warning shown if source agent file missing
+- [x] Installation summary includes agent
+
+## Implementation Details
+
+**Changes Made:**
+1. Added explicit `mkdir -p "$INSTALL_DIR/agents"` to ensure directory exists
+2. Added dedicated copy section for clarification-questioner agent with success/warning messages
+3. Updated installation summary to mention "including clarification-questioner"
+4. Maintained idempotent behavior (safe to run multiple times)
+
+**Files Modified:**
+- `installer/scripts/install.sh` (lines 514-530, 1264)
+
+**Commits:**
+- `0e5423e` - Implementation of installer changes
+- `6dff66e` - Task completion and status update
 
 ## Testing
 
