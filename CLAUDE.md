@@ -259,9 +259,19 @@ Phase 5.5: Plan Audit (scope creep detection)
 
 GuardKit asks targeted clarifying questions before making assumptions during planning. This reduces rework from incorrect assumptions by ~15%.
 
-### When Questions Are Asked
+### How It Works
 
-**Complexity Gating:**
+All commands use the `clarification-questioner` subagent to collect user preferences:
+
+| Command | Context Type | When | Purpose |
+|---------|--------------|------|---------|
+| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
+| `/feature-plan` | review_scope | Before review | Guide what to analyze |
+| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
+| `/task-review` | review_scope | Phase 1 | Guide review focus |
+
+### Complexity Gating
+
 | Complexity | task-work | task-review | feature-plan |
 |------------|-----------|-------------|--------------|
 | 1-2 | Skip | Skip | Skip |
@@ -269,13 +279,16 @@ GuardKit asks targeted clarifying questions before making assumptions during pla
 | 5-6 | Full (blocking) | Quick | Full |
 | 7+ | Full (blocking) | Full | Full |
 
-### Three Clarification Contexts
+### Agent Invocation
 
-| Context | Command | When | Purpose |
-|---------|---------|------|---------|
-| Review Scope | `/task-review`, `/feature-plan` | Before analysis | Guide what to analyze |
-| Implementation Prefs | `/feature-plan` [I]mplement | Before subtask creation | Guide approach & constraints |
-| Implementation Planning | `/task-work` | Before planning (Phase 1.5) | Guide scope, tech, trade-offs |
+All commands invoke the same agent:
+
+```
+subagent_type: "clarification-questioner"
+prompt: "Execute clarification...
+  CONTEXT TYPE: {review_scope|implementation_prefs|implementation_planning}
+  ..."
+```
 
 ### Command-Line Flags
 
@@ -369,6 +382,15 @@ This enables:
 
 **Want to see previous decisions?**
 Check the `clarification` section in task frontmatter.
+
+### Clarification Agent
+
+The `clarification-questioner` agent handles all clarification contexts:
+- Location: `~/.agentecflow/agents/clarification-questioner.md`
+- Installed by: GuardKit installer
+- Uses: `lib/clarification/*` Python modules
+
+The agent is invoked via the Task tool at appropriate points in each command's workflow.
 
 ## Review vs Implementation Workflows
 
