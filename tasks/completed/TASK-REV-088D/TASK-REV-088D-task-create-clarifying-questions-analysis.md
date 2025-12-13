@@ -1,10 +1,11 @@
 ---
 id: TASK-REV-088D
 title: Analyze if /task-create should ask clarifying questions
-status: review_complete
+status: completed
 task_type: review
 created: 2025-12-13T17:20:00Z
-updated: 2025-12-13T17:30:00Z
+updated: 2025-12-13T17:35:00Z
+completed: 2025-12-13T17:35:00Z
 priority: medium
 tags: [clarifying-questions, task-create, workflow, analysis]
 complexity: 5
