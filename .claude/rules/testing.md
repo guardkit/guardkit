@@ -1,5 +1,5 @@
 ---
-paths: tests/**/*.py, **/test_*.py, **/*_test.py, **/conftest.py
+paths: tests/**/*.py, **/test_*.py, **/conftest.py
 ---
 
 # pytest Testing Patterns
