@@ -1,10 +1,11 @@
 ---
 id: TASK-WC-006
 title: Update task-work.md with subagent invocation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-13T23:30:00Z
+completed: 2025-12-13T23:30:00Z
 priority: high
 tags: [clarification, task-work, command, wave-2]
 complexity: 3
@@ -16,9 +17,12 @@ conductor_workspace: unified-clarification-wave2-1
 dependencies:
   - TASK-WC-005
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: N/A (documentation update)
+  last_run: 2025-12-13T23:30:00Z
+completed_location: tasks/completed/TASK-WC-006/
+organized_files:
+  - TASK-WC-006.md
 ---
 
 # Task: Update task-work.md with Subagent Invocation
@@ -119,16 +123,29 @@ Use these clarifications to inform your implementation plan.
 
 ## Acceptance Criteria
 
-- [ ] Phase 1.6 invokes clarification-questioner agent
-- [ ] Context type is `implementation_planning`
-- [ ] All flags are passed to agent
-- [ ] Clarification context stored for Phase 2
-- [ ] Phase 2 prompt includes clarification decisions
-- [ ] Skip conditions work (--no-questions, --implement-only)
+- [x] Phase 1.6 invokes clarification-questioner agent
+- [x] Context type is `implementation_planning`
+- [x] All flags are passed to agent
+- [x] Clarification context stored for Phase 2
+- [x] Phase 2 prompt includes clarification decisions
+- [x] Skip conditions work (--no-questions, --implement-only)
 
-## Testing
+## Implementation Summary
 
-1. Run `/task-work TASK-XXX` on task with complexity 5+ → questions appear
-2. Run `/task-work TASK-XXX --no-questions` → questions skipped
-3. Run `/task-work TASK-XXX --defaults` → defaults applied silently
-4. Verify Phase 2 planning uses clarification context
+Successfully updated `installer/core/commands/task-work.md` with:
+
+1. **Phase 1.6 Subagent Invocation**: Replaced old workflow documentation with Task tool invocation calling the `clarification-questioner` agent
+2. **Skip Conditions**: Added proper skip logic for `--no-questions` and `--implement-only` flags
+3. **Phase 2 Integration**: Updated Phase 2 prompt to use `clarification_context` with separate sections for explicit decisions and assumed defaults
+4. **Flag Passing**: All clarification flags are properly passed to the subagent
+5. **Context Type**: Set to `implementation_planning` as specified
+
+## Changes Made
+
+- File: `installer/core/commands/task-work.md`
+  - Updated Phase 1.6 workflow section with subagent invocation
+  - Removed old integration code
+  - Updated Phase 2 AGENT_CONTEXT to use clarification_context
+  - Updated Phase 2 prompt to properly display clarification decisions
+
+Commit: [799284d] Update task-work.md with Phase 1.6 subagent invocation
