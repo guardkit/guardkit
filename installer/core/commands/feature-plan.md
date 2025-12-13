@@ -400,12 +400,50 @@ The system captures the generated task ID (e.g., `TASK-REV-A3F2`) from the outpu
 Proceeding to review analysis...
 ```
 
-### Step 2: Execute Decision Review
+### Step 2: Review Scope Clarification (Context A)
+
+**IF** --no-questions flag is NOT set:
+
+**INVOKE** Task tool with clarification-questioner agent:
+```python
+subagent_type: "clarification-questioner"
+description: "Collect review scope clarifications"
+prompt: """Execute clarification for feature planning.
+
+CONTEXT TYPE: review_scope
+
+FEATURE: {feature_description}
+ESTIMATED COMPLEXITY: {estimated_complexity}/10
+
+FLAGS:
+  --no-questions: {flags.no_questions}
+  --with-questions: {flags.with_questions}
+  --defaults: {flags.defaults}
+  --answers: {flags.answers}
+
+Ask about:
+1. Review focus (all/technical/architecture/performance/security)
+2. Trade-off priority (speed/quality/cost/maintainability/balanced)
+3. Any specific concerns to address
+
+Return ClarificationContext with review preferences."""
+```
+
+**WAIT** for agent completion
+
+**STORE** context_a for /task-review execution
+
+**ELSE**:
+  **DISPLAY**: "Review scope clarification skipped (--no-questions)"
+
+### Step 3: Execute Decision Review
 
 Internally executes:
 ```bash
 /task-review TASK-REV-A3F2 --mode=decision --depth=standard
 ```
+
+**PASS** context_a to review analysis (via task frontmatter or inline)
 
 The review analyzes:
 - **Technical options** for implementing the feature
@@ -486,7 +524,7 @@ COMPLEXITY: 6/10 (Medium)
 RISK LEVEL: Low
 ```
 
-### Step 3: Decision Checkpoint
+### Step 4: Decision Checkpoint
 
 The review presents decision options:
 
@@ -517,7 +555,7 @@ What would you like to do?
 Your choice [A/R/I/C]:
 ```
 
-### Step 4a: If [A]ccept
+### Step 5a: If [A]ccept
 
 ```
 ✅ Feature plan approved
@@ -534,7 +572,7 @@ Or manually:
   /task-create "Implement dark mode" requirements:[TASK-REV-A3F2]
 ```
 
-### Step 4b: If [R]evise
+### Step 5b: If [R]evise
 
 ```
 🔄 Re-analyzing with additional focus...
@@ -551,9 +589,50 @@ What aspect would you like to explore further?
 Enter choice [1-6]:
 ```
 
-### Step 4c: If [I]mplement (Enhanced with Auto-Detection - TASK-FW-008)
+### Step 5c: If [I]mplement - Implementation Preferences (Context B)
 
-The enhanced [I]mplement option uses the auto-detection pipeline from TASK-FW-008 to automatically generate the complete feature structure with zero manual input:
+**IF** user chose [I]mplement:
+
+  **IF** --no-questions flag is NOT set AND subtask_count >= 2:
+
+  **INVOKE** Task tool with clarification-questioner agent:
+  ```python
+  subagent_type: "clarification-questioner"
+  description: "Collect implementation preferences"
+  prompt: """Execute clarification for implementation.
+
+  CONTEXT TYPE: implementation_prefs
+
+  REVIEW FINDINGS:
+    Recommendations: {review_recommendations}
+    Options identified: {review_options}
+    Subtask count: {subtask_count}
+
+  FLAGS:
+    --no-questions: {flags.no_questions}
+    --with-questions: {flags.with_questions}
+    --defaults: {flags.defaults}
+    --answers: {flags.answers}
+
+  Ask about:
+  1. Approach selection (which recommendation to follow)
+  2. Execution preference (parallel vs sequential, Conductor usage)
+  3. Testing depth (TDD/standard/minimal)
+
+  Return ClarificationContext with implementation preferences."""
+  ```
+
+  **WAIT** for agent completion
+
+  **STORE** context_b for subtask creation
+
+  **ELSE**:
+    **DISPLAY**: "Implementation preferences using defaults (--no-questions or <2 subtasks)"
+    **USE** defaults for subtask creation
+
+### Step 6: Generate Feature Structure (Enhanced with Auto-Detection - TASK-FW-008)
+
+The enhanced [I]mplement option uses the auto-detection pipeline from TASK-FW-008 to automatically generate the complete feature structure with zero manual input, incorporating context_b preferences:
 
 ```
 🚀 Enhanced [I]mplement Flow - Auto-Detection Pipeline
@@ -577,12 +656,17 @@ Step 5/10: Generating Conductor workspace names...
 Step 6/10: Displaying auto-detected configuration...
 
 ================================================================================
-✅ Auto-detected Configuration:
+✅ Auto-detected Configuration (using Context B preferences):
 ================================================================================
    Feature slug: dark-mode
    Feature name: implement dark mode
    Subtasks: 5 (from review recommendations)
    Parallel groups: 2 waves
+
+   Context B Decisions Applied:
+     • Approach: JWT with refresh tokens (from Q1)
+     • Execution: Parallel with Conductor (from Q2)
+     • Testing: Standard mode (from Q3)
 
    Implementation modes:
      • /task-work: 2 tasks
@@ -643,16 +727,16 @@ Original review: TASK-REV-A3F2 (marked completed)
 ```
 
 **What Makes This Enhanced**:
-- ✅ **Zero manual prompts** - Everything auto-detected
+- ✅ **Context-driven decisions** - Uses Context A (review scope) and Context B (implementation prefs)
 - ✅ **Smart mode assignment** - Complexity-based task-work/direct/manual
 - ✅ **Parallel group detection** - File conflict analysis for waves
-- ✅ **Conductor integration** - Workspace names for parallel execution
+- ✅ **Conductor integration** - Workspace names for parallel execution (from Context B)
 - ✅ **Complete documentation** - README + Implementation Guide auto-generated
 - ✅ **95% time savings** - <1 minute vs 15-30 minutes manual
 
 **See**: `installer/core/lib/implement_orchestrator.py` for orchestration logic
 
-### Step 4d: If [C]ancel
+### Step 5d: If [C]ancel
 
 ```
 ❌ Feature plan cancelled
