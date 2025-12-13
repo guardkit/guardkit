@@ -1300,6 +1300,53 @@ GuardKit uses AI-powered agent discovery to automatically match tasks to appropr
 # Fallback: task-manager (if no specialist found)
 ```
 
+#### How Agents Are Installed and Discovered
+
+**1. Global Installation** (happens during `./installer/scripts/install.sh`):
+- Installer copies all agents from `installer/core/agents/` to `~/.agentecflow/agents/`
+- All core agents (including `clarification-questioner`) become available globally
+- No manual intervention required
+
+**2. Project Initialization** (happens during `guardkit init`):
+- Template agents copied first (from `installer/core/templates/*/agents/`)
+- Global agents copied second (from `~/.agentecflow/agents/`)
+- Global agents only copied if not already present from template (template takes precedence)
+- Result: No duplicates, template patterns preserved
+
+**3. Agent Discovery Search Order** (during `/task-work` or other commands):
+1. **Local** (`.claude/agents/`) - Priority 0 (highest)
+2. **User** (`~/.agentecflow/agents/`) - Priority 2
+3. **Global** (`installer/core/agents/`) - Priority 3
+4. **Template** (`installer/core/templates/*/agents/`) - Priority 4 (lowest)
+
+**Important**: If the same agent exists in multiple locations, the highest priority version is used.
+
+#### Adding Custom Agents
+
+**Option A: Global** (available for all projects):
+```bash
+# Create agent file
+vim ~/.agentecflow/agents/my-custom-agent.md
+
+# Agent automatically discovered in all projects
+```
+
+**Option B: Project-Local** (available only for current project):
+```bash
+# Create agent file in project
+vim .claude/agents/my-custom-agent.md
+
+# Agent overrides global version (if exists)
+```
+
+**Option C: Template** (distributed with template):
+```bash
+# Add to template
+vim installer/core/templates/my-template/agents/my-agent.md
+
+# Copied during guardkit init my-template
+```
+
 ### Stack-Specific Implementation Agents (Template-Based, Haiku Model)
 
 Stack-specific agents are distributed across templates and automatically discovered:
