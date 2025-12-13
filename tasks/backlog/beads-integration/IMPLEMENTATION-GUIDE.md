@@ -85,6 +85,23 @@ Tasks are organized into 4 waves for parallel execution with Conductor.
 **Blocking:** None
 **Estimated:** 4-6 hours combined
 
+### Independent Tasks (Can Execute Anytime)
+
+These tasks from the architectural review can be executed in parallel with any wave:
+
+| Task | Description | Mode | Dependencies |
+|------|-------------|------|--------------|
+| TASK-BI-009 | Create unified metadata schema | task-work | None (improves BI-001) |
+| TASK-BI-010 | Implement --discovered-from flag | task-work | BI-003 |
+| TASK-BI-011 | Standardize RequireKit marker detection | task-work | None |
+
+**Source:** [TASK-REV-b8c3 Architectural Review](../../../.claude/reviews/TASK-REV-b8c3-review-report.md)
+
+**Notes:**
+- TASK-BI-009 addresses DRY violation in metadata definitions
+- TASK-BI-010 is **critical** for agent context preservation (discovered work provenance)
+- TASK-BI-011 is cleanup/standardization (low priority)
+
 ## Dependency Graph
 
 ```
@@ -227,14 +244,16 @@ Estimated additional effort: 4-5 hours once Beads integration complete.
 
 Integration is complete when:
 
-- [ ] All 8 tasks marked complete
+- [ ] All 11 tasks marked complete (8 original + 3 from review)
 - [ ] Unit tests passing (with and without Beads)
 - [ ] Integration tests for CLI commands
 - [ ] Documentation reviewed and merged
 - [ ] `/task-create` works with both backends
+- [ ] `/task-create --discovered-from` preserves provenance (BI-010)
 - [ ] `/task-work` uses `bd ready` when Beads enabled
 - [ ] `/task-complete` syncs with Beads when enabled
 - [ ] Migration script tested on sample project
+- [ ] Unified metadata schema in use (BI-009)
 
 ## Total Effort Estimate
 
@@ -244,9 +263,10 @@ Integration is complete when:
 | Wave 2: Beads Backend | 2 | 6-8 hrs |
 | Wave 3: Integration | 2 | 5-7 hrs |
 | Wave 4: Polish | 2 | 4-6 hrs |
-| **Total** | **8** | **20-28 hrs** |
+| Independent (Review) | 3 | 6-9 hrs |
+| **Total** | **11** | **26-37 hrs** |
 
-With Conductor parallel execution (2 tasks per wave): **10-14 hours elapsed time**
+With Conductor parallel execution (2 tasks per wave + independent tasks): **13-19 hours elapsed time**
 
 ## References
 
