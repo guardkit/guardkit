@@ -1,10 +1,12 @@
 ---
 id: TASK-WC-008
 title: Update task-review.md with subagent invocation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-13T21:15:00Z
+completed: 2025-12-13T21:15:00Z
+completed_location: tasks/completed/TASK-WC-008/
 priority: high
 tags: [clarification, task-review, command, wave-2]
 complexity: 3
@@ -18,9 +20,13 @@ dependencies:
 supersedes:
   - TASK-WC-002
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: n/a
+  last_run: 2025-12-13T21:15:00Z
+organized_files:
+  - TASK-WC-008.md
+git_commits:
+  - b7c1654168417c9fd5868799634c53c2269ebe3b
 ---
 
 # Task: Update task-review.md with Subagent Invocation
@@ -153,11 +159,11 @@ The `/task-review` command uses the `clarification-questioner` subagent to colle
 
 ## Acceptance Criteria
 
-- [ ] Context A invoked at start of Phase 1
-- [ ] Complexity gating rules respected
-- [ ] Clarification context passed to review agents
-- [ ] All flags work correctly
-- [ ] Skip conditions work (--no-questions, low complexity)
+- [x] Context A invoked at start of Phase 1
+- [x] Complexity gating rules respected
+- [x] Clarification context passed to review agents
+- [x] All flags work correctly
+- [x] Skip conditions work (--no-questions, low complexity)
 
 ## Testing
 

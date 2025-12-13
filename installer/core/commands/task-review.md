@@ -154,7 +154,7 @@ If you want to use `/task-work` for a task that was detected as review:
 
 ## Clarification Integration
 
-The `/task-review` command integrates with the clarification module at two key points to gather user preferences before analysis and implementation.
+The `/task-review` command uses the `clarification-questioner` subagent to collect review scope preferences before analysis begins.
 
 ### Context A: Review Scope Clarification (Phase 1)
 
@@ -336,26 +336,22 @@ Q3. Testing Depth
 
 ### Complexity-Based Gating
 
-The clarification module uses task complexity to determine when clarification is needed.
+The `clarification-questioner` subagent uses task complexity to determine when clarification is needed.
 
-**Context A Gating Rules**:
+**Gating Rules**:
 
-| Complexity | Review Mode | Clarification Behavior |
-|------------|-------------|------------------------|
+| Complexity | Review Mode | Behavior |
+|------------|-------------|----------|
 | 0-3 | Any | Skip (unless --with-questions) |
-| 4-6 | decision, architectural | Ask (unless --no-questions) |
+| 4-6 | decision, architectural | Ask |
 | 4-6 | code-quality, technical-debt, security | Skip (unless --with-questions) |
 | 7-10 | Any | Always ask (unless --no-questions) |
 
-**Context B Gating Rules**:
-
-| Condition | Clarification Behavior |
-|-----------|------------------------|
-| Single subtask | Skip (no parallelization decisions needed) |
-| 2-3 subtasks | Ask approach + testing only |
-| 4-6 subtasks | Ask approach + parallelization + testing |
-| 7+ subtasks | Ask all 5 questions (full preferences) |
-| --no-questions | Skip always |
+**Flags**:
+- `--no-questions`: Skip clarification entirely
+- `--with-questions`: Force clarification
+- `--defaults`: Apply defaults without prompting
+- `--answers="..."`: Inline answers for automation
 
 **Examples**:
 
@@ -544,17 +540,90 @@ Uses default answers for all clarification questions without prompting.
 The `/task-review` command executes these phases automatically:
 
 ### Phase 1: Load Review Context (with Optional Clarification)
-- Read task description and acceptance criteria
-- **[NEW]** Present review scope clarification questions (Context A)
-  - Triggered for: decision mode, complexity ≥4, or --with-questions flag
-  - Skipped if: --no-questions flag or quick depth
-  - Questions help clarify: focus areas, analysis depth, trade-offs, concerns
+
+**READ** task file from: tasks/{state}/TASK-{id}-*.md
+
+**PARSE** task metadata:
+- Task ID: {task_id}
+- Title: {task_title}
+- Complexity: {task_complexity}
+- Review mode: {review_mode} (from --mode flag or task frontmatter)
+
+**IF** --no-questions flag is NOT set:
+
+  **INVOKE** Task tool:
+  ```
+  subagent_type: "clarification-questioner"
+  description: "Collect review scope clarifications for {task_id}"
+  prompt: "Execute clarification for task review.
+
+  CONTEXT TYPE: review_scope
+
+  TASK CONTEXT:
+    Task ID: {task_id}
+    Title: {task_title}
+    Description: {task_description}
+    Review Mode: {review_mode}
+    Complexity: {task_complexity}/10
+
+  FLAGS:
+    --no-questions: {flags.no_questions}
+    --with-questions: {flags.with_questions}
+    --defaults: {flags.defaults}
+    --answers: {flags.answers}
+
+  Ask about:
+  1. Review focus (all/technical/architecture/performance/security)
+  2. Analysis depth (quick/standard/deep)
+  3. Trade-off priority (speed/quality/cost/maintainability/balanced)
+  4. Specific concerns (optional, free-form)
+  5. Extensibility consideration (yes/no/default)
+
+  Apply complexity gating:
+  - Complexity 0-3: Skip unless --with-questions
+  - Complexity 4-6 + decision/architectural mode: Ask
+  - Complexity 7+: Always ask
+
+  Return ClarificationContext with review preferences."
+  ```
+
+  **WAIT** for agent completion
+
+  **STORE** clarification_context for review analysis
+
+  **DISPLAY**:
+  ```
+  Phase 1: Review context loaded
+    Clarification mode: {clarification_context.mode}
+    Focus: {clarification_context.get_decision('focus', 'all')}
+    Depth: {clarification_context.get_decision('depth', 'standard')}
+    Trade-off Priority: {clarification_context.get_decision('tradeoff', 'balanced')}
+  ```
+
+**ELSE**:
+  **DISPLAY**: "Review scope clarification skipped (--no-questions)"
+  **SET** clarification_context = None
+
+**Continue with context loading**:
 - Identify review scope and objectives (using clarification if provided)
 - Load relevant codebase files/modules
 - Load related design documents and ADRs
 
 ### Phase 2: Execute Review Analysis
-- Invoke appropriate review agents based on mode
+
+**INVOKE** appropriate review agent based on --mode flag:
+
+{if clarification_context:}
+**REVIEW SCOPE** (from clarification):
+  Focus: {clarification_context.get_decision('focus', 'all')}
+  Depth: {clarification_context.get_decision('depth', 'standard')}
+  Trade-off Priority: {clarification_context.get_decision('tradeoff', 'balanced')}
+  Specific Concerns: {clarification_context.get_decision('concerns', 'none')}
+  Extensibility: {clarification_context.get_decision('extensibility', 'default')}
+
+Prioritize analysis based on these preferences.
+{endif}
+
 - Perform analysis using specialized prompts
 - Generate findings with supporting evidence
 - Score/rate based on review criteria
