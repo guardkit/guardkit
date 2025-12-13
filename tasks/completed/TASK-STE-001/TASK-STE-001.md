@@ -11,6 +11,10 @@ implementation_mode: direct
 wave: 1
 conductor_workspace: self-template-wave1-guardkit
 complexity: 3
+completed_location: tasks/completed/TASK-STE-001/
+organized_files:
+  - TASK-STE-001.md
+  - analysis-report.md
 ---
 
 # Task: Run template-create --dry-run analysis on GuardKit
