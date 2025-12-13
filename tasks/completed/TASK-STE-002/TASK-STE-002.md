@@ -4,6 +4,11 @@ title: Run template-create --dry-run analysis on fastapi-python template
 status: completed
 created: 2025-12-13T13:00:00Z
 completed: 2025-12-13T09:50:00Z
+completed_location: tasks/completed/TASK-STE-002/
+organized_files:
+  - TASK-STE-002.md
+  - fastapi-template-analysis.json
+  - analysis-summary.md
 priority: high
 tags: [analysis, template-create, dry-run, fastapi, python]
 parent_task: TASK-REV-1DDD
@@ -11,6 +16,7 @@ implementation_mode: direct
 wave: 1
 conductor_workspace: self-template-wave1-fastapi
 complexity: 3
+duration_actual: 0.5 hours
 ---
 
 # Task: Run template-create --dry-run analysis on fastapi-python template
