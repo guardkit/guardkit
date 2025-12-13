@@ -1,9 +1,10 @@
 ---
 id: TASK-CDI-002
 title: Narrow dataclasses.md path pattern
-status: backlog
+status: completed
 created: 2025-12-13T17:00:00Z
-updated: 2025-12-13T17:00:00Z
+updated: 2025-12-13T19:30:00Z
+completed: 2025-12-13T19:30:00Z
 priority: high
 tags: [rules-structure, patterns, dataclasses, path-optimization]
 parent_task: TASK-REV-79E0
@@ -67,9 +68,9 @@ paths: "**/state*.py", "**/*_state.py", "**/*result*.py", "**/*context*.py"
 
 ## Acceptance Criteria
 
-- [ ] Path pattern updated in dataclasses.md
-- [ ] Pattern validated against actual GuardKit dataclass usage
-- [ ] No syntax errors in frontmatter
+- [x] Path pattern updated in dataclasses.md
+- [x] Pattern validated against actual GuardKit dataclass usage
+- [x] No syntax errors in frontmatter
 
 ## Verification
 

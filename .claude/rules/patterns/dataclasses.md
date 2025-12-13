@@ -1,5 +1,5 @@
 ---
-paths: "**/*.py"
+paths: "**/state*.py", "**/*_state.py", "**/*result*.py", "**/*context*.py"
 ---
 
 # Dataclass Patterns
