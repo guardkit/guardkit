@@ -147,20 +147,31 @@ See [BDD Workflow for Agentic Systems](../docs/guides/bdd-workflow-for-agentic-s
 
 ## Clarifying Questions
 
-GuardKit asks targeted clarifying questions before making assumptions during planning, reducing rework by ~15%.
+GuardKit uses a unified `clarification-questioner` subagent for all clarification needs, reducing rework by ~15%.
 
-### When Questions Trigger
+### How It Works
+
+All commands invoke the same agent with different context types:
+
+| Command | Context Type | When | Purpose |
+|---------|--------------|------|---------|
+| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
+| `/feature-plan` | review_scope | Before review | Guide what to analyze |
+| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
+| `/task-review` | review_scope | Phase 1 | Guide review focus |
+
+### Three Contexts
+
+1. **review_scope** (Context A) - For /feature-plan and /task-review
+2. **implementation_prefs** (Context B) - For /feature-plan [I]mplement
+3. **implementation_planning** (Context C) - For /task-work Phase 1.6
+
+### Complexity Gating
 
 Questions are gated by task complexity:
 - **Complexity 1-2**: Skip (simple tasks)
 - **Complexity 3-4**: Quick questions (15s timeout)
 - **Complexity 5+**: Full questions (blocking)
-
-### Three Contexts
-
-1. **Review Scope** (`/task-review`, `/feature-plan`) - Before analysis
-2. **Implementation Prefs** (`/feature-plan` [I]mplement) - Before subtask creation
-3. **Implementation Planning** (`/task-work`) - Before planning (Phase 1.5)
 
 ### Control Flags
 
@@ -174,6 +185,15 @@ All commands support:
 ### Persistence
 
 Decisions are saved to task frontmatter for audit trail and reproducibility.
+
+### Clarification Agent
+
+The `clarification-questioner` agent handles all clarification contexts:
+- Location: `~/.agentecflow/agents/clarification-questioner.md`
+- Installed by: GuardKit installer
+- Uses: `lib/clarification/*` Python modules
+
+The agent is invoked via the Task tool at appropriate points in each command's workflow.
 
 See main CLAUDE.md for detailed examples and troubleshooting.
 
