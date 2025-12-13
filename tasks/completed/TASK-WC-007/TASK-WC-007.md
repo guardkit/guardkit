@@ -1,10 +1,11 @@
 ---
 id: TASK-WC-007
 title: Update feature-plan.md with subagent invocation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-13T23:15:00Z
+completed: 2025-12-13T23:15:00Z
 priority: high
 tags: [clarification, feature-plan, command, wave-2]
 complexity: 4
@@ -18,9 +19,16 @@ dependencies:
 supersedes:
   - TASK-WC-001
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  coverage: n/a
+  last_run: 2025-12-13T23:15:00Z
+completion_summary: |
+  Successfully integrated two clarification touchpoints into feature-plan.md:
+  - Context A (review_scope): Added at Step 2, before /task-review execution
+  - Context B (implementation_prefs): Added at Step 5c, after [I]mplement choice
+  Both contexts use the unified clarification-questioner agent and respect all flags.
+  Step numbering updated throughout document. Feature structure generation now
+  incorporates context_b preferences.
 ---
 
 # Task: Update feature-plan.md with Subagent Invocation
@@ -156,12 +164,12 @@ Use context_b in subtask generation:
 
 ## Acceptance Criteria
 
-- [ ] Context A invoked before /task-create
-- [ ] Context A decisions passed to /task-review
-- [ ] Context B invoked at [I]mplement decision (if 2+ subtasks)
-- [ ] Context B decisions used in subtask creation
-- [ ] Both contexts use clarification-questioner agent
-- [ ] Skip conditions work (--no-questions flag)
+- [x] Context A invoked before /task-review execution (Step 2)
+- [x] Context A decisions passed to /task-review (Step 3)
+- [x] Context B invoked at [I]mplement decision (if 2+ subtasks) (Step 5c)
+- [x] Context B decisions used in subtask creation (Step 6)
+- [x] Both contexts use clarification-questioner agent
+- [x] Skip conditions work (--no-questions flag)
 
 ## Testing
 
