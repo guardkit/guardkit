@@ -366,3 +366,183 @@ def _compact_options(options: List[str]) -> str:
         codes[1:] = [c.lower() for c in codes[1:]]
 
     return f"[{'/'.join(codes)}]"
+
+
+# =============================================================================
+# Interactive Display Functions (collect user input and return ClarificationContext)
+# =============================================================================
+
+def collect_full_responses(
+    questions: List['Question'],
+    task_id: str,
+    task_title: str,
+    complexity: int
+) -> 'ClarificationContext':
+    """
+    Display full questions interactively and collect user responses.
+
+    Shows all questions with detailed options and rationale. Waits for
+    user input. Returns ClarificationContext with collected decisions.
+
+    Args:
+        questions: List of Question objects to display
+        task_id: Task identifier (e.g., "TASK-ABC-123")
+        task_title: Human-readable task title
+        complexity: Complexity score (0-10)
+
+    Returns:
+        ClarificationContext with all decisions recorded
+    """
+    # Import here to avoid circular imports
+    from .core import ClarificationContext, Decision, ClarificationMode, process_responses
+
+    if not questions:
+        return ClarificationContext(
+            context_type="review_scope",
+            mode="full",
+            total_questions=0,
+            answered_count=0,
+        )
+
+    # Display formatted questions
+    print(display_full_questions(questions, task_id, task_title, complexity))
+
+    # Collect responses
+    user_responses = {}
+
+    print("\nEnter your responses:")
+    for i, question in enumerate(questions, 1):
+        # Extract valid option codes
+        valid_codes = _extract_option_codes(question.options)
+
+        while True:
+            prompt = f"  Q{i} [{question.default}]: "
+            answer = input(prompt).strip().upper()
+
+            if not answer:
+                # Use default
+                answer = question.default
+                break
+
+            if answer in valid_codes or not valid_codes:
+                break
+
+            print(f"    Invalid. Please enter one of: {', '.join(valid_codes)}")
+
+        user_responses[question.id] = answer
+
+    # Process responses into context
+    context = process_responses(questions, user_responses, ClarificationMode.FULL)
+    context.context_type = "review_scope"
+    context.mode = "full"
+
+    # Show summary
+    print(f"\n{'='*60}")
+    print(f"✓ Recorded {len(context.decisions)} decision(s)")
+    print(f"{'='*60}\n")
+
+    return context
+
+
+def collect_quick_responses(
+    questions: List['Question'],
+    timeout_seconds: int = 15
+) -> 'ClarificationContext':
+    """
+    Display questions in quick mode and collect responses.
+
+    Shows compact question format. For simplicity, uses immediate defaults
+    if user presses Enter without input (no timeout implementation to
+    avoid platform-specific complexity).
+
+    Args:
+        questions: List of Question objects to display
+        timeout_seconds: Display hint for timeout (informational only)
+
+    Returns:
+        ClarificationContext with decisions (may include defaults)
+    """
+    # Import here to avoid circular imports
+    from .core import ClarificationContext, ClarificationMode, process_responses
+
+    if not questions:
+        return ClarificationContext(
+            context_type="review_scope",
+            mode="quick",
+            total_questions=0,
+            answered_count=0,
+        )
+
+    # Display formatted questions
+    print(display_quick_questions(questions, timeout_seconds))
+
+    # Collect all responses at once (simpler than per-question timeout)
+    prompt = "\nYour answers (space-separated, or Enter for defaults): "
+    raw_input = input(prompt).strip().upper()
+
+    user_responses = {}
+
+    if raw_input:
+        # Parse space-separated answers
+        answers = raw_input.split()
+        for i, question in enumerate(questions):
+            if i < len(answers):
+                user_responses[question.id] = answers[i]
+            else:
+                user_responses[question.id] = question.default
+    else:
+        # Use all defaults
+        for question in questions:
+            user_responses[question.id] = question.default
+
+    # Process responses into context
+    context = process_responses(questions, user_responses, ClarificationMode.QUICK)
+    context.context_type = "review_scope"
+    context.mode = "quick"
+
+    print(f"\n✓ Recorded {len(context.decisions)} decision(s)\n")
+
+    return context
+
+
+def create_skip_context(reason: str = "skip") -> 'ClarificationContext':
+    """
+    Return skip context without displaying questions.
+
+    Used when clarification is bypassed due to low complexity,
+    --no-questions flag, or explicit skip request.
+
+    Args:
+        reason: Skip reason for user_override field
+
+    Returns:
+        Empty ClarificationContext with mode="skip"
+    """
+    # Import here to avoid circular imports
+    from .core import ClarificationContext
+
+    return ClarificationContext(
+        context_type="review_scope",
+        mode="skip",
+        total_questions=0,
+        answered_count=0,
+        user_override=reason,
+    )
+
+
+def _extract_option_codes(options: List[str]) -> List[str]:
+    """Extract single-letter codes from option strings.
+
+    Args:
+        options: List like ["[Y]es", "[N]o", "[D]etails"]
+
+    Returns:
+        List like ["Y", "N", "D"]
+    """
+    codes = []
+    for opt in options:
+        if '[' in opt and ']' in opt:
+            start = opt.index('[') + 1
+            end = opt.index(']')
+            codes.append(opt[start:end].upper())
+    return codes

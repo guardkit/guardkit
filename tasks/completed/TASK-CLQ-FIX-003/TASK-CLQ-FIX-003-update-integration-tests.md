@@ -1,15 +1,22 @@
 ---
 id: TASK-CLQ-FIX-003
 title: "Update integration tests to test real orchestrator paths"
-status: backlog
+status: completed
 created: 2025-12-13T16:35:00Z
-updated: 2025-12-13T16:35:00Z
+updated: 2025-12-13T20:30:00Z
+completed: 2025-12-13T20:30:00Z
 priority: medium
 tags: [clarifying-questions, testing, integration-tests]
 complexity: 4
 parent_review: TASK-REV-0614
 implementation_mode: task-work
 dependencies: [TASK-CLQ-FIX-001]
+completion_summary: |
+  Updated all 3 integration test files to properly test real orchestrators:
+  - test_task_review_clarification.py: 13 tests passing
+  - test_feature_plan_clarification.py: 17 tests passing
+  - test_task_work_clarification.py: 26 tests passing
+  Total: 56/56 tests passing
 ---
 
 # Task: Update integration tests to test real orchestrator

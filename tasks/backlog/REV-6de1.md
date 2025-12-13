@@ -1,0 +1,46 @@
+---
+id: REV-6de1
+title: 'Review: test feature'
+status: in_progress
+created: '2025-12-13T17:12:32.840437Z'
+updated: '2025-12-13T17:12:32.875543Z'
+priority: medium
+tags: []
+complexity: 3
+test_results:
+  status: pending
+  coverage: null
+  last_run: null
+task_type: review
+review_mode: architectural
+review_depth: standard
+model_used: claude-sonnet-4-20250620
+---
+
+
+## Description
+
+Architectural review for feature: test feature
+
+This review will analyze:
+- Implementation approach
+- Architectural patterns
+- Integration points
+- Subtask breakdown
+
+## Review Scope
+
+**Feature**: test feature
+
+**Expected Deliverables**:
+- Recommended implementation approach
+- Subtask breakdown with dependencies
+- Risk assessment
+- Effort estimation
+
+## Acceptance Criteria
+
+- [ ] Implementation approach recommended
+- [ ] Subtasks identified with dependencies
+- [ ] Risks documented
+- [ ] Decision options presented

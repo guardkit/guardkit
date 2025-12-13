@@ -23,8 +23,33 @@ import json
 import glob as glob_module
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
+
+# Import clarification module
+try:
+    from .clarification import (
+        should_clarify,
+        ClarificationMode,
+        ClarificationContext,
+        format_for_prompt,
+    )
+    from .clarification.generators.planning_generator import (
+        generate_planning_questions,
+        TaskContext as ClarificationTaskContext,
+        CodebaseContext as ClarificationCodebaseContext,
+    )
+    from .clarification.display import (
+        collect_full_responses,
+        collect_quick_responses,
+        create_skip_context,
+        display_skip_message,
+    )
+    CLARIFICATION_AVAILABLE = True
+except ImportError as e:
+    logger.debug(f"Clarification module not available: {e}")
+    CLARIFICATION_AVAILABLE = False
 
 # Optional import of agent discovery module
 # This allows the module to work even if agent_discovery is unavailable
@@ -46,6 +71,286 @@ class PhaseExecutionError(Exception):
 class StateValidationError(Exception):
     """Raised when task state is invalid for the requested operation."""
     pass
+
+
+# =============================================================================
+# Phase 1.6: Clarifying Questions (TASK-CLQ-FIX-005)
+# =============================================================================
+
+def execute_phase_1_6_clarification(
+    task_id: str,
+    task_context: Dict[str, Any],
+    flags: Dict[str, Any]
+) -> Optional[ClarificationContext]:
+    """
+    Execute Phase 1.6: Clarifying Questions for /task-work.
+
+    This phase asks targeted clarifying questions before implementation planning
+    to reduce rework from incorrect assumptions (~15% improvement).
+
+    Args:
+        task_id: Task identifier (e.g., "TASK-006")
+        task_context: Task context loaded from task file (frontmatter + content)
+        flags: Command-line flags including:
+            - no_questions: Skip Phase 1.6 entirely
+            - with_questions: Force Phase 1.6 even for trivial tasks
+            - defaults: Use all defaults without prompting
+            - answers: Inline answers string (e.g., "1:Y 2:N 3:JWT")
+            - reclarify: Re-run even if saved clarification exists
+
+    Returns:
+        ClarificationContext with decisions, or None if skipped/unavailable
+
+    Examples:
+        >>> # Normal execution
+        >>> result = execute_phase_1_6_clarification("TASK-006", context, {})
+        >>> result.decisions  # List of decisions
+
+        >>> # Skip with flag
+        >>> result = execute_phase_1_6_clarification("TASK-006", context, {"no_questions": True})
+        >>> result is None or result.mode == "skip"
+        True
+
+        >>> # Force clarification
+        >>> result = execute_phase_1_6_clarification("TASK-006", context, {"with_questions": True})
+        >>> result is not None
+        True
+    """
+    if not CLARIFICATION_AVAILABLE:
+        logger.warning("Clarification module not available, skipping Phase 1.6")
+        return None
+
+    # Extract complexity from task context
+    complexity = task_context.get("complexity", task_context.get("complexity_score", 5))
+    task_title = task_context.get("title", "Untitled")
+    task_description = task_context.get("description", "")
+
+    print(f"\n⏳ Phase 1.6: Clarifying Questions")
+    print(f"   Task: {task_id} - {task_title}")
+    print(f"   Complexity: {complexity}/10")
+
+    # Check for existing clarification (unless --reclarify flag)
+    if not flags.get("reclarify", False):
+        task_path = _find_task_file(task_id)
+        if task_path:
+            existing = ClarificationContext.load_from_frontmatter(task_path)
+            if existing and existing.decisions:
+                print(f"   ✅ Using saved clarification ({len(existing.decisions)} decisions)")
+                return existing
+
+    # Determine clarification mode based on complexity and flags
+    mode = _determine_clarification_mode(complexity, flags)
+
+    if mode == ClarificationMode.SKIP:
+        reason = "flag" if flags.get("no_questions") else "trivial"
+        print(display_skip_message(reason, complexity))
+        return create_skip_context(reason)
+
+    # Generate questions based on task context
+    clr_task_context = ClarificationTaskContext(
+        task_id=task_id,
+        title=task_title,
+        description=task_description,
+        acceptance_criteria=task_context.get("acceptance_criteria", []),
+        tags=task_context.get("tags", []),
+        complexity_score=complexity,
+    )
+
+    questions = generate_planning_questions(
+        task_context=clr_task_context,
+        mode=mode,
+    )
+
+    if not questions:
+        print("   ✅ No clarification questions needed (task is clear)")
+        return create_skip_context("no_questions_generated")
+
+    # Handle inline answers (--answers flag for CI/CD automation)
+    if flags.get("answers"):
+        context = _process_inline_answers(questions, flags["answers"], mode)
+        print(f"   ✅ Applied {len(context.decisions)} inline answer(s)")
+        _persist_clarification(task_id, context)
+        return context
+
+    # Handle defaults flag
+    if flags.get("defaults") or mode == ClarificationMode.USE_DEFAULTS:
+        context = _apply_defaults(questions)
+        print(f"   ✅ Applied {len(context.decisions)} default(s)")
+        _persist_clarification(task_id, context)
+        return context
+
+    # Interactive collection based on mode
+    if mode == ClarificationMode.FULL:
+        context = collect_full_responses(
+            questions=questions,
+            task_id=task_id,
+            task_title=task_title,
+            complexity=complexity,
+        )
+    else:  # QUICK mode
+        context = collect_quick_responses(
+            questions=questions,
+            timeout_seconds=15,
+        )
+
+    # Persist to task frontmatter
+    _persist_clarification(task_id, context)
+
+    return context
+
+
+def _determine_clarification_mode(
+    complexity: int,
+    flags: Dict[str, Any]
+) -> ClarificationMode:
+    """
+    Determine clarification mode based on complexity and flags.
+
+    Flag precedence (highest to lowest):
+    1. --no-questions: SKIP
+    2. --answers: (process later, but enter interactive mode)
+    3. --defaults: USE_DEFAULTS
+    4. --with-questions: Force FULL/QUICK based on complexity
+    5. Complexity-based auto-selection
+
+    Args:
+        complexity: Task complexity score (0-10)
+        flags: Command-line flags
+
+    Returns:
+        ClarificationMode indicating how to proceed
+    """
+    # Priority 1: --no-questions (highest)
+    if flags.get("no_questions", False):
+        return ClarificationMode.SKIP
+
+    # Priority 2: --micro flag (implies skip)
+    if flags.get("micro", False):
+        return ClarificationMode.SKIP
+
+    # Priority 3: --defaults
+    if flags.get("defaults", False):
+        return ClarificationMode.USE_DEFAULTS
+
+    # Priority 4: --with-questions (force clarification)
+    if flags.get("with_questions", False):
+        # Force clarification, but use appropriate mode based on complexity
+        if complexity >= 5:
+            return ClarificationMode.FULL
+        else:
+            return ClarificationMode.QUICK
+
+    # Priority 5: Complexity-based auto-selection
+    return should_clarify("planning", complexity, flags)
+
+
+def _process_inline_answers(
+    questions: List[Any],
+    answers_str: str,
+    mode: ClarificationMode
+) -> ClarificationContext:
+    """
+    Process inline answers from --answers flag.
+
+    Format: "1:Y 2:N 3:JWT" (question_number:answer pairs)
+
+    Args:
+        questions: List of Question objects
+        answers_str: Inline answers string
+        mode: Clarification mode
+
+    Returns:
+        ClarificationContext with parsed answers
+    """
+    from .clarification.core import process_responses
+
+    user_responses = {}
+
+    # Parse answers string (e.g., "1:Y 2:N 3:JWT")
+    pairs = answers_str.split()
+    for pair in pairs:
+        if ":" in pair:
+            parts = pair.split(":", 1)
+            try:
+                # Support both numeric (1:Y) and id-based (scope_01:Y) formats
+                key = parts[0]
+                answer = parts[1].upper()
+
+                if key.isdigit():
+                    # Numeric index (1-based)
+                    idx = int(key) - 1
+                    if 0 <= idx < len(questions):
+                        user_responses[questions[idx].id] = answer
+                else:
+                    # Question ID
+                    user_responses[key] = answer
+            except (ValueError, IndexError) as e:
+                logger.warning(f"Could not parse answer '{pair}': {e}")
+
+    # Fill in defaults for unanswered questions
+    for q in questions:
+        if q.id not in user_responses:
+            user_responses[q.id] = q.default
+
+    return process_responses(questions, user_responses, mode)
+
+
+def _apply_defaults(questions: List[Any]) -> ClarificationContext:
+    """
+    Apply default answers to all questions.
+
+    Args:
+        questions: List of Question objects
+
+    Returns:
+        ClarificationContext with all defaults applied
+    """
+    from .clarification.core import process_responses
+
+    user_responses = {q.id: q.default for q in questions}
+    return process_responses(questions, user_responses, ClarificationMode.USE_DEFAULTS)
+
+
+def _persist_clarification(
+    task_id: str,
+    context: ClarificationContext
+) -> None:
+    """
+    Persist clarification context to task frontmatter.
+
+    Args:
+        task_id: Task identifier
+        context: ClarificationContext to persist
+    """
+    task_path = _find_task_file(task_id)
+    if task_path:
+        try:
+            context.context_type = "implementation_planning"
+            context.persist_to_frontmatter(task_path)
+            logger.debug(f"Persisted clarification to {task_path}")
+        except Exception as e:
+            logger.warning(f"Could not persist clarification: {e}")
+
+
+def get_clarification_for_prompt(
+    context: Optional[ClarificationContext]
+) -> str:
+    """
+    Format clarification context for inclusion in agent prompts.
+
+    Args:
+        context: ClarificationContext or None
+
+    Returns:
+        Formatted string for agent prompts
+    """
+    if not context or not CLARIFICATION_AVAILABLE:
+        return ""
+
+    if not context.decisions:
+        return ""
+
+    return format_for_prompt(context)
 
 
 def execute_phases(
@@ -973,16 +1278,33 @@ def _find_task_file(task_id: str) -> Optional[Path]:
     """
     Find task file across all state directories.
 
+    Supports both exact filenames (TASK-001.md) and descriptive filenames
+    (TASK-001-add-feature.md) by using glob patterns.
+
     Args:
-        task_id: Task identifier
+        task_id: Task identifier (e.g., "TASK-001", "TASK-CLQ-FIX-005")
 
     Returns:
         Path to task file or None if not found
     """
-    for state_dir in ["backlog", "in_progress", "in_review", "blocked", "completed"]:
-        task_file = Path(f"tasks/{state_dir}/{task_id}.md")
-        if task_file.exists():
-            return task_file
+    # Also check feature folders (e.g., tasks/backlog/clarifying-questions-fix/)
+    search_patterns = [
+        "tasks/{state_dir}/{task_id}.md",                    # Exact match
+        "tasks/{state_dir}/{task_id}-*.md",                  # With descriptor
+        "tasks/{state_dir}/*/{task_id}.md",                  # In feature folder
+        "tasks/{state_dir}/*/{task_id}-*.md",                # In feature folder with descriptor
+    ]
+
+    state_dirs = ["in_progress", "backlog", "blocked", "in_review", "completed"]
+
+    for state_dir in state_dirs:
+        for pattern_template in search_patterns:
+            pattern = pattern_template.format(state_dir=state_dir, task_id=task_id)
+            matches = list(glob_module.glob(pattern))
+            if matches:
+                # Return first match
+                return Path(matches[0])
+
     return None
 
 
@@ -992,11 +1314,14 @@ __all__ = [
     "execute_design_phases",
     "execute_implementation_phases",
     "execute_standard_phases",
+    "execute_phase_1_6_clarification",
+    "get_clarification_for_prompt",
     "execute_phase_3",
     "analyze_task_context",
     "execute_phase_5_5_plan_audit",
     "prompt_with_timeout",
     "handle_audit_decision",
     "PhaseExecutionError",
-    "StateValidationError"
+    "StateValidationError",
+    "CLARIFICATION_AVAILABLE",
 ]
