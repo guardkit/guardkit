@@ -11,8 +11,8 @@ Stop shipping broken code. GuardKit is built on **Feature Plan Development (FPD)
 ## Key Features
 
 - **Feature Planning** - Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
-- **Clarifying Questions** - Targeted questions before assumptions (~15% rework reduction), complexity-gated
-- **Architectural Review** - SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
+- **Clarifying Questions** - Targeted questions before assumptions, complexity-gated
+- **Architectural Review** - SOLID, DRY, YAGNI evaluation before coding
 - **Test Enforcement** - Automatic test fixing (up to 3 attempts), ensures 100% pass rate
 - **AI Agent Discovery** - Automatic specialist matching via metadata (stack, phase, keywords)
 - **Quality Gates** - Coverage thresholds (80% line, 75% branch), compilation checks, code review

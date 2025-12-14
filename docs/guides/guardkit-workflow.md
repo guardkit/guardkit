@@ -83,10 +83,10 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 - Small-to-medium projects
 
 **Benefits**:
-- 50% faster task completion
+- Streamlined task completion
 - Zero manual quality checks
 - Automatic architectural review
-- 100% test enforcement
+- Automatic test enforcement
 - Clear task states and progress
 
 ---
@@ -282,7 +282,7 @@ The `/task-work` command executes 10 phases automatically:
 ├─ PHASE 1: Load Task Context
 │
 ├─ PHASE 1.6: Clarifying Questions ─────────┐
-│   └─ Complexity-gated (~15% rework reduction)│ Human
+│   └─ Complexity-gated                        │ Human
 │                                              │ Input
 ├─ PHASE 2: Implementation Planning            │
 │   ├─ Feature 8: MCP Tool Discovery           │
@@ -324,7 +324,7 @@ The `/task-work` command executes 10 phases automatically:
 - Transitions BACKLOG → IN_PROGRESS
 - Loads task description and acceptance criteria
 
-**Phase 1.6: Clarifying Questions** (~15% rework reduction)
+**Phase 1.6: Clarifying Questions**
 - Asks targeted questions before making assumptions
 - Complexity-gated: simple tasks skip, complex tasks get full clarification
 - Persists decisions to task frontmatter for audit trail
@@ -516,7 +516,7 @@ BACKLOG
 ## 3.1 Clarifying Questions
 
 **Phase**: 1.6 of /task-work command
-**Purpose**: Ask targeted questions before making assumptions, reducing rework by ~15%.
+**Purpose**: Ask targeted questions before making assumptions.
 
 ### Quick Start
 

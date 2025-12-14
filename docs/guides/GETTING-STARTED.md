@@ -326,12 +326,12 @@ guardkit init your-custom-template
 
 ### Developer Experience
 - **Fewer commands** to remember (3-step workflow)
-- **50% faster** task completion
+- **Streamlined** task completion
 - **Zero** manual quality checks
 
 ### Code Quality
 - **Automatic** architectural review
-- **100%** test enforcement
+- **Automatic** test enforcement
 - **Built-in** TDD support
 
 ### Team Collaboration

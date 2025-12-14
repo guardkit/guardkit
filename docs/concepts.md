@@ -30,7 +30,7 @@ The complete workflow from task creation to completion, including all phases and
 
 **Workflow Phases:**
 
-- Phase 1.6: Clarifying Questions (complexity-gated, ~15% rework reduction)
+- Phase 1.6: Clarifying Questions (complexity-gated)
 - Phase 2: Implementation Planning (Markdown format)
 - Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 - Phase 2.7: Complexity Evaluation (0-10 scale)
@@ -45,7 +45,7 @@ The complete workflow from task creation to completion, including all phases and
 
 ## 💬 Clarifying Questions
 
-GuardKit asks targeted questions before making assumptions (~15% rework reduction):
+GuardKit asks targeted questions before making assumptions:
 
 ```bash
 /task-work TASK-a3f8
@@ -81,7 +81,7 @@ GuardKit uses collision-free hash-based task IDs to enable parallel development 
 
 **Learn More:**
 
-- [Hash-Based ID Parallel Development](guides/hash-id-parallel-development.md) - 20-33% faster completion with Conductor.build
+- [Hash-Based ID Parallel Development](guides/hash-id-parallel-development.md) - Parallel development with Conductor.build
 - [Hash-Based IDs and PM Tools](guides/hash-id-pm-tools.md) - Bidirectional ID mapping
 
 ## 📊 [Complexity Management](workflows/complexity-management-workflow.md)
@@ -99,7 +99,7 @@ How GuardKit evaluates task complexity and decides when to require human review.
 1. **Upfront (task-create)**: Decide if task should be split (threshold: 7/10)
 2. **Planning (task-work)**: Decide review mode (auto/quick/full)
 
-Learn how complexity evaluation saves time and prevents over-engineering.
+Learn how complexity evaluation helps prevent over-engineering.
 
 ## ✅ [Quality Gates](workflows/quality-gates-workflow.md)
 
@@ -159,7 +159,7 @@ Standard vs TDD mode for different types of tasks.
 
 **TDD Workflow:** Red → Green → Refactor
 
-Learn when to use each mode for optimal productivity.
+Learn when to use each mode.
 
 ## 🤖 [Agent Discovery](guides/agent-discovery-guide.md)
 
@@ -178,7 +178,7 @@ How GuardKit automatically matches tasks to specialized AI agents.
 - **react-state-specialist**: React hooks, TanStack Query, state management (Haiku)
 - **dotnet-domain-specialist**: Domain models, DDD patterns, value objects (Haiku)
 
-**Benefits:** 4-5x faster implementation, 48-53% cost savings, 90%+ quality maintained.
+**Benefits:** Stack-specific guidance, lower-cost model usage for routine tasks, maintained quality standards.
 
 ---
 

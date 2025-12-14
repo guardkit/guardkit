@@ -54,13 +54,13 @@ For teams needing formal requirements (EARS notation, BDD scenarios, epic hierar
 ## What You Get
 
 - **Feature Planning**: Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
-- **Clarifying Questions**: Targeted questions before assumptions (~15% rework reduction), complexity-gated
+- **Clarifying Questions**: Targeted questions before assumptions, complexity-gated
 - **Hash-Based Task IDs**: Collision-free IDs enable concurrent creation and parallel development (Conductor.build compatible)
 - **PM Tool Integration**: Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs
-- **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
+- **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding
 - **Test Enforcement**: Automatic test fixing (up to 3 attempts), ensures 100% pass rate
 - **AI Agent Discovery**: Automatic specialist matching via metadata (stack, phase, keywords)
-- **Stack-Specific Optimization**: Haiku agents for 48-53% cost savings, 4-5x faster implementation
+- **Stack-Specific Optimization**: Haiku agents for lower-cost, faster implementation of routine tasks
 - **Specialized Agents**: Stack-specific AI agents for React, Python, .NET, TypeScript
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
@@ -72,7 +72,7 @@ GuardKit learns from your codebase:
 
 - **Template Creation**: `/template-create` analyzes your code and generates stack-specific templates with your patterns
 - **Agent Discovery**: Automatically matches tasks to specialist AI agents based on file patterns and keywords
-- **Rules Structure**: Path-specific Claude rules load conditionally for 60-70% context reduction
+- **Rules Structure**: Path-specific Claude rules load conditionally to reduce context usage
 - **Progressive Disclosure**: Essential guidance always loaded, detailed references on-demand
 
 Start with reference templates for learning, then create your own from production code.
@@ -81,7 +81,7 @@ Start with reference templates for learning, then create your own from productio
 
 **AI does heavy lifting. Humans make decisions.**
 
-### Clarifying Questions (~15% Rework Reduction)
+### Clarifying Questions
 
 GuardKit asks targeted questions before making assumptions:
 
@@ -142,7 +142,7 @@ GuardKit integrates seamlessly with [Conductor.build](https://conductor.build) f
 - **Blocked on one task? Switch to another** - No waiting for CI, reviews, or external dependencies
 - **Parallel experimentation** - Try different approaches simultaneously, keep the best
 - **Team collaboration** - Different team members work on different tasks without merge conflicts
-- **Faster iteration** - 3-5x productivity boost when multiple tasks are in flight
+- **Faster iteration** - Work on multiple tasks without losing context
 
 ### Competitive Advantage
 - **Linear/Jira**: Sequential task switching (lose context on every switch)
