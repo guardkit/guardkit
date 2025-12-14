@@ -155,10 +155,15 @@ GuardKit integrates seamlessly with [Conductor.build](https://conductor.build) f
 
 📚 **[Full Documentation](https://guardkit.github.io/guardkit/)** | **[Core Concepts](https://guardkit.github.io/guardkit/concepts/)** | **[Templates](https://guardkit.github.io/guardkit/templates/)**
 
-```bash
-# Install GuardKit (macOS/Linux/WSL2)
-curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
+### 1. Install
 
+```bash
+curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
+```
+
+### 2. Initialize & Use
+
+```bash
 # Initialize your project
 guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 
@@ -169,8 +174,6 @@ guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 ```
 
 > **VS Code users**: Reload window after installation (`Cmd+Shift+P` → `Developer: Reload Window`)
-
-Three commands from idea to production-ready code.
 
 ## Why GuardKit?
 
