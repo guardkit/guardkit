@@ -257,140 +257,17 @@ Phase 5.5: Plan Audit (scope creep detection)
 
 ## Clarifying Questions
 
-GuardKit asks targeted clarifying questions before making assumptions during planning. This reduces rework from incorrect assumptions by ~15%.
+GuardKit asks targeted questions before making assumptions during planning (~15% rework reduction).
 
-### How It Works
+**Flags** (all commands):
+- `--no-questions` - Skip clarification
+- `--with-questions` - Force clarification
+- `--defaults` - Use defaults without prompting
+- `--answers="..."` - Inline answers for automation
 
-All commands use the `clarification-questioner` subagent to collect user preferences:
+**Agent**: `clarification-questioner` at `~/.agentecflow/agents/`
 
-| Command | Context Type | When | Purpose |
-|---------|--------------|------|---------|
-| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
-| `/feature-plan` | review_scope | Before review | Guide what to analyze |
-| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
-| `/task-review` | review_scope | Phase 1 | Guide review focus |
-
-### Complexity Gating
-
-| Complexity | task-work | task-review | feature-plan |
-|------------|-----------|-------------|--------------|
-| 1-2 | Skip | Skip | Skip |
-| 3-4 | Quick (15s timeout) | Skip | Quick |
-| 5-6 | Full (blocking) | Quick | Full |
-| 7+ | Full (blocking) | Full | Full |
-
-### Agent Invocation
-
-All commands invoke the same agent:
-
-```
-subagent_type: "clarification-questioner"
-prompt: "Execute clarification...
-  CONTEXT TYPE: {review_scope|implementation_prefs|implementation_planning}
-  ..."
-```
-
-### Command-Line Flags
-
-All commands support:
-
-| Flag | Effect |
-|------|--------|
-| `--no-questions` | Skip clarification entirely |
-| `--with-questions` | Force clarification even for simple tasks |
-| `--defaults` | Use defaults without prompting |
-| `--answers="1:Y 2:N 3:JWT"` | Inline answers for automation |
-
-### Example: task-work Clarification
-
-```bash
-/task-work TASK-a3f8
-
-Phase 1: Loading context...
-Phase 1.5: Clarifying Questions (complexity: 5)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 CLARIFYING QUESTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Q1. Implementation Scope
-    How comprehensive should this implementation be?
-
-    [M]inimal - Core functionality only
-    [S]tandard - With error handling (DEFAULT)
-    [C]omplete - Production-ready with edge cases
-
-    Your choice [M/S/C]: S
-
-Q2. Testing Approach
-    What testing strategy?
-
-    [U]nit tests only
-    [I]ntegration tests included (DEFAULT)
-    [F]ull coverage (unit + integration + e2e)
-
-    Your choice [U/I/F]: I
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✓ Recorded 2 decisions
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Phase 2: Planning implementation with clarifications...
-```
-
-### Example: Skip Clarification
-
-```bash
-# For CI/CD automation
-/task-work TASK-a3f8 --no-questions
-
-# Or use inline answers
-/task-work TASK-a3f8 --answers="scope:standard testing:integration"
-```
-
-### Persistence
-
-Clarification decisions are persisted to task frontmatter:
-
-```yaml
-clarification:
-  context: implementation_planning
-  timestamp: 2025-12-08T14:30:00Z
-  mode: full
-  decisions:
-    - question_id: scope
-      answer: standard
-      default_used: true
-```
-
-This enables:
-- Task resumption without re-asking questions
-- Audit trail of planning decisions
-- Reproducibility of AI behavior
-
-### Troubleshooting
-
-**Questions not appearing?**
-- Check task complexity (must be ≥3 for task-work)
-- Verify not using `--no-questions` flag
-- Check if previous clarification exists in frontmatter
-
-**Want to re-ask questions?**
-```bash
-/task-work TASK-a3f8 --reclarify
-```
-
-**Want to see previous decisions?**
-Check the `clarification` section in task frontmatter.
-
-### Clarification Agent
-
-The `clarification-questioner` agent handles all clarification contexts:
-- Location: `~/.agentecflow/agents/clarification-questioner.md`
-- Installed by: GuardKit installer
-- Uses: `lib/clarification/*` Python modules
-
-The agent is invoked via the Task tool at appropriate points in each command's workflow.
+**See**: `.claude/rules/clarifying-questions.md` for complexity gating, examples, and troubleshooting.
 
 ## Review vs Implementation Workflows
 
@@ -630,18 +507,131 @@ Optional flags for complex tasks requiring upfront design approval.
 
 ## Incremental Enhancement Workflow
 
-Phase 8 of `/template-create` enables incremental agent enhancement - improve agent files over time instead of all at once.
+Phase 8 enables **incremental agent enhancement** - you can improve agent files over time instead of all at once.
+
+### When to Use
+
+**Use Incremental Enhancement**:
+- Template has 5+ agents (too many to enhance at once)
+- Want to prioritize critical agents first
+- Learning template patterns gradually
+- Testing enhancement quality on small subset
+
+**Use Full Enhancement** (during template creation):
+- Template has 1-3 agents (quick to enhance)
+- Need all agents complete immediately
+- One-time template creation
+
+### Workflow Options
+
+#### Option A: Task-Based (Recommended)
 
 ```bash
-# Task-based (recommended)
+# 1. Create template with agent tasks
 /template-create --name my-template --create-agent-tasks
-/task-work TASK-AGENT-XXX
 
-# Direct
-/agent-enhance AGENT_FILE TEMPLATE_DIR [--strategy=ai|static|hybrid]
+# 2. Review created tasks
+/task-status
+
+# Output:
+# BACKLOG:
+#   TASK-AGENT-API-ABC123 - Enhance api-service-specialist
+#   TASK-AGENT-DATABASE-DEF456 - Enhance database-specialist
+#   ...
+
+# 3. Work on high-priority agents first
+/task-work TASK-AGENT-API-ABC123
+
+# 4. Complete when satisfied
+/task-complete TASK-AGENT-API-ABC123
+
+# 5. Repeat for other agents as needed
 ```
 
-**See**: [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md) for when to use, strategies, and best practices.
+**Benefits**:
+- Tracked in task system
+- Can prioritize enhancement work
+- Integrated with /task-work workflow
+- Progress visible
+
+#### Option B: Direct Enhancement
+
+```bash
+# 1. Create template (without --create-agent-tasks)
+/template-create --name my-template
+
+# 2. Enhance specific agent
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template
+
+# 3. Review changes (dry-run first)
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template \
+               --dry-run
+
+# 4. Apply if satisfied
+/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
+               ~/.agentecflow/templates/my-template
+```
+
+**Benefits**:
+- Immediate enhancement
+- No task overhead
+- Quick iteration
+
+### Enhancement Strategies
+
+#### AI Strategy (Recommended)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=ai
+```
+- Uses agent-content-enhancer
+- Analyzes template code
+- Generates examples and best practices
+- **Requires**: AI integration
+
+#### Static Strategy (Fallback)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=static
+```
+- Uses template-based enhancement
+- Extracts patterns from source
+- No AI required
+- Good for offline use
+
+#### Hybrid Strategy (Default)
+```bash
+/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=hybrid
+```
+- Tries AI first
+- Falls back to static if AI fails
+- Best reliability
+- Recommended for most users
+
+### Best Practices
+
+1. **Start with Critical Agents**
+   - Enhance high-priority agents first (priority >= 9)
+   - Use task system to track priorities
+
+2. **Review Before Applying**
+   - Always use `--dry-run` first
+   - Review generated content
+   - Validate examples compile
+
+3. **Iterate on Quality**
+   - Enhance incrementally
+   - Test agent guidance in practice
+   - Refine based on user feedback
+
+4. **Maintain Consistency**
+   - Use same strategy across agents
+   - Follow same content structure
+   - Keep quality bar consistent
+
+**See Also**:
+- [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
+- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
 
 ## Project Structure
 
@@ -1229,7 +1219,4 @@ chmod +x ~/.agentecflow/bin/*
 - Need epic/feature hierarchy
 - Need requirements traceability matrices
 - Need PM tool integration (Jira, Linear, Azure DevOps, GitHub)
-
-## Need Requirements Management?
-
-For formal requirements (EARS notation, BDD with Gherkin, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
+- See [RequireKit](https://github.com/requirekit/require-kit) for seamless integration
