@@ -630,131 +630,18 @@ Optional flags for complex tasks requiring upfront design approval.
 
 ## Incremental Enhancement Workflow
 
-Phase 8 enables **incremental agent enhancement** - you can improve agent files over time instead of all at once.
-
-### When to Use
-
-**Use Incremental Enhancement**:
-- Template has 5+ agents (too many to enhance at once)
-- Want to prioritize critical agents first
-- Learning template patterns gradually
-- Testing enhancement quality on small subset
-
-**Use Full Enhancement** (during template creation):
-- Template has 1-3 agents (quick to enhance)
-- Need all agents complete immediately
-- One-time template creation
-
-### Workflow Options
-
-#### Option A: Task-Based (Recommended)
+Phase 8 of `/template-create` enables incremental agent enhancement - improve agent files over time instead of all at once.
 
 ```bash
-# 1. Create template with agent tasks
+# Task-based (recommended)
 /template-create --name my-template --create-agent-tasks
+/task-work TASK-AGENT-XXX
 
-# 2. Review created tasks
-/task-status
-
-# Output:
-# BACKLOG:
-#   TASK-AGENT-API-ABC123 - Enhance api-service-specialist
-#   TASK-AGENT-DATABASE-DEF456 - Enhance database-specialist
-#   ...
-
-# 3. Work on high-priority agents first
-/task-work TASK-AGENT-API-ABC123
-
-# 4. Complete when satisfied
-/task-complete TASK-AGENT-API-ABC123
-
-# 5. Repeat for other agents as needed
+# Direct
+/agent-enhance AGENT_FILE TEMPLATE_DIR [--strategy=ai|static|hybrid]
 ```
 
-**Benefits**:
-- Tracked in task system
-- Can prioritize enhancement work
-- Integrated with /task-work workflow
-- Progress visible
-
-#### Option B: Direct Enhancement
-
-```bash
-# 1. Create template (without --create-agent-tasks)
-/template-create --name my-template
-
-# 2. Enhance specific agent
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template
-
-# 3. Review changes (dry-run first)
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template \
-               --dry-run
-
-# 4. Apply if satisfied
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template
-```
-
-**Benefits**:
-- Immediate enhancement
-- No task overhead
-- Quick iteration
-
-### Enhancement Strategies
-
-#### AI Strategy (Recommended)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=ai
-```
-- Uses agent-content-enhancer
-- Analyzes template code
-- Generates examples and best practices
-- **Requires**: AI integration
-
-#### Static Strategy (Fallback)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=static
-```
-- Uses template-based enhancement
-- Extracts patterns from source
-- No AI required
-- Good for offline use
-
-#### Hybrid Strategy (Default)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=hybrid
-```
-- Tries AI first
-- Falls back to static if AI fails
-- Best reliability
-- Recommended for most users
-
-### Best Practices
-
-1. **Start with Critical Agents**
-   - Enhance high-priority agents first (priority >= 9)
-   - Use task system to track priorities
-
-2. **Review Before Applying**
-   - Always use `--dry-run` first
-   - Review generated content
-   - Validate examples compile
-
-3. **Iterate on Quality**
-   - Enhance incrementally
-   - Test agent guidance in practice
-   - Refine based on user feedback
-
-4. **Maintain Consistency**
-   - Use same strategy across agents
-   - Follow same content structure
-   - Keep quality bar consistent
-
-**See Also**:
-- [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
-- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
+**See**: [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md) for when to use, strategies, and best practices.
 
 ## Project Structure
 
