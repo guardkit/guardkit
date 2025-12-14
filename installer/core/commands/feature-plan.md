@@ -1037,31 +1037,122 @@ Next steps:
 
 ## CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE
 
-When the user runs `/feature-plan "description"`, you MUST:
+**⚠️ CRITICAL: YOU MUST USE THE TASK TOOL AND SLASH COMMANDS. DO NOT DO THE WORK YOURSELF.**
+
+When the user runs `/feature-plan "description"`, you MUST follow these steps **EXACTLY**. This is an orchestration command - you coordinate other commands and agents, NOT perform the analysis yourself.
 
 ### Execution Steps
 
 1. ✅ **Parse feature description** from command arguments
-2. ✅ **Execute `/task-create`** with:
+
+2. ✅ **Context A: Review Scope Clarification** (IF --no-questions NOT set):
+
+   **INVOKE** Task tool:
+   ```
+   subagent_type: "clarification-questioner"
+   description: "Collect review scope clarifications"
+   prompt: "Execute clarification for feature planning.
+
+   CONTEXT TYPE: review_scope
+
+   FEATURE: {feature_description}
+   ESTIMATED COMPLEXITY: {estimated_complexity}/10
+
+   FLAGS:
+     --no-questions: {flags.no_questions}
+     --with-questions: {flags.with_questions}
+     --defaults: {flags.defaults}
+     --answers: {flags.answers}
+
+   Ask about:
+   1. Review focus (all/technical/architecture/performance/security)
+   2. Trade-off priority (speed/quality/cost/maintainability/balanced)
+   3. Any specific concerns to address
+
+   Return ClarificationContext with review preferences."
+   ```
+
+   **WAIT** for agent completion
+   **STORE** context_a for /task-review execution
+
+   **ELSE**:
+     **DISPLAY**: "Review scope clarification skipped (--no-questions)"
+
+3. ✅ **Execute `/task-create`** with:
    - Title: "Plan: {description}"
    - Flags: `task_type:review priority:high`
-3. ✅ **Capture task ID** from output (regex: `TASK-[A-Z0-9-]+`)
-4. ✅ **Execute `/task-review`** with captured task ID:
+
+4. ✅ **Capture task ID** from output (regex: `TASK-[A-Z0-9-]+`)
+
+5. ✅ **Execute `/task-review`** with captured task ID:
    - Flags: `--mode=decision --depth=standard`
-5. ✅ **Present decision checkpoint** (inherited from `/task-review`)
-6. ✅ **Handle user decision**:
+   - Pass context_a to review
+
+6. ✅ **Present decision checkpoint** (inherited from `/task-review`)
+
+7. ✅ **Handle user decision**:
    - [A]ccept: Save review, show reference message
    - [R]evise: Re-run review with additional focus
-   - [I]mplement: Create subfolder + subtasks + guide
+   - [I]mplement: **→ Go to step 8**
    - [C]ancel: Move to cancelled state
+
+8. ✅ **Context B: Implementation Preferences** (IF [I]mplement AND subtasks >= 2):
+
+   **INVOKE** Task tool:
+   ```
+   subagent_type: "clarification-questioner"
+   description: "Collect implementation preferences"
+   prompt: "Execute clarification for implementation.
+
+   CONTEXT TYPE: implementation_prefs
+
+   REVIEW FINDINGS:
+     Recommendations: {review_recommendations}
+     Options identified: {review_options}
+     Subtask count: {subtask_count}
+
+   FLAGS:
+     --no-questions: {flags.no_questions}
+     --with-questions: {flags.with_questions}
+     --defaults: {flags.defaults}
+     --answers: {flags.answers}
+
+   Ask about:
+   1. Approach selection (which recommendation to follow)
+   2. Execution preference (parallel vs sequential, Conductor usage)
+   3. Testing depth (TDD/standard/minimal)
+
+   Return ClarificationContext with implementation preferences."
+   ```
+
+   **WAIT** for agent completion
+   **USE** context_b for subtask creation
+
+   **ELSE**:
+     **USE** defaults for subtask creation
+
+9. ✅ **Create subfolder + subtasks + guide** using context_b preferences
 
 ### What NOT to Do
 
+❌ **DO NOT** perform the review analysis yourself - you MUST use `/task-review` command
+❌ **DO NOT** skip the clarification steps - you MUST invoke Task tool with `clarification-questioner`
+❌ **DO NOT** create task files manually with bash - you MUST use `/task-create` command
+❌ **DO NOT** use Explore or other agents for the review - the `/task-review` command handles analysis
 ❌ **DO NOT** skip task creation step
 ❌ **DO NOT** skip review execution step
 ❌ **DO NOT** implement the feature directly
 ❌ **DO NOT** bypass decision checkpoint
 ❌ **DO NOT** create implementation files without [I]mplement choice
+
+**REMEMBER**: This is a **coordination command**. Your job is to:
+1. Invoke the `clarification-questioner` agent via Task tool
+2. Execute `/task-create` slash command
+3. Execute `/task-review` slash command
+4. Present the decision checkpoint
+5. If [I]mplement, invoke `clarification-questioner` again, then create structure
+
+You are NOT supposed to do any analysis yourself. Let the agents and commands do their jobs.
 
 ### Error Handling
 
@@ -1081,16 +1172,30 @@ If `/task-review` fails:
 User: /feature-plan "implement dark mode"
 
 Claude executes internally:
-  1. /task-create "Plan: implement dark mode" task_type:review priority:high
+  1. Parse: feature_description = "implement dark mode"
+
+  2. INVOKE Task(clarification-questioner, context_type=review_scope)
+     → User answers: Focus=all, Priority=balanced
+     → STORE context_a
+
+  3. /task-create "Plan: implement dark mode" task_type:review priority:high
      → Captures: TASK-REV-A3F2
-  2. /task-review TASK-REV-A3F2 --mode=decision --depth=standard
-     → Runs analysis, presents options
-  3. User chooses: I
-  4. Creates structure:
+
+  4. /task-review TASK-REV-A3F2 --mode=decision --depth=standard
+     → Runs analysis (uses context_a), presents options
+
+  5. User chooses: I (Implement)
+
+  6. INVOKE Task(clarification-questioner, context_type=implementation_prefs)
+     → User answers: Approach=Option1, Parallel=yes, Testing=standard
+     → USE context_b
+
+  7. Creates structure (using context_b):
      - Feature folder
-     - Subtasks
+     - Subtasks with Conductor workspace names
      - Implementation guide
-  5. Shows completion summary
+
+  8. Shows completion summary
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.

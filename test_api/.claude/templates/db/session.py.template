@@ -1,0 +1,57 @@
+"""
+Database Session Management
+
+This module configures SQLAlchemy async engine and session factory.
+"""
+
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
+from src.core.config import settings
+
+# Create async engine with connection pooling
+engine = create_async_engine(
+    str(settings.DATABASE_URL),
+    echo=settings.DEBUG,  # Log SQL queries in debug mode
+    future=True,
+    pool_pre_ping=True,  # Verify connections before using
+    pool_size=10,  # Number of connections to maintain
+    max_overflow=20,  # Additional connections when pool is exhausted
+)
+
+# Create async session factory
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,  # Don't expire objects after commit
+    autocommit=False,  # Manual transaction control
+    autoflush=False,  # Manual flush control
+)
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Dependency for database session.
+
+    Provides a database session for each request and ensures
+    proper cleanup even if an error occurs.
+
+    Yields:
+        AsyncSession: Database session
+
+    Example:
+        ```python
+        from fastapi import Depends
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        @router.get("/items/")
+        async def get_items(db: AsyncSession = Depends(get_db)):
+            items = await crud.item.get_multi(db)
+            return items
+        ```
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
