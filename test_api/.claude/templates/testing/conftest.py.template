@@ -1,0 +1,222 @@
+"""
+Test Configuration and Fixtures
+
+Shared pytest fixtures for {{FeatureName}} tests.
+"""
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from httpx import AsyncClient
+
+from src.db.base import Base
+from src.main import app
+from src.db.session import get_db
+from src.{{FeatureName}}.models import {{EntityName}}
+
+# Test database URL - use in-memory SQLite for speed
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture
+async def test_db():
+    """
+    Create test database and tables.
+
+    Yields:
+        AsyncSession: Database session for testing
+
+    Cleanup:
+        Drops all tables and closes connections after test
+    """
+    # Create test engine
+    engine = create_async_engine(
+        TEST_DATABASE_URL,
+        echo=False,
+        future=True
+    )
+
+    # Create all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    # Create session factory
+    TestSessionLocal = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False
+    )
+
+    # Provide session for test
+    async with TestSessionLocal() as session:
+        yield session
+
+    # Cleanup: drop all tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()
+
+
+@pytest.fixture
+def override_get_db(test_db: AsyncSession):
+    """
+    Override get_db dependency with test database.
+
+    This ensures all API calls during tests use the test database.
+
+    Args:
+        test_db: Test database session
+
+    Yields:
+        None
+
+    Cleanup:
+        Clears dependency overrides after test
+    """
+    async def _override_get_db():
+        yield test_db
+
+    app.dependency_overrides[get_db] = _override_get_db
+    yield
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def client(override_get_db):
+    """
+    Async HTTP client for testing API endpoints.
+
+    Args:
+        override_get_db: Fixture that overrides database dependency
+
+    Yields:
+        AsyncClient: HTTP client configured for testing
+
+    Example:
+        ```python
+        async def test_endpoint(client: AsyncClient):
+            response = await client.get("/api/v1/endpoint")
+            assert response.status_code == 200
+        ```
+    """
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest.fixture
+async def create_test_{{entity_name}}(test_db: AsyncSession):
+    """
+    Factory fixture to create test {{entity_name_plural}}.
+
+    Args:
+        test_db: Test database session
+
+    Returns:
+        Callable that creates {{entity_name}} with given parameters
+
+    Example:
+        ```python
+        async def test_something(create_test_{{entity_name}}):
+            {{entity_name}} = await create_test_{{entity_name}}(name="Test")
+            assert {{entity_name}}.id is not None
+        ```
+    """
+    async def _create_{{entity_name}}(**kwargs):
+        """
+        Create a {{entity_name}} with given parameters.
+
+        Args:
+            **kwargs: {{EntityName}} fields to override defaults
+
+        Returns:
+            {{EntityName}}: Created {{entity_name}} object
+        """
+        {{entity_name}}_data = {
+            "name": "Test {{EntityName}}",
+            "description": "Test description",
+            "is_active": True,
+            **kwargs
+        }
+        {{entity_name}} = {{EntityName}}(**{{entity_name}}_data)
+        test_db.add({{entity_name}})
+        await test_db.commit()
+        await test_db.refresh({{entity_name}})
+        return {{entity_name}}
+
+    return _create_{{entity_name}}
+
+
+@pytest.fixture
+async def sample_{{entity_name}}(create_test_{{entity_name}}):
+    """
+    Create a single sample {{entity_name}} for testing.
+
+    Args:
+        create_test_{{entity_name}}: Factory fixture
+
+    Returns:
+        {{EntityName}}: A sample {{entity_name}} object
+
+    Example:
+        ```python
+        async def test_update(sample_{{entity_name}}, client):
+            response = await client.put(
+                f"/api/v1/{{entity_name_plural}}/{sample_{{entity_name}}.id}",
+                json={"name": "Updated"}
+            )
+            assert response.status_code == 200
+        ```
+    """
+    return await create_test_{{entity_name}}(name="Sample {{EntityName}}")
+
+
+@pytest.fixture
+async def multiple_{{entity_name_plural}}(create_test_{{entity_name}}):
+    """
+    Create multiple {{entity_name_plural}} for testing lists/pagination.
+
+    Args:
+        create_test_{{entity_name}}: Factory fixture
+
+    Returns:
+        List[{{EntityName}}]: List of created {{entity_name}} objects
+
+    Example:
+        ```python
+        async def test_list(multiple_{{entity_name_plural}}, client):
+            response = await client.get("/api/v1/{{entity_name_plural}}/")
+            assert len(response.json()) >= len(multiple_{{entity_name_plural}})
+        ```
+    """
+    {{entity_name_plural}} = []
+    for i in range(5):
+        {{entity_name}} = await create_test_{{entity_name}}(name=f"{{EntityName}} {i}")
+        {{entity_name_plural}}.append({{entity_name}})
+    return {{entity_name_plural}}
+
+
+@pytest.fixture
+def auth_headers():
+    """
+    Mock authentication headers for testing protected endpoints.
+
+    Returns:
+        dict: Headers with mock authentication token
+
+    Note:
+        In real tests, you would generate a valid JWT token.
+        This is a placeholder for demonstration.
+
+    Example:
+        ```python
+        async def test_protected(client, auth_headers):
+            response = await client.get(
+                "/api/v1/protected",
+                headers=auth_headers
+            )
+            assert response.status_code == 200
+        ```
+    """
+    return {
+        "Authorization": "Bearer mock-test-token"
+    }

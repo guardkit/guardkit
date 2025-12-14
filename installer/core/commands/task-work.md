@@ -1407,25 +1407,60 @@ validator = PhaseGateValidator(tracker)
 
 **Workflow**:
 
-1. **Detect Ambiguity**
-   - Analyze task description for scope ambiguity
-   - Check for technology choices not specified
-   - Identify trade-offs not addressed
+**IF** `--no-questions` flag is set:
+```
+DISPLAY: "⏭️  Clarification skipped (--no-questions flag)"
+Skip to Phase 2
+```
 
-2. **Generate Questions**
-   - Select relevant questions from templates (Context C: Implementation Planning)
-   - Customize based on task context
-   - Limit to 3-5 questions maximum
+**ELSE IF** `--implement-only` flag is set:
+```
+DISPLAY: "⏭️  Clarification skipped (using saved design)"
+Skip to Phase 2
+```
 
-3. **Present to User**
-   - Display questions with options
-   - Show defaults and rationale
-   - Accept answers or timeout (quick mode)
+**ELSE**:
 
-4. **Record Decisions**
-   - Store in ClarificationContext
-   - Pass to Phase 2 for planning
-   - Persist to task frontmatter
+**INVOKE** Task tool:
+```
+subagent_type: "clarification-questioner"
+description: "Collect implementation planning clarifications for TASK-{task_id}"
+prompt: "Execute clarification for TASK-{task_id}.
+
+CONTEXT TYPE: implementation_planning
+
+TASK CONTEXT:
+  Title: {task_context.title}
+  Description: {task_context.description}
+  Complexity: {task_context.complexity}/10
+  Acceptance Criteria: {task_context.acceptance_criteria}
+  Stack: {detected_stack}
+
+FLAGS:
+  --no-questions: {flags.no_questions}
+  --with-questions: {flags.with_questions}
+  --defaults: {flags.defaults}
+  --answers: {flags.answers}
+
+Execute clarification based on complexity gating:
+- Complexity 1-2: Skip unless --with-questions
+- Complexity 3-4: Quick mode (15s timeout)
+- Complexity 5+: Full mode (blocking)
+
+Return ClarificationContext with user decisions."
+```
+
+**WAIT** for agent completion
+
+**STORE** `clarification_context` for Phase 2 prompt
+
+**DISPLAY**:
+```
+✅ Phase 1.6: Clarification complete
+  Mode: {clarification_context.mode}
+  Decisions: {clarification_context.answered_count}
+  Defaults used: {len(clarification_context.assumed_defaults)}
+```
 
 **Command-Line Flags**:
 
@@ -1471,48 +1506,6 @@ Q2. Testing Approach
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Phase 2: Planning implementation with clarifications...
-```
-
-**Integration Code**:
-
-```python
-# In task-work command implementation
-
-from lib.clarification import (
-    ClarificationContext,
-    generate_planning_questions,
-    display_questions_full,
-    display_questions_quick,
-)
-from lib.clarification.detection import detect_ambiguity_level
-
-def execute_task_work(task_id: str, flags: dict):
-    # Phase 1.5: Context Loading
-    task = load_task(task_id)
-    context = load_project_context()
-
-    # Phase 1.6: Clarifying Questions
-    clarification = None
-    if not flags.get('no_questions'):
-        ambiguity = detect_ambiguity_level(task, context)
-        complexity = task.complexity
-
-        if flags.get('with_questions') or complexity >= 3:
-            questions = generate_planning_questions(task, context, ambiguity)
-
-            if flags.get('answers'):
-                clarification = parse_inline_answers(flags['answers'], questions)
-            elif flags.get('defaults'):
-                clarification = apply_defaults(questions)
-            elif complexity >= 5:
-                clarification = display_questions_full(questions)
-            else:
-                clarification = display_questions_quick(questions, timeout=15)
-
-    # Phase 2: Implementation Planning (with clarification context)
-    plan = create_implementation_plan(task, context, clarification)
-
-    # ... continue with phases 2.5-5.5
 ```
 
 **Quick Mode Timeout Behavior**:
@@ -1566,8 +1559,8 @@ complexity_score: {task_context.complexity}
 task_id: {task_id}
 stack: {stack}
 phase: 2
-{if clarification:}
-clarification_context: {clarification}
+{if clarification_context:}
+clarification_context: {clarification_context}
 {endif}
 </AGENT_CONTEXT>
 
@@ -1575,15 +1568,19 @@ Design {stack} implementation approach for {task_id}.
 Include architecture decisions, pattern selection, and component structure.
 Consider {stack}-specific best practices and testing strategies.
 
-{if clarification:}
-CLARIFICATION CONTEXT (Phase 1.6 decisions):
-User provided the following clarifications during Phase 1.6:
-{for question, answer in clarification.items():}
-  • {question}: {answer}
+{if clarification_context:}
+CLARIFICATION CONTEXT (from Phase 1.6):
+User provided the following clarifications:
+{for decision in clarification_context.explicit_decisions:}
+  - {decision.question_text}: {decision.answer_display}
 {endfor}
 
-**IMPORTANT**: Incorporate these decisions into your implementation plan.
-Respect the user's choices regarding scope, testing approach, and other clarified aspects.
+Defaults applied (user did not override):
+{for decision in clarification_context.assumed_defaults:}
+  - {decision.question_text}: {decision.answer_display} (default)
+{endfor}
+
+Use these clarifications to inform your implementation plan.
 {endif}
 
 {if mode == 'bdd':}

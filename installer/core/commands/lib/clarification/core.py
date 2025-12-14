@@ -249,6 +249,10 @@ def should_clarify(
     if flags.get("defaults", False):
         return ClarificationMode.USE_DEFAULTS
 
+    # Force full clarification if requested (overrides complexity-based skip)
+    if flags.get("with_questions", False):
+        return ClarificationMode.FULL
+
     # Context-specific thresholds
     thresholds = {
         "review": {"skip": 2, "quick": 4, "full": 6},

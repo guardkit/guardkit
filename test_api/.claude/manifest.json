@@ -1,0 +1,133 @@
+{
+  "schema_version": "1.0.0",
+  "name": "fastapi-python",
+  "display_name": "Python FastAPI Backend",
+  "description": "Production-ready FastAPI template based on best practices from 12k+ star repository. Features Netflix Dispatch-inspired structure, dependency injection, async patterns, and comprehensive testing.",
+  "version": "1.0.0",
+  "author": "GuardKit",
+  "source": "https://github.com/zhanymkanov/fastapi-best-practices",
+  "language": "Python",
+  "language_version": ">=3.9",
+  "frameworks": [
+    {
+      "name": "FastAPI",
+      "version": ">=0.104.0",
+      "purpose": "web_framework"
+    },
+    {
+      "name": "SQLAlchemy",
+      "version": ">=2.0.0",
+      "purpose": "database_orm"
+    },
+    {
+      "name": "Pydantic",
+      "version": ">=2.0.0",
+      "purpose": "data_validation"
+    },
+    {
+      "name": "Alembic",
+      "version": ">=1.12.0",
+      "purpose": "database_migrations"
+    },
+    {
+      "name": "pytest",
+      "version": ">=7.4.0",
+      "purpose": "testing"
+    },
+    {
+      "name": "pytest-asyncio",
+      "version": ">=0.21.0",
+      "purpose": "async_testing"
+    },
+    {
+      "name": "httpx",
+      "version": ">=0.25.0",
+      "purpose": "http_client_testing"
+    }
+  ],
+  "architecture": "Layered (Netflix Dispatch-inspired)",
+  "patterns": [
+    "Dependency Injection",
+    "Repository Pattern",
+    "CRUD Base Classes",
+    "Pydantic Schema Validation",
+    "Async/Await Patterns",
+    "Database Session Management",
+    "API Versioning",
+    "Error Handling with HTTPException"
+  ],
+  "layers": [
+    "api",
+    "core",
+    "crud",
+    "db",
+    "models",
+    "schemas",
+    "services"
+  ],
+  "placeholders": {
+    "ProjectName": {
+      "name": "{{ProjectName}}",
+      "description": "Name of the project (used in package names and configurations)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "my_api"
+    },
+    "FeatureName": {
+      "name": "{{FeatureName}}",
+      "description": "Name of a feature/domain module (e.g., users, products, orders)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "users"
+    },
+    "EntityName": {
+      "name": "{{EntityName}}",
+      "description": "Name of a database entity/model (singular, PascalCase)",
+      "required": true,
+      "pattern": "^[A-Z][a-zA-Z0-9]*$",
+      "example": "User"
+    },
+    "EntityNamePlural": {
+      "name": "{{EntityNamePlural}}",
+      "description": "Plural form of entity name (for collections)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "users"
+    },
+    "APIVersion": {
+      "name": "{{APIVersion}}",
+      "description": "API version string (e.g., v1, v2)",
+      "required": false,
+      "pattern": "^v[0-9]+$",
+      "default": "v1",
+      "example": "v1"
+    }
+  },
+  "tags": [
+    "python",
+    "fastapi",
+    "api",
+    "backend",
+    "rest",
+    "async",
+    "sqlalchemy",
+    "pydantic",
+    "alembic"
+  ],
+  "category": "backend",
+  "complexity": 7,
+  "quality_scores": {
+    "solid_compliance": 90,
+    "dry_compliance": 85,
+    "yagni_compliance": 88,
+    "test_coverage": 85,
+    "documentation": 90
+  },
+  "created_at": "2025-01-09T00:00:00Z",
+  "updated_at": "2025-01-09T00:00:00Z",
+  "source_project": "https://github.com/zhanymkanov/fastapi-best-practices",
+  "confidence_score": 95,
+  "production_ready": true,
+  "learning_resource": true,
+  "reference_implementation": true
+}

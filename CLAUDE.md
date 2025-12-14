@@ -259,9 +259,19 @@ Phase 5.5: Plan Audit (scope creep detection)
 
 GuardKit asks targeted clarifying questions before making assumptions during planning. This reduces rework from incorrect assumptions by ~15%.
 
-### When Questions Are Asked
+### How It Works
 
-**Complexity Gating:**
+All commands use the `clarification-questioner` subagent to collect user preferences:
+
+| Command | Context Type | When | Purpose |
+|---------|--------------|------|---------|
+| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
+| `/feature-plan` | review_scope | Before review | Guide what to analyze |
+| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
+| `/task-review` | review_scope | Phase 1 | Guide review focus |
+
+### Complexity Gating
+
 | Complexity | task-work | task-review | feature-plan |
 |------------|-----------|-------------|--------------|
 | 1-2 | Skip | Skip | Skip |
@@ -269,13 +279,16 @@ GuardKit asks targeted clarifying questions before making assumptions during pla
 | 5-6 | Full (blocking) | Quick | Full |
 | 7+ | Full (blocking) | Full | Full |
 
-### Three Clarification Contexts
+### Agent Invocation
 
-| Context | Command | When | Purpose |
-|---------|---------|------|---------|
-| Review Scope | `/task-review`, `/feature-plan` | Before analysis | Guide what to analyze |
-| Implementation Prefs | `/feature-plan` [I]mplement | Before subtask creation | Guide approach & constraints |
-| Implementation Planning | `/task-work` | Before planning (Phase 1.5) | Guide scope, tech, trade-offs |
+All commands invoke the same agent:
+
+```
+subagent_type: "clarification-questioner"
+prompt: "Execute clarification...
+  CONTEXT TYPE: {review_scope|implementation_prefs|implementation_planning}
+  ..."
+```
 
 ### Command-Line Flags
 
@@ -369,6 +382,15 @@ This enables:
 
 **Want to see previous decisions?**
 Check the `clarification` section in task frontmatter.
+
+### Clarification Agent
+
+The `clarification-questioner` agent handles all clarification contexts:
+- Location: `~/.agentecflow/agents/clarification-questioner.md`
+- Installed by: GuardKit installer
+- Uses: `lib/clarification/*` Python modules
+
+The agent is invoked via the Task tool at appropriate points in each command's workflow.
 
 ## Review vs Implementation Workflows
 
@@ -1298,6 +1320,53 @@ GuardKit uses AI-powered agent discovery to automatically match tasks to appropr
 
 # Selected: fastapi-specialist (source: template)
 # Fallback: task-manager (if no specialist found)
+```
+
+#### How Agents Are Installed and Discovered
+
+**1. Global Installation** (happens during `./installer/scripts/install.sh`):
+- Installer copies all agents from `installer/core/agents/` to `~/.agentecflow/agents/`
+- All core agents (including `clarification-questioner`) become available globally
+- No manual intervention required
+
+**2. Project Initialization** (happens during `guardkit init`):
+- Template agents copied first (from `installer/core/templates/*/agents/`)
+- Global agents copied second (from `~/.agentecflow/agents/`)
+- Global agents only copied if not already present from template (template takes precedence)
+- Result: No duplicates, template patterns preserved
+
+**3. Agent Discovery Search Order** (during `/task-work` or other commands):
+1. **Local** (`.claude/agents/`) - Priority 0 (highest)
+2. **User** (`~/.agentecflow/agents/`) - Priority 2
+3. **Global** (`installer/core/agents/`) - Priority 3
+4. **Template** (`installer/core/templates/*/agents/`) - Priority 4 (lowest)
+
+**Important**: If the same agent exists in multiple locations, the highest priority version is used.
+
+#### Adding Custom Agents
+
+**Option A: Global** (available for all projects):
+```bash
+# Create agent file
+vim ~/.agentecflow/agents/my-custom-agent.md
+
+# Agent automatically discovered in all projects
+```
+
+**Option B: Project-Local** (available only for current project):
+```bash
+# Create agent file in project
+vim .claude/agents/my-custom-agent.md
+
+# Agent overrides global version (if exists)
+```
+
+**Option C: Template** (distributed with template):
+```bash
+# Add to template
+vim installer/core/templates/my-template/agents/my-agent.md
+
+# Copied during guardkit init my-template
 ```
 
 ### Stack-Specific Implementation Agents (Template-Based, Haiku Model)

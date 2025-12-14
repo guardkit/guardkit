@@ -9,8 +9,14 @@ from pathlib import Path
 import tempfile
 import yaml
 
-# These imports will work once the clarification module is implemented
-from lib.clarification.core import Question, Decision, ClarificationContext
+# Import from clarification module (installer/core/commands/lib/clarification)
+from clarification.core import (
+    Question,
+    Decision,
+    ClarificationContext,
+    ClarificationMode,
+    should_clarify,
+)
 
 
 class TestQuestion:
@@ -458,3 +464,108 @@ clarification:
         assert loaded is not None
         assert loaded.decisions[0].answer == "complete"
         assert loaded.decisions[0].default_used is False
+
+
+class TestShouldClarify:
+    """Test should_clarify() function for mode determination."""
+
+    def test_no_questions_flag_skips(self):
+        """--no-questions flag should always skip clarification."""
+        assert should_clarify("planning", 10, {"no_questions": True}) == ClarificationMode.SKIP
+        assert should_clarify("review", 8, {"no_questions": True}) == ClarificationMode.SKIP
+        assert should_clarify("implement_prefs", 6, {"no_questions": True}) == ClarificationMode.SKIP
+
+    def test_micro_flag_skips(self):
+        """--micro flag should always skip clarification."""
+        assert should_clarify("planning", 10, {"micro": True}) == ClarificationMode.SKIP
+        assert should_clarify("review", 8, {"micro": True}) == ClarificationMode.SKIP
+
+    def test_defaults_flag_uses_defaults(self):
+        """--defaults flag should use defaults mode."""
+        assert should_clarify("planning", 10, {"defaults": True}) == ClarificationMode.USE_DEFAULTS
+        assert should_clarify("review", 8, {"defaults": True}) == ClarificationMode.USE_DEFAULTS
+
+    def test_with_questions_forces_full(self):
+        """--with-questions flag should force FULL mode regardless of complexity."""
+        # Trivial task (complexity 1) should normally skip
+        assert should_clarify("planning", 1, {}) == ClarificationMode.SKIP
+
+        # With --with-questions, should force FULL
+        assert should_clarify("planning", 1, {"with_questions": True}) == ClarificationMode.FULL
+        assert should_clarify("planning", 2, {"with_questions": True}) == ClarificationMode.FULL
+
+        # Should work for all context types
+        assert should_clarify("review", 1, {"with_questions": True}) == ClarificationMode.FULL
+        assert should_clarify("review", 2, {"with_questions": True}) == ClarificationMode.FULL
+        assert should_clarify("implement_prefs", 1, {"with_questions": True}) == ClarificationMode.FULL
+
+    def test_no_questions_takes_precedence_over_with_questions(self):
+        """--no-questions should take precedence over --with-questions."""
+        # When both flags are present, no_questions wins
+        assert should_clarify("planning", 1, {"with_questions": True, "no_questions": True}) == ClarificationMode.SKIP
+        assert should_clarify("planning", 5, {"with_questions": True, "no_questions": True}) == ClarificationMode.SKIP
+        assert should_clarify("review", 8, {"with_questions": True, "no_questions": True}) == ClarificationMode.SKIP
+
+    def test_micro_takes_precedence_over_with_questions(self):
+        """--micro should take precedence over --with-questions."""
+        assert should_clarify("planning", 1, {"with_questions": True, "micro": True}) == ClarificationMode.SKIP
+
+    def test_defaults_takes_precedence_over_with_questions(self):
+        """--defaults should take precedence over --with-questions."""
+        assert should_clarify("planning", 1, {"with_questions": True, "defaults": True}) == ClarificationMode.USE_DEFAULTS
+
+    def test_complexity_based_routing_planning(self):
+        """Test complexity-based routing for 'planning' context."""
+        # Complexity 1-2: SKIP
+        assert should_clarify("planning", 1, {}) == ClarificationMode.SKIP
+        assert should_clarify("planning", 2, {}) == ClarificationMode.SKIP
+
+        # Complexity 3-4: QUICK
+        assert should_clarify("planning", 3, {}) == ClarificationMode.QUICK
+        assert should_clarify("planning", 4, {}) == ClarificationMode.QUICK
+
+        # Complexity 5+: FULL
+        assert should_clarify("planning", 5, {}) == ClarificationMode.FULL
+        assert should_clarify("planning", 10, {}) == ClarificationMode.FULL
+
+    def test_complexity_based_routing_review(self):
+        """Test complexity-based routing for 'review' context.
+
+        Thresholds: skip ≤2, quick 3-4, full ≥5
+        """
+        # Complexity 1-2: SKIP
+        assert should_clarify("review", 1, {}) == ClarificationMode.SKIP
+        assert should_clarify("review", 2, {}) == ClarificationMode.SKIP
+
+        # Complexity 3-4: QUICK
+        assert should_clarify("review", 3, {}) == ClarificationMode.QUICK
+        assert should_clarify("review", 4, {}) == ClarificationMode.QUICK
+
+        # Complexity 5+: FULL (threshold is 4 for quick)
+        assert should_clarify("review", 5, {}) == ClarificationMode.FULL
+        assert should_clarify("review", 6, {}) == ClarificationMode.FULL
+        assert should_clarify("review", 10, {}) == ClarificationMode.FULL
+
+    def test_complexity_based_routing_implement_prefs(self):
+        """Test complexity-based routing for 'implement_prefs' context.
+
+        Thresholds: skip ≤3, quick 4-5, full ≥6
+        """
+        # Complexity 1-3: SKIP
+        assert should_clarify("implement_prefs", 1, {}) == ClarificationMode.SKIP
+        assert should_clarify("implement_prefs", 3, {}) == ClarificationMode.SKIP
+
+        # Complexity 4-5: QUICK
+        assert should_clarify("implement_prefs", 4, {}) == ClarificationMode.QUICK
+        assert should_clarify("implement_prefs", 5, {}) == ClarificationMode.QUICK
+
+        # Complexity 6+: FULL (threshold is 5 for quick)
+        assert should_clarify("implement_prefs", 6, {}) == ClarificationMode.FULL
+        assert should_clarify("implement_prefs", 7, {}) == ClarificationMode.FULL
+        assert should_clarify("implement_prefs", 10, {}) == ClarificationMode.FULL
+
+    def test_unknown_context_uses_review_thresholds(self):
+        """Unknown context should fall back to review thresholds."""
+        assert should_clarify("unknown", 2, {}) == ClarificationMode.SKIP
+        assert should_clarify("unknown", 4, {}) == ClarificationMode.QUICK
+        assert should_clarify("unknown", 7, {}) == ClarificationMode.FULL

@@ -1,0 +1,20 @@
+{
+  "version": "1.0.0",
+  "extends": "/Users/richardwoollcott/.agentecflow/templates/fastapi-python",
+  "project": {
+    "name": "test_api",
+    "template": "fastapi-python",
+    "detected_type": "unknown",
+    "created": "2025-12-14T10:34:21Z"
+  },
+  "methodology": {
+    "requirements": "EARS",
+    "testing": "BDD",
+    "documentation": "ADR"
+  },
+  "quality": {
+    "coverage": 80,
+    "complexity": 10,
+    "gates": true
+  }
+}

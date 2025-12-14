@@ -80,6 +80,18 @@ from .detection import (
     detect_unhandled_edge_cases,
 )
 
+# Interactive display functions
+from .display import (
+    # Formatting functions (return strings)
+    display_full_questions,
+    display_quick_questions,
+    display_skip_message,
+    # Interactive functions (collect input, return ClarificationContext)
+    collect_full_responses,
+    collect_quick_responses,
+    create_skip_context,
+)
+
 __all__ = [
     # Core - Enums
     "ClarificationMode",
@@ -112,6 +124,14 @@ __all__ = [
     "detect_user_ambiguity",
     "detect_tradeoff_needs",
     "detect_unhandled_edge_cases",
+    # Display - Formatting functions
+    "display_full_questions",
+    "display_quick_questions",
+    "display_skip_message",
+    # Display - Interactive functions
+    "collect_full_responses",
+    "collect_quick_responses",
+    "create_skip_context",
 ]
 
 __version__ = "0.1.0"

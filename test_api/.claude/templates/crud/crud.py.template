@@ -1,0 +1,126 @@
+"""
+{{FeatureName}} CRUD Operations
+
+This module defines database operations for {{entity_name_plural}}.
+Extends the generic CRUDBase class with {{entity_name}}-specific operations.
+"""
+
+from typing import Optional, List
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.crud.base import CRUDBase
+from src.{{FeatureName}}.models import {{EntityName}}
+from src.{{FeatureName}}.schemas import {{EntityName}}Create, {{EntityName}}Update
+
+
+class CRUD{{EntityName}}(CRUDBase[{{EntityName}}, {{EntityName}}Create, {{EntityName}}Update]):
+    """
+    CRUD operations for {{EntityName}} model.
+
+    Inherits standard CRUD operations (get, get_multi, create, update, delete)
+    from CRUDBase and adds {{entity_name}}-specific operations.
+    """
+
+    async def get_by_name(
+        self,
+        db: AsyncSession,
+        *,
+        name: str
+    ) -> Optional[{{EntityName}}]:
+        """
+        Get {{entity_name}} by name.
+
+        Args:
+            db: Database session
+            name: Name of the {{entity_name}} to find
+
+        Returns:
+            {{EntityName}} object if found, None otherwise
+        """
+        result = await db.execute(
+            select({{EntityName}}).where({{EntityName}}.name == name)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_active(
+        self,
+        db: AsyncSession,
+        *,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[{{EntityName}}]:
+        """
+        Get only active {{entity_name_plural}}.
+
+        Args:
+            db: Database session
+            skip: Number of records to skip (pagination)
+            limit: Maximum number of records to return
+
+        Returns:
+            List of active {{entity_name}} objects
+        """
+        result = await db.execute(
+            select({{EntityName}})
+            .where({{EntityName}}.is_active == True)
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def search_by_name(
+        self,
+        db: AsyncSession,
+        *,
+        search_term: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[{{EntityName}}]:
+        """
+        Search {{entity_name_plural}} by name (case-insensitive partial match).
+
+        Args:
+            db: Database session
+            search_term: Term to search for in name
+            skip: Number of records to skip (pagination)
+            limit: Maximum number of records to return
+
+        Returns:
+            List of matching {{entity_name}} objects
+        """
+        result = await db.execute(
+            select({{EntityName}})
+            .where({{EntityName}}.name.ilike(f"%{search_term}%"))
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def deactivate(
+        self,
+        db: AsyncSession,
+        *,
+        id: int
+    ) -> Optional[{{EntityName}}]:
+        """
+        Soft delete {{entity_name}} by setting is_active to False.
+
+        Args:
+            db: Database session
+            id: ID of the {{entity_name}} to deactivate
+
+        Returns:
+            Updated {{entity_name}} object if found, None otherwise
+        """
+        {{entity_name}} = await self.get(db, id=id)
+        if {{entity_name}}:
+            {{entity_name}}.is_active = False
+            db.add({{entity_name}})
+            await db.commit()
+            await db.refresh({{entity_name}})
+        return {{entity_name}}
+
+
+# Instantiate CRUD object for use in routers
+{{entity_name}} = CRUD{{EntityName}}({{EntityName}})

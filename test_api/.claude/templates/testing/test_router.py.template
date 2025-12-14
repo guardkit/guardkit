@@ -1,0 +1,218 @@
+"""
+{{FeatureName}} Router Tests
+
+Tests for {{FeatureName}} API endpoints.
+"""
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.{{FeatureName}}.models import {{EntityName}}
+
+
+@pytest.mark.asyncio
+async def test_create_{{entity_name}}(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    auth_headers: dict
+):
+    """Test creating a new {{entity_name}}."""
+    {{entity_name}}_data = {
+        "name": "Test {{EntityName}}",
+        "description": "Test description"
+    }
+
+    response = await client.post(
+        "/api/{{APIVersion}}/{{entity_name_plural}}/",
+        json={{entity_name}}_data,
+        headers=auth_headers
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["name"] == {{entity_name}}_data["name"]
+    assert data["description"] == {{entity_name}}_data["description"]
+    assert "id" in data
+    assert "created_at" in data
+
+
+@pytest.mark.asyncio
+async def test_create_{{entity_name}}_invalid_data(
+    client: AsyncClient,
+    auth_headers: dict
+):
+    """Test creating {{entity_name}} with invalid data."""
+    {{entity_name}}_data = {
+        "name": "",  # Empty name should fail validation
+        "description": "Test"
+    }
+
+    response = await client.post(
+        "/api/{{APIVersion}}/{{entity_name_plural}}/",
+        json={{entity_name}}_data,
+        headers=auth_headers
+    )
+
+    assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+async def test_get_{{entity_name}}(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    create_test_{{entity_name}},
+    auth_headers: dict
+):
+    """Test retrieving a {{entity_name}} by ID."""
+    {{entity_name}} = await create_test_{{entity_name}}(name="Test {{EntityName}}")
+
+    response = await client.get(
+        f"/api/{{APIVersion}}/{{entity_name_plural}}/{{{entity_name}}.id}",
+        headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] == {{entity_name}}.id
+    assert data["name"] == {{entity_name}}.name
+
+
+@pytest.mark.asyncio
+async def test_get_{{entity_name}}_not_found(
+    client: AsyncClient,
+    auth_headers: dict
+):
+    """Test retrieving non-existent {{entity_name}}."""
+    response = await client.get(
+        "/api/{{APIVersion}}/{{entity_name_plural}}/99999",
+        headers=auth_headers
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_{{entity_name_plural}}(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    create_test_{{entity_name}},
+    auth_headers: dict
+):
+    """Test listing {{entity_name_plural}} with pagination."""
+    # Create multiple {{entity_name_plural}}
+    for i in range(5):
+        await create_test_{{entity_name}}(name=f"{{EntityName}} {i}")
+
+    response = await client.get(
+        "/api/{{APIVersion}}/{{entity_name_plural}}/",
+        params={"skip": 0, "limit": 10},
+        headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 5
+
+
+@pytest.mark.asyncio
+async def test_update_{{entity_name}}(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    create_test_{{entity_name}},
+    auth_headers: dict
+):
+    """Test updating a {{entity_name}}."""
+    {{entity_name}} = await create_test_{{entity_name}}(name="Original Name")
+
+    update_data = {
+        "name": "Updated Name",
+        "description": "Updated description"
+    }
+
+    response = await client.put(
+        f"/api/{{APIVersion}}/{{entity_name_plural}}/{{{entity_name}}.id}",
+        json=update_data,
+        headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == update_data["name"]
+    assert data["description"] == update_data["description"]
+
+
+@pytest.mark.asyncio
+async def test_update_{{entity_name}}_partial(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    create_test_{{entity_name}},
+    auth_headers: dict
+):
+    """Test partial update of {{entity_name}}."""
+    {{entity_name}} = await create_test_{{entity_name}}(
+        name="Original Name",
+        description="Original description"
+    )
+
+    # Update only name
+    update_data = {"name": "Updated Name"}
+
+    response = await client.put(
+        f"/api/{{APIVersion}}/{{entity_name_plural}}/{{{entity_name}}.id}",
+        json=update_data,
+        headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == update_data["name"]
+    assert data["description"] == "Original description"  # Unchanged
+
+
+@pytest.mark.asyncio
+async def test_delete_{{entity_name}}(
+    client: AsyncClient,
+    test_db: AsyncSession,
+    create_test_{{entity_name}},
+    auth_headers: dict
+):
+    """Test deleting a {{entity_name}}."""
+    {{entity_name}} = await create_test_{{entity_name}}(name="To Delete")
+
+    response = await client.delete(
+        f"/api/{{APIVersion}}/{{entity_name_plural}}/{{{entity_name}}.id}",
+        headers=auth_headers
+    )
+
+    assert response.status_code == 204
+
+    # Verify deletion
+    get_response = await client.get(
+        f"/api/{{APIVersion}}/{{entity_name_plural}}/{{{entity_name}}.id}",
+        headers=auth_headers
+    )
+    assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_{{entity_name}}_not_found(
+    client: AsyncClient,
+    auth_headers: dict
+):
+    """Test deleting non-existent {{entity_name}}."""
+    response = await client.delete(
+        "/api/{{APIVersion}}/{{entity_name_plural}}/99999",
+        headers=auth_headers
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_unauthorized_access(client: AsyncClient):
+    """Test that endpoints require authentication."""
+    response = await client.get("/api/{{APIVersion}}/{{entity_name_plural}}/")
+
+    assert response.status_code == 401

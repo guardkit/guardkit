@@ -46,8 +46,33 @@ except ImportError:
             class CostInfo:
                 model_id = "claude-sonnet-4-20250620"
                 estimated_cost_usd = 0.27
+                estimated_tokens = 50000
                 rationale = "Cost estimates unavailable"
             return CostInfo()
+
+        def log_model_usage(self, task_id, mode, depth, model_id):
+            pass  # No-op in fallback
+
+# Clarification module imports
+try:
+    from clarification import (
+        should_clarify,
+        ClarificationMode,
+        ClarificationContext,
+        process_responses,
+    )
+    from clarification.generators.review_generator import generate_review_questions
+    from clarification.display import (
+        collect_full_responses,
+        collect_quick_responses,
+        create_skip_context,
+        display_skip_message,
+    )
+    CLARIFICATION_AVAILABLE = True
+except ImportError:
+    CLARIFICATION_AVAILABLE = False
+    ClarificationContext = None
+    ClarificationMode = None
 
 
 # Valid review modes
@@ -309,6 +334,107 @@ def _display_cost_info(cost_info) -> None:
     print(f"{'='*70}\n")
 
 
+def execute_clarification_phase(
+    task_context: Dict[str, Any],
+    review_mode: str,
+    flags: Dict[str, Any]
+) -> Optional['ClarificationContext']:
+    """
+    Phase 1.5: Clarification (if needed).
+
+    Determines if clarification is needed based on task complexity and mode,
+    generates appropriate questions, displays them, and collects responses.
+
+    Args:
+        task_context: Context from Phase 1 containing task metadata
+        review_mode: Review mode (architectural, code-quality, decision, etc.)
+        flags: Command-line flags including:
+            - no_questions: Skip clarification entirely
+            - with_questions: Force clarification even for simple tasks
+            - defaults: Use defaults without prompting
+
+    Returns:
+        ClarificationContext with decisions, or None if skipped/unavailable
+    """
+    print(f"\n{'='*60}")
+    print(f"Phase 1.5: Clarification")
+    print(f"{'='*60}")
+
+    # Check if clarification module is available
+    if not CLARIFICATION_AVAILABLE:
+        print("Clarification module not available, skipping...")
+        return None
+
+    # Extract complexity from task metadata
+    metadata = task_context.get('metadata', {})
+    complexity = metadata.get('complexity', 5)  # Default to medium complexity
+
+    print(f"Complexity: {complexity}")
+    print(f"Review Mode: {review_mode}")
+
+    # Determine clarification mode
+    clarification_mode = should_clarify("review", complexity, flags)
+    print(f"Clarification Mode: {clarification_mode.value}")
+
+    # Handle SKIP mode
+    if clarification_mode == ClarificationMode.SKIP:
+        print(display_skip_message("trivial" if complexity <= 2 else "flag", complexity))
+        return create_skip_context("skip")
+
+    # Handle USE_DEFAULTS mode
+    if clarification_mode == ClarificationMode.USE_DEFAULTS:
+        print("Using defaults without prompting (--defaults flag)")
+        # Generate questions but apply defaults automatically
+        questions = generate_review_questions(
+            task_context=task_context,
+            review_mode=review_mode,
+            complexity=complexity
+        )
+        if not questions:
+            return create_skip_context("no_questions")
+
+        # Create context with all defaults
+        user_responses = {q.id: q.default for q in questions}
+        context = process_responses(questions, user_responses, clarification_mode)
+        context.context_type = "review_scope"
+        context.mode = "defaults"
+        print(f"Applied defaults for {len(questions)} question(s)")
+        return context
+
+    # Generate questions for QUICK or FULL mode
+    questions = generate_review_questions(
+        task_context=task_context,
+        review_mode=review_mode,
+        complexity=complexity
+    )
+
+    if not questions:
+        print("No clarification questions generated for this review mode")
+        return None
+
+    print(f"Generated {len(questions)} clarification question(s)")
+
+    # Get task info for display
+    task_id = task_context.get('task_id', 'UNKNOWN')
+    task_title = task_context.get('title', 'Untitled')
+
+    # Display questions and collect responses based on mode
+    if clarification_mode == ClarificationMode.FULL:
+        clarification = collect_full_responses(
+            questions=questions,
+            task_id=task_id,
+            task_title=task_title,
+            complexity=complexity
+        )
+    else:  # QUICK mode
+        clarification = collect_quick_responses(
+            questions=questions,
+            timeout_seconds=15
+        )
+
+    return clarification
+
+
 def execute_review_analysis(
     task_context: Dict[str, Any],
     mode: str,
@@ -557,13 +683,17 @@ def execute_task_review(
     task_id: str,
     mode: str = "architectural",
     depth: str = "standard",
-    output: str = "detailed"
+    output: str = "detailed",
+    no_questions: bool = False,
+    with_questions: bool = False,
+    defaults: bool = False,
 ) -> Dict[str, Any]:
     """
     Main orchestrator for task-review command.
 
-    Executes all 5 phases of the review workflow:
+    Executes all phases of the review workflow:
     1. Load review context (full implementation)
+    1.5. Clarification (if needed based on complexity)
     2. Execute review analysis (skeleton)
     3. Synthesize recommendations (skeleton)
     4. Generate review report (skeleton)
@@ -574,6 +704,9 @@ def execute_task_review(
         mode: Review mode (architectural, code-quality, decision, technical-debt, security)
         depth: Review depth (quick, standard, comprehensive)
         output: Output format (summary, detailed, presentation)
+        no_questions: Skip clarification questions entirely
+        with_questions: Force clarification even for simple tasks
+        defaults: Use default answers without prompting
 
     Returns:
         Review results dictionary containing:
@@ -583,6 +716,7 @@ def execute_task_review(
         - task_id: The task ID
         - report: Generated report (if successful)
         - error: Error message (if failed)
+        - clarification: Clarification decisions (if any)
 
     Raises:
         ValueError: If invalid parameters provided
@@ -600,6 +734,13 @@ def execute_task_review(
         validate_review_mode(mode)
         validate_review_depth(depth)
         validate_output_format(output)
+
+        # Build flags dict for clarification
+        flags = {
+            'no_questions': no_questions,
+            'with_questions': with_questions,
+            'defaults': defaults,
+        }
 
         # Phase 0: Model selection and cost transparency
         model_router = ModelRouter()
@@ -628,6 +769,17 @@ def execute_task_review(
                 'model_used': model_id
             }
         )
+
+        # Phase 1.5: Clarification (if needed)
+        clarification = execute_clarification_phase(task_context, mode, flags)
+        if clarification:
+            task_context['clarification'] = clarification
+            # Persist clarification decisions to task frontmatter
+            if hasattr(clarification, 'persist_to_frontmatter'):
+                try:
+                    clarification.persist_to_frontmatter(task_file)
+                except Exception as e:
+                    print(f"Warning: Could not persist clarification: {e}")
 
         # Phase 2: Execute review analysis with model preference
         review_results = execute_review_analysis(task_context, mode, depth, model_id)
@@ -665,7 +817,8 @@ def execute_task_review(
             "task_id": task_id,
             "model_used": model_id,
             "report": report,
-            "decision": decision
+            "decision": decision,
+            "clarification": clarification
         }
 
     except Exception as e:
@@ -699,13 +852,26 @@ if __name__ == "__main__":
                         choices=list(VALID_OUTPUT_FORMATS),
                         help="Output format")
 
+    # Clarification flags
+    parser.add_argument("--no-questions", action="store_true",
+                        dest="no_questions",
+                        help="Skip clarification questions")
+    parser.add_argument("--with-questions", action="store_true",
+                        dest="with_questions",
+                        help="Force clarification even for simple tasks")
+    parser.add_argument("--defaults", action="store_true",
+                        help="Use default answers without prompting")
+
     args = parser.parse_args()
 
     result = execute_task_review(
         args.task_id,
         mode=args.mode,
         depth=args.depth,
-        output=args.output
+        output=args.output,
+        no_questions=args.no_questions,
+        with_questions=args.with_questions,
+        defaults=args.defaults,
     )
 
     print(f"\n{'='*60}")
