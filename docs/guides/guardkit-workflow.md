@@ -102,10 +102,10 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 
 ### Your First Task
 
-**Step 1**: Create a simple task
+**Step 1**: Create a simple task (natural language description)
 
 ```bash
-/task-create "Fix typo in error message"
+/task-create "There's a typo in the authentication error message that needs to be fixed"
 ```
 
 **Step 2**: Work on the task
@@ -1385,8 +1385,8 @@ When design-to-code workflows are available, additional gates will apply:
 ### Example 1: Simple Bug Fix
 
 ```bash
-# Create task
-/task-create "Fix null pointer exception in UserService" priority:critical
+# Create task (natural language description)
+/task-create "There's a null pointer exception in UserService that crashes the app" priority:critical
 
 # Work on task (auto-proceeds, no checkpoint)
 /task-work TASK-001
@@ -1406,8 +1406,8 @@ When design-to-code workflows are available, additional gates will apply:
 ### Example 2: Medium Complexity Feature
 
 ```bash
-# Create task
-/task-create "Add user profile page with avatar upload" priority:medium
+# Create task (natural language description)
+/task-create "We need to add a user profile page with avatar upload capability" priority:medium
 
 # Work on task (quick optional checkpoint)
 /task-work TASK-002
@@ -1428,8 +1428,8 @@ When design-to-code workflows are available, additional gates will apply:
 ### Example 3: Complex Refactoring (Design-First)
 
 ```bash
-# Create task
-/task-create "Refactor authentication to support OAuth2" priority:high
+# Create task (natural language description)
+/task-create "Refactor the entire authentication system to support OAuth2 providers" priority:high
 
 # Design phase only
 /task-work TASK-003 --design-only

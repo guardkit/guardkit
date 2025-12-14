@@ -167,8 +167,8 @@ curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scr
 # Initialize your project
 guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 
-# Create and work on a task
-/task-create "Add user login feature"
+# Create and work on a task (natural language description)
+/task-create "We need to add a user login feature with email and password"
 /task-work TASK-h8j3  # Does everything: plan, review, implement, test, verify
 /task-complete TASK-h8j3
 ```
@@ -198,7 +198,7 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 
 ### Core Workflow
 ```bash
-/task-create "Title" [priority:high|medium|low]
+/task-create "description" [priority:high|medium|low]  # Natural language, auto-infers title
 /task-work TASK-XXX [--mode=standard|tdd] [--design-only] [--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
@@ -268,7 +268,7 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 # → Creates review task, analyzes options, generates subtasks
 
 # Simple task (for bug fixes, small features)
-/task-create "Fix login button styling"
+/task-create "The login button styling is broken on mobile devices"
 /task-work TASK-p9r3   # Plans, reviews, implements, tests (all automatic)
 /task-complete TASK-p9r3
 ```

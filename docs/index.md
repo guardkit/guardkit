@@ -78,8 +78,8 @@ guardkit init react-typescript
 ### Simple Tasks (Direct)
 
 ```bash
-# Create and work on a simple task
-/task-create "Fix login button styling"
+# Create and work on a simple task (natural language description)
+/task-create "The login button styling is broken on mobile devices"
 /task-work TASK-a3f8  # Plans, reviews, implements, tests
 /task-complete TASK-a3f8
 ```

@@ -28,28 +28,116 @@ Additional fields: `epic`, `feature`, `requirements`, `bdd_scenarios`, `export`
 
 ## Usage
 ```bash
-/task-create <title> [options]
+/task-create <description> [options]
+```
+
+**Description**: A natural language description of what needs to be done (5-500 characters). The system automatically infers a concise title from the description.
+
+**Examples**:
+```bash
+# Short, action-oriented (used as-is)
+/task-create "Fix login bug"
+
+# Detailed explanation (title auto-inferred)
+/task-create "We need to add user authentication with JWT tokens and refresh token support for the API"
+# → Title: "Add JWT user authentication"
+
+# Problem description (title extracted)
+/task-create "The login button styling is broken on mobile devices and needs to be fixed"
+# → Title: "Fix mobile login button styling"
+```
+
+## Title Inference Algorithm
+
+The system automatically generates concise, actionable titles from your descriptions using this algorithm:
+
+### Inference Rules
+
+**Rule 1: Short action-oriented descriptions (< 50 chars, starts with verb, no trailing punctuation)**
+```bash
+/task-create "Fix login bug"
+# → Title: "Fix login bug" (used as-is)
+
+/task-create "Add dark mode support"
+# → Title: "Add dark mode support" (used as-is)
+```
+
+**Rule 2: Detailed descriptions (extract main action + object + qualifier)**
+```bash
+/task-create "We need to add user authentication with JWT tokens and refresh token support"
+# → Identifies: Action="Add", Object="user authentication", Qualifier="JWT"
+# → Title: "Add JWT user authentication"
+
+/task-create "The login button styling is completely broken on mobile devices and needs immediate attention"
+# → Identifies: Action="Fix", Object="login button styling", Qualifier="mobile"
+# → Title: "Fix mobile login button styling"
+
+/task-create "Implement a caching layer for API responses to improve performance"
+# → Identifies: Action="Implement", Object="caching layer", Qualifier="API response"
+# → Title: "Implement API response caching"
+```
+
+### Common Transformation Examples
+
+| Description | Inferred Title |
+|-------------|----------------|
+| "Fix null pointer exception in UserService" | "Fix UserService null pointer" |
+| "We need to add user authentication with JWT" | "Add JWT user authentication" |
+| "The login button is broken on mobile" | "Fix mobile login button" |
+| "Implement caching for API responses" | "Implement API response caching" |
+| "Add dark mode" | "Add dark mode" (used as-is) |
+| "Create component for user profile display" | "Create user profile component" |
+| "Update database schema to support multi-tenancy" | "Update schema for multi-tenancy" |
+| "Refactor authentication to use OAuth2" | "Refactor authentication for OAuth2" |
+
+### Edge Cases
+
+**Ambiguous descriptions** (system will ask for clarification):
+```bash
+/task-create "This needs to be done soon"
+# → Error: Cannot infer clear action. Please provide a more specific description.
+```
+
+**Multiple actions** (uses first primary action):
+```bash
+/task-create "Add authentication and fix the logout bug"
+# → Title: "Add authentication"
+# → Suggestion: Consider creating separate tasks for "fix logout bug"
+```
+
+**Very long descriptions** (truncates to 10 words max):
+```bash
+/task-create "We need to completely redesign and refactor the entire authentication system to support multiple providers including OAuth2, SAML, and custom integrations"
+# → Title: "Refactor authentication for multiple providers"
 ```
 
 ## Examples
+
 ```bash
-# Simple task creation
-/task-create "Add user authentication"
+# Simple, direct descriptions
+/task-create "Fix login bug"
+/task-create "Add dark mode support"
+/task-create "Implement caching layer"
+
+# Detailed problem descriptions (title auto-inferred)
+/task-create "We need to add user authentication with JWT tokens for the API"
+/task-create "The login button styling is broken on mobile devices"
+/task-create "Implement a caching layer for API responses to improve performance"
 
 # With priority and tags
-/task-create "Add user authentication" priority:high tags:[auth,security]
+/task-create "Add user authentication with JWT support" priority:high tags:[auth,security]
 
 # Link to requirements immediately
-/task-create "Add user authentication" requirements:[REQ-001,REQ-002]
+/task-create "Implement OAuth2 authentication flow" requirements:[REQ-001,REQ-002]
 
 # Link to epic for hierarchy and PM tool integration
-/task-create "Add user authentication" epic:EPIC-001
+/task-create "Add JWT authentication middleware" epic:EPIC-001
 
 # Full specification with epic linking
-/task-create "Add user authentication" priority:high epic:EPIC-001 requirements:[REQ-001,REQ-002] bdd:[BDD-001]
+/task-create "Implement complete authentication system with OAuth2" priority:high epic:EPIC-001 requirements:[REQ-001,REQ-002] bdd:[BDD-001]
 
 # Epic linking with automatic PM tool integration
-/task-create "Add user authentication" epic:EPIC-001 export:jira
+/task-create "Build authentication API endpoints" epic:EPIC-001 export:jira
 ```
 
 ## Task Structure
@@ -585,7 +673,9 @@ complexity_evaluation:
 ## Validation
 
 Tasks are validated before creation:
-- ✅ Title must be 5-100 characters
+- ✅ Description must be 5-500 characters
+- ✅ Inferred title must be 5-100 characters
+- ✅ Description must contain identifiable action (add, fix, implement, etc.)
 - ✅ No duplicate titles in active tasks
 - ✅ Linked requirements must exist
 - ✅ Linked BDD scenarios must exist
@@ -594,13 +684,123 @@ Tasks are validated before creation:
 - ✅ Export tools must be configured and accessible
 - ✅ Complexity score calculated (if requirements linked)
 
+### Validation Examples
+
+**✅ Valid descriptions**:
+```bash
+/task-create "Fix login bug"                                    # Clear action, concise
+/task-create "Add user authentication"                          # Clear action, specific
+/task-create "We need to implement OAuth2 for the API"         # Detailed, inferable
+```
+
+**❌ Invalid descriptions**:
+```bash
+/task-create "Do it"                                           # Too vague (< 5 chars meaningful)
+/task-create "This"                                            # No identifiable action
+/task-create "Something something something..."                # No clear action verb
+```
+
+**⚠️ Warnings (task created but flagged)**:
+```bash
+/task-create "Add auth and fix logout and update profile"     # Multiple actions (suggest split)
+/task-create "The system is slow"                             # Missing action (inferred: "Fix system performance")
+```
+
 ## Best Practices
 
-1. **Clear titles**: Use action verbs ("Implement", "Add", "Fix", "Refactor")
-2. **Link specifications**: Always link to requirements for traceability
-3. **Set priority**: Helps with sprint planning
-4. **Use tags**: Improves discoverability and filtering
-5. **Add description**: Provide context beyond the title
+### Writing Good Descriptions
+
+1. **Start with action verbs** when possible:
+   - ✅ "Fix login button on mobile"
+   - ✅ "Add JWT authentication"
+   - ✅ "Implement caching layer"
+   - ❌ "Login button issue" (no action)
+
+2. **Be specific** but concise:
+   - ✅ "Fix null pointer in UserService.authenticate()"
+   - ❌ "Fix bug" (too vague)
+   - ❌ "We need to fix the bug where the UserService.authenticate() method throws a null pointer exception when the user object is not properly initialized during the authentication flow" (too verbose)
+
+3. **Focus on one primary action**:
+   - ✅ "Add user authentication"
+   - ❌ "Add authentication and fix logout and update profile" (multiple actions → split tasks)
+
+4. **Use natural language**:
+   - ✅ "The login button is broken on mobile devices"
+   - ✅ "We need to implement caching for API responses"
+   - System will extract clear title automatically
+
+### Other Best Practices
+
+5. **Link specifications**: Always link to requirements for traceability
+6. **Set priority**: Helps with sprint planning
+7. **Use tags**: Improves discoverability and filtering
+
+## Troubleshooting
+
+### "Cannot infer clear action from description"
+
+**Problem**: Description is too vague or doesn't contain an identifiable action verb.
+
+```bash
+/task-create "This needs work"
+# ❌ Error: Cannot infer clear action from description
+```
+
+**Solutions**:
+- Add an action verb: "Fix this login issue"
+- Be more specific: "Refactor authentication module"
+- Describe the problem: "The login page is broken on Safari"
+
+### "Inferred title too short/long"
+
+**Problem**: Extracted title doesn't meet 5-100 character requirement.
+
+```bash
+/task-create "Fix it"
+# ⚠️ Warning: Inferred title too short. Using description as-is.
+```
+
+**Solutions**:
+- Provide more context: "Fix login validation error"
+- Be more specific about what needs fixing
+
+### "Multiple actions detected"
+
+**Problem**: Description contains multiple distinct actions.
+
+```bash
+/task-create "Add authentication and fix the logout bug and update the profile page"
+# ⚠️ Warning: Multiple actions detected. Consider creating separate tasks.
+# Created: "Add authentication"
+# Suggestions:
+#   - /task-create "Fix logout bug"
+#   - /task-create "Update profile page"
+```
+
+**Solutions**:
+- Split into separate tasks as suggested
+- Focus on the primary action
+- Accept the inferred title if it covers the main work
+
+### Title differs from expectation
+
+**Problem**: Inferred title doesn't match what you intended.
+
+```bash
+/task-create "We really need to get the authentication working properly"
+# Inferred: "Fix authentication"
+# Expected: "Add authentication"
+```
+
+**Solutions**:
+- Review the inferred title in the output
+- If incorrect, cancel and rephrase:
+  ```bash
+  /task-create "Add authentication support to the API"
+  # Inferred: "Add API authentication"
+  ```
+- Start with the action verb: "Add authentication..."
 
 ## Output Format
 
@@ -609,7 +809,8 @@ Tasks are validated before creation:
 ✅ Task Created: TASK-E01-B2C4
 
 📋 Task Details
-Title: Add user authentication
+Description: "We need to add user authentication with JWT tokens and refresh token support"
+Inferred Title: Add JWT user authentication
 ID Format: Hash-based with prefix (E01)
 Priority: high
 Status: backlog
@@ -628,7 +829,7 @@ Linear Initiative: PROJECT-456
 Task Export: Will be created in linked tools
 
 📁 File Location
-tasks/backlog/TASK-E01-B2C4-add-user-authentication.md
+tasks/backlog/TASK-E01-B2C4-add-jwt-user-authentication.md
 
 Next Steps:
 1. Review task details

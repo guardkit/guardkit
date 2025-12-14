@@ -8,6 +8,12 @@ Orchestrates the feature planning workflow in a single user-facing command by au
 /feature-plan "feature description"
 ```
 
+**Note on `/feature-plan` vs `/task-create`**:
+- **`/feature-plan`**: Uses the description for **analysis** purposes. The review task title is programmatically generated as "Plan: {description}".
+- **`/task-create`**: Uses the description for **title inference**. Claude analyzes the description to extract a concise, actionable title (e.g., "We need JWT auth" → "Add JWT authentication").
+
+Both accept natural language descriptions, but they serve different purposes in the workflow.
+
 ## Available Flags
 
 | Flag | Description |
@@ -1079,7 +1085,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
      **DISPLAY**: "Review scope clarification skipped (--no-questions)"
 
 3. ✅ **Execute `/task-create`** with:
-   - Title: "Plan: {description}"
+   - Description: "Plan: {description}" (title auto-inferred as "Plan {feature_name}")
    - Flags: `task_type:review priority:high`
 
 4. ✅ **Capture task ID** from output (regex: `TASK-[A-Z0-9-]+`)

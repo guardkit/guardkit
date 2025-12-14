@@ -37,8 +37,8 @@ chmod +x installer/scripts/install.sh
 
 **For simple tasks (direct):**
 ```bash
-# Create a simple task
-/task-create "Fix login button styling"
+# Create a simple task (natural language description)
+/task-create "The login button styling is broken on mobile devices"
 
 # Work on it (automatic planning + implementation + testing)
 /task-work TASK-a3f8
@@ -96,14 +96,16 @@ BACKLOG → IN_PROGRESS → IN_REVIEW → COMPLETED
 
 ### 1. Create a Task
 ```bash
-# Simple task creation
-/task-create "Feature name"
+# Simple task creation (natural language descriptions)
+/task-create "We need to add a user login feature"
+/task-create "Fix the critical bug in payment processing"
+/task-create "Add comprehensive logging to the infrastructure"
 
 # With priority
-/task-create "Critical bug fix" priority:critical
+/task-create "Critical bug in payment processing needs immediate fix" priority:critical
 
 # With tags
-/task-create "Add logging" tags:infrastructure,logging
+/task-create "Add logging infrastructure to track API requests" tags:infrastructure,logging
 ```
 
 ### 2. Work on the Task (One Command!)
@@ -188,28 +190,28 @@ Total time: ~2 minutes (vs ~10 minutes with manual workflow)
 
 ### Scenario 1: Simple Feature
 ```bash
-/task-create "Add user profile page"
+/task-create "We need to add a user profile page with avatar upload"
 /task-work TASK-050              # Standard mode by default
 /task-complete TASK-050
 ```
 
 ### Scenario 2: Complex Business Logic
 ```bash
-/task-create "Calculate tax rates"
+/task-create "Implement tax rate calculation for multi-state transactions"
 /task-work TASK-051 --mode=tdd   # TDD for complex logic
 /task-complete TASK-051
 ```
 
 ### Scenario 3: Bug Fix
 ```bash
-/task-create "Fix login timeout" priority:critical
+/task-create "The login timeout is occurring after 5 minutes instead of 30" priority:critical
 /task-work TASK-053               # Quick fix
 /task-complete TASK-053
 ```
 
 ### Scenario 4: Design-First Workflow
 ```bash
-/task-create "Refactor authentication system" priority:high
+/task-create "Refactor the entire authentication system to support OAuth2" priority:high
 /task-work TASK-054 --design-only
 # [Human reviews and approves plan]
 /task-work TASK-054 --implement-only
@@ -262,7 +264,7 @@ For architectural reviews, security audits, technical decisions (no implementati
 
 ### Task Commands
 ```bash
-/task-create "name" [priority:high|medium|low] [tags:tag1,tag2]
+/task-create "description" [priority:high|medium|low] [tags:tag1,tag2]  # Natural language
 /task-work TASK-XXX [--mode=standard|tdd] [--design-only|--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]

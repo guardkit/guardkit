@@ -18,10 +18,10 @@ guardkit init default                # Language-agnostic (Go, Rust, Ruby, etc.)
 
 ### Task Management
 ```bash
-# Create tasks
-/task-create "Task title"
-/task-create "Task title" priority:high
-/task-create "Task title" tags:feature,api
+# Create tasks (natural language descriptions)
+/task-create "We need to add user authentication"
+/task-create "Fix the critical bug in payment processing" priority:high
+/task-create "Implement caching for API responses" tags:feature,api
 
 # Work on tasks (automatic planning + implementation + testing)
 /task-work TASK-XXX
@@ -45,9 +45,11 @@ guardkit init default                # Language-agnostic (Go, Rust, Ruby, etc.)
 ### /task-create Parameters
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
-| title | string | Task description (required) | "Add login feature" |
+| description | string | Natural language task description (required, 5-500 chars) | "We need to add user login with JWT" |
 | priority | enum | Task priority | priority:high, priority:medium, priority:low |
 | tags | list | Task categorization | tags:api,security |
+
+**Note**: The system automatically infers a concise title from the description (e.g., "We need to add user login with JWT" → "Add JWT user login")
 
 ### /task-work Parameters
 | Parameter | Type | Description | Example |
@@ -199,8 +201,8 @@ guardkit init your-custom-template
 
 ### Standard Development Flow
 ```bash
-# 1. Create task
-/task-create "Add user authentication" priority:high
+# 1. Create task (natural language description)
+/task-create "We need to implement user authentication with JWT tokens" priority:high
 
 # 2. Work on task (automatic phases)
 /task-work TASK-001
@@ -222,8 +224,8 @@ guardkit init your-custom-template
 
 ### Design-First Workflow (Complex Tasks)
 ```bash
-# 1. Create complex task
-/task-create "Refactor authentication system" priority:high
+# 1. Create complex task (natural language description)
+/task-create "Refactor the entire authentication system to support multiple providers" priority:high
 
 # 2. Design phase only
 /task-work TASK-002 --design-only
@@ -239,8 +241,8 @@ guardkit init your-custom-template
 
 ### TDD Workflow
 ```bash
-# 1. Create task requiring complex logic
-/task-create "Calculate tax rates" priority:medium
+# 1. Create task requiring complex logic (natural language description)
+/task-create "Implement tax rate calculation for multi-jurisdiction transactions" priority:medium
 
 # 2. Work with TDD mode
 /task-work TASK-003 --mode=tdd
