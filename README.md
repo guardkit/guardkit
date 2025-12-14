@@ -53,6 +53,8 @@ For teams needing formal requirements (EARS notation, BDD scenarios, epic hierar
 
 ## What You Get
 
+- **Feature Planning**: Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
+- **Clarifying Questions**: Targeted questions before assumptions (~15% rework reduction), complexity-gated
 - **Hash-Based Task IDs**: Collision-free IDs enable concurrent creation and parallel development (Conductor.build compatible)
 - **PM Tool Integration**: Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs
 - **Architectural Review**: SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
@@ -68,7 +70,36 @@ For teams needing formal requirements (EARS notation, BDD scenarios, epic hierar
 
 **AI does heavy lifting. Humans make decisions.**
 
+### Clarifying Questions (~15% Rework Reduction)
+
+GuardKit asks targeted questions before making assumptions:
+
+```bash
+/task-work TASK-a3f8
+
+📋 CLARIFYING QUESTIONS (complexity: 5)
+
+Q1. Implementation Scope
+    [M]inimal - Core functionality only
+    [S]tandard - With error handling (DEFAULT)
+    [C]omplete - Production-ready with edge cases
+    Your choice: S
+
+Q2. Testing Approach
+    [U]nit tests only
+    [I]ntegration + unit (DEFAULT)
+    [F]ull coverage (unit + integration + e2e)
+    Your choice: I
+
+✓ Recorded 2 decisions - proceeding with implementation...
+```
+
+**Complexity-gated**: Simple tasks (1-2) skip questions, medium tasks (3-4) get quick questions with timeout, complex tasks (5+) get full clarification.
+
+**Flags**: `--no-questions` (skip), `--with-questions` (force), `--defaults` (use defaults), `--answers="..."` (inline for CI/CD)
+
 ### Human-in-the-Loop Checkpoints
+- **Phase 1.6: Clarifying Questions** - Scope, approach, testing preferences (complexity-gated)
 - **Phase 2.5: Architectural Review** - SOLID/DRY/YAGNI scoring (60/100 minimum)
 - **Phase 2.8: Complexity Checkpoint** - Tasks ≥7 complexity require approval before implementation
 - **Phase 4.5: Test Enforcement** - Auto-fix up to 3 attempts, block if tests fail
