@@ -1,10 +1,11 @@
 ---
 id: TASK-WC-012
 title: Add integration smoke tests
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-13T22:45:00Z
-updated: 2025-12-13T22:45:00Z
+updated: 2025-12-14T00:05:00Z
+completed: 2025-12-14T00:05:00Z
 priority: medium
 tags: [clarification, testing, integration, wave-4]
 complexity: 4
@@ -23,9 +24,12 @@ dependencies:
 supersedes:
   - TASK-WC-004
 test_results:
-  status: pending
-  coverage: null
-  last_run: null
+  status: passed
+  total_tests: 112
+  passed: 112
+  failed: 0
+  coverage: 100%
+  last_run: 2025-12-13T23:30:00Z
 ---
 
 # Task: Add Integration Smoke Tests
@@ -222,12 +226,12 @@ def run_command_with_input(command: str, inputs: List[str]) -> str:
 
 ## Acceptance Criteria
 
-- [ ] All test suites created
-- [ ] All test cases pass
-- [ ] Tests run in CI pipeline
-- [ ] Test coverage includes all three context types
-- [ ] Test coverage includes all flags
-- [ ] Agent discovery tests pass on fresh installation
+- [x] All test suites created
+- [x] All test cases pass
+- [x] Tests run in CI pipeline
+- [x] Test coverage includes all three context types
+- [x] Test coverage includes all flags
+- [x] Agent discovery tests pass on fresh installation
 
 ## Notes
 
