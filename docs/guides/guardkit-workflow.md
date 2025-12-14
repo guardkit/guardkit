@@ -15,20 +15,21 @@
 - [When to Use GuardKit](#when-to-use-guardkit)
 
 ### Part 2: Core Workflow (15 Minutes)
-- [The 9 Workflow Phases](#the-9-workflow-phases)
+- [The 10 Workflow Phases](#the-10-workflow-phases)
 - [Quality Gates](#quality-gates)
 - [State Management](#state-management)
 
 ### Part 3: Feature Deep Dives (30+ Minutes)
-- [3.1 Complexity Evaluation](#31-complexity-evaluation)
-- [3.2 Design-First Workflow](#32-design-first-workflow)
-- [3.3 Test Enforcement Loop](#33-test-enforcement-loop)
-- [3.4 Architectural Review](#34-architectural-review)
-- [3.5 Human Checkpoints](#35-human-checkpoints)
-- [3.6 Plan Audit](#36-plan-audit)
-- [3.7 Iterative Refinement](#37-iterative-refinement)
-- [3.8 MCP Tool Discovery](#38-mcp-tool-discovery)
-- [3.9 Design System Detection](#39-design-system-detection)
+- [3.1 Clarifying Questions](#31-clarifying-questions)
+- [3.2 Complexity Evaluation](#32-complexity-evaluation)
+- [3.3 Design-First Workflow](#33-design-first-workflow)
+- [3.4 Test Enforcement Loop](#34-test-enforcement-loop)
+- [3.5 Architectural Review](#35-architectural-review)
+- [3.6 Human Checkpoints](#36-human-checkpoints)
+- [3.7 Plan Audit](#37-plan-audit)
+- [3.8 Iterative Refinement](#38-iterative-refinement)
+- [3.9 MCP Tool Discovery](#39-mcp-tool-discovery)
+- [3.10 Design System Detection](#310-design-system-detection)
 
 ### Part 4: Practical Usage
 - [4.1 Complete Workflow Examples](#41-complete-workflow-examples)
@@ -271,45 +272,48 @@ Use for **analysis** and **decision-making** tasks:
 
 # Part 2: CORE WORKFLOW (15 Minutes)
 
-## The 9 Workflow Phases
+## The 10 Workflow Phases
 
-The `/task-work` command executes 9 phases automatically:
+The `/task-work` command executes 10 phases automatically:
 
 ```
 /task-work TASK-XXX
 │
 ├─ PHASE 1: Load Task Context
 │
-├─ PHASE 2: Implementation Planning
-│   ├─ Feature 8: MCP Tool Discovery
-│   └─ Feature 9: Design System Detection
-│
-├─ PHASE 2.5A: Pattern Suggestion
-│
-├─ PHASE 2.5B: Architectural Review ────────┐
-│   └─ SOLID/DRY/YAGNI Scoring              │ Quality
-│                                            │ Gates
-├─ PHASE 2.7: Complexity Evaluation ────────┤
-│   └─ 1-10 Scoring & Review Routing        │
-│                                            │
-├─ PHASE 2.8: Human Checkpoint ─────────────┤
-│   └─ Smart Approval (complexity-based)    │
-│                                            │
-├─ PHASE 3: Implementation                  │
-│   └─ Code Generation from Plan            │
-│                                            │
-├─ PHASE 4: Testing                         │
-│                                            │
-├─ PHASE 4.5: Test Enforcement Loop ────────┤
-│   └─ Auto-Fix (up to 3 attempts)          │
-│                                            │
-├─ PHASE 5: Code Review                     │
-│                                            │
-├─ PHASE 5.5: Plan Audit ───────────────────┤
-│   └─ Scope Creep Detection                │
-│                                            │
-└─ PHASE 6: Iterative Refinement            │
-    └─ /task-refine Command ────────────────┘
+├─ PHASE 1.6: Clarifying Questions ─────────┐
+│   └─ Complexity-gated (~15% rework reduction)│ Human
+│                                              │ Input
+├─ PHASE 2: Implementation Planning            │
+│   ├─ Feature 8: MCP Tool Discovery           │
+│   └─ Feature 9: Design System Detection      │
+│                                              │
+├─ PHASE 2.5A: Pattern Suggestion              │
+│                                              │
+├─ PHASE 2.5B: Architectural Review ───────────┤ Quality
+│   └─ SOLID/DRY/YAGNI Scoring                 │ Gates
+│                                              │
+├─ PHASE 2.7: Complexity Evaluation ───────────┤
+│   └─ 1-10 Scoring & Review Routing           │
+│                                              │
+├─ PHASE 2.8: Human Checkpoint ────────────────┤
+│   └─ Smart Approval (complexity-based)       │
+│                                              │
+├─ PHASE 3: Implementation                     │
+│   └─ Code Generation from Plan               │
+│                                              │
+├─ PHASE 4: Testing                            │
+│                                              │
+├─ PHASE 4.5: Test Enforcement Loop ───────────┤
+│   └─ Auto-Fix (up to 3 attempts)             │
+│                                              │
+├─ PHASE 5: Code Review                        │
+│                                              │
+├─ PHASE 5.5: Plan Audit ──────────────────────┤
+│   └─ Scope Creep Detection                   │
+│                                              │
+└─ PHASE 6: Iterative Refinement               │
+    └─ /task-refine Command ───────────────────┘
 ```
 
 ### Phase Descriptions
@@ -319,6 +323,12 @@ The `/task-work` command executes 9 phases automatically:
 - Parses frontmatter metadata
 - Transitions BACKLOG → IN_PROGRESS
 - Loads task description and acceptance criteria
+
+**Phase 1.6: Clarifying Questions** (~15% rework reduction)
+- Asks targeted questions before making assumptions
+- Complexity-gated: simple tasks skip, complex tasks get full clarification
+- Persists decisions to task frontmatter for audit trail
+- Flags: `--no-questions`, `--with-questions`, `--defaults`, `--answers="..."`
 
 **Phase 2: Implementation Planning**
 - Generates structured implementation plan
@@ -503,7 +513,122 @@ BACKLOG
 
 # Part 3: FEATURE DEEP DIVES (30+ Minutes)
 
-## 3.1 Complexity Evaluation
+## 3.1 Clarifying Questions
+
+**Phase**: 1.6 of /task-work command
+**Purpose**: Ask targeted questions before making assumptions, reducing rework by ~15%.
+
+### Quick Start
+
+Clarifying questions appear automatically based on task complexity:
+
+```bash
+/task-work TASK-042
+
+Phase 1: Loading context...
+Phase 1.6: Clarifying Questions (complexity: 5)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 CLARIFYING QUESTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Q1. Implementation Scope
+    How comprehensive should this implementation be?
+
+    [M]inimal - Core functionality only
+    [S]tandard - With error handling (DEFAULT)
+    [C]omplete - Production-ready with edge cases
+
+    Your choice [M/S/C]: S
+
+Q2. Testing Approach
+    What testing strategy?
+
+    [U]nit tests only
+    [I]ntegration tests included (DEFAULT)
+    [F]ull coverage (unit + integration + e2e)
+
+    Your choice [U/I/F]: I
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Recorded 2 decisions
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 2: Planning implementation with clarifications...
+```
+
+### Complexity Gating
+
+Questions are triggered based on task complexity:
+
+| Complexity | Behavior | Timeout |
+|------------|----------|---------|
+| **1-2 (Simple)** | Skip questions entirely | N/A |
+| **3-4 (Medium)** | Quick questions | 15 seconds |
+| **5+ (Complex)** | Full clarification | Blocking |
+
+### Command-Line Flags
+
+All clarification behavior can be controlled:
+
+| Flag | Effect |
+|------|--------|
+| `--no-questions` | Skip clarification entirely |
+| `--with-questions` | Force clarification even for simple tasks |
+| `--defaults` | Use default answers without prompting |
+| `--answers="1:S 2:I"` | Inline answers for CI/CD automation |
+| `--reclarify` | Re-run clarification even if previous decisions exist |
+
+### Example: CI/CD Automation
+
+```bash
+# Skip questions entirely
+/task-work TASK-042 --no-questions
+
+# Use defaults without prompting
+/task-work TASK-042 --defaults
+
+# Provide inline answers
+/task-work TASK-042 --answers="scope:standard testing:integration"
+```
+
+### Persistence
+
+Decisions are saved to task frontmatter for audit trail:
+
+```yaml
+clarification:
+  context: implementation_planning
+  timestamp: 2025-12-08T14:30:00Z
+  mode: full
+  decisions:
+    - question_id: scope
+      answer: standard
+      default_used: true
+    - question_id: testing
+      answer: integration
+      default_used: false
+```
+
+**Benefits:**
+- Task resumption without re-asking questions
+- Audit trail of planning decisions
+- Reproducibility of AI behavior
+
+### Multi-Command Support
+
+Clarifying questions work across multiple commands:
+
+| Command | Context Type | When | Purpose |
+|---------|--------------|------|---------|
+| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
+| `/feature-plan` | review_scope | Before review | Guide what to analyze |
+| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
+| `/task-review` | review_scope | Phase 1 | Guide review focus |
+
+---
+
+## 3.2 Complexity Evaluation
 
 **Phase**: 2.7 of /task-work command
 **Purpose**: Automatically evaluate task complexity to route to appropriate review mode and suggest task breakdown.
@@ -600,7 +725,7 @@ Phase 2.7: Complexity Evaluation
 
 ---
 
-## 3.2 Design-First Workflow
+## 3.3 Design-First Workflow
 
 **Phase**: 2-3 of /task-work command with optional flags
 **Purpose**: Separate design and implementation phases for complex tasks requiring upfront design approval.
@@ -669,7 +794,7 @@ Plans are saved as Markdown in `.claude/task-plans/{task_id}-implementation-plan
 
 ---
 
-## 3.3 Test Enforcement Loop
+## 3.4 Test Enforcement Loop
 
 **Phase**: 4.5 of /task-work command
 **Purpose**: Zero tolerance for test failures. Automatically fix and re-test up to 3 times before blocking.
@@ -772,7 +897,7 @@ Tests: 5/5 PASSED ✅
 
 ---
 
-## 3.4 Architectural Review
+## 3.5 Architectural Review
 
 **Phase**: 2.5B of /task-work command
 **Purpose**: Evaluate implementation plans against SOLID, DRY, and YAGNI principles before implementation.
@@ -876,7 +1001,7 @@ REQUIRED ACTIONS:
 
 ---
 
-## 3.5 Human Checkpoints
+## 3.6 Human Checkpoints
 
 **Phase**: 2.8 of /task-work command
 **Purpose**: Complexity-based routing with interactive plan review for critical decisions.
@@ -996,7 +1121,7 @@ Certain conditions force FULL_REQUIRED mode regardless of complexity:
 
 ---
 
-## 3.6 Plan Audit
+## 3.7 Plan Audit
 
 **Phase**: 5.5 of /task-work command
 **Purpose**: Compare actual implementation vs planned implementation to detect scope creep.
@@ -1087,7 +1212,7 @@ Why were these files and dependencies added?
 
 ---
 
-## 3.7 Iterative Refinement
+## 3.8 Iterative Refinement
 
 **Phase**: 6 (separate `/task-refine` command)
 **Purpose**: Lightweight improvements for tasks in IN_REVIEW state without full re-work.
@@ -1162,7 +1287,7 @@ Coverage: 92% (+7%)
 
 ---
 
-## 3.8 MCP Tool Discovery
+## 3.9 MCP Tool Discovery
 
 **Phase**: 2 (during implementation planning)
 **Purpose**: Automatically detect available MCP tools and enhance plans with tool-specific capabilities.
@@ -1224,7 +1349,7 @@ Implementing with latest patterns...
 
 ---
 
-## 3.9 Design System Detection (Coming Soon)
+## 3.10 Design System Detection (Coming Soon)
 
 > **Status: Under Development**
 >

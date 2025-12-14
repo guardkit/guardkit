@@ -1,8 +1,8 @@
 # Getting Started with GuardKit
 
-## Welcome to Lightweight Task Workflow!
+## Welcome to Feature Plan Development!
 
-GuardKit is an AI-powered task workflow system with built-in quality gates that prevents broken code from reaching production. Work on individual tasks with automatic architectural review, test enforcement, and quality verification.
+GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace. Built-in quality gates prevent broken code from reaching production.
 
 ## Quick Start (5 Minutes!)
 
@@ -17,19 +17,37 @@ chmod +x installer/scripts/install.sh
 
 > **Using Claude Code Web?** See the [Claude Code Web Setup Guide](claude-code-web-setup.md) for detailed web-specific instructions including persistence and multi-repository usage.
 
-### Step 2: Create Your First Task (in Claude Code)
+### Step 2: Plan Your First Feature (in Claude Code)
+
+**For new features (recommended):**
 ```bash
-# Create a task
-/task-create "Add user authentication"
+# Plan a feature (single command!)
+/feature-plan "add user authentication"
 
-# Work on it (automatic planning + implementation + testing)
-/task-work TASK-001
+# System creates complete feature workspace:
+# ✅ Review task with technical options
+# ✅ Subtask breakdown with parallel waves
+# ✅ Implementation guide
+# ✅ Feature workspace in tasks/backlog/
 
-# Complete it
-/task-complete TASK-001
+# Work through generated subtasks
+/task-work TASK-AUTH-001
+/task-complete TASK-AUTH-001
 ```
 
-That's it! The `/task-work` command handles planning, implementation, architectural review, testing, and quality verification automatically.
+**For simple tasks (direct):**
+```bash
+# Create a simple task
+/task-create "Fix login button styling"
+
+# Work on it (automatic planning + implementation + testing)
+/task-work TASK-a3f8
+
+# Complete it
+/task-complete TASK-a3f8
+```
+
+The `/feature-plan` command handles feature decomposition, and `/task-work` handles planning, implementation, architectural review, testing, and quality verification automatically.
 
 ## Documentation Structure
 
@@ -237,6 +255,11 @@ For architectural reviews, security audits, technical decisions (no implementati
 
 ## Essential Commands
 
+### Feature Planning (Recommended Starting Point)
+```bash
+/feature-plan "feature description"    # Single command → complete feature plan
+```
+
 ### Task Commands
 ```bash
 /task-create "name" [priority:high|medium|low] [tags:tag1,tag2]
@@ -252,6 +275,8 @@ For architectural reviews, security audits, technical decisions (no implementati
 --mode=tdd              # Test-driven development cycle
 --design-only           # Planning only (complex tasks)
 --implement-only        # Implementation only (requires approved plan)
+--no-questions          # Skip clarifying questions
+--with-questions        # Force clarifying questions
 ```
 
 ## Best Practices
@@ -352,4 +377,4 @@ The workflow ensures every piece of code is tested, reviewed, and ready for prod
 
 ---
 
-*"Quality without ceremony" - Start with `/task-create` and let `/task-work` handle the rest!*
+*"Plan Features. Build Faster." - Start with `/feature-plan` for new features, or `/task-create` for simple tasks!*

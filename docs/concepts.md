@@ -2,12 +2,35 @@
 
 Understand the fundamentals of GuardKit's workflow and quality gates.
 
+## 🎯 Feature Plan Development (FPD)
+
+GuardKit treats **features as the unit of planning** and **tasks as the unit of execution**.
+
+```bash
+/feature-plan "add user authentication"
+
+# System automatically:
+# ✅ Creates review task
+# ✅ Analyzes technical options
+# ✅ Generates subtask breakdown
+# ✅ Detects parallel execution waves
+# ✅ Creates implementation guide
+```
+
+**FPD Manifesto:**
+- Features over files
+- Plans over improvisation
+- Structured decomposition over ad-hoc tasking
+- Parallel execution over sequential bottlenecks
+- Automation where possible, human oversight where needed
+
 ## 🔄 [GuardKit Workflow](guides/guardkit-workflow.md)
 
 The complete workflow from task creation to completion, including all phases and quality gates.
 
 **Workflow Phases:**
 
+- Phase 1.6: Clarifying Questions (complexity-gated, ~15% rework reduction)
 - Phase 2: Implementation Planning (Markdown format)
 - Phase 2.5: Architectural Review (SOLID/DRY/YAGNI scoring)
 - Phase 2.7: Complexity Evaluation (0-10 scale)
@@ -19,6 +42,26 @@ The complete workflow from task creation to completion, including all phases and
 - Phase 5.5: Plan Audit (scope creep detection)
 
 **Start here** to understand the end-to-end process.
+
+## 💬 Clarifying Questions
+
+GuardKit asks targeted questions before making assumptions (~15% rework reduction):
+
+```bash
+/task-work TASK-a3f8
+
+📋 CLARIFYING QUESTIONS (complexity: 5)
+
+Q1. Implementation Scope
+    [M]inimal - Core functionality only
+    [S]tandard - With error handling (DEFAULT)
+    [C]omplete - Production-ready with edge cases
+    Your choice: S
+```
+
+**Complexity-gated**: Simple tasks (1-2) skip questions, medium tasks (3-4) get quick questions with timeout, complex tasks (5+) get full clarification.
+
+**Flags**: `--no-questions` (skip), `--with-questions` (force), `--defaults` (use defaults), `--answers="..."` (inline for CI/CD)
 
 ## 🔑 Hash-Based Task IDs
 

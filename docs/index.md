@@ -4,18 +4,19 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![standalone](https://img.shields.io/badge/standalone-no%20dependencies-blueviolet)
 
-**Lightweight AI-assisted development with built-in quality gates.**
+**Plan Features. Build Faster.**
 
-Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
+Stop shipping broken code. GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
 
 ## Key Features
 
+- **Feature Planning** - Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
+- **Clarifying Questions** - Targeted questions before assumptions (~15% rework reduction), complexity-gated
 - **Architectural Review** - SOLID, DRY, YAGNI evaluation before coding (saves 40-50% rework time)
 - **Test Enforcement** - Automatic test fixing (up to 3 attempts), ensures 100% pass rate
 - **AI Agent Discovery** - Automatic specialist matching via metadata (stack, phase, keywords)
-- **Stack-Specific Optimization** - Haiku agents for 48-53% cost savings, 4-5x faster implementation
 - **Quality Gates** - Coverage thresholds (80% line, 75% branch), compilation checks, code review
-- **Simple Workflow** - Create → Work → Complete (3 commands)
+- **Parallel Development** - Built-in wave detection + Conductor.build integration
 
 ## Quick Start
 
@@ -50,6 +51,8 @@ Common issues, solutions, and the `/debug` command.
 
 ## Example Workflow
 
+### Feature Planning (Recommended)
+
 ```bash
 # Install GuardKit
 curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
@@ -58,13 +61,30 @@ curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scr
 cd /path/to/your/project
 guardkit init react-typescript
 
-# Create and work on a task
-/task-create "Add user authentication"
-/task-work TASK-001  # Plans, reviews, implements, tests
-/task-complete TASK-001
+# Plan a feature (single command!)
+/feature-plan "add user authentication"
+
+# System creates:
+# ✅ Review task with technical options
+# ✅ Subtask breakdown with parallel waves
+# ✅ Implementation guide
+# ✅ Feature workspace in tasks/backlog/
+
+# Work through generated subtasks
+/task-work TASK-AUTH-001
+/task-complete TASK-AUTH-001
 ```
 
-That's it! Three commands from idea to production-ready code.
+### Simple Tasks (Direct)
+
+```bash
+# Create and work on a simple task
+/task-create "Fix login button styling"
+/task-work TASK-a3f8  # Plans, reviews, implements, tests
+/task-complete TASK-a3f8
+```
+
+Three commands from idea to production-ready code.
 
 ## When to Use GuardKit
 
@@ -90,4 +110,4 @@ For formal requirements management (EARS notation, BDD with Gherkin, epic/featur
 
 ---
 
-**Built for pragmatic developers who ship quality code fast.**
+**Plan Features. Build Faster.** Built for pragmatic developers who ship quality code.
