@@ -7,35 +7,49 @@
 ![detection](https://img.shields.io/badge/detection-automatic-blueviolet)
 [![documentation](https://img.shields.io/badge/docs-online-blue)](https://guardkit.github.io/guardkit/)
 
-**Lightweight AI-assisted development with built-in quality gates.**
+**Plan Features. Build Faster.**
 
-Stop shipping broken code. Get architectural review before implementation and automatic test enforcement after. Simple task workflow, no ceremony.
+Stop shipping broken code. GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
 
-## Spec-Oriented Development (SOD)
+## Feature Plan Development (FPD)
 
-GuardKit provides **Spec-Oriented Development** out of the box:
+GuardKit treats **features as the unit of planning** and **tasks as the unit of execution**.
 
-✅ **Task descriptions as lightweight specifications**
-- Acceptance criteria instead of formal requirements (EARS)
-- Quick start, minimal ceremony
-- Perfect for solo developers and small teams
+```bash
+/feature-plan "add user authentication"
 
-✅ **Optional Upgrade to Spec-Driven Development (SDD)**
-- For teams needing formal requirements management, combine GuardKit with [RequireKit](https://github.com/requirekit/require-kit)
-- EARS notation requirements
-- BDD scenarios (Gherkin)
-- Epic/feature hierarchy
-- PM tool integration (Jira, Linear, GitHub)
-- Requirements traceability matrices
+# System automatically:
+# ✅ Creates review task
+# ✅ Analyzes technical options
+# ✅ Generates subtask breakdown
+# ✅ Detects parallel execution waves
+# ✅ Creates implementation guide
+# ✅ Sets up feature workspace
+```
 
-### Why "Spec-Oriented" vs "Spec-Driven"?
+### The FPD Manifesto
 
-| | Spec-Oriented (GuardKit) | Spec-Driven (Spec-Kit, Kiro, Tessl) |
+We believe that:
+
+- **Features over files** — Every capability deserves a clear Feature Plan
+- **Plans over improvisation** — AI excels at generating structured, repeatable plans
+- **Structured decomposition over ad-hoc tasking** — Developers do their best work when guided, not constrained
+- **Parallel execution over sequential bottlenecks** — Consistency is a feature, not a chore
+- **Automation where possible, human oversight where needed** — Quality gates built-in, not bolted on
+
+### FPD vs Spec-Driven Development
+
+| | Feature Plan Development (GuardKit) | Spec-Driven (Kiro, Tessl, etc.) |
 |---|---|---|
-| **Specs** | Task descriptions + acceptance criteria | Formal specifications (EARS, extensive docs) |
-| **Ceremony** | Minimal (1-2 minute task creation) | Heavy (30+ minute spec authoring) |
-| **Target** | Solo devs, small teams | Large teams, regulated industries |
-| **Flexibility** | Agile, iterative | Structured, plan-heavy |
+| **Starting Point** | Feature description → auto-generated plan | Manual specification authoring |
+| **Ceremony** | Minimal (single command) | Heavy (30+ minutes per spec) |
+| **Output** | Complete feature workspace + subtasks | Specification documents |
+| **Parallel Support** | Built-in wave detection + Conductor integration | Manual coordination |
+| **Target** | Solo devs to medium teams | Large teams, regulated industries |
+
+### Optional: Formal Requirements
+
+For teams needing formal requirements (EARS notation, BDD scenarios, epic hierarchy, PM tool sync), combine GuardKit with [RequireKit](https://github.com/requirekit/require-kit) for full Spec-Driven Development.
 
 ## What You Get
 
@@ -208,8 +222,8 @@ That's it! Three commands from idea to production-ready code.
    - 100% state preservation across worktrees
    - **Competitor gap**: Linear/Jira require sequential context switching
 
-5. **Spectrum of Formality** 📊
-   - Lightweight: GuardKit alone (SOD)
+5. **Feature-First Planning** 📊
+   - Lightweight: GuardKit alone (FPD)
    - Full-featured: GuardKit + RequireKit (SDD)
    - **Right amount of process for your team size**
 
@@ -220,23 +234,26 @@ That's it! Three commands from idea to production-ready code.
 
 ## Who Should Use GuardKit?
 
-| Audience | Use Case | Solution | Specs? | Parallel? |
-|----------|----------|----------|--------|-----------|
-| **Solo Developers** | Quick prototyping, personal projects | GuardKit (SOD) | Task descriptions | Optional (Conductor) |
-| **Small Teams (2-5)** | Agile development, startup MVPs | GuardKit (SOD) | Task descriptions | Recommended (Conductor) |
-| **Medium Teams (5-20)** | Structured development, traceability | GuardKit + RequireKit (SDD) | EARS + Gherkin | Recommended (Conductor) |
-| **Large Teams (20+)** | Regulated industries, compliance | GuardKit + RequireKit (SDD) | EARS + Gherkin + PM sync | Essential (Conductor) |
+| Audience | Use Case | Solution | Planning | Parallel? |
+|----------|----------|----------|----------|-----------|
+| **Solo Developers** | Quick prototyping, personal projects | GuardKit (FPD) | Feature plans + tasks | Optional (Conductor) |
+| **Small Teams (2-5)** | Agile development, startup MVPs | GuardKit (FPD) | Feature plans + tasks | Recommended (Conductor) |
+| **Medium Teams (5-20)** | Structured development, traceability | GuardKit + RequireKit | + EARS + Gherkin | Recommended (Conductor) |
+| **Large Teams (20+)** | Regulated industries, compliance | GuardKit + RequireKit | + EARS + PM sync | Essential (Conductor) |
 
 ### Migration Path
-- ✅ Start with GuardKit (SOD) - "Zero ceremony, get moving fast"
+- ✅ Start with GuardKit (FPD) - "One command, complete feature plan"
 - ✅ Add Conductor when parallelizing - "Work on multiple tasks simultaneously"
-- ✅ Add RequireKit when needed (SDD) - "Team grew? Need compliance? Upgrade seamlessly"
-
-## Need Requirements Management?
-
-For formal requirements (EARS notation, BDD scenarios, epic/feature hierarchy, PM tool sync), see [RequireKit](https://github.com/requirekit/require-kit) which integrates seamlessly with GuardKit.
+- ✅ Add RequireKit when needed - "Team grew? Need compliance? Upgrade seamlessly"
 
 ## Available Commands
+
+### Feature Planning (Recommended Starting Point)
+```bash
+/feature-plan "feature description"    # Single command → complete feature plan
+```
+
+This creates a review task, analyzes options, generates subtasks, and sets up the implementation workspace.
 
 ### Core Workflow
 ```bash
@@ -481,11 +498,42 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 
 ## Example Workflow
 
-### Real-World: User Authentication Feature
+### Feature Planning Flow (Recommended)
+
+```bash
+# 1. Plan the feature
+/feature-plan "add user authentication"
+
+# Output:
+# ✅ Created review task: TASK-REV-a3f8
+# 🔍 Analyzing technical options...
+#
+# TECHNICAL OPTIONS:
+#   Option 1: JWT with refresh tokens (Recommended)
+#   Option 2: Session-based auth
+#   Option 3: OAuth 2.0 integration
+#
+# DECISION: [A]ccept [R]evise [I]mplement [C]ancel
+# Your choice: I
+#
+# ✅ Created: tasks/backlog/user-authentication/
+#   ├── README.md
+#   ├── IMPLEMENTATION-GUIDE.md (2 parallel waves)
+#   ├── TASK-AUTH-001-setup-jwt-middleware.md
+#   ├── TASK-AUTH-002-create-user-model.md
+#   └── ... (3 more subtasks)
+
+# 2. Work through subtasks (use Conductor for parallel execution)
+/task-work TASK-AUTH-001
+/task-complete TASK-AUTH-001
+# ... continue through all subtasks
+```
+
+### Direct Task Flow (Simple Tasks)
 
 ```bash
 # 1. Create task
-/task-create "Add JWT-based user authentication"
+/task-create "Fix login button styling"
 # Created: TASK-p9r3
 
 # 2. Work on it (automatic phases)
@@ -494,14 +542,9 @@ Restart Claude Code, done! Now `/task-work` automatically fetches latest docs.
 # Output:
 # Phase 2: Implementation Planning ✅
 # Phase 2.5: Architectural Review (Score: 75/100) ✅
-# Phase 2.7: Complexity Evaluation (3/10 - Simple) ✅
-# Phase 2.8: Auto-proceed (no checkpoint needed)
-# Phase 3: Implementation (7 files created) ✅
-# Phase 4: Testing (15 tests, 92% coverage) ✅
-# Phase 4.5: Test Enforcement (All tests passing) ✅
+# Phase 3: Implementation (2 files modified) ✅
+# Phase 4: Testing (5 tests, 95% coverage) ✅
 # Phase 5: Code Review ✅
-# Phase 5.5: Plan Audit (0 violations) ✅
-#
 # Task moved to IN_REVIEW
 
 # 3. Complete
@@ -570,4 +613,4 @@ MIT License - See LICENSE file for details
 
 ---
 
-**Built for pragmatic developers who ship quality code fast.**
+**Plan Features. Build Faster.** Built for pragmatic developers who ship quality code.
