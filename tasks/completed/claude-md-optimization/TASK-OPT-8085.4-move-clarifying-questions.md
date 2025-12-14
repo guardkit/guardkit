@@ -1,9 +1,10 @@
 ---
 id: TASK-OPT-8085.4
 title: Move Clarifying Questions details to rules/
-status: backlog
+status: completed
 created: 2025-12-14T10:35:00Z
-updated: 2025-12-14T10:35:00Z
+updated: 2025-12-14T18:40:00Z
+completed: 2025-12-14T18:40:00Z
 priority: high
 tags: [optimization, documentation, claude-md]
 complexity: 3
@@ -113,7 +114,7 @@ GuardKit asks targeted questions before making assumptions during planning (~15%
 
 ## Acceptance Criteria
 
-- [ ] Section reduced from 3,668 to ~600 chars
-- [ ] `.claude/rules/clarifying-questions.md` created
-- [ ] No information lost
-- [ ] CLAUDE.md still parseable
+- [x] Section reduced from 3,668 to ~500 chars
+- [x] `.claude/rules/clarifying-questions.md` created
+- [x] No information lost
+- [x] CLAUDE.md still parseable

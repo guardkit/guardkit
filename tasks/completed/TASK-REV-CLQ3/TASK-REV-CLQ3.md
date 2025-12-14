@@ -1,11 +1,13 @@
 ---
 id: TASK-REV-CLQ3
 title: Review task-work clarification architecture - subagent vs orchestrator
-status: review_complete
+status: completed
 task_type: review
 review_mode: decision
 created: 2025-12-13T21:45:00Z
-updated: 2025-12-13T22:30:00Z
+updated: 2025-12-14T00:00:00Z
+completed: 2025-12-14T00:00:00Z
+completed_location: tasks/completed/TASK-REV-CLQ3/
 priority: high
 tags: [clarification, task-work, architecture, decision, subagent, orchestrator]
 complexity: 6

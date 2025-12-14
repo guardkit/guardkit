@@ -1,9 +1,10 @@
 ---
 id: TASK-OPT-8085.1
 title: Reduce Core AI Agents section in CLAUDE.md
-status: backlog
+status: completed
 created: 2025-12-14T10:35:00Z
-updated: 2025-12-14T10:35:00Z
+updated: 2025-12-14T18:40:00Z
+completed: 2025-12-14T18:40:00Z
 priority: high
 tags: [optimization, documentation, claude-md]
 complexity: 3
@@ -66,7 +67,7 @@ GuardKit uses AI-powered agent discovery to match tasks to specialists based on 
 
 ## Acceptance Criteria
 
-- [ ] Section reduced from 5,496 to ~800 chars
-- [ ] "See:" link points to valid guide
-- [ ] No information permanently lost
-- [ ] CLAUDE.md still parseable (no broken markdown)
+- [x] Section reduced from 5,496 to ~600 chars
+- [x] "See:" link points to valid guide
+- [x] No information permanently lost
+- [x] CLAUDE.md still parseable (no broken markdown)
