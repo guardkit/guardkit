@@ -1,14 +1,19 @@
 ---
 id: TASK-OPT-8085.5
 title: Reduce Incremental Enhancement section in CLAUDE.md
-status: backlog
+status: completed
 created: 2025-12-14T10:35:00Z
-updated: 2025-12-14T10:35:00Z
+updated: 2025-12-14T14:35:00Z
+completed: 2025-12-14T14:37:00Z
 priority: high
 tags: [optimization, documentation, claude-md]
 complexity: 2
 parent_review: TASK-REV-BFC1
 implementation_mode: direct
+previous_state: in_review
+state_transition_reason: "All acceptance criteria met - task completed successfully"
+completed_location: tasks/completed/TASK-OPT-8085.5/
+organized_files: ["TASK-OPT-8085.5.md"]
 ---
 
 # Task: Reduce Incremental Enhancement section in CLAUDE.md
@@ -66,7 +71,7 @@ Phase 8 of `/template-create` enables incremental agent enhancement - improve ag
 
 ## Acceptance Criteria
 
-- [ ] Section reduced from 3,343 to ~400 chars
-- [ ] "See:" link points to valid workflow doc
-- [ ] No information permanently lost
-- [ ] CLAUDE.md still parseable
+- [x] Section reduced from 3,343 to ~509 chars (85% reduction)
+- [x] "See:" link points to valid workflow doc (verified: docs/workflows/incremental-enhancement-workflow.md)
+- [x] No information permanently lost (all details preserved in workflow doc)
+- [x] CLAUDE.md still parseable (verified)
