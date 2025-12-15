@@ -305,14 +305,17 @@ verify_rules_structure() {
 # Create project configuration
 create_config() {
     print_info "Creating project configuration..."
-    
+
     local project_name=$(basename "$PROJECT_DIR")
     local detected_type=$(detect_project_type)
-    
+
+    # Use ~ for portability instead of absolute path
+    local extends_path="~/.agentecflow/templates/$TEMPLATE"
+
     cat > .claude/settings.json << EOF
 {
   "version": "1.0.0",
-  "extends": "$AGENTECFLOW_HOME/templates/$TEMPLATE",
+  "extends": "$extends_path",
   "project": {
     "name": "$project_name",
     "template": "$TEMPLATE",
