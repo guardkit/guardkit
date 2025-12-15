@@ -9,7 +9,7 @@
 
 **Plan Features. Build Faster.**
 
-Stop shipping broken code. GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
+GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation guide.
 
 ## Feature Plan Development (FPD)
 
@@ -24,32 +24,7 @@ GuardKit treats **features as the unit of planning** and **tasks as the unit of 
 # ✅ Generates subtask breakdown
 # ✅ Detects parallel execution waves
 # ✅ Creates implementation guide
-# ✅ Sets up feature workspace
 ```
-
-### The FPD Manifesto
-
-We believe that:
-
-- **Features over files** — Every capability deserves a clear Feature Plan
-- **Plans over improvisation** — AI excels at generating structured, repeatable plans
-- **Structured decomposition over ad-hoc tasking** — Developers do their best work when guided, not constrained
-- **Parallel execution over sequential bottlenecks** — Consistency is a feature, not a chore
-- **Automation where possible, human oversight where needed** — Quality gates built-in, not bolted on
-
-### FPD vs Spec-Driven Development
-
-| | Feature Plan Development (GuardKit) | Spec-Driven (Kiro, Tessl, etc.) |
-|---|---|---|
-| **Starting Point** | Feature description → auto-generated plan | Manual specification authoring |
-| **Ceremony** | Minimal (single command) | Heavy (30+ minutes per spec) |
-| **Output** | Complete feature workspace + subtasks | Specification documents |
-| **Parallel Support** | Built-in wave detection + Conductor integration | Manual coordination |
-| **Target** | Solo devs to medium teams | Large teams, regulated industries |
-
-### Optional: Formal Requirements
-
-For teams needing formal requirements (EARS notation, BDD scenarios, epic hierarchy, PM tool sync), combine GuardKit with [RequireKit](https://github.com/requirekit/require-kit) for full Spec-Driven Development.
 
 ## What You Get
 
@@ -134,7 +109,7 @@ GuardKit integrates seamlessly with [Conductor.build](https://conductor.build) f
 
 ### How It Works
 - **Multiple Worktrees** - Work on 3-5 tasks in parallel, each in isolated git worktree
-- **State Preservation** - 100% state sync across worktrees (no manual intervention)
+- **State Preservation** - State synchronsiation across worktrees (no manual intervention)
 - **Zero Context Switching** - Each worktree maintains its own implementation context
 - **Automatic Sync** - All commands available in every worktree, state updates propagate automatically
 
@@ -181,11 +156,11 @@ guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 |---------|----------|-------------|
 | **Quality Gates** | Built-in (architectural review, test enforcement, plan audit) | Manual or missing |
 | **Complexity Awareness** | Upfront 0-10 scoring, auto-split recommendations | React after problems |
-| **Parallel Development** | Conductor.build integration, 100% state sync | Sequential switching |
+| **Parallel Development** | Conductor.build integration, State sync | Sequential switching |
 | **AI Customization** | Template creation, agent discovery from your code | Generic tooling |
 | **Vendor Lock-In** | Zero (Markdown files, self-hosted) | SaaS platforms |
 
-**Start with GuardKit (FPD)** → **Add Conductor for parallel work** → **Add RequireKit when you need formal requirements**
+**Start with GuardKit (FPD)** → **Add Conductor for parallel work** → **Add [RequireKit](https://github.com/requirekit/require-kit) for Spec-Driven Development**
 
 ## Commands
 
@@ -199,7 +174,7 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 ### Core Workflow
 ```bash
 /task-create "description" [priority:high|medium|low]  # Natural language, auto-infers title
-/task-work TASK-XXX [--mode=standard|tdd] [--design-only] [--implement-only]
+/task-work TASK-XXX [--mode=standard|tdd] [--micro] [--design-only] [--implement-only]
 /task-complete TASK-XXX
 /task-status [TASK-XXX]
 /task-refine TASK-XXX  # Lightweight improvements
@@ -208,6 +183,7 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 ### Development Modes
 - **Standard** (default): Implementation + tests together
 - **TDD**: Test-Driven Development (Red → Green → Refactor)
+- **Micro** (`--micro`): Skip planning phases for trivial tasks
 
 ### Design-First Workflow
 ```bash
