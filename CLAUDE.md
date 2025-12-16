@@ -1203,6 +1203,30 @@ chmod +x ~/.agentecflow/bin/*
 ./installer/scripts/install.sh
 ```
 
+## Known Limitations
+
+### Monorepo Support in VS Code Extension
+
+**Issue**: When using GuardKit in a monorepo (multiple projects in one workspace) via the VS Code Claude Code Extension, task commands may create files at the workspace root level instead of the intended project's `tasks/` directory.
+
+**Why**: The VS Code Extension always opens at the workspace root. There's no facility to change the working directory within the extension.
+
+**Workaround**: For monorepos, use the CLI instead of the VS Code Extension:
+
+```bash
+# Navigate to the specific project first
+cd my-monorepo/project-a
+claude
+
+# Now run GuardKit commands - files will be created in project-a/tasks/
+/feature-plan "implement feature"
+/task-create "Fix bug"
+```
+
+**Affected Commands**: All task commands (`/task-create`, `/task-work`, `/task-review`, `/task-refine`, `/task-complete`, `/feature-plan`)
+
+**Single-Project Workspaces**: This limitation does not affect single-project workspaces. Only monorepos with multiple `tasks/` directories are affected.
+
 ## When to Use GuardKit
 
 ### Use When:
