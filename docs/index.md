@@ -6,7 +6,7 @@
 
 **Plan Features. Build Faster.**
 
-Stop shipping broken code. GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
+GuardKit is built on **Feature Plan Development (FPD)** — a feature-first workflow where a single `/feature-plan` command generates a complete, consistent plan, subtask breakdown, and implementation workspace.
 
 ## Key Features
 
