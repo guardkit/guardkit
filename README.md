@@ -28,7 +28,7 @@ GuardKit treats **features as the unit of planning** and **tasks as the unit of 
 
 ## What You Get
 
-- **Feature Planning**: Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
+- **Feature Planning**: Single `/feature-plan` command creates feature directory, README, implementation guide, and subtasks
 - **Clarifying Questions**: Targeted questions before assumptions, complexity-gated
 - **Hash-Based Task IDs**: Collision-free IDs enable concurrent creation and parallel development (Conductor.build compatible)
 - **PM Tool Integration**: Automatic mapping to JIRA, Azure DevOps, Linear, GitHub sequential IDs

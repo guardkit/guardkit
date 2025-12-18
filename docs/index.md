@@ -10,7 +10,7 @@ GuardKit is built on **Feature Plan Development (FPD)** — a feature-first work
 
 ## Key Features
 
-- **Feature Planning** - Single `/feature-plan` command generates complete workspace with subtasks and implementation guide
+- **Feature Planning** - Single `/feature-plan` command creates feature directory, README, implementation guide, and subtasks
 - **Clarifying Questions** - Targeted questions before assumptions, complexity-gated
 - **Architectural Review** - SOLID, DRY, YAGNI evaluation before coding
 - **Test Enforcement** - Automatic test fixing (up to 3 attempts), ensures 100% pass rate
