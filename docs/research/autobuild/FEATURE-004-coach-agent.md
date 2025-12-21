@@ -1,171 +1,108 @@
-# Feature 4: Coach Agent
+# FEATURE-004: Coach Agent (SubAgent Definition)
 
-> **Feature ID**: FEATURE-004
-> **Priority**: P0 (Core agent)
-> **Estimated Effort**: 1-2 days
-> **Dependencies**: FEATURE-002 (Agent SDK Infrastructure)
-
----
-
-## Summary
-
-Create the Coach agent - the validation-focused agent in the adversarial cooperation pattern. The Coach independently validates Player implementations against requirements. Only the Coach can approve task completion.
+> **Status**: Simplified to use DeepAgents SubAgentMiddleware
+> **Effort**: 1 day (down from 1-2 days)
+> **Dependencies**: F2 (DeepAgents Infrastructure)
+> **Enables**: F5 (Orchestrator)
 
 ---
 
-## The Key Insight
+## Overview
 
-> "The key insight in the adversarial dyad is to discard the implementing agent's self-report of success and have the coach perform an independent evaluation of compliance to requirements."
-> — Block AI Research
+The Coach Agent is the "validation-focused" agent in the adversarial cooperation pattern. It reviews the Player's implementation against requirements, runs validation checks, and either approves or provides specific feedback.
 
-The Coach does NOT trust the Player's claims. It independently:
-- Reads the requirements
-- Reviews the code changes
-- Runs the tests
-- Checks edge cases
-- Makes the approval decision
+**With DeepAgents**, the Coach is defined as a SubAgent configuration. This provides context isolation from the orchestrator while allowing custom model selection (Sonnet for better reasoning).
 
 ---
 
-## Agent Definition
-
-### Frontmatter
-
-```yaml
-# .claude/agents/autobuild-coach.md
----
-name: autobuild-coach
-description: Validation agent for AutoBuild adversarial loop
-model: sonnet  # Better reasoning for validation decisions
-triggers: []   # Only invoked by orchestrator
-stack: any     # Works with any technology stack
-
-contracts:
-  must_call:
-    - guardkit.agents.coach.validate_implementation
-    - guardkit.agents.coach.record_decision
-  must_not:
-    - trust player self-report
-    - skip independent verification
-    - approve without checking all requirements
-  must_output:
-    - structured JSON decision
-    - specific feedback if not approving
-
-collaborates_with:
-  - autobuild-player  # Provides feedback to player
----
-```
-
-### Agent Instructions
-
-```markdown
-## Your Role: COACH (Validation)
-
-You are the validation agent in an adversarial cooperation loop. Your job is to independently verify that the Player's implementation meets ALL requirements. You do NOT trust the Player's claims.
-
-## Critical Rules
-
-1. **NEVER trust "it works"** - The Player will claim success; you must verify
-2. **ALWAYS verify independently** - Run tests yourself, read the code
-3. **ALWAYS check ALL requirements** - Don't approve if anything is missing
-4. **Be SPECIFIC in feedback** - File, line number, exact issue
-5. **Only YOU can approve** - The Player cannot declare completion
-
-## Your Workflow
-
-1. **Read Original Requirements**
-   - Understand what was supposed to be built
-   - Note ALL acceptance criteria
-   - Identify expected edge cases
-
-2. **Review Player Report** (but don't trust it)
-   - Note what they claim to have done
-   - Use as a guide for what to verify
-   - Assume things may be missing or wrong
-
-3. **Independent Verification**
-   - Read the actual code changes
-   - Run the tests yourself
-   - Check edge cases
-   - Verify acceptance criteria
-
-4. **Make Decision**
-   - APPROVE only if ALL requirements met
-   - FEEDBACK with specific issues if not
-
-## Required Python Calls
-
-You MUST call these functions. Do NOT implement this functionality yourself.
+## SubAgent Definition
 
 ```python
-from guardkit.agents.coach import validate_implementation, record_decision
+# guardkit/agents/coach.py
+from typing import Sequence
+from langchain_core.tools import tool
 
-# At the START of validation:
-context = validate_implementation(
-    task_id="TASK-001",
-    requirements=["req1", "req2", "req3"],
-    player_report=player_report_dict
-)
-
-# At the END (after your decision):
-record_decision(
-    task_id="TASK-001",
-    decision="approve",  # or "feedback"
-    rationale="All requirements met and tests pass",
-    feedback_items=[]  # List of issues if decision is "feedback"
-)
+# Coach SubAgent configuration for DeepAgents
+COACH_SUBAGENT = {
+    "name": "coach",
+    "description": "Validation-focused agent that reviews implementation against requirements",
+    "system_prompt": COACH_INSTRUCTIONS,  # See below
+    "tools": COACH_TOOLS,
+    "model": "anthropic:claude-sonnet-4-5-20250929",  # Better reasoning
+}
 ```
 
-## Decision Criteria
+---
 
-### APPROVE When:
+## Coach Instructions
 
-- [ ] Every requirement has corresponding implementation
-- [ ] All tests pass (you ran them yourself)
-- [ ] Edge cases are handled appropriately
-- [ ] No obvious bugs or security issues
-- [ ] Code follows project patterns
+```python
+# guardkit/agents/coach.py
 
-### FEEDBACK When:
+COACH_INSTRUCTIONS = """
+# Coach Agent - Validation Focus
 
-- [ ] Any requirement is not implemented
-- [ ] Any test is failing
-- [ ] Edge cases are not handled
-- [ ] Bugs or issues found in code review
-- [ ] Code doesn't follow project patterns
+You are the Coach agent in an adversarial cooperation system. Your role is to critically review the Player's implementation and ensure it meets requirements.
 
-## Output Format
+## Your Responsibilities
+
+1. **Review** - Examine all code changes critically
+2. **Validate** - Run tests and verify functionality
+3. **Assess** - Compare implementation against requirements
+4. **Decide** - Approve or provide specific feedback
+
+## Reading Player's Report
+
+First, read the Player's report from:
+`/coordination/player/turn_{turn}/report.json`
+
+This tells you:
+- Which files were modified
+- Which tests were written
+- The Player's implementation notes
+- Any concerns the Player flagged
+
+## Validation Checklist
+
+Before making your decision, verify:
+
+### Code Quality
+- [ ] Code follows project conventions
+- [ ] Functions are well-named and focused
+- [ ] Error handling is appropriate
+- [ ] No obvious security issues
+
+### Testing
+- [ ] Tests exist for new functionality
+- [ ] Tests actually pass (run them!)
+- [ ] Tests cover edge cases
+- [ ] Test names are descriptive
+
+### Requirements
+- [ ] All acceptance criteria are met
+- [ ] No requirements were missed
+- [ ] No scope creep (extra unrequested features)
+
+### Integration
+- [ ] Changes don't break existing functionality
+- [ ] Dependencies are properly declared
+- [ ] No hardcoded values that should be config
+
+## Making Your Decision
+
+After validation, write your decision to:
+`/coordination/coach/turn_{turn}/decision.json`
 
 ### If APPROVING:
 
 ```json
 {
+  "task_id": "TASK-XXX",
+  "turn": 1,
   "decision": "approve",
-  "task_id": "TASK-001",
-  "requirements_verified": [
-    {
-      "requirement": "OAuth2 flow with PKCE",
-      "status": "met",
-      "evidence": "Implemented in google_provider.py using authlib PKCE"
-    },
-    {
-      "requirement": "Token refresh",
-      "status": "met", 
-      "evidence": "test_token_refresh_on_expiry passes"
-    }
-  ],
-  "tests_verified": {
-    "total": 4,
-    "passed": 4,
-    "failed": 0
-  },
-  "rationale": "All 4 requirements verified. Tests pass. Code follows existing patterns.",
-  "contracts_honored": {
-    "validate_implementation_called": true,
-    "record_decision_called": true,
-    "independent_verification": true
-  }
+  "rationale": "Clear explanation of why the implementation is acceptable",
+  "feedback_items": [],
+  "severity": "minor"
 }
 ```
 
@@ -173,179 +110,261 @@ record_decision(
 
 ```json
 {
+  "task_id": "TASK-XXX",
+  "turn": 1,
   "decision": "feedback",
-  "task_id": "TASK-001",
-  "requirements_verified": [
-    {
-      "requirement": "OAuth2 flow with PKCE",
-      "status": "met",
-      "evidence": "Implemented correctly"
-    },
-    {
-      "requirement": "Handle invalid credentials",
-      "status": "not_met",
-      "issue": "No error handling when credentials are revoked"
-    }
-  ],
-  "tests_verified": {
-    "total": 4,
-    "passed": 3,
-    "failed": 1,
-    "failures": ["test_revoked_credentials - no test exists"]
-  },
+  "rationale": "Overall assessment of what needs improvement",
   "feedback_items": [
-    {
-      "severity": "high",
-      "file": "src/auth/google_provider.py",
-      "line": 87,
-      "issue": "No handling for revoked credentials",
-      "suggestion": "Add try/catch for TokenRevokedError"
-    },
-    {
-      "severity": "medium",
-      "file": "tests/test_oauth.py",
-      "issue": "Missing test for revoked credentials scenario",
-      "suggestion": "Add test_revoked_credentials test case"
-    }
+    "Specific issue #1 with actionable fix",
+    "Specific issue #2 with actionable fix"
   ],
-  "rationale": "3 of 4 requirements met. Missing error handling for revoked credentials.",
-  "contracts_honored": {
-    "validate_implementation_called": true,
-    "record_decision_called": true,
-    "independent_verification": true
-  }
+  "severity": "major"
 }
 ```
 
-## Feedback Quality Guidelines
+## Feedback Guidelines
 
-### Good Feedback:
-✅ "src/auth/google_provider.py line 87: No handling for TokenRevokedError. Add try/catch."
-✅ "Missing test: test_revoked_credentials should verify graceful handling of revoked tokens"
-✅ "Requirement 'secure token storage' not met: tokens stored in plain text config file"
+When providing feedback:
 
-### Bad Feedback:
-❌ "The code has issues" (not specific)
-❌ "Tests need improvement" (not actionable)
-❌ "Doesn't look right" (not helpful)
+1. **Be Specific** - Point to exact files and line numbers
+2. **Be Actionable** - Explain HOW to fix, not just WHAT is wrong
+3. **Prioritize** - List most important issues first
+4. **Be Fair** - Don't nitpick if the implementation is fundamentally sound
 
-## What NOT To Do
+### Severity Levels
 
-❌ Trust the Player's claim that "all tests pass"
-❌ Approve without running tests yourself
-❌ Skip checking any requirements
-❌ Provide vague feedback
-❌ Approve because "it looks mostly done"
+- **minor**: Small issues, mostly style or minor improvements
+- **major**: Significant issues that affect functionality or maintainability
+- **critical**: Blocking issues like failing tests, security problems, or missing core functionality
 
-## What To Do
+## What NOT to Do
 
-✅ Run tests independently
-✅ Read actual code, not just Player's summary
-✅ Check every requirement explicitly
-✅ Provide specific, actionable feedback
-✅ Only approve when truly complete
+- Don't approve incomplete implementations
+- Don't fail work for subjective style preferences
+- Don't add new requirements not in the original spec
+- Don't provide vague feedback like "needs improvement"
+
+## The Adversarial Mindset
+
+Your job is to be a helpful critic, not an antagonist:
+- **Goal**: Help produce quality code, not block progress
+- **Approach**: Specific, actionable, fair criticism
+- **Standard**: Would you approve this for production?
+
+## Escalation
+
+If you encounter:
+- Security vulnerabilities
+- Fundamental misunderstanding of requirements
+- Issues that can't be fixed in remaining turns
+
+Set severity to "critical" and explain clearly in your rationale.
+
+## Remember
+
+The Player is trying their best. Your feedback should help them succeed, not demoralize them. Be critical but constructive.
+"""
 ```
 
 ---
 
-## Python Support Functions
+## Coach Tools
+
+```python
+# guardkit/agents/coach_tools.py
+from langchain_core.tools import tool
+import subprocess
+import json
+
+@tool
+def run_all_tests() -> str:
+    """
+    Run the full test suite and return results.
+    
+    Returns:
+        Test output with pass/fail counts
+    """
+    result = subprocess.run(
+        ["pytest", "-v", "--tb=short", "-q"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return f"Exit code: {result.returncode}\n\n{result.stdout}\n{result.stderr}"
+
+
+@tool
+def run_specific_tests(test_paths: list[str]) -> str:
+    """
+    Run specific test files.
+    
+    Args:
+        test_paths: List of test file paths to run
+    
+    Returns:
+        Test results
+    """
+    result = subprocess.run(
+        ["pytest", "-v", "--tb=short"] + test_paths,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return f"Exit code: {result.returncode}\n\n{result.stdout}\n{result.stderr}"
+
+
+@tool
+def check_coverage(source_path: str) -> str:
+    """
+    Check test coverage for a source file.
+    
+    Args:
+        source_path: Path to source file
+    
+    Returns:
+        Coverage percentage and uncovered lines
+    """
+    result = subprocess.run(
+        ["pytest", "--cov=" + source_path, "--cov-report=term-missing", "-q"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return result.stdout
+
+
+@tool
+def diff_changes() -> str:
+    """
+    Show git diff of all changes made by Player.
+    
+    Returns:
+        Git diff output
+    """
+    result = subprocess.run(
+        ["git", "diff", "--stat"],
+        capture_output=True,
+        text=True,
+    )
+    summary = result.stdout
+    
+    result = subprocess.run(
+        ["git", "diff"],
+        capture_output=True,
+        text=True,
+    )
+    
+    if len(result.stdout) > 10000:
+        return f"Summary:\n{summary}\n\n(Full diff truncated - {len(result.stdout)} chars)"
+    
+    return f"Summary:\n{summary}\n\nFull diff:\n{result.stdout}"
+
+
+@tool
+def validate_json_schema(file_path: str, expected_keys: list[str]) -> str:
+    """
+    Validate that a JSON file has expected structure.
+    
+    Args:
+        file_path: Path to JSON file
+        expected_keys: List of keys that must be present
+    
+    Returns:
+        Validation result
+    """
+    try:
+        with open(file_path) as f:
+            data = json.load(f)
+        
+        missing = [k for k in expected_keys if k not in data]
+        if missing:
+            return f"INVALID: Missing keys: {missing}"
+        return "VALID: All expected keys present"
+    except json.JSONDecodeError as e:
+        return f"INVALID: JSON parse error: {e}"
+    except FileNotFoundError:
+        return f"INVALID: File not found: {file_path}"
+
+
+# Collect all coach tools
+COACH_TOOLS = [
+    run_all_tests,
+    run_specific_tests,
+    check_coverage,
+    diff_changes,
+    validate_json_schema,
+]
+```
+
+---
+
+## Complete SubAgent Configuration
 
 ```python
 # guardkit/agents/coach.py
-from typing import List, Dict, Optional
-from enum import Enum
-from guardkit.sdk.tracing import get_trace
-import time
 
-class CoachDecision(Enum):
-    APPROVE = "approve"
-    FEEDBACK = "feedback"
+from guardkit.agents.coach_instructions import COACH_INSTRUCTIONS
+from guardkit.agents.coach_tools import COACH_TOOLS
 
-def validate_implementation(
-    task_id: str,
-    requirements: List[str],
-    player_report: dict
-) -> dict:
+def create_coach_subagent(model: str = "anthropic:claude-sonnet-4-5-20250929"):
     """
-    Set up validation context for coach.
-    
-    Must be called at the START of coach's work.
-    
-    Returns context dict with requirements and files to review.
-    """
-    trace = get_trace(task_id)
-    trace.log_python_call("validate_implementation")
-    trace.log_event("coach_validate_start", {
-        "requirements_count": len(requirements),
-        "player_files": player_report.get("files_modified", []),
-        "player_tests": player_report.get("tests_written", []),
-        "timestamp": time.time()
-    })
-    
-    return {
-        "task_id": task_id,
-        "requirements": requirements,
-        "files_to_review": player_report.get("files_modified", []),
-        "tests_to_run": player_report.get("tests_written", []),
-        "player_notes": player_report.get("implementation_notes", ""),
-        "player_concerns": player_report.get("concerns", [])
-    }
-
-def record_decision(
-    task_id: str,
-    decision: str,
-    rationale: str,
-    feedback_items: Optional[List[dict]] = None,
-    requirements_status: Optional[List[dict]] = None
-) -> dict:
-    """
-    Record coach decision for orchestrator.
-    
-    Must be called at the END of coach's work.
+    Create Coach SubAgent configuration for DeepAgents.
     
     Args:
-        task_id: The task being validated
-        decision: "approve" or "feedback"
-        rationale: Why this decision was made
-        feedback_items: List of specific issues (if decision is feedback)
-        requirements_status: Status of each requirement checked
+        model: Model to use for Coach (default: Sonnet for better reasoning)
+    
+    Returns:
+        SubAgent configuration dict
     """
-    trace = get_trace(task_id)
-    trace.log_python_call("record_decision")
-    trace.log_event("coach_decision", {
-        "decision": decision,
-        "rationale": rationale,
-        "feedback_count": len(feedback_items) if feedback_items else 0,
-        "timestamp": time.time()
-    })
-    
-    # Store feedback for player's next iteration
-    if feedback_items:
-        trace.log_event("coach_feedback", {
-            "items": feedback_items,
-            "requirements_status": requirements_status or []
-        })
-    
     return {
-        "task_id": task_id,
-        "decision": decision,
-        "rationale": rationale,
-        "feedback_items": feedback_items or [],
-        "is_approved": decision == "approve"
+        "name": "coach",
+        "description": (
+            "Validation-focused agent that reviews implementation against requirements. "
+            "Use this agent to validate code changes, run tests, and provide feedback. "
+            "The coach either approves work or provides specific, actionable feedback."
+        ),
+        "system_prompt": COACH_INSTRUCTIONS,
+        "tools": COACH_TOOLS,
+        "model": model,
     }
+```
 
-def get_validation_history(task_id: str) -> List[dict]:
-    """
-    Get history of coach validations for this task.
-    
-    Useful for seeing how many iterations have occurred.
-    """
-    trace = get_trace(task_id)
-    
-    return [
-        event.data for event in trace.events
-        if event.event_type == "coach_decision"
-    ]
+---
+
+## Decision Format
+
+The Coach writes decisions to the coordination filesystem:
+
+### Approval Decision
+
+```json
+// /coordination/coach/turn_1/decision.json
+{
+  "task_id": "TASK-001",
+  "turn": 1,
+  "decision": "approve",
+  "rationale": "Implementation correctly handles OAuth2 authorization code flow with PKCE. All tests pass (12/12). Code follows project conventions. Token refresh logic is well-implemented with appropriate error handling.",
+  "feedback_items": [],
+  "severity": "minor"
+}
+```
+
+### Feedback Decision
+
+```json
+// /coordination/coach/turn_1/decision.json
+{
+  "task_id": "TASK-001",
+  "turn": 1,
+  "decision": "feedback",
+  "rationale": "Core OAuth flow is implemented but several issues need attention before approval.",
+  "feedback_items": [
+    "CRITICAL: Token storage in memory will be lost on restart. Use Redis or database storage (src/auth/oauth.py:45)",
+    "MAJOR: Missing test for token expiration handling - add test case for expired token refresh",
+    "MINOR: Consider extracting magic number 3600 to TOKEN_LIFETIME_SECONDS constant"
+  ],
+  "severity": "major"
+}
 ```
 
 ---
@@ -356,233 +375,137 @@ def get_validation_history(task_id: str) -> List[dict]:
 guardkit/
 ├── agents/
 │   ├── __init__.py
-│   ├── player.py            # Player support functions
-│   └── coach.py             # Coach support functions
+│   ├── coach.py                # SubAgent config + create_coach_subagent()
+│   ├── coach_instructions.py   # COACH_INSTRUCTIONS constant
+│   └── coach_tools.py          # run_all_tests, diff_changes, etc.
+```
 
-.claude/
-├── agents/
-│   ├── autobuild-player.md  # Player agent instructions
-│   └── autobuild-coach.md   # Coach agent instructions
+---
+
+## Integration with Orchestrator
+
+The Coach is invoked by the orchestrator after Player completes:
+
+```python
+# In orchestrator flow:
+# 1. Player writes report to /coordination/player/turn_N/report.json
+# 2. Orchestrator invokes Coach via task tool
+# 3. Coach reads Player's report, validates, writes decision
+# 4. Orchestrator reads decision and routes accordingly
+
+# DeepAgents handles context isolation automatically
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+```python
+# tests/unit/agents/test_coach.py
+import pytest
+from guardkit.agents.coach import create_coach_subagent, COACH_INSTRUCTIONS
+
+def test_coach_subagent_has_required_fields():
+    subagent = create_coach_subagent()
+    assert subagent["name"] == "coach"
+    assert "description" in subagent
+    assert "system_prompt" in subagent
+    assert "tools" in subagent
+    assert "model" in subagent
+
+def test_coach_instructions_contain_decision_protocol():
+    assert "/coordination/coach/" in COACH_INSTRUCTIONS
+    assert "decision.json" in COACH_INSTRUCTIONS
+    assert "approve" in COACH_INSTRUCTIONS
+    assert "feedback" in COACH_INSTRUCTIONS
+
+def test_coach_uses_sonnet_by_default():
+    subagent = create_coach_subagent()
+    assert "sonnet" in subagent["model"]
+
+def test_coach_model_configurable():
+    subagent = create_coach_subagent(model="anthropic:claude-3-opus-20240229")
+    assert "opus" in subagent["model"]
+```
+
+### Integration Tests
+
+```python
+# tests/integration/agents/test_coach_execution.py
+import pytest
+from deepagents import create_deep_agent
+from guardkit.agents.coach import create_coach_subagent
+
+@pytest.mark.integration
+async def test_coach_can_be_invoked():
+    """Test that Coach subagent can be invoked via task tool."""
+    agent = create_deep_agent(
+        model="anthropic:claude-3-5-haiku-20241022",
+        subagents=[create_coach_subagent()],
+    )
+    
+    # First write a mock player report
+    setup_result = await agent.ainvoke({
+        "messages": [{
+            "role": "user",
+            "content": 'Write this to /coordination/player/turn_1/report.json: {"task_id": "TEST-001", "turn": 1, "files_modified": ["test.py"], "tests_written": [], "implementation_notes": "test", "concerns": []}'
+        }]
+    })
+    
+    # Then invoke coach
+    result = await agent.ainvoke({
+        "messages": [{
+            "role": "user",
+            "content": "Use the coach agent to review the player's work for turn 1"
+        }]
+    })
+    
+    assert result is not None
 ```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] Coach agent instructions created in `.claude/agents/autobuild-coach.md`
-- [ ] Agent frontmatter includes model selection (`sonnet`)
-- [ ] Agent frontmatter includes contract requirements
-- [ ] Python support functions implemented in `guardkit/agents/coach.py`
-- [ ] `validate_implementation()` logs to trace
-- [ ] `record_decision()` logs to trace with decision details
-- [ ] Coach independently verifies (doesn't trust Player)
-- [ ] Coach provides specific, actionable feedback
-- [ ] Coach decisions are logged for orchestrator
-- [ ] Only Coach can approve task completion
-- [ ] Feedback items include file, line, issue, suggestion
+- [ ] `create_coach_subagent()` returns valid SubAgent configuration
+- [ ] Coach instructions include decision protocol
+- [ ] Coach tools (`run_all_tests`, `diff_changes`, etc.) work correctly
+- [ ] Coach can be invoked via DeepAgents `task` tool
+- [ ] Coach reads Player reports from `/coordination/player/turn_N/report.json`
+- [ ] Coach writes decisions to `/coordination/coach/turn_N/decision.json`
+- [ ] Decision format matches schema (approve/feedback)
+- [ ] Unit tests pass
+- [ ] Integration test passes
 
 ---
 
-## Testing Approach
+## Migration Notes
 
-### Unit Tests
+### What Changed from Original Design
 
-```python
-# tests/unit/test_coach.py
-from guardkit.agents.coach import validate_implementation, record_decision
-from guardkit.sdk.tracing import get_trace, _traces
+| Original | DeepAgents-Based |
+|----------|------------------|
+| Custom `CoachAgent` class | SubAgent configuration dict |
+| Custom execution wrapper | DeepAgents `task` tool |
+| Custom context management | DeepAgents context isolation |
+| Complex decision logic | Simplified via instructions |
+| 1-2 days effort | 1 day effort |
 
-def setup_function():
-    _traces.clear()
+### What We Keep
 
-def test_validate_implementation_logs_trace():
-    player_report = {
-        "files_modified": ["src/test.py"],
-        "tests_written": ["test_feature"]
-    }
-    
-    result = validate_implementation(
-        task_id="TASK-001",
-        requirements=["req1", "req2"],
-        player_report=player_report
-    )
-    
-    assert result["task_id"] == "TASK-001"
-    assert len(result["requirements"]) == 2
-    
-    trace = get_trace("TASK-001")
-    assert "validate_implementation" in trace.python_calls
-
-def test_record_decision_approve():
-    result = record_decision(
-        task_id="TASK-001",
-        decision="approve",
-        rationale="All requirements met"
-    )
-    
-    assert result["is_approved"] == True
-    
-    trace = get_trace("TASK-001")
-    assert "record_decision" in trace.python_calls
-    
-    decision_events = [e for e in trace.events if e.event_type == "coach_decision"]
-    assert len(decision_events) == 1
-    assert decision_events[0].data["decision"] == "approve"
-
-def test_record_decision_feedback():
-    feedback_items = [
-        {"file": "src/test.py", "line": 42, "issue": "Missing null check"}
-    ]
-    
-    result = record_decision(
-        task_id="TASK-001",
-        decision="feedback",
-        rationale="Missing error handling",
-        feedback_items=feedback_items
-    )
-    
-    assert result["is_approved"] == False
-    assert len(result["feedback_items"]) == 1
-    
-    trace = get_trace("TASK-001")
-    feedback_events = [e for e in trace.events if e.event_type == "coach_feedback"]
-    assert len(feedback_events) == 1
-
-def test_contract_verification():
-    validate_implementation("TASK-001", ["req"], {"files_modified": []})
-    record_decision("TASK-001", "approve", "LGTM")
-    
-    trace = get_trace("TASK-001")
-    
-    assert trace.verify_contract([
-        "validate_implementation",
-        "record_decision"
-    ])
-```
-
-### Contract Tests
-
-```python
-# tests/contract/test_coach_contract.py
-
-def test_coach_output_has_required_fields(coach_output: dict):
-    """Verify coach output structure."""
-    required_fields = ["decision", "task_id", "rationale"]
-    
-    for field in required_fields:
-        assert field in coach_output
-
-def test_feedback_has_required_fields(feedback_item: dict):
-    """Verify feedback item structure."""
-    required_fields = ["file", "issue"]
-    
-    for field in required_fields:
-        assert field in feedback_item
-
-def test_coach_provides_specific_feedback(coach_output: dict):
-    """Verify feedback is specific, not vague."""
-    if coach_output["decision"] == "feedback":
-        for item in coach_output.get("feedback_items", []):
-            # Must have file reference
-            assert "file" in item and item["file"]
-            # Must have specific issue
-            assert "issue" in item and len(item["issue"]) > 10
-```
-
----
-
-## Example Coach Execution
-
-### Input (from Orchestrator)
-
-```
-## Task: TASK-001
-Validate Player implementation of OAuth2 authentication
-
-## Original Requirements
-1. Implement OAuth2 flow with PKCE
-2. Support token refresh
-3. Handle invalid credentials gracefully
-4. Store tokens securely
-
-## Player Report
-{
-  "files_modified": ["src/auth/oauth_service.py", "src/auth/google_provider.py"],
-  "tests_written": ["test_google_auth_flow", "test_token_refresh"],
-  "implementation_notes": "Implemented OAuth2 with authlib",
-  "concerns": ["Not sure about keyring availability"]
-}
-```
-
-### Output (FEEDBACK example)
-
-```json
-{
-  "decision": "feedback",
-  "task_id": "TASK-001",
-  "requirements_verified": [
-    {
-      "requirement": "OAuth2 flow with PKCE",
-      "status": "met",
-      "evidence": "PKCE implemented correctly in google_provider.py"
-    },
-    {
-      "requirement": "Token refresh",
-      "status": "met",
-      "evidence": "test_token_refresh passes"
-    },
-    {
-      "requirement": "Handle invalid credentials",
-      "status": "not_met",
-      "issue": "No error handling for invalid/expired credentials"
-    },
-    {
-      "requirement": "Secure token storage",
-      "status": "not_met",
-      "issue": "Tokens stored in plain text file, not keyring"
-    }
-  ],
-  "tests_verified": {
-    "total": 2,
-    "passed": 2,
-    "failed": 0,
-    "missing": ["test_invalid_credentials", "test_secure_storage"]
-  },
-  "feedback_items": [
-    {
-      "severity": "high",
-      "file": "src/auth/google_provider.py",
-      "line": 45,
-      "issue": "No exception handling for invalid credentials",
-      "suggestion": "Add try/catch for AuthenticationError and return user-friendly message"
-    },
-    {
-      "severity": "high",
-      "file": "src/auth/oauth_service.py",
-      "line": 78,
-      "issue": "Tokens written to tokens.json in plain text",
-      "suggestion": "Use keyring library for secure storage, with fallback for systems without keyring"
-    },
-    {
-      "severity": "medium",
-      "file": "tests/test_oauth.py",
-      "issue": "Missing test coverage",
-      "suggestion": "Add test_invalid_credentials and test_secure_storage tests"
-    }
-  ],
-  "rationale": "2 of 4 requirements met. Missing error handling and secure storage.",
-  "contracts_honored": {
-    "validate_implementation_called": true,
-    "record_decision_called": true,
-    "independent_verification": true
-  }
-}
-```
+- Coach instructions (the "soul" of the agent)
+- Coach tools (run_all_tests, diff_changes, etc.)
+- Decision format specification
+- Coordination protocol via filesystem
+- Different model from Player (Sonnet vs Haiku)
 
 ---
 
 ## References
 
-- Adversarial Cooperation: Block AI Research paper
-- Main spec: `AutoBuild_Product_Specification.md`
-- Player agent: `FEATURE-003-player-agent.md`
+- [DeepAgents SubAgents](https://docs.langchain.com/oss/python/deepagents/middleware#subagentmiddleware)
+- [FEATURE-002: DeepAgents Infrastructure](./FEATURE-002-agent-sdk-infrastructure.md)
+- [FEATURE-003: Player Agent](./FEATURE-003-player-agent.md)
+- [Adversarial Cooperation Paper](../adversarial-cooperation-in-code-synthesis.pdf)

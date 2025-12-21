@@ -1,453 +1,357 @@
-# Feature 2: Claude Agent SDK Infrastructure
+# FEATURE-002: DeepAgents Infrastructure
 
-> **Feature ID**: FEATURE-002
-> **Priority**: P0 (Foundation for all agent features)
-> **Estimated Effort**: 2-3 days
+> **Status**: Updated to use LangChain DeepAgents
+> **Effort**: 0.5 days (down from 2-3 days)
 > **Dependencies**: None
+> **Enables**: F3 (Player), F4 (Coach), F5 (Orchestrator)
 
 ---
 
-## Summary
+## Overview
 
-Create infrastructure to wrap Claude Agent SDK for use by player/coach agents and orchestrator. Handle async execution, worktree management, session isolation, and result capture.
+This feature configures the DeepAgents framework as the foundation for AutoBuild. DeepAgents is an official LangChain package (5.8k ⭐) that provides battle-tested infrastructure for long-horizon agent tasks.
+
+**What DeepAgents provides**:
+- `create_deep_agent()` - Agent factory with middleware stack
+- `FilesystemMiddleware` - Virtual filesystem for coordination (our blackboard)
+- `SubAgentMiddleware` - Isolated subagent spawning (Player/Coach)
+- `TodoListMiddleware` - Planning and task tracking
+- `SummarizationMiddleware` - Auto-summarize at 170K tokens
+- `HumanInTheLoopMiddleware` - Tool-level approval gates
+
+**What we add**:
+- `AdversarialLoopMiddleware` - Custom middleware for Player↔Coach loop
+- Git worktree management for parallel execution
+- GuardKit integration layer
 
 ---
 
-## Purpose
+## Installation
 
-The Claude Agent SDK provides the low-level capability to run Claude Code programmatically. This feature creates a higher-level abstraction that:
+```bash
+# Add to pyproject.toml
+pip install deepagents langgraph pyyaml rich
+```
 
-1. Manages isolated sessions (one per agent/task)
-2. Handles git worktrees for parallel execution
-3. Captures structured results (files modified, tests run, etc.)
-4. Provides async execution for parallelism
-5. Enables tracing for contract verification
+Dependencies:
+- `deepagents>=0.2.7` - Agent harness
+- `langgraph>=0.2.0` - Graph execution (transitive)
+- `langchain>=0.3.0` - Core framework (transitive)
+- `pyyaml>=6.0` - Feature file parsing
+- `rich>=13.0` - CLI progress display
 
 ---
 
 ## Components
 
-### 2.1 SDK Wrapper
+### 2.1 DeepAgents Configuration
 
 ```python
-# guardkit/sdk/claude_wrapper.py
-from claude_code_sdk import query, ClaudeCodeOptions
+# guardkit/orchestrator/config.py
 from dataclasses import dataclass, field
-from typing import Optional, List
-import asyncio
+from typing import Optional
+
+@dataclass
+class AutoBuildConfig:
+    """Configuration for AutoBuild orchestrator."""
+    
+    # Model configuration
+    orchestrator_model: str = "anthropic:claude-sonnet-4-5-20250929"
+    player_model: str = "anthropic:claude-3-5-haiku-20241022"
+    coach_model: str = "anthropic:claude-sonnet-4-5-20250929"
+    
+    # Loop configuration
+    max_turns: int = 5
+    require_approval_on_complete: bool = True
+    require_approval_on_escalate: bool = True
+    
+    # Filesystem paths (for coordination)
+    coordination_path: str = "/coordination/"
+    artifacts_path: str = "/artifacts/"
+    working_path: str = "/working/"
+    
+    # Git worktree settings
+    use_worktrees: bool = True
+    worktree_base: str = ".guardkit/worktrees"
+    
+    # Timeout settings
+    player_timeout: int = 300  # 5 minutes
+    coach_timeout: int = 120   # 2 minutes
+```
+
+### 2.2 Filesystem Backend Setup
+
+```python
+# guardkit/orchestrator/backends.py
+from deepagents.backends import (
+    CompositeBackend,
+    StateBackend,
+    StoreBackend,
+    FilesystemBackend,
+)
+from langgraph.store.memory import InMemoryStore
+from langgraph.checkpoint.sqlite import SqliteSaver
+from typing import Optional
+import os
+
+def create_coordination_backend(
+    store: Optional[InMemoryStore] = None,
+    persistent: bool = True,
+    db_path: str = ".guardkit/coordination.db",
+):
+    """
+    Create filesystem backend with coordination namespaces.
+    
+    Namespaces:
+    - /coordination/ - Player/Coach communication (persistent)
+    - /artifacts/    - Build outputs (persistent)
+    - /working/      - Ephemeral working state
+    
+    Args:
+        store: LangGraph store for persistence
+        persistent: Whether to persist coordination data
+        db_path: Path to SQLite database for checkpoints
+    
+    Returns:
+        Backend factory function for FilesystemMiddleware
+    """
+    if store is None:
+        store = InMemoryStore()
+    
+    def backend_factory(runtime):
+        if persistent:
+            return CompositeBackend(
+                default=StateBackend(runtime),
+                routes={
+                    "/coordination/": StoreBackend(runtime),
+                    "/artifacts/": StoreBackend(runtime),
+                }
+            )
+        else:
+            # All ephemeral for testing
+            return StateBackend(runtime)
+    
+    return backend_factory
+
+
+def create_checkpointer(db_path: str = ".guardkit/checkpoints.db"):
+    """Create SQLite checkpointer for workflow resume."""
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    return SqliteSaver.from_conn_string(db_path)
+```
+
+### 2.3 Git Worktree Manager
+
+```python
+# guardkit/orchestrator/worktrees.py
+import subprocess
+import os
+import shutil
+from dataclasses import dataclass
+from typing import Optional
 import uuid
 
 @dataclass
-class AgentSession:
-    """Isolated agent session with its own working directory."""
-    session_id: str
-    working_dir: str
-    options: ClaudeCodeOptions
-    created_at: float = field(default_factory=lambda: time.time())
-    
-    @classmethod
-    def create(cls, working_dir: str, session_id: Optional[str] = None) -> "AgentSession":
-        return cls(
-            session_id=session_id or str(uuid.uuid4())[:8],
-            working_dir=working_dir,
-            options=ClaudeCodeOptions(cwd=working_dir)
-        )
-
-class ClaudeAgentWrapper:
-    """Wrapper for Claude Agent SDK with GuardKit integration."""
-    
-    def __init__(self, default_timeout: int = 300):
-        self.default_timeout = default_timeout
-        self.active_sessions: dict[str, AgentSession] = {}
-    
-    async def create_session(
-        self, 
-        working_dir: str,
-        session_id: Optional[str] = None
-    ) -> AgentSession:
-        """Create isolated agent session."""
-        session = AgentSession.create(working_dir, session_id)
-        self.active_sessions[session.session_id] = session
-        return session
-    
-    async def execute(
-        self,
-        session: AgentSession,
-        prompt: str,
-        timeout: Optional[int] = None
-    ) -> "AgentResult":
-        """Execute prompt in agent session."""
-        timeout = timeout or self.default_timeout
-        
-        try:
-            result = await asyncio.wait_for(
-                query(prompt=prompt, options=session.options),
-                timeout=timeout
-            )
-            return AgentResult.from_sdk_result(result, session)
-        except asyncio.TimeoutError:
-            return AgentResult.timeout(session, timeout)
-        except Exception as e:
-            return AgentResult.error(session, str(e))
-    
-    async def execute_parallel(
-        self,
-        sessions: List[AgentSession],
-        prompts: List[str],
-        timeout: Optional[int] = None
-    ) -> List["AgentResult"]:
-        """Execute multiple prompts in parallel across sessions."""
-        if len(sessions) != len(prompts):
-            raise ValueError("Sessions and prompts must have same length")
-        
-        tasks = [
-            self.execute(session, prompt, timeout)
-            for session, prompt in zip(sessions, prompts)
-        ]
-        
-        return await asyncio.gather(*tasks)
-    
-    def cleanup_session(self, session_id: str) -> None:
-        """Remove session from tracking."""
-        self.active_sessions.pop(session_id, None)
-    
-    def get_active_sessions(self) -> List[AgentSession]:
-        """List all active sessions."""
-        return list(self.active_sessions.values())
-```
-
-### 2.2 Worktree Manager
-
-```python
-# guardkit/sdk/worktrees.py
-from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional, List
-import subprocess
-import shutil
-
-@dataclass
-class WorktreeInfo:
+class Worktree:
+    """Represents an isolated git worktree for a task."""
     task_id: str
-    path: Path
+    path: str
     branch: str
-    created_at: float
-    status: str  # "active" | "merged" | "abandoned"
+    created_at: str
+    
+    @property
+    def exists(self) -> bool:
+        return os.path.exists(self.path)
+
 
 class WorktreeManager:
-    """Manage git worktrees for parallel task execution."""
+    """
+    Manages git worktrees for parallel task isolation.
     
-    def __init__(self, repo_path: str):
-        self.repo_path = Path(repo_path)
-        self.worktrees_dir = self.repo_path / ".guardkit" / "worktrees"
-        self.worktrees_dir.mkdir(parents=True, exist_ok=True)
+    Each task gets its own worktree with a dedicated branch,
+    allowing multiple tasks to run in parallel without conflicts.
+    """
     
-    def create_worktree(
-        self, 
-        task_id: str, 
-        base_branch: str = "main"
-    ) -> Path:
-        """Create isolated worktree for task."""
-        worktree_path = self.worktrees_dir / task_id
+    def __init__(self, base_path: str = ".guardkit/worktrees"):
+        self.base_path = base_path
+        os.makedirs(base_path, exist_ok=True)
+    
+    def create(self, task_id: str) -> Worktree:
+        """
+        Create a new worktree for a task.
+        
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+        
+        Returns:
+            Worktree instance with path and branch info
+        """
         branch_name = f"autobuild/{task_id}"
+        worktree_path = os.path.join(self.base_path, task_id)
         
-        if worktree_path.exists():
-            raise ValueError(f"Worktree for {task_id} already exists")
-        
-        # Create branch and worktree
-        subprocess.run(
-            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base_branch],
-            cwd=self.repo_path,
-            check=True,
-            capture_output=True
-        )
-        
-        return worktree_path
-    
-    def cleanup_worktree(self, task_id: str) -> None:
-        """Remove worktree after task completion."""
-        worktree_path = self.worktrees_dir / task_id
-        branch_name = f"autobuild/{task_id}"
-        
-        if worktree_path.exists():
-            # Remove worktree
+        # Create branch if it doesn't exist
+        try:
             subprocess.run(
-                ["git", "worktree", "remove", str(worktree_path), "--force"],
-                cwd=self.repo_path,
-                capture_output=True
+                ["git", "branch", branch_name],
+                capture_output=True,
+                check=False,  # OK if branch exists
             )
+        except subprocess.CalledProcessError:
+            pass
         
-        # Delete branch (optional, may want to keep for history)
+        # Create worktree
         subprocess.run(
-            ["git", "branch", "-D", branch_name],
-            cwd=self.repo_path,
-            capture_output=True
+            ["git", "worktree", "add", worktree_path, branch_name],
+            capture_output=True,
+            check=True,
+        )
+        
+        return Worktree(
+            task_id=task_id,
+            path=worktree_path,
+            branch=branch_name,
+            created_at=subprocess.run(
+                ["date", "-Iseconds"],
+                capture_output=True,
+                text=True,
+            ).stdout.strip(),
         )
     
-    def merge_worktree(
-        self, 
-        task_id: str, 
-        target_branch: str = "main",
-        squash: bool = True
-    ) -> bool:
-        """Merge completed worktree back to target branch."""
-        branch_name = f"autobuild/{task_id}"
+    def get(self, task_id: str) -> Optional[Worktree]:
+        """Get existing worktree for a task."""
+        worktree_path = os.path.join(self.base_path, task_id)
+        if not os.path.exists(worktree_path):
+            return None
+        
+        # Get branch name
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        
+        return Worktree(
+            task_id=task_id,
+            path=worktree_path,
+            branch=result.stdout.strip(),
+            created_at="",  # Could parse from git log
+        )
+    
+    def merge(self, task_id: str, target_branch: str = "main") -> bool:
+        """
+        Merge worktree changes back to target branch.
+        
+        Args:
+            task_id: Task identifier
+            target_branch: Branch to merge into
+        
+        Returns:
+            True if merge succeeded, False otherwise
+        """
+        worktree = self.get(task_id)
+        if not worktree:
+            return False
         
         try:
-            # Checkout target branch
+            # Switch to main repo and merge
             subprocess.run(
                 ["git", "checkout", target_branch],
-                cwd=self.repo_path,
                 check=True,
-                capture_output=True
             )
-            
-            # Merge (squash by default for clean history)
-            merge_args = ["git", "merge"]
-            if squash:
-                merge_args.append("--squash")
-            merge_args.append(branch_name)
-            
             subprocess.run(
-                merge_args,
-                cwd=self.repo_path,
+                ["git", "merge", worktree.branch, "--no-ff", 
+                 "-m", f"Merge {task_id} from AutoBuild"],
                 check=True,
-                capture_output=True
             )
-            
-            if squash:
-                # Commit the squashed changes
-                subprocess.run(
-                    ["git", "commit", "-m", f"feat: {task_id} (autobuild)"],
-                    cwd=self.repo_path,
-                    check=True,
-                    capture_output=True
-                )
-            
             return True
-            
-        except subprocess.CalledProcessError as e:
-            # Merge conflict or other error
-            subprocess.run(
-                ["git", "merge", "--abort"],
-                cwd=self.repo_path,
-                capture_output=True
-            )
+        except subprocess.CalledProcessError:
             return False
     
-    def list_active_worktrees(self) -> List[WorktreeInfo]:
-        """List all active worktrees with status."""
+    def cleanup(self, task_id: str):
+        """Remove worktree and optionally delete branch."""
+        worktree_path = os.path.join(self.base_path, task_id)
+        
+        if os.path.exists(worktree_path):
+            subprocess.run(
+                ["git", "worktree", "remove", worktree_path, "--force"],
+                capture_output=True,
+            )
+    
+    def list_active(self) -> list[Worktree]:
+        """List all active worktrees."""
         result = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
-            cwd=self.repo_path,
             capture_output=True,
-            text=True
+            text=True,
         )
         
         worktrees = []
-        # Parse porcelain output
-        # ... implementation details
+        current_path = None
+        current_branch = None
+        
+        for line in result.stdout.split("\n"):
+            if line.startswith("worktree "):
+                current_path = line[9:]
+            elif line.startswith("branch "):
+                current_branch = line[7:]
+                if current_path and self.base_path in current_path:
+                    task_id = os.path.basename(current_path)
+                    worktrees.append(Worktree(
+                        task_id=task_id,
+                        path=current_path,
+                        branch=current_branch,
+                        created_at="",
+                    ))
+                current_path = None
+                current_branch = None
         
         return worktrees
-    
-    def get_worktree_path(self, task_id: str) -> Optional[Path]:
-        """Get path for task's worktree if it exists."""
-        path = self.worktrees_dir / task_id
-        return path if path.exists() else None
 ```
 
-### 2.3 Result Types
+### 2.4 Agent Result Types
 
 ```python
-# guardkit/sdk/types.py
+# guardkit/orchestrator/types.py
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, List, Any
-import time
-
-class AgentResultStatus(Enum):
-    SUCCESS = "success"
-    FAILURE = "failure"
-    TIMEOUT = "timeout"
-    ERROR = "error"
+from typing import Optional, Literal
+from datetime import datetime
 
 @dataclass
-class AgentResult:
-    """Result from agent execution."""
-    status: AgentResultStatus
-    session_id: str
-    output: str
-    files_modified: List[str] = field(default_factory=list)
-    tests_run: int = 0
-    tests_passed: int = 0
-    tests_failed: int = 0
-    duration_seconds: float = 0.0
-    error: Optional[str] = None
-    trace: Optional[dict] = None  # For contract verification
-    
-    @classmethod
-    def from_sdk_result(cls, result: Any, session: "AgentSession") -> "AgentResult":
-        """Parse SDK result into AgentResult."""
-        # Extract structured data from result
-        output = str(result)
-        
-        return cls(
-            status=AgentResultStatus.SUCCESS,
-            session_id=session.session_id,
-            output=output,
-            files_modified=cls._extract_files(output),
-            tests_run=cls._extract_test_count(output, "run"),
-            tests_passed=cls._extract_test_count(output, "passed"),
-            tests_failed=cls._extract_test_count(output, "failed"),
-            duration_seconds=time.time() - session.created_at
-        )
-    
-    @classmethod
-    def timeout(cls, session: "AgentSession", timeout: int) -> "AgentResult":
-        return cls(
-            status=AgentResultStatus.TIMEOUT,
-            session_id=session.session_id,
-            output="",
-            error=f"Execution timed out after {timeout} seconds"
-        )
-    
-    @classmethod
-    def error(cls, session: "AgentSession", error_msg: str) -> "AgentResult":
-        return cls(
-            status=AgentResultStatus.ERROR,
-            session_id=session.session_id,
-            output="",
-            error=error_msg
-        )
-    
-    @staticmethod
-    def _extract_files(output: str) -> List[str]:
-        """Extract modified files from output."""
-        # Pattern matching for file paths
-        # ... implementation
-        return []
-    
-    @staticmethod
-    def _extract_test_count(output: str, count_type: str) -> int:
-        """Extract test counts from output."""
-        # Pattern matching for test results
-        # ... implementation
-        return 0
-    
-    @property
-    def is_success(self) -> bool:
-        return self.status == AgentResultStatus.SUCCESS
-    
-    @property
-    def tests_all_passed(self) -> bool:
-        return self.tests_failed == 0 and self.tests_run > 0
-```
-
-### 2.4 Tracing Infrastructure
-
-```python
-# guardkit/sdk/tracing.py
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
-import json
-import time
-from pathlib import Path
-
-@dataclass
-class TraceEvent:
-    timestamp: float
-    event_type: str
-    data: Dict[str, Any]
-    
-    def to_dict(self) -> dict:
-        return {
-            "timestamp": self.timestamp,
-            "type": self.event_type,
-            "data": self.data
-        }
-
-@dataclass
-class WorkflowTrace:
-    """Trace of workflow execution for debugging and contract verification."""
+class PlayerReport:
+    """Report from Player agent after implementation attempt."""
     task_id: str
-    started_at: float = field(default_factory=time.time)
-    events: List[TraceEvent] = field(default_factory=list)
-    python_calls: List[str] = field(default_factory=list)
-    agent_invocations: Dict[str, int] = field(default_factory=dict)
-    
-    def log_event(self, event_type: str, data: Dict[str, Any]) -> None:
-        """Log an event to the trace."""
-        self.events.append(TraceEvent(
-            timestamp=time.time(),
-            event_type=event_type,
-            data=data
-        ))
-    
-    def log_python_call(self, function_name: str) -> None:
-        """Log a Python function call."""
-        self.python_calls.append(function_name)
-        self.log_event("python_call", {"function": function_name})
-    
-    def log_agent_invocation(self, agent_name: str) -> None:
-        """Log an agent invocation."""
-        self.agent_invocations[agent_name] = self.agent_invocations.get(agent_name, 0) + 1
-        self.log_event("agent_invocation", {"agent": agent_name})
-    
-    def verify_contract(self, expected_calls: List[str]) -> bool:
-        """Verify all expected Python calls were made."""
-        return all(call in self.python_calls for call in expected_calls)
-    
-    def save(self, path: Optional[Path] = None) -> Path:
-        """Save trace to file."""
-        if path is None:
-            path = Path(".guardkit") / "traces" / f"{self.task_id}.json"
-        
-        path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(path, "w") as f:
-            json.dump({
-                "task_id": self.task_id,
-                "started_at": self.started_at,
-                "duration": time.time() - self.started_at,
-                "events": [e.to_dict() for e in self.events],
-                "python_calls": self.python_calls,
-                "agent_invocations": self.agent_invocations
-            }, f, indent=2)
-        
-        return path
-    
-    @classmethod
-    def load(cls, task_id: str) -> Optional["WorkflowTrace"]:
-        """Load trace from file."""
-        path = Path(".guardkit") / "traces" / f"{task_id}.json"
-        if not path.exists():
-            return None
-        
-        with open(path) as f:
-            data = json.load(f)
-        
-        trace = cls(task_id=data["task_id"], started_at=data["started_at"])
-        trace.python_calls = data["python_calls"]
-        trace.agent_invocations = data["agent_invocations"]
-        # Reconstruct events...
-        
-        return trace
+    turn: int
+    files_modified: list[str]
+    tests_written: list[str]
+    implementation_notes: str
+    concerns: list[str] = field(default_factory=list)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
-# Global trace registry
-_traces: Dict[str, WorkflowTrace] = {}
 
-def get_trace(task_id: str) -> WorkflowTrace:
-    """Get or create trace for task."""
-    if task_id not in _traces:
-        _traces[task_id] = WorkflowTrace(task_id=task_id)
-    return _traces[task_id]
+@dataclass
+class CoachDecision:
+    """Decision from Coach agent after validation."""
+    task_id: str
+    turn: int
+    decision: Literal["approve", "feedback"]
+    rationale: str
+    feedback_items: list[str] = field(default_factory=list)
+    severity: Literal["minor", "major", "critical"] = "minor"
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
-def save_trace(task_id: str) -> Path:
-    """Save and clear trace for task."""
-    trace = _traces.pop(task_id, None)
-    if trace:
-        return trace.save()
-    raise ValueError(f"No trace found for {task_id}")
+
+@dataclass
+class TaskResult:
+    """Final result of an AutoBuild task."""
+    task_id: str
+    status: Literal["completed", "failed", "escalated"]
+    turns_used: int
+    final_decision: Optional[CoachDecision]
+    worktree_path: Optional[str]
+    merge_status: Optional[Literal["merged", "pending", "conflict"]]
+    summary: str
+    duration_seconds: float
 ```
 
 ---
@@ -456,107 +360,158 @@ def save_trace(task_id: str) -> Path:
 
 ```
 guardkit/
-├── sdk/
+├── orchestrator/
 │   ├── __init__.py
-│   ├── claude_wrapper.py    # ClaudeAgentWrapper
-│   ├── worktrees.py         # WorktreeManager
-│   ├── types.py             # AgentResult, AgentResultStatus
-│   └── tracing.py           # WorkflowTrace, TraceEvent
+│   ├── config.py          # AutoBuildConfig
+│   ├── backends.py        # Filesystem backend setup
+│   ├── worktrees.py       # Git worktree management
+│   ├── types.py           # PlayerReport, CoachDecision, TaskResult
+│   └── middleware.py      # AdversarialLoopMiddleware (see F5)
+```
+
+---
+
+## Usage Example
+
+```python
+from guardkit.orchestrator.config import AutoBuildConfig
+from guardkit.orchestrator.backends import (
+    create_coordination_backend,
+    create_checkpointer,
+)
+from guardkit.orchestrator.worktrees import WorktreeManager
+from deepagents import create_deep_agent
+
+# Configure
+config = AutoBuildConfig(
+    max_turns=5,
+    use_worktrees=True,
+)
+
+# Create infrastructure
+backend = create_coordination_backend(persistent=True)
+checkpointer = create_checkpointer()
+worktrees = WorktreeManager(config.worktree_base)
+
+# Create task worktree
+worktree = worktrees.create("TASK-001")
+
+# Agent creation happens in F5 (Orchestrator)
+# This module provides the infrastructure
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+```python
+# tests/unit/test_backends.py
+import pytest
+from guardkit.orchestrator.backends import create_coordination_backend
+
+def test_backend_factory_returns_callable():
+    backend = create_coordination_backend(persistent=False)
+    assert callable(backend)
+
+def test_coordination_paths_are_persistent():
+    # Test that /coordination/ routes to StoreBackend
+    pass
+
+
+# tests/unit/test_worktrees.py
+import pytest
+from guardkit.orchestrator.worktrees import WorktreeManager
+
+@pytest.fixture
+def worktree_manager(tmp_path):
+    return WorktreeManager(str(tmp_path / "worktrees"))
+
+def test_create_worktree(worktree_manager):
+    # Requires git repo context
+    pass
+
+def test_list_active_worktrees(worktree_manager):
+    pass
+```
+
+### Integration Tests
+
+```python
+# tests/integration/test_deepagents_setup.py
+import pytest
+from deepagents import create_deep_agent
+from guardkit.orchestrator.backends import create_coordination_backend
+
+@pytest.mark.integration
+def test_deepagent_creates_successfully():
+    """Verify DeepAgents setup works."""
+    agent = create_deep_agent(
+        model="anthropic:claude-3-5-haiku-20241022",
+        tools=[],
+        system_prompt="Test agent",
+    )
+    assert agent is not None
+
+@pytest.mark.integration
+def test_filesystem_middleware_coordination():
+    """Test that coordination paths work."""
+    backend = create_coordination_backend(persistent=False)
+    
+    agent = create_deep_agent(
+        model="anthropic:claude-3-5-haiku-20241022",
+        tools=[],
+        backend=backend,
+    )
+    
+    # Invoke and check filesystem operations work
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": "Write 'test' to /coordination/test.txt"}]
+    })
+    assert result is not None
 ```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `ClaudeAgentWrapper` can create isolated sessions
-- [ ] Sessions execute prompts via Claude Agent SDK
-- [ ] `execute_parallel` runs multiple sessions concurrently
-- [ ] `WorktreeManager` creates git worktrees for tasks
-- [ ] Worktrees are isolated (changes don't affect main)
-- [ ] Worktrees can be merged back to main branch
-- [ ] Merge conflicts are detected and reported
-- [ ] `AgentResult` captures output, files modified, test results
-- [ ] Trace data captured for contract verification
-- [ ] Traces can be saved and loaded
-- [ ] All async operations properly handle timeouts
+- [ ] `deepagents` package installed and importable
+- [ ] `create_coordination_backend()` returns working backend factory
+- [ ] `/coordination/` path routes to persistent storage
+- [ ] `/working/` path routes to ephemeral storage
+- [ ] `WorktreeManager.create()` creates isolated worktree
+- [ ] `WorktreeManager.merge()` merges changes back
+- [ ] `WorktreeManager.cleanup()` removes worktree
+- [ ] `create_checkpointer()` returns SQLite checkpointer
+- [ ] Type definitions (`PlayerReport`, `CoachDecision`, `TaskResult`) are complete
+- [ ] Unit tests pass
+- [ ] Integration test with DeepAgents passes
 
 ---
 
-## Testing Approach
+## Migration Notes
 
-### Unit Tests
+### What Changed from Original Design
 
-```python
-# tests/unit/test_worktrees.py
-def test_worktree_creation(tmp_git_repo):
-    manager = WorktreeManager(tmp_git_repo)
-    path = manager.create_worktree("TASK-001")
-    
-    assert path.exists()
-    assert (path / ".git").exists()
+| Original | DeepAgents-Based |
+|----------|------------------|
+| Custom `ClaudeAgentWrapper` | Use `create_deep_agent()` |
+| Custom `AgentSession` | DeepAgents handles session |
+| Custom async execution | DeepAgents async support |
+| 2-3 days effort | 0.5 days effort |
 
-def test_worktree_isolation(tmp_git_repo):
-    manager = WorktreeManager(tmp_git_repo)
-    path = manager.create_worktree("TASK-001")
-    
-    # Create file in worktree
-    (path / "new_file.py").write_text("# test")
-    
-    # File should not exist in main repo
-    assert not (Path(tmp_git_repo) / "new_file.py").exists()
+### What We Keep
 
-def test_worktree_merge(tmp_git_repo):
-    manager = WorktreeManager(tmp_git_repo)
-    path = manager.create_worktree("TASK-001")
-    
-    # Create and commit file in worktree
-    (path / "feature.py").write_text("# feature")
-    subprocess.run(["git", "add", "."], cwd=path)
-    subprocess.run(["git", "commit", "-m", "feat"], cwd=path)
-    
-    # Merge back
-    success = manager.merge_worktree("TASK-001")
-    
-    assert success
-    assert (Path(tmp_git_repo) / "feature.py").exists()
-```
-
-### Integration Tests
-
-```python
-# tests/integration/test_sdk_wrapper.py
-@pytest.mark.integration
-async def test_execute_simple_prompt():
-    wrapper = ClaudeAgentWrapper()
-    session = await wrapper.create_session("/tmp/test-project")
-    
-    result = await wrapper.execute(session, "echo 'hello'")
-    
-    assert result.is_success
-    assert "hello" in result.output
-
-@pytest.mark.integration
-async def test_execute_parallel():
-    wrapper = ClaudeAgentWrapper()
-    
-    sessions = [
-        await wrapper.create_session("/tmp/test-1"),
-        await wrapper.create_session("/tmp/test-2")
-    ]
-    
-    results = await wrapper.execute_parallel(
-        sessions,
-        ["echo 'one'", "echo 'two'"]
-    )
-    
-    assert len(results) == 2
-    assert all(r.is_success for r in results)
-```
+- Git worktree management (unique to our use case)
+- Type definitions (for type safety)
+- Configuration structure (GuardKit-specific)
 
 ---
 
 ## References
 
-- Claude Agent SDK: https://docs.anthropic.com/en/docs/claude-code/sdk
-- Git worktrees: https://git-scm.com/docs/git-worktree
-- Main spec: `AutoBuild_Product_Specification.md` (Testing Strategy section)
+- [DeepAgents Documentation](https://docs.langchain.com/oss/python/deepagents/overview)
+- [DeepAgents Middleware](https://docs.langchain.com/oss/python/deepagents/middleware)
+- [LangGraph Checkpointing](https://langchain-ai.github.io/langgraph/concepts/persistence/)
+- [Git Worktrees](https://git-scm.com/docs/git-worktree)

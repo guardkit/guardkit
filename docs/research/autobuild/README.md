@@ -1,86 +1,169 @@
-# AutoBuild Research
+# AutoBuild - Autonomous Feature Implementation for GuardKit
 
-This folder contains research into **AutoBuild** - GuardKit's autonomous feature implementation capability using adversarial cooperation (dialectical autocoding).
-
-## Overview
-
-AutoBuild enables GuardKit to automatically implement features after `/feature-plan` generates subtasks, using a coach-player feedback loop that iterates until requirements are met.
-
-## Key Concepts
-
-- **Dialectical Autocoding**: Two-agent feedback loop (player + coach) for autonomous coding
-- **Adversarial Cooperation**: Player implements, coach validates - neither can declare success alone
-- **Multi-Model Support**: Works with Claude, Devstral 2, DeepSeek, and other LLMs
-- **Fresh Context**: Each turn uses new agent instances to prevent context pollution
-
-## Documents in This Folder
-
-### Primary Research
-
-| Document | Description |
-|----------|-------------|
-| [Adversarial_Cooperation_AutoBuild_Research.md](./Adversarial_Cooperation_AutoBuild_Research.md) | **Main document** - Complete analysis of the adversarial cooperation pattern, implementation architecture, and phased rollout plan |
-
-### Related Research (Moved Here)
-
-These documents were previously in the parent research folder and provide background context:
-
-| Document | Description | Original Location |
-|----------|-------------|-------------------|
-| [claude_agent_sdk_integration_analysis.md](./claude_agent_sdk_integration_analysis.md) | Analysis of Claude Agents SDK capabilities | `docs/research/` |
-| [Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md) | Fast-path implementation using Claude SDK | `docs/research/` |
-| [Claude_Agent_SDK_True_End_to_End_Orchestrator.md](./Claude_Agent_SDK_True_End_to_End_Orchestrator.md) | Full automation specification | `docs/research/` |
-| [Claude_Agent_SDK_Two_Command_Feature_Workflow.md](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md) | Two-command workflow approach | `docs/research/` |
-| [agentecflow_langgraph_mcp_architecture_recommendation.md](./agentecflow_langgraph_mcp_architecture_recommendation.md) | LangGraph architecture recommendations | `docs/research/` |
-
-## Key References
-
-### Block AI Research Paper
-
-The primary inspiration for AutoBuild is the Block AI Research paper "Adversarial Cooperation in Code Synthesis" (December 8, 2025):
-
-- **Repository**: https://github.com/dhanji/g3
-- **Key Finding**: Adversarial cooperation achieves 5/5 completeness vs 1-4.5/5 for single-agent approaches
-- **Pattern**: Player implements → Coach validates → Iterate until approved
-
-### Multi-Model Options
-
-| Model | SWE-bench | Cost | Notes |
-|-------|-----------|------|-------|
-| Claude Sonnet 4 | ~50% | $3/$15 per M | Current default |
-| Devstral 2 | 72.2% | $0.40/$2.00 | **Free during preview** |
-| Devstral Small 2 | 68.0% | $0.10/$0.30 | Runs locally |
-| DeepSeek R1 | ~65% | ~$0.14/$0.28 | Open weights |
-
-## Implementation Status
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| Research | ✅ Complete | Pattern analysis, architecture design |
-| Phase 1 | 🔲 Not Started | Basic dialectical loop with single model |
-| Phase 2 | 🔲 Not Started | Multi-model support (Devstral, DeepSeek) |
-| Phase 3 | 🔲 Not Started | Parallel task execution |
-| Phase 4 | 🔲 Not Started | Human-in-the-loop refinements |
-
-## Quick Decision Summary
-
-**Why AutoBuild (not Orchestration)?**
-- "Orchestration" implies swarm/hive multi-agent systems
-- AutoBuild is a bounded two-agent loop, not emergent behavior
-- Clearer marketing: "autonomous feature building"
-
-**Why LangGraph (not Claude SDK alone)?**
-- Multi-model support (breaks vendor lock-in)
-- Cost story ($0 with local Devstral vs $200/mo Claude Max)
-- Industry-standard patterns (transferable knowledge)
-- Better content opportunities
-
-**Why Adversarial Cooperation (not single agent)?**
-- Proven 5/5 completeness vs 1-4.5/5 for single agents
-- Prevents premature success declaration
-- Fresh context each turn prevents pollution
-- Aligns with GuardKit philosophy: implementation ≠ done until validated
+> **Status**: Phase 1 Ready for Implementation
+> **Technology**: LangChain DeepAgents + LangGraph
+> **Timeline**: ~10 days (2 weeks)
 
 ---
 
-*Last Updated: December 19, 2025*
+## Overview
+
+AutoBuild adds autonomous feature implementation to GuardKit using the **adversarial cooperation** pattern. Two AI agents work together:
+
+- **Player Agent**: Implements code, writes tests
+- **Coach Agent**: Validates implementation, provides feedback
+
+They iterate until the Coach approves or max turns are reached.
+
+---
+
+## Architecture
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                   AutoBuild Orchestrator                    │
+│                   (LangChain DeepAgents)                    │
+├────────────────────────────────────────────────────────────┤
+│  Built-in Middleware:                                       │
+│  • TodoListMiddleware          (planning)                   │
+│  • FilesystemMiddleware        (coordination)               │
+│  • SubAgentMiddleware          (agent spawning)             │
+│  • SummarizationMiddleware     (context management)         │
+│  • HumanInTheLoopMiddleware    (approval gates)             │
+│                                                             │
+│  Custom Middleware:                                         │
+│  • AdversarialLoopMiddleware   (our innovation)             │
+├────────────────────────────────────────────────────────────┤
+│  SubAgents:                                                 │
+│  ┌─────────────────┐       ┌─────────────────┐             │
+│  │     Player      │◄─────►│      Coach      │             │
+│  │    (Haiku)      │       │    (Sonnet)     │             │
+│  └─────────────────┘       └─────────────────┘             │
+│           │                         │                       │
+│           └────────/coordination/───┘                       │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Documentation
+
+### Getting Started
+- [Phase 1 Kickoff](./AutoBuild_Phase1_Kickoff.md) - Start here
+- [Implementation Readiness Review](./Implementation_Readiness_Review.md) - Checklist
+
+### Features
+| Feature | Description | Doc |
+|---------|-------------|-----|
+| F1 | Enhanced feature-plan with YAML output | [FEATURE-001](./features/FEATURE-001-enhanced-feature-plan.md) |
+| F2 | DeepAgents infrastructure setup | [FEATURE-002](./features/FEATURE-002-agent-sdk-infrastructure.md) |
+| F3 | Player Agent (SubAgent definition) | [FEATURE-003](./features/FEATURE-003-player-agent.md) |
+| F4 | Coach Agent (SubAgent definition) | [FEATURE-004](./features/FEATURE-004-coach-agent.md) |
+| F5 | Orchestrator + AdversarialLoopMiddleware | [FEATURE-005](./features/FEATURE-005-adversarial-orchestrator.md) |
+| F6 | autobuild CLI commands | [FEATURE-006](./features/FEATURE-006-autobuild-cli.md) |
+
+### Research & Analysis
+- [DeepAgents Integration Analysis](./DeepAgents_Integration_Analysis.md) - Why we chose DeepAgents
+- [Claude-Flow Patterns Research](./Claude-Flow_Patterns_Research.md) - Coordination patterns
+- [Adversarial Cooperation Research](./Adversarial_Cooperation_AutoBuild_Research.md) - Academic backing
+- [Full Product Specification](./AutoBuild_Product_Specification.md) - Complete spec (4,300+ lines)
+
+---
+
+## Quick Start
+
+### Usage (After Implementation)
+
+```bash
+# Plan a feature with structured output
+guardkit feature-plan "Add OAuth2 authentication" --structured
+
+# Run autobuild on a single task
+guardkit autobuild task TASK-001
+
+# Run autobuild on entire feature
+guardkit autobuild feature FEAT-001 --parallel 2
+
+# Resume interrupted run
+guardkit autobuild resume FEAT-001
+```
+
+### How It Works
+
+1. **Plan**: `/feature-plan` creates structured YAML with tasks and dependencies
+2. **Execute**: `autobuild` runs tasks through Player→Coach loop
+3. **Iterate**: Coach provides feedback, Player refines
+4. **Approve**: Coach approves or escalates to human
+5. **Merge**: Approved changes merged to main branch
+
+---
+
+## Technology Stack
+
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| Agent Framework | DeepAgents | Agent harness with middleware |
+| Orchestration | LangGraph | State management, checkpointing |
+| Coordination | FilesystemMiddleware | Blackboard pattern |
+| Approval Gates | HumanInTheLoopMiddleware | Human review points |
+| Player Model | Claude 3.5 Haiku | Cost-efficient implementation |
+| Coach Model | Claude Sonnet 4.5 | Better reasoning for validation |
+
+---
+
+## Implementation Timeline
+
+```
+Week 1 (5 days):
+├── F1: Enhanced feature-plan      (2-3 days)
+├── F2: DeepAgents setup           (0.5 days)
+├── F3: Player Agent               (1 day)
+└── F4: Coach Agent                (1 day)
+
+Week 2 (5 days):
+├── F5: Orchestrator + Middleware  (2-3 days)
+└── F6: CLI + Integration          (1-2 days)
+
+Total: ~10 days
+```
+
+---
+
+## Key Innovation
+
+Our **AdversarialLoopMiddleware** implements the adversarial cooperation pattern on top of DeepAgents' infrastructure:
+
+```python
+class AdversarialLoopMiddleware(AgentMiddleware):
+    """Custom middleware for Player↔Coach loop control."""
+    
+    @property
+    def tools(self):
+        return [
+            start_adversarial_task,
+            get_loop_status,
+            complete_task,   # HITL gated
+            escalate_task,   # HITL gated
+        ]
+```
+
+This is what makes AutoBuild unique - the adversarial pattern ensures higher quality output than single-agent approaches.
+
+---
+
+## Success Metrics
+
+| Metric | Target |
+|--------|--------|
+| Task completion rate | ≥70% without human intervention |
+| Average turns per task | ≤4 |
+| Coach approval accuracy | No false positives |
+| Time to complete Phase 1 | ≤2 weeks |
+
+---
+
+## References
+
+- [DeepAgents](https://github.com/langchain-ai/deepagents) - 5.8k ⭐ LangChain agent harness
+- [LangGraph](https://langchain-ai.github.io/langgraph/) - State management
+- [Adversarial Cooperation Paper](./adversarial-cooperation-in-code-synthesis.pdf) - Academic research

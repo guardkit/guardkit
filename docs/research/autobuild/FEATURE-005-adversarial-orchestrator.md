@@ -1,682 +1,523 @@
-# Feature 5: Adversarial Loop Orchestrator
+# FEATURE-005: Adversarial Orchestrator (DeepAgents + Custom Middleware)
 
-> **Feature ID**: FEATURE-005
-> **Priority**: P0 (Core workflow)
-> **Estimated Effort**: 2-3 days
-> **Dependencies**: FEATURE-002, FEATURE-003, FEATURE-004
+> **Status**: Updated to use DeepAgents with custom AdversarialLoopMiddleware
+> **Effort**: 2-3 days (unchanged - middleware is our core innovation)
+> **Dependencies**: F2 (DeepAgents Infrastructure), F3 (Player), F4 (Coach)
+> **Enables**: F6 (CLI)
 
 ---
 
-## Summary
+## Overview
 
-Create the LangGraph-based orchestrator that runs the adversarial cooperation loop. The orchestrator manages the Player → Coach → Feedback cycle until approval or turn limit is reached.
+The Adversarial Orchestrator manages the Player↔Coach loop using DeepAgents as the foundation. Our custom `AdversarialLoopMiddleware` implements the adversarial cooperation pattern on top of DeepAgents' built-in capabilities.
+
+**What DeepAgents provides**:
+- `create_deep_agent()` - Agent factory
+- `FilesystemMiddleware` - Coordination filesystem (our blackboard)
+- `SubAgentMiddleware` - Player/Coach spawning
+- `HumanInTheLoopMiddleware` - Approval gates
+
+**What we add**:
+- `AdversarialLoopMiddleware` - Custom middleware for Player↔Coach loop control
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      ADVERSARIAL LOOP ORCHESTRATOR                      │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│   ┌──────────┐     ┌──────────┐     ┌─────────────┐                    │
-│   │Initialize│────▶│  Player  │────▶│    Coach    │                    │
-│   └──────────┘     └──────────┘     └─────────────┘                    │
-│                          ▲                 │                            │
-│                          │                 │                            │
-│                          │    ┌────────────┴────────────┐              │
-│                          │    │                         │              │
-│                          │    ▼                         ▼              │
-│                    ┌──────────┐                  ┌──────────┐          │
-│                    │ Feedback │                  │  Success │          │
-│                    │  (loop)  │                  │  (exit)  │          │
-│                    └──────────┘                  └──────────┘          │
-│                                                                         │
-│   Turn Limit: 10 (configurable)                                        │
-│   Fresh Context: Each turn                                              │
-│   State: Persisted (resumable)                                         │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                   AutoBuild Orchestrator                    │
+│                   (create_deep_agent)                       │
+├────────────────────────────────────────────────────────────┤
+│  Middleware Stack:                                          │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │ TodoListMiddleware          (planning)               │  │
+│  │ FilesystemMiddleware        (coordination/blackboard)│  │
+│  │ SubAgentMiddleware          (player/coach spawning)  │  │
+│  │ SummarizationMiddleware     (context management)     │  │
+│  │ AdversarialLoopMiddleware   (OUR CUSTOM)             │◄─┼── Our innovation
+│  │ HumanInTheLoopMiddleware    (approval gates)         │  │
+│  └──────────────────────────────────────────────────────┘  │
+├────────────────────────────────────────────────────────────┤
+│  SubAgents:                                                 │
+│  ┌─────────────────┐       ┌─────────────────┐            │
+│  │     Player      │       │      Coach      │            │
+│  │    (Haiku)      │       │    (Sonnet)     │            │
+│  └─────────────────┘       └─────────────────┘            │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## State Schema
+## AdversarialLoopMiddleware
+
+This is our core innovation - a custom LangChain middleware that implements the adversarial cooperation pattern.
 
 ```python
-# guardkit/orchestrator/state.py
-from typing import TypedDict, Annotated, Literal, Optional, List
-from langgraph.graph import add_messages
-from datetime import datetime
+# guardkit/orchestrator/middleware.py
+from langchain.agents.middleware import AgentMiddleware
+from langchain_core.tools import tool
+from typing import Any, Literal
+import json
 
-class TaskRequirements(TypedDict):
-    """Immutable requirements for the task."""
-    description: str
-    acceptance_criteria: List[str]
-    context_files: List[str]  # Files relevant to the task
+class AdversarialLoopMiddleware(AgentMiddleware):
+    """
+    Custom middleware implementing the adversarial cooperation pattern.
+    
+    Provides tools for:
+    - Starting adversarial task loops
+    - Tracking loop state (turns, status)
+    - Routing between Player and Coach
+    - Completing or escalating tasks
+    
+    Communication happens via FilesystemMiddleware at /coordination/.
+    """
+    
+    def __init__(
+        self,
+        player_name: str = "player",
+        coach_name: str = "coach",
+        max_turns: int = 5,
+        coordination_path: str = "/coordination/",
+    ):
+        super().__init__()
+        self.player_name = player_name
+        self.coach_name = coach_name
+        self.max_turns = max_turns
+        self.coordination_path = coordination_path
+    
+    @property
+    def name(self) -> str:
+        return "AdversarialLoopMiddleware"
+    
+    @property
+    def tools(self) -> list:
+        """Provide adversarial loop control tools."""
+        return [
+            self._create_start_task_tool(),
+            self._create_get_status_tool(),
+            self._create_complete_task_tool(),
+            self._create_escalate_tool(),
+        ]
+    
+    def _create_start_task_tool(self):
+        @tool
+        def start_adversarial_task(
+            task_id: str,
+            requirements: str,
+            acceptance_criteria: list[str],
+        ) -> str:
+            """
+            Start an adversarial task loop.
+            
+            This initializes the loop state and prepares for Player execution.
+            
+            Args:
+                task_id: Unique task identifier (e.g., "TASK-001")
+                requirements: Task requirements description
+                acceptance_criteria: List of acceptance criteria
+            
+            Returns:
+                Instructions for proceeding with the loop
+            """
+            # Write initial state to coordination filesystem
+            state = {
+                "task_id": task_id,
+                "current_turn": 1,
+                "max_turns": self.max_turns,
+                "status": "in_progress",
+                "requirements": requirements,
+                "acceptance_criteria": acceptance_criteria,
+                "history": [],
+            }
+            
+            return f"""
+Adversarial task {task_id} initialized.
 
-class PlayerReport(TypedDict):
-    """Report from player agent."""
-    files_modified: List[str]
-    files_created: List[str]
-    tests_written: List[str]
-    implementation_notes: str
-    concerns: List[str]
+NEXT STEP: Delegate to the "{self.player_name}" subagent with these instructions:
 
-class CoachFeedback(TypedDict):
-    """Feedback from coach agent."""
-    decision: Literal["approve", "feedback"]
-    rationale: str
-    feedback_items: List[dict]
-    requirements_status: List[dict]
+"Implement task {task_id}. Requirements: {requirements}
 
-class AutoBuildState(TypedDict):
-    """State for adversarial loop orchestrator."""
+Acceptance criteria:
+{chr(10).join(f'- {c}' for c in acceptance_criteria)}
+
+After implementation, write your report to {self.coordination_path}player/turn_1/report.json"
+
+After player completes, delegate to "{self.coach_name}" subagent to review.
+"""
+        return start_adversarial_task
     
-    # Task identification
-    task_id: str
-    feature_id: Optional[str]
+    def _create_get_status_tool(self):
+        @tool
+        def get_loop_status(task_id: str) -> str:
+            """
+            Get current status of an adversarial loop.
+            
+            Args:
+                task_id: Task identifier
+            
+            Returns:
+                Current loop state as JSON
+            """
+            # Read from coordination filesystem
+            return f"Read status from {self.coordination_path}state/{task_id}.json"
+        return get_loop_status
     
-    # Requirements (immutable during loop)
-    requirements: TaskRequirements
+    def _create_complete_task_tool(self):
+        @tool
+        def complete_task(task_id: str, summary: str) -> str:
+            """
+            Mark task as successfully completed.
+            
+            This should only be called after Coach approves.
+            Note: This tool requires human approval (HITL).
+            
+            Args:
+                task_id: Task identifier
+                summary: Summary of completed work
+            
+            Returns:
+                Completion confirmation
+            """
+            return f"Task {task_id} marked as complete. Summary: {summary}"
+        return complete_task
     
-    # Loop tracking
-    turn_count: int
-    max_turns: int  # Default 10
-    started_at: str  # ISO timestamp
+    def _create_escalate_tool(self):
+        @tool
+        def escalate_task(
+            task_id: str,
+            reason: str,
+            severity: Literal["minor", "major", "critical"] = "major",
+        ) -> str:
+            """
+            Escalate task to human intervention.
+            
+            Use when:
+            - Max turns reached without approval
+            - Critical issues discovered
+            - Requirements are unclear
+            
+            Note: This tool requires human approval (HITL).
+            
+            Args:
+                task_id: Task identifier
+                reason: Why escalation is needed
+                severity: Issue severity
+            
+            Returns:
+                Escalation confirmation
+            """
+            return f"Task {task_id} escalated ({severity}). Reason: {reason}"
+        return escalate_task
     
-    # Current phase
-    phase: Literal[
-        "initializing",
-        "player_implementing", 
-        "coach_validating",
-        "processing_feedback",
-        "completed",
-        "failed",
-        "escalated"
-    ]
-    
-    # Player state (updated each turn)
-    player_report: Optional[PlayerReport]
-    
-    # Coach state (updated each turn)
-    coach_feedback: Optional[CoachFeedback]
-    coach_decision: Literal["pending", "approve", "feedback"]
-    
-    # Accumulated feedback history (for context)
-    feedback_history: Annotated[List[CoachFeedback], lambda x, y: x + y]
-    
-    # Outcome
-    success: Optional[bool]
-    failure_reason: Optional[str]
-    
-    # Message history (for debugging, not passed to agents)
-    messages: Annotated[List[dict], add_messages]
+    def modify_model_request(self, request, runtime):
+        """Inject adversarial loop instructions into system prompt."""
+        adversarial_instructions = f"""
+## Adversarial Task Execution Protocol
+
+When executing a task using the adversarial pattern:
+
+### Starting a Task
+1. Call `start_adversarial_task` with task details
+2. Follow the returned instructions
+
+### The Adversarial Loop
+For each turn (max {self.max_turns} turns):
+
+1. **Player Turn**: Delegate to "{self.player_name}" subagent
+   - Player implements code
+   - Player writes report to {self.coordination_path}player/turn_N/report.json
+
+2. **Coach Turn**: Delegate to "{self.coach_name}" subagent  
+   - Coach reads player's report
+   - Coach validates implementation
+   - Coach writes decision to {self.coordination_path}coach/turn_N/decision.json
+
+3. **Decision Routing**:
+   - If Coach approves → Call `complete_task`
+   - If Coach gives feedback → Start next turn with Player
+   - If max turns reached → Call `escalate_task`
+
+### Communication Rules
+- Player and Coach NEVER communicate directly
+- All coordination happens through {self.coordination_path}
+- Read reports/decisions before proceeding
+
+### Current Limits
+- Max turns: {self.max_turns}
+- Player model: Cost-efficient (Haiku)
+- Coach model: Better reasoning (Sonnet)
+"""
+        # Append to existing system prompt
+        if hasattr(request, 'system_prompt'):
+            request.system_prompt = (request.system_prompt or "") + adversarial_instructions
+        return request
 ```
 
 ---
 
-## Graph Structure
+## Orchestrator Factory
 
 ```python
-# guardkit/orchestrator/graph.py
-from langgraph.graph import StateGraph, START, END
+# guardkit/orchestrator/factory.py
+from deepagents import create_deep_agent
+from deepagents.middleware import FilesystemMiddleware
+from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
+from langgraph.store.memory import InMemoryStore
 from langgraph.checkpoint.sqlite import SqliteSaver
-from guardkit.orchestrator.state import AutoBuildState
-from guardkit.orchestrator.nodes import (
-    initialize_task,
-    execute_player,
-    execute_coach,
-    process_feedback,
-    finalize_success,
-    finalize_failure,
-    finalize_escalation
-)
-from guardkit.orchestrator.edges import route_coach_decision
-from pathlib import Path
 
-def build_autobuild_graph(
-    checkpoint_path: str = ".guardkit/checkpoints/autobuild.db"
-) -> StateGraph:
-    """Build the adversarial loop graph."""
-    
-    # Ensure checkpoint directory exists
-    Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
-    
-    # Create graph
-    graph = StateGraph(AutoBuildState)
-    
-    # Add nodes
-    graph.add_node("initialize", initialize_task)
-    graph.add_node("player_turn", execute_player)
-    graph.add_node("coach_turn", execute_coach)
-    graph.add_node("process_feedback", process_feedback)
-    graph.add_node("finalize_success", finalize_success)
-    graph.add_node("finalize_failure", finalize_failure)
-    graph.add_node("finalize_escalation", finalize_escalation)
-    
-    # Add edges
-    graph.add_edge(START, "initialize")
-    graph.add_edge("initialize", "player_turn")
-    graph.add_edge("player_turn", "coach_turn")
-    
-    # Conditional routing after coach
-    graph.add_conditional_edges(
-        "coach_turn",
-        route_coach_decision,
-        {
-            "approve": "finalize_success",
-            "feedback": "process_feedback",
-            "max_turns": "finalize_failure",
-            "escalate": "finalize_escalation"
-        }
-    )
-    
-    # Feedback loops back to player
-    graph.add_edge("process_feedback", "player_turn")
-    
-    # All finalizers go to END
-    graph.add_edge("finalize_success", END)
-    graph.add_edge("finalize_failure", END)
-    graph.add_edge("finalize_escalation", END)
-    
-    # Compile with checkpointer for state persistence
-    checkpointer = SqliteSaver.from_conn_string(checkpoint_path)
-    
-    return graph.compile(checkpointer=checkpointer)
+from guardkit.orchestrator.middleware import AdversarialLoopMiddleware
+from guardkit.orchestrator.config import AutoBuildConfig
+from guardkit.agents.player import create_player_subagent
+from guardkit.agents.coach import create_coach_subagent
 
-def get_graph() -> StateGraph:
-    """Get the singleton graph instance."""
-    global _graph
-    if _graph is None:
-        _graph = build_autobuild_graph()
-    return _graph
+ORCHESTRATOR_INSTRUCTIONS = """
+# AutoBuild Orchestrator
 
-_graph = None
-```
+You are the AutoBuild orchestrator. Your job is to coordinate the implementation of tasks using the adversarial cooperation pattern.
 
----
+## Your Role
+- Receive tasks from the user
+- Coordinate Player and Coach agents
+- Track progress and handle decisions
+- Report results
 
-## Node Implementations
+## Available SubAgents
+- **player**: Implementation-focused agent (writes code, tests)
+- **coach**: Validation-focused agent (reviews, approves/rejects)
 
-```python
-# guardkit/orchestrator/nodes.py
-from guardkit.orchestrator.state import AutoBuildState, PlayerReport, CoachFeedback
-from guardkit.sdk.claude_wrapper import ClaudeAgentWrapper, AgentSession
-from guardkit.sdk.worktrees import WorktreeManager
-from guardkit.sdk.tracing import get_trace, save_trace
-from guardkit.tasks import load_task
-from datetime import datetime
-from typing import Dict, Any
+## Workflow
+1. User provides task details
+2. You start the adversarial loop
+3. Player implements, Coach validates
+4. Loop continues until approval or max turns
+5. You report the final result
 
-# Singleton instances
-_agent_wrapper = ClaudeAgentWrapper()
-_worktree_manager: WorktreeManager = None
-
-def get_worktree_manager() -> WorktreeManager:
-    global _worktree_manager
-    if _worktree_manager is None:
-        _worktree_manager = WorktreeManager(".")
-    return _worktree_manager
-
-
-async def initialize_task(state: AutoBuildState) -> Dict[str, Any]:
-    """Load task requirements and set up initial state."""
-    task_id = state["task_id"]
-    
-    # Load task from .guardkit/tasks/
-    task = load_task(task_id)
-    
-    # Create worktree for isolated execution
-    wtm = get_worktree_manager()
-    worktree_path = wtm.create_worktree(task_id)
-    
-    # Initialize trace
-    trace = get_trace(task_id)
-    trace.log_event("orchestrator_start", {
-        "task_id": task_id,
-        "worktree": str(worktree_path)
-    })
-    
-    return {
-        "requirements": {
-            "description": task.description,
-            "acceptance_criteria": task.acceptance_criteria,
-            "context_files": task.context_files or []
-        },
-        "turn_count": 0,
-        "max_turns": state.get("max_turns", 10),
-        "started_at": datetime.utcnow().isoformat(),
-        "phase": "player_implementing",
-        "coach_decision": "pending",
-        "feedback_history": [],
-        "messages": [{
-            "role": "system",
-            "content": f"Starting autobuild for {task_id}"
-        }]
-    }
-
-
-async def execute_player(state: AutoBuildState) -> Dict[str, Any]:
-    """Run player agent in isolated session."""
-    task_id = state["task_id"]
-    
-    # Get worktree path
-    wtm = get_worktree_manager()
-    worktree_path = wtm.get_worktree_path(task_id)
-    
-    # Create agent session
-    session = await _agent_wrapper.create_session(
-        working_dir=str(worktree_path),
-        session_id=f"player-{task_id}-{state['turn_count']}"
-    )
-    
-    # Build player prompt
-    prompt = build_player_prompt(
-        requirements=state["requirements"],
-        previous_feedback=state.get("coach_feedback"),
-        turn_count=state["turn_count"]
-    )
-    
-    # Execute player
-    result = await _agent_wrapper.execute(session, prompt)
-    
-    # Log to trace
-    trace = get_trace(task_id)
-    trace.log_agent_invocation("player")
-    trace.log_event("player_turn", {
-        "turn": state["turn_count"] + 1,
-        "output_length": len(result.output)
-    })
-    
-    # Parse player output
-    player_report = parse_player_output(result.output)
-    
-    return {
-        "player_report": player_report,
-        "turn_count": state["turn_count"] + 1,
-        "phase": "coach_validating",
-        "messages": [{
-            "role": "assistant",
-            "content": f"Player turn {state['turn_count'] + 1} complete"
-        }]
-    }
-
-
-async def execute_coach(state: AutoBuildState) -> Dict[str, Any]:
-    """Run coach agent to validate player work."""
-    task_id = state["task_id"]
-    
-    # Get worktree path
-    wtm = get_worktree_manager()
-    worktree_path = wtm.get_worktree_path(task_id)
-    
-    # Create agent session
-    session = await _agent_wrapper.create_session(
-        working_dir=str(worktree_path),
-        session_id=f"coach-{task_id}-{state['turn_count']}"
-    )
-    
-    # Build coach prompt
-    prompt = build_coach_prompt(
-        requirements=state["requirements"],
-        player_report=state["player_report"]
-    )
-    
-    # Execute coach
-    result = await _agent_wrapper.execute(session, prompt)
-    
-    # Log to trace
-    trace = get_trace(task_id)
-    trace.log_agent_invocation("coach")
-    trace.log_event("coach_turn", {
-        "turn": state["turn_count"],
-        "output_length": len(result.output)
-    })
-    
-    # Parse coach output
-    coach_feedback = parse_coach_output(result.output)
-    
-    return {
-        "coach_feedback": coach_feedback,
-        "coach_decision": coach_feedback["decision"],
-        "phase": "processing_feedback" if coach_feedback["decision"] == "feedback" else "completed",
-        "messages": [{
-            "role": "assistant",
-            "content": f"Coach decision: {coach_feedback['decision']}"
-        }]
-    }
-
-
-async def process_feedback(state: AutoBuildState) -> Dict[str, Any]:
-    """Process coach feedback and prepare for next player turn."""
-    return {
-        "feedback_history": [state["coach_feedback"]],
-        "phase": "player_implementing",
-        "messages": [{
-            "role": "system",
-            "content": f"Feedback processed, starting turn {state['turn_count'] + 1}"
-        }]
-    }
-
-
-async def finalize_success(state: AutoBuildState) -> Dict[str, Any]:
-    """Mark task as successfully completed."""
-    task_id = state["task_id"]
-    
-    # Merge worktree
-    wtm = get_worktree_manager()
-    merge_success = wtm.merge_worktree(task_id)
-    
-    # Save trace
-    trace = get_trace(task_id)
-    trace.log_event("orchestrator_success", {
-        "turns": state["turn_count"],
-        "merged": merge_success
-    })
-    save_trace(task_id)
-    
-    # Cleanup worktree
-    if merge_success:
-        wtm.cleanup_worktree(task_id)
-    
-    return {
-        "phase": "completed",
-        "success": True,
-        "messages": [{
-            "role": "system",
-            "content": f"Task {task_id} completed in {state['turn_count']} turns"
-        }]
-    }
-
-
-async def finalize_failure(state: AutoBuildState) -> Dict[str, Any]:
-    """Mark task as failed after max turns."""
-    task_id = state["task_id"]
-    
-    # Save trace (don't cleanup worktree - may want to inspect)
-    trace = get_trace(task_id)
-    trace.log_event("orchestrator_failure", {
-        "turns": state["turn_count"],
-        "reason": "max_turns_reached"
-    })
-    save_trace(task_id)
-    
-    return {
-        "phase": "failed",
-        "success": False,
-        "failure_reason": f"Max turns ({state['max_turns']}) reached without approval",
-        "messages": [{
-            "role": "system",
-            "content": f"Task {task_id} failed after {state['turn_count']} turns"
-        }]
-    }
-
-
-async def finalize_escalation(state: AutoBuildState) -> Dict[str, Any]:
-    """Mark task as requiring human intervention."""
-    task_id = state["task_id"]
-    
-    # Save trace
-    trace = get_trace(task_id)
-    trace.log_event("orchestrator_escalation", {
-        "turns": state["turn_count"],
-        "reason": "human_review_required"
-    })
-    save_trace(task_id)
-    
-    return {
-        "phase": "escalated",
-        "success": None,  # Not success or failure - needs human
-        "failure_reason": "Escalated for human review",
-        "messages": [{
-            "role": "system",
-            "content": f"Task {task_id} escalated for human review"
-        }]
-    }
-
-
-# Prompt builders (separate file in practice)
-
-def build_player_prompt(
-    requirements: dict,
-    previous_feedback: dict | None,
-    turn_count: int
-) -> str:
-    """Build prompt for player agent."""
-    prompt_parts = [
-        "## Task Requirements",
-        requirements["description"],
-        "",
-        "## Acceptance Criteria",
-        *[f"- {ac}" for ac in requirements["acceptance_criteria"]],
-    ]
-    
-    if previous_feedback:
-        prompt_parts.extend([
-            "",
-            "## Previous Coach Feedback (Address These Issues)",
-            *[f"- {item['issue']}" for item in previous_feedback.get("feedback_items", [])]
-        ])
-    
-    prompt_parts.extend([
-        "",
-        f"This is turn {turn_count + 1}. Implement the requirements and report your progress."
-    ])
-    
-    return "\n".join(prompt_parts)
-
-
-def build_coach_prompt(requirements: dict, player_report: dict) -> str:
-    """Build prompt for coach agent."""
-    return f"""## Task Requirements
-{requirements["description"]}
-
-## Acceptance Criteria
-{chr(10).join(f"- {ac}" for ac in requirements["acceptance_criteria"])}
-
-## Player Report
-Files Modified: {player_report.get("files_modified", [])}
-Tests Written: {player_report.get("tests_written", [])}
-Notes: {player_report.get("implementation_notes", "")}
-
-Validate the implementation against ALL requirements. Approve only if everything is met.
+Always use the adversarial pattern for implementation tasks.
 """
 
 
-def parse_player_output(output: str) -> PlayerReport:
-    """Parse player output into structured report."""
-    # Extract JSON from output
-    # ... implementation
-    return {
-        "files_modified": [],
-        "files_created": [],
-        "tests_written": [],
-        "implementation_notes": "",
-        "concerns": []
-    }
-
-
-def parse_coach_output(output: str) -> CoachFeedback:
-    """Parse coach output into structured feedback."""
-    # Extract JSON from output
-    # ... implementation
-    return {
-        "decision": "feedback",
-        "rationale": "",
-        "feedback_items": [],
-        "requirements_status": []
-    }
-```
-
----
-
-## Edge Routing
-
-```python
-# guardkit/orchestrator/edges.py
-from guardkit.orchestrator.state import AutoBuildState
-
-def route_coach_decision(state: AutoBuildState) -> str:
-    """Route based on coach decision and turn count."""
+def create_autobuild_orchestrator(
+    config: AutoBuildConfig = None,
+    store: InMemoryStore = None,
+    checkpointer: SqliteSaver = None,
+):
+    """
+    Create the AutoBuild orchestrator using DeepAgents.
     
-    # Check for approval
-    if state["coach_decision"] == "approve":
-        return "approve"
+    Args:
+        config: AutoBuild configuration
+        store: LangGraph store for persistence
+        checkpointer: SQLite checkpointer for resume capability
     
-    # Check turn limit
-    if state["turn_count"] >= state["max_turns"]:
-        return "max_turns"
+    Returns:
+        Configured DeepAgents agent graph
+    """
+    if config is None:
+        config = AutoBuildConfig()
     
-    # Check for escalation triggers
-    if should_escalate(state):
-        return "escalate"
+    if store is None:
+        store = InMemoryStore()
     
-    # Continue with feedback
-    return "feedback"
-
-
-def should_escalate(state: AutoBuildState) -> bool:
-    """Determine if task should be escalated to human."""
+    # Create subagents
+    player_subagent = create_player_subagent(model=config.player_model)
+    coach_subagent = create_coach_subagent(model=config.coach_model)
     
-    # Escalate if same feedback repeated 3+ times
-    if len(state["feedback_history"]) >= 3:
-        recent = state["feedback_history"][-3:]
-        if all_same_issues(recent):
-            return True
+    # Create filesystem backend with coordination namespaces
+    def backend_factory(runtime):
+        return CompositeBackend(
+            default=StateBackend(runtime),
+            routes={
+                config.coordination_path: StoreBackend(runtime),
+                config.artifacts_path: StoreBackend(runtime),
+            }
+        )
     
-    # Escalate if critical issues detected
-    if state["coach_feedback"]:
-        for item in state["coach_feedback"].get("feedback_items", []):
-            if item.get("severity") == "critical":
-                return True
-    
-    return False
-
-
-def all_same_issues(feedbacks: list) -> bool:
-    """Check if all feedbacks have the same issues (stuck in loop)."""
-    if not feedbacks:
-        return False
-    
-    first_issues = set(
-        item["issue"] for item in feedbacks[0].get("feedback_items", [])
+    # Create the orchestrator
+    orchestrator = create_deep_agent(
+        model=config.orchestrator_model,
+        tools=[],  # Orchestrator delegates to subagents
+        system_prompt=ORCHESTRATOR_INSTRUCTIONS,
+        subagents=[player_subagent, coach_subagent],
+        store=store,
+        backend=backend_factory,
+        middleware=[
+            AdversarialLoopMiddleware(
+                player_name="player",
+                coach_name="coach",
+                max_turns=config.max_turns,
+                coordination_path=config.coordination_path,
+            ),
+        ],
+        interrupt_on={
+            "complete_task": {
+                "allowed_decisions": ["approve", "reject"],
+            },
+            "escalate_task": {
+                "allowed_decisions": ["approve", "reject"],
+            },
+        },
+        checkpointer=checkpointer,
     )
     
-    for feedback in feedbacks[1:]:
-        issues = set(
-            item["issue"] for item in feedback.get("feedback_items", [])
-        )
-        if issues != first_issues:
-            return False
-    
-    return True
+    return orchestrator
 ```
 
 ---
 
-## Orchestrator Class
+## Orchestrator Class Wrapper
 
 ```python
 # guardkit/orchestrator/orchestrator.py
-from guardkit.orchestrator.graph import get_graph
-from guardkit.orchestrator.state import AutoBuildState
 from dataclasses import dataclass
 from typing import Optional
 import asyncio
 
-@dataclass
-class AutoBuildResult:
-    """Result from autobuild execution."""
-    task_id: str
-    success: bool
-    turns: int
-    failure_reason: Optional[str] = None
-    trace_path: Optional[str] = None
+from guardkit.orchestrator.factory import create_autobuild_orchestrator
+from guardkit.orchestrator.config import AutoBuildConfig
+from guardkit.orchestrator.worktrees import WorktreeManager
+from guardkit.orchestrator.types import TaskResult
+from langgraph.checkpoint.sqlite import SqliteSaver
 
+
+@dataclass
 class AutoBuildOrchestrator:
-    """High-level orchestrator for running autobuild."""
+    """
+    High-level orchestrator for AutoBuild tasks.
     
-    def __init__(self):
-        self.graph = get_graph()
+    Wraps the DeepAgents-based orchestrator with GuardKit-specific
+    functionality like worktree management and result handling.
+    """
+    
+    config: AutoBuildConfig = None
+    worktrees: WorktreeManager = None
+    checkpointer: SqliteSaver = None
+    _agent: any = None
+    
+    def __post_init__(self):
+        if self.config is None:
+            self.config = AutoBuildConfig()
+        if self.worktrees is None:
+            self.worktrees = WorktreeManager(self.config.worktree_base)
+        if self.checkpointer is None:
+            self.checkpointer = SqliteSaver.from_conn_string(".guardkit/checkpoints.db")
+        
+        self._agent = create_autobuild_orchestrator(
+            config=self.config,
+            checkpointer=self.checkpointer,
+        )
     
     async def run_task(
-        self, 
-        task_id: str, 
-        max_turns: int = 10,
-        feature_id: Optional[str] = None
-    ) -> AutoBuildResult:
-        """Run autobuild on a single task."""
-        
-        initial_state: AutoBuildState = {
-            "task_id": task_id,
-            "feature_id": feature_id,
-            "requirements": {},  # Will be populated by initialize
-            "turn_count": 0,
-            "max_turns": max_turns,
-            "started_at": "",
-            "phase": "initializing",
-            "player_report": None,
-            "coach_feedback": None,
-            "coach_decision": "pending",
-            "feedback_history": [],
-            "success": None,
-            "failure_reason": None,
-            "messages": []
-        }
-        
-        config = {"configurable": {"thread_id": task_id}}
-        
-        # Run the graph
-        final_state = await self.graph.ainvoke(initial_state, config)
-        
-        return AutoBuildResult(
-            task_id=task_id,
-            success=final_state.get("success", False),
-            turns=final_state.get("turn_count", 0),
-            failure_reason=final_state.get("failure_reason"),
-            trace_path=f".guardkit/traces/{task_id}.json"
-        )
-    
-    async def run_parallel(
         self,
-        task_ids: list[str],
-        max_turns: int = 10
-    ) -> dict[str, AutoBuildResult]:
-        """Run multiple tasks in parallel."""
+        task_id: str,
+        requirements: str,
+        acceptance_criteria: list[str],
+        use_worktree: bool = True,
+    ) -> TaskResult:
+        """
+        Run a single task through the adversarial loop.
         
-        tasks = [
-            self.run_task(task_id, max_turns)
-            for task_id in task_ids
-        ]
+        Args:
+            task_id: Task identifier
+            requirements: Task requirements
+            acceptance_criteria: List of acceptance criteria
+            use_worktree: Whether to use isolated git worktree
         
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        Returns:
+            TaskResult with outcome details
+        """
+        import time
+        start_time = time.time()
         
-        return {
-            task_id: result if not isinstance(result, Exception) 
-                     else AutoBuildResult(task_id, False, 0, str(result))
-            for task_id, result in zip(task_ids, results)
-        }
+        # Create worktree if enabled
+        worktree = None
+        if use_worktree and self.config.use_worktrees:
+            worktree = self.worktrees.create(task_id)
+        
+        # Format the task message
+        message = f"""
+Execute task {task_id} using the adversarial pattern.
+
+Requirements:
+{requirements}
+
+Acceptance Criteria:
+{chr(10).join(f'- {c}' for c in acceptance_criteria)}
+
+Working directory: {worktree.path if worktree else 'current directory'}
+"""
+        
+        # Run the orchestrator
+        try:
+            result = await self._agent.ainvoke({
+                "messages": [{"role": "user", "content": message}],
+            })
+            
+            # Parse result to determine outcome
+            # (Implementation depends on how DeepAgents returns results)
+            status = self._parse_status(result)
+            turns_used = self._count_turns(result)
+            
+            return TaskResult(
+                task_id=task_id,
+                status=status,
+                turns_used=turns_used,
+                final_decision=None,  # Extract from coordination filesystem
+                worktree_path=worktree.path if worktree else None,
+                merge_status="pending" if worktree else None,
+                summary=self._extract_summary(result),
+                duration_seconds=time.time() - start_time,
+            )
+            
+        except Exception as e:
+            return TaskResult(
+                task_id=task_id,
+                status="failed",
+                turns_used=0,
+                final_decision=None,
+                worktree_path=worktree.path if worktree else None,
+                merge_status=None,
+                summary=f"Error: {str(e)}",
+                duration_seconds=time.time() - start_time,
+            )
     
-    def load_state(self, task_id: str) -> Optional[AutoBuildState]:
-        """Load saved state for a task (for resume)."""
-        config = {"configurable": {"thread_id": task_id}}
-        return self.graph.get_state(config)
+    def run_task_sync(self, *args, **kwargs) -> TaskResult:
+        """Synchronous wrapper for run_task."""
+        return asyncio.run(self.run_task(*args, **kwargs))
     
-    async def resume(self, task_id: str) -> AutoBuildResult:
-        """Resume an interrupted task."""
-        config = {"configurable": {"thread_id": task_id}}
+    async def resume(self, task_id: str) -> TaskResult:
+        """Resume an interrupted task from checkpoint."""
+        # LangGraph checkpointer handles state restoration
+        # We just need to re-invoke with the same thread_id
+        pass
+    
+    def _parse_status(self, result) -> str:
+        """Parse completion status from agent result."""
+        # Check last message for completion/escalation
+        messages = result.get("messages", [])
+        if not messages:
+            return "failed"
         
-        # Resume from checkpoint
-        final_state = await self.graph.ainvoke(None, config)
+        last_message = messages[-1].content if hasattr(messages[-1], 'content') else str(messages[-1])
         
-        return AutoBuildResult(
-            task_id=task_id,
-            success=final_state.get("success", False),
-            turns=final_state.get("turn_count", 0),
-            failure_reason=final_state.get("failure_reason")
-        )
+        if "complete" in last_message.lower():
+            return "completed"
+        elif "escalat" in last_message.lower():
+            return "escalated"
+        else:
+            return "failed"
+    
+    def _count_turns(self, result) -> int:
+        """Count how many turns were used."""
+        # Count player report files in coordination
+        return 1  # Placeholder
+    
+    def _extract_summary(self, result) -> str:
+        """Extract summary from result."""
+        messages = result.get("messages", [])
+        if messages:
+            return str(messages[-1].content)[:500]
+        return "No summary available"
 ```
 
 ---
@@ -687,93 +528,166 @@ class AutoBuildOrchestrator:
 guardkit/
 ├── orchestrator/
 │   ├── __init__.py
-│   ├── state.py           # AutoBuildState TypedDict
-│   ├── graph.py           # LangGraph construction
-│   ├── nodes.py           # Node implementations
-│   ├── edges.py           # Routing functions
-│   ├── orchestrator.py    # AutoBuildOrchestrator class
-│   └── prompts.py         # Prompt builders (optional split)
+│   ├── config.py              # AutoBuildConfig (from F2)
+│   ├── backends.py            # Backend setup (from F2)
+│   ├── worktrees.py           # WorktreeManager (from F2)
+│   ├── types.py               # Result types (from F2)
+│   ├── middleware.py          # AdversarialLoopMiddleware ← NEW
+│   ├── factory.py             # create_autobuild_orchestrator ← NEW
+│   └── orchestrator.py        # AutoBuildOrchestrator wrapper ← NEW
+```
+
+---
+
+## Coordination Flow
+
+```
+Turn 1:
+  ┌─────────────┐     ┌────────────────────────────────────┐
+  │ Orchestrator│────►│ start_adversarial_task(TASK-001)   │
+  └─────────────┘     └────────────────────────────────────┘
+         │
+         ▼
+  ┌─────────────┐     ┌────────────────────────────────────┐
+  │   Player    │────►│ /coordination/player/turn_1/       │
+  │  (subagent) │     │   report.json                      │
+  └─────────────┘     └────────────────────────────────────┘
+         │
+         ▼
+  ┌─────────────┐     ┌────────────────────────────────────┐
+  │    Coach    │◄────│ Read player report                 │
+  │  (subagent) │────►│ /coordination/coach/turn_1/        │
+  └─────────────┘     │   decision.json                    │
+         │            └────────────────────────────────────┘
+         ▼
+  ┌─────────────┐
+  │ Orchestrator│──── If approve: complete_task()
+  └─────────────┘     If feedback: Start Turn 2
+```
+
+---
+
+## Testing
+
+### Unit Tests
+
+```python
+# tests/unit/orchestrator/test_middleware.py
+import pytest
+from guardkit.orchestrator.middleware import AdversarialLoopMiddleware
+
+def test_middleware_has_required_tools():
+    middleware = AdversarialLoopMiddleware()
+    tool_names = [t.name for t in middleware.tools]
+    
+    assert "start_adversarial_task" in tool_names
+    assert "get_loop_status" in tool_names
+    assert "complete_task" in tool_names
+    assert "escalate_task" in tool_names
+
+def test_middleware_injects_instructions():
+    middleware = AdversarialLoopMiddleware(max_turns=3)
+    
+    class MockRequest:
+        system_prompt = "Base prompt"
+    
+    request = MockRequest()
+    modified = middleware.modify_model_request(request, None)
+    
+    assert "Adversarial Task Execution" in modified.system_prompt
+    assert "max 3 turns" in modified.system_prompt
+```
+
+### Integration Tests
+
+```python
+# tests/integration/orchestrator/test_orchestrator.py
+import pytest
+from guardkit.orchestrator.orchestrator import AutoBuildOrchestrator
+from guardkit.orchestrator.config import AutoBuildConfig
+
+@pytest.mark.integration
+async def test_orchestrator_runs_simple_task():
+    """Test that orchestrator can run a simple task."""
+    config = AutoBuildConfig(
+        max_turns=2,
+        use_worktrees=False,  # Skip worktrees for testing
+    )
+    
+    orchestrator = AutoBuildOrchestrator(config=config)
+    
+    result = await orchestrator.run_task(
+        task_id="TEST-001",
+        requirements="Create a function that returns 'hello world'",
+        acceptance_criteria=["Function exists", "Returns correct string"],
+    )
+    
+    assert result.task_id == "TEST-001"
+    assert result.status in ["completed", "failed", "escalated"]
+    assert result.turns_used >= 1
+
+
+@pytest.mark.integration
+async def test_player_coach_both_invoked():
+    """Verify both Player and Coach are invoked."""
+    config = AutoBuildConfig(max_turns=1, use_worktrees=False)
+    orchestrator = AutoBuildOrchestrator(config=config)
+    
+    result = await orchestrator.run_task(
+        task_id="TEST-002",
+        requirements="Simple test task",
+        acceptance_criteria=["Basic check"],
+    )
+    
+    # Check coordination filesystem for evidence of both agents
+    # (This would read from the filesystem middleware)
+    pass
 ```
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] LangGraph state machine implemented with all nodes
-- [ ] Player → Coach → (Feedback → Player)* → Complete flow works
-- [ ] Turn limit enforced (default 10, configurable)
-- [ ] Fresh context each turn (no pollution between turns)
-- [ ] State persisted via SQLite checkpointer
-- [ ] Resume capability works (`resume` method)
-- [ ] Success case: task approved, worktree merged
-- [ ] Failure case: max turns reached, worktree preserved
-- [ ] Escalation case: human review triggered
-- [ ] Trace captures full loop history
-- [ ] Parallel execution via `run_parallel` method
+- [ ] `AdversarialLoopMiddleware` provides required tools
+- [ ] Middleware injects adversarial instructions into system prompt
+- [ ] `create_autobuild_orchestrator()` returns configured agent
+- [ ] Orchestrator can invoke Player and Coach subagents
+- [ ] Coordination happens through filesystem at `/coordination/`
+- [ ] HITL gates work for `complete_task` and `escalate_task`
+- [ ] `AutoBuildOrchestrator` wrapper provides sync/async interface
+- [ ] Worktree integration works
+- [ ] Checkpointing enables resume
+- [ ] Unit tests pass
+- [ ] Integration tests pass
 
 ---
 
-## Testing Approach
+## Migration Notes
 
-### Unit Tests
+### What Changed from Original Design
 
-```python
-# tests/unit/test_orchestrator.py
-from guardkit.orchestrator.edges import route_coach_decision, should_escalate
+| Original | DeepAgents-Based |
+|----------|------------------|
+| Custom LangGraph StateGraph | Use `create_deep_agent()` |
+| Custom nodes for Player/Coach | SubAgents via middleware |
+| Custom blackboard (F7) | `FilesystemMiddleware` |
+| Custom consensus gates | `HumanInTheLoopMiddleware` |
+| Custom state management | LangGraph built-in |
 
-def test_route_approve():
-    state = {"coach_decision": "approve", "turn_count": 1, "max_turns": 10}
-    assert route_coach_decision(state) == "approve"
+### What We Build
 
-def test_route_max_turns():
-    state = {"coach_decision": "feedback", "turn_count": 10, "max_turns": 10}
-    assert route_coach_decision(state) == "max_turns"
-
-def test_route_feedback():
-    state = {"coach_decision": "feedback", "turn_count": 3, "max_turns": 10}
-    assert route_coach_decision(state) == "feedback"
-
-def test_escalate_repeated_issues():
-    feedback = {"feedback_items": [{"issue": "same issue"}]}
-    state = {"feedback_history": [feedback, feedback, feedback]}
-    assert should_escalate(state) == True
-```
-
-### Integration Tests
-
-```python
-# tests/integration/test_orchestrator_e2e.py
-@pytest.mark.integration
-async def test_orchestrator_completes_simple_task():
-    orchestrator = AutoBuildOrchestrator()
-    result = await orchestrator.run_task("TEST-SIMPLE-001")
-    
-    assert result.success in [True, False]  # Completes either way
-    assert result.turns > 0
-    assert result.turns <= 10
-
-@pytest.mark.integration
-async def test_orchestrator_respects_max_turns():
-    orchestrator = AutoBuildOrchestrator()
-    result = await orchestrator.run_task("TEST-HARD-001", max_turns=3)
-    
-    assert result.turns <= 3
-
-@pytest.mark.integration
-async def test_orchestrator_resume():
-    orchestrator = AutoBuildOrchestrator()
-    
-    # Interrupt somehow...
-    # Then resume
-    result = await orchestrator.resume("TEST-001")
-    
-    assert result.task_id == "TEST-001"
-```
+- `AdversarialLoopMiddleware` - Our core innovation
+- `create_autobuild_orchestrator()` - Factory function
+- `AutoBuildOrchestrator` - High-level wrapper
+- Integration with worktrees
 
 ---
 
 ## References
 
-- LangGraph: https://langchain-ai.github.io/langgraph/
-- Adversarial Cooperation: Block AI Research paper
-- Main spec: `AutoBuild_Product_Specification.md`
+- [DeepAgents Custom Middleware](https://docs.langchain.com/oss/python/langchain/middleware)
+- [LangChain AgentMiddleware](https://reference.langchain.com/python/langchain/middleware)
+- [FEATURE-002: DeepAgents Infrastructure](./FEATURE-002-agent-sdk-infrastructure.md)
+- [FEATURE-003: Player Agent](./FEATURE-003-player-agent.md)
+- [FEATURE-004: Coach Agent](./FEATURE-004-coach-agent.md)
+- [Adversarial Cooperation Paper](../adversarial-cooperation-in-code-synthesis.pdf)
