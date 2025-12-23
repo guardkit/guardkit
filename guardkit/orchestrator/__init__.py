@@ -1,6 +1,11 @@
 """Orchestrator components for GuardKit AutoBuild feature."""
 
 from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator.autobuild import (
+    AutoBuildOrchestrator,
+    OrchestrationResult,
+    TurnRecord,
+)
 from guardkit.orchestrator.exceptions import (
     AgentInvokerError,
     AgentInvocationError,
@@ -9,6 +14,10 @@ from guardkit.orchestrator.exceptions import (
     CoachDecisionNotFoundError,
     CoachDecisionInvalidError,
     SDKTimeoutError,
+    OrchestrationError,
+    SetupPhaseError,
+    LoopPhaseError,
+    FinalizePhaseError,
 )
 from guardkit.orchestrator.progress import ProgressDisplay
 
@@ -16,7 +25,11 @@ __all__ = [
     # Agent invocation
     "AgentInvoker",
     "AgentInvocationResult",
-    # Exceptions
+    # AutoBuild orchestration
+    "AutoBuildOrchestrator",
+    "OrchestrationResult",
+    "TurnRecord",
+    # Exceptions - AgentInvoker
     "AgentInvokerError",
     "AgentInvocationError",
     "PlayerReportNotFoundError",
@@ -24,6 +37,11 @@ __all__ = [
     "CoachDecisionNotFoundError",
     "CoachDecisionInvalidError",
     "SDKTimeoutError",
+    # Exceptions - Orchestration
+    "OrchestrationError",
+    "SetupPhaseError",
+    "LoopPhaseError",
+    "FinalizePhaseError",
     # Progress display
     "ProgressDisplay",
 ]

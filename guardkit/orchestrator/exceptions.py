@@ -1,4 +1,9 @@
-"""Custom exceptions for AgentInvoker."""
+"""Custom exceptions for orchestrator components."""
+
+
+# ============================================================================
+# AgentInvoker Exceptions
+# ============================================================================
 
 
 class AgentInvokerError(Exception):
@@ -39,5 +44,34 @@ class CoachDecisionInvalidError(AgentInvokerError):
 
 class SDKTimeoutError(AgentInvokerError):
     """Raised when SDK invocation times out."""
+
+    pass
+
+
+# ============================================================================
+# Orchestration Exceptions
+# ============================================================================
+
+
+class OrchestrationError(Exception):
+    """Base exception for orchestration errors."""
+
+    pass
+
+
+class SetupPhaseError(OrchestrationError):
+    """Raised when setup phase fails."""
+
+    pass
+
+
+class LoopPhaseError(OrchestrationError):
+    """Raised when loop phase encounters critical error."""
+
+    pass
+
+
+class FinalizePhaseError(OrchestrationError):
+    """Raised when finalize phase fails."""
 
     pass
