@@ -20,6 +20,7 @@ from guardkit.orchestrator.exceptions import (
     FinalizePhaseError,
 )
 from guardkit.orchestrator.progress import ProgressDisplay
+from guardkit.orchestrator.protocol import OrchestratorProtocol
 
 __all__ = [
     # Agent invocation
@@ -29,6 +30,8 @@ __all__ = [
     "AutoBuildOrchestrator",
     "OrchestrationResult",
     "TurnRecord",
+    # Protocol
+    "OrchestratorProtocol",
     # Exceptions - AgentInvoker
     "AgentInvokerError",
     "AgentInvocationError",
