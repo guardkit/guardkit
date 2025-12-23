@@ -1,4 +1,4 @@
-# AutoBuild: Adversarial Cooperation for Autonomous Feature Implementation
+# GuardKit Agent: Adversarial Cooperation for Autonomous Feature Implementation
 
 **Date:** December 19, 2025  
 **Status:** Research Complete - Ready for Implementation  
@@ -13,13 +13,15 @@ This document captures research into **dialectical autocoding** - a proven appro
 
 **Key Finding:** The adversarial cooperation pattern (two agents in a bounded feedback loop) significantly outperforms single-agent "vibe coding" for completing complex tasks without human intervention.
 
-**Recommended Name:** **AutoBuild** (alternative: CoachMode)
+**Product Names:**
+- **Phase 1a:** `/feature-build` command (GuardKit slash command)
+- **Phase 1b/2:** `gka` CLI (standalone GuardKit Agent)
 
 **Implementation Path:** LangGraph with multi-LLM support (Claude, Devstral 2, DeepSeek)
 
 ---
 
-## The Problem AutoBuild Solves
+## The Problem GuardKit Agent Solves
 
 ### Current GuardKit Workflow
 
@@ -33,14 +35,14 @@ Developer MANUALLY runs /task-work on each task
 Developer reviews, iterates, completes each task
 ```
 
-### AutoBuild Workflow
+### GuardKit Agent Workflow
 
 ```
 /feature-plan "dark mode for settings"
     ↓
 Creates subtasks: TASK-001, TASK-002, TASK-003
     ↓
-/autobuild                          ← NEW
+/feature-build (Phase 1a)  OR  gka feature work (Phase 1b/2)
     ↓
 Autonomous implementation with coach-player loop
     ↓
@@ -183,7 +185,7 @@ When coach feedback was withheld from g3:
 
 ## Multi-Model Support: The Cost Advantage
 
-### Available Models for AutoBuild
+### Available Models for GuardKit Agent
 
 | Model | SWE-bench | Price (input/output per M tokens) | Notes |
 |-------|-----------|-----------------------------------|-------|
@@ -209,25 +211,23 @@ Claude Max subscription: $200/month
 Devstral 2 API (estimated): ~$20-50/month for heavy use
 Devstral Small 2 local: $0/month (runs on RTX 4090)
 
-GuardKit with AutoBuild works with ALL of these.
+GuardKit Agent works with ALL of these.
 ```
 
 ---
 
-## GuardKit AutoBuild Architecture
+## GuardKit Agent Architecture
 
 ### Proposed Commands
 
 ```bash
-# Option 1: Separate command
-/feature-plan "dark mode for settings"
-/autobuild
+# Phase 1a: GuardKit slash command
+/feature-build TASK-001
+/feature-build FEAT-001
 
-# Option 2: Flag on feature-plan
-/feature-plan "dark mode for settings" --autobuild
-
-# Option 3: Coach mode naming
-/feature-plan "dark mode for settings" --coach
+# Phase 1b/2: Standalone CLI
+gka task work TASK-001
+gka feature work FEAT-001
 ```
 
 ### LangGraph Implementation
@@ -236,7 +236,7 @@ GuardKit with AutoBuild works with ALL of these.
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Literal
 
-class AutoBuildState(TypedDict):
+class GKAState(TypedDict):
     feature_plan: str           # The requirements contract
     tasks: list[str]            # Subtasks from feature plan
     current_task_index: int     # Which task we're on
@@ -247,7 +247,7 @@ class AutoBuildState(TypedDict):
     workspace_path: str         # Git worktree location
     model_config: dict          # Which LLM to use (Claude, Devstral, etc.)
 
-def player_node(state: AutoBuildState) -> AutoBuildState:
+def player_node(state: GKAState) -> GKAState:
     """Player: Implement based on requirements + coach feedback"""
     # Fresh LLM instance each turn (prevents context pollution)
     llm = get_llm(state["model_config"])
@@ -271,7 +271,7 @@ def player_node(state: AutoBuildState) -> AutoBuildState:
         "status": "reviewing"
     }
 
-def coach_node(state: AutoBuildState) -> AutoBuildState:
+def coach_node(state: GKAState) -> GKAState:
     """Coach: Validate against requirements, not just compilation"""
     llm = get_llm(state["model_config"])  # Fresh instance
     
@@ -307,7 +307,7 @@ def coach_node(state: AutoBuildState) -> AutoBuildState:
         "turn_number": state["turn_number"] + 1
     }
 
-def should_continue(state: AutoBuildState) -> str:
+def should_continue(state: GKAState) -> str:
     if state["status"] == "approved":
         return "complete"
     if state["status"] == "next_task":
@@ -316,7 +316,7 @@ def should_continue(state: AutoBuildState) -> str:
         return "failed"
     return "continue"
 
-def advance_task_node(state: AutoBuildState) -> AutoBuildState:
+def advance_task_node(state: GKAState) -> GKAState:
     """Move to the next task in the feature plan"""
     return {
         **state,
@@ -327,7 +327,7 @@ def advance_task_node(state: AutoBuildState) -> AutoBuildState:
     }
 
 # Build the graph
-graph = StateGraph(AutoBuildState)
+graph = StateGraph(GKAState)
 graph.add_node("player", player_node)
 graph.add_node("coach", coach_node)
 graph.add_node("advance_task", advance_task_node)
@@ -342,7 +342,7 @@ graph.add_conditional_edges("coach", should_continue, {
 })
 graph.add_edge("advance_task", "player")
 
-autobuild_workflow = graph.compile()
+gka_workflow = graph.compile()
 ```
 
 ### Integration with Existing GuardKit
@@ -355,11 +355,11 @@ autobuild_workflow = graph.compile()
 │      │                                                          │
 │      ├── Creates feature plan document                          │
 │      ├── Generates subtasks (TASK-001, TASK-002, etc.)         │
-│      └── [--autobuild flag triggers AutoBuild]                  │
+│      └── Ready for /feature-build or gka commands               │
 │                          │                                      │
 │                          ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │                    AutoBuild Engine                         ││
+│  │                 GuardKit Agent Engine                       ││
 │  │  ┌─────────────┐                 ┌─────────────┐           ││
 │  │  │   Player    │◄───feedback────►│    Coach    │           ││
 │  │  │  (Claude/   │                 │  (Claude/   │           ││
@@ -382,90 +382,50 @@ autobuild_workflow = graph.compile()
 
 ## Implementation Phases
 
-### Phase 1: Basic Dialectical Loop (Week 1-2)
+### Phase 1a: GuardKit Extension (Week 1-2)
 
-**Goal:** Prove the pattern works with GuardKit's feature plans
+**Goal:** Prove the pattern works within Claude Code ecosystem
 
-- [ ] LangGraph state machine for player-coach loop
-- [ ] Integration with existing `/task-work` logic
-- [ ] Single model (Claude) initially
-- [ ] Sequential task execution
-- [ ] Basic turn limits and failure handling
+- [ ] `/feature-build` slash command
+- [ ] Claude Agent SDK integration
+- [ ] Basic Player/Coach loop
+- [ ] Git worktree isolation
 
-**Deliverable:** `/autobuild` command that completes a simple feature autonomously
+**Deliverable:** Working `/feature-build` command that completes simple features
 
-**Content:** Blog post "Why Two Agents Beat One: Implementing Adversarial Cooperation"
+### Phase 1b: Knowledge Graph MCP (Week 3-5)
 
-### Phase 2: Multi-Model Support (Week 3)
+**Goal:** Build foundation for standalone product
 
-**Goal:** Break vendor lock-in, demonstrate cost savings
+- [ ] Knowledge Graph MCP server
+- [ ] Job-specific context retrieval
+- [ ] Agent and pattern storage
 
-- [ ] Abstract LLM interface (LangChain-style)
-- [ ] Add Devstral 2 support via Mistral API
-- [ ] Add DeepSeek R1 support
-- [ ] Configuration for model selection
-- [ ] Cost tracking and comparison
+### Phase 2: Standalone CLI (Week 6-10)
 
-**Deliverable:** `--model devstral-2` flag, cost comparison benchmarks
+**Goal:** Full `gka` CLI with multi-model support
 
-**Content:** Blog post "GuardKit Goes Open: From $200/mo Claude to Free Devstral"
-
-### Phase 3: Parallel Task Execution (Week 4-5)
-
-**Goal:** Implement multiple tasks simultaneously
-
-- [ ] Parallel worktrees for independent tasks
-- [ ] Dependency-aware task scheduling
-- [ ] Resource management (concurrent LLM calls)
-- [ ] Progress tracking and UI feedback
-
-**Deliverable:** Parallel feature implementation with Conductor-style visualization
-
-**Content:** Demo video "Watch GuardKit auto-implement 5 tasks simultaneously"
-
-### Phase 4: Human-in-the-Loop Refinements (Week 6+)
-
-**Goal:** Add escape hatches and control points
-
-- [ ] `--pause-after-task` for review between tasks
-- [ ] Manual override capability mid-loop
-- [ ] Checkpoint/resume for long-running builds
-- [ ] Integration with Beads for task state tracking
-
-**Deliverable:** Production-ready AutoBuild with full control options
+- [ ] LangGraph state machine
+- [ ] Multi-model support (Claude, Devstral, DeepSeek)
+- [ ] Full CLI commands
+- [ ] Quality gates
 
 ---
 
-## Comparison: AutoBuild vs Other Approaches
+## Comparison: Approaches
 
 ### Why Not Claude Agents SDK Alone?
 
-The Claude Agents SDK is a viable path (see related research docs), but:
+The Claude Agents SDK is a viable path for Phase 1a, but:
 
-| Factor | Claude SDK | LangGraph + Multi-Model |
-|--------|------------|------------------------|
+| Factor | Claude SDK (1a) | LangGraph (1b/2) |
+|--------|-----------------|------------------|
 | Time to MVP | ~1 week | ~2-3 weeks |
 | Vendor lock-in | 100% Anthropic | None |
 | Model flexibility | Claude only | Any LLM |
 | Cost story | $200/mo minimum | $0 with local models |
-| Learning value | Low (proprietary) | High (industry standard) |
-| Content value | Good | Excellent |
 
-**Recommendation:** Start with LangGraph. The extra 1-2 weeks pays off in flexibility and content opportunities.
-
-### Why Not Full Multi-Agent Orchestration (Claude-Flow style)?
-
-Swarm/hive systems (like Claude-Flow) are more complex:
-
-| Aspect | AutoBuild (Dialectical) | Swarm Orchestration |
-|--------|------------------------|---------------------|
-| Agent count | 2 (player + coach) | Many (spawned dynamically) |
-| Communication | Structured feedback loop | Message passing, shared memory |
-| Complexity | Moderate | High |
-| Debuggability | High (linear flow) | Low (emergent behavior) |
-| Proven results | Yes (g3, Block AI paper) | Limited evidence |
-
-**Recommendation:** Dialectical approach is simpler, proven, and sufficient for feature implementation.
+**Recommendation:** Start with Phase 1a to validate, then build Phase 1b/2 for full flexibility.
 
 ---
 
@@ -474,9 +434,9 @@ Swarm/hive systems (like Claude-Flow) are more complex:
 | Week | Milestone | Content Piece |
 |------|-----------|---------------|
 | 1 | Basic loop working | Blog: "Adversarial Cooperation: Why Two AI Agents Beat One" |
-| 2 | Full feature completion | Demo: "GuardKit AutoBuild: From Requirements to Implementation" |
-| 3 | Devstral 2 integration | Blog: "Breaking Free from Claude Max: GuardKit with Open Models" |
-| 4 | Cost benchmarks | Data post: "The Real Cost of AI Coding: Claude vs Devstral vs DeepSeek" |
+| 2 | Full feature completion | Demo: "GuardKit Agent: From Requirements to Implementation" |
+| 3 | Knowledge Graph MCP | Blog: "Building the Brain Behind GuardKit Agent" |
+| 4 | Multi-model support | Blog: "Breaking Free from Claude Max: GuardKit with Open Models" |
 | 5 | Parallel execution | Demo: "Watch 5 Features Get Built Simultaneously" |
 
 ---
@@ -500,26 +460,18 @@ Swarm/hive systems (like Claude-Flow) are more complex:
 - [Claude Agent SDK Integration Analysis](./claude_agent_sdk_integration_analysis.md)
 - [Claude Agent SDK Fast Path](./Claude_Agent_SDK_Fast_Path_to_TaskWright_Orchestration.md)
 - [Claude Agent SDK Two-Command Workflow](./Claude_Agent_SDK_Two_Command_Feature_Workflow.md)
-- [LangGraph MCP Architecture](./agentecflow_langgraph_mcp_architecture_recommendation.md)
 
 ---
 
-## Terminology Decision
+## Terminology
 
-After evaluation, the recommended name is **AutoBuild** because:
-
-| Term | Verdict | Reasoning |
-|------|---------|-----------|
-| **AutoBuild** | ✅ Chosen | Clear purpose, action-oriented, not overloaded |
-| CoachMode | ⚠️ Alternative | Good but emphasizes process over outcome |
-| Dialectical Autocoding | ❌ | Too academic for developer marketing |
-| Orchestration | ❌ | Overloaded with swarm/hive connotations |
-| Auto-implement | ❌ | Generic, not distinctive |
-
-**Usage:**
-- Command: `/autobuild` or `/feature-plan --autobuild`
-- Documentation: "GuardKit AutoBuild"
-- Marketing: "Autonomous feature implementation with adversarial cooperation"
+| Term | Usage |
+|------|-------|
+| **GuardKit Agent** | The standalone product (Phase 1b/2) |
+| **gka** | CLI command for standalone product |
+| **/feature-build** | GuardKit slash command (Phase 1a) |
+| **Player** | Implementation agent |
+| **Coach** | Validation agent |
 
 ---
 
@@ -528,3 +480,4 @@ After evaluation, the recommended name is **AutoBuild** because:
 | Date | Author | Changes |
 |------|--------|---------|
 | 2025-12-19 | Research session | Initial creation based on Block AI paper analysis and Devstral 2 evaluation |
+| 2025-12-22 | Research session | Renamed: AutoBuild → GuardKit Agent. Updated command references: `/feature-build` for Phase 1a, `gka` for Phase 1b/2 |

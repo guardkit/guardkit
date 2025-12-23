@@ -1,4 +1,4 @@
-# Feature 6: autobuild CLI Command
+# Feature 6: gka CLI Command
 
 > **Feature ID**: FEATURE-006
 > **Priority**: P1 (User interface)
@@ -9,21 +9,21 @@
 
 ## Summary
 
-Create the command-line interface for AutoBuild. This is the user-facing entry point that wraps the orchestrator and provides progress feedback, configuration options, and result reporting.
+Create the command-line interface for GuardKit Agent. This is the user-facing entry point that wraps the orchestrator and provides progress feedback, configuration options, and result reporting.
 
 ---
 
 ## Command Structure
 
 ```bash
-guardkit autobuild [COMMAND] [OPTIONS]
+gka [COMMAND] [OPTIONS]
 
 Commands:
-  task      Run autobuild on a single task
-  feature   Run autobuild on all tasks in a feature
-  resume    Resume an interrupted autobuild run
-  status    Show status of running/completed autobuilds
-  cancel    Cancel a running autobuild
+  task      Run GuardKit Agent on a single task
+  feature   Run GuardKit Agent on all tasks in a feature
+  resume    Resume an interrupted run
+  status    Show status of running/completed runs
+  cancel    Cancel a running operation
 
 Global Options:
   --verbose, -v     Show detailed output
@@ -35,12 +35,12 @@ Global Options:
 
 ## Detailed Commands
 
-### autobuild task
+### gka task work
 
-Run autobuild on a single task.
+Run GuardKit Agent on a single task.
 
 ```bash
-guardkit autobuild task TASK-001 [OPTIONS]
+gka task work TASK-001 [OPTIONS]
 
 Arguments:
   TASK_ID    Task ID to run (e.g., TASK-001)
@@ -55,21 +55,21 @@ Options:
 **Examples:**
 ```bash
 # Basic usage
-guardkit autobuild task TASK-001
+gka task work TASK-001
 
 # With options
-guardkit autobuild task TASK-001 --max-turns 5 --verbose
+gka task work TASK-001 --max-turns 5 --verbose
 
 # Dry run
-guardkit autobuild task TASK-001 --dry-run
+gka task work TASK-001 --dry-run
 ```
 
-### autobuild feature
+### gka feature work
 
-Run autobuild on all tasks in a feature.
+Run GuardKit Agent on all tasks in a feature.
 
 ```bash
-guardkit autobuild feature FEAT-001 [OPTIONS]
+gka feature work FEAT-001 [OPTIONS]
 
 Arguments:
   FEATURE_ID    Feature ID to run (e.g., FEAT-001)
@@ -84,32 +84,32 @@ Options:
 **Examples:**
 ```bash
 # Sequential execution
-guardkit autobuild feature FEAT-001
+gka feature work FEAT-001
 
 # Parallel execution (2 tasks at a time)
-guardkit autobuild feature FEAT-001 --parallel 2
+gka feature work FEAT-001 --parallel 2
 
 # With orchestrator mode
-guardkit autobuild feature FEAT-001 --orchestrate --parallel 3
+gka feature work FEAT-001 --orchestrate --parallel 3
 ```
 
-### autobuild resume
+### gka resume
 
-Resume an interrupted autobuild run.
+Resume an interrupted run.
 
 ```bash
-guardkit autobuild resume TASK_OR_FEATURE_ID
+gka resume TASK_OR_FEATURE_ID
 
 Arguments:
   ID    Task or Feature ID to resume
 ```
 
-### autobuild status
+### gka status
 
-Show status of autobuild runs.
+Show status of runs.
 
 ```bash
-guardkit autobuild status [OPTIONS]
+gka status [OPTIONS]
 
 Options:
   --task TEXT       Show status for specific task
@@ -118,12 +118,12 @@ Options:
   --json            Output as JSON
 ```
 
-### autobuild cancel
+### gka cancel
 
-Cancel a running autobuild.
+Cancel a running operation.
 
 ```bash
-guardkit autobuild cancel TASK_OR_FEATURE_ID
+gka cancel TASK_OR_FEATURE_ID
 
 Arguments:
   ID    Task or Feature ID to cancel
@@ -134,13 +134,13 @@ Arguments:
 ## Implementation
 
 ```python
-# guardkit/cli/autobuild.py
+# guardkit/cli/gka.py
 import click
 import asyncio
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
-from guardkit.orchestrator import AutoBuildOrchestrator, AutoBuildResult
+from guardkit.orchestrator import GKAOrchestrator, GKAResult
 from guardkit.features import load_feature
 from guardkit.tasks import load_task
 from typing import Optional
@@ -148,12 +148,18 @@ from typing import Optional
 console = Console()
 
 @click.group()
-def autobuild():
-    """Autonomous feature building with adversarial cooperation."""
+def gka():
+    """GuardKit Agent - Autonomous feature implementation with adversarial cooperation."""
     pass
 
 
-@autobuild.command()
+@gka.group()
+def task():
+    """Task management commands."""
+    pass
+
+
+@task.command()
 @click.argument("task_id")
 @click.option("--max-turns", default=10, help="Maximum player/coach turns")
 @click.option("--timeout", default=300, help="Timeout per turn in seconds")
@@ -162,7 +168,7 @@ def autobuild():
 @click.option("--dry-run", is_flag=True, help="Show what would run")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.pass_context
-def task(
+def work(
     ctx,
     task_id: str, 
     max_turns: int, 
@@ -172,7 +178,7 @@ def task(
     dry_run: bool,
     verbose: bool
 ):
-    """Run autobuild on a single task."""
+    """Run GuardKit Agent on a single task."""
     
     # Load task to verify it exists
     try:
@@ -185,13 +191,13 @@ def task(
         _show_dry_run_task(task_id, task_data, max_turns)
         return
     
-    # Run autobuild
-    console.print(f"[bold]🚀 Starting autobuild for {task_id}[/bold]")
+    # Run GuardKit Agent
+    console.print(f"[bold]🚀 Starting GuardKit Agent for {task_id}[/bold]")
     console.print(f"   Max turns: {max_turns}")
     console.print(f"   Timeout: {timeout}s per turn")
     console.print()
     
-    orchestrator = AutoBuildOrchestrator()
+    orchestrator = GKAOrchestrator()
     
     with Progress(
         SpinnerColumn(),
@@ -209,7 +215,13 @@ def task(
     _report_result(result, verbose)
 
 
-@autobuild.command()
+@gka.group()
+def feature():
+    """Feature management commands."""
+    pass
+
+
+@feature.command()
 @click.argument("feature_id")
 @click.option("--parallel", default=1, help="Max parallel tasks")
 @click.option("--max-turns", default=10, help="Maximum turns per task")
@@ -217,7 +229,7 @@ def task(
 @click.option("--orchestrate", is_flag=True, help="Enable orchestrator mode")
 @click.option("--dry-run", is_flag=True, help="Show execution plan")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
-def feature(
+def work(
     feature_id: str,
     parallel: int,
     max_turns: int,
@@ -226,7 +238,7 @@ def feature(
     dry_run: bool,
     verbose: bool
 ):
-    """Run autobuild on all tasks in a feature."""
+    """Run GuardKit Agent on all tasks in a feature."""
     
     # Load feature
     try:
@@ -239,13 +251,13 @@ def feature(
         _show_dry_run_feature(feature_id, feature_data, parallel)
         return
     
-    console.print(f"[bold]🚀 Starting autobuild for feature {feature_id}[/bold]")
+    console.print(f"[bold]🚀 Starting GuardKit Agent for feature {feature_id}[/bold]")
     console.print(f"   Tasks: {len(feature_data.tasks)}")
     console.print(f"   Parallel: {parallel}")
     console.print(f"   Orchestrator mode: {'enabled' if orchestrate else 'disabled'}")
     console.print()
     
-    orchestrator = AutoBuildOrchestrator()
+    orchestrator = GKAOrchestrator()
     results = {}
     failed = False
     
@@ -292,12 +304,12 @@ def feature(
     _report_feature_summary(feature_id, results)
 
 
-@autobuild.command()
+@gka.command()
 @click.argument("id")
 def resume(id: str):
-    """Resume an interrupted autobuild run."""
+    """Resume an interrupted run."""
     
-    orchestrator = AutoBuildOrchestrator()
+    orchestrator = GKAOrchestrator()
     state = orchestrator.load_state(id)
     
     if not state:
@@ -313,18 +325,18 @@ def resume(id: str):
     _report_result(result, verbose=True)
 
 
-@autobuild.command()
+@gka.command()
 @click.option("--task", default=None, help="Show status for specific task")
 @click.option("--feature", default=None, help="Show status for specific feature")
 @click.option("--all", "show_all", is_flag=True, help="Show all including completed")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def status(task: Optional[str], feature: Optional[str], show_all: bool, as_json: bool):
-    """Show status of autobuild runs."""
+    """Show status of runs."""
     
     # Load status from traces and checkpoints
-    from guardkit.orchestrator.status import get_autobuild_status
+    from guardkit.orchestrator.status import get_gka_status
     
-    statuses = get_autobuild_status(
+    statuses = get_gka_status(
         task_id=task,
         feature_id=feature,
         include_completed=show_all
@@ -336,10 +348,10 @@ def status(task: Optional[str], feature: Optional[str], show_all: bool, as_json:
         return
     
     if not statuses:
-        console.print("[dim]No autobuild runs found[/dim]")
+        console.print("[dim]No runs found[/dim]")
         return
     
-    table = Table(title="AutoBuild Status")
+    table = Table(title="GuardKit Agent Status")
     table.add_column("ID", style="cyan")
     table.add_column("Type")
     table.add_column("Status")
@@ -365,14 +377,14 @@ def status(task: Optional[str], feature: Optional[str], show_all: bool, as_json:
     console.print(table)
 
 
-@autobuild.command()
+@gka.command()
 @click.argument("id")
 def cancel(id: str):
-    """Cancel a running autobuild."""
+    """Cancel a running operation."""
     
-    from guardkit.orchestrator.status import cancel_autobuild
+    from guardkit.orchestrator.status import cancel_gka
     
-    success = cancel_autobuild(id)
+    success = cancel_gka(id)
     
     if success:
         console.print(f"[green]Cancelled {id}[/green]")
@@ -416,8 +428,8 @@ def _show_dry_run_feature(feature_id: str, feature_data, parallel: int):
             console.print(f"  Group {idx + 1}: {', '.join(group)} (parallel, max {parallel})")
 
 
-def _report_result(result: AutoBuildResult, verbose: bool):
-    """Report result of single task autobuild."""
+def _report_result(result: GKAResult, verbose: bool):
+    """Report result of single task run."""
     console.print()
     
     if result.success:
@@ -432,8 +444,8 @@ def _report_result(result: AutoBuildResult, verbose: bool):
         console.print(f"   Trace: {result.trace_path}")
 
 
-def _report_feature_summary(feature_id: str, results: dict[str, AutoBuildResult]):
-    """Report summary for feature autobuild."""
+def _report_feature_summary(feature_id: str, results: dict[str, GKAResult]):
+    """Report summary for feature run."""
     succeeded = sum(1 for r in results.values() if r.success)
     failed = sum(1 for r in results.values() if not r.success)
     total_turns = sum(r.turns for r in results.values())
@@ -464,16 +476,16 @@ import json
 import os
 import signal
 
-def get_autobuild_status(
+def get_gka_status(
     task_id: Optional[str] = None,
     feature_id: Optional[str] = None,
     include_completed: bool = False
 ) -> List[dict]:
-    """Get status of autobuild runs."""
+    """Get status of GuardKit Agent runs."""
     
     statuses = []
-    traces_dir = Path(".guardkit/traces")
-    checkpoints_dir = Path(".guardkit/checkpoints")
+    traces_dir = Path(".gka/traces")
+    checkpoints_dir = Path(".gka/checkpoints")
     
     if not traces_dir.exists():
         return statuses
@@ -515,10 +527,10 @@ def _determine_status(trace: dict) -> str:
     return "running"
 
 
-def cancel_autobuild(id: str) -> bool:
-    """Cancel a running autobuild."""
+def cancel_gka(id: str) -> bool:
+    """Cancel a running GuardKit Agent operation."""
     
-    pid_file = Path(f".guardkit/pids/{id}.pid")
+    pid_file = Path(f".gka/pids/{id}.pid")
     
     if not pid_file.exists():
         return False
@@ -542,7 +554,7 @@ guardkit/
 ├── cli/
 │   ├── __init__.py
 │   ├── main.py              # Main CLI entry point
-│   └── autobuild.py         # Autobuild commands
+│   └── gka.py               # GuardKit Agent commands
 ├── orchestrator/
 │   └── status.py            # Status tracking
 ```
@@ -551,15 +563,15 @@ guardkit/
 
 ## Acceptance Criteria
 
-- [ ] `guardkit autobuild task TASK-ID` runs single task
-- [ ] `guardkit autobuild feature FEAT-ID` runs all tasks in feature
+- [ ] `gka task work TASK-ID` runs single task
+- [ ] `gka feature work FEAT-ID` runs all tasks in feature
 - [ ] `--parallel` controls concurrent execution
 - [ ] `--dry-run` shows plan without executing
 - [ ] `--max-turns` configurable
 - [ ] `--stop-on-fail` stops feature on first failure
 - [ ] `resume` continues interrupted runs
-- [ ] `status` shows running/completed autobuilds
-- [ ] `cancel` stops running autobuild
+- [ ] `status` shows running/completed runs
+- [ ] `cancel` stops running operation
 - [ ] Progress displayed during execution (rich library)
 - [ ] Final summary shows success/failure per task
 - [ ] Exit codes: 0 for success, 1 for failure
@@ -571,13 +583,13 @@ guardkit/
 ### Unit Tests
 
 ```python
-# tests/unit/test_cli_autobuild.py
+# tests/unit/test_cli_gka.py
 from click.testing import CliRunner
-from guardkit.cli.autobuild import autobuild
+from guardkit.cli.gka import gka
 
 def test_task_dry_run(tmp_guardkit_project):
     runner = CliRunner()
-    result = runner.invoke(autobuild, ["task", "TASK-001", "--dry-run"])
+    result = runner.invoke(gka, ["task", "work", "TASK-001", "--dry-run"])
     
     assert result.exit_code == 0
     assert "Dry run" in result.output
@@ -585,14 +597,14 @@ def test_task_dry_run(tmp_guardkit_project):
 
 def test_feature_dry_run(tmp_guardkit_project):
     runner = CliRunner()
-    result = runner.invoke(autobuild, ["feature", "FEAT-001", "--dry-run"])
+    result = runner.invoke(gka, ["feature", "work", "FEAT-001", "--dry-run"])
     
     assert result.exit_code == 0
     assert "Execution Plan" in result.output
 
 def test_task_not_found():
     runner = CliRunner()
-    result = runner.invoke(autobuild, ["task", "NONEXISTENT"])
+    result = runner.invoke(gka, ["task", "work", "NONEXISTENT"])
     
     assert result.exit_code == 1
     assert "not found" in result.output
@@ -601,21 +613,21 @@ def test_task_not_found():
 ### Integration Tests
 
 ```python
-# tests/integration/test_cli_autobuild.py
+# tests/integration/test_cli_gka.py
 @pytest.mark.integration
-def test_autobuild_task_e2e(tmp_guardkit_project):
+def test_gka_task_e2e(tmp_guardkit_project):
     runner = CliRunner()
-    result = runner.invoke(autobuild, ["task", "TEST-001"])
+    result = runner.invoke(gka, ["task", "work", "TEST-001"])
     
     # Should complete (success or failure)
     assert result.exit_code in [0, 1]
     assert "TEST-001" in result.output
 
 @pytest.mark.integration
-def test_autobuild_feature_parallel(tmp_guardkit_project):
+def test_gka_feature_parallel(tmp_guardkit_project):
     runner = CliRunner()
-    result = runner.invoke(autobuild, [
-        "feature", "TEST-FEAT", 
+    result = runner.invoke(gka, [
+        "feature", "work", "TEST-FEAT", 
         "--parallel", "2"
     ])
     
@@ -628,7 +640,7 @@ def test_autobuild_feature_parallel(tmp_guardkit_project):
 
 ### Task Success
 ```
-🚀 Starting autobuild for TASK-001
+🚀 Starting GuardKit Agent for TASK-001
    Max turns: 10
    Timeout: 300s per turn
 
@@ -636,12 +648,12 @@ Running TASK-001... ✓
 
 ✅ TASK-001 completed successfully
    Turns: 3
-   Trace: .guardkit/traces/TASK-001.json
+   Trace: .gka/traces/TASK-001.json
 ```
 
 ### Task Failure
 ```
-🚀 Starting autobuild for TASK-001
+🚀 Starting GuardKit Agent for TASK-001
    Max turns: 10
    Timeout: 300s per turn
 
@@ -650,12 +662,12 @@ Running TASK-001... ✓
 ❌ TASK-001 failed
    Turns: 10
    Reason: Max turns (10) reached without approval
-   Trace: .guardkit/traces/TASK-001.json
+   Trace: .gka/traces/TASK-001.json
 ```
 
 ### Feature Summary
 ```
-🚀 Starting autobuild for feature FEAT-001
+🚀 Starting GuardKit Agent for feature FEAT-001
    Tasks: 4
    Parallel: 2
    Orchestrator mode: disabled
@@ -689,4 +701,4 @@ Failed tasks:
 
 - Click documentation: https://click.palletsprojects.com/
 - Rich library: https://rich.readthedocs.io/
-- Main spec: `AutoBuild_Product_Specification.md`
+- Main spec: `GuardKit_Agent_Product_Specification.md`

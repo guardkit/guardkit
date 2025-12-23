@@ -1,4 +1,4 @@
-# AutoBuild Phase 1: Kickoff Document (Updated)
+# GuardKit Agent Phase 1: Kickoff Document (Updated)
 
 > **Purpose**: Focused requirements for `/feature-plan` consumption. Updated to use LangChain DeepAgents.
 > **Last Updated**: December 2025
@@ -37,7 +37,7 @@
 | **F3** | Player Agent (SubAgent) | 1 day | Ready |
 | **F4** | Coach Agent (SubAgent) | 1 day | Ready |
 | **F5** | Orchestrator + Middleware | 2-3 days | Ready |
-| **F6** | autobuild CLI | 1-2 days | Ready |
+| **F6** | gka CLI | 1-2 days | Ready |
 | ~~F7~~ | ~~Blackboard~~ | ~~2 days~~ | Superseded |
 
 **Total**: 8-11 days (down from 12-17 days)
@@ -123,7 +123,7 @@ Configure DeepAgents as the foundation. This replaces the custom Agent SDK we or
 ```python
 # guardkit/orchestrator/config.py
 @dataclass
-class AutoBuildConfig:
+class GKAConfig:
     orchestrator_model: str = "anthropic:claude-sonnet-4-5-20250929"
     player_model: str = "anthropic:claude-3-5-haiku-20241022"
     coach_model: str = "anthropic:claude-sonnet-4-5-20250929"
@@ -284,7 +284,7 @@ class AdversarialLoopMiddleware(AgentMiddleware):
 
 ```python
 # guardkit/orchestrator/factory.py
-def create_autobuild_orchestrator(config=None):
+def create_gka_orchestrator(config=None):
     return create_deep_agent(
         model=config.orchestrator_model,
         subagents=[player_subagent, coach_subagent],
@@ -305,46 +305,46 @@ def create_autobuild_orchestrator(config=None):
 
 ---
 
-## Feature 6: autobuild CLI
+## Feature 6: gka CLI
 
 ### Commands
 
 ```bash
 # Run single task
-guardkit autobuild task TASK-001 [--max-turns 5]
+gka task work TASK-001 [--max-turns 5]
 
 # Run all tasks in feature
-guardkit autobuild feature FEAT-001 [--parallel 2]
+gka feature work FEAT-001 [--parallel 2]
 
 # Resume interrupted run
-guardkit autobuild resume FEAT-001
+gka resume FEAT-001
 
 # Check status
-guardkit autobuild status [TASK-ID | FEAT-ID]
+gka status [TASK-ID | FEAT-ID]
 ```
 
 ### Implementation
 
 ```python
-# guardkit/cli/autobuild.py
+# guardkit/cli/gka.py
 @click.group()
-def autobuild():
-    """AutoBuild - Autonomous feature implementation."""
+def gka():
+    """GuardKit Agent - Autonomous feature implementation."""
     pass
 
-@autobuild.command()
+@gka.command()
 @click.argument("task_id")
 @click.option("--max-turns", default=5)
 def task(task_id: str, max_turns: int):
-    """Run autobuild on a single task."""
-    orchestrator = AutoBuildOrchestrator()
+    """Run GuardKit Agent on a single task."""
+    orchestrator = GKAOrchestrator()
     result = orchestrator.run_task_sync(task_id, ...)
     display_result(result)
 ```
 
 ### Acceptance Criteria
-- [ ] `guardkit autobuild task TASK-ID` runs single task
-- [ ] `guardkit autobuild feature FEAT-ID` runs all tasks
+- [ ] `gka task work TASK-ID` runs single task
+- [ ] `gka feature work FEAT-ID` runs all tasks
 - [ ] `--parallel` controls concurrent execution
 - [ ] `resume` continues interrupted runs
 - [ ] Progress displayed during execution
@@ -373,8 +373,8 @@ Week 1 (5 days):
 Week 2 (5 days):
 ├── Day 1-3: F5 Orchestrator
 │   ├── AdversarialLoopMiddleware
-│   ├── create_autobuild_orchestrator
-│   └── AutoBuildOrchestrator wrapper
+│   ├── create_gka_orchestrator
+│   └── GKAOrchestrator wrapper
 │
 └── Day 4-5: F6 CLI + Integration
     ├── CLI commands
@@ -412,18 +412,18 @@ F2 (DeepAgents) ──┬──→ F3 (Player) ──→ F5 (Orchestrator) ─�
 ### Key Integration Tests
 
 ```python
-# tests/integration/test_autobuild_e2e.py
+# tests/integration/test_gka_e2e.py
 
 @pytest.mark.integration
-async def test_autobuild_task_completes():
-    """Actually run autobuild on a test task."""
-    result = await run_cli(["autobuild", "task", "TEST-001"])
+async def test_gka_task_completes():
+    """Actually run GuardKit Agent on a test task."""
+    result = await run_cli(["gka", "task", "work", "TEST-001"])
     assert result.exit_code == 0
 
 @pytest.mark.integration  
 async def test_player_coach_loop_executes():
     """Verify player and coach both run."""
-    result = await run_autobuild_task("TEST-001")
+    result = await run_gka_task("TEST-001")
     # Check coordination filesystem for both reports
 ```
 
@@ -433,7 +433,7 @@ async def test_player_coach_loop_executes():
 
 | Metric | Target |
 |--------|--------|
-| Task completion rate (autobuild) | ≥70% without human intervention |
+| Task completion rate (gka) | ≥70% without human intervention |
 | Average turns per task | ≤4 |
 | Coach approval accuracy | No false positives |
 | Integration test coverage | 100% of seams tested |
@@ -461,7 +461,7 @@ async def test_player_coach_loop_executes():
 | **AdversarialLoopMiddleware** | Player↔Coach loop control |
 | **Enhanced feature-plan** | Structured YAML with dependencies |
 | **WorktreeManager** | Git isolation for parallel tasks |
-| **autobuild CLI** | User-facing commands |
+| **gka CLI** | User-facing commands |
 | **Agent instructions** | Player and Coach prompts |
 
 ---
@@ -470,6 +470,6 @@ async def test_player_coach_loop_executes():
 
 - [DeepAgents GitHub](https://github.com/langchain-ai/deepagents) - 5.8k ⭐
 - [DeepAgents Documentation](https://docs.langchain.com/oss/python/deepagents/overview)
-- Full spec: `AutoBuild_Product_Specification.md`
+- Full spec: `GuardKit_Agent_Product_Specification.md`
 - Integration analysis: `DeepAgents_Integration_Analysis.md`
 - Adversarial cooperation: Block AI Research paper
