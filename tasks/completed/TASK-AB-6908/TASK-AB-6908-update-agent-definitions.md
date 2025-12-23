@@ -1,9 +1,9 @@
 ---
 id: TASK-AB-6908
 title: Update agent definitions to match GuardKit template standards
-status: backlog
+status: completed
 created: 2025-12-23T07:22:00Z
-updated: 2025-12-23T07:22:00Z
+updated: 2025-12-23T15:02:43.048896Z
 priority: high
 tags: [autobuild, agents, templates, documentation]
 complexity: 3
@@ -15,6 +15,8 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+completed: 2025-12-23T15:02:43.049076Z
+completed_location: tasks/completed/TASK-AB-6908/
 ---
 
 # Task: Update agent definitions to match GuardKit template standards
