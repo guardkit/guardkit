@@ -105,6 +105,247 @@ See `tasks/backlog/design-url-integration/` for implementation status.
 
 **See**: `installer/core/commands/*.md` for complete command specifications.
 
+## AutoBuild - Autonomous Task Implementation
+
+AutoBuild provides fully autonomous task implementation using a Player-Coach adversarial workflow. The system creates isolated worktrees, runs iterative implementation cycles, and preserves all work for human review.
+
+### How It Works
+
+AutoBuild uses a three-phase execution pattern:
+
+1. **Setup Phase**: Creates isolated git worktree for the task
+2. **Loop Phase**: Executes Player-Coach adversarial turns until approval or max turns
+3. **Finalize Phase**: Preserves worktree for human review (never auto-merges)
+
+### Player-Coach Workflow
+
+The adversarial loop ensures high-quality implementations:
+
+- **Player Agent**: Implements code, writes tests, creates report
+  - Full file system access (Read, Write, Edit, Bash)
+  - Works in isolated worktree
+  - Reports implementation status and concerns
+
+- **Coach Agent**: Validates implementation independently
+  - Read-only access (Read, Bash only)
+  - Runs tests independently
+  - Either approves or provides specific feedback
+
+### Usage
+
+Enable AutoBuild in task frontmatter:
+
+```yaml
+---
+id: TASK-XXX
+title: Task title
+autobuild:
+  enabled: true
+  max_turns: 5
+  base_branch: main
+---
+```
+
+Then run:
+
+```bash
+guardkit autobuild task TASK-XXX
+```
+
+### Configuration
+
+Task frontmatter options:
+
+```yaml
+autobuild:
+  enabled: true              # Enable AutoBuild for this task
+  max_turns: 5               # Maximum Player-Coach iterations (default: 5)
+  base_branch: main          # Branch to create worktree from (default: main)
+  player_model: claude-sonnet-4-5-20250929    # Optional: specify Player model
+  coach_model: claude-sonnet-4-5-20250929     # Optional: specify Coach model
+  sdk_timeout: 300           # Optional: SDK timeout in seconds (default: 300)
+```
+
+### Workflow Example
+
+**Simple Task (1-2 turns)**:
+```
+Turn 1: Player Implementation
+  ✓ 3 files created, 2 modified, 5 tests passing
+Turn 1: Coach Validation
+  ✓ Coach approved - ready for human review
+
+Status: APPROVED
+Worktree: .guardkit/worktrees/TASK-XXX
+```
+
+**Iterative Task (3+ turns)**:
+```
+Turn 1: Player Implementation
+  ✓ 2 files created, 8 tests passing
+Turn 1: Coach Validation
+  ⚠ Feedback: Missing token refresh logic
+
+Turn 2: Player Implementation
+  ✓ 1 file modified, 11 tests passing
+Turn 2: Coach Validation
+  ⚠ Feedback: Edge case coverage incomplete
+
+Turn 3: Player Implementation
+  ✓ 2 files modified, 15 tests passing
+Turn 3: Coach Validation
+  ✓ Coach approved - ready for human review
+
+Status: APPROVED
+Worktree: .guardkit/worktrees/TASK-XXX
+```
+
+### Exit Conditions
+
+AutoBuild exits under three conditions:
+
+1. **Approved**: Coach approves implementation
+   - Worktree preserved for human review
+   - Ready for manual merge
+
+2. **Max Turns Exceeded**: Reached iteration limit
+   - Worktree preserved for inspection
+   - Human intervention required
+
+3. **Error**: Critical error occurred
+   - Worktree preserved for debugging
+   - Check error logs
+
+### Worktree Management
+
+All AutoBuild work happens in isolated git worktrees:
+
+- **Location**: `.guardkit/worktrees/TASK-XXX/`
+- **Branch**: `autobuild/TASK-XXX`
+- **Preserved**: Never auto-deleted (manual cleanup required)
+
+To review AutoBuild output:
+
+```bash
+# Navigate to worktree
+cd .guardkit/worktrees/TASK-XXX
+
+# Review changes
+git diff main
+
+# Review turn history
+cat .guardkit/autobuild/TASK-XXX/player_turn_*.json
+cat .guardkit/autobuild/TASK-XXX/coach_turn_*.json
+
+# Merge if approved
+git checkout main
+git merge autobuild/TASK-XXX
+
+# Cleanup worktree
+guardkit worktree cleanup TASK-XXX
+```
+
+### Agent Reports
+
+Player and Coach create structured JSON reports:
+
+**Player Report** (`.guardkit/autobuild/TASK-XXX/player_turn_N.json`):
+```json
+{
+  "task_id": "TASK-XXX",
+  "turn": 1,
+  "files_modified": ["src/auth.py"],
+  "files_created": ["src/oauth.py"],
+  "tests_written": ["tests/test_oauth.py"],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "12 tests passed",
+  "implementation_notes": "Implemented OAuth2 flow with token refresh",
+  "concerns": [],
+  "requirements_addressed": ["OAuth2 support", "Token refresh"],
+  "requirements_remaining": []
+}
+```
+
+**Coach Decision** (`.guardkit/autobuild/TASK-XXX/coach_turn_N.json`):
+```json
+{
+  "task_id": "TASK-XXX",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {
+    "requirements_met": ["OAuth2 support", "Token refresh"],
+    "tests_run": true,
+    "tests_passed": true,
+    "test_command": "pytest tests/",
+    "test_output_summary": "All tests passed",
+    "code_quality": "Excellent",
+    "edge_cases_covered": ["Token expiry", "Invalid grant"]
+  },
+  "rationale": "Implementation meets all requirements with comprehensive testing"
+}
+```
+
+### Troubleshooting
+
+**AutoBuild not available?**
+- Check Claude Agents SDK installation
+- Verify API keys configured
+- Run `guardkit doctor` for diagnostics
+
+**Player/Coach not responding?**
+- Check SDK timeout configuration
+- Review error logs in `.guardkit/logs/`
+- Verify worktree permissions
+
+**Max turns reached without approval?**
+- Review Coach feedback from last turn
+- Check if requirements are too broad
+- Consider splitting into smaller tasks
+- Manual implementation may be needed
+
+**Worktree conflicts?**
+- Ensure base branch is up to date
+- Check for existing worktree with same name
+- Run `guardkit worktree cleanup` if needed
+
+### Best Practices
+
+1. **Clear Requirements**: Provide detailed requirements and acceptance criteria
+2. **Right-Sized Tasks**: Aim for tasks that complete in 1-3 turns
+3. **Review Before Merge**: Always review AutoBuild output before merging
+4. **Cleanup Worktrees**: Remove old worktrees after merging
+5. **Monitor Progress**: Watch the progress display to catch issues early
+
+### Integration with GuardKit Workflow
+
+AutoBuild integrates seamlessly with GuardKit task workflow:
+
+```bash
+# Standard workflow
+/task-create "Implement OAuth2 authentication"
+/task-work TASK-XXX  # Manual implementation with quality gates
+
+# AutoBuild workflow (autonomous)
+/task-create "Implement OAuth2 authentication" autobuild:enabled=true
+guardkit autobuild task TASK-XXX  # Autonomous implementation
+# Review worktree output
+# Merge manually
+/task-complete TASK-XXX
+```
+
+**When to Use AutoBuild**:
+- Well-defined requirements
+- Standard implementation patterns
+- Good test coverage possible
+- Low risk changes
+
+**When to Use Manual /task-work**:
+- Exploratory work
+- Complex architectural decisions
+- High risk changes
+- Unusual requirements
+
 ## Hash-Based Task IDs
 
 GuardKit uses hash-based task IDs to prevent duplicates and support concurrent creation:
