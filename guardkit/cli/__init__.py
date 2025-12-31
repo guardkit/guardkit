@@ -1,5 +1,5 @@
 """GuardKit CLI package."""
 
-__version__ = "1.0.0"
+from guardkit import __version__
 
 __all__ = ["__version__"]

@@ -40,11 +40,8 @@ from guardkit.orchestrator.exceptions import (
     SDKTimeoutError,
 )
 
-# Mock worktree components (imported from installer location)
-_installer_lib_path = _test_root / "installer" / "core" / "lib"
-sys.path.insert(0, str(_installer_lib_path))
-
-from orchestrator.worktrees import (
+# Import worktree components from guardkit package
+from guardkit.worktrees import (
     Worktree,
     WorktreeCreationError,
     WorktreeMergeError,
@@ -63,6 +60,7 @@ def mock_worktree():
     worktree.task_id = "TASK-AB-001"
     worktree.path = Path("/tmp/worktrees/TASK-AB-001")
     worktree.branch_name = "autobuild/TASK-AB-001"
+    worktree.base_branch = "main"
     return worktree
 
 
@@ -99,10 +97,31 @@ def mock_progress_display():
 
 
 @pytest.fixture
+def mock_coach_validator():
+    """
+    Patch CoachValidator to force SDK fallback.
+
+    The CoachValidator is tried first in _invoke_coach_safely. By making it
+    raise an exception, we force the orchestrator to use the mock_agent_invoker
+    which the tests control. This maintains backward compatibility with
+    existing tests while allowing CoachValidator to work in production.
+    """
+    with patch(
+        "guardkit.orchestrator.autobuild.CoachValidator"
+    ) as mock_validator_class:
+        # Make CoachValidator.validate() raise to force SDK fallback
+        mock_instance = MagicMock()
+        mock_instance.validate.side_effect = Exception("Force SDK fallback for test")
+        mock_validator_class.return_value = mock_instance
+        yield mock_validator_class
+
+
+@pytest.fixture
 def orchestrator_with_mocks(
     mock_worktree_manager,
     mock_agent_invoker,
-    mock_progress_display
+    mock_progress_display,
+    mock_coach_validator,
 ):
     """Create AutoBuildOrchestrator with all dependencies mocked."""
     return AutoBuildOrchestrator(
@@ -873,6 +892,414 @@ class TestIntegration:
         assert turn2.turn == 2
         assert turn2.decision == "approve"
         assert turn2.feedback is None
+
+
+# ============================================================================
+# Test State Persistence
+# ============================================================================
+
+
+class TestStatePersistence:
+    """Test state persistence and resume functionality."""
+
+    @pytest.fixture
+    def temp_task_file(self, tmp_path):
+        """Create a temporary task file with frontmatter."""
+        task_file = tmp_path / "TASK-AB-001.md"
+        content = """---
+id: TASK-AB-001
+title: Test Task
+status: backlog
+---
+
+# Test Task
+
+Requirements here.
+"""
+        task_file.write_text(content)
+        return task_file
+
+    @pytest.fixture
+    def temp_task_file_with_state(self, tmp_path):
+        """Create a task file with existing autobuild state."""
+        task_file = tmp_path / "TASK-AB-002.md"
+        worktree_path = tmp_path / "worktrees" / "TASK-AB-002"
+        worktree_path.mkdir(parents=True)
+
+        content = f"""---
+id: TASK-AB-002
+title: Test Task with State
+status: in_progress
+autobuild_state:
+  current_turn: 2
+  max_turns: 5
+  worktree_path: {worktree_path}
+  base_branch: main
+  started_at: '2025-12-24T10:00:00'
+  last_updated: '2025-12-24T10:10:00'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: Add more tests
+    timestamp: '2025-12-24T10:05:00'
+    player_summary: Implemented initial feature
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: Fix edge cases
+    timestamp: '2025-12-24T10:10:00'
+    player_summary: Added test coverage
+    player_success: true
+    coach_success: true
+---
+
+# Test Task with State
+
+Requirements here.
+"""
+        task_file.write_text(content)
+        return task_file, worktree_path
+
+    def test_save_state_creates_autobuild_state(
+        self,
+        temp_task_file,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _save_state creates autobuild_state in frontmatter."""
+        import yaml
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Add a turn to history
+        orchestrator._turn_history = [
+            TurnRecord(
+                turn=1,
+                player_result=make_player_result(turn=1),
+                coach_result=make_coach_result(turn=1, decision="feedback"),
+                decision="feedback",
+                feedback="Add more tests",
+                timestamp="2025-12-24T10:00:00",
+            )
+        ]
+
+        # Mock worktree
+        worktree = Mock()
+        worktree.path = Path("/tmp/worktrees/TASK-AB-001")
+        worktree.base_branch = "main"
+
+        # Save state
+        orchestrator._save_state(temp_task_file, worktree, "in_progress")
+
+        # Verify state was saved
+        content = temp_task_file.read_text()
+        assert "autobuild_state:" in content
+        assert "current_turn: 1" in content
+        assert "worktree_path:" in content
+        assert "status: in_progress" in content
+
+    def test_resume_from_state_restores_turn_history(
+        self,
+        temp_task_file_with_state,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _resume_from_state restores turn history correctly."""
+        task_file, worktree_path = temp_task_file_with_state
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            resume=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Resume from state
+        worktree, start_turn = orchestrator._resume_from_state(
+            "TASK-AB-002",
+            task_file,
+        )
+
+        # Verify turn history restored
+        assert len(orchestrator._turn_history) == 2
+        assert orchestrator._turn_history[0].turn == 1
+        assert orchestrator._turn_history[0].decision == "feedback"
+        assert orchestrator._turn_history[0].feedback == "Add more tests"
+        assert orchestrator._turn_history[1].turn == 2
+        assert orchestrator._turn_history[1].feedback == "Fix edge cases"
+
+        # Verify start turn
+        assert start_turn == 3  # Continue from turn 3
+
+        # Verify worktree
+        assert worktree.task_id == "TASK-AB-002"
+        assert worktree.path == worktree_path
+
+    def test_resume_from_state_no_state_raises_error(
+        self,
+        temp_task_file,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _resume_from_state raises error when no state exists."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            resume=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        with pytest.raises(SetupPhaseError, match="No saved state found"):
+            orchestrator._resume_from_state("TASK-AB-001", temp_task_file)
+
+    def test_resume_from_state_missing_worktree_raises_error(
+        self,
+        tmp_path,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _resume_from_state raises error when worktree doesn't exist."""
+        task_file = tmp_path / "TASK-AB-003.md"
+        content = """---
+id: TASK-AB-003
+title: Test Task
+status: in_progress
+autobuild_state:
+  current_turn: 1
+  worktree_path: /nonexistent/path
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: Test feedback
+    timestamp: '2025-12-24T10:00:00'
+    player_success: true
+    coach_success: true
+---
+
+# Test Task
+"""
+        task_file.write_text(content)
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            resume=True,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        with pytest.raises(SetupPhaseError, match="Worktree not found"):
+            orchestrator._resume_from_state("TASK-AB-003", task_file)
+
+    def test_get_last_feedback_returns_last_turn_feedback(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _get_last_feedback returns feedback from last turn."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Set turn history
+        orchestrator._turn_history = [
+            TurnRecord(
+                turn=1,
+                player_result=make_player_result(turn=1),
+                coach_result=make_coach_result(turn=1, decision="feedback"),
+                decision="feedback",
+                feedback="First feedback",
+                timestamp="2025-12-24T10:00:00",
+            ),
+            TurnRecord(
+                turn=2,
+                player_result=make_player_result(turn=2),
+                coach_result=make_coach_result(turn=2, decision="feedback"),
+                decision="feedback",
+                feedback="Last feedback",
+                timestamp="2025-12-24T10:05:00",
+            ),
+        ]
+
+        # Verify last feedback returned
+        assert orchestrator._get_last_feedback() == "Last feedback"
+
+    def test_get_last_feedback_returns_none_when_no_history(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _get_last_feedback returns None when no turn history."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        assert orchestrator._get_last_feedback() is None
+
+    def test_serialize_turn_history(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _serialize_turn_history produces correct format."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Set turn history
+        orchestrator._turn_history = [
+            TurnRecord(
+                turn=1,
+                player_result=make_player_result(turn=1),
+                coach_result=make_coach_result(turn=1, decision="approve"),
+                decision="approve",
+                feedback=None,
+                timestamp="2025-12-24T10:00:00",
+            )
+        ]
+
+        # Serialize
+        serialized = orchestrator._serialize_turn_history()
+
+        # Verify format
+        assert len(serialized) == 1
+        assert serialized[0]["turn"] == 1
+        assert serialized[0]["decision"] == "approve"
+        assert serialized[0]["feedback"] is None
+        assert serialized[0]["timestamp"] == "2025-12-24T10:00:00"
+        assert serialized[0]["player_success"] is True
+        assert serialized[0]["coach_success"] is True
+
+    def test_deserialize_turn_history(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _deserialize_turn_history restores TurnRecords."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        saved_turns = [
+            {
+                "turn": 1,
+                "decision": "feedback",
+                "feedback": "Test feedback",
+                "timestamp": "2025-12-24T10:00:00",
+                "player_summary": "Initial implementation",
+                "player_success": True,
+                "coach_success": True,
+            }
+        ]
+
+        # Deserialize
+        records = orchestrator._deserialize_turn_history(saved_turns)
+
+        # Verify records
+        assert len(records) == 1
+        assert records[0].turn == 1
+        assert records[0].decision == "feedback"
+        assert records[0].feedback == "Test feedback"
+        assert records[0].timestamp == "2025-12-24T10:00:00"
+        assert records[0].player_result.success is True
+        assert records[0].coach_result.success is True
+
+    def test_orchestrate_saves_state_after_each_turn(
+        self,
+        temp_task_file,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree,
+        mock_coach_validator,
+    ):
+        """Test orchestrate saves state after each turn."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock 2 turns: feedback then approve
+        mock_agent_invoker.invoke_player.side_effect = [
+            make_player_result(turn=1),
+            make_player_result(turn=2),
+        ]
+        mock_agent_invoker.invoke_coach.side_effect = [
+            make_coach_result(turn=1, decision="feedback"),
+            make_coach_result(turn=2, decision="approve"),
+        ]
+
+        # Execute orchestration with task file path
+        result = orchestrator.orchestrate(
+            task_id="TASK-AB-001",
+            requirements="Test requirements",
+            acceptance_criteria=["Test criteria"],
+            task_file_path=temp_task_file,
+        )
+
+        # Verify result
+        assert result.success is True
+        assert result.total_turns == 2
+
+        # Verify state was saved (check file content)
+        content = temp_task_file.read_text()
+        assert "autobuild_state:" in content
+        assert "current_turn: 2" in content
+
+    def test_resume_parameter_passed_to_orchestrator(self):
+        """Test resume parameter is stored correctly."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            resume=True,
+        )
+        assert orchestrator.resume is True
+
+        orchestrator_no_resume = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            resume=False,
+        )
+        assert orchestrator_no_resume.resume is False
 
 
 # ============================================================================

@@ -336,7 +336,7 @@ class TestCoachInvocation:
             call_kwargs = mock_sdk.call_args.kwargs
             assert call_kwargs["agent_type"] == "coach"
             assert call_kwargs["allowed_tools"] == ["Read", "Bash", "Grep", "Glob"]
-            assert call_kwargs["permission_mode"] == "default"
+            assert call_kwargs["permission_mode"] == "bypassPermissions"
             assert "Write" not in call_kwargs["allowed_tools"]
             assert "Edit" not in call_kwargs["allowed_tools"]
 
@@ -565,9 +565,23 @@ class TestSDKIntegration:
     """Test SDK integration patterns."""
 
     @pytest.mark.asyncio
-    async def test_sdk_invocation_not_implemented(self, agent_invoker):
-        """SDK invocation raises NotImplementedError (SDK not yet integrated)."""
-        with pytest.raises(NotImplementedError) as exc_info:
+    async def test_sdk_invocation_calls_query(self, agent_invoker):
+        """SDK invocation calls claude_agent_sdk.query() with correct options."""
+        # Create async generator mock for query()
+        async def mock_query_gen(*args, **kwargs):
+            yield MagicMock(type="assistant")
+            yield MagicMock(type="result", subtype="success")
+
+        # Create mock SDK module
+        mock_sdk = MagicMock()
+        mock_sdk.query = mock_query_gen
+        mock_sdk.ClaudeAgentOptions = MagicMock()
+        mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+        mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
+        mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             await agent_invoker._invoke_with_role(
                 prompt="Test prompt",
                 agent_type="player",
@@ -576,7 +590,127 @@ class TestSDKIntegration:
                 model="claude-sonnet-4-5-20250929",
             )
 
-        assert "SDK integration pending" in str(exc_info.value)
+            # Verify ClaudeAgentOptions was constructed correctly
+            mock_sdk.ClaudeAgentOptions.assert_called_once()
+            options_kwargs = mock_sdk.ClaudeAgentOptions.call_args.kwargs
+            assert options_kwargs["cwd"] == str(agent_invoker.worktree_path)
+            assert options_kwargs["allowed_tools"] == ["Read", "Write"]
+            assert options_kwargs["permission_mode"] == "acceptEdits"
+            assert options_kwargs["max_turns"] == agent_invoker.max_turns_per_agent
+            assert options_kwargs["model"] == "claude-sonnet-4-5-20250929"
+            assert options_kwargs["setting_sources"] == ["project"]
+
+    @pytest.mark.asyncio
+    async def test_sdk_handles_cli_not_found(self, agent_invoker):
+        """SDK raises AgentInvocationError when CLI not found."""
+        # Create mock SDK module with CLINotFoundError
+        CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+
+        async def mock_query_error(*args, **kwargs):
+            raise CLINotFoundError("Claude Code not found")
+            yield  # Make it a generator
+
+        mock_sdk = MagicMock()
+        mock_sdk.query = mock_query_error
+        mock_sdk.ClaudeAgentOptions = MagicMock()
+        mock_sdk.CLINotFoundError = CLINotFoundError
+        mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
+        mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            with pytest.raises(AgentInvocationError) as exc_info:
+                await agent_invoker._invoke_with_role(
+                    prompt="Test prompt",
+                    agent_type="player",
+                    allowed_tools=["Read"],
+                    permission_mode="acceptEdits",
+                    model="claude-sonnet-4-5-20250929",
+                )
+
+            assert "Claude Code CLI not installed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_sdk_handles_import_error(self, agent_invoker):
+        """SDK raises AgentInvocationError when SDK not installed."""
+        # Patch the import to raise ImportError
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": None}):
+            with pytest.raises(AgentInvocationError) as exc_info:
+                await agent_invoker._invoke_with_role(
+                    prompt="Test prompt",
+                    agent_type="player",
+                    allowed_tools=["Read"],
+                    permission_mode="acceptEdits",
+                    model="claude-sonnet-4-5-20250929",
+                )
+
+            assert "Claude Agent SDK not installed" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_sdk_handles_timeout(self, agent_invoker):
+        """SDK raises SDKTimeoutError when invocation times out."""
+        async def mock_query_timeout(*args, **kwargs):
+            await asyncio.sleep(10)  # Simulate long-running operation
+            yield MagicMock()
+
+        # Create mock SDK module
+        mock_sdk = MagicMock()
+        mock_sdk.query = mock_query_timeout
+        mock_sdk.ClaudeAgentOptions = MagicMock()
+        mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+        mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
+        mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        # Set a very short timeout for testing
+        agent_invoker.sdk_timeout_seconds = 0.01
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            with pytest.raises(SDKTimeoutError) as exc_info:
+                await agent_invoker._invoke_with_role(
+                    prompt="Test prompt",
+                    agent_type="player",
+                    allowed_tools=["Read"],
+                    permission_mode="acceptEdits",
+                    model="claude-sonnet-4-5-20250929",
+                )
+
+            assert "timeout" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_coach_uses_bypass_permissions(self, agent_invoker, worktree_path, sample_player_report, sample_coach_approval):
+        """Coach invocation uses bypassPermissions mode."""
+        # Setup: Create Coach decision file
+        create_report_file(
+            worktree_path, "TASK-001", 1, "coach", sample_coach_approval
+        )
+
+        # Create async generator mock for query()
+        async def mock_query_gen(*args, **kwargs):
+            yield MagicMock(type="result")
+
+        mock_sdk = MagicMock()
+        mock_sdk.query = mock_query_gen
+        mock_sdk.ClaudeAgentOptions = MagicMock()
+        mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+        mock_sdk.ProcessError = type("ProcessError", (Exception,), {})
+        mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            await agent_invoker.invoke_coach(
+                task_id="TASK-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report=sample_player_report,
+            )
+
+            # Verify Coach uses bypassPermissions
+            options_kwargs = mock_sdk.ClaudeAgentOptions.call_args.kwargs
+            assert options_kwargs["permission_mode"] == "bypassPermissions"
+            assert "Write" not in options_kwargs["allowed_tools"]
+            assert "Edit" not in options_kwargs["allowed_tools"]
 
     @pytest.mark.asyncio
     async def test_fresh_context_per_turn(self, agent_invoker, worktree_path, sample_player_report):

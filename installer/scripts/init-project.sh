@@ -266,18 +266,15 @@ copy_template_files() {
         fi
     done 2>/dev/null || true
     
-    # Link to global commands
-    if [ -d "$AGENTECFLOW_HOME/commands" ]; then
-        for cmd in "$AGENTECFLOW_HOME/commands"/*.md; do
-            if [ -f "$cmd" ]; then
-                local cmd_name=$(basename "$cmd")
-                # Create symlink or copy if symlink fails
-                ln -sf "$cmd" ".claude/commands/$cmd_name" 2>/dev/null || \
-                cp "$cmd" ".claude/commands/$cmd_name"
-            fi
-        done
-        print_success "Linked GuardKit commands"
-    fi
+    # NOTE: Global commands are already available via ~/.claude/commands/ symlink
+    # Do NOT create project-level command symlinks - this causes duplicate commands
+    # in Claude Code's autocomplete (user + project both point to same files)
+    #
+    # Commands are loaded from:
+    #   ~/.claude/commands/ → ~/.agentecflow/commands/ (global, always available)
+    #
+    # Project-specific commands can still be added to .claude/commands/ if needed,
+    # but we don't duplicate the global ones here.
     
     TEMPLATE="$effective_template"  # Update for later use
 }

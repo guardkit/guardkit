@@ -57,7 +57,7 @@ def mock_task_data():
 @pytest.fixture
 def mock_worktree():
     """Provide mock Worktree for testing."""
-    from orchestrator.worktrees import Worktree
+    from guardkit.worktrees import Worktree
 
     return Worktree(
         task_id="TASK-AB-001",
@@ -190,6 +190,7 @@ def test_task_command_success(
         task_id="TASK-AB-001",
         requirements=mock_task_data["requirements"],
         acceptance_criteria=mock_task_data["acceptance_criteria"],
+        task_file_path=mock_task_data["file_path"],
     )
 
     # Verify exit code

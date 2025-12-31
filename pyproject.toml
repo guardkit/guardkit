@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "guardkit-py"
+dynamic = ["version"]
+description = "Lightweight AI-Assisted Development Framework"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "GuardKit Contributors", email = "noreply@guardkit.dev"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "pyyaml>=6.0.0",
+    "python-frontmatter>=1.0.0",
+    "pydantic>=2.0.0",
+    "Jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+autobuild = [
+    "claude-agent-sdk>=0.1.0",
+]
+dev = [
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.25.1",
+]
+all = [
+    "claude-agent-sdk>=0.1.0",
+    "pytest>=7.4.3",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.25.1",
+]
+
+[project.scripts]
+guardkit-py = "guardkit.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/guardkit/guardkit"
+Documentation = "https://github.com/guardkit/guardkit/tree/main/docs"
+Repository = "https://github.com/guardkit/guardkit"
+Issues = "https://github.com/guardkit/guardkit/issues"
+
+[tool.hatch.version]
+path = "guardkit/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["guardkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=guardkit --cov-report=term --cov-report=json"

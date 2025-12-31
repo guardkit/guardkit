@@ -79,6 +79,44 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 
 **See**: `installer/core/commands/feature-plan.md` for complete documentation
 
+### Autonomous Build Workflow (AutoBuild)
+```bash
+/feature-build TASK-XXX [--max-turns N] [--resume] [--verbose]
+```
+
+The `/feature-build` command provides fully autonomous task implementation using the Player-Coach adversarial workflow.
+
+**What it does**:
+1. Creates isolated git worktree
+2. Runs Player-Coach dialectical loop
+3. Player implements, Coach validates
+4. Preserves worktree for human review (never auto-merges)
+
+**Example**:
+```bash
+/feature-build TASK-AUTH-001
+
+# Output:
+# Turn 1: Player implements → Coach provides feedback
+# Turn 2: Player improves → Coach approves
+#
+# Status: APPROVED
+# Worktree: .guardkit/worktrees/TASK-AUTH-001
+# Next: cd .guardkit/worktrees/TASK-AUTH-001 && git diff main
+```
+
+**When to use**:
+- Well-defined requirements with clear acceptance criteria
+- Standard implementation patterns
+- Low-medium risk changes that can complete in 1-5 iterations
+
+**When to use /task-work instead**:
+- Exploratory work
+- Complex architectural decisions
+- High-risk changes requiring human judgment
+
+**See**: `installer/core/commands/feature-build.md` for complete documentation
+
 ### Agent & Template Management
 ```bash
 /agent-format <template>/<agent>     # Format agent to template standards

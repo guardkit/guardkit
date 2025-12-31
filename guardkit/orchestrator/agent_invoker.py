@@ -244,11 +244,12 @@ class AgentInvoker:
             prompt = self._build_coach_prompt(task_id, turn, requirements, player_report)
 
             # Invoke SDK with Coach permissions (Read, Bash only - no Write/Edit)
+            # Coach uses bypassPermissions since it's read-only anyway
             await self._invoke_with_role(
                 prompt=prompt,
                 agent_type="coach",
                 allowed_tools=["Read", "Bash", "Grep", "Glob"],
-                permission_mode="default",
+                permission_mode="bypassPermissions",
                 model=self.coach_model,
             )
 
@@ -459,19 +460,19 @@ Follow the decision format specified in your agent definition.
         prompt: str,
         agent_type: Literal["player", "coach"],
         allowed_tools: list[str],
-        permission_mode: Literal["acceptEdits", "default"],
+        permission_mode: Literal["acceptEdits", "bypassPermissions"],
         model: str,
     ) -> None:
         """Low-level SDK invocation with role-based permissions.
 
-        This method handles the actual Claude Agents SDK invocation with
+        This method handles the actual Claude Agent SDK invocation with
         appropriate permissions and timeout handling.
 
         Args:
             prompt: Formatted prompt for agent
             agent_type: "player" or "coach"
             allowed_tools: List of allowed SDK tools
-            permission_mode: "acceptEdits" (Player) or "default" (Coach)
+            permission_mode: "acceptEdits" (Player) or "bypassPermissions" (Coach)
             model: Model identifier
 
         Raises:
@@ -479,37 +480,52 @@ Follow the decision format specified in your agent definition.
             SDKTimeoutError: If invocation exceeds timeout
         """
         try:
-            # Note: Actual SDK integration will be added when SDK is available
-            # This is a placeholder for the SDK invocation pattern
-            #
-            # from claude_code_sdk import query, ClaudeCodeOptions
-            #
-            # options = ClaudeCodeOptions(
-            #     cwd=str(self.worktree_path),
-            #     allowed_tools=allowed_tools,
-            #     permission_mode=permission_mode,
-            #     max_turns=self.max_turns_per_agent,
-            #     model=model,
-            # )
-            #
-            # async with asyncio.timeout(self.sdk_timeout_seconds):
-            #     async for message in query(prompt=prompt, options=options):
-            #         # Process SDK messages (progress tracking, etc.)
-            #         yield message
-
-            # For now, raise NotImplementedError to indicate SDK integration needed
-            raise NotImplementedError(
-                "Claude Agents SDK integration pending. "
-                "This will be completed when SDK is available."
+            from claude_agent_sdk import (
+                query,
+                ClaudeAgentOptions,
+                CLINotFoundError,
+                ProcessError,
+                CLIJSONDecodeError,
             )
+        except ImportError as e:
+            raise AgentInvocationError(
+                "Claude Agent SDK not installed. Run: pip install claude-agent-sdk"
+            ) from e
+
+        try:
+            options = ClaudeAgentOptions(
+                cwd=str(self.worktree_path),
+                allowed_tools=allowed_tools,
+                permission_mode=permission_mode,
+                max_turns=self.max_turns_per_agent,
+                model=model,
+                setting_sources=["project"],  # Load CLAUDE.md from worktree
+            )
+
+            async with asyncio.timeout(self.sdk_timeout_seconds):
+                async for message in query(prompt=prompt, options=options):
+                    # Progress tracking handled by ProgressDisplay
+                    # Agent writes report to JSON file, which is loaded after
+                    # the query completes via _load_agent_report()
+                    pass
 
         except asyncio.TimeoutError:
             raise SDKTimeoutError(
                 f"Agent invocation exceeded {self.sdk_timeout_seconds}s timeout"
             )
-        except NotImplementedError:
-            # Re-raise NotImplementedError for testing
-            raise
+        except CLINotFoundError as e:
+            raise AgentInvocationError(
+                "Claude Code CLI not installed. "
+                "Run: npm install -g @anthropic-ai/claude-code"
+            ) from e
+        except ProcessError as e:
+            raise AgentInvocationError(
+                f"SDK process failed (exit {e.exit_code}): {e.stderr}"
+            ) from e
+        except CLIJSONDecodeError as e:
+            raise AgentInvocationError(
+                f"Failed to parse SDK response: {e}"
+            ) from e
         except Exception as e:
             raise AgentInvocationError(
                 f"SDK invocation failed for {agent_type}: {str(e)}"

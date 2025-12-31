@@ -27,21 +27,7 @@ from guardkit.orchestrator import (
     TurnRecord,
 )
 from guardkit.tasks.task_loader import TaskLoader
-
-# Worktree imports with sys.path fallback
-try:
-    from orchestrator.worktrees import WorktreeManager, Worktree
-except ImportError:
-    import sys as _sys
-    from pathlib import Path as _Path
-
-    _installer_lib_path = (
-        _Path(__file__).parent.parent.parent / "installer" / "core" / "lib"
-    )
-    if str(_installer_lib_path) not in _sys.path:
-        _sys.path.insert(0, str(_installer_lib_path))
-    from orchestrator.worktrees import WorktreeManager, Worktree
-
+from guardkit.worktrees import WorktreeManager, Worktree
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -88,6 +74,11 @@ def autobuild():
     is_flag=True,
     help="Show detailed turn-by-turn output",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume from last saved state",
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -96,6 +87,7 @@ def task(
     max_turns: int,
     model: str,
     verbose: bool,
+    resume: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -108,13 +100,20 @@ def task(
         guardkit autobuild task TASK-AB-001
         guardkit autobuild task TASK-AB-001 --max-turns 10 --verbose
         guardkit autobuild task TASK-AB-001 --model claude-opus-4-5-20251101
+        guardkit autobuild task TASK-AB-001 --resume
 
     \b
     Workflow:
         1. Load task file from tasks/backlog or tasks/in_progress
-        2. Create isolated worktree in .guardkit/worktrees/
+        2. Create isolated worktree in .guardkit/worktrees/ (or resume existing)
         3. Execute Player→Coach adversarial turns
-        4. Preserve worktree for human review (approval or debugging)
+        4. Persist state to task frontmatter after each turn
+        5. Preserve worktree for human review (approval or debugging)
+
+    \b
+    Resume Mode (--resume):
+        Continue from last saved state if orchestration was interrupted.
+        State is stored in task frontmatter as 'autobuild_state'.
 
     \b
     Exit Codes:
@@ -128,13 +127,15 @@ def task(
     verbose = verbose or ctx_obj.get("verbose", False)
 
     # Display startup banner
+    mode_text = "[yellow]Resuming[/yellow]" if resume else "Starting"
     if not ctx_obj.get("quiet", False):
         console.print(
             Panel(
                 f"[bold]AutoBuild Task Orchestration[/bold]\n\n"
                 f"Task: [cyan]{task_id}[/cyan]\n"
                 f"Max Turns: {max_turns}\n"
-                f"Model: {model}",
+                f"Model: {model}\n"
+                f"Mode: {mode_text}",
                 title="GuardKit AutoBuild",
                 border_style="blue",
             )
@@ -149,14 +150,16 @@ def task(
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
         max_turns=max_turns,
+        resume=resume,
     )
 
     # Phase 3: Execute orchestration
-    logger.info(f"Starting orchestration for {task_id}")
+    logger.info(f"Starting orchestration for {task_id} (resume={resume})")
     result = orchestrator.orchestrate(
         task_id=task_id,
         requirements=task_data["requirements"],
         acceptance_criteria=task_data["acceptance_criteria"],
+        task_file_path=task_data.get("file_path"),  # Pass task file for state persistence
     )
 
     # Phase 4: Display results

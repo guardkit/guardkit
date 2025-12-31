@@ -22,15 +22,7 @@ from guardkit.tasks.task_loader import TaskNotFoundError, TaskParseError
 from guardkit.orchestrator.exceptions import AgentInvocationError, SDKTimeoutError
 
 # Import worktree exceptions
-try:
-    from orchestrator.worktrees import WorktreeCreationError, WorktreeMergeError
-except ImportError:
-    # Fallback for testing
-    class WorktreeCreationError(Exception):
-        pass
-
-    class WorktreeMergeError(Exception):
-        pass
+from guardkit.worktrees import WorktreeCreationError, WorktreeMergeError
 
 
 # ============================================================================

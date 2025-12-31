@@ -37,10 +37,7 @@ from guardkit.orchestrator.autobuild import (
 from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 
 # Import worktree components
-_installer_lib_path = _test_root / "installer" / "core" / "lib"
-sys.path.insert(0, str(_installer_lib_path))
-
-from orchestrator.worktrees import WorktreeManager
+from guardkit.worktrees import WorktreeManager
 
 
 # ============================================================================

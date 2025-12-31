@@ -5,6 +5,7 @@ from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
     OrchestrationResult,
     TurnRecord,
+    PreLoopPhaseError,
 )
 from guardkit.orchestrator.exceptions import (
     AgentInvokerError,
@@ -22,6 +23,16 @@ from guardkit.orchestrator.exceptions import (
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.protocol import OrchestratorProtocol
 
+# Import quality gates module
+from guardkit.orchestrator.quality_gates import (
+    PreLoopQualityGates,
+    TaskWorkInterface,
+    QualityGateError,
+    QualityGateBlocked,
+    DesignPhaseError,
+    CheckpointRejectedError,
+)
+
 __all__ = [
     # Agent invocation
     "AgentInvoker",
@@ -32,6 +43,9 @@ __all__ = [
     "TurnRecord",
     # Protocol
     "OrchestratorProtocol",
+    # Quality Gates
+    "PreLoopQualityGates",
+    "TaskWorkInterface",
     # Exceptions - AgentInvoker
     "AgentInvokerError",
     "AgentInvocationError",
@@ -43,8 +57,14 @@ __all__ = [
     # Exceptions - Orchestration
     "OrchestrationError",
     "SetupPhaseError",
+    "PreLoopPhaseError",
     "LoopPhaseError",
     "FinalizePhaseError",
+    # Exceptions - Quality Gates
+    "QualityGateError",
+    "QualityGateBlocked",
+    "DesignPhaseError",
+    "CheckpointRejectedError",
     # Progress display
     "ProgressDisplay",
 ]

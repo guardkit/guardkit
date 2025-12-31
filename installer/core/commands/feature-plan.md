@@ -22,6 +22,48 @@ Both accept natural language descriptions, but they serve different purposes in 
 | `--with-questions` | Force clarification even for simple features |
 | `--defaults` | Use clarification defaults throughout workflow |
 | `--answers="..."` | Inline answers (propagated to task-review and subtask creation) |
+| `--no-structured` | Disable structured YAML feature file output (enabled by default) |
+
+### AutoBuild Integration (Default Behavior)
+
+By default, `/feature-plan` generates structured YAML feature files for AutoBuild integration. This includes:
+- A structured YAML feature file at `.guardkit/features/FEAT-XXX.yaml`
+- Task dependencies and parallel execution groups
+- Complexity scores (1-10) for each task
+- Orchestration metadata for AutoBuild consumption
+
+This enables integration with `/feature-build` for autonomous implementation:
+
+```bash
+# Standard usage (structured output is default)
+/feature-plan "add OAuth2 authentication"
+
+# Output includes:
+# ✅ Feature FEAT-A1B2 created
+# 📋 Tasks: 5
+#    TASK-001: Create OAuth service interface (complexity: 3)
+#    TASK-002: Implement Google OAuth provider (complexity: 5)
+#    TASK-003: Implement GitHub OAuth provider (complexity: 5)
+#    TASK-004: Add session management (complexity: 4)
+#    TASK-005: Integration tests (complexity: 3)
+#
+# 🔀 Parallel execution groups:
+#    Group 1: [TASK-001]
+#    Group 2: [TASK-002, TASK-003] (can run in parallel)
+#    Group 3: [TASK-004]
+#    Group 4: [TASK-005]
+#
+# 📁 Feature file: .guardkit/features/FEAT-A1B2.yaml
+# 📁 Task files: tasks/backlog/oauth-auth/TASK-001.md ... TASK-005.md
+
+# Then use feature-build for autonomous implementation
+/feature-build FEAT-A1B2
+
+# To disable structured output (task markdown files only)
+/feature-plan "add OAuth2 authentication" --no-structured
+```
+
+**Note**: Both the traditional task markdown files AND the structured YAML feature file are created by default. This maintains compatibility with `/task-work` while enabling `/feature-build` integration. Use `--no-structured` to skip YAML generation.
 
 ## Clarification Integration
 
@@ -1139,6 +1181,72 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 
 9. ✅ **Create subfolder + subtasks + guide** using context_b preferences
 
+10. ✅ **Generate structured YAML feature file** (DEFAULT - unless --no-structured flag set):
+
+    **AFTER** creating task markdown files, generate the structured feature file using the CLI script:
+
+    **Execute via Bash tool:**
+    ```bash
+    # Build task arguments from subtasks
+    # Format: --task "ID:NAME:COMPLEXITY:DEPS" for each subtask
+    # DEPS is comma-separated list of dependency task IDs (or empty)
+
+    python3 ~/.agentecflow/bin/generate-feature-yaml \
+        --name "{feature_name}" \
+        --description "{review_findings_summary}" \
+        --task "TASK-001:First task name:5:" \
+        --task "TASK-002:Second task name:6:TASK-001" \
+        --task "TASK-003:Third task name:3:TASK-001,TASK-002" \
+        --base-path "."
+    ```
+
+    **Task argument format:** `ID:NAME:COMPLEXITY:DEPS`
+    - ID: The task ID (e.g., TASK-OAUTH-001)
+    - NAME: The task name/title
+    - COMPLEXITY: Complexity score 1-10 (use 5 if unknown)
+    - DEPS: Comma-separated dependency task IDs (empty if none)
+
+    **Example with actual subtasks:**
+    ```bash
+    python3 ~/.agentecflow/bin/generate-feature-yaml \
+        --name "Implement OAuth2 authentication" \
+        --description "Add OAuth2 authentication with multiple providers" \
+        --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
+        --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-003:Add database migrations:4:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-004:Implement social OAuth2:7:TASK-OAUTH-002,TASK-OAUTH-003" \
+        --task "TASK-OAUTH-005:Add auth tests:3:TASK-OAUTH-004" \
+        --base-path "."
+    ```
+
+    **Script output:**
+    ```
+    ✅ Feature FEAT-A1B2 created
+    📋 Tasks: 5
+       TASK-OAUTH-001: Create auth infrastructure (complexity: 5)
+       TASK-OAUTH-002: Implement local JWT auth (complexity: 6) (deps: TASK-OAUTH-001)
+       TASK-OAUTH-003: Add database migrations (complexity: 4) (deps: TASK-OAUTH-001)
+       TASK-OAUTH-004: Implement social OAuth2 (complexity: 7) (deps: TASK-OAUTH-002, TASK-OAUTH-003)
+       TASK-OAUTH-005: Add auth tests (complexity: 3) (deps: TASK-OAUTH-004)
+
+    🔀 Parallel execution groups: 4 waves
+       Wave 1: [TASK-OAUTH-001]
+       Wave 2: [TASK-OAUTH-002, TASK-OAUTH-003]
+       Wave 3: [TASK-OAUTH-004]
+       Wave 4: [TASK-OAUTH-005]
+
+    📁 Feature file: .guardkit/features/FEAT-A1B2.yaml
+    ⚡ AutoBuild ready: /feature-build FEAT-A1B2
+    ```
+
+    **Note**: The script automatically:
+    - Generates a unique feature ID (FEAT-XXXX)
+    - Analyzes task dependencies to build parallel execution groups
+    - Calculates aggregate complexity from task scores
+    - Assigns implementation modes (task-work for complexity ≥4, direct for ≤3)
+    - Estimates duration based on complexity
+    - Creates the `.guardkit/features/` directory if needed
+
 ### What NOT to Do
 
 ❌ **DO NOT** perform the review analysis yourself - you MUST use `/task-review` command
@@ -1202,6 +1310,50 @@ Claude executes internally:
      - Implementation guide
 
   8. Shows completion summary
+```
+
+### Example Execution Trace (Default with Structured Output)
+
+```
+User: /feature-plan "implement OAuth2"
+
+Claude executes internally:
+  1. Parse: feature_description = "implement OAuth2", flags.no_structured = false
+
+  2. INVOKE Task(clarification-questioner, context_type=review_scope)
+     → User answers: Focus=all, Priority=quality
+     → STORE context_a
+
+  3. /task-create "Plan: implement OAuth2" task_type:review priority:high
+     → Captures: TASK-REV-B4C5
+
+  4. /task-review TASK-REV-B4C5 --mode=decision --depth=standard
+     → Runs analysis (uses context_a), presents options
+
+  5. User chooses: I (Implement)
+
+  6. INVOKE Task(clarification-questioner, context_type=implementation_prefs)
+     → User answers: Approach=Option1, Parallel=detect, Testing=standard
+     → USE context_b
+
+  7. Creates structure (using context_b):
+     - Feature folder: tasks/backlog/oauth2/
+     - Subtasks: TASK-OAUTH-001.md through TASK-OAUTH-005.md
+     - Implementation guide
+
+  8. Generate structured feature file (default behavior):
+     - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
+         --name "implement OAuth2" \
+         --description "OAuth2 authentication implementation" \
+         --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
+         --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
+         ... (one --task arg per subtask)
+     - Script outputs: FEAT-D6E7 and writes .guardkit/features/FEAT-D6E7.yaml
+     (Skip this step if --no-structured flag is set)
+
+  9. Shows completion summary including:
+     📁 Feature file: .guardkit/features/FEAT-D6E7.yaml
+     ⚡ AutoBuild ready: /feature-build FEAT-D6E7
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.
