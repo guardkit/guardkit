@@ -842,10 +842,11 @@ case "$1" in
         exec "$AGENTECFLOW_HOME/bin/guardkit-init" "$@"
         ;;
     autobuild)
-        # Find guardkit-py CLI - check multiple locations
+        # Find guardkit-py CLI - resolve to full path for reliable -x test
         GUARDKIT_PY=""
         if command -v guardkit-py &> /dev/null; then
-            GUARDKIT_PY="guardkit-py"
+            # Resolve to full path (fixes bug where -x test fails on command name)
+            GUARDKIT_PY="$(command -v guardkit-py)"
         elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
             GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
         elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
