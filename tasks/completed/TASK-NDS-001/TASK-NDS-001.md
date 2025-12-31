@@ -1,9 +1,10 @@
 ---
 id: TASK-NDS-001
 title: Update TaskLoader to use rglob for recursive search
-status: in_review
+status: completed
 created: 2025-12-31T12:00:00Z
-updated: 2025-12-31T13:30:00Z
+updated: 2025-12-31T13:45:00Z
+completed: 2025-12-31T13:45:00Z
 priority: high
 tags: [nested-directory-support, autobuild, task-loader]
 complexity: 3
@@ -12,8 +13,12 @@ parallel_group: 1
 conductor_workspace: nested-dir-wave1-1
 parent_review: TASK-REV-C675
 dependencies: []
-previous_state: in_progress
-state_transition_reason: "All quality gates passed"
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria verified"
+completed_location: tasks/completed/TASK-NDS-001/
+organized_files:
+  - TASK-NDS-001.md
+  - completion-report.md
 quality_gates:
   compilation: passed
   tests: passed
@@ -65,6 +70,16 @@ Modify `TaskLoader._find_task_file()` in `guardkit/tasks/task_loader.py` to use 
 - 22 tests passing (100%)
 - 94% line coverage
 - All acceptance criteria verified
+
+## Completion Summary
+
+| Metric | Value |
+|--------|-------|
+| Duration | ~15 minutes |
+| Lines Changed | ~12 |
+| Tests Added | 6 |
+| Coverage | 94% |
+| Architectural Score | 90/100 |
 
 ## Dependencies
 
