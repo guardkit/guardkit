@@ -112,14 +112,18 @@ class TaskLoader:
         task_path = TaskLoader._find_task_file(task_id, repo_root)
 
         if not task_path:
-            searched = [
-                str(repo_root / "tasks" / dir_name / f"{task_id}*.md (recursive)")
-                for dir_name in TaskLoader.SEARCH_PATHS
-            ]
             raise TaskNotFoundError(
                 f"Task {task_id} not found.\n\n"
                 f"Searched locations (including subdirectories):\n"
-                + "\n".join(f"  - {path}" for path in searched)
+                + "\n".join(
+                    f"  - {repo_root / 'tasks' / dir_name}/**/"
+                    for dir_name in TaskLoader.SEARCH_PATHS
+                )
+                + "\n\n"
+                f"Hints:\n"
+                f"  - Check task ID format (e.g., TASK-XXX-001)\n"
+                f"  - Verify task file exists with .md extension\n"
+                f"  - For feature tasks, check tasks/backlog/<feature-slug>/"
             )
 
         return TaskLoader._parse_task_file(task_path, task_id)

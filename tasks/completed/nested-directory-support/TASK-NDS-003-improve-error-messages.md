@@ -1,9 +1,10 @@
 ---
 id: TASK-NDS-003
 title: Improve error messages to indicate subdirectory search
-status: backlog
+status: completed
 created: 2025-12-31T12:00:00Z
-updated: 2025-12-31T12:00:00Z
+updated: 2025-12-31T14:00:00Z
+completed: 2025-12-31T14:00:00Z
 priority: low
 tags: [nested-directory-support, error-handling, task-loader]
 complexity: 2
@@ -28,10 +29,10 @@ Update the `TaskNotFoundError` message in `TaskLoader.load_task()` to indicate t
 
 ## Acceptance Criteria
 
-- [ ] Error message indicates subdirectories were searched
-- [ ] Error message includes helpful hints for common issues
-- [ ] Error message format is consistent with existing style
-- [ ] No functional changes to error handling behavior
+- [x] Error message indicates subdirectories were searched
+- [x] Error message includes helpful hints for common issues
+- [x] Error message format is consistent with existing style
+- [x] No functional changes to error handling behavior
 
 ## Files to Modify
 

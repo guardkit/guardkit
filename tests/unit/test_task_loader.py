@@ -84,6 +84,23 @@ def test_load_task_not_found(tmp_path):
     assert "in_progress" in str(exc_info.value)
 
 
+def test_load_task_not_found_includes_hints(tmp_path):
+    """Test TaskNotFoundError includes helpful hints (TASK-NDS-003)."""
+    with pytest.raises(TaskNotFoundError) as exc_info:
+        TaskLoader.load_task("TASK-AB-999", repo_root=tmp_path)
+
+    error_message = str(exc_info.value)
+
+    # Verify error message indicates subdirectory search
+    assert "/**/" in error_message or "subdirectories" in error_message
+
+    # Verify hints section is present
+    assert "Hints:" in error_message
+    assert "Check task ID format" in error_message
+    assert ".md extension" in error_message
+    assert "tasks/backlog/<feature-slug>/" in error_message
+
+
 def test_load_task_search_order(tmp_path):
     """Test that backlog is searched before in_progress."""
     # Create task in both locations (should find backlog first)
