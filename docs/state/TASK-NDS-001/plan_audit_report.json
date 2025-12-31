@@ -1,0 +1,28 @@
+{
+  "task_id": "TASK-NDS-001",
+  "audit_timestamp": "2025-12-31T13:30:00Z",
+  "planned": {
+    "files_modified": 1,
+    "lines_changed": 10,
+    "estimated_duration_minutes": 17.5,
+    "dependencies": 0
+  },
+  "actual": {
+    "files_modified": 1,
+    "lines_changed": 12,
+    "actual_duration_minutes": 15,
+    "dependencies": 0
+  },
+  "variances": {
+    "files": 0,
+    "lines_percent": 20,
+    "duration_percent": -14.3,
+    "extra_files": [],
+    "extra_dependencies": []
+  },
+  "severity": "LOW",
+  "outcome": "AUTO-APPROVED",
+  "decision": "approve",
+  "decision_timestamp": "2025-12-31T13:30:00Z",
+  "notes": "Implementation matches plan with minimal variance. All acceptance criteria addressed."
+}

@@ -392,3 +392,159 @@ Implement feature
     assert isinstance(task_data["frontmatter"], dict)
     assert isinstance(task_data["content"], str)
     assert isinstance(task_data["file_path"], Path)
+
+
+# ============================================================================
+# Test: Nested Directory Support (TASK-NDS-001)
+# ============================================================================
+
+
+def test_load_task_from_nested_directory(tmp_path):
+    """Test loading task from nested subdirectory."""
+    # Create task in nested folder
+    task_file = tmp_path / "tasks" / "backlog" / "feature-slug" / "TASK-AB-001.md"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        """---
+id: TASK-AB-001
+title: Nested Task
+---
+
+## Requirements
+Implement feature X
+"""
+    )
+
+    # Should find task in nested directory
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+
+    assert task_data["task_id"] == "TASK-AB-001"
+    assert task_data["frontmatter"]["title"] == "Nested Task"
+
+
+def test_load_task_with_extended_filename(tmp_path):
+    """Test loading task with extended filename (descriptive suffix)."""
+    # Create task with extended filename
+    task_file = tmp_path / "tasks" / "backlog" / "TASK-AB-001-create-auth-service.md"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        """---
+id: TASK-AB-001
+title: Auth Service Task
+---
+
+## Requirements
+Implement auth service
+"""
+    )
+
+    # Should match extended filename
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+
+    assert task_data["task_id"] == "TASK-AB-001"
+    assert task_data["frontmatter"]["title"] == "Auth Service Task"
+
+
+def test_load_task_extended_filename_in_nested_dir(tmp_path):
+    """Test loading task with extended filename in nested directory."""
+    # Create task with extended filename in nested directory
+    task_file = (
+        tmp_path
+        / "tasks"
+        / "backlog"
+        / "auth-feature"
+        / "TASK-AB-001-create-auth-service.md"
+    )
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        """---
+id: TASK-AB-001
+title: Nested Auth Task
+---
+
+## Requirements
+Implement nested auth
+"""
+    )
+
+    # Should find nested task with extended filename
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+
+    assert task_data["task_id"] == "TASK-AB-001"
+    assert task_data["frontmatter"]["title"] == "Nested Auth Task"
+
+
+def test_search_order_with_nested_directories(tmp_path):
+    """Test that backlog is searched before in_progress with nested dirs."""
+    # Create task in nested backlog
+    backlog_file = tmp_path / "tasks" / "backlog" / "feature" / "TASK-AB-001.md"
+    backlog_file.parent.mkdir(parents=True, exist_ok=True)
+    backlog_file.write_text(
+        """---
+title: From Nested Backlog
+---
+"""
+    )
+
+    # Create task in flat in_progress
+    in_progress_file = tmp_path / "tasks" / "in_progress" / "TASK-AB-001.md"
+    in_progress_file.parent.mkdir(parents=True, exist_ok=True)
+    in_progress_file.write_text(
+        """---
+title: From In Progress
+---
+"""
+    )
+
+    # Should find backlog version first (even though nested)
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+    assert task_data["frontmatter"]["title"] == "From Nested Backlog"
+
+
+def test_deeply_nested_task_discovery(tmp_path):
+    """Test finding tasks in deeply nested directories."""
+    # Create task in deeply nested path
+    task_file = (
+        tmp_path
+        / "tasks"
+        / "backlog"
+        / "epic"
+        / "feature"
+        / "sprint"
+        / "TASK-AB-001.md"
+    )
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        """---
+id: TASK-AB-001
+title: Deeply Nested Task
+---
+"""
+    )
+
+    # Should find deeply nested task
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+    assert task_data["task_id"] == "TASK-AB-001"
+
+
+def test_backward_compatibility_flat_structure(tmp_path):
+    """Test backward compatibility with flat directory structure."""
+    # Create task in flat backlog (original structure)
+    task_file = tmp_path / "tasks" / "backlog" / "TASK-AB-001.md"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        """---
+id: TASK-AB-001
+title: Flat Task
+---
+
+## Requirements
+Implement flat feature
+"""
+    )
+
+    # Should still find task in flat structure
+    task_data = TaskLoader.load_task("TASK-AB-001", repo_root=tmp_path)
+
+    assert task_data["task_id"] == "TASK-AB-001"
+    assert task_data["frontmatter"]["title"] == "Flat Task"

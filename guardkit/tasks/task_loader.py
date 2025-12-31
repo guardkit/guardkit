@@ -113,12 +113,12 @@ class TaskLoader:
 
         if not task_path:
             searched = [
-                str(repo_root / "tasks" / dir_name / f"{task_id}.md")
+                str(repo_root / "tasks" / dir_name / f"{task_id}*.md (recursive)")
                 for dir_name in TaskLoader.SEARCH_PATHS
             ]
             raise TaskNotFoundError(
                 f"Task {task_id} not found.\n\n"
-                f"Searched locations:\n"
+                f"Searched locations (including subdirectories):\n"
                 + "\n".join(f"  - {path}" for path in searched)
             )
 
@@ -127,12 +127,16 @@ class TaskLoader:
     @staticmethod
     def _find_task_file(task_id: str, repo_root: Path) -> Path:
         """
-        Find task file in search paths.
+        Find task file in search paths using recursive glob.
+
+        Searches for files matching {task_id}*.md pattern, allowing for
+        both exact matches (TASK-XXX.md) and extended filenames
+        (TASK-XXX-descriptive-name.md) in nested directories.
 
         Parameters
         ----------
         task_id : str
-            Task identifier
+            Task identifier (e.g., "TASK-AB-001")
         repo_root : Path
             Repository root
 
@@ -142,8 +146,12 @@ class TaskLoader:
             Path to task file, or None if not found
         """
         for dir_name in TaskLoader.SEARCH_PATHS:
-            task_path = repo_root / "tasks" / dir_name / f"{task_id}.md"
-            if task_path.exists():
+            search_dir = repo_root / "tasks" / dir_name
+            if not search_dir.exists():
+                continue
+
+            # Use rglob for recursive search with pattern matching
+            for task_path in search_dir.rglob(f"{task_id}*.md"):
                 logger.debug(f"Found task {task_id} at {task_path}")
                 return task_path
 
