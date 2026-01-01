@@ -26,6 +26,15 @@ from guardkit.orchestrator import (
     OrchestrationResult,
     TurnRecord,
 )
+from guardkit.orchestrator.feature_orchestrator import (
+    FeatureOrchestrator,
+    FeatureOrchestrationResult,
+    FeatureOrchestrationError,
+)
+from guardkit.orchestrator.feature_loader import (
+    FeatureNotFoundError,
+    FeatureValidationError,
+)
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree
 
@@ -232,6 +241,151 @@ def status(ctx, task_id: str, verbose: bool):
 
 
 # ============================================================================
+# Feature Command
+# ============================================================================
+
+
+@autobuild.command()
+@click.argument("feature_id")
+@click.option(
+    "--max-turns",
+    default=5,
+    type=int,
+    help="Maximum adversarial turns per task (default: 5)",
+    show_default=True,
+)
+@click.option(
+    "--stop-on-failure/--no-stop-on-failure",
+    default=True,
+    help="Stop feature execution on first task failure",
+)
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume from last saved state",
+)
+@click.option(
+    "--fresh",
+    is_flag=True,
+    help="Start fresh, ignoring any saved state",
+)
+@click.option(
+    "--task",
+    "specific_task",
+    default=None,
+    help="Run specific task within feature (e.g., TASK-AUTH-001)",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Show detailed turn-by-turn output",
+)
+@click.pass_context
+@handle_cli_errors
+def feature(
+    ctx,
+    feature_id: str,
+    max_turns: int,
+    stop_on_failure: bool,
+    resume: bool,
+    fresh: bool,
+    specific_task: Optional[str],
+    verbose: bool,
+):
+    """
+    Execute AutoBuild for all tasks in a feature.
+
+    This command loads a feature file from .guardkit/features/FEAT-XXX.yaml,
+    creates a shared worktree, and executes tasks wave by wave respecting
+    dependency ordering.
+
+    \b
+    Examples:
+        guardkit autobuild feature FEAT-A1B2
+        guardkit autobuild feature FEAT-A1B2 --max-turns 10
+        guardkit autobuild feature FEAT-A1B2 --no-stop-on-failure
+        guardkit autobuild feature FEAT-A1B2 --task TASK-AUTH-002
+        guardkit autobuild feature FEAT-A1B2 --resume
+        guardkit autobuild feature FEAT-A1B2 --fresh
+
+    \b
+    Resume Behavior:
+        - If incomplete state detected and no flags: prompts user to resume or start fresh
+        - --resume: skip prompt, resume from last saved state
+        - --fresh: skip prompt, start from scratch (clears previous state)
+        - Cannot use both --resume and --fresh together
+
+    \b
+    Workflow:
+        1. Load feature file from .guardkit/features/
+        2. Validate all task markdown files exist
+        3. Create shared worktree for entire feature
+        4. Execute tasks wave by wave (respecting parallel_groups)
+        5. Update feature YAML after each task
+        6. Preserve worktree for human review
+
+    \b
+    Exit Codes:
+        0: Success (all tasks completed)
+        1: Feature file not found
+        2: Orchestration error
+        3: Validation error
+    """
+    # Inherit verbose from parent if set (ctx.obj can be None in testing)
+    ctx_obj = ctx.obj or {}
+    verbose = verbose or ctx_obj.get("verbose", False)
+
+    # Validate mutually exclusive flags
+    if resume and fresh:
+        console.print("[red]Error: Cannot use both --resume and --fresh flags together[/red]")
+        console.print("\nChoose one:")
+        console.print("  --resume  Resume from last saved state")
+        console.print("  --fresh   Start from scratch, ignoring saved state")
+        sys.exit(3)
+
+    logger.info(
+        f"Starting feature orchestration: {feature_id} "
+        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh})"
+    )
+
+    try:
+        # Initialize feature orchestrator
+        orchestrator = FeatureOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=max_turns,
+            stop_on_failure=stop_on_failure,
+            resume=resume,
+            fresh=fresh,
+            verbose=verbose,
+            quiet=ctx_obj.get("quiet", False),
+        )
+
+        # Execute feature orchestration
+        result = orchestrator.orchestrate(
+            feature_id=feature_id,
+            specific_task=specific_task,
+        )
+
+        # Exit with appropriate code
+        sys.exit(0 if result.success else 2)
+
+    except FeatureNotFoundError as e:
+        console.print(f"[red]Feature not found: {e}[/red]")
+        logger.error(f"Feature not found: {e}")
+        sys.exit(1)
+
+    except FeatureValidationError as e:
+        console.print(f"[red]Feature validation failed:[/red]\n{e}")
+        logger.error(f"Feature validation failed: {e}")
+        sys.exit(3)
+
+    except FeatureOrchestrationError as e:
+        console.print(f"[red]Orchestration error: {e}[/red]")
+        logger.error(f"Feature orchestration error: {e}")
+        sys.exit(2)
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 
@@ -299,7 +453,8 @@ def _display_result(result: OrchestrationResult, verbose: bool = False) -> None:
                     if turn.coach_result
                     else turn.player_result.error
                 )
-                details = f"Error: {error[:50]}..." if len(error) > 50 else f"Error: {error}"
+                error_msg = error or "Unknown error"
+                details = f"Error: {error_msg[:50]}..." if len(error_msg) > 50 else f"Error: {error_msg}"
             else:  # feedback
                 feedback = turn.feedback or "No feedback"
                 details = feedback[:50] + "..." if len(feedback) > 50 else feedback

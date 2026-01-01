@@ -3,7 +3,7 @@ id: TASK-SEC-004
 title: Implement task tagging detection
 status: backlog
 created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T14:45:00Z
+updated: 2025-12-31T16:15:00Z
 priority: high
 tags: [security, configuration, detection, autobuild]
 complexity: 3
@@ -13,6 +13,10 @@ estimated_hours: 1-2
 wave: 2
 conductor_workspace: coach-security-wave2-2
 dependencies: [TASK-SEC-001, TASK-SEC-002]
+enhanced_by: TASK-REV-SEC2
+claude_code_techniques:
+  - category-aligned-tags
+  - high-risk-category-triggers
 ---
 
 # TASK-SEC-004: Implement Task Tagging Detection
@@ -35,17 +39,36 @@ Implement the logic to determine when a task requires full security-specialist r
 ### Security Tags
 
 ```python
+# [From TASK-REV-SEC2] Aligned with Claude Code 10-category taxonomy
 SECURITY_TAGS = {
-    # Core security
+    # Category: Injection Attacks
+    "injection", "sql", "command", "ldap", "xpath", "xxe",
+    # Category: Authentication & Authorization
     "authentication", "authorization", "security", "auth",
-    # Token/session
     "session", "token", "jwt", "oauth", "oauth2",
+    "rbac", "acl", "permissions", "roles",
+    # Category: Data Exposure
+    "secrets", "credentials", "pii", "gdpr",
+    # Category: Cryptography
+    "crypto", "encryption", "hashing",
+    # Category: Input Validation
+    "validation", "input", "sanitization",
+    # Category: Configuration Security
+    "cors", "csrf", "headers",
+    # Category: Code Execution
+    "deserialization", "pickle",
+    # Category: XSS
+    "xss",
     # Sensitive operations
     "payment", "checkout", "billing",
-    # Cryptography
-    "crypto", "encryption", "hashing",
-    # Access control
-    "rbac", "acl", "permissions", "roles",
+}
+
+# [From TASK-REV-SEC2] High-risk categories always trigger full review
+HIGH_RISK_CATEGORIES = {
+    "authentication", "authorization", "auth",
+    "injection", "sql", "command",
+    "crypto", "encryption",
+    "secrets", "credentials",
 }
 ```
 
@@ -123,14 +146,16 @@ def should_run_full_review(task: dict, config: SecurityConfig) -> bool:
 
 ## Acceptance Criteria
 
-- [ ] `SECURITY_TAGS` set defined with 15+ tags
+- [ ] `SECURITY_TAGS` set defined with 25+ tags (aligned with 10-category taxonomy)
 - [ ] `SECURITY_KEYWORDS` list defined with 25+ keywords
+- [ ] `HIGH_RISK_CATEGORIES` set defined for always-trigger tags
 - [ ] `should_run_full_review()` implemented
 - [ ] Configuration precedence correct (force > level > tags > keywords)
 - [ ] Case-insensitive matching
 - [ ] Keyword density threshold for descriptions
 - [ ] Unit tests for each detection path
 - [ ] Edge case handling (empty tags, empty title)
+- [ ] **[From TASK-REV-SEC2]** Tags aligned with Claude Code 10-category taxonomy
 
 ## Test Cases
 
@@ -177,3 +202,9 @@ if should_run_full_review(task, security_config):
 - Quick checks implementation (TASK-SEC-001)
 - Configuration schema (TASK-SEC-002)
 - Security-specialist invocation (TASK-SEC-003)
+
+## Claude Code Reference
+
+Techniques adopted from [claude-code-security-review](https://github.com/anthropics/claude-code-security-review):
+- Tags aligned with 10-category vulnerability taxonomy
+- High-risk categories (auth, injection, crypto, secrets) always trigger full review

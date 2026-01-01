@@ -3,7 +3,7 @@ id: TASK-SEC-002
 title: Add security configuration schema
 status: backlog
 created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T14:45:00Z
+updated: 2025-12-31T16:15:00Z
 priority: high
 tags: [security, configuration, schema, autobuild]
 complexity: 3
@@ -13,6 +13,11 @@ estimated_hours: 1-2
 wave: 1
 conductor_workspace: coach-security-wave1-2
 dependencies: []
+enhanced_by: TASK-REV-SEC2
+claude_code_techniques:
+  - hard-exclusion-categories
+  - file-type-filtering
+  - environment-toggle
 ---
 
 # TASK-SEC-002: Add Security Configuration Schema
@@ -28,6 +33,9 @@ Define and implement the configuration schema for security validation in task fr
 3. Add schema validation for feature YAML `security` section
 4. Implement configuration loading in Coach validator
 5. Document configuration options
+6. **[From TASK-REV-SEC2]** Add hard exclusion categories (DOS, rate limiting, resource management)
+7. **[From TASK-REV-SEC2]** Add file type/pattern exclusions
+8. **[From TASK-REV-SEC2]** Add environment variable override (GUARDKIT_SECURITY_SKIP)
 
 ## Configuration Schema
 
@@ -65,6 +73,25 @@ autobuild:
     quick_check_timeout: 30
     full_review_timeout: 300
     block_on_critical: true
+    # [From TASK-REV-SEC2] Hard exclusion categories
+    exclude_categories:
+      - dos                    # Denial of Service
+      - rate-limiting          # Rate limiting recommendations
+      - resource-management    # Memory leaks, connection leaks
+      - open-redirect          # Open redirect vulnerabilities
+    # [From TASK-REV-SEC2] File pattern exclusions
+    exclude_patterns:
+      - "*.md"                 # Markdown documentation
+      - "*.test.*"             # Test files
+      - "docs/**"              # Documentation directory
+      - "**/fixtures/**"       # Test fixtures
+```
+
+### Environment Variable Override
+
+```bash
+# [From TASK-REV-SEC2] Disable security checks entirely (CI/CD use case)
+export GUARDKIT_SECURITY_SKIP=1
 ```
 
 ## Security Levels
@@ -86,6 +113,9 @@ autobuild:
 - [ ] Configuration merging (task > feature > global)
 - [ ] Default values applied correctly
 - [ ] Unit tests for configuration loading
+- [ ] **[From TASK-REV-SEC2]** `exclude_categories` field with default DOS, rate-limiting, resource-management
+- [ ] **[From TASK-REV-SEC2]** `exclude_patterns` field for file pattern exclusions
+- [ ] **[From TASK-REV-SEC2]** Environment variable override (`GUARDKIT_SECURITY_SKIP`)
 
 ## Technical Notes
 
@@ -94,12 +124,29 @@ autobuild:
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional
+import os
 
 class SecurityLevel(Enum):
     STRICT = "strict"
     STANDARD = "standard"
     MINIMAL = "minimal"
     SKIP = "skip"
+
+# [From TASK-REV-SEC2] Default exclusion categories from Claude Code security-review
+DEFAULT_EXCLUDE_CATEGORIES = [
+    "dos",                  # Denial of Service
+    "rate-limiting",        # Rate limiting recommendations
+    "resource-management",  # Memory leaks, connection leaks
+    "open-redirect",        # Open redirect vulnerabilities
+]
+
+# [From TASK-REV-SEC2] Default file pattern exclusions
+DEFAULT_EXCLUDE_PATTERNS = [
+    "*.md",
+    "*.test.*",
+    "docs/**",
+    "**/fixtures/**",
+]
 
 @dataclass
 class SecurityConfig:
@@ -109,6 +156,10 @@ class SecurityConfig:
     quick_check_timeout: int = 30
     full_review_timeout: int = 300
     block_on_critical: bool = True
+    # [From TASK-REV-SEC2] Hard exclusion categories
+    exclude_categories: List[str] = field(default_factory=lambda: DEFAULT_EXCLUDE_CATEGORIES.copy())
+    # [From TASK-REV-SEC2] File pattern exclusions
+    exclude_patterns: List[str] = field(default_factory=lambda: DEFAULT_EXCLUDE_PATTERNS.copy())
 
     @classmethod
     def from_task(cls, task: dict) -> "SecurityConfig":
@@ -118,6 +169,14 @@ class SecurityConfig:
     @classmethod
     def from_feature(cls, feature: dict, task_id: str) -> "SecurityConfig":
         """Load config from feature YAML."""
+        ...
+
+    @classmethod
+    def from_global(cls) -> "SecurityConfig":
+        """Load config from global config, respecting env override."""
+        # [From TASK-REV-SEC2] Environment variable override
+        if os.getenv("GUARDKIT_SECURITY_SKIP", "0") == "1":
+            return cls(level=SecurityLevel.SKIP)
         ...
 
     @classmethod
@@ -152,3 +211,10 @@ def _load_security_config(self, task: dict) -> SecurityConfig:
 - Quick check implementation (TASK-SEC-001)
 - Full review invocation (TASK-SEC-003)
 - Tag detection logic (TASK-SEC-004)
+
+## Claude Code Reference
+
+Techniques adopted from [claude-code-security-review](https://github.com/anthropics/claude-code-security-review):
+- Hard exclusion categories (DOS, rate limiting, resource management, open redirect)
+- File pattern exclusions (markdown, test files, documentation)
+- Environment variable override for CI/CD pipelines

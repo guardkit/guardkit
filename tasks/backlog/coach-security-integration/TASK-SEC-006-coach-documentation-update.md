@@ -3,7 +3,7 @@ id: TASK-SEC-006
 title: Update Coach agent documentation
 status: backlog
 created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T14:45:00Z
+updated: 2025-12-31T16:15:00Z
 priority: medium
 tags: [security, documentation, coach-agent, autobuild]
 complexity: 2
@@ -13,6 +13,10 @@ estimated_hours: 1-2
 wave: 3
 conductor_workspace: coach-security-wave3-2
 dependencies: [TASK-SEC-005]
+enhanced_by: TASK-REV-SEC2
+claude_code_techniques:
+  - exclusion-documentation
+  - confidence-threshold-docs
 ---
 
 # TASK-SEC-006: Update Coach Agent Documentation
@@ -235,6 +239,20 @@ security:
 **False Positive**: Add to `skip_checks` or use `# nosec` comment
 **Performance**: Use `minimal` level for UI-only tasks
 **Missing Detection**: Upgrade to `strict` level
+
+### Excluded Finding Types
+
+[From TASK-REV-SEC2] The following finding types are automatically excluded as low-value:
+- Denial of Service / resource exhaustion
+- Rate limiting recommendations
+- Memory leaks / resource management
+- Open redirect vulnerabilities
+- Findings in documentation files (*.md)
+
+### Confidence Scoring
+
+[From TASK-REV-SEC2] Security findings include a confidence score (0.0-1.0).
+Only findings with confidence ≥ 0.8 are reported.
 ```
 
 ## Acceptance Criteria
@@ -245,8 +263,16 @@ security:
 - [ ] `docs/guides/security-validation.md` created
 - [ ] All documentation reviewed for accuracy
 - [ ] Examples tested for correctness
+- [ ] **[From TASK-REV-SEC2]** Document excluded finding types (DOS, rate limiting, etc.)
+- [ ] **[From TASK-REV-SEC2]** Document confidence threshold (0.8)
 
 ## Out of Scope
 
 - Implementation changes (Wave 1-2 tasks)
 - Test documentation (part of TASK-SEC-005)
+
+## Claude Code Reference
+
+Techniques adopted from [claude-code-security-review](https://github.com/anthropics/claude-code-security-review):
+- Document excluded finding types (DOS, rate limiting, resource management)
+- Document confidence threshold (0.8) for findings

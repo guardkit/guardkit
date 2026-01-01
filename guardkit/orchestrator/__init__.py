@@ -20,6 +20,23 @@ from guardkit.orchestrator.exceptions import (
     LoopPhaseError,
     FinalizePhaseError,
 )
+from guardkit.orchestrator.feature_loader import (
+    Feature,
+    FeatureTask,
+    FeatureOrchestration,
+    FeatureExecution,
+    FeatureLoader,
+    FeatureNotFoundError,
+    FeatureParseError,
+    FeatureValidationError,
+)
+from guardkit.orchestrator.feature_orchestrator import (
+    FeatureOrchestrator,
+    FeatureOrchestrationResult,
+    FeatureOrchestrationError,
+    TaskExecutionResult,
+    WaveExecutionResult,
+)
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.protocol import OrchestratorProtocol
 
@@ -41,6 +58,16 @@ __all__ = [
     "AutoBuildOrchestrator",
     "OrchestrationResult",
     "TurnRecord",
+    # Feature orchestration
+    "Feature",
+    "FeatureTask",
+    "FeatureOrchestration",
+    "FeatureExecution",
+    "FeatureLoader",
+    "FeatureOrchestrator",
+    "FeatureOrchestrationResult",
+    "TaskExecutionResult",
+    "WaveExecutionResult",
     # Protocol
     "OrchestratorProtocol",
     # Quality Gates
@@ -60,6 +87,11 @@ __all__ = [
     "PreLoopPhaseError",
     "LoopPhaseError",
     "FinalizePhaseError",
+    # Exceptions - Feature Orchestration
+    "FeatureNotFoundError",
+    "FeatureParseError",
+    "FeatureValidationError",
+    "FeatureOrchestrationError",
     # Exceptions - Quality Gates
     "QualityGateError",
     "QualityGateBlocked",

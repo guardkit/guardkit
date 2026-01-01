@@ -1,0 +1,1285 @@
+"""
+FeatureOrchestrator for multi-task wave execution in AutoBuild.
+
+This module provides the FeatureOrchestrator class which coordinates the execution
+of multiple tasks within a feature using wave-based dependency ordering. It creates
+a single shared worktree for all tasks in a feature and reuses the existing
+AutoBuildOrchestrator for individual task execution.
+
+Architecture:
+    Three-Phase Execution Pattern:
+    1. Setup Phase: Load feature, validate tasks, create shared worktree
+    2. Wave Phase: Execute tasks wave by wave, respecting dependencies
+    3. Finalize Phase: Update feature status, preserve worktree for review
+
+Example:
+    >>> from pathlib import Path
+    >>> from guardkit.orchestrator.feature_orchestrator import FeatureOrchestrator
+    >>>
+    >>> orchestrator = FeatureOrchestrator(repo_root=Path.cwd())
+    >>> result = orchestrator.orchestrate("FEAT-A1B2")
+    >>> print(result.status)
+    'completed'
+"""
+
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional
+
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+
+from guardkit.orchestrator.autobuild import AutoBuildOrchestrator, OrchestrationResult
+from guardkit.orchestrator.feature_loader import (
+    Feature,
+    FeatureLoader,
+    FeatureTask,
+    FeatureNotFoundError,
+    FeatureValidationError,
+)
+from guardkit.tasks.task_loader import TaskLoader
+from guardkit.worktrees import WorktreeManager, Worktree, WorktreeCreationError
+from guardkit.cli.display import WaveProgressDisplay
+
+logger = logging.getLogger(__name__)
+console = Console()
+
+
+# ============================================================================
+# Data Models
+# ============================================================================
+
+
+@dataclass
+class TaskExecutionResult:
+    """
+    Result of executing a single task within a feature.
+
+    Attributes
+    ----------
+    task_id : str
+        Task identifier
+    success : bool
+        Whether task succeeded
+    total_turns : int
+        Number of turns executed
+    final_decision : str
+        Final orchestration decision
+    error : Optional[str]
+        Error message if failed
+    """
+
+    task_id: str
+    success: bool
+    total_turns: int
+    final_decision: str
+    error: Optional[str] = None
+
+
+@dataclass
+class WaveExecutionResult:
+    """
+    Result of executing a wave of tasks.
+
+    Attributes
+    ----------
+    wave_number : int
+        Wave number (1-indexed)
+    task_ids : List[str]
+        Task IDs in this wave
+    results : List[TaskExecutionResult]
+        Results for each task
+    all_succeeded : bool
+        Whether all tasks in wave succeeded
+    """
+
+    wave_number: int
+    task_ids: List[str]
+    results: List[TaskExecutionResult]
+    all_succeeded: bool
+
+
+@dataclass
+class FeatureOrchestrationResult:
+    """
+    Complete result of feature orchestration.
+
+    Attributes
+    ----------
+    feature_id : str
+        Feature identifier
+    success : bool
+        Whether all tasks succeeded
+    status : str
+        Final feature status
+    total_tasks : int
+        Total number of tasks
+    tasks_completed : int
+        Number of completed tasks
+    tasks_failed : int
+        Number of failed tasks
+    wave_results : List[WaveExecutionResult]
+        Results for each wave
+    worktree : Worktree
+        Shared worktree (preserved for review)
+    error : Optional[str]
+        Error message if failed
+    """
+
+    feature_id: str
+    success: bool
+    status: Literal["completed", "failed", "paused"]
+    total_tasks: int
+    tasks_completed: int
+    tasks_failed: int
+    wave_results: List[WaveExecutionResult]
+    worktree: Worktree
+    error: Optional[str] = None
+
+
+# ============================================================================
+# Exceptions
+# ============================================================================
+
+
+class FeatureOrchestrationError(Exception):
+    """Base exception for feature orchestration errors."""
+
+    pass
+
+
+class WaveExecutionError(FeatureOrchestrationError):
+    """Raised when a wave fails and stop_on_failure is True."""
+
+    pass
+
+
+class DependencyError(FeatureOrchestrationError):
+    """Raised when task dependencies cannot be satisfied."""
+
+    pass
+
+
+# ============================================================================
+# FeatureOrchestrator
+# ============================================================================
+
+
+class FeatureOrchestrator:
+    """
+    Orchestrates multi-task feature execution with wave-based dependency ordering.
+
+    This class implements a three-phase execution pattern:
+    1. Setup Phase: Load feature, validate tasks, create shared worktree
+    2. Wave Phase: Execute tasks wave by wave, respecting dependencies
+    3. Finalize Phase: Update feature status, preserve worktree for review
+
+    Key Design Decisions:
+    - Single shared worktree per feature (not per task)
+    - Reuses AutoBuildOrchestrator for individual task execution
+    - Updates feature YAML after each task completes
+    - Supports stop-on-failure or continue-on-failure modes
+
+    Attributes
+    ----------
+    repo_root : Path
+        Repository root directory
+    max_turns : int
+        Maximum turns per task
+    stop_on_failure : bool
+        Whether to stop on first task failure
+    resume : bool
+        Whether to resume from saved state
+    fresh : bool
+        Whether to start fresh (ignore saved state)
+    verbose : bool
+        Whether to show detailed output
+    features_dir : Path
+        Directory containing feature YAML files
+
+    Examples
+    --------
+    >>> orchestrator = FeatureOrchestrator(repo_root=Path.cwd())
+    >>> result = orchestrator.orchestrate("FEAT-A1B2")
+    >>> print(result.success)
+    True
+    """
+
+    def __init__(
+        self,
+        repo_root: Path,
+        max_turns: int = 5,
+        stop_on_failure: bool = True,
+        resume: bool = False,
+        fresh: bool = False,
+        verbose: bool = False,
+        features_dir: Optional[Path] = None,
+        worktree_manager: Optional[WorktreeManager] = None,
+        quiet: bool = False,
+    ):
+        """
+        Initialize FeatureOrchestrator.
+
+        Parameters
+        ----------
+        repo_root : Path
+            Repository root directory
+        max_turns : int, optional
+            Maximum turns per task (default: 5)
+        stop_on_failure : bool, optional
+            Stop on first task failure (default: True)
+        resume : bool, optional
+            Resume from saved state (default: False)
+        fresh : bool, optional
+            Start fresh, ignoring saved state (default: False)
+        verbose : bool, optional
+            Show detailed output (default: False)
+        features_dir : Optional[Path], optional
+            Override features directory (for testing)
+        worktree_manager : Optional[WorktreeManager], optional
+            Optional WorktreeManager for DI/testing
+        quiet : bool, optional
+            Suppress progress display (default: False)
+
+        Raises
+        ------
+        ValueError
+            If max_turns < 1 or if both resume and fresh are True
+        """
+        if max_turns < 1:
+            raise ValueError("max_turns must be at least 1")
+
+        if resume and fresh:
+            raise ValueError("Cannot use both --resume and --fresh flags together")
+
+        self.repo_root = Path(repo_root).resolve()
+        self.max_turns = max_turns
+        self.stop_on_failure = stop_on_failure
+        self.resume = resume
+        self.fresh = fresh
+        self.verbose = verbose
+        self.quiet = quiet
+        self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
+
+        # Initialize dependencies
+        self._worktree_manager = worktree_manager or WorktreeManager(
+            repo_root=self.repo_root
+        )
+
+        # Wave progress display (initialized during setup phase)
+        self._wave_display: Optional[WaveProgressDisplay] = None
+
+        logger.info(
+            f"FeatureOrchestrator initialized: repo={self.repo_root}, "
+            f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
+            f"resume={self.resume}, fresh={self.fresh}"
+        )
+
+    def orchestrate(
+        self,
+        feature_id: str,
+        base_branch: str = "main",
+        specific_task: Optional[str] = None,
+    ) -> FeatureOrchestrationResult:
+        """
+        Execute complete feature orchestration workflow.
+
+        This is the main entry point for feature orchestration. It coordinates
+        the three-phase execution pattern: Setup → Waves → Finalize.
+
+        Parameters
+        ----------
+        feature_id : str
+            Feature identifier (e.g., "FEAT-A1B2")
+        base_branch : str, optional
+            Branch to create worktree from (default: "main")
+        specific_task : Optional[str], optional
+            If provided, only execute this specific task
+
+        Returns
+        -------
+        FeatureOrchestrationResult
+            Complete orchestration result
+
+        Raises
+        ------
+        FeatureNotFoundError
+            If feature file doesn't exist
+        FeatureValidationError
+            If feature fails validation
+        FeatureOrchestrationError
+            If critical error occurs
+
+        Examples
+        --------
+        >>> result = orchestrator.orchestrate("FEAT-A1B2")
+        >>> print(result.status)
+        'completed'
+        >>>
+        >>> # Run specific task only
+        >>> result = orchestrator.orchestrate("FEAT-A1B2", specific_task="TASK-001")
+        """
+        logger.info(f"Starting feature orchestration for {feature_id}")
+
+        try:
+            # Phase 1: Setup
+            feature, worktree = self._setup_phase(feature_id, base_branch)
+
+            # Phase 2: Wave Execution
+            if specific_task:
+                # Execute single task mode
+                wave_results = self._execute_single_task(
+                    feature, worktree, specific_task
+                )
+            else:
+                # Execute all tasks wave by wave
+                wave_results = self._wave_phase(feature, worktree)
+
+            # Phase 3: Finalize
+            result = self._finalize_phase(feature, wave_results, worktree)
+
+            logger.info(
+                f"Feature orchestration complete: {feature_id}, "
+                f"status={result.status}, completed={result.tasks_completed}/{result.total_tasks}"
+            )
+
+            return result
+
+        except FeatureNotFoundError:
+            raise
+        except FeatureValidationError:
+            raise
+        except Exception as e:
+            logger.error(f"Feature orchestration failed: {e}", exc_info=True)
+            raise FeatureOrchestrationError(
+                f"Failed to orchestrate feature {feature_id}: {e}"
+            ) from e
+
+    def _setup_phase(
+        self,
+        feature_id: str,
+        base_branch: str,
+    ) -> tuple[Feature, Worktree]:
+        """
+        Phase 1: Load feature, validate, create shared worktree.
+
+        Parameters
+        ----------
+        feature_id : str
+            Feature identifier
+        base_branch : str
+            Branch to create worktree from
+
+        Returns
+        -------
+        tuple[Feature, Worktree]
+            Loaded feature and created worktree
+
+        Raises
+        ------
+        FeatureNotFoundError
+            If feature file not found
+        FeatureValidationError
+            If validation fails
+        WorktreeCreationError
+            If worktree creation fails
+        """
+        logger.info(f"Phase 1 (Setup): Loading feature {feature_id}")
+
+        # Display setup banner
+        mode_text = (
+            "[yellow]Fresh Start[/yellow]" if self.fresh else
+            "[yellow]Resuming[/yellow]" if self.resume else
+            "Starting"
+        )
+        console.print(
+            Panel(
+                f"[bold]AutoBuild Feature Orchestration[/bold]\n\n"
+                f"Feature: [cyan]{feature_id}[/cyan]\n"
+                f"Max Turns: {self.max_turns}\n"
+                f"Stop on Failure: {self.stop_on_failure}\n"
+                f"Mode: {mode_text}",
+                title="GuardKit AutoBuild",
+                border_style="blue",
+            )
+        )
+
+        # Load feature
+        feature = FeatureLoader.load_feature(
+            feature_id,
+            repo_root=self.repo_root,
+            features_dir=self.features_dir,
+        )
+
+        console.print(f"[green]✓[/green] Loaded feature: {feature.name}")
+        console.print(f"  Tasks: {len(feature.tasks)}")
+        console.print(f"  Waves: {len(feature.orchestration.parallel_groups)}")
+
+        # Validate feature
+        errors = FeatureLoader.validate_feature(feature, self.repo_root)
+        if errors:
+            error_msg = "\n".join(f"  - {e}" for e in errors)
+            raise FeatureValidationError(
+                f"Feature validation failed for {feature_id}:\n{error_msg}"
+            )
+
+        console.print("[green]✓[/green] Feature validation passed")
+
+        # Initialize wave progress display
+        if not self.quiet:
+            self._wave_display = WaveProgressDisplay(
+                total_waves=len(feature.orchestration.parallel_groups),
+                verbose=self.verbose,
+            )
+
+        # Handle fresh start
+        if self.fresh:
+            if FeatureLoader.is_incomplete(feature):
+                console.print("[yellow]⚠[/yellow] Clearing previous incomplete state")
+                self._clean_state(feature)
+            return self._create_new_worktree(feature, feature_id, base_branch)
+
+        # Check for incomplete state
+        if FeatureLoader.is_incomplete(feature):
+            resume_point = FeatureLoader.get_resume_point(feature)
+
+            if self.resume:
+                # Explicit resume flag - proceed with resume
+                console.print(
+                    f"[yellow]⟳[/yellow] Resuming from incomplete state"
+                )
+                console.print(
+                    f"  Completed tasks: {len(resume_point['completed_tasks'])}"
+                )
+                console.print(
+                    f"  Pending tasks: {len(resume_point['pending_tasks'])}"
+                )
+                if resume_point['task_id']:
+                    console.print(
+                        f"  In-progress task: {resume_point['task_id']} "
+                        f"(turn {resume_point['turn']})"
+                    )
+
+                # Reuse existing worktree if available
+                if resume_point['worktree_path']:
+                    worktree_path = Path(resume_point['worktree_path'])
+                    if worktree_path.exists():
+                        console.print(
+                            f"[green]✓[/green] Using existing worktree: {worktree_path}"
+                        )
+                        worktree = Worktree(
+                            task_id=feature_id,
+                            branch_name=f"autobuild/{feature_id}",
+                            path=worktree_path,
+                            base_branch=base_branch,
+                        )
+                        return feature, worktree
+
+                # Worktree not found, create new but keep state
+                console.print("[yellow]⚠[/yellow] Previous worktree not found, creating new one")
+                return self._create_new_worktree(feature, feature_id, base_branch)
+            else:
+                # No explicit flag - prompt user
+                should_resume = self._prompt_resume(feature, resume_point)
+                if should_resume:
+                    self.resume = True  # Set flag for wave phase
+                    if resume_point['worktree_path']:
+                        worktree_path = Path(resume_point['worktree_path'])
+                        if worktree_path.exists():
+                            console.print(
+                                f"[green]✓[/green] Using existing worktree: {worktree_path}"
+                            )
+                            worktree = Worktree(
+                                task_id=feature_id,
+                                branch_name=f"autobuild/{feature_id}",
+                                path=worktree_path,
+                                base_branch=base_branch,
+                            )
+                            return feature, worktree
+                    return self._create_new_worktree(feature, feature_id, base_branch)
+                else:
+                    # User chose fresh start
+                    console.print("[yellow]⚠[/yellow] Starting fresh, clearing previous state")
+                    self._clean_state(feature)
+                    return self._create_new_worktree(feature, feature_id, base_branch)
+
+        # No incomplete state, start fresh
+        return self._create_new_worktree(feature, feature_id, base_branch)
+
+    def _create_new_worktree(
+        self,
+        feature: Feature,
+        feature_id: str,
+        base_branch: str,
+    ) -> tuple[Feature, Worktree]:
+        """
+        Create a new worktree for feature execution.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature being executed
+        feature_id : str
+            Feature identifier
+        base_branch : str
+            Branch to create worktree from
+
+        Returns
+        -------
+        tuple[Feature, Worktree]
+            Feature and created worktree
+        """
+        try:
+            worktree = self._worktree_manager.create(
+                task_id=feature_id,
+                base_branch=base_branch,
+            )
+            console.print(f"[green]✓[/green] Created shared worktree: {worktree.path}")
+        except WorktreeCreationError as e:
+            raise FeatureOrchestrationError(
+                f"Failed to create worktree for {feature_id}: {e}"
+            ) from e
+
+        # Update feature with worktree path and start time
+        feature.status = "in_progress"
+        feature.execution.started_at = datetime.now().isoformat()
+        feature.execution.worktree_path = str(worktree.path)
+        feature.execution.last_updated = datetime.now().isoformat()
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+        return feature, worktree
+
+    def _prompt_resume(
+        self,
+        feature: Feature,
+        resume_point: Dict[str, Any],
+    ) -> bool:
+        """
+        Prompt user to resume or start fresh.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature with incomplete state
+        resume_point : Dict[str, Any]
+            Resume point information
+
+        Returns
+        -------
+        bool
+            True to resume, False to start fresh
+        """
+        console.print()
+        console.print(
+            Panel(
+                f"[yellow]Incomplete Execution Detected[/yellow]\n\n"
+                f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
+                f"Last updated: {feature.execution.last_updated or 'Unknown'}\n"
+                f"Completed tasks: {len(resume_point['completed_tasks'])}/{len(feature.tasks)}\n"
+                f"Current wave: {resume_point['wave']}\n"
+                + (
+                    f"In-progress task: {resume_point['task_id']} (turn {resume_point['turn']})\n"
+                    if resume_point['task_id']
+                    else ""
+                ),
+                title="Resume Available",
+                border_style="yellow",
+            )
+        )
+
+        console.print("\nOptions:")
+        console.print("  [R]esume - Continue from where you left off")
+        console.print("  [F]resh  - Start over from the beginning")
+        console.print()
+
+        try:
+            import sys
+            if sys.stdin.isatty():
+                choice = input("Your choice [R/f]: ").strip().lower() or "r"
+                return choice != "f"
+            else:
+                # Non-interactive mode, default to resume
+                console.print("[dim]Non-interactive mode, defaulting to resume[/dim]")
+                return True
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Cancelled[/yellow]")
+            raise FeatureOrchestrationError("User cancelled resume prompt")
+
+    def _clean_state(self, feature: Feature) -> None:
+        """
+        Clean up feature state for a fresh start.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to clean
+        """
+        # Remove existing worktree if it exists
+        if feature.execution.worktree_path:
+            worktree_path = Path(feature.execution.worktree_path)
+            if worktree_path.exists():
+                try:
+                    # Create a Worktree object for cleanup
+                    worktree_to_cleanup = Worktree(
+                        task_id=feature.id,
+                        branch_name=f"autobuild/{feature.id}",
+                        path=worktree_path,
+                        base_branch="main",
+                    )
+                    self._worktree_manager.cleanup(worktree_to_cleanup)
+                    console.print(
+                        f"[green]✓[/green] Cleaned up previous worktree: {worktree_path}"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to cleanup worktree: {e}")
+                    console.print(
+                        f"[yellow]⚠[/yellow] Could not cleanup worktree: {e}"
+                    )
+
+        # Reset feature state
+        FeatureLoader.reset_state(feature)
+        FeatureLoader.save_feature(feature, self.repo_root)
+        console.print("[green]✓[/green] Reset feature state")
+
+    def _wave_phase(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> List[WaveExecutionResult]:
+        """
+        Phase 2: Execute tasks wave by wave respecting dependencies.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to execute
+        worktree : Worktree
+            Shared worktree
+
+        Returns
+        -------
+        List[WaveExecutionResult]
+            Results for each wave
+        """
+        logger.info(f"Phase 2 (Waves): Executing {len(feature.orchestration.parallel_groups)} waves")
+        wave_results = []
+
+        console.print()
+        console.print("[bold]Starting Wave Execution[/bold]")
+
+        for wave_number, task_ids in enumerate(
+            feature.orchestration.parallel_groups, 1
+        ):
+            # Check dependencies satisfied
+            for task_id in task_ids:
+                task = FeatureLoader.find_task(feature, task_id)
+                if task and not self._dependencies_satisfied(task, feature):
+                    raise DependencyError(
+                        f"Task {task_id} has unsatisfied dependencies: {task.dependencies}"
+                    )
+
+            # Display wave start via progress display
+            if self._wave_display:
+                self._wave_display.start_wave(wave_number, task_ids)
+            else:
+                # Fallback to basic display
+                console.print()
+                console.print(
+                    f"[bold cyan]Wave {wave_number}/{len(feature.orchestration.parallel_groups)}[/bold cyan]: "
+                    f"{', '.join(task_ids)}"
+                )
+
+            wave_result = self._execute_wave(
+                wave_number, task_ids, feature, worktree
+            )
+            wave_results.append(wave_result)
+
+            # Display wave completion via progress display
+            passed = sum(1 for r in wave_result.results if r.success)
+            failed = len(wave_result.results) - passed
+            skipped = sum(1 for r in wave_result.results if r.final_decision == "skipped")
+
+            if self._wave_display:
+                self._wave_display.complete_wave(wave_number, passed, failed, skipped)
+            else:
+                # Fallback to basic display
+                status = "[green]✓ PASSED[/green]" if wave_result.all_succeeded else "[red]✗ FAILED[/red]"
+                console.print(f"  Wave {wave_number} {status}: {passed} passed, {failed} failed")
+
+            # Check for stop-on-failure
+            if not wave_result.all_succeeded and self.stop_on_failure:
+                console.print(
+                    "[yellow]⚠[/yellow] Stopping execution (stop_on_failure=True)"
+                )
+                break
+
+        return wave_results
+
+    def _execute_wave(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        feature: Feature,
+        worktree: Worktree,
+    ) -> WaveExecutionResult:
+        """
+        Execute all tasks in a single wave.
+
+        Parameters
+        ----------
+        wave_number : int
+            Wave number (1-indexed)
+        task_ids : List[str]
+            Task IDs to execute
+        feature : Feature
+            Parent feature
+        worktree : Worktree
+            Shared worktree
+
+        Returns
+        -------
+        WaveExecutionResult
+            Results for this wave
+        """
+        results = []
+
+        # Update current wave tracking
+        feature.execution.current_wave = wave_number
+        feature.execution.last_updated = datetime.now().isoformat()
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+        for task_id in task_ids:
+            task = FeatureLoader.find_task(feature, task_id)
+            if not task:
+                results.append(
+                    TaskExecutionResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="error",
+                        error=f"Task not found in feature: {task_id}",
+                    )
+                )
+                continue
+
+            # Skip already completed tasks (for resume)
+            if task.status == "completed":
+                if self._wave_display:
+                    self._wave_display.update_task_status(
+                        task_id, "skipped", "already completed",
+                        turns=task.turns_completed, decision="already_completed"
+                    )
+                else:
+                    console.print(f"  [dim]⏭ Skipping {task_id} (already completed)[/dim]")
+                results.append(
+                    TaskExecutionResult(
+                        task_id=task_id,
+                        success=True,
+                        total_turns=task.turns_completed,
+                        final_decision="already_completed",
+                    )
+                )
+                continue
+
+            # Skip tasks whose dependencies failed
+            if not self._dependencies_satisfied(task, feature):
+                if self._wave_display:
+                    self._wave_display.update_task_status(
+                        task_id, "skipped", "dependency failed"
+                    )
+                else:
+                    console.print(
+                        f"  [yellow]⏭ Skipping {task_id} (dependency failed)[/yellow]"
+                    )
+                task.status = "skipped"
+                self._update_feature(feature, task_id, None, wave_number)
+                results.append(
+                    TaskExecutionResult(
+                        task_id=task_id,
+                        success=False,
+                        total_turns=0,
+                        final_decision="skipped",
+                        error="Dependency failed",
+                    )
+                )
+                continue
+
+            # Mark task as started for resume tracking
+            self._update_task_started(feature, task_id)
+
+            # Display task start
+            if self._wave_display:
+                self._wave_display.update_task_status(
+                    task_id, "in_progress", f"Executing: {task.name}"
+                )
+            else:
+                console.print(f"  [cyan]▶[/cyan] Executing {task_id}: {task.name}")
+
+            # Execute task
+            result = self._execute_task(task, feature, worktree)
+            results.append(result)
+
+            # Update task status in display
+            if self._wave_display:
+                status = "success" if result.success else "failed"
+                self._wave_display.update_task_status(
+                    task_id, status, result.final_decision,
+                    turns=result.total_turns, decision=result.final_decision
+                )
+
+            # Update feature with result
+            self._update_feature(feature, task_id, result, wave_number)
+
+            # Check for stop-on-failure within wave
+            if not result.success and self.stop_on_failure:
+                break
+
+        all_succeeded = all(r.success for r in results)
+
+        # Mark wave as completed if all tasks succeeded
+        if all_succeeded:
+            self._mark_wave_completed(feature, wave_number)
+
+        return WaveExecutionResult(
+            wave_number=wave_number,
+            task_ids=task_ids,
+            results=results,
+            all_succeeded=all_succeeded,
+        )
+
+    def _execute_task(
+        self,
+        task: FeatureTask,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> TaskExecutionResult:
+        """
+        Execute single task using AutoBuildOrchestrator with shared worktree.
+
+        Parameters
+        ----------
+        task : FeatureTask
+            Task to execute
+        feature : Feature
+            Parent feature
+        worktree : Worktree
+            Shared worktree
+
+        Returns
+        -------
+        TaskExecutionResult
+            Execution result
+        """
+        try:
+            # Load task data from markdown file
+            task_data = TaskLoader.load_task(task.id, repo_root=self.repo_root)
+
+            # Create AutoBuildOrchestrator with existing worktree
+            task_orchestrator = AutoBuildOrchestrator(
+                repo_root=self.repo_root,
+                max_turns=self.max_turns,
+                resume=False,  # Each task starts fresh in feature mode
+                existing_worktree=worktree,  # Pass shared worktree
+                worktree_manager=self._worktree_manager,
+            )
+
+            # Execute task orchestration
+            result = task_orchestrator.orchestrate(
+                task_id=task.id,
+                requirements=task_data["requirements"],
+                acceptance_criteria=task_data["acceptance_criteria"],
+                task_file_path=task_data.get("file_path"),
+            )
+
+            status_icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+            console.print(
+                f"    {status_icon} {task.id}: {result.final_decision} "
+                f"({result.total_turns} turns)"
+            )
+
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=result.success,
+                total_turns=result.total_turns,
+                final_decision=result.final_decision,
+                error=result.error,
+            )
+
+        except Exception as e:
+            console.print(f"    [red]✗[/red] {task.id}: Error - {e}")
+            return TaskExecutionResult(
+                task_id=task.id,
+                success=False,
+                total_turns=0,
+                final_decision="error",
+                error=str(e),
+            )
+
+    def _execute_single_task(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+        task_id: str,
+    ) -> List[WaveExecutionResult]:
+        """
+        Execute a single specific task (--task option).
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature containing the task
+        worktree : Worktree
+            Shared worktree
+        task_id : str
+            Task ID to execute
+
+        Returns
+        -------
+        List[WaveExecutionResult]
+            Single-element list with the task result
+        """
+        task = FeatureLoader.find_task(feature, task_id)
+        if not task:
+            raise FeatureOrchestrationError(
+                f"Task {task_id} not found in feature {feature.id}"
+            )
+
+        console.print(f"\n[bold]Single Task Mode:[/bold] {task_id}")
+
+        result = self._execute_task(task, feature, worktree)
+        self._update_feature(feature, task_id, result)
+
+        return [
+            WaveExecutionResult(
+                wave_number=1,
+                task_ids=[task_id],
+                results=[result],
+                all_succeeded=result.success,
+            )
+        ]
+
+    def _finalize_phase(
+        self,
+        feature: Feature,
+        wave_results: List[WaveExecutionResult],
+        worktree: Worktree,
+    ) -> FeatureOrchestrationResult:
+        """
+        Phase 3: Update feature status and preserve worktree.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to finalize
+        wave_results : List[WaveExecutionResult]
+            Results from wave execution
+        worktree : Worktree
+            Shared worktree
+
+        Returns
+        -------
+        FeatureOrchestrationResult
+            Complete orchestration result
+        """
+        logger.info(f"Phase 3 (Finalize): Updating feature {feature.id}")
+
+        # Calculate totals
+        tasks_completed = sum(
+            1
+            for wave in wave_results
+            for r in wave.results
+            if r.success
+        )
+        tasks_failed = sum(
+            1
+            for wave in wave_results
+            for r in wave.results
+            if not r.success
+        )
+        total_turns = sum(
+            r.total_turns
+            for wave in wave_results
+            for r in wave.results
+        )
+
+        # Determine final status
+        final_status: Literal["completed", "failed", "paused"]
+        if tasks_failed == 0 and tasks_completed == len(feature.tasks):
+            final_status = "completed"
+            success = True
+        elif tasks_failed > 0:
+            final_status = "failed"
+            success = False
+        else:
+            final_status = "paused"  # Partial completion (resume mode)
+            success = False
+
+        # Update feature
+        feature.status = final_status
+        feature.execution.completed_at = datetime.now().isoformat()
+        feature.execution.total_turns = total_turns
+        feature.execution.tasks_completed = tasks_completed
+        feature.execution.tasks_failed = tasks_failed
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+        # Preserve worktree for human review
+        self._worktree_manager.preserve_on_failure(worktree)
+
+        # Display summary
+        self._display_summary(feature, wave_results, worktree, final_status)
+
+        return FeatureOrchestrationResult(
+            feature_id=feature.id,
+            success=success,
+            status=final_status,
+            total_tasks=len(feature.tasks),
+            tasks_completed=tasks_completed,
+            tasks_failed=tasks_failed,
+            wave_results=wave_results,
+            worktree=worktree,
+            error=None if success else f"{tasks_failed} task(s) failed",
+        )
+
+    def _dependencies_satisfied(
+        self,
+        task: FeatureTask,
+        feature: Feature,
+    ) -> bool:
+        """
+        Check if all dependencies for a task are satisfied.
+
+        Parameters
+        ----------
+        task : FeatureTask
+            Task to check
+        feature : Feature
+            Parent feature
+
+        Returns
+        -------
+        bool
+            True if all dependencies completed successfully
+        """
+        for dep_id in task.dependencies:
+            dep_task = FeatureLoader.find_task(feature, dep_id)
+            if dep_task and dep_task.status != "completed":
+                return False
+        return True
+
+    def _update_feature(
+        self,
+        feature: Feature,
+        task_id: str,
+        result: Optional[TaskExecutionResult],
+        wave_number: Optional[int] = None,
+    ) -> None:
+        """
+        Update task status in feature after execution.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to update
+        task_id : str
+            Task ID to update
+        result : Optional[TaskExecutionResult]
+            Execution result (None for skipped tasks)
+        wave_number : Optional[int]
+            Current wave number (1-indexed)
+        """
+        task = FeatureLoader.find_task(feature, task_id)
+        if not task:
+            return
+
+        if result:
+            task.status = "completed" if result.success else "failed"
+            task.turns_completed = result.total_turns
+            task.current_turn = 0  # Reset current turn on completion
+            task.completed_at = datetime.now().isoformat()
+            task.result = {
+                "total_turns": result.total_turns,
+                "final_decision": result.final_decision,
+                "error": result.error,
+            }
+
+        # Update execution counters
+        feature.execution.tasks_completed = sum(
+            1 for t in feature.tasks if t.status == "completed"
+        )
+        feature.execution.tasks_failed = sum(
+            1 for t in feature.tasks if t.status == "failed"
+        )
+
+        # Update wave tracking
+        if wave_number is not None:
+            feature.execution.current_wave = wave_number
+
+        # Update timestamp
+        feature.execution.last_updated = datetime.now().isoformat()
+
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+    def _update_task_started(
+        self,
+        feature: Feature,
+        task_id: str,
+    ) -> None:
+        """
+        Mark a task as started (in_progress).
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature containing the task
+        task_id : str
+            Task ID to mark as started
+        """
+        task = FeatureLoader.find_task(feature, task_id)
+        if not task:
+            return
+
+        task.status = "in_progress"
+        task.started_at = datetime.now().isoformat()
+        task.current_turn = 1  # Starting first turn
+        feature.execution.last_updated = datetime.now().isoformat()
+
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+    def _mark_wave_completed(
+        self,
+        feature: Feature,
+        wave_number: int,
+    ) -> None:
+        """
+        Mark a wave as completed.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to update
+        wave_number : int
+            Wave number that completed (1-indexed)
+        """
+        if wave_number not in feature.execution.completed_waves:
+            feature.execution.completed_waves.append(wave_number)
+        feature.execution.last_updated = datetime.now().isoformat()
+
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+    def _display_summary(
+        self,
+        feature: Feature,
+        wave_results: List[WaveExecutionResult],
+        worktree: Worktree,
+        status: str,
+    ) -> None:
+        """
+        Display final orchestration summary.
+
+        Parameters
+        ----------
+        feature : Feature
+            Completed feature
+        wave_results : List[WaveExecutionResult]
+            Execution results
+        worktree : Worktree
+            Shared worktree
+        status : str
+            Final status
+        """
+        # Use wave display for final summary if available
+        if self._wave_display:
+            self._wave_display.render_final_summary(
+                feature_id=feature.id,
+                feature_name=feature.name,
+                status=status,
+                total_tasks=len(feature.tasks),
+                tasks_completed=feature.execution.tasks_completed,
+                tasks_failed=feature.execution.tasks_failed,
+                total_turns=feature.execution.total_turns,
+                worktree_path=str(worktree.path),
+            )
+            return
+
+        # Fallback to basic display
+        console.print()
+
+        if status == "completed":
+            console.print(
+                Panel(
+                    f"[green]✓ Feature completed successfully[/green]\n\n"
+                    f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
+                    f"Tasks: {len(feature.tasks)} completed\n"
+                    f"Waves: {len(wave_results)}\n"
+                    f"Total Turns: {feature.execution.total_turns}\n"
+                    f"Worktree: [cyan]{worktree.path}[/cyan]",
+                    title="Feature Orchestration Complete",
+                    border_style="green",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[red]✗ Feature execution failed[/red]\n\n"
+                    f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
+                    f"Completed: {feature.execution.tasks_completed}/{len(feature.tasks)}\n"
+                    f"Failed: {feature.execution.tasks_failed}\n"
+                    f"Worktree preserved at: [cyan]{worktree.path}[/cyan]",
+                    title="Feature Orchestration Failed",
+                    border_style="red",
+                )
+            )
+
+        # Display task summary table
+        if self.verbose:
+            console.print("\n[bold]Task Summary:[/bold]\n")
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Task", style="cyan", width=20)
+            table.add_column("Status", width=12)
+            table.add_column("Turns", width=8)
+            table.add_column("Decision", width=20)
+
+            for task in feature.tasks:
+                status_style = (
+                    "green" if task.status == "completed"
+                    else "red" if task.status == "failed"
+                    else "yellow" if task.status == "skipped"
+                    else "dim"
+                )
+                status_text = f"[{status_style}]{task.status.upper()}[/{status_style}]"
+                turns = task.result.get("total_turns", "-") if task.result else "-"
+                decision = task.result.get("final_decision", "-") if task.result else "-"
+
+                table.add_row(task.id, status_text, str(turns), decision)
+
+            console.print(table)
+
+        # Next steps
+        console.print("\n[bold]Next Steps:[/bold]")
+        if status == "completed":
+            console.print(f"  1. Review changes: cd {worktree.path}")
+            console.print("  2. View diff: git diff main")
+            console.print(f"  3. Merge if approved: git checkout main && git merge autobuild/{feature.id}")
+            console.print(f"  4. Cleanup: guardkit worktree cleanup {feature.id}")
+        else:
+            console.print(f"  1. Review failed tasks: cd {worktree.path}")
+            console.print(f"  2. Check feature status: guardkit autobuild status {feature.id}")
+            console.print(f"  3. Resume after fixes: guardkit autobuild feature {feature.id} --resume")
+
+
+# ============================================================================
+# Public API
+# ============================================================================
+
+__all__ = [
+    "FeatureOrchestrator",
+    "FeatureOrchestrationResult",
+    "TaskExecutionResult",
+    "WaveExecutionResult",
+    "FeatureOrchestrationError",
+    "WaveExecutionError",
+    "DependencyError",
+]

@@ -3,7 +3,7 @@ id: TASK-SEC-005
 title: Add security validation tests
 status: backlog
 created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T14:45:00Z
+updated: 2025-12-31T16:15:00Z
 priority: high
 tags: [security, testing, quality-gates, autobuild]
 complexity: 5
@@ -13,6 +13,11 @@ estimated_hours: 2-3
 wave: 3
 conductor_workspace: coach-security-wave3-1
 dependencies: [TASK-SEC-001, TASK-SEC-002, TASK-SEC-003, TASK-SEC-004]
+enhanced_by: TASK-REV-SEC2
+claude_code_techniques:
+  - false-positive-tests
+  - confidence-threshold-tests
+  - exclusion-category-tests
 ---
 
 # TASK-SEC-005: Add Security Validation Tests
@@ -29,6 +34,9 @@ Create comprehensive test coverage for all security validation features: quick c
 4. Integration tests for Coach validation with security
 5. Mock tests for security-specialist invocation
 6. Test fixtures for vulnerable code samples
+7. **[From TASK-REV-SEC2]** False positive filtering tests
+8. **[From TASK-REV-SEC2]** Confidence threshold tests
+9. **[From TASK-REV-SEC2]** Exclusion category tests (DOS, rate limiting, etc.)
 
 ## Test Structure
 
@@ -38,7 +46,8 @@ tests/
 │   ├── test_security_checker.py       # Quick checks
 │   ├── test_security_config.py        # Configuration
 │   ├── test_security_detection.py     # Tag/keyword detection
-│   └── test_security_invocation.py    # Full review (mocked)
+│   ├── test_security_invocation.py    # Full review (mocked)
+│   └── test_security_filtering.py     # [From TASK-REV-SEC2] False positive filtering
 ├── integration/
 │   └── test_coach_security.py         # Coach + security flow
 └── fixtures/
@@ -166,7 +175,101 @@ class TestSecurityDetection:
         assert should_run_full_review(task, config) is False
 ```
 
-### 4. Integration Tests (`test_coach_security.py`)
+### 4. False Positive Filtering Tests (`test_security_filtering.py`)
+
+```python
+# [From TASK-REV-SEC2] Tests based on Claude Code security-review filtering
+class TestFalsePositiveFiltering:
+    """Test that low-value findings are filtered."""
+
+    def test_dos_findings_excluded(self):
+        """DOS vulnerabilities should be filtered."""
+        finding = SecurityFinding(
+            check_id="test-1",
+            severity="medium",
+            confidence=0.9,
+            description="Infinite loop could cause denial of service",
+            file_path="app.py",
+            line_number=42,
+        )
+        assert is_excluded(finding) is True
+
+    def test_rate_limit_findings_excluded(self):
+        """Rate limiting recommendations should be filtered."""
+        finding = SecurityFinding(
+            check_id="test-2",
+            severity="low",
+            confidence=0.85,
+            description="Missing rate limiting on API endpoint",
+            file_path="api.py",
+            line_number=100,
+        )
+        assert is_excluded(finding) is True
+
+    def test_resource_management_findings_excluded(self):
+        """Resource management issues should be filtered."""
+        finding = SecurityFinding(
+            check_id="test-3",
+            severity="medium",
+            confidence=0.9,
+            description="Memory leak in connection pool",
+            file_path="db.py",
+            line_number=50,
+        )
+        assert is_excluded(finding) is True
+
+    def test_open_redirect_findings_excluded(self):
+        """Open redirect vulnerabilities should be filtered."""
+        finding = SecurityFinding(
+            check_id="test-4",
+            severity="medium",
+            confidence=0.88,
+            description="Open redirect vulnerability in login flow",
+            file_path="auth.py",
+            line_number=75,
+        )
+        assert is_excluded(finding) is True
+
+    def test_real_vulnerabilities_not_excluded(self):
+        """Real security issues should NOT be filtered."""
+        finding = SecurityFinding(
+            check_id="test-5",
+            severity="critical",
+            confidence=0.95,
+            description="SQL injection via user input",
+            file_path="query.py",
+            line_number=30,
+        )
+        assert is_excluded(finding) is False
+
+    def test_low_confidence_filtered(self):
+        """Findings with confidence < 0.8 should be filtered."""
+        finding = SecurityFinding(
+            check_id="test-6",
+            severity="high",
+            confidence=0.6,
+            description="Possible XSS vulnerability",
+            file_path="template.py",
+            line_number=20,
+        )
+        # Assuming filter_by_confidence function
+        assert finding.confidence < 0.8
+
+    def test_markdown_files_excluded(self):
+        """Findings in .md files should be excluded."""
+        finding = SecurityFinding(
+            check_id="test-7",
+            severity="high",
+            confidence=0.9,
+            description="Hardcoded API key",
+            file_path="README.md",
+            line_number=10,
+        )
+        # Based on file pattern exclusion
+        assert should_exclude_file("README.md") is True
+```
+
+### 5. Integration Tests (`test_coach_security.py`)
 
 ```python
 class TestCoachSecurityIntegration:
@@ -209,6 +312,9 @@ class TestCoachSecurityIntegration:
 - [ ] All tests pass
 - [ ] Coverage > 90% for security modules
 - [ ] Tests run in < 60 seconds total
+- [ ] **[From TASK-REV-SEC2]** 8+ tests for false positive filtering
+- [ ] **[From TASK-REV-SEC2]** Tests for confidence threshold (0.8)
+- [ ] **[From TASK-REV-SEC2]** Tests for exclusion categories (DOS, rate limiting, etc.)
 
 ## Test Fixtures
 
@@ -239,3 +345,10 @@ fixtures/security/safe_code/
 - Actual security-specialist agent testing (mocked)
 - Performance benchmarking beyond basic checks
 - Fuzzing/property-based testing
+
+## Claude Code Reference
+
+Techniques adopted from [claude-code-security-review](https://github.com/anthropics/claude-code-security-review):
+- False positive filtering tests for DOS, rate limiting, resource management
+- Confidence threshold tests (filter below 0.8)
+- File pattern exclusion tests (markdown, test files)

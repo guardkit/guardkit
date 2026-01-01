@@ -286,6 +286,7 @@ class AutoBuildOrchestrator:
         resume: bool = False,
         enable_pre_loop: bool = True,
         pre_loop_options: Optional[Dict[str, Any]] = None,
+        existing_worktree: Optional[Worktree] = None,
         worktree_manager: Optional[WorktreeManager] = None,
         agent_invoker: Optional[AgentInvoker] = None,
         progress_display: Optional[ProgressDisplay] = None,
@@ -309,6 +310,9 @@ class AutoBuildOrchestrator:
             - no_questions: Skip clarification
             - with_questions: Force clarification
             - answers: Inline answers for automation
+        existing_worktree : Optional[Worktree], optional
+            Use an existing worktree instead of creating a new one (for feature mode).
+            When provided, _setup_phase() will reuse this worktree.
         worktree_manager : Optional[WorktreeManager], optional
             Optional WorktreeManager for DI/testing
         agent_invoker : Optional[AgentInvoker], optional
@@ -330,6 +334,9 @@ class AutoBuildOrchestrator:
 
         Pre-loop quality gates delegate to task-work --design-only, achieving
         100% code reuse of existing quality gates (TASK-REV-0414, Option D).
+
+        The existing_worktree parameter enables feature mode where multiple
+        tasks share a single worktree, added for TASK-FBC-001.
         """
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
@@ -339,6 +346,7 @@ class AutoBuildOrchestrator:
         self.resume = resume
         self.enable_pre_loop = enable_pre_loop
         self.pre_loop_options = pre_loop_options or {}
+        self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         self._turn_history: List[TurnRecord] = []
 
         # Initialize dependencies (DI or defaults)
@@ -352,7 +360,8 @@ class AutoBuildOrchestrator:
         logger.info(
             f"AutoBuildOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, resume={self.resume}, "
-            f"enable_pre_loop={self.enable_pre_loop}"
+            f"enable_pre_loop={self.enable_pre_loop}, "
+            f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
     def orchestrate(
@@ -548,7 +557,7 @@ class AutoBuildOrchestrator:
 
         Steps
         -----
-        1. Create git worktree via WorktreeManager
+        1. Create git worktree via WorktreeManager (or use existing if provided)
         2. Initialize AgentInvoker with worktree path (lazy initialization)
         3. Log setup confirmation
 
@@ -562,7 +571,7 @@ class AutoBuildOrchestrator:
         Returns
         -------
         Worktree
-            Created Worktree instance
+            Created or existing Worktree instance
 
         Raises
         ------
@@ -573,11 +582,28 @@ class AutoBuildOrchestrator:
         -----
         ProgressDisplay is managed as context manager in loop phase to guarantee
         cleanup even if later phases fail.
+
+        If existing_worktree is provided (feature mode), that worktree is used
+        instead of creating a new one. This enables multiple tasks to share
+        a single worktree (TASK-FBC-001).
         """
         logger.info(f"Phase 1 (Setup): Creating worktree for {task_id}")
 
         try:
-            # Create isolated worktree
+            # Use existing worktree if provided (feature mode)
+            if self._existing_worktree is not None:
+                logger.info(
+                    f"Using existing worktree for {task_id}: {self._existing_worktree.path}"
+                )
+                worktree = self._existing_worktree
+
+                # Initialize AgentInvoker with worktree path
+                if self._agent_invoker is None:
+                    self._agent_invoker = AgentInvoker(worktree_path=worktree.path)
+
+                return worktree
+
+            # Create isolated worktree (normal mode)
             worktree = self._worktree_manager.create(
                 task_id=task_id,
                 base_branch=base_branch,
