@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 import pytest
 
-from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator.agent_invoker import (
+    AgentInvoker,
+    AgentInvocationResult,
+    USE_TASK_WORK_DELEGATION,
+)
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     PlayerReportNotFoundError,
@@ -16,6 +20,7 @@ from guardkit.orchestrator.exceptions import (
     CoachDecisionNotFoundError,
     CoachDecisionInvalidError,
     SDKTimeoutError,
+    TaskWorkResult,
 )
 
 
@@ -797,3 +802,497 @@ class TestHelperMethods:
             agent_invoker._load_agent_report("TASK-001", 1, "coach")
 
         assert "Coach decision not found" in str(exc_info.value)
+
+
+# ==================== Task-Work Delegation Tests ====================
+
+
+class TestTaskWorkDelegation:
+    """Test task-work delegation functionality."""
+
+    @pytest.fixture
+    def delegation_invoker(self, worktree_path):
+        """Create AgentInvoker with task-work delegation enabled."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            max_turns_per_agent=30,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    @pytest.fixture
+    def legacy_invoker(self, worktree_path):
+        """Create AgentInvoker with task-work delegation disabled (legacy)."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            max_turns_per_agent=30,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=False,
+        )
+
+    def test_init_with_delegation_enabled(self, worktree_path):
+        """AgentInvoker can be initialized with task-work delegation enabled."""
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            use_task_work_delegation=True,
+        )
+        assert invoker.use_task_work_delegation is True
+
+    def test_init_with_delegation_disabled(self, worktree_path):
+        """AgentInvoker can be initialized with task-work delegation disabled."""
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            use_task_work_delegation=False,
+        )
+        assert invoker.use_task_work_delegation is False
+
+    def test_init_defaults_to_env_var(self, worktree_path):
+        """AgentInvoker defaults use_task_work_delegation to USE_TASK_WORK_DELEGATION."""
+        invoker = AgentInvoker(worktree_path=worktree_path)
+        assert invoker.use_task_work_delegation == USE_TASK_WORK_DELEGATION
+
+
+class TestWriteCoachFeedback:
+    """Test _write_coach_feedback method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            use_task_work_delegation=True,
+        )
+
+    def test_write_coach_feedback_creates_file(self, invoker, worktree_path):
+        """_write_coach_feedback creates feedback file in correct location."""
+        feedback = "Please add error handling for edge cases."
+
+        path = invoker._write_coach_feedback(
+            task_id="TASK-001",
+            turn=2,
+            feedback=feedback,
+        )
+
+        # Verify file exists
+        assert path.exists()
+
+        # Verify path is correct
+        expected_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-001" /
+            "coach_feedback_for_turn_2.md"
+        )
+        assert path == expected_path
+
+    def test_write_coach_feedback_content(self, invoker, worktree_path):
+        """_write_coach_feedback writes correct content."""
+        feedback = "Add unit tests for the authentication module."
+
+        path = invoker._write_coach_feedback(
+            task_id="TASK-001",
+            turn=3,
+            feedback=feedback,
+        )
+
+        content = path.read_text()
+
+        # Verify content includes feedback
+        assert "Add unit tests for the authentication module." in content
+        assert "Turn 3" in content
+        assert "Turn 2" in content  # Feedback is from previous turn
+
+    def test_write_coach_feedback_creates_directories(self, invoker, worktree_path):
+        """_write_coach_feedback creates parent directories if needed."""
+        feedback = "Test feedback"
+
+        path = invoker._write_coach_feedback(
+            task_id="TASK-NEW",
+            turn=2,
+            feedback=feedback,
+        )
+
+        # Verify directories were created
+        assert (worktree_path / ".guardkit" / "autobuild" / "TASK-NEW").is_dir()
+        assert path.exists()
+
+
+class TestInvokeTaskWorkImplement:
+    """Test _invoke_task_work_implement method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_success(self, invoker, worktree_path):
+        """_invoke_task_work_implement returns success on exit code 0."""
+        # Mock subprocess
+        mock_process = AsyncMock()
+        mock_process.returncode = 0
+        mock_process.communicate = AsyncMock(
+            return_value=(
+                b"All tests passing\nCoverage: 85.2%\nIN_REVIEW",
+                b"",
+            )
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            # Verify result
+            assert result.success is True
+            assert result.exit_code == 0
+            assert result.error is None
+
+            # Verify subprocess was called correctly
+            mock_exec.assert_called_once()
+            call_args = mock_exec.call_args
+            assert "guardkit" in call_args.args
+            assert "task-work" in call_args.args
+            assert "TASK-001" in call_args.args
+            assert "--implement-only" in call_args.args
+            assert "--mode=tdd" in call_args.args
+            assert call_args.kwargs["cwd"] == str(worktree_path)
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_failure(self, invoker):
+        """_invoke_task_work_implement returns failure on non-zero exit code."""
+        # Mock subprocess
+        mock_process = AsyncMock()
+        mock_process.returncode = 1
+        mock_process.communicate = AsyncMock(
+            return_value=(b"", b"Error: tests failed")
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="standard",
+            )
+
+            # Verify result
+            assert result.success is False
+            assert result.exit_code == 1
+            assert "Error: tests failed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_timeout(self, invoker):
+        """_invoke_task_work_implement raises SDKTimeoutError on timeout."""
+        # Set very short timeout
+        invoker.sdk_timeout_seconds = 0.001
+
+        # Mock subprocess that takes too long
+        mock_process = AsyncMock()
+        mock_process.kill = MagicMock()
+        mock_process.wait = AsyncMock()
+
+        async def slow_communicate():
+            await asyncio.sleep(10)
+            return (b"", b"")
+
+        mock_process.communicate = slow_communicate
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            with pytest.raises(SDKTimeoutError) as exc_info:
+                await invoker._invoke_task_work_implement(
+                    task_id="TASK-001",
+                    mode="tdd",
+                )
+
+            assert "timeout" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_command_not_found(self, invoker):
+        """_invoke_task_work_implement handles missing guardkit command."""
+        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError()):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            assert result.success is False
+            assert "guardkit command not found" in result.error
+            assert result.exit_code == -1
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_mode_passed(self, invoker, worktree_path):
+        """_invoke_task_work_implement passes mode parameter correctly."""
+        mock_process = AsyncMock()
+        mock_process.returncode = 0
+        mock_process.communicate = AsyncMock(return_value=(b"Success", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+            await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="standard",
+            )
+
+            call_args = mock_exec.call_args
+            assert "--mode=standard" in call_args.args
+
+
+class TestParseTaskWorkOutput:
+    """Test _parse_task_work_output method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_parse_output_with_all_metrics(self, invoker):
+        """Parse output with all metrics present."""
+        stdout = """
+Task Work Complete - TASK-001
+
+✅ All tests passing!
+
+Test Results:
+- Passed: 15
+- Failed: 0
+
+Coverage: 85.2%
+Branch Coverage: 78.5%
+
+All quality gates passed
+IN_REVIEW
+"""
+        result = invoker._parse_task_work_output(stdout)
+
+        assert result["tests_passed"] is True
+        assert result["coverage_line"] == 85.2
+        assert result["coverage_branch"] == 78.5
+        assert result["quality_gates_passed"] is True
+        assert "All tests passing" in result["raw_output"]
+
+    def test_parse_output_with_no_metrics(self, invoker):
+        """Parse output with no metrics."""
+        stdout = "Some generic output without metrics"
+
+        result = invoker._parse_task_work_output(stdout)
+
+        assert result["tests_passed"] is False
+        assert result["coverage_line"] is None
+        assert result["coverage_branch"] is None
+        assert result["quality_gates_passed"] is False
+
+    def test_parse_output_with_checkmark(self, invoker):
+        """Parse output with checkmark emoji indicates tests passed."""
+        stdout = "Tests: ✅ 10/10 passed"
+
+        result = invoker._parse_task_work_output(stdout)
+
+        assert result["tests_passed"] is True
+
+    def test_parse_output_line_coverage_formats(self, invoker):
+        """Parse various line coverage formats."""
+        test_cases = [
+            ("Line coverage: 90%", 90.0),
+            ("Coverage: 85.5%", 85.5),
+            ("coverage:75%", 75.0),
+        ]
+
+        for stdout, expected in test_cases:
+            result = invoker._parse_task_work_output(stdout)
+            assert result["coverage_line"] == expected, f"Failed for: {stdout}"
+
+
+class TestInvokePlayerWithDelegation:
+    """Test invoke_player method with task-work delegation."""
+
+    @pytest.fixture
+    def delegation_invoker(self, worktree_path):
+        """Create AgentInvoker with task-work delegation enabled."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_player_uses_delegation(
+        self, delegation_invoker, worktree_path, sample_player_report
+    ):
+        """invoke_player uses task-work delegation when enabled."""
+        # Setup: Create Player report file that task-work would create
+        create_report_file(
+            worktree_path, "TASK-001", 1, "player", sample_player_report
+        )
+
+        # Mock _invoke_task_work_implement
+        mock_result = TaskWorkResult(
+            success=True,
+            output={"tests_passed": True},
+            exit_code=0,
+        )
+        with patch.object(
+            delegation_invoker,
+            "_invoke_task_work_implement",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_invoke:
+            result = await delegation_invoker.invoke_player(
+                task_id="TASK-001",
+                turn=1,
+                requirements="Implement feature",
+                mode="tdd",
+            )
+
+            # Verify delegation was called
+            mock_invoke.assert_called_once_with(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            # Verify result
+            assert result.success is True
+            assert result.agent_type == "player"
+            assert result.report == sample_player_report
+
+    @pytest.mark.asyncio
+    async def test_invoke_player_writes_feedback_before_delegation(
+        self, delegation_invoker, worktree_path, sample_player_report
+    ):
+        """invoke_player writes feedback before delegating."""
+        # Setup
+        create_report_file(
+            worktree_path, "TASK-001", 2, "player", sample_player_report
+        )
+        feedback = "Please fix the error handling"
+
+        mock_result = TaskWorkResult(
+            success=True,
+            output={},
+            exit_code=0,
+        )
+
+        with patch.object(
+            delegation_invoker,
+            "_invoke_task_work_implement",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            with patch.object(
+                delegation_invoker,
+                "_write_coach_feedback",
+            ) as mock_write:
+                await delegation_invoker.invoke_player(
+                    task_id="TASK-001",
+                    turn=2,
+                    requirements="Implement feature",
+                    feedback=feedback,
+                )
+
+                # Verify feedback was written
+                mock_write.assert_called_once_with("TASK-001", 2, feedback)
+
+    @pytest.mark.asyncio
+    async def test_invoke_player_skips_feedback_on_turn_1(
+        self, delegation_invoker, worktree_path, sample_player_report
+    ):
+        """invoke_player doesn't write feedback on turn 1."""
+        # Setup
+        create_report_file(
+            worktree_path, "TASK-001", 1, "player", sample_player_report
+        )
+
+        mock_result = TaskWorkResult(
+            success=True,
+            output={},
+            exit_code=0,
+        )
+
+        with patch.object(
+            delegation_invoker,
+            "_invoke_task_work_implement",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            with patch.object(
+                delegation_invoker,
+                "_write_coach_feedback",
+            ) as mock_write:
+                await delegation_invoker.invoke_player(
+                    task_id="TASK-001",
+                    turn=1,
+                    requirements="Implement feature",
+                    feedback=None,  # No feedback on turn 1
+                )
+
+                # Verify feedback was NOT written
+                mock_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invoke_player_returns_error_on_delegation_failure(
+        self, delegation_invoker, worktree_path
+    ):
+        """invoke_player returns error when delegation fails."""
+        mock_result = TaskWorkResult(
+            success=False,
+            output={},
+            error="task-work failed: tests not passing",
+            exit_code=1,
+        )
+
+        with patch.object(
+            delegation_invoker,
+            "_invoke_task_work_implement",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
+            result = await delegation_invoker.invoke_player(
+                task_id="TASK-001",
+                turn=1,
+                requirements="Implement feature",
+            )
+
+            # Verify error is returned
+            assert result.success is False
+            assert "task-work failed" in result.error
+            assert result.report == {}
+
+
+class TestInvokePlayerLegacy:
+    """Test invoke_player method with legacy SDK invocation."""
+
+    @pytest.fixture
+    def legacy_invoker(self, worktree_path):
+        """Create AgentInvoker with task-work delegation disabled."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=False,
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_player_uses_legacy_sdk(
+        self, legacy_invoker, worktree_path, sample_player_report
+    ):
+        """invoke_player uses direct SDK when delegation disabled."""
+        # Setup: Create Player report file
+        create_report_file(
+            worktree_path, "TASK-001", 1, "player", sample_player_report
+        )
+
+        # Mock SDK invocation
+        with patch.object(
+            legacy_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ) as mock_sdk:
+            result = await legacy_invoker.invoke_player(
+                task_id="TASK-001",
+                turn=1,
+                requirements="Implement feature",
+            )
+
+            # Verify SDK was called (not delegation)
+            mock_sdk.assert_called_once()
+
+            # Verify result
+            assert result.success is True
+            assert result.report == sample_player_report

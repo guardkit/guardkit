@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import logging
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +16,16 @@ from guardkit.orchestrator.exceptions import (
     PlayerReportInvalidError,
     PlayerReportNotFoundError,
     SDKTimeoutError,
+    TaskWorkResult,
 )
+
+# Logger for agent invocations
+logger = logging.getLogger(__name__)
+
+# Feature flag for task-work delegation (set via environment or config)
+# When enabled, invoke_player() delegates to `guardkit task-work --implement-only`
+# instead of direct SDK invocation
+USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "false").lower() == "true"
 
 # Player report schema - required fields
 PLAYER_REPORT_SCHEMA = {
@@ -97,6 +108,7 @@ class AgentInvoker:
         player_model: str = "claude-sonnet-4-5-20250929",
         coach_model: str = "claude-sonnet-4-5-20250929",
         sdk_timeout_seconds: int = 300,
+        use_task_work_delegation: Optional[bool] = None,
     ):
         """Initialize AgentInvoker.
 
@@ -106,12 +118,18 @@ class AgentInvoker:
             player_model: Model to use for Player agent (default: claude-sonnet-4-5)
             coach_model: Model to use for Coach agent (default: claude-sonnet-4-5)
             sdk_timeout_seconds: Timeout for SDK invocations (default: 300s)
+            use_task_work_delegation: If True, delegate Player to task-work instead of
+                direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
         """
         self.worktree_path = Path(worktree_path)
         self.max_turns_per_agent = max_turns_per_agent
         self.player_model = player_model
         self.coach_model = coach_model
         self.sdk_timeout_seconds = sdk_timeout_seconds
+        self.use_task_work_delegation = (
+            use_task_work_delegation if use_task_work_delegation is not None
+            else USE_TASK_WORK_DELEGATION
+        )
 
     async def invoke_player(
         self,
@@ -119,8 +137,15 @@ class AgentInvoker:
         turn: int,
         requirements: str,
         feedback: Optional[str] = None,
+        mode: str = "tdd",
     ) -> AgentInvocationResult:
-        """Invoke Player agent via Claude Agents SDK.
+        """Invoke Player agent via task-work delegation or Claude Agents SDK.
+
+        When task-work delegation is enabled (use_task_work_delegation=True),
+        the Player delegates to `guardkit task-work --implement-only` which
+        leverages the full subagent infrastructure.
+
+        When delegation is disabled (legacy mode), uses direct SDK invocation.
 
         The Player agent:
         - Has full file system access (Read, Write, Edit, Bash)
@@ -133,6 +158,7 @@ class AgentInvoker:
             turn: Current turn number (1-based)
             requirements: Task requirements (from task markdown)
             feedback: Optional Coach feedback from previous turn
+            mode: Development mode ("tdd" or "standard"), passed to task-work
 
         Returns:
             AgentInvocationResult with Player's report
@@ -146,32 +172,76 @@ class AgentInvoker:
         start_time = time.time()
 
         try:
-            # Build prompt for Player
-            prompt = self._build_player_prompt(task_id, turn, requirements, feedback)
+            # Write Coach feedback for task-work to read (if present and not turn 1)
+            if feedback and turn > 1:
+                self._write_coach_feedback(task_id, turn, feedback)
 
-            # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
-            await self._invoke_with_role(
-                prompt=prompt,
-                agent_type="player",
-                allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
-                permission_mode="acceptEdits",
-                model=self.player_model,
-            )
+            # Choose invocation method based on feature flag
+            if self.use_task_work_delegation:
+                logger.info(
+                    f"Invoking Player via task-work delegation for {task_id} (turn {turn})"
+                )
+                result = await self._invoke_task_work_implement(
+                    task_id=task_id,
+                    mode=mode,
+                )
 
-            # Load and validate Player report
-            report = self._load_agent_report(task_id, turn, "player")
-            self._validate_player_report(report)
+                duration = time.time() - start_time
 
-            duration = time.time() - start_time
+                if result.success:
+                    # Load the Player report from file (task-work creates it)
+                    report = self._load_agent_report(task_id, turn, "player")
+                    self._validate_player_report(report)
 
-            return AgentInvocationResult(
-                task_id=task_id,
-                turn=turn,
-                agent_type="player",
-                success=True,
-                report=report,
-                duration_seconds=duration,
-            )
+                    return AgentInvocationResult(
+                        task_id=task_id,
+                        turn=turn,
+                        agent_type="player",
+                        success=True,
+                        report=report,
+                        duration_seconds=duration,
+                    )
+                else:
+                    return AgentInvocationResult(
+                        task_id=task_id,
+                        turn=turn,
+                        agent_type="player",
+                        success=False,
+                        report={},
+                        duration_seconds=duration,
+                        error=result.error,
+                    )
+            else:
+                # Legacy direct SDK invocation
+                logger.info(
+                    f"Invoking Player via direct SDK for {task_id} (turn {turn})"
+                )
+                # Build prompt for Player
+                prompt = self._build_player_prompt(task_id, turn, requirements, feedback)
+
+                # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
+                await self._invoke_with_role(
+                    prompt=prompt,
+                    agent_type="player",
+                    allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob"],
+                    permission_mode="acceptEdits",
+                    model=self.player_model,
+                )
+
+                # Load and validate Player report
+                report = self._load_agent_report(task_id, turn, "player")
+                self._validate_player_report(report)
+
+                duration = time.time() - start_time
+
+                return AgentInvocationResult(
+                    task_id=task_id,
+                    turn=turn,
+                    agent_type="player",
+                    success=True,
+                    report=report,
+                    duration_seconds=duration,
+                )
 
         except (PlayerReportNotFoundError, PlayerReportInvalidError) as e:
             duration = time.time() - start_time
@@ -664,3 +734,180 @@ Follow the decision format specified in your agent definition.
             if type_errors:
                 error_msg += f"Type errors: {', '.join(type_errors)}"
             raise CoachDecisionInvalidError(error_msg)
+
+    # =========================================================================
+    # Task-Work Delegation Methods
+    # =========================================================================
+
+    def _write_coach_feedback(
+        self,
+        task_id: str,
+        turn: int,
+        feedback: str,
+    ) -> Path:
+        """Write Coach feedback to file for task-work to read.
+
+        When using task-work delegation, Coach feedback from the previous turn
+        is written to a file that task-work can read as context.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            turn: Current turn number (feedback is from turn-1)
+            feedback: Coach feedback text to write
+
+        Returns:
+            Path to the written feedback file
+        """
+        autobuild_dir = self.worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+
+        feedback_path = autobuild_dir / f"coach_feedback_for_turn_{turn}.md"
+        feedback_content = f"""# Coach Feedback for Turn {turn}
+
+## Feedback from Turn {turn - 1}
+
+{feedback}
+
+---
+*This feedback should be addressed in the current implementation turn.*
+"""
+        feedback_path.write_text(feedback_content)
+        logger.debug(f"Wrote Coach feedback to {feedback_path}")
+        return feedback_path
+
+    async def _invoke_task_work_implement(
+        self,
+        task_id: str,
+        mode: str = "tdd",
+    ) -> TaskWorkResult:
+        """Execute task-work --implement-only in worktree context.
+
+        Delegates Player implementation to the full task-work command,
+        which uses the complete subagent infrastructure for:
+        - Implementation planning
+        - Architectural review
+        - Testing
+        - Code review
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            mode: Development mode ("tdd" or "standard")
+
+        Returns:
+            TaskWorkResult with success status and output/error
+
+        Raises:
+            SDKTimeoutError: If execution exceeds timeout
+        """
+        args = [task_id, "--implement-only", f"--mode={mode}"]
+
+        logger.info(f"Executing: guardkit task-work {' '.join(args)}")
+        logger.info(f"Working directory: {self.worktree_path}")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "guardkit",
+                "task-work",
+                *args,
+                cwd=str(self.worktree_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=self.sdk_timeout_seconds,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                await proc.wait()
+                raise SDKTimeoutError(
+                    f"task-work execution exceeded {self.sdk_timeout_seconds}s timeout"
+                )
+
+            stdout_text = stdout.decode("utf-8") if stdout else ""
+            stderr_text = stderr.decode("utf-8") if stderr else ""
+
+            if proc.returncode == 0:
+                logger.info(f"task-work completed successfully for {task_id}")
+                return TaskWorkResult(
+                    success=True,
+                    output=self._parse_task_work_output(stdout_text),
+                    exit_code=proc.returncode,
+                )
+            else:
+                logger.error(
+                    f"task-work failed for {task_id}: exit code {proc.returncode}"
+                )
+                error_message = stderr_text or f"task-work failed with exit code {proc.returncode}"
+                return TaskWorkResult(
+                    success=False,
+                    output={},
+                    error=error_message,
+                    exit_code=proc.returncode,
+                )
+
+        except FileNotFoundError:
+            error_msg = "guardkit command not found. Ensure guardkit is installed and in PATH."
+            logger.error(error_msg)
+            return TaskWorkResult(
+                success=False,
+                output={},
+                error=error_msg,
+                exit_code=-1,
+            )
+        except SDKTimeoutError:
+            # Re-raise timeout errors
+            raise
+        except Exception as e:
+            logger.exception(f"Unexpected error executing task-work: {e}")
+            return TaskWorkResult(
+                success=False,
+                output={},
+                error=str(e),
+                exit_code=-1,
+            )
+
+    def _parse_task_work_output(self, stdout: str) -> Dict[str, Any]:
+        """Parse task-work stdout into structured output.
+
+        Extracts key information from task-work output including:
+        - Test results
+        - Coverage metrics
+        - Files modified
+        - Quality gate status
+
+        Args:
+            stdout: Raw stdout from task-work command
+
+        Returns:
+            Parsed output dictionary
+        """
+        output = {
+            "raw_output": stdout,
+            "tests_passed": False,
+            "coverage_line": None,
+            "coverage_branch": None,
+            "quality_gates_passed": False,
+        }
+
+        # Parse test results
+        if "All tests passing" in stdout or "✅" in stdout:
+            output["tests_passed"] = True
+
+        # Parse coverage (look for patterns like "Coverage: 85.2%")
+        import re
+        coverage_match = re.search(r"(?:Line )?[Cc]overage:?\s*(\d+(?:\.\d+)?)\s*%", stdout)
+        if coverage_match:
+            output["coverage_line"] = float(coverage_match.group(1))
+
+        branch_match = re.search(r"[Bb]ranch [Cc]overage:?\s*(\d+(?:\.\d+)?)\s*%", stdout)
+        if branch_match:
+            output["coverage_branch"] = float(branch_match.group(1))
+
+        # Parse quality gates
+        if "All quality gates passed" in stdout or "IN_REVIEW" in stdout:
+            output["quality_gates_passed"] = True
+
+        return output

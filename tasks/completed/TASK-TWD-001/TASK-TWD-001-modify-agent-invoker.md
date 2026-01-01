@@ -1,9 +1,10 @@
 ---
 id: TASK-TWD-001
 title: Modify AgentInvoker.invoke_player() for task-work delegation
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-31T14:00:00Z
+completed: 2026-01-01T09:30:00Z
 priority: high
 tags: [autobuild, task-work-delegation, agent-invoker, core-change]
 complexity: 6
@@ -12,6 +13,7 @@ wave: 1
 implementation_mode: task-work
 conductor_workspace: autobuild-twd-wave1-1
 source_review: TASK-REV-RW01
+completed_location: tasks/completed/TASK-TWD-001/
 ---
 
 # Task: Modify AgentInvoker.invoke_player() for task-work delegation
@@ -143,3 +145,67 @@ async def _invoke_task_work_implement(
 - Keep old implementation available behind feature flag for rollback
 - Add logging for delegation start/end
 - Consider what happens if task is not in design_approved state (TASK-TWD-002 handles this)
+
+## Implementation Summary
+
+### Changes Made
+
+**1. `guardkit/orchestrator/exceptions.py`**
+- Added `TaskWorkResult` dataclass to hold task-work command execution results
+- Includes `success`, `output`, `error`, and `exit_code` fields
+
+**2. `guardkit/orchestrator/agent_invoker.py`**
+
+**New Constants:**
+- `USE_TASK_WORK_DELEGATION` - Environment variable flag for enabling/disabling delegation
+
+**Modified `__init__`:**
+- Added `use_task_work_delegation` parameter (defaults to env var)
+
+**Modified `invoke_player()`:**
+- Added `mode` parameter for development mode (tdd/standard)
+- Branches based on `use_task_work_delegation` flag:
+  - When enabled: Delegates to `_invoke_task_work_implement()`
+  - When disabled: Uses legacy direct SDK invocation (unchanged)
+- Writes Coach feedback before delegation for turns > 1
+
+**New Methods:**
+- `_write_coach_feedback()` - Writes Coach feedback to file for task-work to read
+- `_invoke_task_work_implement()` - Executes `guardkit task-work --implement-only --mode={mode}` as subprocess
+- `_parse_task_work_output()` - Parses task-work stdout for test results, coverage, and quality gates
+
+**3. `tests/unit/test_agent_invoker.py`**
+- Added 21 new tests covering:
+  - `TestTaskWorkDelegation` - Feature flag initialization
+  - `TestWriteCoachFeedback` - Feedback file creation
+  - `TestInvokeTaskWorkImplement` - Subprocess execution, timeout, error handling
+  - `TestParseTaskWorkOutput` - Output parsing logic
+  - `TestInvokePlayerWithDelegation` - Delegation workflow
+  - `TestInvokePlayerLegacy` - Legacy SDK workflow (unchanged behavior)
+
+### Test Results
+
+All 52 tests pass:
+- 31 existing tests (unchanged behavior verified)
+- 21 new tests for task-work delegation
+
+### Feature Flag
+
+Enable task-work delegation by:
+```bash
+export GUARDKIT_USE_TASK_WORK_DELEGATION=true
+```
+
+Or programmatically:
+```python
+invoker = AgentInvoker(worktree_path=path, use_task_work_delegation=True)
+```
+
+### Acceptance Criteria Verification
+
+1. ✅ `invoke_player()` delegates to task-work instead of direct SDK call
+2. ✅ Mode parameter (`tdd`, `standard`) is passed through correctly
+3. ✅ Task-work executes in the worktree context (cwd parameter)
+4. ✅ Timeout handling works (uses sdk_timeout_seconds)
+5. ✅ Errors from task-work are captured and returned properly
+6. ✅ Return format compatible with existing orchestrator expectations

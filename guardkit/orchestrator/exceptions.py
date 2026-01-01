@@ -1,5 +1,30 @@
 """Custom exceptions for orchestrator components."""
 
+from dataclasses import dataclass
+from typing import Any, Dict, Optional
+
+
+# ============================================================================
+# Data Classes for Agent Invocation Results
+# ============================================================================
+
+
+@dataclass
+class TaskWorkResult:
+    """Result of task-work command execution.
+
+    Attributes:
+        success: True if task-work completed successfully
+        output: Parsed output from task-work (test results, coverage, etc.)
+        error: Error message if task-work failed
+        exit_code: Process exit code
+    """
+
+    success: bool
+    output: Dict[str, Any]
+    error: Optional[str] = None
+    exit_code: int = 0
+
 
 # ============================================================================
 # AgentInvoker Exceptions
