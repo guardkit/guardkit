@@ -1,9 +1,10 @@
 ---
 id: TASK-TWD-002
 title: Implement task state bridging for design_approved state
-status: backlog
+status: completed
 task_type: implementation
 created: 2025-12-31T14:00:00Z
+completed: 2026-01-01T22:20:00Z
 priority: high
 tags: [autobuild, task-work-delegation, state-management, core-change]
 complexity: 5
@@ -12,6 +13,19 @@ wave: 1
 implementation_mode: task-work
 conductor_workspace: autobuild-twd-wave1-2
 source_review: TASK-REV-RW01
+completed_location: tasks/completed/TASK-TWD-002/
+quality_gates:
+  tests_passed: true
+  code_review: approved
+  plan_audit: passed
+files_created:
+  - guardkit/tasks/state_bridge.py
+  - tests/unit/test_state_bridge.py
+files_modified:
+  - guardkit/orchestrator/exceptions.py
+  - guardkit/orchestrator/agent_invoker.py
+  - guardkit/tasks/task_loader.py
+  - tests/unit/test_agent_invoker.py
 ---
 
 # Task: Implement task state bridging for design_approved state

@@ -56,8 +56,9 @@ class TaskLoader:
     Tasks are searched in this order:
     1. tasks/backlog/
     2. tasks/in_progress/
-    3. tasks/in_review/
-    4. tasks/blocked/
+    3. tasks/design_approved/
+    4. tasks/in_review/
+    5. tasks/blocked/
 
     Attributes
     ----------
@@ -65,7 +66,7 @@ class TaskLoader:
         Task directory search order
     """
 
-    SEARCH_PATHS = ["backlog", "in_progress", "in_review", "blocked"]
+    SEARCH_PATHS = ["backlog", "in_progress", "design_approved", "in_review", "blocked"]
 
     @staticmethod
     def load_task(task_id: str, repo_root: Path = None) -> Dict[str, Any]:

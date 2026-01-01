@@ -13,9 +13,11 @@ from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     CoachDecisionInvalidError,
     CoachDecisionNotFoundError,
+    PlanNotFoundError,
     PlayerReportInvalidError,
     PlayerReportNotFoundError,
     SDKTimeoutError,
+    TaskStateError,
     TaskWorkResult,
 )
 
@@ -181,6 +183,11 @@ class AgentInvoker:
                 logger.info(
                     f"Invoking Player via task-work delegation for {task_id} (turn {turn})"
                 )
+
+                # Ensure task is in design_approved state before delegation
+                # This bridges AutoBuild state with task-work --implement-only requirements
+                self._ensure_design_approved_state(task_id)
+
                 result = await self._invoke_task_work_implement(
                     task_id=task_id,
                     mode=mode,
@@ -911,3 +918,40 @@ Follow the decision format specified in your agent definition.
             output["quality_gates_passed"] = True
 
         return output
+
+    def _ensure_design_approved_state(self, task_id: str) -> None:
+        """Ensure task is in design_approved state before task-work delegation.
+
+        This method bridges AutoBuild orchestration state with task-work's
+        state machine requirements. When AutoBuild delegates to
+        `task-work --implement-only`, the task must be in `design_approved`
+        state with a valid implementation plan.
+
+        This bridge ensures:
+        1. Task is in design_approved state (transitions if needed)
+        2. Implementation plan exists in expected location
+        3. State transitions are logged for debugging
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+
+        Raises:
+            TaskStateError: If state transition fails
+            PlanNotFoundError: If implementation plan is missing
+        """
+        from guardkit.tasks.state_bridge import TaskStateBridge
+
+        logger.info(f"Ensuring task {task_id} is in design_approved state")
+
+        try:
+            bridge = TaskStateBridge(task_id, self.worktree_path)
+            bridge.ensure_design_approved_state()
+            logger.info(f"Task {task_id} state verified: design_approved")
+
+        except PlanNotFoundError as e:
+            logger.error(f"Implementation plan not found for {task_id}: {e}")
+            raise
+
+        except TaskStateError as e:
+            logger.error(f"Failed to ensure design_approved state for {task_id}: {e}")
+            raise

@@ -100,3 +100,54 @@ class FinalizePhaseError(OrchestrationError):
     """Raised when finalize phase fails."""
 
     pass
+
+
+# ============================================================================
+# Task State Exceptions
+# ============================================================================
+
+
+class TaskStateError(OrchestrationError):
+    """Base exception for task state errors.
+
+    Raised when task state transition fails or state validation fails.
+
+    Attributes:
+        task_id: Task identifier
+        current_state: Current state of the task
+        expected_state: Expected state of the task
+    """
+
+    def __init__(
+        self,
+        message: str,
+        task_id: Optional[str] = None,
+        current_state: Optional[str] = None,
+        expected_state: Optional[str] = None,
+    ):
+        self.task_id = task_id
+        self.current_state = current_state
+        self.expected_state = expected_state
+        super().__init__(message)
+
+
+class PlanNotFoundError(TaskStateError):
+    """Raised when implementation plan is missing or invalid.
+
+    Attributes:
+        plan_path: Expected path to the implementation plan
+    """
+
+    def __init__(self, message: str, plan_path: Optional[str] = None, **kwargs):
+        self.plan_path = plan_path
+        super().__init__(message, **kwargs)
+
+
+class StateValidationError(TaskStateError):
+    """Raised when state validation fails.
+
+    Used when the task state doesn't match expected requirements
+    for a given operation (e.g., implement-only requires design_approved).
+    """
+
+    pass

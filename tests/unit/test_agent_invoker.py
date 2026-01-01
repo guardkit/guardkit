@@ -1133,27 +1133,31 @@ class TestInvokePlayerWithDelegation:
         )
         with patch.object(
             delegation_invoker,
-            "_invoke_task_work_implement",
-            new_callable=AsyncMock,
-            return_value=mock_result,
-        ) as mock_invoke:
-            result = await delegation_invoker.invoke_player(
-                task_id="TASK-001",
-                turn=1,
-                requirements="Implement feature",
-                mode="tdd",
-            )
+            "_ensure_design_approved_state",
+        ):
+            with patch.object(
+                delegation_invoker,
+                "_invoke_task_work_implement",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ) as mock_invoke:
+                result = await delegation_invoker.invoke_player(
+                    task_id="TASK-001",
+                    turn=1,
+                    requirements="Implement feature",
+                    mode="tdd",
+                )
 
-            # Verify delegation was called
-            mock_invoke.assert_called_once_with(
-                task_id="TASK-001",
-                mode="tdd",
-            )
+                # Verify delegation was called
+                mock_invoke.assert_called_once_with(
+                    task_id="TASK-001",
+                    mode="tdd",
+                )
 
-            # Verify result
-            assert result.success is True
-            assert result.agent_type == "player"
-            assert result.report == sample_player_report
+                # Verify result
+                assert result.success is True
+                assert result.agent_type == "player"
+                assert result.report == sample_player_report
 
     @pytest.mark.asyncio
     async def test_invoke_player_writes_feedback_before_delegation(
@@ -1174,23 +1178,27 @@ class TestInvokePlayerWithDelegation:
 
         with patch.object(
             delegation_invoker,
-            "_invoke_task_work_implement",
-            new_callable=AsyncMock,
-            return_value=mock_result,
+            "_ensure_design_approved_state",
         ):
             with patch.object(
                 delegation_invoker,
-                "_write_coach_feedback",
-            ) as mock_write:
-                await delegation_invoker.invoke_player(
-                    task_id="TASK-001",
-                    turn=2,
-                    requirements="Implement feature",
-                    feedback=feedback,
-                )
+                "_invoke_task_work_implement",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ):
+                with patch.object(
+                    delegation_invoker,
+                    "_write_coach_feedback",
+                ) as mock_write:
+                    await delegation_invoker.invoke_player(
+                        task_id="TASK-001",
+                        turn=2,
+                        requirements="Implement feature",
+                        feedback=feedback,
+                    )
 
-                # Verify feedback was written
-                mock_write.assert_called_once_with("TASK-001", 2, feedback)
+                    # Verify feedback was written
+                    mock_write.assert_called_once_with("TASK-001", 2, feedback)
 
     @pytest.mark.asyncio
     async def test_invoke_player_skips_feedback_on_turn_1(
@@ -1210,23 +1218,27 @@ class TestInvokePlayerWithDelegation:
 
         with patch.object(
             delegation_invoker,
-            "_invoke_task_work_implement",
-            new_callable=AsyncMock,
-            return_value=mock_result,
+            "_ensure_design_approved_state",
         ):
             with patch.object(
                 delegation_invoker,
-                "_write_coach_feedback",
-            ) as mock_write:
-                await delegation_invoker.invoke_player(
-                    task_id="TASK-001",
-                    turn=1,
-                    requirements="Implement feature",
-                    feedback=None,  # No feedback on turn 1
-                )
+                "_invoke_task_work_implement",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ):
+                with patch.object(
+                    delegation_invoker,
+                    "_write_coach_feedback",
+                ) as mock_write:
+                    await delegation_invoker.invoke_player(
+                        task_id="TASK-001",
+                        turn=1,
+                        requirements="Implement feature",
+                        feedback=None,  # No feedback on turn 1
+                    )
 
-                # Verify feedback was NOT written
-                mock_write.assert_not_called()
+                    # Verify feedback was NOT written
+                    mock_write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_invoke_player_returns_error_on_delegation_failure(
@@ -1242,20 +1254,24 @@ class TestInvokePlayerWithDelegation:
 
         with patch.object(
             delegation_invoker,
-            "_invoke_task_work_implement",
-            new_callable=AsyncMock,
-            return_value=mock_result,
+            "_ensure_design_approved_state",
         ):
-            result = await delegation_invoker.invoke_player(
-                task_id="TASK-001",
-                turn=1,
-                requirements="Implement feature",
-            )
+            with patch.object(
+                delegation_invoker,
+                "_invoke_task_work_implement",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ):
+                result = await delegation_invoker.invoke_player(
+                    task_id="TASK-001",
+                    turn=1,
+                    requirements="Implement feature",
+                )
 
-            # Verify error is returned
-            assert result.success is False
-            assert "task-work failed" in result.error
-            assert result.report == {}
+                # Verify error is returned
+                assert result.success is False
+                assert "task-work failed" in result.error
+                assert result.report == {}
 
 
 class TestInvokePlayerLegacy:
