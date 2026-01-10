@@ -1,6 +1,10 @@
 """Orchestrator components for GuardKit AutoBuild feature."""
 
-from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationResult
+from guardkit.orchestrator.agent_invoker import (
+    AgentInvoker,
+    AgentInvocationResult,
+    TaskWorkStreamParser,
+)
 from guardkit.orchestrator.autobuild import (
     AutoBuildOrchestrator,
     OrchestrationResult,
@@ -37,6 +41,7 @@ from guardkit.orchestrator.feature_orchestrator import (
     TaskExecutionResult,
     WaveExecutionResult,
 )
+from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.protocol import OrchestratorProtocol
 
@@ -54,6 +59,7 @@ __all__ = [
     # Agent invocation
     "AgentInvoker",
     "AgentInvocationResult",
+    "TaskWorkStreamParser",
     # AutoBuild orchestration
     "AutoBuildOrchestrator",
     "OrchestrationResult",
@@ -68,6 +74,8 @@ __all__ = [
     "FeatureOrchestrationResult",
     "TaskExecutionResult",
     "WaveExecutionResult",
+    # Paths
+    "TaskArtifactPaths",
     # Protocol
     "OrchestratorProtocol",
     # Quality Gates

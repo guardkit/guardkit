@@ -33,6 +33,7 @@ from guardkit.orchestrator.exceptions import (
     StateValidationError,
     TaskStateError,
 )
+from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -300,33 +301,14 @@ class TaskStateBridge:
         """
         Get list of possible implementation plan paths.
 
+        Uses centralized TaskArtifactPaths for consistent path resolution.
+
         Returns
         -------
         List[Path]
             List of paths to check for implementation plan
         """
-        return [
-            # Primary locations
-            self.repo_root
-            / ".claude"
-            / "task-plans"
-            / f"{self.task_id}-implementation-plan.md",
-            self.repo_root
-            / ".claude"
-            / "task-plans"
-            / f"{self.task_id}-implementation-plan.json",
-            # Alternative locations (docs/state)
-            self.repo_root
-            / "docs"
-            / "state"
-            / self.task_id
-            / "implementation_plan.md",
-            self.repo_root
-            / "docs"
-            / "state"
-            / self.task_id
-            / "implementation_plan.json",
-        ]
+        return TaskArtifactPaths.implementation_plan_paths(self.task_id, self.repo_root)
 
     def _update_task_frontmatter(self, task_path: Path, updates: Dict[str, Any]) -> None:
         """
