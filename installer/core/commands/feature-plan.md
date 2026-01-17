@@ -878,6 +878,9 @@ Step 7/10: Creating subfolder structure...
 
 Step 8/10: Generating subtask files...
    ✓ Generated 5 task files
+   ✓ Provenance fields added:
+     - parent_review: TASK-REV-a3f8 (links back to review)
+     - feature_id: FEAT-a3f8 (groups related tasks)
 
 Step 9/10: Generating IMPLEMENTATION-GUIDE.md...
    ✓ Guide generated
@@ -931,9 +934,34 @@ Original review: TASK-REV-A3F2 (marked completed)
 - ✅ **Parallel group detection** - File conflict analysis for waves
 - ✅ **Conductor integration** - Workspace names for parallel execution (from Context B)
 - ✅ **Complete documentation** - README + Implementation Guide auto-generated
+- ✅ **Provenance tracking** - parent_review and feature_id fields link tasks to review and feature
 - ✅ **95% time savings** - <1 minute vs 15-30 minutes manual
 
-**See**: `installer/core/lib/implement_orchestrator.py` for orchestration logic
+**Provenance Fields**:
+
+Each generated task includes provenance metadata:
+
+```yaml
+---
+id: TASK-DM-001
+title: Add CSS variables
+parent_review: TASK-REV-a3f8  # Links back to review that recommended this
+feature_id: FEAT-a3f8          # Groups with related tasks in this feature
+wave: 1
+implementation_mode: direct
+---
+```
+
+This enables:
+- **Traceability**: From feature idea → review → implementation → completion
+- **Context preservation**: Implementation tasks reference review findings
+- **Grouping**: Related tasks organized by feature
+- **Reporting**: Feature-level progress tracking
+
+**See**:
+- `installer/core/lib/implement_orchestrator.py` for orchestration logic
+- `.claude/rules/task-workflow.md` for provenance field documentation
+- TASK-INT-e5f6 for design rationale
 
 ### Step 5d: If [C]ancel
 
