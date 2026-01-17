@@ -1,10 +1,25 @@
 ---
 id: TASK-INT-e5f6
 title: Add provenance-aware auto-detection logic
-status: backlog
+status: completed
 created: 2026-01-17T14:30:00Z
-updated: 2026-01-17T14:30:00Z
+updated: 2026-01-17T21:15:00Z
+completed: 2026-01-17T21:20:00Z
 priority: high
+previous_state: in_review
+state_transition_reason: "Task completed successfully - all acceptance criteria met"
+completion_location: tasks/completed/TASK-INT-e5f6/
+organized_files:
+  - TASK-INT-e5f6-auto-detection-logic.md
+  - test-results.json
+quality_gates:
+  compilation: passed
+  tests_passing: 64/64
+  line_coverage: 100%
+  branch_coverage: 100%
+  architectural_review: 92/100
+duration_actual: 150
+duration_estimated: 150
 tags:
   - intensity-system
   - auto-detection

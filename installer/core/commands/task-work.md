@@ -399,6 +399,180 @@ The `--intensity` flag controls the ceremony level and phase execution profile, 
 
 **Note**: `--intensity` cannot be combined with `--design-only` or `--implement-only`. Use design flags for the default intensity workflow only.
 
+### Intensity Auto-Detection (NEW - TASK-INT-e5f6)
+
+When `--intensity` is not explicitly provided, the system automatically detects the appropriate intensity level based on **provenance** and **complexity**.
+
+#### Detection Algorithm
+
+The auto-detection follows a prioritized decision tree:
+
+1. **High-Risk Keywords** → STRICT (always overrides)
+2. **Provenance: parent_review** → MINIMAL/LIGHT based on complexity
+3. **Provenance: feature_id** → MINIMAL/LIGHT/STANDARD based on complexity
+4. **Fresh task** → Complexity-based detection
+
+#### Provenance-Based Rules
+
+**Tasks from Reviews** (have `parent_review` field):
+- Complexity ≤4 → **MINIMAL**
+- Complexity >4 → **LIGHT**
+
+**Rationale**: Tasks created from review recommendations are already well-scoped by the review process, so they can safely use lighter intensity levels.
+
+**Tasks from Features** (have `feature_id` field):
+- Complexity ≤3 → **MINIMAL**
+- Complexity ≤5 → **LIGHT**
+- Complexity >5 → **STANDARD**
+
+**Rationale**: Feature subtasks benefit from feature-level planning and coordination, reducing the need for individual task rigor.
+
+**Fresh Tasks** (no provenance):
+- Complexity ≤3 → **MINIMAL**
+- Complexity ≤5 → **LIGHT**
+- Complexity ≤6 → **STANDARD**
+- Complexity >6 → **STRICT**
+
+**Rationale**: Fresh tasks require more rigor since they lack the benefit of prior planning from reviews or features.
+
+#### High-Risk Keywords
+
+The following keywords in the task description **always force STRICT mode**, regardless of complexity or provenance:
+
+**Security & Authentication**:
+- security, auth, authentication, authorization
+- oauth, saml, jwt, session
+- privilege, permission, access control
+- encryption, crypto, cryptographic
+
+**Data & Schema**:
+- schema, migration, database
+
+**Breaking Changes**:
+- breaking, breaking change, api, endpoint
+
+**Financial**:
+- financial, payment, billing
+
+**Vulnerabilities**:
+- injection, xss, csrf
+
+**Rationale**: These keywords indicate security-sensitive or high-risk changes that demand maximum rigor regardless of task complexity.
+
+#### Examples
+
+```bash
+# Example 1: Task from review with low complexity
+# Task: TASK-042
+# Description: "Fix typo in error message"
+# Complexity: 2
+# parent_review: TASK-041
+# → Auto-detected: MINIMAL
+
+# Example 2: Task from feature with medium complexity
+# Task: TASK-043
+# Description: "Add dark mode toggle component"
+# Complexity: 5
+# feature_id: dark-mode
+# → Auto-detected: LIGHT
+
+# Example 3: Fresh task with high-risk keyword
+# Task: TASK-044
+# Description: "Implement OAuth authentication"
+# Complexity: 6
+# parent_review: None
+# feature_id: None
+# → Auto-detected: STRICT (high-risk keyword: "oauth")
+
+# Example 4: Fresh task with high complexity
+# Task: TASK-045
+# Description: "Refactor payment processing system"
+# Complexity: 8
+# parent_review: None
+# feature_id: None
+# → Auto-detected: STRICT (high complexity + "payment" keyword)
+
+# Example 5: User override takes precedence
+# Task: TASK-046
+# Auto-detected: LIGHT
+# → /task-work TASK-046 --intensity=strict
+# → Actual: STRICT (user override)
+```
+
+#### Provenance Field Expectations
+
+The auto-detection algorithm expects the following fields in the task metadata:
+
+```yaml
+# Task frontmatter
+task_id: TASK-042
+description: "Add user authentication"
+complexity: 6
+parent_review: TASK-041  # Optional - set if created from review
+feature_id: auth-feature # Optional - set if part of feature
+```
+
+**Field Sources**:
+- `parent_review`: Set by `/task-review` when creating implementation tasks via [I]mplement decision
+- `feature_id`: Set by `/feature-plan` when creating feature subtasks
+- `complexity`: Set by complexity evaluation during task creation
+
+#### Implementation Details
+
+The auto-detection logic is implemented in `guardkit/orchestrator/intensity_detector.py`:
+
+```python
+from guardkit.orchestrator.intensity_detector import (
+    IntensityLevel,
+    determine_intensity,
+    HIGH_RISK_KEYWORDS,
+)
+
+# Auto-detect intensity
+task_data = {
+    "description": task.description,
+    "complexity": task.complexity,
+    "parent_review": task.parent_review,
+    "feature_id": task.feature_id,
+}
+intensity = determine_intensity(task_data, override=args.intensity)
+```
+
+**Module Characteristics**:
+- Pure stateless functions (no side effects)
+- Dict-based input (no Pydantic coupling)
+- Enum-based type safety
+- Graceful handling of missing/invalid data
+
+#### Override Behavior
+
+User-provided `--intensity` flag always takes precedence over auto-detection:
+
+```bash
+# Auto-detection would choose LIGHT, but user forces STRICT
+/task-work TASK-042 --intensity=strict
+```
+
+Invalid override values fall back to auto-detection with a warning:
+
+```bash
+# Invalid value
+/task-work TASK-042 --intensity=invalid
+# Warning: Invalid intensity override 'invalid', falling back to auto-detection
+# → Uses auto-detected intensity
+```
+
+#### Logging
+
+Auto-detection decisions are logged for transparency:
+
+```
+INFO: Task from review (parent_review=TASK-041), complexity=3 → minimal
+INFO: High-risk keywords detected in description, forcing STRICT intensity
+INFO: Task from feature (feature_id=auth-feature), complexity=5 → light
+INFO: Fresh task with complexity=7 → strict
+```
+
 ## Micro-Task Mode (NEW - TASK-020)
 
 The task-work command now supports a `--micro` flag for streamlined execution of trivial tasks (typo fixes, documentation updates, cosmetic changes) that don't require full architectural review.
