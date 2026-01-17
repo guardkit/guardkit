@@ -95,7 +95,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--intensity=minimal|light|standard|strict] [--design-only | --implement-only] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
 ```
 
 ## Available Flags
