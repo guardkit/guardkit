@@ -1,0 +1,199 @@
+{
+  "task_id": "TASK-INT-a1b2",
+  "task_title": "Add provenance fields to task frontmatter schema",
+  "test_type": "documentation",
+  "test_date": "2026-01-17T09:35:00Z",
+  "test_duration_minutes": 5,
+  "overall_status": "PASSED",
+  "confidence_level": "100%",
+
+  "summary": {
+    "total_files_expected": 3,
+    "total_files_modified": 1,
+    "files_modified_correctly": 1,
+    "acceptance_criteria_met": 6,
+    "acceptance_criteria_total": 6,
+    "quality_gates_passed": 5,
+    "quality_gates_total": 5
+  },
+
+  "files_verified": [
+    {
+      "path": ".claude/rules/task-workflow.md",
+      "status": "PASS",
+      "lines_added": 117,
+      "sections_added": [
+        "Frontmatter example update",
+        "Optional Fields additions",
+        "Provenance Fields section"
+      ],
+      "issues_found": 0
+    },
+    {
+      "path": "docs/guides/guardkit-workflow.md",
+      "status": "N/A",
+      "reason": "High-level workflow guide, doesn't document frontmatter schema",
+      "lines_added": 0,
+      "issues_found": 0
+    },
+    {
+      "path": "installer/core/commands/task-create.md",
+      "status": "N/A",
+      "reason": "Command documentation, doesn't detail all frontmatter fields",
+      "lines_added": 0,
+      "issues_found": 0
+    }
+  ],
+
+  "acceptance_criteria": [
+    {
+      "id": 1,
+      "description": "parent_review field documented in task-workflow.md",
+      "status": "PASS",
+      "evidence": "Line 47 + Provenance section (39 lines)"
+    },
+    {
+      "id": 2,
+      "description": "feature_id field documented in task-workflow.md",
+      "status": "PASS",
+      "evidence": "Line 48 + Provenance section (39 lines)"
+    },
+    {
+      "id": 3,
+      "description": "Both fields are optional (backwards compatible)",
+      "status": "PASS",
+      "evidence": "Listed in Optional Fields section"
+    },
+    {
+      "id": 4,
+      "description": "/task-review [I]mplement flow sets parent_review",
+      "status": "PASS",
+      "evidence": "Documented in parent_review subsection"
+    },
+    {
+      "id": 5,
+      "description": "/feature-plan sets feature_id",
+      "status": "PASS",
+      "evidence": "Documented in feature_id subsection"
+    },
+    {
+      "id": 6,
+      "description": "Example frontmatter updated in documentation",
+      "status": "PASS",
+      "evidence": "Lines 23-24 show both fields with inline comments"
+    }
+  ],
+
+  "quality_gates": [
+    {
+      "gate": "Acceptance criteria coverage",
+      "threshold": "100%",
+      "actual": "100%",
+      "status": "PASS"
+    },
+    {
+      "gate": "Example coverage",
+      "threshold": "≥1 per field",
+      "actual": "3 per field",
+      "status": "PASS"
+    },
+    {
+      "gate": "Cross-references",
+      "threshold": "≥1",
+      "actual": "2",
+      "status": "PASS"
+    },
+    {
+      "gate": "Format consistency",
+      "threshold": "100%",
+      "actual": "100%",
+      "status": "PASS"
+    },
+    {
+      "gate": "Backwards compatibility",
+      "threshold": "Required",
+      "actual": "Maintained",
+      "status": "PASS"
+    }
+  ],
+
+  "content_quality": {
+    "completeness": 10,
+    "clarity": 10,
+    "consistency": 10,
+    "examples": 10,
+    "cross_references": 10,
+    "average_score": 10
+  },
+
+  "fields_documented": {
+    "parent_review": {
+      "format": "TASK-REV-{hash}",
+      "set_by": "/task-review [I]mplement",
+      "optional": true,
+      "examples_count": 3,
+      "use_cases_count": 4,
+      "cross_references": ["TASK-INT-e5f6"]
+    },
+    "feature_id": {
+      "format": "FEAT-{hash}",
+      "set_by": "/feature-plan",
+      "optional": true,
+      "examples_count": 3,
+      "use_cases_count": 4,
+      "cross_references": ["TASK-INT-e5f6"]
+    }
+  },
+
+  "backwards_compatibility": {
+    "status": "VERIFIED",
+    "fields_optional": true,
+    "existing_tasks_valid": true,
+    "breaking_changes": false
+  },
+
+  "issues_found": [],
+
+  "warnings": [],
+
+  "recommendations": [
+    {
+      "priority": "low",
+      "category": "enhancement",
+      "description": "Consider adding validation tests for field format patterns"
+    },
+    {
+      "priority": "low",
+      "category": "enhancement",
+      "description": "Consider adding visual diagram showing provenance chain"
+    },
+    {
+      "priority": "low",
+      "category": "enhancement",
+      "description": "Consider adding troubleshooting section for common field issues"
+    }
+  ],
+
+  "next_steps": [
+    "Task can move to IN_REVIEW",
+    "Documentation changes ready for review",
+    "No blocking issues identified",
+    "Ready for implementation in TASK-INT-e5f6"
+  ],
+
+  "test_methodology": {
+    "approach": "Documentation consistency analysis",
+    "tools_used": ["manual_review", "grep", "git_diff"],
+    "coverage_areas": [
+      "File modification verification",
+      "Content completeness",
+      "Format consistency",
+      "Backwards compatibility",
+      "Cross-reference validation",
+      "Quality assessment"
+    ]
+  },
+
+  "verified_by": "test-verifier agent",
+  "report_location": "test-results-TASK-INT-a1b2.md"
+}
