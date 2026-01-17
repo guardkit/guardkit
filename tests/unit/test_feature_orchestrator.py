@@ -13,13 +13,15 @@ Test Coverage:
 - Shared worktree management
 - Specific task execution
 - Error handling
+- Wave Parallelization (TASK-FBP-001)
 """
 
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 import tempfile
 import yaml
+import asyncio
 
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
@@ -95,6 +97,64 @@ def sample_feature() -> Feature:
             ],
             estimated_duration_minutes=105,
             recommended_parallel=2,
+        ),
+        execution=FeatureExecution(),
+    )
+
+
+@pytest.fixture
+def parallel_feature() -> Feature:
+    """Provide a Feature with independent tasks for parallel execution testing.
+
+    Unlike sample_feature, these tasks have NO dependencies between them,
+    making them suitable for testing true parallel execution.
+    """
+    return Feature(
+        id="FEAT-PARALLEL",
+        name="Parallel Test Feature",
+        description="Feature with independent tasks for parallel testing",
+        created="2025-12-31T12:00:00Z",
+        status="planned",
+        complexity=4,
+        estimated_tasks=3,
+        tasks=[
+            FeatureTask(
+                id="TASK-P-001",
+                name="Independent Task 1",
+                file_path=Path("tasks/backlog/TASK-P-001.md"),
+                complexity=3,
+                dependencies=[],  # No dependencies
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+            FeatureTask(
+                id="TASK-P-002",
+                name="Independent Task 2",
+                file_path=Path("tasks/backlog/TASK-P-002.md"),
+                complexity=3,
+                dependencies=[],  # No dependencies
+                status="pending",
+                implementation_mode="task-work",
+                estimated_minutes=30,
+            ),
+            FeatureTask(
+                id="TASK-P-003",
+                name="Independent Task 3",
+                file_path=Path("tasks/backlog/TASK-P-003.md"),
+                complexity=3,
+                dependencies=[],  # No dependencies
+                status="pending",
+                implementation_mode="direct",
+                estimated_minutes=30,
+            ),
+        ],
+        orchestration=FeatureOrchestration(
+            parallel_groups=[
+                ["TASK-P-001", "TASK-P-002", "TASK-P-003"],  # All in same wave
+            ],
+            estimated_duration_minutes=30,
+            recommended_parallel=3,
         ),
         execution=FeatureExecution(),
     )
@@ -237,6 +297,70 @@ def test_setup_phase_updates_execution_state(temp_repo, mock_worktree, mock_work
     assert feature.status == "in_progress"
     assert feature.execution.started_at is not None
     assert feature.execution.worktree_path == str(mock_worktree.path)
+
+
+# ============================================================================
+# Test: Clean State (Force Cleanup)
+# ============================================================================
+
+
+def test_clean_state_uses_force_cleanup(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that _clean_state passes force=True to cleanup."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Set up feature with existing worktree path
+    sample_feature.execution.worktree_path = "/fake/worktree/path"
+
+    # Mock Path.exists() to return True so cleanup is attempted
+    with patch("pathlib.Path.exists", return_value=True):
+        # Call _clean_state
+        orchestrator._clean_state(sample_feature)
+
+    # Verify cleanup was called with force=True
+    mock_worktree_manager.cleanup.assert_called_once()
+    call_args = mock_worktree_manager.cleanup.call_args
+    assert call_args[0][0].task_id == sample_feature.id
+    assert call_args[1]["force"] is True
+
+
+def test_clean_state_handles_missing_worktree(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that _clean_state handles missing worktree gracefully."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Set worktree path to non-existent location
+    sample_feature.execution.worktree_path = "/nonexistent/worktree/path"
+
+    # Should not raise, cleanup should not be called
+    orchestrator._clean_state(sample_feature)
+
+    # Cleanup should not have been called since path doesn't exist
+    mock_worktree_manager.cleanup.assert_not_called()
+
+
+def test_clean_state_resets_feature_state(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that _clean_state resets feature execution state."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Set initial state
+    sample_feature.execution.worktree_path = "/fake/worktree/path"
+    sample_feature.status = "in_progress"
+
+    # Call _clean_state
+    orchestrator._clean_state(sample_feature)
+
+    # Verify state was reset
+    # After _clean_state, the feature status should be reset to "planned"
+    # (This tests that FeatureLoader.reset_state was called)
+    assert sample_feature.status == "planned"
 
 
 # ============================================================================
@@ -625,3 +749,767 @@ def test_cli_feature_command_with_resume_flag(mock_orchestrator_class):
     # Verify resume=True was passed to orchestrator
     call_kwargs = mock_orchestrator_class.call_args[1]
     assert call_kwargs.get("resume") is True
+
+
+# ============================================================================
+# Test: SDK Timeout Resolution (TASK-REV-8BCC regression test)
+# ============================================================================
+
+
+def test_execute_task_resolves_sdk_timeout_from_task_frontmatter(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Test that _execute_task correctly resolves SDK timeout from task frontmatter.
+
+    This is a regression test for TASK-REV-8BCC where feature.config was incorrectly
+    accessed, causing 'Feature' object has no attribute 'config' error.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        sdk_timeout=None,  # Force resolution cascade
+    )
+
+    # Update task file with autobuild.sdk_timeout in frontmatter
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+autobuild:
+  sdk_timeout: 600
+---
+
+# First Task
+
+## Requirements
+Test requirements.
+
+## Acceptance Criteria
+- Test criteria
+""")
+
+    # Mock AutoBuildOrchestrator to capture sdk_timeout
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify task executed successfully
+        assert result.success is True
+
+        # Verify sdk_timeout was passed from task frontmatter
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("sdk_timeout") == 600
+
+
+def test_execute_task_uses_default_sdk_timeout_when_not_specified(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Test that _execute_task uses default SDK timeout (600) when not specified."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        sdk_timeout=None,  # Force resolution cascade
+    )
+
+    # Task file without autobuild.sdk_timeout
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+---
+
+# First Task
+
+## Requirements
+Test requirements.
+
+## Acceptance Criteria
+- Test criteria
+""")
+
+    # Mock AutoBuildOrchestrator to capture sdk_timeout
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify task executed successfully
+        assert result.success is True
+
+        # Verify default sdk_timeout (600) was used
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("sdk_timeout") == 600
+
+
+def test_execute_task_cli_sdk_timeout_overrides_task_frontmatter(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Test that CLI sdk_timeout overrides task frontmatter setting."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        sdk_timeout=900,  # CLI override
+    )
+
+    # Task file with autobuild.sdk_timeout in frontmatter
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+autobuild:
+  sdk_timeout: 600
+---
+
+# First Task
+
+## Requirements
+Test requirements.
+
+## Acceptance Criteria
+- Test criteria
+""")
+
+    # Mock AutoBuildOrchestrator to capture sdk_timeout
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify task executed successfully
+        assert result.success is True
+
+        # Verify CLI sdk_timeout (900) overrode task frontmatter (600)
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("sdk_timeout") == 900
+
+
+# ============================================================================
+# enable_pre_loop Configuration Cascade Tests (TASK-FB-FIX-010)
+# ============================================================================
+
+
+def test_resolve_enable_pre_loop_cli_takes_precedence(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that CLI enable_pre_loop takes precedence over all other sources."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=False,  # CLI override
+    )
+
+    # Task data with enable_pre_loop=True in frontmatter
+    task_data = {
+        "frontmatter": {
+            "autobuild": {
+                "enable_pre_loop": True,
+            }
+        }
+    }
+
+    # CLI value should win
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is False
+
+
+def test_resolve_enable_pre_loop_task_frontmatter_over_feature(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that task frontmatter overrides feature YAML config."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=None,  # No CLI override
+    )
+
+    # Add autobuild_config to feature (simulating feature YAML)
+    sample_feature.autobuild_config = {"enable_pre_loop": True}
+
+    # Task data with enable_pre_loop=False in frontmatter
+    task_data = {
+        "frontmatter": {
+            "autobuild": {
+                "enable_pre_loop": False,
+            }
+        }
+    }
+
+    # Task frontmatter should win over feature config
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is False
+
+
+def test_resolve_enable_pre_loop_feature_yaml_when_no_task_override(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that feature YAML is used when no CLI or task override."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=None,  # No CLI override
+    )
+
+    # Add autobuild_config to feature (simulating feature YAML)
+    sample_feature.autobuild_config = {"enable_pre_loop": False}
+
+    # Task data without enable_pre_loop
+    task_data = {
+        "frontmatter": {
+            "autobuild": {}
+        }
+    }
+
+    # Feature YAML should be used
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is False
+
+
+def test_resolve_enable_pre_loop_default_false_for_feature_build(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that default is False for feature-build when no config specified anywhere.
+
+    Feature tasks created via /feature-plan already have detailed acceptance criteria,
+    architectural analysis, and complexity scoring - the pre-loop design phase duplicates
+    this work and adds ~90 minutes per task.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=None,  # No CLI override
+    )
+
+    # No autobuild_config on feature
+    sample_feature.autobuild_config = None
+
+    # Task data without enable_pre_loop
+    task_data = {
+        "frontmatter": {}
+    }
+
+    # Default should be False for feature-build (tasks have detailed specs from feature-plan)
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is False
+
+
+def test_execute_task_passes_enable_pre_loop_to_orchestrator(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Test that _execute_task passes resolved enable_pre_loop to AutoBuildOrchestrator."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=False,  # CLI override
+    )
+
+    # Create task file
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+---
+
+# First Task
+
+## Requirements
+Test requirements.
+
+## Acceptance Criteria
+- Test criteria
+""")
+
+    # Mock AutoBuildOrchestrator to capture enable_pre_loop
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify task executed successfully
+        assert result.success is True
+
+        # Verify enable_pre_loop was passed to AutoBuildOrchestrator
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("enable_pre_loop") is False
+
+
+def test_execute_task_enable_pre_loop_from_task_frontmatter(
+    temp_repo, sample_feature, mock_worktree, mock_worktree_manager
+):
+    """Test that enable_pre_loop from task frontmatter is used when no CLI override."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=None,  # No CLI override
+    )
+
+    # Create task file with enable_pre_loop in frontmatter
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+autobuild:
+  enable_pre_loop: false
+---
+
+# First Task
+
+## Requirements
+Test requirements.
+
+## Acceptance Criteria
+- Test criteria
+""")
+
+    # Mock AutoBuildOrchestrator to capture enable_pre_loop
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        result = orchestrator._execute_task(task, sample_feature, mock_worktree)
+
+        # Verify task executed successfully
+        assert result.success is True
+
+        # Verify enable_pre_loop from task frontmatter was used
+        call_kwargs = mock_orch_class.call_args[1]
+        assert call_kwargs.get("enable_pre_loop") is False
+
+
+def test_cli_enable_pre_loop_flag_overrides_default_false(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that CLI --enable-pre-loop flag overrides the default False value.
+
+    Even though default is now False for feature-build, the CLI flag should
+    still allow forcing enable_pre_loop=True when needed.
+    """
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=True,  # CLI override to force pre-loop
+    )
+
+    # No autobuild_config on feature
+    sample_feature.autobuild_config = None
+
+    # Task data without enable_pre_loop
+    task_data = {
+        "frontmatter": {}
+    }
+
+    # CLI flag should override default to True
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is True
+
+
+def test_feature_yaml_can_enable_pre_loop(temp_repo, sample_feature, mock_worktree_manager):
+    """Test that feature YAML can enable pre-loop even though default is False."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        enable_pre_loop=None,  # No CLI override
+    )
+
+    # Feature YAML specifies enable_pre_loop=True
+    sample_feature.autobuild_config = {"enable_pre_loop": True}
+
+    # Task data without enable_pre_loop
+    task_data = {
+        "frontmatter": {}
+    }
+
+    # Feature YAML should override default
+    result = orchestrator._resolve_enable_pre_loop(sample_feature, task_data)
+    assert result is True
+
+
+# ============================================================================
+# Wave Parallelization Tests (TASK-FBP-001)
+# ============================================================================
+
+
+def test_execute_wave_uses_asyncio_run(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """Test that _execute_wave uses asyncio.run() to execute parallel method."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Mock the async parallel method
+    mock_results = [
+        TaskExecutionResult(task_id="TASK-T-001", success=True, total_turns=1, final_decision="approved")
+    ]
+
+    with patch.object(orchestrator, '_execute_wave_parallel', new_callable=AsyncMock) as mock_parallel:
+        mock_parallel.return_value = mock_results
+
+        # Execute wave
+        result = orchestrator._execute_wave(1, ["TASK-T-001"], sample_feature, mock_worktree)
+
+        # Verify async method was called
+        mock_parallel.assert_called_once_with(1, ["TASK-T-001"], sample_feature, mock_worktree)
+
+        # Verify result
+        assert result.wave_number == 1
+        assert result.all_succeeded is True
+        assert len(result.results) == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_wave_parallel_executes_concurrently(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that tasks within a wave execute concurrently using asyncio.gather()."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Mock _execute_task to track concurrent execution
+    execution_order = []
+
+    def mock_execute_task(task, feature, worktree):
+        execution_order.append(f"start_{task.id}")
+        # Simulate some work
+        import time
+        time.sleep(0.01)
+        execution_order.append(f"end_{task.id}")
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved"
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        # Execute wave with 2 independent tasks (no dependencies)
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        # Verify both tasks executed
+        assert len(results) == 2
+        assert all(r.success for r in results)
+
+        # Verify tasks started before any finished (concurrent execution)
+        assert execution_order.index("start_TASK-P-001") < execution_order.index("end_TASK-P-001")
+        assert execution_order.index("start_TASK-P-002") < execution_order.index("end_TASK-P-002")
+
+
+@pytest.mark.asyncio
+async def test_execute_wave_parallel_all_tasks_complete_before_return(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that all tasks in wave complete before wave result is returned."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    completed_tasks = []
+
+    def mock_execute_task(task, feature, worktree):
+        import time
+        time.sleep(0.02)  # Simulate work
+        completed_tasks.append(task.id)
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved"
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        # Execute wave with 2 independent tasks (no dependencies)
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        # Verify both tasks completed before return
+        assert len(completed_tasks) == 2
+        assert "TASK-P-001" in completed_tasks
+        assert "TASK-P-002" in completed_tasks
+
+        # Verify results returned
+        assert len(results) == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_wave_parallel_exception_isolation(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that exception from one task doesn't crash other tasks."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    def mock_execute_task(task, feature, worktree):
+        if task.id == "TASK-P-001":
+            raise Exception("Task P-001 failed")
+        return TaskExecutionResult(
+            task_id=task.id,
+            success=True,
+            total_turns=1,
+            final_decision="approved"
+        )
+
+    with patch.object(orchestrator, '_execute_task', side_effect=mock_execute_task):
+        # Execute wave with 2 independent tasks (one will fail)
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        # Verify both tasks returned results
+        assert len(results) == 2
+
+        # Verify P-001 has error result
+        p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+        assert p001_result.success is False
+        assert "Task P-001 failed" in p001_result.error
+
+        # Verify P-002 succeeded
+        p002_result = next(r for r in results if r.task_id == "TASK-P-002")
+        assert p002_result.success is True
+
+
+def test_create_error_result_produces_correct_result(temp_repo, mock_worktree_manager):
+    """Test that _create_error_result() helper produces correct TaskExecutionResult."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    error = Exception("Test error message")
+    result = orchestrator._create_error_result("TASK-T-001", error)
+
+    assert result.task_id == "TASK-T-001"
+    assert result.success is False
+    assert result.total_turns == 0
+    assert result.final_decision == "error"
+    assert result.error == "Test error message"
+
+
+def test_stop_on_failure_waits_for_wave_completion(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """Test that stop_on_failure flag is checked AFTER wave completes (not mid-wave)."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        stop_on_failure=True,
+    )
+
+    # Mock _execute_wave to simulate wave with one failure
+    wave1_results = [
+        TaskExecutionResult(task_id="TASK-T-001", success=True, total_turns=1, final_decision="approved")
+    ]
+    wave2_results = [
+        TaskExecutionResult(task_id="TASK-T-002", success=False, total_turns=2, final_decision="failed", error="Failed"),
+        TaskExecutionResult(task_id="TASK-T-003", success=True, total_turns=1, final_decision="approved")
+    ]
+
+    # Mock both _execute_wave and _dependencies_satisfied
+    with patch.object(orchestrator, '_execute_wave') as mock_execute_wave, \
+         patch.object(orchestrator, '_dependencies_satisfied', return_value=True):
+        mock_execute_wave.side_effect = [
+            WaveExecutionResult(wave_number=1, task_ids=["TASK-T-001"], results=wave1_results, all_succeeded=True),
+            WaveExecutionResult(wave_number=2, task_ids=["TASK-T-002", "TASK-T-003"], results=wave2_results, all_succeeded=False),
+        ]
+
+        # Execute waves phase
+        results = orchestrator._wave_phase(sample_feature, mock_worktree)
+
+        # Verify wave 1 executed
+        assert len(results) >= 1
+        assert results[0].wave_number == 1
+        assert results[0].all_succeeded is True
+
+        # Verify wave 2 executed (both tasks completed despite one failing)
+        assert len(results) == 2
+        assert results[1].wave_number == 2
+        assert results[1].all_succeeded is False
+        assert len(results[1].results) == 2  # Both tasks completed
+
+
+def test_stop_on_failure_false_continues_to_next_wave(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """Test that stop_on_failure=False continues to next wave even if wave failed."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        stop_on_failure=False,  # Continue on failure
+    )
+
+    # Mock _execute_wave to simulate wave with failure
+    wave1_results = [
+        TaskExecutionResult(task_id="TASK-T-001", success=False, total_turns=2, final_decision="failed", error="Failed")
+    ]
+    wave2_results = [
+        TaskExecutionResult(task_id="TASK-T-002", success=True, total_turns=1, final_decision="approved"),
+        TaskExecutionResult(task_id="TASK-T-003", success=True, total_turns=1, final_decision="approved")
+    ]
+
+    # Mock both _execute_wave and _dependencies_satisfied
+    with patch.object(orchestrator, '_execute_wave') as mock_execute_wave, \
+         patch.object(orchestrator, '_dependencies_satisfied', return_value=True):
+        mock_execute_wave.side_effect = [
+            WaveExecutionResult(wave_number=1, task_ids=["TASK-T-001"], results=wave1_results, all_succeeded=False),
+            WaveExecutionResult(wave_number=2, task_ids=["TASK-T-002", "TASK-T-003"], results=wave2_results, all_succeeded=True),
+        ]
+
+        # Execute waves phase
+        results = orchestrator._wave_phase(sample_feature, mock_worktree)
+
+        # Verify both waves executed
+        assert len(results) == 2
+        assert results[0].wave_number == 1
+        assert results[0].all_succeeded is False
+        assert results[1].wave_number == 2
+        assert results[1].all_succeeded is True
+
+
+def test_single_task_wave_works_correctly(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """Test that single-task waves work identically to before."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Create task file
+    task = sample_feature.tasks[0]
+    task_file = temp_repo / task.file_path
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("""---
+id: TASK-T-001
+title: First Task
+status: pending
+---
+
+# First Task
+""")
+
+    # Mock AutoBuildOrchestrator
+    with patch("guardkit.orchestrator.feature_orchestrator.AutoBuildOrchestrator") as mock_orch_class:
+        mock_orch = MagicMock()
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.total_turns = 1
+        mock_result.final_decision = "approved"
+        mock_result.error = None
+        mock_orch.orchestrate.return_value = mock_result
+        mock_orch_class.return_value = mock_orch
+
+        # Execute single-task wave
+        result = orchestrator._execute_wave(1, ["TASK-T-001"], sample_feature, mock_worktree)
+
+        # Verify wave executed successfully
+        assert result.wave_number == 1
+        assert result.all_succeeded is True
+        assert len(result.results) == 1
+        assert result.results[0].task_id == "TASK-T-001"
+        assert result.results[0].success is True
+
+
+@pytest.mark.asyncio
+async def test_completed_tasks_skipped_in_parallel(temp_repo, parallel_feature, mock_worktree, mock_worktree_manager):
+    """Test that completed tasks are skipped correctly in parallel execution."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+        resume=True,
+    )
+
+    # Mark P-001 as completed (independent task, no dependencies)
+    parallel_feature.tasks[0].status = "completed"
+    parallel_feature.tasks[0].turns_completed = 2
+
+    # Mock _execute_task (should not be called for P-001)
+    with patch.object(orchestrator, '_execute_task') as mock_execute:
+        mock_execute.return_value = TaskExecutionResult(
+            task_id="TASK-P-002",
+            success=True,
+            total_turns=1,
+            final_decision="approved"
+        )
+
+        # Execute wave with completed and pending task (both independent)
+        results = await orchestrator._execute_wave_parallel(
+            1, ["TASK-P-001", "TASK-P-002"], parallel_feature, mock_worktree
+        )
+
+        # Verify P-001 skipped (not passed to _execute_task)
+        assert len(results) == 2
+
+        # Verify P-001 result shows already_completed
+        p001_result = next(r for r in results if r.task_id == "TASK-P-001")
+        assert p001_result.success is True
+        assert p001_result.final_decision == "already_completed"
+        assert p001_result.total_turns == 2  # Preserved from previous run
+
+        # Verify P-002 executed
+        p002_result = next(r for r in results if r.task_id == "TASK-P-002")
+        assert p002_result.success is True
+        mock_execute.assert_called_once()  # Only P-002 executed
+
+
+@pytest.mark.asyncio
+async def test_dependency_failed_tasks_skipped_in_parallel(temp_repo, sample_feature, mock_worktree, mock_worktree_manager):
+    """Test that tasks with failed dependencies are skipped in parallel execution."""
+    orchestrator = FeatureOrchestrator(
+        repo_root=temp_repo,
+        worktree_manager=mock_worktree_manager,
+    )
+
+    # Mark T-001 as failed (dependency for T-002 and T-003)
+    sample_feature.tasks[0].status = "failed"
+
+    # Mock _execute_task (should not be called)
+    with patch.object(orchestrator, '_execute_task') as mock_execute:
+        # Execute wave 2 (T-002 and T-003 depend on T-001)
+        results = await orchestrator._execute_wave_parallel(
+            2, ["TASK-T-002", "TASK-T-003"], sample_feature, mock_worktree
+        )
+
+        # Verify both tasks skipped
+        assert len(results) == 2
+
+        # Verify both show skipped status
+        for result in results:
+            assert result.success is False
+            assert result.final_decision == "skipped"
+            assert "Dependency failed" in result.error
+
+        # Verify _execute_task was never called
+        mock_execute.assert_not_called()

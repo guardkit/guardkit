@@ -81,7 +81,7 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 
 ### Autonomous Build Workflow (AutoBuild)
 ```bash
-/feature-build TASK-XXX [--max-turns N] [--resume] [--verbose]
+/feature-build TASK-XXX [--max-turns N] [--sdk-timeout S] [--resume] [--verbose]
 ```
 
 The `/feature-build` command provides fully autonomous task implementation using the Player-Coach adversarial workflow.
@@ -143,352 +143,17 @@ See `tasks/backlog/design-url-integration/` for implementation status.
 
 **See**: `installer/core/commands/*.md` for complete command specifications.
 
-## AutoBuild - Autonomous Task Implementation
+## AutoBuild
 
-AutoBuild provides fully autonomous task implementation using a Player-Coach adversarial workflow. The system creates isolated worktrees, runs iterative implementation cycles, and preserves all work for human review.
-
-### How It Works
-
-AutoBuild uses a three-phase execution pattern:
-
-1. **Setup Phase**: Creates isolated git worktree for the task
-2. **Loop Phase**: Executes Player-Coach adversarial turns until approval or max turns
-3. **Finalize Phase**: Preserves worktree for human review (never auto-merges)
-
-### Player-Coach Workflow
-
-The adversarial loop ensures high-quality implementations:
-
-- **Player Agent**: Implements code, writes tests, creates report
-  - Full file system access (Read, Write, Edit, Bash)
-  - Works in isolated worktree
-  - Reports implementation status and concerns
-
-- **Coach Agent**: Validates implementation independently
-  - Read-only access (Read, Bash only)
-  - Runs tests independently
-  - Either approves or provides specific feedback
-
-### Usage
-
-Enable AutoBuild in task frontmatter:
-
-```yaml
----
-id: TASK-XXX
-title: Task title
-autobuild:
-  enabled: true
-  max_turns: 5
-  base_branch: main
----
-```
-
-Then run:
-
-```bash
-guardkit autobuild task TASK-XXX
-```
-
-### Configuration
-
-Task frontmatter options:
-
-```yaml
-autobuild:
-  enabled: true              # Enable AutoBuild for this task
-  max_turns: 5               # Maximum Player-Coach iterations (default: 5)
-  base_branch: main          # Branch to create worktree from (default: main)
-  player_model: claude-sonnet-4-5-20250929    # Optional: specify Player model
-  coach_model: claude-sonnet-4-5-20250929     # Optional: specify Coach model
-  sdk_timeout: 300           # Optional: SDK timeout in seconds (default: 300)
-```
-
-### Workflow Example
-
-**Simple Task (1-2 turns)**:
-```
-Turn 1: Player Implementation
-  ✓ 3 files created, 2 modified, 5 tests passing
-Turn 1: Coach Validation
-  ✓ Coach approved - ready for human review
-
-Status: APPROVED
-Worktree: .guardkit/worktrees/TASK-XXX
-```
-
-**Iterative Task (3+ turns)**:
-```
-Turn 1: Player Implementation
-  ✓ 2 files created, 8 tests passing
-Turn 1: Coach Validation
-  ⚠ Feedback: Missing token refresh logic
-
-Turn 2: Player Implementation
-  ✓ 1 file modified, 11 tests passing
-Turn 2: Coach Validation
-  ⚠ Feedback: Edge case coverage incomplete
-
-Turn 3: Player Implementation
-  ✓ 2 files modified, 15 tests passing
-Turn 3: Coach Validation
-  ✓ Coach approved - ready for human review
-
-Status: APPROVED
-Worktree: .guardkit/worktrees/TASK-XXX
-```
-
-### Exit Conditions
-
-AutoBuild exits under three conditions:
-
-1. **Approved**: Coach approves implementation
-   - Worktree preserved for human review
-   - Ready for manual merge
-
-2. **Max Turns Exceeded**: Reached iteration limit
-   - Worktree preserved for inspection
-   - Human intervention required
-
-3. **Error**: Critical error occurred
-   - Worktree preserved for debugging
-   - Check error logs
-
-### Worktree Management
-
-All AutoBuild work happens in isolated git worktrees:
-
-- **Location**: `.guardkit/worktrees/TASK-XXX/`
-- **Branch**: `autobuild/TASK-XXX`
-- **Preserved**: Never auto-deleted (manual cleanup required)
-
-To review AutoBuild output:
-
-```bash
-# Navigate to worktree
-cd .guardkit/worktrees/TASK-XXX
-
-# Review changes
-git diff main
-
-# Review turn history
-cat .guardkit/autobuild/TASK-XXX/player_turn_*.json
-cat .guardkit/autobuild/TASK-XXX/coach_turn_*.json
-
-# Merge if approved
-git checkout main
-git merge autobuild/TASK-XXX
-
-# Cleanup worktree
-guardkit worktree cleanup TASK-XXX
-```
-
-### Agent Reports
-
-Player and Coach create structured JSON reports:
-
-**Player Report** (`.guardkit/autobuild/TASK-XXX/player_turn_N.json`):
-```json
-{
-  "task_id": "TASK-XXX",
-  "turn": 1,
-  "files_modified": ["src/auth.py"],
-  "files_created": ["src/oauth.py"],
-  "tests_written": ["tests/test_oauth.py"],
-  "tests_run": true,
-  "tests_passed": true,
-  "test_output_summary": "12 tests passed",
-  "implementation_notes": "Implemented OAuth2 flow with token refresh",
-  "concerns": [],
-  "requirements_addressed": ["OAuth2 support", "Token refresh"],
-  "requirements_remaining": []
-}
-```
-
-**Coach Decision** (`.guardkit/autobuild/TASK-XXX/coach_turn_N.json`):
-```json
-{
-  "task_id": "TASK-XXX",
-  "turn": 1,
-  "decision": "approve",
-  "validation_results": {
-    "requirements_met": ["OAuth2 support", "Token refresh"],
-    "tests_run": true,
-    "tests_passed": true,
-    "test_command": "pytest tests/",
-    "test_output_summary": "All tests passed",
-    "code_quality": "Excellent",
-    "edge_cases_covered": ["Token expiry", "Invalid grant"]
-  },
-  "rationale": "Implementation meets all requirements with comprehensive testing"
-}
-```
-
-### Troubleshooting
-
-**AutoBuild not available?**
-- Check Claude Agents SDK installation
-- Verify API keys configured
-- Run `guardkit doctor` for diagnostics
-
-**Player/Coach not responding?**
-- Check SDK timeout configuration
-- Review error logs in `.guardkit/logs/`
-- Verify worktree permissions
-
-**Max turns reached without approval?**
-- Review Coach feedback from last turn
-- Check if requirements are too broad
-- Consider splitting into smaller tasks
-- Manual implementation may be needed
-
-**Worktree conflicts?**
-- Ensure base branch is up to date
-- Check for existing worktree with same name
-- Run `guardkit worktree cleanup` if needed
-
-### Best Practices
-
-1. **Clear Requirements**: Provide detailed requirements and acceptance criteria
-2. **Right-Sized Tasks**: Aim for tasks that complete in 1-3 turns
-3. **Review Before Merge**: Always review AutoBuild output before merging
-4. **Cleanup Worktrees**: Remove old worktrees after merging
-5. **Monitor Progress**: Watch the progress display to catch issues early
-
-### Integration with GuardKit Workflow
-
-AutoBuild integrates seamlessly with GuardKit task workflow:
-
-```bash
-# Standard workflow
-/task-create "Implement OAuth2 authentication"
-/task-work TASK-XXX  # Manual implementation with quality gates
-
-# AutoBuild workflow (autonomous)
-/task-create "Implement OAuth2 authentication" autobuild:enabled=true
-guardkit autobuild task TASK-XXX  # Autonomous implementation
-# Review worktree output
-# Merge manually
-/task-complete TASK-XXX
-```
-
-**When to Use AutoBuild**:
-- Well-defined requirements
-- Standard implementation patterns
-- Good test coverage possible
-- Low risk changes
-
-**When to Use Manual /task-work**:
-- Exploratory work
-- Complex architectural decisions
-- High risk changes
-- Unusual requirements
+Autonomous task implementation using Player-Coach adversarial workflow.
+Run: `guardkit autobuild task TASK-XXX [--mode=tdd]`
+See: `.claude/rules/autobuild.md` for full documentation.
 
 ## Hash-Based Task IDs
 
-GuardKit uses hash-based task IDs to prevent duplicates and support concurrent creation:
-
-### Format
-- **Simple**: `TASK-{hash}` (e.g., `TASK-a3f8`)
-- **With prefix**: `TASK-{prefix}-{hash}` (e.g., `TASK-E01-b2c4`, `TASK-FIX-a3f8`)
-- **With subtask**: `TASK-{prefix}-{hash}.{number}` (e.g., `TASK-E01-b2c4.1`)
-
-### Benefits
-- ✅ **Zero duplicates** - Mathematically guaranteed unique IDs
-- ✅ **Concurrent creation** - Safe for parallel development across worktrees
-- ✅ **Conductor.build compatible** - No ID collisions in parallel workflows
-- ✅ **PM tool integration** - Automatic mapping to JIRA, Azure DevOps, Linear, GitHub
-
-### Common Prefixes
-- `E{number}`: Epic-related tasks (E01, E02, E03)
-- `DOC`: Documentation tasks
-- `FIX`: Bug fixes
-- `TEST`: Test-related tasks
-- Custom prefixes: Any 2-4 uppercase alphanumeric characters
-
-### Examples
-
-```bash
-# Simple hash-based ID
-/task-create "Fix login bug"
-# Created: TASK-a3f8
-
-# With prefix
-/task-create "Fix login bug" prefix:FIX
-# Created: TASK-FIX-a3f8
-
-# Epic-related task
-/task-create "Implement user authentication" prefix:E01
-# Created: TASK-E01-b2c4
-
-# Subtask
-/task-create "Add unit tests for auth" parent:TASK-E01-b2c4
-# Created: TASK-E01-b2c4.1
-```
-
-### PM Tool Integration
-
-GuardKit automatically maps internal hash IDs to external sequential IDs:
-
-**Internal ID**: `TASK-E01-b2c4`
-
-**External IDs** (automatic):
-- JIRA: `PROJ-456`
-- Azure DevOps: `#1234`
-- Linear: `TEAM-789`
-- GitHub: `#234`
-
-This mapping is:
-- ✅ Automatic when tasks are exported
-- ✅ Bidirectional (internal ↔ external)
-- ✅ Persistent across sessions
-- ✅ Transparent to users
-
-### For Developers
-
-If you're implementing the hash-based ID system:
-- **Implementation Guide**: [Implementation Tasks Summary](docs/research/implementation-tasks-summary.md) - Wave-based execution plan
-- **Parallel Development**: [Conductor.build Workflow](docs/guides/hash-id-parallel-development.md) - 20-33% faster completion
-- **PM Tool Integration**: [External ID Mapping](docs/guides/hash-id-pm-tools.md) - Integration patterns
-- **Technical Details**: [Strategy Analysis](docs/research/task-id-strategy-analysis.md) - Architecture and design decisions
-- **Decision Rationale**: [Decision Guide](docs/research/task-id-decision-guide.md) - Why hash-based IDs?
-
-### Migration Note
-
-**Existing tasks with old sequential IDs?** Run the personal migration script:
-
-```bash
-# Preview changes
-python3 scripts/migrate-my-tasks.py --dry-run
-
-# Execute migration
-python3 scripts/migrate-my-tasks.py --execute
-
-# Rollback if needed
-bash .claude/state/rollback-migration.sh
-```
-
-Old IDs are preserved in the `legacy_id` field. See script source for details.
-
-### FAQ
-
-**Q: Why hash-based instead of sequential?**
-A: Prevents duplicates in concurrent and distributed workflows. Critical for Conductor.build support and parallel development.
-
-**Q: Will users hate typing TASK-a3f8?**
-A: Users rarely type IDs manually. Shell completion, copy/paste, and IDE integration handle this automatically.
-
-**Q: How do PM tools handle hash IDs?**
-A: They don't see them! GuardKit maps internal hash IDs to external sequential IDs automatically (see PM Tool Integration above).
-
-**Q: Can I still use sequential IDs?**
-A: No. Hash-based IDs are mandatory to prevent duplicates and enable parallel development.
-
-**Q: How long are the IDs?**
-A: 4-6 characters for the hash, plus optional 2-4 char prefix. Total: 9-15 characters (e.g., `TASK-FIX-a3f8`).
-
-**Q: What about parallel development?**
-A: Hash-based IDs enable safe concurrent task creation across multiple Conductor.build worktrees with zero collision risk. See [Parallel Development Guide](docs/guides/hash-id-parallel-development.md).
+Format: `TASK-{hash}` or `TASK-{prefix}-{hash}` (e.g., `TASK-FIX-a3f8`)
+Benefits: Zero duplicates, concurrent-safe, Conductor compatible.
+See: `.claude/rules/hash-based-ids.md` for full documentation.
 
 ## Task Workflow Phases
 
@@ -651,95 +316,12 @@ Design-to-code workflows for Figma and Zeplin are under active development.
 
 **Status:** Implementation tasks are tracked in `tasks/backlog/design-url-integration/`
 
-**See**: [UX Design Integration Workflow](docs/workflows/ux-design-integration-workflow.md) for planned architecture
+**See**: [UX Design Integration Workflow (Archived)](docs/archive/ux-design-integration-workflow.md) for planned architecture
 
 ## Template Validation
 
-GuardKit provides a 3-level validation system for template quality assurance.
-
-### Validation Levels
-
-**Level 1: Automatic Validation** (Always On)
-- Runs during `/template-create` (Phase 5.5)
-- CRUD completeness checks
-- Layer symmetry validation
-- Auto-fix common issues
-- Duration: ~30 seconds
-- **No user action required**
-
-**Level 2: Extended Validation** (Optional)
-```bash
-# Personal templates (default: ~/.agentecflow/templates/)
-/template-create --validate
-
-# Repository templates (installer/core/templates/)
-/template-create --validate --output-location=repo
-```
-- All Level 1 checks
-- Placeholder consistency validation
-- Pattern fidelity spot-checks
-- Documentation completeness
-- Detailed quality report (saved in template directory)
-- Exit code based on score
-- Duration: 2-5 minutes
-- Works with both personal and repository templates
-
-**Level 3: Comprehensive Audit** (On-demand)
-```bash
-# Personal templates
-/template-validate ~/.agentecflow/templates/my-template
-
-# Repository templates
-/template-validate installer/core/templates/react-typescript
-```
-- Interactive 16-section audit
-- Section selection
-- Session save/resume
-- Inline issue fixes
-- AI-assisted analysis (sections 8,11,12,13)
-- Comprehensive audit report (saved in template directory)
-- Decision framework
-- Duration: 30-60 minutes (with AI)
-- Works with templates in either location
-
-### When to Use Each Level
-
-**Use Level 1** (Automatic):
-- Personal templates (default location: `~/.agentecflow/templates/`)
-- Quick prototyping
-- Learning template creation
-
-**Use Level 2** (`--validate`):
-- Before sharing with team
-- Pre-deployment QA for repository templates (`--output-location=repo`)
-- CI/CD integration
-- Quality reporting
-
-**Use Level 3** (`/template-validate`):
-- Global template deployment (repository templates)
-- Production-critical templates
-- Comprehensive audit required
-- Development/testing
-- Works with templates in either personal or repository location
-
-### Quality Reports
-
-Level 2 and 3 generate markdown reports in the template directory:
-- `validation-report.md` (Level 2)
-- `audit-report.md` (Level 3)
-
-Reports include:
-- Quality scores (0-10)
-- Detailed findings
-- Actionable recommendations
-- Production readiness assessment
-
-**Template Locations**:
-- **Personal templates**: `~/.agentecflow/templates/` (default, immediate use)
-- **Repository templates**: `installer/core/templates/` (team/public distribution, requires `--output-location=repo` flag)
-
-Validation works with templates in either location.
-
+3-level validation: Automatic (always), Extended (`--validate`), Comprehensive (`/template-validate`).
+Reports saved to template directory.
 **See**: [Template Validation Guide](docs/guides/template-validation-guide.md)
 
 ## Template Creation Workflow Phases
@@ -786,131 +368,9 @@ Optional flags for complex tasks requiring upfront design approval.
 
 ## Incremental Enhancement Workflow
 
-Phase 8 enables **incremental agent enhancement** - you can improve agent files over time instead of all at once.
-
-### When to Use
-
-**Use Incremental Enhancement**:
-- Template has 5+ agents (too many to enhance at once)
-- Want to prioritize critical agents first
-- Learning template patterns gradually
-- Testing enhancement quality on small subset
-
-**Use Full Enhancement** (during template creation):
-- Template has 1-3 agents (quick to enhance)
-- Need all agents complete immediately
-- One-time template creation
-
-### Workflow Options
-
-#### Option A: Task-Based (Recommended)
-
-```bash
-# 1. Create template with agent tasks
-/template-create --name my-template --create-agent-tasks
-
-# 2. Review created tasks
-/task-status
-
-# Output:
-# BACKLOG:
-#   TASK-AGENT-API-ABC123 - Enhance api-service-specialist
-#   TASK-AGENT-DATABASE-DEF456 - Enhance database-specialist
-#   ...
-
-# 3. Work on high-priority agents first
-/task-work TASK-AGENT-API-ABC123
-
-# 4. Complete when satisfied
-/task-complete TASK-AGENT-API-ABC123
-
-# 5. Repeat for other agents as needed
-```
-
-**Benefits**:
-- Tracked in task system
-- Can prioritize enhancement work
-- Integrated with /task-work workflow
-- Progress visible
-
-#### Option B: Direct Enhancement
-
-```bash
-# 1. Create template (without --create-agent-tasks)
-/template-create --name my-template
-
-# 2. Enhance specific agent
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template
-
-# 3. Review changes (dry-run first)
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template \
-               --dry-run
-
-# 4. Apply if satisfied
-/agent-enhance ~/.agentecflow/templates/my-template/agents/api-service-specialist.md \
-               ~/.agentecflow/templates/my-template
-```
-
-**Benefits**:
-- Immediate enhancement
-- No task overhead
-- Quick iteration
-
-### Enhancement Strategies
-
-#### AI Strategy (Recommended)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=ai
-```
-- Uses agent-content-enhancer
-- Analyzes template code
-- Generates examples and best practices
-- **Requires**: AI integration
-
-#### Static Strategy (Fallback)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=static
-```
-- Uses template-based enhancement
-- Extracts patterns from source
-- No AI required
-- Good for offline use
-
-#### Hybrid Strategy (Default)
-```bash
-/agent-enhance AGENT_FILE TEMPLATE_DIR --strategy=hybrid
-```
-- Tries AI first
-- Falls back to static if AI fails
-- Best reliability
-- Recommended for most users
-
-### Best Practices
-
-1. **Start with Critical Agents**
-   - Enhance high-priority agents first (priority >= 9)
-   - Use task system to track priorities
-
-2. **Review Before Applying**
-   - Always use `--dry-run` first
-   - Review generated content
-   - Validate examples compile
-
-3. **Iterate on Quality**
-   - Enhance incrementally
-   - Test agent guidance in practice
-   - Refine based on user feedback
-
-4. **Maintain Consistency**
-   - Use same strategy across agents
-   - Follow same content structure
-   - Keep quality bar consistent
-
-**See Also**:
-- [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
-- [Agent Enhance Command](installer/core/commands/agent-enhance.md)
+Enhance agents incrementally via task-based or direct enhancement.
+Use `--create-agent-tasks` flag to generate enhancement tasks automatically.
+**See**: [Incremental Enhancement Workflow](docs/workflows/incremental-enhancement-workflow.md)
 
 ## Project Structure
 
@@ -939,71 +399,9 @@ installer/core/           # Global resources
 
 ## Template Philosophy
 
-GuardKit includes **5 high-quality templates** for learning and evaluation:
-
-### Stack-Specific Reference Templates (9+/10 Quality)
-1. **react-typescript** - Frontend best practices (from Bulletproof React)
-2. **fastapi-python** - Backend API patterns (from FastAPI Best Practices)
-3. **nextjs-fullstack** - Full-stack application (Next.js App Router)
-
-### Specialized Templates (8-9+/10 Quality)
-4. **react-fastapi-monorepo** - Full-stack monorepo (9.2/10)
-
-### Language-Agnostic Template (8+/10 Quality)
-5. **default** - For Go, Rust, Ruby, Elixir, PHP, and other languages
-
-### Note on guardkit-python Template (Removed)
-
-The `guardkit-python` template was removed because:
-- **GuardKit's `.claude/` is git-managed** - Template initialization not needed for GuardKit development
-- **User confusion** - Template suggested users should run `guardkit init` on GuardKit repo itself (incorrect)
-- **Better alternatives exist** - Users needing Python CLI templates should use `fastapi-python` or create custom templates via `/template-create`
-
-**For GuardKit development**: The `.claude/` directory is checked into git. Clone the repo and use the configuration as-is.
-
-**For Python CLI projects**: Use `fastapi-python` template or create a custom template based on your architecture.
-
-### Why This Approach?
-
-**Templates are learning resources, not production code.**
-
-Each template demonstrates:
-- ✅ How to structure templates for `/template-create`
-- ✅ Stack-specific best practices (or language-agnostic patterns)
-- ✅ GuardKit workflow integration
-- ✅ Boundary sections (ALWAYS/NEVER/ASK) for clear agent behavior
-- ✅ High quality standards (all score 8+/10)
-
-### Output Options
-
-| Flag | Output | Use Case |
-|------|--------|----------|
-| (default) | rules/ directory | Most templates (60-70% context reduction) |
-| `--no-rules-structure` | CLAUDE.md + ext files | Simple templates, universal rules |
-
-### For Production: Use `/template-create`
-
-```bash
-# Evaluate GuardKit (reference template)
-guardkit init react-typescript
-
-# Production workflow (recommended)
-cd your-existing-project
-
-# Default output (rules structure - TASK-TC-DEFAULT-FLAGS)
-/template-create
-
-# Opt-out to progressive disclosure (split files)
-/template-create --no-rules-structure
-
-guardkit init your-custom-template
-```
-
-**Default Behavior (TASK-UX-3A8D)**: `/template-create` now creates agent enhancement tasks by default, providing immediate guidance on next steps. Use `--no-create-agent-tasks` to opt out (e.g., CI/CD automation).
-
-**Why?** Your production code is better than any generic template. Create templates from what you've proven works.
-
-**See**: [Template Philosophy Guide](docs/guides/template-philosophy.md) for detailed explanation.
+5 high-quality templates for learning: react-typescript, fastapi-python, nextjs-fullstack, react-fastapi-monorepo, default.
+Create production templates from your code with `/template-create`.
+**See**: [Template Philosophy Guide](docs/guides/template-philosophy.md)
 
 ## Template Quality Standards
 
@@ -1031,82 +429,9 @@ guardkit init your-custom-template
 
 ## Progressive Disclosure
 
-GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
-
-### Two Approaches
-
-1. **Rules Structure** (Default - TASK-TC-DEFAULT-FLAGS)
-   - Modular `.claude/rules/` directory
-   - Path-specific conditional loading
-   - 60-70% token reduction
-   - Use `--no-rules-structure` to opt out
-
-2. **Split Files** (Opt-out)
-   - Core `{name}.md` always loaded
-   - Extended `{name}-ext.md` loaded on-demand
-   - 55-60% token reduction
-   - Use with `--no-rules-structure` flag
-
-**When to Choose:**
-- Use rules structure (default) for most templates
-- Use split files (`--no-rules-structure`) for simpler projects with universal rules
-
-### How It Works
-
-Agent and template files are split into:
-
-1. **Core files** (`{name}.md`): Essential content always loaded
-   - Quick Start examples (5-10)
-   - Boundaries (ALWAYS/NEVER/ASK)
-   - Capabilities summary
-   - Phase integration
-   - Loading instructions
-
-2. **Extended files** (`{name}-ext.md`): Detailed reference loaded on-demand
-   - Detailed code examples (30+)
-   - Best practices with full explanations
-   - Anti-patterns with code samples
-   - Technology-specific guidance
-   - Troubleshooting scenarios
-
-### Loading Extended Content
-
-When implementing detailed code, load the extended reference:
-
-```bash
-# For agents
-cat agents/{agent-name}-ext.md
-
-# For template patterns
-cat docs/patterns/README.md
-
-# For reference documentation
-cat docs/reference/README.md
-```
-
-### Benefits
-
-- **55-60% token reduction** in typical tasks
-- **Faster responses** from reduced context
-- **Same comprehensive content** available when needed
-- **Competitive positioning** vs other AI dev tools
-
-### For Template Authors
-
-When creating templates with `/template-create`:
-- CLAUDE.md is automatically split into core + docs/
-- Agent files are automatically split during `/agent-enhance`
-- Use `--no-split` flag for single-file output (not recommended)
-
-### Guidance vs Agent Files
-
-Templates include two types of specialist files:
-- **`agents/{name}.md`**: Full agent context for Task tool execution (source of truth)
-- **`rules/guidance/{slug}.md`**: Slim summary for path-triggered loading (derived)
-
-**Source of Truth**: Always edit `agents/` files. Guidance files are generated summaries.
-
-See [Rules Structure Guide](docs/guides/rules-structure-guide.md#guidance-vs-agent-files) for details.
+Core files always load; extended files load on-demand (55-60% token reduction).
+Default: rules structure (`--no-rules-structure` to opt out).
+**See**: [Rules Structure Guide](docs/guides/rules-structure-guide.md)
 
 ## Claude Code Rules Structure
 
@@ -1172,15 +497,32 @@ Rules without `paths:` frontmatter load unconditionally.
 ## Installation & Setup
 
 ```bash
-# Install
+# Basic installation (shell script)
 chmod +x installer/scripts/install.sh
 ./installer/scripts/install.sh
+
+# Or with pip (Python package)
+pip install guardkit-py
+
+# With AutoBuild support (required for /feature-build)
+pip install guardkit-py[autobuild]
+
+# Development installation
+pip install guardkit-py[dev]      # Testing dependencies
+pip install guardkit-py[all]      # Everything
 
 # Initialize with template
 guardkit init [react-typescript|fastapi-python|nextjs-fullstack|default]
 
 # View template details
 guardkit init react-typescript --info
+```
+
+**Note**: AutoBuild features (`/feature-build`, `guardkit autobuild`) require the optional `claude-agent-sdk` dependency. If you see "Claude Agent SDK not installed", run:
+```bash
+pip install guardkit-py[autobuild]
+# OR
+pip install claude-agent-sdk
 ```
 
 **Python Command Scripts**: All Python-based command scripts are symlinked to `~/.agentecflow/bin/` for global accessibility. This allows commands to work from any directory, including Conductor worktrees. The symlinks point to the actual repository scripts, so updates propagate automatically.

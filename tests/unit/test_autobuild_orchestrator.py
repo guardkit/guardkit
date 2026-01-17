@@ -117,11 +117,34 @@ def mock_coach_validator():
 
 
 @pytest.fixture
+def mock_pre_loop_gates():
+    """Create mock PreLoopQualityGates."""
+    gates = MagicMock()
+    # Mock the async execute method with proper return value
+    from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
+
+    async def mock_execute(*args, **kwargs):
+        return PreLoopResult(
+            plan={"steps": ["Step 1"]},
+            plan_path="/tmp/plan.md",
+            complexity=5,
+            max_turns=5,
+            checkpoint_passed=True,
+            architectural_score=85,
+            clarifications={},
+        )
+
+    gates.execute = mock_execute
+    return gates
+
+
+@pytest.fixture
 def orchestrator_with_mocks(
     mock_worktree_manager,
     mock_agent_invoker,
     mock_progress_display,
     mock_coach_validator,
+    mock_pre_loop_gates,
 ):
     """Create AutoBuildOrchestrator with all dependencies mocked."""
     return AutoBuildOrchestrator(
@@ -130,6 +153,7 @@ def orchestrator_with_mocks(
         worktree_manager=mock_worktree_manager,
         agent_invoker=mock_agent_invoker,
         progress_display=mock_progress_display,
+        pre_loop_gates=mock_pre_loop_gates,
     )
 
 
@@ -292,6 +316,31 @@ class TestConstructor:
 
         assert orchestrator.max_turns == 10
 
+    def test_constructor_default_development_mode(self):
+        """Test constructor defaults development_mode to tdd."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        assert orchestrator.development_mode == "tdd"
+
+    def test_constructor_custom_development_mode(self):
+        """Test constructor accepts custom development_mode."""
+        orchestrator_standard = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            development_mode="standard",
+        )
+        assert orchestrator_standard.development_mode == "standard"
+
+        orchestrator_bdd = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            development_mode="bdd",
+        )
+        assert orchestrator_bdd.development_mode == "bdd"
+
 
 # ============================================================================
 # Test Setup Phase
@@ -336,6 +385,43 @@ class TestSetupPhase:
 
         # Verify AgentInvoker was initialized
         assert orchestrator_with_mocks._agent_invoker is not None
+
+    def test_setup_phase_initializes_agent_invoker_with_delegation(
+        self,
+        mock_worktree_manager,
+        mock_progress_display,
+        mock_worktree,
+        tmp_path,
+    ):
+        """Test setup phase creates AgentInvoker with use_task_work_delegation=True."""
+        # Patch AgentInvoker to capture constructor arguments
+        with patch(
+            "guardkit.orchestrator.autobuild.AgentInvoker"
+        ) as MockAgentInvoker:
+            mock_invoker = Mock()
+            MockAgentInvoker.return_value = mock_invoker
+
+            # Create orchestrator with real initialization path
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=tmp_path,
+                max_turns=5,
+                worktree_manager=mock_worktree_manager,
+                progress_display=mock_progress_display,
+            )
+            orchestrator._agent_invoker = None  # Reset to trigger lazy init
+
+            # Execute setup phase
+            orchestrator._setup_phase(
+                task_id="TASK-AB-001",
+                base_branch="main",
+            )
+
+            # Verify AgentInvoker was called with use_task_work_delegation=True
+            MockAgentInvoker.assert_called_once()
+            call_kwargs = MockAgentInvoker.call_args[1]
+            assert call_kwargs.get("use_task_work_delegation") is True, (
+                "AgentInvoker must be created with use_task_work_delegation=True"
+            )
 
     def test_setup_phase_worktree_creation_failure(self, orchestrator_with_mocks):
         """Test setup phase raises SetupPhaseError on worktree creation failure."""
@@ -1248,6 +1334,7 @@ autobuild_state:
         mock_progress_display,
         mock_worktree,
         mock_coach_validator,
+        mock_pre_loop_gates,
     ):
         """Test orchestrate saves state after each turn."""
         orchestrator = AutoBuildOrchestrator(
@@ -1256,6 +1343,7 @@ autobuild_state:
             worktree_manager=mock_worktree_manager,
             agent_invoker=mock_agent_invoker,
             progress_display=mock_progress_display,
+            pre_loop_gates=mock_pre_loop_gates,
         )
 
         # Mock 2 turns: feedback then approve
@@ -1300,6 +1388,387 @@ autobuild_state:
             resume=False,
         )
         assert orchestrator_no_resume.resume is False
+
+
+# ============================================================================
+# Test SDK Timeout Propagation to PreLoopQualityGates (TASK-FB-FIX-009)
+# ============================================================================
+
+
+class TestSdkTimeoutPropagationToPreLoop:
+    """
+    Test sdk_timeout propagation from AutoBuildOrchestrator to PreLoopQualityGates.
+
+    This addresses TASK-FB-FIX-009: The --sdk-timeout CLI flag was being ignored
+    because sdk_timeout was not passed when creating PreLoopQualityGates.
+    """
+
+    def test_pre_loop_phase_passes_sdk_timeout(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree,
+    ):
+        """Test _pre_loop_phase passes sdk_timeout to PreLoopQualityGates."""
+        with patch(
+            "guardkit.orchestrator.autobuild.PreLoopQualityGates"
+        ) as mock_gates_cls:
+            # Mock the PreLoopQualityGates instance
+            mock_gates = MagicMock()
+
+            async def mock_execute(*args, **kwargs):
+                from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
+                return PreLoopResult(
+                    plan={"steps": ["Step 1"]},
+                    plan_path="/tmp/plan.md",
+                    complexity=5,
+                    max_turns=5,
+                    checkpoint_passed=True,
+                    architectural_score=85,
+                    clarifications={},
+                )
+
+            mock_gates.execute = mock_execute
+            mock_gates_cls.return_value = mock_gates
+
+            # Create orchestrator with custom sdk_timeout
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/test-repo"),
+                max_turns=5,
+                sdk_timeout=1800,  # Custom timeout
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+            # Execute pre-loop phase
+            orchestrator._pre_loop_phase(
+                task_id="TASK-001",
+                worktree=mock_worktree,
+            )
+
+            # Verify PreLoopQualityGates was created with sdk_timeout
+            mock_gates_cls.assert_called_once()
+            call_kwargs = mock_gates_cls.call_args[1]
+            assert "sdk_timeout" in call_kwargs
+            assert call_kwargs["sdk_timeout"] == 1800
+
+    def test_default_sdk_timeout_propagated(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree,
+    ):
+        """Test default sdk_timeout (600) is propagated to PreLoopQualityGates."""
+        with patch(
+            "guardkit.orchestrator.autobuild.PreLoopQualityGates"
+        ) as mock_gates_cls:
+            # Mock the PreLoopQualityGates instance
+            mock_gates = MagicMock()
+
+            async def mock_execute(*args, **kwargs):
+                from guardkit.orchestrator.quality_gates.pre_loop import PreLoopResult
+                return PreLoopResult(
+                    plan={"steps": ["Step 1"]},
+                    plan_path="/tmp/plan.md",
+                    complexity=5,
+                    max_turns=5,
+                    checkpoint_passed=True,
+                    architectural_score=85,
+                    clarifications={},
+                )
+
+            mock_gates.execute = mock_execute
+            mock_gates_cls.return_value = mock_gates
+
+            # Create orchestrator with default sdk_timeout
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/test-repo"),
+                max_turns=5,
+                # No sdk_timeout specified - should use default 600
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+            )
+
+            # Execute pre-loop phase
+            orchestrator._pre_loop_phase(
+                task_id="TASK-001",
+                worktree=mock_worktree,
+            )
+
+            # Verify PreLoopQualityGates was created with default sdk_timeout
+            mock_gates_cls.assert_called_once()
+            call_kwargs = mock_gates_cls.call_args[1]
+            assert "sdk_timeout" in call_kwargs
+            assert call_kwargs["sdk_timeout"] == 600
+
+    def test_sdk_timeout_stored_in_orchestrator(self):
+        """Test sdk_timeout is stored correctly in orchestrator."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+            sdk_timeout=1200,
+        )
+
+        assert orchestrator.sdk_timeout == 1200
+
+    def test_sdk_timeout_default_value(self):
+        """Test sdk_timeout defaults to 600 if not specified."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path.cwd(),
+            max_turns=5,
+        )
+
+        assert orchestrator.sdk_timeout == 600
+
+    def test_injected_pre_loop_gates_bypasses_creation(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_pre_loop_gates,
+        mock_worktree,
+    ):
+        """Test injected pre_loop_gates bypasses PreLoopQualityGates creation."""
+        with patch(
+            "guardkit.orchestrator.autobuild.PreLoopQualityGates"
+        ) as mock_gates_cls:
+            # Create orchestrator with injected pre_loop_gates
+            orchestrator = AutoBuildOrchestrator(
+                repo_root=Path("/tmp/test-repo"),
+                max_turns=5,
+                sdk_timeout=1800,
+                worktree_manager=mock_worktree_manager,
+                agent_invoker=mock_agent_invoker,
+                progress_display=mock_progress_display,
+                pre_loop_gates=mock_pre_loop_gates,  # Injected
+            )
+
+            # Execute pre-loop phase
+            orchestrator._pre_loop_phase(
+                task_id="TASK-001",
+                worktree=mock_worktree,
+            )
+
+            # Verify PreLoopQualityGates was NOT created (injected one used)
+            mock_gates_cls.assert_not_called()
+
+
+# ============================================================================
+# Test CoachValidator Path Construction (TASK-FB-PATH1)
+# ============================================================================
+
+
+class TestCoachValidatorPathConstruction:
+    """
+    Test that _invoke_coach_safely passes correct worktree path to CoachValidator.
+
+    This addresses TASK-FB-PATH1: In feature mode, the worktree path differs from
+    the task ID. The CoachValidator must receive the actual worktree path, not
+    construct it from task_id.
+
+    Path Examples:
+    - Single-task mode: .guardkit/worktrees/TASK-001 (worktree name == task_id)
+    - Feature mode: .guardkit/worktrees/FEAT-ABC (worktree name == feature_id)
+    """
+
+    @pytest.fixture
+    def mock_worktree_feature_mode(self):
+        """Create mock Worktree for feature mode (worktree name != task_id)."""
+        worktree = Mock(spec=Worktree)
+        worktree.task_id = "TASK-INFRA-001"  # Task being executed
+        worktree.path = Path("/tmp/worktrees/FEAT-3DEB")  # Feature worktree
+        worktree.branch_name = "autobuild/FEAT-3DEB"
+        worktree.base_branch = "main"
+        return worktree
+
+    @pytest.fixture
+    def mock_worktree_single_task_mode(self):
+        """Create mock Worktree for single-task mode (worktree name == task_id)."""
+        worktree = Mock(spec=Worktree)
+        worktree.task_id = "TASK-001"
+        worktree.path = Path("/tmp/worktrees/TASK-001")  # Same as task_id
+        worktree.branch_name = "autobuild/TASK-001"
+        worktree.base_branch = "main"
+        return worktree
+
+    def test_invoke_coach_safely_uses_worktree_path_not_task_id(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_feature_mode,
+    ):
+        """
+        Test that CoachValidator receives actual worktree path in feature mode.
+
+        In feature mode:
+        - task_id: TASK-INFRA-001
+        - worktree.path: .guardkit/worktrees/FEAT-3DEB
+
+        CoachValidator should look for task_work_results.json at:
+        .guardkit/worktrees/FEAT-3DEB/.guardkit/autobuild/TASK-INFRA-001/task_work_results.json
+
+        NOT at:
+        .guardkit/worktrees/TASK-INFRA-001/.guardkit/autobuild/TASK-INFRA-001/task_work_results.json
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock CoachValidator to capture the path it receives
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_result = MagicMock()
+            mock_result.decision = "approve"
+            mock_result.to_dict.return_value = {"decision": "approve", "issues": []}
+            mock_instance.validate.return_value = mock_result
+            mock_validator_class.return_value = mock_instance
+
+            # Call _invoke_coach_safely with feature mode worktree
+            result = orchestrator._invoke_coach_safely(
+                task_id="TASK-INFRA-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report={"status": "completed"},
+                worktree=mock_worktree_feature_mode,
+            )
+
+            # Verify CoachValidator was instantiated with feature worktree path
+            mock_validator_class.assert_called_once_with(
+                str(mock_worktree_feature_mode.path)
+            )
+            # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
+            call_arg = mock_validator_class.call_args[0][0]
+            assert "FEAT-3DEB" in call_arg
+            assert "TASK-INFRA-001" not in call_arg.split("/")[-1]
+
+    def test_invoke_coach_safely_works_in_single_task_mode(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_single_task_mode,
+    ):
+        """
+        Test that CoachValidator works correctly in single-task mode.
+
+        In single-task mode:
+        - task_id: TASK-001
+        - worktree.path: .guardkit/worktrees/TASK-001 (same as task_id)
+
+        CoachValidator should look for task_work_results.json at:
+        .guardkit/worktrees/TASK-001/.guardkit/autobuild/TASK-001/task_work_results.json
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock CoachValidator to capture the path it receives
+        with patch(
+            "guardkit.orchestrator.autobuild.CoachValidator"
+        ) as mock_validator_class:
+            mock_instance = MagicMock()
+            mock_result = MagicMock()
+            mock_result.decision = "approve"
+            mock_result.to_dict.return_value = {"decision": "approve", "issues": []}
+            mock_instance.validate.return_value = mock_result
+            mock_validator_class.return_value = mock_instance
+
+            # Call _invoke_coach_safely with single-task mode worktree
+            result = orchestrator._invoke_coach_safely(
+                task_id="TASK-001",
+                turn=1,
+                requirements="Test requirements",
+                player_report={"status": "completed"},
+                worktree=mock_worktree_single_task_mode,
+            )
+
+            # Verify CoachValidator was instantiated with correct path
+            mock_validator_class.assert_called_once_with(
+                str(mock_worktree_single_task_mode.path)
+            )
+            call_arg = mock_validator_class.call_args[0][0]
+            assert "TASK-001" in call_arg
+
+    def test_execute_turn_passes_worktree_to_coach(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+        mock_worktree_feature_mode,
+    ):
+        """
+        Test that _execute_turn passes worktree parameter to _invoke_coach_safely.
+
+        This is the integration point where the fix matters: _execute_turn
+        receives the worktree and must pass it through to coach invocation.
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test-repo"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Mock player invocation
+        with patch.object(
+            orchestrator, "_invoke_player_safely"
+        ) as mock_player:
+            player_result = AgentInvocationResult(
+                task_id="TASK-INFRA-001",
+                turn=1,
+                agent_type="player",
+                success=True,
+                report={"status": "completed"},
+                duration_seconds=10.0,
+                error=None,
+            )
+            mock_player.return_value = player_result
+
+            # Mock coach invocation to verify worktree parameter
+            with patch.object(
+                orchestrator, "_invoke_coach_safely"
+            ) as mock_coach:
+                coach_result = AgentInvocationResult(
+                    task_id="TASK-INFRA-001",
+                    turn=1,
+                    agent_type="coach",
+                    success=True,
+                    report={"decision": "approve"},
+                    duration_seconds=5.0,
+                    error=None,
+                )
+                mock_coach.return_value = coach_result
+
+                # Execute turn with feature mode worktree
+                turn_record = orchestrator._execute_turn(
+                    turn=1,
+                    task_id="TASK-INFRA-001",
+                    requirements="Test requirements",
+                    worktree=mock_worktree_feature_mode,
+                    previous_feedback=None,
+                )
+
+                # Verify _invoke_coach_safely was called with worktree parameter
+                mock_coach.assert_called_once()
+                call_kwargs = mock_coach.call_args[1]
+                assert "worktree" in call_kwargs
+                assert call_kwargs["worktree"] == mock_worktree_feature_mode
 
 
 # ============================================================================

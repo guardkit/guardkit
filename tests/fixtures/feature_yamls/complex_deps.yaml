@@ -1,0 +1,62 @@
+id: FEAT-COMPLEX
+name: Feature with complex dependency graph
+description: Multiple dependency relationships but no cycles - diamond pattern
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 7
+estimated_tasks: 5
+tasks:
+  - id: TASK-CX-001
+    name: Root task - no dependencies
+    file_path: tasks/backlog/TASK-CX-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-CX-002
+    name: Task depends on 001
+    file_path: tasks/backlog/TASK-CX-002.md
+    complexity: 4
+    dependencies:
+      - TASK-CX-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+  - id: TASK-CX-003
+    name: Task also depends on 001 (parallel with 002)
+    file_path: tasks/backlog/TASK-CX-003.md
+    complexity: 4
+    dependencies:
+      - TASK-CX-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+  - id: TASK-CX-004
+    name: Diamond merge - depends on 002 and 003
+    file_path: tasks/backlog/TASK-CX-004.md
+    complexity: 5
+    dependencies:
+      - TASK-CX-002
+      - TASK-CX-003
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 60
+  - id: TASK-CX-005
+    name: Final task depends on 004
+    file_path: tasks/backlog/TASK-CX-005.md
+    complexity: 3
+    dependencies:
+      - TASK-CX-004
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-CX-001
+    - - TASK-CX-002
+      - TASK-CX-003
+    - - TASK-CX-004
+    - - TASK-CX-005
+  estimated_duration_minutes: 165
+  recommended_parallel: 2

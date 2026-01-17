@@ -28,6 +28,11 @@ from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureParseError,
     FeatureValidationError,
+    TASK_SCHEMA,
+    FEATURE_SCHEMA,
+    ORCHESTRATION_SCHEMA,
+    _truncate_data,
+    _build_schema_error_message,
 )
 
 
@@ -182,7 +187,7 @@ def test_load_feature_parse_error(temp_features_dir):
 
 
 def test_load_feature_missing_required_field(temp_features_dir):
-    """Test FeatureParseError for missing required fields."""
+    """Test FeatureParseError for missing required fields with schema hints."""
     features_dir = temp_features_dir / ".guardkit" / "features"
     incomplete_file = features_dir / "FEAT-INCOMPLETE.yaml"
 
@@ -192,7 +197,12 @@ def test_load_feature_missing_required_field(temp_features_dir):
     with pytest.raises(FeatureParseError) as exc_info:
         FeatureLoader.load_feature("FEAT-INCOMPLETE", repo_root=temp_features_dir)
 
-    assert "Invalid feature structure" in str(exc_info.value)
+    error_msg = str(exc_info.value)
+    # Verify improved error message format with schema hints
+    assert "Missing required field 'id'" in error_msg
+    assert "Feature Schema:" in error_msg
+    assert "Present fields:" in error_msg
+    assert "Fix:" in error_msg
 
 
 # ============================================================================
@@ -1182,3 +1192,619 @@ def test_task_state_fields_persistence():
         assert reloaded.execution.current_wave == 1
         assert reloaded.execution.completed_waves == []
         assert reloaded.execution.last_updated == "2025-12-31T12:15:00Z"
+
+
+# ============================================================================
+# Test: Schema Hint Error Messages (TASK-FP-004)
+# ============================================================================
+
+
+class TestSchemaHintErrorMessages:
+    """Test improved error messages with schema hints."""
+
+    def test_truncate_data_short_string(self):
+        """Test _truncate_data doesn't truncate short strings."""
+        data = {"id": "TASK-001", "name": "Test"}
+        result = _truncate_data(data)
+        assert "..." not in result
+        assert "TASK-001" in result
+
+    def test_truncate_data_long_string(self):
+        """Test _truncate_data truncates long strings at 200 chars."""
+        data = {"key": "x" * 300}
+        result = _truncate_data(data, max_length=200)
+        assert result.endswith("...")
+        assert len(result) == 203  # 200 chars + "..."
+
+    def test_truncate_data_custom_max_length(self):
+        """Test _truncate_data with custom max_length."""
+        data = "This is a test string that should be truncated"
+        result = _truncate_data(data, max_length=20)
+        assert result == "This is a test strin..."
+        assert len(result) == 23
+
+    def test_build_schema_error_message_structure(self):
+        """Test _build_schema_error_message produces expected structure."""
+        msg = _build_schema_error_message(
+            missing_field="file_path",
+            context="task 'TASK-001'",
+            data={"id": "TASK-001", "name": "Test"},
+            schema=TASK_SCHEMA,
+        )
+
+        assert "Missing required field 'file_path'" in msg
+        assert "task 'TASK-001'" in msg
+        assert "Task Schema:" in msg
+        assert "Present fields:" in msg
+        assert "['id', 'name']" in msg
+        assert "Fix:" in msg
+        assert "/feature-plan" in msg
+
+    def test_build_schema_error_message_empty_data(self):
+        """Test _build_schema_error_message handles empty data."""
+        msg = _build_schema_error_message(
+            missing_field="id",
+            context="feature definition",
+            data={},
+            schema=FEATURE_SCHEMA,
+        )
+
+        assert "Missing required field 'id'" in msg
+        assert "Present fields: []" in msg
+
+    def test_build_schema_error_message_none_data(self):
+        """Test _build_schema_error_message handles None data."""
+        msg = _build_schema_error_message(
+            missing_field="id",
+            context="feature definition",
+            data=None,
+            schema=FEATURE_SCHEMA,
+        )
+
+        assert "Missing required field 'id'" in msg
+        assert "Present fields: []" in msg
+
+    def test_parse_error_missing_task_id(self, temp_features_dir, sample_feature_yaml):
+        """Test parse error for missing task 'id' shows schema hint."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+
+        # Create feature with task missing 'id'
+        bad_task_feature = sample_feature_yaml.copy()
+        bad_task_feature["tasks"] = [
+            {
+                "name": "Task without ID",
+                "file_path": "tasks/test.md",
+            }
+        ]
+        bad_file = features_dir / "FEAT-BAD-TASK-ID.yaml"
+        with open(bad_file, "w") as f:
+            yaml.dump(bad_task_feature, f)
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-BAD-TASK-ID", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Missing required field 'id'" in error_msg
+        assert "Task Schema:" in error_msg
+        assert "Fix:" in error_msg
+
+    def test_parse_error_missing_file_path(self, temp_features_dir, sample_feature_yaml):
+        """Test parse error for missing 'file_path' shows expected schema."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+
+        # Create feature with task missing 'file_path'
+        bad_task_feature = sample_feature_yaml.copy()
+        bad_task_feature["tasks"] = [
+            {
+                "id": "TASK-NO-PATH",
+                "name": "Task without file_path",
+            }
+        ]
+        bad_file = features_dir / "FEAT-BAD-PATH.yaml"
+        with open(bad_file, "w") as f:
+            yaml.dump(bad_task_feature, f)
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-BAD-PATH", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Missing required field 'file_path'" in error_msg
+        assert "task 'TASK-NO-PATH'" in error_msg
+        assert "Task Schema:" in error_msg
+
+    def test_parse_error_missing_feature_id(self, temp_features_dir):
+        """Test parse error for missing feature 'id' shows schema."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+        incomplete_file = features_dir / "FEAT-NO-ID.yaml"
+
+        # Write YAML missing 'id' field
+        incomplete_file.write_text(yaml.dump({"name": "Feature without ID"}))
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-NO-ID", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Missing required field 'id'" in error_msg
+        assert "feature definition" in error_msg
+        assert "Feature Schema:" in error_msg
+
+    def test_parse_error_missing_feature_name(self, temp_features_dir):
+        """Test parse error for missing feature 'name' shows schema."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+        incomplete_file = features_dir / "FEAT-NO-NAME.yaml"
+
+        # Write YAML missing 'name' field
+        incomplete_file.write_text(yaml.dump({"id": "FEAT-NO-NAME"}))
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-NO-NAME", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Missing required field 'name'" in error_msg
+        assert "Feature Schema:" in error_msg
+
+    def test_parse_error_shows_actual_data(self, temp_features_dir):
+        """Test parse error includes actual data that caused error."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+        bad_file = features_dir / "FEAT-DATA-PREVIEW.yaml"
+
+        # Write YAML with some fields but missing required one
+        data = {"description": "A feature", "complexity": 5}
+        bad_file.write_text(yaml.dump(data))
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-DATA-PREVIEW", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Data preview:" in error_msg
+        assert "description" in error_msg or "complexity" in error_msg
+
+    def test_parse_error_shows_present_fields(self, temp_features_dir):
+        """Test parse error shows list of fields that ARE present."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+        bad_file = features_dir / "FEAT-FIELDS.yaml"
+
+        # Write YAML with specific fields but missing 'id'
+        data = {"name": "Test Feature", "description": "Description"}
+        bad_file.write_text(yaml.dump(data))
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-FIELDS", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Present fields:" in error_msg
+        assert "name" in error_msg
+        assert "description" in error_msg
+
+    def test_error_message_includes_fix_suggestion(self, temp_features_dir):
+        """Test error message includes actionable fix suggestions."""
+        features_dir = temp_features_dir / ".guardkit" / "features"
+        bad_file = features_dir / "FEAT-FIX.yaml"
+
+        # Write YAML missing required field
+        bad_file.write_text(yaml.dump({"name": "No ID feature"}))
+
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature("FEAT-FIX", repo_root=temp_features_dir)
+
+        error_msg = str(exc_info.value)
+        assert "Fix:" in error_msg
+        assert "/feature-plan" in error_msg
+
+    def test_valid_task_no_error(self, sample_feature_yaml):
+        """Regression test: valid task data doesn't raise error."""
+        task_data = sample_feature_yaml["tasks"][0]
+        task = FeatureLoader._parse_task(task_data)
+
+        assert task.id == "TASK-AUTH-001"
+        assert task.file_path == Path("tasks/backlog/TASK-AUTH-001.md")
+
+    def test_schema_constants_exported(self):
+        """Test that schema constants are exported and non-empty."""
+        assert TASK_SCHEMA
+        assert "id" in TASK_SCHEMA
+        assert "file_path" in TASK_SCHEMA
+
+        assert FEATURE_SCHEMA
+        assert "id" in FEATURE_SCHEMA
+        assert "name" in FEATURE_SCHEMA
+
+        assert ORCHESTRATION_SCHEMA
+        assert "parallel_groups" in ORCHESTRATION_SCHEMA
+
+
+# ============================================================================
+# Test: Schema Parsing Edge Cases (TASK-FP-005)
+# ============================================================================
+
+
+class TestFeatureLoaderParsing:
+    """Tests for FeatureLoader schema parsing edge cases."""
+
+    @pytest.fixture
+    def fixtures_dir(self) -> Path:
+        """Return path to feature YAML fixtures directory."""
+        return Path(__file__).parent.parent / "fixtures" / "feature_yamls"
+
+    def test_valid_schema_parses_successfully(self, fixtures_dir):
+        """Valid feature YAML should parse without errors."""
+        feature = FeatureLoader.load_feature(
+            "FEAT-VALID",
+            features_dir=fixtures_dir,
+        )
+
+        assert feature.id == "FEAT-VALID"
+        assert feature.name == "Valid Feature for Testing"
+        assert len(feature.tasks) == 3
+        assert feature.orchestration.parallel_groups == [
+            ["TASK-V-001"],
+            ["TASK-V-002"],
+            ["TASK-V-003"],
+        ]
+
+    def test_missing_file_path_raises_parse_error(self, fixtures_dir):
+        """Missing file_path field should raise FeatureParseError with helpful message."""
+        with pytest.raises(FeatureParseError) as exc_info:
+            FeatureLoader.load_feature(
+                "missing_file_path",
+                features_dir=fixtures_dir,
+            )
+
+        error_msg = str(exc_info.value)
+        assert "Missing required field 'file_path'" in error_msg
+        assert "task 'TASK-NO-PATH'" in error_msg
+        assert "Task Schema:" in error_msg
+        assert "Fix:" in error_msg
+
+    def test_missing_task_id_raises_parse_error(self, fixtures_dir):
+        """Missing id field should raise FeatureParseError."""
+        # Create a temp file with missing task id
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_dir = Path(tmpdir)
+            bad_file = temp_dir / "FEAT-NO-TASK-ID.yaml"
+            bad_file.write_text(yaml.dump({
+                "id": "FEAT-NO-TASK-ID",
+                "name": "Feature with task missing id",
+                "tasks": [
+                    {
+                        "name": "Task without ID",
+                        "file_path": "tasks/test.md",
+                    }
+                ],
+                "orchestration": {"parallel_groups": [[]]},
+            }))
+
+            with pytest.raises(FeatureParseError) as exc_info:
+                FeatureLoader.load_feature("FEAT-NO-TASK-ID", features_dir=temp_dir)
+
+            error_msg = str(exc_info.value)
+            assert "Missing required field 'id'" in error_msg
+            assert "Task Schema:" in error_msg
+
+    def test_old_execution_groups_format_uses_empty_orchestration(self, fixtures_dir):
+        """Old execution_groups format should result in empty parallel_groups.
+
+        When execution_groups is used instead of orchestration.parallel_groups,
+        the parser ignores execution_groups and creates empty orchestration.
+        This is schema-compatible behavior (graceful degradation).
+        """
+        feature = FeatureLoader.load_feature(
+            "old_schema_format",
+            features_dir=fixtures_dir,
+        )
+
+        # execution_groups is ignored, orchestration defaults to empty
+        assert feature.orchestration.parallel_groups == []
+        # But tasks are still parsed correctly
+        assert len(feature.tasks) == 2
+        assert feature.tasks[0].id == "TASK-OLD-001"
+
+    def test_old_execution_groups_format_fails_validation(self, fixtures_dir):
+        """Old execution_groups format should fail validation (tasks not in orchestration)."""
+        feature = FeatureLoader.load_feature(
+            "old_schema_format",
+            features_dir=fixtures_dir,
+        )
+
+        # Validation should catch missing orchestration
+        errors = FeatureLoader.validate_feature(feature, repo_root=fixtures_dir.parent.parent)
+        assert any("Tasks not in orchestration" in e for e in errors)
+
+    def test_task_files_section_ignored(self, fixtures_dir):
+        """Redundant task_files section should be ignored if present."""
+        feature = FeatureLoader.load_feature(
+            "with_task_files",
+            features_dir=fixtures_dir,
+        )
+
+        # Feature should parse successfully, ignoring task_files
+        assert feature.id == "FEAT-WITH-FILES"
+        assert len(feature.tasks) == 1
+        # file_path should come from tasks[].file_path, not task_files
+        assert feature.tasks[0].file_path == Path("tasks/backlog/TASK-WF-001.md")
+
+    def test_empty_tasks_list_validation_error(self, fixtures_dir):
+        """Feature with no tasks should raise validation error (not parse error)."""
+        # Empty tasks parses successfully
+        feature = FeatureLoader.load_feature(
+            "empty_tasks",
+            features_dir=fixtures_dir,
+        )
+        assert feature.id == "FEAT-EMPTY"
+        assert len(feature.tasks) == 0
+
+        # But validation catches the issue
+        errors = FeatureLoader.validate_feature(feature, repo_root=fixtures_dir.parent.parent)
+        assert any("no tasks defined" in e.lower() for e in errors)
+
+    def test_circular_dependencies_detected(self, fixtures_dir):
+        """Circular task dependencies should be detected."""
+        feature = FeatureLoader.load_feature(
+            "circular_deps",
+            features_dir=fixtures_dir,
+        )
+
+        # Parsing succeeds
+        assert len(feature.tasks) == 3
+
+        # Circular dependency detection works
+        cycle = FeatureLoader._detect_circular_dependencies(feature)
+        assert cycle is not None
+        # Cycle should include at least one of the circular tasks
+        assert any(task_id in cycle for task_id in ["TASK-CIRC-A", "TASK-CIRC-B", "TASK-CIRC-C"])
+
+    def test_missing_task_file_validation(self, fixtures_dir):
+        """Non-existent task files should raise validation error."""
+        feature = FeatureLoader.load_feature(
+            "FEAT-VALID",
+            features_dir=fixtures_dir,
+        )
+
+        # Use a repo_root where task files don't exist
+        errors = FeatureLoader.validate_feature(feature, repo_root=fixtures_dir)
+        assert len(errors) >= 3  # All 3 task files missing
+        assert all("Task file not found" in e for e in errors)
+
+    def test_parallel_groups_list_of_lists(self, fixtures_dir):
+        """parallel_groups must be list of lists format."""
+        feature = FeatureLoader.load_feature(
+            "FEAT-VALID",
+            features_dir=fixtures_dir,
+        )
+
+        # Verify structure is list of lists
+        assert isinstance(feature.orchestration.parallel_groups, list)
+        for wave in feature.orchestration.parallel_groups:
+            assert isinstance(wave, list)
+            for task_id in wave:
+                assert isinstance(task_id, str)
+
+
+class TestFeatureLoaderEdgeCases:
+    """Edge case tests for FeatureLoader."""
+
+    @pytest.fixture
+    def fixtures_dir(self) -> Path:
+        """Return path to feature YAML fixtures directory."""
+        return Path(__file__).parent.parent / "fixtures" / "feature_yamls"
+
+    def test_single_task_feature(self, fixtures_dir):
+        """Feature with single task should work."""
+        feature = FeatureLoader.load_feature(
+            "single_task",
+            features_dir=fixtures_dir,
+        )
+
+        assert feature.id == "FEAT-SINGLE"
+        assert len(feature.tasks) == 1
+        assert feature.tasks[0].id == "TASK-SINGLE-001"
+        assert feature.orchestration.parallel_groups == [["TASK-SINGLE-001"]]
+
+    def test_all_tasks_parallel(self, fixtures_dir):
+        """All tasks in single wave should work."""
+        feature = FeatureLoader.load_feature(
+            "all_parallel",
+            features_dir=fixtures_dir,
+        )
+
+        assert feature.id == "FEAT-PARALLEL"
+        assert len(feature.tasks) == 4
+
+        # All tasks in single wave
+        assert len(feature.orchestration.parallel_groups) == 1
+        assert len(feature.orchestration.parallel_groups[0]) == 4
+
+        # All tasks have no dependencies
+        for task in feature.tasks:
+            assert task.dependencies == []
+
+    def test_complex_dependency_graph(self, fixtures_dir):
+        """Complex but valid dependency graph should work (diamond pattern)."""
+        feature = FeatureLoader.load_feature(
+            "complex_deps",
+            features_dir=fixtures_dir,
+        )
+
+        assert feature.id == "FEAT-COMPLEX"
+        assert len(feature.tasks) == 5
+
+        # Verify dependency structure (diamond pattern)
+        task_map = {t.id: t for t in feature.tasks}
+
+        assert task_map["TASK-CX-001"].dependencies == []
+        assert task_map["TASK-CX-002"].dependencies == ["TASK-CX-001"]
+        assert task_map["TASK-CX-003"].dependencies == ["TASK-CX-001"]
+        assert sorted(task_map["TASK-CX-004"].dependencies) == ["TASK-CX-002", "TASK-CX-003"]
+        assert task_map["TASK-CX-005"].dependencies == ["TASK-CX-004"]
+
+        # No circular dependencies
+        cycle = FeatureLoader._detect_circular_dependencies(feature)
+        assert cycle is None
+
+    def test_optional_fields_use_defaults(self, fixtures_dir):
+        """Optional fields should use sensible defaults."""
+        feature = FeatureLoader.load_feature(
+            "minimal_defaults",
+            features_dir=fixtures_dir,
+        )
+
+        assert feature.id == "FEAT-MINIMAL"
+        assert feature.name == "Minimal Feature"
+
+        # Feature-level defaults
+        assert feature.description == ""
+        assert feature.status == "planned"
+        assert feature.complexity == 5  # Default complexity
+
+        # Task-level defaults
+        task = feature.tasks[0]
+        assert task.id == "TASK-MIN-001"
+        assert task.name == "TASK-MIN-001"  # Defaults to id
+        assert task.complexity == 5
+        assert task.dependencies == []
+        assert task.status == "pending"
+        assert task.implementation_mode == "task-work"
+        assert task.estimated_minutes == 30
+
+        # Orchestration defaults
+        assert feature.orchestration.estimated_duration_minutes == 0
+        assert feature.orchestration.recommended_parallel == 1
+
+    def test_feature_with_all_task_statuses(self):
+        """Feature should accept all valid task statuses."""
+        for status in ["pending", "in_progress", "completed", "failed", "skipped"]:
+            task_data = {
+                "id": f"TASK-STATUS-{status}",
+                "file_path": "tasks/test.md",
+                "status": status,
+            }
+            task = FeatureLoader._parse_task(task_data)
+            assert task.status == status
+
+    def test_feature_with_all_implementation_modes(self):
+        """Feature should accept all valid implementation modes."""
+        for mode in ["task-work", "direct", "manual"]:
+            task_data = {
+                "id": f"TASK-MODE-{mode}",
+                "file_path": "tasks/test.md",
+                "implementation_mode": mode,
+            }
+            task = FeatureLoader._parse_task(task_data)
+            assert task.implementation_mode == mode
+
+    def test_self_dependency_detected(self):
+        """Task depending on itself should be detected as circular."""
+        feature = Feature(
+            id="FEAT-SELF-DEP",
+            name="Self Dependency Test",
+            description="",
+            created="2026-01-06",
+            status="planned",
+            complexity=3,
+            estimated_tasks=1,
+            tasks=[
+                FeatureTask(
+                    id="TASK-SELF",
+                    name="Task depends on itself",
+                    file_path=Path("tasks/self.md"),
+                    complexity=3,
+                    dependencies=["TASK-SELF"],  # Self-dependency
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[["TASK-SELF"]],
+                estimated_duration_minutes=30,
+                recommended_parallel=1,
+            ),
+        )
+
+        cycle = FeatureLoader._detect_circular_dependencies(feature)
+        assert cycle is not None
+        assert "TASK-SELF" in cycle
+
+    def test_missing_orchestration_uses_defaults(self):
+        """Missing orchestration section should use defaults."""
+        data = {
+            "id": "FEAT-NO-ORCH",
+            "name": "Feature without orchestration",
+            "tasks": [
+                {
+                    "id": "TASK-NO-ORCH",
+                    "file_path": "tasks/test.md",
+                }
+            ],
+            # No orchestration section
+        }
+
+        feature = FeatureLoader._parse_feature(data)
+
+        assert feature.orchestration.parallel_groups == []
+        assert feature.orchestration.estimated_duration_minutes == 0
+        assert feature.orchestration.recommended_parallel == 1
+
+    def test_unicode_in_feature_name(self):
+        """Feature should handle unicode characters in names."""
+        data = {
+            "id": "FEAT-UNICODE",
+            "name": "Feature with Unicode: \u00e9\u00e8\u00ea \u4e2d\u6587 \U0001F680",
+            "description": "Test unicode: \u00e4\u00f6\u00fc\u00df",
+            "tasks": [
+                {
+                    "id": "TASK-UNICODE",
+                    "name": "Task: \u2705 \u2764\ufe0f",
+                    "file_path": "tasks/unicode.md",
+                }
+            ],
+            "orchestration": {
+                "parallel_groups": [["TASK-UNICODE"]],
+            },
+        }
+
+        feature = FeatureLoader._parse_feature(data)
+
+        assert "\u00e9" in feature.name  # e with accent
+        assert "\u4e2d\u6587" in feature.name  # Chinese characters
+        assert "\U0001F680" in feature.name  # Rocket emoji
+        assert "\u2705" in feature.tasks[0].name  # Checkmark
+
+    def test_very_long_dependency_chain(self):
+        """Feature with long dependency chain should work without stack overflow."""
+        num_tasks = 50
+        tasks = []
+        for i in range(num_tasks):
+            deps = [f"TASK-CHAIN-{i-1:03d}"] if i > 0 else []
+            tasks.append(
+                FeatureTask(
+                    id=f"TASK-CHAIN-{i:03d}",
+                    name=f"Task {i}",
+                    file_path=Path(f"tasks/chain-{i}.md"),
+                    complexity=3,
+                    dependencies=deps,
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                )
+            )
+
+        feature = Feature(
+            id="FEAT-LONG-CHAIN",
+            name="Long Dependency Chain",
+            description="",
+            created="2026-01-06",
+            status="planned",
+            complexity=8,
+            estimated_tasks=num_tasks,
+            tasks=tasks,
+            orchestration=FeatureOrchestration(
+                parallel_groups=[[f"TASK-CHAIN-{i:03d}"] for i in range(num_tasks)],
+                estimated_duration_minutes=num_tasks * 30,
+                recommended_parallel=1,
+            ),
+        )
+
+        # Should not raise RecursionError
+        cycle = FeatureLoader._detect_circular_dependencies(feature)
+        assert cycle is None  # Linear chain has no cycles

@@ -40,6 +40,7 @@ Example:
     >>> print(f"Worktree: {result.worktree.path}")
 """
 
+import asyncio
 import logging
 import sys
 from dataclasses import dataclass
@@ -62,8 +63,18 @@ from guardkit.orchestrator.agent_invoker import AgentInvoker, AgentInvocationRes
 from guardkit.orchestrator.progress import ProgressDisplay
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
+    BlockedReport,
     CoachDecisionInvalidError,
     SDKTimeoutError,
+)
+from guardkit.orchestrator.schemas import (
+    CompletionPromise,
+    CriterionVerification,
+    CriterionStatus,
+    VerificationResult,
+    calculate_completion_percentage,
+    format_promise_summary,
+    format_verification_summary,
 )
 
 # Import quality gates for pre-loop execution
@@ -73,6 +84,17 @@ from guardkit.orchestrator.quality_gates import (
     CheckpointRejectedError,
     CoachValidator,
     CoachValidationResult,
+)
+
+# Import state detection for partial work recovery
+from guardkit.orchestrator.state_detection import (
+    detect_git_changes,
+    detect_test_results,
+    GitChangesSummary,
+)
+from guardkit.orchestrator.state_tracker import (
+    MultiLayeredStateTracker,
+    WorkState,
 )
 
 # Setup logging
@@ -291,6 +313,8 @@ class AutoBuildOrchestrator:
         agent_invoker: Optional[AgentInvoker] = None,
         progress_display: Optional[ProgressDisplay] = None,
         pre_loop_gates: Optional[PreLoopQualityGates] = None,
+        development_mode: str = "tdd",
+        sdk_timeout: int = 600,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -321,6 +345,12 @@ class AutoBuildOrchestrator:
             Optional ProgressDisplay for DI/testing
         pre_loop_gates : Optional[PreLoopQualityGates], optional
             Optional PreLoopQualityGates for DI/testing
+        development_mode : str, optional
+            Development mode for implementation (default: "tdd").
+            Valid values: "standard", "tdd", "bdd"
+        sdk_timeout : int, optional
+            SDK timeout in seconds for agent invocations (default: 600).
+            Valid range: 60-3600 seconds.
 
         Raises
         ------
@@ -346,8 +376,11 @@ class AutoBuildOrchestrator:
         self.resume = resume
         self.enable_pre_loop = enable_pre_loop
         self.pre_loop_options = pre_loop_options or {}
+        self.development_mode = development_mode
+        self.sdk_timeout = sdk_timeout
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         self._turn_history: List[TurnRecord] = []
+        self._honesty_history: List[float] = []  # Track honesty scores across turns
 
         # Initialize dependencies (DI or defaults)
         self._worktree_manager = worktree_manager or WorktreeManager(
@@ -361,6 +394,8 @@ class AutoBuildOrchestrator:
             f"AutoBuildOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, resume={self.resume}, "
             f"enable_pre_loop={self.enable_pre_loop}, "
+            f"development_mode={self.development_mode}, "
+            f"sdk_timeout={self.sdk_timeout}s, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
@@ -599,7 +634,12 @@ class AutoBuildOrchestrator:
 
                 # Initialize AgentInvoker with worktree path
                 if self._agent_invoker is None:
-                    self._agent_invoker = AgentInvoker(worktree_path=worktree.path)
+                    self._agent_invoker = AgentInvoker(
+                        worktree_path=worktree.path,
+                        development_mode=self.development_mode,
+                        sdk_timeout_seconds=self.sdk_timeout,
+                        use_task_work_delegation=True,
+                    )
 
                 return worktree
 
@@ -613,7 +653,12 @@ class AutoBuildOrchestrator:
 
             # Initialize AgentInvoker with worktree path (lazy initialization)
             if self._agent_invoker is None:
-                self._agent_invoker = AgentInvoker(worktree_path=worktree.path)
+                self._agent_invoker = AgentInvoker(
+                    worktree_path=worktree.path,
+                    development_mode=self.development_mode,
+                    sdk_timeout_seconds=self.sdk_timeout,
+                    use_task_work_delegation=True,
+                )
 
             return worktree
 
@@ -675,10 +720,14 @@ class AutoBuildOrchestrator:
 
         # Initialize pre-loop gates if not injected (lazy initialization)
         if self._pre_loop_gates is None:
-            self._pre_loop_gates = PreLoopQualityGates(str(worktree.path))
+            self._pre_loop_gates = PreLoopQualityGates(
+                str(worktree.path),
+                sdk_timeout=self.sdk_timeout,
+            )
 
         # Execute pre-loop quality gates via task-work delegation
-        result = self._pre_loop_gates.execute(task_id, self.pre_loop_options)
+        # The execute() method is async, so we run it in an event loop
+        result = asyncio.run(self._pre_loop_gates.execute(task_id, self.pre_loop_options))
 
         logger.info(
             f"Pre-loop complete: complexity={result.complexity}, "
@@ -770,6 +819,12 @@ class AutoBuildOrchestrator:
 
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
+
+                # Record honesty score from Coach's verification
+                self._record_honesty(turn_record)
+
+                # Display criteria progress after each turn
+                self._display_criteria_progress(turn_record, acceptance_criteria)
 
                 # Persist state after each turn
                 if task_file_path:
@@ -867,20 +922,45 @@ class AutoBuildOrchestrator:
             summary = self._build_player_summary(player_result.report)
             self._progress_display.complete_turn("success", summary)
         else:
+            # Player failed - attempt state detection for recovery
             self._progress_display.complete_turn(
                 "error",
-                "Player failed",
+                "Player failed - attempting state recovery",
                 error=player_result.error,
             )
-            # Return early - can't proceed without Player implementation
-            return TurnRecord(
+
+            # Attempt multi-layered state detection
+            recovered_player_result = self._attempt_state_recovery(
+                task_id=task_id,
                 turn=turn,
-                player_result=player_result,
-                coach_result=None,
-                decision="error",
-                feedback=None,
-                timestamp=timestamp,
+                worktree=worktree,
+                original_error=player_result.error,
             )
+
+            if recovered_player_result:
+                # State recovery succeeded - continue with recovered data
+                player_result = recovered_player_result
+                logger.info(
+                    f"State recovery successful for {task_id} turn {turn}"
+                )
+                summary = self._build_player_summary(player_result.report)
+                self._progress_display.complete_turn(
+                    "success",
+                    f"[RECOVERED] {summary}",
+                )
+            else:
+                # State recovery failed - return error
+                logger.warning(
+                    f"State recovery failed for {task_id} turn {turn}"
+                )
+                return TurnRecord(
+                    turn=turn,
+                    player_result=player_result,
+                    coach_result=None,
+                    decision="error",
+                    feedback=None,
+                    timestamp=timestamp,
+                )
 
         # ===== Coach Phase =====
 
@@ -892,6 +972,7 @@ class AutoBuildOrchestrator:
             turn=turn,
             requirements=requirements,
             player_report=player_result.report,
+            worktree=worktree,
         )
 
         # Parse Coach decision
@@ -961,7 +1042,7 @@ class AutoBuildOrchestrator:
         Decision Tree
         -------------
         - approved: Preserve for human review before merge
-        - max_turns_exceeded: Preserve for inspection
+        - max_turns_exceeded: Preserve for inspection (with blocked report if available)
         - error: Preserve for debugging
         - pre_loop_blocked: Preserve for review (quality gate failure)
 
@@ -981,12 +1062,23 @@ class AutoBuildOrchestrator:
 
         Side Effects:
         - Preserves worktree (never auto-deletes)
+        - Renders blocked report if available (escape hatch pattern)
         - Renders final summary via ProgressDisplay
         """
         logger.info(f"Phase 4 (Finalize): Preserving worktree for {worktree.task_id}")
 
         # Always preserve worktree for human review
         self._worktree_manager.preserve_on_failure(worktree)
+
+        # Check for blocked report in last Player report (escape hatch pattern)
+        blocked_report = self._extract_blocked_report(turn_history)
+        if blocked_report and final_decision == "max_turns_exceeded":
+            # Render structured blocked report
+            self._progress_display.render_blocked_report(
+                blocked_report=blocked_report,
+                task_id=worktree.task_id,
+                total_turns=len(turn_history),
+            )
 
         # Build summary details
         details = self._build_summary_details(turn_history, final_decision)
@@ -1003,9 +1095,344 @@ class AutoBuildOrchestrator:
             f"Decision: {final_decision}"
         )
 
+    def _extract_blocked_report(
+        self,
+        turn_history: List[TurnRecord],
+    ) -> Optional[BlockedReport]:
+        """
+        Extract blocked report from the last Player report if present.
+
+        The Player agent generates a blocked_report when approaching max turns
+        without approval (escape hatch pattern). This method extracts that
+        report for display.
+
+        Parameters
+        ----------
+        turn_history : List[TurnRecord]
+            Complete turn history
+
+        Returns
+        -------
+        Optional[BlockedReport]
+            BlockedReport if present in last Player report, None otherwise
+        """
+        if not turn_history:
+            return None
+
+        # Check the last turn's Player report
+        last_turn = turn_history[-1]
+        if last_turn.player_result and last_turn.player_result.success:
+            try:
+                return BlockedReport.from_player_report(last_turn.player_result.report)
+            except Exception as e:
+                logger.warning(f"Failed to extract blocked report: {e}")
+                return None
+
+        return None
+
+    def _attempt_state_recovery(
+        self,
+        task_id: str,
+        turn: int,
+        worktree: Worktree,
+        original_error: Optional[str],
+    ) -> Optional[AgentInvocationResult]:
+        """
+        Attempt to recover work state when Player fails.
+
+        This method implements the multi-layered state detection pattern to
+        detect partial work even when Player fails without writing a JSON report.
+
+        Detection Cascade:
+        1. Check for Player JSON report (may exist despite failure)
+        2. Detect git changes (modified/new files)
+        3. Run tests to verify implementation quality
+
+        If any work is detected, creates a synthetic AgentInvocationResult
+        with the detected state, allowing the workflow to continue.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier
+        turn : int
+            Turn number
+        worktree : Worktree
+            Worktree for state detection
+        original_error : Optional[str]
+            Original error from Player failure
+
+        Returns
+        -------
+        Optional[AgentInvocationResult]
+            Synthetic result if work detected, None if no work found
+        """
+        logger.info(
+            f"Attempting state recovery for {task_id} turn {turn} "
+            f"after Player failure: {original_error}"
+        )
+
+        try:
+            # Use MultiLayeredStateTracker for cascade detection
+            state_tracker = MultiLayeredStateTracker(
+                task_id=task_id,
+                worktree_path=worktree.path,
+            )
+
+            work_state = state_tracker.capture_state(turn=turn)
+
+            if not work_state or not work_state.has_work:
+                logger.info(f"No work detected in {worktree.path}")
+                return None
+
+            # Log recovery details
+            logger.info(
+                f"State recovery succeeded via {work_state.detection_method}: "
+                f"{work_state.total_files_changed} files, "
+                f"{work_state.test_count} tests "
+                f"({'passing' if work_state.tests_passed else 'failing'})"
+            )
+
+            # Save detected state for audit trail
+            state_tracker.save_state(work_state)
+
+            # Build synthetic Player report from detected state
+            synthetic_report = self._build_synthetic_report(work_state, original_error)
+
+            # Return as AgentInvocationResult
+            return AgentInvocationResult(
+                task_id=task_id,
+                turn=turn,
+                agent_type="player",
+                success=True,  # Recovery succeeded
+                report=synthetic_report,
+                duration_seconds=0.0,
+                error=None,
+            )
+
+        except Exception as e:
+            logger.error(f"State recovery failed: {e}", exc_info=True)
+            return None
+
+    def _build_synthetic_report(
+        self,
+        work_state: WorkState,
+        original_error: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        Build synthetic Player report from detected work state.
+
+        Creates a report structure compatible with existing Coach validation,
+        including all detected files and test results.
+
+        Parameters
+        ----------
+        work_state : WorkState
+            Detected work state
+        original_error : Optional[str]
+            Original error for context
+
+        Returns
+        -------
+        Dict[str, Any]
+            Synthetic Player report
+        """
+        report = {
+            "task_id": "",  # Filled by caller
+            "turn": work_state.turn_number,
+            "files_modified": work_state.files_modified,
+            "files_created": work_state.files_created,
+            "tests_written": work_state.tests_written,
+            "tests_run": work_state.test_count > 0,
+            "tests_passed": work_state.tests_passed,
+            "test_output_summary": (
+                work_state.test_results.output_summary
+                if work_state.test_results
+                else ""
+            ),
+            "implementation_notes": (
+                f"[RECOVERED via {work_state.detection_method}] "
+                f"Original error: {original_error or 'Unknown'}"
+            ),
+            "concerns": [
+                f"Player failed with error: {original_error or 'Unknown'}",
+                f"Work recovered via {work_state.detection_method}",
+            ],
+            "requirements_addressed": [],  # Cannot determine from detection
+            "requirements_remaining": [],  # Cannot determine from detection
+            "_recovery_metadata": {
+                "detection_method": work_state.detection_method,
+                "git_insertions": (
+                    work_state.git_changes.insertions
+                    if work_state.git_changes
+                    else 0
+                ),
+                "git_deletions": (
+                    work_state.git_changes.deletions
+                    if work_state.git_changes
+                    else 0
+                ),
+                "timestamp": work_state.timestamp,
+            },
+        }
+
+        return report
+
     # ========================================================================
     # Helper Methods (Error Handling, Summary Building)
     # ========================================================================
+
+    def _record_honesty(self, turn_record: TurnRecord) -> None:
+        """
+        Record honesty score from turn's Coach verification results.
+
+        Extracts the honesty_verification data from the Coach report and tracks
+        the score for cumulative honesty tracking across turns.
+
+        Parameters
+        ----------
+        turn_record : TurnRecord
+            Completed turn record with Coach results
+
+        Notes
+        -----
+        If honesty scores drop below threshold (avg < 0.8 over 3+ turns),
+        a warning is logged to alert about potential Player reliability issues.
+        """
+        if not turn_record.coach_result or not turn_record.coach_result.success:
+            return
+
+        honesty_data = turn_record.coach_result.report.get("honesty_verification", {})
+        honesty_score = honesty_data.get("honesty_score", 1.0)
+
+        self._honesty_history.append(honesty_score)
+
+        # Check for sustained low honesty
+        if len(self._honesty_history) >= 3:
+            avg_honesty = sum(self._honesty_history[-3:]) / 3
+            if avg_honesty < 0.8:
+                logger.warning(
+                    f"Player honesty concern: average score {avg_honesty:.2f} over last 3 turns "
+                    f"(threshold: 0.8). Consider manual review."
+                )
+
+        # Log current turn's score
+        discrepancy_count = honesty_data.get("discrepancy_count", 0)
+        if discrepancy_count > 0:
+            logger.info(
+                f"Turn {turn_record.turn} honesty: {honesty_score:.2f} "
+                f"({discrepancy_count} discrepancies)"
+            )
+
+    def _display_criteria_progress(
+        self,
+        turn_record: TurnRecord,
+        acceptance_criteria: List[str],
+    ) -> None:
+        """
+        Display progress on acceptance criteria after each turn.
+
+        This method extracts completion promises from the Player report and
+        criteria verifications from the Coach decision, then displays a
+        progress summary showing which criteria are verified, rejected,
+        or still pending.
+
+        Parameters
+        ----------
+        turn_record : TurnRecord
+            Completed turn record with Player and Coach results
+        acceptance_criteria : List[str]
+            List of acceptance criteria text
+
+        Notes
+        -----
+        This method is called after each turn in the loop phase to provide
+        real-time visibility into criteria completion progress.
+        """
+        if not acceptance_criteria:
+            return
+
+        # Extract promises from Player report
+        promises: List[CompletionPromise] = []
+        if turn_record.player_result and turn_record.player_result.success:
+            promises_data = turn_record.player_result.report.get("completion_promises", [])
+            promises = [CompletionPromise.from_dict(p) for p in promises_data]
+
+        # Extract verifications from Coach decision
+        verifications: List[CriterionVerification] = []
+        if turn_record.coach_result and turn_record.coach_result.success:
+            verifications_data = turn_record.coach_result.report.get("criteria_verification", [])
+            verifications = [CriterionVerification.from_dict(v) for v in verifications_data]
+
+        # Build verification map for quick lookup
+        verification_map = {v.criterion_id: v for v in verifications}
+
+        # Calculate progress
+        total_criteria = len(acceptance_criteria)
+        verified_count = sum(
+            1 for v in verifications if v.result == VerificationResult.VERIFIED
+        )
+        rejected_count = sum(
+            1 for v in verifications if v.result == VerificationResult.REJECTED
+        )
+        pending_count = total_criteria - len(verifications)
+
+        # Calculate percentage
+        completion_percentage = calculate_completion_percentage(promises, verifications)
+
+        # Display progress header
+        logger.info(
+            f"Criteria Progress (Turn {turn_record.turn}): "
+            f"{verified_count}/{total_criteria} verified ({completion_percentage:.0f}%)"
+        )
+
+        # Log detailed status for each criterion
+        for i, criterion_text in enumerate(acceptance_criteria):
+            criterion_id = f"AC-{i+1:03d}"
+
+            # Find matching promise
+            promise = next((p for p in promises if p.criterion_id == criterion_id), None)
+            verification = verification_map.get(criterion_id)
+
+            if verification:
+                if verification.result == VerificationResult.VERIFIED:
+                    status = "VERIFIED"
+                    icon = "+"
+                else:
+                    status = "REJECTED"
+                    icon = "x"
+            elif promise:
+                if promise.status == CriterionStatus.COMPLETE:
+                    status = "CLAIMED"
+                    icon = "?"
+                else:
+                    status = "INCOMPLETE"
+                    icon = "-"
+            else:
+                status = "PENDING"
+                icon = " "
+
+            # Truncate criterion text for display
+            criterion_short = (
+                criterion_text[:50] + "..." if len(criterion_text) > 50 else criterion_text
+            )
+            logger.debug(f"  [{icon}] {criterion_id}: {status} - {criterion_short}")
+
+        # Display summary via progress display if available
+        if hasattr(self, '_progress_display') and self._progress_display:
+            summary_lines = [
+                f"Criteria: {verified_count} verified, {rejected_count} rejected, {pending_count} pending",
+            ]
+
+            # Add rejection details if any
+            for v in verifications:
+                if v.result == VerificationResult.REJECTED:
+                    notes_short = v.notes[:60] + "..." if len(v.notes) > 60 else v.notes
+                    summary_lines.append(f"  {v.criterion_id}: {notes_short}")
+
+            # Log summary
+            for line in summary_lines[:3]:  # Limit to 3 lines for display
+                logger.info(line)
 
     def _invoke_player_safely(
         self,
@@ -1040,6 +1467,8 @@ class AutoBuildOrchestrator:
         -----
         Always returns a result - never raises. Errors are captured
         in the result's error field.
+
+        Passes max_turns to enable escape hatch pattern when approaching limit.
         """
         try:
             # AgentInvoker.invoke_player is actually synchronous despite the
@@ -1059,6 +1488,7 @@ class AutoBuildOrchestrator:
                     turn=turn,
                     requirements=requirements,
                     feedback=feedback,
+                    max_turns=self.max_turns,  # Enable escape hatch pattern
                 )
             )
             return result
@@ -1093,6 +1523,7 @@ class AutoBuildOrchestrator:
         turn: int,
         requirements: str,
         player_report: Dict[str, Any],
+        worktree: Worktree,
         acceptance_criteria: Optional[List[str]] = None,
     ) -> AgentInvocationResult:
         """
@@ -1116,6 +1547,11 @@ class AutoBuildOrchestrator:
             Original task requirements
         player_report : Dict[str, Any]
             Player's report from current turn
+        worktree : Worktree
+            Worktree instance containing the correct path. In single-task mode,
+            this is the task-specific worktree. In feature mode, this is the
+            shared feature worktree. Using the actual worktree.path ensures
+            Coach finds task_work_results.json at the correct location.
         acceptance_criteria : Optional[List[str]]
             Task acceptance criteria for requirements validation
 
@@ -1143,10 +1579,11 @@ class AutoBuildOrchestrator:
         try:
             logger.info(f"Using CoachValidator for {task_id} turn {turn}")
 
-            # Get worktree path from the manager
-            worktree_path = self._worktree_manager.worktrees_dir / task_id
-
-            validator = CoachValidator(str(worktree_path))
+            # Use the actual worktree path (supports both single-task and feature mode)
+            # In single-task mode: worktree.path = .guardkit/worktrees/TASK-001
+            # In feature mode: worktree.path = .guardkit/worktrees/FEAT-ABC
+            # CoachValidator will look for: worktree.path/.guardkit/autobuild/{task_id}/task_work_results.json
+            validator = CoachValidator(str(worktree.path))
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -1445,7 +1882,12 @@ class AutoBuildOrchestrator:
 
             # Initialize AgentInvoker with worktree path
             if self._agent_invoker is None:
-                self._agent_invoker = AgentInvoker(worktree_path=worktree.path)
+                self._agent_invoker = AgentInvoker(
+                    worktree_path=worktree.path,
+                    development_mode=self.development_mode,
+                    sdk_timeout_seconds=self.sdk_timeout,
+                    use_task_work_delegation=True,
+                )
 
             # Calculate next turn
             start_turn = len(self._turn_history) + 1

@@ -257,6 +257,91 @@ class WorktreeManager:
         """
         return f"autobuild/{task_id}"
 
+    def _is_branch_exists_error(self, error: WorktreeError) -> bool:
+        """
+        Check if a WorktreeError indicates the branch already exists.
+
+        This helper method detects branch-already-exists errors to enable
+        automatic cleanup and retry during worktree creation.
+
+        Args:
+            error: The WorktreeError to check
+
+        Returns:
+            True if error indicates branch already exists, False otherwise
+        """
+        error_str = str(error).lower()
+        return "already exists" in error_str
+
+    def _build_worktree_add_cmd(
+        self,
+        worktree_path: Path,
+        branch_name: str,
+        base_branch: str,
+    ) -> list[str]:
+        """
+        Build git worktree add command arguments.
+
+        This helper method implements the DRY principle by centralizing
+        worktree add command construction.
+
+        Args:
+            worktree_path: Path where worktree will be created
+            branch_name: Name of the new branch to create
+            base_branch: Branch to create worktree from
+
+        Returns:
+            List of git command arguments for worktree add
+        """
+        return [
+            "worktree", "add",
+            str(worktree_path),
+            "-b", branch_name,
+            base_branch
+        ]
+
+    def _is_empty_repo(self) -> bool:
+        """
+        Check if repository has no commits.
+
+        Returns:
+            True if repository is empty (no commits), False otherwise.
+        """
+        try:
+            self._run_git(["rev-parse", "HEAD"])
+            return False
+        except WorktreeError:
+            return True
+
+    def _branch_exists(self, branch_name: str) -> bool:
+        """
+        Check if a branch exists.
+
+        Args:
+            branch_name: Name of the branch to check.
+
+        Returns:
+            True if branch exists, False otherwise.
+        """
+        try:
+            self._run_git(["rev-parse", "--verify", f"refs/heads/{branch_name}"])
+            return True
+        except WorktreeError:
+            return False
+
+    def _list_branches(self) -> list[str]:
+        """
+        List all local branches.
+
+        Returns:
+            List of branch names, or empty list on error.
+        """
+        try:
+            result = self._run_git(["branch", "--format=%(refname:short)"])
+            return [b.strip() for b in result.stdout.splitlines() if b.strip()]
+        except WorktreeError:
+            return []
+
     def create(
         self,
         task_id: str,
@@ -292,18 +377,62 @@ class WorktreeManager:
         # Ensure worktrees directory exists
         self.worktrees_dir.mkdir(parents=True, exist_ok=True)
 
+        # Validate base branch exists before worktree creation
+        if not self._branch_exists(base_branch):
+            if self._is_empty_repo():
+                raise WorktreeCreationError(
+                    f"Cannot create worktree: repository has no commits. "
+                    f"Create an initial commit first: "
+                    f"git add . && git commit -m 'Initial commit'"
+                )
+            else:
+                available = self._list_branches()
+                branches_str = ", ".join(available) if available else "(none)"
+                raise WorktreeCreationError(
+                    f"Base branch '{base_branch}' does not exist. "
+                    f"Available branches: {branches_str}"
+                )
+
         # Create worktree with new branch
+        worktree_add_cmd = self._build_worktree_add_cmd(
+            worktree_path, branch_name, base_branch
+        )
         try:
-            self._run_git([
-                "worktree", "add",
-                str(worktree_path),
-                "-b", branch_name,
-                base_branch
-            ])
+            self._run_git(worktree_add_cmd)
         except WorktreeError as e:
-            raise WorktreeCreationError(
-                f"Failed to create worktree for {task_id}: {e}"
-            )
+            # Check if error is due to branch already existing
+            if self._is_branch_exists_error(e):
+                # Attempt automatic cleanup: delete the existing branch
+                try:
+                    self._run_git(["branch", "-D", branch_name])
+                except WorktreeError:
+                    # Branch deletion failed, provide manual cleanup guidance
+                    raise WorktreeCreationError(
+                        f"Failed to create worktree for {task_id}: branch '{branch_name}' "
+                        f"already exists and automatic cleanup failed.\n"
+                        f"Manual cleanup steps:\n"
+                        f"  1. git worktree remove .guardkit/worktrees/{task_id} --force\n"
+                        f"  2. git branch -D {branch_name}\n"
+                        f"  3. Retry the operation"
+                    )
+
+                # Retry worktree creation after branch cleanup
+                try:
+                    self._run_git(worktree_add_cmd)
+                except WorktreeError as retry_error:
+                    raise WorktreeCreationError(
+                        f"Failed to create worktree for {task_id} after branch cleanup: "
+                        f"{retry_error}\n"
+                        f"Manual cleanup steps:\n"
+                        f"  1. git worktree remove .guardkit/worktrees/{task_id} --force\n"
+                        f"  2. git branch -D {branch_name}\n"
+                        f"  3. Retry the operation"
+                    )
+            else:
+                # Not a branch-exists error, raise original error
+                raise WorktreeCreationError(
+                    f"Failed to create worktree for {task_id}: {e}"
+                )
 
         return Worktree(
             task_id=task_id,

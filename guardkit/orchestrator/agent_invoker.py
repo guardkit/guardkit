@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import time
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
@@ -36,13 +37,63 @@ from guardkit.orchestrator.schemas import (
 # Logger for agent invocations
 logger = logging.getLogger(__name__)
 
+
+# =========================================================================
+# Heartbeat Logging for SDK Invocations
+# =========================================================================
+
+
+@asynccontextmanager
+async def async_heartbeat(
+    task_id: str,
+    phase: str,
+    interval: int = 30,
+) -> AsyncGenerator[None, None]:
+    """Context manager that logs heartbeat messages during SDK invocations.
+
+    Provides periodic progress logging to eliminate the perception of "stalling"
+    during long-running SDK invocations (10-20+ minutes).
+
+    Args:
+        task_id: Task identifier for log messages (e.g., "TASK-001")
+        phase: Description of the current phase (e.g., "Player invocation")
+        interval: Seconds between heartbeat logs (default: 30)
+
+    Yields:
+        None - just provides heartbeat logging during context
+
+    Example:
+        >>> async with async_heartbeat("TASK-001", "Player invocation"):
+        ...     result = await sdk_invoke(...)  # May take 10+ minutes
+        # Logs: [TASK-001] Player invocation in progress... (30s elapsed)
+        # Logs: [TASK-001] Player invocation in progress... (60s elapsed)
+        # etc.
+    """
+    async def heartbeat() -> None:
+        elapsed = 0
+        while True:
+            await asyncio.sleep(interval)
+            elapsed += interval
+            logger.info(f"[{task_id}] {phase} in progress... ({elapsed}s elapsed)")
+
+    heartbeat_task = asyncio.create_task(heartbeat())
+    try:
+        yield
+    finally:
+        heartbeat_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await heartbeat_task
+
+
 # Feature flag for task-work delegation (set via environment or config)
 # When enabled, invoke_player() delegates to `guardkit task-work --implement-only`
 # instead of direct SDK invocation
 USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "false").lower() == "true"
 
-# SDK timeout in seconds (default: 600s, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
-DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "600"))
+# SDK timeout in seconds (default: 1800s/30min, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
+# With pre-loop disabled for feature-build (TASK-FB-FIX-015), the loop phase needs ~600-900s.
+# A 1800s default provides adequate headroom for Player-Coach iterations.
+DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1800"))
 
 # Player report schema - required fields
 PLAYER_REPORT_SCHEMA = {
@@ -64,6 +115,14 @@ COACH_DECISION_SCHEMA = {
     "task_id": str,
     "turn": int,
     "decision": str,  # "approve" or "feedback"
+}
+
+# Documentation level to max files mapping
+# Used to enforce file count constraints based on documentation_level setting
+DOCUMENTATION_LEVEL_MAX_FILES = {
+    "minimal": 2,
+    "standard": 2,
+    "comprehensive": None,  # No limit
 }
 
 
@@ -364,6 +423,7 @@ class AgentInvoker:
         feedback: Optional[Union[str, Dict[str, Any]]] = None,
         mode: Optional[str] = None,
         max_turns: int = 5,
+        documentation_level: str = "minimal",
     ) -> AgentInvocationResult:
         """Invoke Player agent via task-work delegation or Claude Agents SDK.
 
@@ -388,6 +448,8 @@ class AgentInvoker:
                 If not provided, uses the instance's development_mode.
             max_turns: Maximum turns allowed for this orchestration (default: 5).
                 Used to calculate approaching_limit flag for escape hatch pattern.
+            documentation_level: Documentation level for file count constraint validation
+                ("minimal", "standard", or "comprehensive"). Default: "minimal" for AutoBuild.
 
         Returns:
             AgentInvocationResult with Player's report
@@ -427,14 +489,16 @@ class AgentInvoker:
                 result = await self._invoke_task_work_implement(
                     task_id=task_id,
                     mode=effective_mode,
+                    documentation_level=documentation_level,
                 )
 
                 duration = time.time() - start_time
 
                 if result.success:
                     # Create Player report from task-work results
-                    # task-work creates task_work_results.json, but orchestrator expects
-                    # player_turn_{turn}.json - this bridges the gap
+                    # AgentInvoker._invoke_task_work_implement() writes task_work_results.json
+                    # after parsing task-work output. This method transforms it to
+                    # player_turn_{turn}.json format expected by the orchestrator.
                     self._create_player_report_from_task_work(task_id, turn, result)
 
                     # Load the Player report from file (now exists)
@@ -972,12 +1036,20 @@ Follow the decision format specified in your agent definition.
                 setting_sources=["project"],  # Load CLAUDE.md from worktree
             )
 
+            # Extract task_id from prompt for heartbeat logging
+            task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
+            heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
+
             async with asyncio.timeout(self.sdk_timeout_seconds):
-                async for message in query(prompt=prompt, options=options):
-                    # Progress tracking handled by ProgressDisplay
-                    # Agent writes report to JSON file, which is loaded after
-                    # the query completes via _load_agent_report()
-                    pass
+                async with async_heartbeat(
+                    heartbeat_task_id,
+                    f"{agent_type.capitalize()} invocation",
+                ):
+                    async for message in query(prompt=prompt, options=options):
+                        # Progress tracking handled by ProgressDisplay
+                        # Agent writes report to JSON file, which is loaded after
+                        # the query completes via _load_agent_report()
+                        pass
 
         except asyncio.TimeoutError:
             raise SDKTimeoutError(
@@ -1594,6 +1666,7 @@ Follow the decision format specified in your agent definition.
         self,
         task_id: str,
         mode: str = "standard",
+        documentation_level: str = "minimal",
     ) -> TaskWorkResult:
         """Execute task-work --implement-only via SDK query() in worktree context.
 
@@ -1610,6 +1683,9 @@ Follow the decision format specified in your agent definition.
         Args:
             task_id: Task identifier (e.g., "TASK-001")
             mode: Development mode ("standard", "tdd", or "bdd")
+            documentation_level: Documentation level for file count constraint
+                validation ("minimal", "standard", or "comprehensive").
+                Default: "minimal" for AutoBuild tasks.
 
         Returns:
             TaskWorkResult with success status and output/error
@@ -1629,6 +1705,12 @@ Follow the decision format specified in your agent definition.
                 CLINotFoundError,
                 ProcessError,
                 CLIJSONDecodeError,
+                # TASK-FB-FIX-013: Import message types for proper ContentBlock iteration
+                AssistantMessage,
+                TextBlock,
+                ToolUseBlock,
+                ToolResultBlock,
+                ResultMessage,
             )
         except ImportError as e:
             import sys
@@ -1655,24 +1737,49 @@ Follow the decision format specified in your agent definition.
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
                 permission_mode="acceptEdits",
                 max_turns=50,  # task-work can take many turns
-                setting_sources=["project"],  # Load CLAUDE.md from worktree
+                # TASK-FB-FIX-014: Include "user" to load skills from ~/.claude/commands/
+                # Without "user", the SDK can't find /task-work skill
+                setting_sources=["user", "project"],
             )
 
-            collected_output = []
+            collected_output: List[str] = []
             async with asyncio.timeout(self.sdk_timeout_seconds):
-                async for message in query(prompt=prompt, options=options):
-                    # Collect message content for parsing
-                    # Stream processing will be enhanced by TASK-SDK-002
-                    if hasattr(message, 'content'):
-                        collected_output.append(str(message.content))
+                async with async_heartbeat(task_id, "task-work implementation"):
+                    async for message in query(prompt=prompt, options=options):
+                        # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
+                        # message.content is a list[ContentBlock], not a string
+                        # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    collected_output.append(block.text)
+                                    # Log progress for debugging
+                                    if "Phase" in block.text or "test" in block.text.lower():
+                                        logger.debug(f"SDK progress: {block.text[:100]}...")
+                                elif isinstance(block, ToolUseBlock):
+                                    logger.debug(f"Tool invoked: {block.name}")
+                                elif isinstance(block, ToolResultBlock):
+                                    # Extract content from tool results if present
+                                    if block.content:
+                                        collected_output.append(str(block.content))
+                        elif isinstance(message, ResultMessage):
+                            logger.info(f"SDK completed: turns={message.num_turns}")
 
             # Join collected output for parsing
             output_text = "\n".join(collected_output)
 
+            # Parse output using stream parser for structured data
+            parser = TaskWorkStreamParser()
+            parser.parse_message(output_text)
+            parsed_result = parser.to_result()
+
+            # Write task_work_results.json for Coach validation
+            self._write_task_work_results(task_id, parsed_result, documentation_level)
+
             logger.info(f"task-work completed successfully for {task_id}")
             return TaskWorkResult(
                 success=True,
-                output=self._parse_task_work_output(output_text),
+                output=parsed_result,
             )
 
         except asyncio.TimeoutError:
@@ -2009,7 +2116,12 @@ Follow the decision format specified in your agent definition.
     # Task-Work Results Writer Methods
     # =========================================================================
 
-    def _write_task_work_results(self, task_id: str, result_data: Dict[str, Any]) -> Path:
+    def _write_task_work_results(
+        self,
+        task_id: str,
+        result_data: Dict[str, Any],
+        documentation_level: str = "standard",
+    ) -> Path:
         """Write task-work results to JSON file for Coach validation.
 
         This method creates a structured results file at the expected location
@@ -2029,6 +2141,8 @@ Follow the decision format specified in your agent definition.
                 - quality_gates_passed: Boolean quality gate status
                 - files_modified: List of modified file paths
                 - files_created: List of created file paths
+            documentation_level: Documentation level ("minimal", "standard", or
+                "comprehensive"). Used to validate file count constraints.
 
         Returns:
             Path to the written results file
@@ -2084,6 +2198,13 @@ Follow the decision format specified in your agent definition.
             "summary": self._generate_summary(result_data),
         }
 
+        # Validate file count constraint for documentation level
+        self._validate_file_count_constraint(
+            task_id=task_id,
+            documentation_level=documentation_level,
+            files_created=results["files_created"],
+        )
+
         # Write results to file
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote task_work_results.json to {results_file}")
@@ -2133,3 +2254,51 @@ Follow the decision format specified in your agent definition.
             parts.append("quality gates failed")
 
         return ", ".join(parts) if parts else "Implementation completed"
+
+    def _validate_file_count_constraint(
+        self,
+        task_id: str,
+        documentation_level: str,
+        files_created: List[str],
+    ) -> None:
+        """Validate that files created do not exceed documentation level limit.
+
+        This method enforces documentation level constraints by logging a warning
+        when the number of created files exceeds the limit for the specified level.
+        This is monitoring-only and does not block execution.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            documentation_level: One of "minimal", "standard", or "comprehensive"
+            files_created: List of files created by the agent
+
+        Note:
+            - "minimal" and "standard" levels have a limit of 2 files
+            - "comprehensive" has no limit (None)
+            - Unknown levels are treated as having no limit
+
+        Example:
+            >>> invoker._validate_file_count_constraint(
+            ...     "TASK-001",
+            ...     "minimal",
+            ...     ["file1.py", "file2.py", "file3.py"]
+            ... )
+            # Logs: [TASK-001] Documentation level constraint violated: ...
+        """
+        max_files = DOCUMENTATION_LEVEL_MAX_FILES.get(documentation_level)
+
+        # Comprehensive or unknown levels have no limit
+        if max_files is None:
+            return
+
+        actual_count = len(files_created)
+
+        if actual_count > max_files:
+            # Show first 5 files to avoid overly long log messages
+            files_preview = files_created[:5]
+            suffix = "..." if len(files_created) > 5 else ""
+            logger.warning(
+                f"[{task_id}] Documentation level constraint violated: "
+                f"created {actual_count} files, max allowed {max_files} "
+                f"for {documentation_level} level. Files: {files_preview}{suffix}"
+            )

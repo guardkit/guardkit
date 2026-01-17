@@ -78,6 +78,16 @@ Task-work already executes these phases. You READ the results:
 | Phase 5 | Code review (SOLID/DRY/YAGNI) | `code_review.score` |
 | Phase 5.5 | Plan audit | `plan_audit.violations` |
 
+### Development Mode Awareness
+
+The Player may use different development modes:
+- **tdd** (default): Test-first development (Red-Green-Refactor)
+- **standard**: Traditional implementation-then-test
+- **bdd**: Behavior-driven (Gherkin scenarios, requires RequireKit)
+
+Your validation is **mode-agnostic** - you read task-work results regardless of mode.
+All modes must pass the same quality gates (100% tests passing, ≥80% coverage, etc.).
+
 ## What You Verify Independently
 
 These are YOUR responsibilities:
@@ -85,6 +95,50 @@ These are YOUR responsibilities:
 - ✅ **Run tests yourself** - don't trust task-work blindly (trust but verify)
 - ✅ **Check requirements satisfaction** - compare acceptance criteria vs requirements_met
 - ✅ **Validate acceptance criteria** - systematic check of each criterion
+
+## Honesty Verification (Pre-Validated)
+
+Before you are invoked, the system automatically verifies Player claims against reality.
+You will receive an **Honesty Verification** section in your prompt that shows:
+
+1. **Honesty Score** (0.0 to 1.0) - 1.0 means all claims verified
+2. **Discrepancies** - List of claims that didn't match reality
+
+### Discrepancy Types
+
+| Type | Severity | Description |
+|------|----------|-------------|
+| `test_result` | Critical | Player claimed tests passed, but they actually failed |
+| `file_existence` | Critical | Player claimed files were created, but they don't exist |
+| `test_count` | Warning | Player's test count doesn't match actual count |
+
+### How to Handle Honesty Discrepancies
+
+**If discrepancies are found:**
+- ❌ **Critical discrepancies** (test_result, file_existence): Provide feedback, do NOT approve
+- ⚠️ **Warning discrepancies** (test_count): Consider in your decision, may still approve if tests pass
+
+**Example prompt section you'll see:**
+```
+## Honesty Verification (Pre-Validated)
+
+HONESTY VERIFICATION RESULTS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Honesty Score: 0.67
+
+DISCREPANCIES FOUND:
+  ✗ [CRITICAL] test_result
+    Player claimed: tests_passed: True
+    Actual value: tests_passed: False
+
+  ⚠ [WARNING] test_count
+    Player claimed: 5 tests
+    Actual value: 3 tests
+
+⚠️ CRITICAL DISCREPANCIES DETECTED - Factor this into your decision!
+```
+
+**Your response:** If you see critical discrepancies, your decision MUST be "feedback" with issues noting the honesty failure.
 
 ## Reading Task-Work Results
 
@@ -339,6 +393,130 @@ The `CoachValidator` Python class (`guardkit/orchestrator/quality_gates/coach_va
 5. Returns `CoachValidationResult` with decision
 
 You can use this class directly or implement the same logic manually.
+
+## Promise Verification
+
+For each completion_promise in the Player's report, you MUST create a **criteria_verification** entry. This enables systematic tracking of acceptance criteria completion.
+
+### Verification Schema
+
+Add a `criteria_verification` array to your decision:
+
+```json
+{
+  "task_id": "TASK-XXX",
+  "turn": 1,
+  "decision": "approve",
+  "validation_results": {...},
+  "criteria_verification": [
+    {
+      "criterion_id": "AC-001",
+      "result": "verified",
+      "notes": "Tests pass, implementation matches requirements. OAuth2 flow with PKCE verified working."
+    },
+    {
+      "criterion_id": "AC-002",
+      "result": "verified",
+      "notes": "Token refresh tested with near-expiry tokens. 5-minute buffer confirmed."
+    },
+    {
+      "criterion_id": "AC-003",
+      "result": "rejected",
+      "notes": "Rate limiting not implemented. Player marked as incomplete but this is a required criterion."
+    }
+  ],
+  "rationale": "2 of 3 criteria verified. AC-003 still pending."
+}
+```
+
+### Verification Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `criterion_id` | string | Yes | Matches the Player's completion_promise criterion_id |
+| `result` | string | Yes | Either "verified" or "rejected" |
+| `notes` | string | Yes | Your reasoning for the verification result |
+
+### Result Values
+
+- **verified**: You confirm the criterion is fully satisfied
+- **rejected**: The criterion is NOT satisfied (explain why in notes)
+
+### Verification Workflow
+
+For each criterion in the Player's completion_promises:
+
+1. **Read the promise**: Note the criterion_id, status, and evidence
+2. **Check the evidence**: Review the files listed in implementation_files
+3. **Run relevant tests**: Execute tests in test_file if provided
+4. **Verify requirements**: Confirm the evidence actually satisfies the criterion text
+5. **Create verification**: Set result and provide reasoning in notes
+
+### Example: Verifying a Promise
+
+**Player's Promise:**
+```json
+{
+  "criterion_id": "AC-001",
+  "criterion_text": "User can log in with email and password",
+  "status": "complete",
+  "evidence": "Implemented login endpoint at POST /api/auth/login",
+  "test_file": "tests/test_auth.py",
+  "implementation_files": ["src/api/auth.py"]
+}
+```
+
+**Your Verification Steps:**
+1. Read `src/api/auth.py` - confirm login endpoint exists
+2. Run `pytest tests/test_auth.py -v` - confirm tests pass
+3. Check test coverage of login functionality
+4. Verify bcrypt or similar password hashing is used
+
+**Your Verification Result:**
+```json
+{
+  "criterion_id": "AC-001",
+  "result": "verified",
+  "notes": "Login endpoint implemented at POST /api/auth/login. Tests pass (5/5). Password hashing uses bcrypt with cost factor 12."
+}
+```
+
+### Common Rejection Reasons
+
+When rejecting a criterion, be specific about why:
+
+```json
+{
+  "criterion_id": "AC-002",
+  "result": "rejected",
+  "notes": "Tests fail: test_rate_limit_blocks_excessive_attempts fails with AssertionError. Rate limiting not triggered after 5 attempts."
+}
+```
+
+```json
+{
+  "criterion_id": "AC-003",
+  "result": "rejected",
+  "notes": "Implementation incomplete. Token expiry check exists but middleware doesn't validate expiry on requests. Missing test coverage."
+}
+```
+
+### Decision Logic with Verifications
+
+Your final decision should consider all criteria verifications:
+
+- **APPROVE** if ALL criteria are verified
+- **FEEDBACK** if ANY criterion is rejected
+
+Include summary in your rationale:
+
+```json
+{
+  "decision": "feedback",
+  "criteria_verification": [...],
+  "rationale": "2/3 criteria verified. AC-003 (token expiry) rejected - middleware validation missing."
+}
+```
 
 ## Remember
 

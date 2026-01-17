@@ -86,61 +86,10 @@ def version():
 @cli.command()
 def doctor():
     """Check GuardKit installation and configuration."""
-    console.print("[bold]GuardKit Doctor[/bold]\n")
+    from guardkit.cli.doctor import run_doctor
 
-    # Check git repository
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        console.print("[green]✓[/green] Git repository detected")
-    except subprocess.CalledProcessError:
-        console.print("[red]✗[/red] Not a git repository")
-        sys.exit(1)
-
-    # Check Python version
-    import sys as _sys
-
-    py_version = f"{_sys.version_info.major}.{_sys.version_info.minor}.{_sys.version_info.micro}"
-    if _sys.version_info >= (3, 9):
-        console.print(f"[green]✓[/green] Python {py_version}")
-    else:
-        console.print(
-            f"[yellow]⚠[/yellow] Python {py_version} (3.9+ recommended)"
-        )
-
-    # Check dependencies
-    try:
-        import click as _click
-        import frontmatter as _fm
-        from rich import __version__ as rich_version
-
-        console.print(f"[green]✓[/green] Dependencies installed")
-        if console.is_terminal:
-            console.print(f"  - click: {_click.__version__}")
-            console.print(f"  - rich: {rich_version}")
-            console.print(f"  - frontmatter: installed")
-    except ImportError as e:
-        console.print(f"[red]✗[/red] Missing dependency: {e.name}")
-        sys.exit(1)
-
-    # Check worktrees directory
-    from pathlib import Path
-
-    worktrees_dir = Path.cwd() / ".guardkit" / "worktrees"
-    if worktrees_dir.exists():
-        console.print(f"[green]✓[/green] Worktrees directory: {worktrees_dir}")
-    else:
-        console.print(
-            f"[yellow]⚠[/yellow] Worktrees directory not found (will be created on first use)"
-        )
-
-    console.print("\n[green]GuardKit installation OK[/green]")
+    exit_code = run_doctor()
+    sys.exit(exit_code)
 
 
 # ============================================================================

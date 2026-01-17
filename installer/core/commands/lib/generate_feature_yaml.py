@@ -36,6 +36,7 @@ class TaskSpec:
     id: str
     name: str
     complexity: int
+    file_path: str = ""  # Path to task markdown file (required by FeatureLoader)
     dependencies: List[str] = field(default_factory=list)
     status: str = "pending"
     description: str = ""
@@ -46,6 +47,7 @@ class TaskSpec:
         return {
             "id": self.id,
             "name": self.name,
+            "file_path": self.file_path,  # Required by FeatureLoader
             "complexity": self.complexity,
             "dependencies": self.dependencies,
             "status": self.status,
@@ -114,11 +116,55 @@ def estimate_duration(complexity: int) -> int:
     return int(base_minutes * (scaling ** (complexity - 1)))
 
 
-def parse_task_string(task_str: str) -> TaskSpec:
+def build_task_file_path(
+    task_id: str,
+    feature_slug: str,
+    base_path: str = "tasks/backlog"
+) -> str:
+    """
+    Build standardized task file path from components.
+
+    Centralizes path construction logic for DRY compliance.
+
+    Args:
+        task_id: Task identifier (e.g., "TASK-001")
+        feature_slug: Feature directory name (e.g., "oauth2"). Empty for flat structure.
+        base_path: Base tasks directory (default: "tasks/backlog")
+
+    Returns:
+        Relative path to task file
+
+    Examples:
+        >>> build_task_file_path("TASK-001", "oauth2")
+        'tasks/backlog/oauth2/TASK-001.md'
+        >>> build_task_file_path("TASK-001", "")
+        'tasks/backlog/TASK-001.md'
+    """
+    if feature_slug:
+        return f"{base_path}/{feature_slug}/{task_id}.md"
+    else:
+        return f"{base_path}/{task_id}.md"
+
+
+def parse_task_string(
+    task_str: str,
+    feature_slug: str = "",
+    task_base_path: str = "tasks/backlog"
+) -> TaskSpec:
     """
     Parse a task string in format: ID:NAME:COMPLEXITY:DEPS
 
-    DEPS is comma-separated list of dependency IDs (optional)
+    Args:
+        task_str: Task string in format "ID:NAME:COMPLEXITY:DEPS"
+        feature_slug: Feature directory name for file path derivation (optional)
+        task_base_path: Base path for task files (default: "tasks/backlog")
+
+    Returns:
+        TaskSpec with all fields populated, including file_path if feature_slug provided
+
+    Examples:
+        >>> parse_task_string("TASK-001:Auth service:5:", "oauth2")
+        TaskSpec(id="TASK-001", name="Auth service", file_path="tasks/backlog/oauth2/TASK-001.md", ...)
     """
     parts = task_str.split(":", 3)
 
@@ -135,10 +181,16 @@ def parse_task_string(task_str: str) -> TaskSpec:
     else:
         mode = "task-work"
 
+    # Derive file_path from feature_slug if provided
+    file_path = ""
+    if feature_slug:
+        file_path = build_task_file_path(task_id, feature_slug, task_base_path)
+
     return TaskSpec(
         id=task_id,
         name=name,
         complexity=complexity,
+        file_path=file_path,
         dependencies=dependencies,
         implementation_mode=mode,
         estimated_minutes=estimate_duration(complexity),
@@ -271,6 +323,19 @@ def main():
         help="Suppress progress output"
     )
 
+    # New arguments for file path derivation (TASK-FP-002)
+    parser.add_argument(
+        "--feature-slug",
+        default="",
+        help="Feature slug for deriving task file paths (e.g., 'dark-mode', 'oauth2')"
+    )
+
+    parser.add_argument(
+        "--task-base-path",
+        default="tasks/backlog",
+        help="Base path for task files (default: tasks/backlog)"
+    )
+
     args = parser.parse_args()
 
     # Parse tasks
@@ -278,7 +343,11 @@ def main():
 
     if args.tasks:
         for task_str in args.tasks:
-            task_specs.append(parse_task_string(task_str))
+            task_specs.append(parse_task_string(
+                task_str,
+                feature_slug=args.feature_slug,
+                task_base_path=args.task_base_path
+            ))
 
     if args.tasks_json:
         # Try to parse as JSON string or file
@@ -290,12 +359,20 @@ def main():
                 tasks_data = json.loads(args.tasks_json)
 
             for t in tasks_data:
+                task_id = t.get("id", t.get("task_id", ""))
                 complexity = t.get("complexity", 5)
                 mode = "direct" if complexity <= 3 else "task-work"
+                # Derive file_path using centralized helper
+                file_path = ""
+                if args.feature_slug:
+                    file_path = build_task_file_path(
+                        task_id, args.feature_slug, args.task_base_path
+                    )
                 task_specs.append(TaskSpec(
-                    id=t.get("id", t.get("task_id", "")),
+                    id=task_id,
                     name=t.get("name", t.get("title", "")),
                     complexity=complexity,
+                    file_path=file_path,
                     dependencies=t.get("dependencies", []),
                     description=t.get("description", ""),
                     implementation_mode=mode,

@@ -97,163 +97,17 @@ Use for complex business logic, algorithms, features with clear test cases.
 /task-work TASK-042 --mode=bdd
 ```
 
-**Use BDD for agentic orchestration systems**:
-- Requires RequireKit installation
-- Delegates to bdd-generator agent
-- EARS → Gherkin → Implementation workflow
-- Full requirements traceability
-
-**When to use**:
-```python
-# Example: LangGraph state routing
-if building_state_machine or safety_critical or formal_spec_needed:
-    use_bdd_mode = True
-else:
-    use_standard_or_tdd = True
-```
-
-**Plugin Discovery**:
-```python
-from lib.feature_detection import supports_bdd
-
-if supports_bdd():  # Checks ~/.agentecflow/require-kit.marker
-    # RequireKit available, BDD mode enabled
-    execute_bdd_workflow()
-else:
-    # RequireKit not installed
-    show_installation_guidance()
-```
-
-**BDD Workflow**:
-1. Create requirements in RequireKit (EARS notation)
-2. Generate Gherkin scenarios (`/generate-bdd REQ-001`)
-3. Link scenarios in task frontmatter (`bdd_scenarios: [BDD-001]`)
-4. Execute BDD mode (`/task-work TASK-042 --mode=bdd`)
-5. BDD tests run as quality gate (100% pass required)
-
-**Example Use Cases**:
-- LangGraph state machines with complexity-based routing
-- Multi-agent coordination workflows
-- Quality gate orchestration with approval checkpoints
-- Safety-critical authentication/authorization logic
-
-**Not for**:
-- CRUD features
-- Simple UI components
-- Bug fixes
-- General refactoring
+**Use BDD for**: LangGraph state machines, multi-agent coordination, safety-critical logic.
+**Requires**: RequireKit installation (`~/.agentecflow/require-kit.marker`).
+**Not for**: CRUD features, simple UI, bug fixes, general refactoring.
 
 See [BDD Workflow for Agentic Systems](../docs/guides/bdd-workflow-for-agentic-systems.md) for complete guide.
 
 ## Clarifying Questions
 
-GuardKit uses a unified `clarification-questioner` subagent for all clarification needs, reducing rework by ~15%.
-
-### How It Works
-
-All commands invoke the same agent with different context types:
-
-| Command | Context Type | When | Purpose |
-|---------|--------------|------|---------|
-| `/task-work` | implementation_planning | Phase 1.6 | Guide implementation scope and approach |
-| `/feature-plan` | review_scope | Before review | Guide what to analyze |
-| `/feature-plan` | implementation_prefs | At [I]mplement | Guide subtask creation |
-| `/task-review` | review_scope | Phase 1 | Guide review focus |
-
-### Three Contexts
-
-1. **review_scope** (Context A) - For /feature-plan and /task-review
-2. **implementation_prefs** (Context B) - For /feature-plan [I]mplement
-3. **implementation_planning** (Context C) - For /task-work Phase 1.6
-
-### Complexity Gating
-
-Questions are gated by task complexity:
-- **Complexity 1-2**: Skip (simple tasks)
-- **Complexity 3-4**: Quick questions (15s timeout)
-- **Complexity 5+**: Full questions (blocking)
-
-### Control Flags
-
-All commands support:
-- `--no-questions` - Skip clarification
-- `--with-questions` - Force clarification
-- `--defaults` - Use defaults without prompting
-- `--answers="..."` - Inline answers for automation
-- `--reclarify` - Re-run even if saved
-
-### Persistence
-
-Decisions are saved to task frontmatter for audit trail and reproducibility.
-
-### Clarification Agent
-
-The `clarification-questioner` agent handles all clarification contexts:
-- Location: `~/.agentecflow/agents/clarification-questioner.md`
-- Installed by: GuardKit installer
-- Uses: `lib/clarification/*` Python modules
-
-The agent is invoked via the Task tool at appropriate points in each command's workflow.
-
-See main CLAUDE.md for detailed examples and troubleshooting.
+See: `.claude/rules/clarifying-questions.md` for details on complexity gating, control flags, and persistence.
 
 ## Progressive Disclosure
 
-GuardKit uses progressive disclosure to optimize context window usage while maintaining comprehensive documentation.
-
-### How It Works
-
-Agent and template files are split into:
-
-1. **Core files** (`{name}.md`): Essential content always loaded
-   - Quick Start examples (5-10)
-   - Boundaries (ALWAYS/NEVER/ASK)
-   - Capabilities summary
-   - Phase integration
-   - Loading instructions
-
-2. **Extended files** (`{name}-ext.md`): Detailed reference loaded on-demand
-   - Detailed code examples (30+)
-   - Best practices with full explanations
-   - Anti-patterns with code samples
-   - Technology-specific guidance
-   - Troubleshooting scenarios
-
-### Loading Extended Content
-
-When implementing detailed code, load the extended reference:
-
-```bash
-# For agents
-cat agents/{agent-name}-ext.md
-
-# For template patterns
-cat docs/patterns/README.md
-
-# For reference documentation
-cat docs/reference/README.md
-```
-
-### Benefits
-
-- **55-60% token reduction** in typical tasks
-- **Faster responses** from reduced context
-- **Same comprehensive content** available when needed
-- **Competitive positioning** vs other AI dev tools
-
-### For Template Authors
-
-When creating templates with `/template-create`:
-- CLAUDE.md is automatically split into core + docs/
-- Agent files are automatically split during `/agent-enhance`
-- Use `--no-split` flag for single-file output (not recommended)
-
-### Guidance Architecture
-
-When working with templates:
-- **`agents/`** = Source of truth (full content, 6-12KB)
-- **`rules/guidance/`** = Derived summary (slim, <3KB)
-
-Never edit guidance files directly - they are regenerated from agents.
-
-See [Progressive Disclosure Guide](../docs/guides/progressive-disclosure.md) for details.
+Core files (`{name}.md`) always load; extended files (`{name}-ext.md`) load on-demand.
+See root CLAUDE.md for detailed structure.

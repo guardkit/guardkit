@@ -122,31 +122,30 @@ Control the verbosity of documentation generated during task execution. This sig
 **Purpose**: Override automatic documentation level selection
 
 **Values**:
-- `--docs=minimal` - Structured data only, ~8-12 minutes, 2 files
-- `--docs=standard` - Brief explanations, ~12-18 minutes, 2 files (default for complexity 4+)
+- `--docs=minimal` - Structured data only, ~8-12 minutes, 2 files (DEFAULT)
+- `--docs=standard` - Brief explanations, ~12-18 minutes, 2 files
 - `--docs=comprehensive` - Full documentation, ~36+ minutes, 13+ files
 
 **Auto-selection** (when flag not provided):
-- Complexity 1-3: `minimal` mode (structured data)
-- Complexity 4-10: `standard` mode (brief explanations)
+- Default: `minimal` mode (use `--docs=standard` to lift)
 - Security/compliance keywords: `comprehensive` mode (forced)
 
 **Configuration hierarchy** (highest to lowest priority):
-1. Command-line flag (`--docs=minimal`)
+1. Command-line flag (`--docs=minimal|standard|comprehensive`)
 2. Force-comprehensive triggers (security, compliance, breaking changes)
 3. Settings.json default (`.claude/settings.json` → `documentation.default_level`)
-4. Auto-selection (complexity-based)
+4. Default: `minimal` (use `--docs=standard` to lift)
 
 **Examples**:
 ```bash
-# Explicit minimal mode (fastest)
-/task-work TASK-042 --docs=minimal
+# Default minimal mode (fastest, recommended)
+/task-work TASK-042
+
+# Lift to standard mode when more documentation needed
+/task-work TASK-043 --docs=standard
 
 # Explicit comprehensive mode (security tasks)
-/task-work TASK-043 --docs=comprehensive
-
-# Auto-selection based on complexity (default)
-/task-work TASK-044
+/task-work TASK-044 --docs=comprehensive
 ```
 
 **Performance impact**:
@@ -178,11 +177,11 @@ The task-work command now supports a `--micro` flag for streamlined execution of
 
 **Purpose**: Lightweight workflow for trivial tasks, completing in 3-5 minutes vs 15+ minutes.
 
-**Criteria for micro-tasks** (ALL must be true):
-- Complexity: 1/10 (single file, <1 hour, low risk)
-- Files: Single file modification (or documentation-only)
+**Criteria for micro-tasks** (ALL must be true) - TASK-TWP-c3d4 updated thresholds:
+- Complexity: ≤3/10 (was 1/10 - simple tasks now qualify)
+- Files: ≤3 file modifications (was single file)
 - Risk: No high-risk keywords (security, schema, breaking changes, API changes)
-- Estimated time: <1 hour
+- Estimated time: <2 hours (was <1 hour)
 
 **Phases executed**:
 - Phase 1: Load Task Context
@@ -245,7 +244,7 @@ Duration: 2 minutes 34 seconds
 /task-work TASK-047
 
 Detected micro-task (confidence: 95%)
-This task appears to be trivial (complexity 1/10, single file, <1 hour).
+This task appears to be trivial (complexity ≤3/10, ≤3 files, <2 hours).
 
 Suggest using: /task-work TASK-047 --micro
 Saves ~12 minutes by skipping optional phases.
@@ -258,9 +257,9 @@ Auto-apply micro-mode? [y/N] (10s timeout): _
 /task-work TASK-048 --micro
 
 Task does not qualify as micro-task:
-  - Complexity: 5/10 (threshold: 1/10)
+  - Complexity: 5/10 (threshold: ≤3/10)
   - High-risk keywords detected: authentication, database
-  - Estimated effort: 4 hours (threshold: <1 hour)
+  - Estimated effort: 4 hours (threshold: <2 hours)
 
 Escalating to full workflow...
 
@@ -1246,7 +1245,7 @@ If file not exists: Set stack to "default"
 1. Command-line flag: `--docs=minimal|standard|comprehensive`
 2. Force-comprehensive triggers (security, compliance, breaking changes)
 3. Settings.json default: `.claude/settings.json` → `documentation.default_level`
-4. Auto-selection: Complexity-based (1-3=minimal, 4+=standard)
+4. Default: `minimal` (use `--docs=standard` to lift)
 
 **STEP 1: Load Configuration**
 
@@ -1303,15 +1302,10 @@ elif default_level != "auto":
     documentation_level = default_level
     reason = "settings.json default"
 
-# Priority 4: Complexity-based auto-selection (lowest)
+# Priority 4: Default to minimal (lowest)
 else:
-    complexity = task_context.get("complexity", 5)
-    if complexity <= 3:
-        documentation_level = "minimal"
-        reason = f"auto-select (complexity {complexity}/10)"
-    else:
-        documentation_level = "standard"
-        reason = f"auto-select (complexity {complexity}/10)"
+    documentation_level = "minimal"
+    reason = "default (use --docs=standard to lift)"
 ```
 
 **STEP 4: Store in Context & Display**
@@ -1599,9 +1593,9 @@ Implementation plan should:
 {endif}
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return plan as structured data (file list, phases, estimates)
-- standard: Return plan with brief architecture notes and key decisions
-- comprehensive: Generate detailed implementation guide with ADRs and diagrams
+- minimal: Return plan as structured data (file list, phases, estimates). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return plan with brief architecture notes and key decisions. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed implementation guide with ADRs and diagrams (13+ files allowed)
 
 Output: Implementation plan matching documentation level expectations."
 ```
@@ -1638,9 +1632,72 @@ except ValidationError as e:
 **IF validation passes**: Proceed to Phase 2.5A
 **IF validation fails**: Task moved to BLOCKED, execution stops
 
-#### Phase 2.5A: Pattern Suggestion (NEW - Recommend design patterns)
+#### Phase 2.5A: Pattern Suggestion (Conditional - Skip for simple tasks)
 
-**IF** Design Patterns MCP is available (check for mcp__design-patterns tools):
+**STEP 1: Evaluate Skip Conditions**
+
+Before invoking Design Patterns MCP, evaluate whether pattern suggestions would add value:
+
+```python
+def should_invoke_design_patterns_mcp(task_context):
+    """Determine if design patterns MCP adds value for this task."""
+
+    # Get task metadata
+    complexity = task_context.get("complexity", 5)
+    task_type = task_context.get("task_type", "feature")
+    description = task_context.get("description", "")
+    title = task_context.get("title", "")
+
+    # Combine title and description for pattern matching
+    task_text = f"{title} {description}".lower()
+
+    # Skip Condition 1: Simple tasks (complexity ≤3)
+    if complexity <= 3:
+        return False, f"complexity {complexity} <= 3 (simple task)"
+
+    # Skip Condition 2: Bug fixes
+    if task_type == "bugfix":
+        return False, "task_type is 'bugfix' (no new architecture needed)"
+
+    # Skip Condition 3: Task already references a known pattern
+    known_patterns = [
+        "singleton", "repository", "factory", "strategy", "observer",
+        "adapter", "decorator", "facade", "command", "mediator",
+        "builder", "prototype", "chain of responsibility", "state",
+        "template method", "visitor", "memento", "iterator"
+    ]
+
+    for pattern in known_patterns:
+        if pattern in task_text:
+            return False, f"task references '{pattern}' pattern"
+
+    # All checks passed - invoke MCP
+    return True, None
+```
+
+**EVALUATE** skip conditions:
+
+```python
+should_invoke, skip_reason = should_invoke_design_patterns_mcp(task_context)
+```
+
+**IF** should_invoke == False:
+
+**DISPLAY** skip message:
+```
+⏭️  Skipping Pattern Suggestion (Phase 2.5A)
+   Reason: {skip_reason}
+
+   Proceeding to Phase 2.5B...
+```
+
+**PROCEED** directly to Phase 2.5B (Architectural Review)
+
+---
+
+**STEP 2: Invoke MCP (if not skipped)**
+
+**IF** should_invoke == True AND Design Patterns MCP is available (check for mcp__design-patterns tools):
 
 **QUERY** Design Patterns MCP using problem description from implementation plan:
 ```
@@ -1685,7 +1742,17 @@ Based on task requirements and constraints:
 [Additional patterns if relevant...]
 ```
 
-**IF** no Design Patterns MCP available, skip to Phase 2.5B.
+**IF** no Design Patterns MCP available:
+
+**DISPLAY**:
+```
+⏭️  Skipping Pattern Suggestion (Phase 2.5A)
+   Reason: Design Patterns MCP not available
+
+   Proceeding to Phase 2.5B...
+```
+
+**PROCEED** to Phase 2.5B.
 
 #### Phase 2.5B: Architectural Review (Catch design issues early)
 
@@ -1730,9 +1797,9 @@ PATTERN CONTEXT (if Design Patterns MCP was queried):
 - Identify if patterns are over-engineered for the requirements
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return scores and critical issues only (structured data)
-- standard: Return scores with brief explanations and recommendations
-- comprehensive: Generate detailed architecture review report with rationale
+- minimal: Return scores and critical issues only (structured data). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return scores with brief explanations and recommendations. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed architecture review report with rationale (13+ files allowed)
 
 Approval thresholds:
 - ≥80/100: Auto-approve (proceed to Phase 3)
@@ -2672,9 +2739,9 @@ EXECUTE the test suite and report detailed results:
 - Detailed failure information for any failing tests
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return test results as structured data (counts, coverage, failures)
-- standard: Return results with brief test descriptions
-- comprehensive: Generate detailed test report with rationale for each test
+- minimal: Return test results as structured data (counts, coverage, failures). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return results with brief test descriptions. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed test report with rationale for each test (13+ files allowed)
 
 Cross-reference: installer/core/agents/test-orchestrator.md (MANDATORY RULE #1)"
 ```
@@ -2878,9 +2945,9 @@ Provide actionable feedback if improvements needed.
 Confirm readiness for IN_REVIEW state or identify blockers.
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return approval status and critical issues only
-- standard: Return review with brief feedback on key areas
-- comprehensive: Generate detailed code review report with recommendations
+- minimal: Return approval status and critical issues only. CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return review with brief feedback on key areas. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed code review report with recommendations (13+ files allowed)
 
 See installer/core/agents/code-reviewer.md for documentation level specifications."
 ```

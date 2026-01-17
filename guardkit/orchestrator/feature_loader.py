@@ -28,6 +28,105 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Schema Documentation (for error messages)
+# ============================================================================
+
+TASK_SCHEMA = """
+Task Schema:
+  id: str (required)        # e.g., "TASK-AUTH-001"
+  file_path: str (required) # Path to task markdown file
+  name: str                 # Human-readable name (defaults to id)
+  complexity: int           # 1-10 (default: 5)
+  dependencies: list        # Task IDs this depends on
+  status: str               # pending/in_progress/completed/failed/skipped
+  implementation_mode: str  # task-work/direct/manual
+  estimated_minutes: int    # Default: 30
+"""
+
+FEATURE_SCHEMA = """
+Feature Schema:
+  id: str (required)        # e.g., "FEAT-A1B2"
+  name: str (required)      # Human-readable name
+  description: str          # Feature description
+  tasks: list               # List of task objects
+  orchestration: dict       # Parallel execution configuration
+"""
+
+ORCHESTRATION_SCHEMA = """
+Orchestration Schema:
+  parallel_groups: list     # Lists of task IDs per wave
+  estimated_duration_minutes: int
+  recommended_parallel: int # Recommended max parallel tasks
+"""
+
+
+# ============================================================================
+# Error Message Helpers
+# ============================================================================
+
+
+def _truncate_data(data: Any, max_length: int = 200) -> str:
+    """
+    Truncate data representation for error messages.
+
+    Parameters
+    ----------
+    data : Any
+        Data to truncate
+    max_length : int
+        Maximum length of output string
+
+    Returns
+    -------
+    str
+        Truncated string representation
+    """
+    data_str = str(data)
+    if len(data_str) > max_length:
+        return data_str[:max_length] + "..."
+    return data_str
+
+
+def _build_schema_error_message(
+    missing_field: str,
+    context: str,
+    data: Dict[str, Any],
+    schema: str,
+) -> str:
+    """
+    Build a user-friendly error message with schema hints.
+
+    Parameters
+    ----------
+    missing_field : str
+        The name of the missing required field
+    context : str
+        Context description (e.g., "task 'TASK-001'", "feature")
+    data : Dict[str, Any]
+        The actual data that caused the error
+    schema : str
+        The expected schema documentation
+
+    Returns
+    -------
+    str
+        Formatted error message with hints
+    """
+    present_fields = list(data.keys()) if data else []
+
+    return f"""Missing required field '{missing_field}' in {context}
+
+{schema.strip()}
+
+Actual data received:
+  Present fields: {present_fields}
+  Data preview: {_truncate_data(data)}
+
+Fix: Ensure the YAML contains the '{missing_field}' field.
+     Re-run /feature-plan to regenerate with correct schema."""
+
+
+# ============================================================================
 # Data Models
 # ============================================================================
 
@@ -291,11 +390,26 @@ class FeatureLoader:
             feature = FeatureLoader._parse_feature(data)
             feature.file_path = feature_file
             return feature
-        except (KeyError, TypeError, ValueError) as e:
+        except FeatureParseError:
+            # Re-raise with schema hints intact
+            raise
+        except KeyError as e:
+            # Wrap KeyError with schema context
+            raise FeatureParseError(
+                _build_schema_error_message(
+                    missing_field=str(e).strip("'\""),
+                    context=f"feature '{feature_id}'",
+                    data=data if isinstance(data, dict) else {},
+                    schema=FEATURE_SCHEMA,
+                )
+            ) from e
+        except (TypeError, ValueError) as e:
+            # For type/value errors, show generic error with schema reference
             raise FeatureParseError(
                 f"Invalid feature structure: {feature_id}\n"
-                f"Error: {e}"
-            )
+                f"Error: {e}\n\n"
+                f"Expected schema:\n{FEATURE_SCHEMA}"
+            ) from e
 
     @staticmethod
     def _parse_feature(data: Dict[str, Any]) -> Feature:
@@ -311,12 +425,46 @@ class FeatureLoader:
         -------
         Feature
             Parsed Feature instance
+
+        Raises
+        ------
+        FeatureParseError
+            If required fields are missing, with schema hints
         """
-        # Parse tasks
+        # Validate required fields at feature level
+        required_fields = ["id", "name"]
+
+        for field in required_fields:
+            if field not in data:
+                raise FeatureParseError(
+                    _build_schema_error_message(
+                        missing_field=field,
+                        context="feature definition",
+                        data=data,
+                        schema=FEATURE_SCHEMA,
+                    )
+                )
+
+        # Parse tasks with per-task error handling
         tasks = []
-        for task_data in data.get("tasks", []):
-            task = FeatureLoader._parse_task(task_data)
-            tasks.append(task)
+        for i, task_data in enumerate(data.get("tasks", [])):
+            try:
+                task = FeatureLoader._parse_task(task_data)
+                tasks.append(task)
+            except FeatureParseError:
+                # Re-raise with original schema hints
+                raise
+            except (KeyError, TypeError, ValueError) as e:
+                # Wrap unexpected errors with schema context
+                task_id = task_data.get("id", f"at index {i}") if isinstance(task_data, dict) else f"at index {i}"
+                raise FeatureParseError(
+                    _build_schema_error_message(
+                        missing_field=str(e).strip("'\""),
+                        context=f"task '{task_id}'",
+                        data=task_data if isinstance(task_data, dict) else {"raw_value": task_data},
+                        schema=TASK_SCHEMA,
+                    )
+                ) from e
 
         # Parse orchestration
         orch_data = data.get("orchestration", {})
@@ -367,7 +515,27 @@ class FeatureLoader:
         -------
         FeatureTask
             Parsed task instance
+
+        Raises
+        ------
+        FeatureParseError
+            If required fields are missing, with schema hints
         """
+        # Validate required fields with helpful error messages
+        required_fields = ["id", "file_path"]
+
+        for field in required_fields:
+            if field not in task_data:
+                task_id = task_data.get("id", "<unknown>")
+                raise FeatureParseError(
+                    _build_schema_error_message(
+                        missing_field=field,
+                        context=f"task '{task_id}'",
+                        data=task_data,
+                        schema=TASK_SCHEMA,
+                    )
+                )
+
         return FeatureTask(
             id=task_data["id"],
             name=task_data.get("name", task_data["id"]),
@@ -737,12 +905,19 @@ class FeatureLoader:
 # ============================================================================
 
 __all__ = [
+    # Data models
     "Feature",
     "FeatureTask",
     "FeatureOrchestration",
     "FeatureExecution",
+    # Loader
     "FeatureLoader",
+    # Exceptions
     "FeatureNotFoundError",
     "FeatureParseError",
     "FeatureValidationError",
+    # Schema constants (for external use)
+    "TASK_SCHEMA",
+    "FEATURE_SCHEMA",
+    "ORCHESTRATION_SCHEMA",
 ]

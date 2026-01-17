@@ -1,0 +1,12 @@
+id: FEAT-EMPTY
+name: Feature with no tasks
+description: Feature has empty tasks list - should fail validation
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 1
+estimated_tasks: 0
+tasks: []
+orchestration:
+  parallel_groups: []
+  estimated_duration_minutes: 0
+  recommended_parallel: 1

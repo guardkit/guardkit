@@ -22,6 +22,7 @@ Example:
     'completed'
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -219,6 +220,8 @@ class FeatureOrchestrator:
         features_dir: Optional[Path] = None,
         worktree_manager: Optional[WorktreeManager] = None,
         quiet: bool = False,
+        sdk_timeout: Optional[int] = None,
+        enable_pre_loop: Optional[bool] = None,
     ):
         """
         Initialize FeatureOrchestrator.
@@ -243,6 +246,11 @@ class FeatureOrchestrator:
             Optional WorktreeManager for DI/testing
         quiet : bool, optional
             Suppress progress display (default: False)
+        sdk_timeout : Optional[int], optional
+            SDK timeout in seconds (60-3600). If None, uses feature YAML or task defaults.
+        enable_pre_loop : Optional[bool], optional
+            Enable/disable pre-loop quality gates. If None, uses cascade:
+            task frontmatter > feature YAML > default (True).
 
         Raises
         ------
@@ -262,6 +270,8 @@ class FeatureOrchestrator:
         self.fresh = fresh
         self.verbose = verbose
         self.quiet = quiet
+        self.sdk_timeout = sdk_timeout
+        self.enable_pre_loop = enable_pre_loop
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
 
         # Initialize dependencies
@@ -275,7 +285,7 @@ class FeatureOrchestrator:
         logger.info(
             f"FeatureOrchestrator initialized: repo={self.repo_root}, "
             f"max_turns={self.max_turns}, stop_on_failure={self.stop_on_failure}, "
-            f"resume={self.resume}, fresh={self.fresh}"
+            f"resume={self.resume}, fresh={self.fresh}, enable_pre_loop={self.enable_pre_loop}"
         )
 
     def orchestrate(
@@ -629,7 +639,7 @@ class FeatureOrchestrator:
                         path=worktree_path,
                         base_branch="main",
                     )
-                    self._worktree_manager.cleanup(worktree_to_cleanup)
+                    self._worktree_manager.cleanup(worktree_to_cleanup, force=True)
                     console.print(
                         f"[green]✓[/green] Cleaned up previous worktree: {worktree_path}"
                     )
@@ -718,22 +728,27 @@ class FeatureOrchestrator:
 
         return wave_results
 
-    def _execute_wave(
+    async def _execute_wave_parallel(
         self,
         wave_number: int,
         task_ids: List[str],
         feature: Feature,
         worktree: Worktree,
-    ) -> WaveExecutionResult:
+    ) -> List[TaskExecutionResult]:
         """
-        Execute all tasks in a single wave.
+        Execute all tasks in a wave in parallel using asyncio.
+
+        This method creates parallel execution tasks using asyncio.to_thread()
+        to achieve true parallelism with the blocking AutoBuildOrchestrator.
+        Tasks are filtered for already-completed and dependency-failed cases
+        before parallel execution.
 
         Parameters
         ----------
         wave_number : int
             Wave number (1-indexed)
         task_ids : List[str]
-            Task IDs to execute
+            Task IDs to execute in parallel
         feature : Feature
             Parent feature
         worktree : Worktree
@@ -741,26 +756,20 @@ class FeatureOrchestrator:
 
         Returns
         -------
-        WaveExecutionResult
-            Results for this wave
+        List[TaskExecutionResult]
+            Results for all tasks in the wave
         """
         results = []
-
-        # Update current wave tracking
-        feature.execution.current_wave = wave_number
-        feature.execution.last_updated = datetime.now().isoformat()
-        FeatureLoader.save_feature(feature, self.repo_root)
+        tasks_to_execute = []
+        task_id_mapping = []  # Track which task_id corresponds to which async task
 
         for task_id in task_ids:
             task = FeatureLoader.find_task(feature, task_id)
             if not task:
                 results.append(
-                    TaskExecutionResult(
-                        task_id=task_id,
-                        success=False,
-                        total_turns=0,
-                        final_decision="error",
-                        error=f"Task not found in feature: {task_id}",
+                    self._create_error_result(
+                        task_id,
+                        Exception(f"Task not found in feature: {task_id}")
                     )
                 )
                 continue
@@ -818,25 +827,88 @@ class FeatureOrchestrator:
             else:
                 console.print(f"  [cyan]▶[/cyan] Executing {task_id}: {task.name}")
 
-            # Execute task
-            result = self._execute_task(task, feature, worktree)
-            results.append(result)
+            # Add to parallel execution queue
+            tasks_to_execute.append(
+                asyncio.to_thread(self._execute_task, task, feature, worktree)
+            )
+            task_id_mapping.append(task_id)
 
-            # Update task status in display
-            if self._wave_display:
-                status = "success" if result.success else "failed"
-                self._wave_display.update_task_status(
-                    task_id, status, result.final_decision,
-                    turns=result.total_turns, decision=result.final_decision
-                )
+        # Execute all tasks in parallel if any
+        if tasks_to_execute:
+            parallel_results = await asyncio.gather(*tasks_to_execute, return_exceptions=True)
 
-            # Update feature with result
-            self._update_feature(feature, task_id, result, wave_number)
+            # Process results and handle exceptions
+            for task_id, result in zip(task_id_mapping, parallel_results):
+                if isinstance(result, Exception):
+                    error_result = self._create_error_result(task_id, result)
+                    results.append(error_result)
 
-            # Check for stop-on-failure within wave
-            if not result.success and self.stop_on_failure:
-                break
+                    # Update task status in display
+                    if self._wave_display:
+                        self._wave_display.update_task_status(
+                            task_id, "failed", "error",
+                            turns=0, decision="error"
+                        )
 
+                    # Update feature with error result
+                    self._update_feature(feature, task_id, error_result, wave_number)
+                else:
+                    results.append(result)
+
+                    # Update task status in display
+                    if self._wave_display:
+                        status = "success" if result.success else "failed"
+                        self._wave_display.update_task_status(
+                            task_id, status, result.final_decision,
+                            turns=result.total_turns, decision=result.final_decision
+                        )
+
+                    # Update feature with result
+                    self._update_feature(feature, task_id, result, wave_number)
+
+        return results
+
+    def _execute_wave(
+        self,
+        wave_number: int,
+        task_ids: List[str],
+        feature: Feature,
+        worktree: Worktree,
+    ) -> WaveExecutionResult:
+        """
+        Execute all tasks in a single wave in parallel.
+
+        This method delegates to _execute_wave_parallel() for parallel task
+        execution using asyncio. It preserves all existing display logic and
+        stop-on-failure behavior.
+
+        Parameters
+        ----------
+        wave_number : int
+            Wave number (1-indexed)
+        task_ids : List[str]
+            Task IDs to execute
+        feature : Feature
+            Parent feature
+        worktree : Worktree
+            Shared worktree
+
+        Returns
+        -------
+        WaveExecutionResult
+            Results for this wave
+        """
+        # Update current wave tracking
+        feature.execution.current_wave = wave_number
+        feature.execution.last_updated = datetime.now().isoformat()
+        FeatureLoader.save_feature(feature, self.repo_root)
+
+        # Execute tasks in parallel
+        results = asyncio.run(
+            self._execute_wave_parallel(wave_number, task_ids, feature, worktree)
+        )
+
+        # Check for stop-on-failure AFTER all parallel tasks complete
         all_succeeded = all(r.success for r in results)
 
         # Mark wave as completed if all tasks succeeded
@@ -849,6 +921,57 @@ class FeatureOrchestrator:
             results=results,
             all_succeeded=all_succeeded,
         )
+
+    def _resolve_enable_pre_loop(
+        self,
+        feature: Feature,
+        task_data: Dict[str, Any],
+    ) -> bool:
+        """
+        Resolve enable_pre_loop with cascade priority.
+
+        Priority (highest to lowest):
+        1. CLI flag (self.enable_pre_loop)
+        2. Task frontmatter (autobuild.enable_pre_loop)
+        3. Feature YAML (autobuild.enable_pre_loop via feature config)
+        4. Default (True)
+
+        Parameters
+        ----------
+        feature : Feature
+            Parent feature
+        task_data : Dict[str, Any]
+            Task data from TaskLoader
+
+        Returns
+        -------
+        bool
+            Resolved enable_pre_loop value
+        """
+        # 1. CLI flag (highest priority)
+        if self.enable_pre_loop is not None:
+            logger.debug(f"enable_pre_loop from CLI: {self.enable_pre_loop}")
+            return self.enable_pre_loop
+
+        # 2. Task frontmatter
+        task_frontmatter = task_data.get("frontmatter", {})
+        task_autobuild = task_frontmatter.get("autobuild", {})
+        if "enable_pre_loop" in task_autobuild:
+            value = task_autobuild["enable_pre_loop"]
+            logger.debug(f"enable_pre_loop from task frontmatter: {value}")
+            return value
+
+        # 3. Feature YAML (check feature autobuild config if it exists)
+        # Feature may have autobuild_config attribute with enable_pre_loop
+        feature_autobuild = getattr(feature, "autobuild_config", None) or {}
+        if "enable_pre_loop" in feature_autobuild:
+            value = feature_autobuild["enable_pre_loop"]
+            logger.debug(f"enable_pre_loop from feature YAML: {value}")
+            return value
+
+        # 4. Default: False for feature-build (feature tasks have detailed specs from feature-plan)
+        logger.debug("enable_pre_loop using default for feature-build: False")
+        return False
 
     def _execute_task(
         self,
@@ -877,6 +1000,22 @@ class FeatureOrchestrator:
             # Load task data from markdown file
             task_data = TaskLoader.load_task(task.id, repo_root=self.repo_root)
 
+            # Resolve SDK timeout: CLI > task frontmatter > default (600)
+            effective_sdk_timeout = self.sdk_timeout
+            if effective_sdk_timeout is None:
+                # Try task frontmatter autobuild.sdk_timeout
+                # Note: TaskLoader returns frontmatter as nested dict, not at top level
+                task_frontmatter = task_data.get("frontmatter", {})
+                task_autobuild = task_frontmatter.get("autobuild", {})
+                effective_sdk_timeout = task_autobuild.get("sdk_timeout", 600)
+
+            # Resolve enable_pre_loop: CLI > task frontmatter > feature YAML > default (False for feature-build)
+            effective_enable_pre_loop = self._resolve_enable_pre_loop(feature, task_data)
+            if effective_enable_pre_loop:
+                logger.info(f"Task {task.id}: enable_pre_loop=True (pre-loop design phase will run)")
+            else:
+                logger.info(f"Task {task.id}: Pre-loop skipped (enable_pre_loop=False)")
+
             # Create AutoBuildOrchestrator with existing worktree
             task_orchestrator = AutoBuildOrchestrator(
                 repo_root=self.repo_root,
@@ -884,6 +1023,8 @@ class FeatureOrchestrator:
                 resume=False,  # Each task starts fresh in feature mode
                 existing_worktree=worktree,  # Pass shared worktree
                 worktree_manager=self._worktree_manager,
+                sdk_timeout=effective_sdk_timeout,
+                enable_pre_loop=effective_enable_pre_loop,
             )
 
             # Execute task orchestration
@@ -960,6 +1101,30 @@ class FeatureOrchestrator:
                 all_succeeded=result.success,
             )
         ]
+
+    def _create_error_result(self, task_id: str, error: Exception) -> TaskExecutionResult:
+        """
+        Create TaskExecutionResult from exception.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier
+        error : Exception
+            Exception that occurred
+
+        Returns
+        -------
+        TaskExecutionResult
+            Error result
+        """
+        return TaskExecutionResult(
+            task_id=task_id,
+            success=False,
+            total_turns=0,
+            final_decision="error",
+            error=str(error),
+        )
 
     def _finalize_phase(
         self,

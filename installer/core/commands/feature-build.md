@@ -354,7 +354,7 @@ autobuild:
 | `base_branch` | Branch to create worktree from | main |
 | `player_model` | Model for Player agent | claude-sonnet-4-5-20250929 |
 | `coach_model` | Model for Coach agent | claude-sonnet-4-5-20250929 |
-| `sdk_timeout` | SDK timeout in seconds | 300 |
+| `sdk_timeout` | SDK timeout in seconds | 600 |
 
 ## State Persistence
 
@@ -625,8 +625,8 @@ def detect_mode(id_arg: str) -> str:
 When the user invokes `/feature-build TASK-XXX`:
 
 1. **Load the task file** from `tasks/backlog/` or `tasks/in_progress/`
-2. **Check if CLI is available**, if not use Task tool fallback
-3. **Execute Player-Coach loop** until approval or max turns
+2. **Check if CLI is available** (required - error if not)
+3. **Execute Player-Coach loop via CLI** until approval or max turns
 4. **Show final results** with worktree location
 
 #### Step 1: Check CLI Availability
@@ -636,87 +636,41 @@ When the user invokes `/feature-build TASK-XXX`:
 guardkit autobuild --help 2>&1 || echo "CLI_NOT_AVAILABLE"
 ```
 
-#### Step 2a: If CLI Available (Preferred)
+If CLI is not available, display this error and exit:
+
+```
+══════════════════════════════════════════════════════════════
+ERROR: GuardKit CLI Required
+══════════════════════════════════════════════════════════════
+
+The /feature-build command requires the GuardKit CLI to be installed.
+
+The CLI provides the fully-tested Player-Coach adversarial loop with:
+  • Promise-based completion verification
+  • Honesty verification
+  • Quality gate enforcement
+  • State persistence and resume
+
+Installation:
+  pip install guardkit
+
+  Or from source:
+  cd ~/Projects/guardkit
+  pip install -e .
+
+After installation, verify:
+  guardkit autobuild --help
+
+Then retry:
+  /feature-build TASK-XXX
+══════════════════════════════════════════════════════════════
+```
+
+#### Step 2: Execute via CLI
 
 ```bash
 guardkit autobuild task TASK-XXX [options]
 ```
-
-#### Step 2b: If CLI Not Available (Fallback - Use Task Tool)
-
-When the `guardkit autobuild` CLI command is not available, execute the Player-Coach loop directly using the Task tool with `autobuild-player` and `autobuild-coach` agents:
-
-**Setup Phase:**
-1. Create git worktree: `git worktree add .guardkit/worktrees/TASK-XXX -b autobuild/TASK-XXX`
-2. Read task requirements and acceptance criteria from task markdown file
-
-**Loop Phase (repeat until approved or max turns):**
-
-```
-For turn = 1 to max_turns:
-
-    # 1. Player Turn - Implementation
-    INVOKE Task tool:
-        subagent_type: "autobuild-player"
-        description: "Player turn {turn} for TASK-XXX"
-        prompt: """
-        TASK: {task_id}
-        TURN: {turn}/{max_turns}
-        WORKTREE: .guardkit/worktrees/{task_id}
-
-        REQUIREMENTS:
-        {task_requirements}
-
-        ACCEPTANCE CRITERIA:
-        {acceptance_criteria}
-
-        PREVIOUS FEEDBACK (if any):
-        {previous_coach_feedback}
-
-        Implement the task requirements. Write code, create tests, ensure all tests pass.
-        Report your changes and test results.
-        """
-
-    WAIT for player completion
-    SAVE player report to .guardkit/autobuild/{task_id}/player_turn_{turn}.json
-
-    # 2. Coach Turn - Validation
-    INVOKE Task tool:
-        subagent_type: "autobuild-coach"
-        description: "Coach turn {turn} for TASK-XXX"
-        prompt: """
-        TASK: {task_id}
-        TURN: {turn}/{max_turns}
-        WORKTREE: .guardkit/worktrees/{task_id}
-
-        REQUIREMENTS:
-        {task_requirements}
-
-        ACCEPTANCE CRITERIA:
-        {acceptance_criteria}
-
-        PLAYER REPORT:
-        {player_report}
-
-        Validate the implementation independently.
-        Run tests yourself. Check all acceptance criteria are met.
-        Decide: APPROVE or provide specific FEEDBACK for next turn.
-        """
-
-    WAIT for coach completion
-    SAVE coach decision to .guardkit/autobuild/{task_id}/coach_turn_{turn}.json
-
-    IF coach.decision == "approve":
-        BREAK loop (task complete)
-    ELSE:
-        previous_coach_feedback = coach.feedback
-        CONTINUE to next turn
-```
-
-**Finalize Phase:**
-- Update task status based on result
-- Display summary with worktree location
-- Never auto-merge (human review required)
 
 ---
 
@@ -726,8 +680,8 @@ When the user invokes `/feature-build FEAT-XXX`:
 
 1. **Load the feature file** from `.guardkit/features/FEAT-XXX.yaml`
 2. **Parse tasks and dependencies** from the YAML structure
-3. **Check if CLI is available**, if not use Task tool fallback
-4. **Execute tasks wave by wave** respecting parallel groups
+3. **Check if CLI is available** (required - error if not)
+4. **Execute tasks wave by wave via CLI** respecting parallel groups
 5. **Update feature status** after each task completes
 6. **Show final summary** with all task results
 
@@ -751,7 +705,9 @@ Parse the YAML to extract:
 guardkit autobuild --help 2>&1 || echo "CLI_NOT_AVAILABLE"
 ```
 
-#### Step 3a: If CLI Available (Preferred)
+If CLI is not available, display the same error message as Single Task Mode (see above) and exit.
+
+#### Step 3: Execute Tasks via CLI
 
 Execute each task through the CLI:
 
@@ -759,18 +715,6 @@ Execute each task through the CLI:
 for task_id in wave:
     guardkit autobuild task $task_id --max-turns 5
 ```
-
-#### Step 3b: If CLI Not Available (Fallback)
-
-Execute each task using the Player-Coach Task tool workflow described in Single Task Mode.
-
-For each wave:
-1. Display wave header: `Wave {n}/{total}: [TASK-001, TASK-002, ...]`
-2. For each task in wave:
-   - Create worktree (shared across feature): `.guardkit/worktrees/FEAT-XXX/`
-   - Run Player-Coach loop using Task tool with autobuild-player and autobuild-coach
-   - Update task status in feature YAML after completion
-3. Block until all tasks in wave complete before proceeding to next wave
 
 #### Step 4: Update Feature YAML
 
@@ -823,10 +767,10 @@ FEATURE RESULT: SUCCESS
 
 ---
 
-**Note**: The pseudo-code below shows the logical flow. Actual execution uses the Task tool workflow described above.
+**Note**: The pseudo-code below shows the logical flow. Actual execution uses the CLI orchestrator described above.
 
 ```python
-# Logical flow (for reference only - use Task tool in practice)
+# Logical flow (for reference only - actual execution via CLI)
 feature_id = args[0]  # e.g., "FEAT-A1B2"
 max_turns = options.get("max-turns", 5)
 stop_on_failure = options.get("stop-on-failure", True)
@@ -843,7 +787,7 @@ for wave_idx, wave in enumerate(feature["orchestration"]["parallel_groups"]):
         if task["status"] == "completed":
             continue
 
-        # Execute using Player-Coach Task tool workflow
+        # Execute using CLI orchestrator
         result = execute_player_coach_loop(task, max_turns)
 
         # Update task status in feature YAML (use Edit tool)

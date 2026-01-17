@@ -133,8 +133,17 @@ GuardKit integrates seamlessly with [Conductor.build](https://conductor.build) f
 ### 1. Install
 
 ```bash
+# Basic installation
 curl -sSL https://raw.githubusercontent.com/guardkit/guardkit/main/installer/scripts/install.sh | bash
+
+# Or with pip (Python package)
+pip install guardkit-py
+
+# With AutoBuild support (required for /feature-build)
+pip install guardkit-py[autobuild]
 ```
+
+**Note**: AutoBuild features (`/feature-build`, `guardkit autobuild`) require the optional `claude-agent-sdk` dependency. If you see "Claude Agent SDK not installed", run `pip install guardkit-py[autobuild]`.
 
 ### 2. Initialize & Use
 

@@ -428,8 +428,9 @@ def _get_review_mode(complexity_score: int) -> str:
 def display_phase28_checkpoint(
     task_id: str,
     complexity_score: int,
-    plan_path: Optional[Path] = None
-) -> None:
+    plan_path: Optional[Path] = None,
+    auto_approve: bool = False
+) -> str:
     """
     Display Phase 2.8 checkpoint with implementation plan summary.
 
@@ -440,6 +441,10 @@ def display_phase28_checkpoint(
         task_id: Task identifier
         complexity_score: 1-10 complexity score
         plan_path: Optional explicit path to plan file
+        auto_approve: If True, automatically approve without user interaction
+
+    Returns:
+        str: "approved" if auto-approve or user approves, "rejected" otherwise
 
     Example:
         >>> display_phase28_checkpoint("TASK-028", 7)
@@ -453,6 +458,18 @@ def display_phase28_checkpoint(
         IMPLEMENTATION PLAN SUMMARY
         ...
     """
+    # If auto_approve, log and return immediately
+    if auto_approve:
+        from datetime import datetime
+        logger.info(f"Auto-approved checkpoint for {task_id}")
+        print("\n" + "=" * 60)
+        print("AUTO-APPROVED: --auto-approve-checkpoint flag enabled")
+        print(f"   Task: {task_id}")
+        print(f"   Complexity: {complexity_score}/10")
+        print(f"   Timestamp: {datetime.now().isoformat()}")
+        print("=" * 60 + "\n")
+        return "approved"
+
     print("\n" + "=" * 60)
     print("PHASE 2.8: IMPLEMENTATION PLAN CHECKPOINT")
     print("=" * 60)

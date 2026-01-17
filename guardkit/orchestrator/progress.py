@@ -431,6 +431,129 @@ class ProgressDisplay:
 
         logger.info(f"Summary rendered: {final_status} after {total_turns} turns")
 
+    @_handle_display_error
+    def render_blocked_report(
+        self,
+        blocked_report: "BlockedReport",
+        task_id: str,
+        total_turns: int,
+    ) -> None:
+        """
+        Render structured blocked report for human review.
+
+        This method displays a formatted blocked report when the task
+        cannot be completed autonomously, providing actionable information
+        to the human reviewer.
+
+        Args:
+            blocked_report: BlockedReport instance with structured data
+            task_id: Task identifier
+            total_turns: Total turns executed
+
+        Examples:
+            >>> from guardkit.orchestrator.exceptions import BlockedReport
+            >>> display.render_blocked_report(blocked_report, "TASK-001", 5)
+        """
+        # Import BlockedReport type for type hints
+        from guardkit.orchestrator.exceptions import BlockedReport, BlockingCategory
+
+        self.console.print()
+        self.console.print(
+            Panel(
+                f"[bold red]Task {task_id} requires human intervention[/bold red]\n"
+                f"Completed {total_turns} turn(s) without approval",
+                title="[bold]BLOCKED REPORT[/bold]",
+                border_style="red",
+                box=box.DOUBLE,
+            )
+        )
+
+        # Blocking Issues Table
+        if blocked_report.blocking_issues:
+            issues_table = Table(
+                title="Blocking Issues",
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold red",
+            )
+            issues_table.add_column("Category", style="yellow", width=20)
+            issues_table.add_column("Description", style="white")
+            issues_table.add_column("Location", style="cyan", width=25)
+
+            for issue in blocked_report.blocking_issues:
+                location = ""
+                if issue.file_path:
+                    location = issue.file_path
+                    if issue.line_number:
+                        location += f":{issue.line_number}"
+
+                issues_table.add_row(
+                    issue.category.value,
+                    issue.description,
+                    location or "—",
+                )
+
+            self.console.print()
+            self.console.print(issues_table)
+
+        # Attempts Made Table
+        if blocked_report.attempts_made:
+            attempts_table = Table(
+                title="Attempts Made",
+                box=box.ROUNDED,
+                show_header=True,
+                header_style="bold blue",
+            )
+            attempts_table.add_column("Turn", style="cyan", width=6)
+            attempts_table.add_column("Approach", style="white")
+            attempts_table.add_column("Outcome", style="yellow", width=15)
+            attempts_table.add_column("Learnings", style="dim")
+
+            for attempt in blocked_report.attempts_made:
+                attempts_table.add_row(
+                    str(attempt.turn),
+                    attempt.approach,
+                    attempt.outcome,
+                    attempt.learnings or "—",
+                )
+
+            self.console.print()
+            self.console.print(attempts_table)
+
+        # Suggested Alternatives
+        if blocked_report.suggested_alternatives:
+            alternatives_content = "\n".join(
+                f"  {i}. {alt}"
+                for i, alt in enumerate(blocked_report.suggested_alternatives, 1)
+            )
+            self.console.print()
+            self.console.print(
+                Panel(
+                    alternatives_content,
+                    title="[bold green]Suggested Alternatives[/bold green]",
+                    border_style="green",
+                    box=box.ROUNDED,
+                )
+            )
+
+        # Required Human Action
+        if blocked_report.human_action_required:
+            self.console.print()
+            self.console.print(
+                Panel(
+                    f"[bold]{blocked_report.human_action_required}[/bold]",
+                    title="[bold yellow]Required Human Action[/bold yellow]",
+                    border_style="yellow",
+                    box=box.DOUBLE,
+                )
+            )
+
+        logger.info(
+            f"Blocked report rendered for {task_id}: "
+            f"{len(blocked_report.blocking_issues)} issues, "
+            f"{len(blocked_report.attempts_made)} attempts"
+        )
+
 
 # Public API
 __all__ = [

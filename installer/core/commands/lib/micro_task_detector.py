@@ -61,10 +61,10 @@ class MicroTaskDetector:
     Uses heuristic-based analysis to identify trivial tasks that can skip
     expensive workflow phases (architectural review, complexity evaluation).
 
-    Micro-Task Criteria (ALL must be true):
-    - Single file modification (or docs-only)
-    - Estimated effort <1 hour
-    - Low complexity indicators
+    Micro-Task Criteria (ALL must be true) - TASK-TWP-c3d4 updated thresholds:
+    - ≤3 file modifications (was: single file or docs-only)
+    - Estimated effort <2 hours (was: <1 hour)
+    - Complexity ≤3/10 (was: 1/10)
     - No high-risk keywords (security, schema, breaking changes)
 
     Attributes:
@@ -88,11 +88,15 @@ class MicroTaskDetector:
     DOC_EXTENSIONS = {'.md', '.txt', '.rst', '.adoc', '.pdf', '.docx'}
 
     # Default configuration
+    # TASK-TWP-c3d4: Lowered thresholds to include complexity ≤3 tasks
+    # Previous values: max_files=1, max_hours=1.0, max_complexity=1, confidence_threshold=0.8
+    # Rationale: Simple tasks (complexity ≤3) were running full workflow (65+ min)
+    #            when they could complete in 3-5 min with micro-mode
     DEFAULT_CONFIG = {
-        'max_files': 1,
-        'max_hours': 1.0,
-        'max_complexity': 1,
-        'confidence_threshold': 0.8,
+        'max_files': 3,              # Was 1 - now allows up to 3 files
+        'max_hours': 2.0,            # Was 1.0 - now allows up to 2 hours
+        'max_complexity': 3,         # Was 1 - now allows complexity ≤3
+        'confidence_threshold': 0.3, # Was 0.8 - lowered since blocking_reasons now handles hard boundaries
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -452,26 +456,40 @@ class MicroTaskDetector:
         """
         confidence = 1.0
 
-        # File count penalty (exponential)
-        if file_count > 1:
-            confidence *= 0.5 ** (file_count - 1)
+        # File count penalty (TASK-TWP-c3d4: adjusted for max_files=3)
+        # Scale: 1 file = no penalty, 2-3 files = moderate penalty, 4+ = severe penalty
+        if file_count > 3:
+            confidence *= 0.3   # Above new threshold
+        elif file_count == 3:
+            confidence *= 0.7   # At threshold boundary
+        elif file_count == 2:
+            confidence *= 0.85  # Two files - still manageable
+        # else: 1 file = no penalty (confidence *= 1.0)
 
-        # Effort penalty
+        # Effort penalty (TASK-TWP-c3d4: adjusted for max_hours=2)
+        # Scale: <30min = no penalty, 30min-2h = moderate, 2h+ = severe
         if hours:
             if hours < 0.5:
-                confidence *= 1.0  # Very quick task
+                confidence *= 1.0  # Very quick task (<30 min)
             elif hours < 1.0:
-                confidence *= 0.8
+                confidence *= 0.9  # Quick task (30-60 min)
+            elif hours < 2.0:
+                confidence *= 0.8  # Reasonable task (1-2 hours)
             else:
-                confidence *= 0.3
+                confidence *= 0.3  # Above new threshold (2+ hours)
 
-        # Complexity penalty
-        if complexity > 1:
-            confidence *= 0.4
+        # Complexity penalty (TASK-TWP-c3d4: adjusted for max_complexity=3)
+        # Scale: 0-1 = high confidence, 2-3 = moderate confidence, 4+ = low confidence
+        if complexity > 3:
+            confidence *= 0.3   # Above new threshold
+        elif complexity == 3:
+            confidence *= 0.7   # At threshold boundary
+        elif complexity == 2:
+            confidence *= 0.85  # Simple task
         elif complexity == 1:
-            confidence *= 0.9
+            confidence *= 0.95  # Very simple task
         else:
-            confidence *= 1.0  # Complexity 0 or unset
+            confidence *= 1.0   # Complexity 0 or unset
 
         # Risk penalty (severe)
         if has_risks:

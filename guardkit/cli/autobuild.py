@@ -43,6 +43,59 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# SDK Pre-flight Check
+# ============================================================================
+
+
+def _check_sdk_available() -> bool:
+    """
+    Check if Claude Agent SDK is available.
+
+    This function attempts to import the Claude Agent SDK to verify
+    it is installed and accessible. Used for fail-fast validation
+    before starting orchestration.
+
+    Returns
+    -------
+    bool
+        True if SDK is importable, False otherwise.
+    """
+    try:
+        from claude_agent_sdk import query  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _require_sdk() -> None:
+    """
+    Require SDK availability or exit with helpful message.
+
+    This function should be called at the start of commands that
+    require the Claude Agent SDK. If the SDK is not available,
+    it prints installation instructions and exits with code 1.
+
+    Raises
+    ------
+    SystemExit
+        Exits with code 1 if SDK is not available.
+    """
+    if not _check_sdk_available():
+        console.print("[red]Error: Claude Agent SDK not available[/red]")
+        console.print()
+        console.print("AutoBuild requires the Claude Agent SDK.")
+        console.print()
+        console.print("To install:")
+        console.print("  [cyan]pip install claude-agent-sdk[/cyan]")
+        console.print("  # OR")
+        console.print("  [cyan]pip install guardkit-py[autobuild][/cyan]")
+        console.print()
+        console.print("For more info: [dim]guardkit doctor[/dim]")
+        sys.exit(1)
+
+
+# ============================================================================
 # AutoBuild Command Group
 # ============================================================================
 
@@ -88,6 +141,32 @@ def autobuild():
     is_flag=True,
     help="Resume from last saved state",
 )
+@click.option(
+    "--mode",
+    type=click.Choice(["standard", "tdd", "bdd"], case_sensitive=False),
+    default=None,
+    help="Development mode (standard, tdd, or bdd). Defaults to task frontmatter autobuild.mode or 'tdd'",
+)
+@click.option(
+    "--sdk-timeout",
+    "sdk_timeout",
+    default=None,
+    type=int,
+    help="SDK timeout in seconds (60-3600). Defaults to task frontmatter autobuild.sdk_timeout or 600",
+)
+@click.option(
+    "--no-pre-loop",
+    "no_pre_loop",
+    is_flag=True,
+    default=False,
+    help=(
+        "Skip design phase (Phases 1.6-2.8) before Player-Coach loop. "
+        "NOTE: Enabled by default for task-build because standalone tasks "
+        "often need design clarification. Disable for simple bug fixes or "
+        "tasks with detailed implementation notes. Saves 60-90 min. "
+        "See: docs/guides/guardkit-workflow.md#pre-loop-decision-guide"
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -97,27 +176,53 @@ def task(
     model: str,
     verbose: bool,
     resume: bool,
+    mode: Optional[str],
+    sdk_timeout: Optional[int],
+    no_pre_loop: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
 
-    This command creates an isolated worktree, runs the Player/Coach
-    adversarial loop, and preserves the worktree for human review.
+    This command creates an isolated worktree and runs the Player/Coach
+    adversarial loop. The Player **delegates** to `task-work --implement-only`
+    to leverage the full subagent infrastructure and quality gates.
+
+    \b
+    Delegation Architecture:
+        PreLoop: task-work --design-only (Phases 2-2.8)
+        Loop:    task-work --implement-only --mode=MODE (Phases 3-5.5)
+        Coach:   Validates task-work quality gate results
+
+    \b
+    Development Modes (--mode flag):
+        tdd:      Red-Green-Refactor cycle (default)
+        standard: Traditional implementation
+        bdd:      Behavior-driven (requires RequireKit)
 
     \b
     Examples:
         guardkit autobuild task TASK-AB-001
+        guardkit autobuild task TASK-AB-001 --mode=standard
         guardkit autobuild task TASK-AB-001 --max-turns 10 --verbose
         guardkit autobuild task TASK-AB-001 --model claude-opus-4-5-20251101
         guardkit autobuild task TASK-AB-001 --resume
 
     \b
+    Quality Gate Reuse (100% code reuse):
+        Player delegates to task-work for:
+        - Phase 2.5B: Architectural Review
+        - Phase 4.5: Test Enforcement Loop
+        - Phase 5: Code Review
+        - Phase 5.5: Plan Audit
+
+    \b
     Workflow:
         1. Load task file from tasks/backlog or tasks/in_progress
         2. Create isolated worktree in .guardkit/worktrees/ (or resume existing)
-        3. Execute Player→Coach adversarial turns
-        4. Persist state to task frontmatter after each turn
-        5. Preserve worktree for human review (approval or debugging)
+        3. PreLoop: task-work --design-only (planning + approval)
+        4. Loop: Player delegates to task-work --implement-only (iterative)
+        5. Coach: Validates quality gate results, approves or provides feedback
+        6. Preserve worktree for human review (never auto-merges)
 
     \b
     Resume Mode (--resume):
@@ -127,16 +232,45 @@ def task(
     \b
     Exit Codes:
         0: Success (Coach approved)
-        1: Task file not found
+        1: Task file not found or SDK not available
         2: Orchestration error
         3: Invalid arguments
     """
+    # Pre-flight check: Ensure SDK is available before any work
+    _require_sdk()
+
     # Inherit verbose from parent if set (ctx.obj can be None in testing)
     ctx_obj = ctx.obj or {}
     verbose = verbose or ctx_obj.get("verbose", False)
 
+    # Phase 1: Load task file
+    logger.info(f"Loading task {task_id}")
+    task_data = TaskLoader.load_task(task_id, repo_root=Path.cwd())
+
+    # Resolve development mode: CLI flag > task frontmatter > default (tdd)
+    # Note: TaskLoader returns frontmatter as nested dict, not at top level
+    task_frontmatter = task_data.get("frontmatter", {})
+    autobuild_config = task_frontmatter.get("autobuild", {})
+    effective_mode = mode
+    if effective_mode is None:
+        effective_mode = autobuild_config.get("mode", "tdd")
+    logger.info(f"Development mode: {effective_mode}")
+
+    # Validate and resolve SDK timeout: CLI flag > task frontmatter > default (600)
+    if sdk_timeout is not None and not (60 <= sdk_timeout <= 3600):
+        raise click.BadParameter(
+            "SDK timeout must be between 60 and 3600 seconds",
+            param_hint="'--sdk-timeout'",
+        )
+    effective_sdk_timeout = sdk_timeout
+    if effective_sdk_timeout is None:
+        effective_sdk_timeout = autobuild_config.get("sdk_timeout", 600)
+    logger.info(f"SDK timeout: {effective_sdk_timeout}s")
+
     # Display startup banner
-    mode_text = "[yellow]Resuming[/yellow]" if resume else "Starting"
+    resume_text = " [yellow](Resuming)[/yellow]" if resume else ""
+    mode_display = effective_mode.upper()
+    pre_loop_display = "[red]OFF[/red]" if no_pre_loop else "[green]ON[/green]"
     if not ctx_obj.get("quiet", False):
         console.print(
             Panel(
@@ -144,22 +278,25 @@ def task(
                 f"Task: [cyan]{task_id}[/cyan]\n"
                 f"Max Turns: {max_turns}\n"
                 f"Model: {model}\n"
-                f"Mode: {mode_text}",
+                f"Mode: [magenta]{mode_display}[/magenta]\n"
+                f"Pre-Loop: {pre_loop_display}\n"
+                f"SDK Timeout: {effective_sdk_timeout}s{resume_text}",
                 title="GuardKit AutoBuild",
                 border_style="blue",
             )
         )
 
-    # Phase 1: Load task file
-    logger.info(f"Loading task {task_id}")
-    task_data = TaskLoader.load_task(task_id, repo_root=Path.cwd())
-
     # Phase 2: Initialize orchestrator
-    logger.info("Initializing orchestrator")
+    # Note: enable_pre_loop defaults to True for task-build, --no-pre-loop disables it
+    enable_pre_loop = not no_pre_loop
+    logger.info(f"Initializing orchestrator (enable_pre_loop={enable_pre_loop})")
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
         max_turns=max_turns,
         resume=resume,
+        enable_pre_loop=enable_pre_loop,
+        development_mode=effective_mode,
+        sdk_timeout=effective_sdk_timeout,
     )
 
     # Phase 3: Execute orchestration
@@ -280,6 +417,24 @@ def status(ctx, task_id: str, verbose: bool):
     is_flag=True,
     help="Show detailed turn-by-turn output",
 )
+@click.option(
+    "--sdk-timeout",
+    "sdk_timeout",
+    default=None,
+    type=int,
+    help="SDK timeout in seconds (60-3600). Defaults to feature YAML autobuild.sdk_timeout or 600",
+)
+@click.option(
+    "--enable-pre-loop/--no-pre-loop",
+    "enable_pre_loop",
+    default=None,
+    help=(
+        "Enable/disable design phase (Phases 1.6-2.8) before Player-Coach loop. "
+        "NOTE: Disabled by default for feature-build because tasks from /feature-plan "
+        "already have detailed specs. Enable for tasks needing architectural design. "
+        "Adds 60-90 min per task. See: docs/guides/guardkit-workflow.md#pre-loop-decision-guide"
+    ),
+)
 @click.pass_context
 @handle_cli_errors
 def feature(
@@ -291,6 +446,8 @@ def feature(
     fresh: bool,
     specific_task: Optional[str],
     verbose: bool,
+    sdk_timeout: Optional[int],
+    enable_pre_loop: Optional[bool],
 ):
     """
     Execute AutoBuild for all tasks in a feature.
@@ -327,10 +484,13 @@ def feature(
     \b
     Exit Codes:
         0: Success (all tasks completed)
-        1: Feature file not found
+        1: Feature file not found or SDK not available
         2: Orchestration error
         3: Validation error
     """
+    # Pre-flight check: Ensure SDK is available before any work
+    _require_sdk()
+
     # Inherit verbose from parent if set (ctx.obj can be None in testing)
     ctx_obj = ctx.obj or {}
     verbose = verbose or ctx_obj.get("verbose", False)
@@ -343,9 +503,17 @@ def feature(
         console.print("  --fresh   Start from scratch, ignoring saved state")
         sys.exit(3)
 
+    # Validate SDK timeout if provided
+    if sdk_timeout is not None and not (60 <= sdk_timeout <= 3600):
+        raise click.BadParameter(
+            "SDK timeout must be between 60 and 3600 seconds",
+            param_hint="'--sdk-timeout'",
+        )
+
     logger.info(
         f"Starting feature orchestration: {feature_id} "
-        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh})"
+        f"(max_turns={max_turns}, stop_on_failure={stop_on_failure}, resume={resume}, fresh={fresh}, "
+        f"sdk_timeout={sdk_timeout}, enable_pre_loop={enable_pre_loop})"
     )
 
     try:
@@ -358,6 +526,8 @@ def feature(
             fresh=fresh,
             verbose=verbose,
             quiet=ctx_obj.get("quiet", False),
+            sdk_timeout=sdk_timeout,
+            enable_pre_loop=enable_pre_loop,
         )
 
         # Execute feature orchestration
@@ -554,4 +724,7 @@ __all__ = [
     "autobuild",
     "task",
     "status",
+    "feature",
+    "_check_sdk_available",
+    "_require_sdk",
 ]

@@ -1,0 +1,21 @@
+id: FEAT-MISSING-PATH
+name: Feature with missing file_path
+description: Task is missing the required file_path field
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 3
+estimated_tasks: 1
+tasks:
+  - id: TASK-NO-PATH
+    name: Task without file_path
+    # file_path is missing - should raise FeatureParseError
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-NO-PATH
+  estimated_duration_minutes: 30
+  recommended_parallel: 1

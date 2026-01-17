@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from guardkit.orchestrator.agent_invoker import async_heartbeat
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.orchestrator.quality_gates.exceptions import (
     DesignPhaseError,
@@ -44,8 +45,10 @@ from guardkit.orchestrator.quality_gates.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-# SDK timeout in seconds (default: 600s, can be overridden via env var or constructor)
-DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "600"))
+# SDK timeout in seconds (default: 1800s/30min, can be overridden via env var or constructor)
+# With pre-loop disabled for feature-build (TASK-FB-FIX-015), the loop phase needs ~600-900s.
+# A 1800s default provides adequate headroom for design phases and Player-Coach iterations.
+DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1800"))
 
 
 @dataclass
@@ -259,6 +262,9 @@ class TaskWorkInterface:
         """
         parts = [f"/task-work {task_id} --design-only"]
 
+        # SDK mode: Auto-approve checkpoints (no human present)
+        parts.append("--auto-approve-checkpoint")
+
         # Add clarification flags
         if options.get("no_questions"):
             parts.append("--no-questions")
@@ -315,6 +321,11 @@ class TaskWorkInterface:
                 CLINotFoundError,
                 ProcessError,
                 CLIJSONDecodeError,
+                AssistantMessage,
+                TextBlock,
+                ToolUseBlock,
+                ToolResultBlock,
+                ResultMessage,
             )
         except ImportError as e:
             import sys
@@ -336,23 +347,48 @@ class TaskWorkInterface:
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
                 permission_mode="acceptEdits",
                 max_turns=50,  # Design phases can take many turns
-                setting_sources=["project"],  # Load CLAUDE.md from worktree
+                # TASK-FB-FIX-006: Include "user" to load skills from ~/.claude/commands/
+                # Without "user", the SDK can't find /task-work skill
+                setting_sources=["user", "project"],
             )
+
+            # Extract task_id from prompt for heartbeat logging
+            task_id_match = re.search(r"TASK-[A-Z0-9-]+", prompt)
+            heartbeat_task_id = task_id_match.group(0) if task_id_match else "unknown"
 
             collected_output: List[str] = []
             async with asyncio.timeout(self.sdk_timeout_seconds):
-                async for message in query(prompt=prompt, options=options):
-                    # Collect message content for parsing
-                    if hasattr(message, 'content'):
-                        content = str(message.content)
-                        collected_output.append(content)
-                        # Log progress for debugging
-                        if "Phase" in content:
-                            logger.debug(f"SDK progress: {content[:100]}...")
+                async with async_heartbeat(heartbeat_task_id, "design phase"):
+                    async for message in query(prompt=prompt, options=options):
+                        # TASK-FB-FIX-005: Properly iterate ContentBlocks instead of str()
+                        # message.content is a list[ContentBlock], not a string
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock):
+                                    collected_output.append(block.text)
+                                    # Log progress for debugging
+                                    if "Phase" in block.text or "Plan saved" in block.text:
+                                        logger.debug(f"SDK progress: {block.text[:100]}...")
+                                elif isinstance(block, ToolUseBlock):
+                                    logger.debug(f"Tool invoked: {block.name}")
+                                elif isinstance(block, ToolResultBlock):
+                                    # Extract content from tool results if present
+                                    if block.content:
+                                        collected_output.append(str(block.content))
+                        elif isinstance(message, ResultMessage):
+                            logger.info(f"SDK completed: turns={message.num_turns}")
 
             # Join collected output and parse results
             output_text = "\n".join(collected_output)
             logger.info(f"SDK execution completed for design phase")
+
+            # TASK-FB-FIX-006: Log output length for debugging
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Collected output length: {len(output_text)} chars")
+                if len(output_text) < 500:
+                    logger.debug(f"Full output: {output_text}")
+                else:
+                    logger.debug(f"Output preview: {output_text[:500]}...")
 
             return self._parse_sdk_output(output_text)
 
@@ -421,6 +457,7 @@ class TaskWorkInterface:
             r"Plan saved[:\s]+to[:\s]+([^\s\n]+)",
             r"Implementation plan saved[:\s]+to[:\s]+([^\s\n]+)",
             r"Implementation plan saved[:\s]+([^\s\n]+)",
+            r"Created implementation plan[:\s]+([^\s\n]+)",  # Task-work actual output format
             r"plan_path[:\s]+[\"']?([^\s\n\"']+)",
             r"(docs/state/[A-Z0-9-]+/implementation_plan\.(?:md|json))",
             r"(\.claude/task-plans/[A-Z0-9-]+-implementation-plan\.(?:md|json))",

@@ -16,16 +16,20 @@ Architecture:
 
 Example:
     >>> from guardkit.orchestrator.quality_gates import PreLoopQualityGates
+    >>> import asyncio
     >>>
-    >>> gates = PreLoopQualityGates("/path/to/worktree")
-    >>> result = gates.execute("TASK-001", {"no_questions": True})
-    >>>
-    >>> # Pass plan to Player agent
-    >>> player_prompt = f"Implement according to: {result['plan']}"
-    >>>
-    >>> # Use dynamic max_turns based on complexity
-    >>> for turn in range(result['max_turns']):
-    ...     pass  # Player-Coach loop
+    >>> async def run_quality_gates():
+    ...     gates = PreLoopQualityGates("/path/to/worktree")
+    ...     result = await gates.execute("TASK-001", {"no_questions": True})
+    ...
+    ...     # Pass plan to Player agent
+    ...     player_prompt = f"Implement according to: {result.plan}"
+    ...
+    ...     # Use dynamic max_turns based on complexity
+    ...     for turn in range(result.max_turns):
+    ...         pass  # Player-Coach loop
+    ...
+    >>> asyncio.run(run_quality_gates())
 """
 
 import logging
@@ -111,8 +115,9 @@ class PreLoopQualityGates:
 
     Example
     -------
+    >>> import asyncio
     >>> gates = PreLoopQualityGates("/path/to/worktree")
-    >>> result = gates.execute("TASK-001", {"no_questions": True})
+    >>> result = asyncio.run(gates.execute("TASK-001", {"no_questions": True}))
     >>>
     >>> print(f"Complexity: {result.complexity}/10")
     >>> print(f"Max turns: {result.max_turns}")
@@ -131,6 +136,7 @@ class PreLoopQualityGates:
         self,
         worktree_path: str,
         interface: Optional[TaskWorkInterface] = None,
+        sdk_timeout: int = 600,
     ):
         """
         Initialize PreLoopQualityGates.
@@ -141,13 +147,22 @@ class PreLoopQualityGates:
             Path to the git worktree where quality gates should execute
         interface : Optional[TaskWorkInterface]
             Optional interface for dependency injection (testing)
+        sdk_timeout : int
+            SDK timeout in seconds for agent invocations (default: 600)
         """
         self.worktree_path = Path(worktree_path)
-        self._interface = interface or TaskWorkInterface(self.worktree_path)
+        self.sdk_timeout = sdk_timeout
+        self._interface = interface or TaskWorkInterface(
+            self.worktree_path,
+            sdk_timeout_seconds=sdk_timeout,
+        )
 
-        logger.debug(f"PreLoopQualityGates initialized for worktree: {worktree_path}")
+        logger.debug(
+            f"PreLoopQualityGates initialized for worktree: {worktree_path}, "
+            f"sdk_timeout: {sdk_timeout}s"
+        )
 
-    def execute(
+    async def execute(
         self,
         task_id: str,
         options: Dict[str, Any],
@@ -184,14 +199,14 @@ class PreLoopQualityGates:
 
         Example
         -------
-        >>> result = gates.execute("TASK-001", {"no_questions": True})
+        >>> result = await gates.execute("TASK-001", {"no_questions": True})
         >>> print(f"Plan ready: {bool(result.plan)}")
         >>> print(f"Max turns: {result.max_turns}")
         """
         logger.info(f"Executing pre-loop quality gates for {task_id}")
 
         # Execute design phases via task-work delegation
-        design_result = self._interface.execute_design_phase(task_id, options)
+        design_result = await self._interface.execute_design_phase(task_id, options)
 
         # Check if checkpoint was rejected
         if design_result.checkpoint_result == "rejected":
@@ -221,7 +236,64 @@ class PreLoopQualityGates:
         -------
         PreLoopResult
             Extracted and formatted results
+
+        Raises
+        ------
+        QualityGateBlocked
+            If plan_path is None or the plan file doesn't exist
         """
+        # Import TaskArtifactPaths for fallback search
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        # Primary: Use SDK-reported path (may be relative)
+        plan_path = result.plan_path
+
+        # Resolve relative paths against worktree
+        # The SDK executes task-work with cwd=worktree, so relative paths
+        # are relative to the worktree, not the main repo's CWD
+        if plan_path:
+            plan_file = Path(plan_path)
+            if not plan_file.is_absolute():
+                plan_file = self.worktree_path / plan_file
+                logger.debug(f"Resolved relative plan path to: {plan_file}")
+            plan_path = str(plan_file)
+
+        # Fallback: Search all known locations if SDK path not found or doesn't exist
+        if not plan_path or not Path(plan_path).exists():
+            found_plan = TaskArtifactPaths.find_implementation_plan(
+                task_id, self.worktree_path
+            )
+            if found_plan:
+                plan_path = str(found_plan)
+                logger.info(f"Found plan at fallback location: {plan_path}")
+
+        # Validate plan path was returned
+        if not plan_path:
+            raise QualityGateBlocked(
+                reason=(
+                    f"Design phase did not return plan path for {task_id}. "
+                    "The task-work --design-only execution may have failed. "
+                    "Run `/task-work {task_id} --design-only` manually to debug."
+                ),
+                gate_name="plan_generation",
+                details={"task_id": task_id, "plan_path": None},
+            )
+
+        # Validate plan file exists on disk
+        plan_file = Path(plan_path)
+        if not plan_file.exists():
+            raise QualityGateBlocked(
+                reason=(
+                    f"Implementation plan not found at {plan_path} for {task_id}. "
+                    "The design phase may have completed but failed to save the plan. "
+                    "Run `/task-work {task_id} --design-only` manually to debug."
+                ),
+                gate_name="plan_validation",
+                details={"task_id": task_id, "plan_path": plan_path},
+            )
+
+        logger.info(f"Pre-loop validated plan exists at: {plan_path}")
+
         complexity_score = result.complexity.get("score", 5)
         max_turns = self._determine_max_turns(complexity_score)
 
@@ -234,7 +306,7 @@ class PreLoopQualityGates:
 
         return PreLoopResult(
             plan=result.implementation_plan,
-            plan_path=result.plan_path,
+            plan_path=plan_path,  # Use resolved path, not original result.plan_path
             complexity=complexity_score,
             max_turns=max_turns,
             checkpoint_passed=result.checkpoint_result in ("approved", "skipped"),

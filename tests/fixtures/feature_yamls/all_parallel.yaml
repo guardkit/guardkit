@@ -1,0 +1,48 @@
+id: FEAT-PARALLEL
+name: Feature with all tasks in parallel
+description: All tasks can run in a single wave with no dependencies
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 6
+estimated_tasks: 4
+tasks:
+  - id: TASK-PAR-001
+    name: Parallel task 1
+    file_path: tasks/backlog/TASK-PAR-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-PAR-002
+    name: Parallel task 2
+    file_path: tasks/backlog/TASK-PAR-002.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-PAR-003
+    name: Parallel task 3
+    file_path: tasks/backlog/TASK-PAR-003.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 20
+  - id: TASK-PAR-004
+    name: Parallel task 4
+    file_path: tasks/backlog/TASK-PAR-004.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-PAR-001
+      - TASK-PAR-002
+      - TASK-PAR-003
+      - TASK-PAR-004
+  estimated_duration_minutes: 30
+  recommended_parallel: 4

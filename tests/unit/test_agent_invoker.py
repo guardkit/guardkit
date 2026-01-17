@@ -11,7 +11,10 @@ import pytest
 from guardkit.orchestrator.agent_invoker import (
     AgentInvoker,
     AgentInvocationResult,
+    DOCUMENTATION_LEVEL_MAX_FILES,
+    TaskWorkStreamParser,
     USE_TASK_WORK_DELEGATION,
+    async_heartbeat,
 )
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -127,7 +130,8 @@ class TestAgentInvokerInit:
         assert invoker.max_turns_per_agent == 30
         assert invoker.player_model == "claude-sonnet-4-5-20250929"
         assert invoker.coach_model == "claude-sonnet-4-5-20250929"
-        assert invoker.sdk_timeout_seconds == 300
+        assert invoker.sdk_timeout_seconds == 1800  # Updated default per TASK-FB-FIX-016
+        assert invoker.development_mode == "tdd"  # Default is tdd
 
     def test_init_with_custom_values(self, worktree_path):
         """AgentInvoker accepts custom configuration."""
@@ -143,6 +147,20 @@ class TestAgentInvokerInit:
         assert invoker.player_model == "claude-opus-4-5-20251101"
         assert invoker.coach_model == "claude-sonnet-4-5-20250929"
         assert invoker.sdk_timeout_seconds == 120
+
+    def test_init_with_development_mode(self, worktree_path):
+        """AgentInvoker accepts development_mode parameter."""
+        invoker = AgentInvoker(
+            worktree_path=worktree_path,
+            development_mode="standard",
+        )
+        assert invoker.development_mode == "standard"
+
+        invoker_bdd = AgentInvoker(
+            worktree_path=worktree_path,
+            development_mode="bdd",
+        )
+        assert invoker_bdd.development_mode == "bdd"
 
 
 # ==================== Player Invocation Tests ====================
@@ -333,7 +351,12 @@ class TestCoachInvocation:
             assert result.agent_type == "coach"
             assert result.task_id == "TASK-001"
             assert result.turn == 1
-            assert result.report == sample_coach_approval
+            # Check core fields from sample_coach_approval are present
+            assert result.report["decision"] == sample_coach_approval["decision"]
+            assert result.report["task_id"] == sample_coach_approval["task_id"]
+            assert result.report["turn"] == sample_coach_approval["turn"]
+            # Honesty verification is now added by invoke_coach
+            assert "honesty_verification" in result.report
             assert result.duration_seconds > 0
 
             # Verify SDK was called with read-only permissions
@@ -637,7 +660,14 @@ class TestSDKIntegration:
 
     @pytest.mark.asyncio
     async def test_sdk_handles_import_error(self, agent_invoker):
-        """SDK raises AgentInvocationError when SDK not installed."""
+        """SDK raises AgentInvocationError with diagnostic info when SDK not installed.
+
+        The error message includes:
+        - Actual ImportError message
+        - Python executable path
+        - First 3 sys.path entries
+        - Installation options
+        """
         # Patch the import to raise ImportError
         import sys
         with patch.dict(sys.modules, {"claude_agent_sdk": None}):
@@ -650,7 +680,47 @@ class TestSDKIntegration:
                     model="claude-sonnet-4-5-20250929",
                 )
 
-            assert "Claude Agent SDK not installed" in str(exc_info.value)
+            error_message = str(exc_info.value)
+            # Verify the error message contains expected diagnostic components
+            assert "Claude Agent SDK import failed" in error_message
+            assert "Error:" in error_message
+            assert "Python:" in error_message
+            assert "sys.path" in error_message
+            assert "pip install" in error_message
+
+    @pytest.mark.asyncio
+    async def test_sdk_import_error_includes_diagnostic_info(self, agent_invoker):
+        """SDK ImportError includes complete diagnostic information.
+
+        Test verifies all diagnostic components are present:
+        - Error message label
+        - Python executable path
+        - sys.path entries
+        - Both installation options
+        """
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": None}):
+            with pytest.raises(AgentInvocationError) as exc_info:
+                await agent_invoker._invoke_with_role(
+                    prompt="Test prompt",
+                    agent_type="player",
+                    allowed_tools=["Read"],
+                    permission_mode="acceptEdits",
+                    model="claude-sonnet-4-5-20250929",
+                )
+
+            error_message = str(exc_info.value)
+
+            # Verify all diagnostic components
+            assert "Error:" in error_message, "Missing 'Error:' label in diagnostic"
+            assert "Python:" in error_message, "Missing 'Python:' label for executable path"
+            assert "sys.path" in error_message, "Missing 'sys.path' diagnostic info"
+
+            # Verify installation options
+            assert "pip install claude-agent-sdk" in error_message, \
+                "Missing 'pip install claude-agent-sdk' installation option"
+            assert "pip install guardkit-py[autobuild]" in error_message, \
+                "Missing 'pip install guardkit-py[autobuild]' installation option"
 
     @pytest.mark.asyncio
     async def test_sdk_handles_timeout(self, agent_invoker):
@@ -863,8 +933,8 @@ class TestWriteCoachFeedback:
             use_task_work_delegation=True,
         )
 
-    def test_write_coach_feedback_creates_file(self, invoker, worktree_path):
-        """_write_coach_feedback creates feedback file in correct location."""
+    def test_write_coach_feedback_creates_json_file(self, invoker, worktree_path):
+        """_write_coach_feedback creates JSON feedback file in correct location."""
         feedback = "Please add error handling for edge cases."
 
         path = invoker._write_coach_feedback(
@@ -876,15 +946,15 @@ class TestWriteCoachFeedback:
         # Verify file exists
         assert path.exists()
 
-        # Verify path is correct
+        # Verify path is correct (now JSON format)
         expected_path = (
             worktree_path / ".guardkit" / "autobuild" / "TASK-001" /
-            "coach_feedback_for_turn_2.md"
+            "coach_feedback_for_turn_2.json"
         )
         assert path == expected_path
 
-    def test_write_coach_feedback_content(self, invoker, worktree_path):
-        """_write_coach_feedback writes correct content."""
+    def test_write_coach_feedback_string_content(self, invoker, worktree_path):
+        """_write_coach_feedback writes string feedback as structured JSON."""
         feedback = "Add unit tests for the authentication module."
 
         path = invoker._write_coach_feedback(
@@ -893,12 +963,74 @@ class TestWriteCoachFeedback:
             feedback=feedback,
         )
 
-        content = path.read_text()
+        # Load and verify JSON content
+        with open(path) as f:
+            content = json.load(f)
 
-        # Verify content includes feedback
-        assert "Add unit tests for the authentication module." in content
-        assert "Turn 3" in content
-        assert "Turn 2" in content  # Feedback is from previous turn
+        # Verify structure
+        assert content["turn"] == 3
+        assert content["feedback_from_turn"] == 2
+        assert content["feedback_summary"] == feedback
+        assert content["raw_feedback"] == feedback
+        assert content["must_fix"] == []
+        assert content["should_fix"] == []
+
+    def test_write_coach_feedback_dict_content(self, invoker, worktree_path):
+        """_write_coach_feedback writes dict feedback with issues categorization."""
+        feedback = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "decision": "feedback",
+            "rationale": "Missing error handling",
+            "issues": [
+                {
+                    "type": "missing_requirement",
+                    "severity": "critical",
+                    "description": "No error handling for network failures",
+                    "location": "src/api/client.py:45",
+                    "suggestion": "Add try/except with retry logic",
+                },
+                {
+                    "type": "code_quality",
+                    "severity": "minor",
+                    "description": "Consider extracting helper",
+                    "location": "src/api/client.py:30-60",
+                    "suggestion": "Create _make_request() method",
+                },
+            ],
+            "validation_results": {
+                "tests_run": True,
+                "tests_passed": False,
+                "test_output_summary": "2 failed, 8 passed",
+            },
+        }
+
+        path = invoker._write_coach_feedback(
+            task_id="TASK-001",
+            turn=2,
+            feedback=feedback,
+        )
+
+        # Load and verify JSON content
+        with open(path) as f:
+            content = json.load(f)
+
+        # Verify structure
+        assert content["turn"] == 2
+        assert content["feedback_from_turn"] == 1
+        assert content["feedback_summary"] == "Missing error handling"
+
+        # Verify must_fix contains critical issues
+        assert len(content["must_fix"]) == 1
+        assert content["must_fix"][0]["issue"] == "No error handling for network failures"
+        assert content["must_fix"][0]["location"] == "src/api/client.py:45"
+
+        # Verify should_fix contains minor issues
+        assert len(content["should_fix"]) == 1
+        assert content["should_fix"][0]["issue"] == "Consider extracting helper"
+
+        # Verify validation results preserved
+        assert content["validation_results"]["tests_passed"] is False
 
     def test_write_coach_feedback_creates_directories(self, invoker, worktree_path):
         """_write_coach_feedback creates parent directories if needed."""
@@ -915,8 +1047,256 @@ class TestWriteCoachFeedback:
         assert path.exists()
 
 
+class TestLoadCoachFeedback:
+    """Test load_coach_feedback method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            use_task_work_delegation=True,
+        )
+
+    def test_load_coach_feedback_success(self, invoker, worktree_path):
+        """load_coach_feedback loads existing feedback file."""
+        # Create feedback file
+        feedback_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        feedback_dir.mkdir(parents=True)
+        feedback_path = feedback_dir / "coach_feedback_for_turn_2.json"
+        feedback_data = {
+            "turn": 2,
+            "feedback_from_turn": 1,
+            "feedback_summary": "Add more tests",
+            "must_fix": [{"issue": "Missing tests", "location": "src/auth.py"}],
+            "should_fix": [],
+            "validation_results": {},
+        }
+        with open(feedback_path, "w") as f:
+            json.dump(feedback_data, f)
+
+        # Load feedback
+        result = invoker.load_coach_feedback("TASK-001", 2)
+
+        assert result is not None
+        assert result["turn"] == 2
+        assert result["feedback_summary"] == "Add more tests"
+        assert len(result["must_fix"]) == 1
+
+    def test_load_coach_feedback_not_found(self, invoker):
+        """load_coach_feedback returns None when file doesn't exist."""
+        result = invoker.load_coach_feedback("TASK-NONEXISTENT", 2)
+        assert result is None
+
+    def test_load_coach_feedback_invalid_json(self, invoker, worktree_path):
+        """load_coach_feedback returns None on invalid JSON."""
+        # Create invalid JSON file
+        feedback_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        feedback_dir.mkdir(parents=True)
+        feedback_path = feedback_dir / "coach_feedback_for_turn_2.json"
+        feedback_path.write_text("{ invalid json }")
+
+        result = invoker.load_coach_feedback("TASK-001", 2)
+        assert result is None
+
+
+class TestFormatFeedbackForPrompt:
+    """Test format_feedback_for_prompt method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_format_feedback_with_must_fix(self, invoker):
+        """format_feedback_for_prompt formats must-fix issues."""
+        feedback = {
+            "turn": 2,
+            "feedback_from_turn": 1,
+            "feedback_summary": "Critical issues found",
+            "must_fix": [
+                {
+                    "issue": "No error handling",
+                    "location": "src/api/client.py:45",
+                    "suggestion": "Add try/except",
+                },
+            ],
+            "should_fix": [],
+            "validation_results": {},
+        }
+
+        result = invoker.format_feedback_for_prompt(feedback)
+
+        assert "Coach Feedback from Turn 1" in result
+        assert "Critical issues found" in result
+        assert "MUST FIX" in result
+        assert "No error handling" in result
+        assert "src/api/client.py:45" in result
+        assert "Add try/except" in result
+
+    def test_format_feedback_with_should_fix(self, invoker):
+        """format_feedback_for_prompt formats should-fix issues."""
+        feedback = {
+            "turn": 2,
+            "feedback_from_turn": 1,
+            "feedback_summary": "Minor improvements needed",
+            "must_fix": [],
+            "should_fix": [
+                {
+                    "issue": "Consider refactoring",
+                    "location": "src/utils.py:10-30",
+                    "suggestion": "Extract helper function",
+                },
+            ],
+            "validation_results": {},
+        }
+
+        result = invoker.format_feedback_for_prompt(feedback)
+
+        assert "SHOULD FIX" in result
+        assert "Consider refactoring" in result
+        assert "Extract helper function" in result
+
+    def test_format_feedback_with_validation_results(self, invoker):
+        """format_feedback_for_prompt includes validation results."""
+        feedback = {
+            "turn": 2,
+            "feedback_from_turn": 1,
+            "feedback_summary": "Tests failing",
+            "must_fix": [],
+            "should_fix": [],
+            "validation_results": {
+                "tests_passed": False,
+                "test_output_summary": "2 failed, 8 passed",
+                "code_quality": "Needs improvement",
+            },
+        }
+
+        result = invoker.format_feedback_for_prompt(feedback)
+
+        assert "Validation Results" in result
+        assert "❌ Failed" in result
+        assert "2 failed, 8 passed" in result
+        assert "Needs improvement" in result
+
+    def test_format_feedback_prioritizes_must_fix(self, invoker):
+        """format_feedback_for_prompt shows must-fix before should-fix."""
+        feedback = {
+            "turn": 2,
+            "feedback_from_turn": 1,
+            "feedback_summary": "Multiple issues",
+            "must_fix": [{"issue": "Critical bug", "location": "", "suggestion": ""}],
+            "should_fix": [{"issue": "Minor improvement", "location": "", "suggestion": ""}],
+            "validation_results": {},
+        }
+
+        result = invoker.format_feedback_for_prompt(feedback)
+
+        # Must fix should appear before should fix
+        must_fix_pos = result.find("MUST FIX")
+        should_fix_pos = result.find("SHOULD FIX")
+        assert must_fix_pos < should_fix_pos
+
+
+class TestParseCoachFeedback:
+    """Test _parse_coach_feedback method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_parse_string_feedback(self, invoker):
+        """_parse_coach_feedback handles plain string feedback."""
+        result = invoker._parse_coach_feedback("Please add more tests", 2)
+
+        assert result["turn"] == 2
+        assert result["feedback_from_turn"] == 1
+        assert result["feedback_summary"] == "Please add more tests"
+        assert result["raw_feedback"] == "Please add more tests"
+        assert result["must_fix"] == []
+        assert result["should_fix"] == []
+
+    def test_parse_dict_feedback_critical(self, invoker):
+        """_parse_coach_feedback categorizes critical issues as must-fix."""
+        feedback = {
+            "rationale": "Security issue found",
+            "issues": [
+                {
+                    "description": "SQL injection vulnerability",
+                    "severity": "critical",
+                    "location": "src/db.py:42",
+                    "suggestion": "Use parameterized queries",
+                    "type": "security",
+                },
+            ],
+            "validation_results": {"tests_passed": True},
+        }
+
+        result = invoker._parse_coach_feedback(feedback, 2)
+
+        assert result["feedback_summary"] == "Security issue found"
+        assert len(result["must_fix"]) == 1
+        assert result["must_fix"][0]["issue"] == "SQL injection vulnerability"
+        assert result["must_fix"][0]["type"] == "security"
+        assert len(result["should_fix"]) == 0
+        assert result["validation_results"]["tests_passed"] is True
+
+    def test_parse_dict_feedback_major(self, invoker):
+        """_parse_coach_feedback categorizes major issues as must-fix."""
+        feedback = {
+            "issues": [
+                {
+                    "description": "Missing error handling",
+                    "severity": "major",
+                    "location": "src/api.py:10",
+                },
+            ],
+        }
+
+        result = invoker._parse_coach_feedback(feedback, 2)
+
+        assert len(result["must_fix"]) == 1
+        assert len(result["should_fix"]) == 0
+
+    def test_parse_dict_feedback_minor(self, invoker):
+        """_parse_coach_feedback categorizes minor issues as should-fix."""
+        feedback = {
+            "issues": [
+                {
+                    "description": "Consider using helper function",
+                    "severity": "minor",
+                    "location": "src/utils.py:5",
+                },
+            ],
+        }
+
+        result = invoker._parse_coach_feedback(feedback, 2)
+
+        assert len(result["must_fix"]) == 0
+        assert len(result["should_fix"]) == 1
+        assert result["should_fix"][0]["issue"] == "Consider using helper function"
+
+    def test_parse_dict_feedback_mixed_severities(self, invoker):
+        """_parse_coach_feedback properly categorizes mixed severity issues."""
+        feedback = {
+            "rationale": "Multiple issues found",
+            "issues": [
+                {"description": "Critical bug", "severity": "critical"},
+                {"description": "Major issue", "severity": "major"},
+                {"description": "Minor style", "severity": "minor"},
+                {"description": "Unknown severity"},  # No severity - should be should-fix
+            ],
+        }
+
+        result = invoker._parse_coach_feedback(feedback, 3)
+
+        assert len(result["must_fix"]) == 2  # critical + major
+        assert len(result["should_fix"]) == 2  # minor + unknown
+
+
 class TestInvokeTaskWorkImplement:
-    """Test _invoke_task_work_implement method."""
+    """Test _invoke_task_work_implement method with SDK query() invocation."""
 
     @pytest.fixture
     def invoker(self, worktree_path):
@@ -927,20 +1307,74 @@ class TestInvokeTaskWorkImplement:
             use_task_work_delegation=True,
         )
 
+    def _create_mock_sdk(self, query_gen):
+        """Create mock SDK module with given query generator.
+
+        TASK-FB-FIX-013: Updated to include AssistantMessage, TextBlock, and other
+        message types for proper ContentBlock iteration testing.
+        """
+        mock_sdk = MagicMock()
+        mock_sdk.query = query_gen
+        mock_sdk.ClaudeAgentOptions = MagicMock()
+        mock_sdk.CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+        mock_sdk.ProcessError = type("ProcessError", (Exception,), {"exit_code": 1, "stderr": ""})
+        mock_sdk.CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        # TASK-FB-FIX-013: Add message type classes for isinstance() checks
+        # These are real classes that isinstance() can check against
+        class MockTextBlock:
+            def __init__(self, text):
+                self.type = "text"
+                self.text = text
+
+        class MockToolUseBlock:
+            def __init__(self, name="test_tool"):
+                self.type = "tool_use"
+                self.name = name
+
+        class MockToolResultBlock:
+            def __init__(self, content=None):
+                self.type = "tool_result"
+                self.content = content
+
+        class MockAssistantMessage:
+            def __init__(self, content):
+                self.content = content  # List of ContentBlocks
+
+        class MockResultMessage:
+            def __init__(self, num_turns=1):
+                self.num_turns = num_turns
+
+        mock_sdk.AssistantMessage = MockAssistantMessage
+        mock_sdk.TextBlock = MockTextBlock
+        mock_sdk.ToolUseBlock = MockToolUseBlock
+        mock_sdk.ToolResultBlock = MockToolResultBlock
+        mock_sdk.ResultMessage = MockResultMessage
+
+        return mock_sdk
+
+    def _create_assistant_message(self, mock_sdk, text):
+        """Helper to create a properly-structured AssistantMessage with TextBlock content."""
+        text_block = mock_sdk.TextBlock(text)
+        return mock_sdk.AssistantMessage([text_block])
+
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_success(self, invoker, worktree_path):
-        """_invoke_task_work_implement returns success on exit code 0."""
-        # Mock subprocess
-        mock_process = AsyncMock()
-        mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(
-            return_value=(
-                b"All tests passing\nCoverage: 85.2%\nIN_REVIEW",
-                b"",
-            )
-        )
+        """_invoke_task_work_implement returns success when SDK query completes."""
+        # TASK-FB-FIX-013: Use proper AssistantMessage with TextBlock content
+        mock_sdk = self._create_mock_sdk(lambda *args, **kwargs: None)
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        async def mock_query_gen(*args, **kwargs):
+            # Simulate output with passing tests (TaskWorkStreamParser format)
+            # Use proper AssistantMessage with TextBlock content
+            text_block = mock_sdk.TextBlock("10 tests passed, 0 tests failed\nCoverage: 85.2%\nAll quality gates passed")
+            yield mock_sdk.AssistantMessage([text_block])
+            yield mock_sdk.ResultMessage(num_turns=5)
+
+        mock_sdk.query = mock_query_gen
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             result = await invoker._invoke_task_work_implement(
                 task_id="TASK-001",
                 mode="tdd",
@@ -948,30 +1382,44 @@ class TestInvokeTaskWorkImplement:
 
             # Verify result
             assert result.success is True
-            assert result.exit_code == 0
             assert result.error is None
+            # TaskWorkStreamParser returns test count as integer
+            assert result.output.get("tests_passed") == 10
+            assert result.output.get("tests_failed") == 0
 
-            # Verify subprocess was called correctly
-            mock_exec.assert_called_once()
-            call_args = mock_exec.call_args
-            assert "guardkit" in call_args.args
-            assert "task-work" in call_args.args
-            assert "TASK-001" in call_args.args
-            assert "--implement-only" in call_args.args
-            assert "--mode=tdd" in call_args.args
-            assert call_args.kwargs["cwd"] == str(worktree_path)
+            # Verify ClaudeAgentOptions was configured correctly
+            mock_sdk.ClaudeAgentOptions.assert_called_once()
+            options_kwargs = mock_sdk.ClaudeAgentOptions.call_args.kwargs
+            assert options_kwargs["cwd"] == str(worktree_path)
+            assert "Read" in options_kwargs["allowed_tools"]
+            assert "Write" in options_kwargs["allowed_tools"]
+            assert "Edit" in options_kwargs["allowed_tools"]
+            assert "Bash" in options_kwargs["allowed_tools"]
+            assert "Task" in options_kwargs["allowed_tools"]
+            assert "Skill" in options_kwargs["allowed_tools"]
+            assert options_kwargs["permission_mode"] == "acceptEdits"
+            assert options_kwargs["max_turns"] == 50
+            # TASK-FB-FIX-014: Now includes "user" for skill loading
+            assert options_kwargs["setting_sources"] == ["user", "project"]
 
     @pytest.mark.asyncio
-    async def test_invoke_task_work_implement_failure(self, invoker):
-        """_invoke_task_work_implement returns failure on non-zero exit code."""
-        # Mock subprocess
-        mock_process = AsyncMock()
-        mock_process.returncode = 1
-        mock_process.communicate = AsyncMock(
-            return_value=(b"", b"Error: tests failed")
-        )
+    async def test_invoke_task_work_implement_sdk_process_error(self, invoker):
+        """_invoke_task_work_implement returns failure on SDK ProcessError."""
+        # Create ProcessError with required attributes
+        ProcessError = type("ProcessError", (Exception,), {})
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        async def mock_query_error(*args, **kwargs):
+            error = ProcessError("Process failed")
+            error.exit_code = 1
+            error.stderr = "Error: tests failed"
+            raise error
+            yield  # Make it a generator
+
+        mock_sdk = self._create_mock_sdk(mock_query_error)
+        mock_sdk.ProcessError = ProcessError
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             result = await invoker._invoke_task_work_implement(
                 task_id="TASK-001",
                 mode="standard",
@@ -979,8 +1427,7 @@ class TestInvokeTaskWorkImplement:
 
             # Verify result
             assert result.success is False
-            assert result.exit_code == 1
-            assert "Error: tests failed" in result.error
+            assert "SDK process failed" in result.error
 
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_timeout(self, invoker):
@@ -988,18 +1435,14 @@ class TestInvokeTaskWorkImplement:
         # Set very short timeout
         invoker.sdk_timeout_seconds = 0.001
 
-        # Mock subprocess that takes too long
-        mock_process = AsyncMock()
-        mock_process.kill = MagicMock()
-        mock_process.wait = AsyncMock()
+        async def mock_query_slow(*args, **kwargs):
+            await asyncio.sleep(10)  # Simulate long-running operation
+            yield MagicMock()
 
-        async def slow_communicate():
-            await asyncio.sleep(10)
-            return (b"", b"")
+        mock_sdk = self._create_mock_sdk(mock_query_slow)
 
-        mock_process.communicate = slow_communicate
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             with pytest.raises(SDKTimeoutError) as exc_info:
                 await invoker._invoke_task_work_implement(
                     task_id="TASK-001",
@@ -1009,33 +1452,182 @@ class TestInvokeTaskWorkImplement:
             assert "timeout" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    async def test_invoke_task_work_implement_command_not_found(self, invoker):
-        """_invoke_task_work_implement handles missing guardkit command."""
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError()):
+    async def test_invoke_task_work_implement_cli_not_found(self, invoker):
+        """_invoke_task_work_implement handles missing Claude CLI."""
+        CLINotFoundError = type("CLINotFoundError", (Exception,), {})
+
+        async def mock_query_cli_error(*args, **kwargs):
+            raise CLINotFoundError("Claude Code not found")
+            yield  # Make it a generator
+
+        mock_sdk = self._create_mock_sdk(mock_query_cli_error)
+        mock_sdk.CLINotFoundError = CLINotFoundError
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             result = await invoker._invoke_task_work_implement(
                 task_id="TASK-001",
                 mode="tdd",
             )
 
             assert result.success is False
-            assert "guardkit command not found" in result.error
-            assert result.exit_code == -1
+            assert "Claude Code CLI not installed" in result.error
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_sdk_import_error(self, invoker):
+        """_invoke_task_work_implement handles missing SDK import."""
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": None}):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            assert result.success is False
+            assert "Claude Agent SDK import failed" in result.error
+            assert "pip install claude-agent-sdk" in result.error
 
     @pytest.mark.asyncio
     async def test_invoke_task_work_implement_mode_passed(self, invoker, worktree_path):
-        """_invoke_task_work_implement passes mode parameter correctly."""
-        mock_process = AsyncMock()
-        mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(return_value=(b"Success", b""))
+        """_invoke_task_work_implement passes mode parameter in prompt correctly."""
+        captured_prompt = None
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
+        async def mock_query_capture(*args, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = kwargs.get("prompt") or (args[0] if args else None)
+            yield MagicMock(content="Success")
+
+        mock_sdk = self._create_mock_sdk(mock_query_capture)
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
             await invoker._invoke_task_work_implement(
                 task_id="TASK-001",
                 mode="standard",
             )
 
-            call_args = mock_exec.call_args
-            assert "--mode=standard" in call_args.args
+            # Verify the prompt contains the correct task-work command
+            assert captured_prompt is not None
+            assert "/task-work TASK-001 --implement-only --mode=standard" in captured_prompt
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_json_decode_error(self, invoker):
+        """_invoke_task_work_implement handles SDK JSON decode errors."""
+        CLIJSONDecodeError = type("CLIJSONDecodeError", (Exception,), {})
+
+        async def mock_query_json_error(*args, **kwargs):
+            raise CLIJSONDecodeError("Invalid JSON response")
+            yield  # Make it a generator
+
+        mock_sdk = self._create_mock_sdk(mock_query_json_error)
+        mock_sdk.CLIJSONDecodeError = CLIJSONDecodeError
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            assert result.success is False
+            assert "Failed to parse SDK response" in result.error
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_collects_output(self, invoker):
+        """_invoke_task_work_implement collects message content for parsing."""
+        # TASK-FB-FIX-013: Use proper AssistantMessage with TextBlock content
+        mock_sdk = self._create_mock_sdk(lambda *args, **kwargs: None)
+
+        async def mock_query_multi_message(*args, **kwargs):
+            # Simulate multiple messages with content (TaskWorkStreamParser format)
+            # Each message is an AssistantMessage with TextBlock content
+            for content in ["Starting...", "8 tests passed, 0 tests failed", "Coverage: 90%", "All quality gates passed"]:
+                text_block = mock_sdk.TextBlock(content)
+                yield mock_sdk.AssistantMessage([text_block])
+            yield mock_sdk.ResultMessage(num_turns=10)
+
+        mock_sdk.query = mock_query_multi_message
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+            assert result.success is True
+            # TaskWorkStreamParser returns test count as integer
+            assert result.output.get("tests_passed") == 8
+            # TaskWorkStreamParser uses 'coverage' not 'coverage_line'
+            assert result.output.get("coverage") == 90.0
+            assert result.output.get("quality_gates_passed") is True
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_writes_results_file(self, invoker, worktree_path):
+        """_invoke_task_work_implement writes task_work_results.json after success."""
+        # TASK-FB-FIX-013: Use proper AssistantMessage with TextBlock content
+        mock_sdk = self._create_mock_sdk(lambda *args, **kwargs: None)
+
+        async def mock_query_gen(*args, **kwargs):
+            # Simulate output with passing tests and coverage
+            text_block = mock_sdk.TextBlock("12 tests passed, 0 failed\nCoverage: 85.5%\nAll quality gates passed\nIN_REVIEW")
+            yield mock_sdk.AssistantMessage([text_block])
+            yield mock_sdk.ResultMessage(num_turns=8)
+
+        mock_sdk.query = mock_query_gen
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-001",
+                mode="tdd",
+            )
+
+        assert result.success is True
+
+        # Verify results file was written
+        results_path = worktree_path / ".guardkit" / "autobuild" / "TASK-001" / "task_work_results.json"
+        assert results_path.exists(), "task_work_results.json should be written after successful invocation"
+
+        # Verify content has required fields for Coach validation
+        content = json.loads(results_path.read_text())
+        assert content["task_id"] == "TASK-001"
+        assert "quality_gates" in content
+        assert "timestamp" in content
+        assert "completed" in content
+
+    @pytest.mark.asyncio
+    async def test_invoke_task_work_implement_results_file_has_quality_gates(self, invoker, worktree_path):
+        """_invoke_task_work_implement writes results with quality gate metrics."""
+        # TASK-FB-FIX-013: Use proper AssistantMessage with TextBlock content
+        mock_sdk = self._create_mock_sdk(lambda *args, **kwargs: None)
+
+        async def mock_query_gen(*args, **kwargs):
+            text_block = mock_sdk.TextBlock("15 tests passed, 0 failed\nCoverage: 92.5%\nAll quality gates passed")
+            yield mock_sdk.AssistantMessage([text_block])
+            yield mock_sdk.ResultMessage(num_turns=6)
+
+        mock_sdk.query = mock_query_gen
+
+        import sys
+        with patch.dict(sys.modules, {"claude_agent_sdk": mock_sdk}):
+            result = await invoker._invoke_task_work_implement(
+                task_id="TASK-QG-001",
+                mode="standard",
+            )
+
+        assert result.success is True
+
+        # Verify quality gates in results file
+        results_path = worktree_path / ".guardkit" / "autobuild" / "TASK-QG-001" / "task_work_results.json"
+        content = json.loads(results_path.read_text())
+
+        quality_gates = content["quality_gates"]
+        assert quality_gates["tests_passed"] == 15
+        assert quality_gates["tests_failed"] == 0
+        assert quality_gates["coverage"] == 92.5
+        assert quality_gates["coverage_met"] is True
+        assert quality_gates["tests_passing"] is True
 
 
 class TestParseTaskWorkOutput:
@@ -1120,9 +1712,21 @@ class TestInvokePlayerWithDelegation:
         self, delegation_invoker, worktree_path, sample_player_report
     ):
         """invoke_player uses task-work delegation when enabled."""
-        # Setup: Create Player report file that task-work would create
-        create_report_file(
-            worktree_path, "TASK-001", 1, "player", sample_player_report
+        # Setup: Create task_work_results.json that task-work creates
+        # (Player report is now created from this by _create_player_report_from_task_work)
+        task_work_results = {
+            "files_modified": ["src/auth.py"],
+            "files_created": ["tests/test_auth.py"],
+            "tests_info": {
+                "tests_run": True,
+                "tests_passed": True,
+                "output_summary": "5 passed in 0.23s",
+            },
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_results, indent=2)
         )
 
         # Mock _invoke_task_work_implement
@@ -1152,21 +1756,30 @@ class TestInvokePlayerWithDelegation:
                 mock_invoke.assert_called_once_with(
                     task_id="TASK-001",
                     mode="tdd",
+                    documentation_level="minimal",
                 )
 
                 # Verify result
                 assert result.success is True
                 assert result.agent_type == "player"
-                assert result.report == sample_player_report
+                # Report is created from task_work_results.json
+                assert result.report["task_id"] == "TASK-001"
+                assert result.report["turn"] == 1
+                assert result.report["files_modified"] == ["src/auth.py"]
+                assert result.report["files_created"] == ["tests/test_auth.py"]
+                assert result.report["tests_passed"] is True
 
     @pytest.mark.asyncio
     async def test_invoke_player_writes_feedback_before_delegation(
         self, delegation_invoker, worktree_path, sample_player_report
     ):
         """invoke_player writes feedback before delegating."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 2, "player", sample_player_report
+        # Setup: Create task_work_results.json (Player report created from this)
+        task_work_results = {"files_modified": [], "files_created": []}
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_results)
         )
         feedback = "Please fix the error handling"
 
@@ -1205,9 +1818,12 @@ class TestInvokePlayerWithDelegation:
         self, delegation_invoker, worktree_path, sample_player_report
     ):
         """invoke_player doesn't write feedback on turn 1."""
-        # Setup
-        create_report_file(
-            worktree_path, "TASK-001", 1, "player", sample_player_report
+        # Setup: Create task_work_results.json (Player report created from this)
+        task_work_results = {"files_modified": [], "files_created": []}
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        autobuild_dir.mkdir(parents=True, exist_ok=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_results)
         )
 
         mock_result = TaskWorkResult(
@@ -1312,3 +1928,2132 @@ class TestInvokePlayerLegacy:
             # Verify result
             assert result.success is True
             assert result.report == sample_player_report
+
+
+# ==================== Acceptance Criteria Extraction Tests ====================
+
+
+class TestExtractAcceptanceCriteria:
+    """Test extract_acceptance_criteria method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    @pytest.fixture
+    def task_dir(self, worktree_path):
+        """Create task directory structure."""
+        task_dir = worktree_path / "tasks" / "in_progress"
+        task_dir.mkdir(parents=True)
+        return task_dir
+
+    def test_extract_from_frontmatter(self, invoker, task_dir):
+        """Extract acceptance criteria from YAML frontmatter."""
+        task_content = """---
+id: TASK-001
+title: Implement OAuth2
+acceptance_criteria:
+  - OAuth2 authentication flow works correctly
+  - Token refresh handles expiry edge case
+  - Error responses are properly formatted
+---
+
+# Task Description
+
+Implement OAuth2 authentication.
+"""
+        task_file = task_dir / "TASK-001.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-001")
+
+        assert len(result) == 3
+        assert result[0]["id"] == "AC-001"
+        assert result[0]["text"] == "OAuth2 authentication flow works correctly"
+        assert result[1]["id"] == "AC-002"
+        assert result[1]["text"] == "Token refresh handles expiry edge case"
+        assert result[2]["id"] == "AC-003"
+        assert result[2]["text"] == "Error responses are properly formatted"
+
+    def test_extract_from_body_bullets(self, invoker, task_dir):
+        """Extract acceptance criteria from markdown body with bullets."""
+        task_content = """---
+id: TASK-002
+title: Add Error Handling
+---
+
+# Task Description
+
+Add error handling to the API.
+
+## Acceptance Criteria
+
+- All API errors return JSON format
+- Error codes follow HTTP standards
+- Stack traces are not exposed in production
+"""
+        task_file = task_dir / "TASK-002.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-002")
+
+        assert len(result) == 3
+        assert result[0]["id"] == "AC-001"
+        assert result[0]["text"] == "All API errors return JSON format"
+        assert result[1]["id"] == "AC-002"
+        assert result[1]["text"] == "Error codes follow HTTP standards"
+
+    def test_extract_from_body_numbered(self, invoker, task_dir):
+        """Extract acceptance criteria from numbered list in body."""
+        task_content = """---
+id: TASK-003
+title: Database Migration
+---
+
+# Description
+
+Migrate database schema.
+
+## Acceptance Criteria
+
+1. All data is preserved during migration
+2. Migration is reversible
+3. Downtime is under 5 minutes
+"""
+        task_file = task_dir / "TASK-003.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-003")
+
+        assert len(result) == 3
+        assert result[0]["text"] == "All data is preserved during migration"
+        assert result[1]["text"] == "Migration is reversible"
+        assert result[2]["text"] == "Downtime is under 5 minutes"
+
+    def test_extract_returns_empty_when_no_file(self, invoker):
+        """Return empty list when task file doesn't exist."""
+        result = invoker.extract_acceptance_criteria("TASK-NONEXISTENT")
+        assert result == []
+
+    def test_extract_returns_empty_when_no_criteria(self, invoker, task_dir):
+        """Return empty list when no acceptance criteria found."""
+        task_content = """---
+id: TASK-004
+title: Simple Task
+---
+
+# Description
+
+A simple task with no acceptance criteria section.
+"""
+        task_file = task_dir / "TASK-004.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-004")
+        assert result == []
+
+    def test_extract_checks_multiple_directories(self, invoker, worktree_path):
+        """Check multiple task directories for task file."""
+        # Create task in backlog instead of in_progress
+        backlog_dir = worktree_path / "tasks" / "backlog"
+        backlog_dir.mkdir(parents=True)
+
+        task_content = """---
+id: TASK-005
+title: Backlog Task
+acceptance_criteria:
+  - Criterion from backlog
+---
+"""
+        task_file = backlog_dir / "TASK-005.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-005")
+
+        assert len(result) == 1
+        assert result[0]["text"] == "Criterion from backlog"
+
+    def test_extract_checks_subdirectories(self, invoker, worktree_path):
+        """Check subdirectories within task status directories."""
+        # Create task in a feature subdirectory
+        feature_dir = worktree_path / "tasks" / "in_progress" / "feature-auth"
+        feature_dir.mkdir(parents=True)
+
+        task_content = """---
+id: TASK-006
+title: Feature Task
+acceptance_criteria:
+  - Criterion from feature directory
+---
+"""
+        task_file = feature_dir / "TASK-006.md"
+        task_file.write_text(task_content)
+
+        result = invoker.extract_acceptance_criteria("TASK-006")
+
+        assert len(result) == 1
+        assert result[0]["text"] == "Criterion from feature directory"
+
+
+class TestParseCriteriaFromBody:
+    """Test _parse_criteria_from_body method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_parse_bullet_points_dash(self, invoker):
+        """Parse criteria with dash bullet points."""
+        body = """
+## Acceptance Criteria
+
+- First criterion
+- Second criterion
+- Third criterion
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 3
+        assert result[0]["id"] == "AC-001"
+        assert result[0]["text"] == "First criterion"
+        assert result[1]["text"] == "Second criterion"
+        assert result[2]["text"] == "Third criterion"
+
+    def test_parse_bullet_points_asterisk(self, invoker):
+        """Parse criteria with asterisk bullet points."""
+        body = """
+## Acceptance Criteria
+
+* First item
+* Second item
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 2
+        assert result[0]["text"] == "First item"
+        assert result[1]["text"] == "Second item"
+
+    def test_parse_numbered_list_dot(self, invoker):
+        """Parse criteria with numbered list using dots."""
+        body = """
+## Acceptance Criteria
+
+1. First numbered
+2. Second numbered
+3. Third numbered
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 3
+        assert result[0]["text"] == "First numbered"
+
+    def test_parse_numbered_list_paren(self, invoker):
+        """Parse criteria with numbered list using parentheses."""
+        body = """
+## Acceptance Criteria
+
+1) First paren
+2) Second paren
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 2
+        assert result[0]["text"] == "First paren"
+
+    def test_parse_case_insensitive_header(self, invoker):
+        """Parse with case-insensitive header matching."""
+        body = """
+## acceptance criteria
+
+- Lowercase header criterion
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 1
+        assert result[0]["text"] == "Lowercase header criterion"
+
+    def test_parse_stops_at_next_section(self, invoker):
+        """Stop parsing at next ## section."""
+        body = """
+## Acceptance Criteria
+
+- First criterion
+- Second criterion
+
+## Implementation Notes
+
+This is not a criterion.
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        assert len(result) == 2
+        assert "Implementation Notes" not in str(result)
+
+    def test_parse_returns_empty_when_no_section(self, invoker):
+        """Return empty list when no acceptance criteria section."""
+        body = """
+## Description
+
+Some description.
+
+## Notes
+
+Some notes.
+"""
+        result = invoker._parse_criteria_from_body(body)
+        assert result == []
+
+    def test_parse_handles_indented_items(self, invoker):
+        """Handle indented list items."""
+        body = """
+## Acceptance Criteria
+
+  - Indented item
+    - Nested item (should also be captured)
+"""
+        result = invoker._parse_criteria_from_body(body)
+
+        # Should capture both indented items
+        assert len(result) >= 1
+        assert result[0]["text"] == "Indented item"
+
+
+class TestParseCompletionPromises:
+    """Test parse_completion_promises method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_parse_single_promise(self, invoker):
+        """Parse single completion promise from player report."""
+        report = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "OAuth2 flow works",
+                    "status": "complete",
+                    "evidence": "Implemented in oauth.py",
+                    "test_file": "tests/test_oauth.py",
+                    "implementation_files": ["src/oauth.py"],
+                }
+            ],
+        }
+
+        result = invoker.parse_completion_promises(report)
+
+        assert len(result) == 1
+        assert result[0].criterion_id == "AC-001"
+        assert result[0].criterion_text == "OAuth2 flow works"
+        from guardkit.orchestrator.schemas import CriterionStatus
+        assert result[0].status == CriterionStatus.COMPLETE
+        assert result[0].evidence == "Implemented in oauth.py"
+        assert result[0].test_file == "tests/test_oauth.py"
+        assert result[0].implementation_files == ["src/oauth.py"]
+
+    def test_parse_multiple_promises(self, invoker):
+        """Parse multiple completion promises from player report."""
+        report = {
+            "completion_promises": [
+                {
+                    "criterion_id": "AC-001",
+                    "criterion_text": "First criterion",
+                    "status": "complete",
+                    "evidence": "Done",
+                },
+                {
+                    "criterion_id": "AC-002",
+                    "criterion_text": "Second criterion",
+                    "status": "incomplete",
+                    "evidence": "WIP",
+                },
+            ],
+        }
+
+        result = invoker.parse_completion_promises(report)
+
+        assert len(result) == 2
+        assert result[0].criterion_id == "AC-001"
+        assert result[1].criterion_id == "AC-002"
+        from guardkit.orchestrator.schemas import CriterionStatus
+        assert result[1].status == CriterionStatus.INCOMPLETE
+
+    def test_parse_empty_promises(self, invoker):
+        """Return empty list when no completion_promises field."""
+        report = {
+            "task_id": "TASK-001",
+            "turn": 1,
+        }
+
+        result = invoker.parse_completion_promises(report)
+
+        assert result == []
+
+    def test_parse_empty_promises_list(self, invoker):
+        """Return empty list when completion_promises is empty."""
+        report = {
+            "completion_promises": [],
+        }
+
+        result = invoker.parse_completion_promises(report)
+
+        assert result == []
+
+
+class TestParseCriteriaVerifications:
+    """Test parse_criteria_verifications method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_parse_single_verification(self, invoker):
+        """Parse single criteria verification from coach decision."""
+        decision = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "decision": "approve",
+            "criteria_verification": [
+                {
+                    "criterion_id": "AC-001",
+                    "result": "verified",
+                    "notes": "All tests pass",
+                }
+            ],
+        }
+
+        result = invoker.parse_criteria_verifications(decision)
+
+        assert len(result) == 1
+        assert result[0].criterion_id == "AC-001"
+        from guardkit.orchestrator.schemas import VerificationResult
+        assert result[0].result == VerificationResult.VERIFIED
+        assert result[0].notes == "All tests pass"
+
+    def test_parse_multiple_verifications(self, invoker):
+        """Parse multiple criteria verifications from coach decision."""
+        decision = {
+            "criteria_verification": [
+                {
+                    "criterion_id": "AC-001",
+                    "result": "verified",
+                    "notes": "Good",
+                },
+                {
+                    "criterion_id": "AC-002",
+                    "result": "rejected",
+                    "notes": "Missing tests",
+                },
+            ],
+        }
+
+        result = invoker.parse_criteria_verifications(decision)
+
+        assert len(result) == 2
+        assert result[0].criterion_id == "AC-001"
+        assert result[1].criterion_id == "AC-002"
+        from guardkit.orchestrator.schemas import VerificationResult
+        assert result[0].result == VerificationResult.VERIFIED
+        assert result[1].result == VerificationResult.REJECTED
+
+    def test_parse_empty_verifications(self, invoker):
+        """Return empty list when no criteria_verification field."""
+        decision = {
+            "task_id": "TASK-001",
+            "decision": "approve",
+        }
+
+        result = invoker.parse_criteria_verifications(decision)
+
+        assert result == []
+
+    def test_parse_empty_verifications_list(self, invoker):
+        """Return empty list when criteria_verification is empty."""
+        decision = {
+            "criteria_verification": [],
+        }
+
+        result = invoker.parse_criteria_verifications(decision)
+
+        assert result == []
+
+
+# ==================== Turn Context Tests ====================
+
+
+class TestWriteTurnContext:
+    """Test _write_turn_context method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_write_turn_context_creates_file(self, invoker, worktree_path):
+        """_write_turn_context creates JSON context file."""
+        path = invoker._write_turn_context(
+            task_id="TASK-001",
+            turn=1,
+            max_turns=5,
+            approaching_limit=False,
+        )
+
+        assert path.exists()
+        expected_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-001" / "turn_context.json"
+        )
+        assert path == expected_path
+
+    def test_write_turn_context_content(self, invoker, worktree_path):
+        """_write_turn_context writes correct content."""
+        invoker._write_turn_context(
+            task_id="TASK-002",
+            turn=3,
+            max_turns=5,
+            approaching_limit=False,
+        )
+
+        context_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-002" / "turn_context.json"
+        )
+        with open(context_path) as f:
+            content = json.load(f)
+
+        assert content["task_id"] == "TASK-002"
+        assert content["turn"] == 3
+        assert content["max_turns"] == 5
+        assert content["turns_remaining"] == 2
+        assert content["approaching_limit"] is False
+        assert content["escape_hatch_active"] is False
+
+    def test_write_turn_context_approaching_limit(self, invoker, worktree_path):
+        """_write_turn_context marks approaching_limit correctly."""
+        invoker._write_turn_context(
+            task_id="TASK-003",
+            turn=4,
+            max_turns=5,
+            approaching_limit=True,
+        )
+
+        context_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-003" / "turn_context.json"
+        )
+        with open(context_path) as f:
+            content = json.load(f)
+
+        assert content["approaching_limit"] is True
+        assert content["escape_hatch_active"] is True
+        assert content["turns_remaining"] == 1
+
+
+class TestLoadTurnContext:
+    """Test load_turn_context method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_load_turn_context_success(self, invoker, worktree_path):
+        """load_turn_context loads existing context file."""
+        # Create context file
+        context_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        context_dir.mkdir(parents=True)
+        context_path = context_dir / "turn_context.json"
+        context_data = {
+            "task_id": "TASK-001",
+            "turn": 2,
+            "max_turns": 5,
+            "approaching_limit": False,
+        }
+        with open(context_path, "w") as f:
+            json.dump(context_data, f)
+
+        result = invoker.load_turn_context("TASK-001")
+
+        assert result is not None
+        assert result["task_id"] == "TASK-001"
+        assert result["turn"] == 2
+
+    def test_load_turn_context_not_found(self, invoker):
+        """load_turn_context returns None when file doesn't exist."""
+        result = invoker.load_turn_context("TASK-NONEXISTENT")
+        assert result is None
+
+    def test_load_turn_context_invalid_json(self, invoker, worktree_path):
+        """load_turn_context returns None on invalid JSON."""
+        context_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-001"
+        context_dir.mkdir(parents=True)
+        context_path = context_dir / "turn_context.json"
+        context_path.write_text("{ invalid json }")
+
+        result = invoker.load_turn_context("TASK-001")
+        assert result is None
+
+
+# ==================== Player Prompt with Acceptance Criteria Tests ====================
+
+
+class TestBuildPlayerPromptWithCriteria:
+    """Test _build_player_prompt with acceptance criteria."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    def test_prompt_includes_criteria_section(self, invoker):
+        """Player prompt includes acceptance criteria section."""
+        criteria = [
+            {"id": "AC-001", "text": "OAuth2 flow works correctly"},
+            {"id": "AC-002", "text": "Token refresh handles expiry"},
+        ]
+
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Implement OAuth2",
+            feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+        assert "## Acceptance Criteria" in prompt
+        assert "AC-001" in prompt
+        assert "OAuth2 flow works correctly" in prompt
+        assert "AC-002" in prompt
+        assert "Token refresh handles expiry" in prompt
+
+    def test_prompt_includes_completion_promise_example(self, invoker):
+        """Player prompt includes completion_promises example."""
+        criteria = [
+            {"id": "AC-001", "text": "OAuth2 flow works correctly"},
+        ]
+
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Implement OAuth2",
+            feedback=None,
+            acceptance_criteria=criteria,
+        )
+
+        assert "completion_promises" in prompt
+        assert '"criterion_id": "AC-001"' in prompt
+
+    def test_prompt_without_criteria(self, invoker):
+        """Player prompt without criteria doesn't include criteria section."""
+        prompt = invoker._build_player_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Simple task",
+            feedback=None,
+            acceptance_criteria=None,
+        )
+
+        # Should not have structured criteria section
+        assert "You MUST create a completion_promise for each criterion" not in prompt
+
+
+# ==================== Coach Prompt with Verification Tests ====================
+
+
+class TestBuildCoachPromptWithVerification:
+    """Test _build_coach_prompt with acceptance criteria verification."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(worktree_path=worktree_path)
+
+    @pytest.fixture
+    def sample_player_report(self):
+        """Sample Player report for Coach prompt."""
+        return {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": ["src/auth.py"],
+            "tests_passed": True,
+        }
+
+    def test_prompt_includes_criteria_to_verify(self, invoker, sample_player_report):
+        """Coach prompt includes acceptance criteria to verify."""
+        criteria = [
+            {"id": "AC-001", "text": "OAuth2 flow works correctly"},
+            {"id": "AC-002", "text": "Token refresh handles expiry"},
+        ]
+
+        prompt = invoker._build_coach_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Implement OAuth2",
+            player_report=sample_player_report,
+            acceptance_criteria=criteria,
+        )
+
+        assert "## Acceptance Criteria to Verify" in prompt
+        assert "AC-001" in prompt
+        assert "AC-002" in prompt
+
+    def test_prompt_includes_verification_example(self, invoker, sample_player_report):
+        """Coach prompt includes criteria_verification example."""
+        criteria = [
+            {"id": "AC-001", "text": "OAuth2 flow works correctly"},
+        ]
+
+        prompt = invoker._build_coach_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Implement OAuth2",
+            player_report=sample_player_report,
+            acceptance_criteria=criteria,
+        )
+
+        assert "criteria_verification" in prompt
+        assert '"result": "verified"' in prompt
+
+    def test_prompt_without_criteria(self, invoker, sample_player_report):
+        """Coach prompt without criteria doesn't include verification section."""
+        prompt = invoker._build_coach_prompt(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Simple task",
+            player_report=sample_player_report,
+            acceptance_criteria=None,
+        )
+
+        # Should not have structured verification section
+        assert "## Acceptance Criteria to Verify" not in prompt
+
+
+# ============================================================================
+# TASK-FB-RPT1: Player Report Creation from Task-Work Results
+# ============================================================================
+
+
+class TestCreatePlayerReportFromTaskWork:
+    """Test _create_player_report_from_task_work method.
+
+    These tests verify that Player reports are correctly created from
+    task-work results, bridging the gap between task-work's output format
+    (task_work_results.json) and the expected Player report format
+    (player_turn_{turn}.json).
+
+    Coverage Target: >=85%
+    Test Count: 8 tests
+    """
+
+    @pytest.fixture
+    def invoker_with_worktree(self, worktree_path):
+        """Create AgentInvoker with worktree path."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+            use_task_work_delegation=True,
+        )
+
+    @pytest.fixture
+    def sample_task_work_results(self):
+        """Sample task_work_results.json content."""
+        return {
+            "files_modified": ["src/auth.py", "src/config.py"],
+            "files_created": ["tests/test_auth.py", "src/oauth.py"],
+            "tests_info": {
+                "tests_run": True,
+                "tests_passed": True,
+                "output_summary": "12 tests passed in 0.45s",
+            },
+            "coverage": {"line": 85.5, "branch": 78.2},
+            "plan_audit": {
+                "files_planned": 4,
+                "files_actual": 4,
+            },
+        }
+
+    def test_creates_player_report_from_task_work_results(
+        self, invoker_with_worktree, worktree_path, sample_task_work_results
+    ):
+        """_create_player_report_from_task_work creates player_turn_{turn}.json from task_work_results.json."""
+        task_id = "TASK-001"
+        turn = 1
+
+        # Create task_work_results.json
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(sample_task_work_results, indent=2)
+        )
+
+        # Create TaskWorkResult
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={},
+            exit_code=0,
+        )
+
+        # Execute
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id,
+            turn=turn,
+            task_work_result=task_work_result,
+        )
+
+        # Verify player report was created
+        player_report_path = autobuild_dir / f"player_turn_{turn}.json"
+        assert player_report_path.exists()
+
+        # Verify report content
+        report = json.loads(player_report_path.read_text())
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+        assert report["files_modified"] == sample_task_work_results["files_modified"]
+        assert report["files_created"] == sample_task_work_results["files_created"]
+        assert report["tests_run"] is True
+        assert report["tests_passed"] is True
+        assert report["test_output_summary"] == "12 tests passed in 0.45s"
+
+    def test_extracts_test_files_from_created_modified(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """_create_player_report_from_task_work identifies test files correctly."""
+        task_id = "TASK-002"
+        turn = 2
+
+        # Create task_work_results.json with test files
+        task_work_data = {
+            "files_modified": ["tests/test_auth.py", "src/auth.py"],
+            "files_created": ["tests/test_oauth.py", "src/oauth_test.py"],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Execute
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        # Verify tests_written extracted correctly
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+        # Should include files with "test" in name
+        assert "tests/test_auth.py" in report["tests_written"]
+        assert "tests/test_oauth.py" in report["tests_written"]
+        assert "src/oauth_test.py" in report["tests_written"]
+        # Should NOT include non-test files
+        assert "src/auth.py" not in report["tests_written"]
+
+    def test_creates_report_without_task_work_results_file(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """_create_player_report_from_task_work creates report with defaults when task_work_results.json missing."""
+        task_id = "TASK-003"
+        turn = 1
+
+        # Don't create task_work_results.json
+
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={"files_created": ["src/new_file.py"]},
+            exit_code=0,
+        )
+
+        # Mock git detection to avoid actual git calls
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": ["src/changed.py"], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        # Verify report was created with task_work_result.output data
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        report_path = autobuild_dir / f"player_turn_{turn}.json"
+        assert report_path.exists()
+
+        report = json.loads(report_path.read_text())
+        # Output overrides git detection
+        assert report["files_created"] == ["src/new_file.py"]
+
+    def test_output_overrides_file_data(
+        self, invoker_with_worktree, worktree_path, sample_task_work_results
+    ):
+        """task_work_result.output takes precedence over task_work_results.json file data."""
+        task_id = "TASK-004"
+        turn = 1
+
+        # Create task_work_results.json
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(sample_task_work_results)
+        )
+
+        # TaskWorkResult with different output data
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={
+                "files_modified": ["src/override.py"],
+                "tests_passed": False,
+            },
+            exit_code=0,
+        )
+
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+        # Output should override file data
+        assert report["files_modified"] == ["src/override.py"]
+        assert report["tests_passed"] is False
+        assert report["tests_run"] is True  # Set when tests_passed is in output
+
+    def test_handles_malformed_task_work_results_json(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """_create_player_report_from_task_work handles malformed JSON gracefully."""
+        task_id = "TASK-005"
+        turn = 1
+
+        # Create malformed JSON
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            "{ invalid json content"
+        )
+
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={"files_created": ["src/file.py"]},
+            exit_code=0,
+        )
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            # Should not raise exception
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        # Verify report was still created
+        report_path = autobuild_dir / f"player_turn_{turn}.json"
+        assert report_path.exists()
+
+    def test_creates_autobuild_directory_if_missing(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """_create_player_report_from_task_work creates autobuild directory if it doesn't exist."""
+        task_id = "TASK-006"
+        turn = 1
+
+        # Directory doesn't exist
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        assert not autobuild_dir.exists()
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        # Directory should now exist
+        assert autobuild_dir.exists()
+        assert (autobuild_dir / f"player_turn_{turn}.json").exists()
+
+    def test_report_includes_all_required_fields(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Created report includes all fields from PLAYER_REPORT_SCHEMA."""
+        task_id = "TASK-007"
+        turn = 1
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Verify all required fields from PLAYER_REPORT_SCHEMA
+        required_fields = [
+            "task_id",
+            "turn",
+            "files_modified",
+            "files_created",
+            "tests_written",
+            "tests_run",
+            "tests_passed",
+            "implementation_notes",
+            "concerns",
+            "requirements_addressed",
+            "requirements_remaining",
+        ]
+        for field in required_fields:
+            assert field in report, f"Missing required field: {field}"
+
+    def test_implementation_notes_include_plan_audit_info(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Implementation notes include plan audit info when available."""
+        task_id = "TASK-008"
+        turn = 1
+
+        task_work_data = {
+            "files_modified": [],
+            "files_created": [],
+            "plan_audit": {
+                "files_planned": 5,
+                "files_actual": 4,
+            },
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        invoker_with_worktree._create_player_report_from_task_work(
+            task_id=task_id, turn=turn, task_work_result=task_work_result
+        )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+        assert "Files planned: 5" in report["implementation_notes"]
+        assert "Files actual: 4" in report["implementation_notes"]
+
+
+class TestDetectGitChanges:
+    """Test _detect_git_changes method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    def test_detect_git_changes_returns_dict(self, invoker):
+        """_detect_git_changes returns dict with modified and created keys."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0, stdout="")
+            result = invoker._detect_git_changes()
+
+        assert "modified" in result
+        assert "created" in result
+        assert isinstance(result["modified"], list)
+        assert isinstance(result["created"], list)
+
+    def test_detect_git_changes_parses_modified_files(self, invoker):
+        """_detect_git_changes parses modified files from git diff."""
+        with patch("subprocess.run") as mock_run:
+            # First call for modified files
+            mock_modified = Mock(returncode=0, stdout="src/auth.py\nsrc/config.py\n")
+            # Second call for untracked files
+            mock_untracked = Mock(returncode=0, stdout="")
+            mock_run.side_effect = [mock_modified, mock_untracked]
+
+            result = invoker._detect_git_changes()
+
+        assert result["modified"] == ["src/auth.py", "src/config.py"]
+
+    def test_detect_git_changes_parses_untracked_files(self, invoker):
+        """_detect_git_changes parses untracked files from git ls-files."""
+        with patch("subprocess.run") as mock_run:
+            # First call for modified files
+            mock_modified = Mock(returncode=0, stdout="")
+            # Second call for untracked files
+            mock_untracked = Mock(returncode=0, stdout="src/new_file.py\ntests/test_new.py\n")
+            mock_run.side_effect = [mock_modified, mock_untracked]
+
+            result = invoker._detect_git_changes()
+
+        assert result["created"] == ["src/new_file.py", "tests/test_new.py"]
+
+    def test_detect_git_changes_handles_git_failure(self, invoker):
+        """_detect_git_changes returns empty lists when git fails."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=1, stdout="")
+            result = invoker._detect_git_changes()
+
+        # Should return empty lists, not raise
+        assert result["modified"] == []
+        assert result["created"] == []
+
+    def test_detect_git_changes_handles_timeout(self, invoker):
+        """_detect_git_changes handles subprocess timeout."""
+        import subprocess
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
+            result = invoker._detect_git_changes()
+
+        # Should return empty lists, not raise
+        assert result["modified"] == []
+        assert result["created"] == []
+
+
+# ==================== TaskWorkStreamParser Tests ====================
+
+
+class TestTaskWorkStreamParser:
+    """Test TaskWorkStreamParser for quality gate extraction.
+
+    The TaskWorkStreamParser is a stateful incremental parser that extracts
+    quality gate results from task-work SDK stream messages.
+
+    Coverage Target: >=90%
+    Test Count: 20+ tests
+    """
+
+    @pytest.fixture
+    def parser(self):
+        """Create a fresh TaskWorkStreamParser instance."""
+        return TaskWorkStreamParser()
+
+    # -------------- Phase Detection Tests --------------
+
+    def test_parse_phase_marker(self, parser):
+        """Parser extracts phase markers with description."""
+        parser.parse_message("Phase 2: Implementation Planning")
+        result = parser.to_result()
+
+        assert "phases" in result
+        assert "phase_2" in result["phases"]
+        assert result["phases"]["phase_2"]["detected"] is True
+        assert "Implementation Planning" in result["phases"]["phase_2"]["text"]
+        assert result["phases"]["phase_2"]["completed"] is False
+
+    def test_parse_phase_marker_with_decimal(self, parser):
+        """Parser extracts phase markers with decimal numbers (e.g., Phase 2.5)."""
+        parser.parse_message("Phase 2.5: Architectural Review")
+        result = parser.to_result()
+
+        assert "phase_2.5" in result["phases"]
+        assert result["phases"]["phase_2.5"]["detected"] is True
+        assert "Architectural Review" in result["phases"]["phase_2.5"]["text"]
+
+    def test_parse_phase_complete_marker(self, parser):
+        """Parser detects phase completion markers."""
+        parser.parse_message("Phase 3: Implementation")
+        parser.parse_message("✓ Phase 3 complete")
+        result = parser.to_result()
+
+        assert result["phases"]["phase_3"]["completed"] is True
+
+    def test_parse_phase_complete_without_prior_detection(self, parser):
+        """Parser handles completion marker without prior phase detection."""
+        parser.parse_message("✓ Phase 4.5 complete")
+        result = parser.to_result()
+
+        assert "phase_4.5" in result["phases"]
+        assert result["phases"]["phase_4.5"]["completed"] is True
+        assert result["phases"]["phase_4.5"]["detected"] is True
+
+    def test_parse_multiple_phases(self, parser):
+        """Parser accumulates multiple phases."""
+        parser.parse_message("Phase 2: Planning")
+        parser.parse_message("✓ Phase 2 complete")
+        parser.parse_message("Phase 3: Implementation")
+        parser.parse_message("✓ Phase 3 complete")
+        result = parser.to_result()
+
+        assert len(result["phases"]) == 2
+        assert result["phases"]["phase_2"]["completed"] is True
+        assert result["phases"]["phase_3"]["completed"] is True
+
+    # -------------- Test Results Tests --------------
+
+    def test_parse_tests_passed(self, parser):
+        """Parser extracts test pass count."""
+        parser.parse_message("12 tests passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 12
+
+    def test_parse_tests_passed_singular(self, parser):
+        """Parser handles singular 'test passed'."""
+        parser.parse_message("1 test passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 1
+
+    def test_parse_tests_failed(self, parser):
+        """Parser extracts test fail count."""
+        parser.parse_message("3 tests failed")
+        result = parser.to_result()
+
+        assert result["tests_failed"] == 3
+
+    def test_parse_tests_both_counts(self, parser):
+        """Parser extracts both pass and fail counts from same message."""
+        parser.parse_message("12 tests passed, 2 tests failed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 12
+        assert result["tests_failed"] == 2
+
+    def test_parse_tests_case_insensitive(self, parser):
+        """Parser handles case variations in test results."""
+        parser.parse_message("15 Tests Passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 15
+
+    # -------------- Coverage Tests --------------
+
+    def test_parse_coverage_percentage(self, parser):
+        """Parser extracts coverage percentage."""
+        parser.parse_message("Coverage: 85.5%")
+        result = parser.to_result()
+
+        assert result["coverage"] == 85.5
+
+    def test_parse_coverage_integer(self, parser):
+        """Parser handles integer coverage."""
+        parser.parse_message("coverage: 90%")
+        result = parser.to_result()
+
+        assert result["coverage"] == 90.0
+
+    def test_parse_coverage_no_space(self, parser):
+        """Parser handles coverage without space after colon."""
+        parser.parse_message("Coverage:87.3%")
+        result = parser.to_result()
+
+        assert result["coverage"] == 87.3
+
+    # -------------- Quality Gates Tests --------------
+
+    def test_parse_quality_gates_passed(self, parser):
+        """Parser detects quality gates passed."""
+        parser.parse_message("Quality gates: PASSED")
+        result = parser.to_result()
+
+        assert result["quality_gates_passed"] is True
+
+    def test_parse_quality_gates_passed_lowercase(self, parser):
+        """Parser handles quality gates passed in lowercase."""
+        parser.parse_message("all quality gates passed")
+        result = parser.to_result()
+
+        assert result["quality_gates_passed"] is True
+
+    def test_parse_quality_gates_failed(self, parser):
+        """Parser detects quality gates failed."""
+        parser.parse_message("Quality gates: FAILED")
+        result = parser.to_result()
+
+        assert result["quality_gates_passed"] is False
+
+    # -------------- File Modification Tests --------------
+
+    def test_parse_file_modified(self, parser):
+        """Parser extracts modified file paths."""
+        parser.parse_message("Modified: src/auth.py")
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "src/auth.py" in result["files_modified"]
+
+    def test_parse_file_created(self, parser):
+        """Parser extracts created file paths."""
+        parser.parse_message("Created: tests/test_auth.py")
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "tests/test_auth.py" in result["files_created"]
+
+    def test_parse_file_changed_variant(self, parser):
+        """Parser handles 'Changed:' variant for modified files."""
+        parser.parse_message("Changed: src/config.py")
+        result = parser.to_result()
+
+        assert "src/config.py" in result["files_modified"]
+
+    def test_parse_file_added_variant(self, parser):
+        """Parser handles 'Added:' variant for created files."""
+        parser.parse_message("Added: src/new_module.py")
+        result = parser.to_result()
+
+        assert "src/new_module.py" in result["files_created"]
+
+    def test_parse_multiple_files_same_message(self, parser):
+        """Parser extracts multiple files from same message."""
+        parser.parse_message("Modified: src/a.py Modified: src/b.py")
+        result = parser.to_result()
+
+        assert len(result["files_modified"]) == 2
+        assert "src/a.py" in result["files_modified"]
+        assert "src/b.py" in result["files_modified"]
+
+    def test_file_deduplication(self, parser):
+        """Parser deduplicates file paths across messages."""
+        parser.parse_message("Modified: src/auth.py")
+        parser.parse_message("Modified: src/auth.py")
+        result = parser.to_result()
+
+        assert result["files_modified"].count("src/auth.py") == 1
+
+    def test_files_sorted_in_result(self, parser):
+        """Parser returns files sorted alphabetically."""
+        parser.parse_message("Modified: src/z_file.py")
+        parser.parse_message("Modified: src/a_file.py")
+        parser.parse_message("Modified: src/m_file.py")
+        result = parser.to_result()
+
+        assert result["files_modified"] == [
+            "src/a_file.py",
+            "src/m_file.py",
+            "src/z_file.py",
+        ]
+
+    # -------------- Incremental Parsing Tests --------------
+
+    def test_incremental_parsing_accumulates(self, parser):
+        """Parser accumulates results across multiple messages."""
+        parser.parse_message("Phase 2: Planning")
+        parser.parse_message("8 tests passed")
+        parser.parse_message("Coverage: 92%")
+        parser.parse_message("all quality gates passed")
+        parser.parse_message("Modified: src/main.py")
+        result = parser.to_result()
+
+        assert "phase_2" in result["phases"]
+        assert result["tests_passed"] == 8
+        assert result["coverage"] == 92.0
+        assert result["quality_gates_passed"] is True
+        assert "src/main.py" in result["files_modified"]
+
+    def test_later_value_overwrites_earlier(self, parser):
+        """Later parsed values overwrite earlier ones."""
+        parser.parse_message("5 tests passed")
+        parser.parse_message("10 tests passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 10
+
+    # -------------- Edge Cases Tests --------------
+
+    def test_parse_empty_message(self, parser):
+        """Parser handles empty messages gracefully."""
+        parser.parse_message("")
+        result = parser.to_result()
+
+        assert result == {}
+
+    def test_parse_none_equivalent(self, parser):
+        """Parser handles None-like empty input."""
+        parser.parse_message("")
+        parser.parse_message("")
+        result = parser.to_result()
+
+        assert result == {}
+
+    def test_parse_unrecognized_patterns(self, parser):
+        """Parser ignores unrecognized patterns without error."""
+        parser.parse_message("This is some random text")
+        parser.parse_message("Building artifacts...")
+        parser.parse_message("Done in 2.5s")
+        result = parser.to_result()
+
+        # Should have empty result, not raise errors
+        assert result == {}
+
+    def test_parse_long_phase_text_truncated(self, parser):
+        """Parser truncates long phase text to 100 characters."""
+        long_text = "A" * 200
+        parser.parse_message(f"Phase 1: {long_text}")
+        result = parser.to_result()
+
+        assert len(result["phases"]["phase_1"]["text"]) == 100
+
+    # -------------- Reset Tests --------------
+
+    def test_reset_clears_state(self, parser):
+        """Reset clears all accumulated state."""
+        parser.parse_message("12 tests passed")
+        parser.parse_message("Coverage: 85%")
+        parser.parse_message("Modified: src/file.py")
+
+        parser.reset()
+        result = parser.to_result()
+
+        assert result == {}
+
+    def test_reset_allows_reuse(self, parser):
+        """Parser can be reused after reset."""
+        parser.parse_message("5 tests passed")
+        parser.reset()
+        parser.parse_message("10 tests passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 10
+
+
+class TestParseTaskWorkStream:
+    """Test AgentInvoker._parse_task_work_stream method."""
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    def test_parse_task_work_stream_returns_result(self, invoker):
+        """_parse_task_work_stream returns accumulated result."""
+        parser = TaskWorkStreamParser()
+        result = invoker._parse_task_work_stream("12 tests passed", parser)
+
+        assert result["tests_passed"] == 12
+
+    def test_parse_task_work_stream_accumulates(self, invoker):
+        """_parse_task_work_stream accumulates across calls."""
+        parser = TaskWorkStreamParser()
+        invoker._parse_task_work_stream("Phase 2: Planning", parser)
+        invoker._parse_task_work_stream("8 tests passed", parser)
+        result = invoker._parse_task_work_stream("Coverage: 90%", parser)
+
+        assert "phase_2" in result["phases"]
+        assert result["tests_passed"] == 8
+        assert result["coverage"] == 90.0
+
+    def test_parse_task_work_stream_with_empty_message(self, invoker):
+        """_parse_task_work_stream handles empty messages."""
+        parser = TaskWorkStreamParser()
+        result = invoker._parse_task_work_stream("", parser)
+
+        assert result == {}
+
+    def test_parse_task_work_stream_integration_pattern(self, invoker):
+        """_parse_task_work_stream works with typical integration pattern."""
+        parser = TaskWorkStreamParser()
+        messages = [
+            "Starting task-work...",
+            "Phase 2: Implementation Planning",
+            "✓ Phase 2 complete",
+            "Phase 3: Implementation",
+            "Modified: src/feature.py",
+            "Created: tests/test_feature.py",
+            "Running tests...",
+            "15 tests passed, 0 tests failed",
+            "Coverage: 88.5%",
+            "all quality gates passed",
+            "✓ Phase 3 complete",
+        ]
+
+        for message in messages:
+            invoker._parse_task_work_stream(message, parser)
+
+        result = parser.to_result()
+
+        assert result["phases"]["phase_2"]["completed"] is True
+        assert result["phases"]["phase_3"]["completed"] is True
+        assert result["tests_passed"] == 15
+        assert result["tests_failed"] == 0
+        assert result["coverage"] == 88.5
+        assert result["quality_gates_passed"] is True
+        assert "src/feature.py" in result["files_modified"]
+        assert "tests/test_feature.py" in result["files_created"]
+
+
+# ==================== Task Work Results Writer Tests ====================
+
+
+class TestWriteTaskWorkResults:
+    """Test AgentInvoker._write_task_work_results method.
+
+    This method writes parsed quality gate results to task_work_results.json
+    in the format expected by Coach validation.
+
+    Coverage Target: >=90%
+    Test Count: 15+ tests
+    """
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    # -------------- Basic Write Tests --------------
+
+    def test_write_creates_file(self, invoker, worktree_path):
+        """_write_task_work_results creates the results file."""
+        result_data = {"tests_passed": 10, "tests_failed": 0}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        assert results_path.exists()
+        assert results_path.name == "task_work_results.json"
+
+    def test_write_creates_directory_structure(self, invoker, worktree_path):
+        """_write_task_work_results creates directory structure if not exists."""
+        result_data = {"tests_passed": 5}
+
+        results_path = invoker._write_task_work_results("TASK-NEW-001", result_data)
+
+        expected_dir = worktree_path / ".guardkit" / "autobuild" / "TASK-NEW-001"
+        assert expected_dir.exists()
+        assert expected_dir.is_dir()
+
+    def test_write_correct_location(self, invoker, worktree_path):
+        """Results file is written to correct Coach-expected location."""
+        result_data = {"tests_passed": 10}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        expected_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-001" / "task_work_results.json"
+        )
+        assert results_path == expected_path
+
+    def test_write_valid_json(self, invoker, worktree_path):
+        """Results file contains valid JSON."""
+        result_data = {"tests_passed": 10, "coverage": 85.5}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        content = results_path.read_text()
+        parsed = json.loads(content)
+        assert isinstance(parsed, dict)
+
+    # -------------- Schema Validation Tests --------------
+
+    def test_write_includes_task_id(self, invoker, worktree_path):
+        """Results include task_id field."""
+        result_data = {}
+
+        results_path = invoker._write_task_work_results("TASK-XYZ-123", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["task_id"] == "TASK-XYZ-123"
+
+    def test_write_includes_timestamp(self, invoker, worktree_path):
+        """Results include ISO format timestamp."""
+        result_data = {}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "timestamp" in parsed
+        # Verify ISO format (should parse without error)
+        from datetime import datetime
+        datetime.fromisoformat(parsed["timestamp"])
+
+    def test_write_includes_quality_gates_section(self, invoker, worktree_path):
+        """Results include quality_gates nested structure."""
+        result_data = {
+            "tests_passed": 12,
+            "tests_failed": 0,
+            "coverage": 85.5,
+            "quality_gates_passed": True,
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "quality_gates" in parsed
+        qg = parsed["quality_gates"]
+        assert qg["tests_passing"] is True
+        assert qg["tests_passed"] == 12
+        assert qg["tests_failed"] == 0
+        assert qg["coverage"] == 85.5
+        assert qg["coverage_met"] is True
+        assert qg["all_passed"] is True
+
+    def test_write_includes_phases(self, invoker, worktree_path):
+        """Results include phases information."""
+        result_data = {
+            "phases": {
+                "phase_3": {"detected": True, "text": "Implementation", "completed": True},
+                "phase_4": {"detected": True, "text": "Testing", "completed": True},
+            }
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "phases" in parsed
+        assert "phase_3" in parsed["phases"]
+        assert "phase_4" in parsed["phases"]
+
+    def test_write_includes_file_lists(self, invoker, worktree_path):
+        """Results include files_modified and files_created."""
+        result_data = {
+            "files_modified": ["src/auth.py", "src/config.py"],
+            "files_created": ["tests/test_auth.py"],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "files_modified" in parsed
+        assert "files_created" in parsed
+        assert "src/auth.py" in parsed["files_modified"]
+        assert "tests/test_auth.py" in parsed["files_created"]
+
+    def test_write_deduplicates_file_lists(self, invoker, worktree_path):
+        """Results deduplicate file lists."""
+        result_data = {
+            "files_modified": ["src/auth.py", "src/auth.py", "src/config.py"],
+            "files_created": ["tests/test.py", "tests/test.py"],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["files_modified"].count("src/auth.py") == 1
+        assert parsed["files_created"].count("tests/test.py") == 1
+
+    def test_write_sorts_file_lists(self, invoker, worktree_path):
+        """Results have sorted file lists."""
+        result_data = {
+            "files_modified": ["z_file.py", "a_file.py", "m_file.py"],
+            "files_created": [],
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["files_modified"] == ["a_file.py", "m_file.py", "z_file.py"]
+
+    # -------------- Completion Status Tests --------------
+
+    def test_write_completed_true_when_quality_gates_passed(self, invoker, worktree_path):
+        """completed is True when quality_gates_passed is True."""
+        result_data = {"quality_gates_passed": True}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["completed"] is True
+
+    def test_write_completed_true_when_tests_pass_no_failures(self, invoker, worktree_path):
+        """completed is True when tests pass with no failures."""
+        result_data = {"tests_passed": 10, "tests_failed": 0}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["completed"] is True
+
+    def test_write_completed_false_when_tests_fail(self, invoker, worktree_path):
+        """completed is False when tests fail."""
+        result_data = {
+            "tests_passed": 8,
+            "tests_failed": 2,
+            "quality_gates_passed": False,
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["completed"] is False
+
+    # -------------- Edge Cases Tests --------------
+
+    def test_write_handles_empty_result_data(self, invoker, worktree_path):
+        """_write_task_work_results handles empty result data gracefully."""
+        result_data = {}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["task_id"] == "TASK-001"
+        assert parsed["completed"] is False
+        assert parsed["phases"] == {}
+        assert parsed["files_modified"] == []
+        assert parsed["files_created"] == []
+
+    def test_write_handles_none_coverage(self, invoker, worktree_path):
+        """_write_task_work_results handles None coverage."""
+        result_data = {"tests_passed": 10, "coverage": None}
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["quality_gates"]["coverage"] is None
+        assert parsed["quality_gates"]["coverage_met"] is None
+
+    def test_write_handles_partial_data(self, invoker, worktree_path):
+        """_write_task_work_results handles partial result data."""
+        result_data = {"tests_passed": 5}  # Only tests_passed provided
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["quality_gates"]["tests_passed"] == 5
+        assert parsed["quality_gates"]["tests_failed"] == 0
+        assert parsed["quality_gates"]["coverage"] is None
+
+    def test_write_includes_summary(self, invoker, worktree_path):
+        """Results include human-readable summary."""
+        result_data = {
+            "tests_passed": 12,
+            "coverage": 85.5,
+            "quality_gates_passed": True,
+        }
+
+        results_path = invoker._write_task_work_results("TASK-001", result_data)
+
+        parsed = json.loads(results_path.read_text())
+        assert "summary" in parsed
+        assert "12 tests passed" in parsed["summary"]
+        assert "85.5% coverage" in parsed["summary"]
+
+    def test_write_overwrites_existing_file(self, invoker, worktree_path):
+        """_write_task_work_results overwrites existing file."""
+        # Write first version
+        result_data_v1 = {"tests_passed": 5}
+        invoker._write_task_work_results("TASK-001", result_data_v1)
+
+        # Write second version
+        result_data_v2 = {"tests_passed": 15}
+        results_path = invoker._write_task_work_results("TASK-001", result_data_v2)
+
+        parsed = json.loads(results_path.read_text())
+        assert parsed["quality_gates"]["tests_passed"] == 15
+
+
+# ==================== Generate Summary Tests ====================
+
+
+class TestGenerateSummary:
+    """Test AgentInvoker._generate_summary method.
+
+    This method generates human-readable summaries from task-work results.
+
+    Coverage Target: >=90%
+    Test Count: 10+ tests
+    """
+
+    @pytest.fixture
+    def invoker(self, worktree_path):
+        """Create AgentInvoker instance."""
+        return AgentInvoker(
+            worktree_path=worktree_path,
+            sdk_timeout_seconds=60,
+        )
+
+    # -------------- Basic Summary Tests --------------
+
+    def test_summary_with_tests_passed(self, invoker):
+        """Summary includes test pass count."""
+        result_data = {"tests_passed": 12}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "12 tests passed" in summary
+
+    def test_summary_with_tests_failed(self, invoker):
+        """Summary includes test fail count."""
+        result_data = {"tests_failed": 3}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "3 tests failed" in summary
+
+    def test_summary_with_coverage(self, invoker):
+        """Summary includes coverage percentage."""
+        result_data = {"coverage": 85.5}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "85.5% coverage" in summary
+
+    def test_summary_with_quality_gates_passed(self, invoker):
+        """Summary indicates quality gates passed."""
+        result_data = {"quality_gates_passed": True}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "all quality gates passed" in summary
+
+    def test_summary_with_quality_gates_failed(self, invoker):
+        """Summary indicates quality gates failed."""
+        result_data = {"quality_gates_passed": False}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "quality gates failed" in summary
+
+    # -------------- Combined Summary Tests --------------
+
+    def test_summary_combined_all_fields(self, invoker):
+        """Summary combines all available fields."""
+        result_data = {
+            "tests_passed": 12,
+            "coverage": 85.5,
+            "quality_gates_passed": True,
+        }
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "12 tests passed" in summary
+        assert "85.5% coverage" in summary
+        assert "all quality gates passed" in summary
+        # Verify comma separation
+        assert ", " in summary
+
+    def test_summary_combined_with_failures(self, invoker):
+        """Summary combines all fields including failures."""
+        result_data = {
+            "tests_passed": 8,
+            "tests_failed": 2,
+            "coverage": 75.0,
+            "quality_gates_passed": False,
+        }
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "8 tests passed" in summary
+        assert "2 tests failed" in summary
+        assert "75.0% coverage" in summary
+        assert "quality gates failed" in summary
+
+    # -------------- Edge Cases Tests --------------
+
+    def test_summary_empty_data(self, invoker):
+        """Summary returns default for empty data."""
+        result_data = {}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert summary == "Implementation completed"
+
+    def test_summary_zero_tests_not_included(self, invoker):
+        """Summary doesn't include zero test count."""
+        result_data = {"tests_passed": 0}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "0 tests passed" not in summary
+
+    def test_summary_zero_failures_not_included(self, invoker):
+        """Summary doesn't include zero failure count."""
+        result_data = {"tests_passed": 10, "tests_failed": 0}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "0 tests failed" not in summary
+
+    def test_summary_none_values_not_included(self, invoker):
+        """Summary doesn't include None values."""
+        result_data = {
+            "tests_passed": None,
+            "coverage": None,
+            "quality_gates_passed": None,
+        }
+
+        summary = invoker._generate_summary(result_data)
+
+        assert summary == "Implementation completed"
+
+    def test_summary_integer_coverage(self, invoker):
+        """Summary handles integer coverage."""
+        result_data = {"coverage": 90}
+
+        summary = invoker._generate_summary(result_data)
+
+        assert "90% coverage" in summary
+
+
+# =========================================================================
+# Heartbeat Logging Tests (TASK-FBP-002)
+# =========================================================================
+
+
+class TestHeartbeatLogging:
+    """Test heartbeat logging during SDK invocations.
+
+    Coverage Target: 100% for async_heartbeat context manager
+    Test Count: 5 tests
+    """
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_logs_at_interval(self, caplog):
+        """Heartbeat logs every N seconds during long operations."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="guardkit.orchestrator.agent_invoker")
+
+        # Use a short interval for testing (1 second)
+        async with async_heartbeat("TASK-001", "Player invocation", interval=1):
+            await asyncio.sleep(2.5)  # Should log at 1s and 2s
+
+        # Verify heartbeat messages were logged
+        assert "[TASK-001] Player invocation in progress... (1s elapsed)" in caplog.text
+        assert "[TASK-001] Player invocation in progress... (2s elapsed)" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_cancelled_on_completion(self, caplog):
+        """Heartbeat stops cleanly when context exits."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="guardkit.orchestrator.agent_invoker")
+
+        async with async_heartbeat("TASK-002", "Coach validation", interval=1):
+            await asyncio.sleep(0.1)  # Exit quickly before first heartbeat
+
+        # Wait a bit to ensure no stray logs after context exit
+        await asyncio.sleep(1.5)
+
+        # No heartbeat should have been logged (we exited too early)
+        assert "[TASK-002] Coach validation in progress..." not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_cancelled_on_exception(self, caplog):
+        """Heartbeat stops cleanly when exception occurs."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="guardkit.orchestrator.agent_invoker")
+
+        with pytest.raises(ValueError):
+            async with async_heartbeat("TASK-003", "test phase", interval=1):
+                await asyncio.sleep(0.1)
+                raise ValueError("Test exception")
+
+        # Wait a bit to ensure no stray logs after exception
+        await asyncio.sleep(1.5)
+
+        # No heartbeat should have been logged (we exited too early)
+        assert "[TASK-003] test phase in progress..." not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_uses_correct_task_id(self, caplog):
+        """Heartbeat logs use the provided task_id."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="guardkit.orchestrator.agent_invoker")
+
+        async with async_heartbeat("TASK-FBP-002", "design phase", interval=1):
+            await asyncio.sleep(1.5)
+
+        assert "[TASK-FBP-002] design phase in progress..." in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_does_not_block_operation(self):
+        """Heartbeat does not interfere with the wrapped operation."""
+        result = None
+
+        async def long_operation():
+            await asyncio.sleep(0.1)
+            return "success"
+
+        async with async_heartbeat("TASK-004", "test phase", interval=1):
+            result = await long_operation()
+
+        assert result == "success"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_custom_interval(self, caplog):
+        """Heartbeat respects custom interval parameter."""
+        import logging
+
+        caplog.set_level(logging.INFO, logger="guardkit.orchestrator.agent_invoker")
+
+        # Use 2 second interval, wait 3 seconds
+        async with async_heartbeat("TASK-005", "test phase", interval=2):
+            await asyncio.sleep(3.5)
+
+        # Should log at 2s but not at 1s
+        assert "(1s elapsed)" not in caplog.text
+        assert "(2s elapsed)" in caplog.text
+
+
+# ==================== File Count Constraint Validation Tests ====================
+
+
+class TestFileCountConstraintValidation:
+    """Tests for documentation level file count constraints."""
+
+    def test_documentation_level_max_files_constant(self):
+        """Verify constant mapping is correct."""
+        assert DOCUMENTATION_LEVEL_MAX_FILES["minimal"] == 2
+        assert DOCUMENTATION_LEVEL_MAX_FILES["standard"] == 2
+        assert DOCUMENTATION_LEVEL_MAX_FILES["comprehensive"] is None
+
+    def test_validate_file_count_minimal_within_limit(self, agent_invoker, caplog):
+        """Minimal level allows up to 2 files without warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-001",
+            documentation_level="minimal",
+            files_created=["file1.py", "file2.py"],
+        )
+
+        # No warning should be logged for 2 files (within limit)
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_minimal_exceeds_limit(self, agent_invoker, caplog):
+        """Minimal level logs warning when >2 files created."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-001",
+            documentation_level="minimal",
+            files_created=["file1.py", "file2.py", "file3.py"],
+        )
+
+        # Warning should be logged for 3 files (exceeds limit of 2)
+        assert "Documentation level constraint violated" in caplog.text
+        assert "created 3 files" in caplog.text
+        assert "max allowed 2" in caplog.text
+        assert "minimal" in caplog.text
+
+    def test_validate_file_count_standard_within_limit(self, agent_invoker, caplog):
+        """Standard level allows up to 2 files without warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-002",
+            documentation_level="standard",
+            files_created=["src/module.py"],
+        )
+
+        # No warning for 1 file (within limit)
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_standard_exceeds_limit(self, agent_invoker, caplog):
+        """Standard level logs warning when >2 files created."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-002",
+            documentation_level="standard",
+            files_created=["a.py", "b.py", "c.py", "d.py"],
+        )
+
+        # Warning should be logged for 4 files (exceeds limit of 2)
+        assert "Documentation level constraint violated" in caplog.text
+        assert "created 4 files" in caplog.text
+
+    def test_validate_file_count_comprehensive_unlimited(self, agent_invoker, caplog):
+        """Comprehensive level has no file limit."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        # Create 10 files - should not trigger warning
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-003",
+            documentation_level="comprehensive",
+            files_created=[f"file{i}.py" for i in range(10)],
+        )
+
+        # No warning should be logged (comprehensive has no limit)
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_unknown_level_no_limit(self, agent_invoker, caplog):
+        """Unknown documentation level is treated as having no limit."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-004",
+            documentation_level="unknown_level",
+            files_created=[f"file{i}.py" for i in range(15)],
+        )
+
+        # No warning for unknown level (treated as no limit)
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_empty_files_list(self, agent_invoker, caplog):
+        """Empty files list should not trigger warning."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-005",
+            documentation_level="minimal",
+            files_created=[],
+        )
+
+        # No warning for empty list
+        assert "Documentation level constraint violated" not in caplog.text
+
+    def test_validate_file_count_warning_includes_file_preview(self, agent_invoker, caplog):
+        """Warning message includes preview of created files."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        files = ["a.py", "b.py", "c.py", "d.py"]
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-006",
+            documentation_level="minimal",
+            files_created=files,
+        )
+
+        # Check that file names appear in warning
+        assert "a.py" in caplog.text
+
+    def test_validate_file_count_truncates_long_file_list(self, agent_invoker, caplog):
+        """Warning truncates file list when more than 5 files."""
+        import logging
+
+        caplog.set_level(logging.WARNING, logger="guardkit.orchestrator.agent_invoker")
+
+        # Create 8 files
+        files = [f"file{i}.py" for i in range(8)]
+        agent_invoker._validate_file_count_constraint(
+            task_id="TASK-007",
+            documentation_level="minimal",
+            files_created=files,
+        )
+
+        # Check that ellipsis is added for truncated list
+        assert "..." in caplog.text
+        assert "created 8 files" in caplog.text

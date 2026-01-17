@@ -335,7 +335,7 @@ check_prerequisites() {
 
 # Install guardkit Python package
 install_python_package() {
-    print_info "Installing guardkit Python package..."
+    print_info "Installing guardkit Python package (with AutoBuild support)..."
 
     # Get repository root (parent of installer/)
     local repo_root="$(cd "$INSTALLER_DIR/.." && pwd)"
@@ -347,18 +347,20 @@ install_python_package() {
         return 0
     fi
 
-    # Check if pip3 is available
-    if ! command -v pip3 &> /dev/null; then
-        print_warning "pip3 not found - cannot install guardkit package"
+    # Check if python3 with pip module is available (more reliable than pip3 command)
+    if ! python3 -m pip --version &> /dev/null; then
+        print_warning "python3 -m pip not available - cannot install guardkit package"
         print_info "The guardkit autobuild command will not be available"
+        print_info "Install pip with: python3 -m ensurepip"
         return 0
     fi
 
     print_info "Installing from: $repo_root"
 
+    # Install with [autobuild] extras to include claude-agent-sdk
     # Try installing with --break-system-packages (PEP 668 compliance for Python 3.11+)
     set +e  # Temporarily allow errors
-    pip3 install -e "$repo_root" --break-system-packages 2>&1
+    python3 -m pip install -e "$repo_root[autobuild]" --break-system-packages 2>&1
     local install_status=$?
     set -e  # Re-enable exit on error
 
@@ -366,28 +368,49 @@ install_python_package() {
         # Fallback to --user install
         print_info "Retrying with --user flag..."
         set +e
-        pip3 install -e "$repo_root" --user 2>&1
+        python3 -m pip install -e "$repo_root[autobuild]" --user 2>&1
         install_status=$?
         set -e
 
         if [ $install_status -eq 0 ]; then
-            print_success "guardkit package installed successfully (user mode)"
+            print_success "guardkit package installed successfully (user mode, with AutoBuild)"
         else
             print_warning "Failed to install guardkit package"
             print_info "AutoBuild CLI will not be available"
-            print_info "You can install manually with: pip3 install -e $repo_root"
+            print_info "You can install manually with: python3 -m pip install -e \"$repo_root[autobuild]\""
             return 0
         fi
     else
-        print_success "guardkit package installed successfully"
+        print_success "guardkit package installed successfully (with AutoBuild)"
     fi
 
     # Verify installation
-    if command -v guardkit-py &> /dev/null; then
-        print_success "guardkit-py command is available"
+    set +e
+    python3 -c "import guardkit" 2>/dev/null
+    local import_status=$?
+    set -e
+
+    if [ $import_status -eq 0 ]; then
+        print_success "guardkit Python package is importable"
     else
-        print_warning "guardkit-py command not found in PATH"
-        print_info "You may need to restart your shell or add ~/.local/bin to PATH"
+        print_warning "guardkit package installed but not importable"
+        print_info "You may need to restart your shell"
+    fi
+
+    # Check if guardkit-py CLI is available
+    if command -v guardkit-py &> /dev/null; then
+        print_success "guardkit-py CLI command is available"
+    else
+        # Try to find it via Python
+        set +e
+        local cli_path=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        set -e
+        if [ -n "$cli_path" ]; then
+            print_success "guardkit-py CLI found at: $cli_path"
+        else
+            print_warning "guardkit-py CLI not found in PATH"
+            print_info "You may need to restart your shell or add ~/.local/bin to PATH"
+        fi
     fi
 }
 

@@ -314,6 +314,100 @@ class TestWorktreeCreate:
 
 
 # ============================================================================
+# Repository State Checks Tests
+# ============================================================================
+
+
+class TestRepositoryStateChecks:
+    """Test repository state validation methods."""
+
+    def test_is_empty_repo_true(self, manager):
+        """Test _is_empty_repo returns True for empty repo."""
+        manager.executor.fail_on_command = "rev-parse HEAD"
+        assert manager._is_empty_repo() is True
+
+    def test_is_empty_repo_false(self, manager):
+        """Test _is_empty_repo returns False for non-empty repo."""
+        # Default mock succeeds, so repo is not empty
+        assert manager._is_empty_repo() is False
+
+    def test_branch_exists_true(self, manager):
+        """Test _branch_exists returns True for existing branch."""
+        assert manager._branch_exists("main") is True
+
+    def test_branch_exists_false(self, manager):
+        """Test _branch_exists returns False for missing branch."""
+        manager.executor.fail_on_command = "rev-parse --verify"
+        assert manager._branch_exists("nonexistent") is False
+
+    def test_list_branches(self, manager):
+        """Test _list_branches returns parsed list."""
+        manager.executor.return_stdout = "main\ndevelop\nfeature-x\n"
+        branches = manager._list_branches()
+        assert branches == ["main", "develop", "feature-x"]
+
+    def test_list_branches_empty(self, manager):
+        """Test _list_branches returns empty list on error."""
+        manager.executor.fail_on_command = "branch"
+        branches = manager._list_branches()
+        assert branches == []
+
+    def test_create_fails_on_empty_repo(self, manager):
+        """Test create() fails with helpful message on empty repo."""
+        # Simulate: branch doesn't exist AND repo is empty
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+            # rev-parse --git-dir succeeds (valid repo)
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            # rev-parse --verify fails (branch doesn't exist)
+            if "rev-parse --verify" in cmd_str:
+                raise subprocess.CalledProcessError(1, args, stderr="unknown revision")
+            # rev-parse HEAD fails (empty repo)
+            if "rev-parse HEAD" in cmd_str:
+                raise subprocess.CalledProcessError(1, args, stderr="bad revision")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        with pytest.raises(WorktreeCreationError) as exc_info:
+            manager.create("TASK-001")
+
+        assert "repository has no commits" in str(exc_info.value)
+        assert "git add . && git commit" in str(exc_info.value)
+
+    def test_create_fails_on_missing_branch(self, manager):
+        """Test create() fails listing available branches when branch missing."""
+        # Simulate: branch doesn't exist BUT repo has commits
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+            # rev-parse --git-dir succeeds
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            # rev-parse --verify fails (branch doesn't exist)
+            if "rev-parse --verify" in cmd_str:
+                raise subprocess.CalledProcessError(1, args, stderr="unknown revision")
+            # rev-parse HEAD succeeds (repo has commits)
+            if "rev-parse HEAD" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "abc123", "")
+            # branch --format returns available branches
+            if "branch --format" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "develop\nfeature-x\n", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        with pytest.raises(WorktreeCreationError) as exc_info:
+            manager.create("TASK-001", base_branch="main")
+
+        assert "does not exist" in str(exc_info.value)
+        assert "Available branches:" in str(exc_info.value)
+        assert "develop" in str(exc_info.value)
+
+
+# ============================================================================
 # Worktree Merge Tests
 # ============================================================================
 
@@ -678,3 +772,162 @@ class TestWorktreeWorkflows:
         assert any("worktree" in call and "remove" in call for call in git_calls)
         # Check for branch delete command
         assert any("branch" in call for call in git_calls)
+
+
+# ============================================================================
+# Branch Cleanup Fallback Tests
+# ============================================================================
+
+
+class TestBranchCleanupFallback:
+    """Test automatic branch cleanup when worktree creation fails."""
+
+    def test_is_branch_exists_error_true(self, manager):
+        """Test _is_branch_exists_error returns True for 'already exists' error."""
+        error = WorktreeError("fatal: A branch named 'autobuild/TASK-001' already exists.")
+        assert manager._is_branch_exists_error(error) is True
+
+    def test_is_branch_exists_error_false(self, manager):
+        """Test _is_branch_exists_error returns False for other errors."""
+        error = WorktreeError("fatal: No space left on device")
+        assert manager._is_branch_exists_error(error) is False
+
+    def test_is_branch_exists_error_case_insensitive(self, manager):
+        """Test error detection is case insensitive."""
+        error = WorktreeError("fatal: A branch named 'autobuild/TASK-001' ALREADY EXISTS.")
+        assert manager._is_branch_exists_error(error) is True
+
+    def test_build_worktree_add_cmd(self, manager, temp_repo_root):
+        """Test _build_worktree_add_cmd builds correct command."""
+        worktree_path = temp_repo_root / ".guardkit" / "worktrees" / "TASK-001"
+        cmd = manager._build_worktree_add_cmd(worktree_path, "autobuild/TASK-001", "main")
+        assert cmd == [
+            "worktree", "add",
+            str(worktree_path),
+            "-b", "autobuild/TASK-001",
+            "main"
+        ]
+
+    def test_create_with_branch_cleanup_success(self, manager):
+        """Test successful creation after branch cleanup."""
+        # Track worktree add calls to fail first time, succeed second
+        worktree_add_calls = [0]
+
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "rev-parse --verify" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "abc123", "")
+            if "worktree add" in cmd_str:
+                worktree_add_calls[0] += 1
+                if worktree_add_calls[0] == 1:
+                    raise subprocess.CalledProcessError(
+                        1, args, stderr="fatal: A branch named 'autobuild/TASK-001' already exists."
+                    )
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "branch" in cmd_str and "-D" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        worktree = manager.create("TASK-001")
+
+        assert worktree.task_id == "TASK-001"
+        assert worktree.branch_name == "autobuild/TASK-001"
+
+        # Verify branch -D was called
+        git_calls = [" ".join(call[0]) for call in manager.executor.calls]
+        assert any("branch" in call and "-D" in call for call in git_calls)
+
+        # Verify worktree add was called twice
+        assert sum(1 for call in git_calls if "worktree add" in call) == 2
+
+    def test_create_fails_when_branch_cleanup_fails(self, manager):
+        """Test error with manual guidance when branch cleanup fails."""
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "rev-parse --verify" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "abc123", "")
+            if "worktree add" in cmd_str:
+                raise subprocess.CalledProcessError(
+                    1, args, stderr="fatal: A branch named 'autobuild/TASK-001' already exists."
+                )
+            if "branch" in cmd_str and "-D" in cmd_str:
+                raise subprocess.CalledProcessError(
+                    1, args, stderr="error: Cannot delete branch - checked out elsewhere"
+                )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        with pytest.raises(WorktreeCreationError) as exc_info:
+            manager.create("TASK-001")
+
+        error_msg = str(exc_info.value)
+        assert "Manual cleanup steps:" in error_msg
+        assert "git branch -D autobuild/TASK-001" in error_msg
+
+    def test_create_fails_when_retry_fails(self, manager):
+        """Test error with manual guidance when retry after cleanup fails."""
+        # Track worktree add calls - both should fail
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "rev-parse --verify" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "abc123", "")
+            if "worktree add" in cmd_str:
+                raise subprocess.CalledProcessError(
+                    1, args, stderr="fatal: A branch named 'autobuild/TASK-001' already exists."
+                )
+            if "branch" in cmd_str and "-D" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")  # Cleanup succeeds
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        with pytest.raises(WorktreeCreationError) as exc_info:
+            manager.create("TASK-001")
+
+        error_msg = str(exc_info.value)
+        assert "after branch cleanup" in error_msg
+        assert "Manual cleanup steps:" in error_msg
+
+    def test_create_non_branch_error_not_caught(self, manager):
+        """Test that non-branch errors are not caught by fallback logic."""
+        def mock_run(args, cwd=None, check=True, capture_output=True, text=True):
+            manager.executor.calls.append((args, cwd))
+            cmd_str = " ".join(args)
+
+            if "rev-parse --git-dir" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "", "")
+            if "rev-parse --verify" in cmd_str:
+                return subprocess.CompletedProcess(args, 0, "abc123", "")
+            if "worktree add" in cmd_str:
+                raise subprocess.CalledProcessError(
+                    1, args, stderr="fatal: unable to create file: No space left on device"
+                )
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        manager.executor.run = mock_run
+
+        with pytest.raises(WorktreeCreationError) as exc_info:
+            manager.create("TASK-001")
+
+        error_msg = str(exc_info.value)
+        assert "No space left on device" in error_msg
+        assert "Manual cleanup steps:" not in error_msg
+
+        # Verify branch -D was NOT attempted
+        git_calls = [" ".join(call[0]) for call in manager.executor.calls]
+        assert not any("branch" in call and "-D" in call for call in git_calls)
