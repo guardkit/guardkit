@@ -154,3 +154,43 @@ updated: 2025-12-13T15:00:00Z
 previous_state: backlog
 state_transition_reason: "Automatic transition for task-work execution"
 ```
+
+## Task Work Intensity Levels
+
+The `/task-work` command supports an `--intensity` flag to control workflow ceremony and phase execution.
+
+### Quick Reference
+
+| Level | Use Case | Duration | Quality Gates |
+|-------|----------|----------|----------------|
+| **minimal** | Typos, cosmetic changes | 3-5 min | Compilation + tests, no coverage |
+| **light** | Simple features, small fixes | 10-15 min | Compilation + tests, 70% coverage |
+| **standard** | Most tasks (default) | 15-30 min | Full gates, 80% coverage, arch review |
+| **strict** | Security, APIs, critical code | 30-60+ min | Maximum rigor, 85% coverage, security scan |
+
+### Using Intensity Levels
+
+```bash
+# Fastest execution for trivial changes
+/task-work TASK-001 --intensity=minimal
+/task-work TASK-001 --micro  # Shorthand alias
+
+# Quick implementation with brief planning
+/task-work TASK-002 --intensity=light
+
+# Standard workflow (default)
+/task-work TASK-003 --intensity=standard
+/task-work TASK-003  # Same as above
+
+# Maximum rigor for critical code
+/task-work TASK-004 --intensity=strict
+```
+
+### Intensity Level Details
+
+**See**: [`installer/core/commands/task-work.md` - Intensity Levels section](../../installer/core/commands/task-work.md#intensity-levels-new---task-int-c3d4) for complete specifications including:
+- Full phase execution details for each level
+- Quality gate requirements
+- Plan audit variance thresholds
+- Task type recommendations
+- Blocking checkpoint behavior

@@ -103,9 +103,10 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 | Flag | Description |
 |------|-------------|
 | `--mode=tdd\|standard\|bdd` | Development mode (default: standard) |
+| `--intensity=LEVEL` | Control ceremony level (minimal, light, standard, strict) |
+| `--micro` | Alias for --intensity=minimal |
 | `--design-only` | Stop at Phase 2.8 checkpoint, save plan |
 | `--implement-only` | Start at Phase 3 with approved plan |
-| `--micro` | Streamlined workflow for trivial tasks |
 | `--docs=minimal\|standard\|comprehensive` | Documentation level control |
 | `--no-questions` | Skip Phase 1.5 clarification |
 | `--with-questions` | Force Phase 1.5 clarification |
@@ -168,6 +169,235 @@ phase: {1|2|2.5|4|5}
 ```
 
 See individual agent files (installer/core/agents/*.md) for documentation level behavior specifications.
+
+## Intensity Levels (NEW - TASK-INT-c3d4)
+
+The `--intensity` flag controls the ceremony level and phase execution profile, allowing you to tune the workflow for task complexity and team preference.
+
+### Flag: --intensity=LEVEL
+
+**Purpose**: Select predefined phase execution profiles from a spectrum of ceremony levels.
+
+**Values**:
+- `minimal` - Fastest execution, minimal phases (alias: `--micro`)
+- `light` - Fast execution with brief planning, no architecture review
+- `standard` - Full workflow with smart MCP usage (default, current behavior)
+- `strict` - Maximum rigor, all phases with blocking checkpoints
+
+**Default**: `standard` (provides current behavior)
+
+### Intensity Level Specifications
+
+#### minimal (--micro alias)
+
+**Use for**: Trivial tasks, cosmetic changes, typo fixes, simple documentation updates.
+
+**Phases Executed**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✗
+- Phase 2.5A: Pattern MCP ✗
+- Phase 2.5B: Architectural Review ✗
+- Phase 2.7: Complexity Evaluation ✗
+- Phase 2.8: Human Checkpoint ✗
+- Phase 3: Implementation ✓ (simplified)
+- Phase 4: Testing ✓ (no coverage requirement)
+- Phase 4.5: Fix Loop ✓ (1 attempt max)
+- Phase 5: Code Review ✓ (lint only)
+- Phase 5.5: Plan Audit ✗
+
+**Key Characteristics**:
+- Execution time: 3-5 minutes
+- No implementation plan generated
+- Coverage requirements skipped
+- Minimal human interaction
+- Quick architectural validation (lint only)
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: SKIPPED
+- Architectural Review: SKIPPED
+- Code Review: Lightweight (lint only)
+
+**Example**:
+```bash
+# Fix a typo in error message
+/task-work TASK-047 --intensity=minimal
+
+# Or use the --micro alias
+/task-work TASK-047 --micro
+```
+
+#### light
+
+**Use for**: Simple features, straightforward bug fixes, small refactoring tasks.
+
+**Phases Executed**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (brief, ~5 minutes)
+- Phase 2.5A: Pattern MCP ✗
+- Phase 2.5B: Architectural Review ✗
+- Phase 2.7: Complexity Evaluation ✗
+- Phase 2.8: Human Checkpoint ✓ (10s timeout, auto-proceed)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓
+- Phase 4.5: Fix Loop ✓ (2 attempts)
+- Phase 5: Code Review ✓ (quick)
+- Phase 5.5: Plan Audit ✓ (50% variance threshold)
+
+**Key Characteristics**:
+- Execution time: 10-15 minutes
+- Brief implementation plan (essential elements only)
+- Optional checkpoint with auto-proceed
+- Faster planning process
+- Lighter scope creep detection
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: ≥70% (vs 80% in standard)
+- Architectural Review: SKIPPED
+- Code Review: Quick pass (no detailed analysis)
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: ±50% (vs ±20% in standard)
+- Duration variance: ±50% (vs ±30% in standard)
+
+**Example**:
+```bash
+# Add a simple feature with quick review
+/task-work TASK-048 --intensity=light
+```
+
+#### standard (default)
+
+**Use for**: Most tasks, normal development, features with clear requirements.
+
+**This is the current default behavior. All phases execute with smart decisions**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (full)
+- Phase 2.5A: Pattern MCP ✓ (only if pattern need detected)
+- Phase 2.5B: Architectural Review ✓
+- Phase 2.7: Complexity Evaluation ✓
+- Phase 2.8: Human Checkpoint ✓ (30s timeout, auto-proceed for 1-6, blocking for 7-10)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓
+- Phase 4.5: Fix Loop ✓ (3 attempts)
+- Phase 5: Code Review ✓ (full)
+- Phase 5.5: Plan Audit ✓ (20% variance threshold)
+
+**Key Characteristics**:
+- Execution time: 15-30 minutes
+- Complete implementation plan
+- Full architectural review when beneficial
+- Complexity-gated checkpoints
+- Standard scope creep detection
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: ≥80% lines, ≥75% branches
+- Architectural Review: ≥60/100 (human checkpoint if lower)
+- Code Review: Full analysis
+- Pattern Review: Smart MCP usage
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: ±20% acceptable
+- Duration variance: ±30% acceptable
+- File count variance: 0% (must match plan exactly)
+
+**Example**:
+```bash
+# Standard workflow - full quality gates
+/task-work TASK-049  # Same as /task-work TASK-049 --intensity=standard
+```
+
+#### strict
+
+**Use for**: Critical code, security-sensitive changes, APIs, high-risk refactoring, financial systems.
+
+**Phases Executed** (maximum rigor):
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (detailed)
+- Phase 2.5A: Pattern MCP ✓ (always, comprehensive pattern analysis)
+- Phase 2.5B: Architectural Review ✓ (full with security scan)
+- Phase 2.7: Complexity Evaluation ✓ (detailed)
+- Phase 2.8: Human Checkpoint ✓ (blocking, no timeout)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓ (comprehensive)
+- Phase 4.5: Fix Loop ✓ (5 attempts)
+- Phase 5: Code Review ✓ (full + security scan)
+- Phase 5.5: Plan Audit ✓ (0% variance - any deviation flagged)
+
+**Key Characteristics**:
+- Execution time: 30-60+ minutes
+- Comprehensive implementation plan
+- Mandatory human checkpoint
+- Full pattern analysis
+- Security vulnerability scanning
+- Zero-tolerance scope creep
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED (all must pass)
+- Coverage: ≥85% lines, ≥80% branches (elevated requirements)
+- Architectural Review: ≥70/100 minimum, human checkpoint if lower
+- Code Review: Full analysis + security scan
+- Pattern Review: Comprehensive pattern analysis
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: 0% variance allowed (any deviation flagged for review)
+- Duration variance: ±10% only
+- File count variance: 0% (exact match required)
+
+**Blocking Checkpoints**:
+- Phase 2.8: Mandatory, no timeout
+- Phase 5: Full security review before approval
+
+**Example**:
+```bash
+# Security-critical implementation with maximum rigor
+/task-work TASK-050 --intensity=strict
+
+# Financial system changes
+/task-work TASK-051 --intensity=strict
+
+# API endpoint changes
+/task-work TASK-052 --intensity=strict
+```
+
+### Intensity Selection Guide
+
+| Task Type | Recommended | Reason |
+|-----------|-------------|--------|
+| Typo fix | minimal | Skip unnecessary phases |
+| Documentation update | minimal | Documentation-only exception |
+| Simple bug fix | light | Brief planning, quick review |
+| New UI component | standard | Full architecture review beneficial |
+| Business logic feature | standard | Standard rigor recommended |
+| Security implementation | strict | Mandatory security review |
+| API endpoint changes | strict | Breaking changes require strict mode |
+| Database migration | strict | High risk, zero-tolerance scope creep |
+| Authentication changes | strict | Security-critical |
+
+### Flag Combinations
+
+**Valid combinations**:
+```bash
+# Intensity + mode
+/task-work TASK-001 --intensity=strict --mode=tdd
+
+# Intensity + documentation
+/task-work TASK-002 --intensity=light --docs=comprehensive
+
+# Intensity + clarification (--no-questions for automation)
+/task-work TASK-003 --intensity=minimal --no-questions
+
+# But NOT intensity + design flags (conflict)
+# ❌ /task-work TASK-001 --intensity=strict --design-only  # Invalid
+```
+
+**Note**: `--intensity` cannot be combined with `--design-only` or `--implement-only`. Use design flags for the default intensity workflow only.
 
 ## Micro-Task Mode (NEW - TASK-020)
 

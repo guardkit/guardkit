@@ -1,10 +1,12 @@
 ---
 id: TASK-INT-c3d4
 title: Implement --intensity flag with 4 levels
-status: backlog
+status: in_progress
 created: 2026-01-17T14:30:00Z
-updated: 2026-01-17T14:30:00Z
+updated: 2026-01-17T18:45:23Z
 priority: high
+previous_state: backlog
+state_transition_reason: Automatic transition for task-work execution
 tags:
   - intensity-system
   - cli
