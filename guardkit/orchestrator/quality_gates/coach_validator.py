@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
+from guardkit.orchestrator.paths import TaskArtifactPaths
+
 logger = logging.getLogger(__name__)
 
 
@@ -392,7 +394,7 @@ class CoachValidator:
         Dict[str, Any]
             Task-work results, or dict with "error" key if not found
         """
-        results_path = self.worktree_path / ".guardkit" / "autobuild" / task_id / "task_work_results.json"
+        results_path = TaskArtifactPaths.task_work_results_path(task_id, self.worktree_path)
 
         if not results_path.exists():
             logger.warning(f"Task-work results not found at {results_path}")
