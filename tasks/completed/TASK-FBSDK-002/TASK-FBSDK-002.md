@@ -1,9 +1,26 @@
 ---
 id: TASK-FBSDK-002
 title: Write task_work_results.json after SDK parse in AgentInvoker
-status: backlog
+status: completed
 created: 2026-01-18T12:15:00Z
-updated: 2026-01-18T12:15:00Z
+updated: 2026-01-18T17:50:00Z
+completed: 2026-01-18T17:50:00Z
+previous_state: in_review
+state_transition_reason: "Task completion - all acceptance criteria met"
+completed_location: tasks/completed/TASK-FBSDK-002/
+organized_files:
+  - TASK-FBSDK-002.md
+  - clarification-result.md
+  - test-results.md
+  - test-metrics.json
+quality_gates:
+  compilation: passed
+  tests_passing: passed
+  test_count: 54
+  test_pass_rate: 100
+  line_coverage: 100
+  branch_coverage: 100
+  architectural_review: 88
 priority: critical
 tags: [feature-build, agent-invoker, coach-validator, sdk-coordination]
 complexity: 5

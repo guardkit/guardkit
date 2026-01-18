@@ -24,6 +24,7 @@ Example:
 
 import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -553,6 +554,9 @@ class FeatureOrchestrator:
                 f"Failed to create worktree for {feature_id}: {e}"
             ) from e
 
+        # Copy task files to worktree
+        self._copy_tasks_to_worktree(feature, worktree)
+
         # Update feature with worktree path and start time
         feature.status = "in_progress"
         feature.execution.started_at = datetime.now().isoformat()
@@ -561,6 +565,132 @@ class FeatureOrchestrator:
         FeatureLoader.save_feature(feature, self.repo_root)
 
         return feature, worktree
+
+    def _copy_tasks_to_worktree(
+        self,
+        feature: Feature,
+        worktree: Worktree,
+    ) -> None:
+        """
+        Copy feature's task markdown files to worktree.
+
+        This ensures TaskStateBridge can find task files in the worktree when
+        running ensure_design_approved_state(). Task files are copied from the
+        main repository's tasks/backlog/ directory to preserve them even if
+        they're not yet committed.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature being orchestrated
+        worktree : Worktree
+            Created worktree instance
+
+        Notes
+        -----
+        - Uses shutil.copy() for simple file copying (metadata preservation not needed)
+        - Skips files that already exist (idempotency for committed tasks)
+        - Logs warnings on copy failures but doesn't raise (error recovery pattern)
+        - Discovers feature directory name from first task's file_path
+        """
+        if not feature.tasks:
+            logger.debug("No tasks to copy to worktree")
+            return
+
+        # Extract feature directory from first task's file_path
+        # Example: tasks/backlog/feature-build-sdk-coordination/TASK-FBSDK-001.md
+        # -> feature-build-sdk-coordination
+        first_task = feature.tasks[0]
+        if not first_task.file_path:
+            logger.warning(
+                f"Cannot copy tasks: First task {first_task.id} has no file_path"
+            )
+            return
+
+        task_file_path = Path(first_task.file_path)
+
+        # Find "tasks" and "backlog" in the path parts
+        # Example: /path/to/repo/tasks/backlog/feature-name/TASK-001.md
+        parts = task_file_path.parts
+        try:
+            tasks_idx = parts.index("tasks")
+            if tasks_idx + 1 < len(parts) and parts[tasks_idx + 1] == "backlog":
+                if tasks_idx + 2 < len(parts):
+                    feature_dir = parts[tasks_idx + 2]
+                else:
+                    logger.warning(
+                        f"Cannot copy tasks: Missing feature directory in path: {task_file_path}"
+                    )
+                    return
+            else:
+                logger.warning(
+                    f"Cannot copy tasks: Expected 'backlog' after 'tasks': {task_file_path}"
+                )
+                return
+        except ValueError:
+            logger.warning(
+                f"Cannot copy tasks: 'tasks' directory not found in path: {task_file_path}"
+            )
+            return
+        logger.debug(f"Detected feature directory: {feature_dir}")
+
+        # Source: main repo's tasks/backlog/{feature_dir}/
+        src_dir = self.repo_root / "tasks" / "backlog" / feature_dir
+
+        # Destination: worktree's tasks/backlog/ (flat structure)
+        dst_dir = worktree.path / "tasks" / "backlog"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+
+        # Copy each task file
+        copied_count = 0
+        skipped_count = 0
+        error_count = 0
+
+        for task in feature.tasks:
+            # Find task file in main repo
+            task_pattern = f"{task.id}*.md"
+            matching_files = list(src_dir.glob(task_pattern))
+
+            if not matching_files:
+                logger.warning(
+                    f"Task file not found in {src_dir}: {task_pattern}"
+                )
+                error_count += 1
+                continue
+
+            for task_file in matching_files:
+                dst_file = dst_dir / task_file.name
+
+                # Skip if already exists (idempotency)
+                if dst_file.exists():
+                    logger.debug(
+                        f"Skipping existing file in worktree: {task_file.name}"
+                    )
+                    skipped_count += 1
+                    continue
+
+                # Copy file (use copy() instead of copy2(), no metadata needed)
+                try:
+                    shutil.copy(task_file, dst_file)
+                    logger.info(f"Copied task file to worktree: {task_file.name}")
+                    copied_count += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to copy {task_file.name} to worktree: {e}"
+                    )
+                    error_count += 1
+
+        # Log summary
+        if copied_count > 0:
+            console.print(
+                f"[green]✓[/green] Copied {copied_count} task file(s) to worktree"
+            )
+        if skipped_count > 0:
+            logger.debug(f"Skipped {skipped_count} existing file(s)")
+        if error_count > 0:
+            logger.warning(
+                f"Failed to copy {error_count} task file(s) (see logs for details)"
+            )
 
     def _prompt_resume(
         self,
