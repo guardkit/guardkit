@@ -204,6 +204,9 @@ class TaskStateBridge:
         3. docs/state/{task_id}/implementation_plan.md
         4. docs/state/{task_id}/implementation_plan.json
 
+        If no plan exists and the task was created via /feature-plan, this method
+        will create a minimal stub plan to enable implement-only workflow.
+
         Returns
         -------
         Path
@@ -212,7 +215,7 @@ class TaskStateBridge:
         Raises
         ------
         PlanNotFoundError
-            If plan missing or invalid
+            If plan missing or invalid and stub creation fails
 
         Example
         -------
@@ -236,7 +239,16 @@ class TaskStateBridge:
                         f"Plan file exists but appears empty: {plan_path}"
                     )
 
-        # No valid plan found
+        # No valid plan found - attempt to create stub for feature tasks
+        try:
+            stub_path = self._create_stub_implementation_plan()
+            if stub_path and stub_path.exists():
+                self.logger.info(f"Created stub implementation plan at: {stub_path}")
+                return stub_path
+        except Exception as e:
+            self.logger.debug(f"Could not create stub plan: {e}")
+
+        # No valid plan found and stub creation failed
         raise PlanNotFoundError(
             f"Implementation plan not found for {self.task_id}. "
             f"Expected at one of: {[str(p) for p in plan_paths]}. "
@@ -309,6 +321,103 @@ class TaskStateBridge:
             List of paths to check for implementation plan
         """
         return TaskArtifactPaths.implementation_plan_paths(self.task_id, self.repo_root)
+
+    def _create_stub_implementation_plan(self) -> Optional[Path]:
+        """
+        Create stub implementation plan for feature task.
+
+        This method generates a minimal stub plan when pre-loop is disabled
+        for tasks created via /feature-plan. The stub directs implementers
+        to the task file for detailed specifications.
+
+        Returns
+        -------
+        Optional[Path]
+            Path to the created stub plan, or None if stub should not be created
+
+        Raises
+        ------
+        Exception
+            If task cannot be loaded or stub cannot be written
+
+        Example
+        -------
+        >>> bridge = TaskStateBridge("TASK-DM-001", Path("/repo"))
+        >>> stub_path = bridge._create_stub_implementation_plan()
+        >>> print(stub_path)
+        /repo/.claude/task-plans/TASK-DM-001-implementation-plan.md
+        """
+        from datetime import datetime
+
+        # Get preferred plan path (primary location)
+        plan_path = TaskArtifactPaths.preferred_plan_path(self.task_id, self.repo_root)
+
+        # Check if valid plan already exists (idempotency)
+        # Don't count empty/invalid plans as existing
+        if plan_path.exists():
+            content = plan_path.read_text().strip()
+            if len(content) > 50:  # Same threshold as verify method
+                self.logger.debug(f"Valid plan already exists at {plan_path}, skipping stub creation")
+                return plan_path
+            else:
+                self.logger.debug(f"Existing plan at {plan_path} is empty/invalid, will overwrite with stub")
+
+        # Load task to get title and autobuild metadata
+        try:
+            task_data = TaskLoader.load_task(self.task_id, self.repo_root)
+            frontmatter_data = task_data.get("frontmatter", {})
+            title = frontmatter_data.get("title", "No title")
+            autobuild_config = frontmatter_data.get("autobuild", {})
+        except Exception as e:
+            self.logger.warning(
+                f"Could not load task {self.task_id} for stub generation: {e}. "
+                "Stub creation skipped."
+            )
+            return None
+
+        # Only create stub for autobuild tasks (feature-build context)
+        # This prevents stub creation for standalone tasks that should use pre-loop
+        if not isinstance(autobuild_config, dict) or not autobuild_config:
+            self.logger.debug(
+                f"Task {self.task_id} has no autobuild config, skipping stub creation"
+            )
+            return None
+
+        # Determine if pre-loop was enabled (default: task-build has it, feature-build doesn't)
+        # For feature tasks, we create stub regardless since they were pre-designed
+        enable_pre_loop = autobuild_config.get("enable_pre_loop", False)
+
+        # Generate stub content
+        timestamp = datetime.now().isoformat()
+        stub_content = f"""# Implementation Plan: {self.task_id}
+
+## Task
+{title}
+
+## Plan Status
+**Auto-generated stub** - Pre-loop was skipped for this feature task.
+Generated: {timestamp}
+
+## Implementation
+Follow acceptance criteria in task file.
+
+## Notes
+This plan was auto-generated because the task was created via /feature-plan
+with pre-loop disabled (enable_pre_loop={enable_pre_loop}).
+The detailed specifications are in the task markdown file.
+"""
+
+        # Ensure directory exists
+        TaskArtifactPaths.ensure_plan_dir(self.repo_root)
+
+        # Write stub
+        try:
+            plan_path.write_text(stub_content, encoding="utf-8")
+            self.logger.info(f"Created stub implementation plan: {plan_path}")
+            return plan_path
+        except Exception as e:
+            self.logger.error(f"Failed to write stub plan to {plan_path}: {e}")
+            raise
 
     def _update_task_frontmatter(self, task_path: Path, updates: Dict[str, Any]) -> None:
         """

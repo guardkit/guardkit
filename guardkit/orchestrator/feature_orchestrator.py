@@ -692,6 +692,99 @@ class FeatureOrchestrator:
                 f"Failed to copy {error_count} task file(s) (see logs for details)"
             )
 
+    def _create_stub_implementation_plan(
+        self,
+        task_id: str,
+        worktree_path: Path,
+        enable_pre_loop: bool = False,
+    ) -> Path:
+        """
+        Create stub implementation plan for feature task.
+
+        This method generates a minimal stub plan when pre-loop is disabled
+        for tasks created via /feature-plan. The stub directs implementers
+        to the task file for detailed specifications.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-DM-001")
+        worktree_path : Path
+            Path to the worktree
+        enable_pre_loop : bool, optional
+            Whether pre-loop was enabled (default: False)
+
+        Returns
+        -------
+        Path
+            Path to the created stub plan
+
+        Raises
+        ------
+        Exception
+            If task cannot be loaded or stub cannot be written
+
+        Example
+        -------
+        >>> orchestrator = FeatureOrchestrator()
+        >>> plan_path = orchestrator._create_stub_implementation_plan(
+        ...     "TASK-DM-001",
+        ...     Path("/repo/.guardkit/worktrees/FEAT-XXX"),
+        ...     enable_pre_loop=False
+        ... )
+        >>> print(plan_path)
+        /repo/.guardkit/worktrees/FEAT-XXX/.claude/task-plans/TASK-DM-001-implementation-plan.md
+        """
+        from guardkit.orchestrator.paths import TaskArtifactPaths
+
+        # Get preferred plan path (primary location)
+        plan_path = TaskArtifactPaths.preferred_plan_path(task_id, worktree_path)
+
+        # Skip if plan already exists (idempotency)
+        if plan_path.exists():
+            logger.debug(f"Stub plan already exists at {plan_path}, skipping creation")
+            return plan_path
+
+        # Load task to get title
+        try:
+            task_data = TaskLoader.load_task(task_id, self.repo_root)
+            title = task_data.get("frontmatter", {}).get("title", "No title")
+        except Exception as e:
+            logger.warning(
+                f"Could not load task {task_id} for stub generation: {e}. "
+                "Using default title."
+            )
+            title = "Feature task"
+
+        # Generate stub content
+        timestamp = datetime.now().isoformat()
+        stub_content = f"""# Implementation Plan: {task_id}
+
+## Task
+{title}
+
+## Plan Status
+**Auto-generated stub** - Pre-loop was skipped for this feature task.
+Generated: {timestamp}
+
+## Implementation
+Follow acceptance criteria in task file.
+
+## Notes
+This plan was auto-generated because the task was created via /feature-plan
+with pre-loop disabled (enable_pre_loop={enable_pre_loop}).
+The detailed specifications are in the task markdown file.
+"""
+
+        # Ensure directory exists
+        TaskArtifactPaths.ensure_plan_dir(worktree_path)
+
+        # Write stub
+        plan_path.write_text(stub_content, encoding="utf-8")
+        logger.info(f"Created stub implementation plan: {plan_path}")
+
+        return plan_path
+
     def _prompt_resume(
         self,
         feature: Feature,
