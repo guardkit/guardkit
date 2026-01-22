@@ -945,12 +945,33 @@ Each generated task includes provenance metadata:
 ---
 id: TASK-DM-001
 title: Add CSS variables
+task_type: scaffolding         # REQUIRED for CoachValidator quality gate profiles
 parent_review: TASK-REV-a3f8  # Links back to review that recommended this
 feature_id: FEAT-a3f8          # Groups with related tasks in this feature
 wave: 1
 implementation_mode: direct
 ---
 ```
+
+**CRITICAL: task_type Field**:
+
+The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, CoachValidator defaults to `feature` profile which requires architectural review - causing scaffolding tasks to fail inappropriately.
+
+**Task Type Assignment Rules**:
+
+| Task Title/Description Pattern | task_type Value |
+|-------------------------------|-----------------|
+| "Create project structure", "Setup...", "Initialize...", "Configure..." | `scaffolding` |
+| "Add tests", "Create test...", "Test infrastructure" | `testing` |
+| "Update docs", "Add README", "Documentation..." | `documentation` |
+| "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
+| All other implementation tasks | `feature` |
+
+**Example Detection**:
+- "Create project structure and pyproject.toml" → `task_type: scaffolding`
+- "Implement health endpoint" → `task_type: feature`
+- "Add unit tests for authentication" → `task_type: testing`
+- "Update API documentation" → `task_type: documentation`
 
 This enables:
 - **Traceability**: From feature idea → review → implementation → completion
@@ -1360,6 +1381,41 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 
 9. ✅ **Create subfolder + subtasks + guide** using context_b preferences
 
+   **CRITICAL: When generating task markdown files, you MUST include `task_type` in frontmatter:**
+
+   ```yaml
+   ---
+   id: TASK-XXX-001
+   title: Task title
+   task_type: scaffolding  # ← REQUIRED! See task type assignment rules below
+   parent_review: TASK-REV-xxxx
+   feature_id: FEAT-xxxx
+   wave: 1
+   implementation_mode: task-work
+   complexity: 3
+   dependencies: []
+   ---
+   ```
+
+   **Task Type Assignment Rules:**
+   - `scaffolding`: Setup tasks (project structure, config, initialization)
+   - `feature`: Implementation tasks (endpoints, components, business logic)
+   - `testing`: Test creation tasks
+   - `documentation`: Documentation tasks
+   - `refactor`: Refactoring/migration tasks
+
+   **Pattern Matching for task_type:**
+   - Title contains "Create project", "Setup", "Initialize", "Configure" → `scaffolding`
+   - Title contains "test", "Test" → `testing`
+   - Title contains "doc", "README", "Documentation" → `documentation`
+   - Title contains "Refactor", "Migrate", "Upgrade" → `refactor`
+   - All other tasks → `feature`
+
+   **Why This Matters:**
+   Without `task_type`, CoachValidator defaults to `feature` profile which requires architectural review.
+   Scaffolding tasks have no code architecture to review, so they fail the 60-point threshold.
+   Including `task_type: scaffolding` tells CoachValidator to skip architectural review for setup tasks.
+
 10. ✅ **Generate structured YAML feature file** (DEFAULT - unless --no-structured flag set):
 
     **AFTER** creating task markdown files, generate the structured feature file using the CLI script:
@@ -1439,6 +1495,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 ❌ **DO NOT** implement the feature directly
 ❌ **DO NOT** bypass decision checkpoint
 ❌ **DO NOT** create implementation files without [I]mplement choice
+❌ **DO NOT** omit `task_type` from task file frontmatter - CoachValidator REQUIRES it for quality gate profiles
 
 **REMEMBER**: This is a **coordination command**. Your job is to:
 1. Invoke the `clarification-questioner` agent via Task tool

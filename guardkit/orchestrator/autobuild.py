@@ -77,6 +77,9 @@ from guardkit.orchestrator.schemas import (
     format_verification_summary,
 )
 
+# Import task loading utilities
+from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
+
 # Import quality gates for pre-loop execution
 from guardkit.orchestrator.quality_gates import (
     PreLoopQualityGates,
@@ -461,6 +464,18 @@ class AutoBuildOrchestrator:
 
         pre_loop_result = None  # Initialize pre-loop result
 
+        # Load task data to extract task_type for CoachValidator
+        task_type: Optional[str] = None
+        try:
+            task_data = TaskLoader.load_task(task_id, repo_root=self.repo_root)
+            task_type = task_data.get("frontmatter", {}).get("task_type")
+            if task_type:
+                logger.debug(f"Loaded task_type from task file: {task_type}")
+        except TaskNotFoundError:
+            logger.debug(f"Task file not found for {task_id}, continuing with task_type=None")
+        except Exception as e:
+            logger.debug(f"Failed to load task_type from task file: {e}, continuing with task_type=None")
+
         try:
             # Phase 1: Setup (or resume existing worktree)
             if self.resume and task_file_path:
@@ -536,6 +551,7 @@ class AutoBuildOrchestrator:
                 start_turn=start_turn,
                 task_file_path=task_file_path,
                 implementation_plan=pre_loop_result.get("plan") if pre_loop_result else None,
+                task_type=task_type,
             )
 
             # Phase 4: Finalize
@@ -754,6 +770,7 @@ class AutoBuildOrchestrator:
         start_turn: int = 1,
         task_file_path: Optional[Path] = None,
         implementation_plan: Optional[Dict[str, Any]] = None,
+        task_type: Optional[str] = None,
     ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
@@ -781,6 +798,8 @@ class AutoBuildOrchestrator:
             Turn to start from (default: 1, used for resume)
         task_file_path : Optional[Path], optional
             Path to task file for state persistence
+        task_type : Optional[str], optional
+            Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
 
         Returns
         -------
@@ -815,6 +834,7 @@ class AutoBuildOrchestrator:
                     requirements=requirements,
                     worktree=worktree,
                     previous_feedback=previous_feedback,
+                    task_type=task_type,
                 )
 
                 turn_history.append(turn_record)
@@ -860,6 +880,7 @@ class AutoBuildOrchestrator:
         requirements: str,
         worktree: Worktree,
         previous_feedback: Optional[str],
+        task_type: Optional[str] = None,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -890,6 +911,8 @@ class AutoBuildOrchestrator:
             Worktree for agent invocation
         previous_feedback : Optional[str]
             Optional feedback from previous turn
+        task_type : Optional[str], optional
+            Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
 
         Returns
         -------
@@ -973,6 +996,7 @@ class AutoBuildOrchestrator:
             requirements=requirements,
             player_report=player_result.report,
             worktree=worktree,
+            task_type=task_type,
         )
 
         # Parse Coach decision
@@ -1525,6 +1549,7 @@ class AutoBuildOrchestrator:
         player_report: Dict[str, Any],
         worktree: Worktree,
         acceptance_criteria: Optional[List[str]] = None,
+        task_type: Optional[str] = None,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -1554,6 +1579,8 @@ class AutoBuildOrchestrator:
             Coach finds task_work_results.json at the correct location.
         acceptance_criteria : Optional[List[str]]
             Task acceptance criteria for requirements validation
+        task_type : Optional[str], optional
+            Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
 
         Returns
         -------
@@ -1587,7 +1614,10 @@ class AutoBuildOrchestrator:
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
-                task={"acceptance_criteria": acceptance_criteria or []},
+                task={
+                    "acceptance_criteria": acceptance_criteria or [],
+                    "task_type": task_type,
+                },
             )
 
             duration = time.time() - start_time
