@@ -287,6 +287,242 @@ class TestEndToEnd:
         assert "Feature Implementation Structure Created" in captured.out
 
 
+class TestImplementationPlanGeneration:
+    """Test implementation plan generation."""
+
+    def test_generate_implementation_plans_creates_files(
+        self,
+        sample_review_task,
+        sample_review_report,
+        temp_dir
+    ):
+        """Test that generate_implementation_plans creates plan files."""
+        # Change to temp directory so plans are created there
+        original_cwd = os.getcwd()
+        os.chdir(temp_dir)
+
+        try:
+            orchestrator = ImplementOrchestrator(
+                sample_review_task,
+                sample_review_report
+            )
+            orchestrator.extract_feature_info()
+            orchestrator.parse_subtasks()
+            orchestrator.assign_modes()
+
+            # Generate plans
+            orchestrator.generate_implementation_plans()
+
+            # Check plans directory was created
+            plans_dir = Path(temp_dir) / ".claude" / "task-plans"
+            assert plans_dir.exists()
+
+            # Check a plan file was created for each subtask
+            for subtask in orchestrator.subtasks:
+                task_id = subtask["id"]
+                plan_path = plans_dir / f"{task_id}-implementation-plan.md"
+                assert plan_path.exists(), f"Plan not found for {task_id}"
+
+                # Verify plan content is >50 chars (validation requirement)
+                content = plan_path.read_text()
+                assert len(content) > 50, f"Plan for {task_id} is too short"
+
+        finally:
+            os.chdir(original_cwd)
+
+    def test_plan_content_structure(
+        self,
+        sample_review_task,
+        sample_review_report,
+        temp_dir
+    ):
+        """Test that generated plans have proper structure."""
+        original_cwd = os.getcwd()
+        os.chdir(temp_dir)
+
+        try:
+            orchestrator = ImplementOrchestrator(
+                sample_review_task,
+                sample_review_report
+            )
+            orchestrator.extract_feature_info()
+            orchestrator.parse_subtasks()
+            orchestrator.assign_modes()
+            orchestrator.generate_implementation_plans()
+
+            # Check first plan's structure
+            plans_dir = Path(temp_dir) / ".claude" / "task-plans"
+            first_task_id = orchestrator.subtasks[0]["id"]
+            plan_path = plans_dir / f"{first_task_id}-implementation-plan.md"
+            content = plan_path.read_text()
+
+            # Check required sections
+            assert "# Implementation Plan:" in content
+            assert "## Task" in content
+            assert "## Overview" in content
+            assert "## Files to Create/Modify" in content
+            assert "## Implementation Approach" in content
+            assert "## Dependencies" in content
+            assert "## Test Strategy" in content
+            assert "## Estimated Effort" in content
+            assert "Complexity:" in content
+            assert "LOC:" in content
+            assert "Duration:" in content
+
+        finally:
+            os.chdir(original_cwd)
+
+    def test_format_plan_files_empty(self, sample_review_task, sample_review_report):
+        """Test _format_plan_files with empty list."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        result = orchestrator._format_plan_files([])
+        assert "will be determined" in result
+
+    def test_format_plan_files_with_files(self, sample_review_task, sample_review_report):
+        """Test _format_plan_files with file list."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        files = ["src/module.py", "tests/test_module.py"]
+        result = orchestrator._format_plan_files(files)
+        assert "`src/module.py`" in result
+        assert "`tests/test_module.py`" in result
+        assert "Implementation target" in result
+
+    def test_format_plan_dependencies_empty(self, sample_review_task, sample_review_report):
+        """Test _format_plan_dependencies with empty list."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        result = orchestrator._format_plan_dependencies([])
+        assert result == "None"
+
+    def test_format_plan_dependencies_with_deps(self, sample_review_task, sample_review_report):
+        """Test _format_plan_dependencies with dependencies."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        deps = ["TASK-FW-001", "TASK-FW-002"]
+        result = orchestrator._format_plan_dependencies(deps)
+        assert "TASK-FW-001" in result
+        assert "TASK-FW-002" in result
+
+    def test_generate_implementation_approach_task_work(
+        self,
+        sample_review_task,
+        sample_review_report
+    ):
+        """Test implementation approach for task-work mode."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        subtask = {
+            "title": "Test task",
+            "description": "Test description",
+            "files": ["src/file.py"],
+            "implementation_mode": "task-work"
+        }
+        result = orchestrator._generate_implementation_approach(subtask)
+        assert "Review task requirements" in result
+        assert "Write unit tests" in result
+        assert "code quality" in result
+
+    def test_generate_implementation_approach_direct(
+        self,
+        sample_review_task,
+        sample_review_report
+    ):
+        """Test implementation approach for direct mode."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        subtask = {
+            "title": "Test task",
+            "files": [],
+            "implementation_mode": "direct"
+        }
+        result = orchestrator._generate_implementation_approach(subtask)
+        assert "Review task requirements" in result
+        assert "Verify changes work" in result
+
+    def test_generate_test_strategy_task_work(
+        self,
+        sample_review_task,
+        sample_review_report
+    ):
+        """Test test strategy for task-work mode."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        result = orchestrator._generate_test_strategy("task-work", [])
+        assert "Unit tests" in result
+        assert "80%" in result
+
+    def test_generate_test_strategy_direct(
+        self,
+        sample_review_task,
+        sample_review_report
+    ):
+        """Test test strategy for direct mode."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        result = orchestrator._generate_test_strategy("direct", [])
+        assert "Manual verification" in result
+
+    def test_generate_test_strategy_manual(
+        self,
+        sample_review_task,
+        sample_review_report
+    ):
+        """Test test strategy for manual mode."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        result = orchestrator._generate_test_strategy("manual", [])
+        assert "Manual verification required" in result
+
+    def test_estimate_loc(self, sample_review_task, sample_review_report):
+        """Test LOC estimation."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        # Low complexity, few files
+        result = orchestrator._estimate_loc(3, 1)
+        assert result > 0
+        assert result < 100
+
+        # High complexity, many files
+        result_high = orchestrator._estimate_loc(8, 5)
+        assert result_high > result
+
+    def test_estimate_duration(self, sample_review_task, sample_review_report):
+        """Test duration estimation."""
+        orchestrator = ImplementOrchestrator(
+            sample_review_task,
+            sample_review_report
+        )
+        # Simple task
+        result = orchestrator._estimate_duration(2)
+        assert "30 minutes" in result or "1 hour" in result
+
+        # Complex task
+        result = orchestrator._estimate_duration(8)
+        assert "4-8 hours" in result
+
+
 class TestErrorHandling:
     """Test error handling scenarios."""
 

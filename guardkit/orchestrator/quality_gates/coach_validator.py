@@ -395,15 +395,18 @@ class CoachValidator:
             Task-work results, or dict with "error" key if not found
         """
         results_path = TaskArtifactPaths.task_work_results_path(task_id, self.worktree_path)
+        logger.debug(f"Looking for task_work_results at: {results_path}")
 
         if not results_path.exists():
-            logger.warning(f"Task-work results not found at {results_path}")
+            logger.warning(f"task_work_results.json not found at {results_path}")
+            logger.debug(f"Worktree path: {self.worktree_path}")
+            logger.debug(f"Task ID: {task_id}")
             return {"error": f"Task-work results not found at {results_path}"}
 
         try:
             with open(results_path) as f:
                 results = json.load(f)
-            logger.debug(f"Loaded task-work results from {results_path}")
+            logger.debug(f"Successfully loaded task_work_results from {results_path}")
             return results
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse task-work results: {e}")
@@ -432,23 +435,47 @@ class CoachValidator:
         QualityGateStatus
             Status of all quality gates
         """
-        # Extract test results
-        test_results = task_work_results.get("test_results", {})
-        tests_passed = test_results.get("all_passed", False)
+        # Log input structure for debugging
+        logger.debug(f"task_work_results keys: {list(task_work_results.keys())}")
+        logger.debug(f"quality_gates content: {task_work_results.get('quality_gates', 'NOT_FOUND')}")
+        logger.debug(f"code_review content: {task_work_results.get('code_review', 'NOT_FOUND')}")
+        logger.debug(f"plan_audit content: {task_work_results.get('plan_audit', 'NOT_FOUND')}")
 
-        # Extract coverage results
-        coverage = task_work_results.get("coverage", {})
-        coverage_met = coverage.get("threshold_met", True)  # Default True if not present
+        # Read from quality_gates object (what writer actually creates)
+        quality_gates = task_work_results.get("quality_gates", {})
 
-        # Extract architectural review results
+        # Test results - use all_passed if present, otherwise check tests_failed
+        if "all_passed" in quality_gates:
+            tests_passed = quality_gates["all_passed"]
+            logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
+        elif "tests_failed" in quality_gates:
+            # If we have test counts, check if any failed
+            tests_failed = quality_gates["tests_failed"]
+            tests_passed = tests_failed == 0
+            logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.tests_failed={tests_failed}")
+        else:
+            # No quality_gates data at all - assume failure
+            tests_passed = False
+            logger.debug("No tests_passed or tests_failed found in quality_gates, defaulting to False")
+
+        # Coverage - read from quality_gates.coverage_met
+        coverage_met = quality_gates.get("coverage_met", True)  # Default True if not present
+        logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met")
+
+        # Architectural review - may be in separate code_review field or not present
         code_review = task_work_results.get("code_review", {})
-        arch_score = code_review.get("score", 0)
+        arch_score = code_review.get("score", 0)  # Default to 0 if not present
         arch_review_passed = arch_score >= self.ARCH_REVIEW_THRESHOLD
+        logger.debug(
+            f"Extracted arch_review_passed={arch_review_passed} "
+            f"(score={arch_score}, threshold={self.ARCH_REVIEW_THRESHOLD})"
+        )
 
-        # Extract plan audit results
+        # Plan audit - separate field
         plan_audit = task_work_results.get("plan_audit", {})
         violations = plan_audit.get("violations", 0)
         plan_audit_passed = violations == 0
+        logger.debug(f"Extracted plan_audit_passed={plan_audit_passed} (violations={violations})")
 
         status = QualityGateStatus(
             tests_passed=tests_passed,
@@ -457,9 +484,14 @@ class CoachValidator:
             plan_audit_passed=plan_audit_passed,
         )
 
-        logger.debug(
-            f"Quality gate status: tests={tests_passed}, coverage={coverage_met}, "
-            f"arch={arch_review_passed} (score={arch_score}), audit={plan_audit_passed}"
+        # Log final decision at INFO level for visibility
+        logger.info(
+            f"Quality gate evaluation complete: "
+            f"tests={status.tests_passed}, "
+            f"coverage={status.coverage_met}, "
+            f"arch={status.arch_review_passed}, "
+            f"audit={status.plan_audit_passed}, "
+            f"ALL_PASSED={status.all_gates_passed}"
         )
 
         return status
@@ -732,27 +764,28 @@ class CoachValidator:
         """
         issues = []
 
+        # Extract from quality_gates for test details
+        quality_gates = task_work_results.get("quality_gates", {})
+
         if not gates.tests_passed:
-            test_results = task_work_results.get("test_results", {})
             issues.append({
                 "severity": "must_fix",
                 "category": "test_failure",
                 "description": "Tests did not pass during task-work execution",
                 "details": {
-                    "failed_count": test_results.get("failed", 0),
-                    "total_count": test_results.get("total", 0),
+                    "failed_count": quality_gates.get("tests_failed", 0),
+                    "total_count": quality_gates.get("tests_passed", 0) + quality_gates.get("tests_failed", 0),
                 },
             })
 
         if not gates.coverage_met:
-            coverage = task_work_results.get("coverage", {})
             issues.append({
                 "severity": "must_fix",
                 "category": "coverage",
                 "description": "Coverage threshold not met",
                 "details": {
-                    "line_coverage": coverage.get("line", 0),
-                    "branch_coverage": coverage.get("branch", 0),
+                    "line_coverage": quality_gates.get("coverage", 0),
+                    "branch_coverage": quality_gates.get("branch_coverage", 0),
                 },
             })
 

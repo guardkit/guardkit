@@ -2957,6 +2957,124 @@ class TestCreatePlayerReportFromTaskWork:
         assert "Files planned: 5" in report["implementation_notes"]
         assert "Files actual: 4" in report["implementation_notes"]
 
+    def test_tests_passed_is_boolean_when_int_provided(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """tests_passed should be bool even when output provides int count (TASK-FBSDK-015).
+
+        The TaskWorkStreamParser captures tests_passed as an integer (count of passing tests),
+        but PLAYER_REPORT_SCHEMA expects a boolean. This test verifies the type conversion.
+        """
+        task_id = "TASK-009"
+        turn = 1
+
+        # TaskWorkResult with tests_passed as int (from parser)
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={
+                "tests_passed": 7,  # Parser provides count as int
+                "files_created": ["src/feature.py"],
+            },
+            exit_code=0,
+        )
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Verify tests_passed is boolean, not int
+        assert isinstance(report["tests_passed"], bool), \
+            f"tests_passed should be bool, got {type(report['tests_passed']).__name__}"
+        assert report["tests_passed"] is True  # 7 > 0 = True
+
+        # Verify test count is preserved in separate field
+        assert "tests_passed_count" in report, \
+            "tests_passed_count should be added to preserve the original count"
+        assert report["tests_passed_count"] == 7
+
+    def test_tests_passed_is_false_when_zero_int_provided(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """tests_passed should be False when int count is 0 (TASK-FBSDK-015)."""
+        task_id = "TASK-010"
+        turn = 1
+
+        # TaskWorkResult with tests_passed as 0
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={
+                "tests_passed": 0,  # No tests passed
+                "files_created": ["src/feature.py"],
+            },
+            exit_code=0,
+        )
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Verify tests_passed is False when count is 0
+        assert isinstance(report["tests_passed"], bool)
+        assert report["tests_passed"] is False  # 0 > 0 = False
+        assert report["tests_passed_count"] == 0
+
+    def test_tests_passed_remains_bool_when_bool_provided(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """tests_passed should remain bool when output already provides bool (TASK-FBSDK-015)."""
+        task_id = "TASK-011"
+        turn = 1
+
+        # TaskWorkResult with tests_passed as bool (already correct type)
+        task_work_result = TaskWorkResult(
+            success=True,
+            output={
+                "tests_passed": True,  # Already a boolean
+                "files_created": ["src/feature.py"],
+            },
+            exit_code=0,
+        )
+
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": [], "created": []},
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Verify tests_passed remains boolean
+        assert isinstance(report["tests_passed"], bool)
+        assert report["tests_passed"] is True
+        # tests_passed_count should NOT be set for bool input
+        assert "tests_passed_count" not in report
+
 
 class TestDetectGitChanges:
     """Test _detect_git_changes method."""

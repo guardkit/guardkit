@@ -25,6 +25,8 @@ Example:
     All checks passed!
 """
 
+import json
+import os
 import shutil
 import subprocess
 import sys
@@ -316,6 +318,138 @@ class FileExistsCheck(Check):
             )
 
 
+class ClaudeAuthCheck(Check):
+    """Check if Claude authentication is configured."""
+
+    def __init__(self, required: bool = False):
+        """Initialize Claude auth check.
+
+        Args:
+            required: Whether authentication is required
+        """
+        super().__init__(required=required)
+
+    def _mask_api_key(self, key: str) -> str:
+        """Mask API key for secure display.
+
+        Args:
+            key: The API key to mask
+
+        Returns:
+            Masked key showing first 8 and last 4 characters
+        """
+        if len(key) <= 12:
+            return "***"
+        return f"{key[:8]}...{key[-4:]}"
+
+    def run(self) -> CheckResult:
+        """Check for Claude authentication."""
+        # Check 1: ANTHROPIC_API_KEY environment variable
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if api_key:
+            masked_key = self._mask_api_key(api_key)
+            return CheckResult(
+                name="Claude Auth",
+                status=CheckStatus.PASS,
+                message=f"ANTHROPIC_API_KEY ({masked_key})",
+                required=self.required,
+            )
+
+        # Check 2: Claude Code auth file
+        auth_file = Path.home() / ".claude" / "auth.json"
+        if auth_file.exists():
+            try:
+                data = json.loads(auth_file.read_text())
+                # Check for valid auth data (claude code uses various keys)
+                if data:
+                    return CheckResult(
+                        name="Claude Auth",
+                        status=CheckStatus.PASS,
+                        message=f"Claude Code auth ({auth_file})",
+                        required=self.required,
+                    )
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # No authentication found
+        status = CheckStatus.FAIL if self.required else CheckStatus.WARNING
+        message = "Not configured" if self.required else "Not configured (optional)"
+        return CheckResult(
+            name="Claude Auth",
+            status=status,
+            message=message,
+            details="Set ANTHROPIC_API_KEY or authenticate via Claude Code",
+            required=self.required,
+        )
+
+
+class SDKConnectivityCheck(Check):
+    """Check if Claude Agent SDK can connect to the API."""
+
+    def __init__(self, enabled: bool = False, required: bool = False):
+        """Initialize SDK connectivity check.
+
+        Args:
+            enabled: Whether to actually run the connectivity test
+            required: Whether connectivity is required
+        """
+        super().__init__(required=required)
+        self.enabled = enabled
+
+    def run(self) -> CheckResult:
+        """Check SDK connectivity."""
+        if not self.enabled:
+            return CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.WARNING,
+                message="Skipped (use --connectivity to test)",
+                required=self.required,
+            )
+
+        # Try to import and use the SDK
+        try:
+            import asyncio
+
+            from claude_agent_sdk import query
+
+            async def test_query():
+                """Run a minimal SDK query."""
+                # Use the query function for simple one-shot queries
+                async for message in query(prompt="Say 'ok' and nothing else."):
+                    # Just need to get a response to verify connectivity
+                    return message
+
+            # Run the async test
+            asyncio.run(test_query())
+
+            return CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.PASS,
+                message="Connected successfully",
+                required=self.required,
+            )
+        except ImportError:
+            return CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.FAIL,
+                message="claude-agent-sdk not installed",
+                details="Run: pip install claude-agent-sdk",
+                required=self.required,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            # Truncate long error messages
+            if len(error_msg) > 50:
+                error_msg = error_msg[:47] + "..."
+            return CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.FAIL,
+                message=f"Connection failed: {error_msg}",
+                details="Check API key and network connectivity",
+                required=self.required,
+            )
+
+
 # ============================================================================
 # Doctor Runner (Orchestration)
 # ============================================================================
@@ -324,12 +458,14 @@ class FileExistsCheck(Check):
 class DoctorRunner:
     """Orchestrates execution of all diagnostic checks."""
 
-    def __init__(self, checks: Optional[List[Check]] = None):
+    def __init__(self, checks: Optional[List[Check]] = None, connectivity: bool = False):
         """Initialize doctor runner.
 
         Args:
             checks: List of checks to run. If None, uses default checks.
+            connectivity: Whether to run SDK connectivity test
         """
+        self.connectivity = connectivity
         self.checks = checks or self._default_checks()
 
     def _default_checks(self) -> List[Check]:
@@ -349,6 +485,8 @@ class DoctorRunner:
             # AutoBuild Dependencies
             PackageCheck("claude-agent-sdk", import_name="claude_agent_sdk", required=False),
             CLIToolCheck("claude", required=False),
+            ClaudeAuthCheck(required=False),
+            SDKConnectivityCheck(enabled=self.connectivity, required=False),
             # Optional Tools
             CLIToolCheck("git", required=True),
             CLIToolCheck("conductor", required=False),
@@ -411,7 +549,7 @@ class DoctorReport:
         for result in self.results:
             if result.name in ["Python", "guardkit-py", "click", "rich", "pyyaml", "frontmatter"]:
                 core_deps.append(result)
-            elif result.name in ["claude-agent-sdk", "claude"]:
+            elif result.name in ["claude-agent-sdk", "claude", "Claude Auth", "SDK Connectivity"]:
                 autobuild_deps.append(result)
             elif result.name in ["git", "conductor"]:
                 optional_tools.append(result)
@@ -475,13 +613,16 @@ class DoctorReport:
 # ============================================================================
 
 
-def run_doctor() -> int:
+def run_doctor(connectivity: bool = False) -> int:
     """Run GuardKit doctor diagnostic.
+
+    Args:
+        connectivity: Whether to run SDK connectivity test
 
     Returns:
         Exit code (0 for success, 1 for failure)
     """
-    runner = DoctorRunner()
+    runner = DoctorRunner(connectivity=connectivity)
     results = runner.run()
 
     report = DoctorReport(results)

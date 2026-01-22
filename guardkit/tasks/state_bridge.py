@@ -375,17 +375,32 @@ class TaskStateBridge:
             )
             return None
 
-        # Only create stub for autobuild tasks (feature-build context)
-        # This prevents stub creation for standalone tasks that should use pre-loop
-        if not isinstance(autobuild_config, dict) or not autobuild_config:
+        # Get implementation mode and autobuild_state (runtime field)
+        implementation_mode = frontmatter_data.get("implementation_mode")
+        autobuild_state = frontmatter_data.get("autobuild_state", {})
+
+        # Create stub for tasks in autobuild context OR with task-work implementation mode
+        # - autobuild config: explicit autobuild frontmatter (e.g., autobuild: enabled: true)
+        # - autobuild_state: runtime state added by autobuild orchestrator
+        # - implementation_mode: task-work: feature tasks created via /feature-plan
+        has_autobuild_config = isinstance(autobuild_config, dict) and autobuild_config
+        has_autobuild_state = isinstance(autobuild_state, dict) and autobuild_state
+        is_task_work_mode = implementation_mode == "task-work"
+
+        should_create_stub = has_autobuild_config or has_autobuild_state or is_task_work_mode
+
+        if not should_create_stub:
             self.logger.debug(
-                f"Task {self.task_id} has no autobuild config, skipping stub creation"
+                f"Task {self.task_id} not configured for stub creation "
+                f"(autobuild_config={bool(has_autobuild_config)}, "
+                f"autobuild_state={bool(has_autobuild_state)}, "
+                f"implementation_mode={implementation_mode})"
             )
             return None
 
         # Determine if pre-loop was enabled (default: task-build has it, feature-build doesn't)
         # For feature tasks, we create stub regardless since they were pre-designed
-        enable_pre_loop = autobuild_config.get("enable_pre_loop", False)
+        enable_pre_loop = autobuild_config.get("enable_pre_loop", False) if has_autobuild_config else False
 
         # Generate stub content
         timestamp = datetime.now().isoformat()

@@ -866,5 +866,369 @@ class TestReturnValue:
         assert result_path.is_absolute()
 
 
+# ==================== Tests for _write_failure_results ====================
+
+
+class TestWriteFailureResults:
+    """Test suite for _write_failure_results method.
+
+    This method writes failure results on ALL error paths to ensure Coach
+    receives actionable information instead of "results not found".
+    """
+
+    def test_creates_file_with_failure_data(self, agent_invoker):
+        """Test that file is created with failure data."""
+        task_id = "TASK-FAIL-001"
+        error = "SDK process failed (exit 1): Command not found"
+        error_type = "ProcessError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        # Verify file exists
+        assert result_path.exists()
+        assert result_path.is_file()
+
+        # Verify file location matches expected path
+        expected_path = (
+            agent_invoker.worktree_path
+            / ".guardkit"
+            / "autobuild"
+            / task_id
+            / "task_work_results.json"
+        )
+        assert result_path == expected_path
+
+    def test_failure_results_contain_required_fields(self, agent_invoker):
+        """Test that failure results contain all required fields."""
+        task_id = "TASK-FAIL-002"
+        error = "Timeout error"
+        error_type = "TimeoutError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+
+        # Verify required fields
+        required_fields = {
+            "task_id",
+            "timestamp",
+            "completed",
+            "success",
+            "error",
+            "error_type",
+            "partial_output",
+            "phases",
+            "quality_gates",
+            "files_modified",
+            "files_created",
+            "summary",
+        }
+        assert required_fields.issubset(results.keys())
+
+    def test_failure_results_mark_not_completed(self, agent_invoker):
+        """Test that failure results are marked as not completed."""
+        task_id = "TASK-FAIL-003"
+        error = "CLI not found"
+        error_type = "CLINotFoundError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["completed"] is False
+        assert results["success"] is False
+
+    def test_failure_results_preserve_error_info(self, agent_invoker):
+        """Test that error information is preserved in results."""
+        task_id = "TASK-FAIL-004"
+        error = "SDK process failed (exit 1): Permission denied"
+        error_type = "ProcessError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["error"] == error
+        assert results["error_type"] == error_type
+
+    def test_failure_results_preserve_partial_output(self, agent_invoker):
+        """Test that partial output is preserved in results."""
+        task_id = "TASK-FAIL-005"
+        error = "Timeout after 600s"
+        error_type = "TimeoutError"
+        partial_output = [
+            "Phase 2 started...",
+            "Planning implementation...",
+            "Creating files...",
+        ]
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type, partial_output
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["partial_output"] == partial_output
+
+    def test_failure_results_default_empty_partial_output(self, agent_invoker):
+        """Test that partial_output defaults to empty list when not provided."""
+        task_id = "TASK-FAIL-006"
+        error = "Unexpected error"
+        error_type = "Exception"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+            # No partial_output argument
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["partial_output"] == []
+
+    def test_failure_results_quality_gates_marked_failed(self, agent_invoker):
+        """Test that quality gates are marked as failed in failure results."""
+        task_id = "TASK-FAIL-007"
+        error = "JSON decode error"
+        error_type = "CLIJSONDecodeError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        gates = results["quality_gates"]
+
+        assert gates["all_passed"] is False
+        assert gates["compilation"]["passed"] is False
+        assert "SDK invocation failed" in gates["compilation"]["error"]
+        assert gates["tests"]["passed"] is False
+        assert "SDK invocation failed" in gates["tests"]["error"]
+
+    def test_failure_results_include_summary(self, agent_invoker):
+        """Test that failure results include a meaningful summary."""
+        task_id = "TASK-FAIL-008"
+        error = "SDK process failed (exit 137): Killed"
+        error_type = "ProcessError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        summary = results["summary"]
+
+        # Summary should contain error type and message
+        assert "ProcessError" in summary
+        assert "SDK process failed" in summary
+
+    def test_failure_results_timestamp_is_valid(self, agent_invoker):
+        """Test that failure results have a valid ISO 8601 timestamp."""
+        task_id = "TASK-FAIL-009"
+        error = "Timeout"
+        error_type = "TimeoutError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        timestamp = results["timestamp"]
+
+        # Should be parseable as ISO 8601
+        try:
+            datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            pytest.fail(f"Timestamp is not valid ISO 8601: {timestamp}")
+
+    def test_failure_results_task_id_preserved(self, agent_invoker):
+        """Test that task_id is correctly preserved in failure results."""
+        task_id = "TASK-CUSTOM-FAILURE-ID"
+        error = "Test error"
+        error_type = "TestError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["task_id"] == task_id
+
+    def test_failure_results_creates_parent_directories(self, temp_worktree):
+        """Test that parent directories are created if missing."""
+        # Start with minimal directory structure
+        invoker = AgentInvoker(
+            temp_worktree, max_turns_per_agent=5, sdk_timeout_seconds=30
+        )
+
+        task_id = "TASK-FAIL-010"
+        error = "Directory test error"
+        error_type = "DirectoryError"
+
+        result_path = invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        # Verify parent directory was created
+        assert result_path.parent.exists()
+        assert result_path.exists()
+
+    def test_failure_results_empty_file_lists(self, agent_invoker):
+        """Test that failure results have empty file lists."""
+        task_id = "TASK-FAIL-011"
+        error = "Process error"
+        error_type = "ProcessError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["files_modified"] == []
+        assert results["files_created"] == []
+
+    def test_failure_results_empty_phases(self, agent_invoker):
+        """Test that failure results have empty phases dict."""
+        task_id = "TASK-FAIL-012"
+        error = "Early failure"
+        error_type = "EarlyError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["phases"] == {}
+
+    def test_failure_results_returns_path(self, agent_invoker):
+        """Test that _write_failure_results returns the Path to written file."""
+        task_id = "TASK-FAIL-013"
+        error = "Test error"
+        error_type = "TestError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        assert isinstance(result_path, Path)
+        assert result_path.exists()
+
+    def test_failure_results_uses_taskartifactpaths(self, agent_invoker):
+        """Test that file is created at location from TaskArtifactPaths."""
+        task_id = "TASK-FAIL-014"
+        error = "Path test error"
+        error_type = "PathError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        expected_path = TaskArtifactPaths.task_work_results_path(
+            task_id, agent_invoker.worktree_path
+        )
+
+        assert result_path == expected_path
+
+    def test_failure_results_with_unicode_error_message(self, agent_invoker):
+        """Test handling of unicode characters in error message."""
+        task_id = "TASK-FAIL-015"
+        error = "Ошибка процесса: 文件找不到"
+        error_type = "UnicodeError"
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type
+        )
+
+        results = json.loads(result_path.read_text())
+        assert results["error"] == error
+
+    def test_failure_results_with_long_partial_output(self, agent_invoker):
+        """Test handling of long partial output."""
+        task_id = "TASK-FAIL-016"
+        error = "Timeout"
+        error_type = "TimeoutError"
+        partial_output = [f"Line {i}: Processing..." for i in range(1000)]
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type, partial_output
+        )
+
+        results = json.loads(result_path.read_text())
+        assert len(results["partial_output"]) == 1000
+
+
+class TestFailureResultsCoachIntegration:
+    """Test suite for Coach integration with failure results."""
+
+    def test_failure_results_can_be_read_by_coach(self, agent_invoker):
+        """Test that failure results can be read and parsed by Coach."""
+        task_id = "TASK-FAIL-COACH-001"
+        error = "SDK process failed (exit 1): Claude Code CLI not found"
+        error_type = "ProcessError"
+        partial_output = ["Starting task-work...", "Invoking SDK..."]
+
+        result_path = agent_invoker._write_failure_results(
+            task_id, error, error_type, partial_output
+        )
+
+        # Simulate Coach reading the file
+        with open(result_path, "r") as f:
+            coach_results = json.load(f)
+
+        # Verify Coach can access error information
+        assert coach_results["task_id"] == task_id
+        assert coach_results["success"] is False
+        assert coach_results["error"] == error
+        assert coach_results["error_type"] == error_type
+        assert isinstance(coach_results["quality_gates"], dict)
+
+    def test_coach_can_distinguish_error_types(self, agent_invoker):
+        """Test that Coach can distinguish between different error types."""
+        error_types = [
+            ("TimeoutError", "task-work execution exceeded 600s timeout"),
+            ("ProcessError", "SDK process failed (exit 1): Permission denied"),
+            ("CLINotFoundError", "Claude Code CLI not installed"),
+            ("CLIJSONDecodeError", "Failed to parse SDK response: Invalid JSON"),
+            ("ValueError", "Unexpected error: invalid value"),
+        ]
+
+        for error_type, error_msg in error_types:
+            task_id = f"TASK-COACH-{error_type}"
+            result_path = agent_invoker._write_failure_results(
+                task_id, error_msg, error_type
+            )
+
+            results = json.loads(result_path.read_text())
+
+            # Coach can identify error type for targeted feedback
+            assert results["error_type"] == error_type
+            assert results["error"] == error_msg
+
+    def test_failure_results_path_matches_success_path(self, agent_invoker):
+        """Test that failure results are written to same path as success results."""
+        task_id = "TASK-PATH-CHECK"
+
+        # Failure path
+        failure_path = agent_invoker._write_failure_results(
+            task_id, "Error", "TestError"
+        )
+
+        # Success path (from existing method)
+        success_result_data = {
+            "tests_passed": 10,
+            "tests_failed": 0,
+            "quality_gates_passed": True,
+        }
+        success_path = agent_invoker._write_task_work_results(
+            task_id, success_result_data, "standard"
+        )
+
+        # Both should write to the same path
+        assert failure_path == success_path
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

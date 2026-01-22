@@ -7,6 +7,7 @@ import os
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
 
@@ -1184,7 +1185,17 @@ Follow the decision format specified in your agent definition.
             if "files_created" in output:
                 report["files_created"] = output["files_created"]
             if "tests_passed" in output:
-                report["tests_passed"] = output["tests_passed"]
+                tests_passed_value = output["tests_passed"]
+                # Convert count to boolean for PLAYER_REPORT_SCHEMA compliance
+                # Parser captures tests_passed as int (count), schema expects bool
+                # Note: Check for bool FIRST since bool is a subclass of int in Python
+                if isinstance(tests_passed_value, bool):
+                    report["tests_passed"] = tests_passed_value
+                elif isinstance(tests_passed_value, int):
+                    report["tests_passed"] = tests_passed_value > 0
+                    report["tests_passed_count"] = tests_passed_value  # Preserve count
+                else:
+                    report["tests_passed"] = bool(tests_passed_value)
                 report["tests_run"] = True
 
         # Write Player report
@@ -1742,14 +1753,32 @@ Follow the decision format specified in your agent definition.
                 setting_sources=["user", "project"],
             )
 
+            # TASK-FBSDK-011: Log SDK configuration before invocation
+            logger.info(f"[{task_id}] SDK invocation starting")
+            logger.info(f"[{task_id}] Working directory: {self.worktree_path}")
+            logger.info(f"[{task_id}] Allowed tools: {options.allowed_tools}")
+            logger.info(f"[{task_id}] Setting sources: {options.setting_sources}")
+            logger.info(f"[{task_id}] Permission mode: {options.permission_mode}")
+            logger.info(f"[{task_id}] Max turns: {options.max_turns}")
+            logger.info(f"[{task_id}] SDK timeout: {self.sdk_timeout_seconds}s")
+            logger.debug(f"[{task_id}] Prompt (first 500 chars): {prompt[:500]}...")
+
             collected_output: List[str] = []
+            # TASK-FBSDK-011: Track message statistics
+            message_count = 0
+            assistant_count = 0
+            tool_count = 0
+            result_count = 0
             async with asyncio.timeout(self.sdk_timeout_seconds):
                 async with async_heartbeat(task_id, "task-work implementation"):
                     async for message in query(prompt=prompt, options=options):
+                        # TASK-FBSDK-011: Track message counts
+                        message_count += 1
                         # TASK-FB-FIX-013: Properly iterate ContentBlocks instead of str()
                         # message.content is a list[ContentBlock], not a string
                         # Mirrors TASK-FB-FIX-005 pattern from task_work_interface.py
                         if isinstance(message, AssistantMessage):
+                            assistant_count += 1
                             for block in message.content:
                                 if isinstance(block, TextBlock):
                                     collected_output.append(block.text)
@@ -1757,13 +1786,21 @@ Follow the decision format specified in your agent definition.
                                     if "Phase" in block.text or "test" in block.text.lower():
                                         logger.debug(f"SDK progress: {block.text[:100]}...")
                                 elif isinstance(block, ToolUseBlock):
+                                    tool_count += 1
                                     logger.debug(f"Tool invoked: {block.name}")
                                 elif isinstance(block, ToolResultBlock):
                                     # Extract content from tool results if present
                                     if block.content:
                                         collected_output.append(str(block.content))
                         elif isinstance(message, ResultMessage):
+                            result_count += 1
                             logger.info(f"SDK completed: turns={message.num_turns}")
+
+            # TASK-FBSDK-011: Log message processing summary
+            logger.info(
+                f"[{task_id}] Message summary: total={message_count}, "
+                f"assistant={assistant_count}, tools={tool_count}, results={result_count}"
+            )
 
             # Join collected output for parsing
             output_text = "\n".join(collected_output)
@@ -1784,7 +1821,12 @@ Follow the decision format specified in your agent definition.
 
         except asyncio.TimeoutError:
             error_msg = f"task-work execution exceeded {self.sdk_timeout_seconds}s timeout"
-            logger.error(error_msg)
+            logger.error(f"[{task_id}] SDK TIMEOUT: {error_msg}")
+            logger.error(f"[{task_id}] Messages processed before timeout: {message_count}")
+            if collected_output:
+                last_output = " ".join(collected_output)[-500:]
+                logger.error(f"[{task_id}] Last output (500 chars): {last_output}")
+            self._write_failure_results(task_id, error_msg, "TimeoutError", collected_output)
             raise SDKTimeoutError(error_msg)
 
         except CLINotFoundError as e:
@@ -1793,6 +1835,7 @@ Follow the decision format specified in your agent definition.
                 "Run: npm install -g @anthropic-ai/claude-code"
             )
             logger.error(error_msg)
+            self._write_failure_results(task_id, error_msg, "CLINotFoundError", collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
@@ -1801,7 +1844,14 @@ Follow the decision format specified in your agent definition.
 
         except ProcessError as e:
             error_msg = f"SDK process failed (exit {e.exit_code}): {e.stderr}"
-            logger.error(error_msg)
+            logger.error(f"[{task_id}] SDK PROCESS ERROR")
+            logger.error(f"[{task_id}] Exit code: {e.exit_code}")
+            logger.error(f"[{task_id}] Stderr: {e.stderr}")
+            logger.error(f"[{task_id}] Messages processed: {message_count}")
+            if collected_output:
+                last_output = " ".join(collected_output)[-500:]
+                logger.error(f"[{task_id}] Last output (500 chars): {last_output}")
+            self._write_failure_results(task_id, error_msg, "ProcessError", collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
@@ -1811,6 +1861,7 @@ Follow the decision format specified in your agent definition.
         except CLIJSONDecodeError as e:
             error_msg = f"Failed to parse SDK response: {e}"
             logger.error(error_msg)
+            self._write_failure_results(task_id, error_msg, "CLIJSONDecodeError", collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
@@ -1818,11 +1869,19 @@ Follow the decision format specified in your agent definition.
             )
 
         except Exception as e:
-            logger.exception(f"Unexpected error executing task-work: {e}")
+            error_msg = f"Unexpected error executing task-work: {str(e)}"
+            logger.error(f"[{task_id}] SDK UNEXPECTED ERROR: {type(e).__name__}")
+            logger.error(f"[{task_id}] Error message: {str(e)}")
+            logger.error(f"[{task_id}] Messages processed: {message_count}")
+            logger.exception(f"[{task_id}] Full traceback:")
+            if collected_output:
+                last_output = " ".join(collected_output)[-500:]
+                logger.error(f"[{task_id}] Last output (500 chars): {last_output}")
+            self._write_failure_results(task_id, error_msg, type(e).__name__, collected_output)
             return TaskWorkResult(
                 success=False,
                 output={},
-                error=str(e),
+                error=error_msg,
             )
 
     def _parse_task_work_output(self, stdout: str) -> Dict[str, Any]:
@@ -2159,8 +2218,6 @@ Follow the decision format specified in your agent definition.
             >>> results_path
             PosixPath('.guardkit/autobuild/TASK-001/task_work_results.json')
         """
-        from datetime import datetime
-
         # Ensure results directory exists (uses centralized paths)
         TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
 
@@ -2208,6 +2265,79 @@ Follow the decision format specified in your agent definition.
         # Write results to file
         results_file.write_text(json.dumps(results, indent=2))
         logger.info(f"Wrote task_work_results.json to {results_file}")
+
+        return results_file
+
+    def _write_failure_results(
+        self,
+        task_id: str,
+        error: str,
+        error_type: str,
+        partial_output: Optional[List[str]] = None,
+    ) -> Path:
+        """Write task_work_results.json with failure status.
+
+        Called on ALL error paths to ensure Coach receives actionable information
+        instead of "results not found". This enables intelligent feedback based
+        on the specific error type that occurred.
+
+        Location: .guardkit/autobuild/{task_id}/task_work_results.json
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            error: Error message describing what failed
+            error_type: Exception type name (e.g., "ProcessError", "TimeoutError")
+            partial_output: Any output collected before failure (optional)
+
+        Returns:
+            Path to the written results file
+
+        Raises:
+            OSError: If directory creation or file write fails
+
+        Example:
+            >>> invoker._write_failure_results(
+            ...     "TASK-001",
+            ...     "SDK process failed (exit 1): Command not found",
+            ...     "ProcessError",
+            ...     ["Phase 2 started...", "Planning..."]
+            ... )
+            PosixPath('.guardkit/autobuild/TASK-001/task_work_results.json')
+        """
+        # Ensure results directory exists (uses centralized paths)
+        TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
+
+        results_file = TaskArtifactPaths.task_work_results_path(task_id, self.worktree_path)
+
+        # Build failure results matching Coach expectations
+        results: Dict[str, Any] = {
+            "task_id": task_id,
+            "timestamp": datetime.now().isoformat(),
+            "completed": False,
+            "success": False,
+            "error": error,
+            "error_type": error_type,
+            "partial_output": partial_output or [],
+            "phases": {},
+            "quality_gates": {
+                "all_passed": False,
+                "compilation": {
+                    "passed": False,
+                    "error": "SDK invocation failed before testing",
+                },
+                "tests": {
+                    "passed": False,
+                    "error": "SDK invocation failed before testing",
+                },
+            },
+            "files_modified": [],
+            "files_created": [],
+            "summary": f"Failed: {error_type} - {error}",
+        }
+
+        # Write results to file
+        results_file.write_text(json.dumps(results, indent=2))
+        logger.info(f"Wrote failure results to {results_file}")
 
         return results_file
 

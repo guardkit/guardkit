@@ -68,25 +68,31 @@ def make_task_work_results(
     violations: int = 0,
     requirements_met: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """Helper to create task-work results with customizable values."""
+    """Helper to create task-work results matching actual writer schema."""
+    # If tests_passed is False, we need to set failed_count if it's 0
+    # This ensures the schema reflects the actual failure state
+    if not tests_passed and failed_count == 0:
+        failed_count = 1  # Set to at least 1 to indicate failure
+
+    passed_count = total_tests - failed_count
     return {
-        "test_results": {
-            "all_passed": tests_passed,
-            "total": total_tests,
-            "passed": total_tests - failed_count,
-            "failed": failed_count,
+        # Quality gates object (what writer actually creates)
+        "quality_gates": {
+            "tests_passing": tests_passed and failed_count == 0,
+            "tests_passed": passed_count,
+            "tests_failed": failed_count,
+            "coverage": line_coverage,
+            "coverage_met": coverage_met,
+            "all_passed": tests_passed and coverage_met,
         },
-        "coverage": {
-            "line": line_coverage,
-            "branch": 78,
-            "threshold_met": coverage_met,
-        },
+        # Code review (separate from quality_gates)
         "code_review": {
             "score": arch_score,
             "solid": 85,
             "dry": 80,
             "yagni": 82,
         },
+        # Plan audit (separate from quality_gates)
         "plan_audit": {
             "violations": violations,
             "file_count_match": True,
@@ -423,15 +429,37 @@ class TestQualityGateVerification:
         """Test handling of partial results."""
         validator = CoachValidator(str(tmp_worktree))
         results = {
-            "test_results": {"all_passed": True},
-            # Missing coverage, code_review, plan_audit
+            "quality_gates": {"all_passed": True},
+            # Include code_review to make arch review pass
+            "code_review": {"score": 82},
         }
 
         status = validator.verify_quality_gates(results)
 
         assert status.tests_passed is True
         assert status.coverage_met is True  # Default
-        assert status.arch_review_passed is False  # No score means 0
+        assert status.arch_review_passed is True  # Has code_review.score = 82
+
+    def test_verify_quality_gates_reads_quality_gates_object(self, tmp_worktree):
+        """Coach should read from quality_gates object, not test_results."""
+        task_work_results = {
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passed": 7,
+                "tests_failed": 0,
+                "coverage_met": True,
+            },
+            # Include code_review to make arch review pass
+            "code_review": {"score": 75},
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        status = validator.verify_quality_gates(task_work_results)
+
+        assert status.tests_passed is True
+        assert status.coverage_met is True
+        assert status.arch_review_passed is True
+        assert status.all_gates_passed is True
 
 
 # ============================================================================

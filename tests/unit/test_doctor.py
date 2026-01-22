@@ -19,11 +19,13 @@ from guardkit.cli.doctor import (
     Check,
     CheckResult,
     CheckStatus,
+    ClaudeAuthCheck,
     DoctorReport,
     DoctorRunner,
     FileExistsCheck,
     PackageCheck,
     PythonVersionCheck,
+    SDKConnectivityCheck,
     run_doctor,
 )
 
@@ -448,6 +450,242 @@ class TestFileExistsCheck:
 
 
 # ============================================================================
+# ClaudeAuthCheck Tests
+# ============================================================================
+
+
+class TestClaudeAuthCheck:
+    """Test ClaudeAuthCheck."""
+
+    def test_auth_with_api_key(self, monkeypatch):
+        """Test when ANTHROPIC_API_KEY is set."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test1234567890abcdef")
+
+        check = ClaudeAuthCheck(required=False)
+        result = check.run()
+
+        assert result.status == CheckStatus.PASS
+        assert result.name == "Claude Auth"
+        assert "ANTHROPIC_API_KEY" in result.message
+        # Verify key is masked
+        assert "sk-ant-a" in result.message  # First 8 chars
+        assert "cdef" in result.message  # Last 4 chars
+        assert "1234567890ab" not in result.message  # Middle is hidden
+
+    def test_auth_with_short_api_key(self, monkeypatch):
+        """Test masking of short API key."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "short-key")
+
+        check = ClaudeAuthCheck(required=False)
+        result = check.run()
+
+        assert result.status == CheckStatus.PASS
+        # Short keys should show ***
+        assert "***" in result.message
+
+    def test_auth_with_claude_code_file(self, tmp_path, monkeypatch):
+        """Test when Claude Code auth file exists."""
+        # Clear API key env var
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        # Create mock auth file
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        auth_file = claude_dir / "auth.json"
+        auth_file.write_text('{"access_token": "test-token"}')
+
+        # Patch Path.home() to return our temp dir
+        with patch("guardkit.cli.doctor.Path.home", return_value=tmp_path):
+            check = ClaudeAuthCheck(required=False)
+            result = check.run()
+
+        assert result.status == CheckStatus.PASS
+        assert "Claude Code auth" in result.message
+
+    def test_auth_with_empty_auth_file(self, tmp_path, monkeypatch):
+        """Test when Claude Code auth file is empty JSON."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        auth_file = claude_dir / "auth.json"
+        auth_file.write_text("{}")
+
+        with patch("guardkit.cli.doctor.Path.home", return_value=tmp_path):
+            check = ClaudeAuthCheck(required=False)
+            result = check.run()
+
+        # Empty JSON should be treated as invalid
+        assert result.status == CheckStatus.WARNING
+        assert "Not configured" in result.message
+
+    def test_auth_with_invalid_json_file(self, tmp_path, monkeypatch):
+        """Test when Claude Code auth file has invalid JSON."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        auth_file = claude_dir / "auth.json"
+        auth_file.write_text("not valid json")
+
+        with patch("guardkit.cli.doctor.Path.home", return_value=tmp_path):
+            check = ClaudeAuthCheck(required=False)
+            result = check.run()
+
+        assert result.status == CheckStatus.WARNING
+        assert "Not configured" in result.message
+
+    def test_auth_not_configured_optional(self, tmp_path, monkeypatch):
+        """Test when no auth is configured (optional)."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        with patch("guardkit.cli.doctor.Path.home", return_value=tmp_path):
+            check = ClaudeAuthCheck(required=False)
+            result = check.run()
+
+        assert result.status == CheckStatus.WARNING
+        assert "Not configured (optional)" in result.message
+        assert result.details is not None
+        assert "ANTHROPIC_API_KEY" in result.details
+
+    def test_auth_not_configured_required(self, tmp_path, monkeypatch):
+        """Test when no auth is configured (required)."""
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        with patch("guardkit.cli.doctor.Path.home", return_value=tmp_path):
+            check = ClaudeAuthCheck(required=True)
+            result = check.run()
+
+        assert result.status == CheckStatus.FAIL
+        assert "Not configured" in result.message
+        assert result.required is True
+
+    def test_mask_api_key_method(self):
+        """Test the _mask_api_key method directly."""
+        check = ClaudeAuthCheck()
+
+        # Normal key
+        assert check._mask_api_key("sk-ant-api03-abcdefghijklmnop") == "sk-ant-a...mnop"
+
+        # Short key (<=12 chars)
+        assert check._mask_api_key("shortkey") == "***"
+
+        # Exactly 12 chars
+        assert check._mask_api_key("123456789012") == "***"
+
+        # 13 chars (first that shows partial)
+        assert check._mask_api_key("1234567890123") == "12345678...0123"
+
+
+# ============================================================================
+# SDKConnectivityCheck Tests
+# ============================================================================
+
+
+class TestSDKConnectivityCheck:
+    """Test SDKConnectivityCheck."""
+
+    def test_connectivity_skipped_when_disabled(self):
+        """Test that connectivity check is skipped when not enabled."""
+        check = SDKConnectivityCheck(enabled=False, required=False)
+        result = check.run()
+
+        assert result.status == CheckStatus.WARNING
+        assert result.name == "SDK Connectivity"
+        assert "Skipped" in result.message
+        assert "--connectivity" in result.message
+
+    def test_connectivity_import_error(self):
+        """Test when claude_agent_sdk is not installed."""
+        with patch("guardkit.cli.doctor.SDKConnectivityCheck.run") as mock_run:
+            # Simulate ImportError path
+            mock_run.return_value = CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.FAIL,
+                message="claude-agent-sdk not installed",
+                details="Run: pip install claude-agent-sdk",
+                required=False,
+            )
+
+            check = SDKConnectivityCheck(enabled=True, required=False)
+            result = check.run()
+
+            assert result.status == CheckStatus.FAIL
+            assert "not installed" in result.message
+
+    def test_connectivity_success(self):
+        """Test successful SDK connectivity."""
+        # Mock the SDK import and query
+        mock_query = MagicMock()
+
+        async def mock_query_fn(prompt):
+            yield {"type": "message", "content": "ok"}
+
+        with patch.dict("sys.modules", {"claude_agent_sdk": MagicMock()}):
+            with patch("guardkit.cli.doctor.SDKConnectivityCheck.run") as mock_run:
+                mock_run.return_value = CheckResult(
+                    name="SDK Connectivity",
+                    status=CheckStatus.PASS,
+                    message="Connected successfully",
+                    required=False,
+                )
+
+                check = SDKConnectivityCheck(enabled=True, required=False)
+                result = check.run()
+
+                assert result.status == CheckStatus.PASS
+                assert "Connected successfully" in result.message
+
+    def test_connectivity_connection_failure(self):
+        """Test SDK connectivity failure."""
+        with patch("guardkit.cli.doctor.SDKConnectivityCheck.run") as mock_run:
+            mock_run.return_value = CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.FAIL,
+                message="Connection failed: API error",
+                details="Check API key and network connectivity",
+                required=False,
+            )
+
+            check = SDKConnectivityCheck(enabled=True, required=False)
+            result = check.run()
+
+            assert result.status == CheckStatus.FAIL
+            assert "Connection failed" in result.message
+
+    def test_connectivity_error_message_truncation(self):
+        """Test that long error messages are truncated."""
+        long_error = "A" * 100  # 100 character error message
+
+        with patch("guardkit.cli.doctor.SDKConnectivityCheck.run") as mock_run:
+            # Simulate truncated error
+            truncated = long_error[:47] + "..."
+            mock_run.return_value = CheckResult(
+                name="SDK Connectivity",
+                status=CheckStatus.FAIL,
+                message=f"Connection failed: {truncated}",
+                details="Check API key and network connectivity",
+                required=False,
+            )
+
+            check = SDKConnectivityCheck(enabled=True, required=False)
+            result = check.run()
+
+            assert result.status == CheckStatus.FAIL
+            assert "..." in result.message
+            # Original long error should not be fully present
+            assert long_error not in result.message
+
+    def test_connectivity_required_flag(self):
+        """Test that required flag is respected."""
+        check = SDKConnectivityCheck(enabled=False, required=True)
+        assert check.required is True
+
+        check = SDKConnectivityCheck(enabled=False, required=False)
+        assert check.required is False
+
+
+# ============================================================================
 # DoctorRunner Tests
 # ============================================================================
 
@@ -464,6 +702,24 @@ class TestDoctorRunner:
         check_names = [check.__class__.__name__ for check in runner.checks]
         assert "PythonVersionCheck" in check_names
         assert "CLIToolCheck" in check_names
+        assert "ClaudeAuthCheck" in check_names
+        assert "SDKConnectivityCheck" in check_names
+
+    def test_connectivity_parameter(self):
+        """Test connectivity parameter is passed to SDKConnectivityCheck."""
+        runner_without = DoctorRunner(connectivity=False)
+        runner_with = DoctorRunner(connectivity=True)
+
+        # Find SDKConnectivityCheck in each runner
+        sdk_check_without = next(
+            c for c in runner_without.checks if isinstance(c, SDKConnectivityCheck)
+        )
+        sdk_check_with = next(
+            c for c in runner_with.checks if isinstance(c, SDKConnectivityCheck)
+        )
+
+        assert sdk_check_without.enabled is False
+        assert sdk_check_with.enabled is True
 
     def test_custom_checks(self):
         """Test with custom checks."""
@@ -514,6 +770,10 @@ class TestDoctorRunner:
         assert "guardkit-py" in names
         assert "click" in names
         assert "rich" in names
+
+        # AutoBuild dependencies (new checks)
+        assert "Claude Auth" in names
+        assert "SDK Connectivity" in names
 
         # Optional tools
         assert "git" in names
@@ -613,6 +873,8 @@ class TestDoctorReport:
             CheckResult("click", CheckStatus.PASS, "8.3.1", required=True),
             # AutoBuild deps
             CheckResult("claude-agent-sdk", CheckStatus.WARNING, "Not installed (optional)", required=False),
+            CheckResult("Claude Auth", CheckStatus.PASS, "ANTHROPIC_API_KEY (sk-ant-a...cdef)", required=False),
+            CheckResult("SDK Connectivity", CheckStatus.WARNING, "Skipped (use --connectivity to test)", required=False),
             # Optional tools
             CheckResult("git", CheckStatus.PASS, "2.50.1", required=True),
             # Config
@@ -657,6 +919,8 @@ class TestRunDoctor:
 
         assert exit_code == 0
         mock_runner.run.assert_called_once()
+        # Verify DoctorRunner was called with default connectivity=False
+        mock_runner_class.assert_called_once_with(connectivity=False)
 
     @patch("guardkit.cli.doctor.DoctorRunner")
     def test_run_doctor_failure(self, mock_runner_class):
@@ -689,6 +953,22 @@ class TestRunDoctor:
         exit_code = run_doctor()
 
         assert exit_code == 0
+
+    @patch("guardkit.cli.doctor.DoctorRunner")
+    def test_run_doctor_with_connectivity(self, mock_runner_class):
+        """Test run_doctor with connectivity flag enabled."""
+        mock_results = [
+            CheckResult("test", CheckStatus.PASS, "passed", required=True),
+        ]
+        mock_runner = Mock()
+        mock_runner.run.return_value = mock_results
+        mock_runner_class.return_value = mock_runner
+
+        exit_code = run_doctor(connectivity=True)
+
+        assert exit_code == 0
+        # Verify DoctorRunner was called with connectivity=True
+        mock_runner_class.assert_called_once_with(connectivity=True)
 
 
 # ============================================================================

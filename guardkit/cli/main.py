@@ -84,11 +84,16 @@ def version():
 
 
 @cli.command()
-def doctor():
+@click.option(
+    "--connectivity/--no-connectivity",
+    default=False,
+    help="Test SDK connectivity to Claude API",
+)
+def doctor(connectivity: bool):
     """Check GuardKit installation and configuration."""
     from guardkit.cli.doctor import run_doctor
 
-    exit_code = run_doctor()
+    exit_code = run_doctor(connectivity=connectivity)
     sys.exit(exit_code)
 
 

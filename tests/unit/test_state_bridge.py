@@ -392,3 +392,186 @@ status: design_approved
 
         with pytest.raises(TaskNotFoundError):
             invoker._ensure_design_approved_state("TASK-NONEXISTENT")
+
+
+class TestStubCreation:
+    """Tests for stub implementation plan creation logic."""
+
+    @pytest.fixture
+    def temp_repo(self):
+        """Create a temporary repository structure."""
+        temp_dir = tempfile.mkdtemp()
+        repo_root = Path(temp_dir)
+
+        for state in STATE_DIRECTORIES:
+            (repo_root / "tasks" / state).mkdir(parents=True, exist_ok=True)
+        (repo_root / ".claude" / "task-plans").mkdir(parents=True, exist_ok=True)
+
+        yield repo_root
+        shutil.rmtree(temp_dir)
+
+    def test_stub_created_for_task_with_autobuild_config(self, temp_repo):
+        """Test stub creation for task with explicit autobuild configuration."""
+        task_content = """---
+id: TASK-001
+title: Test task
+status: design_approved
+autobuild:
+  enabled: true
+---
+# Test Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is not None
+        assert stub_path.exists()
+        assert "Implementation Plan" in stub_path.read_text()
+
+    def test_stub_created_for_task_with_implementation_mode_task_work(self, temp_repo):
+        """Test stub creation for feature task with implementation_mode: task-work."""
+        task_content = """---
+id: TASK-FHA-001
+title: Create project structure
+status: design_approved
+implementation_mode: task-work
+wave: 1
+---
+# Feature Task
+
+Task created via /feature-plan
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-FHA-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-FHA-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is not None
+        assert stub_path.exists()
+        content = stub_path.read_text()
+        assert "Implementation Plan" in content
+        assert "TASK-FHA-001" in content
+
+    def test_stub_created_for_task_with_autobuild_state(self, temp_repo):
+        """Test stub creation for task with runtime autobuild_state."""
+        task_content = """---
+id: TASK-001
+title: Test task
+status: design_approved
+autobuild_state:
+  worktree_path: /tmp/test
+  base_branch: main
+---
+# Test Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is not None
+        assert stub_path.exists()
+
+    def test_stub_not_created_for_manual_task(self, temp_repo):
+        """Test stub is NOT created for task without autobuild/task-work config."""
+        task_content = """---
+id: TASK-001
+title: Manual task
+status: design_approved
+implementation_mode: manual
+---
+# Manual Task
+
+This task should be implemented manually.
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is None
+
+    def test_stub_not_created_for_direct_mode_without_autobuild(self, temp_repo):
+        """Test stub is NOT created for direct mode without autobuild config."""
+        task_content = """---
+id: TASK-001
+title: Direct task
+status: design_approved
+implementation_mode: direct
+---
+# Direct Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is None
+
+    def test_stub_not_created_for_task_without_any_config(self, temp_repo):
+        """Test stub is NOT created for task with no relevant configuration."""
+        task_content = """---
+id: TASK-001
+title: Plain task
+status: design_approved
+---
+# Plain Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is None
+
+    def test_existing_valid_plan_not_overwritten(self, temp_repo):
+        """Test existing valid plan is not overwritten by stub creation."""
+        task_content = """---
+id: TASK-001
+title: Test task
+status: design_approved
+implementation_mode: task-work
+---
+# Test Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        # Create existing plan
+        plan_path = temp_repo / ".claude" / "task-plans" / "TASK-001-implementation-plan.md"
+        original_content = "# Existing Plan\n\nThis is an existing detailed plan with more than 50 characters."
+        plan_path.write_text(original_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        result_path = bridge._create_stub_implementation_plan()
+
+        # Should return existing path, not create new stub
+        assert result_path == plan_path
+        assert plan_path.read_text() == original_content
+
+    def test_stub_content_includes_task_title(self, temp_repo):
+        """Test stub content includes task title."""
+        task_content = """---
+id: TASK-001
+title: Create authentication module
+status: design_approved
+implementation_mode: task-work
+---
+# Auth Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
+        task_path.write_text(task_content)
+
+        bridge = TaskStateBridge("TASK-001", temp_repo)
+        stub_path = bridge._create_stub_implementation_plan()
+
+        content = stub_path.read_text()
+        assert "Create authentication module" in content
