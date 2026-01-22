@@ -45,6 +45,9 @@ from lib.parallel_analyzer import detect_parallel_groups, generate_workspace_nam
 from lib.guide_generator import generate_guide_content, write_guide_to_file
 from lib.readme_generator import generate_feature_readme
 
+# Import task type detection
+from guardkit.lib.task_type_detector import detect_task_type
+
 
 def extract_feature_slug(title: str) -> str:
     """
@@ -238,6 +241,7 @@ class ImplementOrchestrator:
           - Files to modify
           - Dependencies
           - Implementation mode
+          - Task type (auto-detected)
         """
         for subtask in self.subtasks:
             task_id = subtask["id"]
@@ -249,6 +253,9 @@ class ImplementOrchestrator:
             parallel_group = subtask.get("parallel_group")
             conductor_workspace = subtask.get("conductor_workspace", "")
             dependencies = subtask.get("dependencies", [])
+
+            # Auto-detect task type based on title and description
+            task_type = detect_task_type(title, description)
 
             # Generate filename
             slug = self._slugify(title)
@@ -265,6 +272,7 @@ updated: {self.review_task.get('created', '2025-12-04T00:00:00Z')}
 priority: medium
 tags: [{self.feature_slug}]
 complexity: {complexity}
+task_type: {task_type.value}
 implementation_mode: {implementation_mode}
 parallel_group: {parallel_group if parallel_group else 'null'}
 conductor_workspace: {conductor_workspace if conductor_workspace else 'null'}

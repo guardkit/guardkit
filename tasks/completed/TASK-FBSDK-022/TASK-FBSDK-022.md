@@ -1,9 +1,10 @@
 ---
 id: TASK-FBSDK-022
 title: Update feature-plan to auto-detect task types
-status: backlog
+status: completed
 created: 2025-01-21T16:30:00Z
-updated: 2025-01-21T16:30:00Z
+updated: 2025-01-22T18:50:00Z
+completed: 2025-01-22T19:00:00Z
 priority: medium
 tags: [feature-plan, task-types, auto-detection]
 parent_review: TASK-REV-FB19
@@ -13,6 +14,27 @@ wave: 2
 conductor_workspace: arch-score-fix-wave2-3
 complexity: 4
 depends_on: [TASK-FBSDK-020]
+previous_state: in_review
+state_transition_reason: "Task completed successfully - all acceptance criteria met"
+completed_location: tasks/completed/TASK-FBSDK-022/
+organized_files:
+  - TASK-FBSDK-022.md
+  - implementation-summary.md
+  - test-report.md
+completed_phases: [1, 2, 2.5A, 2.5B, 2.7, 2.8, 3, 4, 4.5, 5]
+test_coverage:
+  line: 100
+  branch: 100
+  tests_passed: 50
+  tests_total: 50
+architectural_review:
+  score: 82
+  status: approved_with_recommendations
+completion_quality_gates:
+  code_coverage: passed
+  test_pass_rate: passed
+  architectural_review: passed
+  code_review: passed
 ---
 
 # Task: Update feature-plan to auto-detect task types
@@ -23,13 +45,13 @@ Enhance the `/feature-plan` command's subtask generation to automatically classi
 
 ## Acceptance Criteria
 
-- [ ] Auto-detection logic classifies tasks into 4 types
-- [ ] Classification based on title keywords and task content
-- [ ] Generated task files include `task_type` in frontmatter
-- [ ] Detection accuracy ≥90% for common patterns
-- [ ] Manual override available if auto-detection is wrong
-- [ ] Unit tests verify classification rules
-- [ ] Integration test with sample feature plan
+- [x] Auto-detection logic classifies tasks into 4 types
+- [x] Classification based on title keywords and task content
+- [x] Generated task files include `task_type` in frontmatter
+- [x] Detection accuracy ≥90% for common patterns
+- [x] Manual override available if auto-detection is wrong
+- [x] Unit tests verify classification rules
+- [x] Integration test with sample feature plan
 
 ## Implementation Notes
 
