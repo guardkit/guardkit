@@ -2175,6 +2175,113 @@ Follow the decision format specified in your agent definition.
     # Task-Work Results Writer Methods
     # =========================================================================
 
+    def _read_json_artifact(self, path: Path) -> Optional[Dict[str, Any]]:
+        """Read and parse JSON artifact file with graceful error handling.
+
+        This is a DRY helper method for reading JSON artifact files with
+        consistent error handling and logging patterns. Returns None if the
+        file doesn't exist or contains invalid JSON.
+
+        Args:
+            path: Path to the JSON artifact file
+
+        Returns:
+            Parsed JSON data as dict, or None if file not found or invalid
+
+        Example:
+            >>> design_path = TaskArtifactPaths.design_results_path(task_id, worktree)
+            >>> design_data = self._read_json_artifact(design_path)
+            >>> if design_data:
+            ...     score = design_data.get("architectural_review", {}).get("score")
+        """
+        if not path.exists():
+            logger.debug(f"JSON artifact not found: {path}")
+            return None
+
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Invalid JSON in {path}: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Error reading {path}: {e}")
+            return None
+
+    def _write_design_results(
+        self,
+        task_id: str,
+        result_data: Dict[str, Any],
+    ) -> Path:
+        """Write design phase results for implement-only mode access.
+
+        Persists Phase 2.5B (Architectural Review) results from pre-loop
+        execution to enable implement-only mode to include these scores in
+        task_work_results.json for Coach validation.
+
+        Location: .guardkit/autobuild/{task_id}/design_results.json
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            result_data: Parsed result data from design phase
+                Expected keys:
+                - architectural_review: Dict with score, solid_score, dry_score, yagni_score
+                - complexity_score: Integer complexity score (1-10)
+
+        Returns:
+            Path to the written design_results.json file
+
+        Raises:
+            OSError: If directory creation or file write fails
+
+        Example:
+            >>> result_data = {
+            ...     "architectural_review": {"score": 75, "solid_score": 8, ...},
+            ...     "complexity_score": 5
+            ... }
+            >>> path = invoker._write_design_results("TASK-001", result_data)
+            >>> path
+            PosixPath('.guardkit/autobuild/TASK-001/design_results.json')
+        """
+        # Ensure autobuild directory exists
+        TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
+
+        design_file = TaskArtifactPaths.design_results_path(task_id, self.worktree_path)
+
+        # Extract design phase data with simplified schema (per arch review)
+        design_results: Dict[str, Any] = {
+            "architectural_review": result_data.get("architectural_review", {}),
+            "complexity_score": result_data.get("complexity_score"),
+        }
+
+        # Write design results to file (idempotent - overwrites if exists)
+        design_file.write_text(json.dumps(design_results, indent=2))
+        logger.info(f"Wrote design_results.json to {design_file}")
+
+        return design_file
+
+    def _read_design_results(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Read design phase results from pre-loop execution.
+
+        Reads Phase 2.5B results persisted by pre-loop for use in
+        implement-only mode. Returns None if pre-loop was disabled or
+        design results are unavailable.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+
+        Returns:
+            Parsed design results dict, or None if not available
+
+        Example:
+            >>> design_data = invoker._read_design_results("TASK-001")
+            >>> if design_data:
+            ...     arch_review = design_data.get("architectural_review", {})
+            ...     score = arch_review.get("score", 0)
+        """
+        design_file = TaskArtifactPaths.design_results_path(task_id, self.worktree_path)
+        return self._read_json_artifact(design_file)
+
     def _write_task_work_results(
         self,
         task_id: str,
@@ -2254,6 +2361,17 @@ Follow the decision format specified in your agent definition.
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
             "summary": self._generate_summary(result_data),
         }
+
+        # Merge design results if available (for implement-only mode)
+        design_data = self._read_design_results(task_id)
+        if design_data:
+            logger.info("Merging design phase results into task_work_results.json")
+            # Merge architectural review scores from pre-loop
+            if "architectural_review" in design_data:
+                results["architectural_review"] = design_data["architectural_review"]
+            # Merge complexity score from pre-loop
+            if "complexity_score" in design_data:
+                results["complexity_score"] = design_data["complexity_score"]
 
         # Validate file count constraint for documentation level
         self._validate_file_count_constraint(

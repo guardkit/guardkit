@@ -85,6 +85,7 @@ class TaskArtifactPaths:
     PLAYER_REPORT: str = ".guardkit/autobuild/{task_id}/player_turn_{turn}.json"
     COACH_DECISION: str = ".guardkit/autobuild/{task_id}/coach_turn_{turn}.json"
     TASK_WORK_RESULTS: str = ".guardkit/autobuild/{task_id}/task_work_results.json"
+    DESIGN_RESULTS: str = ".guardkit/autobuild/{task_id}/design_results.json"
     COACH_FEEDBACK: str = ".guardkit/autobuild/{task_id}/coach_feedback_{turn}.json"
     VERIFICATION_CONTEXT: str = ".guardkit/autobuild/{task_id}/verification_context_{turn}.json"
 
@@ -312,6 +313,34 @@ class TaskArtifactPaths:
         PosixPath('/repo/.guardkit/autobuild/TASK-001/task_work_results.json')
         """
         return worktree / cls.TASK_WORK_RESULTS.format(task_id=task_id)
+
+    @classmethod
+    def design_results_path(cls, task_id: str, worktree: Path) -> Path:
+        """Get path for design results file.
+
+        Design results store Phase 2.5B (Architectural Review) scores from
+        pre-loop execution, enabling implement-only mode to access these
+        scores during the Player-Coach loop.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the design_results.json file
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.design_results_path("TASK-001", Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild/TASK-001/design_results.json')
+        """
+        return worktree / cls.DESIGN_RESULTS.format(task_id=task_id)
 
     @classmethod
     def coach_feedback_path(cls, task_id: str, turn: int, worktree: Path) -> Path:
