@@ -167,6 +167,13 @@ def autobuild():
         "See: docs/guides/guardkit-workflow.md#pre-loop-decision-guide"
     ),
 )
+@click.option(
+    "--skip-arch-review",
+    "skip_arch_review",
+    is_flag=True,
+    default=False,
+    help="Skip architectural review quality gate (use with caution)",
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -179,6 +186,7 @@ def task(
     mode: Optional[str],
     sdk_timeout: Optional[int],
     no_pre_loop: bool,
+    skip_arch_review: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -267,6 +275,19 @@ def task(
         effective_sdk_timeout = autobuild_config.get("sdk_timeout", 600)
     logger.info(f"SDK timeout: {effective_sdk_timeout}s")
 
+    # Resolve skip_arch_review: CLI flag > task frontmatter > default (False)
+    effective_skip_arch_review = skip_arch_review
+    if not effective_skip_arch_review:
+        effective_skip_arch_review = autobuild_config.get("skip_arch_review", False)
+    logger.info(f"Skip architectural review: {effective_skip_arch_review}")
+
+    # Display warning if skipping architectural review
+    if effective_skip_arch_review:
+        console.print("[yellow]⚠️  Warning: Architectural review will be skipped[/yellow]")
+        console.print("[dim]   This bypasses SOLID/DRY/YAGNI validation.[/dim]")
+        console.print("[dim]   Use only for legacy code or special circumstances.[/dim]")
+        console.print()
+
     # Display startup banner
     resume_text = " [yellow](Resuming)[/yellow]" if resume else ""
     mode_display = effective_mode.upper()
@@ -289,7 +310,7 @@ def task(
     # Phase 2: Initialize orchestrator
     # Note: enable_pre_loop defaults to True for task-build, --no-pre-loop disables it
     enable_pre_loop = not no_pre_loop
-    logger.info(f"Initializing orchestrator (enable_pre_loop={enable_pre_loop})")
+    logger.info(f"Initializing orchestrator (enable_pre_loop={enable_pre_loop}, skip_arch_review={effective_skip_arch_review})")
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
         max_turns=max_turns,
@@ -297,6 +318,7 @@ def task(
         enable_pre_loop=enable_pre_loop,
         development_mode=effective_mode,
         sdk_timeout=effective_sdk_timeout,
+        skip_arch_review=effective_skip_arch_review,
     )
 
     # Phase 3: Execute orchestration

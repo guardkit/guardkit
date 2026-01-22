@@ -315,6 +315,7 @@ class AutoBuildOrchestrator:
         pre_loop_gates: Optional[PreLoopQualityGates] = None,
         development_mode: str = "tdd",
         sdk_timeout: int = 600,
+        skip_arch_review: bool = False,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -351,6 +352,9 @@ class AutoBuildOrchestrator:
         sdk_timeout : int, optional
             SDK timeout in seconds for agent invocations (default: 600).
             Valid range: 60-3600 seconds.
+        skip_arch_review : bool, optional
+            Skip architectural review quality gate (default: False).
+            Use with caution - bypasses SOLID/DRY/YAGNI validation.
 
         Raises
         ------
@@ -378,6 +382,7 @@ class AutoBuildOrchestrator:
         self.pre_loop_options = pre_loop_options or {}
         self.development_mode = development_mode
         self.sdk_timeout = sdk_timeout
+        self.skip_arch_review = skip_arch_review
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         self._turn_history: List[TurnRecord] = []
         self._honesty_history: List[float] = []  # Track honesty scores across turns
@@ -396,6 +401,7 @@ class AutoBuildOrchestrator:
             f"enable_pre_loop={self.enable_pre_loop}, "
             f"development_mode={self.development_mode}, "
             f"sdk_timeout={self.sdk_timeout}s, "
+            f"skip_arch_review={self.skip_arch_review}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
@@ -723,6 +729,7 @@ class AutoBuildOrchestrator:
             self._pre_loop_gates = PreLoopQualityGates(
                 str(worktree.path),
                 sdk_timeout=self.sdk_timeout,
+                skip_arch_review=self.skip_arch_review,
             )
 
         # Execute pre-loop quality gates via task-work delegation
