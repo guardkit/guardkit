@@ -2200,6 +2200,7 @@ Follow the decision format specified in your agent definition.
                 - quality_gates_passed: Boolean quality gate status
                 - files_modified: List of modified file paths
                 - files_created: List of created file paths
+                - architectural_review: Dict with overall score and optional subscores
             documentation_level: Documentation level ("minimal", "standard", or
                 "comprehensive"). Used to validate file count constraints.
 
@@ -2235,6 +2236,24 @@ Follow the decision format specified in your agent definition.
             tests_passed is not None and tests_passed > 0 and tests_failed == 0
         )
 
+        # Extract architectural review score and subscores from result_data
+        # The architectural_review object from Phase 2.5B contains overall score
+        # and optional SOLID/DRY/YAGNI subscores for detailed evaluation
+        arch_review_data = result_data.get("architectural_review", {})
+        code_review: Dict[str, Any] = {}
+        if arch_review_data:
+            # Extract overall score (required for CoachValidator)
+            if "score" in arch_review_data:
+                code_review["score"] = arch_review_data["score"]
+
+            # Include optional subscores if present
+            if "solid" in arch_review_data:
+                code_review["solid"] = arch_review_data["solid"]
+            if "dry" in arch_review_data:
+                code_review["dry"] = arch_review_data["dry"]
+            if "yagni" in arch_review_data:
+                code_review["yagni"] = arch_review_data["yagni"]
+
         # Build structured results matching Coach expectations
         results: Dict[str, Any] = {
             "task_id": task_id,
@@ -2254,6 +2273,10 @@ Follow the decision format specified in your agent definition.
             "files_created": sorted(list(set(result_data.get("files_created", [])))),
             "summary": self._generate_summary(result_data),
         }
+
+        # Add code_review field if architectural review data was found
+        if code_review:
+            results["code_review"] = code_review
 
         # Validate file count constraint for documentation level
         self._validate_file_count_constraint(

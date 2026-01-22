@@ -1230,5 +1230,112 @@ class TestFailureResultsCoachIntegration:
         assert failure_path == success_path
 
 
+# ==================== Tests for Code Review Field (TASK-FBSDK-018) ====================
+
+
+class TestCodeReviewFieldExtraction:
+    """Test suite for architectural review score extraction to code_review field.
+
+    TASK-FBSDK-018: Extract code_review field from task-work results with
+    architectural review score and optional SOLID/DRY/YAGNI subscores.
+    """
+
+    def test_code_review_extracted_when_architectural_review_present(
+        self, agent_invoker
+    ):
+        """Test that code_review field is created when architectural_review data exists."""
+        task_id = "TASK-046"
+        result_data = {
+            "tests_passed": 10,
+            "tests_failed": 0,
+            "quality_gates_passed": True,
+            "architectural_review": {
+                "score": 85,
+                "solid": 80,
+                "dry": 90,
+                "yagni": 85,
+            },
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+
+        # Verify code_review field is present
+        assert "code_review" in results
+        assert "score" in results["code_review"]
+        assert results["code_review"]["score"] == 85
+
+    def test_code_review_includes_all_subscores(self, agent_invoker):
+        """Test that code_review includes SOLID, DRY, YAGNI subscores when available."""
+        task_id = "TASK-047"
+        result_data = {
+            "tests_passed": 5,
+            "tests_failed": 0,
+            "architectural_review": {
+                "score": 75,
+                "solid": 70,
+                "dry": 75,
+                "yagni": 80,
+            },
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        code_review = results["code_review"]
+
+        # Verify all subscores are present
+        assert code_review["score"] == 75
+        assert code_review["solid"] == 70
+        assert code_review["dry"] == 75
+        assert code_review["yagni"] == 80
+
+    def test_code_review_handles_partial_subscores(self, agent_invoker):
+        """Test that code_review works with only score (no subscores)."""
+        task_id = "TASK-048"
+        result_data = {
+            "tests_passed": 8,
+            "tests_failed": 0,
+            "architectural_review": {"score": 65},
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+        code_review = results["code_review"]
+
+        # Should have score but no subscores
+        assert code_review["score"] == 65
+        assert "solid" not in code_review
+        assert "dry" not in code_review
+        assert "yagni" not in code_review
+
+    def test_code_review_omitted_when_no_architectural_review(self, agent_invoker):
+        """Test that code_review field is omitted when no architectural_review data."""
+        task_id = "TASK-049"
+        result_data = {
+            "tests_passed": 12,
+            "tests_failed": 0,
+            "quality_gates_passed": True,
+            # No architectural_review key
+        }
+
+        result_path = agent_invoker._write_task_work_results(
+            task_id, result_data, "standard"
+        )
+
+        results = json.loads(result_path.read_text())
+
+        # code_review should not be present if no arch review data
+        assert "code_review" not in results
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
