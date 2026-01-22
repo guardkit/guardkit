@@ -118,4 +118,4 @@ debug-*.md
 site/
 
 # OS generated files
-*.orig
+*.orig*.py,cover
