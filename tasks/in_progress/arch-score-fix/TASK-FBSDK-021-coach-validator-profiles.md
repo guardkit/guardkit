@@ -1,9 +1,9 @@
 ---
 id: TASK-FBSDK-021
 title: Modify CoachValidator to apply task type profiles
-status: backlog
+status: in_progress
 created: 2025-01-21T16:30:00Z
-updated: 2025-01-21T16:30:00Z
+updated: 2025-01-22T08:45:00Z
 priority: high
 tags: [autobuild, quality-gates, coach-validator, task-types]
 parent_review: TASK-REV-FB19
@@ -13,6 +13,8 @@ wave: 2
 conductor_workspace: arch-score-fix-wave2-2
 complexity: 5
 depends_on: [TASK-FBSDK-020]
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution"
 ---
 
 # Task: Modify CoachValidator to apply task type profiles

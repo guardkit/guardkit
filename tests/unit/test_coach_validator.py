@@ -975,6 +975,334 @@ class TestAutoBuildIntegration:
 
 
 # ============================================================================
+# Test Task Type Profile Support (TASK-FBSDK-021)
+# ============================================================================
+
+
+class TestTaskTypeProfileResolution:
+    """Test task type resolution from task metadata."""
+
+    def test_resolve_task_type_default_no_type_specified(self, tmp_worktree):
+        """Test default resolution when no task_type specified."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.FEATURE
+
+    def test_resolve_task_type_scaffolding(self, tmp_worktree):
+        """Test resolution of scaffolding task type."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "scaffolding", "acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.SCAFFOLDING
+
+    def test_resolve_task_type_feature(self, tmp_worktree):
+        """Test resolution of feature task type."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "feature", "acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.FEATURE
+
+    def test_resolve_task_type_infrastructure(self, tmp_worktree):
+        """Test resolution of infrastructure task type."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "infrastructure", "acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.INFRASTRUCTURE
+
+    def test_resolve_task_type_documentation(self, tmp_worktree):
+        """Test resolution of documentation task type."""
+        from guardkit.models.task_types import TaskType
+
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "documentation", "acceptance_criteria": []}
+
+        task_type = validator._resolve_task_type(task)
+
+        assert task_type == TaskType.DOCUMENTATION
+
+    def test_resolve_task_type_invalid(self, tmp_worktree):
+        """Test error handling for invalid task_type."""
+        validator = CoachValidator(str(tmp_worktree))
+        task = {"task_type": "invalid_type", "acceptance_criteria": []}
+
+        with pytest.raises(ValueError) as exc_info:
+            validator._resolve_task_type(task)
+
+        assert "Invalid task_type value" in str(exc_info.value)
+        assert "invalid_type" in str(exc_info.value)
+
+
+class TestQualityGateProfileApplication:
+    """Test application of quality gate profiles during validation."""
+
+    def test_scaffolding_profile_skips_arch_review(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that scaffolding profile skips architectural review gate."""
+        # Write results with low arch score (would fail feature profile)
+        results = make_task_work_results(
+            arch_score=45,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "scaffolding",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task)
+
+        # Should approve despite low arch score because scaffolding doesn't require arch review
+        assert result.decision == "approve"
+        assert result.quality_gates.arch_review_required is False
+        assert result.quality_gates.arch_review_passed is True  # Skipped, so True
+        assert result.quality_gates.all_gates_passed is True
+
+    def test_scaffolding_profile_skips_coverage(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that scaffolding profile skips coverage gate."""
+        # Write results with low coverage (would fail feature profile)
+        results = make_task_work_results(
+            coverage_met=False,
+            line_coverage=45,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "scaffolding",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task)
+
+        # Should approve despite low coverage because scaffolding doesn't require coverage
+        assert result.decision == "approve"
+        assert result.quality_gates.coverage_required is False
+        assert result.quality_gates.coverage_met is True  # Skipped, so True
+        assert result.quality_gates.all_gates_passed is True
+
+    def test_feature_profile_requires_arch_review(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that feature profile enforces architectural review."""
+        # Write results with low arch score
+        results = make_task_work_results(arch_score=45)
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "feature",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
+
+        # Should reject because feature profile requires arch review
+        assert result.decision == "feedback"
+        assert result.quality_gates.arch_review_required is True
+        assert result.quality_gates.arch_review_passed is False
+        assert result.quality_gates.all_gates_passed is False
+        assert any(
+            issue["category"] == "architectural"
+            for issue in result.issues
+        )
+
+    def test_infrastructure_profile_skips_arch_review(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that infrastructure profile skips architectural review."""
+        # Write results with low arch score
+        results = make_task_work_results(
+            arch_score=30,
+            tests_passed=True,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "infrastructure",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task)
+
+        # Should approve despite low arch score (infrastructure doesn't require it)
+        assert result.decision == "approve"
+        assert result.quality_gates.arch_review_required is False
+        assert result.quality_gates.arch_review_passed is True  # Skipped
+        assert result.quality_gates.all_gates_passed is True
+
+    def test_infrastructure_profile_requires_tests(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that infrastructure profile requires tests."""
+        # Write results with no tests passed
+        results = make_task_work_results(tests_passed=False, failed_count=5)
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "infrastructure",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
+
+        # Should reject because infrastructure requires tests
+        assert result.decision == "feedback"
+        assert result.quality_gates.tests_required is True
+        assert result.quality_gates.tests_passed is False
+        assert any(
+            issue["category"] == "test_failure"
+            for issue in result.issues
+        )
+
+    def test_documentation_profile_minimal_gates(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that documentation profile skips most gates."""
+        # Write results with all gates failing
+        results = make_task_work_results(
+            tests_passed=False,
+            coverage_met=False,
+            arch_score=0,
+            violations=5,
+            requirements_met=["Document API"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "documentation",
+            "acceptance_criteria": ["Document API"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task)
+
+        # Should approve despite all gates failing (documentation minimal gates)
+        assert result.decision == "approve"
+        assert result.quality_gates.tests_required is False
+        assert result.quality_gates.coverage_required is False
+        assert result.quality_gates.arch_review_required is False
+        assert result.quality_gates.plan_audit_required is False
+        assert result.quality_gates.all_gates_passed is True
+
+
+class TestQualityGateStatusWithProfiles:
+    """Test QualityGateStatus with profile-based gate requirements."""
+
+    def test_all_gates_required_all_pass(self):
+        """Test all_gates_passed when all required gates pass."""
+        status = QualityGateStatus(
+            tests_passed=True,
+            coverage_met=True,
+            arch_review_passed=True,
+            plan_audit_passed=True,
+            tests_required=True,
+            coverage_required=True,
+            arch_review_required=True,
+            plan_audit_required=True,
+        )
+
+        assert status.all_gates_passed is True
+
+    def test_optional_gate_skip_does_not_fail(self):
+        """Test that skipped optional gates don't cause failure."""
+        status = QualityGateStatus(
+            tests_passed=True,
+            coverage_met=False,  # Failed
+            arch_review_passed=False,  # Failed
+            plan_audit_passed=True,
+            tests_required=True,
+            coverage_required=False,  # Optional - skip
+            arch_review_required=False,  # Optional - skip
+            plan_audit_required=True,
+        )
+
+        # Should pass because coverage and arch are not required
+        assert status.all_gates_passed is True
+
+    def test_required_gate_failure_fails_overall(self):
+        """Test that required gate failure fails overall."""
+        status = QualityGateStatus(
+            tests_passed=False,  # Failed
+            coverage_met=True,
+            arch_review_passed=True,
+            plan_audit_passed=True,
+            tests_required=True,  # Required
+            coverage_required=False,
+            arch_review_required=False,
+            plan_audit_required=False,
+        )
+
+        # Should fail because tests are required
+        assert status.all_gates_passed is False
+
+    def test_no_gates_required_always_passes(self):
+        """Test that when no gates are required, status passes."""
+        status = QualityGateStatus(
+            tests_passed=False,
+            coverage_met=False,
+            arch_review_passed=False,
+            plan_audit_passed=False,
+            tests_required=False,
+            coverage_required=False,
+            arch_review_required=False,
+            plan_audit_required=False,
+        )
+
+        # Should pass because no gates are required
+        assert status.all_gates_passed is True
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 
