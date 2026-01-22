@@ -230,6 +230,10 @@ class TaskWorkInterface:
         if options.get("defaults"):
             args.append("--defaults")
 
+        # Pass through skip_arch_review flag
+        if options.get("skip_arch_review"):
+            args.append("--skip-arch-review")
+
         return args
 
     def _build_design_prompt(
@@ -280,6 +284,10 @@ class TaskWorkInterface:
         # Add documentation level if specified
         if docs := options.get("docs"):
             parts.append(f"--docs={docs}")
+
+        # Add skip_arch_review flag if specified
+        if options.get("skip_arch_review"):
+            parts.append("--skip-arch-review")
 
         return " ".join(parts)
 

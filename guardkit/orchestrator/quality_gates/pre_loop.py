@@ -137,6 +137,7 @@ class PreLoopQualityGates:
         worktree_path: str,
         interface: Optional[TaskWorkInterface] = None,
         sdk_timeout: int = 600,
+        skip_arch_review: bool = False,
     ):
         """
         Initialize PreLoopQualityGates.
@@ -149,9 +150,12 @@ class PreLoopQualityGates:
             Optional interface for dependency injection (testing)
         sdk_timeout : int
             SDK timeout in seconds for agent invocations (default: 600)
+        skip_arch_review : bool
+            Skip architectural review quality gate (default: False)
         """
         self.worktree_path = Path(worktree_path)
         self.sdk_timeout = sdk_timeout
+        self.skip_arch_review = skip_arch_review
         self._interface = interface or TaskWorkInterface(
             self.worktree_path,
             sdk_timeout_seconds=sdk_timeout,
@@ -159,7 +163,7 @@ class PreLoopQualityGates:
 
         logger.debug(
             f"PreLoopQualityGates initialized for worktree: {worktree_path}, "
-            f"sdk_timeout: {sdk_timeout}s"
+            f"sdk_timeout: {sdk_timeout}s, skip_arch_review: {skip_arch_review}"
         )
 
     async def execute(
@@ -205,8 +209,11 @@ class PreLoopQualityGates:
         """
         logger.info(f"Executing pre-loop quality gates for {task_id}")
 
+        # Add skip_arch_review to options for task-work delegation
+        options_with_override = {**options, "skip_arch_review": self.skip_arch_review}
+
         # Execute design phases via task-work delegation
-        design_result = await self._interface.execute_design_phase(task_id, options)
+        design_result = await self._interface.execute_design_phase(task_id, options_with_override)
 
         # Check if checkpoint was rejected
         if design_result.checkpoint_result == "rejected":

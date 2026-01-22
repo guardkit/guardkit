@@ -1,9 +1,9 @@
 ---
 id: TASK-FBSDK-023
 title: Add skip_arch_review CLI and frontmatter flags
-status: backlog
+status: completed
 created: 2025-01-21T16:30:00Z
-updated: 2025-01-21T16:30:00Z
+updated: 2026-01-22T12:24:38.607739Z
 priority: medium
 tags: [autobuild, cli, override, quality-gates]
 parent_review: TASK-REV-FB19
@@ -13,6 +13,17 @@ wave: 3
 conductor_workspace: arch-score-fix-wave3-1
 complexity: 3
 depends_on: [TASK-FBSDK-021]
+completed: 2026-01-22T12:24:38.607751Z
+completed_location: tasks/completed/TASK-FBSDK-023/
+organized_files:
+  - TASK-FBSDK-023.md
+  - test-results.md
+  - implementation-summary.md
+quality_gates:
+  compilation: passed
+  tests_passing: 96/96 (100%)
+  line_coverage: 93.0%
+  code_review: approved (95/100)
 ---
 
 # Task: Add skip_arch_review CLI and frontmatter flags
@@ -23,13 +34,13 @@ Add explicit override mechanisms for skipping architectural review. This allows 
 
 ## Acceptance Criteria
 
-- [ ] CLI flag `--skip-arch-review` added to `guardkit autobuild task`
-- [ ] Frontmatter field `skip_arch_review: true` supported
-- [ ] CLI flag takes precedence over frontmatter
-- [ ] Warning message when skipping architectural review
-- [ ] Flag documented in help text and command docs
-- [ ] Unit tests verify flag behavior
-- [ ] Integration test with override
+- [x] CLI flag `--skip-arch-review` added to `guardkit autobuild task`
+- [x] Frontmatter field `skip_arch_review: true` supported
+- [x] CLI flag takes precedence over frontmatter
+- [x] Warning message when skipping architectural review
+- [x] Flag documented in help text and command docs
+- [x] Unit tests verify flag behavior
+- [x] Integration test with override
 
 ## Implementation Notes
 
