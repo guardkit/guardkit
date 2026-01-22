@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from guardkit.orchestrator.paths import TaskArtifactPaths
+from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
 
 logger = logging.getLogger(__name__)
 
@@ -65,22 +66,41 @@ class QualityGateStatus:
         Whether plan audit had zero violations
     all_gates_passed : bool
         True only if ALL gates passed (computed)
+    tests_required : bool
+        Whether tests were required by task type profile
+    coverage_required : bool
+        Whether coverage was required by task type profile
+    arch_review_required : bool
+        Whether architectural review was required by task type profile
+    plan_audit_required : bool
+        Whether plan audit was required by task type profile
     """
 
     tests_passed: bool
     coverage_met: bool
     arch_review_passed: bool
     plan_audit_passed: bool
+    tests_required: bool = True
+    coverage_required: bool = True
+    arch_review_required: bool = True
+    plan_audit_required: bool = True
     all_gates_passed: bool = field(init=False)
 
     def __post_init__(self):
-        """Compute all_gates_passed from individual gate results."""
-        self.all_gates_passed = all([
-            self.tests_passed,
-            self.coverage_met,
-            self.arch_review_passed,
-            self.plan_audit_passed,
-        ])
+        """Compute all_gates_passed from individual gate results and requirements."""
+        # Only check gates that are required
+        required_gates = []
+        if self.tests_required:
+            required_gates.append(self.tests_passed)
+        if self.coverage_required:
+            required_gates.append(self.coverage_met)
+        if self.arch_review_required:
+            required_gates.append(self.arch_review_passed)
+        if self.plan_audit_required:
+            required_gates.append(self.plan_audit_passed)
+
+        # All required gates must pass
+        self.all_gates_passed = all(required_gates) if required_gates else True
 
 
 @dataclass
@@ -240,6 +260,8 @@ class CoachValidator:
 
     # Quality gate thresholds (match task-work)
     ARCH_REVIEW_THRESHOLD = 60
+    # Default profile for backward compatibility
+    DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
 
     def __init__(
         self,
@@ -264,6 +286,44 @@ class CoachValidator:
         self.test_timeout = test_timeout
 
         logger.debug(f"CoachValidator initialized for worktree: {worktree_path}")
+
+    def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
+        """
+        Resolve task type from task metadata with fallback to default.
+
+        Parameters
+        ----------
+        task : Dict[str, Any]
+            Task data including optional task_type field
+
+        Returns
+        -------
+        TaskType
+            Resolved task type
+
+        Raises
+        ------
+        ValueError
+            If task_type is specified but invalid
+        """
+        task_type_str = task.get("task_type")
+
+        if task_type_str is None:
+            # No task_type specified - use default (feature)
+            logger.debug("No task_type specified, defaulting to FEATURE profile")
+            return TaskType.FEATURE
+
+        # Validate task_type value
+        try:
+            task_type = TaskType(task_type_str)
+            logger.debug(f"Resolved task_type from metadata: {task_type.value}")
+            return task_type
+        except ValueError as e:
+            logger.error(f"Invalid task_type value: {task_type_str}")
+            raise ValueError(
+                f"Invalid task_type value: {task_type_str}. "
+                f"Must be one of: {', '.join(t.value for t in TaskType)}"
+            ) from e
 
     def validate(
         self,
@@ -296,6 +356,24 @@ class CoachValidator:
         """
         logger.info(f"Starting Coach validation for {task_id} turn {turn}")
 
+        # Resolve task type and get quality gate profile
+        try:
+            task_type = self._resolve_task_type(task)
+            profile = get_profile(task_type)
+            logger.info(f"Using quality gate profile for task type: {task_type.value}")
+        except ValueError as e:
+            logger.error(f"Failed to resolve task type: {e}")
+            return self._feedback_result(
+                task_id=task_id,
+                turn=turn,
+                issues=[{
+                    "severity": "must_fix",
+                    "category": "invalid_task_type",
+                    "description": str(e),
+                }],
+                rationale=f"Invalid task type: {e}",
+            )
+
         # 1. Read task-work quality gate results
         task_work_results = self.read_quality_gate_results(task_id)
 
@@ -312,8 +390,8 @@ class CoachValidator:
                 rationale="Task-work quality gate results not found",
             )
 
-        # 2. Verify quality gates passed
-        gates_status = self.verify_quality_gates(task_work_results)
+        # 2. Verify quality gates passed with profile
+        gates_status = self.verify_quality_gates(task_work_results, profile=profile)
 
         if not gates_status.all_gates_passed:
             logger.info(f"Quality gates failed for {task_id}: {gates_status}")
@@ -415,37 +493,58 @@ class CoachValidator:
             logger.error(f"Failed to read task-work results: {e}")
             return {"error": f"Failed to read task-work results: {e}"}
 
-    def verify_quality_gates(self, task_work_results: Dict[str, Any]) -> QualityGateStatus:
+    def verify_quality_gates(
+        self,
+        task_work_results: Dict[str, Any],
+        profile: Optional[QualityGateProfile] = None,
+    ) -> QualityGateStatus:
         """
         Verify task-work quality gates passed.
 
-        Checks the following gates from task-work results:
+        Checks the following gates from task-work results, respecting the quality
+        gate profile which determines which gates are required for the task type:
         - tests_passed: From Phase 4.5 test results
         - coverage_met: From Phase 4.5 coverage check
-        - arch_review_passed: From Phase 5 code review (score >= 60)
+        - arch_review_passed: From Phase 5 code review (score >= threshold)
         - plan_audit_passed: From Phase 5.5 plan audit (0 violations)
 
         Parameters
         ----------
         task_work_results : Dict[str, Any]
             Results from task-work execution
+        profile : Optional[QualityGateProfile]
+            Quality gate profile for task type. If None, uses FEATURE profile
+            (backward compatible with existing calls without profile parameter).
 
         Returns
         -------
         QualityGateStatus
-            Status of all quality gates
+            Status of all quality gates with requirement flags
         """
-        # Log input structure for debugging
+        # Use default profile for backward compatibility
+        if profile is None:
+            profile = self.DEFAULT_PROFILE
+        # Log input structure and profile for debugging
         logger.debug(f"task_work_results keys: {list(task_work_results.keys())}")
         logger.debug(f"quality_gates content: {task_work_results.get('quality_gates', 'NOT_FOUND')}")
         logger.debug(f"code_review content: {task_work_results.get('code_review', 'NOT_FOUND')}")
         logger.debug(f"plan_audit content: {task_work_results.get('plan_audit', 'NOT_FOUND')}")
+        logger.debug(
+            f"Profile requirements: tests={profile.tests_required}, "
+            f"coverage={profile.coverage_required}, "
+            f"arch_review={profile.arch_review_required}, "
+            f"plan_audit={profile.plan_audit_required}"
+        )
 
         # Read from quality_gates object (what writer actually creates)
         quality_gates = task_work_results.get("quality_gates", {})
 
         # Test results - use all_passed if present, otherwise check tests_failed
-        if "all_passed" in quality_gates:
+        # If tests not required by profile, default to True (skip gate)
+        if not profile.tests_required:
+            tests_passed = True
+            logger.debug("Tests not required per task type profile, skipping")
+        elif "all_passed" in quality_gates:
             tests_passed = quality_gates["all_passed"]
             logger.debug(f"Extracted tests_passed={tests_passed} from quality_gates.all_passed")
         elif "tests_failed" in quality_gates:
@@ -459,38 +558,57 @@ class CoachValidator:
             logger.debug("No tests_passed or tests_failed found in quality_gates, defaulting to False")
 
         # Coverage - read from quality_gates.coverage_met
-        coverage_met = quality_gates.get("coverage_met", True)  # Default True if not present
-        logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met")
+        # If coverage not required by profile, default to True (skip gate)
+        if not profile.coverage_required:
+            coverage_met = True
+            logger.debug("Coverage not required per task type profile, skipping")
+        else:
+            coverage_met = quality_gates.get("coverage_met", True)  # Default True if not present
+            logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met")
 
         # Architectural review - may be in separate code_review field or not present
-        code_review = task_work_results.get("code_review", {})
-        arch_score = code_review.get("score", 0)  # Default to 0 if not present
-        arch_review_passed = arch_score >= self.ARCH_REVIEW_THRESHOLD
-        logger.debug(
-            f"Extracted arch_review_passed={arch_review_passed} "
-            f"(score={arch_score}, threshold={self.ARCH_REVIEW_THRESHOLD})"
-        )
+        # If arch review not required by profile, default to True (skip gate)
+        if not profile.arch_review_required:
+            arch_review_passed = True
+            logger.debug("Architectural review not required per task type profile, skipping")
+        else:
+            code_review = task_work_results.get("code_review", {})
+            arch_score = code_review.get("score", 0)  # Default to 0 if not present
+            arch_review_passed = arch_score >= profile.arch_review_threshold
+            logger.debug(
+                f"Extracted arch_review_passed={arch_review_passed} "
+                f"(score={arch_score}, threshold={profile.arch_review_threshold})"
+            )
 
         # Plan audit - separate field
-        plan_audit = task_work_results.get("plan_audit", {})
-        violations = plan_audit.get("violations", 0)
-        plan_audit_passed = violations == 0
-        logger.debug(f"Extracted plan_audit_passed={plan_audit_passed} (violations={violations})")
+        # If plan audit not required by profile, default to True (skip gate)
+        if not profile.plan_audit_required:
+            plan_audit_passed = True
+            logger.debug("Plan audit not required per task type profile, skipping")
+        else:
+            plan_audit = task_work_results.get("plan_audit", {})
+            violations = plan_audit.get("violations", 0)
+            plan_audit_passed = violations == 0
+            logger.debug(f"Extracted plan_audit_passed={plan_audit_passed} (violations={violations})")
 
         status = QualityGateStatus(
             tests_passed=tests_passed,
             coverage_met=coverage_met,
             arch_review_passed=arch_review_passed,
             plan_audit_passed=plan_audit_passed,
+            tests_required=profile.tests_required,
+            coverage_required=profile.coverage_required,
+            arch_review_required=profile.arch_review_required,
+            plan_audit_required=profile.plan_audit_required,
         )
 
         # Log final decision at INFO level for visibility
         logger.info(
             f"Quality gate evaluation complete: "
-            f"tests={status.tests_passed}, "
-            f"coverage={status.coverage_met}, "
-            f"arch={status.arch_review_passed}, "
-            f"audit={status.plan_audit_passed}, "
+            f"tests={status.tests_passed} (required={status.tests_required}), "
+            f"coverage={status.coverage_met} (required={status.coverage_required}), "
+            f"arch={status.arch_review_passed} (required={status.arch_review_required}), "
+            f"audit={status.plan_audit_passed} (required={status.plan_audit_required}), "
             f"ALL_PASSED={status.all_gates_passed}"
         )
 
@@ -746,6 +864,9 @@ class CoachValidator:
         """
         Create feedback result from failed quality gates.
 
+        Generates feedback that clearly indicates which gates failed and which
+        were skipped (optional per task type profile).
+
         Parameters
         ----------
         task_id : str
@@ -753,7 +874,7 @@ class CoachValidator:
         turn : int
             Turn number
         gates : QualityGateStatus
-            Quality gate status
+            Quality gate status with requirement flags
         task_work_results : Dict[str, Any]
             Task-work results for additional context
 
@@ -767,7 +888,8 @@ class CoachValidator:
         # Extract from quality_gates for test details
         quality_gates = task_work_results.get("quality_gates", {})
 
-        if not gates.tests_passed:
+        # Only report failures for required gates
+        if gates.tests_required and not gates.tests_passed:
             issues.append({
                 "severity": "must_fix",
                 "category": "test_failure",
@@ -778,7 +900,7 @@ class CoachValidator:
                 },
             })
 
-        if not gates.coverage_met:
+        if gates.coverage_required and not gates.coverage_met:
             issues.append({
                 "severity": "must_fix",
                 "category": "coverage",
@@ -789,19 +911,19 @@ class CoachValidator:
                 },
             })
 
-        if not gates.arch_review_passed:
+        if gates.arch_review_required and not gates.arch_review_passed:
             code_review = task_work_results.get("code_review", {})
             issues.append({
                 "severity": "must_fix",
                 "category": "architectural",
-                "description": f"Architectural review score below {self.ARCH_REVIEW_THRESHOLD}",
+                "description": f"Architectural review score below threshold",
                 "details": {
                     "score": code_review.get("score", 0),
-                    "threshold": self.ARCH_REVIEW_THRESHOLD,
+                    "threshold": code_review.get("score", 0) >= 60 and 60 or code_review.get("score", 0),
                 },
             })
 
-        if not gates.plan_audit_passed:
+        if gates.plan_audit_required and not gates.plan_audit_passed:
             plan_audit = task_work_results.get("plan_audit", {})
             issues.append({
                 "severity": "should_fix",
