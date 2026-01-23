@@ -1,0 +1,89 @@
+id: FEAT-4C15
+name: Context-Sensitive Coach
+description: AI-powered context-sensitive CoachValidator that adapts quality gate
+  thresholds based on actual implementation characteristics
+created: '2026-01-23T08:06:00.646441'
+status: planned
+complexity: 5
+estimated_tasks: 7
+tasks:
+- id: TASK-CSC-001
+  name: Create data models and universal context gatherer
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-001.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-CSC-002
+  name: Implement fast classification gate
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-002.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-CSC-003
+  name: Implement AI context analysis
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-003.md
+  complexity: 5
+  dependencies:
+  - TASK-CSC-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-CSC-004
+  name: Implement context caching
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-004.md
+  complexity: 4
+  dependencies:
+  - TASK-CSC-001
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-CSC-005
+  name: Integrate with existing CoachValidator
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-005.md
+  complexity: 5
+  dependencies:
+  - TASK-CSC-003
+  - TASK-CSC-004
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-CSC-006
+  name: Add unit and integration tests
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-006.md
+  complexity: 4
+  dependencies:
+  - TASK-CSC-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 50
+- id: TASK-CSC-007
+  name: Update documentation and proposal
+  file_path: tasks/backlog/context-sensitive-coach/TASK-CSC-007.md
+  complexity: 2
+  dependencies:
+  - TASK-CSC-005
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 22
+orchestration:
+  parallel_groups:
+  - - TASK-CSC-001
+    - TASK-CSC-002
+  - - TASK-CSC-003
+    - TASK-CSC-004
+  - - TASK-CSC-005
+  - - TASK-CSC-006
+    - TASK-CSC-007
+  estimated_duration_minutes: 355
+  recommended_parallel: 2
