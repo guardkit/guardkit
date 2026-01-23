@@ -2,13 +2,16 @@
 
 Provides automatic task type classification for feature planning workflow.
 Analyzes task titles and descriptions to assign appropriate task types
-(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, FEATURE) based on keyword matching.
+(SCAFFOLDING, DOCUMENTATION, INFRASTRUCTURE, TESTING, REFACTOR, FEATURE)
+based on keyword matching.
 
 The detector uses a priority-based classification system:
 1. INFRASTRUCTURE - DevOps, deployment, CI/CD (checked first for specificity)
-2. DOCUMENTATION - Docs, guides, tutorials
-3. SCAFFOLDING - Configuration, boilerplate, setup tasks
-4. FEATURE - Default for implementation tasks
+2. TESTING - Test frameworks, test types, test infrastructure
+3. REFACTOR - Code restructuring, migration, modernization
+4. DOCUMENTATION - Docs, guides, tutorials
+5. SCAFFOLDING - Configuration, boilerplate, setup tasks
+6. FEATURE - Default for implementation tasks
 
 This module supports the /feature-plan workflow by automatically determining
 which quality gate profile should be applied to each subtask.
@@ -32,7 +35,7 @@ from guardkit.models.task_types import TaskType
 
 
 # Keyword mappings for task type classification
-# Priority order: INFRASTRUCTURE → DOCUMENTATION → SCAFFOLDING → FEATURE
+# Priority order: INFRASTRUCTURE → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
 # Infrastructure gets priority to avoid "config" matching before "docker config"
 KEYWORD_MAPPINGS = {
     TaskType.INFRASTRUCTURE: [
@@ -92,6 +95,45 @@ KEYWORD_MAPPINGS = {
         "changelog",
         "release notes",
     ],
+    TaskType.TESTING: [
+        # Test frameworks
+        "pytest",
+        "unittest",
+        "jest",
+        "vitest",
+        "mocha",
+        "jasmine",
+        # Test types
+        "test",
+        "testing",
+        "spec",
+        "e2e",
+        "end-to-end",
+        "integration test",
+        "unit test",
+        # Test infrastructure
+        "test fixture",
+        "test setup",
+        "mock",
+        "stub",
+    ],
+    TaskType.REFACTOR: [
+        # Refactoring
+        "refactor",
+        "refactoring",
+        "restructure",
+        # Migration
+        "migrate",
+        "migration",
+        "upgrade",
+        # Modernization
+        "modernize",
+        "modernization",
+        # Cleanup
+        "cleanup",
+        "clean up",
+        "clean-up",
+    ],
     TaskType.SCAFFOLDING: [
         # Configuration files (more generic, checked after infrastructure)
         "config",
@@ -134,9 +176,11 @@ def detect_task_type(title: str, description: str = "") -> TaskType:
 
     Priority order (first match wins):
     1. INFRASTRUCTURE - DevOps and deployment (most specific keywords)
-    2. DOCUMENTATION - Documentation and guides
-    3. SCAFFOLDING - Configuration and setup tasks (generic keywords)
-    4. FEATURE - Default for all other tasks
+    2. TESTING - Test frameworks, test types, test infrastructure
+    3. REFACTOR - Code restructuring, migration, modernization
+    4. DOCUMENTATION - Documentation and guides
+    5. SCAFFOLDING - Configuration and setup tasks (generic keywords)
+    6. FEATURE - Default for all other tasks
 
     Args:
         title: Task title (required, used for primary classification)
@@ -202,10 +246,12 @@ def detect_task_type(title: str, description: str = "") -> TaskType:
         return TaskType.FEATURE
 
     # Check each task type in priority order
-    # Priority: INFRASTRUCTURE → DOCUMENTATION → SCAFFOLDING → FEATURE
+    # Priority: INFRASTRUCTURE → TESTING → REFACTOR → DOCUMENTATION → SCAFFOLDING → FEATURE
     # Infrastructure first to catch "docker config" before "config"
     for task_type in [
         TaskType.INFRASTRUCTURE,
+        TaskType.TESTING,
+        TaskType.REFACTOR,
         TaskType.DOCUMENTATION,
         TaskType.SCAFFOLDING,
     ]:
@@ -241,6 +287,8 @@ def get_task_type_summary(task_type: TaskType) -> str:
         TaskType.SCAFFOLDING: "Configuration and boilerplate",
         TaskType.DOCUMENTATION: "Documentation and guides",
         TaskType.INFRASTRUCTURE: "DevOps and deployment",
+        TaskType.TESTING: "Test infrastructure and tests",
+        TaskType.REFACTOR: "Code refactoring and migration",
         TaskType.FEATURE: "Feature implementation",
     }
     return summaries.get(task_type, "Unknown task type")

@@ -26,18 +26,24 @@ class TaskType(Enum):
     - FEATURE: Primary implementation tasks (full quality gates)
     - INFRASTRUCTURE: DevOps and deployment tasks (tests required, no architecture review)
     - DOCUMENTATION: Documentation and guides (minimal validation)
+    - TESTING: Test creation, test refactoring, coverage improvements (minimal validation)
+    - REFACTOR: Code improvements, performance optimization, pattern implementation
 
     Attributes:
         SCAFFOLDING: Configuration files, project setup, templates
         FEATURE: Feature implementation, bug fixes, enhancements
         INFRASTRUCTURE: Docker, deployment, CI/CD, terraform, ansible
         DOCUMENTATION: Guides, API docs, tutorials, README files
+        TESTING: Test files, test utilities, coverage improvements
+        REFACTOR: Code cleanup, performance optimization, pattern refactoring
     """
 
     SCAFFOLDING = "scaffolding"
     FEATURE = "feature"
     INFRASTRUCTURE = "infrastructure"
     DOCUMENTATION = "documentation"
+    TESTING = "testing"
+    REFACTOR = "refactor"
 
 
 @dataclass
@@ -191,6 +197,22 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
         coverage_threshold=0.0,
         tests_required=False,
         plan_audit_required=False,
+    ),
+    TaskType.TESTING: QualityGateProfile(
+        arch_review_required=False,
+        arch_review_threshold=0,
+        coverage_required=False,
+        coverage_threshold=0.0,
+        tests_required=False,
+        plan_audit_required=True,
+    ),
+    TaskType.REFACTOR: QualityGateProfile(
+        arch_review_required=True,
+        arch_review_threshold=60,
+        coverage_required=True,
+        coverage_threshold=80.0,
+        tests_required=True,
+        plan_audit_required=True,
     ),
 }
 

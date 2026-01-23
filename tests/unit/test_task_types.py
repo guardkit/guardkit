@@ -5,7 +5,7 @@ Tests task type enumeration, quality gate profile configuration, default profile
 registry, and profile lookup functionality.
 
 Coverage Target: >=90%
-Test Count: 30+ tests
+Test Count: 42+ tests
 """
 
 import pytest
@@ -24,9 +24,9 @@ from guardkit.models.task_types import (
 class TestTaskTypeEnum:
     """Test TaskType enumeration."""
 
-    def test_task_type_enum_has_four_values(self):
-        """Test that TaskType enum has exactly 4 values."""
-        assert len(TaskType) == 4
+    def test_task_type_enum_has_six_values(self):
+        """Test that TaskType enum has exactly 6 values."""
+        assert len(TaskType) == 6
 
     def test_task_type_scaffolding_value(self):
         """Test SCAFFOLDING task type value."""
@@ -44,12 +44,22 @@ class TestTaskTypeEnum:
         """Test DOCUMENTATION task type value."""
         assert TaskType.DOCUMENTATION.value == "documentation"
 
+    def test_task_type_testing_value(self):
+        """Test TESTING task type value."""
+        assert TaskType.TESTING.value == "testing"
+
+    def test_task_type_refactor_value(self):
+        """Test REFACTOR task type value."""
+        assert TaskType.REFACTOR.value == "refactor"
+
     def test_task_type_enum_lookup_by_value(self):
         """Test looking up enum members by value."""
         assert TaskType("scaffolding") == TaskType.SCAFFOLDING
         assert TaskType("feature") == TaskType.FEATURE
         assert TaskType("infrastructure") == TaskType.INFRASTRUCTURE
         assert TaskType("documentation") == TaskType.DOCUMENTATION
+        assert TaskType("testing") == TaskType.TESTING
+        assert TaskType("refactor") == TaskType.REFACTOR
 
 
 # ============================================================================
@@ -119,6 +129,38 @@ class TestQualityGateProfileCreation:
         assert profile.coverage_required is False
         assert profile.tests_required is False
         assert profile.plan_audit_required is False
+
+    def test_create_testing_profile(self):
+        """Test creating a testing task profile."""
+        profile = QualityGateProfile(
+            arch_review_required=False,
+            arch_review_threshold=0,
+            coverage_required=False,
+            coverage_threshold=0.0,
+            tests_required=False,
+            plan_audit_required=True,
+        )
+        assert profile.arch_review_required is False
+        assert profile.coverage_required is False
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is True
+
+    def test_create_refactor_profile(self):
+        """Test creating a refactor task profile."""
+        profile = QualityGateProfile(
+            arch_review_required=True,
+            arch_review_threshold=60,
+            coverage_required=True,
+            coverage_threshold=80.0,
+            tests_required=True,
+            plan_audit_required=True,
+        )
+        assert profile.arch_review_required is True
+        assert profile.arch_review_threshold == 60
+        assert profile.coverage_required is True
+        assert profile.coverage_threshold == 80.0
+        assert profile.tests_required is True
+        assert profile.plan_audit_required is True
 
     def test_create_profile_with_default_values(self):
         """Test that all fields are required (no defaults)."""
@@ -325,9 +367,27 @@ class TestQualityGateProfileForType:
         assert profile.tests_required is False
         assert profile.plan_audit_required is False
 
+    def test_for_type_returns_testing_profile(self):
+        """Test that for_type returns testing profile."""
+        profile = QualityGateProfile.for_type(TaskType.TESTING)
+        assert profile.arch_review_required is False
+        assert profile.coverage_required is False
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is True
+
+    def test_for_type_returns_refactor_profile(self):
+        """Test that for_type returns refactor profile."""
+        profile = QualityGateProfile.for_type(TaskType.REFACTOR)
+        assert profile.arch_review_required is True
+        assert profile.arch_review_threshold == 60
+        assert profile.coverage_required is True
+        assert profile.coverage_threshold == 80.0
+        assert profile.tests_required is True
+        assert profile.plan_audit_required is True
+
 
 # ============================================================================
-# 5. DEFAULT_PROFILES Registry Tests (5 tests)
+# 5. DEFAULT_PROFILES Registry Tests (7 tests)
 # ============================================================================
 
 class TestDefaultProfiles:
@@ -379,9 +439,29 @@ class TestDefaultProfiles:
         assert profile.tests_required is False
         assert profile.plan_audit_required is False
 
+    def test_default_profiles_testing_configuration(self):
+        """Test DEFAULT_PROFILES testing profile configuration."""
+        profile = DEFAULT_PROFILES[TaskType.TESTING]
+        assert profile.arch_review_required is False
+        assert profile.arch_review_threshold == 0
+        assert profile.coverage_required is False
+        assert profile.coverage_threshold == 0.0
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is True
+
+    def test_default_profiles_refactor_configuration(self):
+        """Test DEFAULT_PROFILES refactor profile configuration."""
+        profile = DEFAULT_PROFILES[TaskType.REFACTOR]
+        assert profile.arch_review_required is True
+        assert profile.arch_review_threshold == 60
+        assert profile.coverage_required is True
+        assert profile.coverage_threshold == 80.0
+        assert profile.tests_required is True
+        assert profile.plan_audit_required is True
+
 
 # ============================================================================
-# 6. get_profile() Function Tests (6 tests)
+# 6. get_profile() Function Tests (8 tests)
 # ============================================================================
 
 class TestGetProfile:
@@ -419,6 +499,19 @@ class TestGetProfile:
         """Test get_profile with DOCUMENTATION type."""
         profile = get_profile(TaskType.DOCUMENTATION)
         assert profile.tests_required is False
+
+    def test_get_profile_with_testing(self):
+        """Test get_profile with TESTING type."""
+        profile = get_profile(TaskType.TESTING)
+        assert profile.arch_review_required is False
+        assert profile.tests_required is False
+        assert profile.plan_audit_required is True
+
+    def test_get_profile_with_refactor(self):
+        """Test get_profile with REFACTOR type."""
+        profile = get_profile(TaskType.REFACTOR)
+        assert profile.arch_review_required is True
+        assert profile.tests_required is True
 
 
 # ============================================================================
@@ -521,5 +614,28 @@ class TestIntegration:
 
         # Verify tests are required but architecture review is not
         assert profile.arch_review_required is False
+        assert profile.tests_required is True
+        assert profile.plan_audit_required is True
+
+    def test_workflow_testing_task(self):
+        """Test complete workflow for testing task."""
+        # Get profile for testing task
+        profile = get_profile(TaskType.TESTING)
+
+        # Verify minimal gates for test-writing tasks
+        assert profile.arch_review_required is False
+        assert profile.coverage_required is False
+        assert profile.tests_required is False
+        # But plan audit is still required
+        assert profile.plan_audit_required is True
+
+    def test_workflow_refactor_task(self):
+        """Test complete workflow for refactor task."""
+        # Get profile for refactor task
+        profile = get_profile(TaskType.REFACTOR)
+
+        # Verify full quality gates for refactoring
+        assert profile.arch_review_required is True
+        assert profile.coverage_required is True
         assert profile.tests_required is True
         assert profile.plan_audit_required is True
