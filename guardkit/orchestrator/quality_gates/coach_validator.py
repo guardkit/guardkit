@@ -268,6 +268,7 @@ class CoachValidator:
         worktree_path: str,
         test_command: Optional[str] = None,
         test_timeout: int = 300,
+        task_id: Optional[str] = None,
     ):
         """
         Initialize CoachValidator.
@@ -280,12 +281,17 @@ class CoachValidator:
             Command to run tests. If None, auto-detects based on project.
         test_timeout : int
             Timeout for test execution in seconds (default: 300s)
+        task_id : Optional[str]
+            Task identifier for task-specific test filtering in shared worktrees.
+            When provided, test detection will first look for task-specific test
+            files before falling back to running the full test suite.
         """
         self.worktree_path = Path(worktree_path)
         self.test_command = test_command
         self.test_timeout = test_timeout
+        self.task_id = task_id
 
-        logger.debug(f"CoachValidator initialized for worktree: {worktree_path}")
+        logger.debug(f"CoachValidator initialized for worktree: {worktree_path}, task_id: {task_id}")
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """
@@ -330,6 +336,7 @@ class CoachValidator:
         task_id: str,
         turn: int,
         task: Dict[str, Any],
+        skip_arch_review: bool = False,
     ) -> CoachValidationResult:
         """
         Main validation entry point.
@@ -348,6 +355,10 @@ class CoachValidator:
             Current turn number (1-based)
         task : Dict[str, Any]
             Task data including acceptance_criteria
+        skip_arch_review : bool
+            If True, skip architectural review gate regardless of profile setting.
+            Used for --implement-only mode where Phase 2.5B doesn't run.
+            Default: False (enforce arch review per profile).
 
         Returns
         -------
@@ -391,7 +402,9 @@ class CoachValidator:
             )
 
         # 2. Verify quality gates passed with profile
-        gates_status = self.verify_quality_gates(task_work_results, profile=profile)
+        gates_status = self.verify_quality_gates(
+            task_work_results, profile=profile, skip_arch_review=skip_arch_review
+        )
 
         if not gates_status.all_gates_passed:
             logger.info(f"Quality gates failed for {task_id}: {gates_status}")
@@ -403,7 +416,17 @@ class CoachValidator:
             )
 
         # 3. Independent test verification (trust but verify)
-        test_result = self.run_independent_tests()
+        # Skip independent tests for task types that don't require tests (e.g., scaffolding)
+        if not profile.tests_required:
+            test_result = IndependentTestResult(
+                tests_passed=True,
+                test_command="skipped",
+                test_output_summary="Independent test verification skipped (tests_required=False)",
+                duration_seconds=0.0,
+            )
+            logger.info(f"Independent test verification skipped for {task_id} (tests_required=False)")
+        else:
+            test_result = self.run_independent_tests()
 
         if not test_result.tests_passed:
             logger.warning(f"Independent test verification failed for {task_id}")
@@ -497,6 +520,7 @@ class CoachValidator:
         self,
         task_work_results: Dict[str, Any],
         profile: Optional[QualityGateProfile] = None,
+        skip_arch_review: bool = False,
     ) -> QualityGateStatus:
         """
         Verify task-work quality gates passed.
@@ -515,6 +539,10 @@ class CoachValidator:
         profile : Optional[QualityGateProfile]
             Quality gate profile for task type. If None, uses FEATURE profile
             (backward compatible with existing calls without profile parameter).
+        skip_arch_review : bool
+            If True, skip architectural review gate regardless of profile setting.
+            Used for --implement-only mode where Phase 2.5B doesn't run.
+            Default: False (enforce arch review per profile).
 
         Returns
         -------
@@ -563,12 +591,17 @@ class CoachValidator:
             coverage_met = True
             logger.debug("Coverage not required per task type profile, skipping")
         else:
-            coverage_met = quality_gates.get("coverage_met", True)  # Default True if not present
-            logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met")
+            # Handle None explicitly: treat as "not measured" = pass (same as coverage not required)
+            coverage_met_value = quality_gates.get("coverage_met")
+            coverage_met = coverage_met_value if coverage_met_value is not None else True
+            logger.debug(f"Extracted coverage_met={coverage_met} from quality_gates.coverage_met (raw={coverage_met_value})")
 
         # Architectural review - may be in separate code_review field or not present
-        # If arch review not required by profile, default to True (skip gate)
-        if not profile.arch_review_required:
+        # If arch review not required by profile OR skip_arch_review=True, default to True (skip gate)
+        if skip_arch_review:
+            arch_review_passed = True
+            logger.debug("Architectural review skipped (skip_arch_review=True, implement-only mode)")
+        elif not profile.arch_review_required:
             arch_review_passed = True
             logger.debug("Architectural review not required per task type profile, skipping")
         else:
@@ -591,6 +624,9 @@ class CoachValidator:
             plan_audit_passed = violations == 0
             logger.debug(f"Extracted plan_audit_passed={plan_audit_passed} (violations={violations})")
 
+        # Determine effective arch_review_required (False if skip_arch_review=True)
+        effective_arch_review_required = profile.arch_review_required and not skip_arch_review
+
         status = QualityGateStatus(
             tests_passed=tests_passed,
             coverage_met=coverage_met,
@@ -598,7 +634,7 @@ class CoachValidator:
             plan_audit_passed=plan_audit_passed,
             tests_required=profile.tests_required,
             coverage_required=profile.coverage_required,
-            arch_review_required=profile.arch_review_required,
+            arch_review_required=effective_arch_review_required,
             plan_audit_required=profile.plan_audit_required,
         )
 
@@ -626,8 +662,19 @@ class CoachValidator:
         IndependentTestResult
             Result of independent test execution
         """
-        # Determine test command
-        test_cmd = self.test_command or self._detect_test_command()
+        # Determine test command (pass task_id for task-specific filtering)
+        test_cmd = self.test_command or self._detect_test_command(self.task_id)
+
+        # If test_cmd is None, it means task-specific filtering was requested
+        # but no matching tests were found. Skip verification in this case.
+        if test_cmd is None:
+            logger.info(f"No task-specific tests found for {self.task_id}, skipping independent verification")
+            return IndependentTestResult(
+                tests_passed=True,
+                test_command="skipped",
+                test_output_summary=f"No task-specific tests found for {self.task_id}, skipping independent verification",
+                duration_seconds=0.0,
+            )
 
         logger.info(f"Running independent tests: {test_cmd}")
         start_time = time.time()
@@ -736,15 +783,74 @@ class CoachValidator:
     # Helper Methods
     # ========================================================================
 
-    def _detect_test_command(self) -> str:
+    def _task_id_to_pattern_prefix(self, task_id: str) -> str:
         """
-        Auto-detect the test command based on project files.
+        Convert task ID to a pattern-matching prefix.
+
+        Converts task IDs like "TASK-FHA-002" to "task_fha_002" for
+        matching against test file naming conventions.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-FHA-002")
 
         Returns
         -------
         str
-            Detected test command
+            Lowercase underscore-separated pattern prefix
         """
+        return task_id.replace("-", "_").lower()
+
+    def _detect_test_command(self, task_id: Optional[str] = None) -> Optional[str]:
+        """
+        Auto-detect the test command based on project files.
+
+        When task_id is provided, attempts to find task-specific test files
+        first. If no task-specific tests are found and task_id was provided,
+        returns None to signal that independent verification should be skipped.
+        This is essential for shared worktrees where parallel tasks may have
+        tests with unmet dependencies.
+
+        Parameters
+        ----------
+        task_id : Optional[str]
+            Task identifier for task-specific test filtering. If provided,
+            the method will search for test files matching the task ID
+            pattern. If no matching tests found, returns None to skip
+            verification (prevents running all tests from parallel tasks).
+
+        Returns
+        -------
+        Optional[str]
+            Detected test command, or None if task_id was provided but no
+            task-specific tests were found (signals to skip verification)
+        """
+        # Try task-specific filtering first (for shared worktrees)
+        if task_id:
+            task_prefix = self._task_id_to_pattern_prefix(task_id)
+            # Pattern: tests/test_{task_prefix}*.py (most common test organization)
+            pattern = f"tests/test_{task_prefix}*.py"
+
+            logger.debug(f"Searching for task-specific tests: pattern={pattern}")
+            matching_files = list(self.worktree_path.glob(pattern))
+
+            if matching_files:
+                # Deduplicate and convert to relative paths
+                unique_files = list(set(matching_files))
+                files_str = " ".join(
+                    str(f.relative_to(self.worktree_path)) for f in sorted(unique_files)
+                )
+                logger.info(f"Task-specific tests detected for {task_id}: {len(unique_files)} file(s)")
+                logger.debug(f"Test files: {files_str}")
+                return f"pytest {files_str} -v --tb=short"
+            else:
+                # No task-specific tests found - skip verification in this case
+                # Running all tests would include tests from other parallel tasks
+                logger.info(f"No task-specific tests found for {task_id}, skipping independent verification")
+                return None
+
+        # Fallback to original detection logic
         # Check for Python projects
         if (self.worktree_path / "pytest.ini").exists():
             return "pytest tests/ -v --tb=short"

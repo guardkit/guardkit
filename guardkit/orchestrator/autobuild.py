@@ -317,7 +317,7 @@ class AutoBuildOrchestrator:
         progress_display: Optional[ProgressDisplay] = None,
         pre_loop_gates: Optional[PreLoopQualityGates] = None,
         development_mode: str = "tdd",
-        sdk_timeout: int = 600,
+        sdk_timeout: int = 900,
         skip_arch_review: bool = False,
     ):
         """
@@ -835,6 +835,8 @@ class AutoBuildOrchestrator:
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
 
                 # Execute single turn
+                # Skip arch review when pre-loop is disabled (implement-only mode)
+                # because Phase 2.5B (Architectural Review) doesn't run
                 turn_record = self._execute_turn(
                     turn=turn,
                     task_id=task_id,
@@ -842,6 +844,7 @@ class AutoBuildOrchestrator:
                     worktree=worktree,
                     previous_feedback=previous_feedback,
                     task_type=task_type,
+                    skip_arch_review=not self.enable_pre_loop,
                 )
 
                 turn_history.append(turn_record)
@@ -888,6 +891,7 @@ class AutoBuildOrchestrator:
         worktree: Worktree,
         previous_feedback: Optional[str],
         task_type: Optional[str] = None,
+        skip_arch_review: bool = False,
     ) -> TurnRecord:
         """
         Execute single Player→Coach turn.
@@ -1004,6 +1008,7 @@ class AutoBuildOrchestrator:
             player_report=player_result.report,
             worktree=worktree,
             task_type=task_type,
+            skip_arch_review=skip_arch_review,
         )
 
         # Parse Coach decision
@@ -1557,6 +1562,7 @@ class AutoBuildOrchestrator:
         worktree: Worktree,
         acceptance_criteria: Optional[List[str]] = None,
         task_type: Optional[str] = None,
+        skip_arch_review: bool = False,
     ) -> AgentInvocationResult:
         """
         Invoke Coach agent with comprehensive error handling.
@@ -1588,6 +1594,10 @@ class AutoBuildOrchestrator:
             Task acceptance criteria for requirements validation
         task_type : Optional[str], optional
             Task type from task frontmatter (e.g., "implementation", "refactor", "bugfix")
+        skip_arch_review : bool, optional
+            If True, skip architectural review gate validation. Use when running
+            in implement-only mode where Phase 2.5B (Architectural Review) was skipped.
+            Default is False.
 
         Returns
         -------
@@ -1617,7 +1627,7 @@ class AutoBuildOrchestrator:
             # In single-task mode: worktree.path = .guardkit/worktrees/TASK-001
             # In feature mode: worktree.path = .guardkit/worktrees/FEAT-ABC
             # CoachValidator will look for: worktree.path/.guardkit/autobuild/{task_id}/task_work_results.json
-            validator = CoachValidator(str(worktree.path))
+            validator = CoachValidator(str(worktree.path), task_id=task_id)
             validation_result = validator.validate(
                 task_id=task_id,
                 turn=turn,
@@ -1625,6 +1635,7 @@ class AutoBuildOrchestrator:
                     "acceptance_criteria": acceptance_criteria or [],
                     "task_type": task_type,
                 },
+                skip_arch_review=skip_arch_review,
             )
 
             duration = time.time() - start_time
@@ -1740,7 +1751,15 @@ class AutoBuildOrchestrator:
         for issue in issues[:3]:  # Limit to top 3 issues
             desc = issue.get("description", "")
             suggestion = issue.get("suggestion", "")
-            feedback_lines.append(f"- {desc}: {suggestion}")
+            test_output = issue.get("test_output", "")
+
+            if suggestion:
+                feedback_lines.append(f"- {desc}: {suggestion}")
+            elif test_output:
+                # Use test output as the actionable detail
+                feedback_lines.append(f"- {desc}:\n  {test_output}")
+            else:
+                feedback_lines.append(f"- {desc}")
 
         if len(issues) > 3:
             feedback_lines.append(f"... and {len(issues) - 3} more issues")

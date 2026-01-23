@@ -171,6 +171,9 @@ class TaskWorkStreamParser:
     QUALITY_GATES_FAILED_PATTERN = re.compile(r"[Qq]uality\s+gates[:\s]*FAILED", re.IGNORECASE)
     FILES_MODIFIED_PATTERN = re.compile(r"(?:Modified|Changed):\s*([^\s,]+)")
     FILES_CREATED_PATTERN = re.compile(r"(?:Created|Added):\s*([^\s,]+)")
+    # Architectural review score patterns
+    ARCH_SCORE_PATTERN = re.compile(r"[Aa]rchitectural.*?[Ss]core[:\s]+(\d+)(?:/100)?", re.IGNORECASE)
+    ARCH_SUBSCORES_PATTERN = re.compile(r"SOLID[:\s]+(\d+),?\s*DRY[:\s]+(\d+),?\s*YAGNI[:\s]+(\d+)", re.IGNORECASE)
 
     def __init__(self) -> None:
         """Initialize the parser with empty accumulated state."""
@@ -181,6 +184,10 @@ class TaskWorkStreamParser:
         self._quality_gates_passed: Optional[bool] = None
         self._files_modified: set = set()
         self._files_created: set = set()
+        self._arch_score: Optional[int] = None
+        self._solid_score: Optional[int] = None
+        self._dry_score: Optional[int] = None
+        self._yagni_score: Optional[int] = None
 
     def _match_pattern(
         self,
@@ -278,6 +285,25 @@ class TaskWorkStreamParser:
             self._files_created.add(file_path)
             logger.debug(f"File created: {file_path}")
 
+        # Architectural review scores
+        arch_score_match = self._match_pattern(self.ARCH_SCORE_PATTERN, message)
+        if arch_score_match:
+            try:
+                self._arch_score = int(arch_score_match.group(1))
+                logger.debug(f"Architectural review score: {self._arch_score}")
+            except ValueError:
+                logger.warning(f"Invalid arch score format: {arch_score_match.group(1)}")
+
+        subscores_match = self._match_pattern(self.ARCH_SUBSCORES_PATTERN, message)
+        if subscores_match:
+            try:
+                self._solid_score = int(subscores_match.group(1))
+                self._dry_score = int(subscores_match.group(2))
+                self._yagni_score = int(subscores_match.group(3))
+                logger.debug(f"SOLID: {self._solid_score}, DRY: {self._dry_score}, YAGNI: {self._yagni_score}")
+            except ValueError:
+                logger.warning(f"Invalid subscore format in: {message}")
+
     def to_result(self) -> Dict[str, Any]:
         """Convert accumulated state to a result dictionary.
 
@@ -290,6 +316,8 @@ class TaskWorkStreamParser:
             - quality_gates_passed: Boolean or None if not detected
             - files_modified: List of modified file paths
             - files_created: List of created file paths
+            - architectural_review: Dict with score and optional SOLID/DRY/YAGNI
+              subscores (or absent if no arch review score found)
         """
         result: Dict[str, Any] = {}
 
@@ -314,6 +342,16 @@ class TaskWorkStreamParser:
         if self._files_created:
             result["files_created"] = sorted(list(self._files_created))
 
+        if self._arch_score is not None:
+            arch_review: Dict[str, Any] = {"score": self._arch_score}
+            if self._solid_score is not None:
+                arch_review["solid"] = self._solid_score
+            if self._dry_score is not None:
+                arch_review["dry"] = self._dry_score
+            if self._yagni_score is not None:
+                arch_review["yagni"] = self._yagni_score
+            result["architectural_review"] = arch_review
+
         return result
 
     def reset(self) -> None:
@@ -329,6 +367,10 @@ class TaskWorkStreamParser:
         self._quality_gates_passed = None
         self._files_modified = set()
         self._files_created = set()
+        self._arch_score = None
+        self._solid_score = None
+        self._dry_score = None
+        self._yagni_score = None
 
 
 @dataclass

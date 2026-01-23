@@ -440,6 +440,77 @@ class TestQualityGateVerification:
         assert status.coverage_met is True  # Default
         assert status.arch_review_passed is True  # Has code_review.score = 82
 
+    def test_verify_coverage_none_treated_as_pass(self, tmp_worktree):
+        """Test that coverage_met=None is treated as pass (not measured).
+
+        When task-work writes coverage_met=null (Python None) to task_work_results.json,
+        this means coverage data wasn't collected. We should treat this as "not measured"
+        and allow the gate to pass, rather than failing because it's not explicitly True.
+
+        This is the fix for TASK-FIX-COVNULL where quality gates failed due to
+        coverage=None being evaluated as falsy even though coverage wasn't measured.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = {
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage_met": None,  # Explicitly None - coverage not measured
+            },
+            "code_review": {"score": 82},
+        }
+
+        status = validator.verify_quality_gates(results)
+
+        # coverage_met=None should be treated as True (pass) since coverage wasn't measured
+        assert status.coverage_met is True
+        assert status.all_gates_passed is True
+
+    def test_verify_coverage_false_still_fails(self, tmp_worktree):
+        """Test that coverage_met=False still correctly fails the gate.
+
+        Ensure the None handling doesn't break explicit False values.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = {
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage_met": False,  # Explicitly False - coverage below threshold
+            },
+            "code_review": {"score": 82},
+        }
+
+        status = validator.verify_quality_gates(results)
+
+        # coverage_met=False should still fail
+        assert status.coverage_met is False
+        assert status.all_gates_passed is False
+
+    def test_verify_coverage_true_still_passes(self, tmp_worktree):
+        """Test that coverage_met=True still correctly passes the gate.
+
+        Ensure the None handling doesn't break explicit True values.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = {
+            "quality_gates": {
+                "all_passed": True,
+                "tests_passed": 5,
+                "tests_failed": 0,
+                "coverage_met": True,  # Explicitly True - coverage met
+            },
+            "code_review": {"score": 82},
+        }
+
+        status = validator.verify_quality_gates(results)
+
+        # coverage_met=True should pass
+        assert status.coverage_met is True
+        assert status.all_gates_passed is True
+
     def test_verify_quality_gates_reads_quality_gates_object(self, tmp_worktree):
         """Coach should read from quality_gates object, not test_results."""
         task_work_results = {
@@ -1070,17 +1141,17 @@ class TestQualityGateProfileApplication:
             "acceptance_criteria": ["Criterion 1"],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
-
-            validator = CoachValidator(str(tmp_worktree))
-            result = validator.validate("TASK-001", 1, task)
+        # No subprocess mock needed - scaffolding skips independent tests
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
 
         # Should approve despite low arch score because scaffolding doesn't require arch review
         assert result.decision == "approve"
         assert result.quality_gates.arch_review_required is False
         assert result.quality_gates.arch_review_passed is True  # Skipped, so True
         assert result.quality_gates.all_gates_passed is True
+        # Verify independent tests were skipped (not run)
+        assert result.independent_tests.test_command == "skipped"
 
     def test_scaffolding_profile_skips_coverage(
         self,
@@ -1101,17 +1172,92 @@ class TestQualityGateProfileApplication:
             "acceptance_criteria": ["Criterion 1"],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
-
-            validator = CoachValidator(str(tmp_worktree))
-            result = validator.validate("TASK-001", 1, task)
+        # No subprocess mock needed - scaffolding skips independent tests
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
 
         # Should approve despite low coverage because scaffolding doesn't require coverage
         assert result.decision == "approve"
         assert result.quality_gates.coverage_required is False
         assert result.quality_gates.coverage_met is True  # Skipped, so True
         assert result.quality_gates.all_gates_passed is True
+        # Verify independent tests were skipped (not run)
+        assert result.independent_tests.test_command == "skipped"
+
+    def test_scaffolding_profile_skips_independent_test_verification(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that scaffolding profile skips independent test verification.
+
+        Scaffolding tasks (task_type: scaffolding) should skip independent test
+        verification because they CREATE the test infrastructure. Tests don't
+        exist yet during scaffolding tasks.
+
+        This is the fix for TASK-FIX-SCAF where quality gates passed but then
+        independent test verification failed because tests didn't exist.
+        """
+        # Write results that pass quality gates for scaffolding
+        results = make_task_work_results(
+            tests_passed=True,  # Quality gates passed
+            requirements_met=["Create test infrastructure"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "scaffolding",
+            "acceptance_criteria": ["Create test infrastructure"],
+        }
+
+        # DO NOT mock subprocess.run - we want to verify tests are NOT run
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
+
+        # Should approve without running independent tests
+        assert result.decision == "approve"
+        assert result.independent_tests is not None
+        # Verify test verification was skipped (not actually run)
+        assert result.independent_tests.test_command == "skipped"
+        assert "skipped" in result.independent_tests.test_output_summary.lower()
+        assert result.independent_tests.tests_passed is True
+        assert result.independent_tests.duration_seconds == 0.0
+
+    def test_feature_profile_runs_independent_test_verification(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test that feature profile runs independent test verification.
+
+        Feature tasks with tests_required=True should still run independent
+        test verification (trust but verify behavior).
+        """
+        results = make_task_work_results(
+            tests_passed=True,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "feature",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task)
+
+        # Should run independent tests and approve
+        assert result.decision == "approve"
+        assert result.independent_tests is not None
+        # Verify test verification was actually run (not skipped)
+        assert result.independent_tests.test_command != "skipped"
+        assert "skipped" not in result.independent_tests.test_output_summary.lower()
+        # Verify subprocess.run was called (tests were actually run)
+        mock_run.assert_called_once()
 
     def test_feature_profile_requires_arch_review(
         self,
@@ -1220,15 +1366,15 @@ class TestQualityGateProfileApplication:
             "acceptance_criteria": ["Document API"],
         }
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
-
-            validator = CoachValidator(str(tmp_worktree))
-            result = validator.validate("TASK-001", 1, task)
+        # No subprocess mock needed - documentation skips independent tests
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task)
 
         # Should approve despite all gates failing (documentation minimal gates)
         assert result.decision == "approve"
         assert result.quality_gates.tests_required is False
+        # Verify independent tests were skipped (not run)
+        assert result.independent_tests.test_command == "skipped"
         assert result.quality_gates.coverage_required is False
         assert result.quality_gates.arch_review_required is False
         assert result.quality_gates.plan_audit_required is False
@@ -1300,6 +1446,357 @@ class TestQualityGateStatusWithProfiles:
 
         # Should pass because no gates are required
         assert status.all_gates_passed is True
+
+
+# ============================================================================
+# Test Skip Arch Review Feature (TASK-FIX-ARIMPL)
+# ============================================================================
+
+
+class TestSkipArchReview:
+    """Test skip_arch_review parameter functionality.
+
+    This test class validates the skip_arch_review feature which allows
+    implement-only workflows to bypass architectural review requirements.
+
+    Tests verify:
+    - skip_arch_review=True passes with zero arch score
+    - skip_arch_review=False (default) enforces arch review
+    - Default behavior is False
+    - Interaction with profile-based requirements
+    - Full validation flow with skip flag
+    """
+
+    def test_skip_arch_review_passes_with_zero_score(self, tmp_worktree):
+        """Test verify_quality_gates with skip_arch_review=True and arch_score=0.
+
+        When skip_arch_review=True, arch review should pass regardless of score.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = make_task_work_results(arch_score=0)
+
+        status = validator.verify_quality_gates(results, skip_arch_review=True)
+
+        assert status.arch_review_passed is True
+        assert status.all_gates_passed is True
+
+    def test_no_skip_fails_with_zero_score(self, tmp_worktree):
+        """Test verify_quality_gates with skip_arch_review=False and arch_score=0.
+
+        When skip_arch_review=False (default), zero score should fail.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = make_task_work_results(arch_score=0)
+
+        status = validator.verify_quality_gates(results, skip_arch_review=False)
+
+        assert status.arch_review_passed is False
+        assert status.all_gates_passed is False
+
+    def test_skip_arch_review_default_is_false(self, tmp_worktree):
+        """Test that skip_arch_review defaults to False.
+
+        Without explicit skip_arch_review parameter, arch review should be enforced.
+        """
+        validator = CoachValidator(str(tmp_worktree))
+        results = make_task_work_results(arch_score=45)  # Below threshold
+
+        # Call without skip_arch_review parameter - should use default (False)
+        status = validator.verify_quality_gates(results)
+
+        assert status.arch_review_passed is False
+
+    def test_skip_arch_review_with_scaffolding_profile_redundant(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test skip_arch_review with scaffolding profile (both skip arch review).
+
+        Scaffolding profile already skips arch review. Adding skip_arch_review=True
+        is redundant but should work without issues.
+        """
+        results = make_task_work_results(
+            arch_score=0,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "scaffolding",
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        validator = CoachValidator(str(tmp_worktree))
+        result = validator.validate("TASK-001", 1, task, skip_arch_review=True)
+
+        # Both mechanisms result in arch review being skipped
+        assert result.quality_gates.arch_review_required is False
+        assert result.decision == "approve"
+
+    def test_skip_arch_review_overrides_profile_requirement(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test skip_arch_review overrides profile-based arch review requirement.
+
+        Feature profile normally requires arch review. skip_arch_review=True
+        should override this and allow zero score to pass.
+        """
+        results = make_task_work_results(
+            arch_score=0,
+            requirements_met=["Criterion 1"],
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = {
+            "task_type": "feature",  # Feature profile requires arch review
+            "acceptance_criteria": ["Criterion 1"],
+        }
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task, skip_arch_review=True)
+
+        # Should pass despite feature profile normally requiring arch review
+        assert result.quality_gates.arch_review_passed is True
+        assert result.decision == "approve"
+
+    def test_validate_with_skip_arch_review_approves(
+        self,
+        tmp_worktree,
+        task_work_results_dir,
+    ):
+        """Test full validate() call with skip_arch_review=True and arch_score=0.
+
+        Complete validation flow should approve when skip_arch_review=True
+        even with zero arch score.
+        """
+        results = make_task_work_results(
+            arch_score=0,
+            tests_passed=True,
+            coverage_met=True,
+        )
+        write_task_work_results(task_work_results_dir, results)
+
+        task = make_task()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="All passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = validator.validate("TASK-001", 1, task, skip_arch_review=True)
+
+        assert result.decision == "approve"
+        assert result.quality_gates.arch_review_passed is True
+        assert result.quality_gates.all_gates_passed is True
+        assert len(result.issues) == 0
+
+
+# ============================================================================
+# Test Task-Specific Test Detection (TASK-FIX-INDTEST)
+# ============================================================================
+
+
+class TestTaskSpecificTestDetection:
+    """Test task-specific test detection and filtering.
+
+    These tests verify the fix for TASK-FIX-INDTEST where independent test
+    verification in shared worktrees was discovering ALL tests from ALL tasks
+    instead of just the specific task being validated.
+    """
+
+    def test_task_id_to_pattern_prefix_basic(self, tmp_worktree):
+        """Test basic task_id to pattern conversion."""
+        validator = CoachValidator(str(tmp_worktree))
+
+        assert validator._task_id_to_pattern_prefix("TASK-FHA-002") == "task_fha_002"
+        assert validator._task_id_to_pattern_prefix("TASK-001") == "task_001"
+        assert validator._task_id_to_pattern_prefix("TASK-AB-001") == "task_ab_001"
+
+    def test_task_id_to_pattern_prefix_lowercase_preserved(self, tmp_worktree):
+        """Test that already lowercase IDs are preserved."""
+        validator = CoachValidator(str(tmp_worktree))
+
+        # Already lowercase should work
+        assert validator._task_id_to_pattern_prefix("task-001") == "task_001"
+
+    def test_detect_test_command_finds_task_specific_tests(self, tmp_worktree):
+        """Test detection of task-specific test files."""
+        # Create Python project indicator
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create test directory and task-specific test file
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_fha_002_auth.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FHA-002")
+        test_cmd = validator._detect_test_command("TASK-FHA-002")
+
+        assert "test_task_fha_002_auth.py" in test_cmd
+        assert "pytest" in test_cmd
+        assert "tests/ " not in test_cmd  # Should NOT include full directory
+
+    def test_detect_test_command_returns_none_when_no_task_tests(self, tmp_worktree):
+        """Test that None is returned when no task-specific tests found.
+
+        When task_id is provided but no matching test files exist, _detect_test_command
+        should return None to signal that independent verification should be skipped.
+        This prevents running all tests from parallel tasks in shared worktrees.
+
+        Replaces old fallback behavior (TASK-FIX-INDFB).
+        """
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create tests directory with other tests (not task-specific)
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_other_feature.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-XYZ-999")
+        test_cmd = validator._detect_test_command("TASK-XYZ-999")
+
+        # Should return None (skip verification) instead of falling back to full suite
+        assert test_cmd is None
+
+    def test_detect_test_command_without_task_id(self, tmp_worktree):
+        """Test original behavior when task_id is None."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        validator = CoachValidator(str(tmp_worktree))  # No task_id
+        test_cmd = validator._detect_test_command(None)
+
+        assert test_cmd == "pytest tests/ -v --tb=short"
+
+    def test_detect_test_command_multiple_matching_files(self, tmp_worktree):
+        """Test handling of multiple task-specific test files."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_fha_002_auth.py").touch()
+        (tests_dir / "test_task_fha_002_validation.py").touch()
+
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-FHA-002")
+        test_cmd = validator._detect_test_command("TASK-FHA-002")
+
+        # Both files should be included
+        assert "test_task_fha_002_auth.py" in test_cmd
+        assert "test_task_fha_002_validation.py" in test_cmd
+
+    def test_run_independent_tests_uses_task_specific_command(self, tmp_worktree):
+        """Test that run_independent_tests uses task-specific command when available."""
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_abc_001.py").touch()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="1 passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree), task_id="TASK-ABC-001")
+            result = validator.run_independent_tests()
+
+        # Verify task-specific test file was used
+        call_args = mock_run.call_args[0][0]
+        assert "test_task_abc_001.py" in call_args
+        assert "tests/ " not in call_args  # Full directory not used
+
+    def test_constructor_stores_task_id(self, tmp_worktree):
+        """Test that CoachValidator stores task_id in constructor."""
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-TEST-001")
+
+        assert validator.task_id == "TASK-TEST-001"
+
+    def test_constructor_task_id_defaults_to_none(self, tmp_worktree):
+        """Test that task_id defaults to None."""
+        validator = CoachValidator(str(tmp_worktree))
+
+        assert validator.task_id is None
+
+    def test_detect_test_command_with_special_characters_in_task_id(self, tmp_worktree):
+        """Test task ID conversion handles various formats."""
+        validator = CoachValidator(str(tmp_worktree))
+
+        # Test various task ID formats
+        assert validator._task_id_to_pattern_prefix("TASK-FIX-INDTEST") == "task_fix_indtest"
+        assert validator._task_id_to_pattern_prefix("TASK-REV-FB25") == "task_rev_fb25"
+        assert validator._task_id_to_pattern_prefix("TASK-E01-A3F2") == "task_e01_a3f2"
+
+    def test_run_independent_tests_skips_when_no_task_tests(self, tmp_worktree):
+        """Test that run_independent_tests skips when no task-specific tests found.
+
+        When task_id is provided but no matching test files exist, independent test
+        verification should be skipped instead of running all tests (which would
+        include tests from other parallel tasks).
+
+        This is the fix for TASK-FIX-INDFB.
+        """
+        (tmp_worktree / "pyproject.toml").touch()
+
+        # Create tests directory with other tests (not task-specific)
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_other_feature.py").touch()
+
+        # DO NOT mock subprocess.run - we want to verify tests are NOT run
+        validator = CoachValidator(str(tmp_worktree), task_id="TASK-XYZ-999")
+        result = validator.run_independent_tests()
+
+        # Should skip verification with descriptive result
+        assert result.tests_passed is True
+        assert result.test_command == "skipped"
+        assert "no task-specific tests found" in result.test_output_summary.lower()
+        assert "TASK-XYZ-999" in result.test_output_summary
+        assert result.duration_seconds == 0.0
+
+    def test_run_independent_tests_still_runs_when_task_tests_exist(self, tmp_worktree):
+        """Test that run_independent_tests runs when task-specific tests ARE found.
+
+        Ensure the skip behavior doesn't affect normal operation when tests exist.
+        """
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_task_xyz_999_feature.py").touch()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="1 passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree), task_id="TASK-XYZ-999")
+            result = validator.run_independent_tests()
+
+        # Should actually run the tests
+        assert result.test_command != "skipped"
+        assert "test_task_xyz_999_feature.py" in result.test_command
+        mock_run.assert_called_once()
+
+    def test_run_independent_tests_without_task_id_runs_full_suite(self, tmp_worktree):
+        """Test that run_independent_tests runs full suite when task_id is None.
+
+        When no task_id is provided (standalone mode), should run full test suite.
+        """
+        (tmp_worktree / "pyproject.toml").touch()
+
+        tests_dir = tmp_worktree / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_something.py").touch()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="5 passed", stderr="")
+
+            validator = CoachValidator(str(tmp_worktree))  # No task_id
+            result = validator.run_independent_tests()
+
+        # Should run full test suite
+        assert result.test_command == "pytest tests/ -v --tb=short"
+        mock_run.assert_called_once()
 
 
 # ============================================================================

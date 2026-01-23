@@ -3422,6 +3422,78 @@ class TestTaskWorkStreamParser:
 
         assert len(result["phases"]["phase_1"]["text"]) == 100
 
+    # -------------- Architectural Review Score Tests --------------
+
+    def test_parse_architectural_review_score(self, parser):
+        """Parser extracts architectural review score."""
+        parser.parse_message("Architectural Score: 82/100")
+        result = parser.to_result()
+
+        assert "architectural_review" in result
+        assert result["architectural_review"]["score"] == 82
+
+    def test_parse_architectural_review_score_no_denominator(self, parser):
+        """Parser handles score without /100 suffix."""
+        parser.parse_message("Architectural score: 75")
+        result = parser.to_result()
+
+        assert result["architectural_review"]["score"] == 75
+
+    def test_parse_architectural_review_subscores(self, parser):
+        """Parser extracts SOLID/DRY/YAGNI subscores."""
+        parser.parse_message("Architectural Score: 80")
+        parser.parse_message("SOLID: 85, DRY: 80, YAGNI: 82")
+        result = parser.to_result()
+
+        assert result["architectural_review"]["solid"] == 85
+        assert result["architectural_review"]["dry"] == 80
+        assert result["architectural_review"]["yagni"] == 82
+
+    def test_parse_architectural_review_subscores_no_commas(self, parser):
+        """Parser handles subscores without commas."""
+        parser.parse_message("Architectural Score: 80")
+        parser.parse_message("SOLID: 85 DRY: 80 YAGNI: 82")
+        result = parser.to_result()
+
+        assert result["architectural_review"]["solid"] == 85
+        assert result["architectural_review"]["dry"] == 80
+        assert result["architectural_review"]["yagni"] == 82
+
+    def test_parse_architectural_review_score_and_subscores(self, parser):
+        """Parser combines overall score with subscores."""
+        parser.parse_message("Architectural Score: 82")
+        parser.parse_message("SOLID: 45, DRY: 23, YAGNI: 17")
+        result = parser.to_result()
+
+        assert result["architectural_review"]["score"] == 82
+        assert result["architectural_review"]["solid"] == 45
+        assert result["architectural_review"]["dry"] == 23
+        assert result["architectural_review"]["yagni"] == 17
+
+    def test_parse_architectural_review_case_insensitive(self, parser):
+        """Parser handles case variations."""
+        parser.parse_message("architectural SCORE: 90")
+        result = parser.to_result()
+
+        assert result["architectural_review"]["score"] == 90
+
+    def test_parse_architectural_review_no_score_returns_empty(self, parser):
+        """Parser returns empty result when no arch score found."""
+        parser.parse_message("Some other message")
+        result = parser.to_result()
+
+        assert "architectural_review" not in result
+
+    def test_architectural_review_reset_clears_scores(self, parser):
+        """Reset clears architectural review state."""
+        parser.parse_message("Architectural Score: 82")
+        parser.parse_message("SOLID: 85, DRY: 80, YAGNI: 82")
+
+        parser.reset()
+        result = parser.to_result()
+
+        assert "architectural_review" not in result
+
     # -------------- Reset Tests --------------
 
     def test_reset_clears_state(self, parser):

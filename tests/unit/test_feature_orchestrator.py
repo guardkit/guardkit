@@ -815,7 +815,7 @@ Test requirements.
 def test_execute_task_uses_default_sdk_timeout_when_not_specified(
     temp_repo, sample_feature, mock_worktree, mock_worktree_manager
 ):
-    """Test that _execute_task uses default SDK timeout (600) when not specified."""
+    """Test that _execute_task uses default SDK timeout (900) when not specified."""
     orchestrator = FeatureOrchestrator(
         repo_root=temp_repo,
         worktree_manager=mock_worktree_manager,
@@ -857,9 +857,9 @@ Test requirements.
         # Verify task executed successfully
         assert result.success is True
 
-        # Verify default sdk_timeout (600) was used
+        # Verify default sdk_timeout (900) was used
         call_kwargs = mock_orch_class.call_args[1]
-        assert call_kwargs.get("sdk_timeout") == 600
+        assert call_kwargs.get("sdk_timeout") == 900
 
 
 def test_execute_task_cli_sdk_timeout_overrides_task_frontmatter(

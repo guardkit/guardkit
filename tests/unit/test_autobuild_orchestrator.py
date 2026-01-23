@@ -1461,7 +1461,7 @@ class TestSdkTimeoutPropagationToPreLoop:
         mock_progress_display,
         mock_worktree,
     ):
-        """Test default sdk_timeout (600) is propagated to PreLoopQualityGates."""
+        """Test default sdk_timeout (900) is propagated to PreLoopQualityGates."""
         with patch(
             "guardkit.orchestrator.autobuild.PreLoopQualityGates"
         ) as mock_gates_cls:
@@ -1487,7 +1487,7 @@ class TestSdkTimeoutPropagationToPreLoop:
             orchestrator = AutoBuildOrchestrator(
                 repo_root=Path("/tmp/test-repo"),
                 max_turns=5,
-                # No sdk_timeout specified - should use default 600
+                # No sdk_timeout specified - should use default 900
                 worktree_manager=mock_worktree_manager,
                 agent_invoker=mock_agent_invoker,
                 progress_display=mock_progress_display,
@@ -1503,7 +1503,7 @@ class TestSdkTimeoutPropagationToPreLoop:
             mock_gates_cls.assert_called_once()
             call_kwargs = mock_gates_cls.call_args[1]
             assert "sdk_timeout" in call_kwargs
-            assert call_kwargs["sdk_timeout"] == 600
+            assert call_kwargs["sdk_timeout"] == 900
 
     def test_sdk_timeout_stored_in_orchestrator(self):
         """Test sdk_timeout is stored correctly in orchestrator."""
@@ -1516,13 +1516,13 @@ class TestSdkTimeoutPropagationToPreLoop:
         assert orchestrator.sdk_timeout == 1200
 
     def test_sdk_timeout_default_value(self):
-        """Test sdk_timeout defaults to 600 if not specified."""
+        """Test sdk_timeout defaults to 900 if not specified."""
         orchestrator = AutoBuildOrchestrator(
             repo_root=Path.cwd(),
             max_turns=5,
         )
 
-        assert orchestrator.sdk_timeout == 600
+        assert orchestrator.sdk_timeout == 900
 
     def test_injected_pre_loop_gates_bypasses_creation(
         self,
@@ -1643,9 +1643,10 @@ class TestCoachValidatorPathConstruction:
                 worktree=mock_worktree_feature_mode,
             )
 
-            # Verify CoachValidator was instantiated with feature worktree path
+            # Verify CoachValidator was instantiated with feature worktree path and task_id
             mock_validator_class.assert_called_once_with(
-                str(mock_worktree_feature_mode.path)
+                str(mock_worktree_feature_mode.path),
+                task_id="TASK-INFRA-001"
             )
             # Should be FEAT-3DEB path, NOT TASK-INFRA-001 path
             call_arg = mock_validator_class.call_args[0][0]
@@ -1697,9 +1698,10 @@ class TestCoachValidatorPathConstruction:
                 worktree=mock_worktree_single_task_mode,
             )
 
-            # Verify CoachValidator was instantiated with correct path
+            # Verify CoachValidator was instantiated with correct path and task_id
             mock_validator_class.assert_called_once_with(
-                str(mock_worktree_single_task_mode.path)
+                str(mock_worktree_single_task_mode.path),
+                task_id="TASK-001"
             )
             call_arg = mock_validator_class.call_args[0][0]
             assert "TASK-001" in call_arg
@@ -1769,6 +1771,182 @@ class TestCoachValidatorPathConstruction:
                 call_kwargs = mock_coach.call_args[1]
                 assert "worktree" in call_kwargs
                 assert call_kwargs["worktree"] == mock_worktree_feature_mode
+
+
+# ============================================================================
+# Test Extract Feedback (TASK-FIX-FBMSG)
+# ============================================================================
+
+
+class TestExtractFeedback:
+    """Test _extract_feedback method with test_output field."""
+
+    def test_extract_feedback_with_suggestion(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback uses suggestion when available."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Missing HTTPS enforcement",
+                    "suggestion": "Add HTTPS validation in auth flow",
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "Missing HTTPS enforcement: Add HTTPS validation in auth flow" in feedback
+        assert "\n  " not in feedback  # No indentation for suggestion
+
+    def test_extract_feedback_with_test_output(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback uses test_output when suggestion is empty."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Test failure in auth module",
+                    "suggestion": "",
+                    "test_output": "AssertionError: Expected 401, got 200",
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "Test failure in auth module:" in feedback
+        assert "  AssertionError: Expected 401, got 200" in feedback
+
+    def test_extract_feedback_with_description_only(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback with description only (no suggestion or test_output)."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Edge case not covered",
+                    "suggestion": "",
+                    "test_output": "",
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert feedback == "- Edge case not covered"
+
+    def test_extract_feedback_prefers_suggestion_over_test_output(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback prefers suggestion when both are present."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {
+                    "description": "Test failure",
+                    "suggestion": "Fix the logic in auth.py line 42",
+                    "test_output": "AssertionError: some error",
+                }
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "Fix the logic in auth.py line 42" in feedback
+        assert "AssertionError" not in feedback
+
+    def test_extract_feedback_limits_to_three_issues(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback limits output to top 3 issues."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [
+                {"description": f"Issue {i}", "suggestion": f"Fix {i}"}
+                for i in range(5)
+            ]
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert "Issue 0" in feedback
+        assert "Issue 1" in feedback
+        assert "Issue 2" in feedback
+        assert "... and 2 more issues" in feedback
+        assert "Issue 3" not in feedback
+        assert "Issue 4" not in feedback
+
+    def test_extract_feedback_no_issues_returns_rationale(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test _extract_feedback returns rationale when no issues."""
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        coach_report = {
+            "issues": [],
+            "rationale": "Implementation looks good",
+        }
+
+        feedback = orchestrator._extract_feedback(coach_report)
+        assert feedback == "Implementation looks good"
 
 
 # ============================================================================

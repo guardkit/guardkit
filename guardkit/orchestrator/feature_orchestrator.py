@@ -1230,7 +1230,7 @@ The detailed specifications are in the task markdown file.
                 # Note: TaskLoader returns frontmatter as nested dict, not at top level
                 task_frontmatter = task_data.get("frontmatter", {})
                 task_autobuild = task_frontmatter.get("autobuild", {})
-                effective_sdk_timeout = task_autobuild.get("sdk_timeout", 600)
+                effective_sdk_timeout = task_autobuild.get("sdk_timeout", 900)
 
             # Resolve enable_pre_loop: CLI > task frontmatter > feature YAML > default (False for feature-build)
             effective_enable_pre_loop = self._resolve_enable_pre_loop(feature, task_data)

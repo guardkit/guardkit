@@ -83,7 +83,7 @@ autobuild:
   mode: tdd                  # Development mode: tdd (default), standard, or bdd
   player_model: claude-sonnet-4-5-20250929    # Optional: specify Player model
   coach_model: claude-sonnet-4-5-20250929     # Optional: specify Coach model
-  sdk_timeout: 600           # Optional: SDK timeout in seconds (default: 600)
+  sdk_timeout: 900           # Optional: SDK timeout in seconds (default: 900)
 ```
 
 ## Development Modes
@@ -167,7 +167,7 @@ Command: `guardkit autobuild task TASK-XXX --no-pre-loop`
 
 ## SDK Timeout Configuration
 
-The `--sdk-timeout` flag controls how long to wait for agent invocations (default: 600 seconds).
+The `--sdk-timeout` flag controls how long to wait for agent invocations (default: 900 seconds).
 
 **CLI Usage**:
 ```bash
@@ -177,8 +177,8 @@ guardkit autobuild feature FEAT-XXX --sdk-timeout 900 # 15 minutes
 
 **Configuration Cascade** (highest priority first):
 1. CLI flag: `--sdk-timeout 600`
-2. Task frontmatter: `autobuild.sdk_timeout: 600`
-3. Default: 600 seconds
+2. Task frontmatter: `autobuild.sdk_timeout: 900`
+3. Default: 900 seconds
 
 **Valid Range**: 60-3600 seconds (1 minute to 1 hour)
 
