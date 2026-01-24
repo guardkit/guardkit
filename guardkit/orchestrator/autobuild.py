@@ -319,6 +319,7 @@ class AutoBuildOrchestrator:
         development_mode: str = "tdd",
         sdk_timeout: int = 900,
         skip_arch_review: bool = False,
+        enable_perspective_reset: bool = True,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -358,6 +359,11 @@ class AutoBuildOrchestrator:
         skip_arch_review : bool, optional
             Skip architectural review quality gate (default: False).
             Use with caution - bypasses SOLID/DRY/YAGNI validation.
+        enable_perspective_reset : bool, optional
+            Enable fresh perspective reset to prevent anchoring bias (default: True).
+            When enabled, Player receives only original requirements (no feedback) at
+            turns 3 and 5, allowing fresh perspective and breaking anchored assumptions.
+            This helps prevent the Player from becoming locked into early approaches.
 
         Raises
         ------
@@ -374,6 +380,10 @@ class AutoBuildOrchestrator:
 
         The existing_worktree parameter enables feature mode where multiple
         tasks share a single worktree, added for TASK-FBC-001.
+
+        Fresh perspective reset (TASK-BRF-001) addresses anchoring bias prevention
+        by resetting context at specified turns, enabling the Player to reconsider
+        the problem from first principles rather than being anchored by prior feedback.
         """
         if max_turns < 1:
             raise ValueError("max_turns must be at least 1")
@@ -386,7 +396,10 @@ class AutoBuildOrchestrator:
         self.development_mode = development_mode
         self.sdk_timeout = sdk_timeout
         self.skip_arch_review = skip_arch_review
+        self.enable_perspective_reset = enable_perspective_reset
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
+        # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
+        self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
         self._honesty_history: List[float] = []  # Track honesty scores across turns
 
@@ -405,6 +418,8 @@ class AutoBuildOrchestrator:
             f"development_mode={self.development_mode}, "
             f"sdk_timeout={self.sdk_timeout}s, "
             f"skip_arch_review={self.skip_arch_review}, "
+            f"enable_perspective_reset={self.enable_perspective_reset}, "
+            f"reset_turns={self.perspective_reset_turns}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
@@ -833,6 +848,11 @@ class AutoBuildOrchestrator:
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
+
+                # Check if perspective should be reset to prevent anchoring bias
+                # When reset triggered, Player receives only original requirements (no feedback)
+                if self._should_reset_perspective(turn):
+                    previous_feedback = None
 
                 # Execute single turn
                 # Skip arch review when pre-loop is disabled (implement-only mode)
@@ -1317,6 +1337,42 @@ class AutoBuildOrchestrator:
     # ========================================================================
     # Helper Methods (Error Handling, Summary Building)
     # ========================================================================
+
+    def _should_reset_perspective(self, turn: int) -> bool:
+        """
+        Check if Player should receive fresh perspective (reset) on this turn.
+
+        Fresh perspective reset prevents anchoring bias by having the Player
+        receive only original requirements without prior feedback at specified
+        turns. This allows the Player to reconsider the problem from first
+        principles rather than being locked into early assumptions.
+
+        Implementation (TASK-BRF-001):
+        - Turn-based reset at hardcoded turns [3, 5]
+        - No anchoring detection (deferred to future work per YAGNI principle)
+        - Simple logging when reset occurs
+
+        Parameters
+        ----------
+        turn : int
+            Current turn number (1-indexed)
+
+        Returns
+        -------
+        bool
+            True if perspective should be reset, False otherwise
+
+        Notes
+        -----
+        Reset turns are hardcoded as [3, 5] per architectural review
+        recommendation to keep MVP simple and testable.
+        """
+        if turn in self.perspective_reset_turns:
+            logger.info(
+                f"Perspective reset triggered at turn {turn} (scheduled reset)"
+            )
+            return True
+        return False
 
     def _record_honesty(self, turn_record: TurnRecord) -> None:
         """
