@@ -7,36 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-#### Architectural Review Threshold Increased
-
-**Default threshold raised from 60 to 75** for architectural review quality gates (Phase 2.5B).
-
-**Affected Task Types**:
-- `FEATURE` tasks (most common): now require arch review score ≥75 (was 60)
-- `REFACTOR` tasks: now require arch review score ≥75 (was 60)
-- Other task types (scaffolding, infrastructure, documentation): no change (arch review not required)
-
-**Migration Path**:
-- **No action needed** for most users - the higher threshold improves code quality
-- **If your team depends on the 60 threshold**: Use `--arch-threshold 60` CLI flag to maintain previous behavior
-- **To configure per-task**: Add `arch_threshold: 60` to task frontmatter under `autobuild:` section
-
-**CLI Override**:
-```bash
-# Use old threshold (60)
-guardkit autobuild task TASK-XXX --arch-threshold 60
-
-# Use new default (75)
-guardkit autobuild task TASK-XXX  # No flag needed
-
-# Use higher threshold (85)
-guardkit autobuild task TASK-XXX --arch-threshold 85
-```
-
-**Rationale**: Block AI research on adversarial cooperation emphasizes high quality standards for effective autonomous coding. The 60 threshold was too lenient and allowed lower-quality code through quality gates.
-
 ### Breaking Changes
 
 #### Template Overhaul

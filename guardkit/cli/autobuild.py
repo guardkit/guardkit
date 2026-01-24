@@ -178,14 +178,6 @@ def autobuild():
     help="Skip architectural review quality gate (use with caution)",
 )
 @click.option(
-    "--arch-threshold",
-    "arch_threshold",
-    type=click.IntRange(50, 100),
-    default=75,
-    help="Minimum architectural review score (default: 75)",
-    show_default=True,
-)
-@click.option(
     "--no-checkpoints",
     "no_checkpoints",
     is_flag=True,
@@ -212,7 +204,6 @@ def task(
     sdk_timeout: Optional[int],
     no_pre_loop: bool,
     skip_arch_review: bool,
-    arch_threshold: int,
     no_checkpoints: bool,
     no_rollback: bool,
 ):

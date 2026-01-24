@@ -259,7 +259,7 @@ class CoachValidator:
     """
 
     # Quality gate thresholds (match task-work)
-    ARCH_REVIEW_THRESHOLD = 75
+    ARCH_REVIEW_THRESHOLD = 60
     # Default profile for backward compatibility
     DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
 
