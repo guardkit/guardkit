@@ -27,7 +27,8 @@ from generate_feature_yaml import (
     build_parallel_groups,
     estimate_duration,
     generate_feature_id,
-    build_task_file_path,  # NEW: Helper function for path construction
+    build_task_file_path,  # Helper function for path construction
+    slugify_task_name,  # NEW: Task name slug generation
 )
 
 
@@ -97,11 +98,53 @@ class TestTaskSpec:
 # 2. File Path Construction Tests
 # ============================================================================
 
+class TestSlugifyTaskName:
+    """Tests for task name slugification."""
+
+    def test_slugify_basic_name(self):
+        """Test slugification of basic task name."""
+        assert slugify_task_name("Create auth service") == "create-auth-service"
+
+    def test_slugify_with_special_characters(self):
+        """Test slugification handles special characters."""
+        assert slugify_task_name("Add OAuth 2.0 Provider") == "add-oauth-2-0-provider"
+
+    def test_slugify_with_punctuation(self):
+        """Test slugification removes punctuation."""
+        assert slugify_task_name("Fix bug! (urgent)") == "fix-bug-urgent"
+
+    def test_slugify_uppercase(self):
+        """Test slugification converts to lowercase."""
+        assert slugify_task_name("Create AUTH Service") == "create-auth-service"
+
+    def test_slugify_multiple_spaces(self):
+        """Test slugification collapses multiple spaces."""
+        assert slugify_task_name("Create   auth   service") == "create-auth-service"
+
+    def test_slugify_leading_trailing_spaces(self):
+        """Test slugification trims leading/trailing spaces."""
+        assert slugify_task_name("  Create auth service  ") == "create-auth-service"
+
+    def test_slugify_numbers(self):
+        """Test slugification preserves numbers."""
+        assert slugify_task_name("Phase 1 setup") == "phase-1-setup"
+
+
 class TestBuildTaskFilePath:
     """Tests for file path construction helper function."""
 
-    def test_build_task_file_path_with_feature_slug(self):
-        """Test file path construction with feature slug."""
+    def test_build_task_file_path_with_task_name(self):
+        """Test file path includes task name slug when provided."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="oauth2",
+            base_path="tasks/backlog",
+            task_name="Create auth service"
+        )
+        assert path == "tasks/backlog/oauth2/TASK-001-create-auth-service.md"
+
+    def test_build_task_file_path_without_task_name(self):
+        """Test file path uses just task ID when name not provided."""
         path = build_task_file_path(
             task_id="TASK-001",
             feature_slug="oauth2",
@@ -114,26 +157,39 @@ class TestBuildTaskFilePath:
         path = build_task_file_path(
             task_id="TASK-AUTH-001",
             feature_slug="authentication",
-            base_path="tasks/in_progress"
+            base_path="tasks/in_progress",
+            task_name="Add OAuth provider"
         )
-        assert path == "tasks/in_progress/authentication/TASK-AUTH-001.md"
+        assert path == "tasks/in_progress/authentication/TASK-AUTH-001-add-oauth-provider.md"
 
     def test_build_task_file_path_without_feature_slug(self):
         """Test file path construction without feature slug (flat structure)."""
         path = build_task_file_path(
             task_id="TASK-001",
             feature_slug="",
-            base_path="tasks/backlog"
+            base_path="tasks/backlog",
+            task_name="Create service"
         )
-        assert path == "tasks/backlog/TASK-001.md"
+        # Without feature slug, still includes name in filename
+        assert path == "tasks/backlog/TASK-001-create-service.md"
 
     def test_build_task_file_path_default_base_path(self):
         """Test file path uses default base path."""
         path = build_task_file_path(
             task_id="TASK-001",
-            feature_slug="my-feature"
+            feature_slug="my-feature",
+            task_name="Setup project"
         )
-        assert path == "tasks/backlog/my-feature/TASK-001.md"
+        assert path == "tasks/backlog/my-feature/TASK-001-setup-project.md"
+
+    def test_build_task_file_path_empty_task_name(self):
+        """Test file path with explicitly empty task name."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="oauth2",
+            task_name=""
+        )
+        assert path == "tasks/backlog/oauth2/TASK-001.md"
 
 
 # ============================================================================
@@ -144,7 +200,7 @@ class TestParseTaskString:
     """Tests for parsing task string format."""
 
     def test_parse_task_string_with_feature_slug(self):
-        """Test parsing with feature slug for file path derivation."""
+        """Test parsing with feature slug includes task name in file path."""
         task = parse_task_string(
             "TASK-001:Create auth service:5:",
             feature_slug="oauth2",
@@ -153,7 +209,8 @@ class TestParseTaskString:
         assert task.id == "TASK-001"
         assert task.name == "Create auth service"
         assert task.complexity == 5
-        assert task.file_path == "tasks/backlog/oauth2/TASK-001.md"
+        # File path now includes slugified task name
+        assert task.file_path == "tasks/backlog/oauth2/TASK-001-create-auth-service.md"
 
     def test_parse_task_string_without_feature_slug(self):
         """Test parsing without feature slug (backward compatible)."""
@@ -164,7 +221,7 @@ class TestParseTaskString:
         assert task.file_path == ""  # Empty when no slug provided
 
     def test_parse_task_string_with_dependencies(self):
-        """Test parsing task with dependencies."""
+        """Test parsing task with dependencies includes name in path."""
         task = parse_task_string(
             "TASK-002:Add OAuth provider:6:TASK-001",
             feature_slug="oauth2",
@@ -172,7 +229,8 @@ class TestParseTaskString:
         )
         assert task.id == "TASK-002"
         assert task.dependencies == ["TASK-001"]
-        assert task.file_path == "tasks/backlog/oauth2/TASK-002.md"
+        # File path now includes slugified task name
+        assert task.file_path == "tasks/backlog/oauth2/TASK-002-add-oauth-provider.md"
 
     def test_parse_task_string_with_multiple_dependencies(self):
         """Test parsing task with multiple dependencies."""
@@ -182,6 +240,7 @@ class TestParseTaskString:
             task_base_path="tasks/backlog"
         )
         assert task.dependencies == ["TASK-001", "TASK-002"]
+        assert task.file_path == "tasks/backlog/oauth2/TASK-003-add-tests.md"
 
     def test_parse_task_string_sets_implementation_mode_by_complexity(self):
         """Test that implementation_mode is set based on complexity."""

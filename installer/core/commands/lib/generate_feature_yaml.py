@@ -116,10 +116,39 @@ def estimate_duration(complexity: int) -> int:
     return int(base_minutes * (scaling ** (complexity - 1)))
 
 
+def slugify_task_name(name: str) -> str:
+    """
+    Convert task name to URL-friendly slug for filename suffix.
+
+    Args:
+        name: Task name (e.g., "Create auth service")
+
+    Returns:
+        Slugified name (e.g., "create-auth-service")
+
+    Examples:
+        >>> slugify_task_name("Create auth service")
+        'create-auth-service'
+        >>> slugify_task_name("Add OAuth 2.0 Provider")
+        'add-oauth-2-0-provider'
+    """
+    import re
+    # Convert to lowercase
+    slug = name.lower()
+    # Replace non-alphanumeric characters with hyphens
+    slug = re.sub(r'[^a-z0-9]+', '-', slug)
+    # Remove leading/trailing hyphens
+    slug = slug.strip('-')
+    # Collapse multiple hyphens
+    slug = re.sub(r'-+', '-', slug)
+    return slug
+
+
 def build_task_file_path(
     task_id: str,
     feature_slug: str,
-    base_path: str = "tasks/backlog"
+    base_path: str = "tasks/backlog",
+    task_name: str = ""
 ) -> str:
     """
     Build standardized task file path from components.
@@ -130,20 +159,31 @@ def build_task_file_path(
         task_id: Task identifier (e.g., "TASK-001")
         feature_slug: Feature directory name (e.g., "oauth2"). Empty for flat structure.
         base_path: Base tasks directory (default: "tasks/backlog")
+        task_name: Task name for filename suffix (e.g., "Create auth service").
+                   If provided, generates filename like "TASK-001-create-auth-service.md"
 
     Returns:
         Relative path to task file
 
     Examples:
+        >>> build_task_file_path("TASK-001", "oauth2", task_name="Create auth service")
+        'tasks/backlog/oauth2/TASK-001-create-auth-service.md'
         >>> build_task_file_path("TASK-001", "oauth2")
         'tasks/backlog/oauth2/TASK-001.md'
         >>> build_task_file_path("TASK-001", "")
         'tasks/backlog/TASK-001.md'
     """
-    if feature_slug:
-        return f"{base_path}/{feature_slug}/{task_id}.md"
+    # Build filename with optional name suffix
+    if task_name:
+        name_slug = slugify_task_name(task_name)
+        filename = f"{task_id}-{name_slug}.md"
     else:
-        return f"{base_path}/{task_id}.md"
+        filename = f"{task_id}.md"
+
+    if feature_slug:
+        return f"{base_path}/{feature_slug}/{filename}"
+    else:
+        return f"{base_path}/{filename}"
 
 
 def parse_task_string(
@@ -164,7 +204,7 @@ def parse_task_string(
 
     Examples:
         >>> parse_task_string("TASK-001:Auth service:5:", "oauth2")
-        TaskSpec(id="TASK-001", name="Auth service", file_path="tasks/backlog/oauth2/TASK-001.md", ...)
+        TaskSpec(id="TASK-001", name="Auth service", file_path="tasks/backlog/oauth2/TASK-001-auth-service.md", ...)
     """
     parts = task_str.split(":", 3)
 
@@ -181,10 +221,10 @@ def parse_task_string(
     else:
         mode = "task-work"
 
-    # Derive file_path from feature_slug if provided
+    # Derive file_path from feature_slug if provided (includes task name in filename)
     file_path = ""
     if feature_slug:
-        file_path = build_task_file_path(task_id, feature_slug, task_base_path)
+        file_path = build_task_file_path(task_id, feature_slug, task_base_path, task_name=name)
 
     return TaskSpec(
         id=task_id,
@@ -360,17 +400,19 @@ def main():
 
             for t in tasks_data:
                 task_id = t.get("id", t.get("task_id", ""))
+                task_name = t.get("name", t.get("title", ""))
                 complexity = t.get("complexity", 5)
                 mode = "direct" if complexity <= 3 else "task-work"
-                # Derive file_path using centralized helper
+                # Derive file_path using centralized helper (includes task name in filename)
                 file_path = ""
                 if args.feature_slug:
                     file_path = build_task_file_path(
-                        task_id, args.feature_slug, args.task_base_path
+                        task_id, args.feature_slug, args.task_base_path,
+                        task_name=task_name
                     )
                 task_specs.append(TaskSpec(
                     id=task_id,
-                    name=t.get("name", t.get("title", "")),
+                    name=task_name,
                     complexity=complexity,
                     file_path=file_path,
                     dependencies=t.get("dependencies", []),
