@@ -58,7 +58,7 @@ class QualityGateProfile:
             Recommended for: FEATURE tasks
             Skipped for: SCAFFOLDING, INFRASTRUCTURE, DOCUMENTATION
         arch_review_threshold: Minimum architectural review score (0-100).
-            Default for features: 60
+            Default for features: 75
             Ignored if arch_review_required is False
         coverage_required: Whether code coverage validation is required.
             Recommended for: FEATURE tasks with testable code
@@ -79,7 +79,7 @@ class QualityGateProfile:
         Feature task profile (maximum validation):
         >>> feature_profile = QualityGateProfile(
         ...     arch_review_required=True,
-        ...     arch_review_threshold=60,
+        ...     arch_review_threshold=75,
         ...     coverage_required=True,
         ...     coverage_threshold=80,
         ...     tests_required=True,
@@ -176,7 +176,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
     ),
     TaskType.FEATURE: QualityGateProfile(
         arch_review_required=True,
-        arch_review_threshold=60,
+        arch_review_threshold=75,
         coverage_required=True,
         coverage_threshold=80.0,
         tests_required=True,
@@ -208,7 +208,7 @@ DEFAULT_PROFILES: Dict[TaskType, QualityGateProfile] = {
     ),
     TaskType.REFACTOR: QualityGateProfile(
         arch_review_required=True,
-        arch_review_threshold=60,
+        arch_review_threshold=75,
         coverage_required=True,
         coverage_threshold=80.0,
         tests_required=True,
