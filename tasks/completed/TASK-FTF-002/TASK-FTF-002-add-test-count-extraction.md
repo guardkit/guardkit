@@ -1,9 +1,10 @@
 ---
 id: TASK-FTF-002
 title: Add test count extraction from pytest output
-status: in_review
+status: completed
 created: 2026-01-24T12:00:00Z
-updated: 2026-01-24T16:30:00Z
+updated: 2026-01-24T17:00:00Z
+completed: 2026-01-24T17:00:00Z
 priority: low
 complexity: 3
 tags: [autobuild, agent-invoker, test-tracking, display]
@@ -13,6 +14,11 @@ parent_review: TASK-REV-BRF
 feature_id: file-tracking-fix
 wave: 1
 dependencies: []
+previous_state: in_review
+state_transition_reason: "Task completed - all acceptance criteria met"
+completed_location: tasks/completed/TASK-FTF-002/
+organized_files:
+  - TASK-FTF-002-add-test-count-extraction.md
 quality_gates:
   tests_passed: 250
   tests_failed: 0
