@@ -1,9 +1,9 @@
 ---
 id: TASK-FC-004
 title: Add merge instruction display
-status: backlog
+status: in_progress
 created: 2026-01-24T12:00:00Z
-updated: 2026-01-24T12:00:00Z
+updated: 2026-01-24T21:30:00Z
 priority: medium
 tags: [feature-complete, display, ux]
 complexity: 1
@@ -13,6 +13,8 @@ implementation_mode: direct
 wave: 1
 dependencies: []
 estimated_minutes: 20
+previous_state: backlog
+state_transition_reason: "Automatic transition for task-work execution"
 ---
 
 # Task: Add merge instruction display
