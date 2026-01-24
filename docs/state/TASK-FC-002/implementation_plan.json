@@ -1,0 +1,91 @@
+{
+  "task_id": "TASK-FC-002",
+  "title": "Implement parallel task completion",
+  "complexity": 3,
+  "estimated_duration_minutes": 60,
+  "estimated_loc": 270,
+  "files_to_create": [
+    {
+      "path": "tests/orchestrator/test_feature_complete_tasks.py",
+      "purpose": "Unit tests for parallel completion logic",
+      "estimated_lines": 150
+    }
+  ],
+  "files_to_modify": [
+    {
+      "path": "guardkit/orchestrator/feature_complete.py",
+      "changes": "Add async _complete_tasks_parallel() method, update _completion_phase(), add _extract_feature_slug() helper",
+      "estimated_lines": 120
+    }
+  ],
+  "external_dependencies": [],
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Core Async Logic",
+      "duration_minutes": 30,
+      "tasks": [
+        "Implement _complete_tasks_parallel() async method",
+        "Use asyncio.gather() for parallel execution",
+        "Handle errors with isolation"
+      ]
+    },
+    {
+      "phase": 2,
+      "name": "Integration",
+      "duration_minutes": 20,
+      "tasks": [
+        "Update _completion_phase() to call parallel logic",
+        "Add feature subfolder creation",
+        "Integrate progress reporting"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "Testing",
+      "duration_minutes": 10,
+      "tasks": [
+        "Create test file with async tests",
+        "Test success, partial failure, edge cases"
+      ]
+    }
+  ],
+  "test_summary": {
+    "framework": "pytest",
+    "plugins": ["pytest-asyncio"],
+    "coverage_target_line": 80,
+    "coverage_target_branch": 75,
+    "test_cases": [
+      "All tasks complete successfully (parallel execution)",
+      "Some tasks fail, others succeed (error isolation)",
+      "Already completed tasks are skipped",
+      "Feature subfolder creation",
+      "Progress reporting accuracy"
+    ]
+  },
+  "risks": [
+    {
+      "description": "Async test complexity",
+      "severity": "low",
+      "mitigation": "Use pytest-asyncio with AsyncMock"
+    },
+    {
+      "description": "Feature subfolder organization",
+      "severity": "low",
+      "mitigation": "Verify TASK-FC-001 specification before implementing"
+    }
+  ],
+  "architectural_decisions": [
+    "Async/await pattern for true parallelism",
+    "Error isolation (individual failures don't block others)",
+    "Reuse existing complete_task() from helper",
+    "Feature organization under subfolders"
+  ],
+  "architectural_review": {
+    "solid_score": 43,
+    "dry_score": 22,
+    "yagni_score": 20,
+    "overall_score": 85,
+    "status": "approved"
+  }
+}
