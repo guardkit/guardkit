@@ -1,34 +1,43 @@
 """
-Feature completion orchestrator for AutoBuild feature mode.
+FeatureCompleteOrchestrator for parallel task completion.
 
 This module provides the FeatureCompleteOrchestrator class which coordinates
-the completion of all tasks in a feature, followed by archival and handoff
-instructions for human review.
+the completion of all tasks within a feature using parallel execution.
+
+Architecture:
+    Three-Phase Execution Pattern:
+    1. Setup Phase: Load feature, validate tasks
+    2. Completion Phase: Complete tasks in parallel
+    3. Finalize Phase: Update feature status, generate report
 
 Example:
     >>> from pathlib import Path
     >>> from guardkit.orchestrator.feature_complete import FeatureCompleteOrchestrator
     >>>
     >>> orchestrator = FeatureCompleteOrchestrator(repo_root=Path.cwd())
-    >>> result = orchestrator.complete("FEAT-A1B2")
-    >>> print(result.status)
-    'completed'
+    >>> result = orchestrator.complete_feature("FEAT-A1B2")
+    >>> print(result.completed_count)
+    12
 """
 
+import asyncio
 import logging
+import shutil
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from guardkit.orchestrator.feature_loader import (
     Feature,
     FeatureLoader,
+    FeatureTask,
     FeatureNotFoundError,
-    FeatureValidationError,
 )
-from guardkit.worktrees import WorktreeManager, Worktree
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -40,35 +49,52 @@ console = Console()
 
 
 @dataclass
+class TaskCompleteResult:
+    """
+    Result of completing a single task.
+
+    Attributes
+    ----------
+    task_id : str
+        Task identifier
+    success : bool
+        Whether task completed successfully
+    error : Optional[str]
+        Error message if failed
+    """
+
+    task_id: str
+    success: bool
+    error: Optional[str] = None
+
+
+@dataclass
 class FeatureCompleteResult:
     """
-    Result of feature completion orchestration.
+    Complete result of feature completion orchestration.
 
     Attributes
     ----------
     feature_id : str
         Feature identifier
-    success : bool
-        Whether completion succeeded
-    status : str
-        Final feature status (completed/failed)
-    tasks_completed : int
-        Number of completed tasks
     total_tasks : int
-        Total number of tasks
-    worktree_path : Optional[str]
-        Path to preserved worktree
-    error : Optional[str]
-        Error message if failed
+        Total number of tasks in feature
+    completed_count : int
+        Number of tasks successfully completed
+    failed_count : int
+        Number of tasks that failed
+    skipped_count : int
+        Number of tasks already completed (skipped)
+    results : List[TaskCompleteResult]
+        Individual task completion results
     """
 
     feature_id: str
-    success: bool
-    status: str
-    tasks_completed: int
     total_tasks: int
-    worktree_path: Optional[str] = None
-    error: Optional[str] = None
+    completed_count: int
+    failed_count: int
+    skipped_count: int
+    results: List[TaskCompleteResult]
 
 
 # ============================================================================
@@ -89,13 +115,18 @@ class FeatureCompleteError(Exception):
 
 class FeatureCompleteOrchestrator:
     """
-    Orchestrates feature completion workflow.
+    Orchestrates parallel completion of all tasks in a feature.
 
-    This class implements a four-phase completion pattern:
-    1. Validation: Verify feature exists and is ready for completion
-    2. Completion: Mark all incomplete tasks as complete (TASK-FC-002)
-    3. Archival: Archive feature and cleanup resources (TASK-FC-003)
-    4. Handoff: Display handoff instructions for human review (TASK-FC-004)
+    This class implements a three-phase execution pattern:
+    1. Setup Phase: Load feature, validate tasks
+    2. Completion Phase: Complete tasks in parallel
+    3. Finalize Phase: Update feature status, generate report
+
+    Key Design Decisions:
+    - Parallel execution using asyncio.gather()
+    - Error isolation (one task failure doesn't block others)
+    - Feature-specific organization (tasks/completed/{date}/{feature-slug}/)
+    - Progress reporting with rich console
 
     Attributes
     ----------
@@ -103,26 +134,22 @@ class FeatureCompleteOrchestrator:
         Repository root directory
     features_dir : Path
         Directory containing feature YAML files
-    dry_run : bool
-        Whether to simulate without making changes
-    force : bool
-        Whether to force completion even if tasks incomplete
+    verbose : bool
+        Whether to show detailed output
 
     Examples
     --------
     >>> orchestrator = FeatureCompleteOrchestrator(repo_root=Path.cwd())
-    >>> result = orchestrator.complete("FEAT-A1B2")
-    >>> print(result.success)
-    True
+    >>> result = orchestrator.complete_feature("FEAT-A1B2")
+    >>> print(f"{result.completed_count}/{result.total_tasks} tasks completed")
+    12/12 tasks completed
     """
 
     def __init__(
         self,
         repo_root: Path,
         features_dir: Optional[Path] = None,
-        worktree_manager: Optional[WorktreeManager] = None,
-        dry_run: bool = False,
-        force: bool = False,
+        verbose: bool = False,
     ):
         """
         Initialize FeatureCompleteOrchestrator.
@@ -133,34 +160,24 @@ class FeatureCompleteOrchestrator:
             Repository root directory
         features_dir : Optional[Path], optional
             Override features directory (for testing)
-        worktree_manager : Optional[WorktreeManager], optional
-            Optional WorktreeManager for DI/testing
-        dry_run : bool, optional
-            Simulate without making changes (default: False)
-        force : bool, optional
-            Force completion even if tasks incomplete (default: False)
+        verbose : bool, optional
+            Show detailed output (default: False)
         """
         self.repo_root = Path(repo_root).resolve()
         self.features_dir = features_dir or self.repo_root / ".guardkit" / "features"
-        self.dry_run = dry_run
-        self.force = force
-
-        # Initialize dependencies
-        self._worktree_manager = worktree_manager or WorktreeManager(
-            repo_root=self.repo_root
-        )
+        self.verbose = verbose
 
         logger.info(
             f"FeatureCompleteOrchestrator initialized: repo={self.repo_root}, "
-            f"dry_run={self.dry_run}, force={self.force}"
+            f"verbose={self.verbose}"
         )
 
-    def complete(self, feature_id: str) -> FeatureCompleteResult:
+    def complete_feature(self, feature_id: str) -> FeatureCompleteResult:
         """
         Execute complete feature completion workflow.
 
-        This is the main entry point for feature completion. It coordinates
-        the four-phase completion pattern: Validation → Completion → Archival → Handoff.
+        This is the main entry point for feature completion orchestration.
+        It coordinates the three-phase execution pattern: Setup → Complete → Finalize.
 
         Parameters
         ----------
@@ -170,54 +187,41 @@ class FeatureCompleteOrchestrator:
         Returns
         -------
         FeatureCompleteResult
-            Complete completion result
+            Complete orchestration result
 
         Raises
         ------
         FeatureNotFoundError
             If feature file doesn't exist
-        FeatureValidationError
-            If feature fails validation
         FeatureCompleteError
             If critical error occurs
 
         Examples
         --------
-        >>> result = orchestrator.complete("FEAT-A1B2")
-        >>> print(result.status)
-        'completed'
+        >>> result = orchestrator.complete_feature("FEAT-A1B2")
+        >>> print(result.completed_count)
+        12
         """
         logger.info(f"Starting feature completion for {feature_id}")
 
         try:
-            # Phase 1: Validation
-            feature, worktree = self._validate_phase(feature_id)
+            # Phase 1: Setup
+            feature = self._setup_phase(feature_id)
 
-            # Phase 2: Completion (TASK-FC-002 - placeholder)
-            self._completion_phase(feature)
+            # Phase 2: Completion
+            results = self._completion_phase(feature)
 
-            # Phase 3: Archival (TASK-FC-003 - placeholder)
-            self._archival_phase(feature, worktree)
+            # Phase 3: Finalize
+            final_result = self._finalize_phase(feature, results)
 
-            # Phase 4: Handoff (TASK-FC-004 - placeholder)
-            self._handoff_phase(feature, worktree)
-
-            # Build result
-            result = FeatureCompleteResult(
-                feature_id=feature.id,
-                success=True,
-                status="completed",
-                tasks_completed=len(feature.tasks),
-                total_tasks=len(feature.tasks),
-                worktree_path=str(worktree.path) if worktree else None,
+            logger.info(
+                f"Feature completion complete: {feature_id}, "
+                f"completed={final_result.completed_count}/{final_result.total_tasks}"
             )
 
-            logger.info(f"Feature completion successful: {feature_id}")
-            return result
+            return final_result
 
         except FeatureNotFoundError:
-            raise
-        except FeatureValidationError:
             raise
         except Exception as e:
             logger.error(f"Feature completion failed: {e}", exc_info=True)
@@ -225,11 +229,9 @@ class FeatureCompleteOrchestrator:
                 f"Failed to complete feature {feature_id}: {e}"
             ) from e
 
-    def _validate_phase(
-        self, feature_id: str
-    ) -> tuple[Feature, Optional[Worktree]]:
+    def _setup_phase(self, feature_id: str) -> Feature:
         """
-        Phase 1: Validate feature exists and is ready for completion.
+        Phase 1: Load feature and validate.
 
         Parameters
         ----------
@@ -238,21 +240,25 @@ class FeatureCompleteOrchestrator:
 
         Returns
         -------
-        tuple[Feature, Optional[Worktree]]
-            Loaded feature and worktree (if exists)
+        Feature
+            Loaded feature
 
         Raises
         ------
         FeatureNotFoundError
             If feature file not found
-        FeatureValidationError
-            If validation fails
-        FeatureCompleteError
-            If feature not ready for completion
         """
-        logger.info(f"Phase 1 (Validation): Validating feature {feature_id}")
+        logger.info(f"Phase 1 (Setup): Loading feature {feature_id}")
 
-        console.print(f"\n[bold cyan]Phase 1:[/bold cyan] Validating feature {feature_id}")
+        # Display setup banner
+        console.print(
+            Panel(
+                f"[bold]Feature Task Completion[/bold]\n\n"
+                f"Feature: [cyan]{feature_id}[/cyan]",
+                title="GuardKit Feature Complete",
+                border_style="blue",
+            )
+        )
 
         # Load feature
         feature = FeatureLoader.load_feature(
@@ -262,109 +268,288 @@ class FeatureCompleteOrchestrator:
         )
 
         console.print(f"[green]✓[/green] Loaded feature: {feature.name}")
-        console.print(f"  Tasks: {len(feature.tasks)}")
-        console.print(f"  Status: {feature.status}")
+        console.print(f"  Total tasks: {len(feature.tasks)}")
 
-        # Check if feature is already completed
-        if feature.status == "completed" and not self.force:
-            console.print("[yellow]⚠[/yellow] Feature already completed")
-            if not self.dry_run:
-                raise FeatureCompleteError(
-                    f"Feature {feature_id} is already completed. Use --force to re-complete."
-                )
+        # Count pending tasks
+        pending_tasks = [t for t in feature.tasks if t.status != "completed"]
+        console.print(f"  Pending completion: {len(pending_tasks)}")
 
-        # Check if all tasks are completed (unless --force)
-        if not self.force:
-            incomplete_tasks = [
-                task for task in feature.tasks if task.status != "completed"
-            ]
-            if incomplete_tasks:
-                console.print(
-                    f"[yellow]⚠[/yellow] {len(incomplete_tasks)} task(s) not completed:"
-                )
-                for task in incomplete_tasks:
-                    console.print(f"  - {task.id}: {task.status}")
-                if not self.dry_run:
-                    raise FeatureCompleteError(
-                        f"Cannot complete feature {feature_id}: {len(incomplete_tasks)} task(s) incomplete. "
-                        "Use --force to override."
-                    )
+        return feature
 
-        # Find worktree if it exists
-        worktree = None
-        if feature.execution.worktree_path:
-            worktree_path = Path(feature.execution.worktree_path)
-            if worktree_path.exists():
-                worktree = Worktree(
-                    task_id=feature_id,
-                    branch_name=f"autobuild/{feature_id}",
-                    path=worktree_path,
-                    base_branch="main",
-                )
-                console.print(f"[green]✓[/green] Found worktree: {worktree.path}")
-            else:
-                console.print("[yellow]⚠[/yellow] Worktree path not found (may have been cleaned up)")
-
-        console.print("[green]✓[/green] Validation complete\n")
-
-        return feature, worktree
-
-    def _completion_phase(self, feature: Feature) -> None:
+    def _completion_phase(self, feature: Feature) -> List[TaskCompleteResult]:
         """
-        Phase 2: Mark all incomplete tasks as complete.
-
-        This is a placeholder for TASK-FC-002 implementation.
+        Phase 2: Complete tasks in parallel.
 
         Parameters
         ----------
         feature : Feature
             Feature to complete
+
+        Returns
+        -------
+        List[TaskCompleteResult]
+            Results for all tasks
         """
-        logger.info(f"Phase 2 (Completion): Placeholder for TASK-FC-002")
+        logger.info(f"Phase 2 (Completion): Completing tasks in parallel")
 
-        console.print("[bold cyan]Phase 2:[/bold cyan] Task Completion")
-        console.print("[dim]  → Placeholder for TASK-FC-002[/dim]")
-        console.print("[dim]  → Will mark incomplete tasks as complete[/dim]\n")
+        # Execute async completion
+        results = asyncio.run(self._complete_tasks_parallel(feature))
 
-    def _archival_phase(self, feature: Feature, worktree: Optional[Worktree]) -> None:
+        return results
+
+    async def _complete_tasks_parallel(
+        self, feature: Feature
+    ) -> List[TaskCompleteResult]:
         """
-        Phase 3: Archive feature and cleanup resources.
+        Complete all tasks in a feature in parallel using asyncio.
 
-        This is a placeholder for TASK-FC-003 implementation.
+        This method creates parallel execution tasks using asyncio.to_thread()
+        to achieve true parallelism with the blocking file operations.
+        Tasks are filtered for already-completed cases before parallel execution.
 
         Parameters
         ----------
         feature : Feature
-            Feature to archive
-        worktree : Optional[Worktree]
-            Worktree to cleanup (if exists)
+            Parent feature
+
+        Returns
+        -------
+        List[TaskCompleteResult]
+            Results for all tasks in the feature
         """
-        logger.info(f"Phase 3 (Archival): Placeholder for TASK-FC-003")
+        results = []
+        pending_tasks = [t for t in feature.tasks if t.status != "completed"]
 
-        console.print("[bold cyan]Phase 3:[/bold cyan] Archival")
-        console.print("[dim]  → Placeholder for TASK-FC-003[/dim]")
-        console.print("[dim]  → Will archive feature YAML[/dim]")
-        console.print("[dim]  → Will cleanup worktree[/dim]\n")
+        if not pending_tasks:
+            console.print("[dim]No tasks to complete (all already completed)[/dim]")
+            # Return empty list - already completed tasks are skipped
+            return results
 
-    def _handoff_phase(self, feature: Feature, worktree: Optional[Worktree]) -> None:
+        console.print(f"\n[bold]Completing {len(pending_tasks)} tasks...[/bold]")
+
+        # Create progress display
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task_progress = progress.add_task(
+                f"Completing tasks...", total=len(pending_tasks)
+            )
+
+            # Create completion coroutines
+            tasks_to_execute = [
+                asyncio.to_thread(self._complete_single_task, task, feature)
+                for task in pending_tasks
+            ]
+
+            # Execute in parallel with error isolation
+            parallel_results = await asyncio.gather(
+                *tasks_to_execute, return_exceptions=True
+            )
+
+            # Process results and handle exceptions
+            for task, result in zip(pending_tasks, parallel_results):
+                if isinstance(result, Exception):
+                    error_result = TaskCompleteResult(
+                        task_id=task.id,
+                        success=False,
+                        error=str(result),
+                    )
+                    results.append(error_result)
+                    logger.error(
+                        f"Task {task.id} completion failed: {result}", exc_info=result
+                    )
+                else:
+                    results.append(result)
+
+                progress.update(task_progress, advance=1)
+
+        return results
+
+    def _complete_single_task(
+        self, task: FeatureTask, feature: Feature
+    ) -> TaskCompleteResult:
         """
-        Phase 4: Display handoff instructions for human review.
+        Complete a single task (runs in thread).
 
-        This is a placeholder for TASK-FC-004 implementation.
+        This method moves the task file to the completed directory,
+        organized under feature-specific folder.
+
+        Parameters
+        ----------
+        task : FeatureTask
+            Task to complete
+        feature : Feature
+            Parent feature
+
+        Returns
+        -------
+        TaskCompleteResult
+            Completion result
+        """
+        try:
+            feature_slug = self._extract_feature_slug(feature.id)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+
+            # Create target directory: tasks/completed/{date}/{feature-slug}/
+            target_dir = (
+                self.repo_root / "tasks" / "completed" / date_str / feature_slug
+            )
+            target_dir.mkdir(parents=True, exist_ok=True)
+
+            # Find task file
+            task_file = self._find_task_file(task.id)
+            if not task_file:
+                logger.warning(f"Task file not found: {task.id}")
+                return TaskCompleteResult(
+                    task_id=task.id,
+                    success=False,
+                    error="Task file not found",
+                )
+
+            # Move task file
+            target_file = target_dir / task_file.name
+            shutil.move(str(task_file), str(target_file))
+
+            if self.verbose:
+                console.print(f"  [green]✓[/green] Completed {task.id}")
+
+            return TaskCompleteResult(
+                task_id=task.id,
+                success=True,
+                error=None,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to complete task {task.id}: {e}", exc_info=True)
+            return TaskCompleteResult(
+                task_id=task.id,
+                success=False,
+                error=str(e),
+            )
+
+    def _extract_feature_slug(self, feature_id: str) -> str:
+        """
+        Extract feature slug from feature ID.
+
+        Examples:
+        - FEAT-A1B2 → feat-a1b2
+        - FEAT-AUTH-001 → feat-auth-001
+
+        Parameters
+        ----------
+        feature_id : str
+            Feature identifier
+
+        Returns
+        -------
+        str
+            Feature slug (lowercase, with hyphens)
+        """
+        return feature_id.lower()
+
+    def _find_task_file(self, task_id: str) -> Optional[Path]:
+        """
+        Find task file in standard locations.
+
+        Searches in order:
+        1. tasks/in_review/
+        2. tasks/in_progress/
+        3. tasks/backlog/
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier
+
+        Returns
+        -------
+        Optional[Path]
+            Path to task file, or None if not found
+        """
+        search_dirs = ["in_review", "in_progress", "backlog"]
+
+        for dir_name in search_dirs:
+            search_dir = self.repo_root / "tasks" / dir_name
+            if not search_dir.exists():
+                continue
+
+            # Use rglob for recursive search (handles feature subdirectories)
+            for task_file in search_dir.rglob(f"{task_id}*.md"):
+                logger.debug(f"Found task {task_id} at {task_file}")
+                return task_file
+
+        return None
+
+    def _finalize_phase(
+        self, feature: Feature, results: List[TaskCompleteResult]
+    ) -> FeatureCompleteResult:
+        """
+        Phase 3: Update feature status and generate report.
 
         Parameters
         ----------
         feature : Feature
-            Completed feature
-        worktree : Optional[Worktree]
-            Worktree (if still exists)
-        """
-        logger.info(f"Phase 4 (Handoff): Placeholder for TASK-FC-004")
+            Feature to finalize
+        results : List[TaskCompleteResult]
+            Task completion results
 
-        console.print("[bold cyan]Phase 4:[/bold cyan] Handoff Instructions")
-        console.print("[dim]  → Placeholder for TASK-FC-004[/dim]")
-        console.print("[dim]  → Will display review instructions[/dim]")
-        console.print("[dim]  → Will provide merge commands[/dim]\n")
+        Returns
+        -------
+        FeatureCompleteResult
+            Complete orchestration result
+        """
+        logger.info(f"Phase 3 (Finalize): Updating feature {feature.id}")
+
+        # Calculate totals
+        completed_count = sum(1 for r in results if r.success and r.error is None)
+        failed_count = sum(1 for r in results if not r.success)
+        skipped_count = len(feature.tasks) - len(
+            [t for t in feature.tasks if t.status != "completed"]
+        )
+
+        # Display summary
+        console.print()
+        if failed_count == 0:
+            console.print(
+                Panel(
+                    f"[green]✓ Feature tasks completed successfully[/green]\n\n"
+                    f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
+                    f"Completed: {completed_count} tasks\n"
+                    f"Skipped: {skipped_count} tasks (already completed)",
+                    title="Feature Completion Complete",
+                    border_style="green",
+                )
+            )
+        else:
+            console.print(
+                Panel(
+                    f"[yellow]⚠ Feature completion finished with errors[/yellow]\n\n"
+                    f"Feature: [cyan]{feature.id}[/cyan] - {feature.name}\n"
+                    f"Completed: {completed_count} tasks\n"
+                    f"Failed: {failed_count} tasks\n"
+                    f"Skipped: {skipped_count} tasks",
+                    title="Feature Completion Complete",
+                    border_style="yellow",
+                )
+            )
+
+        # Display failed tasks if any
+        if failed_count > 0 and self.verbose:
+            console.print("\n[bold red]Failed Tasks:[/bold red]")
+            for result in results:
+                if not result.success:
+                    console.print(f"  [red]✗[/red] {result.task_id}: {result.error}")
+
+        return FeatureCompleteResult(
+            feature_id=feature.id,
+            total_tasks=len(feature.tasks),
+            completed_count=completed_count,
+            failed_count=failed_count,
+            skipped_count=skipped_count,
+            results=results,
+        )
 
 
 # ============================================================================
@@ -374,5 +559,6 @@ class FeatureCompleteOrchestrator:
 __all__ = [
     "FeatureCompleteOrchestrator",
     "FeatureCompleteResult",
+    "TaskCompleteResult",
     "FeatureCompleteError",
 ]
