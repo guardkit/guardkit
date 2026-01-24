@@ -3516,6 +3516,213 @@ class TestTaskWorkStreamParser:
 
         assert result["tests_passed"] == 10
 
+    # -------------- Tool Invocation Tracking Tests --------------
+
+    def test_track_write_tool_call(self, parser):
+        """Verify _track_tool_call adds Write paths to files_created."""
+        parser._track_tool_call("Write", {"file_path": "/path/to/new_file.py"})
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/path/to/new_file.py" in result["files_created"]
+
+    def test_track_edit_tool_call(self, parser):
+        """Verify _track_tool_call adds Edit paths to files_modified."""
+        parser._track_tool_call("Edit", {"file_path": "/path/to/existing_file.py"})
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "/path/to/existing_file.py" in result["files_modified"]
+
+    def test_track_tool_call_ignores_unknown_tool(self, parser):
+        """Verify _track_tool_call ignores unknown tool names."""
+        parser._track_tool_call("Read", {"file_path": "/path/to/file.py"})
+        parser._track_tool_call("Bash", {"command": "ls -la"})
+        parser._track_tool_call("Unknown", {"file_path": "/path/to/file.py"})
+        result = parser.to_result()
+
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+    def test_track_tool_call_ignores_missing_file_path(self, parser):
+        """Verify _track_tool_call handles missing file_path gracefully."""
+        parser._track_tool_call("Write", {})
+        parser._track_tool_call("Edit", {"other_arg": "value"})
+        result = parser.to_result()
+
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+    def test_track_tool_call_ignores_non_string_file_path(self, parser):
+        """Verify _track_tool_call handles non-string file_path gracefully."""
+        parser._track_tool_call("Write", {"file_path": 123})
+        parser._track_tool_call("Edit", {"file_path": ["list", "not", "string"]})
+        parser._track_tool_call("Write", {"file_path": None})
+        result = parser.to_result()
+
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+    def test_parse_tool_invocation_xml_write(self, parser):
+        """Parse XML-style Write tool invocation."""
+        message = '''<invoke name="Write">
+<parameter name="file_path">/src/utils/helper.py</parameter>
+<parameter name="content">print("hello")</parameter>
+</invoke>'''
+        parser.parse_message(message)
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/src/utils/helper.py" in result["files_created"]
+
+    def test_parse_tool_invocation_xml_edit(self, parser):
+        """Parse XML-style Edit tool invocation."""
+        message = '''<invoke name="Edit">
+<parameter name="file_path">/src/models/user.py</parameter>
+<parameter name="old_string">def old_method</parameter>
+<parameter name="new_string">def new_method</parameter>
+</invoke>'''
+        parser.parse_message(message)
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "/src/models/user.py" in result["files_modified"]
+
+    def test_parse_tool_invocation_xml_with_whitespace(self, parser):
+        """Parse XML tool invocation with extra whitespace in file_path."""
+        message = '''<invoke name="Write">
+<parameter name="file_path">  /src/new_module.py  </parameter>
+</invoke>'''
+        parser.parse_message(message)
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/src/new_module.py" in result["files_created"]
+
+    def test_parse_tool_result_created(self, parser):
+        """Parse 'File created successfully at:' message."""
+        parser.parse_message("File created successfully at: /tests/test_new.py")
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/tests/test_new.py" in result["files_created"]
+
+    def test_parse_tool_result_written(self, parser):
+        """Parse 'File written to:' message variant."""
+        parser.parse_message("File written to: /src/output.json")
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/src/output.json" in result["files_created"]
+
+    def test_parse_tool_result_modified(self, parser):
+        """Parse 'File modified successfully at:' message."""
+        parser.parse_message("File modified successfully at: /src/config.py")
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "/src/config.py" in result["files_modified"]
+
+    def test_parse_tool_result_updated(self, parser):
+        """Parse 'File updated at:' message variant."""
+        parser.parse_message("File updated at: /src/settings.yaml")
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "/src/settings.yaml" in result["files_modified"]
+
+    def test_parse_tool_result_edited(self, parser):
+        """Parse 'File edited at:' message variant."""
+        parser.parse_message("File edited at: /src/main.py")
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert "/src/main.py" in result["files_modified"]
+
+    def test_tool_tracking_deduplication(self, parser):
+        """Verify duplicate paths are deduplicated across tracking methods."""
+        # Add same file via multiple methods
+        parser._track_tool_call("Write", {"file_path": "/src/utils.py"})
+        parser.parse_message("File created successfully at: /src/utils.py")
+        parser.parse_message('''<invoke name="Write">
+<parameter name="file_path">/src/utils.py</parameter>
+</invoke>''')
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert len(result["files_created"]) == 1
+        assert "/src/utils.py" in result["files_created"]
+
+    def test_tool_tracking_deduplication_modified(self, parser):
+        """Verify duplicate modified paths are deduplicated."""
+        parser._track_tool_call("Edit", {"file_path": "/src/models.py"})
+        parser.parse_message("File modified at: /src/models.py")
+        parser._track_tool_call("Edit", {"file_path": "/src/models.py"})
+        result = parser.to_result()
+
+        assert "files_modified" in result
+        assert len(result["files_modified"]) == 1
+        assert "/src/models.py" in result["files_modified"]
+
+    def test_tool_tracking_multiple_files_single_message(self, parser):
+        """Parse multiple tool results from single message."""
+        message = """File created successfully at: /src/a.py
+File created successfully at: /src/b.py
+File modified at: /src/c.py"""
+        parser.parse_message(message)
+        result = parser.to_result()
+
+        assert "files_created" in result
+        assert "/src/a.py" in result["files_created"]
+        assert "/src/b.py" in result["files_created"]
+        assert "files_modified" in result
+        assert "/src/c.py" in result["files_modified"]
+
+    def test_tool_tracking_with_other_patterns(self, parser):
+        """Tool tracking works alongside other pattern matching."""
+        parser.parse_message("Phase 3: Implementation")
+        parser.parse_message('''<invoke name="Write">
+<parameter name="file_path">/src/feature.py</parameter>
+</invoke>''')
+        parser.parse_message("File created successfully at: /tests/test_feature.py")
+        parser.parse_message("12 tests passed")
+        parser.parse_message("Coverage: 85%")
+        result = parser.to_result()
+
+        assert "phase_3" in result["phases"]
+        assert result["tests_passed"] == 12
+        assert result["coverage"] == 85.0
+        assert "/src/feature.py" in result["files_created"]
+        assert "/tests/test_feature.py" in result["files_created"]
+
+    def test_tool_tracking_reset_clears_state(self, parser):
+        """Reset clears tool tracking state."""
+        parser._track_tool_call("Write", {"file_path": "/src/new.py"})
+        parser._track_tool_call("Edit", {"file_path": "/src/old.py"})
+        parser.reset()
+        result = parser.to_result()
+
+        assert "files_created" not in result
+        assert "files_modified" not in result
+
+    def test_tool_tracking_case_insensitive_result_patterns(self, parser):
+        """Tool result patterns are case-insensitive."""
+        parser.parse_message("FILE CREATED successfully at: /src/upper.py")
+        parser.parse_message("file modified AT: /src/lower.py")
+        result = parser.to_result()
+
+        assert "/src/upper.py" in result["files_created"]
+        assert "/src/lower.py" in result["files_modified"]
+
+    def test_tool_tracking_sorted_output(self, parser):
+        """Tool tracking output is sorted alphabetically."""
+        parser._track_tool_call("Write", {"file_path": "/z_file.py"})
+        parser._track_tool_call("Write", {"file_path": "/a_file.py"})
+        parser._track_tool_call("Write", {"file_path": "/m_file.py"})
+        result = parser.to_result()
+
+        assert result["files_created"] == ["/a_file.py", "/m_file.py", "/z_file.py"]
+
 
 class TestParseTaskWorkStream:
     """Test AgentInvoker._parse_task_work_stream method."""

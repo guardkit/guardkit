@@ -174,6 +174,14 @@ class TaskWorkStreamParser:
     # Architectural review score patterns
     ARCH_SCORE_PATTERN = re.compile(r"[Aa]rchitectural.*?[Ss]core[:\s]+(\d+)(?:/100)?", re.IGNORECASE)
     ARCH_SUBSCORES_PATTERN = re.compile(r"SOLID[:\s]+(\d+),?\s*DRY[:\s]+(\d+),?\s*YAGNI[:\s]+(\d+)", re.IGNORECASE)
+    # Tool invocation patterns for tracking Write/Edit operations
+    # Matches: <invoke name="Write"> or <invoke name="Edit">
+    TOOL_INVOKE_PATTERN = re.compile(r'<invoke\s+name="(Write|Edit)">')
+    # Matches: <parameter name="file_path">/path/to/file</parameter>
+    TOOL_FILE_PATH_PATTERN = re.compile(r'<parameter\s+name="file_path">([^<]+)</parameter>')
+    # Matches tool result messages like "File created successfully at: /path"
+    TOOL_RESULT_CREATED_PATTERN = re.compile(r"File\s+(?:created|written)\s+(?:successfully\s+)?(?:at|to)[:\s]+([^\s]+)", re.IGNORECASE)
+    TOOL_RESULT_MODIFIED_PATTERN = re.compile(r"File\s+(?:modified|updated|edited)\s+(?:successfully\s+)?(?:at)?[:\s]+([^\s]+)", re.IGNORECASE)
 
     def __init__(self) -> None:
         """Initialize the parser with empty accumulated state."""
@@ -205,6 +213,59 @@ class TaskWorkStreamParser:
         """
         return pattern.search(text)
 
+    def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
+        """Track file operations from tool calls.
+
+        Extracts file paths from Write and Edit tool invocations and adds them
+        to the appropriate tracking set (created or modified).
+
+        Args:
+            tool_name: Name of the tool (e.g., "Write", "Edit")
+            tool_args: Tool arguments dictionary containing file_path
+        """
+        file_path = tool_args.get("file_path")
+        if not file_path or not isinstance(file_path, str):
+            return
+
+        if tool_name == "Write":
+            self._files_created.add(file_path)
+            logger.debug(f"Tool call tracked - file created: {file_path}")
+        elif tool_name == "Edit":
+            self._files_modified.add(file_path)
+            logger.debug(f"Tool call tracked - file modified: {file_path}")
+
+    def _parse_tool_invocations(self, message: str) -> None:
+        """Parse tool invocations from message and track file operations.
+
+        Detects Write and Edit tool calls in the message text and extracts
+        file paths to track. Handles both XML-style tool invocations and
+        tool result messages.
+
+        Args:
+            message: Stream message that may contain tool invocations
+        """
+        # Track XML-style tool invocations: <invoke name="Write">...<parameter name="file_path">
+        tool_match = self._match_pattern(self.TOOL_INVOKE_PATTERN, message)
+        if tool_match:
+            tool_name = tool_match.group(1)
+            file_path_match = self._match_pattern(self.TOOL_FILE_PATH_PATTERN, message)
+            if file_path_match:
+                file_path = file_path_match.group(1).strip()
+                self._track_tool_call(tool_name, {"file_path": file_path})
+
+        # Track tool result messages (e.g., "File created successfully at: /path")
+        for result_match in self.TOOL_RESULT_CREATED_PATTERN.finditer(message):
+            file_path = result_match.group(1).strip()
+            if file_path:
+                self._files_created.add(file_path)
+                logger.debug(f"Tool result tracked - file created: {file_path}")
+
+        for result_match in self.TOOL_RESULT_MODIFIED_PATTERN.finditer(message):
+            file_path = result_match.group(1).strip()
+            if file_path:
+                self._files_modified.add(file_path)
+                logger.debug(f"Tool result tracked - file modified: {file_path}")
+
     def parse_message(self, message: str) -> None:
         """Parse a single stream message and accumulate results.
 
@@ -215,6 +276,7 @@ class TaskWorkStreamParser:
         - Coverage percentage
         - Quality gate status
         - File modification lists
+        - Tool invocations (Write/Edit) for file tracking
 
         Args:
             message: Single message from the task-work SDK stream
@@ -225,6 +287,9 @@ class TaskWorkStreamParser:
         """
         if not message:
             return
+
+        # Tool invocation tracking (Write/Edit operations)
+        self._parse_tool_invocations(message)
 
         # Phase detection
         phase_match = self._match_pattern(self.PHASE_MARKER_PATTERN, message)
