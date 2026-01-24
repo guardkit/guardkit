@@ -191,6 +191,13 @@ def autobuild():
     default=False,
     help="Disable automatic rollback on context pollution (manual rollback still available)",
 )
+@click.option(
+    "--ablation",
+    "ablation_mode",
+    is_flag=True,
+    default=False,
+    help="Run in ablation mode (no Coach feedback) for testing Block research findings",
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -206,6 +213,7 @@ def task(
     skip_arch_review: bool,
     no_checkpoints: bool,
     no_rollback: bool,
+    ablation_mode: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -307,10 +315,26 @@ def task(
         console.print("[dim]   Use only for legacy code or special circumstances.[/dim]")
         console.print()
 
+    # Display warning banner if ablation mode is active
+    if ablation_mode:
+        console.print()
+        console.print("[bold red]" + "="*80 + "[/bold red]")
+        console.print("[bold red]⚠️  ABLATION MODE ACTIVE[/bold red]")
+        console.print("[bold red]" + "="*80 + "[/bold red]")
+        console.print("[yellow]Coach feedback is DISABLED. This mode is for testing only.[/yellow]")
+        console.print("[yellow]Expected outcomes:[/yellow]")
+        console.print("[yellow]  • Higher failure rate (no feedback loop)[/yellow]")
+        console.print("[yellow]  • Lower code quality (no architectural review)[/yellow]")
+        console.print("[yellow]  • More turns needed (no guidance toward convergence)[/yellow]")
+        console.print("[yellow]This validates Block AI research findings.[/yellow]")
+        console.print("[bold red]" + "="*80 + "[/bold red]")
+        console.print()
+
     # Display startup banner
     resume_text = " [yellow](Resuming)[/yellow]" if resume else ""
     mode_display = effective_mode.upper()
     pre_loop_display = "[red]OFF[/red]" if no_pre_loop else "[green]ON[/green]"
+    ablation_display = "[red]ENABLED[/red]" if ablation_mode else "[green]DISABLED[/green]"
     if not ctx_obj.get("quiet", False):
         console.print(
             Panel(
@@ -320,6 +344,7 @@ def task(
                 f"Model: {model}\n"
                 f"Mode: [magenta]{mode_display}[/magenta]\n"
                 f"Pre-Loop: {pre_loop_display}\n"
+                f"Ablation: {ablation_display}\n"
                 f"SDK Timeout: {effective_sdk_timeout}s{resume_text}",
                 title="GuardKit AutoBuild",
                 border_style="blue",
@@ -336,7 +361,8 @@ def task(
         f"Initializing orchestrator (enable_pre_loop={enable_pre_loop}, "
         f"skip_arch_review={effective_skip_arch_review}, "
         f"enable_checkpoints={enable_checkpoints}, "
-        f"rollback_on_pollution={rollback_on_pollution})"
+        f"rollback_on_pollution={rollback_on_pollution}, "
+        f"ablation_mode={ablation_mode})"
     )
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
@@ -348,6 +374,7 @@ def task(
         skip_arch_review=effective_skip_arch_review,
         enable_checkpoints=enable_checkpoints,
         rollback_on_pollution=rollback_on_pollution,
+        ablation_mode=ablation_mode,
     )
 
     # Phase 3: Execute orchestration

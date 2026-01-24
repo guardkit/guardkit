@@ -238,6 +238,7 @@ class OrchestrationResult:
     worktree: Worktree
     error: Optional[str] = None
     pre_loop_result: Optional[Dict[str, Any]] = None  # Results from pre-loop quality gates
+    ablation_mode: bool = False  # Track if result was from ablation mode
 
 
 # ============================================================================
@@ -328,6 +329,7 @@ class AutoBuildOrchestrator:
         enable_perspective_reset: bool = True,
         enable_checkpoints: bool = True,
         rollback_on_pollution: bool = True,
+        ablation_mode: bool = False,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -413,12 +415,20 @@ class AutoBuildOrchestrator:
         self.enable_perspective_reset = enable_perspective_reset
         self.enable_checkpoints = enable_checkpoints
         self.rollback_on_pollution = rollback_on_pollution
+        self.ablation_mode = ablation_mode
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
         self._honesty_history: List[float] = []  # Track honesty scores across turns
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
+
+        # Log warning if ablation mode is active
+        if self.ablation_mode:
+            logger.warning(
+                "⚠️ ABLATION MODE ACTIVE - Coach feedback disabled. "
+                "This mode is for testing only and will produce inferior results."
+            )
 
         # Initialize dependencies (DI or defaults)
         self._worktree_manager = worktree_manager or WorktreeManager(
@@ -439,6 +449,7 @@ class AutoBuildOrchestrator:
             f"reset_turns={self.perspective_reset_turns}, "
             f"enable_checkpoints={self.enable_checkpoints}, "
             f"rollback_on_pollution={self.rollback_on_pollution}, "
+            f"ablation_mode={self.ablation_mode}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
@@ -550,6 +561,7 @@ class AutoBuildOrchestrator:
                             worktree=worktree,
                             error="Human checkpoint rejected implementation plan",
                             pre_loop_result=pre_loop_result,
+                            ablation_mode=self.ablation_mode,
                         )
 
                     # Update max_turns based on complexity from pre-loop
@@ -580,6 +592,7 @@ class AutoBuildOrchestrator:
                         worktree=worktree,
                         error=str(e),
                         pre_loop_result=None,
+                        ablation_mode=self.ablation_mode,
                     )
 
             # Phase 3: Loop
@@ -619,6 +632,7 @@ class AutoBuildOrchestrator:
                 if success
                 else self._build_error_message(final_decision, turn_history),
                 pre_loop_result=pre_loop_result,
+                ablation_mode=self.ablation_mode,
             )
 
             logger.info(
@@ -1087,6 +1101,22 @@ class AutoBuildOrchestrator:
                 )
 
         # ===== Coach Phase =====
+
+        # Skip Coach validation if ablation mode is active
+        if self.ablation_mode:
+            logger.info(f"[ABLATION] Skipping Coach validation for turn {turn} - auto-approving")
+            self._progress_display.complete_turn(
+                "warning",
+                "[ABLATION] Skipping Coach validation - auto-approving",
+            )
+            return TurnRecord(
+                turn=turn,
+                player_result=player_result,
+                coach_result=None,
+                decision="approve",  # Auto-approve in ablation mode
+                feedback=None,
+                timestamp=timestamp,
+            )
 
         self._progress_display.start_turn(turn, "Coach Validation")
 

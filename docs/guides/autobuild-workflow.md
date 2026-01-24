@@ -564,6 +564,7 @@ guardkit autobuild task TASK-XXX [OPTIONS]
 | `--sdk-timeout N` | 900 | SDK timeout in seconds (60-3600) |
 | `--no-pre-loop` | false | Skip design phase (Phases 1.6-2.8) |
 | `--skip-arch-review` | false | Skip architectural review quality gate |
+| `--ablation` | false | Run in ablation mode (no Coach feedback) for testing |
 
 **Exit Codes:**
 - `0`: Success (Coach approved)
@@ -588,6 +589,9 @@ guardkit autobuild task TASK-FIX-001 --no-pre-loop
 
 # Extended timeout for large implementations
 guardkit autobuild task TASK-REFACTOR-001 --sdk-timeout 1800
+
+# Ablation mode for testing (demonstrates system without Coach feedback)
+guardkit autobuild task TASK-AUTH-001 --ablation
 ```
 
 ---
@@ -982,6 +986,119 @@ GUARDKIT_LOG_LEVEL=DEBUG guardkit autobuild task TASK-XXX 2>&1 | tee autobuild.l
 | Tests always fail | Test setup issues | Check test infrastructure in worktree |
 | Coach never approves | Acceptance criteria too strict | Review task requirements |
 | Worktree conflicts | Previous run artifacts | Use `--fresh` flag |
+
+---
+
+## Ablation Mode
+
+### What is Ablation Mode?
+
+Ablation mode (`--ablation`) is a testing mode that disables Coach feedback to validate the Block AI research finding that adversarial cooperation is essential for quality code generation.
+
+**Purpose**: Demonstrate that the Player-only system produces inferior results compared to the full Player-Coach adversarial loop.
+
+### How Ablation Mode Works
+
+```
+Normal Mode:
+┌────────────┐     ┌────────────┐
+│   Player   │────▶│   Coach    │
+│  Implements│     │  Validates │
+└────────────┘     └────────────┘
+      ▲                  │
+      │    Feedback      │
+      └──────────────────┘
+   (iterative improvement)
+
+Ablation Mode:
+┌────────────┐
+│   Player   │ (Coach disabled)
+│  Implements│
+└────────────┘
+      │
+      └─▶ Auto-approve (no feedback)
+```
+
+### Using Ablation Mode
+
+```bash
+# Run task in ablation mode
+guardkit autobuild task TASK-AUTH-001 --ablation
+
+# Compare with normal mode
+guardkit autobuild task TASK-AUTH-001  # Normal mode with Coach
+```
+
+### Expected Outcomes
+
+When running in ablation mode, expect:
+
+| Metric | Normal Mode | Ablation Mode |
+|--------|-------------|---------------|
+| **Success Rate** | Higher | Lower |
+| **Code Quality** | Better architecture | More technical debt |
+| **Test Coverage** | Comprehensive | Incomplete |
+| **Iterations** | 2-5 turns | 1 turn (premature success) |
+| **Edge Cases** | Handled | Missed |
+
+### Warning Banner
+
+When ablation mode is active, you'll see:
+
+```
+================================================================================
+⚠️  ABLATION MODE ACTIVE
+================================================================================
+Coach feedback is DISABLED. This mode is for testing only.
+Expected outcomes:
+  • Higher failure rate (no feedback loop)
+  • Lower code quality (no architectural review)
+  • More turns needed (no guidance toward convergence)
+This validates Block AI research findings.
+================================================================================
+```
+
+### Validating Block Research Findings
+
+The Block AI research paper ["Adversarial Cooperation in Code Synthesis"](https://block.xyz/documents/adversarial-cooperation-in-code-synthesis.pdf) includes ablation studies showing:
+
+> "When coach feedback was withheld, the player went 4 rounds of implementations with missing feedback. On each iteration it spontaneously found things to improve, however the final implementation was non-functional."
+
+Ablation mode allows you to reproduce these findings in GuardKit, demonstrating:
+
+1. **Anchoring Bias**: Without Coach feedback, Player drifts from original requirements
+2. **Premature Success**: Player declares completion despite missing functionality
+3. **Circular Verification**: Player cannot objectively assess its own work
+4. **Context Pollution**: Error accumulation without fresh perspective
+
+### Comparison Testing
+
+To validate adversarial cooperation benefits, run the same task in both modes:
+
+```bash
+# Normal mode (with Coach)
+guardkit autobuild task TASK-TEST-001 --verbose > normal_mode.log
+
+# Ablation mode (no Coach)
+guardkit autobuild task TASK-TEST-001 --ablation --verbose > ablation_mode.log
+
+# Compare results
+diff normal_mode.log ablation_mode.log
+```
+
+### Use Cases
+
+**Do use ablation mode for**:
+- Validating Block research findings
+- Demonstrating the value of adversarial cooperation
+- A/B testing implementation quality
+- Research and academic analysis
+
+**Don't use ablation mode for**:
+- Production code generation
+- Real feature implementation
+- Tasks requiring high quality
+- Critical or security-sensitive code
 
 ---
 
