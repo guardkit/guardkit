@@ -155,7 +155,7 @@ def autobuild():
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (60-3600). Defaults to task frontmatter autobuild.sdk_timeout or 600",
+    help="SDK timeout in seconds (60-3600). Defaults to task frontmatter autobuild.sdk_timeout or 900",
 )
 @click.option(
     "--no-pre-loop",
@@ -267,7 +267,7 @@ def task(
         effective_mode = autobuild_config.get("mode", "tdd")
     logger.info(f"Development mode: {effective_mode}")
 
-    # Validate and resolve SDK timeout: CLI flag > task frontmatter > default (600)
+    # Validate and resolve SDK timeout: CLI flag > task frontmatter > default (900)
     if sdk_timeout is not None and not (60 <= sdk_timeout <= 3600):
         raise click.BadParameter(
             "SDK timeout must be between 60 and 3600 seconds",
@@ -275,7 +275,7 @@ def task(
         )
     effective_sdk_timeout = sdk_timeout
     if effective_sdk_timeout is None:
-        effective_sdk_timeout = autobuild_config.get("sdk_timeout", 600)
+        effective_sdk_timeout = autobuild_config.get("sdk_timeout", 900)
     logger.info(f"SDK timeout: {effective_sdk_timeout}s")
 
     # Resolve skip_arch_review: CLI flag > task frontmatter > default (False)
@@ -447,7 +447,7 @@ def status(ctx, task_id: str, verbose: bool):
     "sdk_timeout",
     default=None,
     type=int,
-    help="SDK timeout in seconds (60-3600). Defaults to feature YAML autobuild.sdk_timeout or 600",
+    help="SDK timeout in seconds (60-3600). Defaults to feature YAML autobuild.sdk_timeout or 900",
 )
 @click.option(
     "--enable-pre-loop/--no-pre-loop",

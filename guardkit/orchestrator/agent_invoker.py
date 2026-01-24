@@ -91,10 +91,10 @@ async def async_heartbeat(
 # instead of direct SDK invocation
 USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "false").lower() == "true"
 
-# SDK timeout in seconds (default: 1800s/30min, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
+# SDK timeout in seconds (default: 900s/15min, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
 # With pre-loop disabled for feature-build (TASK-FB-FIX-015), the loop phase needs ~600-900s.
-# A 1800s default provides adequate headroom for Player-Coach iterations.
-DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1800"))
+# A 900s default aligns with orchestrator defaults and provides adequate headroom.
+DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "900"))
 
 # Player report schema - required fields
 PLAYER_REPORT_SCHEMA = {
@@ -441,7 +441,7 @@ class AgentInvoker:
             max_turns_per_agent: Maximum turns per agent invocation (default: 30)
             player_model: Model to use for Player agent (default: claude-sonnet-4-5)
             coach_model: Model to use for Coach agent (default: claude-sonnet-4-5)
-            sdk_timeout_seconds: Timeout for SDK invocations (default: 600s)
+            sdk_timeout_seconds: Timeout for SDK invocations (default: 900s)
             use_task_work_delegation: If True, delegate Player to task-work instead of
                 direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
             development_mode: Development mode for implementation (default: "tdd").

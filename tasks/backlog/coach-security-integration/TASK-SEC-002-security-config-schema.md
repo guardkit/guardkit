@@ -1,23 +1,32 @@
 ---
 id: TASK-SEC-002
 title: Add security configuration schema
-status: backlog
-created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T16:15:00Z
+status: pending
+task_type: feature
+created: 2026-01-24T15:00:00Z
+updated: 2026-01-24T15:00:00Z
 priority: high
 tags: [security, configuration, schema, autobuild]
 complexity: 3
 parent_review: TASK-REV-SEC1
+feature_id: FEAT-SEC
 implementation_mode: task-work
-estimated_hours: 1-2
+estimated_minutes: 90
 wave: 1
 conductor_workspace: coach-security-wave1-2
 dependencies: []
-enhanced_by: TASK-REV-SEC2
-claude_code_techniques:
-  - hard-exclusion-categories
-  - file-type-filtering
-  - environment-toggle
+acceptance_criteria:
+  - SecurityConfig dataclass with all fields
+  - SecurityLevel enum with strict, standard, minimal, skip values
+  - Task frontmatter security section parsed correctly
+  - Feature YAML security section parsed correctly
+  - Global config autobuild.security section parsed correctly
+  - Configuration merging with correct precedence (task > feature > global)
+  - Default values applied correctly
+  - Unit tests for configuration loading
+  - exclude_categories field with default DOS, rate-limiting, resource-management
+  - exclude_patterns field for file pattern exclusions
+  - Environment variable override GUARDKIT_SECURITY_SKIP
 ---
 
 # TASK-SEC-002: Add Security Configuration Schema

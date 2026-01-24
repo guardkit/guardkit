@@ -1,42 +1,66 @@
 ---
 id: TASK-SEC-005
-title: Add security validation tests
-status: backlog
-created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T16:15:00Z
+title: Add security validation tests for revised architecture
+status: pending
+task_type: testing
+created: 2026-01-24T15:00:00Z
+updated: 2026-01-24T17:00:00Z
 priority: high
-tags: [security, testing, quality-gates, autobuild]
+tags: [security, testing, quality-gates, pre-loop, task-work, autobuild]
 complexity: 5
 parent_review: TASK-REV-SEC1
+feature_id: FEAT-SEC
 implementation_mode: task-work
-estimated_hours: 2-3
+estimated_minutes: 180
 wave: 3
 conductor_workspace: coach-security-wave3-1
-dependencies: [TASK-SEC-001, TASK-SEC-002, TASK-SEC-003, TASK-SEC-004]
-enhanced_by: TASK-REV-SEC2
-claude_code_techniques:
-  - false-positive-tests
-  - confidence-threshold-tests
-  - exclusion-category-tests
+dependencies:
+  - TASK-SEC-001
+  - TASK-SEC-002
+  - TASK-SEC-003
+  - TASK-SEC-004
+acceptance_criteria:
+  - 20+ unit tests for quick checks (SecurityChecker)
+  - 10+ unit tests for configuration (SecurityConfig)
+  - 15+ unit tests for detection logic (should_run_full_review)
+  - 5+ integration tests for pre-loop security review (Phase 2.5C)
+  - 5+ integration tests for task-work quick scan (Phase 4.3)
+  - 3+ integration tests for Coach read-only security verification
+  - Test fixtures for vulnerable and safe code
+  - All tests pass
+  - Coverage greater than 90% for security modules
+  - Tests run in less than 60 seconds total
+  - 8+ tests for false positive filtering
+  - Tests for confidence threshold of 0.8
+  - Tests for exclusion categories including DOS and rate limiting
+  - Tests verify Coach does NOT invoke agents
 ---
 
-# TASK-SEC-005: Add Security Validation Tests
+# TASK-SEC-005: Add Security Validation Tests for Revised Architecture
 
 ## Description
 
-Create comprehensive test coverage for all security validation features: quick checks, configuration, full review invocation, and tag detection.
+**REVISED ARCHITECTURE (from TASK-REV-4B0F)**: Tests must verify the new architecture where:
+- Full security review runs in **pre-loop** (Phase 2.5C) via TaskWorkInterface
+- Quick security scan runs in **task-work** (Phase 4.3)
+- Coach only **reads** security results (no agent invocation)
+
+Create comprehensive test coverage for all security validation features with the new integration points.
 
 ## Requirements
 
-1. Unit tests for `SecurityChecker` class
+1. Unit tests for `SecurityChecker` class (quick checks)
 2. Unit tests for `SecurityConfig` dataclass
 3. Unit tests for `should_run_full_review()` function
-4. Integration tests for Coach validation with security
-5. Mock tests for security-specialist invocation
-6. Test fixtures for vulnerable code samples
-7. **[From TASK-REV-SEC2]** False positive filtering tests
-8. **[From TASK-REV-SEC2]** Confidence threshold tests
-9. **[From TASK-REV-SEC2]** Exclusion category tests (DOS, rate limiting, etc.)
+4. Integration tests for **pre-loop** security review (Phase 2.5C)
+5. Integration tests for **task-work** quick scan (Phase 4.3)
+6. Integration tests for **Coach read-only** verification
+7. Mock tests for security-specialist invocation via TaskWorkInterface
+8. Test fixtures for vulnerable code samples
+9. **[From TASK-REV-SEC2]** False positive filtering tests
+10. **[From TASK-REV-SEC2]** Confidence threshold tests
+11. **[From TASK-REV-SEC2]** Exclusion category tests (DOS, rate limiting, etc.)
+12. **[From TASK-REV-4B0F]** Tests verifying Coach does NOT invoke agents
 
 ## Test Structure
 
@@ -45,11 +69,13 @@ tests/
 ├── unit/
 │   ├── test_security_checker.py       # Quick checks
 │   ├── test_security_config.py        # Configuration
-│   ├── test_security_detection.py     # Tag/keyword detection
-│   ├── test_security_invocation.py    # Full review (mocked)
+│   ├── test_security_detection.py     # Tag/keyword detection (pre-loop)
+│   ├── test_security_review.py        # Full review response parsing
 │   └── test_security_filtering.py     # [From TASK-REV-SEC2] False positive filtering
 ├── integration/
-│   └── test_coach_security.py         # Coach + security flow
+│   ├── test_pre_loop_security.py      # Pre-loop Phase 2.5C tests (NEW)
+│   ├── test_task_work_security.py     # Task-work Phase 4.3 tests (NEW)
+│   └── test_coach_security.py         # Coach read-only verification (REVISED)
 └── fixtures/
     └── security/
         ├── vulnerable_code/            # Samples with issues
@@ -269,37 +295,121 @@ class TestFalsePositiveFiltering:
         assert should_exclude_file("README.md") is True
 ```
 
-### 5. Integration Tests (`test_coach_security.py`)
+### 5. Pre-Loop Security Integration Tests (`test_pre_loop_security.py`)
 
 ```python
-class TestCoachSecurityIntegration:
-    """Test Coach validator with security checks."""
+# [From TASK-REV-4B0F] Tests for revised pre-loop architecture
+class TestPreLoopSecurityIntegration:
+    """Test pre-loop security review (Phase 2.5C)."""
 
-    async def test_critical_finding_blocks_approval(self, coach_validator):
-        """Critical security finding should block approval."""
-        # Create worktree with hardcoded secret
-        write_file(coach_validator.worktree_path / "config.py",
-                   'SECRET_KEY = "insecure-key-123"')
+    async def test_security_tagged_task_triggers_review(self, pre_loop_gates):
+        """Security-tagged task should trigger full review in pre-loop."""
+        task = {"id": "TASK-001", "tags": ["authentication"]}
 
-        task = {"id": "TASK-001", "acceptance_criteria": []}
-        result = await coach_validator.validate("TASK-001", 1, task)
+        result = await pre_loop_gates.execute("TASK-001", task)
 
-        assert result.decision == "feedback"
-        assert any("security" in str(i) for i in result.issues)
+        assert result.security_review_executed is True
+        assert (pre_loop_gates.worktree_path / ".guardkit" / "security_review_results.json").exists()
 
-    async def test_clean_code_passes_security(self, coach_validator):
-        """Clean code should pass security checks."""
-        # Create worktree with safe code
-        write_file(coach_validator.worktree_path / "config.py",
-                   'SECRET_KEY = os.environ["SECRET_KEY"]')
+    async def test_non_security_task_skips_review(self, pre_loop_gates):
+        """Non-security task should skip full review."""
+        task = {"id": "TASK-001", "tags": ["ui", "component"]}
 
-        task = {"id": "TASK-001", "acceptance_criteria": []}
-        # Mock task-work results as passing
-        mock_task_work_results(coach_validator, passing=True)
+        result = await pre_loop_gates.execute("TASK-001", task)
 
-        result = await coach_validator.validate("TASK-001", 1, task)
+        assert result.security_review_executed is False
 
-        assert result.decision == "approve"
+    async def test_security_review_via_task_work_interface(self, pre_loop_gates, mock_task_interface):
+        """Full review should invoke security-specialist via TaskWorkInterface."""
+        task = {"id": "TASK-001", "tags": ["authentication"]}
+
+        await pre_loop_gates.execute("TASK-001", task)
+
+        mock_task_interface.execute_security_review.assert_called_once()
+```
+
+### 6. Task-Work Security Integration Tests (`test_task_work_security.py`)
+
+```python
+# [From TASK-REV-4B0F] Tests for Phase 4.3 quick scan
+class TestTaskWorkSecurityIntegration:
+    """Test task-work quick security scan (Phase 4.3)."""
+
+    async def test_quick_scan_runs_after_tests(self, task_work_executor):
+        """Quick security scan should run after tests pass."""
+        result = await task_work_executor.execute("TASK-001", {})
+
+        assert "security" in result.task_work_results
+        assert result.task_work_results["security"]["quick_check_passed"] is True
+
+    async def test_critical_finding_blocks_progression(self, task_work_executor, temp_worktree):
+        """Critical finding should block task progression."""
+        write_file(temp_worktree / "config.py", 'API_KEY = "sk-12345"')
+
+        result = await task_work_executor.execute("TASK-001", {})
+
+        assert result.blocked is True
+        assert result.block_reason == "Critical security vulnerabilities detected"
+
+    async def test_results_written_to_task_work_results(self, task_work_executor):
+        """Quick scan results should be in task_work_results.json."""
+        result = await task_work_executor.execute("TASK-001", {})
+
+        assert "findings_count" in result.task_work_results["security"]
+        assert "critical_count" in result.task_work_results["security"]
+```
+
+### 7. Coach Read-Only Security Tests (`test_coach_security.py`)
+
+```python
+# [From TASK-REV-4B0F] Tests verifying Coach ONLY reads security results
+class TestCoachSecurityReadOnly:
+    """Test Coach validator reads (not generates) security results."""
+
+    def test_coach_reads_security_from_results(self, coach_validator):
+        """Coach should read security results from task_work_results.json."""
+        task_work_results = {
+            "security": {
+                "quick_check_passed": True,
+                "findings_count": 0,
+                "critical_count": 0,
+            }
+        }
+
+        status = coach_validator.verify_quality_gates(task_work_results)
+
+        assert status.security_passed is True
+
+    def test_coach_fails_on_critical_findings(self, coach_validator):
+        """Coach should fail security gate on critical findings."""
+        task_work_results = {
+            "security": {
+                "quick_check_passed": False,
+                "critical_count": 1,
+            }
+        }
+
+        status = coach_validator.verify_quality_gates(task_work_results)
+
+        assert status.security_passed is False
+
+    def test_coach_does_not_invoke_security_specialist(self, coach_validator):
+        """CRITICAL: Coach must NOT invoke security-specialist agent."""
+        # Verify Coach has no Task tool or agent invocation capability
+        assert not hasattr(coach_validator, 'invoke_security_specialist')
+        assert not hasattr(coach_validator, 'invoke_task')
+
+        # Coach should only have read-only verification methods
+        assert hasattr(coach_validator, 'verify_quality_gates')
+
+    def test_coach_handles_missing_security_results(self, coach_validator):
+        """Coach should handle missing security results gracefully."""
+        task_work_results = {}  # No security key
+
+        status = coach_validator.verify_quality_gates(task_work_results)
+
+        # Default to passed when no security results (backward compatibility)
+        assert status.security_passed is True
 ```
 
 ## Acceptance Criteria
@@ -307,7 +417,9 @@ class TestCoachSecurityIntegration:
 - [ ] 20+ unit tests for quick checks
 - [ ] 10+ unit tests for configuration
 - [ ] 15+ unit tests for detection logic
-- [ ] 5+ integration tests for Coach flow
+- [ ] 5+ integration tests for pre-loop security review (Phase 2.5C)
+- [ ] 5+ integration tests for task-work quick scan (Phase 4.3)
+- [ ] 3+ integration tests for Coach read-only verification
 - [ ] Test fixtures for vulnerable/safe code
 - [ ] All tests pass
 - [ ] Coverage > 90% for security modules
@@ -315,6 +427,7 @@ class TestCoachSecurityIntegration:
 - [ ] **[From TASK-REV-SEC2]** 8+ tests for false positive filtering
 - [ ] **[From TASK-REV-SEC2]** Tests for confidence threshold (0.8)
 - [ ] **[From TASK-REV-SEC2]** Tests for exclusion categories (DOS, rate limiting, etc.)
+- [ ] **[From TASK-REV-4B0F]** Tests verify Coach does NOT invoke agents
 
 ## Test Fixtures
 
@@ -345,6 +458,15 @@ fixtures/security/safe_code/
 - Actual security-specialist agent testing (mocked)
 - Performance benchmarking beyond basic checks
 - Fuzzing/property-based testing
+
+## Key Architecture Verification
+
+**[From TASK-REV-4B0F]** Tests MUST verify:
+
+1. **Pre-loop owns security review**: `PreLoopQualityGates.execute()` calls `TaskWorkInterface.execute_security_review()`
+2. **Task-work owns quick scan**: Phase 4.3 runs `SecurityChecker.run_quick_checks()`
+3. **Coach is read-only**: `CoachValidator.verify_quality_gates()` only reads `task_work_results["security"]`
+4. **No agent invocation in Coach**: Coach has NO Task tool, NO `invoke_task()` method
 
 ## Claude Code Reference
 

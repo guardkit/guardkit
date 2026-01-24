@@ -1,10 +1,11 @@
 ---
 id: TASK-FIX-SDKT
 title: Harmonize SDK timeout defaults to 900s across codebase
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-01-24T11:00:00Z
 updated: 2026-01-24T11:00:00Z
+completed: 2026-01-24T12:15:00Z
 priority: medium
 tags: [feature-build, sdk-timeout, configuration, consistency]
 complexity: 2
@@ -77,11 +78,11 @@ sdk_timeout_seconds: Timeout for SDK invocations (default: 900s)
 
 ## Acceptance Criteria
 
-- [ ] All 4 locations updated to reference 900s as default
-- [ ] `guardkit autobuild task --help` shows 900s
-- [ ] `guardkit autobuild feature --help` shows 900s
-- [ ] Test run without `--sdk-timeout` flag shows `SDK timeout: 900s` in logs
-- [ ] Existing tests pass
+- [x] All 4 locations updated to reference 900s as default
+- [x] `guardkit autobuild task --help` shows 900s
+- [x] `guardkit autobuild feature --help` shows 900s
+- [x] Test run without `--sdk-timeout` flag shows `SDK timeout: 900s` in logs
+- [x] Existing tests pass (23 SDK-timeout related tests pass)
 
 ## Test Plan
 

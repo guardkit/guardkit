@@ -45,10 +45,10 @@ from guardkit.orchestrator.quality_gates.exceptions import (
 
 logger = logging.getLogger(__name__)
 
-# SDK timeout in seconds (default: 1800s/30min, can be overridden via env var or constructor)
+# SDK timeout in seconds (default: 900s/15min, can be overridden via env var or constructor)
 # With pre-loop disabled for feature-build (TASK-FB-FIX-015), the loop phase needs ~600-900s.
-# A 1800s default provides adequate headroom for design phases and Player-Coach iterations.
-DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1800"))
+# A 900s default aligns with orchestrator defaults and provides adequate headroom.
+DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "900"))
 
 
 @dataclass

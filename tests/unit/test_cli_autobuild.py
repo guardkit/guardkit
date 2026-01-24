@@ -905,7 +905,7 @@ def test_task_command_sdk_timeout_default_value(
     mock_task_data,
     mock_success_result,
 ):
-    """Test task command uses default sdk_timeout (600) when not specified."""
+    """Test task command uses default sdk_timeout (900) when not specified (TASK-FIX-SDKT)."""
     mock_load_task.return_value = mock_task_data
 
     mock_orchestrator = MagicMock()
@@ -915,10 +915,10 @@ def test_task_command_sdk_timeout_default_value(
     # Execute without sdk-timeout option
     result = cli_runner.invoke(task, ["TASK-AB-001"])
 
-    # Verify orchestrator initialized with default sdk_timeout (600)
+    # Verify orchestrator initialized with default sdk_timeout (900 per TASK-FIX-SDKT)
     mock_orchestrator_class.assert_called_once()
     call_kwargs = mock_orchestrator_class.call_args[1]
-    assert call_kwargs["sdk_timeout"] == 600
+    assert call_kwargs["sdk_timeout"] == 900
 
 
 @patch("guardkit.cli.autobuild._require_sdk")

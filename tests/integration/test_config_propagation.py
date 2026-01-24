@@ -233,14 +233,14 @@ class TestSdkTimeoutPropagation:
         assert interface.sdk_timeout_seconds == 900
 
     def test_task_work_interface_default_timeout(self, mock_worktree):
-        """TaskWorkInterface uses default 600s when not specified."""
+        """TaskWorkInterface uses default 900s when not specified (TASK-FIX-SDKT)."""
         # Arrange & Act
         interface = TaskWorkInterface(
             worktree_path=mock_worktree.path,
         )
 
         # Assert
-        assert interface.sdk_timeout_seconds == 600
+        assert interface.sdk_timeout_seconds == 900
 
     @pytest.mark.asyncio
     async def test_sdk_timeout_passed_to_execute_design_phase(
@@ -638,15 +638,15 @@ class TestEdgeCases:
     """Test edge cases and error handling for config propagation."""
 
     def test_none_sdk_timeout_uses_default(self, mock_worktree):
-        """None sdk_timeout falls through to default 600."""
+        """None sdk_timeout falls through to default 900 (TASK-FIX-SDKT)."""
         # Arrange & Act
         gates = PreLoopQualityGates(
             worktree_path=str(mock_worktree.path),
-            sdk_timeout=600,  # Default value
+            sdk_timeout=900,  # Default value per TASK-FIX-SDKT
         )
 
         # Assert
-        assert gates._interface.sdk_timeout_seconds == 600
+        assert gates._interface.sdk_timeout_seconds == 900
 
     def test_missing_autobuild_section_in_task(
         self, temp_repo_with_feature, sample_feature, mock_worktree_manager

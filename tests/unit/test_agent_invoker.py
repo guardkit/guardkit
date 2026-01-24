@@ -130,7 +130,7 @@ class TestAgentInvokerInit:
         assert invoker.max_turns_per_agent == 30
         assert invoker.player_model == "claude-sonnet-4-5-20250929"
         assert invoker.coach_model == "claude-sonnet-4-5-20250929"
-        assert invoker.sdk_timeout_seconds == 1800  # Updated default per TASK-FB-FIX-016
+        assert invoker.sdk_timeout_seconds == 900  # Harmonized default per TASK-FIX-SDKT
         assert invoker.development_mode == "tdd"  # Default is tdd
 
     def test_init_with_custom_values(self, worktree_path):

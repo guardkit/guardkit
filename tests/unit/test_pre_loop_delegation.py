@@ -1114,11 +1114,11 @@ class TestPreLoopResult:
 class TestSdkTimeoutPropagation:
     """Test sdk_timeout propagation through PreLoopQualityGates."""
 
-    def test_default_sdk_timeout_is_600(self, tmp_worktree):
-        """Test default sdk_timeout is 600 seconds."""
+    def test_default_sdk_timeout_is_900(self, tmp_worktree):
+        """Test default sdk_timeout is 900 seconds (TASK-FIX-SDKT)."""
         gates = PreLoopQualityGates(worktree_path=str(tmp_worktree))
 
-        assert gates.sdk_timeout == 600
+        assert gates.sdk_timeout == 900
 
     def test_custom_sdk_timeout_stored(self, tmp_worktree):
         """Test custom sdk_timeout is stored in instance."""

@@ -1,0 +1,50 @@
+# Docker Compose for MCP Server Development
+#
+# Usage:
+#   docker-compose up -d      # Start server
+#   docker-compose logs -f    # View logs
+#   docker-compose down       # Stop server
+
+version: '3.8'
+
+services:
+  mcp-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: mcp-server-template
+    environment:
+      - LOG_LEVEL=DEBUG
+      # OAuth configuration (for HTTP/SSE transport)
+      - OAUTH_ISSUER=${OAUTH_ISSUER:-}
+      - OAUTH_AUDIENCE=${OAUTH_AUDIENCE:-}
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID:-}
+      - MCP_RESOURCE_INDICATOR=${MCP_RESOURCE_INDICATOR:-}
+    volumes:
+      # Mount source for development (remove in production)
+      - ../src:/app/src:ro
+    # For STDIO transport, use stdin_open and tty
+    stdin_open: true
+    tty: true
+    # For HTTP/SSE transport, expose port
+    # ports:
+    #   - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Redis for caching (if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: mcp-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+# volumes:
+#   redis_data:

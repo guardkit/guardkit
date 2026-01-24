@@ -136,7 +136,7 @@ class PreLoopQualityGates:
         self,
         worktree_path: str,
         interface: Optional[TaskWorkInterface] = None,
-        sdk_timeout: int = 600,
+        sdk_timeout: int = 900,
         skip_arch_review: bool = False,
     ):
         """
@@ -149,7 +149,7 @@ class PreLoopQualityGates:
         interface : Optional[TaskWorkInterface]
             Optional interface for dependency injection (testing)
         sdk_timeout : int
-            SDK timeout in seconds for agent invocations (default: 600)
+            SDK timeout in seconds for agent invocations (default: 900)
         skip_arch_review : bool
             Skip architectural review quality gate (default: False)
         """

@@ -1,46 +1,172 @@
 ---
 id: TASK-SEC-003
-title: Implement security-specialist invocation
-status: backlog
-created: 2025-12-31T14:45:00Z
-updated: 2025-12-31T16:15:00Z
+title: Implement pre-loop security review via TaskWorkInterface
+status: pending
+task_type: feature
+created: 2026-01-24T15:00:00Z
+updated: 2026-01-24T17:00:00Z
 priority: high
-tags: [security, coach-agent, security-specialist, autobuild]
+tags: [security, pre-loop, task-work-interface, security-specialist, autobuild]
 complexity: 6
 parent_review: TASK-REV-SEC1
+feature_id: FEAT-SEC
 implementation_mode: task-work
-estimated_hours: 3-4
+estimated_minutes: 240
 wave: 2
 conductor_workspace: coach-security-wave2-1
-dependencies: [TASK-SEC-001, TASK-SEC-002]
-enhanced_by: TASK-REV-SEC2
-claude_code_techniques:
-  - ten-category-taxonomy
-  - confidence-scoring
-  - post-filtering
-  - structured-prompt
+dependencies:
+  - TASK-SEC-001
+  - TASK-SEC-002
+acceptance_criteria:
+  - Phase 2.5C security pre-check added to pre_loop.py
+  - TaskWorkInterface.execute_security_review() async method implemented
+  - Structured prompt includes task context
+  - Response parsed into SecurityFinding objects
+  - Results saved to security_review_results.json
+  - Phase 4.3 quick security scan added to task-work flow
+  - Quick scan results written to task_work_results.json["security"]
+  - Timeout handling with default 300s for full review
+  - Error handling for agent failures
+  - 10-category vulnerability taxonomy in prompt
+  - Confidence scoring in SecurityFinding with filter below 0.8
+  - Post-filtering for DOS, rate limiting, resource management
+  - Coach only READS security results (no agent invocation)
+  - Unit tests for prompt building and response parsing
+  - Integration test with mock agent response
 ---
 
-# TASK-SEC-003: Implement Security-Specialist Invocation
+# TASK-SEC-003: Implement Pre-Loop Security Review via TaskWorkInterface
 
 ## Description
 
-Add the ability for Coach agent to invoke the security-specialist agent for comprehensive security review. This is triggered conditionally based on task tags, keywords, or explicit configuration.
+**REVISED ARCHITECTURE (from TASK-REV-4B0F)**: Security-specialist invocation was originally designed to run in Coach, but this violates Coach's read-only architecture. Coach has tools [Read, Bash, Grep, Glob] - NO Task tool.
+
+This task now implements security review at two points:
+1. **Phase 2.5C (Pre-Loop)**: Full security review for security-tagged tasks, invoked via TaskWorkInterface
+2. **Phase 4.3 (Task-Work)**: Quick security scan after tests pass
+
+Coach's role is simplified to **reading** security results from `task_work_results.json["security"]`.
+
+## Architecture Overview
+
+```
+REVISED ARCHITECTURE (TASK-REV-4B0F):
+
+Pre-Loop Quality Gates (Phase 2.5C - Security Pre-Check)
+    |
+    +-- Load task metadata (tags, security config)
+    +-- IF security-tagged: Run full security review
+    |       +-- Invoke security-specialist (via TaskWorkInterface)
+    +-- Store security_review_results.json
+              |
+              v
+Player (task-work --implement-only)
+    |
+    +-- Implementation (Phase 3)
+    |
+    +-- Quick Security Scan (Phase 4.3 - NEW)
+    |       +-- SecurityChecker.run_quick_checks()
+    |       +-- Write to task_work_results.json
+    |
+    +-- Quality Gates (Phase 4-5.5)
+              |
+              v
+Coach (validation)
+    |
+    +-- Read task-work results (including security findings)
+    +-- Verify security gates passed
+    |       +-- results["security"]["all_passed"] == true
+    |
+    +-- Approve/Feedback (NO agent invocation)
+```
 
 ## Requirements
 
-1. Create `invoke_security_specialist()` function
-2. Build structured prompt with task context
-3. Parse security-specialist response into findings
-4. Integrate with Coach validation flow
-5. Handle timeout and error cases
-6. **[From TASK-REV-SEC2]** Use 10-category vulnerability taxonomy from Claude Code
-7. **[From TASK-REV-SEC2]** Add confidence scoring (filter below 0.8)
-8. **[From TASK-REV-SEC2]** Implement post-filtering for false positives
+1. Add Phase 2.5C security pre-check to `pre_loop.py`
+2. Implement `TaskWorkInterface.execute_security_review()` method
+3. Build structured prompt with task context
+4. Parse security-specialist response into findings
+5. Save security review results to `security_review_results.json`
+6. Add Phase 4.3 quick security scan to task-work flow
+7. Write quick scan results to `task_work_results.json["security"]`
+8. Update Coach to read (not generate) security results
+9. **[From TASK-REV-SEC2]** Use 10-category vulnerability taxonomy from Claude Code
+10. **[From TASK-REV-SEC2]** Add confidence scoring (filter below 0.8)
+11. **[From TASK-REV-SEC2]** Implement post-filtering for false positives
 
-## Security-Specialist Invocation
+## Implementation Components
 
-### Prompt Template
+### 1. Pre-Loop Security Review (Phase 2.5C)
+
+```python
+# In guardkit/orchestrator/quality_gates/pre_loop.py
+
+class PreLoopQualityGates:
+    """Pre-loop quality gates including security pre-check."""
+
+    async def execute(self, task_id: str, options: Dict[str, Any]) -> PreLoopResult:
+        """Execute pre-loop quality gates."""
+        # Existing gates (Phases 2.5A, 2.5B)...
+        design_result = await self._interface.execute_design_phase(...)
+
+        # NEW: Phase 2.5C - Security Pre-Check
+        if self._should_run_security_review(task):
+            security_result = await self._run_security_review(task)
+            self._save_security_review_result(task_id, security_result)
+
+        return self._extract_pre_loop_results(...)
+
+    def _should_run_security_review(self, task: dict) -> bool:
+        """Check if task requires full security review (delegates to TASK-SEC-004)."""
+        from .security_detection import should_run_full_review
+        config = self._load_security_config(task)
+        return should_run_full_review(task, config)
+
+    async def _run_security_review(self, task: dict) -> SecurityReviewResult:
+        """Invoke security-specialist via TaskWorkInterface."""
+        return await self._interface.execute_security_review(task)
+
+    def _save_security_review_result(self, task_id: str, result: SecurityReviewResult) -> None:
+        """Save security review results for later consumption."""
+        output_path = self.worktree_path / ".guardkit" / "security_review_results.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(result.to_dict(), indent=2))
+```
+
+### 2. TaskWorkInterface Security Review Method
+
+```python
+# In guardkit/orchestrator/quality_gates/task_work_interface.py
+
+class TaskWorkInterface:
+    """Interface for invoking task-work phases."""
+
+    async def execute_security_review(self, task: dict) -> SecurityReviewResult:
+        """
+        Run full security review for security-tagged tasks.
+
+        This is where the Task tool invocation is appropriate - TaskWorkInterface
+        has the Task tool available, unlike Coach which is read-only.
+
+        Args:
+            task: Task dictionary with id, title, tags
+
+        Returns:
+            SecurityReviewResult with findings
+        """
+        prompt = self._build_security_review_prompt(task)
+
+        result = await self.invoke_task(
+            subagent_type="security-specialist",
+            description=f"Security review for {task.get('id')}",
+            prompt=prompt,
+            timeout=300
+        )
+
+        return self._parse_security_review_result(result)
+```
+
+### 3. Prompt Template
 
 ```python
 # [From TASK-REV-SEC2] Structured prompt based on Claude Code security-review
@@ -88,55 +214,77 @@ If no issues found, return empty array: []
 """
 ```
 
-### Invocation Function
+### 4. Phase 4.3 Quick Security Scan (in task-work)
 
 ```python
-async def invoke_security_specialist(
-    worktree_path: Path,
-    task: dict,
-    timeout: int = 300
-) -> List[SecurityFinding]:
-    """
-    Invoke security-specialist agent for comprehensive review.
+# In task-work execution flow (Phase 4.3)
 
-    Args:
-        worktree_path: Path to git worktree
-        task: Task dictionary with id, title, tags
-        timeout: Maximum time in seconds
+# Phase 4: Testing
+test_results = run_tests()
 
-    Returns:
-        List of SecurityFinding objects
-    """
-    prompt = SECURITY_REVIEW_PROMPT.format(
-        worktree_path=worktree_path,
-        task_title=task.get("title", ""),
-        task_tags=task.get("tags", [])
+# Phase 4.3: Quick Security Scan (NEW)
+if security_config.level != SecurityLevel.SKIP:
+    security_findings = SecurityChecker(worktree).run_quick_checks()
+    if has_critical_findings(security_findings):
+        return blocked("Critical security vulnerabilities detected")
+
+    task_work_results["security"] = {
+        "quick_check_passed": True,
+        "findings": [f.to_dict() for f in security_findings],
+        "findings_count": len(security_findings),
+        "critical_count": len([f for f in security_findings if f.severity == "critical"]),
+        "high_count": len([f for f in security_findings if f.severity == "high"]),
+    }
+
+# Phase 4.5: Test Enforcement
+...
+```
+
+### 5. Coach Reads Security Results (No Invocation)
+
+```python
+# In guardkit/orchestrator/quality_gates/coach_validator.py
+
+def verify_quality_gates(self, task_work_results: Dict) -> QualityGateStatus:
+    """Verify quality gates including security results."""
+    # Existing gates...
+    tests_passed = ...
+    coverage_met = ...
+
+    # NEW: Read security results (Coach does NOT invoke security-specialist)
+    security = task_work_results.get("security", {})
+    quick_check_passed = security.get("quick_check_passed", True)
+    critical_findings = security.get("critical_count", 0)
+    high_findings = security.get("high_count", 0)
+
+    # Security gate passes if quick checks passed and no critical issues
+    security_passed = quick_check_passed and critical_findings == 0
+
+    return QualityGateStatus(
+        tests_passed=tests_passed,
+        coverage_met=coverage_met,
+        security_passed=security_passed,
+        security_warnings=high_findings,  # High findings generate feedback, not blocking
     )
-
-    result = await invoke_task(
-        subagent_type="security-specialist",
-        description=f"Security review for {task.get('id')}",
-        prompt=prompt,
-        timeout=timeout
-    )
-
-    return parse_security_findings(result)
 ```
 
 ## Acceptance Criteria
 
-- [ ] `invoke_security_specialist()` async function implemented
+- [ ] Phase 2.5C security pre-check added to `pre_loop.py`
+- [ ] `TaskWorkInterface.execute_security_review()` async method implemented
 - [ ] Structured prompt includes task context
 - [ ] Response parsed into `SecurityFinding` objects
-- [ ] Timeout handling (default 300s)
+- [ ] Results saved to `security_review_results.json`
+- [ ] Phase 4.3 quick security scan added to task-work flow
+- [ ] Quick scan results written to `task_work_results.json["security"]`
+- [ ] Timeout handling (default 300s for full review)
 - [ ] Error handling for agent failures
-- [ ] Integration with Coach `validate()` method
-- [ ] Findings categorized by severity
-- [ ] Unit tests for prompt building
-- [ ] Integration test with mock agent response
 - [ ] **[From TASK-REV-SEC2]** 10-category vulnerability taxonomy in prompt
 - [ ] **[From TASK-REV-SEC2]** Confidence scoring in SecurityFinding (filter < 0.8)
 - [ ] **[From TASK-REV-SEC2]** Post-filtering for DOS, rate limiting, resource management
+- [ ] Coach only READS security results from `task_work_results.json`
+- [ ] Unit tests for prompt building and response parsing
+- [ ] Integration tests for pre-loop and task-work security phases
 
 ## Technical Notes
 
@@ -198,56 +346,67 @@ def parse_security_findings(agent_response: str) -> List[SecurityFinding]:
         return []
 ```
 
-### Integration with Coach
+### Key Architecture Change
 
+**BEFORE (Violated Coach Architecture)**:
 ```python
-# In coach_validator.py validate() method
+# In coach_validator.py - WRONG: Coach cannot invoke agents
+full_findings = await invoke_security_specialist(task)  # Coach lacks Task tool
+```
 
-if should_run_full_review(task, security_config):
-    try:
-        full_findings = await invoke_security_specialist(
-            self.worktree_path,
-            task,
-            timeout=security_config.full_review_timeout
-        )
+**AFTER (Correct Architecture)**:
+```python
+# Security invocation happens in pre_loop.py via TaskWorkInterface
+# Coach only reads the results:
 
-        blocking = [f for f in full_findings
-                   if f.severity in ["critical", "high"]]
-
-        if blocking:
-            return self._feedback_result(
-                task_id=task_id,
-                turn=turn,
-                issues=[{
-                    "severity": "must_fix",
-                    "category": "security",
-                    "description": "Security review identified issues",
-                    "findings": [f.to_dict() for f in blocking]
-                }],
-                rationale=f"Security review found {len(blocking)} blocking issues"
-            )
-
-    except asyncio.TimeoutError:
-        logger.warning(f"Security review timed out for {task_id}")
-        # Continue with approval (timeout is not blocking)
+# In coach_validator.py
+security = task_work_results.get("security", {})
+security_passed = security.get("quick_check_passed", True)
 ```
 
 ## Test Cases
 
-1. Successful invocation with findings
-2. Successful invocation with no findings
-3. Timeout handling
-4. Malformed response handling
-5. Agent error handling
-6. JSON extraction from markdown-wrapped response
-7. Correct severity categorization
-8. Integration with Coach flow
+### Pre-Loop Security Review (Phase 2.5C)
+1. Security-tagged task triggers full review in pre-loop
+2. Non-security task skips full review
+3. Full review results saved to `security_review_results.json`
+4. Timeout handling for security-specialist invocation
+5. Error handling for agent failures
+
+### Task-Work Quick Scan (Phase 4.3)
+6. Quick checks run after tests pass
+7. Critical finding blocks task progression
+8. Results written to `task_work_results.json["security"]`
+9. Non-blocking findings generate warnings
+
+### Response Parsing
+10. Successful parsing with findings
+11. Successful parsing with no findings
+12. Malformed response handling
+13. JSON extraction from markdown-wrapped response
+14. Correct severity categorization
+
+### Coach Validation (Read-Only)
+15. Coach reads security results from task_work_results.json
+16. Coach does NOT invoke any agents
+17. Security gate passes when quick_check_passed is true
+18. Security gate fails on critical findings
 
 ## Out of Scope
 
-- Quick checks (TASK-SEC-001)
+- Quick checks implementation (TASK-SEC-001)
 - Configuration schema (TASK-SEC-002)
-- Tag detection (TASK-SEC-004)
+- Tag detection logic (TASK-SEC-004) - but this task uses it
+
+## Files Modified
+
+### New Files
+- `guardkit/orchestrator/quality_gates/security_review.py` - Security review logic
+
+### Modified Files
+- `guardkit/orchestrator/quality_gates/pre_loop.py` - Add Phase 2.5C
+- `guardkit/orchestrator/quality_gates/task_work_interface.py` - Add execute_security_review()
+- `guardkit/orchestrator/quality_gates/coach_validator.py` - Read-only security verification
 
 ## Claude Code Reference
 

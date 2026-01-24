@@ -1,7 +1,7 @@
 # GuardKit Workflow Guide
 
-**Version**: 1.0.0
-**Last Updated**: 2025-11-04
+**Version**: 2.1.0
+**Last Updated**: 2026-01-24
 **Compatibility**: Claude Code with task-work command v1.0+
 **Document Type**: Comprehensive Workflow Guide
 
@@ -13,6 +13,8 @@
 - [What is GuardKit?](#what-is-guardkit)
 - [5-Minute Getting Started](#5-minute-getting-started)
 - [When to Use GuardKit](#when-to-use-guardkit)
+- [Review vs Implementation Workflows](#review-vs-implementation-workflows)
+- [Manual Task-Work vs AutoBuild Delegation](#manual-task-work-vs-autobuild-delegation) 🆕
 
 ### Part 2: Core Workflow (15 Minutes)
 - [The 10 Workflow Phases](#the-10-workflow-phases)
@@ -274,6 +276,11 @@ Use for **analysis** and **decision-making** tasks:
 
 GuardKit supports two ways to execute the task-work workflow:
 
+> **📖 Comprehensive AutoBuild Documentation**
+>
+> For complete AutoBuild documentation including architecture deep-dive, CLI reference,
+> and troubleshooting, see the [AutoBuild Workflow Guide](autobuild-workflow.md).
+
 #### Manual Execution (`/task-work`)
 
 Direct human-driven execution:
@@ -330,6 +337,8 @@ If you see "Claude Agent SDK not installed", install the dependency above.
 - Iterative improvement (up to 5 turns)
 - Player-Coach dialectic
 
+**See Also:** [AutoBuild Architecture](autobuild-workflow.md#part-2-architecture-deep-dive) for technical details on Player-Coach pattern.
+
 #### Comparison Table
 
 | Aspect | Manual Task-Work | AutoBuild Delegation |
@@ -363,6 +372,8 @@ If you see "Claude Agent SDK not installed", install the dependency above.
 - Phase 5.5: Plan Audit (scope creep detection)
 
 The key difference is **who drives execution**: human (manual) or AI (AutoBuild).
+
+**For complete CLI reference:** See [AutoBuild CLI Commands](autobuild-workflow.md#cli-command-reference).
 
 ---
 

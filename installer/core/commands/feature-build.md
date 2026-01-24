@@ -21,12 +21,91 @@ Supports two modes:
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--max-turns N` | Maximum Player-Coach iterations per task | 5 |
+| `--sdk-timeout S` | Claude SDK operation timeout in seconds | 300 |
 | `--resume` | Resume from last saved state | false |
 | `--verbose` | Show detailed turn-by-turn output | false |
 | `--model MODEL` | Claude model to use | claude-sonnet-4-5-20250929 |
 | `--parallel N` | Max parallel tasks (feature mode only) | 1 |
 | `--stop-on-failure` | Stop feature execution on first task failure | true |
 | `--task TASK-ID` | Run specific task within feature (feature mode) | - |
+| `--enable-pre-loop` | Enable pre-loop design phases (feature mode) | false |
+| `--no-pre-loop` | Disable pre-loop design phases (task mode) | false |
+| `--mode MODE` | Development mode: tdd, standard | tdd |
+
+---
+
+## CLI Reference
+
+The `/feature-build` slash command invokes the Python CLI. You can also use the CLI directly from shell.
+
+### From Claude Code (Slash Command)
+
+```bash
+# Single task
+/feature-build TASK-AUTH-001
+
+# With options
+/feature-build TASK-AUTH-001 --max-turns 10 --verbose
+
+# Feature mode
+/feature-build FEAT-A1B2
+```
+
+### From Shell (Python CLI)
+
+```bash
+# Equivalent single task command
+guardkit autobuild task TASK-AUTH-001
+
+# With options
+guardkit autobuild task TASK-AUTH-001 --max-turns 10 --verbose
+
+# Feature mode
+guardkit autobuild feature FEAT-A1B2
+
+# With debug logging
+GUARDKIT_LOG_LEVEL=DEBUG guardkit autobuild feature FEAT-A1B2 --verbose
+
+# Check status of running/completed builds
+guardkit autobuild status FEAT-A1B2
+
+# Complete and merge (after human review)
+guardkit autobuild complete FEAT-A1B2
+```
+
+### CLI Command Reference
+
+| Command | Description |
+|---------|-------------|
+| `guardkit autobuild task TASK-XXX` | Build single task autonomously |
+| `guardkit autobuild feature FEAT-XXX` | Build feature with wave orchestration |
+| `guardkit autobuild status [ID]` | Show build status |
+| `guardkit autobuild complete ID` | Merge approved build to main |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GUARDKIT_LOG_LEVEL` | INFO | Logging verbosity (DEBUG, INFO, WARNING, ERROR) |
+| `GUARDKIT_SDK_TIMEOUT` | 300 | Claude SDK timeout in seconds |
+| `GUARDKIT_MAX_TURNS` | 5 | Default max iterations |
+
+### Installation
+
+AutoBuild requires the optional `claude-agent-sdk` dependency:
+
+```bash
+# Install with AutoBuild support
+pip install guardkit-py[autobuild]
+
+# Or add SDK separately
+pip install claude-agent-sdk
+
+# Verify installation
+guardkit autobuild --help
+```
+
+**See Also**: [AutoBuild Workflow Guide](../../../docs/guides/autobuild-workflow.md) for comprehensive documentation.
 
 ## How It Works
 
