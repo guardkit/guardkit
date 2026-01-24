@@ -24,16 +24,19 @@ from guardkit.cli.decorators import handle_cli_errors
 from guardkit.orchestrator import (
     AutoBuildOrchestrator,
     OrchestrationResult,
-    TurnRecord,
 )
 from guardkit.orchestrator.feature_orchestrator import (
     FeatureOrchestrator,
-    FeatureOrchestrationResult,
     FeatureOrchestrationError,
 )
 from guardkit.orchestrator.feature_loader import (
     FeatureNotFoundError,
     FeatureValidationError,
+)
+from guardkit.orchestrator.feature_complete import (
+    FeatureCompleteOrchestrator,
+    FeatureCompleteResult,
+    FeatureCompleteError,
 )
 from guardkit.tasks.task_loader import TaskLoader
 from guardkit.worktrees import WorktreeManager, Worktree
@@ -578,6 +581,95 @@ def feature(
 
 
 # ============================================================================
+# Complete Command
+# ============================================================================
+
+
+@autobuild.command()
+@click.argument("feature_id")
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Simulate completion without making changes",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force completion even if tasks are incomplete",
+)
+@click.pass_context
+@handle_cli_errors
+def complete(
+    ctx,
+    feature_id: str,
+    dry_run: bool,
+    force: bool,
+):
+    """
+    Complete all tasks in a feature and archive it.
+
+    This command marks all incomplete tasks as complete, archives the feature
+    YAML, cleans up resources, and displays handoff instructions for human review.
+
+    \b
+    Examples:
+        guardkit autobuild complete FEAT-A1B2
+        guardkit autobuild complete FEAT-A1B2 --dry-run
+        guardkit autobuild complete FEAT-A1B2 --force
+
+    \b
+    Workflow:
+        1. Validation: Verify feature exists and is ready
+        2. Completion: Mark incomplete tasks as complete (TASK-FC-002)
+        3. Archival: Archive feature and cleanup worktree (TASK-FC-003)
+        4. Handoff: Display review instructions (TASK-FC-004)
+
+    \b
+    Exit Codes:
+        0: Success (feature completed)
+        1: Feature not found
+        2: Completion error
+        3: Validation error
+    """
+    logger.info(
+        f"Starting feature completion: {feature_id} "
+        f"(dry_run={dry_run}, force={force})"
+    )
+
+    try:
+        # Initialize completion orchestrator
+        orchestrator = FeatureCompleteOrchestrator(
+            repo_root=Path.cwd(),
+            dry_run=dry_run,
+            force=force,
+        )
+
+        # Execute completion
+        result = orchestrator.complete(feature_id=feature_id)
+
+        # Display summary
+        _display_complete_result(result)
+
+        # Exit with appropriate code
+        sys.exit(0 if result.success else 2)
+
+    except FeatureNotFoundError as e:
+        console.print(f"[red]Feature not found: {e}[/red]")
+        logger.error(f"Feature not found: {e}")
+        sys.exit(1)
+
+    except FeatureValidationError as e:
+        console.print(f"[red]Feature validation failed:[/red]\n{e}")
+        logger.error(f"Feature validation failed: {e}")
+        sys.exit(3)
+
+    except FeatureCompleteError as e:
+        console.print(f"[red]Completion error: {e}[/red]")
+        logger.error(f"Feature completion error: {e}")
+        sys.exit(2)
+
+
+# ============================================================================
 # Helper Functions
 # ============================================================================
 
@@ -738,6 +830,46 @@ def _find_worktree(
     )
 
 
+def _display_complete_result(result: FeatureCompleteResult) -> None:
+    """
+    Display feature completion result with Rich formatting.
+
+    Parameters
+    ----------
+    result : FeatureCompleteResult
+        Completion result
+    """
+    console.print()  # Blank line
+
+    if result.success:
+        console.print(
+            Panel(
+                f"[green]✓ Feature completed successfully[/green]\n\n"
+                f"Feature: [cyan]{result.feature_id}[/cyan]\n"
+                f"Status: {result.status}\n"
+                f"Tasks: {result.tasks_completed}/{result.total_tasks} completed"
+                + (
+                    f"\nWorktree: [cyan]{result.worktree_path}[/cyan]"
+                    if result.worktree_path
+                    else ""
+                ),
+                title="Feature Completion Complete",
+                border_style="green",
+            )
+        )
+    else:
+        console.print(
+            Panel(
+                f"[red]✗ Feature completion failed[/red]\n\n"
+                f"Feature: [cyan]{result.feature_id}[/cyan]\n"
+                f"Status: {result.status}\n"
+                f"Error: {result.error or 'N/A'}",
+                title="Feature Completion Failed",
+                border_style="red",
+            )
+        )
+
+
 # ============================================================================
 # Public API
 # ============================================================================
@@ -747,6 +879,7 @@ __all__ = [
     "task",
     "status",
     "feature",
+    "complete",
     "_check_sdk_available",
     "_require_sdk",
 ]
