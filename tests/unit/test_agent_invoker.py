@@ -3723,6 +3723,154 @@ File modified at: /src/c.py"""
 
         assert result["files_created"] == ["/a_file.py", "/m_file.py", "/z_file.py"]
 
+    # =========================================================================
+    # Test File Detection Tests (TASK-FTF-002)
+    # =========================================================================
+
+    def test_is_test_file_with_test_prefix(self, parser):
+        """_is_test_file detects test_ prefix pattern."""
+        assert parser._is_test_file("test_feature.py") is True
+        assert parser._is_test_file("/path/to/test_feature.py") is True
+        assert parser._is_test_file("src/tests/test_auth.py") is True
+
+    def test_is_test_file_with_test_suffix(self, parser):
+        """_is_test_file detects _test.py suffix pattern."""
+        assert parser._is_test_file("feature_test.py") is True
+        assert parser._is_test_file("/path/to/auth_test.py") is True
+        assert parser._is_test_file("src/tests/user_test.py") is True
+
+    def test_is_test_file_rejects_non_test_files(self, parser):
+        """_is_test_file rejects non-test files."""
+        assert parser._is_test_file("feature.py") is False
+        assert parser._is_test_file("test_config.json") is False
+        assert parser._is_test_file("testing_utils.py") is False
+        assert parser._is_test_file("contest.py") is False
+        assert parser._is_test_file("") is False
+        assert parser._is_test_file("test_") is False
+
+    def test_is_test_file_handles_windows_paths(self, parser):
+        """_is_test_file handles Windows-style paths."""
+        assert parser._is_test_file("C:\\project\\tests\\test_feature.py") is True
+        assert parser._is_test_file("src\\tests\\auth_test.py") is True
+
+    def test_track_tool_call_tracks_test_files(self, parser):
+        """_track_tool_call adds test files to test_files_created set."""
+        parser._track_tool_call("Write", {"file_path": "/tests/test_feature.py"})
+        result = parser.to_result()
+
+        assert "test_files_created" in result
+        assert "/tests/test_feature.py" in result["test_files_created"]
+        assert "/tests/test_feature.py" in result["files_created"]
+
+    def test_track_tool_call_tracks_multiple_test_files(self, parser):
+        """_track_tool_call tracks multiple test files."""
+        parser._track_tool_call("Write", {"file_path": "tests/test_auth.py"})
+        parser._track_tool_call("Write", {"file_path": "tests/test_user.py"})
+        parser._track_tool_call("Write", {"file_path": "src/feature.py"})
+        result = parser.to_result()
+
+        assert len(result["test_files_created"]) == 2
+        assert "tests/test_auth.py" in result["test_files_created"]
+        assert "tests/test_user.py" in result["test_files_created"]
+        assert len(result["files_created"]) == 3
+
+    def test_track_tool_call_deduplicates_test_files(self, parser):
+        """_track_tool_call deduplicates test files."""
+        parser._track_tool_call("Write", {"file_path": "tests/test_feature.py"})
+        parser._track_tool_call("Write", {"file_path": "tests/test_feature.py"})
+        result = parser.to_result()
+
+        assert len(result["test_files_created"]) == 1
+
+    def test_edit_does_not_track_test_files(self, parser):
+        """_track_tool_call does not track test files for Edit operations."""
+        parser._track_tool_call("Edit", {"file_path": "tests/test_feature.py"})
+        result = parser.to_result()
+
+        assert "test_files_created" not in result
+        assert "tests/test_feature.py" in result["files_modified"]
+
+    def test_reset_clears_test_files(self, parser):
+        """reset() clears test_files_created set."""
+        parser._track_tool_call("Write", {"file_path": "tests/test_feature.py"})
+        parser.reset()
+        result = parser.to_result()
+
+        assert "test_files_created" not in result
+
+    def test_test_files_sorted_output(self, parser):
+        """test_files_created output is sorted alphabetically."""
+        parser._track_tool_call("Write", {"file_path": "tests/test_z.py"})
+        parser._track_tool_call("Write", {"file_path": "tests/test_a.py"})
+        parser._track_tool_call("Write", {"file_path": "tests/test_m.py"})
+        result = parser.to_result()
+
+        assert result["test_files_created"] == [
+            "tests/test_a.py",
+            "tests/test_m.py",
+            "tests/test_z.py",
+        ]
+
+    # =========================================================================
+    # Pytest Summary Pattern Tests (TASK-FTF-002)
+    # =========================================================================
+
+    def test_parse_pytest_summary_passed_only(self, parser):
+        """parse_message extracts passed count from pytest summary."""
+        parser.parse_message("===== 15 passed in 0.23s =====")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 15
+
+    def test_parse_pytest_summary_passed_and_failed(self, parser):
+        """parse_message extracts passed and failed from pytest summary."""
+        parser.parse_message("===== 10 passed, 3 failed in 0.45s =====")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 10
+        assert result["tests_failed"] == 3
+
+    def test_parse_pytest_summary_passed_failed_skipped(self, parser):
+        """parse_message handles full pytest summary with skipped."""
+        parser.parse_message("===== 8 passed, 2 failed, 1 skipped in 0.30s =====")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 8
+        assert result["tests_failed"] == 2
+
+    def test_parse_pytest_simple_pattern(self, parser):
+        """parse_message extracts from simple pytest output."""
+        parser.parse_message("5 passed in 0.12s")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 5
+
+    def test_parse_pytest_simple_without_time(self, parser):
+        """parse_message extracts simple passed count without time."""
+        parser.parse_message("20 passed")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 20
+
+    def test_parse_pytest_prefers_higher_count(self, parser):
+        """parse_message keeps higher test count when multiple matches."""
+        # Earlier simple match
+        parser.parse_message("5 tests passed")
+        # Later pytest summary should update if higher
+        parser.parse_message("===== 15 passed in 0.23s =====")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 15
+
+    def test_parse_pytest_keeps_existing_if_higher(self, parser):
+        """parse_message keeps existing count if higher than summary."""
+        parser.parse_message("25 tests passed")
+        # Lower count in summary should not overwrite
+        parser.parse_message("===== 15 passed in 0.23s =====")
+        result = parser.to_result()
+
+        assert result["tests_passed"] == 25
+
 
 class TestParseTaskWorkStream:
     """Test AgentInvoker._parse_task_work_stream method."""

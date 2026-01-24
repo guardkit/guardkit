@@ -182,6 +182,13 @@ class TaskWorkStreamParser:
     # Matches tool result messages like "File created successfully at: /path"
     TOOL_RESULT_CREATED_PATTERN = re.compile(r"File\s+(?:created|written)\s+(?:successfully\s+)?(?:at|to)[:\s]+([^\s]+)", re.IGNORECASE)
     TOOL_RESULT_MODIFIED_PATTERN = re.compile(r"File\s+(?:modified|updated|edited)\s+(?:successfully\s+)?(?:at)?[:\s]+([^\s]+)", re.IGNORECASE)
+    # Pytest summary pattern: "X passed" or "X passed, Y failed" or "X passed, Y failed, Z skipped"
+    PYTEST_SUMMARY_PATTERN = re.compile(
+        r"[=]+\s*(?:(\d+)\s+passed)?(?:,?\s*(\d+)\s+failed)?(?:,?\s*(\d+)\s+skipped)?.*?[=]+",
+        re.IGNORECASE
+    )
+    # Alternative pytest pattern for simpler output: "5 passed in 0.23s"
+    PYTEST_SIMPLE_PATTERN = re.compile(r"(\d+)\s+passed(?:\s+in\s+[\d.]+s)?", re.IGNORECASE)
 
     def __init__(self) -> None:
         """Initialize the parser with empty accumulated state."""
@@ -192,6 +199,7 @@ class TaskWorkStreamParser:
         self._quality_gates_passed: Optional[bool] = None
         self._files_modified: set = set()
         self._files_created: set = set()
+        self._test_files_created: set = set()
         self._arch_score: Optional[int] = None
         self._solid_score: Optional[int] = None
         self._dry_score: Optional[int] = None
@@ -213,11 +221,32 @@ class TaskWorkStreamParser:
         """
         return pattern.search(text)
 
+    def _is_test_file(self, file_path: str) -> bool:
+        """Check if a file path is a test file.
+
+        Detects Python test files using common naming conventions:
+        - test_*.py (pytest default)
+        - *_test.py (alternative convention)
+
+        Args:
+            file_path: Path to the file
+
+        Returns:
+            True if the file is a test file, False otherwise
+        """
+        if not file_path:
+            return False
+        # Extract the filename from the path
+        name = file_path.rsplit("/", 1)[-1] if "/" in file_path else file_path
+        name = name.rsplit("\\", 1)[-1] if "\\" in name else name
+        return name.startswith("test_") and name.endswith(".py") or name.endswith("_test.py")
+
     def _track_tool_call(self, tool_name: str, tool_args: Dict[str, Any]) -> None:
         """Track file operations from tool calls.
 
         Extracts file paths from Write and Edit tool invocations and adds them
-        to the appropriate tracking set (created or modified).
+        to the appropriate tracking set (created or modified). Also tracks
+        test file creation separately.
 
         Args:
             tool_name: Name of the tool (e.g., "Write", "Edit")
@@ -230,6 +259,10 @@ class TaskWorkStreamParser:
         if tool_name == "Write":
             self._files_created.add(file_path)
             logger.debug(f"Tool call tracked - file created: {file_path}")
+            # Track test files separately
+            if self._is_test_file(file_path):
+                self._test_files_created.add(file_path)
+                logger.debug(f"Test file tracked: {file_path}")
         elif tool_name == "Edit":
             self._files_modified.add(file_path)
             logger.debug(f"Tool call tracked - file modified: {file_path}")
@@ -314,7 +347,7 @@ class TaskWorkStreamParser:
                 self._phases[phase_key] = {"detected": True, "completed": True}
             logger.debug(f"Phase {phase_num} completed")
 
-        # Test results
+        # Test results - try individual patterns first
         tests_passed_match = self._match_pattern(self.TESTS_PASSED_PATTERN, message)
         if tests_passed_match:
             self._tests_passed = int(tests_passed_match.group(1))
@@ -324,6 +357,27 @@ class TaskWorkStreamParser:
         if tests_failed_match:
             self._tests_failed = int(tests_failed_match.group(1))
             logger.debug(f"Tests failed: {self._tests_failed}")
+
+        # Parse pytest summary output (e.g., "===== 5 passed, 2 failed in 0.23s =====")
+        pytest_summary_match = self._match_pattern(self.PYTEST_SUMMARY_PATTERN, message)
+        if pytest_summary_match:
+            if pytest_summary_match.group(1):
+                passed_count = int(pytest_summary_match.group(1))
+                if self._tests_passed is None or passed_count > self._tests_passed:
+                    self._tests_passed = passed_count
+                    logger.debug(f"Pytest summary - tests passed: {self._tests_passed}")
+            if pytest_summary_match.group(2):
+                failed_count = int(pytest_summary_match.group(2))
+                if self._tests_failed is None or failed_count > self._tests_failed:
+                    self._tests_failed = failed_count
+                    logger.debug(f"Pytest summary - tests failed: {self._tests_failed}")
+
+        # Also try simpler pytest pattern (e.g., "5 passed in 0.23s")
+        if self._tests_passed is None:
+            simple_match = self._match_pattern(self.PYTEST_SIMPLE_PATTERN, message)
+            if simple_match:
+                self._tests_passed = int(simple_match.group(1))
+                logger.debug(f"Pytest simple - tests passed: {self._tests_passed}")
 
         # Coverage
         coverage_match = self._match_pattern(self.COVERAGE_PATTERN, message)
@@ -381,6 +435,7 @@ class TaskWorkStreamParser:
             - quality_gates_passed: Boolean or None if not detected
             - files_modified: List of modified file paths
             - files_created: List of created file paths
+            - test_files_created: List of test file paths created
             - architectural_review: Dict with score and optional SOLID/DRY/YAGNI
               subscores (or absent if no arch review score found)
         """
@@ -407,6 +462,9 @@ class TaskWorkStreamParser:
         if self._files_created:
             result["files_created"] = sorted(list(self._files_created))
 
+        if self._test_files_created:
+            result["test_files_created"] = sorted(list(self._test_files_created))
+
         if self._arch_score is not None:
             arch_review: Dict[str, Any] = {"score": self._arch_score}
             if self._solid_score is not None:
@@ -432,6 +490,7 @@ class TaskWorkStreamParser:
         self._quality_gates_passed = None
         self._files_modified = set()
         self._files_created = set()
+        self._test_files_created = set()
         self._arch_score = None
         self._solid_score = None
         self._dry_score = None
