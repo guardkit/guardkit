@@ -117,6 +117,40 @@ The `/feature-build` command provides fully autonomous task implementation using
 
 **See**: `installer/core/commands/feature-build.md` for complete documentation
 
+### Feature Completion
+```bash
+/feature-complete TASK-XXX [--dry-run] [--force] [--verify]
+/feature-complete FEAT-XXX [--dry-run] [--force] [--verify]
+```
+
+The `/feature-complete` command finalizes AutoBuild work by merging worktree changes to main:
+- Archives worktree state to `.guardkit/archive/`
+- Updates task status to COMPLETED
+- Cleans up worktree (preserves archive)
+
+**Modes**:
+- **Single Task**: `/feature-complete TASK-XXX` - Merge one task
+- **Feature**: `/feature-complete FEAT-XXX` - Merge all tasks in a feature
+
+**Example**:
+```bash
+# Preview what will be merged
+/feature-complete TASK-AUTH-001 --dry-run
+
+# Merge with test verification
+/feature-complete TASK-AUTH-001 --verify
+
+# Merge entire feature
+/feature-complete FEAT-A1B2
+```
+
+**Note**: Features completed successfully through `/feature-build` preserve worktrees for review. Use `/feature-complete` to:
+- Merge approved worktree changes to main
+- Archive AutoBuild state for audit trail
+- Clean up after human review
+
+**See**: `installer/core/commands/feature-complete.md` for complete documentation
+
 ### Agent & Template Management
 ```bash
 /agent-format <template>/<agent>     # Format agent to template standards
