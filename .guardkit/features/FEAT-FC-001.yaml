@@ -5,7 +5,11 @@ description: >
   Completes all tasks, archives feature folder, and displays merge instructions
   for user to complete with their preferred git tool (GitKraken, Fork, etc.).
 created: '2026-01-24T12:00:00Z'
+updated: '2026-01-24T15:15:00Z'
 status: in_progress
+progress: 40%
+completed_tasks: 2
+total_tasks: 5
 complexity: 11
 estimated_tasks: 5
 parent_review: TASK-REV-FC01
@@ -55,13 +59,15 @@ tasks:
 
 - id: TASK-FC-005
   name: Add guardkit worktree cleanup command
-  file_path: tasks/backlog/feature-complete/TASK-FC-005-worktree-cleanup-command.md
+  file_path: tasks/completed/TASK-FC-005/TASK-FC-005.md
   complexity: 2
   dependencies: []
-  status: pending
+  status: completed
+  completed: '2026-01-24T15:15:00Z'
   description: CLI command to cleanup worktree after merge
   implementation_mode: task-work
   estimated_minutes: 40
+  actual_minutes: 50
 
 orchestration:
   parallel_groups:
@@ -74,7 +80,7 @@ orchestration:
   recommended_parallel: 3
 
 execution:
-  tasks_completed: 1
-  tasks_pending: 4
-  progress_percentage: 20
-  updated: '2026-01-24T08:20:00Z'
+  tasks_completed: 2
+  tasks_pending: 3
+  progress_percentage: 40
+  updated: '2026-01-24T15:15:00Z'
