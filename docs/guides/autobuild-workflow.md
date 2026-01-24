@@ -564,6 +564,7 @@ guardkit autobuild task TASK-XXX [OPTIONS]
 | `--sdk-timeout N` | 900 | SDK timeout in seconds (60-3600) |
 | `--no-pre-loop` | false | Skip design phase (Phases 1.6-2.8) |
 | `--skip-arch-review` | false | Skip architectural review quality gate |
+| `--arch-threshold N` | 75 | Minimum architectural review score (50-100) |
 
 **Exit Codes:**
 - `0`: Success (Coach approved)
@@ -723,6 +724,7 @@ autobuild:
   mode: tdd
   sdk_timeout: 900
   skip_arch_review: false
+  arch_threshold: 75  # Minimum architectural review score (50-100)
 ---
 ```
 

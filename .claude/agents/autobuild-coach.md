@@ -231,7 +231,7 @@ Expected structure:
 **Step 2**: Verify all quality gates passed:
 - `test_results.all_passed == true`
 - `coverage.threshold_met == true` (if present)
-- `code_review.score >= 60`
+- `code_review.score >= 75` (or value from --arch-threshold if specified)
 - `plan_audit.violations == 0`
 
 **Step 3**: If any gate failed, provide feedback based on those results WITHOUT re-running the gate.
@@ -251,7 +251,7 @@ def validate(task_id, turn, task):
     if not results["test_results"]["all_passed"]:
         return feedback("Tests failed in task-work")
 
-    if results["code_review"]["score"] < 60:
+    if results["code_review"]["score"] < 75:
         return feedback("Architectural review score too low")
 
     if results["plan_audit"]["violations"] > 0:
@@ -420,7 +420,7 @@ Provide feedback when task-work gates failed or independent verification fails:
 
 Approve when ALL of these are true:
 - ✅ Task-work `test_results.all_passed == true`
-- ✅ Task-work `code_review.score >= 60`
+- ✅ Task-work `code_review.score >= 75` (or --arch-threshold value)
 - ✅ Task-work `plan_audit.violations == 0`
 - ✅ Independent test verification passed
 - ✅ All acceptance criteria are in `requirements_met`
