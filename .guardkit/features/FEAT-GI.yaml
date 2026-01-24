@@ -1,0 +1,116 @@
+id: FEAT-GI
+name: Graphiti Integration
+description: >
+  Integrates Graphiti (temporal knowledge graph) into GuardKit to solve the
+  memory/context problem where Claude Code sessions lose track of what GuardKit
+  is, architectural decisions, and patterns that worked or failed.
+created: '2026-01-24T00:00:00Z'
+updated: '2026-01-24T00:00:00Z'
+status: planned
+complexity: 39
+estimated_tasks: 7
+parent_review: TASK-REV-GI01
+
+tasks:
+- id: TASK-GI-001
+  name: Graphiti Core Infrastructure
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-001-core-infrastructure.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  description: Docker Compose setup, Python client wrapper, configuration system
+  task_type: scaffolding
+  implementation_mode: task-work
+  estimated_minutes: 180
+
+- id: TASK-GI-002
+  name: System Context Seeding
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-002-system-context-seeding.md
+  complexity: 6
+  dependencies:
+  - TASK-GI-001
+  status: pending
+  description: Seed ~67 episodes of GuardKit system knowledge into Graphiti
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 240
+
+- id: TASK-GI-003
+  name: Session Context Loading
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-003-session-context-loading.md
+  complexity: 7
+  dependencies:
+  - TASK-GI-001
+  - TASK-GI-002
+  status: pending
+  description: Load and inject critical context at session/command start
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 300
+
+- id: TASK-GI-004
+  name: ADR Lifecycle Management
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-004-adr-lifecycle.md
+  complexity: 6
+  dependencies:
+  - TASK-GI-001
+  status: pending
+  description: Capture explicit Architecture Decision Records from workflows
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 240
+
+- id: TASK-GI-005
+  name: Episode Capture (Task Outcomes)
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-005-episode-capture.md
+  complexity: 5
+  dependencies:
+  - TASK-GI-001
+  status: pending
+  description: Capture task outcomes for learning from experience
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 180
+
+- id: TASK-GI-006
+  name: Template/Agent Sync to Graphiti
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-006-template-agent-sync.md
+  complexity: 4
+  dependencies:
+  - TASK-GI-001
+  status: pending
+  description: Sync template and agent metadata for semantic search
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 120
+
+- id: TASK-GI-007
+  name: ADR Discovery from Code Analysis
+  file_path: tasks/backlog/graphiti-integration/TASK-GI-007-adr-discovery.md
+  complexity: 5
+  dependencies:
+  - TASK-GI-001
+  - TASK-GI-004
+  status: pending
+  description: Discover implicit ADRs during template-create code analysis
+  task_type: feature
+  implementation_mode: task-work
+  estimated_minutes: 180
+
+orchestration:
+  parallel_groups:
+  - - TASK-GI-001
+  - - TASK-GI-002
+  - - TASK-GI-003
+  - - TASK-GI-004
+    - TASK-GI-005
+  - - TASK-GI-006
+    - TASK-GI-007
+  estimated_duration_minutes: 1440
+  recommended_parallel: 2
+
+execution:
+  tasks_completed: 0
+  tasks_pending: 7
+  progress_percentage: 0
+  updated: '2026-01-24T00:00:00Z'
