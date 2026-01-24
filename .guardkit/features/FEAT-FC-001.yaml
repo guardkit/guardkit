@@ -5,7 +5,7 @@ description: >
   Completes all tasks, archives feature folder, and displays merge instructions
   for user to complete with their preferred git tool (GitKraken, Fork, etc.).
 created: '2026-01-24T12:00:00Z'
-status: planned
+status: in_progress
 complexity: 11
 estimated_tasks: 5
 parent_review: TASK-REV-FC01
@@ -33,13 +33,15 @@ tasks:
 
 - id: TASK-FC-003
   name: Implement feature folder archival
-  file_path: tasks/backlog/feature-complete/TASK-FC-003-feature-folder-archival.md
+  file_path: tasks/completed/TASK-FC-003/TASK-FC-003-feature-folder-archival.md
   complexity: 2
   dependencies: []
-  status: pending
+  status: completed
   description: Move feature folder to tasks/completed/{date}/{slug}/
   implementation_mode: direct
   estimated_minutes: 30
+  completed: '2026-01-24T08:20:00Z'
+  actual_duration_minutes: 90
 
 - id: TASK-FC-004
   name: Add merge instruction display
@@ -70,3 +72,9 @@ orchestration:
     - TASK-FC-005
   estimated_duration_minutes: 195
   recommended_parallel: 3
+
+execution:
+  tasks_completed: 1
+  tasks_pending: 4
+  progress_percentage: 20
+  updated: '2026-01-24T08:20:00Z'

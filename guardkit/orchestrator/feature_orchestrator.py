@@ -1657,6 +1657,144 @@ The detailed specifications are in the task markdown file.
             console.print(f"  2. Check feature status: guardkit autobuild status {feature.id}")
             console.print(f"  3. Resume after fixes: guardkit autobuild feature {feature.id} --resume")
 
+    def _archive_phase(self, feature: Feature) -> None:
+        """
+        Archive feature folder after completion.
+
+        Moves the feature folder from tasks/backlog/{slug}/ to
+        tasks/completed/{date}/{slug}/ and updates feature YAML with
+        archival metadata.
+
+        Parameters
+        ----------
+        feature : Feature
+            Completed feature to archive
+
+        Notes
+        -----
+        - Handles missing folder gracefully (already archived or moved)
+        - Creates dated subdirectory in tasks/completed/
+        - Updates feature status to 'awaiting_merge'
+        - Records archival timestamp and location
+        - Tracks completion statistics (tasks_completed, tasks_failed)
+        """
+        logger.info(f"Archiving feature {feature.id}")
+        console.print("\n[bold]Phase 4 (Archive):[/bold] Moving feature folder...")
+
+        # Detect feature slug from tasks
+        slug = self._detect_feature_slug(feature)
+
+        # Generate today's date for archival path
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        # Source and destination paths
+        src = self.repo_root / "tasks" / "backlog" / slug
+        dst = self.repo_root / "tasks" / "completed" / today / slug
+
+        # Move folder if it exists
+        if src.exists():
+            try:
+                # Create parent directory
+                dst.parent.mkdir(parents=True, exist_ok=True)
+
+                # Move folder
+                shutil.move(str(src), str(dst))
+                console.print(
+                    f"  [green]✓[/green] Moved to: {dst.relative_to(self.repo_root)}"
+                )
+                logger.info(f"Moved feature folder from {src} to {dst}")
+            except Exception as e:
+                console.print(f"  [yellow]⚠[/yellow] Failed to move folder: {e}")
+                logger.warning(f"Failed to move feature folder: {e}")
+        else:
+            console.print(
+                f"  [dim]⏭ Folder already archived or not found: {src.relative_to(self.repo_root)}[/dim]"
+            )
+            logger.debug(f"Feature folder not found (already archived?): {src}")
+
+        # Update feature YAML
+        feature.status = "awaiting_merge"
+        feature.execution.archived_at = datetime.now().isoformat()
+        feature.execution.archived_to = str(dst.relative_to(self.repo_root))
+        feature.execution.tasks_completed = sum(
+            1 for t in feature.tasks if t.status == "completed"
+        )
+        feature.execution.tasks_failed = sum(
+            1 for t in feature.tasks if t.status == "failed"
+        )
+
+        FeatureLoader.save_feature(feature, self.repo_root)
+        console.print("[green]✓[/green] Updated feature YAML with archival metadata")
+        logger.info(f"Updated feature YAML with archival metadata")
+
+    def _detect_feature_slug(self, feature: Feature) -> str:
+        """
+        Detect feature slug from task file paths.
+
+        Extracts the feature directory name (slug) from the first task's
+        file_path. The slug is the directory name under tasks/backlog/.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to detect slug from
+
+        Returns
+        -------
+        str
+            Feature slug (directory name)
+
+        Raises
+        ------
+        ValueError
+            If slug cannot be detected from task paths
+
+        Example
+        -------
+        >>> # Task file_path: tasks/backlog/dark-mode/TASK-DM-001.md
+        >>> slug = orchestrator._detect_feature_slug(feature)
+        >>> print(slug)
+        'dark-mode'
+        """
+        if not feature.tasks:
+            raise ValueError(
+                f"Cannot detect feature slug: No tasks in feature {feature.id}"
+            )
+
+        # Get first task's file_path
+        first_task = feature.tasks[0]
+        if not first_task.file_path:
+            raise ValueError(
+                f"Cannot detect feature slug: First task {first_task.id} has no file_path"
+            )
+
+        # Convert to Path for parsing
+        task_file_path = Path(first_task.file_path)
+        parts = task_file_path.parts
+
+        # Find "tasks" and "backlog" in the path
+        # Example: /path/to/repo/tasks/backlog/feature-name/TASK-001.md
+        try:
+            tasks_idx = parts.index("tasks")
+            if (
+                tasks_idx + 1 < len(parts)
+                and parts[tasks_idx + 1] == "backlog"
+                and tasks_idx + 2 < len(parts)
+            ):
+                slug = parts[tasks_idx + 2]
+                logger.debug(f"Detected feature slug: {slug}")
+                return slug
+            else:
+                raise ValueError(
+                    f"Expected 'backlog' after 'tasks' in path: {task_file_path}"
+                )
+        except (ValueError, IndexError) as e:
+            raise ValueError(
+                f"Cannot detect feature slug from task path: {task_file_path}\n"
+                f"Expected format: tasks/backlog/feature-slug/TASK-XXX.md\n"
+                f"Error: {e}"
+            )
+
 
 # ============================================================================
 # Public API

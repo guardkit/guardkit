@@ -226,6 +226,10 @@ class FeatureExecution:
         List of completed wave numbers (for resume support)
     last_updated : Optional[str]
         ISO timestamp of last state update
+    archived_at : Optional[str]
+        ISO timestamp when feature was archived
+    archived_to : Optional[str]
+        Path where feature folder was archived (relative to repo root)
     """
 
     started_at: Optional[str] = None
@@ -237,6 +241,8 @@ class FeatureExecution:
     current_wave: int = 0
     completed_waves: List[int] = field(default_factory=list)
     last_updated: Optional[str] = None
+    archived_at: Optional[str] = None
+    archived_to: Optional[str] = None
 
 
 @dataclass
@@ -486,6 +492,8 @@ class FeatureLoader:
             current_wave=exec_data.get("current_wave", 0),
             completed_waves=exec_data.get("completed_waves", []),
             last_updated=exec_data.get("last_updated"),
+            archived_at=exec_data.get("archived_at"),
+            archived_to=exec_data.get("archived_to"),
         )
 
         return Feature(
@@ -760,6 +768,8 @@ class FeatureLoader:
                 "current_wave": feature.execution.current_wave,
                 "completed_waves": feature.execution.completed_waves,
                 "last_updated": feature.execution.last_updated,
+                "archived_at": feature.execution.archived_at,
+                "archived_to": feature.execution.archived_to,
             },
         }
 
