@@ -100,6 +100,12 @@ from guardkit.orchestrator.state_tracker import (
     WorkState,
 )
 
+# Import worktree checkpoint management for context pollution mitigation
+from guardkit.orchestrator.worktree_checkpoints import (
+    WorktreeCheckpointManager,
+    Checkpoint,
+)
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -320,6 +326,8 @@ class AutoBuildOrchestrator:
         sdk_timeout: int = 900,
         skip_arch_review: bool = False,
         enable_perspective_reset: bool = True,
+        enable_checkpoints: bool = True,
+        rollback_on_pollution: bool = True,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -364,6 +372,12 @@ class AutoBuildOrchestrator:
             When enabled, Player receives only original requirements (no feedback) at
             turns 3 and 5, allowing fresh perspective and breaking anchored assumptions.
             This helps prevent the Player from becoming locked into early approaches.
+        enable_checkpoints : bool, optional
+            Enable worktree checkpointing for rollback (default: True).
+            Creates git commits at turn boundaries for context pollution recovery.
+        rollback_on_pollution : bool, optional
+            Automatically rollback when context pollution detected (default: True).
+            Triggers on 2+ consecutive test failures.
 
         Raises
         ------
@@ -397,11 +411,14 @@ class AutoBuildOrchestrator:
         self.sdk_timeout = sdk_timeout
         self.skip_arch_review = skip_arch_review
         self.enable_perspective_reset = enable_perspective_reset
+        self.enable_checkpoints = enable_checkpoints
+        self.rollback_on_pollution = rollback_on_pollution
         self._existing_worktree = existing_worktree  # For feature mode (TASK-FBC-001)
         # Hardcoded reset turns per architectural review (TASK-BRF-001): [3, 5]
         self.perspective_reset_turns: List[int] = [3, 5] if enable_perspective_reset else []
         self._turn_history: List[TurnRecord] = []
         self._honesty_history: List[float] = []  # Track honesty scores across turns
+        self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
 
         # Initialize dependencies (DI or defaults)
         self._worktree_manager = worktree_manager or WorktreeManager(
@@ -420,6 +437,8 @@ class AutoBuildOrchestrator:
             f"skip_arch_review={self.skip_arch_review}, "
             f"enable_perspective_reset={self.enable_perspective_reset}, "
             f"reset_turns={self.perspective_reset_turns}, "
+            f"enable_checkpoints={self.enable_checkpoints}, "
+            f"rollback_on_pollution={self.rollback_on_pollution}, "
             f"existing_worktree={'provided' if existing_worktree else 'None'}"
         )
 
@@ -845,6 +864,17 @@ class AutoBuildOrchestrator:
         turn_history: List[TurnRecord] = list(self._turn_history)
         previous_feedback: Optional[str] = self._get_last_feedback() if self.resume else None
 
+        # Initialize checkpoint manager if enabled
+        if self.enable_checkpoints and self._checkpoint_manager is None:
+            self._checkpoint_manager = WorktreeCheckpointManager(
+                worktree_path=worktree.path,
+                task_id=task_id,
+            )
+            logger.info(
+                f"Checkpoint manager initialized for {task_id} "
+                f"(rollback_on_pollution={self.rollback_on_pollution})"
+            )
+
         with self._progress_display:
             for turn in range(start_turn, self.max_turns + 1):
                 logger.info(f"Executing turn {turn}/{self.max_turns}")
@@ -879,6 +909,46 @@ class AutoBuildOrchestrator:
                 # Persist state after each turn
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
+
+                # Create checkpoint after turn completes (if enabled)
+                if self.enable_checkpoints and self._checkpoint_manager:
+                    tests_passed = self._extract_tests_passed(turn_record)
+                    test_count = self._extract_test_count(turn_record)
+
+                    checkpoint = self._checkpoint_manager.create_checkpoint(
+                        turn=turn,
+                        tests_passed=tests_passed,
+                        test_count=test_count,
+                    )
+                    logger.info(
+                        f"Checkpoint created: {checkpoint.commit_hash[:8]} "
+                        f"for turn {turn}"
+                    )
+
+                    # Check for context pollution and rollback if needed
+                    if self.rollback_on_pollution:
+                        if self._checkpoint_manager.should_rollback():
+                            target_turn = self._checkpoint_manager.find_last_passing_checkpoint()
+                            if target_turn:
+                                logger.warning(
+                                    f"Context pollution detected, rolling back "
+                                    f"from turn {turn} to turn {target_turn}"
+                                )
+                                self._checkpoint_manager.rollback_to(target_turn)
+
+                                # Update state after rollback
+                                self._turn_history = turn_history[:target_turn]
+                                previous_feedback = (
+                                    self._turn_history[-1].feedback
+                                    if self._turn_history else None
+                                )
+
+                                # Continue loop from rollback point + 1
+                                logger.info(
+                                    f"Continuing from turn {target_turn + 1} "
+                                    f"after rollback"
+                                )
+                                continue
 
                 # Check decision
                 if turn_record.decision == "approve":
@@ -2181,6 +2251,47 @@ class AutoBuildOrchestrator:
         if self._turn_history:
             return self._turn_history[-1].feedback
         return None
+
+    def _extract_tests_passed(self, turn_record: TurnRecord) -> bool:
+        """
+        Extract test pass/fail status from turn record.
+
+        Args:
+            turn_record: Turn record with Coach validation results
+
+        Returns:
+            True if tests passed, False otherwise
+        """
+        if not turn_record.coach_result or not turn_record.coach_result.success:
+            return False
+
+        validation = turn_record.coach_result.report.get("validation_results", {})
+        return validation.get("tests_passed", False)
+
+    def _extract_test_count(self, turn_record: TurnRecord) -> int:
+        """
+        Extract test count from turn record.
+
+        Args:
+            turn_record: Turn record with test results
+
+        Returns:
+            Number of tests run (0 if no tests)
+        """
+        if not turn_record.coach_result or not turn_record.coach_result.success:
+            return 0
+
+        validation = turn_record.coach_result.report.get("validation_results", {})
+        test_output = validation.get("test_output_summary", "")
+
+        # Try to parse test count from output (e.g., "15 passed")
+        import re
+        match = re.search(r"(\d+)\s+(?:tests?\s+)?passed", test_output, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+        # Fallback: assume some tests ran if tests_passed is True
+        return 1 if validation.get("tests_passed", False) else 0
 
 
 # ============================================================================

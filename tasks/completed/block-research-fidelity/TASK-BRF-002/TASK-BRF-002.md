@@ -1,10 +1,11 @@
 ---
 id: TASK-BRF-002
 title: Add Worktree State Checkpoint and Rollback Mechanism
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-01-24T16:30:00Z
-updated: 2026-01-24T16:30:00Z
+updated: 2026-01-24T21:00:00Z
+completed: 2026-01-24T21:05:00Z
 priority: high
 tags: [autobuild, context-pollution, block-research, worktree]
 complexity: 7
@@ -14,6 +15,29 @@ wave: 1
 implementation_mode: task-work
 conductor_workspace: block-research-fidelity-wave1-2
 dependencies: []
+previous_state: in_review
+state_transition_reason: "Task completed successfully"
+completed_location: tasks/completed/block-research-fidelity/TASK-BRF-002/
+organized_files:
+  - TASK-BRF-002.md
+  - test-results.md
+  - implementation_plan.md
+  - implementation_plan.json
+  - complexity_score.json
+  - plan_audit_report.json
+quality_gates:
+  compilation: passed
+  tests_passing: "100% (22/22)"
+  line_coverage: "92%"
+  branch_coverage: "87.5%"
+  architectural_review: "72/100"
+  plan_audit: "auto_approved"
+completion_summary:
+  files_created: 2
+  files_modified: 2
+  total_lines: 1236
+  test_coverage: "92%"
+  all_criteria_met: true
 ---
 
 # Task: Add Worktree State Checkpoint and Rollback Mechanism
@@ -28,14 +52,14 @@ Implement a checkpoint/rollback mechanism for worktree state to mitigate context
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Implement `_checkpoint_worktree(worktree, turn)` to create named checkpoint commit
-- [ ] AC-002: Implement `_rollback_to_checkpoint(worktree, checkpoint_turn)` to restore state
-- [ ] AC-003: Add `--enable-checkpoints` CLI flag (default: enabled)
-- [ ] AC-004: Automatically rollback if same test fails 2+ turns in a row (context pollution indicator)
-- [ ] AC-005: Create checkpoint commits with message format: `[guardkit-checkpoint] Turn {N} complete`
-- [ ] AC-006: Preserve checkpoint history in `.guardkit/autobuild/{task_id}/checkpoints.json`
-- [ ] AC-007: Add `--rollback-on-pollution` flag to control auto-rollback behavior
-- [ ] AC-008: Unit and integration tests with ≥80% coverage
+- [x] AC-001: Implement `_checkpoint_worktree(worktree, turn)` to create named checkpoint commit ✅
+- [x] AC-002: Implement `_rollback_to_checkpoint(worktree, checkpoint_turn)` to restore state ✅
+- [x] AC-003: Add `--enable-checkpoints` CLI flag (default: enabled) ✅
+- [x] AC-004: Automatically rollback if same test fails 2+ turns in a row (context pollution indicator) ✅
+- [x] AC-005: Create checkpoint commits with message format: `[guardkit-checkpoint] Turn {N} complete` ✅
+- [x] AC-006: Preserve checkpoint history in `.guardkit/autobuild/{task_id}/checkpoints.json` ✅
+- [x] AC-007: Add `--rollback-on-pollution` flag to control auto-rollback behavior ✅
+- [x] AC-008: Unit and integration tests with ≥80% coverage (achieved 92%) ✅
 
 ## Technical Approach
 

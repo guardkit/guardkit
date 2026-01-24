@@ -1,0 +1,111 @@
+{
+  "task_id": "TASK-BRF-002",
+  "title": "Add Worktree State Checkpoint and Rollback Mechanism",
+  "created": "2026-01-24T20:50:00Z",
+  "complexity": 7,
+  "estimated_duration_hours": 7,
+  "files_to_create": [
+    {
+      "path": "guardkit/orchestrator/worktree_checkpoints.py",
+      "lines": 250,
+      "purpose": "Checkpoint manager implementation"
+    },
+    {
+      "path": "tests/unit/test_worktree_checkpoints.py",
+      "lines": 200,
+      "purpose": "Unit and integration tests"
+    }
+  ],
+  "files_to_modify": [
+    {
+      "path": "guardkit/orchestrator/autobuild.py",
+      "lines_added": 50,
+      "purpose": "Integration in _loop_phase()"
+    },
+    {
+      "path": "guardkit/cli/autobuild.py",
+      "lines_added": 15,
+      "purpose": "Add CLI flags"
+    }
+  ],
+  "external_dependencies": [],
+  "patterns": [
+    "Checkpoint Pattern",
+    "Orchestrator Pattern",
+    "Strategy Pattern",
+    "DI Pattern"
+  ],
+  "phases": [
+    {
+      "phase": 1,
+      "name": "Core Checkpoint Manager",
+      "duration_hours": 2.5,
+      "percentage": 40
+    },
+    {
+      "phase": 2,
+      "name": "AutoBuild Integration",
+      "duration_hours": 2.0,
+      "percentage": 30
+    },
+    {
+      "phase": 3,
+      "name": "CLI Flags",
+      "duration_hours": 0.75,
+      "percentage": 10
+    },
+    {
+      "phase": 4,
+      "name": "Testing",
+      "duration_hours": 1.5,
+      "percentage": 20
+    }
+  ],
+  "risks": [
+    {
+      "risk": "Git operation failures",
+      "level": "medium",
+      "mitigation": "Try/except with detailed error logging"
+    },
+    {
+      "risk": "State loss on rollback",
+      "level": "medium",
+      "mitigation": "Preserve checkpoint history, log rollback actions"
+    },
+    {
+      "risk": "Pollution detection false positives",
+      "level": "low",
+      "mitigation": "--rollback-on-pollution flag for control"
+    }
+  ],
+  "test_strategy": {
+    "unit_tests": [
+      "test_create_checkpoint_creates_commit",
+      "test_rollback_resets_to_checkpoint_state",
+      "test_detect_pollution_on_repeated_failures",
+      "test_no_pollution_on_different_failures",
+      "test_checkpoint_persistence"
+    ],
+    "integration_tests": [
+      "test_checkpoint_created_after_each_turn",
+      "test_rollback_triggered_on_pollution"
+    ],
+    "coverage_target": {
+      "line": 80,
+      "branch": 75
+    }
+  },
+  "architectural_review": {
+    "score": 72,
+    "solid_score": 38,
+    "dry_score": 18,
+    "yagni_score": 16,
+    "status": "approved_with_recommendations",
+    "recommendations": [
+      "Simplify persistence - use git log instead of JSON file (YAGNI)",
+      "Extract git operations to CommandExecutor protocol (DRY + ISP)",
+      "Consider manual rollback only for MVP (YAGNI)",
+      "Extract persistence to repository if keeping JSON (SRP)"
+    ]
+  }
+}
