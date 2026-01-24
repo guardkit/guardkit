@@ -1,10 +1,10 @@
 ---
 id: TASK-BRF-004
 title: Document Honesty Context in Coach Prompt
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-01-24T16:30:00Z
-updated: 2026-01-24T16:30:00Z
+updated: 2026-01-24T17:45:00Z
 priority: medium
 tags: [autobuild, documentation, honesty-verification, coach-agent]
 complexity: 2
@@ -28,10 +28,10 @@ Enhance the Coach agent definition to more explicitly reference the pre-validate
 
 ## Acceptance Criteria
 
-- [ ] AC-001: Add "How to Use Honesty Verification" section to autobuild-coach.md
-- [ ] AC-002: Include example prompts showing honesty context usage
-- [ ] AC-003: Document the relationship between CoachVerifier and Coach agent
-- [ ] AC-004: Add decision tree for honesty-aware approval/feedback
+- [x] AC-001: Add "How to Use Honesty Verification" section to autobuild-coach.md
+- [x] AC-002: Include example prompts showing honesty context usage
+- [x] AC-003: Document the relationship between CoachVerifier and Coach agent
+- [x] AC-004: Add decision tree for honesty-aware approval/feedback
 
 ## Technical Approach
 
