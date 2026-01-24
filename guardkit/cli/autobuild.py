@@ -177,6 +177,20 @@ def autobuild():
     default=False,
     help="Skip architectural review quality gate (use with caution)",
 )
+@click.option(
+    "--no-checkpoints",
+    "no_checkpoints",
+    is_flag=True,
+    default=False,
+    help="Disable worktree checkpointing (not recommended - disables rollback)",
+)
+@click.option(
+    "--no-rollback",
+    "no_rollback",
+    is_flag=True,
+    default=False,
+    help="Disable automatic rollback on context pollution (manual rollback still available)",
+)
 @click.pass_context
 @handle_cli_errors
 def task(
@@ -190,6 +204,8 @@ def task(
     sdk_timeout: Optional[int],
     no_pre_loop: bool,
     skip_arch_review: bool,
+    no_checkpoints: bool,
+    no_rollback: bool,
 ):
     """
     Execute AutoBuild orchestration for a task.
@@ -313,7 +329,15 @@ def task(
     # Phase 2: Initialize orchestrator
     # Note: enable_pre_loop defaults to True for task-build, --no-pre-loop disables it
     enable_pre_loop = not no_pre_loop
-    logger.info(f"Initializing orchestrator (enable_pre_loop={enable_pre_loop}, skip_arch_review={effective_skip_arch_review})")
+    enable_checkpoints = not no_checkpoints
+    rollback_on_pollution = not no_rollback and enable_checkpoints  # Can't rollback without checkpoints
+
+    logger.info(
+        f"Initializing orchestrator (enable_pre_loop={enable_pre_loop}, "
+        f"skip_arch_review={effective_skip_arch_review}, "
+        f"enable_checkpoints={enable_checkpoints}, "
+        f"rollback_on_pollution={rollback_on_pollution})"
+    )
     orchestrator = AutoBuildOrchestrator(
         repo_root=Path.cwd(),
         max_turns=max_turns,
@@ -322,6 +346,8 @@ def task(
         development_mode=effective_mode,
         sdk_timeout=effective_sdk_timeout,
         skip_arch_review=effective_skip_arch_review,
+        enable_checkpoints=enable_checkpoints,
+        rollback_on_pollution=rollback_on_pollution,
     )
 
     # Phase 3: Execute orchestration
