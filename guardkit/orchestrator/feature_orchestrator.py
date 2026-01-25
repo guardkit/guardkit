@@ -934,9 +934,10 @@ The detailed specifications are in the task markdown file.
             passed = sum(1 for r in wave_result.results if r.success)
             failed = len(wave_result.results) - passed
             skipped = sum(1 for r in wave_result.results if r.final_decision == "skipped")
+            recovered = sum(1 for r in wave_result.results if r.recovery_count > 0)
 
             if self._wave_display:
-                self._wave_display.complete_wave(wave_number, passed, failed, skipped)
+                self._wave_display.complete_wave(wave_number, passed, failed, skipped, recovered)
             else:
                 # Fallback to basic display
                 status = "[green]✓ PASSED[/green]" if wave_result.all_succeeded else "[red]✗ FAILED[/red]"
