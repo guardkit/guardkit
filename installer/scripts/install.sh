@@ -397,6 +397,21 @@ install_python_package() {
         print_info "You may need to restart your shell"
     fi
 
+    # Verify Claude Agent SDK is available (for AutoBuild features)
+    set +e
+    python3 -c "import claude_agent_sdk" 2>/dev/null
+    local sdk_status=$?
+    set -e
+
+    if [ $sdk_status -eq 0 ]; then
+        print_success "Claude Agent SDK is available (AutoBuild ready)"
+    else
+        print_warning "Claude Agent SDK not importable"
+        print_info "AutoBuild features require the SDK. Install with:"
+        print_info "  pip install claude-agent-sdk"
+        print_info "  # OR reinstall guardkit with: pip install guardkit-py[autobuild]"
+    fi
+
     # Check if guardkit-py CLI is available
     if command -v guardkit-py &> /dev/null; then
         print_success "guardkit-py CLI command is available"
@@ -1443,6 +1458,15 @@ print_summary() {
         echo -e "  ${GREEN}✓${NC} Compatible with Conductor.build for parallel development"
     else
         echo -e "  ${YELLOW}⚠${NC} Claude Code integration not configured"
+    fi
+    echo ""
+    echo -e "${BOLD}AutoBuild Configuration:${NC}"
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        echo -e "  ${GREEN}✓${NC} ANTHROPIC_API_KEY is set"
+    else
+        echo -e "  ${YELLOW}⚠${NC} ANTHROPIC_API_KEY not set"
+        echo "      AutoBuild requires API credentials or Claude Code authentication"
+        echo "      Run 'guardkit doctor' to check configuration"
     fi
     echo ""
     echo -e "${YELLOW}⚠ Next Steps:${NC}"

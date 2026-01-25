@@ -32,6 +32,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Claude Agent SDK for AutoBuild Player/Coach adversarial workflow
+# Requires Python 3.10+ (same as guardkit)
+# Docs: https://platform.claude.com/docs/en/agent-sdk/python
 autobuild = [
     "claude-agent-sdk>=0.1.0",
 ]

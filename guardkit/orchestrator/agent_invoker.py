@@ -1349,20 +1349,38 @@ Follow the decision format specified in your agent definition.
                 logger.warning(
                     f"Failed to read task_work_results.json, using defaults: {e}"
                 )
-        else:
-            # Fallback: detect git changes
-            logger.info(
-                f"task_work_results.json not found, detecting git changes for {task_id}"
-            )
-            try:
-                git_changes = self._detect_git_changes()
-                report["files_modified"] = git_changes.get("modified", [])
-                report["files_created"] = git_changes.get("created", [])
-                report["implementation_notes"] = (
-                    "Implementation via task-work delegation (git-detected changes)"
-                )
-            except Exception as e:
-                logger.warning(f"Failed to detect git changes: {e}")
+
+        # ALWAYS verify/enrich with git detection (TASK-DMRF-003)
+        # This ensures we capture changes even if task_work_results.json has empty arrays
+        try:
+            git_changes = self._detect_git_changes()
+            if git_changes:
+                original_modified = set(report["files_modified"])
+                original_created = set(report["files_created"])
+
+                git_modified = set(git_changes.get("modified", []))
+                git_created = set(git_changes.get("created", []))
+
+                # Merge using union (preserves existing + adds git-detected)
+                report["files_modified"] = sorted(list(original_modified | git_modified))
+                report["files_created"] = sorted(list(original_created | git_created))
+
+                # Log when git detection adds files not in original report
+                new_modified = git_modified - original_modified
+                new_created = git_created - original_created
+                if new_modified or new_created:
+                    logger.info(
+                        f"Git detection added: {len(new_modified)} modified, "
+                        f"{len(new_created)} created files for {task_id}"
+                    )
+
+                # Update implementation notes if we only have git-detected files
+                if not task_work_results_path.exists():
+                    report["implementation_notes"] = (
+                        "Implementation via task-work delegation (git-detected changes)"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to detect git changes: {e}")
 
         # Also use task_work_result.output if available
         if task_work_result.output:

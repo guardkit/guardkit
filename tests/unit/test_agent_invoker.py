@@ -2716,8 +2716,9 @@ class TestCreatePlayerReportFromTaskWork:
         report = json.loads(player_report_path.read_text())
         assert report["task_id"] == task_id
         assert report["turn"] == turn
-        assert report["files_modified"] == sample_task_work_results["files_modified"]
-        assert report["files_created"] == sample_task_work_results["files_created"]
+        # Files are sorted after git verification merge (TASK-DMRF-003)
+        assert set(report["files_modified"]) == set(sample_task_work_results["files_modified"])
+        assert set(report["files_created"]) == set(sample_task_work_results["files_created"])
         assert report["tests_run"] is True
         assert report["tests_passed"] is True
         assert report["test_output_summary"] == "12 tests passed in 0.45s"
@@ -3079,6 +3080,264 @@ class TestCreatePlayerReportFromTaskWork:
         assert report["tests_passed"] is True
         # tests_passed_count should NOT be set for bool input
         assert "tests_passed_count" not in report
+
+    # ==================== Git Verification Step Tests (TASK-DMRF-003) ====================
+
+    def test_git_verification_enriches_empty_task_work_results(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git detection enriches report when task_work_results.json has empty arrays (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-001"
+        turn = 1
+
+        # Create task_work_results.json with empty file arrays
+        task_work_data = {
+            "files_modified": [],
+            "files_created": [],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection to return files
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={
+                "modified": ["src/changed.py", "src/updated.py"],
+                "created": ["src/new_file.py"],
+            },
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Git-detected files should be in the report
+        assert "src/changed.py" in report["files_modified"]
+        assert "src/updated.py" in report["files_modified"]
+        assert "src/new_file.py" in report["files_created"]
+
+    def test_git_verification_merges_with_existing_files(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git detection merges with existing files (union, not replacement) (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-002"
+        turn = 1
+
+        # Create task_work_results.json with some files already
+        task_work_data = {
+            "files_modified": ["src/existing.py"],
+            "files_created": ["src/original.py"],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection to return additional files
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={
+                "modified": ["src/git_detected.py"],
+                "created": ["src/git_new.py"],
+            },
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Both original AND git-detected files should be present
+        assert "src/existing.py" in report["files_modified"]
+        assert "src/git_detected.py" in report["files_modified"]
+        assert "src/original.py" in report["files_created"]
+        assert "src/git_new.py" in report["files_created"]
+
+    def test_git_verification_deduplicates_files(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git detection does not duplicate files already in report (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-003"
+        turn = 1
+
+        # Create task_work_results.json with files
+        task_work_data = {
+            "files_modified": ["src/shared.py", "src/unique_orig.py"],
+            "files_created": ["src/common.py"],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection to return some overlapping files
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={
+                "modified": ["src/shared.py", "src/unique_git.py"],  # shared.py overlaps
+                "created": ["src/common.py", "src/new_git.py"],  # common.py overlaps
+            },
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # No duplicates - each file should appear only once
+        assert report["files_modified"].count("src/shared.py") == 1
+        assert report["files_created"].count("src/common.py") == 1
+        # All unique files should be present
+        assert "src/unique_orig.py" in report["files_modified"]
+        assert "src/unique_git.py" in report["files_modified"]
+        assert "src/new_git.py" in report["files_created"]
+
+    def test_git_verification_always_runs_even_with_file(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git detection always runs, even when task_work_results.json exists (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-004"
+        turn = 1
+
+        # Create task_work_results.json
+        task_work_data = {
+            "files_modified": ["src/from_file.py"],
+            "files_created": [],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection and track if it was called
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={"modified": ["src/from_git.py"], "created": []},
+        ) as mock_git:
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+            # Git detection should always be called
+            mock_git.assert_called_once()
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Both file and git sources should be present
+        assert "src/from_file.py" in report["files_modified"]
+        assert "src/from_git.py" in report["files_modified"]
+
+    def test_git_verification_handles_detection_failure(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git detection failure should not break report creation (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-005"
+        turn = 1
+
+        # Create task_work_results.json
+        task_work_data = {
+            "files_modified": ["src/preserved.py"],
+            "files_created": ["src/kept.py"],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection to raise exception
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            side_effect=Exception("Git error: not a repository"),
+        ):
+            # Should not raise exception
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        # Report should still be created with original data
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+        assert report["files_modified"] == ["src/preserved.py"]
+        assert report["files_created"] == ["src/kept.py"]
+
+    def test_git_verification_sorts_file_lists(
+        self, invoker_with_worktree, worktree_path
+    ):
+        """Git verification should produce sorted file lists (TASK-DMRF-003)."""
+        task_id = "TASK-GIT-006"
+        turn = 1
+
+        # Create task_work_results.json with unsorted files
+        task_work_data = {
+            "files_modified": ["src/zebra.py", "src/alpha.py"],
+            "files_created": ["src/beta.py"],
+            "tests_info": {"tests_run": True, "tests_passed": True},
+        }
+        autobuild_dir = worktree_path / ".guardkit" / "autobuild" / task_id
+        autobuild_dir.mkdir(parents=True)
+        (autobuild_dir / "task_work_results.json").write_text(
+            json.dumps(task_work_data)
+        )
+
+        task_work_result = TaskWorkResult(success=True, output={}, exit_code=0)
+
+        # Mock git detection with unsorted files
+        with patch.object(
+            invoker_with_worktree,
+            "_detect_git_changes",
+            return_value={
+                "modified": ["src/middle.py"],
+                "created": ["src/aardvark.py", "src/zoo.py"],
+            },
+        ):
+            invoker_with_worktree._create_player_report_from_task_work(
+                task_id=task_id, turn=turn, task_work_result=task_work_result
+            )
+
+        report = json.loads(
+            (autobuild_dir / f"player_turn_{turn}.json").read_text()
+        )
+
+        # Files should be sorted alphabetically
+        assert report["files_modified"] == ["src/alpha.py", "src/middle.py", "src/zebra.py"]
+        assert report["files_created"] == ["src/aardvark.py", "src/beta.py", "src/zoo.py"]
 
 
 class TestDetectGitChanges:
