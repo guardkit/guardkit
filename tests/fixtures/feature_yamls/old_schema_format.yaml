@@ -1,0 +1,29 @@
+id: FEAT-OLD-SCHEMA
+name: Feature with old execution_groups format
+description: Uses deprecated execution_groups instead of parallel_groups
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 4
+estimated_tasks: 2
+tasks:
+  - id: TASK-OLD-001
+    name: First task
+    file_path: tasks/backlog/TASK-OLD-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-OLD-002
+    name: Second task
+    file_path: tasks/backlog/TASK-OLD-002.md
+    complexity: 4
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+# Old schema format - uses execution_groups instead of orchestration.parallel_groups
+execution_groups:
+  - - TASK-OLD-001
+  - - TASK-OLD-002
+# Missing orchestration section with parallel_groups

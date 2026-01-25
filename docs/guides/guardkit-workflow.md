@@ -1,7 +1,7 @@
 # GuardKit Workflow Guide
 
-**Version**: 1.0.0
-**Last Updated**: 2025-11-04
+**Version**: 2.1.0
+**Last Updated**: 2026-01-24
 **Compatibility**: Claude Code with task-work command v1.0+
 **Document Type**: Comprehensive Workflow Guide
 
@@ -13,6 +13,8 @@
 - [What is GuardKit?](#what-is-guardkit)
 - [5-Minute Getting Started](#5-minute-getting-started)
 - [When to Use GuardKit](#when-to-use-guardkit)
+- [Review vs Implementation Workflows](#review-vs-implementation-workflows)
+- [Manual Task-Work vs AutoBuild Delegation](#manual-task-work-vs-autobuild-delegation) 🆕
 
 ### Part 2: Core Workflow (15 Minutes)
 - [The 10 Workflow Phases](#the-10-workflow-phases)
@@ -267,6 +269,153 @@ Use for **analysis** and **decision-making** tasks:
 **Note:** The system automatically detects review tasks during `/task-create` and suggests the appropriate command.
 
 **See:** [Task Review Workflow Guide](../workflows/task-review-workflow.md) for complete review workflow documentation.
+
+---
+
+### Manual Task-Work vs AutoBuild Delegation
+
+GuardKit supports two ways to execute the task-work workflow:
+
+> **📖 Comprehensive AutoBuild Documentation**
+>
+> For complete AutoBuild documentation including architecture deep-dive, CLI reference,
+> and troubleshooting, see the [AutoBuild Workflow Guide](autobuild-workflow.md).
+
+#### Manual Execution (`/task-work`)
+
+Direct human-driven execution:
+
+```bash
+/task-work TASK-042
+# Human monitors Phases 2-5.5
+# Human approves checkpoints
+# Task moves to IN_REVIEW when quality gates pass
+```
+
+**Best for:**
+- Exploratory work requiring human judgment
+- Complex architectural decisions
+- High-risk changes requiring human oversight
+- Learning how quality gates work
+
+**Characteristics:**
+- Human in the loop for checkpoints
+- Interactive Phase 2.8 approval
+- Can modify plan before implementation
+- Single execution (no iteration)
+
+#### AutoBuild Delegation (`/feature-build`)
+
+Autonomous execution via Player-Coach adversarial loop:
+
+```bash
+/feature-build TASK-042
+# Player delegates to task-work --implement-only --mode=tdd
+# Quality gates execute automatically (Phases 3-5.5)
+# Coach validates results
+# Iterates until approval or max turns
+```
+
+**Requirements**: AutoBuild requires the optional `claude-agent-sdk` dependency:
+```bash
+pip install guardkit-py[autobuild]
+# OR
+pip install claude-agent-sdk
+```
+
+If you see "Claude Agent SDK not installed", install the dependency above.
+
+**Best for:**
+- Well-defined requirements
+- Standard implementation patterns
+- Autonomous iteration without human intervention
+- Parallel feature development (multiple tasks)
+
+**Characteristics:**
+- No human checkpoints (autonomous)
+- Automatic Phase 2.8 approval
+- Iterative improvement (up to 5 turns)
+- Player-Coach dialectic
+
+**See Also:** [AutoBuild Architecture](autobuild-workflow.md#part-2-architecture-deep-dive) for technical details on Player-Coach pattern.
+
+#### Comparison Table
+
+| Aspect | Manual Task-Work | AutoBuild Delegation |
+|--------|------------------|---------------------|
+| **Execution** | Human-driven | Autonomous (Player-Coach) |
+| **Checkpoints** | Interactive | Automatic |
+| **Iteration** | Single pass | Up to 5 turns |
+| **Quality Gates** | Same (Phases 2-5.5) | Same (Phases 2-5.5) |
+| **Human Oversight** | During execution | After completion (worktree review) |
+| **Use Case** | Exploration, high-risk | Standard patterns, low-risk |
+| **Code Reuse** | Direct execution | 100% (delegates to task-work) |
+
+#### When to Choose
+
+**Use Manual Task-Work** if:
+- Requirements are unclear (need human judgment)
+- Architecture is experimental
+- High security/safety risk
+- Want to learn the system
+
+**Use AutoBuild** if:
+- Requirements are clear and complete
+- Standard implementation patterns
+- Can tolerate autonomous iteration
+- Want parallel development of multiple tasks
+
+**Both Use Same Quality Gates** (100% code reuse):
+- Phase 2.5B: Architectural Review (SOLID/DRY/YAGNI)
+- Phase 4.5: Test Enforcement Loop (100% pass rate)
+- Phase 5: Code Review
+- Phase 5.5: Plan Audit (scope creep detection)
+
+The key difference is **who drives execution**: human (manual) or AI (AutoBuild).
+
+**For complete CLI reference:** See [AutoBuild CLI Commands](autobuild-workflow.md#cli-command-reference).
+
+---
+
+### Pre-Loop Decision Guide
+
+Use this decision tree to determine whether pre-loop design phases are needed:
+
+```
+Starting AutoBuild?
+│
+├─► Using feature-build (guardkit autobuild feature)?
+│   │
+│   ├─► Tasks from /feature-plan?
+│   │   └─► Pre-loop NOT needed (default: disabled)
+│   │       Tasks already have detailed specs from feature-plan
+│   │
+│   └─► Custom feature.yaml with minimal task specs?
+│       │
+│       ├─► Tasks have clear acceptance criteria?
+│       │   └─► Pre-loop NOT needed (default: disabled)
+│       │
+│       └─► Tasks need clarification/design?
+│           └─► Use --enable-pre-loop
+│               Adds 60-90 min per task for design phases
+│
+└─► Using task-build (guardkit autobuild task)?
+    │
+    ├─► Task from /task-create with detailed requirements?
+    │   └─► Pre-loop runs by default (can skip with --no-pre-loop)
+    │
+    └─► Simple bug fix or documentation task?
+        └─► Consider --no-pre-loop for faster execution
+```
+
+### Pre-Loop Quick Reference
+
+| Scenario | Command | Pre-Loop? | Duration |
+|----------|---------|-----------|----------|
+| Feature from feature-plan | `guardkit autobuild feature FEAT-XXX` | No | 15-25 min/task |
+| Feature needing design | `guardkit autobuild feature FEAT-XXX --enable-pre-loop` | Yes | 75-105 min/task |
+| Standalone task | `guardkit autobuild task TASK-XXX` | Yes | 75-105 min |
+| Simple standalone task | `guardkit autobuild task TASK-XXX --no-pre-loop` | No | 15-25 min |
 
 ---
 

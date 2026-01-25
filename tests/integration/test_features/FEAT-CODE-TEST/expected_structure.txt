@@ -1,0 +1,21 @@
+Expected directory structure after successful AutoBuild of FEAT-CODE-TEST:
+
+src/calculator/
+  __init__.py
+  calculator.py
+  operations.py
+
+tests/calculator/
+  __init__.py
+  test_calculator.py
+  test_operations.py
+
+Expected file count: 6 Python files
+
+Expected test results:
+- Test coverage: ≥80% (expected ~90%)
+- Tests passing: 100% (all tests pass)
+- Architectural score: ≥60 (expected 70-80)
+
+Expected Coach decision: APPROVED (quality gates passed)
+Expected AutoBuild turns: 1-3 turns

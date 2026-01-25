@@ -262,10 +262,31 @@ class TestMicroTaskDetector:
         assert analysis.confidence_score >= 0.9
 
     def test_confidence_low_for_multiple_files(self):
-        """Test that multiple files reduce confidence."""
+        """Test that multiple files (above threshold) reduce confidence.
+
+        TASK-TWP-c3d4: Updated - now 3 files is at threshold, 4+ blocks
+        """
         task_metadata = {
             'id': 'TASK-061',
             'title': 'Update services',
+            'description': 'Update UserService.cs, ProductService.cs, OrderService.cs, CartService.cs',
+            'complexity_estimate': 1,
+            'estimated_effort': '30 minutes'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        # 4+ files should block micro-task mode
+        assert analysis.is_micro_task is False
+
+    def test_confidence_acceptable_for_three_files(self):
+        """Test that exactly 3 files is acceptable (at threshold).
+
+        TASK-TWP-c3d4: New test - 3 files should pass with new max_files=3
+        """
+        task_metadata = {
+            'id': 'TASK-061B',
+            'title': 'Update three services',
             'description': 'Update UserService.cs, ProductService.cs, OrderService.cs',
             'complexity_estimate': 1,
             'estimated_effort': '30 minutes'
@@ -273,8 +294,8 @@ class TestMicroTaskDetector:
 
         analysis = self.detector.analyze(task_metadata)
 
-        # Multiple files should block micro-task mode
-        assert analysis.is_micro_task is False
+        # 3 files is at threshold, should qualify
+        assert analysis.is_micro_task is True
 
     def test_confidence_very_low_for_high_risk(self):
         """Test that high-risk keywords reduce confidence significantly."""
@@ -496,18 +517,42 @@ class TestMicroTaskDetector:
         assert not any('Complexity' in reason for reason in analysis.blocking_reasons)
 
     def test_edge_case_exact_threshold(self):
-        """Test handling of values at exact thresholds."""
+        """Test handling of values at exact thresholds.
+
+        TASK-TWP-c3d4: Updated for new thresholds (max_complexity=3, max_hours=2)
+        - Complexity 3 is now AT threshold, should pass
+        - 1 hour is below new threshold (<2 hours), should pass
+        """
         task_metadata = {
             'id': 'TASK-077',
             'title': 'Update file',
             'description': 'Update UserService.cs',
-            'complexity_estimate': 3,  # Exactly at max_complexity
-            'estimated_effort': '1 hour'  # Exactly at max_hours
+            'complexity_estimate': 3,  # At max_complexity (should pass with ≤3)
+            'estimated_effort': '1 hour'  # Below max_hours (should pass with <2)
         }
 
         analysis = self.detector.analyze(task_metadata)
 
-        # At threshold should be blocked (>= comparison)
+        # At threshold should now PASS with new thresholds
+        assert analysis.is_micro_task is True
+        assert len(analysis.blocking_reasons) == 0
+
+    def test_edge_case_above_threshold(self):
+        """Test handling of values above thresholds.
+
+        TASK-TWP-c3d4: Verify complexity=4 and 2+ hours are blocked.
+        """
+        task_metadata = {
+            'id': 'TASK-077B',
+            'title': 'Update multiple services',
+            'description': 'Update UserService.cs',
+            'complexity_estimate': 4,  # Above max_complexity (should block)
+            'estimated_effort': '2 hours'  # At max_hours (should block with >=)
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        # Above threshold should be blocked
         assert analysis.is_micro_task is False
 
 
@@ -561,3 +606,256 @@ class TestMicroTaskAnalysis:
         )
 
         assert analysis.should_escalate is True
+
+
+class TestTASKTWPc3d4Thresholds:
+    """Test suite for TASK-TWP-c3d4: Lowered micro-mode thresholds.
+
+    Acceptance Criteria:
+    - [ ] Micro-mode auto-detection triggers for complexity ≤3
+    - [ ] Complexity 3 tasks get "Suggest using --micro" prompt
+    - [ ] Complexity 4+ tasks do NOT get micro-mode suggestion
+    - [ ] High-risk keywords (security, database, API) still escalate to full workflow
+    - [ ] Existing `--micro` flag validation still works
+    - [ ] Tests updated for new threshold
+    """
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.detector = MicroTaskDetector()
+
+    # === Complexity Threshold Tests ===
+
+    def test_complexity_1_suggests_micro_mode(self):
+        """Complexity 1 → suggests micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC001',
+            'title': 'Fix typo',
+            'description': 'Fix typo in error message',
+            'complexity_estimate': 1,
+            'estimated_effort': '15 minutes'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is True
+        assert '--micro' in analysis.suggested_flags
+
+    def test_complexity_2_suggests_micro_mode(self):
+        """Complexity 2 → suggests micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC002',
+            'title': 'Update error handling',
+            'description': 'Add try-catch to validation method',
+            'complexity_estimate': 2,
+            'estimated_effort': '30 minutes'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is True
+        assert '--micro' in analysis.suggested_flags
+
+    def test_complexity_3_suggests_micro_mode(self):
+        """Complexity 3 → suggests micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC003',
+            'title': 'Add configuration class',
+            'description': 'Create Pydantic settings for core configuration',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is True
+        assert '--micro' in analysis.suggested_flags
+
+    def test_complexity_4_does_not_suggest_micro_mode(self):
+        """Complexity 4+ → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC004',
+            'title': 'Implement user service',
+            'description': 'Create user service with CRUD operations',
+            'complexity_estimate': 4,
+            'estimated_effort': '3 hours'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+        assert '--micro' not in analysis.suggested_flags
+
+    def test_complexity_5_does_not_suggest_micro_mode(self):
+        """Complexity 5 → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC005',
+            'title': 'Implement full API',
+            'description': 'Create REST API with all endpoints',
+            'complexity_estimate': 5,
+            'estimated_effort': '4 hours'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+
+    # === High-Risk Keyword Escalation Tests ===
+
+    def test_complexity_3_with_security_keyword_escalates(self):
+        """Complexity 3 with "security" keyword → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC006',
+            'title': 'Add input validation',
+            'description': 'Add security validation for user input',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+        assert any('security' in r.lower() for r in analysis.blocking_reasons)
+
+    def test_complexity_3_with_database_keyword_escalates(self):
+        """Complexity 3 with "database" keyword → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC007',
+            'title': 'Add helper function',
+            'description': 'Add database helper for connection pooling',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+        assert any('data' in r.lower() for r in analysis.blocking_reasons)
+
+    def test_complexity_3_with_api_keyword_escalates(self):
+        """Complexity 3 with "breaking change" keyword → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC008',
+            'title': 'Update endpoint',
+            'description': 'Breaking change to user API endpoint',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+        assert any('api' in r.lower() for r in analysis.blocking_reasons)
+
+    # === File Count Threshold Tests ===
+
+    def test_complexity_3_with_4_files_does_not_suggest_micro_mode(self):
+        """Complexity 3 with 4+ files → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC009',
+            'title': 'Update multiple services',
+            'description': 'Update user.py, order.py, product.py, cart.py',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour',
+            'files': ['user.py', 'order.py', 'product.py', 'cart.py']
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+
+    def test_complexity_3_with_3_files_suggests_micro_mode(self):
+        """Complexity 3 with exactly 3 files → suggests micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC010',
+            'title': 'Update three services',
+            'description': 'Update user.py, order.py, product.py',
+            'complexity_estimate': 3,
+            'estimated_effort': '1 hour',
+            'files': ['user.py', 'order.py', 'product.py']
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is True
+
+    # === Estimated Effort Threshold Tests ===
+
+    def test_complexity_3_with_2_hours_does_not_suggest_micro_mode(self):
+        """Complexity 3 with 2+ hours → does NOT suggest micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC011',
+            'title': 'Implement feature',
+            'description': 'Add new feature to user service',
+            'complexity_estimate': 3,
+            'estimated_effort': '2 hours'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is False
+
+    def test_complexity_3_with_1_hour_30_mins_suggests_micro_mode(self):
+        """Complexity 3 with <2 hours → suggests micro-mode."""
+        task_metadata = {
+            'id': 'TASK-AC012',
+            'title': 'Add helper method',
+            'description': 'Add utility method to service',
+            'complexity_estimate': 3,
+            'estimated_effort': '1.5 hours'
+        }
+
+        analysis = self.detector.analyze(task_metadata)
+
+        assert analysis.is_micro_task is True
+
+    # === Validation Tests ===
+
+    def test_validation_allows_complexity_3(self):
+        """Existing --micro flag validation still works for complexity 3."""
+        task_metadata = {
+            'id': 'TASK-AC013',
+            'title': 'Simple update',
+            'description': 'Update configuration value',
+            'complexity_estimate': 3,
+            'estimated_effort': '30 minutes'
+        }
+
+        is_valid = self.detector.validate_micro_mode(task_metadata)
+
+        assert is_valid is True
+
+    def test_validation_blocks_complexity_4(self):
+        """Existing --micro flag validation blocks complexity 4+."""
+        task_metadata = {
+            'id': 'TASK-AC014',
+            'title': 'Complex update',
+            'description': 'Update multiple modules',
+            'complexity_estimate': 4,
+            'estimated_effort': '30 minutes'
+        }
+
+        is_valid = self.detector.validate_micro_mode(task_metadata)
+
+        assert is_valid is False
+
+    # === Suggestion Text Tests ===
+
+    def test_suggestion_includes_task_id_for_complexity_3(self):
+        """Suggestion message includes task ID for complexity 3 tasks."""
+        task_metadata = {
+            'id': 'TASK-AC015',
+            'title': 'Simple fix',
+            'description': 'Fix minor issue',
+            'complexity_estimate': 3,
+            'estimated_effort': '30 minutes'
+        }
+
+        suggestion = self.detector.suggest_micro_mode(task_metadata)
+
+        # Only suggest if confidence >= 0.9
+        analysis = self.detector.analyze(task_metadata)
+        if analysis.confidence_score >= 0.9:
+            assert suggestion is not None
+            assert 'TASK-AC015' in suggestion
+            assert '--micro' in suggestion

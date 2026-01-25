@@ -1,0 +1,48 @@
+id: FEAT-VALID
+name: Valid Feature for Testing
+description: A complete valid feature for testing schema parsing
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 5
+estimated_tasks: 3
+tasks:
+  - id: TASK-V-001
+    name: First task
+    file_path: tasks/backlog/TASK-V-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-V-002
+    name: Second task
+    file_path: tasks/backlog/TASK-V-002.md
+    complexity: 4
+    dependencies:
+      - TASK-V-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+  - id: TASK-V-003
+    name: Third task
+    file_path: tasks/backlog/TASK-V-003.md
+    complexity: 3
+    dependencies:
+      - TASK-V-002
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-V-001
+    - - TASK-V-002
+    - - TASK-V-003
+  estimated_duration_minutes: 105
+  recommended_parallel: 1
+execution:
+  started_at: null
+  completed_at: null
+  worktree_path: null
+  total_turns: 0
+  tasks_completed: 0
+  tasks_failed: 0

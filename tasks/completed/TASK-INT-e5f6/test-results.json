@@ -1,0 +1,96 @@
+{
+  "task_id": "TASK-INT-e5f6",
+  "test_file": "tests/unit/test_intensity_detector.py",
+  "implementation_file": "guardkit/orchestrator/intensity_detector.py",
+  "compilation_status": "SUCCESS",
+  "test_execution": {
+    "total_tests": 64,
+    "passed": 64,
+    "failed": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 1.14
+  },
+  "coverage_metrics": {
+    "line_coverage": {
+      "total_statements": 56,
+      "covered_statements": 56,
+      "percentage": 100.0,
+      "missing_lines": 0
+    },
+    "branch_coverage": {
+      "total_branches": 20,
+      "covered_branches": 20,
+      "percentage": 100.0
+    }
+  },
+  "test_categories": {
+    "parent_review_detection": {
+      "tests": 4,
+      "passed": 4,
+      "description": "Tests for parent_review provenance detection logic"
+    },
+    "feature_id_detection": {
+      "tests": 3,
+      "passed": 3,
+      "description": "Tests for feature_id provenance detection logic"
+    },
+    "fresh_task_detection": {
+      "tests": 4,
+      "passed": 4,
+      "description": "Tests for complexity-based detection without provenance"
+    },
+    "high_risk_keywords": {
+      "tests": 6,
+      "passed": 6,
+      "description": "Tests for security/breaking change keyword detection"
+    },
+    "override_scenarios": {
+      "tests": 5,
+      "passed": 5,
+      "description": "Tests for --intensity flag override behavior"
+    },
+    "edge_cases": {
+      "tests": 9,
+      "passed": 9,
+      "description": "Tests for missing/invalid data handling"
+    },
+    "internal_helpers": {
+      "tests": 4,
+      "passed": 4,
+      "description": "Tests for internal helper functions"
+    },
+    "high_risk_keywords_coverage": {
+      "tests": 27,
+      "passed": 27,
+      "description": "Parameterized tests for all 27 high-risk keywords"
+    },
+    "provenance_priority": {
+      "tests": 2,
+      "passed": 2,
+      "description": "Tests for provenance precedence logic"
+    }
+  },
+  "requirements_coverage": {
+    "task_with_parent_review_complexity_3": "COVERED",
+    "task_with_parent_review_complexity_6": "COVERED",
+    "task_with_feature_id_complexity_4": "COVERED",
+    "fresh_task_complexity_2": "COVERED",
+    "fresh_task_complexity_5": "COVERED",
+    "security_keyword_detection": "COVERED",
+    "intensity_override_strict": "COVERED",
+    "invalid_data_handling": "COVERED",
+    "missing_fields_handling": "COVERED",
+    "all_27_high_risk_keywords": "COVERED"
+  },
+  "quality_gates": {
+    "compilation": "PASSED",
+    "test_execution": "PASSED",
+    "line_coverage_80_percent": "PASSED (100%)",
+    "branch_coverage_75_percent": "PASSED (100%)"
+  },
+  "files_generated": [
+    "tests/unit/test_intensity_detector.py",
+    "tests/coverage-intensity-detector.json"
+  ]
+}

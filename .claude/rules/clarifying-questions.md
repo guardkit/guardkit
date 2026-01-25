@@ -1,5 +1,6 @@
 ---
 description: Clarifying questions system for task planning
+paths: installer/core/commands/*.md, installer/core/agents/clarification-questioner.md
 ---
 
 # Clarifying Questions

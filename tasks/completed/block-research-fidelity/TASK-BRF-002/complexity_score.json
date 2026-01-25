@@ -1,0 +1,21 @@
+{
+  "task_id": "TASK-BRF-002",
+  "total_score": 7,
+  "level": "High",
+  "review_mode": "FULL_REQUIRED",
+  "factors": {
+    "file_complexity": 2,
+    "pattern_familiarity": 1,
+    "risk_level": 2,
+    "dependencies": 0
+  },
+  "forced_review_triggers": [],
+  "breakdown": {
+    "files_to_create": 2,
+    "files_to_modify": 2,
+    "total_files": 4,
+    "patterns_used": ["Checkpoint", "Orchestrator", "Strategy", "DI"],
+    "risk_factors": ["git operations", "state management"]
+  },
+  "timestamp": "2026-01-24T20:50:00Z"
+}

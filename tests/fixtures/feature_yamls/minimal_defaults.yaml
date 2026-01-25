@@ -1,0 +1,8 @@
+id: FEAT-MINIMAL
+name: Minimal Feature
+tasks:
+  - id: TASK-MIN-001
+    file_path: tasks/backlog/TASK-MIN-001.md
+orchestration:
+  parallel_groups:
+    - - TASK-MIN-001

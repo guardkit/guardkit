@@ -1,0 +1,24 @@
+id: FEAT-WITH-FILES
+name: Feature with redundant task_files section
+description: Contains deprecated task_files section which should be ignored
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 3
+estimated_tasks: 1
+tasks:
+  - id: TASK-WF-001
+    name: Task with proper file_path
+    file_path: tasks/backlog/TASK-WF-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+# Redundant task_files section (old format) - should be ignored
+task_files:
+  TASK-WF-001: tasks/backlog/TASK-WF-001.md
+orchestration:
+  parallel_groups:
+    - - TASK-WF-001
+  estimated_duration_minutes: 30
+  recommended_parallel: 1

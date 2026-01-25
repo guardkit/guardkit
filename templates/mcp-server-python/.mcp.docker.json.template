@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "{server-name}-docker": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "{docker-image}:latest"],
+      "env": {
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

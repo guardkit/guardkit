@@ -101,6 +101,8 @@ nav:
       - Task Review Workflow: workflows/task-review-workflow.md
 
   - Deep Dives:
+      - AutoBuild Architecture: deep-dives/autobuild-architecture.md
+      - Adversarial Cooperation Research: deep-dives/adversarial-cooperation-research-validation.md
       - Conductor Integration: deep-dives/conductor-integration.md
       - MCP Integration:
           - Context7 Setup: deep-dives/mcp-integration/context7-setup.md

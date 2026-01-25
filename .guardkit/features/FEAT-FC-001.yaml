@@ -1,0 +1,86 @@
+id: FEAT-FC-001
+name: Feature Complete Command (Wave 1)
+description: >
+  Implements the /feature-complete command with "Prepare and Hand Off" approach.
+  Completes all tasks, archives feature folder, and displays merge instructions
+  for user to complete with their preferred git tool (GitKraken, Fork, etc.).
+created: '2026-01-24T12:00:00Z'
+updated: '2026-01-24T15:15:00Z'
+status: in_progress
+progress: 40%
+completed_tasks: 2
+total_tasks: 5
+complexity: 11
+estimated_tasks: 5
+parent_review: TASK-REV-FC01
+
+tasks:
+- id: TASK-FC-001
+  name: Create feature-complete orchestrator skeleton
+  file_path: tasks/backlog/feature-complete/TASK-FC-001-orchestrator-skeleton.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: Core orchestrator with three-phase execution pattern
+  implementation_mode: task-work
+  estimated_minutes: 45
+
+- id: TASK-FC-002
+  name: Implement parallel task completion
+  file_path: tasks/backlog/feature-complete/TASK-FC-002-parallel-task-completion.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: Parallel task completion using asyncio.gather
+  implementation_mode: task-work
+  estimated_minutes: 60
+
+- id: TASK-FC-003
+  name: Implement feature folder archival
+  file_path: tasks/completed/TASK-FC-003/TASK-FC-003-feature-folder-archival.md
+  complexity: 2
+  dependencies: []
+  status: completed
+  description: Move feature folder to tasks/completed/{date}/{slug}/
+  implementation_mode: direct
+  estimated_minutes: 30
+  completed: '2026-01-24T08:20:00Z'
+  actual_duration_minutes: 90
+
+- id: TASK-FC-004
+  name: Add merge instruction display
+  file_path: tasks/backlog/feature-complete/TASK-FC-004-merge-instruction-display.md
+  complexity: 1
+  dependencies: []
+  status: pending
+  description: Display merge instructions for user's preferred tool
+  implementation_mode: direct
+  estimated_minutes: 20
+
+- id: TASK-FC-005
+  name: Add guardkit worktree cleanup command
+  file_path: tasks/completed/TASK-FC-005/TASK-FC-005.md
+  complexity: 2
+  dependencies: []
+  status: completed
+  completed: '2026-01-24T15:15:00Z'
+  description: CLI command to cleanup worktree after merge
+  implementation_mode: task-work
+  estimated_minutes: 40
+  actual_minutes: 50
+
+orchestration:
+  parallel_groups:
+  - - TASK-FC-001
+    - TASK-FC-002
+    - TASK-FC-003
+    - TASK-FC-004
+    - TASK-FC-005
+  estimated_duration_minutes: 195
+  recommended_parallel: 3
+
+execution:
+  tasks_completed: 2
+  tasks_pending: 3
+  progress_percentage: 40
+  updated: '2026-01-24T15:15:00Z'

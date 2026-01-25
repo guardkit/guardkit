@@ -1,0 +1,42 @@
+id: FEAT-CIRCULAR
+name: Feature with circular dependencies
+description: Tasks have circular dependency chain A -> B -> C -> A
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 5
+estimated_tasks: 3
+tasks:
+  - id: TASK-CIRC-A
+    name: Task A depends on C
+    file_path: tasks/backlog/TASK-CIRC-A.md
+    complexity: 3
+    dependencies:
+      - TASK-CIRC-C
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-CIRC-B
+    name: Task B depends on A
+    file_path: tasks/backlog/TASK-CIRC-B.md
+    complexity: 3
+    dependencies:
+      - TASK-CIRC-A
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+  - id: TASK-CIRC-C
+    name: Task C depends on B
+    file_path: tasks/backlog/TASK-CIRC-C.md
+    complexity: 3
+    dependencies:
+      - TASK-CIRC-B
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-CIRC-A
+    - - TASK-CIRC-B
+    - - TASK-CIRC-C
+  estimated_duration_minutes: 90
+  recommended_parallel: 1

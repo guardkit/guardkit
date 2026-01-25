@@ -1,0 +1,12 @@
+feature_id: FEAT-CODE-TEST
+name: Quality Gate Validation Feature
+description: Test feature for validating quality gates with actual code implementation (not scaffolding)
+status: testing
+created: 2025-01-22T00:00:00Z
+tasks:
+  - id: TASK-QGV-001
+    title: Implement calculator service with SOLID principles
+    wave: 1
+    task_type: feature
+    complexity: 4
+    file: TASK-QGV-001-calculator-service.md

@@ -936,10 +936,15 @@ When you choose [I]mplement, the system automatically:
 4. **Detects parallel groups** by analyzing file conflicts between tasks
 5. **Generates workspace names** for Conductor parallel execution
 6. **Creates subfolder** at `tasks/backlog/{feature-slug}/`
-7. **Generates task files** with complete frontmatter and metadata
+7. **Generates task files** with complete frontmatter and metadata, including:
+   - `parent_review`: Set to the review task ID (format: TASK-REV-{hash})
+   - `feature_id`: Set to generated feature ID (format: FEAT-{hash})
+   - All standard task fields (wave, implementation_mode, dependencies, etc.)
 8. **Generates IMPLEMENTATION-GUIDE.md** with wave breakdowns and execution strategy
 9. **Generates README.md** with problem statement, solution approach, and subtask summary
 10. **Displays execution plan** with next steps
+
+**Provenance tracking**: The `parent_review` and `feature_id` fields enable complete traceability from feature planning through review to implementation. See `.claude/rules/task-workflow.md` for detailed provenance documentation and TASK-INT-e5f6 for the design rationale.
 
 ### Enhanced [I]mplement Benefits
 

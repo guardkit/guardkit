@@ -20,10 +20,10 @@ Micro-task mode provides a streamlined workflow for trivial tasks (typo fixes, d
 - Calculates confidence score (0.0-1.0)
 - Special handling for documentation-only tasks
 
-**Micro-Task Criteria** (ALL must be true):
-- Single file modification (or documentation-only)
-- Estimated effort <1 hour
-- Complexity ≤ 1/10
+**Micro-Task Criteria** (ALL must be true) - TASK-TWP-c3d4 updated thresholds:
+- ≤3 file modifications (was: single file or documentation-only)
+- Estimated effort <2 hours (was: <1 hour)
+- Complexity ≤3/10 (was: 1/10)
 - No high-risk keywords detected
 
 **High-Risk Keywords** (block micro-task mode):
@@ -317,10 +317,10 @@ Phase 2.5B: Architectural Review
 
 ## Success Metrics
 
-**From TASK-020 Requirements**:
-- ✅ Complexity score = 1/10
-- ✅ Single file modification (or docs-only)
-- ✅ Estimated time <1 hour
+**From TASK-020 Requirements** (updated by TASK-TWP-c3d4):
+- ✅ Complexity score ≤3/10 (was 1/10)
+- ✅ ≤3 file modifications (was single file)
+- ✅ Estimated time <2 hours (was <1 hour)
 - ✅ Low risk (no security/database/API keywords)
 - ✅ Complete in ≤5 minutes
 - ✅ Skip all optional/complex phases

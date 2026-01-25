@@ -45,6 +45,9 @@ from lib.parallel_analyzer import detect_parallel_groups, generate_workspace_nam
 from lib.guide_generator import generate_guide_content, write_guide_to_file
 from lib.readme_generator import generate_feature_readme
 
+# Import task type detection
+from guardkit.lib.task_type_detector import detect_task_type
+
 
 def extract_feature_slug(title: str) -> str:
     """
@@ -238,6 +241,7 @@ class ImplementOrchestrator:
           - Files to modify
           - Dependencies
           - Implementation mode
+          - Task type (auto-detected)
         """
         for subtask in self.subtasks:
             task_id = subtask["id"]
@@ -249,6 +253,9 @@ class ImplementOrchestrator:
             parallel_group = subtask.get("parallel_group")
             conductor_workspace = subtask.get("conductor_workspace", "")
             dependencies = subtask.get("dependencies", [])
+
+            # Auto-detect task type based on title and description
+            task_type = detect_task_type(title, description)
 
             # Generate filename
             slug = self._slugify(title)
@@ -265,6 +272,7 @@ updated: {self.review_task.get('created', '2025-12-04T00:00:00Z')}
 priority: medium
 tags: [{self.feature_slug}]
 complexity: {complexity}
+task_type: {task_type.value}
 implementation_mode: {implementation_mode}
 parallel_group: {parallel_group if parallel_group else 'null'}
 conductor_workspace: {conductor_workspace if conductor_workspace else 'null'}
@@ -351,6 +359,162 @@ Auto-generated from {self.review_task['id']} recommendations.
         # Write to file
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(readme_content)
+
+    def generate_implementation_plans(self) -> None:
+        """
+        Generate implementation plan files for each subtask.
+
+        Creates minimal implementation plans at .claude/task-plans/{task_id}-implementation-plan.md
+        leveraging the "hot" AI context from the review analysis.
+
+        Plan structure includes:
+          - Task title and overview
+          - Files to create/modify
+          - Implementation approach
+          - Dependencies
+          - Test strategy
+          - Estimated effort
+        """
+        # Ensure .claude/task-plans/ directory exists
+        plans_dir = Path(".claude/task-plans")
+        plans_dir.mkdir(parents=True, exist_ok=True)
+
+        for subtask in self.subtasks:
+            task_id = subtask["id"]
+            title = subtask["title"]
+            description = subtask.get("description", title)
+            files = subtask.get("files", [])
+            complexity = subtask.get("complexity", 5)
+            dependencies = subtask.get("dependencies", [])
+            implementation_mode = subtask.get("implementation_mode", "task-work")
+
+            # Format files section
+            files_section = self._format_plan_files(files)
+
+            # Format dependencies section
+            deps_section = self._format_plan_dependencies(dependencies)
+
+            # Generate implementation approach based on task info
+            approach_section = self._generate_implementation_approach(subtask)
+
+            # Generate test strategy
+            test_strategy = self._generate_test_strategy(implementation_mode, files)
+
+            # Estimate effort
+            loc_estimate = self._estimate_loc(complexity, len(files))
+            duration_estimate = self._estimate_duration(complexity)
+
+            # Generate plan content
+            plan_content = f"""# Implementation Plan: {task_id}
+
+## Task
+{title}
+
+## Overview
+{description}
+
+## Files to Create/Modify
+{files_section}
+
+## Implementation Approach
+{approach_section}
+
+## Dependencies
+{deps_section}
+
+## Test Strategy
+{test_strategy}
+
+## Estimated Effort
+- LOC: ~{loc_estimate}
+- Duration: {duration_estimate}
+- Complexity: {complexity}/10
+"""
+
+            # Write plan file
+            plan_path = plans_dir / f"{task_id}-implementation-plan.md"
+            plan_path.write_text(plan_content, encoding='utf-8')
+
+    def _format_plan_files(self, files: List[str]) -> str:
+        """Format files list for implementation plan."""
+        if not files:
+            return "Files will be determined during implementation based on task requirements."
+        return '\n'.join(f"- `{f}` - Implementation target" for f in files)
+
+    def _format_plan_dependencies(self, dependencies: List[str]) -> str:
+        """Format dependencies for implementation plan."""
+        if not dependencies:
+            return "None"
+        return '\n'.join(f"- {dep}" for dep in dependencies)
+
+    def _generate_implementation_approach(self, subtask: Dict) -> str:
+        """Generate numbered implementation steps based on subtask info."""
+        title = subtask.get("title", "")
+        description = subtask.get("description", "")
+        files = subtask.get("files", [])
+        implementation_mode = subtask.get("implementation_mode", "task-work")
+
+        steps = []
+
+        # Step 1: Always start with understanding
+        steps.append("1. Review task requirements and acceptance criteria")
+
+        # Step 2: File-specific steps
+        if files:
+            if len(files) == 1:
+                steps.append(f"2. Implement changes in `{files[0]}`")
+            else:
+                steps.append(f"2. Implement changes across {len(files)} files")
+        else:
+            steps.append("2. Identify and create/modify necessary files")
+
+        # Step 3: Testing based on mode
+        if implementation_mode == "task-work":
+            steps.append("3. Write unit tests for new functionality")
+            steps.append("4. Run tests and verify all pass")
+            steps.append("5. Review code quality and architecture compliance")
+        elif implementation_mode == "direct":
+            steps.append("3. Verify changes work as expected")
+            steps.append("4. Run existing tests to ensure no regressions")
+        else:  # manual
+            steps.append("3. Manually verify implementation")
+            steps.append("4. Document any manual steps required")
+
+        return '\n'.join(steps)
+
+    def _generate_test_strategy(self, implementation_mode: str, files: List[str]) -> str:
+        """Generate test strategy based on implementation mode."""
+        if implementation_mode == "task-work":
+            return """- Unit tests for new functionality
+- Integration tests if multiple components affected
+- Ensure 80%+ code coverage for new code
+- Run full test suite to verify no regressions"""
+        elif implementation_mode == "direct":
+            return """- Run existing tests to verify no regressions
+- Manual verification of changes
+- Spot-check edge cases"""
+        else:  # manual
+            return """- Manual verification required
+- Document test results
+- Peer review recommended"""
+
+    def _estimate_loc(self, complexity: int, file_count: int) -> int:
+        """Estimate lines of code based on complexity and file count."""
+        base_loc = 50
+        complexity_multiplier = complexity / 5  # 0.2 to 2.0
+        file_multiplier = max(1, file_count * 0.5)
+        return int(base_loc * complexity_multiplier * file_multiplier)
+
+    def _estimate_duration(self, complexity: int) -> str:
+        """Estimate duration based on complexity."""
+        if complexity <= 3:
+            return "30 minutes - 1 hour"
+        elif complexity <= 5:
+            return "1-2 hours"
+        elif complexity <= 7:
+            return "2-4 hours"
+        else:
+            return "4-8 hours"
 
     def display_summary(self) -> None:
         """
@@ -555,6 +719,11 @@ async def handle_implement_option(review_task: Dict, review_report_path: str) ->
     print("\nStep 8/10: Generating subtask files...")
     orchestrator.generate_subtask_files()
     print(f"   ✓ Generated {len(orchestrator.subtasks)} task files")
+
+    # Step 8b: Generate implementation plans
+    print("   Generating implementation plans...")
+    orchestrator.generate_implementation_plans()
+    print(f"   ✓ Generated {len(orchestrator.subtasks)} implementation plans")
 
     # Step 9: Generate implementation guide
     print("\nStep 9/10: Generating IMPLEMENTATION-GUIDE.md...")

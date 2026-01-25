@@ -1,0 +1,45 @@
+{
+  "task_id": "TASK-AB-CLI",
+  "audit_timestamp": "2025-12-26T10:00:00Z",
+  "planned_creates": [
+    "pyproject.toml",
+    "guardkit/worktrees/__init__.py",
+    "guardkit/worktrees/manager.py"
+  ],
+  "actual_creates": [
+    "pyproject.toml",
+    "guardkit/worktrees/__init__.py",
+    "guardkit/worktrees/manager.py"
+  ],
+  "planned_modifies": [
+    "guardkit/__init__.py",
+    "guardkit/cli/__init__.py",
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/cli/autobuild.py",
+    "installer/scripts/install.sh"
+  ],
+  "actual_modifies": [
+    "guardkit/__init__.py",
+    "guardkit/cli/__init__.py",
+    "guardkit/orchestrator/autobuild.py",
+    "guardkit/cli/autobuild.py",
+    "installer/scripts/install.sh",
+    "guardkit/orchestrator/agent_invoker.py",
+    "tests/integration/test_autobuild_e2e.py",
+    "tests/unit/test_agent_invoker.py",
+    "tests/unit/test_autobuild_orchestrator.py",
+    "tests/unit/test_cli_autobuild.py",
+    "tests/unit/test_cli_decorators.py"
+  ],
+  "extra_files": 6,
+  "missing_files": 0,
+  "severity": "LOW",
+  "rationale": "Extra files are test updates required to support import path changes",
+  "decision": "APPROVED",
+  "test_results": {
+    "total": 67,
+    "passed": 67,
+    "failed": 0,
+    "coverage": "85%"
+  }
+}

@@ -333,6 +333,102 @@ check_prerequisites() {
     print_success "All required prerequisites met"
 }
 
+# Install guardkit Python package
+install_python_package() {
+    print_info "Installing guardkit Python package (with AutoBuild support)..."
+
+    # Get repository root (parent of installer/)
+    local repo_root="$(cd "$INSTALLER_DIR/.." && pwd)"
+
+    # Check if we're in the guardkit repository
+    if [ ! -f "$repo_root/pyproject.toml" ]; then
+        print_warning "pyproject.toml not found at $repo_root"
+        print_warning "Skipping Python package installation"
+        return 0
+    fi
+
+    # Check if python3 with pip module is available (more reliable than pip3 command)
+    if ! python3 -m pip --version &> /dev/null; then
+        print_warning "python3 -m pip not available - cannot install guardkit package"
+        print_info "The guardkit autobuild command will not be available"
+        print_info "Install pip with: python3 -m ensurepip"
+        return 0
+    fi
+
+    print_info "Installing from: $repo_root"
+
+    # Install with [autobuild] extras to include claude-agent-sdk
+    # Try installing with --break-system-packages (PEP 668 compliance for Python 3.11+)
+    set +e  # Temporarily allow errors
+    python3 -m pip install -e "$repo_root[autobuild]" --break-system-packages 2>&1
+    local install_status=$?
+    set -e  # Re-enable exit on error
+
+    if [ $install_status -ne 0 ]; then
+        # Fallback to --user install
+        print_info "Retrying with --user flag..."
+        set +e
+        python3 -m pip install -e "$repo_root[autobuild]" --user 2>&1
+        install_status=$?
+        set -e
+
+        if [ $install_status -eq 0 ]; then
+            print_success "guardkit package installed successfully (user mode, with AutoBuild)"
+        else
+            print_warning "Failed to install guardkit package"
+            print_info "AutoBuild CLI will not be available"
+            print_info "You can install manually with: python3 -m pip install -e \"$repo_root[autobuild]\""
+            return 0
+        fi
+    else
+        print_success "guardkit package installed successfully (with AutoBuild)"
+    fi
+
+    # Verify installation
+    set +e
+    python3 -c "import guardkit" 2>/dev/null
+    local import_status=$?
+    set -e
+
+    if [ $import_status -eq 0 ]; then
+        print_success "guardkit Python package is importable"
+    else
+        print_warning "guardkit package installed but not importable"
+        print_info "You may need to restart your shell"
+    fi
+
+    # Verify Claude Agent SDK is available (for AutoBuild features)
+    set +e
+    python3 -c "import claude_agent_sdk" 2>/dev/null
+    local sdk_status=$?
+    set -e
+
+    if [ $sdk_status -eq 0 ]; then
+        print_success "Claude Agent SDK is available (AutoBuild ready)"
+    else
+        print_warning "Claude Agent SDK not importable"
+        print_info "AutoBuild features require the SDK. Install with:"
+        print_info "  pip install claude-agent-sdk"
+        print_info "  # OR reinstall guardkit with: pip install guardkit-py[autobuild]"
+    fi
+
+    # Check if guardkit-py CLI is available
+    if command -v guardkit-py &> /dev/null; then
+        print_success "guardkit-py CLI command is available"
+    else
+        # Try to find it via Python
+        set +e
+        local cli_path=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        set -e
+        if [ -n "$cli_path" ]; then
+            print_success "guardkit-py CLI found at: $cli_path"
+        else
+            print_warning "guardkit-py CLI not found in PATH"
+            print_info "You may need to restart your shell or add ~/.local/bin to PATH"
+        fi
+    fi
+}
+
 # Backup existing installation
 backup_existing() {
     # Check for any existing installations
@@ -740,14 +836,20 @@ print_help() {
     echo ""
     echo "Commands:"
     echo "  init [template]     Initialize GuardKit in current directory"
+    echo "  autobuild <cmd>     Autonomous task implementation (Player-Coach)"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
     echo "  help                Show this help message"
+    echo ""
+    echo "AutoBuild Commands:"
+    echo "  autobuild task TASK-XXX     Execute Player-Coach loop for a task"
+    echo "  autobuild status TASK-XXX   Check worktree status"
     echo ""
     echo "Examples:"
     echo "  guardkit init                      # Interactive initialization"
     echo "  guardkit init react-typescript     # Initialize with React template"
     echo "  guardkit init fastapi-python       # Initialize with FastAPI template"
+    echo "  guardkit autobuild task TASK-001   # Autonomous task implementation"
     echo "  guardkit doctor                    # Check installation health"
 }
 
@@ -776,6 +878,44 @@ case "$1" in
         shift
         export CLAUDE_HOME="$AGENTECFLOW_HOME"
         exec "$AGENTECFLOW_HOME/bin/guardkit-init" "$@"
+        ;;
+    autobuild)
+        # Find guardkit-py CLI - resolve to full path for reliable -x test
+        GUARDKIT_PY=""
+        if command -v guardkit-py &> /dev/null; then
+            # Resolve to full path (fixes bug where -x test fails on command name)
+            GUARDKIT_PY="$(command -v guardkit-py)"
+        elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
+        elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="$HOME/.local/bin/guardkit-py"
+        elif [ -x "/usr/local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/usr/local/bin/guardkit-py"
+        else
+            # Try to find it via Python
+            GUARDKIT_PY=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        fi
+
+        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
+            shift  # Remove 'autobuild' from args
+            exec "$GUARDKIT_PY" autobuild "$@"
+        else
+            # Python CLI not installed - show guidance
+            echo -e "${YELLOW}AutoBuild CLI requires guardkit-py package${NC}"
+            echo ""
+            echo "The guardkit autobuild command requires the guardkit Python package."
+            echo ""
+            echo "To install:"
+            echo "  pip install -e /path/to/guardkit  # From guardkit repository"
+            echo ""
+            echo "Or use the /feature-build slash command in Claude Code instead."
+            echo "It uses Task tool agents when the CLI is not available."
+            echo ""
+            echo "Example:"
+            echo "  /feature-build TASK-XXX"
+            echo "  /feature-build FEAT-XXX"
+            exit 1
+        fi
         ;;
     doctor)
         echo -e "${BLUE}Running GuardKit diagnostics...${NC}"
@@ -1320,6 +1460,15 @@ print_summary() {
         echo -e "  ${YELLOW}⚠${NC} Claude Code integration not configured"
     fi
     echo ""
+    echo -e "${BOLD}AutoBuild Configuration:${NC}"
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        echo -e "  ${GREEN}✓${NC} ANTHROPIC_API_KEY is set"
+    else
+        echo -e "  ${YELLOW}⚠${NC} ANTHROPIC_API_KEY not set"
+        echo "      AutoBuild requires API credentials or Claude Code authentication"
+        echo "      Run 'guardkit doctor' to check configuration"
+    fi
+    echo ""
     echo -e "${YELLOW}⚠ Next Steps:${NC}"
     echo "  1. Restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
     echo "  2. Navigate to your project directory"
@@ -1594,6 +1743,7 @@ main() {
 
     # Run installation steps
     check_prerequisites
+    install_python_package
     backup_existing
     create_directories
     install_global_files

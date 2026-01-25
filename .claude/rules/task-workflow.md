@@ -20,6 +20,8 @@ updated: 2025-12-13T15:00:00Z
 priority: high
 tags: [rules-structure, guardkit, python-library]
 parent_task: TASK-REV-1DDD
+parent_review: TASK-REV-a3f8  # Review that recommended this task
+feature_id: FEAT-a3f8          # Feature grouping identifier
 implementation_mode: task-work
 wave: 2
 conductor_workspace: self-template-wave2-guardkit-rules
@@ -42,11 +44,118 @@ depends_on:
 - `updated`: Last modification timestamp
 - `tags`: Array of searchable tags
 - `parent_task`: Parent task ID for subtasks
+- `parent_review`: Review task ID that generated this task (format: TASK-REV-{hash})
+- `feature_id`: Feature ID for multi-task features (format: FEAT-{hash})
 - `implementation_mode`: task-work, direct, manual
 - `wave`: Parallel execution wave number
 - `conductor_workspace`: Workspace name for parallel development
 - `complexity`: 1-10 complexity score
 - `depends_on`: Array of dependency task IDs
+
+## Provenance Fields
+
+Tasks created from review tasks or as part of features include optional provenance fields for traceability.
+
+### parent_review
+
+**Purpose**: Links implementation tasks back to the review task that recommended them.
+
+**Format**: `TASK-REV-{hash}` (where {hash} is the review task's hash)
+
+**Set by**: `/task-review` command when user chooses [I]mplement at decision checkpoint
+
+**Example**:
+```yaml
+---
+id: TASK-AR-001
+title: Migrate to JWT-based authentication
+parent_review: TASK-REV-a3f8  # Review that recommended this implementation
+---
+```
+
+**Use cases**:
+- Trace implementation decisions back to architectural reviews
+- Understand why a feature was implemented a certain way
+- Link implementation outcomes to review recommendations
+- Audit trail for decision-making process
+
+**See**: TASK-INT-e5f6 for provenance tracking design
+
+### feature_id
+
+**Purpose**: Groups related tasks under a common feature identifier for multi-task features.
+
+**Format**: `FEAT-{hash}` (where {hash} is a unique feature identifier)
+
+**Set by**: `/feature-plan` command when creating feature structure
+
+**Example**:
+```yaml
+---
+id: TASK-AR-001
+title: Migrate to JWT-based authentication
+feature_id: FEAT-a3f8  # Part of authentication refactor feature
+parent_review: TASK-REV-a3f8
+---
+```
+
+**Use cases**:
+- Group related tasks for parallel execution planning
+- Track feature completion progress
+- Organize task folders (tasks/backlog/{feature-slug}/)
+- Enable feature-level reporting and metrics
+
+**See**: TASK-INT-e5f6 for provenance tracking design
+
+### Provenance Chain Example
+
+Complete provenance tracking from feature planning to implementation:
+
+```yaml
+# Review task (created by /feature-plan)
+---
+id: TASK-REV-a3f8
+title: Plan: authentication refactor
+status: review_complete
+task_type: review
+---
+
+# Implementation tasks (created by [I]mplement option)
+---
+id: TASK-AR-001
+title: Migrate to JWT-based authentication
+parent_review: TASK-REV-a3f8  # Links back to review
+feature_id: FEAT-a3f8          # Groups with related tasks
+wave: 1
+---
+
+---
+id: TASK-AR-002
+title: Implement Argon2 password hashing
+parent_review: TASK-REV-a3f8  # Same review origin
+feature_id: FEAT-a3f8          # Same feature
+wave: 1
+depends_on:
+  - TASK-AR-001
+---
+
+---
+id: TASK-AR-003
+title: Add rate limiting middleware
+parent_review: TASK-REV-a3f8  # Same review origin
+feature_id: FEAT-a3f8          # Same feature
+wave: 2
+depends_on:
+  - TASK-AR-001
+  - TASK-AR-002
+---
+```
+
+This chain enables:
+- **Traceability**: From feature idea → review → implementation → completion
+- **Context preservation**: Implementation tasks reference review findings
+- **Grouping**: Related tasks organized by feature
+- **Reporting**: Feature-level progress tracking
 
 ## Task ID Format
 
@@ -59,6 +168,7 @@ Examples:
 - TASK-STE-007       (feature prefix)
 - TASK-FIX-B2C4      (bug fix prefix)
 - TASK-E01-A3F2.1    (subtask)
+- TASK-REV-A3F2      (review task)
 ```
 
 ## Directory Organization
@@ -154,3 +264,43 @@ updated: 2025-12-13T15:00:00Z
 previous_state: backlog
 state_transition_reason: "Automatic transition for task-work execution"
 ```
+
+## Task Work Intensity Levels
+
+The `/task-work` command supports an `--intensity` flag to control workflow ceremony and phase execution.
+
+### Quick Reference
+
+| Level | Use Case | Duration | Quality Gates |
+|-------|----------|----------|----------------|
+| **minimal** | Typos, cosmetic changes | 3-5 min | Compilation + tests, no coverage |
+| **light** | Simple features, small fixes | 10-15 min | Compilation + tests, 70% coverage |
+| **standard** | Most tasks (default) | 15-30 min | Full gates, 80% coverage, arch review |
+| **strict** | Security, APIs, critical code | 30-60+ min | Maximum rigor, 85% coverage, security scan |
+
+### Using Intensity Levels
+
+```bash
+# Fastest execution for trivial changes
+/task-work TASK-001 --intensity=minimal
+/task-work TASK-001 --micro  # Shorthand alias
+
+# Quick implementation with brief planning
+/task-work TASK-002 --intensity=light
+
+# Standard workflow (default)
+/task-work TASK-003 --intensity=standard
+/task-work TASK-003  # Same as above
+
+# Maximum rigor for critical code
+/task-work TASK-004 --intensity=strict
+```
+
+### Intensity Level Details
+
+**See**: [`installer/core/commands/task-work.md` - Intensity Levels section](../../installer/core/commands/task-work.md#intensity-levels-new---task-int-c3d4) for complete specifications including:
+- Full phase execution details for each level
+- Quality gate requirements
+- Plan audit variance thresholds
+- Task type recommendations
+- Blocking checkpoint behavior

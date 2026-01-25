@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "{server-name}": {
+      "command": "{ABSOLUTE_PATH_TO_VENV}/bin/python",
+      "args": ["-m", "src"],
+      "cwd": "{ABSOLUTE_PATH_TO_PROJECT}",
+      "env": {
+        "PYTHONPATH": "{ABSOLUTE_PATH_TO_PROJECT}",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}

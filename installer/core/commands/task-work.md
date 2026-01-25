@@ -95,7 +95,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 ## Command Syntax
 
 ```bash
-/task-work TASK-XXX [--mode=standard|tdd|bdd] [--design-only | --implement-only | --micro] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
+/task-work TASK-XXX [--mode=standard|tdd|bdd] [--intensity=minimal|light|standard|strict] [--design-only | --implement-only] [--docs=minimal|standard|comprehensive] [--no-questions | --with-questions | --defaults | --answers="1:Y 2:N 3:JWT"] [other-flags...]
 ```
 
 ## Available Flags
@@ -103,9 +103,10 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 | Flag | Description |
 |------|-------------|
 | `--mode=tdd\|standard\|bdd` | Development mode (default: standard) |
+| `--intensity=LEVEL` | Control ceremony level (minimal, light, standard, strict) |
+| `--micro` | Alias for --intensity=minimal |
 | `--design-only` | Stop at Phase 2.8 checkpoint, save plan |
 | `--implement-only` | Start at Phase 3 with approved plan |
-| `--micro` | Streamlined workflow for trivial tasks |
 | `--docs=minimal\|standard\|comprehensive` | Documentation level control |
 | `--no-questions` | Skip Phase 1.5 clarification |
 | `--with-questions` | Force Phase 1.5 clarification |
@@ -122,31 +123,30 @@ Control the verbosity of documentation generated during task execution. This sig
 **Purpose**: Override automatic documentation level selection
 
 **Values**:
-- `--docs=minimal` - Structured data only, ~8-12 minutes, 2 files
-- `--docs=standard` - Brief explanations, ~12-18 minutes, 2 files (default for complexity 4+)
+- `--docs=minimal` - Structured data only, ~8-12 minutes, 2 files (DEFAULT)
+- `--docs=standard` - Brief explanations, ~12-18 minutes, 2 files
 - `--docs=comprehensive` - Full documentation, ~36+ minutes, 13+ files
 
 **Auto-selection** (when flag not provided):
-- Complexity 1-3: `minimal` mode (structured data)
-- Complexity 4-10: `standard` mode (brief explanations)
+- Default: `minimal` mode (use `--docs=standard` to lift)
 - Security/compliance keywords: `comprehensive` mode (forced)
 
 **Configuration hierarchy** (highest to lowest priority):
-1. Command-line flag (`--docs=minimal`)
+1. Command-line flag (`--docs=minimal|standard|comprehensive`)
 2. Force-comprehensive triggers (security, compliance, breaking changes)
 3. Settings.json default (`.claude/settings.json` → `documentation.default_level`)
-4. Auto-selection (complexity-based)
+4. Default: `minimal` (use `--docs=standard` to lift)
 
 **Examples**:
 ```bash
-# Explicit minimal mode (fastest)
-/task-work TASK-042 --docs=minimal
+# Default minimal mode (fastest, recommended)
+/task-work TASK-042
+
+# Lift to standard mode when more documentation needed
+/task-work TASK-043 --docs=standard
 
 # Explicit comprehensive mode (security tasks)
-/task-work TASK-043 --docs=comprehensive
-
-# Auto-selection based on complexity (default)
-/task-work TASK-044
+/task-work TASK-044 --docs=comprehensive
 ```
 
 **Performance impact**:
@@ -170,6 +170,409 @@ phase: {1|2|2.5|4|5}
 
 See individual agent files (installer/core/agents/*.md) for documentation level behavior specifications.
 
+## Intensity Levels (NEW - TASK-INT-c3d4)
+
+The `--intensity` flag controls the ceremony level and phase execution profile, allowing you to tune the workflow for task complexity and team preference.
+
+### Flag: --intensity=LEVEL
+
+**Purpose**: Select predefined phase execution profiles from a spectrum of ceremony levels.
+
+**Values**:
+- `minimal` - Fastest execution, minimal phases (alias: `--micro`)
+- `light` - Fast execution with brief planning, no architecture review
+- `standard` - Full workflow with smart MCP usage (default, current behavior)
+- `strict` - Maximum rigor, all phases with blocking checkpoints
+
+**Default**: `standard` (provides current behavior)
+
+### Intensity Level Specifications
+
+#### minimal (--micro alias)
+
+**Use for**: Trivial tasks, cosmetic changes, typo fixes, simple documentation updates.
+
+**Phases Executed**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✗
+- Phase 2.5A: Pattern MCP ✗
+- Phase 2.5B: Architectural Review ✗
+- Phase 2.7: Complexity Evaluation ✗
+- Phase 2.8: Human Checkpoint ✗
+- Phase 3: Implementation ✓ (simplified)
+- Phase 4: Testing ✓ (no coverage requirement)
+- Phase 4.5: Fix Loop ✓ (1 attempt max)
+- Phase 5: Code Review ✓ (lint only)
+- Phase 5.5: Plan Audit ✗
+
+**Key Characteristics**:
+- Execution time: 3-5 minutes
+- No implementation plan generated
+- Coverage requirements skipped
+- Minimal human interaction
+- Quick architectural validation (lint only)
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: SKIPPED
+- Architectural Review: SKIPPED
+- Code Review: Lightweight (lint only)
+
+**Example**:
+```bash
+# Fix a typo in error message
+/task-work TASK-047 --intensity=minimal
+
+# Or use the --micro alias
+/task-work TASK-047 --micro
+```
+
+#### light
+
+**Use for**: Simple features, straightforward bug fixes, small refactoring tasks.
+
+**Phases Executed**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (brief, ~5 minutes)
+- Phase 2.5A: Pattern MCP ✗
+- Phase 2.5B: Architectural Review ✗
+- Phase 2.7: Complexity Evaluation ✗
+- Phase 2.8: Human Checkpoint ✓ (10s timeout, auto-proceed)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓
+- Phase 4.5: Fix Loop ✓ (2 attempts)
+- Phase 5: Code Review ✓ (quick)
+- Phase 5.5: Plan Audit ✓ (50% variance threshold)
+
+**Key Characteristics**:
+- Execution time: 10-15 minutes
+- Brief implementation plan (essential elements only)
+- Optional checkpoint with auto-proceed
+- Faster planning process
+- Lighter scope creep detection
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: ≥70% (vs 80% in standard)
+- Architectural Review: SKIPPED
+- Code Review: Quick pass (no detailed analysis)
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: ±50% (vs ±20% in standard)
+- Duration variance: ±50% (vs ±30% in standard)
+
+**Example**:
+```bash
+# Add a simple feature with quick review
+/task-work TASK-048 --intensity=light
+```
+
+#### standard (default)
+
+**Use for**: Most tasks, normal development, features with clear requirements.
+
+**This is the current default behavior. All phases execute with smart decisions**:
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (full)
+- Phase 2.5A: Pattern MCP ✓ (only if pattern need detected)
+- Phase 2.5B: Architectural Review ✓
+- Phase 2.7: Complexity Evaluation ✓
+- Phase 2.8: Human Checkpoint ✓ (30s timeout, auto-proceed for 1-6, blocking for 7-10)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓
+- Phase 4.5: Fix Loop ✓ (3 attempts)
+- Phase 5: Code Review ✓ (full)
+- Phase 5.5: Plan Audit ✓ (20% variance threshold)
+
+**Key Characteristics**:
+- Execution time: 15-30 minutes
+- Complete implementation plan
+- Full architectural review when beneficial
+- Complexity-gated checkpoints
+- Standard scope creep detection
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED
+- Coverage: ≥80% lines, ≥75% branches
+- Architectural Review: ≥60/100 (human checkpoint if lower)
+- Code Review: Full analysis
+- Pattern Review: Smart MCP usage
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: ±20% acceptable
+- Duration variance: ±30% acceptable
+- File count variance: 0% (must match plan exactly)
+
+**Example**:
+```bash
+# Standard workflow - full quality gates
+/task-work TASK-049  # Same as /task-work TASK-049 --intensity=standard
+```
+
+#### strict
+
+**Use for**: Critical code, security-sensitive changes, APIs, high-risk refactoring, financial systems.
+
+**Phases Executed** (maximum rigor):
+- Phase 1: Load context ✓
+- Phase 2: Planning ✓ (detailed)
+- Phase 2.5A: Pattern MCP ✓ (always, comprehensive pattern analysis)
+- Phase 2.5B: Architectural Review ✓ (full with security scan)
+- Phase 2.7: Complexity Evaluation ✓ (detailed)
+- Phase 2.8: Human Checkpoint ✓ (blocking, no timeout)
+- Phase 3: Implementation ✓
+- Phase 4: Testing ✓ (comprehensive)
+- Phase 4.5: Fix Loop ✓ (5 attempts)
+- Phase 5: Code Review ✓ (full + security scan)
+- Phase 5.5: Plan Audit ✓ (0% variance - any deviation flagged)
+
+**Key Characteristics**:
+- Execution time: 30-60+ minutes
+- Comprehensive implementation plan
+- Mandatory human checkpoint
+- Full pattern analysis
+- Security vulnerability scanning
+- Zero-tolerance scope creep
+
+**Quality Gates**:
+- Compilation: REQUIRED
+- Tests Pass: REQUIRED (all must pass)
+- Coverage: ≥85% lines, ≥80% branches (elevated requirements)
+- Architectural Review: ≥70/100 minimum, human checkpoint if lower
+- Code Review: Full analysis + security scan
+- Pattern Review: Comprehensive pattern analysis
+
+**Plan Audit Variance Thresholds**:
+- LOC variance: 0% variance allowed (any deviation flagged for review)
+- Duration variance: ±10% only
+- File count variance: 0% (exact match required)
+
+**Blocking Checkpoints**:
+- Phase 2.8: Mandatory, no timeout
+- Phase 5: Full security review before approval
+
+**Example**:
+```bash
+# Security-critical implementation with maximum rigor
+/task-work TASK-050 --intensity=strict
+
+# Financial system changes
+/task-work TASK-051 --intensity=strict
+
+# API endpoint changes
+/task-work TASK-052 --intensity=strict
+```
+
+### Intensity Selection Guide
+
+| Task Type | Recommended | Reason |
+|-----------|-------------|--------|
+| Typo fix | minimal | Skip unnecessary phases |
+| Documentation update | minimal | Documentation-only exception |
+| Simple bug fix | light | Brief planning, quick review |
+| New UI component | standard | Full architecture review beneficial |
+| Business logic feature | standard | Standard rigor recommended |
+| Security implementation | strict | Mandatory security review |
+| API endpoint changes | strict | Breaking changes require strict mode |
+| Database migration | strict | High risk, zero-tolerance scope creep |
+| Authentication changes | strict | Security-critical |
+
+### Flag Combinations
+
+**Valid combinations**:
+```bash
+# Intensity + mode
+/task-work TASK-001 --intensity=strict --mode=tdd
+
+# Intensity + documentation
+/task-work TASK-002 --intensity=light --docs=comprehensive
+
+# Intensity + clarification (--no-questions for automation)
+/task-work TASK-003 --intensity=minimal --no-questions
+
+# But NOT intensity + design flags (conflict)
+# ❌ /task-work TASK-001 --intensity=strict --design-only  # Invalid
+```
+
+**Note**: `--intensity` cannot be combined with `--design-only` or `--implement-only`. Use design flags for the default intensity workflow only.
+
+### Intensity Auto-Detection (NEW - TASK-INT-e5f6)
+
+When `--intensity` is not explicitly provided, the system automatically detects the appropriate intensity level based on **provenance** and **complexity**.
+
+#### Detection Algorithm
+
+The auto-detection follows a prioritized decision tree:
+
+1. **High-Risk Keywords** → STRICT (always overrides)
+2. **Provenance: parent_review** → MINIMAL/LIGHT based on complexity
+3. **Provenance: feature_id** → MINIMAL/LIGHT/STANDARD based on complexity
+4. **Fresh task** → Complexity-based detection
+
+#### Provenance-Based Rules
+
+**Tasks from Reviews** (have `parent_review` field):
+- Complexity ≤4 → **MINIMAL**
+- Complexity >4 → **LIGHT**
+
+**Rationale**: Tasks created from review recommendations are already well-scoped by the review process, so they can safely use lighter intensity levels.
+
+**Tasks from Features** (have `feature_id` field):
+- Complexity ≤3 → **MINIMAL**
+- Complexity ≤5 → **LIGHT**
+- Complexity >5 → **STANDARD**
+
+**Rationale**: Feature subtasks benefit from feature-level planning and coordination, reducing the need for individual task rigor.
+
+**Fresh Tasks** (no provenance):
+- Complexity ≤3 → **MINIMAL**
+- Complexity ≤5 → **LIGHT**
+- Complexity ≤6 → **STANDARD**
+- Complexity >6 → **STRICT**
+
+**Rationale**: Fresh tasks require more rigor since they lack the benefit of prior planning from reviews or features.
+
+#### High-Risk Keywords
+
+The following keywords in the task description **always force STRICT mode**, regardless of complexity or provenance:
+
+**Security & Authentication**:
+- security, auth, authentication, authorization
+- oauth, saml, jwt, session
+- privilege, permission, access control
+- encryption, crypto, cryptographic
+
+**Data & Schema**:
+- schema, migration, database
+
+**Breaking Changes**:
+- breaking, breaking change, api, endpoint
+
+**Financial**:
+- financial, payment, billing
+
+**Vulnerabilities**:
+- injection, xss, csrf
+
+**Rationale**: These keywords indicate security-sensitive or high-risk changes that demand maximum rigor regardless of task complexity.
+
+#### Examples
+
+```bash
+# Example 1: Task from review with low complexity
+# Task: TASK-042
+# Description: "Fix typo in error message"
+# Complexity: 2
+# parent_review: TASK-041
+# → Auto-detected: MINIMAL
+
+# Example 2: Task from feature with medium complexity
+# Task: TASK-043
+# Description: "Add dark mode toggle component"
+# Complexity: 5
+# feature_id: dark-mode
+# → Auto-detected: LIGHT
+
+# Example 3: Fresh task with high-risk keyword
+# Task: TASK-044
+# Description: "Implement OAuth authentication"
+# Complexity: 6
+# parent_review: None
+# feature_id: None
+# → Auto-detected: STRICT (high-risk keyword: "oauth")
+
+# Example 4: Fresh task with high complexity
+# Task: TASK-045
+# Description: "Refactor payment processing system"
+# Complexity: 8
+# parent_review: None
+# feature_id: None
+# → Auto-detected: STRICT (high complexity + "payment" keyword)
+
+# Example 5: User override takes precedence
+# Task: TASK-046
+# Auto-detected: LIGHT
+# → /task-work TASK-046 --intensity=strict
+# → Actual: STRICT (user override)
+```
+
+#### Provenance Field Expectations
+
+The auto-detection algorithm expects the following fields in the task metadata:
+
+```yaml
+# Task frontmatter
+task_id: TASK-042
+description: "Add user authentication"
+complexity: 6
+parent_review: TASK-041  # Optional - set if created from review
+feature_id: auth-feature # Optional - set if part of feature
+```
+
+**Field Sources**:
+- `parent_review`: Set by `/task-review` when creating implementation tasks via [I]mplement decision
+- `feature_id`: Set by `/feature-plan` when creating feature subtasks
+- `complexity`: Set by complexity evaluation during task creation
+
+#### Implementation Details
+
+The auto-detection logic is implemented in `guardkit/orchestrator/intensity_detector.py`:
+
+```python
+from guardkit.orchestrator.intensity_detector import (
+    IntensityLevel,
+    determine_intensity,
+    HIGH_RISK_KEYWORDS,
+)
+
+# Auto-detect intensity
+task_data = {
+    "description": task.description,
+    "complexity": task.complexity,
+    "parent_review": task.parent_review,
+    "feature_id": task.feature_id,
+}
+intensity = determine_intensity(task_data, override=args.intensity)
+```
+
+**Module Characteristics**:
+- Pure stateless functions (no side effects)
+- Dict-based input (no Pydantic coupling)
+- Enum-based type safety
+- Graceful handling of missing/invalid data
+
+#### Override Behavior
+
+User-provided `--intensity` flag always takes precedence over auto-detection:
+
+```bash
+# Auto-detection would choose LIGHT, but user forces STRICT
+/task-work TASK-042 --intensity=strict
+```
+
+Invalid override values fall back to auto-detection with a warning:
+
+```bash
+# Invalid value
+/task-work TASK-042 --intensity=invalid
+# Warning: Invalid intensity override 'invalid', falling back to auto-detection
+# → Uses auto-detected intensity
+```
+
+#### Logging
+
+Auto-detection decisions are logged for transparency:
+
+```
+INFO: Task from review (parent_review=TASK-041), complexity=3 → minimal
+INFO: High-risk keywords detected in description, forcing STRICT intensity
+INFO: Task from feature (feature_id=auth-feature), complexity=5 → light
+INFO: Fresh task with complexity=7 → strict
+```
+
 ## Micro-Task Mode (NEW - TASK-020)
 
 The task-work command now supports a `--micro` flag for streamlined execution of trivial tasks (typo fixes, documentation updates, cosmetic changes) that don't require full architectural review.
@@ -178,11 +581,11 @@ The task-work command now supports a `--micro` flag for streamlined execution of
 
 **Purpose**: Lightweight workflow for trivial tasks, completing in 3-5 minutes vs 15+ minutes.
 
-**Criteria for micro-tasks** (ALL must be true):
-- Complexity: 1/10 (single file, <1 hour, low risk)
-- Files: Single file modification (or documentation-only)
+**Criteria for micro-tasks** (ALL must be true) - TASK-TWP-c3d4 updated thresholds:
+- Complexity: ≤3/10 (was 1/10 - simple tasks now qualify)
+- Files: ≤3 file modifications (was single file)
 - Risk: No high-risk keywords (security, schema, breaking changes, API changes)
-- Estimated time: <1 hour
+- Estimated time: <2 hours (was <1 hour)
 
 **Phases executed**:
 - Phase 1: Load Task Context
@@ -245,7 +648,7 @@ Duration: 2 minutes 34 seconds
 /task-work TASK-047
 
 Detected micro-task (confidence: 95%)
-This task appears to be trivial (complexity 1/10, single file, <1 hour).
+This task appears to be trivial (complexity ≤3/10, ≤3 files, <2 hours).
 
 Suggest using: /task-work TASK-047 --micro
 Saves ~12 minutes by skipping optional phases.
@@ -258,9 +661,9 @@ Auto-apply micro-mode? [y/N] (10s timeout): _
 /task-work TASK-048 --micro
 
 Task does not qualify as micro-task:
-  - Complexity: 5/10 (threshold: 1/10)
+  - Complexity: 5/10 (threshold: ≤3/10)
   - High-risk keywords detected: authentication, database
-  - Estimated effort: 4 hours (threshold: <1 hour)
+  - Estimated effort: 4 hours (threshold: <2 hours)
 
 Escalating to full workflow...
 
@@ -1246,7 +1649,7 @@ If file not exists: Set stack to "default"
 1. Command-line flag: `--docs=minimal|standard|comprehensive`
 2. Force-comprehensive triggers (security, compliance, breaking changes)
 3. Settings.json default: `.claude/settings.json` → `documentation.default_level`
-4. Auto-selection: Complexity-based (1-3=minimal, 4+=standard)
+4. Default: `minimal` (use `--docs=standard` to lift)
 
 **STEP 1: Load Configuration**
 
@@ -1303,15 +1706,10 @@ elif default_level != "auto":
     documentation_level = default_level
     reason = "settings.json default"
 
-# Priority 4: Complexity-based auto-selection (lowest)
+# Priority 4: Default to minimal (lowest)
 else:
-    complexity = task_context.get("complexity", 5)
-    if complexity <= 3:
-        documentation_level = "minimal"
-        reason = f"auto-select (complexity {complexity}/10)"
-    else:
-        documentation_level = "standard"
-        reason = f"auto-select (complexity {complexity}/10)"
+    documentation_level = "minimal"
+    reason = "default (use --docs=standard to lift)"
 ```
 
 **STEP 4: Store in Context & Display**
@@ -1599,9 +1997,9 @@ Implementation plan should:
 {endif}
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return plan as structured data (file list, phases, estimates)
-- standard: Return plan with brief architecture notes and key decisions
-- comprehensive: Generate detailed implementation guide with ADRs and diagrams
+- minimal: Return plan as structured data (file list, phases, estimates). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return plan with brief architecture notes and key decisions. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed implementation guide with ADRs and diagrams (13+ files allowed)
 
 Output: Implementation plan matching documentation level expectations."
 ```
@@ -1638,9 +2036,72 @@ except ValidationError as e:
 **IF validation passes**: Proceed to Phase 2.5A
 **IF validation fails**: Task moved to BLOCKED, execution stops
 
-#### Phase 2.5A: Pattern Suggestion (NEW - Recommend design patterns)
+#### Phase 2.5A: Pattern Suggestion (Conditional - Skip for simple tasks)
 
-**IF** Design Patterns MCP is available (check for mcp__design-patterns tools):
+**STEP 1: Evaluate Skip Conditions**
+
+Before invoking Design Patterns MCP, evaluate whether pattern suggestions would add value:
+
+```python
+def should_invoke_design_patterns_mcp(task_context):
+    """Determine if design patterns MCP adds value for this task."""
+
+    # Get task metadata
+    complexity = task_context.get("complexity", 5)
+    task_type = task_context.get("task_type", "feature")
+    description = task_context.get("description", "")
+    title = task_context.get("title", "")
+
+    # Combine title and description for pattern matching
+    task_text = f"{title} {description}".lower()
+
+    # Skip Condition 1: Simple tasks (complexity ≤3)
+    if complexity <= 3:
+        return False, f"complexity {complexity} <= 3 (simple task)"
+
+    # Skip Condition 2: Bug fixes
+    if task_type == "bugfix":
+        return False, "task_type is 'bugfix' (no new architecture needed)"
+
+    # Skip Condition 3: Task already references a known pattern
+    known_patterns = [
+        "singleton", "repository", "factory", "strategy", "observer",
+        "adapter", "decorator", "facade", "command", "mediator",
+        "builder", "prototype", "chain of responsibility", "state",
+        "template method", "visitor", "memento", "iterator"
+    ]
+
+    for pattern in known_patterns:
+        if pattern in task_text:
+            return False, f"task references '{pattern}' pattern"
+
+    # All checks passed - invoke MCP
+    return True, None
+```
+
+**EVALUATE** skip conditions:
+
+```python
+should_invoke, skip_reason = should_invoke_design_patterns_mcp(task_context)
+```
+
+**IF** should_invoke == False:
+
+**DISPLAY** skip message:
+```
+⏭️  Skipping Pattern Suggestion (Phase 2.5A)
+   Reason: {skip_reason}
+
+   Proceeding to Phase 2.5B...
+```
+
+**PROCEED** directly to Phase 2.5B (Architectural Review)
+
+---
+
+**STEP 2: Invoke MCP (if not skipped)**
+
+**IF** should_invoke == True AND Design Patterns MCP is available (check for mcp__design-patterns tools):
 
 **QUERY** Design Patterns MCP using problem description from implementation plan:
 ```
@@ -1685,7 +2146,17 @@ Based on task requirements and constraints:
 [Additional patterns if relevant...]
 ```
 
-**IF** no Design Patterns MCP available, skip to Phase 2.5B.
+**IF** no Design Patterns MCP available:
+
+**DISPLAY**:
+```
+⏭️  Skipping Pattern Suggestion (Phase 2.5A)
+   Reason: Design Patterns MCP not available
+
+   Proceeding to Phase 2.5B...
+```
+
+**PROCEED** to Phase 2.5B.
 
 #### Phase 2.5B: Architectural Review (Catch design issues early)
 
@@ -1730,9 +2201,9 @@ PATTERN CONTEXT (if Design Patterns MCP was queried):
 - Identify if patterns are over-engineered for the requirements
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return scores and critical issues only (structured data)
-- standard: Return scores with brief explanations and recommendations
-- comprehensive: Generate detailed architecture review report with rationale
+- minimal: Return scores and critical issues only (structured data). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return scores with brief explanations and recommendations. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed architecture review report with rationale (13+ files allowed)
 
 Approval thresholds:
 - ≥80/100: Auto-approve (proceed to Phase 3)
@@ -2672,9 +3143,9 @@ EXECUTE the test suite and report detailed results:
 - Detailed failure information for any failing tests
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return test results as structured data (counts, coverage, failures)
-- standard: Return results with brief test descriptions
-- comprehensive: Generate detailed test report with rationale for each test
+- minimal: Return test results as structured data (counts, coverage, failures). CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return results with brief test descriptions. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed test report with rationale for each test (13+ files allowed)
 
 Cross-reference: installer/core/agents/test-orchestrator.md (MANDATORY RULE #1)"
 ```
@@ -2878,9 +3349,9 @@ Provide actionable feedback if improvements needed.
 Confirm readiness for IN_REVIEW state or identify blockers.
 
 DOCUMENTATION BEHAVIOR (documentation_level={documentation_level}):
-- minimal: Return approval status and critical issues only
-- standard: Return review with brief feedback on key areas
-- comprehensive: Generate detailed code review report with recommendations
+- minimal: Return approval status and critical issues only. CONSTRAINT: Generate ONLY 2 files maximum.
+- standard: Return review with brief feedback on key areas. CONSTRAINT: Generate ONLY 2 files maximum.
+- comprehensive: Generate detailed code review report with recommendations (13+ files allowed)
 
 See installer/core/agents/code-reviewer.md for documentation level specifications."
 ```

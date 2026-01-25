@@ -22,6 +22,199 @@ Both accept natural language descriptions, but they serve different purposes in 
 | `--with-questions` | Force clarification even for simple features |
 | `--defaults` | Use clarification defaults throughout workflow |
 | `--answers="..."` | Inline answers (propagated to task-review and subtask creation) |
+| `--no-structured` | Disable structured YAML feature file output (enabled by default) |
+
+### AutoBuild Integration (Default Behavior)
+
+By default, `/feature-plan` generates structured YAML feature files for AutoBuild integration. This includes:
+- A structured YAML feature file at `.guardkit/features/FEAT-XXX.yaml`
+- Task dependencies and parallel execution groups
+- Complexity scores (1-10) for each task
+- Orchestration metadata for AutoBuild consumption
+
+This enables integration with `/feature-build` for autonomous implementation:
+
+```bash
+# Standard usage (structured output is default)
+/feature-plan "add OAuth2 authentication"
+
+# Output includes:
+# ✅ Feature FEAT-A1B2 created
+# 📋 Tasks: 5
+#    TASK-001: Create OAuth service interface (complexity: 3)
+#    TASK-002: Implement Google OAuth provider (complexity: 5)
+#    TASK-003: Implement GitHub OAuth provider (complexity: 5)
+#    TASK-004: Add session management (complexity: 4)
+#    TASK-005: Integration tests (complexity: 3)
+#
+# 🔀 Parallel execution groups:
+#    Wave 1: [TASK-001]
+#    Wave 2: [TASK-002, TASK-003] (can run in parallel)
+#    Wave 3: [TASK-004]
+#    Wave 4: [TASK-005]
+#
+# 📁 Feature file: .guardkit/features/FEAT-A1B2.yaml
+# 📁 Task files: tasks/backlog/oauth-auth/TASK-001.md ... TASK-005.md
+
+# Then use feature-build for autonomous implementation
+/feature-build FEAT-A1B2
+
+# To disable structured output (task markdown files only)
+/feature-plan "add OAuth2 authentication" --no-structured
+```
+
+**Note**: Both the traditional task markdown files AND the structured YAML feature file are created by default. This maintains compatibility with `/task-work` while enabling `/feature-build` integration. Use `--no-structured` to skip YAML generation.
+
+### Feature YAML Schema Reference
+
+The generated feature YAML file must conform to the `FeatureLoader` schema. This section documents the **required** structure for `/feature-build` compatibility.
+
+#### Complete Schema Example
+
+```yaml
+# .guardkit/features/FEAT-A1B2.yaml
+id: FEAT-A1B2
+name: "OAuth2 Authentication"
+description: "Add OAuth2 authentication with multiple providers"
+created: "2026-01-06T10:30:00Z"
+status: planned
+complexity: 6
+estimated_tasks: 5
+
+tasks:
+  - id: TASK-OAUTH-001
+    name: "Create auth infrastructure"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-001-create-auth-infrastructure.md"
+    complexity: 5
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 60
+
+  - id: TASK-OAUTH-002
+    name: "Implement local JWT auth"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-002-implement-jwt-auth.md"
+    complexity: 6
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 90
+
+  - id: TASK-OAUTH-003
+    name: "Add database migrations"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-003-database-migrations.md"
+    complexity: 4
+    dependencies:
+      - TASK-OAUTH-001
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 45
+
+  - id: TASK-OAUTH-004
+    name: "Implement social OAuth2"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-004-social-oauth.md"
+    complexity: 7
+    dependencies:
+      - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 120
+
+  - id: TASK-OAUTH-005
+    name: "Add auth tests"
+    file_path: "tasks/backlog/oauth-auth/TASK-OAUTH-005-auth-tests.md"
+    complexity: 3
+    dependencies:
+      - TASK-OAUTH-004
+    status: pending
+    implementation_mode: direct
+    estimated_minutes: 30
+
+orchestration:
+  parallel_groups:
+    - - TASK-OAUTH-001
+    - - TASK-OAUTH-002
+      - TASK-OAUTH-003
+    - - TASK-OAUTH-004
+    - - TASK-OAUTH-005
+  estimated_duration_minutes: 345
+  recommended_parallel: 2
+```
+
+#### Required Fields
+
+**Feature-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Feature ID (e.g., "FEAT-A1B2") |
+| `name` | string | ✅ Yes | Human-readable feature name |
+| `tasks` | array | ✅ Yes | List of task objects |
+| `orchestration` | object | ✅ Yes | Execution configuration |
+| `description` | string | No | Feature description |
+| `created` | string | No | ISO 8601 timestamp |
+| `status` | string | No | "planned", "in_progress", "completed", "failed", "paused" |
+| `complexity` | int | No | Aggregate complexity (1-10) |
+| `estimated_tasks` | int | No | Task count |
+
+**Task-level fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | ✅ Yes | Task ID (e.g., "TASK-OAUTH-001") |
+| `file_path` | string | ✅ Yes | **Path to task markdown file** (relative to repo root) |
+| `name` | string | No | Task name (defaults to ID) |
+| `complexity` | int | No | Complexity score 1-10 (default: 5) |
+| `dependencies` | array | No | List of dependency task IDs |
+| `status` | string | No | "pending", "in_progress", "completed", "failed", "skipped" |
+| `implementation_mode` | string | No | "direct", "task-work", "manual" |
+| `estimated_minutes` | int | No | Estimated duration (default: 30) |
+
+**Orchestration fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `parallel_groups` | array | ✅ Yes | List of lists - each inner list is a wave of parallel tasks |
+| `estimated_duration_minutes` | int | No | Total estimated duration |
+| `recommended_parallel` | int | No | Max recommended parallel tasks |
+
+#### Critical: file_path Field
+
+The `file_path` field is **required** for each task. Without it, `FeatureLoader` will fail to parse the feature file.
+
+```yaml
+# ✅ Correct - includes file_path
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    file_path: "tasks/backlog/feature-name/TASK-001-task-name.md"
+    status: pending
+
+# ❌ Wrong - missing file_path (will cause FeatureLoader error)
+tasks:
+  - id: TASK-001
+    name: "Task Name"
+    status: pending
+```
+
+#### parallel_groups Format
+
+The `parallel_groups` field is a **list of lists** where:
+- Each inner list represents a "wave" of tasks that can run in parallel
+- Waves execute sequentially (wave 1 completes before wave 2 starts)
+- Tasks within a wave can execute in parallel
+
+```yaml
+# Example: 4 waves with some parallel execution
+orchestration:
+  parallel_groups:
+    - - TASK-001           # Wave 1: Single task (foundation)
+    - - TASK-002           # Wave 2: Two tasks in parallel
+      - TASK-003
+    - - TASK-004           # Wave 3: Single task (depends on wave 2)
+    - - TASK-005           # Wave 4: Final task
+```
+
+**Note**: This replaces the older `execution_groups` format which is no longer supported.
 
 ## Clarification Integration
 
@@ -685,6 +878,9 @@ Step 7/10: Creating subfolder structure...
 
 Step 8/10: Generating subtask files...
    ✓ Generated 5 task files
+   ✓ Provenance fields added:
+     - parent_review: TASK-REV-a3f8 (links back to review)
+     - feature_id: FEAT-a3f8 (groups related tasks)
 
 Step 9/10: Generating IMPLEMENTATION-GUIDE.md...
    ✓ Guide generated
@@ -738,9 +934,55 @@ Original review: TASK-REV-A3F2 (marked completed)
 - ✅ **Parallel group detection** - File conflict analysis for waves
 - ✅ **Conductor integration** - Workspace names for parallel execution (from Context B)
 - ✅ **Complete documentation** - README + Implementation Guide auto-generated
+- ✅ **Provenance tracking** - parent_review and feature_id fields link tasks to review and feature
 - ✅ **95% time savings** - <1 minute vs 15-30 minutes manual
 
-**See**: `installer/core/lib/implement_orchestrator.py` for orchestration logic
+**Provenance Fields**:
+
+Each generated task includes provenance metadata:
+
+```yaml
+---
+id: TASK-DM-001
+title: Add CSS variables
+task_type: scaffolding         # REQUIRED for CoachValidator quality gate profiles
+parent_review: TASK-REV-a3f8  # Links back to review that recommended this
+feature_id: FEAT-a3f8          # Groups with related tasks in this feature
+wave: 1
+implementation_mode: direct
+---
+```
+
+**CRITICAL: task_type Field**:
+
+The `task_type` field is **REQUIRED** for AutoBuild integration. Without it, CoachValidator defaults to `feature` profile which requires architectural review - causing scaffolding tasks to fail inappropriately.
+
+**Task Type Assignment Rules**:
+
+| Task Title/Description Pattern | task_type Value |
+|-------------------------------|-----------------|
+| "Create project structure", "Setup...", "Initialize...", "Configure..." | `scaffolding` |
+| "Add tests", "Create test...", "Test infrastructure" | `testing` |
+| "Update docs", "Add README", "Documentation..." | `documentation` |
+| "Refactor...", "Migrate...", "Upgrade..." | `refactor` |
+| All other implementation tasks | `feature` |
+
+**Example Detection**:
+- "Create project structure and pyproject.toml" → `task_type: scaffolding`
+- "Implement health endpoint" → `task_type: feature`
+- "Add unit tests for authentication" → `task_type: testing`
+- "Update API documentation" → `task_type: documentation`
+
+This enables:
+- **Traceability**: From feature idea → review → implementation → completion
+- **Context preservation**: Implementation tasks reference review findings
+- **Grouping**: Related tasks organized by feature
+- **Reporting**: Feature-level progress tracking
+
+**See**:
+- `installer/core/lib/implement_orchestrator.py` for orchestration logic
+- `.claude/rules/task-workflow.md` for provenance field documentation
+- TASK-INT-e5f6 for design rationale
 
 ### Step 5d: If [C]ancel
 
@@ -1139,6 +1381,109 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 
 9. ✅ **Create subfolder + subtasks + guide** using context_b preferences
 
+   **CRITICAL: When generating task markdown files, you MUST include `task_type` in frontmatter:**
+
+   ```yaml
+   ---
+   id: TASK-XXX-001
+   title: Task title
+   task_type: scaffolding  # ← REQUIRED! See task type assignment rules below
+   parent_review: TASK-REV-xxxx
+   feature_id: FEAT-xxxx
+   wave: 1
+   implementation_mode: task-work
+   complexity: 3
+   dependencies: []
+   ---
+   ```
+
+   **Task Type Assignment Rules:**
+   - `scaffolding`: Setup tasks (project structure, config, initialization)
+   - `feature`: Implementation tasks (endpoints, components, business logic)
+   - `testing`: Test creation tasks
+   - `documentation`: Documentation tasks
+   - `refactor`: Refactoring/migration tasks
+
+   **Pattern Matching for task_type:**
+   - Title contains "Create project", "Setup", "Initialize", "Configure" → `scaffolding`
+   - Title contains "test", "Test" → `testing`
+   - Title contains "doc", "README", "Documentation" → `documentation`
+   - Title contains "Refactor", "Migrate", "Upgrade" → `refactor`
+   - All other tasks → `feature`
+
+   **Why This Matters:**
+   Without `task_type`, CoachValidator defaults to `feature` profile which requires architectural review.
+   Scaffolding tasks have no code architecture to review, so they fail the 60-point threshold.
+   Including `task_type: scaffolding` tells CoachValidator to skip architectural review for setup tasks.
+
+10. ✅ **Generate structured YAML feature file** (DEFAULT - unless --no-structured flag set):
+
+    **AFTER** creating task markdown files, generate the structured feature file using the CLI script:
+
+    **Execute via Bash tool:**
+    ```bash
+    # Build task arguments from subtasks
+    # Format: --task "ID:NAME:FILE_PATH:COMPLEXITY:DEPS" for each subtask
+    # FILE_PATH is required - path to task markdown file (relative to repo root)
+    # DEPS is comma-separated list of dependency task IDs (or empty)
+
+    python3 ~/.agentecflow/bin/generate-feature-yaml \
+        --name "{feature_name}" \
+        --description "{review_findings_summary}" \
+        --task "TASK-001:First task name:tasks/backlog/feature-name/TASK-001.md:5:" \
+        --task "TASK-002:Second task name:tasks/backlog/feature-name/TASK-002.md:6:TASK-001" \
+        --task "TASK-003:Third task name:tasks/backlog/feature-name/TASK-003.md:3:TASK-001,TASK-002" \
+        --base-path "."
+    ```
+
+    **Task argument format:** `ID:NAME:FILE_PATH:COMPLEXITY:DEPS`
+    - ID: The task ID (e.g., TASK-OAUTH-001)
+    - NAME: The task name/title
+    - FILE_PATH: **Required** - Path to task markdown file (relative to repo root)
+    - COMPLEXITY: Complexity score 1-10 (use 5 if unknown)
+    - DEPS: Comma-separated dependency task IDs (empty if none)
+
+    **Example with actual subtasks:**
+    ```bash
+    python3 ~/.agentecflow/bin/generate-feature-yaml \
+        --name "Implement OAuth2 authentication" \
+        --description "Add OAuth2 authentication with multiple providers" \
+        --task "TASK-OAUTH-001:Create auth infrastructure:tasks/backlog/oauth-auth/TASK-OAUTH-001.md:5:" \
+        --task "TASK-OAUTH-002:Implement local JWT auth:tasks/backlog/oauth-auth/TASK-OAUTH-002.md:6:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-003:Add database migrations:tasks/backlog/oauth-auth/TASK-OAUTH-003.md:4:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-004:Implement social OAuth2:tasks/backlog/oauth-auth/TASK-OAUTH-004.md:7:TASK-OAUTH-002,TASK-OAUTH-003" \
+        --task "TASK-OAUTH-005:Add auth tests:tasks/backlog/oauth-auth/TASK-OAUTH-005.md:3:TASK-OAUTH-004" \
+        --base-path "."
+    ```
+
+    **Script output:**
+    ```
+    ✅ Feature FEAT-A1B2 created
+    📋 Tasks: 5
+       TASK-OAUTH-001: Create auth infrastructure (complexity: 5)
+       TASK-OAUTH-002: Implement local JWT auth (complexity: 6) (deps: TASK-OAUTH-001)
+       TASK-OAUTH-003: Add database migrations (complexity: 4) (deps: TASK-OAUTH-001)
+       TASK-OAUTH-004: Implement social OAuth2 (complexity: 7) (deps: TASK-OAUTH-002, TASK-OAUTH-003)
+       TASK-OAUTH-005: Add auth tests (complexity: 3) (deps: TASK-OAUTH-004)
+
+    🔀 Parallel execution groups: 4 waves
+       Wave 1: [TASK-OAUTH-001]
+       Wave 2: [TASK-OAUTH-002, TASK-OAUTH-003]
+       Wave 3: [TASK-OAUTH-004]
+       Wave 4: [TASK-OAUTH-005]
+
+    📁 Feature file: .guardkit/features/FEAT-A1B2.yaml
+    ⚡ AutoBuild ready: /feature-build FEAT-A1B2
+    ```
+
+    **Note**: The script automatically:
+    - Generates a unique feature ID (FEAT-XXXX)
+    - Analyzes task dependencies to build parallel execution groups
+    - Calculates aggregate complexity from task scores
+    - Assigns implementation modes (task-work for complexity ≥4, direct for ≤3)
+    - Estimates duration based on complexity
+    - Creates the `.guardkit/features/` directory if needed
+
 ### What NOT to Do
 
 ❌ **DO NOT** perform the review analysis yourself - you MUST use `/task-review` command
@@ -1150,6 +1495,7 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
 ❌ **DO NOT** implement the feature directly
 ❌ **DO NOT** bypass decision checkpoint
 ❌ **DO NOT** create implementation files without [I]mplement choice
+❌ **DO NOT** omit `task_type` from task file frontmatter - CoachValidator REQUIRES it for quality gate profiles
 
 **REMEMBER**: This is a **coordination command**. Your job is to:
 1. Invoke the `clarification-questioner` agent via Task tool
@@ -1202,6 +1548,50 @@ Claude executes internally:
      - Implementation guide
 
   8. Shows completion summary
+```
+
+### Example Execution Trace (Default with Structured Output)
+
+```
+User: /feature-plan "implement OAuth2"
+
+Claude executes internally:
+  1. Parse: feature_description = "implement OAuth2", flags.no_structured = false
+
+  2. INVOKE Task(clarification-questioner, context_type=review_scope)
+     → User answers: Focus=all, Priority=quality
+     → STORE context_a
+
+  3. /task-create "Plan: implement OAuth2" task_type:review priority:high
+     → Captures: TASK-REV-B4C5
+
+  4. /task-review TASK-REV-B4C5 --mode=decision --depth=standard
+     → Runs analysis (uses context_a), presents options
+
+  5. User chooses: I (Implement)
+
+  6. INVOKE Task(clarification-questioner, context_type=implementation_prefs)
+     → User answers: Approach=Option1, Parallel=detect, Testing=standard
+     → USE context_b
+
+  7. Creates structure (using context_b):
+     - Feature folder: tasks/backlog/oauth2/
+     - Subtasks: TASK-OAUTH-001.md through TASK-OAUTH-005.md
+     - Implementation guide
+
+  8. Generate structured feature file (default behavior):
+     - Execute: python3 ~/.agentecflow/bin/generate-feature-yaml \
+         --name "implement OAuth2" \
+         --description "OAuth2 authentication implementation" \
+         --task "TASK-OAUTH-001:Create auth infrastructure:tasks/backlog/oauth2/TASK-OAUTH-001.md:5:" \
+         --task "TASK-OAUTH-002:Implement local JWT auth:tasks/backlog/oauth2/TASK-OAUTH-002.md:6:TASK-OAUTH-001" \
+         ... (one --task arg per subtask with file_path)
+     - Script outputs: FEAT-D6E7 and writes .guardkit/features/FEAT-D6E7.yaml
+     (Skip this step if --no-structured flag is set)
+
+  9. Shows completion summary including:
+     📁 Feature file: .guardkit/features/FEAT-D6E7.yaml
+     ⚡ AutoBuild ready: /feature-build FEAT-D6E7
 ```
 
 This is a **coordination command** - it orchestrates existing commands rather than implementing new logic. Follow the execution flow exactly as specified.

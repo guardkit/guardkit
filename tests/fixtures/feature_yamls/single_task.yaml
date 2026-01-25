@@ -1,0 +1,21 @@
+id: FEAT-SINGLE
+name: Feature with single task
+description: Simple feature with only one task
+created: 2026-01-06T12:00:00Z
+status: planned
+complexity: 3
+estimated_tasks: 1
+tasks:
+  - id: TASK-SINGLE-001
+    name: Only task
+    file_path: tasks/backlog/TASK-SINGLE-001.md
+    complexity: 3
+    dependencies: []
+    status: pending
+    implementation_mode: task-work
+    estimated_minutes: 30
+orchestration:
+  parallel_groups:
+    - - TASK-SINGLE-001
+  estimated_duration_minutes: 30
+  recommended_parallel: 1
