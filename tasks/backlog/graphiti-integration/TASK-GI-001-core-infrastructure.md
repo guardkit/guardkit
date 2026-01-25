@@ -56,6 +56,14 @@ This is the **foundation feature** for addressing the memory problem that has pl
 - Advanced security/authentication
 - High availability setup
 
+## Prerequisites
+
+- **Docker and Docker Compose** installed and running
+- **`OPENAI_API_KEY`** environment variable set (required for embeddings)
+  - Can be set in `.env` file at project root
+  - Or exported in shell: `export OPENAI_API_KEY=your-key`
+  - Without this key, Graphiti will initialize with `enabled=False` (graceful degradation)
+
 ## Technical Approach
 
 ### Docker Compose Setup
@@ -261,6 +269,11 @@ graphiti:
 - [ ] **Configuration works**
   - Can enable/disable via `.guardkit/graphiti.yaml`
   - Can override host/port for different environments
+
+- [ ] **Graceful handling of missing OPENAI_API_KEY**
+  - When API key not set, `initialize()` returns False
+  - Warning logged: "Graphiti unavailable: OpenAI API key not configured"
+  - All subsequent operations return empty results (not exceptions)
 
 ## Testing Strategy
 
