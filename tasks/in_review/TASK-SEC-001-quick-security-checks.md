@@ -18,7 +18,7 @@ id: TASK-SEC-001
 implementation_mode: task-work
 parent_review: TASK-REV-SEC1
 priority: high
-status: design_approved
+status: in_review
 tags:
 - security
 - coach-agent
@@ -26,7 +26,7 @@ tags:
 - quality-gates
 task_type: feature
 title: Add quick security checks to Coach agent
-updated: 2026-01-24 15:00:00+00:00
+updated: 2026-01-25T22:30:00+00:00
 wave: 1
 ---
 
