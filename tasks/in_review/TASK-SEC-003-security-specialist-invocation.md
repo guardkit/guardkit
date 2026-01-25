@@ -27,7 +27,7 @@ id: TASK-SEC-003
 implementation_mode: task-work
 parent_review: TASK-REV-SEC1
 priority: high
-status: design_approved
+status: in_review
 tags:
 - security
 - pre-loop
@@ -36,7 +36,7 @@ tags:
 - autobuild
 task_type: feature
 title: Implement pre-loop security review via TaskWorkInterface
-updated: 2026-01-24 17:00:00+00:00
+updated: 2026-01-25T12:00:00+00:00
 wave: 2
 ---
 
