@@ -4602,3 +4602,274 @@ class TestFileCountConstraintValidation:
         # Check that ellipsis is added for truncated list
         assert "..." in caplog.text
         assert "created 8 files" in caplog.text
+
+
+# ==================== Tests for Direct Mode Routing (TASK-FB-2D8B) ====================
+
+
+class TestDirectModeRouting:
+    """Test suite for direct mode task routing.
+
+    Tests the implementation_mode: direct routing logic that bypasses
+    task-work delegation for simple tasks that don't require an
+    implementation plan.
+    """
+
+    @pytest.fixture
+    def direct_mode_task_file(self, worktree_path):
+        """Create a task file with implementation_mode: direct."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-DIRECT-001-test-task.md"
+        task_file.write_text("""---
+id: TASK-DIRECT-001
+title: Direct mode test task
+status: backlog
+implementation_mode: direct
+---
+
+# Test Task
+
+## Description
+Test direct mode routing.
+
+## Acceptance Criteria
+- [ ] File created successfully
+""")
+        return task_file
+
+    @pytest.fixture
+    def task_work_mode_task_file(self, worktree_path):
+        """Create a task file with implementation_mode: task-work."""
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-TW-001-test-task.md"
+        task_file.write_text("""---
+id: TASK-TW-001
+title: Task-work mode test task
+status: backlog
+implementation_mode: task-work
+---
+
+# Test Task
+
+## Description
+Test task-work mode routing.
+
+## Acceptance Criteria
+- [ ] Feature implemented
+""")
+        return task_file
+
+    def test_get_implementation_mode_direct(self, agent_invoker, direct_mode_task_file):
+        """_get_implementation_mode returns 'direct' for direct mode tasks."""
+        mode = agent_invoker._get_implementation_mode("TASK-DIRECT-001")
+        assert mode == "direct"
+
+    def test_get_implementation_mode_task_work(self, agent_invoker, task_work_mode_task_file):
+        """_get_implementation_mode returns 'task-work' for task-work mode tasks."""
+        mode = agent_invoker._get_implementation_mode("TASK-TW-001")
+        assert mode == "task-work"
+
+    def test_get_implementation_mode_default(self, agent_invoker, worktree_path):
+        """_get_implementation_mode returns 'task-work' when no mode specified."""
+        # Create task file without implementation_mode
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-NOMODE-001-test.md"
+        task_file.write_text("""---
+id: TASK-NOMODE-001
+title: No mode specified
+status: backlog
+---
+
+# Test Task
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-NOMODE-001")
+        assert mode == "task-work"
+
+    def test_get_implementation_mode_task_not_found(self, agent_invoker):
+        """_get_implementation_mode returns 'task-work' when task file not found."""
+        mode = agent_invoker._get_implementation_mode("TASK-NONEXISTENT-001")
+        assert mode == "task-work"
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_bypasses_task_work_delegation(
+        self, agent_invoker, worktree_path, direct_mode_task_file, sample_player_report
+    ):
+        """Direct mode tasks bypass task-work delegation."""
+        # Create player report
+        create_report_file(
+            worktree_path, "TASK-DIRECT-001", 1, "player", sample_player_report
+        )
+
+        # Mock SDK invocation (not task-work delegation)
+        with patch.object(
+            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ) as mock_sdk, patch.object(
+            agent_invoker, "_invoke_task_work_implement", new_callable=AsyncMock
+        ) as mock_task_work:
+
+            result = await agent_invoker.invoke_player(
+                task_id="TASK-DIRECT-001",
+                turn=1,
+                requirements="Create documentation",
+            )
+
+            # Verify direct SDK was called, not task-work delegation
+            assert mock_sdk.called
+            assert not mock_task_work.called
+            assert result.success is True
+
+    @pytest.mark.asyncio
+    async def test_direct_mode_writes_results_file(
+        self, agent_invoker, worktree_path, direct_mode_task_file, sample_player_report
+    ):
+        """Direct mode writes task_work_results.json for Coach."""
+        create_report_file(
+            worktree_path, "TASK-DIRECT-001", 1, "player", sample_player_report
+        )
+
+        with patch.object(
+            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ):
+            await agent_invoker.invoke_player(
+                task_id="TASK-DIRECT-001",
+                turn=1,
+                requirements="Create documentation",
+            )
+
+        # Verify results file was created
+        results_path = (
+            worktree_path / ".guardkit" / "autobuild" / "TASK-DIRECT-001" / "task_work_results.json"
+        )
+        assert results_path.exists()
+
+        results = json.loads(results_path.read_text())
+        assert results["task_id"] == "TASK-DIRECT-001"
+        assert results["implementation_mode"] == "direct"
+        assert results["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_task_work_mode_still_uses_delegation(
+        self, agent_invoker, worktree_path, task_work_mode_task_file
+    ):
+        """Task-work mode tasks continue using task-work delegation when flag is set."""
+        # Enable task-work delegation
+        agent_invoker.use_task_work_delegation = True
+
+        # Mock the task-work path to avoid needing full setup
+        with patch.object(
+            agent_invoker, "_ensure_design_approved_state"
+        ) as mock_ensure, patch.object(
+            agent_invoker, "_invoke_task_work_implement", new_callable=AsyncMock
+        ) as mock_task_work, patch.object(
+            agent_invoker, "_invoke_with_role", new_callable=AsyncMock
+        ) as mock_sdk:
+            mock_task_work.return_value = TaskWorkResult(success=False, output={}, error="Mock")
+
+            result = await agent_invoker.invoke_player(
+                task_id="TASK-TW-001",
+                turn=1,
+                requirements="Implement feature",
+            )
+
+            # Verify task-work delegation was attempted (not direct SDK)
+            assert mock_ensure.called
+            assert mock_task_work.called
+            assert not mock_sdk.called
+
+    def test_write_direct_mode_results_creates_file(self, agent_invoker, worktree_path):
+        """_write_direct_mode_results creates task_work_results.json."""
+        task_id = "TASK-DM-001"
+        player_report = {
+            "task_id": task_id,
+            "turn": 1,
+            "files_modified": ["README.md"],
+            "files_created": ["docs/new-file.md"],
+            "tests_run": False,
+            "tests_passed": False,
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        assert result_path.exists()
+        results = json.loads(result_path.read_text())
+
+        assert results["task_id"] == task_id
+        assert results["implementation_mode"] == "direct"
+        assert results["success"] is True
+        assert results["files_created"] == ["docs/new-file.md"]
+        assert results["files_modified"] == ["README.md"]
+
+    def test_write_direct_mode_results_handles_failure(self, agent_invoker, worktree_path):
+        """_write_direct_mode_results handles failure cases."""
+        task_id = "TASK-DM-002"
+        player_report = {"task_id": task_id, "turn": 1}
+        error_msg = "Player report not found"
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=False, error=error_msg
+        )
+
+        results = json.loads(result_path.read_text())
+
+        assert results["success"] is False
+        assert results["error"] == error_msg
+        assert results["completed"] is False
+
+    def test_direct_mode_results_coach_compatible(self, agent_invoker, worktree_path):
+        """Direct mode results contain fields needed by Coach."""
+        task_id = "TASK-DM-003"
+        player_report = {
+            "task_id": task_id,
+            "files_modified": ["src/main.py"],
+            "tests_run": True,
+            "tests_passed": True,
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+
+        # Verify Coach-required fields
+        assert "task_id" in results
+        assert "completed" in results
+        assert "quality_gates" in results
+        assert "summary" in results
+        assert "files_created" in results
+        assert "files_modified" in results
+
+        # Verify quality_gates structure
+        gates = results["quality_gates"]
+        assert "all_passed" in gates
+        assert gates["quality_gates_relaxed"] is True  # Signal to Coach
+
+    def test_direct_mode_results_deduplicates_files(self, agent_invoker, worktree_path):
+        """Direct mode results deduplicate and sort file lists."""
+        task_id = "TASK-DM-004"
+        player_report = {
+            "task_id": task_id,
+            "files_modified": ["b.py", "a.py", "b.py", "c.py", "a.py"],
+            "files_created": ["z.py", "a.py", "z.py"],
+            "tests_run": True,
+            "tests_passed": True,
+        }
+
+        result_path = agent_invoker._write_direct_mode_results(
+            task_id, player_report, success=True
+        )
+
+        results = json.loads(result_path.read_text())
+
+        # Verify deduplication and sorting
+        assert results["files_modified"] == ["a.py", "b.py", "c.py"]
+        assert results["files_created"] == ["a.py", "z.py"]
