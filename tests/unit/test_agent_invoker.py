@@ -13,6 +13,7 @@ from guardkit.orchestrator.agent_invoker import (
     AgentInvocationResult,
     DOCUMENTATION_LEVEL_MAX_FILES,
     TaskWorkStreamParser,
+    TASK_WORK_SDK_MAX_TURNS,
     USE_TASK_WORK_DELEGATION,
     async_heartbeat,
 )
@@ -624,7 +625,9 @@ class TestSDKIntegration:
             assert options_kwargs["cwd"] == str(agent_invoker.worktree_path)
             assert options_kwargs["allowed_tools"] == ["Read", "Write"]
             assert options_kwargs["permission_mode"] == "acceptEdits"
-            assert options_kwargs["max_turns"] == agent_invoker.max_turns_per_agent
+            # TASK-REV-C4D7: Direct mode now uses TASK_WORK_SDK_MAX_TURNS (50)
+            # instead of agent_invoker.max_turns_per_agent
+            assert options_kwargs["max_turns"] == TASK_WORK_SDK_MAX_TURNS
             assert options_kwargs["model"] == "claude-sonnet-4-5-20250929"
             assert options_kwargs["setting_sources"] == ["project"]
 
@@ -1398,9 +1401,9 @@ class TestInvokeTaskWorkImplement:
             assert "Task" in options_kwargs["allowed_tools"]
             assert "Skill" in options_kwargs["allowed_tools"]
             assert options_kwargs["permission_mode"] == "acceptEdits"
-            # TASK-FBR-002: Now uses max_turns_per_agent instead of hardcoded 50
-            # The invoker fixture has max_turns_per_agent unset, defaulting to 30
-            assert options_kwargs["max_turns"] == 30
+            # TASK-REV-BB80: Uses dedicated TASK_WORK_SDK_MAX_TURNS constant (50)
+            # NOT max_turns_per_agent, because task-work needs many internal turns
+            assert options_kwargs["max_turns"] == 50
             # TASK-FB-FIX-014: Now includes "user" for skill loading
             assert options_kwargs["setting_sources"] == ["user", "project"]
 

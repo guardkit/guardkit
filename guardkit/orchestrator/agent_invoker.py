@@ -96,6 +96,11 @@ USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "
 # A 900s default aligns with orchestrator defaults and provides adequate headroom.
 DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "900"))
 
+# TASK-REV-BB80: SDK max_turns for task-work invocation (separate from adversarial turns)
+# /task-work runs multiple phases internally (planning, review, implementation, testing)
+# and needs ~50 internal turns. This is NOT the same as orchestrator's max_turns (adversarial rounds).
+TASK_WORK_SDK_MAX_TURNS = 50
+
 # Player report schema - required fields
 PLAYER_REPORT_SCHEMA = {
     "task_id": str,
@@ -1213,7 +1218,9 @@ Follow the decision format specified in your agent definition.
                 cwd=str(self.worktree_path),
                 allowed_tools=allowed_tools,
                 permission_mode=permission_mode,
-                max_turns=self.max_turns_per_agent,
+                # TASK-REV-C4D7: Direct mode also needs ~50 internal turns
+                # (same as task-work delegation path fixed in TASK-REV-BB80)
+                max_turns=TASK_WORK_SDK_MAX_TURNS,
                 model=model,
                 setting_sources=["project"],  # Load CLAUDE.md from worktree
             )
@@ -2257,7 +2264,10 @@ Follow the decision format specified in your agent definition.
                 cwd=str(self.worktree_path),
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
                 permission_mode="acceptEdits",
-                max_turns=self.max_turns_per_agent,  # TASK-FBR-002: Use configured value
+                # TASK-REV-BB80: Use dedicated constant, NOT self.max_turns_per_agent
+                # max_turns_per_agent is for adversarial turns (default: 5)
+                # task-work needs ~50 internal turns for all phases
+                max_turns=TASK_WORK_SDK_MAX_TURNS,
                 # TASK-FB-FIX-014: Include "user" to load skills from ~/.claude/commands/
                 # Without "user", the SDK can't find /task-work skill
                 setting_sources=["user", "project"],
