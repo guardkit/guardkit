@@ -65,6 +65,60 @@ Orchestration Schema:
 # ============================================================================
 
 
+def _find_similar_ids(target: str, candidates: set, max_distance: int = 2) -> List[str]:
+    """
+    Find task IDs similar to the target from a set of candidates.
+
+    Uses simple matching logic: prefix matching and character difference count.
+    Returns up to 3 similar IDs sorted by similarity.
+
+    Parameters
+    ----------
+    target : str
+        The unknown task ID to find matches for
+    candidates : set
+        Set of valid task IDs to search
+    max_distance : int
+        Maximum character differences allowed (default: 2)
+
+    Returns
+    -------
+    List[str]
+        List of similar task IDs (up to 3), sorted by similarity
+    """
+    similar = []
+    target_lower = target.lower()
+
+    for candidate in candidates:
+        candidate_lower = candidate.lower()
+
+        # Check prefix match (e.g., TASK-AUTH-001 matches TASK-AUTH-002)
+        # Extract prefix up to last number segment
+        target_prefix = target_lower.rsplit("-", 1)[0] if "-" in target_lower else target_lower
+        candidate_prefix = candidate_lower.rsplit("-", 1)[0] if "-" in candidate_lower else candidate_lower
+
+        if target_prefix == candidate_prefix:
+            similar.append((0, candidate))  # Priority 0 for prefix match
+            continue
+
+        # Check character difference count (simple edit distance approximation)
+        if len(target) == len(candidate):
+            diff_count = sum(1 for a, b in zip(target_lower, candidate_lower) if a != b)
+            if diff_count <= max_distance:
+                similar.append((diff_count, candidate))
+                continue
+
+        # Check if one contains the other (substring match)
+        if target_lower in candidate_lower or candidate_lower in target_lower:
+            similar.append((1, candidate))
+
+    # Sort by similarity score (lower is better), then alphabetically
+    similar.sort(key=lambda x: (x[0], x[1]))
+
+    # Return up to 3 matches, extracting just the IDs
+    return [item[1] for item in similar[:3]]
+
+
 def _truncate_data(data: Any, max_length: int = 200) -> str:
     """
     Truncate data representation for error messages.
@@ -615,9 +669,12 @@ class FeatureLoader:
         for task in feature.tasks:
             for dep_id in task.dependencies:
                 if dep_id not in all_task_ids:
-                    errors.append(
-                        f"Task {task.id} has unknown dependency: {dep_id}"
-                    )
+                    error_msg = f"Task {task.id} has unknown dependency: {dep_id}"
+                    similar_ids = _find_similar_ids(dep_id, all_task_ids)
+                    if similar_ids:
+                        suggestions = ", ".join(similar_ids)
+                        error_msg += f". Did you mean: {suggestions}?"
+                    errors.append(error_msg)
 
         # Check for circular dependencies
         circular = FeatureLoader._detect_circular_dependencies(feature)

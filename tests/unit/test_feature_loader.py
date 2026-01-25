@@ -33,6 +33,7 @@ from guardkit.orchestrator.feature_loader import (
     ORCHESTRATION_SCHEMA,
     _truncate_data,
     _build_schema_error_message,
+    _find_similar_ids,
 )
 
 
@@ -1411,6 +1412,264 @@ class TestSchemaHintErrorMessages:
 
         assert ORCHESTRATION_SCHEMA
         assert "parallel_groups" in ORCHESTRATION_SCHEMA
+
+
+# ============================================================================
+# Test: Similar ID Suggestions (TASK-1043)
+# ============================================================================
+
+
+class TestFindSimilarIds:
+    """Test _find_similar_ids function for typo suggestions in error messages."""
+
+    def test_prefix_match_same_prefix_different_number(self):
+        """Test prefix matching: TASK-AUTH-001 matches TASK-AUTH-002, TASK-AUTH-003."""
+        target = "TASK-AUTH-001"
+        candidates = {"TASK-AUTH-002", "TASK-AUTH-003", "TASK-LOG-001"}
+        result = _find_similar_ids(target, candidates)
+
+        # Should suggest both AUTH tasks (prefix match) before LOG
+        assert len(result) >= 2
+        assert "TASK-AUTH-002" in result
+        assert "TASK-AUTH-003" in result
+
+    def test_character_difference_single_char(self):
+        """Test character difference: TASK-DOC-001 with candidates TASK-LOG-001."""
+        target = "TASK-DOC-001"
+        candidates = {"TASK-LOG-001", "TASK-LOG-002"}
+        result = _find_similar_ids(target, candidates)
+
+        # TASK-DOC-001 vs TASK-LOG-001 differs by 2 chars (D→L, O→O, C→G)
+        # Actually DOC vs LOG: D→L (1), O=O (0), C→G (1) = 2 chars different
+        assert "TASK-LOG-001" in result
+
+    def test_no_match_completely_different(self):
+        """Test no suggestions for completely different IDs."""
+        target = "TASK-XYZ-999"
+        candidates = {"TASK-ABC-001", "TASK-DEF-002"}
+        result = _find_similar_ids(target, candidates)
+
+        # XYZ-999 vs ABC-001 and DEF-002 are too different
+        # No prefix match, no substring match, char diff > 2
+        assert result == []
+
+    def test_substring_match_shorter_target(self):
+        """Test substring matching: TASK-LOG-01 contains in TASK-LOG-001."""
+        target = "TASK-LOG-01"
+        candidates = {"TASK-LOG-001", "TASK-LOG-002"}
+        result = _find_similar_ids(target, candidates)
+
+        # "task-log-01" is substring of "task-log-001"
+        assert "TASK-LOG-001" in result
+
+    def test_substring_match_longer_target(self):
+        """Test substring matching: TASK-LOG-0012 contains TASK-LOG-001."""
+        target = "TASK-LOG-0012"
+        candidates = {"TASK-LOG-001", "TASK-XYZ-999"}
+        result = _find_similar_ids(target, candidates)
+
+        # "task-log-001" is substring of "task-log-0012"
+        assert "TASK-LOG-001" in result
+
+    def test_empty_candidates_returns_empty(self):
+        """Test empty candidates returns empty list."""
+        target = "TASK-AUTH-001"
+        candidates = set()
+        result = _find_similar_ids(target, candidates)
+
+        assert result == []
+
+    def test_target_not_in_candidates_by_design(self):
+        """Test that the function is designed for finding similar, not exact matches.
+
+        The use case is when target is an unknown ID not in the valid set.
+        If target IS in candidates, it would match (prefix, char diff = 0).
+        """
+        target = "TASK-AUTH-001"
+        candidates = {"TASK-AUTH-001", "TASK-AUTH-002"}
+        result = _find_similar_ids(target, candidates)
+
+        # TASK-AUTH-001 matches prefix TASK-AUTH, so it would be suggested
+        # This tests the function behavior, not a bug
+        assert "TASK-AUTH-001" in result or "TASK-AUTH-002" in result
+
+    def test_max_three_results(self):
+        """Test that at most 3 results are returned."""
+        target = "TASK-AUTH-001"
+        candidates = {
+            "TASK-AUTH-002",
+            "TASK-AUTH-003",
+            "TASK-AUTH-004",
+            "TASK-AUTH-005",
+            "TASK-AUTH-006",
+        }
+        result = _find_similar_ids(target, candidates)
+
+        assert len(result) <= 3
+
+    def test_sorted_by_similarity_prefix_first(self):
+        """Test results are sorted by similarity (prefix match = priority 0)."""
+        target = "TASK-AUTH-001"
+        candidates = {"TASK-AUTH-002", "TASK-BUTH-001", "TASK-LOG-001"}
+        result = _find_similar_ids(target, candidates)
+
+        # TASK-AUTH-002 has prefix match (priority 0)
+        # TASK-BUTH-001 has same length, 1 char diff (priority 1)
+        if len(result) >= 2:
+            assert result[0] == "TASK-AUTH-002"  # Prefix match first
+
+    def test_case_insensitive_matching(self):
+        """Test that matching is case-insensitive."""
+        target = "task-auth-001"
+        candidates = {"TASK-AUTH-002", "TASK-LOG-001"}
+        result = _find_similar_ids(target, candidates)
+
+        # Should match prefix despite case difference
+        assert "TASK-AUTH-002" in result
+
+    def test_max_distance_parameter_default(self):
+        """Test default max_distance=2 for character difference."""
+        target = "TASK-LOG-001"
+        candidates = {"TASK-DOG-001", "TASK-XYZ-001"}
+        result = _find_similar_ids(target, candidates)
+
+        # LOG vs DOG: L→D (1), O=O (0), G=G (0) = 1 char diff (within default 2)
+        assert "TASK-DOG-001" in result
+
+    def test_max_distance_parameter_custom(self):
+        """Test custom max_distance=1 for stricter matching."""
+        target = "TASK-LOG-001"
+        candidates = {"TASK-DOC-001", "TASK-FOG-001"}
+        result = _find_similar_ids(target, candidates, max_distance=1)
+
+        # LOG vs DOC: L→D (1), O=O (0), G→C (1) = 2 chars diff (exceeds max_distance=1)
+        # LOG vs FOG: L→F (1), O=O (0), G=G (0) = 1 char diff (within max_distance=1)
+        assert "TASK-FOG-001" in result
+        assert "TASK-DOC-001" not in result
+
+    def test_mixed_match_types(self):
+        """Test mixing prefix, character diff, and substring matches."""
+        target = "TASK-AUTH-001"
+        candidates = {
+            "TASK-AUTH-002",   # Prefix match (priority 0)
+            "TASK-AUTH",       # Substring (priority 1)
+            "TASK-BUTH-001",   # 1 char diff (priority 1)
+        }
+        result = _find_similar_ids(target, candidates)
+
+        # All should be suggested
+        assert len(result) == 3
+        # Prefix match should be first
+        assert result[0] == "TASK-AUTH-002"
+
+    def test_no_hyphen_in_target(self):
+        """Test handling of IDs without standard hyphen format."""
+        target = "TASKAUTH001"
+        candidates = {"TASK-AUTH-001", "TASK-AUTH-002"}
+        result = _find_similar_ids(target, candidates)
+
+        # "taskauth001" is substring of neither, no prefix extraction possible
+        # Should still handle gracefully (empty or substring match)
+        # Actually "taskauth001" IS a substring... no wait, checking contains:
+        # "taskauth001" in "task-auth-001" = False
+        # "task-auth-001" in "taskauth001" = False (hyphens prevent substring)
+        assert isinstance(result, list)
+
+    def test_special_characters_in_id(self):
+        """Test handling of special characters in IDs (edge case)."""
+        target = "TASK-FIX_BUG-001"
+        candidates = {"TASK-FIX_BUG-002", "TASK-FIX-BUG-001"}
+        result = _find_similar_ids(target, candidates)
+
+        # Underscore should work with rsplit on hyphen
+        # "task-fix_bug" prefix matches "task-fix_bug-002"
+        assert "TASK-FIX_BUG-002" in result
+
+    def test_validation_error_integration(self):
+        """Test _find_similar_ids is used correctly in validate_feature."""
+        # Create a feature with unknown dependency that's similar to a real task
+        feature = Feature(
+            id="FEAT-TEST",
+            name="Test",
+            description="",
+            created="2026-01-25",
+            status="planned",
+            complexity=5,
+            estimated_tasks=2,
+            tasks=[
+                FeatureTask(
+                    id="TASK-AUTH-001",
+                    name="Task 1",
+                    file_path=Path("tasks/t1.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-AUTH-002",
+                    name="Task 2",
+                    file_path=Path("tasks/t2.md"),
+                    complexity=3,
+                    dependencies=["TASK-AUTH-01"],  # Typo: missing last digit
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[["TASK-AUTH-001"], ["TASK-AUTH-002"]],
+                estimated_duration_minutes=60,
+                recommended_parallel=1,
+            ),
+        )
+
+        # Create temp files
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            for task in feature.tasks:
+                task_file = repo_root / task.file_path
+                task_file.parent.mkdir(parents=True, exist_ok=True)
+                task_file.write_text(f"# {task.name}\n")
+
+            errors = FeatureLoader.validate_feature(feature, repo_root=repo_root)
+
+            # Should have unknown dependency error with suggestion
+            dep_error = [e for e in errors if "unknown dependency" in e.lower()]
+            assert len(dep_error) == 1
+            assert "TASK-AUTH-01" in dep_error[0]
+            assert "Did you mean" in dep_error[0]
+            assert "TASK-AUTH-001" in dep_error[0]
+
+    def test_same_length_different_chars_within_threshold(self):
+        """Test same length IDs with exactly max_distance differences."""
+        target = "TASK-AAA-001"
+        candidates = {"TASK-BBB-001", "TASK-ABC-001"}
+        result = _find_similar_ids(target, candidates, max_distance=2)
+
+        # AAA vs ABC: A=A (0), A→B (1), A→C (1) = 2 chars diff (exactly at threshold)
+        # AAA vs BBB: A→B (1), A→B (1), A→B (1) = 3 chars diff (exceeds threshold)
+        assert "TASK-ABC-001" in result
+        assert "TASK-BBB-001" not in result
+
+    def test_numeric_suffix_variations(self):
+        """Test variations in numeric suffix detection."""
+        target = "TASK-LOG-100"
+        candidates = {"TASK-LOG-001", "TASK-LOG-101", "TASK-LOG-200"}
+        result = _find_similar_ids(target, candidates)
+
+        # All have same prefix "TASK-LOG"
+        assert len(result) == 3
+
+    def test_alphabetical_tiebreaker(self):
+        """Test that same-similarity matches are sorted alphabetically."""
+        target = "TASK-TEST-001"
+        candidates = {"TASK-TEST-003", "TASK-TEST-002", "TASK-TEST-004"}
+        result = _find_similar_ids(target, candidates)
+
+        # All have prefix match (priority 0), should be sorted alphabetically
+        assert result == ["TASK-TEST-002", "TASK-TEST-003", "TASK-TEST-004"]
 
 
 # ============================================================================
