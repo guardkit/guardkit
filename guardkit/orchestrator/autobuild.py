@@ -1060,12 +1060,32 @@ class AutoBuildOrchestrator:
             summary = self._build_player_summary(player_result.report)
             self._progress_display.complete_turn("success", summary)
         else:
-            # Player failed - attempt state detection for recovery
-            self._progress_display.complete_turn(
-                "error",
-                "Player failed - attempting state recovery",
-                error=player_result.error,
+            # Distinguish between missing report and actual failure
+            is_missing_report = (
+                player_result.error and
+                ("report not found" in player_result.error.lower() or
+                 "PlayerReportNotFoundError" in player_result.error)
             )
+
+            if is_missing_report:
+                # Report missing but implementation may have succeeded
+                # Use "feedback" status (⚠ yellow) instead of "error" (✗ red)
+                # because the Player may have succeeded - we just can't find the report
+                self._progress_display.complete_turn(
+                    "feedback",
+                    "Player report missing - attempting state recovery",
+                )
+                # Add explanatory note to console
+                self._progress_display.console.print(
+                    "   [dim]Note: Implementation may have succeeded; recovering state from git[/dim]"
+                )
+            else:
+                # Actual Player failure
+                self._progress_display.complete_turn(
+                    "error",
+                    f"Player failed: {player_result.error or 'Unknown error'}",
+                    error=player_result.error,
+                )
 
             # Attempt multi-layered state detection
             recovered_player_result = self._attempt_state_recovery(
