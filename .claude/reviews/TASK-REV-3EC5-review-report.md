@@ -105,18 +105,26 @@ The `_create_player_report_from_task_work` method ([agent_invoker.py:1270-1393](
 
 ---
 
-### Finding 3: State Recovery Ineffective for Timing Issues (Medium)
+### Finding 3: State Recovery Loads File But Fails `has_work` Check (Medium)
 
-**Evidence**:
-The `_attempt_state_recovery` method ([autobuild.py:1316-1401](guardkit/orchestrator/autobuild.py#L1316-L1401)) is triggered when reports are missing, but recovery fails because:
+**Evidence from Session Log** (`open_api_docs_feature_success.md` lines 88-94):
+```
+INFO:state_tracker:Loaded Player report from .../player_turn_1.json     # SUCCESS
+INFO:state_detection:Git detection: 7 files changed (+0/-0)
+INFO:state_detection:Test detection: 0 tests, failed
+INFO:autobuild:No work detected in .../worktrees/FEAT-F392              # PARADOX
+WARNING:autobuild:State recovery failed
+```
 
-1. It runs **after** the orchestrator has already failed
-2. By this point, checkpoint commits exist with actual work
-3. Recovery detects work but doesn't prevent the error path
+**The Paradox**: State recovery **successfully loads the Player report**, but then the `has_work` check returns False.
 
-**Problem**: State recovery is a **reactive** mechanism, but the timing issue needs a **proactive** solution (e.g., polling/retry).
+**Root Cause**: The `WorkState.has_work` property likely requires:
+- `files_modified` or `files_created` to be non-empty, OR
+- `test_count > 0`
 
-**Architecture Score Impact**: -5 points (SRP: recovery should be part of report loading, not a separate phase)
+But in the failure case, `files_modified` and `files_created` are empty arrays (see Finding 2), and test count is 0. So despite the report existing, `has_work` returns False.
+
+**Architecture Score Impact**: -5 points (the `has_work` logic is too strict when a Player report exists but has empty file arrays)
 
 ---
 
@@ -313,23 +321,32 @@ with open(player_report_path, "w") as f:
 
 ### Q1: Why does `player_turn_1.json` not exist when expected, but appears later?
 
-**Answer**: File system buffering and async event loop timing. The SDK subprocess completes, but file writes haven't flushed to disk. The immediate file existence check fails, but manual checks seconds later find the file.
+**Answer**: **This only affects the direct mode path.** The SDK subprocess writes the file, but filesystem buffering delays visibility. The orchestrator's immediate `exists()` check fails, but state recovery moments later finds the file. The task-work delegation path works correctly because it writes files synchronously.
 
 ### Q2: Is there a race condition between SDK completion and file checks?
 
-**Answer**: Yes. The `_create_player_report_from_task_work` → `_load_agent_report` sequence has no synchronization. Both methods are called synchronously, but the underlying file I/O may not complete instantly.
+**Answer**: **Yes, but only in direct mode.** The `_invoke_player_direct` method writes the report then immediately checks for it. The task-work path (`_invoke_task_work_implement`) has a more robust pattern: it writes `task_work_results.json`, then creates `player_turn_N.json`, then loads it - all synchronously within the same method.
 
 ### Q3: Why are `files_modified`/`files_created` empty when git shows changes?
 
-**Answer**: The `task_work_results.json` file exists but contains empty arrays (likely because the SDK output parser didn't extract file data). The git fallback only triggers when the file is missing, not when it contains empty data.
+**Answer**: Two possible causes:
+1. **Direct mode**: The SDK output parser failed to extract file data from the stream
+2. **Environmental**: The task had an invalid cross-feature dependency and the Agent never actually ran
 
-### Q4: What causes discrepancy between checkpoint commits and orchestrator failure?
+### Q4: Was FEAT-4C22's failure due to the race condition or environmental issues?
 
-**Answer**: The checkpoint commit is created by the Player agent as part of its work. The orchestrator failure happens afterward, during report loading. The checkpoint system and report system are independent—checkpoints succeed while reports fail to be detected.
+**Answer**: **Environmental.** FEAT-4C22 failed validation before any SDK invocation due to the cross-feature dependency on `TASK-DOC-001`. The `/feature-build` agent detected this and attempted to fix it, but subsequent runs hit the race condition.
 
-### Q5: Should there be retry/polling for report detection?
+### Q5: Why did FEAT-F392 succeed on the second (Fresh) attempt?
 
-**Answer**: **Yes, absolutely.** This is the primary recommendation. A simple retry loop with exponential backoff would resolve the race condition without architectural changes.
+**Answer**: The fresh start cleared all prior state. The second run:
+1. Had slightly different timing (tasks took longer: 150s vs 30s)
+2. Some tasks used task-work delegation instead of direct mode
+3. Random filesystem caching may have helped
+
+### Q6: Should there be retry/polling for report detection?
+
+**Answer**: **Yes, specifically for the direct mode path.** The task-work delegation path already handles this correctly. A simple 3-retry loop with 100ms delays in `_invoke_player_direct` would resolve the race condition.
 
 ---
 
