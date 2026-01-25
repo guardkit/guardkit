@@ -711,6 +711,7 @@ class AutoBuildOrchestrator:
                 if self._agent_invoker is None:
                     self._agent_invoker = AgentInvoker(
                         worktree_path=worktree.path,
+                        max_turns_per_agent=self.max_turns,
                         development_mode=self.development_mode,
                         sdk_timeout_seconds=self.sdk_timeout,
                         use_task_work_delegation=True,
@@ -730,6 +731,7 @@ class AutoBuildOrchestrator:
             if self._agent_invoker is None:
                 self._agent_invoker = AgentInvoker(
                     worktree_path=worktree.path,
+                    max_turns_per_agent=self.max_turns,
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,
@@ -2124,6 +2126,7 @@ class AutoBuildOrchestrator:
             if self._agent_invoker is None:
                 self._agent_invoker = AgentInvoker(
                     worktree_path=worktree.path,
+                    max_turns_per_agent=self.max_turns,
                     development_mode=self.development_mode,
                     sdk_timeout_seconds=self.sdk_timeout,
                     use_task_work_delegation=True,

@@ -72,6 +72,8 @@ class TaskExecutionResult:
         Final orchestration decision
     error : Optional[str]
         Error message if failed
+    recovery_count : int
+        Number of state recovery attempts (default: 0)
     """
 
     task_id: str
@@ -79,6 +81,7 @@ class TaskExecutionResult:
     total_turns: int
     final_decision: str
     error: Optional[str] = None
+    recovery_count: int = 0  # Number of state recovery attempts
 
 
 @dataclass
@@ -1271,6 +1274,7 @@ The detailed specifications are in the task markdown file.
                 total_turns=result.total_turns,
                 final_decision=result.final_decision,
                 error=result.error,
+                recovery_count=result.recovery_count,
             )
 
         except Exception as e:

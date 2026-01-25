@@ -422,6 +422,10 @@ class TestSetupPhase:
             assert call_kwargs.get("use_task_work_delegation") is True, (
                 "AgentInvoker must be created with use_task_work_delegation=True"
             )
+            # TASK-FBR-002: Verify max_turns_per_agent is propagated
+            assert call_kwargs.get("max_turns_per_agent") == 5, (
+                "AgentInvoker must receive max_turns_per_agent from orchestrator.max_turns"
+            )
 
     def test_setup_phase_worktree_creation_failure(self, orchestrator_with_mocks):
         """Test setup phase raises SetupPhaseError on worktree creation failure."""

@@ -2257,7 +2257,7 @@ Follow the decision format specified in your agent definition.
                 cwd=str(self.worktree_path),
                 allowed_tools=["Read", "Write", "Edit", "Bash", "Grep", "Glob", "Task", "Skill"],
                 permission_mode="acceptEdits",
-                max_turns=50,  # task-work can take many turns
+                max_turns=self.max_turns_per_agent,  # TASK-FBR-002: Use configured value
                 # TASK-FB-FIX-014: Include "user" to load skills from ~/.claude/commands/
                 # Without "user", the SDK can't find /task-work skill
                 setting_sources=["user", "project"],

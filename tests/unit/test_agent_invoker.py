@@ -1398,7 +1398,9 @@ class TestInvokeTaskWorkImplement:
             assert "Task" in options_kwargs["allowed_tools"]
             assert "Skill" in options_kwargs["allowed_tools"]
             assert options_kwargs["permission_mode"] == "acceptEdits"
-            assert options_kwargs["max_turns"] == 50
+            # TASK-FBR-002: Now uses max_turns_per_agent instead of hardcoded 50
+            # The invoker fixture has max_turns_per_agent unset, defaulting to 30
+            assert options_kwargs["max_turns"] == 30
             # TASK-FB-FIX-014: Now includes "user" for skill loading
             assert options_kwargs["setting_sources"] == ["user", "project"]
 
