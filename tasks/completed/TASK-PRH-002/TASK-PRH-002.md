@@ -1,7 +1,7 @@
 ---
 id: TASK-PRH-002
 title: Improve state recovery error messaging
-status: backlog
+status: completed
 task_type: feature
 implementation_mode: direct
 priority: medium
@@ -9,6 +9,7 @@ complexity: 2
 wave: 2
 parallel_group: player-report-harmonization-wave2-1
 created: 2026-01-25T14:45:00Z
+completed: 2026-01-25T18:30:00Z
 parent_review: TASK-REV-DF4A
 feature_id: FEAT-PRH
 tags:
@@ -17,6 +18,9 @@ tags:
   - user-experience
 dependencies:
   - TASK-PRH-001
+completed_location: tasks/completed/TASK-PRH-002/
+organized_files:
+  - TASK-PRH-002.md
 ---
 
 # TASK-PRH-002: Improve State Recovery Error Messaging
@@ -67,10 +71,10 @@ except PlayerImplementationError as e:
 
 ## Acceptance Criteria
 
-- [ ] "Player report missing" message shown for `PlayerReportNotFoundError`
-- [ ] "Player failed" message shown only for actual implementation failures
-- [ ] Log output clearly distinguishes between missing report and failure
-- [ ] No changes to actual recovery behavior
+- [x] "Player report missing" message shown for `PlayerReportNotFoundError`
+- [x] "Player failed" message shown only for actual implementation failures
+- [x] Log output clearly distinguishes between missing report and failure
+- [x] No changes to actual recovery behavior
 
 ## Test Plan
 
