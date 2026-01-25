@@ -40,6 +40,7 @@ GuardKit treats **features as the unit of planning** and **tasks as the unit of 
 - **Quality Gates**: Coverage thresholds (80% line, 75% branch), compilation checks, code review
 - **State Management**: Automatic kanban tracking (backlog → in_progress → in_review → completed)
 - **Design-First Workflow**: Optional design approval checkpoint for complex tasks (complexity ≥7)
+- **AutoBuild**: Fully autonomous task implementation with Player-Coach adversarial workflow
 
 ## AI-Powered Customization
 
@@ -163,6 +164,7 @@ guardkit init react-typescript  # or: fastapi-python, nextjs-fullstack, default
 
 | Feature | GuardKit | Competitors |
 |---------|----------|-------------|
+| **AutoBuild** | Autonomous Player-Coach implementation with human review | Manual coding or basic autocomplete |
 | **Quality Gates** | Built-in (architectural review, test enforcement, plan audit) | Manual or missing |
 | **Complexity Awareness** | Upfront 0-10 scoring, auto-split recommendations | React after problems |
 | **Parallel Development** | Conductor.build integration, State sync | Sequential switching |
@@ -202,6 +204,23 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 /task-work TASK-XXX --implement-only   # Phases 3-5, requires approved plan
 ```
 
+### Autonomous Build (AutoBuild)
+```bash
+# Fully autonomous implementation with Player-Coach workflow
+/feature-build TASK-XXX                # Single task autonomous build
+/feature-build FEAT-XXX                # Feature mode - all tasks with dependencies
+
+# After review, merge approved work
+/feature-complete TASK-XXX             # Merge single task
+/feature-complete FEAT-XXX             # Merge entire feature
+```
+
+**What AutoBuild does:**
+- Creates isolated git worktree per task
+- Runs Player-Coach dialectical loop (Player implements → Coach validates)
+- Preserves worktree for human review (never auto-merges)
+- Supports checkpoint/resume for interrupted sessions
+
 ### Utilities
 ```bash
 /debug                     # Troubleshoot issues
@@ -234,6 +253,54 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 | Architectural Review | ≥60/100 | Human checkpoint |
 | Plan Audit | 0 violations | Variance review |
 
+## AutoBuild: Autonomous Implementation
+
+**Let AI implement while you review.**
+
+AutoBuild uses a **Player-Coach adversarial workflow** for fully autonomous task implementation:
+
+```
+┌──────────────┐                    ┌──────────────┐
+│   PLAYER     │───Implementation──▶│    COACH     │
+│   (builds)   │◀─────Feedback──────│  (validates) │
+└──────────────┘                    └──────────────┘
+```
+
+- **Player Agent**: Full file system access, implements code, writes tests
+- **Coach Agent**: Read-only access, runs tests, validates against acceptance criteria
+- **Dialectical Loop**: Player implements → Coach validates → repeat until approval
+
+### When to Use AutoBuild
+
+| Use `/feature-build` | Use `/task-work` |
+|---------------------|------------------|
+| Well-defined requirements | Exploratory work |
+| Standard implementation patterns | Complex architectural decisions |
+| Clear acceptance criteria | High-risk changes |
+| Low to medium risk | Unusual or novel requirements |
+
+### AutoBuild Workflow
+
+```bash
+# 1. Plan feature (generates tasks + dependencies)
+/feature-plan "implement OAuth2 authentication"
+# → Creates FEAT-A1B2 with 4 subtasks
+
+# 2. Run autonomous implementation
+/feature-build FEAT-A1B2
+# → Executes tasks in dependency order
+# → Creates worktree: .guardkit/worktrees/FEAT-A1B2/
+
+# 3. Review AI output
+cd .guardkit/worktrees/FEAT-A1B2
+git diff main
+
+# 4. Merge if approved
+/feature-complete FEAT-A1B2
+```
+
+**Installation**: AutoBuild requires `pip install guardkit-py[autobuild]` for the Claude Agent SDK.
+
 ## Optional: MCP Enhancements
 
 **Model Context Protocol (MCP)** servers enhance GuardKit. **All optional** - system works without them.
@@ -250,7 +317,18 @@ This creates a review task, analyzes options, generates subtasks, and sets up th
 ```bash
 # Feature planning (recommended for new features)
 /feature-plan "add user authentication"
-# → Creates review task, analyzes options, generates subtasks
+# → Creates review task, analyzes options, generates subtasks with FEAT-XXX ID
+
+# OPTION A: Interactive implementation (human-in-the-loop)
+/task-work TASK-p9r3   # Plans, reviews, implements, tests (with checkpoints)
+/task-complete TASK-p9r3
+
+# OPTION B: Autonomous implementation (AutoBuild)
+/feature-build FEAT-XXX                 # AI implements entire feature autonomously
+# → Player-Coach loop runs until approved or max turns
+# → Work preserved in .guardkit/worktrees/ for review
+cd .guardkit/worktrees/FEAT-XXX && git diff main  # Review changes
+/feature-complete FEAT-XXX              # Merge approved work to main
 
 # Simple task (for bug fixes, small features)
 /task-create "The login button styling is broken on mobile devices"
