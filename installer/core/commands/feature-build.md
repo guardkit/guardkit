@@ -282,6 +282,90 @@ orchestration:
   recommended_parallel: 2
 ```
 
+### Task Invocation Modes
+
+Feature-build uses two distinct invocation modes for executing tasks. The mode is determined by the `implementation_mode` field in the task's feature YAML entry.
+
+#### Direct SDK Mode
+
+**Use for**: Simple scaffolding, file creation, or configuration tasks that don't need full planning phases.
+
+**Configuration** (in feature YAML):
+```yaml
+tasks:
+  - id: TASK-001
+    name: "Create configuration files"
+    implementation_mode: direct  # Uses direct SDK invocation
+```
+
+**Behavior**:
+- Invokes Player via direct SDK call (`_invoke_player_direct`)
+- Uses `TASK_WORK_SDK_MAX_TURNS` (50) for SDK max turns
+- Faster startup, less overhead
+- No planning phases, jumps straight to implementation
+
+**Log patterns**:
+```
+INFO: Routing to direct Player path for TASK-001 (implementation_mode=direct)
+INFO: Invoking Player via direct SDK for TASK-001 (turn 1)
+```
+
+**Use when**:
+- Creating new files/directories
+- Simple configuration changes
+- Tasks with clear, atomic deliverables
+- Scaffolding modules or boilerplate
+
+#### task-work Delegation Mode (Default)
+
+**Use for**: Complex implementations requiring planning, architectural decisions, and full quality gates.
+
+**Configuration** (in feature YAML):
+```yaml
+tasks:
+  - id: TASK-002
+    name: "Implement OAuth provider"
+    implementation_mode: task-work  # Or omit (default)
+```
+
+**Behavior**:
+- Invokes Player via `/task-work TASK-XXX --implement-only`
+- Uses `TASK_WORK_SDK_MAX_TURNS` (50) for SDK max turns
+- Full task-work phases: planning, implementation, testing, review
+- More thorough but slower
+
+**Log patterns**:
+```
+INFO: Invoking Player via task-work delegation for TASK-002 (turn 1)
+INFO: [TASK-002] Max turns: 50
+INFO: [TASK-002] SDK timeout: 900s
+```
+
+**Use when**:
+- Complex feature implementation
+- Tasks requiring architectural decisions
+- Tasks with multiple acceptance criteria
+- Higher-risk changes needing quality gates
+
+#### Mode Selection Guidelines
+
+| Task Type | Recommended Mode | Rationale |
+|-----------|------------------|-----------|
+| Create new module structure | direct | Simple scaffolding |
+| Add configuration file | direct | Atomic, single-file change |
+| Implement business logic | task-work | Needs planning and tests |
+| Add API endpoint | task-work | Multiple files, integration |
+| Update existing complex code | task-work | Needs careful validation |
+| Add documentation tests | task-work | Testing tasks need quality gates |
+
+#### Technical Details
+
+Both modes share the same `TASK_WORK_SDK_MAX_TURNS` constant (50 turns) for SDK invocation. This ensures sufficient turns for the Claude agent to complete complex implementations.
+
+**Historical note**: A regression (commit `14327137`) temporarily reduced direct mode to 5 turns, causing task failures. This was fixed in commit `7376376b`. See TASK-REV-FDF3 for the full validation of the fix.
+
+---
+
 ### Feature Mode Examples
 
 ```bash

@@ -743,6 +743,54 @@ autobuild:
   enable_pre_loop: false
 ```
 
+### Task Invocation Modes
+
+Each task can specify an `implementation_mode` that determines how the Player executes it:
+
+#### Direct SDK Mode (`implementation_mode: direct`)
+
+Uses direct Claude SDK invocation without full task-work phases. Faster startup for simple tasks.
+
+```yaml
+tasks:
+  - id: TASK-001
+    name: "Create configuration files"
+    implementation_mode: direct
+```
+
+**Log signature**:
+```
+INFO: Routing to direct Player path for TASK-001 (implementation_mode=direct)
+INFO: Invoking Player via direct SDK for TASK-001 (turn 1)
+```
+
+**Best for**: Scaffolding, file creation, simple configuration changes.
+
+#### task-work Delegation Mode (`implementation_mode: task-work`)
+
+Default mode. Delegates to `/task-work --implement-only` for full quality gate enforcement.
+
+```yaml
+tasks:
+  - id: TASK-002
+    name: "Implement OAuth provider"
+    implementation_mode: task-work  # or omit (default)
+```
+
+**Log signature**:
+```
+INFO: Invoking Player via task-work delegation for TASK-002 (turn 1)
+INFO: [TASK-002] Max turns: 50
+```
+
+**Best for**: Complex implementations, code with multiple acceptance criteria, higher-risk changes.
+
+#### SDK Max Turns Configuration
+
+Both modes use `TASK_WORK_SDK_MAX_TURNS` (50) to ensure sufficient turns for Claude to complete complex implementations. This shared constant prevents premature task termination regardless of mode.
+
+**Reference**: See TASK-REV-FDF3 for the fix validation that unified this configuration.
+
 ---
 
 # Part 4: ADVANCED TOPICS
