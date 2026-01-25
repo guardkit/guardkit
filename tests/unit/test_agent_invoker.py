@@ -4873,3 +4873,171 @@ status: backlog
         # Verify deduplication and sorting
         assert results["files_modified"] == ["a.py", "b.py", "c.py"]
         assert results["files_created"] == ["a.py", "z.py"]
+
+    # ========================================================================
+    # Direct Mode Player Report Tests (TASK-PRH-001)
+    # ========================================================================
+
+    def test_write_player_report_for_direct_mode_creates_file(
+        self, agent_invoker, worktree_path
+    ):
+        """_write_player_report_for_direct_mode creates player_turn_N.json."""
+        task_id = "TASK-PRH-001"
+        turn = 1
+        player_report = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["README.md"],
+            "files_created": ["docs/new-file.md"],
+            "tests_run": False,
+            "tests_passed": False,
+            "implementation_notes": "Test implementation",
+        }
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        assert result_path.exists()
+        report = json.loads(result_path.read_text())
+
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+        assert report["implementation_mode"] == "direct"
+        assert report["success"] is True
+        assert report["files_created"] == ["docs/new-file.md"]
+        assert report["files_modified"] == ["README.md"]
+
+    def test_write_player_report_for_direct_mode_handles_failure(
+        self, agent_invoker, worktree_path
+    ):
+        """_write_player_report_for_direct_mode handles failure cases."""
+        task_id = "TASK-PRH-002"
+        turn = 2
+        player_report = {"task_id": task_id, "turn": turn}
+        error_msg = "Player SDK invocation failed"
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=False, error=error_msg
+        )
+
+        report = json.loads(result_path.read_text())
+
+        assert report["success"] is False
+        assert report["error"] == error_msg
+        assert report["task_id"] == task_id
+        assert report["turn"] == turn
+
+    def test_write_player_report_for_direct_mode_schema_compliant(
+        self, agent_invoker, worktree_path
+    ):
+        """Player report contains all PLAYER_REPORT_SCHEMA fields."""
+        task_id = "TASK-PRH-003"
+        turn = 1
+        player_report = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["src/main.py"],
+            "files_created": ["tests/test_main.py"],
+            "tests_written": ["test_feature"],
+            "tests_run": True,
+            "tests_passed": True,
+            "test_output_summary": "5 passed in 0.2s",
+            "implementation_notes": "Added feature X",
+            "concerns": ["Performance may degrade for large inputs"],
+            "requirements_addressed": ["REQ-001"],
+            "requirements_remaining": ["REQ-002"],
+        }
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        report = json.loads(result_path.read_text())
+
+        # Verify all PLAYER_REPORT_SCHEMA fields are present
+        from guardkit.orchestrator.agent_invoker import PLAYER_REPORT_SCHEMA
+
+        for field, expected_type in PLAYER_REPORT_SCHEMA.items():
+            assert field in report, f"Missing required field: {field}"
+            assert isinstance(
+                report[field], expected_type
+            ), f"Field {field} has wrong type: expected {expected_type}, got {type(report[field])}"
+
+    def test_write_player_report_for_direct_mode_correct_path(
+        self, agent_invoker, worktree_path
+    ):
+        """Player report is written to correct path."""
+        task_id = "TASK-PRH-004"
+        turn = 3
+        player_report = {"task_id": task_id, "turn": turn}
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        # Verify path follows TaskArtifactPaths convention
+        expected_path = worktree_path / f".guardkit/autobuild/{task_id}/player_turn_{turn}.json"
+        assert result_path == expected_path
+        assert result_path.exists()
+
+    def test_write_player_report_for_direct_mode_defaults_for_missing_fields(
+        self, agent_invoker, worktree_path
+    ):
+        """Player report provides defaults for missing fields."""
+        task_id = "TASK-PRH-005"
+        turn = 1
+        # Minimal report with only task_id and turn
+        player_report = {"task_id": task_id, "turn": turn}
+
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report, success=True
+        )
+
+        report = json.loads(result_path.read_text())
+
+        # Verify defaults are applied
+        assert report["files_modified"] == []
+        assert report["files_created"] == []
+        assert report["tests_written"] == []
+        assert report["tests_run"] is False
+        assert report["tests_passed"] is False
+        assert report["test_output_summary"] == ""
+        assert "Direct mode" in report["implementation_notes"]
+        assert report["concerns"] == []
+        assert report["requirements_addressed"] == []
+        assert report["requirements_remaining"] == []
+
+    def test_write_player_report_for_direct_mode_overwrites_existing(
+        self, agent_invoker, worktree_path
+    ):
+        """Player report can overwrite existing file (idempotent)."""
+        task_id = "TASK-PRH-006"
+        turn = 1
+
+        # First write
+        player_report_v1 = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["v1.py"],
+        }
+        result_path = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report_v1, success=True
+        )
+
+        report_v1 = json.loads(result_path.read_text())
+        assert report_v1["files_modified"] == ["v1.py"]
+
+        # Second write (overwrite)
+        player_report_v2 = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": ["v2.py", "v2_extra.py"],
+        }
+        result_path_v2 = agent_invoker._write_player_report_for_direct_mode(
+            task_id, turn, player_report_v2, success=True
+        )
+
+        report_v2 = json.loads(result_path_v2.read_text())
+        assert report_v2["files_modified"] == ["v2.py", "v2_extra.py"]
+        assert result_path == result_path_v2

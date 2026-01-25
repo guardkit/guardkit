@@ -1881,6 +1881,10 @@ Follow the decision format specified in your agent definition.
             # Write task_work_results.json for Coach compatibility
             self._write_direct_mode_results(task_id, report, success=True)
 
+            # Write player_turn_N.json for orchestrator state tracking
+            # This harmonizes direct mode with task-work delegation path
+            self._write_player_report_for_direct_mode(task_id, turn, report, success=True)
+
             duration = time.time() - start_time
 
             return AgentInvocationResult(
@@ -1894,12 +1898,22 @@ Follow the decision format specified in your agent definition.
 
         except (PlayerReportNotFoundError, PlayerReportInvalidError) as e:
             duration = time.time() - start_time
+            error_report = {"task_id": task_id, "turn": turn}
+            error_msg = str(e)
             # Write failure results for Coach
             self._write_direct_mode_results(
                 task_id,
-                {"task_id": task_id, "turn": turn},
+                error_report,
                 success=False,
-                error=str(e),
+                error=error_msg,
+            )
+            # Write player_turn_N.json for orchestrator state tracking
+            self._write_player_report_for_direct_mode(
+                task_id,
+                turn,
+                error_report,
+                success=False,
+                error=error_msg,
             )
             return AgentInvocationResult(
                 task_id=task_id,
@@ -1908,15 +1922,25 @@ Follow the decision format specified in your agent definition.
                 success=False,
                 report={},
                 duration_seconds=duration,
-                error=str(e),
+                error=error_msg,
             )
         except SDKTimeoutError as e:
             duration = time.time() - start_time
+            error_report = {"task_id": task_id, "turn": turn}
+            error_msg = f"SDK timeout: {str(e)}"
             self._write_direct_mode_results(
                 task_id,
-                {"task_id": task_id, "turn": turn},
+                error_report,
                 success=False,
-                error=f"SDK timeout: {str(e)}",
+                error=error_msg,
+            )
+            # Write player_turn_N.json for orchestrator state tracking
+            self._write_player_report_for_direct_mode(
+                task_id,
+                turn,
+                error_report,
+                success=False,
+                error=error_msg,
             )
             return AgentInvocationResult(
                 task_id=task_id,
@@ -1929,11 +1953,21 @@ Follow the decision format specified in your agent definition.
             )
         except Exception as e:
             duration = time.time() - start_time
+            error_report = {"task_id": task_id, "turn": turn}
+            error_msg = f"Unexpected error: {str(e)}"
             self._write_direct_mode_results(
                 task_id,
-                {"task_id": task_id, "turn": turn},
+                error_report,
                 success=False,
-                error=f"Unexpected error: {str(e)}",
+                error=error_msg,
+            )
+            # Write player_turn_N.json for orchestrator state tracking
+            self._write_player_report_for_direct_mode(
+                task_id,
+                turn,
+                error_report,
+                success=False,
+                error=error_msg,
             )
             return AgentInvocationResult(
                 task_id=task_id,
@@ -1942,7 +1976,7 @@ Follow the decision format specified in your agent definition.
                 success=False,
                 report={},
                 duration_seconds=duration,
-                error=f"Unexpected error: {str(e)}",
+                error=error_msg,
             )
 
     def _write_direct_mode_results(
@@ -2011,6 +2045,73 @@ Follow the decision format specified in your agent definition.
         logger.info(f"Wrote direct mode results to {results_file}")
 
         return results_file
+
+    def _write_player_report_for_direct_mode(
+        self,
+        task_id: str,
+        turn: int,
+        player_report: Dict[str, Any],
+        success: bool = True,
+        error: Optional[str] = None,
+    ) -> Path:
+        """Write player_turn_N.json for direct mode orchestrator compatibility.
+
+        Direct mode tasks bypass task-work delegation but the AutoBuild orchestrator
+        expects player_turn_{turn}.json for state tracking. This method creates that
+        file from the direct mode invocation results.
+
+        This harmonizes direct mode Player output with the task-work delegation path,
+        ensuring Coach validation and orchestrator state recovery work correctly
+        regardless of which path was used.
+
+        Args:
+            task_id: Task identifier (e.g., "TASK-001")
+            turn: Turn number (1-based)
+            player_report: Player's report from SDK invocation
+            success: Whether Player invocation succeeded
+            error: Error message if success=False
+
+        Returns:
+            Path to the written player report file
+        """
+        # Ensure autobuild directory exists
+        TaskArtifactPaths.ensure_autobuild_dir(task_id, self.worktree_path)
+        player_report_path = TaskArtifactPaths.player_report_path(
+            task_id, turn, self.worktree_path
+        )
+
+        # Build PLAYER_REPORT_SCHEMA compliant report
+        report: Dict[str, Any] = {
+            "task_id": task_id,
+            "turn": turn,
+            "files_modified": player_report.get("files_modified", []),
+            "files_created": player_report.get("files_created", []),
+            "tests_written": player_report.get("tests_written", []),
+            "tests_run": player_report.get("tests_run", False),
+            "tests_passed": player_report.get("tests_passed", False),
+            "test_output_summary": player_report.get("test_output_summary", ""),
+            "implementation_notes": player_report.get(
+                "implementation_notes",
+                "Direct mode implementation via SDK"
+            ),
+            "concerns": player_report.get("concerns", []),
+            "requirements_addressed": player_report.get("requirements_addressed", []),
+            "requirements_remaining": player_report.get("requirements_remaining", []),
+            "implementation_mode": "direct",
+        }
+
+        # Add error info if failed
+        if not success and error:
+            report["error"] = error
+            report["success"] = False
+        else:
+            report["success"] = True
+
+        # Write the report
+        player_report_path.write_text(json.dumps(report, indent=2))
+        logger.info(f"Wrote direct mode player report to {player_report_path}")
+
+        return player_report_path
 
     def format_feedback_for_prompt(self, feedback: Dict[str, Any]) -> str:
         """Format structured feedback for inclusion in subagent prompts.
