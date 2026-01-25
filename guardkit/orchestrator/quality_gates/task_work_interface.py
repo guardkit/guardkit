@@ -765,3 +765,73 @@ class TaskWorkInterface:
         Uses centralized TaskArtifactPaths for consistent path resolution.
         """
         return TaskArtifactPaths.complexity_score_path(task_id, self.worktree_path)
+
+    def execute_security_review(
+        self,
+        task_id: str,
+        worktree_path: Optional[Path] = None,
+        config: Optional["SecurityConfig"] = None,
+    ) -> "SecurityReviewResult":
+        """
+        Execute security review for Phase 2.5C.
+
+        Runs SecurityReviewer on the worktree and persists results to
+        .guardkit/autobuild/{task_id}/security_review.json.
+
+        This method is called during pre-loop Phase 2.5C (after architectural
+        review Phase 2.5B). Coach can later verify the results without
+        re-running the checks.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        worktree_path : Optional[Path]
+            Path to worktree (defaults to self.worktree_path)
+        config : Optional[SecurityConfig]
+            Security configuration (defaults to SecurityConfig())
+
+        Returns
+        -------
+        SecurityReviewResult
+            Complete security review result with findings and blocking decision
+
+        Example
+        -------
+        >>> interface = TaskWorkInterface("/path/to/worktree")
+        >>> result = interface.execute_security_review("TASK-001")
+        >>> if result.blocked:
+        ...     print(f"Security blocked: {result.critical_count} critical findings")
+        """
+        from guardkit.orchestrator.quality_gates.security_review import (
+            SecurityReviewer,
+            SecurityReviewResult,
+            save_security_review,
+        )
+        from guardkit.orchestrator.security_config import SecurityConfig
+
+        # Use instance worktree_path if not provided
+        target_worktree = Path(worktree_path) if worktree_path else self.worktree_path
+
+        # Use default config if not provided
+        if config is None:
+            config = SecurityConfig()
+
+        logger.info(f"Executing security review for {task_id} (Phase 2.5C)")
+
+        # Run security review
+        reviewer = SecurityReviewer(
+            worktree_path=target_worktree,
+            config=config,
+        )
+        result = reviewer.run(task_id)
+
+        # Persist result for Coach verification
+        save_security_review(result, target_worktree)
+
+        logger.info(
+            f"Security review complete for {task_id}: "
+            f"critical={result.critical_count}, blocked={result.blocked}"
+        )
+
+        return result

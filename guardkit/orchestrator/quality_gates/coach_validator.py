@@ -1078,6 +1078,170 @@ class CoachValidator:
         logger.info(f"Saved Coach decision to {decision_path}")
         return decision_path
 
+    # ========================================================================
+    # Security Review Verification (Read-Only)
+    # ========================================================================
+
+    def verify_security_review(
+        self,
+        task_id: str,
+    ) -> Optional["SecurityReviewResult"]:
+        """
+        Verify security review results in read-only mode.
+
+        Reads the persisted security review results from Phase 2.5C without
+        re-running the security checks. This is a "trust but verify" pattern
+        where Coach validates that the security review was executed and
+        examines its results.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+
+        Returns
+        -------
+        Optional[SecurityReviewResult]
+            The persisted security review result, or None if not found
+
+        Note
+        ----
+        This method is READ-ONLY. It does NOT re-run security checks.
+        The security review was already executed during pre-loop Phase 2.5C.
+        Coach simply reads the persisted results for verification.
+
+        Example
+        -------
+        >>> validator = CoachValidator("/path/to/worktree")
+        >>> result = validator.verify_security_review("TASK-001")
+        >>> if result and result.blocked:
+        ...     print(f"Security blocked: {result.critical_count} critical findings")
+        """
+        from guardkit.orchestrator.quality_gates.security_review import (
+            load_security_review,
+            SecurityReviewResult,
+        )
+
+        logger.debug(f"Verifying security review for {task_id} (read-only)")
+
+        result = load_security_review(task_id, self.worktree_path)
+
+        if result is None:
+            logger.warning(f"No security review found for {task_id}")
+            return None
+
+        logger.info(
+            f"Security review verified for {task_id}: "
+            f"critical={result.critical_count}, high={result.high_count}, "
+            f"blocked={result.blocked}"
+        )
+
+        return result
+
+    def get_security_validation_issues(
+        self,
+        task_id: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get validation issues from security review for Coach decision.
+
+        Reads the persisted security review and converts findings into
+        validation issues that can be included in CoachValidationResult.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+
+        Returns
+        -------
+        List[Dict[str, Any]]
+            List of validation issues for security findings:
+            - severity: "must_fix" for critical, "should_fix" for high,
+                       "consider" for medium/low
+            - category: "security"
+            - description: Finding description
+            - details: Full finding details
+
+        Example
+        -------
+        >>> validator = CoachValidator("/path/to/worktree")
+        >>> issues = validator.get_security_validation_issues("TASK-001")
+        >>> for issue in issues:
+        ...     print(f"{issue['severity']}: {issue['description']}")
+        """
+        from guardkit.orchestrator.quality_gates.security_review import (
+            load_security_review,
+        )
+
+        issues: List[Dict[str, Any]] = []
+
+        result = load_security_review(task_id, self.worktree_path)
+
+        if result is None:
+            # No security review found - not necessarily an error
+            logger.debug(f"No security review found for {task_id}")
+            return issues
+
+        # Convert findings to validation issues
+        for finding in result.findings:
+            # Determine severity level for Coach
+            if finding.severity == "critical":
+                severity = "must_fix"
+            elif finding.severity == "high":
+                severity = "should_fix"
+            else:
+                severity = "consider"
+
+            issues.append({
+                "severity": severity,
+                "category": "security",
+                "description": f"[{finding.check_id}] {finding.description}",
+                "details": {
+                    "check_id": finding.check_id,
+                    "file_path": finding.file_path,
+                    "line_number": finding.line_number,
+                    "matched_text": finding.matched_text,
+                    "recommendation": finding.recommendation,
+                },
+            })
+
+        # Add summary issue if there are critical findings
+        if result.critical_count > 0:
+            issues.insert(0, {
+                "severity": "must_fix",
+                "category": "security_summary",
+                "description": (
+                    f"Security review found {result.critical_count} critical finding(s). "
+                    f"Task is BLOCKED until resolved."
+                ),
+                "details": {
+                    "critical_count": result.critical_count,
+                    "high_count": result.high_count,
+                    "medium_count": result.medium_count,
+                    "low_count": result.low_count,
+                    "blocked": result.blocked,
+                },
+            })
+        elif result.high_count > 0:
+            issues.insert(0, {
+                "severity": "should_fix",
+                "category": "security_summary",
+                "description": (
+                    f"Security review found {result.high_count} high-severity finding(s). "
+                    f"Consider addressing before completion."
+                ),
+                "details": {
+                    "critical_count": result.critical_count,
+                    "high_count": result.high_count,
+                    "medium_count": result.medium_count,
+                    "low_count": result.low_count,
+                    "blocked": result.blocked,
+                },
+            })
+
+        return issues
+
 
 # ============================================================================
 # Public API

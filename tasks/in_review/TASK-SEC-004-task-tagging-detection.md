@@ -1,34 +1,38 @@
 ---
-id: TASK-SEC-004
-title: Implement pre-loop security tag detection
-status: pending
-task_type: feature
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T17:00:00Z
-priority: high
-tags: [security, pre-loop, detection, autobuild]
-complexity: 3
-parent_review: TASK-REV-SEC1
-feature_id: FEAT-SEC
-implementation_mode: task-work
-estimated_minutes: 90
-wave: 2
-conductor_workspace: coach-security-wave2-2
-dependencies:
-  - TASK-SEC-001
-  - TASK-SEC-002
 acceptance_criteria:
-  - SECURITY_TAGS set defined with 25+ tags aligned with 10-category taxonomy
-  - SECURITY_KEYWORDS list defined with 25+ keywords
-  - HIGH_RISK_CATEGORIES set defined for always-trigger tags
-  - should_run_full_review() function implemented in security_detection.py
-  - Function called from pre_loop.py (NOT Coach)
-  - Configuration precedence correct (force > level > tags > keywords)
-  - Case-insensitive matching
-  - Keyword density threshold for descriptions
-  - Unit tests for each detection path
-  - Edge case handling for empty tags and empty title
-  - Tags aligned with Claude Code 10-category taxonomy
+- SECURITY_TAGS set defined with 25+ tags aligned with 10-category taxonomy
+- SECURITY_KEYWORDS list defined with 25+ keywords
+- HIGH_RISK_CATEGORIES set defined for always-trigger tags
+- should_run_full_review() function implemented in security_detection.py
+- Function called from pre_loop.py (NOT Coach)
+- Configuration precedence correct (force > level > tags > keywords)
+- Case-insensitive matching
+- Keyword density threshold for descriptions
+- Unit tests for each detection path
+- Edge case handling for empty tags and empty title
+- Tags aligned with Claude Code 10-category taxonomy
+complexity: 3
+conductor_workspace: coach-security-wave2-2
+created: 2026-01-24 15:00:00+00:00
+dependencies:
+- TASK-SEC-001
+- TASK-SEC-002
+estimated_minutes: 90
+feature_id: FEAT-SEC
+id: TASK-SEC-004
+implementation_mode: task-work
+parent_review: TASK-REV-SEC1
+priority: high
+status: in_review
+tags:
+- security
+- pre-loop
+- detection
+- autobuild
+task_type: feature
+title: Implement pre-loop security tag detection
+updated: 2026-01-24 17:00:00+00:00
+wave: 2
 ---
 
 # TASK-SEC-004: Implement Pre-Loop Security Tag Detection

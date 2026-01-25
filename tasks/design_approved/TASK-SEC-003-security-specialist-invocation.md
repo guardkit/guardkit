@@ -1,38 +1,43 @@
 ---
-id: TASK-SEC-003
-title: Implement pre-loop security review via TaskWorkInterface
-status: pending
-task_type: feature
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T17:00:00Z
-priority: high
-tags: [security, pre-loop, task-work-interface, security-specialist, autobuild]
-complexity: 6
-parent_review: TASK-REV-SEC1
-feature_id: FEAT-SEC
-implementation_mode: task-work
-estimated_minutes: 240
-wave: 2
-conductor_workspace: coach-security-wave2-1
-dependencies:
-  - TASK-SEC-001
-  - TASK-SEC-002
 acceptance_criteria:
-  - Phase 2.5C security pre-check added to pre_loop.py
-  - TaskWorkInterface.execute_security_review() async method implemented
-  - Structured prompt includes task context
-  - Response parsed into SecurityFinding objects
-  - Results saved to security_review_results.json
-  - Phase 4.3 quick security scan added to task-work flow
-  - Quick scan results written to task_work_results.json["security"]
-  - Timeout handling with default 300s for full review
-  - Error handling for agent failures
-  - 10-category vulnerability taxonomy in prompt
-  - Confidence scoring in SecurityFinding with filter below 0.8
-  - Post-filtering for DOS, rate limiting, resource management
-  - Coach only READS security results (no agent invocation)
-  - Unit tests for prompt building and response parsing
-  - Integration test with mock agent response
+- Phase 2.5C security pre-check added to pre_loop.py
+- TaskWorkInterface.execute_security_review() async method implemented
+- Structured prompt includes task context
+- Response parsed into SecurityFinding objects
+- Results saved to security_review_results.json
+- Phase 4.3 quick security scan added to task-work flow
+- Quick scan results written to task_work_results.json["security"]
+- Timeout handling with default 300s for full review
+- Error handling for agent failures
+- 10-category vulnerability taxonomy in prompt
+- Confidence scoring in SecurityFinding with filter below 0.8
+- Post-filtering for DOS, rate limiting, resource management
+- Coach only READS security results (no agent invocation)
+- Unit tests for prompt building and response parsing
+- Integration test with mock agent response
+complexity: 6
+conductor_workspace: coach-security-wave2-1
+created: 2026-01-24 15:00:00+00:00
+dependencies:
+- TASK-SEC-001
+- TASK-SEC-002
+estimated_minutes: 240
+feature_id: FEAT-SEC
+id: TASK-SEC-003
+implementation_mode: task-work
+parent_review: TASK-REV-SEC1
+priority: high
+status: design_approved
+tags:
+- security
+- pre-loop
+- task-work-interface
+- security-specialist
+- autobuild
+task_type: feature
+title: Implement pre-loop security review via TaskWorkInterface
+updated: 2026-01-24 17:00:00+00:00
+wave: 2
 ---
 
 # TASK-SEC-003: Implement Pre-Loop Security Review via TaskWorkInterface

@@ -45,6 +45,10 @@ from guardkit.orchestrator.quality_gates.exceptions import (
     QualityGateBlocked,
     CheckpointRejectedError,
 )
+from guardkit.orchestrator.quality_gates.security_detection import (
+    should_run_full_review,
+)
+from guardkit.orchestrator.security_config import SecurityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -404,3 +408,59 @@ class PreLoopQualityGates:
             "defaults": "Use default answers without prompting",
             "docs": "Documentation level (minimal/standard/comprehensive)",
         }
+
+    def _should_run_security_review(self, task: Dict[str, Any]) -> bool:
+        """
+        Check if task requires full security review based on tags, keywords, and config.
+
+        This method loads the security configuration and delegates to the
+        security_detection module to determine if full review is needed.
+
+        Parameters
+        ----------
+        task : Dict[str, Any]
+            Task dictionary with tags, title, and description
+
+        Returns
+        -------
+        bool
+            True if task requires full security review
+
+        Example
+        -------
+        >>> gates = PreLoopQualityGates("/path/to/worktree")
+        >>> task = {"title": "Implement login", "tags": ["auth"]}
+        >>> gates._should_run_security_review(task)
+        True
+        """
+        config = self._load_security_config(task)
+        return should_run_full_review(task, config)
+
+    def _load_security_config(self, task: Dict[str, Any]) -> SecurityConfig:
+        """
+        Load security configuration with proper precedence.
+
+        Configuration precedence (highest to lowest):
+        1. Task frontmatter (task.security)
+        2. Feature YAML (if feature_id present)
+        3. Global config (.guardkit/config.yaml)
+
+        Parameters
+        ----------
+        task : Dict[str, Any]
+            Task dictionary with optional security config
+
+        Returns
+        -------
+        SecurityConfig
+            Merged security configuration
+        """
+        # Load from task frontmatter
+        task_config = SecurityConfig.from_task(task)
+
+        # Load from global config (lowest precedence)
+        global_config = SecurityConfig.from_global()
+
+        # Feature config would be loaded here if feature_id is present
+        # For now, we only merge task and global
+        return SecurityConfig.merge(task_config, None, global_config)

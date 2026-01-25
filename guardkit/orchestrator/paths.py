@@ -88,6 +88,7 @@ class TaskArtifactPaths:
     DESIGN_RESULTS: str = ".guardkit/autobuild/{task_id}/design_results.json"
     COACH_FEEDBACK: str = ".guardkit/autobuild/{task_id}/coach_feedback_{turn}.json"
     VERIFICATION_CONTEXT: str = ".guardkit/autobuild/{task_id}/verification_context_{turn}.json"
+    SECURITY_REVIEW: str = ".guardkit/autobuild/{task_id}/security_review.json"
 
     # Task state paths
     TASK_STATE_DIR: str = "docs/state/{task_id}"
@@ -393,6 +394,34 @@ class TaskArtifactPaths:
         PosixPath('/repo/.guardkit/autobuild/TASK-001/verification_context_1.json')
         """
         return worktree / cls.VERIFICATION_CONTEXT.format(task_id=task_id, turn=turn)
+
+    @classmethod
+    def security_review_path(cls, task_id: str, worktree: Path) -> Path:
+        """Get path for security review results file.
+
+        Security review results store Phase 2.5C findings from pre-loop
+        execution, enabling Coach to verify security review results
+        without re-running the checks.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        worktree : Path
+            Path to the worktree/repository root
+
+        Returns
+        -------
+        Path
+            Path to the security_review.json file
+
+        Example
+        -------
+        >>> path = TaskArtifactPaths.security_review_path("TASK-001", Path("/repo"))
+        >>> path
+        PosixPath('/repo/.guardkit/autobuild/TASK-001/security_review.json')
+        """
+        return worktree / cls.SECURITY_REVIEW.format(task_id=task_id)
 
     @classmethod
     def agent_report_path(
