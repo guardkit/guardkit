@@ -5046,3 +5046,159 @@ status: backlog
         report_v2 = json.loads(result_path_v2.read_text())
         assert report_v2["files_modified"] == ["v2.py", "v2_extra.py"]
         assert result_path == result_path_v2
+
+
+# ============================================================================
+# Retry Mechanism Tests
+# ============================================================================
+
+
+class TestRetryMechanism:
+    """Test retry mechanism for filesystem race conditions."""
+
+    @pytest.mark.asyncio
+    async def test_retry_succeeds_immediately(self, agent_invoker):
+        """Test that retry returns immediately when function succeeds on first try."""
+        call_count = 0
+
+        def successful_function():
+            nonlocal call_count
+            call_count += 1
+            return {"result": "success"}
+
+        result = await agent_invoker._retry_with_backoff(
+            successful_function,
+            max_retries=3,
+            initial_delay=0.1,
+        )
+
+        assert result == {"result": "success"}
+        assert call_count == 1  # Should only be called once
+
+    @pytest.mark.asyncio
+    async def test_retry_succeeds_after_one_retry(self, agent_invoker):
+        """Test that retry succeeds after one failed attempt."""
+        call_count = 0
+
+        def fails_once():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise FileNotFoundError("File not ready yet")
+            return {"result": "success"}
+
+        import time
+
+        start = time.time()
+        result = await agent_invoker._retry_with_backoff(
+            fails_once,
+            max_retries=3,
+            initial_delay=0.1,
+        )
+        elapsed = time.time() - start
+
+        assert result == {"result": "success"}
+        assert call_count == 2  # Should be called twice
+        # Should have delayed at least 0.1s for first retry
+        assert elapsed >= 0.1
+
+    @pytest.mark.asyncio
+    async def test_retry_succeeds_after_two_retries(self, agent_invoker):
+        """Test that retry succeeds after two failed attempts with exponential backoff."""
+        call_count = 0
+
+        def fails_twice():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise FileNotFoundError("File not ready yet")
+            return {"result": "success"}
+
+        import time
+
+        start = time.time()
+        result = await agent_invoker._retry_with_backoff(
+            fails_twice,
+            max_retries=3,
+            initial_delay=0.1,
+        )
+        elapsed = time.time() - start
+
+        assert result == {"result": "success"}
+        assert call_count == 3  # Should be called three times
+        # Should have delayed 0.1s + 0.2s = 0.3s total
+        assert elapsed >= 0.3
+
+    @pytest.mark.asyncio
+    async def test_retry_exhausts_all_attempts(self, agent_invoker):
+        """Test that retry raises exception after all attempts are exhausted."""
+        call_count = 0
+
+        def always_fails():
+            nonlocal call_count
+            call_count += 1
+            raise FileNotFoundError("File never appears")
+
+        with pytest.raises(FileNotFoundError, match="File never appears"):
+            await agent_invoker._retry_with_backoff(
+                always_fails,
+                max_retries=3,
+                initial_delay=0.1,
+            )
+
+        assert call_count == 3  # Should attempt 3 times
+
+    @pytest.mark.asyncio
+    async def test_retry_with_function_args(self, agent_invoker):
+        """Test that retry correctly passes arguments to the function."""
+        call_count = 0
+
+        def function_with_args(arg1, arg2, kwarg1=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("First attempt fails")
+            return {"arg1": arg1, "arg2": arg2, "kwarg1": kwarg1}
+
+        result = await agent_invoker._retry_with_backoff(
+            function_with_args,
+            "value1",
+            "value2",
+            kwarg1="kwvalue",
+            max_retries=3,
+            initial_delay=0.1,
+        )
+
+        assert result == {"arg1": "value1", "arg2": "value2", "kwarg1": "kwvalue"}
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_exponential_backoff_timing(self, agent_invoker):
+        """Test that retry uses exponential backoff (100ms, 200ms, 400ms)."""
+        call_count = 0
+        call_times = []
+
+        def fails_twice():
+            nonlocal call_count
+            call_times.append(asyncio.get_event_loop().time())
+            call_count += 1
+            if call_count <= 2:
+                raise ValueError("Not ready")
+            return "success"
+
+        await agent_invoker._retry_with_backoff(
+            fails_twice,
+            max_retries=3,
+            initial_delay=0.1,
+        )
+
+        # Verify exponential backoff delays
+        # Attempt 1 -> wait 100ms -> Attempt 2 -> wait 200ms -> Attempt 3
+        assert len(call_times) == 3
+
+        # Check delays between attempts (allow 10% tolerance for timing variance)
+        delay_1_2 = call_times[1] - call_times[0]
+        delay_2_3 = call_times[2] - call_times[1]
+
+        assert 0.09 <= delay_1_2 <= 0.15  # ~100ms
+        assert 0.18 <= delay_2_3 <= 0.25  # ~200ms

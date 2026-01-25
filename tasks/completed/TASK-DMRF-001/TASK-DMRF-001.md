@@ -1,9 +1,11 @@
 ---
 id: TASK-DMRF-001
 title: Add retry mechanism to direct mode report loading
-status: backlog
+status: completed
 task_type: implementation
 created: 2026-01-25T17:00:00Z
+updated: 2026-01-25T23:00:00Z
+completed: 2026-01-25T23:30:00Z
 priority: high
 complexity: 3
 parent_review: TASK-REV-3EC5
@@ -12,6 +14,8 @@ wave: 1
 implementation_mode: task-work
 dependencies: []
 tags: [autobuild, direct-mode, race-condition, robustness]
+completed_location: tasks/completed/TASK-DMRF-001/
+organized_files: [TASK-DMRF-001.md]
 ---
 
 # Task: Add retry mechanism to direct mode report loading
@@ -28,12 +32,12 @@ The direct mode path writes `player_turn_N.json` via the SDK subprocess, then im
 
 ## Acceptance Criteria
 
-- [ ] Add retry loop with exponential backoff to `_load_agent_report` when called from direct mode
-- [ ] Maximum 3 retries with delays of 100ms, 200ms, 400ms
-- [ ] Add small delay (100ms) after file write before first read attempt
-- [ ] Log retry attempts at DEBUG level
-- [ ] Only apply retry logic to direct mode path (not task-work delegation)
-- [ ] Add unit tests for retry behavior
+- [x] Add retry loop with exponential backoff to `_load_agent_report` when called from direct mode
+- [x] Maximum 3 retries with delays of 100ms, 200ms, 400ms
+- [x] Add small delay (100ms) after file write before first read attempt
+- [x] Log retry attempts at DEBUG level
+- [x] Only apply retry logic to direct mode path (not task-work delegation)
+- [x] Add unit tests for retry behavior
 
 ## Implementation Notes
 

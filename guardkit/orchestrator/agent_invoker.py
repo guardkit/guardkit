@@ -1487,6 +1487,53 @@ Follow the decision format specified in your agent definition.
 
         return report
 
+    async def _retry_with_backoff(
+        self,
+        func,
+        *args,
+        max_retries: int = 3,
+        initial_delay: float = 0.1,
+        **kwargs,
+    ) -> Any:
+        """Retry a function with exponential backoff.
+
+        This is primarily used to handle filesystem buffering race conditions
+        where a file is written by a subprocess but not immediately visible
+        to the parent process.
+
+        Args:
+            func: Function to retry (can be sync or async)
+            *args: Positional arguments to pass to func
+            max_retries: Maximum number of retry attempts (default: 3)
+            initial_delay: Initial delay in seconds (default: 0.1)
+                          Doubles on each retry (exponential backoff)
+            **kwargs: Keyword arguments to pass to func
+
+        Returns:
+            Result from successful function call
+
+        Raises:
+            Exception from final failed attempt
+        """
+        delay = initial_delay
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    logger.debug(
+                        f"Retry attempt {attempt + 1}/{max_retries} failed: {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                    delay *= 2  # Exponential backoff
+
+        # All retries exhausted, raise the last exception
+        raise last_exception
+
     def _get_report_path(
         self,
         task_id: str,
@@ -1881,8 +1928,22 @@ Follow the decision format specified in your agent definition.
                 model=self.player_model,
             )
 
-            # Load and validate Player report
-            report = self._load_agent_report(task_id, turn, "player")
+            # Add small delay to allow filesystem buffering to complete
+            # This mitigates race conditions where SDK subprocess writes report
+            # but parent process doesn't see it immediately
+            await asyncio.sleep(0.1)
+
+            # Load and validate Player report with retry logic
+            # Handles filesystem buffering race condition where report file
+            # is written by SDK subprocess but not immediately visible
+            report = await self._retry_with_backoff(
+                self._load_agent_report,
+                task_id,
+                turn,
+                "player",
+                max_retries=3,
+                initial_delay=0.1,
+            )
             self._validate_player_report(report)
 
             # Write task_work_results.json for Coach compatibility
