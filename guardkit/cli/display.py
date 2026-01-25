@@ -84,6 +84,7 @@ class WaveRecord:
     passed: int
     failed: int
     total_turns: int
+    recovered: int = 0  # Number of tasks that required state recovery
     completed_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
@@ -235,6 +236,7 @@ class WaveProgressDisplay:
         passed: int,
         failed: int,
         skipped: int = 0,
+        recovered: int = 0,
     ) -> None:
         """
         Display wave completion summary.
@@ -244,6 +246,7 @@ class WaveProgressDisplay:
             passed: Number of tasks that passed
             failed: Number of tasks that failed
             skipped: Number of tasks that were skipped
+            recovered: Number of tasks that required state recovery
         """
         # Calculate total turns for this wave
         total_turns = sum(
@@ -258,6 +261,7 @@ class WaveProgressDisplay:
             passed=passed,
             failed=failed,
             total_turns=total_turns,
+            recovered=recovered,
         ))
 
         # Display wave summary
@@ -374,6 +378,21 @@ class WaveProgressDisplay:
         if self.wave_history:
             self._display_wave_summary_table()
 
+        # Execution quality metrics (recovery statistics)
+        total_tasks_executed = sum(len(wave.task_ids) for wave in self.wave_history)
+        total_recovered = sum(wave.recovered for wave in self.wave_history)
+        clean_executions = total_tasks_executed - total_recovered
+
+        if total_tasks_executed > 0:
+            clean_pct = (clean_executions / total_tasks_executed) * 100
+            recovered_pct = (total_recovered / total_tasks_executed) * 100
+
+            self.console.print("[bold]Execution Quality:[/bold]")
+            self.console.print(f"  Clean executions: {clean_executions}/{total_tasks_executed} ({clean_pct:.0f}%)")
+            if total_recovered > 0:
+                self.console.print(f"  State recoveries: {total_recovered}/{total_tasks_executed} ({recovered_pct:.0f}%)")
+            self.console.print()
+
         # Task summary table (verbose mode)
         if self.verbose and self.task_statuses:
             self._display_all_tasks_table()
@@ -412,6 +431,7 @@ class WaveProgressDisplay:
         table.add_column("Passed", width=8, justify="center")
         table.add_column("Failed", width=8, justify="center")
         table.add_column("Turns", width=8, justify="center")
+        table.add_column("Recovered", width=11, justify="center")
 
         for wave in self.wave_history:
             status_icon = "[green]✓[/green]" if wave.failed == 0 else "[red]✗[/red]"
@@ -424,6 +444,7 @@ class WaveProgressDisplay:
                 str(wave.passed),
                 str(wave.failed) if wave.failed > 0 else "-",
                 str(wave.total_turns),
+                str(wave.recovered) if wave.recovered > 0 else "-",
             )
 
         self.console.print(table)

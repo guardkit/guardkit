@@ -239,6 +239,7 @@ class OrchestrationResult:
     error: Optional[str] = None
     pre_loop_result: Optional[Dict[str, Any]] = None  # Results from pre-loop quality gates
     ablation_mode: bool = False  # Track if result was from ablation mode
+    recovery_count: int = 0  # Number of state recovery attempts
 
 
 # ============================================================================
@@ -422,6 +423,7 @@ class AutoBuildOrchestrator:
         self._turn_history: List[TurnRecord] = []
         self._honesty_history: List[float] = []  # Track honesty scores across turns
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
+        self.recovery_count: int = 0  # Track number of state recovery attempts
 
         # Log warning if ablation mode is active
         if self.ablation_mode:
@@ -562,6 +564,7 @@ class AutoBuildOrchestrator:
                             error="Human checkpoint rejected implementation plan",
                             pre_loop_result=pre_loop_result,
                             ablation_mode=self.ablation_mode,
+                            recovery_count=self.recovery_count,
                         )
 
                     # Update max_turns based on complexity from pre-loop
@@ -593,6 +596,7 @@ class AutoBuildOrchestrator:
                         error=str(e),
                         pre_loop_result=None,
                         ablation_mode=self.ablation_mode,
+                        recovery_count=self.recovery_count,
                     )
 
             # Phase 3: Loop
@@ -633,6 +637,7 @@ class AutoBuildOrchestrator:
                 else self._build_error_message(final_decision, turn_history),
                 pre_loop_result=pre_loop_result,
                 ablation_mode=self.ablation_mode,
+                recovery_count=self.recovery_count,
             )
 
             logger.info(
@@ -1347,6 +1352,9 @@ class AutoBuildOrchestrator:
             f"Attempting state recovery for {task_id} turn {turn} "
             f"after Player failure: {original_error}"
         )
+
+        # Track recovery attempt
+        self.recovery_count += 1
 
         try:
             # Use MultiLayeredStateTracker for cascade detection
