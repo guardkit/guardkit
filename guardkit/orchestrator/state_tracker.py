@@ -76,11 +76,14 @@ class WorkState:
         git_changes: Optional GitChangesSummary from git detection
         test_results: Optional TestResultsSummary from test execution
         player_report: Optional Player report JSON (if available)
+        player_report_loaded: Whether a Player report was successfully loaded
         timestamp: ISO 8601 timestamp when state was captured
         detection_method: How state was detected
 
     Note:
         Fields are explicitly Optional per architectural review recommendation.
+        The player_report_loaded flag ensures has_work returns True even when
+        file arrays are empty but a valid Player report exists.
     """
 
     turn_number: int
@@ -92,12 +95,26 @@ class WorkState:
     git_changes: Optional[GitChangesSummary] = None
     test_results: Optional[TestResultsSummary] = None
     player_report: Optional[Dict[str, Any]] = None
+    player_report_loaded: bool = False
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     detection_method: DetectionMethod = "git_test_detection"
 
     @property
     def has_work(self) -> bool:
-        """True if any work was detected."""
+        """True if any work was detected.
+
+        Returns True if:
+        - A Player report was successfully loaded (trusted source), OR
+        - Any files were modified, created, or tests written/run
+
+        This ensures valid work is not discarded when file arrays are empty
+        but a Player report exists.
+        """
+        # If we loaded a Player report, trust it
+        if self.player_report_loaded:
+            return True
+
+        # Otherwise, fall back to file/test detection
         return (
             len(self.files_modified) > 0
             or len(self.files_created) > 0
@@ -341,7 +358,7 @@ class MultiLayeredStateTracker(StateTracker):
             test_results: Optional test results for verification
 
         Returns:
-            WorkState with player_report as primary source
+            WorkState with player_report as primary source and flag set
         """
         # Use test_results for test status (independent verification)
         tests_passed = (
@@ -365,6 +382,7 @@ class MultiLayeredStateTracker(StateTracker):
             git_changes=git_changes,
             test_results=test_results,
             player_report=player_report,
+            player_report_loaded=True,
             timestamp=datetime.now().isoformat(),
             detection_method="player_report",
         )

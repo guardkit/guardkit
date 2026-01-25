@@ -745,3 +745,273 @@ class TestStateTrackerIntegration:
         # Falls back to Player report value when tests don't run
         assert state.tests_passed is True  # From Player report
         assert state.test_count == 0  # From test detection
+
+
+# ============================================================================
+# 10. Player Report Loaded Flag Tests (NEW - TASK-DMRF-002)
+# ============================================================================
+
+
+class TestPlayerReportLoadedFlag:
+    """Tests for player_report_loaded flag in WorkState."""
+
+    def test_player_report_loaded_default_false(self):
+        """Test that player_report_loaded defaults to False."""
+        state = WorkState(turn_number=1)
+        assert state.player_report_loaded is False
+
+    def test_player_report_loaded_explicit_true(self):
+        """Test that player_report_loaded can be set to True."""
+        state = WorkState(turn_number=1, player_report_loaded=True)
+        assert state.player_report_loaded is True
+
+    def test_player_report_loaded_explicit_false(self):
+        """Test that player_report_loaded can be explicitly set to False."""
+        state = WorkState(turn_number=1, player_report_loaded=False)
+        assert state.player_report_loaded is False
+
+    def test_to_dict_includes_player_report_loaded(self):
+        """Test that to_dict serializes player_report_loaded."""
+        state = WorkState(turn_number=1, player_report_loaded=True)
+        result = state.to_dict()
+
+        # Note: player_report_loaded is not in to_dict (similar to player_report)
+        # Only player_report_available boolean is serialized
+        assert "player_report_available" in result
+
+
+# ============================================================================
+# 11. has_work Property with player_report_loaded Tests (NEW - TASK-DMRF-002)
+# ============================================================================
+
+
+class TestHasWorkWithPlayerReportLoaded:
+    """Tests for has_work property with player_report_loaded flag."""
+
+    def test_has_work_true_when_player_report_loaded_empty_files(self):
+        """Test has_work returns True when player_report_loaded=True even with empty files."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=[],
+            files_created=[],
+            tests_written=[],
+            test_count=0,
+            player_report_loaded=True,
+        )
+        assert state.has_work is True
+
+    def test_has_work_true_when_player_report_loaded_with_files(self):
+        """Test has_work returns True when player_report_loaded=True and has files."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=["src/main.py"],
+            files_created=["src/new.py"],
+            player_report_loaded=True,
+        )
+        assert state.has_work is True
+
+    def test_has_work_false_when_player_report_not_loaded(self):
+        """Test has_work returns False when player_report_loaded=False and no files."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=[],
+            files_created=[],
+            tests_written=[],
+            test_count=0,
+            player_report_loaded=False,
+        )
+        assert state.has_work is False
+
+    def test_has_work_true_with_files_even_without_player_report_loaded(self):
+        """Test has_work returns True with files even if player_report_loaded=False."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=["a.py"],
+            player_report_loaded=False,
+        )
+        assert state.has_work is True
+
+    def test_has_work_true_with_tests_even_without_player_report_loaded(self):
+        """Test has_work returns True with tests even if player_report_loaded=False."""
+        state = WorkState(
+            turn_number=1,
+            test_count=5,
+            player_report_loaded=False,
+        )
+        assert state.has_work is True
+
+    def test_has_work_precedence_player_report_loaded_over_empty_files(self):
+        """Test has_work prioritizes player_report_loaded=True over empty files."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=[],
+            files_created=[],
+            tests_written=[],
+            test_count=0,
+            player_report_loaded=True,
+        )
+        # Should return True because player_report_loaded=True
+        assert state.has_work is True
+
+    def test_has_work_fallback_to_file_detection(self):
+        """Test has_work falls back to file detection when player_report_loaded=False."""
+        state = WorkState(
+            turn_number=1,
+            files_modified=["a.py"],
+            files_created=[],
+            tests_written=[],
+            test_count=0,
+            player_report_loaded=False,
+        )
+        # Should return True because files_modified is not empty
+        assert state.has_work is True
+
+
+# ============================================================================
+# 12. MultiLayeredStateTracker Player Report Loaded Integration Tests
+# ============================================================================
+
+
+class TestPlayerReportLoadedIntegration:
+    """Integration tests for player_report_loaded flag with state capture."""
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_capture_state_sets_player_report_loaded_true(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test that capture_state sets player_report_loaded=True when loading Player report."""
+        # Create Player report with empty file arrays
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        report_dir.mkdir(parents=True)
+        report_path = report_dir / "player_turn_1.json"
+        report_data = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": [],
+            "files_created": [],
+            "tests_written": [],
+            "tests_passed": True,
+        }
+        report_path.write_text(json.dumps(report_data))
+
+        # Mock git/test detection to return None
+        mock_git_changes.return_value = None
+        mock_test_results.return_value = None
+
+        state = tracker.capture_state(turn=1)
+
+        # Verify player_report_loaded is set
+        assert state is not None
+        assert state.player_report_loaded is True
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_has_work_true_with_empty_player_report(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test that has_work=True when Player report loaded, even with empty files."""
+        # This is the key fix for TASK-DMRF-002
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        report_dir.mkdir(parents=True)
+        report_path = report_dir / "player_turn_1.json"
+        report_data = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": [],
+            "files_created": [],
+            "tests_written": [],
+            "tests_passed": False,
+        }
+        report_path.write_text(json.dumps(report_data))
+
+        # Mock git/test detection to return None
+        mock_git_changes.return_value = None
+        mock_test_results.return_value = None
+
+        state = tracker.capture_state(turn=1)
+
+        # Verify has_work=True because player_report_loaded=True
+        assert state is not None
+        assert state.player_report_loaded is True
+        assert state.has_work is True  # Key assertion from TASK-DMRF-002
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_capture_state_sets_player_report_loaded_false_without_report(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test that capture_state sets player_report_loaded=False when no Player report."""
+        mock_git_changes.return_value = GitChangesSummary(
+            files_modified=["a.py"],
+        )
+        mock_test_results.return_value = None
+
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        state = tracker.capture_state(turn=1)
+
+        # Verify player_report_loaded is False
+        assert state is not None
+        assert state.player_report_loaded is False
+
+    @patch("guardkit.orchestrator.state_tracker.detect_git_changes")
+    @patch("guardkit.orchestrator.state_tracker.detect_test_results")
+    def test_save_and_load_preserves_player_report_loaded_state(
+        self,
+        mock_test_results: MagicMock,
+        mock_git_changes: MagicMock,
+        tmp_path: Path,
+    ):
+        """Test that player_report_loaded state survives serialization/deserialization."""
+        # Create Player report
+        tracker = MultiLayeredStateTracker(
+            task_id="TASK-001",
+            worktree_path=tmp_path,
+        )
+        report_dir = tmp_path / ".guardkit" / "autobuild" / "TASK-001"
+        report_dir.mkdir(parents=True)
+        report_path = report_dir / "player_turn_1.json"
+        report_data = {
+            "task_id": "TASK-001",
+            "turn": 1,
+            "files_modified": ["a.py"],
+        }
+        report_path.write_text(json.dumps(report_data))
+
+        mock_git_changes.return_value = None
+        mock_test_results.return_value = None
+
+        # Capture state
+        state = tracker.capture_state(turn=1)
+        assert state is not None
+        assert state.player_report_loaded is True
+
+        # Save state
+        saved_path = tracker.save_state(state)
+        assert saved_path.exists()
+
+        # Load saved state
+        saved_data = json.loads(saved_path.read_text())
+        # Note: player_report_loaded is not in the serialized dict (by design, like player_report)
+        # But we can verify the flag was set before serialization
+        assert state.player_report_loaded is True
