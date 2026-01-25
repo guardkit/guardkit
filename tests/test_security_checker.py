@@ -931,6 +931,14 @@ function setContent(element, html) {
 
     def test_finding_includes_correct_line_number(self, security_checker, create_python_file):
         """Test that findings include correct line numbers."""
+        # Note: Python triple-quoted strings include a leading newline after '''
+        # So actual line numbers in file are:
+        #   Line 1: (empty)
+        #   Line 2: # Line 1
+        #   Line 3: # Line 2
+        #   Line 4: # Line 3
+        #   Line 5: API_KEY = "sk-secret-key-12345"
+        #   Line 6: # Line 5
         create_python_file("multiline.py", '''
 # Line 1
 # Line 2
@@ -943,8 +951,8 @@ API_KEY = "sk-secret-key-12345"
 
         secret_findings = [f for f in findings if f.check_id == "hardcoded-secrets"]
         assert len(secret_findings) >= 1
-        # The pattern is on line 4
-        assert secret_findings[0].line_number == 4
+        # The pattern is on line 5 (due to leading newline from Python triple-quote syntax)
+        assert secret_findings[0].line_number == 5
 
 
 # ============================================================================

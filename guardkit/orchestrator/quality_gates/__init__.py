@@ -44,6 +44,10 @@ from guardkit.orchestrator.quality_gates.coach_validator import (
     IndependentTestResult,
     RequirementsValidation,
 )
+from guardkit.orchestrator.quality_gates.security_checker import (
+    SecurityChecker,
+    SecurityFinding,
+)
 from guardkit.orchestrator.quality_gates.exceptions import (
     QualityGateError,
     QualityGateBlocked,
@@ -61,6 +65,9 @@ __all__ = [
     "QualityGateStatus",
     "IndependentTestResult",
     "RequirementsValidation",
+    # Security checker
+    "SecurityChecker",
+    "SecurityFinding",
     # Exceptions
     "QualityGateError",
     "QualityGateBlocked",
