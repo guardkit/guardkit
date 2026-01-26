@@ -2,7 +2,7 @@
 id: TASK-FMT-005
 title: Create code templates for fastmcp-python
 status: backlog
-task_type: implementation
+task_type: scaffolding
 created: 2026-01-24T14:30:00Z
 updated: 2026-01-24T14:30:00Z
 priority: high

@@ -2,7 +2,7 @@
 id: TASK-FMT-008
 title: Validate fastmcp-python template with /template-validate
 status: backlog
-task_type: implementation
+task_type: testing
 created: 2026-01-24T14:30:00Z
 updated: 2026-01-24T14:30:00Z
 priority: medium

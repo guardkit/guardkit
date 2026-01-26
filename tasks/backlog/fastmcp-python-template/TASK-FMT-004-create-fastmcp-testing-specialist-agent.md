@@ -2,7 +2,7 @@
 id: TASK-FMT-004
 title: Create fastmcp-testing-specialist agent
 status: backlog
-task_type: implementation
+task_type: documentation
 created: 2026-01-24T14:30:00Z
 updated: 2026-01-24T14:30:00Z
 priority: high
