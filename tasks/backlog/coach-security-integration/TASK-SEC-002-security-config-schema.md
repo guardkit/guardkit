@@ -1,12 +1,16 @@
 ---
 id: TASK-SEC-002
 title: Add security configuration schema
-status: pending
+status: in_review
 task_type: feature
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T15:00:00Z
+created: 2026-01-24 15:00:00+00:00
+updated: 2026-01-24 15:00:00+00:00
 priority: high
-tags: [security, configuration, schema, autobuild]
+tags:
+- security
+- configuration
+- schema
+- autobuild
 complexity: 3
 parent_review: TASK-REV-SEC1
 feature_id: FEAT-SEC
@@ -16,17 +20,32 @@ wave: 1
 conductor_workspace: coach-security-wave1-2
 dependencies: []
 acceptance_criteria:
-  - SecurityConfig dataclass with all fields
-  - SecurityLevel enum with strict, standard, minimal, skip values
-  - Task frontmatter security section parsed correctly
-  - Feature YAML security section parsed correctly
-  - Global config autobuild.security section parsed correctly
-  - Configuration merging with correct precedence (task > feature > global)
-  - Default values applied correctly
-  - Unit tests for configuration loading
-  - exclude_categories field with default DOS, rate-limiting, resource-management
-  - exclude_patterns field for file pattern exclusions
-  - Environment variable override GUARDKIT_SECURITY_SKIP
+- SecurityConfig dataclass with all fields
+- SecurityLevel enum with strict, standard, minimal, skip values
+- Task frontmatter security section parsed correctly
+- Feature YAML security section parsed correctly
+- Global config autobuild.security section parsed correctly
+- Configuration merging with correct precedence (task > feature > global)
+- Default values applied correctly
+- Unit tests for configuration loading
+- exclude_categories field with default DOS, rate-limiting, resource-management
+- exclude_patterns field for file pattern exclusions
+- Environment variable override GUARDKIT_SECURITY_SKIP
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SEC
+  base_branch: main
+  started_at: '2026-01-25T22:03:02.830995'
+  last_updated: '2026-01-25T22:09:39.307915'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-25T22:03:02.830995'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-SEC-002: Add Security Configuration Schema

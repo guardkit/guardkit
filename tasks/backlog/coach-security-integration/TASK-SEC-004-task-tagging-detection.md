@@ -1,12 +1,16 @@
 ---
 id: TASK-SEC-004
 title: Implement pre-loop security tag detection
-status: pending
+status: in_review
 task_type: feature
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T17:00:00Z
+created: 2026-01-24 15:00:00+00:00
+updated: 2026-01-24 17:00:00+00:00
 priority: high
-tags: [security, pre-loop, detection, autobuild]
+tags:
+- security
+- pre-loop
+- detection
+- autobuild
 complexity: 3
 parent_review: TASK-REV-SEC1
 feature_id: FEAT-SEC
@@ -15,20 +19,35 @@ estimated_minutes: 90
 wave: 2
 conductor_workspace: coach-security-wave2-2
 dependencies:
-  - TASK-SEC-001
-  - TASK-SEC-002
+- TASK-SEC-001
+- TASK-SEC-002
 acceptance_criteria:
-  - SECURITY_TAGS set defined with 25+ tags aligned with 10-category taxonomy
-  - SECURITY_KEYWORDS list defined with 25+ keywords
-  - HIGH_RISK_CATEGORIES set defined for always-trigger tags
-  - should_run_full_review() function implemented in security_detection.py
-  - Function called from pre_loop.py (NOT Coach)
-  - Configuration precedence correct (force > level > tags > keywords)
-  - Case-insensitive matching
-  - Keyword density threshold for descriptions
-  - Unit tests for each detection path
-  - Edge case handling for empty tags and empty title
-  - Tags aligned with Claude Code 10-category taxonomy
+- SECURITY_TAGS set defined with 25+ tags aligned with 10-category taxonomy
+- SECURITY_KEYWORDS list defined with 25+ keywords
+- HIGH_RISK_CATEGORIES set defined for always-trigger tags
+- should_run_full_review() function implemented in security_detection.py
+- Function called from pre_loop.py (NOT Coach)
+- Configuration precedence correct (force > level > tags > keywords)
+- Case-insensitive matching
+- Keyword density threshold for descriptions
+- Unit tests for each detection path
+- Edge case handling for empty tags and empty title
+- Tags aligned with Claude Code 10-category taxonomy
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SEC
+  base_branch: main
+  started_at: '2026-01-25T22:22:11.865970'
+  last_updated: '2026-01-25T22:32:21.772992'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-25T22:22:11.865970'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-SEC-004: Implement Pre-Loop Security Tag Detection
