@@ -15,33 +15,51 @@ This template provides a complete foundation for building async Python web APIs 
 
 ## Quick Start
 
+### Prerequisites
+
+- Python 3.10+
+- PostgreSQL (or use Docker)
+
+### Setup
+
+**CRITICAL: Always use a virtual environment to avoid package conflicts**
+
 ```bash
 # Initialize new project from this template
 guardkit init fastapi-python
 
-# Set up virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Create and activate virtual environment (REQUIRED)
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements/dev.txt
+# Verify you're in the venv (should show .venv/bin/python)
+which python
+
+# Install dependencies (with dev tools)
+python -m pip install -e ".[dev]"
 
 # Set up environment variables
 cp .env.example .env
 # Edit .env with your configuration
 
 # Create database and run migrations
-alembic upgrade head
+python -m alembic upgrade head
 
 # Run development server
-uvicorn src.main:app --reload
+python -m uvicorn src.main:app --reload
 
 # Run tests
-pytest
+python -m pytest
 
 # Run with coverage
-pytest --cov=src --cov-report=html
+python -m pytest --cov=src --cov-report=html
 ```
+
+> **Why virtual environments are required:**
+> - Prevents conflicts between system Python and project Python
+> - Ensures tools (pytest, alembic, uvicorn) find the right packages
+> - Isolates project dependencies from global packages
+> - Avoids "packages installed but not found" errors common with multiple Python installations
 
 ## Features
 
@@ -97,15 +115,10 @@ pytest --cov=src --cov-report=html
 │   │   └── test_service.py
 │   └── conftest.py               # Shared fixtures
 │
-├── requirements/
-│   ├── base.txt                  # Production dependencies
-│   ├── dev.txt                   # Development dependencies
-│   └── prod.txt                  # Production-only dependencies
-│
 ├── alembic/                      # Database migrations
 ├── .env.example                  # Environment variables template
 ├── alembic.ini                   # Alembic configuration
-├── pyproject.toml                # Project metadata
+├── pyproject.toml                # Project metadata and dependencies
 └── README.md
 ```
 
@@ -301,8 +314,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements/prod.txt requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
 COPY src/ src/
 COPY alembic/ alembic/
@@ -338,6 +351,75 @@ alembic history
 alembic current
 ```
 
+## Transaction Management
+
+The template uses an **auto-commit pattern** for simplified transaction management.
+
+### How It Works
+
+The `get_db()` dependency automatically commits on success and rolls back on error:
+
+```python
+# Dependency in src/db/session.py
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()  # Auto-commit on success
+        except Exception:
+            await session.rollback()  # Rollback on error
+            raise
+```
+
+### Single Operation
+
+```python
+@router.post("/users/", response_model=UserPublic)
+async def create_user(
+    user: UserCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    # CRUD method uses flush(), not commit()
+    new_user = await crud.user.create(db, obj_in=user)
+    # Auto-committed when endpoint succeeds
+    return new_user
+```
+
+### Multiple Operations (Atomic)
+
+All operations in a single endpoint are committed atomically:
+
+```python
+@router.post("/register/", response_model=UserPublic)
+async def register_user(
+    data: RegistrationData,
+    db: AsyncSession = Depends(get_db)
+):
+    # Create user
+    user = await crud.user.create(db, obj_in=data.user)
+
+    # Create profile
+    profile_data = data.profile.copy(update={"user_id": user.id})
+    profile = await crud.profile.create(db, obj_in=profile_data)
+
+    # BOTH committed atomically on success
+    # BOTH rolled back if either operation fails
+    return user
+```
+
+### Usage Guidelines
+
+**Do's:**
+- ✅ Let `get_db()` handle commits and rollbacks automatically
+- ✅ Use `flush()` in CRUD methods to assign IDs without committing
+- ✅ Perform multiple operations in one endpoint for atomic transactions
+- ✅ Raise exceptions to trigger automatic rollback
+
+**Don'ts:**
+- ❌ Don't manually commit in CRUD methods (breaks atomicity)
+- ❌ Don't manually rollback (handled automatically)
+- ❌ Don't create separate database sessions for related operations
+
 ## Code Quality
 
 ```bash
@@ -352,6 +434,45 @@ mypy src/
 
 # Run all quality checks
 ruff format src/ tests/ && ruff check src/ tests/ && mypy src/ && pytest
+```
+
+## Troubleshooting
+
+### "ModuleNotFoundError" after pip install
+
+This usually means you're not in the virtual environment:
+
+```bash
+# Check if venv is active
+which python
+# Should show: /path/to/project/.venv/bin/python
+
+# If not, activate it
+source .venv/bin/activate
+```
+
+### "Command not found" for uvicorn/pytest/alembic
+
+Use `python -m` prefix or venv path:
+
+```bash
+python -m uvicorn src.main:app --reload
+python -m pytest tests/
+python -m alembic upgrade head
+```
+
+### Multiple Python versions causing confusion
+
+Always use `python3` explicitly and verify the path:
+
+```bash
+# Check which Python is being used
+which python3
+python3 --version
+
+# Use explicit venv path if needed
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/uvicorn src.main:app --reload
 ```
 
 ## Specialized AI Agents
@@ -400,6 +521,36 @@ Rules files use `paths:` frontmatter for conditional loading:
 - Rules only load when editing relevant files
 - Reduced context window usage (60-70% reduction)
 - Organized by concern (patterns, agents, etc.)
+
+## Migration from passlib
+
+If you have an existing project using passlib for password hashing, migrating to this template is straightforward:
+
+### Good News: No Database Migration Needed
+
+The bcrypt hash format (`$2b$`) is identical between passlib[bcrypt] and direct bcrypt. Your existing password hashes will continue to work without any changes.
+
+### Update Your Imports
+
+```python
+# OLD (passlib)
+from passlib.context import CryptContext
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+hashed = pwd_context.hash(password)
+verified = pwd_context.verify(password, hashed)
+
+# NEW (direct bcrypt)
+from src.core.security import get_password_hash, verify_password
+hashed = get_password_hash(password)
+verified = verify_password(password, hashed)
+```
+
+### Why Migrate?
+
+- **passlib is unmaintained** since 2020
+- **Incompatible with bcrypt 5.x** (causes complete authentication failure)
+- **Direct bcrypt is simpler** and actively maintained
+- **No breaking changes** - existing hashes work unchanged
 
 ## Resources
 

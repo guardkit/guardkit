@@ -115,7 +115,28 @@ The `/feature-build` command provides fully autonomous task implementation using
 - Complex architectural decisions
 - High-risk changes requiring human judgment
 
-**See**: `installer/core/commands/feature-build.md` for complete documentation
+#### Security Validation
+
+AutoBuild includes automatic security validation:
+
+**Quick Checks** (all tasks, ~30s):
+- Hardcoded secrets, SQL injection, command injection
+- CORS misconfiguration, debug mode
+
+**Full Review** (security-tagged tasks, ~2-5min):
+- OWASP Top 10 analysis
+- Auth pattern review
+
+**Configuration**:
+```yaml
+# In task frontmatter
+security:
+  level: standard  # strict | standard | minimal | skip
+```
+
+**See**: [Security Validation Guide](docs/guides/security-validation.md)
+
+**See Also**: `installer/core/commands/feature-build.md` for complete documentation
 
 ### Feature Completion
 ```bash

@@ -31,27 +31,29 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency for database session.
+    Dependency that provides auto-committing database session.
 
-    Provides a database session for each request and ensures
-    proper cleanup even if an error occurs.
+    Usage:
+        async def endpoint(db: AsyncSession = Depends(get_db)):
+            obj = await crud.create(db, data)
+            # Changes auto-committed when endpoint succeeds
+            # Auto-rolled back if exception raised
+
+    For multiple operations in one transaction:
+        async def endpoint(db: AsyncSession = Depends(get_db)):
+            obj1 = await crud.create(db, data1)
+            obj2 = await crud.create(db, data2)
+            # BOTH committed atomically on success
 
     Yields:
-        AsyncSession: Database session
-
-    Example:
-        ```python
-        from fastapi import Depends
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        @router.get("/items/")
-        async def get_items(db: AsyncSession = Depends(get_db)):
-            items = await crud.item.get_multi(db)
-            return items
-        ```
+        AsyncSession: Database session with auto-commit/rollback
     """
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()  # Auto-commit on success
+        except Exception:
+            await session.rollback()  # Rollback on error
+            raise
         finally:
             await session.close()

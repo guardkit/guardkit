@@ -1,29 +1,33 @@
 ---
-id: TASK-SEC-001
-title: Add quick security checks to Coach agent
-status: pending
-task_type: feature
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T15:00:00Z
-priority: high
-tags: [security, coach-agent, autobuild, quality-gates]
-complexity: 5
-parent_review: TASK-REV-SEC1
-feature_id: FEAT-SEC
-implementation_mode: task-work
-estimated_minutes: 150
-wave: 1
-conductor_workspace: coach-security-wave1-1
-dependencies: []
 acceptance_criteria:
-  - SecurityChecker class created with run_quick_checks() method
-  - All 12+ quick checks implemented with hybrid detection (substring + regex)
-  - Path-based filtering limits checks to relevant file types
-  - Checks scan Python, JavaScript/TypeScript, and YAML files in worktree
-  - Findings returned as structured SecurityFinding dataclass
-  - Critical findings categorized correctly
-  - Execution time less than 30 seconds for typical project
-  - Unit tests for each check pattern
+- SecurityChecker class created with run_quick_checks() method
+- All 12+ quick checks implemented with hybrid detection (substring + regex)
+- Path-based filtering limits checks to relevant file types
+- Checks scan Python, JavaScript/TypeScript, and YAML files in worktree
+- Findings returned as structured SecurityFinding dataclass
+- Critical findings categorized correctly
+- Execution time less than 30 seconds for typical project
+- Unit tests for each check pattern
+complexity: 5
+conductor_workspace: coach-security-wave1-1
+created: 2026-01-24 15:00:00+00:00
+dependencies: []
+estimated_minutes: 150
+feature_id: FEAT-SEC
+id: TASK-SEC-001
+implementation_mode: task-work
+parent_review: TASK-REV-SEC1
+priority: high
+status: in_review
+tags:
+- security
+- coach-agent
+- autobuild
+- quality-gates
+task_type: feature
+title: Add quick security checks to Coach agent
+updated: 2026-01-25T22:30:00+00:00
+wave: 1
 ---
 
 # TASK-SEC-001: Add Quick Security Checks to Coach Agent

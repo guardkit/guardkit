@@ -1,12 +1,18 @@
 ---
 id: TASK-SEC-006
 title: Update security validation documentation for revised architecture
-status: pending
+status: in_review
 task_type: documentation
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T17:00:00Z
+created: 2026-01-24 15:00:00+00:00
+updated: 2026-01-24 17:00:00+00:00
 priority: medium
-tags: [security, documentation, pre-loop, task-work, coach-agent, autobuild]
+tags:
+- security
+- documentation
+- pre-loop
+- task-work
+- coach-agent
+- autobuild
 complexity: 2
 parent_review: TASK-REV-SEC1
 feature_id: FEAT-SEC
@@ -15,18 +21,40 @@ estimated_minutes: 120
 wave: 4
 conductor_workspace: coach-security-wave4-1
 dependencies:
-  - TASK-SEC-005
+- TASK-SEC-005
 acceptance_criteria:
-  - autobuild-coach.md updated to clarify Coach READS security results (no agent invocation)
-  - feature-build.md updated with Security Validation section (pre-loop + task-work phases)
-  - CLAUDE.md updated with Security Validation summary
-  - docs/guides/security-validation.md created with revised architecture
-  - Architecture diagram shows pre-loop Phase 2.5C and task-work Phase 4.3
-  - Documentation clarifies Coach is read-only for security
-  - All documentation reviewed for accuracy
-  - Examples tested for correctness
-  - Document excluded finding types including DOS and rate limiting
-  - Document confidence threshold of 0.8
+- autobuild-coach.md updated to clarify Coach READS security results (no agent invocation)
+- feature-build.md updated with Security Validation section (pre-loop + task-work
+  phases)
+- CLAUDE.md updated with Security Validation summary
+- docs/guides/security-validation.md created with revised architecture
+- Architecture diagram shows pre-loop Phase 2.5C and task-work Phase 4.3
+- Documentation clarifies Coach is read-only for security
+- All documentation reviewed for accuracy
+- Examples tested for correctness
+- Document excluded finding types including DOS and rate limiting
+- Document confidence threshold of 0.8
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SEC
+  base_branch: main
+  started_at: '2026-01-25T22:44:06.386079'
+  last_updated: '2026-01-25T22:50:12.851530'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-25T22:44:06.386079'
+    player_summary: 'Updated all security validation documentation to reflect revised
+      architecture (TASK-REV-4B0F). Key changes: (1) Added Security Validation (Read-Only)
+      section to autobuild-coach.md clarifying Coach only reads security results,
+      never invokes agents; (2) Added comprehensive Security Validation section to
+      feature-build.md with configuration examples, security levels table, quick checks
+      reference, excluded finding types, and confidence scoring; (3) Added Security
+      Validation summary to CLAUDE.md AutoB'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-SEC-006: Update Security Validation Documentation for Revised Architecture

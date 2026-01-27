@@ -1,0 +1,50 @@
+{
+  "turn_number": 1,
+  "files_modified": [
+    "guardkit/orchestrator/quality_gates/__init__.py",
+    "tests/test_security_checker.py"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-SEC-001/task_work_results.json",
+    ".guardkit/autobuild/TASK-SEC-002/checkpoints.json",
+    "guardkit/orchestrator/quality_gates/security_checker.py",
+    "tasks/in_review/TASK-SEC-001-quick-security-checks.md"
+  ],
+  "tests_written": [
+    "tests/test_security_checker.py"
+  ],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-01-25T22:18:10.832251",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [
+      "guardkit/orchestrator/quality_gates/__init__.py",
+      "tests/test_security_checker.py"
+    ],
+    "files_added": [
+      ".guardkit/autobuild/TASK-SEC-001/task_work_results.json",
+      ".guardkit/autobuild/TASK-SEC-002/checkpoints.json",
+      "guardkit/orchestrator/quality_gates/security_checker.py",
+      "tasks/in_review/TASK-SEC-001-quick-security-checks.md"
+    ],
+    "files_deleted": [
+      "tasks/design_approved/TASK-SEC-001-quick-security-checks.md"
+    ],
+    "diff_stats": "guardkit/orchestrator/quality_gates/__init__.py    |   7 +\n .../TASK-SEC-001-quick-security-checks.md          | 181 ---------------------\n tests/test_security_checker.py                     |  12 +-\n 3 files changed, 17 insertions(+), 183 deletions(-)",
+    "insertions": 17,
+    "deletions": 183,
+    "timestamp": "2026-01-25T22:18:03.001360"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SEC\nconfigfile: pytest.ini\ntestpaths: tests\nplugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 5762 items / 2 errors\n\n=================",
+    "timestamp": "2026-01-25T22:18:10.831976",
+    "error": null
+  },
+  "player_report_available": false
+}

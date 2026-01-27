@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-SEC-003",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "e4322636d07188ecf0731c59484ea2de7ad069ca",
+      "timestamp": "2026-01-25T22:34:24.661657",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "48e3a75ae29459a70d8f0b2760276893511cc909",
+      "timestamp": "2026-01-25T22:36:19.974365",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-25T22:36:19.974512"
+}

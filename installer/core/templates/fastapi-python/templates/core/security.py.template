@@ -1,0 +1,77 @@
+"""
+Security Utilities
+
+Password hashing and verification using bcrypt.
+This module provides secure password handling without the deprecated passlib dependency.
+
+Migration Note: Projects using passlib with bcrypt backend can migrate directly.
+The $2b$ hash format is compatible - existing password hashes will continue to work.
+"""
+
+import bcrypt
+
+# Production default: 12 rounds provides good security/performance balance
+# Increase for higher security (each increment doubles computation time)
+BCRYPT_ROUNDS: int = 12
+
+
+def get_password_hash(password: str) -> str:
+    """
+    Hash a password using bcrypt.
+
+    Args:
+        password: Plain text password to hash
+
+    Returns:
+        Hashed password as a string (suitable for database storage)
+
+    Raises:
+        ValueError: If password is empty or None
+
+    Example:
+        >>> hashed = get_password_hash("secret123")
+        >>> hashed.startswith("$2b$")
+        True
+    """
+    if not password:
+        raise ValueError("Password cannot be empty")
+
+    password_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt(rounds=BCRYPT_ROUNDS)
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify a password against a bcrypt hash.
+
+    This function is safe against timing attacks due to bcrypt's
+    constant-time comparison. Returns False for invalid inputs rather
+    than raising exceptions to prevent information leakage in auth flows.
+
+    Args:
+        plain_password: Plain text password to verify
+        hashed_password: Previously hashed password from database
+
+    Returns:
+        True if password matches, False otherwise
+
+    Example:
+        >>> hashed = get_password_hash("secret123")
+        >>> verify_password("secret123", hashed)
+        True
+        >>> verify_password("wrong", hashed)
+        False
+    """
+    if not plain_password or not hashed_password:
+        return False
+
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8")
+        )
+    except (ValueError, TypeError):
+        # Invalid hash format or encoding error
+        return False
