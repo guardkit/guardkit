@@ -43,6 +43,11 @@
       "name": "httpx",
       "version": ">=0.25.0",
       "purpose": "http_client_testing"
+    },
+    {
+      "name": "bcrypt",
+      "version": ">=4.0.0",
+      "purpose": "security"
     }
   ],
   "architecture": "Layered (Netflix Dispatch-inspired)",
@@ -72,6 +77,28 @@
       "required": true,
       "pattern": "^[a-z][a-z0-9_]*$",
       "example": "my_api"
+    },
+    "ProjectDescription": {
+      "name": "{{ProjectDescription}}",
+      "description": "Short description of the project for pyproject.toml",
+      "required": false,
+      "default": "A FastAPI backend application",
+      "example": "User management API with authentication"
+    },
+    "AuthorName": {
+      "name": "{{AuthorName}}",
+      "description": "Author name for pyproject.toml",
+      "required": false,
+      "default": "Developer",
+      "example": "John Doe"
+    },
+    "AuthorEmail": {
+      "name": "{{AuthorEmail}}",
+      "description": "Author email for pyproject.toml",
+      "required": false,
+      "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$",
+      "default": "developer@example.com",
+      "example": "john.doe@example.com"
     },
     "FeatureName": {
       "name": "{{FeatureName}}",

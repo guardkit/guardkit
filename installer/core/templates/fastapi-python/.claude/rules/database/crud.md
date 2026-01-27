@@ -52,11 +52,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return result.scalars().all()
 
     async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
-        """Create a new record."""
+        """Create a new record. Changes flushed but not committed."""
         obj_data = obj_in.model_dump()
         db_obj = self.model(**obj_data)
         db.add(db_obj)
-        await db.commit()
+        await db.flush()
         await db.refresh(db_obj)
         return db_obj
 
@@ -67,7 +67,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         db_obj: ModelType,
         obj_in: UpdateSchemaType | dict
     ) -> ModelType:
-        """Update an existing record."""
+        """Update an existing record. Changes flushed but not committed."""
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
@@ -77,15 +77,15 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             setattr(db_obj, field, value)
 
         db.add(db_obj)
-        await db.commit()
+        await db.flush()
         await db.refresh(db_obj)
         return db_obj
 
     async def delete(self, db: AsyncSession, *, id: int) -> ModelType:
-        """Delete a record."""
+        """Delete a record. Changes flushed but not committed."""
         obj = await self.get(db, id=id)
         await db.delete(obj)
-        await db.commit()
+        await db.flush()
         return obj
 ```
 
@@ -134,6 +134,62 @@ class CRUD{{EntityName}}(CRUDBase[{{EntityName}}, {{EntityName}}Create, {{Entity
 {{entity_name}} = CRUD{{EntityName}}({{EntityName}})
 ```
 
+## Transaction Management
+
+### Auto-Commit Pattern
+
+The `get_db()` dependency automatically commits on success:
+
+```python
+@router.post("/users/")
+async def create_user(
+    user_data: UserCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    # CRUD method uses flush(), not commit()
+    user = await crud.user.create(db, obj_in=user_data)
+    # Auto-committed when endpoint succeeds
+    return user
+```
+
+### Multiple Operations in One Transaction
+
+All operations in a single endpoint are committed atomically:
+
+```python
+@router.post("/complex/")
+async def complex_operation(
+    data: ComplexCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    user = await crud.user.create(db, obj_in=data.user)
+    profile = await crud.profile.create(db, obj_in=data.profile)
+    # BOTH committed atomically on success
+    # BOTH rolled back if either operation fails
+    return {"user": user, "profile": profile}
+```
+
+### Anti-Patterns
+
+❌ **NEVER manually commit in CRUD methods:**
+```python
+# BAD - breaks transaction atomicity
+async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
+    db.add(db_obj)
+    await db.commit()  # ❌ Prevents multiple operations in one transaction
+    return db_obj
+```
+
+✅ **ALWAYS use flush() in CRUD methods:**
+```python
+# GOOD - allows atomic multi-operation transactions
+async def create(self, db: AsyncSession, *, obj_in: CreateSchemaType) -> ModelType:
+    db.add(db_obj)
+    await db.flush()  # ✅ Assigns ID without committing
+    await db.refresh(db_obj)
+    return db_obj
+```
+
 ## Best Practices
 
 1. **Use generic base class** for common operations
@@ -141,3 +197,4 @@ class CRUD{{EntityName}}(CRUDBase[{{EntityName}}, {{EntityName}}Create, {{Entity
 3. **Return Optional[T]** for get operations (may not exist)
 4. **Use async/await** for all database operations
 5. **Instantiate CRUD objects** at module level for reuse
+6. **Use flush(), not commit()** in CRUD methods (auto-commit via get_db)

@@ -6,13 +6,24 @@ paths: **/alembic/**, **/migrations/**, **/alembic.ini
 
 ## Alembic Setup
 
-**Basic alembic configuration** (alembic.ini):
+> **Template Available**: See `templates/config/alembic.ini.template` for a complete, working configuration.
+
+**Complete alembic.ini configuration** (all logger sections are REQUIRED):
 
 ```ini
 [alembic]
 script_location = alembic
 prepend_sys_path = .
-sqlalchemy.url = driver://user:pass@localhost/dbname
+file_template = %%(year)d%%(month).2d%%(day).2d_%%(rev)s_%%(slug)s
+# Database URL set via env.py from settings
+sqlalchemy.url =
+
+[post_write_hooks]
+# Format migrations with ruff (optional)
+hooks = ruff
+ruff.type = exec
+ruff.executable = ruff
+ruff.options = format REVISION_SCRIPT_FILENAME
 
 [loggers]
 keys = root,sqlalchemy,alembic
@@ -22,7 +33,36 @@ keys = console
 
 [formatters]
 keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+propagate = 0
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+propagate = 0
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S
 ```
+
+**⚠️ Common Error**: Missing `[logger_root]`, `[handler_console]`, or `[formatter_generic]` sections will cause `ValueError: list.remove(x): x not in list` when running alembic commands.
 
 ## Creating Migrations
 
