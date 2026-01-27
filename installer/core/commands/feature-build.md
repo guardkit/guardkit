@@ -760,6 +760,105 @@ cat tasks/*/TASK-XXX*.md | grep -A 20 "autobuild_state"
 
 ---
 
+## Security Validation
+
+`/feature-build` includes automatic security validation at two levels:
+
+### Quick Checks (Default)
+
+All tasks receive quick security checks with ~30s overhead:
+- Hardcoded secrets detection
+- SQL/command injection patterns
+- CORS misconfiguration
+- Debug mode detection
+
+**When It Runs**: Phase 4.3 (after tests, before Phase 4.5 Test Enforcement)
+
+### Full Security Review
+
+Tasks tagged with security-related tags receive full review in pre-loop:
+- OWASP Top 10 analysis
+- Authentication pattern review
+- Authorization logic review
+
+**When It Runs**: Phase 2.5C (pre-loop, before Player implementation)
+
+**Triggers**: Tasks with tags like `authentication`, `auth`, `security`, `token`, `payment` or titles containing `login`, `password`, `jwt`, `oauth`
+
+### Configuration
+
+**Task-level** (in task frontmatter):
+```yaml
+security:
+  level: strict  # strict | standard | minimal | skip
+```
+
+**Feature-level** (in feature YAML):
+```yaml
+security:
+  default_level: standard
+  force_full_review: [TASK-AUTH-001]
+  skip_review: [TASK-UI-001]
+```
+
+**Global** (in `.guardkit/config.yaml`):
+```yaml
+autobuild:
+  security:
+    enabled: true
+    default_level: standard
+```
+
+### Security Levels
+
+| Level | Quick Checks | Full Review | Block On |
+|-------|--------------|-------------|----------|
+| strict | Always | Always | High+ |
+| standard | Always | Tagged only | Critical |
+| minimal | Always | Never | Critical |
+| skip | Never | Never | Never |
+
+### Quick Checks Reference
+
+| Check | Severity | Pattern |
+|-------|----------|---------|
+| Hardcoded secrets | Critical | `API_KEY = "..."` |
+| SQL injection | Critical | `f"SELECT {var}"` |
+| Command injection | Critical | `subprocess.run(f"...")` |
+| CORS wildcard | High | `allow_origins=["*"]` |
+| Debug mode | High | `DEBUG = True` |
+| Eval/exec | High | `eval(...)` |
+
+### Skipping Checks
+
+Skip specific checks for false positives:
+```yaml
+security:
+  skip_checks: [debug-mode, cors-wildcard]
+```
+
+Or use inline comments:
+```python
+DEBUG = True  # nosec - only enabled in test environment
+```
+
+### Excluded Finding Types
+
+The following finding types are automatically excluded as low-value:
+- Denial of Service / resource exhaustion
+- Rate limiting recommendations
+- Memory leaks / resource management
+- Open redirect vulnerabilities
+- Findings in documentation files (*.md)
+
+### Confidence Scoring
+
+Security findings include a confidence score (0.0-1.0). Only findings with confidence >= 0.8 are reported.
+
+**See**: [Security Validation Guide](../../docs/guides/security-validation.md) for complete documentation.
+
+---
+
 ## CRITICAL EXECUTION INSTRUCTIONS FOR CLAUDE
 
 ### What This Command Does

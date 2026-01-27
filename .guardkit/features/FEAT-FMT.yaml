@@ -1,132 +1,153 @@
-# .guardkit/features/FEAT-FMT.yaml
-# FastMCP Python Template Feature
-# Generated from existing tasks in tasks/backlog/fastmcp-python-template/
-
 id: FEAT-FMT
-name: "FastMCP Python Template"
-description: "Create a production-ready fastmcp-python template following GuardKit conventions. This template will enable developers to scaffold MCP (Model Context Protocol) servers using FastMCP with all critical production patterns embedded."
-created: "2026-01-24T14:30:00Z"
-status: planned
+name: FastMCP Python Template
+description: Create a production-ready fastmcp-python template following GuardKit
+  conventions. This template will enable developers to scaffold MCP (Model Context
+  Protocol) servers using FastMCP with all critical production patterns embedded.
+created: '2026-01-24T14:30:00Z'
+status: failed
 complexity: 5
 estimated_tasks: 8
-
 tasks:
-  # Wave 1: Foundation (Parallel - 2 tasks)
-  - id: TASK-FMT-001
-    name: "Create manifest.json for fastmcp-python template"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-001-create-manifest-json.md"
-    complexity: 3
-    dependencies: []
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 30
-
-  - id: TASK-FMT-002
-    name: "Create settings.json for fastmcp-python template"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-002-create-settings-json.md"
-    complexity: 4
-    dependencies: []
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 30
-
-  # Wave 2: Core Content (Parallel - 4 tasks)
-  - id: TASK-FMT-003
-    name: "Create fastmcp-specialist agent"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-003-create-fastmcp-specialist-agent.md"
-    complexity: 5
-    dependencies:
-      - TASK-FMT-002
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 90
-
-  - id: TASK-FMT-004
-    name: "Create fastmcp-testing-specialist agent"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-004-create-fastmcp-testing-specialist-agent.md"
-    complexity: 4
-    dependencies:
-      - TASK-FMT-002
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 60
-
-  - id: TASK-FMT-005
-    name: "Create code templates for fastmcp-python"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-005-create-code-templates.md"
-    complexity: 6
-    dependencies:
-      - TASK-FMT-002
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 90
-
-  - id: TASK-FMT-006
-    name: "Create .claude/rules for fastmcp-python template"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-006-create-claude-rules.md"
-    complexity: 4
-    dependencies:
-      - TASK-FMT-002
-    status: pending
-    implementation_mode: task-work
-    estimated_minutes: 60
-
-  # Wave 3: Integration (Sequential - 2 tasks)
-  - id: TASK-FMT-007
-    name: "Create CLAUDE.md files for fastmcp-python template"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-007-create-claude-md-files.md"
-    complexity: 3
-    dependencies:
-      - TASK-FMT-003
-      - TASK-FMT-004
-      - TASK-FMT-005
-      - TASK-FMT-006
-    status: pending
-    implementation_mode: direct
-    estimated_minutes: 30
-
-  - id: TASK-FMT-008
-    name: "Validate fastmcp-python template with /template-validate"
-    file_path: "tasks/backlog/fastmcp-python-template/TASK-FMT-008-validate-template.md"
-    complexity: 2
-    dependencies:
-      - TASK-FMT-007
-    status: pending
-    implementation_mode: direct
-    estimated_minutes: 30
-
+- id: TASK-FMT-001
+  name: Create manifest.json for fastmcp-python template
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-001-create-manifest-json.md
+  complexity: 3
+  dependencies: []
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 5
+    final_decision: max_turns_exceeded
+    error: Maximum turns (5) exceeded without approval
+  turns_completed: 5
+  current_turn: 0
+  started_at: '2026-01-25T22:07:18.571030'
+  completed_at: '2026-01-25T22:21:55.595772'
+- id: TASK-FMT-002
+  name: Create settings.json for fastmcp-python template
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-002-create-settings-json.md
+  complexity: 4
+  dependencies: []
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 5
+    final_decision: max_turns_exceeded
+    error: Maximum turns (5) exceeded without approval
+  turns_completed: 5
+  current_turn: 0
+  started_at: '2026-01-25T22:07:18.574252'
+  completed_at: '2026-01-25T22:21:55.599402'
+- id: TASK-FMT-003
+  name: Create fastmcp-specialist agent
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-003-create-fastmcp-specialist-agent.md
+  complexity: 5
+  dependencies:
+  - TASK-FMT-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 90
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FMT-004
+  name: Create fastmcp-testing-specialist agent
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-004-create-fastmcp-testing-specialist-agent.md
+  complexity: 4
+  dependencies:
+  - TASK-FMT-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 60
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FMT-005
+  name: Create code templates for fastmcp-python
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-005-create-code-templates.md
+  complexity: 6
+  dependencies:
+  - TASK-FMT-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 90
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FMT-006
+  name: Create .claude/rules for fastmcp-python template
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-006-create-claude-rules.md
+  complexity: 4
+  dependencies:
+  - TASK-FMT-002
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 60
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FMT-007
+  name: Create CLAUDE.md files for fastmcp-python template
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-007-create-claude-md-files.md
+  complexity: 3
+  dependencies:
+  - TASK-FMT-003
+  - TASK-FMT-004
+  - TASK-FMT-005
+  - TASK-FMT-006
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 30
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+- id: TASK-FMT-008
+  name: Validate fastmcp-python template with /template-validate
+  file_path: tasks/backlog/fastmcp-python-template/TASK-FMT-008-validate-template.md
+  complexity: 2
+  dependencies:
+  - TASK-FMT-007
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 30
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
 orchestration:
   parallel_groups:
-    # Wave 1: Foundation (2 tasks in parallel)
-    - - TASK-FMT-001
-      - TASK-FMT-002
-    # Wave 2: Core Content (4 tasks in parallel after Wave 1)
-    - - TASK-FMT-003
-      - TASK-FMT-004
-      - TASK-FMT-005
-      - TASK-FMT-006
-    # Wave 3: Integration (sequential after Wave 2)
-    - - TASK-FMT-007
-    - - TASK-FMT-008
+  - - TASK-FMT-001
+    - TASK-FMT-002
+  - - TASK-FMT-003
+    - TASK-FMT-004
+    - TASK-FMT-005
+    - TASK-FMT-006
+  - - TASK-FMT-007
+  - - TASK-FMT-008
   estimated_duration_minutes: 420
   recommended_parallel: 4
-
-# Metadata
-parent_review: TASK-REV-A7F3
-source_patterns:
-  - "Tool Registration in __main__.py"
-  - "Logging to stderr"
-  - "Streaming Two-Layer Architecture"
-  - "String Parameter Conversion"
-  - "Absolute Path Configuration"
-  - "Protocol Testing"
-  - "Docker Non-Root Deployment"
-  - "OAuth 2.1 Security"
-  - "Health Check Endpoints"
-  - "Cursor-based Pagination"
-
-quality_targets:
-  solid: 85
-  dry: 85
-  yagni: 90
-  template_score: 8
+execution:
+  started_at: '2026-01-25T22:07:18.563591'
+  completed_at: '2026-01-25T22:21:55.604359'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FMT
+  total_turns: 10
+  tasks_completed: 0
+  tasks_failed: 2
+  current_wave: 1
+  completed_waves: []
+  last_updated: '2026-01-25T22:21:55.599407'
+  archived_at: null
+  archived_to: null

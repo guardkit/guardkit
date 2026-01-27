@@ -1,0 +1,83 @@
+# Alembic Configuration File
+# Complete configuration with all required logger sections
+# See: https://alembic.sqlalchemy.org/en/latest/tutorial.html
+
+[alembic]
+# Path to migration scripts
+script_location = alembic
+
+# Add project root to sys.path for model imports
+prepend_sys_path = .
+
+# Template for migration revision IDs
+# Use date prefix for chronological ordering
+file_template = %%(year)d%%(month).2d%%(day).2d_%%(rev)s_%%(slug)s
+
+# Database URL - set via env.py from application settings
+# Leave empty here; env.py reads from settings.DATABASE_URL
+sqlalchemy.url =
+
+# Timezone to use when rendering date directives (UTC recommended)
+# timezone =
+
+# Max length of characters to apply to the "slug" field
+# truncate_slug_length = 40
+
+# Set to 'true' to run the environment during "revision"
+# revision_environment = false
+
+# Set to 'true' to allow .pyc and .pyo files without .py
+# sourceless = false
+
+# Version number format for revision output
+# version_path_separator = :  # Use os.pathsep
+# output_encoding = utf-8
+
+# Post-write hooks for auto-formatting
+[post_write_hooks]
+# Format migrations with ruff (optional - requires ruff installed)
+hooks = ruff
+ruff.type = exec
+ruff.executable = ruff
+ruff.options = format REVISION_SCRIPT_FILENAME
+
+# Logging configuration
+# All sections below are REQUIRED for alembic to function correctly
+
+[loggers]
+keys = root,sqlalchemy,alembic
+
+[handlers]
+keys = console
+
+[formatters]
+keys = generic
+
+[logger_root]
+level = WARN
+handlers = console
+qualname =
+
+[logger_sqlalchemy]
+level = WARN
+handlers =
+qualname = sqlalchemy.engine
+# Set to "debug" to log SQL statements
+# level = DEBUG
+propagate = 0
+
+[logger_alembic]
+level = INFO
+handlers =
+qualname = alembic
+propagate = 0
+
+[handler_console]
+class = StreamHandler
+args = (sys.stderr,)
+level = NOTSET
+formatter = generic
+
+[formatter_generic]
+format = %(levelname)-5.5s [%(name)s] %(message)s
+datefmt = %H:%M:%S

@@ -7,7 +7,7 @@ Use this as a base class for feature-specific CRUD classes.
 
 from typing import Generic, TypeVar, Type, Optional, List, Union, Dict, Any
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.base import Base
@@ -100,6 +100,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         Create a new record.
 
+        Note: Changes are flushed but not committed.
+        Commit happens automatically via get_db() dependency.
+
         Args:
             db: Database session
             obj_in: Pydantic schema with creation data
@@ -110,7 +113,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj_data = obj_in.model_dump()
         db_obj = self.model(**obj_data)
         db.add(db_obj)
-        await db.commit()
+        await db.flush()
         await db.refresh(db_obj)
         return db_obj
 
@@ -123,6 +126,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     ) -> ModelType:
         """
         Update an existing record.
+
+        Note: Changes are flushed but not committed.
+        Commit happens automatically via get_db() dependency.
 
         Args:
             db: Database session
@@ -142,7 +148,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
                 setattr(db_obj, field, value)
 
         db.add(db_obj)
-        await db.commit()
+        await db.flush()
         await db.refresh(db_obj)
         return db_obj
 
@@ -155,6 +161,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         Delete a record by ID (hard delete).
 
+        Note: Changes are flushed but not committed.
+        Commit happens automatically via get_db() dependency.
+
         Args:
             db: Database session
             id: Primary key ID of the record to delete
@@ -165,7 +174,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj = await self.get(db, id=id)
         if obj:
             await db.delete(obj)
-            await db.commit()
+            await db.flush()
         return obj
 
     async def exists(

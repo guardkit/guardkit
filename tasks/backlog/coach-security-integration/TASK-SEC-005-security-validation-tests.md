@@ -1,12 +1,18 @@
 ---
 id: TASK-SEC-005
 title: Add security validation tests for revised architecture
-status: pending
+status: in_review
 task_type: testing
-created: 2026-01-24T15:00:00Z
-updated: 2026-01-24T17:00:00Z
+created: 2026-01-24 15:00:00+00:00
+updated: 2026-01-24 17:00:00+00:00
 priority: high
-tags: [security, testing, quality-gates, pre-loop, task-work, autobuild]
+tags:
+- security
+- testing
+- quality-gates
+- pre-loop
+- task-work
+- autobuild
 complexity: 5
 parent_review: TASK-REV-SEC1
 feature_id: FEAT-SEC
@@ -15,25 +21,40 @@ estimated_minutes: 180
 wave: 3
 conductor_workspace: coach-security-wave3-1
 dependencies:
-  - TASK-SEC-001
-  - TASK-SEC-002
-  - TASK-SEC-003
-  - TASK-SEC-004
+- TASK-SEC-001
+- TASK-SEC-002
+- TASK-SEC-003
+- TASK-SEC-004
 acceptance_criteria:
-  - 20+ unit tests for quick checks (SecurityChecker)
-  - 10+ unit tests for configuration (SecurityConfig)
-  - 15+ unit tests for detection logic (should_run_full_review)
-  - 5+ integration tests for pre-loop security review (Phase 2.5C)
-  - 5+ integration tests for task-work quick scan (Phase 4.3)
-  - 3+ integration tests for Coach read-only security verification
-  - Test fixtures for vulnerable and safe code
-  - All tests pass
-  - Coverage greater than 90% for security modules
-  - Tests run in less than 60 seconds total
-  - 8+ tests for false positive filtering
-  - Tests for confidence threshold of 0.8
-  - Tests for exclusion categories including DOS and rate limiting
-  - Tests verify Coach does NOT invoke agents
+- 20+ unit tests for quick checks (SecurityChecker)
+- 10+ unit tests for configuration (SecurityConfig)
+- 15+ unit tests for detection logic (should_run_full_review)
+- 5+ integration tests for pre-loop security review (Phase 2.5C)
+- 5+ integration tests for task-work quick scan (Phase 4.3)
+- 3+ integration tests for Coach read-only security verification
+- Test fixtures for vulnerable and safe code
+- All tests pass
+- Coverage greater than 90% for security modules
+- Tests run in less than 60 seconds total
+- 8+ tests for false positive filtering
+- Tests for confidence threshold of 0.8
+- Tests for exclusion categories including DOS and rate limiting
+- Tests verify Coach does NOT invoke agents
+autobuild_state:
+  current_turn: 1
+  max_turns: 5
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-SEC
+  base_branch: main
+  started_at: '2026-01-25T22:36:20.002486'
+  last_updated: '2026-01-25T22:44:06.366670'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-25T22:36:20.002486'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-SEC-005: Add Security Validation Tests for Revised Architecture

@@ -147,14 +147,12 @@
   },
   "dependencies": {
     "package_manager": "pip",
-    "requirements_structure": "split",
-    "requirements_files": {
-      "base.txt": "Core dependencies for production",
-      "dev.txt": "Development and testing dependencies",
-      "prod.txt": "Production-specific dependencies"
-    },
+    "packaging_format": "pyproject.toml",
+    "build_backend": "hatchling",
+    "install_command": "pip install -e \".[dev]\"",
+    "install_production": "pip install .",
     "virtual_env": "required",
-    "python_version": ">=3.9"
+    "python_version": ">=3.10"
   },
   "database": {
     "orm": "SQLAlchemy",
