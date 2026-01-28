@@ -10,7 +10,7 @@ id: TASK-GI-002
 implementation_mode: task-work
 parent_review: TASK-REV-GI01
 priority: 1
-status: in_progress
+status: design_approved
 tags:
 - graphiti
 - seeding
