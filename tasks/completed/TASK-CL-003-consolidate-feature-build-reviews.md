@@ -1,7 +1,7 @@
 ---
 id: TASK-CL-003
 title: Consolidate feature-build review tasks
-status: backlog
+status: completed
 created: 2026-01-26T14:45:00Z
 updated: 2026-01-26T14:45:00Z
 priority: medium
@@ -81,10 +81,10 @@ Create `tasks/archived/feature-build-reviews/INDEX.md` with summary of archived 
 
 ## Acceptance Criteria
 
-- [ ] Archive directory created
-- [ ] All 20 TASK-REV-FB* tasks moved from backlog
-- [ ] INDEX.md created summarizing archived reviews
-- [ ] Git history preserved via `git mv`
+- [x] Archive directory created
+- [x] All 20 TASK-REV-FB* tasks moved from backlog
+- [x] INDEX.md created summarizing archived reviews
+- [x] Git history preserved via `git mv`
 
 ## Notes
 
