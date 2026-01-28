@@ -1,9 +1,10 @@
 ---
 id: TASK-CL-001
 title: Fix status/directory mismatches
-status: backlog
+status: completed
 created: 2026-01-26T14:45:00Z
-updated: 2026-01-26T14:45:00Z
+updated: 2026-01-28T18:30:00Z
+completed: 2026-01-28T18:30:00Z
 priority: high
 tags: [cleanup, housekeeping]
 task_type: implementation
@@ -63,10 +64,10 @@ git mv tasks/in_progress/TASK-REV-FB19-post-fbsdk015-017-arch-score-analysis.md 
 
 ## Acceptance Criteria
 
-- [ ] All 5 backlog-status tasks moved to tasks/backlog/
-- [ ] All 15 review_complete-status tasks moved from in_review/ to tasks/review_complete/
-- [ ] All 4 review_complete-status tasks moved from in_progress/ to tasks/review_complete/
-- [ ] Git history preserved via `git mv`
+- [x] All 5 backlog-status tasks moved to tasks/backlog/
+- [x] All 15 review_complete-status tasks moved from in_review/ to tasks/review_complete/
+- [x] All 4 review_complete-status tasks moved from in_progress/ to tasks/review_complete/
+- [x] Git history preserved via `git mv`
 
 ## Notes
 
