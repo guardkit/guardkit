@@ -10,7 +10,7 @@ implementation_mode: task-work
 parallel_group: wave2
 parent_review: TASK-REV-4371
 priority: high
-status: design_approved
+status: in_review
 tags:
 - template
 - mcp
@@ -20,8 +20,9 @@ tags:
 - prompts
 task_type: feature
 title: Create tools/tool.ts.template and related templates
-updated: 2026-01-24 16:45:00+00:00
+updated: 2026-01-28 19:30:00+00:00
 wave: 2
+code_review_score: 92
 ---
 
 # Task: Create tools/tool.ts.template and related templates
@@ -209,13 +210,55 @@ export function register{{PromptName}}WithCompletion(server: McpServer) {
 
 ## Acceptance Criteria
 
-- [ ] tools/tool.ts.template created with Zod schema and registration helper
-- [ ] resources/resource.ts.template created with static and dynamic patterns
-- [ ] prompts/prompt.ts.template created with completion support
-- [ ] All templates use proper placeholders from manifest.json
-- [ ] All templates include TypeScript types
-- [ ] All templates demonstrate best practices
+- [x] tools/tool.ts.template created with Zod schema and registration helper
+- [x] resources/resource.ts.template created with static and dynamic patterns
+- [x] prompts/prompt.ts.template created with completion support
+- [x] All templates use proper placeholders from manifest.json
+- [x] All templates include TypeScript types
+- [x] All templates demonstrate best practices
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+### TDD Workflow - 2026-01-28
+
+**Mode**: TDD (Red → Green → Refactor)
+**Duration**: ~15 minutes
+
+#### Phase 3-TDD-RED: Generate Failing Tests
+- Created: `tests/templates/mcp-typescript/test_mcp_primitives_templates.py`
+- Tests: 37 total (3 failing as expected, 26 skipped, 8 passing)
+- Categories: File Existence, Content Validation, Placeholders, Integration, Manifest
+
+#### Phase 3-TDD-GREEN: Implement Templates
+Files created:
+1. `installer/core/templates/mcp-typescript/templates/tools/tool.ts.template` (70 lines)
+   - Zod input/output schemas
+   - Testable implementation function
+   - Registration helper with error handling
+
+2. `installer/core/templates/mcp-typescript/templates/resources/resource.ts.template` (97 lines)
+   - Static resource pattern
+   - Dynamic resource with ResourceTemplate
+   - Text/plain variant
+
+3. `installer/core/templates/mcp-typescript/templates/prompts/prompt.ts.template` (130 lines)
+   - Basic prompt registration
+   - Completion-enabled variant
+   - Multi-message example
+
+#### Phase 4: Testing
+```
+pytest tests/templates/mcp-typescript/test_mcp_primitives_templates.py -v
+================================ 37 passed in 1.22s ================================
+```
+
+- Total Tests: 37
+- Passed: 37 (100%)
+- Failed: 0
+- Coverage: Template content validated
+
+#### Phase 5: Code Review
+- **Score**: 92/100
+- **Acceptance Criteria**: 6/6 met
+- **Issues**: 0 blockers, 1 minor (error handling verbosity)
+- **Verdict**: APPROVED FOR MERGE
