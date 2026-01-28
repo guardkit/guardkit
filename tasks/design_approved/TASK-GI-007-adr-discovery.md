@@ -1,8 +1,8 @@
 ---
+completed_at: 2026-01-28 23:45:00+00:00
 complexity: 5
 conductor_workspace: wave5-2
 created_at: 2026-01-24 00:00:00+00:00
-completed_at: 2026-01-28T23:45:00Z
 dependencies:
 - TASK-GI-001
 - TASK-GI-004
@@ -10,9 +10,17 @@ estimated_minutes: 180
 feature_id: FEAT-GI
 id: TASK-GI-007
 implementation_mode: task-work
+implementation_results:
+  coverage: 68%
+  development_mode: tdd
+  files_created:
+  - guardkit/knowledge/adr_discovery.py
+  - tests/knowledge/test_adr_discovery.py
+  tests_passed: 59
+  tests_total: 59
 parent_review: TASK-REV-GI01
 priority: 3
-status: in_review
+status: design_approved
 tags:
 - graphiti
 - adr
@@ -22,14 +30,6 @@ tags:
 task_type: feature
 title: ADR Discovery from Code Analysis
 wave: 5
-implementation_results:
-  tests_passed: 59
-  tests_total: 59
-  coverage: 68%
-  files_created:
-    - guardkit/knowledge/adr_discovery.py
-    - tests/knowledge/test_adr_discovery.py
-  development_mode: tdd
 ---
 
 # TASK-GI-007: ADR Discovery from Code Analysis
