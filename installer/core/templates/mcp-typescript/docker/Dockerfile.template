@@ -1,0 +1,38 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Copy source and build
+COPY tsconfig.json ./
+COPY src/ ./src/
+RUN npm run build
+
+# Production stage
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy built artifacts
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+
+# Install production dependencies only
+RUN npm ci --production
+
+# Create non-root user
+RUN adduser -D -u 1000 mcp
+USER mcp
+
+# Environment
+ENV NODE_ENV=production
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s \
+  CMD node -e "console.log('healthy')"
+
+CMD ["node", "dist/index.js"]

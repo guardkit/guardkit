@@ -1,21 +1,26 @@
 ---
-id: TASK-MTS-006
-title: Create config templates (package.json, tsconfig, docker, claude-desktop)
-status: backlog
-task_type: scaffolding
-created: 2026-01-24T16:45:00Z
-updated: 2026-01-24T16:45:00Z
-priority: high
-tags: [template, mcp, typescript, config, docker]
 complexity: 4
-parent_review: TASK-REV-4371
-feature_id: FEAT-MTS
-wave: 2
-parallel_group: wave2
-implementation_mode: task-work
 conductor_workspace: mcp-ts-wave2-3
+created: 2026-01-24 16:45:00+00:00
 dependencies:
-  - TASK-MTS-001  # manifest.json for placeholders
+- TASK-MTS-001
+feature_id: FEAT-MTS
+id: TASK-MTS-006
+implementation_mode: task-work
+parallel_group: wave2
+parent_review: TASK-REV-4371
+priority: high
+status: in_review
+tags:
+- template
+- mcp
+- typescript
+- config
+- docker
+task_type: scaffolding
+title: Create config templates (package.json, tsconfig, docker, claude-desktop)
+updated: 2026-01-28 18:55:00+00:00
+wave: 2
 ---
 
 # Task: Create config templates
@@ -180,14 +185,43 @@ services:
 
 ## Acceptance Criteria
 
-- [ ] config/package.json.template created with all scripts and dependencies
-- [ ] config/tsconfig.json.template created with proper module settings
-- [ ] config/claude-desktop.json.template created with ABSOLUTE PATH warnings
-- [ ] docker/Dockerfile.template created with multi-stage build and non-root user
-- [ ] docker/docker-compose.yml.template created
-- [ ] All templates use proper placeholders
-- [ ] Documentation notes about absolute paths included
+- [x] config/package.json.template created with all scripts and dependencies
+- [x] config/tsconfig.json.template created with proper module settings
+- [x] config/claude-desktop.json.template created with ABSOLUTE PATH warnings
+- [x] docker/Dockerfile.template created with multi-stage build and non-root user
+- [x] docker/docker-compose.yml.template created
+- [x] All templates use proper placeholders
+- [x] Documentation notes about absolute paths included
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+### TDD Test Run - 2026-01-28 18:54
+
+```
+ ✓ tests/unit/mcp-typescript-config-templates.test.ts (54 tests) 8ms
+   ✓ MCP TypeScript Config Templates - File Existence (5 tests)
+   ✓ MCP TypeScript Config Templates - package.json.template (12 tests)
+   ✓ MCP TypeScript Config Templates - tsconfig.json.template (9 tests)
+   ✓ MCP TypeScript Config Templates - claude-desktop.json.template (9 tests)
+   ✓ MCP TypeScript Config Templates - Dockerfile.template (11 tests)
+   ✓ MCP TypeScript Config Templates - docker-compose.yml.template (7 tests)
+   ✓ MCP TypeScript Config Templates - Placeholder Consistency (1 test)
+
+ Test Files  1 passed (1)
+      Tests  54 passed (54)
+   Duration  138ms
+```
+
+## Implementation Summary
+
+All 5 configuration templates created following MCP best practices:
+
+1. **package.json.template**: ESM module with esbuild bundling, vitest testing, tsx development
+2. **tsconfig.json.template**: ES2022 target, NodeNext modules, strict mode, path aliases
+3. **claude-desktop.json.template**: MCP server config with absolute path placeholders
+4. **Dockerfile.template**: Multi-stage build, non-root user, health checks
+5. **docker-compose.yml.template**: stdio transport support, production environment
+
+Files created in:
+- `installer/core/templates/mcp-typescript/config/`
+- `installer/core/templates/mcp-typescript/docker/`

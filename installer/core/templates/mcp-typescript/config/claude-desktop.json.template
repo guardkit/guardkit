@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "{{ServerName}}": {
+      "command": "{{AbsoluteNodePath}}",
+      "args": ["--import", "tsx", "{{AbsoluteProjectPath}}/src/index.ts"],
+      "cwd": "{{AbsoluteProjectPath}}",
+      "env": {
+        "NODE_ENV": "development"
+      }
+    }
+  }
+}

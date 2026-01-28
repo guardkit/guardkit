@@ -1,0 +1,69 @@
+/**
+ * {{ToolName}} - MCP Tool
+ * {{Description}}
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import * as z from 'zod';
+
+// Input schema with Zod validation
+export const {{toolName}}Schema = z.object({
+    {{paramName}}: z.string().describe('{{ParamDescription}}')
+});
+
+// Output schema for typed responses
+export const {{toolName}}OutputSchema = z.object({
+    result: z.string()
+});
+
+// Output type (for structuredContent)
+export interface {{ToolName}}Output {
+    result: string;
+    // Add more fields as needed
+}
+
+// Implementation function (testable independently)
+export async function {{toolName}}Impl(
+    params: z.infer<typeof {{toolName}}Schema>
+): Promise<{{ToolName}}Output> {
+    const { {{paramName}} } = params;
+
+    try {
+        // TODO: Implement tool logic
+        if (!{{paramName}}) {
+            throw new Error('Parameter {{paramName}} is required');
+        }
+        return {
+            result: `Processed: ${{{paramName}}}`
+        };
+    } catch (error) {
+        throw new Error(`Tool execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+}
+
+// Tool registration helper (use in index.ts)
+export function register{{ToolName}}(server: McpServer) {
+    server.registerTool(
+        '{{tool-name}}',
+        {
+            title: '{{ToolTitle}}',
+            description: '{{Description}}',
+            inputSchema: {{toolName}}Schema,
+            outputSchema: {{toolName}}OutputSchema
+        },
+        async (params) => {
+            try {
+                const output = await {{toolName}}Impl(params);
+                return {
+                    content: [{ type: 'text', text: JSON.stringify(output) }],
+                    structuredContent: output
+                };
+            } catch (error) {
+                return {
+                    content: [{ type: 'text', text: `Error: ${error instanceof Error ? error.message : 'Unknown error'}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+}

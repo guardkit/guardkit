@@ -1,21 +1,26 @@
 ---
-id: TASK-MTS-007
-title: Create mcp-testing-specialist agent
-status: backlog
-task_type: feature
-created: 2026-01-24T16:45:00Z
-updated: 2026-01-24T16:45:00Z
-priority: medium
-tags: [template, mcp, typescript, agent, testing]
 complexity: 4
-parent_review: TASK-REV-4371
-feature_id: FEAT-MTS
-wave: 3
-parallel_group: wave3
-implementation_mode: task-work
 conductor_workspace: mcp-ts-wave3-1
+created: 2026-01-24 16:45:00+00:00
 dependencies:
-  - TASK-MTS-003  # Core specialist for reference
+- TASK-MTS-003
+feature_id: FEAT-MTS
+id: TASK-MTS-007
+implementation_mode: task-work
+parallel_group: wave3
+parent_review: TASK-REV-4371
+priority: medium
+status: design_approved
+tags:
+- template
+- mcp
+- typescript
+- agent
+- testing
+task_type: feature
+title: Create mcp-testing-specialist agent
+updated: 2026-01-24 16:45:00+00:00
+wave: 3
 ---
 
 # Task: Create mcp-testing-specialist agent

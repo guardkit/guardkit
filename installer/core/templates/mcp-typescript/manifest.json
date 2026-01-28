@@ -27,6 +27,24 @@
     "Docker Non-Root Deployment"
   ],
   "layers": ["tools", "resources", "prompts", "server"],
+  "templates": {
+    "tools": {
+      "path": "templates/tools/tool.ts.template",
+      "description": "MCP tool implementation template with Zod validation"
+    },
+    "resources": {
+      "path": "templates/resources/resource.ts.template",
+      "description": "MCP resource implementation template with static and dynamic patterns"
+    },
+    "prompts": {
+      "path": "templates/prompts/prompt.ts.template",
+      "description": "MCP prompt implementation template with completion support"
+    },
+    "server": {
+      "path": "templates/server/index.ts.template",
+      "description": "MCP server entry point template"
+    }
+  },
   "placeholders": {
     "ServerName": {
       "name": "{{ServerName}}",
