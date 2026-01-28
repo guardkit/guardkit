@@ -1,9 +1,10 @@
 ---
 id: TASK-CL-002
 title: Archive empty feature directories
-status: backlog
+status: completed
 created: 2026-01-26T14:45:00Z
-updated: 2026-01-26T14:45:00Z
+updated: 2026-01-28T18:30:00Z
+completed: 2026-01-28T18:31:00Z
 priority: medium
 tags: [cleanup, housekeeping, archive]
 task_type: implementation
@@ -74,10 +75,10 @@ git mv tasks/backlog/task-work-performance/ tasks/archived/features/
 
 ## Acceptance Criteria
 
-- [ ] tasks/archived/features/ directory created
-- [ ] All 17 empty feature directories moved
-- [ ] Git history preserved via `git mv`
-- [ ] No feature directories with only README/GUIDE remain in backlog
+- [x] tasks/archived/features/ directory created
+- [x] All 17 empty feature directories moved
+- [x] Git history preserved via `git mv`
+- [x] No feature directories with only README/GUIDE remain in backlog
 
 ## Notes
 
