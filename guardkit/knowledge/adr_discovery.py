@@ -319,9 +319,14 @@ class ADRDiscoverer:
         # Scan Python files
         try:
             for py_file in self.source_path.rglob("*.py"):
+                # Filter based on relative path parts, not absolute path
+                try:
+                    rel_parts = py_file.relative_to(self.source_path).parts
+                except ValueError:
+                    continue
                 if any(
                     part.startswith((".", "_", "__", "test", "venv", "env"))
-                    for part in py_file.parts
+                    for part in rel_parts
                 ):
                     continue
 
@@ -413,9 +418,14 @@ class ADRDiscoverer:
         # Scan Python files for class definitions
         try:
             for py_file in self.source_path.rglob("*.py"):
+                # Filter based on relative path parts, not absolute path
+                try:
+                    rel_parts = py_file.relative_to(self.source_path).parts
+                except ValueError:
+                    continue
                 if any(
                     part.startswith((".", "_", "__", "test", "venv", "env"))
-                    for part in py_file.parts
+                    for part in rel_parts
                 ):
                     continue
 
