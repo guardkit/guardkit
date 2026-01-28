@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0.0",
+  "name": "mcp-typescript",
+  "display_name": "MCP TypeScript Server",
+  "description": "Production-ready MCP server template using @modelcontextprotocol/sdk with TypeScript. Implements all 10 critical production patterns including stderr logging, tool registration, streaming architecture, Zod validation, and Docker deployment.",
+  "version": "1.0.0",
+  "author": "GuardKit",
+  "source": "https://modelcontextprotocol.io/",
+  "language": "TypeScript",
+  "language_version": "5.0+",
+  "frameworks": [
+    {"name": "@modelcontextprotocol/sdk", "version": "latest", "purpose": "mcp_server"},
+    {"name": "zod", "version": "3.25+", "purpose": "validation"},
+    {"name": "vitest", "version": "2.0+", "purpose": "testing"},
+    {"name": "tsx", "version": "4.0+", "purpose": "development"},
+    {"name": "esbuild", "version": "0.20+", "purpose": "build"}
+  ],
+  "architecture": "MCP Server Pattern",
+  "patterns": [
+    "High-Level McpServer API",
+    "Tool Registration Before Connect",
+    "Logging to stderr",
+    "Streaming Two-Layer Architecture",
+    "Zod Schema Validation",
+    "Absolute Path Configuration",
+    "Protocol Testing",
+    "Docker Non-Root Deployment"
+  ],
+  "layers": ["tools", "resources", "prompts", "server"],
+  "placeholders": {
+    "ServerName": {
+      "name": "{{ServerName}}",
+      "description": "MCP server name (kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "my-mcp-server"
+    },
+    "ToolName": {
+      "name": "{{ToolName}}",
+      "description": "Tool name (kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "search-patterns"
+    },
+    "ResourceName": {
+      "name": "{{ResourceName}}",
+      "description": "Resource name (kebab-case)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "config-data"
+    },
+    "Description": {
+      "name": "{{Description}}",
+      "description": "Short description of the server/tool/resource",
+      "required": true,
+      "example": "Search for design patterns by query"
+    }
+  },
+  "tags": ["typescript", "mcp", "model-context-protocol", "claude-code", "zod", "vitest", "async"],
+  "category": "integration",
+  "complexity": 5,
+  "quality_scores": {
+    "SOLID": 85,
+    "DRY": 85,
+    "YAGNI": 90,
+    "target_coverage": 80
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "tool": {
+      "pattern": "{{toolName}}",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "examples": [
+        "search-patterns",
+        "get-details",
+        "count-items"
+      ]
+    },
+    "resource": {
+      "pattern": "{{protocol}}://{{path}}",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "examples": [
+        "config://app",
+        "data://{id}/profile"
+      ]
+    },
+    "prompt": {
+      "pattern": "{{promptName}}",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "examples": [
+        "code-review",
+        "summarize-docs"
+      ]
+    },
+    "server": {
+      "pattern": "{{name}}-server",
+      "case_style": "kebab-case",
+      "suffix": ".ts",
+      "examples": [
+        "design-patterns-server",
+        "requirements-server"
+      ]
+    },
+    "test_file": {
+      "pattern": "{{feature}}.test.ts",
+      "case_style": "kebab-case",
+      "suffix": ".test.ts",
+      "directory": "tests",
+      "examples": [
+        "tools.test.ts",
+        "resources.test.ts"
+      ]
+    },
+    "handler": {
+      "pattern": "handle{{Action}}",
+      "case_style": "camelCase",
+      "suffix": ".ts",
+      "examples": [
+        "handleListTools",
+        "handleCallTool",
+        "handleListResources"
+      ]
+    },
+    "type": {
+      "pattern": "{{TypeName}}",
+      "case_style": "PascalCase",
+      "suffix": ".ts",
+      "examples": [
+        "ToolDefinition",
+        "ResourceTemplate",
+        "PromptMessage"
+      ]
+    },
+    "schema": {
+      "pattern": "{{name}}Schema",
+      "case_style": "camelCase",
+      "suffix": "Schema",
+      "examples": [
+        "searchPatternsSchema",
+        "getPatternDetailsSchema"
+      ]
+    }
+  },
+  "file_organization": {
+    "by_layer": true,
+    "by_feature": false,
+    "test_location": "separate",
+    "max_files_per_directory": 15
+  },
+  "layer_mappings": {
+    "tools": {
+      "directory": "src/tools",
+      "namespace_pattern": "@/tools",
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "MCP tool implementations with Zod schemas"
+    },
+    "resources": {
+      "directory": "src/resources",
+      "namespace_pattern": "@/resources",
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "MCP resource providers and templates"
+    },
+    "prompts": {
+      "directory": "src/prompts",
+      "namespace_pattern": "@/prompts",
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "MCP prompt templates and generators"
+    },
+    "server": {
+      "directory": "src",
+      "namespace_pattern": "@/",
+      "file_patterns": [
+        "index.ts",
+        "server.ts"
+      ],
+      "description": "MCP server entry point and configuration"
+    },
+    "types": {
+      "directory": "src/types",
+      "namespace_pattern": "@/types",
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "TypeScript type definitions and interfaces"
+    },
+    "utils": {
+      "directory": "src/utils",
+      "namespace_pattern": "@/utils",
+      "file_patterns": [
+        "*.ts"
+      ],
+      "description": "Shared utility functions"
+    },
+    "tests": {
+      "directory": "tests",
+      "namespace_pattern": "@/tests",
+      "subdirectories": [
+        "unit",
+        "integration",
+        "protocol"
+      ],
+      "file_patterns": [
+        "*.test.ts"
+      ],
+      "description": "Test files organized by type"
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 2,
+    "line_length": 100,
+    "trailing_commas": true,
+    "use_semicolons": true,
+    "quote_style": "single",
+    "arrow_functions": true
+  },
+  "import_aliases": {
+    "@/": "src/",
+    "@/tools": "src/tools",
+    "@/resources": "src/resources",
+    "@/prompts": "src/prompts",
+    "@/types": "src/types",
+    "@/utils": "src/utils"
+  },
+  "generation_options": {
+    "include_tests": true,
+    "include_docker": true,
+    "include_protocol_tests": true,
+    "include_types": true,
+    "include_schemas": true,
+    "generate_tool_handlers": true,
+    "generate_resource_handlers": true
+  }
+}
