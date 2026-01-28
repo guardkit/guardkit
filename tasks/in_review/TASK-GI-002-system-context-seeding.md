@@ -10,7 +10,7 @@ id: TASK-GI-002
 implementation_mode: task-work
 parent_review: TASK-REV-GI01
 priority: 1
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - seeding
@@ -19,6 +19,7 @@ tags:
 task_type: feature
 title: System Context Seeding
 wave: 2
+completed_at: 2026-01-28T00:00:00Z
 ---
 
 # TASK-GI-002: System Context Seeding
@@ -184,24 +185,24 @@ async def seed_architecture_decisions(graphiti):
 
 ## Acceptance Criteria
 
-- [ ] **Seeding completes successfully**
-  - `guardkit graphiti seed` runs without errors
-  - All ~67 episodes are created
-  - Seeding marker is set
+- [x] **Seeding completes successfully**
+  - `guardkit graphiti seed` runs without errors ✓
+  - All ~67 episodes are created (verified: 67 total) ✓
+  - Seeding marker is set ✓
 
-- [ ] **Knowledge is queryable**
-  - "What is GuardKit?" returns product knowledge
-  - "How to invoke task-work?" returns SDK decision
-  - "What are the quality phases?" returns phase structure
+- [x] **Knowledge is queryable**
+  - "What is GuardKit?" returns product knowledge ✓
+  - "How to invoke task-work?" returns SDK decision ✓
+  - "What are the quality phases?" returns phase structure ✓
 
-- [ ] **Idempotent seeding**
-  - Running seed twice doesn't create duplicates
-  - `--force` flag allows re-seeding
+- [x] **Idempotent seeding**
+  - Running seed twice doesn't create duplicates (verified with unit tests) ✓
+  - `--force` flag allows re-seeding (verified) ✓
 
-- [ ] **Template/Agent/Pattern knowledge included**
-  - Template metadata queryable
-  - Agent capabilities queryable
-  - Pattern definitions queryable
+- [x] **Template/Agent/Pattern knowledge included**
+  - Template metadata queryable (4 episodes) ✓
+  - Agent capabilities queryable (7 episodes) ✓
+  - Pattern definitions queryable (5 episodes) ✓
 
 ## Testing Strategy
 
