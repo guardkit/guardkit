@@ -1,25 +1,25 @@
 ---
-id: TASK-GI-003
-title: Session Context Loading
-status: backlog
-priority: 1
-task_type: feature
-created_at: 2026-01-24T00:00:00Z
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 3
-conductor_workspace: wave3-1
 complexity: 7
-estimated_minutes: 300
+conductor_workspace: wave3-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
-  - TASK-GI-001
-  - TASK-GI-002
+- TASK-GI-001
+- TASK-GI-002
+estimated_minutes: 300
+feature_id: FEAT-GI
+id: TASK-GI-003
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 1
+status: in_review
 tags:
-  - graphiti
-  - context-loading
-  - session-management
-  - critical-path
+- graphiti
+- context-loading
+- session-management
+- critical-path
+task_type: feature
+title: Session Context Loading
+wave: 3
 ---
 
 # TASK-GI-003: Session Context Loading
