@@ -1,7 +1,7 @@
 ---
 id: TASK-CL-005
 title: Remove duplicate task files
-status: backlog
+status: completed
 created: 2026-01-26T14:45:00Z
 updated: 2026-01-26T14:45:00Z
 priority: medium
@@ -52,9 +52,9 @@ rm tasks/backlog/TASK-REV-FMT-feature-build-analysis.md
 
 ## Acceptance Criteria
 
-- [ ] TASK-FBP-003 exists only in tasks/in_review/
-- [ ] TASK-REV-FMT exists only in tasks/review_complete/ (after TASK-CL-001 moves it)
-- [ ] No duplicate task IDs across directories
+- [x] TASK-FBP-003 exists only in tasks/in_review/
+- [x] TASK-REV-FMT exists only in tasks/review_complete/ (TASK-CL-001 already handled this)
+- [x] No duplicate task IDs across directories
 
 ## Verification Commands
 
