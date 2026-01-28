@@ -1,21 +1,26 @@
 ---
-id: TASK-MTS-009
-title: Create test templates
-status: backlog
-task_type: testing
-created: 2026-01-24T16:45:00Z
-updated: 2026-01-24T16:45:00Z
-priority: medium
-tags: [template, mcp, typescript, testing, vitest]
 complexity: 3
-parent_review: TASK-REV-4371
-feature_id: FEAT-MTS
-wave: 3
-parallel_group: wave3
-implementation_mode: task-work
 conductor_workspace: mcp-ts-wave3-3
+created: 2026-01-24 16:45:00+00:00
 dependencies:
-  - TASK-MTS-005  # Tool templates for testing patterns
+- TASK-MTS-005
+feature_id: FEAT-MTS
+id: TASK-MTS-009
+implementation_mode: task-work
+parallel_group: wave3
+parent_review: TASK-REV-4371
+priority: medium
+status: in_review
+tags:
+- template
+- mcp
+- typescript
+- testing
+- vitest
+task_type: testing
+title: Create test templates
+updated: 2026-01-24 16:45:00+00:00
+wave: 3
 ---
 
 # Task: Create test templates
@@ -164,14 +169,56 @@ console.log = (...args: any[]) => {
 
 ## Acceptance Criteria
 
-- [ ] testing/tool.test.ts.template created with impl and schema tests
-- [ ] testing/protocol.sh.template created with JSON-RPC test commands
-- [ ] testing/vitest.config.ts.template created with coverage thresholds
-- [ ] testing/setup.ts.template created with console.log warning
-- [ ] Protocol script is executable (chmod +x noted)
-- [ ] All templates use proper placeholders
-- [ ] Coverage thresholds match GuardKit standards (80%)
+- [x] testing/tool.test.ts.template created with impl and schema tests
+- [x] testing/protocol.sh.template created with JSON-RPC test commands
+- [x] testing/vitest.config.ts.template created with coverage thresholds
+- [x] testing/setup.ts.template created with console.log warning
+- [x] Protocol script is executable (chmod +x noted)
+- [x] All templates use proper placeholders
+- [x] Coverage thresholds match GuardKit standards (80%)
 
 ## Test Execution Log
 
-[Automatically populated by /task-work]
+### TDD Workflow Summary
+- **Mode**: TDD (Red → Green → Refactor)
+- **Date**: 2026-01-28
+
+### RED Phase - Test Creation
+Created `tests/templates/mcp-typescript/test_testing_templates.py` with 46 tests covering:
+- TestTestingTemplatesExist (4 tests)
+- TestToolTestTemplate (11 tests)
+- TestProtocolTemplate (12 tests)
+- TestVitestConfigTemplate (13 tests)
+- TestSetupTemplate (6 tests)
+
+### GREEN Phase - Implementation
+Created 4 template files:
+1. `templates/testing/tool.test.ts.template` (44 lines)
+2. `templates/testing/protocol.sh.template` (32 lines)
+3. `templates/testing/vitest.config.ts.template` (23 lines)
+4. `templates/testing/setup.ts.template` (16 lines)
+
+Updated `manifest.json` with testing templates section and placeholder definitions.
+
+### Test Results
+```
+============================= 46 passed in 1.25s ==============================
+```
+
+### REFACTOR Phase - Code Review
+- **Verdict**: APPROVED FOR MERGE
+- **Quality Score**: 85/100 (Excellent)
+- **Acceptance Criteria**: 7/7 (100%)
+- **Test Coverage**: 46/46 tests passing (100%)
+- **Security**: No vulnerabilities detected
+- **Placeholder Consistency**: Verified across all templates
+
+### Files Created
+- `installer/core/templates/mcp-typescript/templates/testing/tool.test.ts.template`
+- `installer/core/templates/mcp-typescript/templates/testing/protocol.sh.template`
+- `installer/core/templates/mcp-typescript/templates/testing/vitest.config.ts.template`
+- `installer/core/templates/mcp-typescript/templates/testing/setup.ts.template`
+- `tests/templates/mcp-typescript/test_testing_templates.py`
+
+### Files Modified
+- `installer/core/templates/mcp-typescript/manifest.json` (added testing section)

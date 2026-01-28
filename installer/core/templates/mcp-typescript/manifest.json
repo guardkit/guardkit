@@ -26,7 +26,7 @@
     "Protocol Testing",
     "Docker Non-Root Deployment"
   ],
-  "layers": ["tools", "resources", "prompts", "server"],
+  "layers": ["tools", "resources", "prompts", "server", "testing"],
   "templates": {
     "tools": {
       "path": "templates/tools/tool.ts.template",
@@ -43,6 +43,24 @@
     "server": {
       "path": "templates/server/index.ts.template",
       "description": "MCP server entry point template"
+    },
+    "testing": {
+      "tool_test": {
+        "path": "templates/testing/tool.test.ts.template",
+        "description": "Vitest unit test template for MCP tools"
+      },
+      "protocol_test": {
+        "path": "templates/testing/protocol.sh.template",
+        "description": "JSON-RPC protocol test script for MCP servers"
+      },
+      "vitest_config": {
+        "path": "templates/testing/vitest.config.ts.template",
+        "description": "Vitest configuration with coverage thresholds"
+      },
+      "setup": {
+        "path": "templates/testing/setup.ts.template",
+        "description": "Vitest setup file with console.log warning"
+      }
     }
   },
   "placeholders": {
@@ -72,6 +90,27 @@
       "description": "Short description of the server/tool/resource",
       "required": true,
       "example": "Search for design patterns by query"
+    },
+    "paramName": {
+      "name": "{{paramName}}",
+      "description": "Parameter name (camelCase)",
+      "required": false,
+      "pattern": "^[a-z][a-zA-Z0-9]*$",
+      "example": "query"
+    },
+    "toolName": {
+      "name": "{{toolName}}",
+      "description": "Tool function name (camelCase)",
+      "required": false,
+      "pattern": "^[a-z][a-zA-Z0-9]*$",
+      "example": "searchPatterns"
+    },
+    "tool-name": {
+      "name": "{{tool-name}}",
+      "description": "Tool file name (kebab-case)",
+      "required": false,
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "example": "search-patterns"
     }
   },
   "tags": ["typescript", "mcp", "model-context-protocol", "claude-code", "zod", "vitest", "async"],

@@ -1,0 +1,31 @@
+#!/bin/bash
+# Protocol tests for {{ServerName}}
+# Run: ./tests/protocol/test-protocol.sh
+
+set -e
+
+SERVER_CMD="npx tsx src/index.ts"
+
+echo "=== MCP Protocol Tests for {{ServerName}} ==="
+
+# Test 1: Initialize
+echo -e "\n--- Test 1: Initialize ---"
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test-client","version":"1.0.0"}}}' | $SERVER_CMD
+
+# Test 2: List Tools
+echo -e "\n--- Test 2: List Tools ---"
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | $SERVER_CMD
+
+# Test 3: Call Tool
+echo -e "\n--- Test 3: Call Tool ---"
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"{{tool-name}}","arguments":{"{{paramName}}":"test-value"}}}' | $SERVER_CMD
+
+# Test 4: List Resources
+echo -e "\n--- Test 4: List Resources ---"
+echo '{"jsonrpc":"2.0","id":4,"method":"resources/list"}' | $SERVER_CMD
+
+# Test 5: Invalid Tool (expect error)
+echo -e "\n--- Test 5: Invalid Tool (expect error) ---"
+echo '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"nonexistent-tool","arguments":{}}}' | $SERVER_CMD || true
+
+echo -e "\n=== Protocol Tests Complete ==="

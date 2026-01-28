@@ -1,21 +1,25 @@
 ---
-id: TASK-MTS-010
-title: Create CLAUDE.md files
-status: backlog
-task_type: documentation
-created: 2026-01-24T16:45:00Z
-updated: 2026-01-24T16:45:00Z
-priority: medium
-tags: [template, mcp, typescript, documentation]
 complexity: 3
-parent_review: TASK-REV-4371
-feature_id: FEAT-MTS
-wave: 4
-parallel_group: wave4
-implementation_mode: task-work
 conductor_workspace: null
+created: 2026-01-24 16:45:00+00:00
 dependencies:
-  - TASK-MTS-008  # Rules files for reference
+- TASK-MTS-008
+feature_id: FEAT-MTS
+id: TASK-MTS-010
+implementation_mode: task-work
+parallel_group: wave4
+parent_review: TASK-REV-4371
+priority: medium
+status: design_approved
+tags:
+- template
+- mcp
+- typescript
+- documentation
+task_type: documentation
+title: Create CLAUDE.md files
+updated: 2026-01-24 16:45:00+00:00
+wave: 4
 ---
 
 # Task: Create CLAUDE.md files
