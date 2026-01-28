@@ -1,24 +1,24 @@
 ---
-id: TASK-GI-002
-title: System Context Seeding
-status: backlog
-priority: 1
-task_type: feature
-created_at: 2026-01-24T00:00:00Z
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 2
-conductor_workspace: wave2-1
 complexity: 6
-estimated_minutes: 240
+conductor_workspace: wave2-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
+estimated_minutes: 240
+feature_id: FEAT-GI
+id: TASK-GI-002
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 1
+status: design_approved
 tags:
-  - graphiti
-  - seeding
-  - knowledge-base
-  - critical-path
+- graphiti
+- seeding
+- knowledge-base
+- critical-path
+task_type: feature
+title: System Context Seeding
+wave: 2
 ---
 
 # TASK-GI-002: System Context Seeding
