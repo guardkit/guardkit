@@ -1,0 +1,152 @@
+{
+  "schema_version": "1.0.0",
+  "naming_conventions": {
+    "tool": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "examples": ["search_patterns", "get_pattern_details", "count_patterns"],
+      "description": "MCP tool functions use snake_case naming"
+    },
+    "server": {
+      "pattern": "{{name}}-server",
+      "case_style": "kebab-case",
+      "examples": ["design-patterns-server", "requirements-server", "context7-server"],
+      "description": "Server names use kebab-case with -server suffix"
+    },
+    "resource": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "examples": ["patterns_list", "pattern_details", "categories"],
+      "description": "MCP resource names use snake_case"
+    },
+    "mcp_parameter": {
+      "pattern": "{{name}}",
+      "case_style": "camelCase",
+      "examples": ["libraryName", "maxResults", "searchType"],
+      "description": "MCP parameters use camelCase per protocol specification"
+    },
+    "module": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "suffix": ".py",
+      "examples": ["server", "tools", "resources"],
+      "description": "Python module names use snake_case"
+    },
+    "class": {
+      "pattern": "{{Name}}",
+      "case_style": "PascalCase",
+      "examples": ["PatternServer", "ToolRegistry", "ResourceHandler"],
+      "description": "Class names use PascalCase"
+    },
+    "function": {
+      "pattern": "{{name}}",
+      "case_style": "snake_case",
+      "examples": ["register_tools", "handle_request", "validate_input"],
+      "description": "Function names use snake_case"
+    },
+    "test_file": {
+      "pattern": "test_{{feature}}.py",
+      "case_style": "snake_case",
+      "prefix": "test_",
+      "examples": ["test_tools.py", "test_resources.py", "test_server.py"],
+      "description": "Test files use test_ prefix"
+    },
+    "test_function": {
+      "pattern": "test_{{action}}_{{entity}}",
+      "case_style": "snake_case",
+      "prefix": "test_",
+      "examples": ["test_search_patterns", "test_get_pattern_details", "test_register_tool"],
+      "description": "Test functions describe the action being tested"
+    }
+  },
+  "file_organization": {
+    "by_layer": false,
+    "by_feature": false,
+    "structure": "flat-mcp",
+    "test_location": "separate",
+    "max_files_per_directory": 10,
+    "description": "MCP servers use flat structure - tools and resources in dedicated directories under src/"
+  },
+  "layer_mappings": {
+    "tools": {
+      "directory": "src/tools/",
+      "description": "MCP tool implementations",
+      "file_patterns": ["*.py"],
+      "responsibilities": ["Tool registration", "Tool handlers", "Parameter validation"]
+    },
+    "resources": {
+      "directory": "src/resources/",
+      "description": "MCP resource implementations",
+      "file_patterns": ["*.py"],
+      "responsibilities": ["Resource registration", "Resource handlers", "Data providers"]
+    },
+    "server": {
+      "directory": "src/",
+      "description": "Main MCP server entry point",
+      "file_patterns": ["server.py", "main.py", "__main__.py"],
+      "responsibilities": ["Server initialization", "FastMCP setup", "Tool/Resource registration"]
+    },
+    "models": {
+      "directory": "src/models/",
+      "description": "Pydantic models for tool parameters and responses",
+      "file_patterns": ["*.py"],
+      "responsibilities": ["Input validation", "Response schemas", "Data structures"]
+    },
+    "tests": {
+      "directory": "tests/",
+      "description": "Test files for MCP server",
+      "file_patterns": ["test_*.py", "conftest.py"],
+      "responsibilities": ["Unit tests", "Integration tests", "Protocol tests"]
+    }
+  },
+  "code_style": {
+    "indentation": "spaces",
+    "indent_size": 4,
+    "line_length": 120,
+    "trailing_commas": true,
+    "quote_style": "double",
+    "async_preferred": true,
+    "type_hints": "required",
+    "docstrings": "google_style",
+    "linter": "ruff",
+    "formatter": "ruff",
+    "logging_target": "stderr",
+    "description": "Follow PEP 8 with MCP-specific constraints (stdout reserved for protocol)"
+  },
+  "dependencies": {
+    "package_manager": "pip",
+    "packaging_format": "pyproject.toml",
+    "build_backend": "hatchling",
+    "install_command": "pip install -e \".[dev]\"",
+    "install_production": "pip install .",
+    "virtual_env": "required",
+    "python_version": ">=3.10",
+    "core_dependencies": ["fastmcp", "pydantic"],
+    "dev_dependencies": ["pytest", "pytest-asyncio", "ruff"]
+  },
+  "testing": {
+    "framework": "pytest",
+    "async_support": "pytest-asyncio",
+    "coverage_minimum": 80,
+    "test_structure": "separate",
+    "fixtures_location": "conftest.py",
+    "protocol_testing": true,
+    "mcp_client_testing": true,
+    "description": "Test MCP protocol compliance and tool/resource behavior"
+  },
+  "mcp_specific": {
+    "stdout_reserved": true,
+    "logging_target": "stderr",
+    "parameter_types": "all_strings",
+    "path_format": "absolute",
+    "transport": "stdio",
+    "protocol_version": "2024-11-05",
+    "description": "MCP protocol constraints - stdout is exclusively for JSON-RPC messages"
+  },
+  "server_conventions": {
+    "entry_point": "src/server.py",
+    "registration_pattern": "decorator",
+    "error_handling": "mcp_error_types",
+    "description": "Use FastMCP decorators for tool/resource registration"
+  }
+}
