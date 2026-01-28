@@ -29,7 +29,10 @@ import logging
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from guardkit.knowledge.decision_detector import DecisionDetector
 
 from guardkit.knowledge.adr import ADREntity, ADRStatus, ADRTrigger
 from guardkit.knowledge.graphiti_client import GraphitiClient
@@ -46,6 +49,7 @@ class ADRService:
 
     Attributes:
         client: GraphitiClient instance for storage operations
+        significance_threshold: Minimum significance score for auto-creating ADRs
 
     Example:
         client = GraphitiClient()
@@ -55,20 +59,51 @@ class ADRService:
         adr_id = await service.create_adr(adr)
 
         results = await service.search_adrs("database decisions")
+
+        # Agent-callable convenience function
+        adr_id = await service.record_decision(
+            question="Which database?",
+            answer="PostgreSQL for ACID compliance",
+            trigger=ADRTrigger.CLARIFYING_QUESTION,
+            source_task_id="TASK-001"
+        )
     """
 
-    def __init__(self, client: GraphitiClient):
+    def __init__(
+        self,
+        client: GraphitiClient,
+        significance_threshold: float = 0.4
+    ):
         """Initialize ADRService with a GraphitiClient.
 
         Args:
             client: GraphitiClient instance for storage operations.
                    Must be provided (not optional).
+            significance_threshold: Minimum significance score (0-1) for
+                   auto-creating ADRs via record_decision(). Default is 0.4.
 
         Raises:
             TypeError: If client is not provided.
         """
         self.client = client
+        self.significance_threshold = significance_threshold
         self._counter_file = Path.home() / ".agentecflow" / "state" / ".adr-counter.json"
+        self._detector: Optional["DecisionDetector"] = None
+
+    def _get_detector(self) -> "DecisionDetector":
+        """Get or create the DecisionDetector instance.
+
+        Lazy initialization to avoid circular imports.
+
+        Returns:
+            DecisionDetector instance.
+        """
+        if self._detector is None:
+            from guardkit.knowledge.decision_detector import DecisionDetector
+            self._detector = DecisionDetector(
+                significance_threshold=self.significance_threshold
+            )
+        return self._detector
 
     def _get_next_adr_id(self) -> str:
         """Generate the next sequential ADR ID.
@@ -384,4 +419,70 @@ class ADRService:
 
         except Exception as e:
             logger.warning(f"Failed to deprecate ADR {adr_id}: {e}")
+            return None
+
+    async def record_decision(
+        self,
+        question: str,
+        answer: str,
+        trigger: ADRTrigger,
+        source_task_id: Optional[str] = None,
+        source_feature_id: Optional[str] = None,
+        source_command: Optional[str] = None,
+        **kwargs
+    ) -> Optional[str]:
+        """Record a decision as an ADR if it's significant enough.
+
+        This is the agent-callable convenience function for capturing
+        decisions from clarifying questions, task reviews, or implementation
+        choices. Decisions below the significance threshold are skipped.
+
+        Args:
+            question: The question that was asked
+            answer: The answer/decision that was provided
+            trigger: What triggered the ADR (e.g., CLARIFYING_QUESTION)
+            source_task_id: Optional task ID for traceability
+            source_feature_id: Optional feature ID for traceability
+            source_command: Optional command name for traceability
+            **kwargs: Additional ADREntity fields
+
+        Returns:
+            ADR ID if created, None if skipped (low significance) or failed.
+
+        Example:
+            adr_id = await service.record_decision(
+                question="Which database?",
+                answer="PostgreSQL for ACID compliance",
+                trigger=ADRTrigger.CLARIFYING_QUESTION,
+                source_task_id="TASK-001"
+            )
+        """
+        try:
+            # Check if Graphiti is enabled
+            if not self.client.enabled:
+                logger.debug("Graphiti disabled, skipping decision recording")
+                return None
+
+            # Use detector to create ADR from Q&A
+            detector = self._get_detector()
+            adr = detector.create_adr_from_decision(
+                question=question,
+                answer=answer,
+                trigger=trigger,
+                source_task_id=source_task_id,
+                source_feature_id=source_feature_id,
+                source_command=source_command,
+                **kwargs
+            )
+
+            # If decision was not significant, skip
+            if adr is None:
+                logger.debug(f"Decision below significance threshold: {question[:50]}...")
+                return None
+
+            # Create the ADR
+            return await self.create_adr(adr)
+
+        except Exception as e:
+            logger.warning(f"Failed to record decision: {e}")
             return None

@@ -433,3 +433,103 @@ async def test_deprecate_adr_graceful_degradation(adr_service, mock_graphiti_cli
 
         # Should handle gracefully
         assert result is None or result is False
+
+
+# ============================================================================
+# 7. record_decision() Convenience Function Tests (6 tests)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_record_decision_basic(adr_service, mock_graphiti_client):
+    """Test record_decision creates ADR from Q&A pair."""
+    adr_id = await adr_service.record_decision(
+        question="Which database should we use?",
+        answer="PostgreSQL because of ACID compliance",
+        trigger=ADRTrigger.CLARIFYING_QUESTION
+    )
+
+    # Should create ADR
+    assert adr_id is not None
+    assert adr_id.startswith("ADR-")
+    mock_graphiti_client.add_episode.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_record_decision_with_task_context(adr_service, mock_graphiti_client):
+    """Test record_decision includes task and feature context."""
+    adr_id = await adr_service.record_decision(
+        question="Should we use microservices?",
+        answer="Monolith for now because we're a small team",
+        trigger=ADRTrigger.TASK_REVIEW,
+        source_task_id="TASK-GI-004",
+        source_feature_id="FEAT-GI",
+        source_command="task-review"
+    )
+
+    assert adr_id is not None
+    # Verify the call includes context
+    call_args = mock_graphiti_client.add_episode.call_args
+    episode_body = call_args.kwargs["episode_body"]
+    assert "TASK-GI-004" in episode_body
+    assert "FEAT-GI" in episode_body
+
+
+@pytest.mark.asyncio
+async def test_record_decision_low_significance_skipped(adr_service, mock_graphiti_client):
+    """Test record_decision skips low-significance decisions."""
+    adr_id = await adr_service.record_decision(
+        question="What should we name this variable?",
+        answer="userCount",
+        trigger=ADRTrigger.CLARIFYING_QUESTION
+    )
+
+    # Low significance - should return None and not call add_episode
+    assert adr_id is None
+    mock_graphiti_client.add_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_record_decision_implementation_trigger(adr_service, mock_graphiti_client):
+    """Test record_decision with IMPLEMENTATION_CHOICE trigger."""
+    adr_id = await adr_service.record_decision(
+        question="Which authentication strategy?",
+        answer="JWT with refresh tokens for stateless scalability",
+        trigger=ADRTrigger.IMPLEMENTATION_CHOICE,
+        source_task_id="TASK-AUTH-001"
+    )
+
+    assert adr_id is not None
+    assert adr_id.startswith("ADR-")
+
+
+@pytest.mark.asyncio
+async def test_record_decision_graceful_degradation(adr_service, mock_graphiti_client):
+    """Test record_decision handles Graphiti failure gracefully."""
+    mock_graphiti_client.add_episode.side_effect = Exception("Connection failed")
+
+    adr_id = await adr_service.record_decision(
+        question="Which framework?",
+        answer="FastAPI because of async support and performance",
+        trigger=ADRTrigger.MANUAL
+    )
+
+    # Should return None on failure, not raise
+    assert adr_id is None
+
+
+@pytest.mark.asyncio
+async def test_record_decision_custom_threshold(mock_graphiti_client):
+    """Test record_decision respects custom significance threshold."""
+    # Create service with high threshold
+    service = ADRService(mock_graphiti_client, significance_threshold=0.9)
+
+    adr_id = await service.record_decision(
+        question="Which logging level?",
+        answer="INFO for production",
+        trigger=ADRTrigger.IMPLEMENTATION_CHOICE
+    )
+
+    # Medium significance should be skipped with high threshold
+    assert adr_id is None
+    mock_graphiti_client.add_episode.assert_not_called()

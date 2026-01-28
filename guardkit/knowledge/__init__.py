@@ -134,6 +134,7 @@ from guardkit.knowledge.adr import (
 
 from guardkit.knowledge.adr_service import (
     ADRService,
+    # record_decision is a method on ADRService, not a standalone function
 )
 
 from guardkit.knowledge.decision_detector import (
