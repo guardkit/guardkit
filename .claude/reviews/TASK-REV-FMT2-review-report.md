@@ -2,11 +2,13 @@
 
 ## Executive Summary
 
-The FEAT-FMT AutoBuild failures were caused by **inconsistent `task_type` vocabulary** between task files and the `TaskType` enum in `guardkit/models/task_types.py`. The value `implementation` used in 161+ task files is NOT a valid enum value - the correct equivalent is `feature`.
+**UPDATED**: A fresh CLI run from macOS iTerm2 **succeeded** - all 8 FEAT-FMT tasks were approved with `task_type: scaffolding`. The previous failed run also used CLI (not VS Code Extension).
 
-**Root Cause**: Schema mismatch between documented/historical task_type values and the programmatic TaskType enum validation added by CoachValidator.
+**Root Cause**: The failure was likely caused by **stale worktree state** from a previous interrupted run. When the user selected "Fresh" start, the worktree was recreated with correct task files, and validation succeeded.
 
-**Impact**: Any task with `task_type: implementation` will fail AutoBuild validation indefinitely until the value is corrected or the Coach is made more lenient.
+**Secondary Finding**: 161+ task files in the codebase use `task_type: implementation` which is not a valid TaskType enum value. This is a separate data quality issue that should be addressed defensively.
+
+**Impact**: FEAT-FMT builds work correctly with a fresh start. Adding alias support will prevent similar issues for legacy task files.
 
 ## Review Details
 
@@ -204,24 +206,44 @@ def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
 2. **Short-term**: Create script to migrate existing tasks (Option B)
 3. **Long-term**: Deprecate aliases after migration complete
 
-## Decision Matrix
+## Decision Matrix (Updated)
 
 | Option | Effort | Risk | Backward Compat | Clean Code | Recommended |
 |--------|--------|------|-----------------|------------|-------------|
 | A: Add to Enum | Low | Low | Yes | No | No |
 | B: Migrate All | Medium | Medium | No | Yes | Later |
-| C: Add Aliases | Low | Low | Yes | Partial | **Yes** |
-| D: C then B | Low+Med | Low | Yes | Yes | **Best** |
+| C: Add Aliases | Low | Low | Yes | Partial | **Yes** (defensive) |
+| D: C then B | Low+Med | Low | Yes | Yes | **Yes** |
+**Recommendation**: Option C (alias support) is the recommended defensive measure to handle the 161+ legacy task files with `task_type: implementation`.
 
 ## Immediate Fix for FEAT-FMT
 
-To unblock FEAT-FMT right now:
+**RESOLVED**: FEAT-FMT works correctly from CLI. The successful run log shows:
 
-1. **Option 1**: Edit TASK-FMT-001 and TASK-FMT-002 worktree copies to ensure `task_type: scaffolding` (already correct in main)
-2. **Option 2**: Implement alias support in Coach
-3. **Option 3**: Clean worktree and restart fresh
+```
+INFO:guardkit.orchestrator.quality_gates.coach_validator:Using quality gate profile for task type: scaffolding
+INFO:guardkit.orchestrator.quality_gates.coach_validator:Coach approved TASK-FMT-001 turn 1
+...
+(all 8 tasks APPROVED)
+```
 
-The tasks in main already have `task_type: scaffolding` which is valid. The issue is likely that the worktree has stale copies.
+**Note**: Both the failed and successful runs were from macOS iTerm2 CLI (not VS Code Extension). The difference was:
+- **Failed run**: Resumed from stale worktree state with corrupted task data
+- **Successful run**: Fresh start (`[F]resh` option) which recreated the worktree with correct task files
+
+## Environment Comparison
+
+| Aspect | Failed Run (Resume) | Successful Run (Fresh) |
+|--------|---------------------|------------------------|
+| Environment | macOS iTerm2 CLI | macOS iTerm2 CLI |
+| Worktree State | Stale (from interrupted run) | Fresh (recreated) |
+| Task Files | May have had corrupted state | Copied fresh from main repo |
+| task_type Resolved | `implementation` (stale/corrupted) | `scaffolding` (correct) |
+| Coach Decision | FEEDBACK (invalid task_type) | APPROVED |
+
+**Resolution**: Fresh start resolved the issue. The stale worktree had corrupted task state.
+
+**Defensive Measure**: Add alias support for `task_type: implementation` to handle the 161+ legacy task files in the codebase.
 
 ## Appendix
 

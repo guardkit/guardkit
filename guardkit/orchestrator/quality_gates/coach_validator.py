@@ -43,6 +43,15 @@ from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
 
 logger = logging.getLogger(__name__)
 
+# Task type aliases for backward compatibility with legacy task_type values
+# See: TASK-REV-FMT2 for analysis of legacy values in codebase
+TASK_TYPE_ALIASES: Dict[str, TaskType] = {
+    "implementation": TaskType.FEATURE,
+    "bug-fix": TaskType.FEATURE,
+    "bug_fix": TaskType.FEATURE,
+    "benchmark": TaskType.TESTING,
+    "research": TaskType.DOCUMENTATION,
+}
 
 # ============================================================================
 # Data Models
@@ -295,7 +304,10 @@ class CoachValidator:
 
     def _resolve_task_type(self, task: Dict[str, Any]) -> TaskType:
         """
-        Resolve task type from task metadata with fallback to default.
+        Resolve task type from task metadata with alias support and fallback to default.
+
+        Supports legacy task_type values through TASK_TYPE_ALIASES mapping.
+        Logs info message when alias is used for transparency.
 
         Parameters
         ----------
@@ -310,7 +322,7 @@ class CoachValidator:
         Raises
         ------
         ValueError
-            If task_type is specified but invalid
+            If task_type is specified but invalid (not in enum or aliases)
         """
         task_type_str = task.get("task_type")
 
@@ -319,17 +331,28 @@ class CoachValidator:
             logger.debug("No task_type specified, defaulting to FEATURE profile")
             return TaskType.FEATURE
 
-        # Validate task_type value
+        # Try to parse as valid TaskType enum first
         try:
             task_type = TaskType(task_type_str)
             logger.debug(f"Resolved task_type from metadata: {task_type.value}")
             return task_type
-        except ValueError as e:
+        except ValueError:
+            # Check aliases before raising error
+            if task_type_str in TASK_TYPE_ALIASES:
+                aliased_type = TASK_TYPE_ALIASES[task_type_str]
+                logger.info(
+                    f"Using task_type alias: '{task_type_str}' → '{aliased_type.value}' "
+                    f"(update task frontmatter to use '{aliased_type.value}' directly)"
+                )
+                return aliased_type
+
+            # Not a valid enum value or alias - raise error
             logger.error(f"Invalid task_type value: {task_type_str}")
             raise ValueError(
                 f"Invalid task_type value: {task_type_str}. "
-                f"Must be one of: {', '.join(t.value for t in TaskType)}"
-            ) from e
+                f"Must be one of: {', '.join(t.value for t in TaskType)} "
+                f"or valid alias: {', '.join(TASK_TYPE_ALIASES.keys())}"
+            ) from None
 
     def validate(
         self,
@@ -1253,4 +1276,5 @@ __all__ = [
     "QualityGateStatus",
     "IndependentTestResult",
     "RequirementsValidation",
+    "TASK_TYPE_ALIASES",
 ]

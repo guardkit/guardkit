@@ -1,12 +1,16 @@
 ---
 id: TASK-FMT-005
 title: Create code templates for fastmcp-python
-status: backlog
+status: in_review
 task_type: scaffolding
-created: 2026-01-24T14:30:00Z
-updated: 2026-01-24T14:30:00Z
+created: 2026-01-24 14:30:00+00:00
+updated: 2026-01-24 14:30:00+00:00
 priority: high
-tags: [template, mcp, fastmcp, scaffolding]
+tags:
+- template
+- mcp
+- fastmcp
+- scaffolding
 complexity: 6
 parent_review: TASK-REV-A7F3
 feature_id: FEAT-FMT
@@ -14,7 +18,31 @@ wave: 2
 parallel_group: wave2
 implementation_mode: task-work
 conductor_workspace: fastmcp-wave2-3
-dependencies: [TASK-FMT-002]
+dependencies:
+- TASK-FMT-002
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FMT
+  base_branch: main
+  started_at: '2026-01-28T06:57:32.149248'
+  last_updated: '2026-01-28T07:28:23.321188'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-01-28T06:57:32.149248'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T07:27:20.834959'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create code templates for fastmcp-python

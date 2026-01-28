@@ -1,12 +1,16 @@
 ---
 id: TASK-FMT-007
 title: Create CLAUDE.md files for fastmcp-python template
-status: backlog
+status: in_review
 task_type: documentation
-created: 2026-01-24T14:30:00Z
-updated: 2026-01-24T14:30:00Z
+created: 2026-01-24 14:30:00+00:00
+updated: 2026-01-24 14:30:00+00:00
 priority: medium
-tags: [template, mcp, fastmcp, documentation]
+tags:
+- template
+- mcp
+- fastmcp
+- documentation
 complexity: 3
 parent_review: TASK-REV-A7F3
 feature_id: FEAT-FMT
@@ -14,7 +18,40 @@ wave: 3
 parallel_group: wave3
 implementation_mode: direct
 conductor_workspace: null
-dependencies: [TASK-FMT-003, TASK-FMT-004, TASK-FMT-005, TASK-FMT-006]
+dependencies:
+- TASK-FMT-003
+- TASK-FMT-004
+- TASK-FMT-005
+- TASK-FMT-006
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-FMT
+  base_branch: main
+  started_at: '2026-01-28T07:28:23.352867'
+  last_updated: '2026-01-28T07:35:19.842148'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T07:28:23.352867'
+    player_summary: 'Created three CLAUDE.md documentation files for fastmcp-python
+      template:
+
+
+      1. Top-level CLAUDE.md (5.8KB): Complete template reference with all 10 critical
+      MCP patterns, architecture overview, technology stack, quick start, and quality
+      scores.
+
+
+      2. .claude/CLAUDE.md (5.1KB): Project-specific quick reference with development
+      workflow, pattern summaries, anti-patterns, and stack-specific guidance.
+
+
+      3. README.md (9.2KB): User-facing documentation with installation instructions,
+      examples, directory st'
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create CLAUDE.md files for fastmcp-python template

@@ -25,6 +25,8 @@ review_results:
   recommendations_count: 4
   report_path: .claude/reviews/TASK-REV-FMT2-review-report.md
   completed_at: 2026-01-28T12:30:00Z
+  decision: implement
+  implementation_task: TASK-IMP-ALIAS
 ---
 
 # Task: Analyze and fix invalid task_type values in FEAT-FMT AutoBuild failure
