@@ -1,0 +1,14 @@
+{
+  "task_id": "TASK-FMT-004",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "f9ff6e55b29650c14958f1063cccbd3c1b1cd77e",
+      "timestamp": "2026-01-28T07:25:45.501524",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-28T07:25:45.501704"
+}
