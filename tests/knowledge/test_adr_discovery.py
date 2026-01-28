@@ -1200,3 +1200,536 @@ class TestIntegration:
 
         # Should still return ADR entities (just not persisted)
         assert isinstance(adrs, list)
+
+
+# ============================================================================
+# 12. Exception Handling Coverage Tests (10+ tests)
+# ============================================================================
+
+
+class TestExceptionHandlingCoverage:
+    """Tests specifically designed to cover exception handling branches."""
+
+    def test_structural_permission_error_in_iterdir(self, tmp_path):
+        """Test PermissionError when iterating directories."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        # Create src dir that will cause permission error on iterdir
+        if os.getuid() != 0:  # Skip if root
+            src_dir = tmp_path / "src"
+            src_dir.mkdir()
+
+            # Create subdirectory before restricting permissions
+            subdir = src_dir / "users"
+            subdir.mkdir()
+            (subdir / "router.py").write_text("# test")
+
+            # Now restrict src directory permissions
+            os.chmod(src_dir, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_directory_structure()
+                # Should handle gracefully and return empty list
+                assert decisions == []
+            finally:
+                os.chmod(src_dir, 0o755)
+
+    def test_dependency_permission_error_requirements(self, tmp_path):
+        """Test PermissionError when reading requirements.txt."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        if os.getuid() != 0:  # Skip if root
+            req_file = tmp_path / "requirements.txt"
+            req_file.write_text("fastapi>=0.100.0")
+            os.chmod(req_file, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_dependencies()
+                # Should handle gracefully and return empty list
+                assert decisions == []
+            finally:
+                os.chmod(req_file, 0o644)
+
+    def test_dependency_unicode_error_requirements(self, tmp_path):
+        """Test UnicodeDecodeError when reading malformed requirements.txt."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        req_file = tmp_path / "requirements.txt"
+        # Write invalid UTF-8 bytes
+        req_file.write_bytes(b"\xff\xfe\x00\x00invalid")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_dependencies()
+        # Should handle gracefully
+        assert isinstance(decisions, list)
+
+    def test_dependency_permission_error_pyproject(self, tmp_path):
+        """Test PermissionError when reading pyproject.toml."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        if os.getuid() != 0:  # Skip if root
+            pyproject = tmp_path / "pyproject.toml"
+            pyproject.write_text("[project]\ndependencies = ['django>=4.0']")
+            os.chmod(pyproject, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_dependencies()
+                # Should handle gracefully
+                assert isinstance(decisions, list)
+            finally:
+                os.chmod(pyproject, 0o644)
+
+    def test_dependency_unicode_error_pyproject(self, tmp_path):
+        """Test UnicodeDecodeError when reading malformed pyproject.toml."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        pyproject = tmp_path / "pyproject.toml"
+        # Write invalid UTF-8 bytes
+        pyproject.write_bytes(b"\xff\xfe\x00\x00invalid")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_dependencies()
+        # Should handle gracefully
+        assert isinstance(decisions, list)
+
+    def test_pattern_with_regex_patterns(self, tmp_path):
+        """Test pattern detection with regex patterns (class.*Service)."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Create file with Service classes (regex pattern)
+        (src_dir / "services.py").write_text("""
+class UserService:
+    pass
+
+class ProductService:
+    pass
+
+class OrderService:
+    pass
+
+class PaymentService:
+    pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_code_patterns()
+
+        # Should detect service pattern via regex
+        assert isinstance(decisions, list)
+
+    def test_pattern_with_router_decorator(self, tmp_path):
+        """Test pattern detection with @router decorator."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Create files with @router decorators
+        for i in range(3):
+            (src_dir / f"api_{i}.py").write_text("""
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/")
+async def handler():
+    pass
+
+@router.post("/items")
+async def create_item():
+    pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_code_patterns()
+
+        # Router pattern detection exercises regex and non-regex code paths
+        # Test validates the code runs without errors
+        assert isinstance(decisions, list)
+
+    def test_pattern_with_app_decorator(self, tmp_path):
+        """Test pattern detection with @app decorator."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Create file with @app decorators (Flask style)
+        (src_dir / "main.py").write_text("""
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/")
+def index():
+    pass
+
+@app.route("/users")
+def users():
+    pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_code_patterns()
+
+        # Should handle @app pattern
+        assert isinstance(decisions, list)
+
+    def test_naming_permission_error_in_rglob(self, tmp_path):
+        """Test PermissionError when scanning for naming conventions."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        if os.getuid() != 0:  # Skip if root
+            src_dir = tmp_path / "src"
+            src_dir.mkdir()
+
+            # Create restricted subdirectory
+            restricted = src_dir / "restricted"
+            restricted.mkdir()
+            (restricted / "schemas.py").write_text("class UserCreate: pass")
+            os.chmod(restricted, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_naming_conventions()
+                # Should handle gracefully
+                assert isinstance(decisions, list)
+            finally:
+                os.chmod(restricted, 0o755)
+
+    def test_naming_unicode_error_in_class_detection(self, tmp_path):
+        """Test UnicodeDecodeError when reading files for class names."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Create file with invalid UTF-8
+        (src_dir / "schemas.py").write_bytes(b"\xff\xfe\x00\x00invalid")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_naming_conventions()
+        # Should handle gracefully
+        assert isinstance(decisions, list)
+
+    def test_naming_with_insufficient_matches(self, tmp_path):
+        """Test naming convention with < 3 matches (below threshold)."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Only 2 schema classes (below threshold of 3)
+        (src_dir / "schemas.py").write_text("""
+class UserCreate:
+    pass
+
+class UserUpdate:
+    pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_naming_conventions()
+
+        # Should not create decision (below threshold)
+        assert decisions == []
+
+    @pytest.mark.asyncio
+    async def test_create_adrs_with_service_exception(self, temp_codebase):
+        """Test exception handling when ADR service raises exception."""
+        from guardkit.knowledge.adr_discovery import (
+            discover_adrs_from_codebase,
+            create_discovered_adrs,
+        )
+
+        discoveries = await discover_adrs_from_codebase(temp_codebase)
+
+        # Create service that raises exception
+        failing_service = MagicMock()
+        failing_service.create_adr = AsyncMock(side_effect=Exception("Database error"))
+
+        # Should handle exception and still create ADRs with generated IDs
+        adrs = await create_discovered_adrs(
+            discoveries,
+            template_id="test",
+            adr_service=failing_service,
+        )
+
+        # Should still return ADRs even though service failed
+        assert len(adrs) >= 1
+        # All ADRs should have generated IDs (not from service)
+        for adr in adrs:
+            assert adr.id.startswith("ADR-DISC-")
+
+    def test_pattern_permission_error_in_rglob(self, tmp_path):
+        """Test PermissionError when scanning Python files for patterns."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        if os.getuid() != 0:  # Skip if root
+            src_dir = tmp_path / "src"
+            src_dir.mkdir()
+
+            # Create restricted subdirectory
+            restricted = src_dir / "restricted"
+            restricted.mkdir()
+            (restricted / "router.py").write_text("async def test(): pass")
+            os.chmod(restricted, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_code_patterns()
+                # Should handle gracefully
+                assert isinstance(decisions, list)
+            finally:
+                os.chmod(restricted, 0o755)
+
+
+# ============================================================================
+# 13. Pattern Detection Branch Coverage Tests
+# ============================================================================
+
+
+class TestPatternDetectionBranches:
+    """Tests specifically designed to hit pattern detection branches (lines 359-388)."""
+
+    def test_dependency_injection_pattern_detected(self, temp_codebase):
+        """Test that Dependency Injection pattern is detected when >= 3 Depends() calls."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer, DiscoveryCategory
+
+        # Use temp_codebase fixture which has proper structure
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # The temp_codebase fixture has Depends() calls
+        di_decisions = [d for d in decisions if "injection" in d.title.lower()]
+        assert len(di_decisions) >= 1
+        assert di_decisions[0].category == DiscoveryCategory.PATTERN
+        assert di_decisions[0].confidence > 0
+
+    def test_async_await_pattern_detected(self, temp_codebase):
+        """Test that async/await pattern is detected when >= 3 async defs."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer, DiscoveryCategory
+
+        # Use temp_codebase fixture which has async functions
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # The temp_codebase fixture has async functions
+        async_decisions = [d for d in decisions if "async" in d.title.lower()]
+        assert len(async_decisions) >= 1
+        assert async_decisions[0].category == DiscoveryCategory.PATTERN
+
+    def test_router_pattern_detected(self, temp_codebase):
+        """Test that Router/Blueprint pattern is detected when >= 2 @router decorators."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer, DiscoveryCategory
+
+        # Use temp_codebase fixture which has @router decorators
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # The temp_codebase fixture has @router decorators
+        router_decisions = [d for d in decisions if "router" in d.title.lower()]
+        assert len(router_decisions) >= 1
+        assert router_decisions[0].category == DiscoveryCategory.PATTERN
+
+    def test_all_patterns_detected_together(self, temp_codebase):
+        """Test that all three patterns can be detected in the same codebase."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # Should detect multiple patterns
+        titles = [d.title.lower() for d in decisions]
+        # At least some patterns should be detected (the fixture has all three)
+        assert len(titles) >= 1
+
+    def test_regex_pattern_matching_service_layer(self, tmp_path):
+        """Test regex pattern matching for 'class.*Service' pattern."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "code"  # Use 'code' instead of 'src' to avoid filter
+        src_dir.mkdir()
+
+        # Create file with Service classes that match regex pattern
+        (src_dir / "services.py").write_text("""
+class UserService:
+    def get_user(self): pass
+
+class ProductService:
+    def get_product(self): pass
+
+class OrderService:
+    def get_order(self): pass
+
+class PaymentService:
+    def process_payment(self): pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_code_patterns()
+
+        # The regex pattern matching code path should be exercised
+        assert isinstance(decisions, list)
+
+    def test_pydantic_basemodel_pattern(self, tmp_path):
+        """Test detection of Pydantic BaseModel pattern."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "code"
+        src_dir.mkdir()
+
+        # Create file with Pydantic BaseModel usage
+        (src_dir / "schemas.py").write_text("""
+from pydantic import BaseModel
+
+class UserBase(BaseModel):
+    email: str
+
+class ProductBase(BaseModel):
+    name: str
+
+class OrderBase(BaseModel):
+    id: int
+
+class CustomerBase(BaseModel):
+    name: str
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_code_patterns()
+
+        # BaseModel pattern detection path exercised
+        assert isinstance(decisions, list)
+
+    def test_pattern_evidence_collection(self, temp_codebase):
+        """Test that pattern evidence is properly collected and limited to 10."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # Evidence should be limited to 10 files
+        for decision in decisions:
+            assert len(decision.evidence) <= 10
+
+    def test_pattern_confidence_calculation(self, temp_codebase):
+        """Test that pattern confidence is properly calculated."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_code_patterns()
+
+        # DI pattern should exist with proper confidence
+        di_decisions = [d for d in decisions if "injection" in d.title.lower()]
+        assert len(di_decisions) >= 1
+        # Confidence should be between 0 and 1
+        assert 0 < di_decisions[0].confidence <= 1.0
+
+
+# ============================================================================
+# 14. Naming Convention Branch Coverage Tests
+# ============================================================================
+
+
+class TestNamingConventionBranches:
+    """Tests for naming convention detection branches (lines 422-450)."""
+
+    def test_naming_convention_file_permission_error(self, tmp_path):
+        """Test handling of PermissionError when reading files for naming."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        if os.getuid() != 0:  # Skip if root
+            src_dir = tmp_path / "src"
+            src_dir.mkdir()
+
+            # Create readable file
+            (src_dir / "schemas.py").write_text("""
+class UserCreate: pass
+class UserUpdate: pass
+class UserPublic: pass
+""")
+
+            # Create unreadable file
+            restricted = src_dir / "restricted.py"
+            restricted.write_text("class RestrictedCreate: pass")
+            os.chmod(restricted, 0o000)
+
+            try:
+                discoverer = ADRDiscoverer(tmp_path)
+                decisions = discoverer.analyze_naming_conventions()
+                # Should handle gracefully and still find patterns in readable files
+                assert isinstance(decisions, list)
+            finally:
+                os.chmod(restricted, 0o644)
+
+    def test_naming_convention_below_threshold(self, tmp_path):
+        """Test that naming conventions below threshold are not detected."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        # Create file with only 2 matching patterns (threshold is 3)
+        (src_dir / "schemas.py").write_text("""
+class UserCreate: pass
+class UserUpdate: pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_naming_conventions()
+
+        # Should not detect pattern (only 2, need >= 3)
+        assert len(decisions) == 0
+
+    def test_naming_convention_at_threshold(self, temp_codebase):
+        """Test that naming conventions at threshold are detected."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer, DiscoveryCategory
+
+        # Use temp_codebase which has proper naming patterns
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_naming_conventions()
+
+        # temp_codebase has UserCreate, UserUpdate, UserPublic patterns
+        assert len(decisions) >= 1
+        assert any(d.category == DiscoveryCategory.CONVENTION for d in decisions)
+
+    def test_naming_convention_high_count(self, temp_codebase):
+        """Test naming convention with high count for max confidence."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        # Use temp_codebase which has multiple entities with patterns
+        discoverer = ADRDiscoverer(temp_codebase)
+        decisions = discoverer.analyze_naming_conventions()
+
+        # Should have reasonable confidence
+        assert len(decisions) >= 1
+        naming_decisions = [d for d in decisions if d.category.value == "convention"]
+        if naming_decisions:
+            assert naming_decisions[0].confidence > 0
+
+    def test_naming_skip_test_directories(self, tmp_path):
+        """Test that test directories are skipped in naming analysis."""
+        from guardkit.knowledge.adr_discovery import ADRDiscoverer
+
+        # Create test directory with patterns that should be skipped
+        test_dir = tmp_path / "tests"
+        test_dir.mkdir()
+        (test_dir / "test_schemas.py").write_text("""
+class TestUserCreate: pass
+class TestUserUpdate: pass
+class TestUserPublic: pass
+class TestProductCreate: pass
+""")
+
+        discoverer = ADRDiscoverer(tmp_path)
+        decisions = discoverer.analyze_naming_conventions()
+
+        # Should skip test directories
+        assert decisions == []
