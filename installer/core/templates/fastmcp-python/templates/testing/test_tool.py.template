@@ -1,0 +1,40 @@
+"""
+{{ToolName}} Tool Tests
+Tests for {{ToolName}} tool functionality.
+"""
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_{{tool_name}}_basic(mcp_client, sample_tool_input):
+    """Test basic {{tool_name}} functionality.
+
+    Args:
+        mcp_client: MCP client fixture
+        sample_tool_input: Sample input fixture
+    """
+    result = await mcp_client.call_tool(
+        "{{tool_name}}",
+        arguments=sample_tool_input
+    )
+
+    assert result is not None
+    # {{AdditionalAssertions}}
+
+
+@pytest.mark.asyncio
+async def test_{{tool_name}}_with_string_params(mcp_client):
+    """Test {{tool_name}} handles string parameter conversion.
+
+    MCP protocol sends all parameters as strings, so tools must
+    convert them to appropriate types.
+    """
+    result = await mcp_client.call_tool(
+        "{{tool_name}}",
+        arguments={
+            "query": "test",
+            "limit": "5"  # String, should be converted to int
+        }
+    )
+
+    assert result is not None

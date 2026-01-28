@@ -1,20 +1,25 @@
 ---
-id: TASK-FMT-005
-title: Create code templates for fastmcp-python
-status: backlog
-task_type: scaffolding
-created: 2026-01-24T14:30:00Z
-updated: 2026-01-24T14:30:00Z
-priority: high
-tags: [template, mcp, fastmcp, scaffolding]
 complexity: 6
-parent_review: TASK-REV-A7F3
-feature_id: FEAT-FMT
-wave: 2
-parallel_group: wave2
-implementation_mode: task-work
 conductor_workspace: fastmcp-wave2-3
-dependencies: [TASK-FMT-002]
+created: 2026-01-24 14:30:00+00:00
+dependencies:
+- TASK-FMT-002
+feature_id: FEAT-FMT
+id: TASK-FMT-005
+implementation_mode: task-work
+parallel_group: wave2
+parent_review: TASK-REV-A7F3
+priority: high
+status: design_approved
+tags:
+- template
+- mcp
+- fastmcp
+- scaffolding
+task_type: scaffolding
+title: Create code templates for fastmcp-python
+updated: 2026-01-24 14:30:00+00:00
+wave: 2
 ---
 
 # Task: Create code templates for fastmcp-python

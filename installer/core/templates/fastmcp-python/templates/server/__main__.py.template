@@ -1,0 +1,38 @@
+"""
+{{ServerName}} - MCP Server
+{{ServerDescription}}
+"""
+from mcp.server import FastMCP
+import sys
+import logging
+
+# CRITICAL: Logging must go to stderr (stdout reserved for MCP protocol)
+logging.basicConfig(
+    stream=sys.stderr,
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# Initialize FastMCP server
+mcp = FastMCP(name="{{ServerName}}")
+
+
+# CRITICAL: Tools registered at module level for Claude Code discovery
+@mcp.tool()
+async def example_tool(param: str) -> dict:
+    """{{ToolDescription}}
+
+    Args:
+        param: Example parameter
+
+    Returns:
+        dict: Result containing the processed parameter
+    """
+    logger.info(f"Processing: {param}")
+    return {"result": param}
+
+
+if __name__ == "__main__":
+    logger.info("Starting {{ServerName}} MCP server")
+    mcp.run(transport="stdio")

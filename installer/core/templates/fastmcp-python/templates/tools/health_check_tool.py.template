@@ -1,0 +1,51 @@
+"""
+Health Check Tool
+Production health check endpoint for load balancers and Kubernetes probes.
+"""
+import sys
+import time
+import logging
+from datetime import datetime, UTC
+
+logger = logging.getLogger(__name__)
+
+# Track server start time for uptime calculation
+_start_time = time.time()
+
+
+@mcp.tool()
+async def health_check() -> dict:
+    """Health check endpoint for load balancers and monitoring.
+
+    Returns server health status including uptime, memory usage,
+    and dependency health for production observability.
+
+    Returns:
+        dict: Health status with uptime, memory, timestamp, and dependency status
+    """
+    import psutil
+
+    process = psutil.Process()
+    memory_mb = process.memory_info().rss / 1024 / 1024
+    uptime_seconds = time.time() - _start_time
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "uptime_seconds": round(uptime_seconds, 2),
+        "memory_mb": round(memory_mb, 2),
+        "dependencies": await _check_dependencies()
+    }
+
+
+async def _check_dependencies() -> dict:
+    """Check health of external dependencies.
+
+    Returns:
+        dict: Status of each dependency
+    """
+    # {{DependencyChecks}} - Customize for your dependencies
+    return {
+        "database": "healthy",
+        "external_api": "healthy"
+    }

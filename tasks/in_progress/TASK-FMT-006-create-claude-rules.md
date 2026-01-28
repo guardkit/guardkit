@@ -1,20 +1,25 @@
 ---
-id: TASK-FMT-006
-title: Create .claude/rules for fastmcp-python template
-status: backlog
-task_type: documentation
-created: 2026-01-24T14:30:00Z
-updated: 2026-01-24T14:30:00Z
-priority: medium
-tags: [template, mcp, fastmcp, rules]
 complexity: 4
-parent_review: TASK-REV-A7F3
-feature_id: FEAT-FMT
-wave: 2
-parallel_group: wave2
-implementation_mode: task-work
 conductor_workspace: fastmcp-wave2-4
-dependencies: [TASK-FMT-002]
+created: 2026-01-24 14:30:00+00:00
+dependencies:
+- TASK-FMT-002
+feature_id: FEAT-FMT
+id: TASK-FMT-006
+implementation_mode: task-work
+parallel_group: wave2
+parent_review: TASK-REV-A7F3
+priority: medium
+status: design_approved
+tags:
+- template
+- mcp
+- fastmcp
+- rules
+task_type: documentation
+title: Create .claude/rules for fastmcp-python template
+updated: 2026-01-24 14:30:00+00:00
+wave: 2
 ---
 
 # Task: Create .claude/rules for fastmcp-python template

@@ -1,0 +1,50 @@
+"""
+{{ToolName}} Tool
+{{ToolDescription}}
+"""
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@mcp.tool()
+async def {{tool_name}}(
+    query: str,
+    limit: str = "10",
+    include_metadata: str = "false"
+) -> dict:
+    """{{ToolDescription}}
+
+    Args:
+        query: Search query string
+        limit: Maximum results to return (as string, converted to int)
+        include_metadata: Whether to include metadata (as string, converted to bool)
+
+    Returns:
+        dict: Results containing items and metadata
+
+    Raises:
+        ValueError: If parameters cannot be converted to expected types
+    """
+    try:
+        # CRITICAL: Convert string parameters to proper types
+        # MCP protocol sends all parameters as strings
+        limit_int = int(limit)
+        include_meta = include_metadata.lower() in ("true", "1", "yes")
+
+        logger.info(f"Executing {query} with limit={limit_int}")
+
+        # Implementation placeholder
+        results = {"items": [], "query": query}
+
+        if include_meta:
+            results["metadata"] = {"limit": limit_int}
+
+        return results
+
+    except ValueError as e:
+        logger.error(f"Parameter conversion error: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Tool execution error: {e}")
+        raise

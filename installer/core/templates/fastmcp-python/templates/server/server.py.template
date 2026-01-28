@@ -1,0 +1,17 @@
+"""
+{{ServerName}} Server Configuration
+"""
+from mcp.server import FastMCP
+
+
+def create_server(name: str = "{{ServerName}}") -> FastMCP:
+    """Create and configure FastMCP server instance.
+
+    Args:
+        name: Server name for identification
+
+    Returns:
+        FastMCP: Configured server instance
+    """
+    server = FastMCP(name=name)
+    return server

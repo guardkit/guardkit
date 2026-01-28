@@ -1,0 +1,52 @@
+"""
+Paginated Tool Template
+Cursor-based pagination for large result sets.
+"""
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+@mcp.tool()
+async def {{ToolName}}(
+    cursor: Optional[str] = None,
+    limit: int = 20
+) -> dict:
+    """{{ToolDescription}}
+
+    Args:
+        cursor: Pagination cursor from previous response (optional)
+        limit: Maximum items to return (default: 20, max: 100)
+
+    Returns:
+        dict: Results with items array, next_cursor, has_more, and count
+    """
+    # Validate limit bounds (1-100)
+    limit = min(max(1, int(limit)), 100)
+
+    logger.info(f"Fetching items: cursor={cursor}, limit={limit}")
+
+    # Fetch items with cursor
+    items, next_cursor = await _fetch_items(cursor, limit)
+
+    return {
+        "items": items,
+        "next_cursor": next_cursor,  # None if no more results
+        "has_more": next_cursor is not None,
+        "count": len(items)
+    }
+
+
+async def _fetch_items(cursor: Optional[str], limit: int) -> tuple:
+    """Fetch paginated items from data source.
+
+    Args:
+        cursor: Starting cursor position
+        limit: Maximum items to return
+
+    Returns:
+        tuple: (items list, next_cursor or None)
+    """
+    # {{FetchImplementation}} - Customize for your data source
+    return [], None

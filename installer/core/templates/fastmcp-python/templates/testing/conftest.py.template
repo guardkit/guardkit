@@ -1,0 +1,36 @@
+"""
+Test Configuration and Fixtures
+Shared pytest fixtures for {{ServerName}} tests.
+"""
+import pytest
+import pytest_asyncio
+from mcp import ClientSession
+from mcp.client.stdio import stdio_client
+
+
+@pytest_asyncio.fixture
+async def mcp_client():
+    """Create MCP client for testing.
+
+    Yields:
+        ClientSession: Connected MCP client session
+    """
+    async with stdio_client(
+        command=["python", "-m", "{{ProjectName}}"]
+    ) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            yield session
+
+
+@pytest.fixture
+def sample_tool_input():
+    """Sample input data for tool tests.
+
+    Returns:
+        dict: Sample input parameters
+    """
+    return {
+        "query": "test query",
+        "limit": "10"
+    }
