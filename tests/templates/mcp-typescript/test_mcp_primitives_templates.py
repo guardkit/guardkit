@@ -74,7 +74,8 @@ class TestToolTemplate:
 
     def test_tool_has_registration_helper(self, tool_template_content):
         """Tool template should include registration helper."""
-        assert "McpServer.registerTool" in tool_template_content or \
+        assert "server.registerTool" in tool_template_content or \
+               "McpServer.registerTool" in tool_template_content or \
                "server.setRequestHandler" in tool_template_content, \
             "No tool registration found"
 
