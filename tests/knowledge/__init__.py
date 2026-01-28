@@ -1,1 +1,1 @@
-"""Tests for guardkit.knowledge module."""
+# Tests for guardkit.knowledge module
