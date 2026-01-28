@@ -1,12 +1,17 @@
 ---
 id: TASK-MTS-006
 title: Create config templates (package.json, tsconfig, docker, claude-desktop)
-status: backlog
+status: in_review
 task_type: scaffolding
-created: 2026-01-24T16:45:00Z
-updated: 2026-01-24T16:45:00Z
+created: 2026-01-24 16:45:00+00:00
+updated: 2026-01-24 16:45:00+00:00
 priority: high
-tags: [template, mcp, typescript, config, docker]
+tags:
+- template
+- mcp
+- typescript
+- config
+- docker
 complexity: 4
 parent_review: TASK-REV-4371
 feature_id: FEAT-MTS
@@ -15,7 +20,22 @@ parallel_group: wave2
 implementation_mode: task-work
 conductor_workspace: mcp-ts-wave2-3
 dependencies:
-  - TASK-MTS-001  # manifest.json for placeholders
+- TASK-MTS-001
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4048
+  base_branch: main
+  started_at: '2026-01-28T18:50:27.051890'
+  last_updated: '2026-01-28T18:55:57.561676'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T18:50:27.051890'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create config templates

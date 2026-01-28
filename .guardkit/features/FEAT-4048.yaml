@@ -5,108 +5,177 @@ description: Production-ready mcp-typescript GuardKit template for building MCP 
   patterns including stderr logging, tool registration, streaming, Zod validation,
   and Docker deployment.
 created: '2026-01-24T14:47:51.985884'
-status: planned
+status: completed
 complexity: 5
 estimated_tasks: 11
-parent_review: TASK-REV-4371
 tasks:
 - id: TASK-MTS-001
   name: Create manifest.json
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-001-create-manifest-json.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: 'Create the manifest.json file for the mcp-typescript template following GuardKit template conventions.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 30
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:41:29.549763'
+  completed_at: '2026-01-28T18:50:24.895952'
 - id: TASK-MTS-002
   name: Create settings.json
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-002-create-settings-json.md
   complexity: 3
   dependencies: []
-  status: pending
-  description: 'Create the settings.json file for the mcp-typescript template defining naming conventions.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 30
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:41:29.554027'
+  completed_at: '2026-01-28T18:50:24.900012'
 - id: TASK-MTS-003
   name: Create mcp-typescript-specialist agent
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-003-create-mcp-typescript-specialist-agent.md
   complexity: 4
   dependencies: []
-  status: pending
-  description: 'Create the core MCP TypeScript specialist agent with ALWAYS/NEVER boundaries encoding the 10 critical production patterns.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:41:29.557866'
+  completed_at: '2026-01-28T18:50:24.903870'
 - id: TASK-MTS-004
   name: Create server/index.ts.template
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-004-create-server-index-template.md
   complexity: 4
   dependencies:
   - TASK-MTS-001
-  status: pending
-  description: 'Create the main server entry point template for MCP TypeScript projects.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:50:26.950218'
+  completed_at: '2026-01-28T19:14:01.221081'
 - id: TASK-MTS-005
   name: Create tools/tool.ts.template
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-005-create-tools-template.md
   complexity: 4
   dependencies:
   - TASK-MTS-001
-  status: pending
-  description: 'Create code templates for MCP primitives: tools, resources, and prompts.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:50:26.954637'
+  completed_at: '2026-01-28T19:14:01.225391'
 - id: TASK-MTS-006
   name: Create config templates
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-006-create-config-templates.md
   complexity: 4
   dependencies:
   - TASK-MTS-001
-  status: pending
-  description: 'Create configuration file templates including package.json, tsconfig.json, Claude Desktop config, Dockerfile, and docker-compose.yml.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:50:26.958828'
+  completed_at: '2026-01-28T19:14:01.229466'
 - id: TASK-MTS-007
   name: Create mcp-testing-specialist agent
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-007-create-testing-specialist-agent.md
   complexity: 4
   dependencies:
   - TASK-MTS-003
-  status: pending
-  description: 'Create a specialized agent for MCP server testing, covering unit tests (Vitest), protocol tests (JSON-RPC), and integration testing patterns.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-01-28T18:50:26.963056'
+  completed_at: '2026-01-28T19:14:01.233589'
 - id: TASK-MTS-008
   name: Create .claude/rules/ files
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-008-create-claude-rules.md
   complexity: 4
   dependencies:
   - TASK-MTS-003
-  status: pending
-  description: 'Create Claude Code rules files for the MCP TypeScript template with path-specific guidance.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T18:50:26.967052'
+  completed_at: '2026-01-28T19:14:01.237715'
 - id: TASK-MTS-009
   name: Create test templates
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-009-create-test-templates.md
   complexity: 3
   dependencies:
   - TASK-MTS-005
-  status: pending
-  description: 'Create test file templates including Vitest unit tests, protocol test scripts, and configuration.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T19:14:01.272336'
+  completed_at: '2026-01-28T19:23:33.135850'
 - id: TASK-MTS-010
   name: Create CLAUDE.md files
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-010-create-claude-md-files.md
   complexity: 3
   dependencies:
   - TASK-MTS-008
-  status: pending
-  description: 'Create the CLAUDE.md documentation files for the MCP TypeScript template.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T19:14:01.276992'
+  completed_at: '2026-01-28T19:23:33.140551'
 - id: TASK-MTS-011
   name: Validate template
   file_path: tasks/backlog/mcp-typescript-template/TASK-MTS-011-validate-template.md
@@ -122,10 +191,17 @@ tasks:
   - TASK-MTS-008
   - TASK-MTS-009
   - TASK-MTS-010
-  status: pending
-  description: 'Run comprehensive validation on the completed mcp-typescript template to ensure it meets GuardKit template standards.'
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 45
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-28T19:23:33.159191'
+  completed_at: '2026-01-28T19:33:53.162470'
 orchestration:
   parallel_groups:
   - - TASK-MTS-001
@@ -141,3 +217,19 @@ orchestration:
   - - TASK-MTS-011
   estimated_duration_minutes: 555
   recommended_parallel: 3
+execution:
+  started_at: '2026-01-28T18:41:29.540038'
+  completed_at: '2026-01-28T19:33:53.172405'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4048
+  total_turns: 12
+  tasks_completed: 11
+  tasks_failed: 0
+  current_wave: 4
+  completed_waves:
+  - 1
+  - 2
+  - 3
+  - 4
+  last_updated: '2026-01-28T19:33:53.167301'
+  archived_at: null
+  archived_to: null

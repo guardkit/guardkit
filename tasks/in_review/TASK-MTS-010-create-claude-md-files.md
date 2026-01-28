@@ -18,8 +18,40 @@ tags:
 - documentation
 task_type: documentation
 title: Create CLAUDE.md files
+status: in_review
+task_type: documentation
+created: 2026-01-24 16:45:00+00:00
 updated: 2026-01-24 16:45:00+00:00
+priority: medium
+tags:
+- template
+- mcp
+- typescript
+- documentation
+complexity: 3
+parent_review: TASK-REV-4371
+feature_id: FEAT-MTS
 wave: 4
+parallel_group: wave4
+implementation_mode: task-work
+conductor_workspace: null
+dependencies:
+- TASK-MTS-008
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4048
+  base_branch: main
+  started_at: '2026-01-28T19:14:01.287723'
+  last_updated: '2026-01-28T19:23:33.133932'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T19:14:01.287723'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create CLAUDE.md files

@@ -19,8 +19,49 @@ tags:
 - testing
 task_type: feature
 title: Create mcp-testing-specialist agent
-updated: 2026-01-28 19:15:00+00:00
+status: in_review
+task_type: feature
+created: 2026-01-24 16:45:00+00:00
+updated: 2026-01-24 16:45:00+00:00
+priority: medium
+tags:
+- template
+- mcp
+- typescript
+- agent
+- testing
+complexity: 4
+parent_review: TASK-REV-4371
+feature_id: FEAT-MTS
 wave: 3
+parallel_group: wave3
+implementation_mode: task-work
+conductor_workspace: mcp-ts-wave3-1
+dependencies:
+- TASK-MTS-003
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-4048
+  base_branch: main
+  started_at: '2026-01-28T18:50:27.074910'
+  last_updated: '2026-01-28T19:14:01.219021'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-01-28T18:50:27.074910'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T19:05:35.202382'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create mcp-testing-specialist agent
