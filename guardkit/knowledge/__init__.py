@@ -6,6 +6,7 @@ for AI systems. It enables GuardKit to maintain persistent memory of:
 - Product knowledge and domain concepts
 - Command workflows and patterns
 - Architecture decisions and rationale
+- Task outcomes and episodes (TASK-GI-005)
 
 All components are designed for graceful degradation - the system continues
 to function normally when Graphiti is unavailable.
@@ -22,6 +23,15 @@ Public API:
     load_critical_context: Load context at session/command start
     format_context_for_injection: Format context for prompt injection
     ContextFormatterConfig: Configuration for context formatting
+    ADRStatus: ADR lifecycle status enum (TASK-GI-004)
+    ADRTrigger: ADR trigger source enum (TASK-GI-004)
+    ADREntity: Architecture Decision Record entity (TASK-GI-004)
+    ADRService: Service for ADR CRUD operations (TASK-GI-004)
+    DecisionDetector: Detect significant decisions from Q&A (TASK-GI-004)
+    OutcomeType: Enum for outcome types (TASK-GI-005)
+    TaskOutcome: Dataclass for task outcomes (TASK-GI-005)
+    capture_task_outcome: Capture task outcomes (TASK-GI-005)
+    find_similar_task_outcomes: Search for similar outcomes (TASK-GI-005)
 
 Example:
     from guardkit.knowledge import (
@@ -50,6 +60,23 @@ Example:
 
     context = await load_critical_context(command="feature-build")
     context_text = format_context_for_injection(context)
+
+    # Episode capture (TASK-GI-005)
+    from guardkit.knowledge import (
+        OutcomeType,
+        TaskOutcome,
+        capture_task_outcome,
+        find_similar_task_outcomes,
+    )
+
+    outcome_id = await capture_task_outcome(
+        outcome_type=OutcomeType.TASK_COMPLETED,
+        task_id="TASK-1234",
+        task_title="Implement OAuth2",
+        task_requirements="Add OAuth2 authentication",
+        success=True,
+        summary="Successfully implemented"
+    )
 """
 
 from guardkit.knowledge.graphiti_client import (
@@ -99,6 +126,35 @@ from guardkit.knowledge.seeding import (
     seed_all_system_context,
 )
 
+from guardkit.knowledge.adr import (
+    ADRStatus,
+    ADRTrigger,
+    ADREntity,
+)
+
+from guardkit.knowledge.adr_service import (
+    ADRService,
+)
+
+from guardkit.knowledge.decision_detector import (
+    DecisionDetector,
+)
+
+from guardkit.knowledge.entities.outcome import (
+    OutcomeType,
+    TaskOutcome,
+)
+
+from guardkit.knowledge.outcome_manager import (
+    capture_task_outcome,
+    OutcomeManager,
+)
+
+from guardkit.knowledge.outcome_queries import (
+    find_similar_task_outcomes,
+    OutcomeQueries,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -136,4 +192,17 @@ __all__ = [
     "seed_rules",
     # Seeding - Orchestrator
     "seed_all_system_context",
+    # ADR Lifecycle (TASK-GI-004)
+    "ADRStatus",
+    "ADRTrigger",
+    "ADREntity",
+    "ADRService",
+    "DecisionDetector",
+    # Episode capture (TASK-GI-005)
+    "OutcomeType",
+    "TaskOutcome",
+    "capture_task_outcome",
+    "find_similar_task_outcomes",
+    "OutcomeManager",
+    "OutcomeQueries",
 ]

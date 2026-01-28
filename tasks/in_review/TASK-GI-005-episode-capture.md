@@ -1,24 +1,24 @@
 ---
-id: TASK-GI-005
-title: Episode Capture (Task Outcomes)
-status: backlog
-priority: 2
-task_type: feature
-created_at: 2026-01-24T00:00:00Z
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 4
-conductor_workspace: wave4-2
 complexity: 5
-estimated_minutes: 180
+conductor_workspace: wave4-2
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
+estimated_minutes: 180
+feature_id: FEAT-GI
+id: TASK-GI-005
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 2
+status: in_review
 tags:
-  - graphiti
-  - episode-capture
-  - learning
-  - high-priority
+- graphiti
+- episode-capture
+- learning
+- high-priority
+task_type: feature
+title: Episode Capture (Task Outcomes)
+wave: 4
 ---
 
 # TASK-GI-005: Episode Capture (Task Outcomes)

@@ -1,24 +1,24 @@
 ---
-id: TASK-GI-004
-title: ADR Lifecycle Management
-status: backlog
-priority: 2
-task_type: feature
-created_at: 2026-01-24T00:00:00Z
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 4
-conductor_workspace: wave4-1
 complexity: 6
-estimated_minutes: 240
+conductor_workspace: wave4-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
+estimated_minutes: 240
+feature_id: FEAT-GI
+id: TASK-GI-004
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 2
+status: design_approved
 tags:
-  - graphiti
-  - adr
-  - decision-capture
-  - high-priority
+- graphiti
+- adr
+- decision-capture
+- high-priority
+task_type: feature
+title: ADR Lifecycle Management
+wave: 4
 ---
 
 # TASK-GI-004: ADR Lifecycle Management
