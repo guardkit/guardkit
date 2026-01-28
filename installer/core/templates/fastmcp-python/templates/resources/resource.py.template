@@ -1,0 +1,22 @@
+"""
+{{ResourceName}} Resource
+{{ResourceDescription}}
+
+Uses @resource decorator pattern for MCP resource registration.
+"""
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+@mcp.resource(uri="{{ResourceUri}}")
+async def {{resource_name}}() -> str:
+    """{{ResourceDescription}}
+
+    Returns:
+        str: Resource content
+    """
+    logger.info("Fetching {{ResourceName}}")
+
+    # {{ResourceImplementation}}
+    return "Resource content"

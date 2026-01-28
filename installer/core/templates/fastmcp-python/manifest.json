@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "name": "fastmcp-python",
+  "display_name": "FastMCP Python Server",
+  "description": "Production-ready FastMCP template implementing 10 critical patterns for building MCP servers. Features tool registration, resource management, and async patterns based on Model Context Protocol best practices.",
+  "version": "1.0.0",
+  "author": "GuardKit",
+  "source": "https://modelcontextprotocol.io/",
+  "language": "Python",
+  "language_version": ">=3.10",
+  "frameworks": [
+    {
+      "name": "FastMCP",
+      "version": ">=2.0.0",
+      "purpose": "mcp_server"
+    },
+    {
+      "name": "mcp",
+      "version": ">=1.0.0",
+      "purpose": "protocol"
+    },
+    {
+      "name": "pytest",
+      "version": ">=7.4.0",
+      "purpose": "testing"
+    },
+    {
+      "name": "pytest-asyncio",
+      "version": ">=0.21.0",
+      "purpose": "async_testing"
+    }
+  ],
+  "architecture": "MCP Server Pattern",
+  "patterns": [
+    "Tool Registration in __main__.py",
+    "Logging to stderr",
+    "Streaming Two-Layer Architecture",
+    "String Parameter Conversion",
+    "Absolute Path Configuration",
+    "Protocol Testing",
+    "Docker Non-Root Deployment",
+    "Resource URI Patterns",
+    "Async Context Injection",
+    "Error Propagation Boundaries"
+  ],
+  "layers": [
+    "tools",
+    "resources",
+    "server"
+  ],
+  "placeholders": {
+    "ServerName": {
+      "name": "{{ServerName}}",
+      "description": "Name of the MCP server (used in package names and configurations)",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "example": "my-mcp-server"
+    },
+    "ToolName": {
+      "name": "{{ToolName}}",
+      "description": "Name of an MCP tool function",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "example": "fetch_data"
+    },
+    "ResourceName": {
+      "name": "{{ResourceName}}",
+      "description": "Name of an MCP resource",
+      "required": true,
+      "pattern": "^[a-z][a-z0-9_-]*$",
+      "example": "config-resource"
+    },
+    "Description": {
+      "name": "{{Description}}",
+      "description": "Short description of the server for documentation",
+      "required": false,
+      "default": "An MCP server implementation",
+      "example": "A server for fetching and processing data"
+    }
+  },
+  "tags": [
+    "python",
+    "mcp",
+    "fastmcp",
+    "claude-code",
+    "async"
+  ],
+  "category": "integration",
+  "complexity": 5,
+  "quality_scores": {
+    "solid_compliance": 85,
+    "dry_compliance": 85,
+    "yagni_compliance": 90,
+    "test_coverage": 85,
+    "documentation": 90
+  },
+  "created_at": "2025-01-28T00:00:00Z",
+  "updated_at": "2025-01-28T00:00:00Z",
+  "source_project": "https://modelcontextprotocol.io/",
+  "confidence_score": 90,
+  "production_ready": true,
+  "learning_resource": true,
+  "reference_implementation": true
+}

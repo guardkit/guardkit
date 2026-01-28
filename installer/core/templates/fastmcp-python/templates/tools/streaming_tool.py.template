@@ -1,0 +1,62 @@
+"""
+Streaming Tool Template
+Demonstrates the two-layer streaming pattern for FastMCP.
+"""
+import asyncio
+import logging
+from typing import AsyncGenerator
+
+logger = logging.getLogger(__name__)
+
+
+# LAYER 1: Implementation layer (pure AsyncGenerator)
+async def _stream_implementation(
+    query: str,
+    chunk_size: int = 100
+) -> AsyncGenerator[dict, None]:
+    """Implementation layer - pure async generator.
+
+    This layer handles the actual streaming logic and can be tested
+    independently from FastMCP.
+
+    Args:
+        query: Query to process
+        chunk_size: Size of each chunk
+
+    Yields:
+        dict: Chunk of results
+    """
+    try:
+        for i in range(3):  # Example: yield 3 chunks
+            await asyncio.sleep(0.1)  # Simulate work
+            yield {
+                "chunk": i,
+                "data": f"Result {i} for {query}",
+                "size": chunk_size
+            }
+    except asyncio.CancelledError:
+        logger.warning("Stream cancelled by client")
+        raise
+    finally:
+        # CRITICAL: Cleanup resources in finally block
+        logger.info("Stream cleanup completed")
+
+
+# LAYER 2: FastMCP wrapper layer
+@mcp.tool()
+async def stream_results(query: str) -> AsyncGenerator[dict, None]:
+    """Stream results for a query.
+
+    This wrapper layer connects the implementation to FastMCP
+    and handles MCP-specific concerns.
+
+    Args:
+        query: Search query
+
+    Yields:
+        dict: Streamed result chunks
+    """
+    logger.info(f"Starting stream for: {query}")
+
+    async for chunk in _stream_implementation(query):
+        yield chunk

@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-FMT-005",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "93741a997015222b42b8fbd58d911092d2768c40",
+      "timestamp": "2026-01-28T07:27:20.834250",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "c54af437e4867953c4553ea1409d78e304ed14e4",
+      "timestamp": "2026-01-28T07:28:23.316966",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-28T07:28:23.317117"
+}
