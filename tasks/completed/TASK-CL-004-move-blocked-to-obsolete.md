@@ -1,7 +1,7 @@
 ---
 id: TASK-CL-004
 title: Move permanently blocked tasks to obsolete
-status: backlog
+status: completed
 created: 2026-01-26T14:45:00Z
 updated: 2026-01-26T14:45:00Z
 priority: low
@@ -36,9 +36,9 @@ git mv tasks/blocked/TASK-EXT-C7C1-create-extended-files-pwa-openai.md tasks/obs
 
 ## Acceptance Criteria
 
-- [ ] Both tasks moved to tasks/obsolete/
-- [ ] Git history preserved via `git mv`
-- [ ] tasks/blocked/ is empty
+- [x] Both tasks moved to tasks/obsolete/
+- [x] Git history preserved via `git mv`
+- [x] tasks/blocked/ is empty
 
 ## Notes
 
