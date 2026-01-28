@@ -74,3 +74,26 @@ def reset_graphiti_singleton():
 
     # Reset after test (don't restore mock objects)
     graphiti_client._graphiti = None
+
+
+@pytest.fixture(autouse=True)
+def clear_seeding_markers():
+    """Clear seeding markers before and after each test.
+
+    This fixture runs automatically to prevent test pollution from
+    marker files created during testing.
+    """
+    from pathlib import Path
+
+    def clear_marker():
+        marker_path = Path.cwd() / ".guardkit" / "seeding" / ".graphiti_seeded.json"
+        if marker_path.exists():
+            marker_path.unlink()
+
+    # Clear before test
+    clear_marker()
+
+    yield
+
+    # Clear after test
+    clear_marker()

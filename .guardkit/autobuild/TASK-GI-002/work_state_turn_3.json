@@ -1,0 +1,55 @@
+{
+  "turn_number": 3,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-GI-002/checkpoints.json",
+    ".guardkit/autobuild/TASK-GI-002/task_work_results.json",
+    ".guardkit/autobuild/TASK-GI-002/turn_context.json",
+    "guardkit/knowledge/__init__.py",
+    "tests/knowledge/conftest.py"
+  ],
+  "files_created": [
+    "guardkit/knowledge/seeding.py",
+    "tasks/in_progress/TASK-GI-002-system-context-seeding.md",
+    "tests/knowledge/test_seeding.py"
+  ],
+  "tests_written": [
+    "tests/knowledge/test_seeding.py",
+    "tests/knowledge/conftest.py"
+  ],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-01-28T22:09:28.823124",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [
+      ".guardkit/autobuild/TASK-GI-002/checkpoints.json",
+      ".guardkit/autobuild/TASK-GI-002/task_work_results.json",
+      ".guardkit/autobuild/TASK-GI-002/turn_context.json",
+      "guardkit/knowledge/__init__.py",
+      "tests/knowledge/conftest.py"
+    ],
+    "files_added": [
+      "guardkit/knowledge/seeding.py",
+      "tasks/in_progress/TASK-GI-002-system-context-seeding.md",
+      "tests/knowledge/test_seeding.py"
+    ],
+    "files_deleted": [
+      "tasks/design_approved/TASK-GI-002-system-context-seeding.md"
+    ],
+    "diff_stats": ".guardkit/autobuild/TASK-GI-002/checkpoints.json   |  10 +-\n .../autobuild/TASK-GI-002/task_work_results.json   |  22 +-\n .guardkit/autobuild/TASK-GI-002/turn_context.json  |   4 +-\n guardkit/knowledge/__init__.py                     |  45 ++++\n .../TASK-GI-002-system-context-seeding.md          | 253 ---------------------\n tests/knowledge/conftest.py                        |  23 ++\n 6 files changed, 99 insertions(+), 258 deletions(-)",
+    "insertions": 99,
+    "deletions": 258,
+    "timestamp": "2026-01-28T22:09:25.979934"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI\nconfigfile: pytest.ini\ntestpaths: tests\nplugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 6629 items / 2 errors\n\n==================",
+    "timestamp": "2026-01-28T22:09:28.822746",
+    "error": null
+  },
+  "player_report_available": false
+}

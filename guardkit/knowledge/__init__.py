@@ -52,6 +52,30 @@ from guardkit.knowledge.config import (
     get_config_path,
 )
 
+from guardkit.knowledge.seeding import (
+    # Marker management
+    is_seeded,
+    mark_seeded,
+    clear_seeding_marker,
+    get_state_dir,
+    # Individual seeding functions
+    seed_product_knowledge,
+    seed_command_workflows,
+    seed_quality_gate_phases,
+    seed_technology_stack,
+    seed_feature_build_architecture,
+    seed_architecture_decisions,
+    seed_failure_patterns,
+    seed_component_status,
+    seed_integration_points,
+    seed_templates,
+    seed_agents,
+    seed_patterns,
+    seed_rules,
+    # Orchestrator
+    seed_all_system_context,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -63,4 +87,25 @@ __all__ = [
     "GraphitiSettings",
     "load_graphiti_config",
     "get_config_path",
+    # Seeding - Marker management
+    "is_seeded",
+    "mark_seeded",
+    "clear_seeding_marker",
+    "get_state_dir",
+    # Seeding - Individual functions
+    "seed_product_knowledge",
+    "seed_command_workflows",
+    "seed_quality_gate_phases",
+    "seed_technology_stack",
+    "seed_feature_build_architecture",
+    "seed_architecture_decisions",
+    "seed_failure_patterns",
+    "seed_component_status",
+    "seed_integration_points",
+    "seed_templates",
+    "seed_agents",
+    "seed_patterns",
+    "seed_rules",
+    # Seeding - Orchestrator
+    "seed_all_system_context",
 ]
