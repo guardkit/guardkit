@@ -1,25 +1,25 @@
 ---
-id: TASK-GI-006
-title: Template/Agent Sync to Graphiti
-status: backlog
-priority: 3
-task_type: feature
-created_at: 2026-01-24T00:00:00Z
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 5
-conductor_workspace: wave5-1
 complexity: 4
-estimated_minutes: 120
+conductor_workspace: wave5-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
+estimated_minutes: 120
+feature_id: FEAT-GI
+id: TASK-GI-006
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 3
+status: design_approved
 tags:
-  - graphiti
-  - templates
-  - agents
-  - sync
-  - medium-priority
+- graphiti
+- templates
+- agents
+- sync
+- medium-priority
+task_type: feature
+title: Template/Agent Sync to Graphiti
+wave: 5
 ---
 
 # TASK-GI-006: Template/Agent Sync to Graphiti
