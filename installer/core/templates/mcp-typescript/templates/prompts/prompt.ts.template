@@ -1,0 +1,129 @@
+/**
+ * {{PromptName}} - MCP Prompt
+ * {{Description}}
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import * as z from 'zod';
+import { completable } from '@modelcontextprotocol/sdk/server/completable.js';
+
+// Prompt arguments schema
+export const {{promptName}}ArgsSchema = z.object({
+    {{argName}}: z.string().describe('{{ArgDescription}}')
+});
+
+// Prompt registration
+export function register{{PromptName}}(server: McpServer) {
+    server.registerPrompt(
+        '{{prompt-name}}',
+        {
+            title: '{{PromptTitle}}',
+            description: '{{Description}}',
+            argsSchema: {
+                {{argName}}: z.string().describe('{{ArgDescription}}')
+            }
+        },
+        ({ {{argName}} }) => {
+            try {
+                if (!{{argName}}) {
+                    throw new Error('Argument {{argName}} is required');
+                }
+                return {
+                    messages: [{
+                        role: 'user',
+                        content: {
+                            type: 'text',
+                            text: `{{PromptTemplate}}\n\n${{{argName}}}`
+                        }
+                    }]
+                };
+            } catch (error) {
+                throw new Error(`Prompt generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}
+
+// Prompt with argument completion support
+export function register{{PromptName}}WithCompletion(server: McpServer) {
+    server.registerPrompt(
+        '{{prompt-name}}',
+        {
+            title: '{{PromptTitle}}',
+            description: '{{Description}}',
+            argsSchema: {
+                {{argName}}: completable(
+                    z.string().describe('{{ArgDescription}}'),
+                    (value) => {
+                        // Return completion suggestions based on input value
+                        try {
+                            return ['option1', 'option2'].filter(o => o.startsWith(value));
+                        } catch (error) {
+                            return [];
+                        }
+                    }
+                )
+            }
+        },
+        ({ {{argName}} }) => {
+            try {
+                return {
+                    messages: [{
+                        role: 'user',
+                        content: { type: 'text', text: `Process: ${{{argName}}}` }
+                    }]
+                };
+            } catch (error) {
+                throw new Error(`Prompt generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}
+
+// Multi-message prompt example
+export function register{{PromptName}}Multi(server: McpServer) {
+    server.registerPrompt(
+        '{{prompt-name}}-multi',
+        {
+            title: '{{PromptTitle}} (Multi-turn)',
+            description: '{{Description}} - Multi-message format',
+            argsSchema: {
+                {{argName}}: z.string().describe('{{ArgDescription}}'),
+                context: z.string().optional().describe('Additional context')
+            }
+        },
+        ({ {{argName}}, context }) => {
+            try {
+                const messages = [{
+                    role: 'user' as const,
+                    content: {
+                        type: 'text' as const,
+                        text: `{{PromptTemplate}}`
+                    }
+                }];
+
+                if (context) {
+                    messages.push({
+                        role: 'user' as const,
+                        content: {
+                            type: 'text' as const,
+                            text: `Context: ${context}`
+                        }
+                    });
+                }
+
+                messages.push({
+                    role: 'user' as const,
+                    content: {
+                        type: 'text' as const,
+                        text: `Input: ${{{argName}}}`
+                    }
+                });
+
+                return { messages };
+            } catch (error) {
+                throw new Error(`Prompt generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}

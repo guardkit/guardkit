@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  {{ServerName}}:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: {{ServerName}}
+    stdin_open: true
+    tty: true
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped

@@ -1,0 +1,96 @@
+/**
+ * {{ResourceName}} - MCP Resource
+ * {{Description}}
+ */
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+
+// Resource URI patterns
+export const {{resourceName}}Uri = '{{protocol}}://{{path}}';
+export const {{resourceName}}UriTemplate = '{{protocol}}://{id}/{{path}}';
+
+// Static resource registration
+export function registerStatic{{ResourceName}}(server: McpServer) {
+    server.registerResource(
+        '{{resource-name}}',
+        '{{protocol}}://{{path}}',
+        {
+            title: '{{ResourceTitle}}',
+            description: '{{Description}}',
+            mimeType: 'application/json'
+        },
+        async (uri) => {
+            try {
+                return {
+                    contents: [{
+                        uri: uri.href,
+                        mimeType: 'application/json',
+                        text: JSON.stringify({
+                            // Resource data here
+                        })
+                    }]
+                };
+            } catch (error) {
+                throw new Error(`Failed to read resource: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}
+
+// Dynamic resource with URI template (uriTemplate pattern)
+export function registerDynamic{{ResourceName}}(server: McpServer) {
+    server.registerResource(
+        '{{resource-name}}',
+        new ResourceTemplate('{{protocol}}://{id}/{{path}}', {
+            list: undefined
+        }),
+        {
+            title: '{{ResourceTitle}}',
+            description: '{{Description}}',
+            mimeType: 'application/json'
+        },
+        async (uri, { id }) => {
+            try {
+                if (!id) {
+                    throw new Error('Resource ID is required');
+                }
+                return {
+                    contents: [{
+                        uri: uri.href,
+                        mimeType: 'application/json',
+                        text: JSON.stringify({ id, data: '...' })
+                    }]
+                };
+            } catch (error) {
+                throw new Error(`Failed to read resource: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}
+
+// Resource with text/plain content type
+export function registerText{{ResourceName}}(server: McpServer) {
+    server.registerResource(
+        '{{resource-name}}-text',
+        '{{protocol}}://{{path}}/text',
+        {
+            title: '{{ResourceTitle}} (Text)',
+            description: '{{Description}} - Plain text format',
+            mimeType: 'text/plain'
+        },
+        async (uri) => {
+            try {
+                return {
+                    contents: [{
+                        uri: uri.href,
+                        mimeType: 'text/plain',
+                        text: 'Resource content as plain text'
+                    }]
+                };
+            } catch (error) {
+                throw new Error(`Failed to read resource: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        }
+    );
+}

@@ -1,0 +1,15 @@
+/**
+ * Vitest setup file
+ */
+
+import { vi } from 'vitest';
+
+// Mock console.log to catch accidental usage
+// (console.log breaks MCP protocol!)
+const originalLog = console.log;
+console.log = (...args: any[]) => {
+    console.error('WARNING: console.log detected! Use console.error for MCP servers.');
+    originalLog(...args);
+};
+
+// Add any global test setup here

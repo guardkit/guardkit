@@ -1,0 +1,43 @@
+/**
+ * Tests for {{ToolName}}
+ */
+
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { {{toolName}}Impl, {{toolName}}Schema } from '../src/tools/{{tool-name}}.js';
+
+describe('{{ToolName}}', () => {
+    describe('{{toolName}}Impl', () => {
+        it('should process valid input', async () => {
+            const result = await {{toolName}}Impl({
+                {{paramName}}: 'test-value'
+            });
+
+            expect(result).toBeDefined();
+            expect(result.result).toContain('test-value');
+        });
+
+        it('should handle empty input', async () => {
+            const result = await {{toolName}}Impl({
+                {{paramName}}: ''
+            });
+
+            expect(result).toBeDefined();
+        });
+
+        // Add more test cases for your specific tool
+    });
+
+    describe('schema validation', () => {
+        it('should validate correct input', () => {
+            const input = { {{paramName}}: 'valid-string' };
+            const parsed = {{toolName}}Schema.{{paramName}}.parse(input.{{paramName}});
+            expect(parsed).toBe('valid-string');
+        });
+
+        it('should reject invalid input', () => {
+            expect(() => {
+                {{toolName}}Schema.{{paramName}}.parse(123);
+            }).toThrow();
+        });
+    });
+});
