@@ -5,16 +5,17 @@ Tests ADRService for creating, searching, superseding, and deprecating ADRs.
 Tests include Graphiti integration, graceful degradation, and ID generation.
 
 Coverage Target: >=85%
-Test Count: 20+ tests
+Test Count: 30+ tests
 
-This is a TDD RED phase test file - all tests will FAIL until implementation.
+This is a TDD GREEN phase test file - adding tests to improve coverage to >80%.
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
+import json
 
-# EXPECTED TO FAIL - modules don't exist yet (TDD RED phase)
+# EXPECTED TO PASS - modules now exist (TDD GREEN phase)
 from guardkit.knowledge.adr import ADRStatus, ADRTrigger, ADREntity
 from guardkit.knowledge.adr_service import ADRService
 from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
@@ -338,7 +339,7 @@ async def test_get_adr_graceful_degradation(adr_service, mock_graphiti_client):
 
 
 # ============================================================================
-# 5. Supersede ADR Tests (4 tests)
+# 5. Supersede ADR Tests (5 tests - added 1 for coverage)
 # ============================================================================
 
 
@@ -396,6 +397,18 @@ async def test_supersede_adr_calls_create(adr_service, mock_graphiti_client):
 
 
 @pytest.mark.asyncio
+async def test_supersede_adr_old_adr_not_found(adr_service, mock_graphiti_client):
+    """Test supersede_adr when old ADR is not found."""
+    with patch.object(adr_service, 'get_adr', return_value=None):
+        new_adr = ADREntity(id="ADR-0002", title="Use PostgreSQL")
+
+        result = await adr_service.supersede_adr("ADR-9999", new_adr)
+
+        # Should return None when old ADR not found
+        assert result is None
+
+
+@pytest.mark.asyncio
 async def test_supersede_adr_graceful_degradation(adr_service, mock_graphiti_client):
     """Test supersede_adr handles failure gracefully."""
     with patch.object(adr_service, 'get_adr', side_effect=Exception("Connection failed")):
@@ -408,7 +421,7 @@ async def test_supersede_adr_graceful_degradation(adr_service, mock_graphiti_cli
 
 
 # ============================================================================
-# 6. Deprecate ADR Tests (2 tests)
+# 6. Deprecate ADR Tests (3 tests - added 1 for coverage)
 # ============================================================================
 
 
@@ -426,6 +439,16 @@ async def test_deprecate_adr_sets_status(adr_service, mock_graphiti_client):
 
 
 @pytest.mark.asyncio
+async def test_deprecate_adr_not_found(adr_service, mock_graphiti_client):
+    """Test deprecate_adr when ADR is not found."""
+    with patch.object(adr_service, 'get_adr', return_value=None):
+        result = await adr_service.deprecate_adr("ADR-9999")
+
+        # Should return None when ADR not found
+        assert result is None
+
+
+@pytest.mark.asyncio
 async def test_deprecate_adr_graceful_degradation(adr_service, mock_graphiti_client):
     """Test deprecate_adr handles failure gracefully."""
     with patch.object(adr_service, 'get_adr', side_effect=Exception("Connection failed")):
@@ -436,7 +459,7 @@ async def test_deprecate_adr_graceful_degradation(adr_service, mock_graphiti_cli
 
 
 # ============================================================================
-# 7. record_decision() Convenience Function Tests (6 tests)
+# 7. record_decision() Convenience Function Tests (7 tests - added 1)
 # ============================================================================
 
 
@@ -504,6 +527,24 @@ async def test_record_decision_implementation_trigger(adr_service, mock_graphiti
 
 
 @pytest.mark.asyncio
+async def test_record_decision_when_graphiti_disabled(sample_adr):
+    """Test record_decision when Graphiti is disabled."""
+    disabled_client = MagicMock(spec=GraphitiClient)
+    disabled_client.enabled = False
+    disabled_client.config = GraphitiConfig(enabled=False)
+
+    service = ADRService(disabled_client)
+    adr_id = await service.record_decision(
+        question="Which framework?",
+        answer="FastAPI because of async support",
+        trigger=ADRTrigger.MANUAL
+    )
+
+    # Should return None when disabled
+    assert adr_id is None
+
+
+@pytest.mark.asyncio
 async def test_record_decision_graceful_degradation(adr_service, mock_graphiti_client):
     """Test record_decision handles Graphiti failure gracefully."""
     mock_graphiti_client.add_episode.side_effect = Exception("Connection failed")
@@ -533,3 +574,117 @@ async def test_record_decision_custom_threshold(mock_graphiti_client):
     # Medium significance should be skipped with high threshold
     assert adr_id is None
     mock_graphiti_client.add_episode.assert_not_called()
+
+
+# ============================================================================
+# 8. ID Generation Tests (2 tests for coverage)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_get_next_adr_id_exception_fallback(adr_service, monkeypatch, tmp_path):
+    """Test _get_next_adr_id falls back to timestamp when counter file fails."""
+    # Patch counter file to raise exception on write
+    bad_counter_file = tmp_path / "bad" / "counter.json"
+    monkeypatch.setattr(adr_service, '_counter_file', bad_counter_file)
+
+    # Make parent directory read-only to trigger exception
+    bad_counter_file.parent.mkdir(parents=True, exist_ok=True)
+    import os
+    os.chmod(bad_counter_file.parent, 0o444)
+
+    try:
+        adr = ADREntity(id="", title="Test")
+        adr_id = await adr_service.create_adr(adr)
+
+        # Should generate fallback ID in ADR-XXXX format
+        assert adr_id.startswith("ADR-")
+        assert len(adr_id) == 8
+    finally:
+        # Restore permissions for cleanup
+        os.chmod(bad_counter_file.parent, 0o755)
+
+
+# ============================================================================
+# 9. Parse ADR Tests (4 tests for coverage)
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_parse_adr_invalid_status_string(adr_service, mock_graphiti_client):
+    """Test _parse_adr handles invalid status string values."""
+    mock_graphiti_client.search.return_value = [
+        {
+            "id": "ADR-0001",
+            "title": "Test",
+            "status": "invalid_status",  # Invalid enum value
+            "trigger": "manual"
+        }
+    ]
+
+    results = await adr_service.search_adrs("test")
+
+    # Should default to ACCEPTED for invalid status
+    assert len(results) == 1
+    assert results[0].status == ADRStatus.ACCEPTED
+
+
+@pytest.mark.asyncio
+async def test_parse_adr_non_string_status(adr_service, mock_graphiti_client):
+    """Test _parse_adr handles non-string status values."""
+    mock_graphiti_client.search.return_value = [
+        {
+            "id": "ADR-0001",
+            "title": "Test",
+            "status": 123,  # Non-string value
+            "trigger": "manual"
+        }
+    ]
+
+    results = await adr_service.search_adrs("test")
+
+    # Should default to ACCEPTED for non-string status
+    assert len(results) == 1
+    assert results[0].status == ADRStatus.ACCEPTED
+
+
+@pytest.mark.asyncio
+async def test_parse_adr_invalid_trigger_string(adr_service, mock_graphiti_client):
+    """Test _parse_adr handles invalid trigger string values."""
+    mock_graphiti_client.search.return_value = [
+        {
+            "id": "ADR-0001",
+            "title": "Test",
+            "status": "accepted",
+            "trigger": "invalid_trigger"  # Invalid enum value
+        }
+    ]
+
+    results = await adr_service.search_adrs("test")
+
+    # Should default to MANUAL for invalid trigger
+    assert len(results) == 1
+    assert results[0].trigger == ADRTrigger.MANUAL
+
+
+@pytest.mark.asyncio
+async def test_parse_adr_datetime_parsing(adr_service, mock_graphiti_client):
+    """Test _parse_adr handles datetime string parsing."""
+    mock_graphiti_client.search.return_value = [
+        {
+            "id": "ADR-0001",
+            "title": "Test",
+            "status": "accepted",
+            "trigger": "manual",
+            "created_at": "2024-01-15T10:30:00"  # ISO format string
+        }
+    ]
+
+    results = await adr_service.search_adrs("test")
+
+    # Should parse datetime string correctly
+    assert len(results) == 1
+    assert isinstance(results[0].created_at, datetime)
+    assert results[0].created_at.year == 2024
+    assert results[0].created_at.month == 1
+    assert results[0].created_at.day == 15

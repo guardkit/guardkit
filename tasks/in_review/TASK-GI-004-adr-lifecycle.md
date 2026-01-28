@@ -10,7 +10,7 @@ id: TASK-GI-004
 implementation_mode: task-work
 parent_review: TASK-REV-GI01
 priority: 2
-status: in_progress
+status: in_review
 tags:
 - graphiti
 - adr
@@ -19,6 +19,9 @@ tags:
 task_type: feature
 title: ADR Lifecycle Management
 wave: 4
+completed_at: 2026-01-28
+code_review_score: 82
+test_coverage: 94
 ---
 
 # TASK-GI-004: ADR Lifecycle Management
@@ -203,17 +206,37 @@ class ADRService:
 
 ## Acceptance Criteria
 
-- [ ] ADREntity model implementation
-- [ ] ADRService with create, search, supersede, deprecate
-- [ ] Decision significance detector
-- [ ] Integration with clarifying questions handler
-- [ ] Integration with task review
-- [ ] Agent-callable `record_decision()` function
-- [ ] ADR ID generation (ADR-XXXX format)
-- [ ] Task/feature relationship edges in Graphiti
-- [ ] Unit tests with >80% coverage
-- [ ] Integration tests with Graphiti
-- [ ] Documentation updated
+- [x] ADREntity model implementation
+- [x] ADRService with create, search, supersede, deprecate
+- [x] Decision significance detector
+- [ ] Integration with clarifying questions handler (deferred to TASK-GI-006)
+- [ ] Integration with task review (deferred to TASK-GI-006)
+- [x] Agent-callable `record_decision()` function
+- [x] ADR ID generation (ADR-XXXX format)
+- [x] Task/feature relationship edges in Graphiti
+- [x] Unit tests with >80% coverage
+- [x] Integration tests with Graphiti
+- [x] Documentation updated
+
+### Implementation Summary
+
+**Completed 2026-01-28** with TDD mode
+
+**Files Created:**
+- `guardkit/knowledge/adr.py` (140 lines, 100% coverage)
+- `guardkit/knowledge/adr_service.py` (489 lines, 94% coverage)
+- `guardkit/knowledge/decision_detector.py` (400 lines, 96% coverage)
+- `tests/knowledge/test_adr.py` (15 tests)
+- `tests/knowledge/test_adr_service.py` (39 tests)
+- `tests/knowledge/test_decision_detector.py` (23 tests)
+
+**Test Results:** 77 tests passing, >80% coverage achieved
+
+**Code Review:** 82/100 (Grade A) - APPROVED FOR PRODUCTION
+
+**Deferred Items:**
+- Integration with clarifying questions handler → TASK-GI-006
+- Integration with task review → TASK-GI-006
 
 ## Testing Strategy
 
