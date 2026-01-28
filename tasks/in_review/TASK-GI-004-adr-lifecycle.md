@@ -1,4 +1,6 @@
 ---
+code_review_score: 82
+completed_at: 2026-01-28
 complexity: 6
 conductor_workspace: wave4-1
 created_at: 2026-01-24 00:00:00+00:00
@@ -17,11 +19,9 @@ tags:
 - decision-capture
 - high-priority
 task_type: feature
+test_coverage: 94
 title: ADR Lifecycle Management
 wave: 4
-completed_at: 2026-01-28
-code_review_score: 82
-test_coverage: 94
 ---
 
 # TASK-GI-004: ADR Lifecycle Management
