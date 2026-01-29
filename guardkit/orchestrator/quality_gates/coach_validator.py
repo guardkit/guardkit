@@ -41,6 +41,14 @@ from typing import Any, Dict, List, Literal, Optional
 from guardkit.orchestrator.paths import TaskArtifactPaths
 from guardkit.models.task_types import TaskType, QualityGateProfile, get_profile
 
+# Optional Graphiti integration for quality gate config queries
+try:
+    from guardkit.knowledge.quality_gate_queries import get_quality_gate_config
+    GRAPHITI_AVAILABLE = True
+except ImportError:
+    GRAPHITI_AVAILABLE = False
+    get_quality_gate_config = None
+
 logger = logging.getLogger(__name__)
 
 # Task type aliases for backward compatibility with legacy task_type values
@@ -272,6 +280,62 @@ class CoachValidator:
     # Default profile for backward compatibility
     DEFAULT_PROFILE = get_profile(TaskType.FEATURE)
 
+    @staticmethod
+    async def get_graphiti_thresholds(
+        task_type: str,
+        complexity: int
+    ) -> Optional[QualityGateProfile]:
+        """
+        Get quality gate thresholds from Graphiti knowledge graph.
+
+        Queries Graphiti for task-type and complexity-based thresholds.
+        Falls back to None if Graphiti is unavailable or no config found.
+
+        Parameters
+        ----------
+        task_type : str
+            Task type (e.g., "feature", "scaffolding", "testing", "docs")
+        complexity : int
+            Task complexity level (1-10)
+
+        Returns
+        -------
+        Optional[QualityGateProfile]
+            Profile from Graphiti config, or None if not available
+        """
+        if not GRAPHITI_AVAILABLE or get_quality_gate_config is None:
+            logger.debug("Graphiti not available for threshold lookup")
+            return None
+
+        try:
+            config = await get_quality_gate_config(task_type, complexity)
+
+            if config is None:
+                logger.debug(f"No Graphiti config found for {task_type} complexity {complexity}")
+                return None
+
+            # Convert QualityGateConfigFact to QualityGateProfile
+            profile = QualityGateProfile(
+                tests_required=config.test_pass_required,
+                coverage_required=config.coverage_required,
+                arch_review_required=config.arch_review_required,
+                plan_audit_required=True,  # Always required in current design
+                arch_review_threshold=config.arch_review_threshold or 60,
+                coverage_threshold=config.coverage_threshold or 80.0,
+            )
+
+            logger.info(
+                f"Loaded Graphiti threshold config: {config.id} "
+                f"(arch_threshold={config.arch_review_threshold}, "
+                f"coverage_threshold={config.coverage_threshold})"
+            )
+
+            return profile
+
+        except Exception as e:
+            logger.warning(f"Error querying Graphiti thresholds: {e}")
+            return None
+
     def __init__(
         self,
         worktree_path: str,
@@ -353,6 +417,61 @@ class CoachValidator:
                 f"Must be one of: {', '.join(t.value for t in TaskType)} "
                 f"or valid alias: {', '.join(TASK_TYPE_ALIASES.keys())}"
             ) from None
+
+    async def validate_with_graphiti_thresholds(
+        self,
+        task_id: str,
+        turn: int,
+        task: Dict[str, Any],
+        skip_arch_review: bool = False,
+    ) -> CoachValidationResult:
+        """
+        Async validation entry point that uses Graphiti-configured thresholds.
+
+        This method attempts to load quality gate thresholds from Graphiti
+        based on task type and complexity. Falls back to default profile
+        if Graphiti is unavailable.
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier (e.g., "TASK-001")
+        turn : int
+            Current turn number (1-based)
+        task : Dict[str, Any]
+            Task data including acceptance_criteria and optional complexity
+        skip_arch_review : bool
+            If True, skip architectural review gate regardless of profile setting.
+
+        Returns
+        -------
+        CoachValidationResult
+            Complete validation result with decision
+        """
+        # Extract task type and complexity for Graphiti lookup
+        task_type_str = task.get("task_type", "feature")
+        complexity = task.get("complexity", 5)  # Default to medium complexity
+
+        # Try to get thresholds from Graphiti
+        graphiti_profile = await self.get_graphiti_thresholds(task_type_str, complexity)
+
+        if graphiti_profile:
+            logger.info(
+                f"Using Graphiti thresholds for {task_id}: "
+                f"arch_threshold={graphiti_profile.arch_review_threshold}, "
+                f"coverage_threshold={graphiti_profile.coverage_threshold}"
+            )
+        else:
+            logger.debug(f"Graphiti thresholds not available, using default profile")
+
+        # Run validation with resolved profile
+        return self._validate_internal(
+            task_id=task_id,
+            turn=turn,
+            task=task,
+            skip_arch_review=skip_arch_review,
+            graphiti_profile=graphiti_profile,
+        )
 
     def validate(
         self,
