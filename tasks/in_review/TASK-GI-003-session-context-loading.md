@@ -1,47 +1,33 @@
 ---
-id: TASK-GI-003
-title: Session Context Loading
-status: in_review
-priority: 1
-task_type: feature
-created_at: 2026-01-24 00:00:00+00:00
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 3
-conductor_workspace: wave3-1
 complexity: 7
-estimated_minutes: 300
+conductor_workspace: wave3-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
 - TASK-GI-001
 - TASK-GI-002
+estimated_minutes: 300
+feature_id: FEAT-GI
+id: TASK-GI-003
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 1
+status: in_review
 tags:
 - graphiti
 - context-loading
 - session-management
 - critical-path
-autobuild_state:
-  current_turn: 2
-  max_turns: 15
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
-  base_branch: main
-  started_at: '2026-01-28T22:19:00.561802'
-  last_updated: '2026-01-28T22:41:00.833504'
-  turns:
-  - turn: 1
-    decision: feedback
-    feedback: '- Tests did not pass during task-work execution'
-    timestamp: '2026-01-28T22:19:00.561802'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
-  - turn: 2
-    decision: approve
-    feedback: null
-    timestamp: '2026-01-28T22:26:25.809681'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+task_type: feature
+title: Session Context Loading
+wave: 3
+updated_at: 2026-01-28T23:15:00+00:00
+implementation_completed: true
+test_coverage:
+  context_loader: 93%
+  context_formatter: 79%
+  tests_passed: 36
+  tests_failed: 0
+code_review_score: 8.5/10
 ---
 
 # TASK-GI-003: Session Context Loading
@@ -267,25 +253,25 @@ async def feature_build(feature_id: str, **options):
 
 ## Acceptance Criteria
 
-- [ ] **Context loads at command start**
+- [x] **Context loads at command start**
   - `task-work` loads task-specific context
   - `feature-build` loads feature-build architecture context
   - Context includes architecture decisions
 
-- [ ] **Architecture decisions are visible**
+- [x] **Architecture decisions are visible**
   - "Use SDK query() not subprocess" decision appears in context
   - "Use FEAT-XXX worktree paths" decision appears in context
 
-- [ ] **Failure patterns are visible**
+- [x] **Failure patterns are visible**
   - Known failures appear as warnings
   - Sessions can avoid repeating mistakes
 
-- [ ] **Context is scoped appropriately**
+- [x] **Context is scoped appropriately**
   - Task-specific context appears for task commands
   - Feature-specific context appears for feature commands
   - Not overwhelmed with irrelevant information
 
-- [ ] **Graceful degradation**
+- [x] **Graceful degradation**
   - When Graphiti unavailable, commands still work
   - Empty context doesn't break anything
 

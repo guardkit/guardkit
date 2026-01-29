@@ -1,0 +1,39 @@
+{
+  "task_id": "TASK-GI-005",
+  "turn": 1,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-GI-003/checkpoints.json",
+    "guardkit/knowledge/__init__.py",
+    "tasks/backlog/TASK-GI-004-adr-lifecycle.md",
+    "tasks/backlog/TASK-GI-005-episode-capture.md"
+  ],
+  "files_created": [
+    ".claude/task-plans/TASK-GI-004-implementation-plan.md",
+    ".claude/task-plans/TASK-GI-005-implementation-plan.md",
+    ".guardkit/autobuild/TASK-GI-004/turn_context.json",
+    ".guardkit/autobuild/TASK-GI-005/task_work_results.json",
+    ".guardkit/autobuild/TASK-GI-005/turn_context.json",
+    "guardkit/knowledge/adr.py",
+    "guardkit/knowledge/adr_service.py",
+    "guardkit/knowledge/decision_detector.py",
+    "guardkit/knowledge/entities/__init__.py",
+    "guardkit/knowledge/entities/outcome.py",
+    "guardkit/knowledge/outcome_manager.py",
+    "guardkit/knowledge/outcome_queries.py",
+    "tasks/design_approved/TASK-GI-004-adr-lifecycle.md",
+    "tasks/in_review/TASK-GI-005-episode-capture.md",
+    "tests/knowledge/test_adr.py",
+    "tests/knowledge/test_adr_service.py",
+    "tests/knowledge/test_decision_detector.py",
+    "tests/knowledge/test_outcome_manager.py"
+  ],
+  "tests_written": [],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": [],
+  "tests_passed_count": 301
+}

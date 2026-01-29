@@ -1,0 +1,30 @@
+{
+  "task_id": "TASK-GI-007",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "e0fffa4d3f83529e26a0ca15e6fb2ce15aad9f1a",
+      "timestamp": "2026-01-28T23:22:37.165069",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "96361ee1121849a904c5f42929552bcf110151d6",
+      "timestamp": "2026-01-28T23:37:40.080109",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)"
+    },
+    {
+      "turn": 3,
+      "commit_hash": "8d2ce9279d5ce7b88b174f609d50346f18e8ce68",
+      "timestamp": "2026-01-28T23:46:48.503523",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 3 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-28T23:46:48.503657"
+}

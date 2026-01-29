@@ -1,0 +1,75 @@
+# Docker Compose configuration for Graphiti knowledge graph services
+#
+# Services:
+#   - falkordb: Graph database backend (Redis-compatible with graph extensions)
+#   - graphiti: Temporal knowledge graph API server
+#
+# Usage:
+#   # Start services
+#   docker compose -f docker/docker-compose.graphiti.yml up -d
+#
+#   # View logs
+#   docker compose -f docker/docker-compose.graphiti.yml logs -f
+#
+#   # Stop services
+#   docker compose -f docker/docker-compose.graphiti.yml down
+#
+#   # Stop and remove volumes (clean slate)
+#   docker compose -f docker/docker-compose.graphiti.yml down -v
+#
+# Requirements:
+#   - Docker and Docker Compose installed
+#   - OPENAI_API_KEY environment variable set (for embeddings)
+#
+# Configuration:
+#   - FalkorDB port: 6379 (default Redis port)
+#   - Graphiti API port: 8000 (configurable in .guardkit/graphiti.yaml)
+
+version: '3.8'
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: guardkit-falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - guardkit-knowledge
+
+  graphiti:
+    image: getzep/graphiti:latest
+    container_name: guardkit-graphiti
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - NEO4J_URI=bolt://falkordb:6379
+      - EMBEDDING_MODEL=text-embedding-3-small
+      - LOG_LEVEL=INFO
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - guardkit-knowledge
+
+volumes:
+  falkordb_data:
+    driver: local
+
+networks:
+  guardkit-knowledge:
+    driver: bridge

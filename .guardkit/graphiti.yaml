@@ -1,0 +1,30 @@
+# Graphiti Knowledge Graph Configuration
+#
+# This file configures the Graphiti integration for GuardKit.
+# All settings can be overridden via environment variables:
+#   - GRAPHITI_ENABLED: Enable/disable integration
+#   - GRAPHITI_HOST: Server hostname
+#   - GRAPHITI_PORT: Server port
+#   - GRAPHITI_TIMEOUT: Connection timeout in seconds
+#
+# To start Graphiti services:
+#   docker compose -f docker/docker-compose.graphiti.yml up -d
+
+# Enable Graphiti integration (set to false to disable)
+enabled: true
+
+# Graphiti server connection settings
+host: localhost
+port: 8000
+timeout: 30.0
+
+# OpenAI embedding model for semantic search
+# Requires OPENAI_API_KEY environment variable
+embedding_model: text-embedding-3-small
+
+# Group IDs for organizing knowledge
+# These create separate namespaces in the knowledge graph
+group_ids:
+  - product_knowledge      # Domain concepts, entities, relationships
+  - command_workflows      # GuardKit command patterns and usage
+  - architecture_decisions # ADRs and design rationale

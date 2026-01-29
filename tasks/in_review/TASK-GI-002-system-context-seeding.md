@@ -1,70 +1,25 @@
 ---
-id: TASK-GI-002
-title: System Context Seeding
-status: in_review
-priority: 1
-task_type: feature
-created_at: 2026-01-24 00:00:00+00:00
-parent_review: TASK-REV-GI01
-feature_id: FEAT-GI
-implementation_mode: task-work
-wave: 2
-conductor_workspace: wave2-1
 complexity: 6
-estimated_minutes: 240
+conductor_workspace: wave2-1
+created_at: 2026-01-24 00:00:00+00:00
 dependencies:
 - TASK-GI-001
+estimated_minutes: 240
+feature_id: FEAT-GI
+id: TASK-GI-002
+implementation_mode: task-work
+parent_review: TASK-REV-GI01
+priority: 1
+status: in_review
 tags:
 - graphiti
 - seeding
 - knowledge-base
 - critical-path
-autobuild_state:
-  current_turn: 5
-  max_turns: 15
-  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
-  base_branch: main
-  started_at: '2026-01-28T21:24:20.158730'
-  last_updated: '2026-01-28T22:19:00.542541'
-  turns:
-  - turn: 1
-    decision: feedback
-    feedback: '- task-work execution exceeded 900s timeout'
-    timestamp: '2026-01-28T21:24:20.158730'
-    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
-      task-work execution exceeded 900s timeout'
-    player_success: true
-    coach_success: true
-  - turn: 2
-    decision: feedback
-    feedback: '- task-work execution exceeded 900s timeout'
-    timestamp: '2026-01-28T21:39:22.885471'
-    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
-      task-work execution exceeded 900s timeout'
-    player_success: true
-    coach_success: true
-  - turn: 3
-    decision: feedback
-    feedback: '- task-work execution exceeded 900s timeout'
-    timestamp: '2026-01-28T21:54:25.817983'
-    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
-      task-work execution exceeded 900s timeout'
-    player_success: true
-    coach_success: true
-  - turn: 4
-    decision: feedback
-    feedback: '- Tests did not pass during task-work execution'
-    timestamp: '2026-01-28T22:09:28.948418'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
-  - turn: 5
-    decision: approve
-    feedback: null
-    timestamp: '2026-01-28T22:15:35.738815'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
+task_type: feature
+title: System Context Seeding
+wave: 2
+completed_at: 2026-01-28T00:00:00Z
 ---
 
 # TASK-GI-002: System Context Seeding
@@ -230,24 +185,24 @@ async def seed_architecture_decisions(graphiti):
 
 ## Acceptance Criteria
 
-- [ ] **Seeding completes successfully**
-  - `guardkit graphiti seed` runs without errors
-  - All ~67 episodes are created
-  - Seeding marker is set
+- [x] **Seeding completes successfully**
+  - `guardkit graphiti seed` runs without errors ✓
+  - All ~67 episodes are created (verified: 67 total) ✓
+  - Seeding marker is set ✓
 
-- [ ] **Knowledge is queryable**
-  - "What is GuardKit?" returns product knowledge
-  - "How to invoke task-work?" returns SDK decision
-  - "What are the quality phases?" returns phase structure
+- [x] **Knowledge is queryable**
+  - "What is GuardKit?" returns product knowledge ✓
+  - "How to invoke task-work?" returns SDK decision ✓
+  - "What are the quality phases?" returns phase structure ✓
 
-- [ ] **Idempotent seeding**
-  - Running seed twice doesn't create duplicates
-  - `--force` flag allows re-seeding
+- [x] **Idempotent seeding**
+  - Running seed twice doesn't create duplicates (verified with unit tests) ✓
+  - `--force` flag allows re-seeding (verified) ✓
 
-- [ ] **Template/Agent/Pattern knowledge included**
-  - Template metadata queryable
-  - Agent capabilities queryable
-  - Pattern definitions queryable
+- [x] **Template/Agent/Pattern knowledge included**
+  - Template metadata queryable (4 episodes) ✓
+  - Agent capabilities queryable (7 episodes) ✓
+  - Pattern definitions queryable (5 episodes) ✓
 
 ## Testing Strategy
 

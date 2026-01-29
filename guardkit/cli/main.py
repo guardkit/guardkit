@@ -15,6 +15,7 @@ import click
 from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
+from guardkit.cli.graphiti import graphiti
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -68,6 +69,9 @@ def cli(ctx, verbose: bool, quiet: bool):
 
 # Add AutoBuild command group
 cli.add_command(autobuild)
+
+# Add Graphiti command group
+cli.add_command(graphiti)
 
 
 # ============================================================================
