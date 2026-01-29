@@ -38,6 +38,10 @@ try:
         FailedApproachManager,
         FAILED_APPROACHES_GROUP_ID,
     )
+    from guardkit.knowledge.seed_failed_approaches import (
+        seed_failed_approaches,
+        get_initial_failed_approaches,
+    )
     IMPORTS_AVAILABLE = True
 except ImportError:
     IMPORTS_AVAILABLE = False
@@ -1002,3 +1006,105 @@ class TestEdgeCases:
         )
 
         assert failure.severity == Severity.MEDIUM
+
+
+# ============================================================================
+# 9. Seed Failed Approaches Tests (8 tests)
+# ============================================================================
+
+class TestSeedFailedApproaches:
+    """Test seed_failed_approaches() seeding functionality."""
+
+    def test_get_initial_failed_approaches_returns_list(self):
+        """Test get_initial_failed_approaches returns a non-empty list."""
+        approaches = get_initial_failed_approaches()
+
+        assert isinstance(approaches, list)
+        assert len(approaches) > 0
+
+    def test_get_initial_failed_approaches_all_have_required_fields(self):
+        """Test all initial approaches have required fields."""
+        approaches = get_initial_failed_approaches()
+
+        for approach in approaches:
+            assert approach.id.startswith("FAIL-")
+            assert len(approach.approach) > 0
+            assert len(approach.symptom) > 0
+            assert len(approach.root_cause) > 0
+            assert len(approach.fix_applied) > 0
+            assert len(approach.prevention) > 0
+            assert approach.context == "feature-build"
+
+    def test_get_initial_failed_approaches_contains_expected_failures(self):
+        """Test initial approaches contain the expected failures from TASK-REV-7549."""
+        approaches = get_initial_failed_approaches()
+        ids = [a.id for a in approaches]
+
+        # Check for key failures identified in TASK-REV-7549
+        assert "FAIL-SUBPROCESS" in ids
+        assert "FAIL-TASK-PATH" in ids
+        assert "FAIL-MOCK-PRELOOP" in ids
+        assert "FAIL-SCHEMA-MISMATCH" in ids
+        assert "FAIL-ALL-TESTS" in ids
+
+    def test_get_initial_failed_approaches_have_related_adrs(self):
+        """Test that critical failures have related ADRs."""
+        approaches = get_initial_failed_approaches()
+
+        # FAIL-SUBPROCESS should have ADR-FB-001
+        subprocess_failure = next(a for a in approaches if a.id == "FAIL-SUBPROCESS")
+        assert "ADR-FB-001" in subprocess_failure.related_adrs
+
+    @pytest.mark.asyncio
+    async def test_seed_failed_approaches_success(self):
+        """Test successful seeding with enabled client."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_123")
+
+        result = await seed_failed_approaches(mock_client)
+
+        assert result is True
+        # Should call add_episode for each initial failure
+        assert mock_client.add_episode.call_count == len(get_initial_failed_approaches())
+
+    @pytest.mark.asyncio
+    async def test_seed_failed_approaches_client_none(self):
+        """Test seeding returns False when client is None."""
+        result = await seed_failed_approaches(None)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_seed_failed_approaches_client_disabled(self):
+        """Test seeding returns False when client is disabled."""
+        mock_client = AsyncMock()
+        mock_client.enabled = False
+
+        result = await seed_failed_approaches(mock_client)
+
+        assert result is False
+        mock_client.add_episode.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_seed_failed_approaches_partial_failure(self):
+        """Test seeding handles partial failures gracefully."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        # Fail on second call, succeed on others
+        call_count = [0]
+
+        async def side_effect_fn(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise Exception("Simulated failure")
+            return "episode_123"
+
+        mock_client.add_episode = AsyncMock(side_effect=side_effect_fn)
+
+        result = await seed_failed_approaches(mock_client)
+
+        # Should return False due to errors
+        assert result is False
+        # But should still try all failures
+        assert mock_client.add_episode.call_count == len(get_initial_failed_approaches())

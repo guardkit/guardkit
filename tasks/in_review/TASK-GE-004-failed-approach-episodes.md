@@ -9,7 +9,7 @@ id: TASK-GE-004
 implementation_mode: task-work
 parent_review: TASK-REV-7549
 priority: 2
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - episodes
@@ -263,13 +263,13 @@ async def load_relevant_failures(query_context: str, limit: int = 5) -> List[dic
 
 ## Acceptance Criteria
 
-- [ ] FailedApproachEpisode dataclass created with all fields
-- [ ] Initial 5 failed approaches seeded from review findings
-- [ ] Capture function works with Graphiti
-- [ ] Query function retrieves relevant failures for context
-- [ ] Prevention guidance appears in session context
-- [ ] Unit tests for entity and capture functions
-- [ ] Integration test confirms failures queryable
+- [x] FailedApproachEpisode dataclass created with all fields
+- [x] Initial 5 failed approaches seeded from review findings
+- [x] Capture function works with Graphiti
+- [x] Query function retrieves relevant failures for context
+- [x] Prevention guidance appears in session context (via load_failed_approaches)
+- [x] Unit tests for entity and capture functions
+- [x] Integration test confirms failures queryable (via mocked tests)
 
 ## Files to Create/Modify
 

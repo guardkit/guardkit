@@ -9,6 +9,7 @@ for AI systems. It enables GuardKit to maintain persistent memory of:
 - Task outcomes and episodes (TASK-GI-005)
 - Feature overviews for context preservation (TASK-GE-001)
 - Turn state episodes for cross-turn learning (TASK-GE-002)
+- Failed approach episodes for prevention (TASK-GE-004)
 
 All components are designed for graceful degradation - the system continues
 to function normally when Graphiti is unavailable.
@@ -39,6 +40,12 @@ Public API:
     seed_feature_overview: Seed single feature overview (TASK-GE-001)
     seed_all_feature_overviews: Seed all feature overviews (TASK-GE-001)
     FEATURE_BUILD_OVERVIEW: Predefined feature-build overview (TASK-GE-001)
+    Severity: Failed approach severity levels (TASK-GE-004)
+    FailedApproachEpisode: Dataclass for capturing failed approaches (TASK-GE-004)
+    capture_failed_approach: Capture failed approaches as episodes (TASK-GE-004)
+    load_relevant_failures: Load failures relevant to context (TASK-GE-004)
+    FailedApproachManager: Manager class for failure operations (TASK-GE-004)
+    load_failed_approaches: Context loader for failed approaches (TASK-GE-004)
 
 Example:
     from guardkit.knowledge import (
@@ -135,6 +142,7 @@ from guardkit.knowledge.context_loader import (
     load_feature_overview,
     load_role_context,
     load_critical_adrs,
+    load_failed_approaches,
 )
 
 from guardkit.knowledge.context_formatter import (
@@ -233,6 +241,24 @@ from guardkit.knowledge.entities.turn_state import (
     TurnStateEntity,
 )
 
+from guardkit.knowledge.entities.failed_approach import (
+    Severity,
+    FailedApproachEpisode,
+)
+
+from guardkit.knowledge.failed_approach_manager import (
+    capture_failed_approach,
+    load_relevant_failures,
+    increment_occurrence,
+    FailedApproachManager,
+    FAILED_APPROACHES_GROUP_ID,
+)
+
+from guardkit.knowledge.seed_failed_approaches import (
+    seed_failed_approaches,
+    get_initial_failed_approaches,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -305,4 +331,15 @@ __all__ = [
     "capture_turn_state",
     "load_turn_continuation_context",
     "create_turn_state_from_autobuild",
+    # Failed approaches (TASK-GE-004)
+    "Severity",
+    "FailedApproachEpisode",
+    "capture_failed_approach",
+    "load_relevant_failures",
+    "increment_occurrence",
+    "FailedApproachManager",
+    "FAILED_APPROACHES_GROUP_ID",
+    "seed_failed_approaches",
+    "get_initial_failed_approaches",
+    "load_failed_approaches",
 ]
