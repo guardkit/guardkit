@@ -1,11 +1,15 @@
 ---
 id: TASK-GI-DOC-001
 title: Write Graphiti Integration Guide
-status: backlog
-created: 2026-01-29T11:00:00Z
-updated: 2026-01-29T11:00:00Z
+status: in_review
+created: 2026-01-29 11:00:00+00:00
+updated: 2026-01-29 11:00:00+00:00
 priority: high
-tags: [documentation, graphiti, user-guide, github-pages]
+tags:
+- documentation
+- graphiti
+- user-guide
+- github-pages
 complexity: 4
 feature_id: FEAT-GI-DOC
 parent_review: TASK-GI-DOC
@@ -16,6 +20,26 @@ test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI-DOC
+  base_branch: main
+  started_at: '2026-01-29T16:53:46.196602'
+  last_updated: '2026-01-29T16:59:32.176812'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-29T16:53:46.196602'
+    player_summary: "Created comprehensive Graphiti Integration Guide at docs/guides/graphiti-integration-guide.md.\
+      \ The guide synthesizes content from multiple research documents including feature-build-crisis-memory-analysis.md\
+      \ (problem statement and failure patterns), graphiti-system-context-seeding.md\
+      \ (knowledge categories and group IDs), .guardkit/graphiti.yaml (configuration\
+      \ examples), and guardkit/cli/graphiti.py (CLI command examples).\n\nThe guide\
+      \ is structured for progressive disclosure: Overview \u2192 Problem \u2192 "
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Write Graphiti Integration Guide
