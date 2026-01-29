@@ -10,7 +10,7 @@ id: TASK-GE-002
 implementation_mode: task-work
 parent_review: TASK-REV-7549
 priority: 1
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - episodes
@@ -264,13 +264,13 @@ async def _post_turn_capture(self, turn_result: TurnResult):
 
 ## Acceptance Criteria
 
-- [ ] TurnStateEntity dataclass created with all fields
-- [ ] capture_turn_state function works with Graphiti
-- [ ] Turn continuation context loads previous turn summary
-- [ ] AutoBuild orchestrator captures turn state after each turn
-- [ ] Acceptance criteria status tracked across turns
-- [ ] Unit tests for entity and capture functions
-- [ ] Integration test confirms cross-turn context available
+- [x] TurnStateEntity dataclass created with all fields
+- [x] capture_turn_state function works with Graphiti
+- [x] Turn continuation context loads previous turn summary
+- [x] AutoBuild orchestrator captures turn state after each turn (via create_turn_state_from_autobuild factory)
+- [x] Acceptance criteria status tracked across turns
+- [x] Unit tests for entity and capture functions (52 tests)
+- [x] Integration test confirms cross-turn context available
 
 ## Files to Create/Modify
 
