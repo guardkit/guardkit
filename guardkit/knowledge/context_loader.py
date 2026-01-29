@@ -21,6 +21,10 @@ Example Usage:
     # Format and inject into session
     from guardkit.knowledge.context_formatter import format_context_for_injection
     context_text = format_context_for_injection(context)
+
+    # Load feature overview
+    from guardkit.knowledge.context_loader import load_feature_overview
+    overview = await load_feature_overview("feature-build")
 """
 
 from dataclasses import dataclass
@@ -293,3 +297,108 @@ async def _load_feature_build_context(graphiti) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Error loading feature-build context: {e}")
         return []
+
+
+async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewEntity"]:
+    """Load feature overview for context injection.
+
+    Queries Graphiti for the feature overview entity matching the given
+    feature name. Returns the first matching result.
+
+    Args:
+        feature_name: Name/ID of the feature (e.g., "feature-build")
+
+    Returns:
+        FeatureOverviewEntity if found, None otherwise (graceful degradation)
+
+    Example:
+        overview = await load_feature_overview("feature-build")
+        if overview:
+            print(f"Loaded: {overview.tagline}")
+    """
+    # Import here to avoid circular imports
+    from guardkit.knowledge.entities.feature_overview import FeatureOverviewEntity
+    from datetime import datetime
+
+    graphiti = get_graphiti()
+
+    # Graceful degradation: return None if Graphiti unavailable
+    if graphiti is None:
+        logger.debug("Graphiti client is None, returning None for feature overview")
+        return None
+
+    if not graphiti.enabled:
+        logger.debug("Graphiti is disabled, returning None for feature overview")
+        return None
+
+    try:
+        results = await graphiti.search(
+            query=f"feature_overview {feature_name}",
+            group_ids=["feature_overviews"],
+            num_results=1
+        )
+
+        if not results:
+            logger.debug(f"No feature overview found for: {feature_name}")
+            return None
+
+        # Get the first result
+        result = results[0]
+
+        # Extract body (may be nested or direct)
+        body = result.get("body", {})
+        if not body or not isinstance(body, dict):
+            logger.debug(f"Malformed feature overview result for: {feature_name}")
+            return None
+
+        # Check for required fields
+        required_fields = [
+            "id", "name", "tagline", "purpose", "what_it_is",
+            "what_it_is_not", "invariants", "architecture_summary",
+            "key_components", "key_decisions"
+        ]
+
+        for field in required_fields:
+            if field not in body:
+                logger.debug(f"Missing required field '{field}' in feature overview")
+                return None
+
+        # Parse timestamps
+        created_at = body.get("created_at")
+        updated_at = body.get("updated_at")
+
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                created_at = datetime.now()
+        else:
+            created_at = datetime.now()
+
+        if isinstance(updated_at, str):
+            try:
+                updated_at = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+            except ValueError:
+                updated_at = datetime.now()
+        else:
+            updated_at = datetime.now()
+
+        # Create entity from body
+        return FeatureOverviewEntity(
+            id=body["id"],
+            name=body["name"],
+            tagline=body["tagline"],
+            purpose=body["purpose"],
+            what_it_is=body["what_it_is"],
+            what_it_is_not=body["what_it_is_not"],
+            invariants=body["invariants"],
+            architecture_summary=body["architecture_summary"],
+            key_components=body["key_components"],
+            key_decisions=body["key_decisions"],
+            created_at=created_at,
+            updated_at=updated_at
+        )
+
+    except Exception as e:
+        logger.warning(f"Error loading feature overview for {feature_name}: {e}")
+        return None

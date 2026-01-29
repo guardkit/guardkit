@@ -95,6 +95,7 @@ from guardkit.knowledge.config import (
 from guardkit.knowledge.context_loader import (
     CriticalContext,
     load_critical_context,
+    load_feature_overview,
 )
 
 from guardkit.knowledge.context_formatter import (
@@ -146,6 +147,16 @@ from guardkit.knowledge.entities.outcome import (
     TaskOutcome,
 )
 
+from guardkit.knowledge.entities.feature_overview import (
+    FeatureOverviewEntity,
+)
+
+from guardkit.knowledge.seed_feature_overviews import (
+    seed_feature_overview,
+    seed_all_feature_overviews,
+    FEATURE_BUILD_OVERVIEW,
+)
+
 from guardkit.knowledge.outcome_manager import (
     capture_task_outcome,
     OutcomeManager,
@@ -170,6 +181,7 @@ __all__ = [
     # Context loading (TASK-GI-003)
     "CriticalContext",
     "load_critical_context",
+    "load_feature_overview",
     "format_context_for_injection",
     "ContextFormatterConfig",
     # Seeding - Marker management
@@ -206,4 +218,9 @@ __all__ = [
     "find_similar_task_outcomes",
     "OutcomeManager",
     "OutcomeQueries",
+    # Feature overview (TASK-GE-001)
+    "FeatureOverviewEntity",
+    "seed_feature_overview",
+    "seed_all_feature_overviews",
+    "FEATURE_BUILD_OVERVIEW",
 ]

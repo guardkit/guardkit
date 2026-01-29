@@ -1,0 +1,25 @@
+{
+  "task_id": "TASK-GE-006",
+  "turn": 1,
+  "files_modified": [],
+  "files_created": [
+    ".claude/rules/feature-build-invariants.md"
+  ],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": true,
+  "test_output_summary": "No tests required for documentation task. Manual verification performed.",
+  "implementation_notes": "Created North Star document at .claude/rules/feature-build-invariants.md (1923 bytes, under 2KB target). Document includes: (1) What You Are section defining autonomous orchestrator identity, (2) What You Are NOT section listing anti-patterns, (3) Six IMMUTABLE invariants from TASK-REV-7549, (4) Player and Coach role constraints with DO/DON'T guidance, (5) ADR quick reference table for FB-001/002/003, (6) When Stuck recovery guidance, (7) Quick Reference paths. Path patterns correctly target guardkit/orchestrator/**/*.py and guardkit/commands/feature_build.py for automatic loading.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Create North Star document",
+    "Keep document under 2KB",
+    "Include all 6 invariants",
+    "Include Player/Coach roles",
+    "Include ADR references",
+    "Configure path patterns"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "success": true
+}
