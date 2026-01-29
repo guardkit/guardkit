@@ -9,7 +9,7 @@ id: TASK-GE-003
 implementation_mode: task-work
 parent_review: TASK-REV-7549
 priority: 2
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - facts

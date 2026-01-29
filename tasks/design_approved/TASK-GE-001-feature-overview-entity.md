@@ -1,23 +1,23 @@
 ---
-id: TASK-GE-001
-title: Feature Overview Entity for Graphiti
-status: backlog
-priority: 1
-task_type: feature
-created_at: 2026-01-29T00:00:00Z
-parent_review: TASK-REV-7549
-feature_id: FEAT-GE
-implementation_mode: task-work
-wave: 1
-conductor_workspace: graphiti-enhancements-wave1-1
 complexity: 5
-estimated_minutes: 120
+conductor_workspace: graphiti-enhancements-wave1-1
+created_at: 2026-01-29 00:00:00+00:00
 dependencies: []
+estimated_minutes: 120
+feature_id: FEAT-GE
+id: TASK-GE-001
+implementation_mode: task-work
+parent_review: TASK-REV-7549
+priority: 1
+status: design_approved
 tags:
-  - graphiti
-  - entity
-  - context-loading
-  - critical-path
+- graphiti
+- entity
+- context-loading
+- critical-path
+task_type: feature
+title: Feature Overview Entity for Graphiti
+wave: 1
 ---
 
 # TASK-GE-001: Feature Overview Entity
