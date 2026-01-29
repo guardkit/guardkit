@@ -29,6 +29,7 @@ from guardkit.knowledge.seeding import (
     clear_seeding_marker,
     SEEDING_VERSION,
 )
+from guardkit.knowledge.seed_feature_build_adrs import seed_feature_build_adrs
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -319,3 +320,72 @@ def verify(verbose: bool):
         console.print("[bold green]Verification complete![/bold green]")
     else:
         console.print("[yellow]Some queries failed. Check Graphiti connection.[/yellow]")
+
+
+@graphiti.command("seed-adrs")
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Force re-seeding even if already seeded",
+)
+def seed_adrs(force: bool):
+    """Seed feature-build ADRs into Graphiti.
+
+    Seeds critical Architecture Decision Records (ADRs) for feature-build
+    workflow. These ADRs encode lessons learned from feature-build failures
+    to prevent future sessions from repeating the same mistakes.
+
+    ADRs seeded:
+    - ADR-FB-001: Use SDK query() for task-work invocation
+    - ADR-FB-002: Use FEAT-XXX paths in feature mode
+    - ADR-FB-003: Pre-loop must invoke real task-work
+
+    Use --force to re-seed even if ADRs have already been seeded.
+    """
+    console.print("[bold blue]Feature-Build ADR Seeding[/bold blue]")
+    console.print()
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("ADR seeding skipped.")
+        return
+
+    # Initialize connection
+    console.print(f"Connecting to Graphiti at {settings.host}:{settings.port}...")
+
+    try:
+        initialized = _run_async(client.initialize())
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    if not initialized or not client.enabled:
+        console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+        console.print("ADR seeding skipped.")
+        return
+
+    console.print("[green]Connected to Graphiti[/green]")
+    console.print()
+
+    # Run ADR seeding
+    console.print("Seeding feature-build ADRs...")
+
+    try:
+        _run_async(seed_feature_build_adrs(client))
+    except Exception as e:
+        console.print(f"[red]Error during ADR seeding: {e}[/red]")
+        logger.exception("ADR seeding failed")
+        raise SystemExit(1)
+
+    console.print()
+    console.print("[bold green]Feature-build ADR seeding complete![/bold green]")
+    console.print()
+    console.print("ADRs seeded:")
+    console.print("  [green]\u2713[/green] ADR-FB-001: Use SDK query() for task-work invocation")
+    console.print("  [green]\u2713[/green] ADR-FB-002: Use FEAT-XXX paths in feature mode")
+    console.print("  [green]\u2713[/green] ADR-FB-003: Pre-loop must invoke real task-work")

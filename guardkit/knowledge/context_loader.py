@@ -404,6 +404,57 @@ async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewE
         return None
 
 
+async def load_critical_adrs() -> List[Dict[str, Any]]:
+    """Load critical Architecture Decision Records for context injection.
+
+    Queries Graphiti for ADRs in the architecture_decisions group and
+    returns them formatted for injection into Claude Code sessions.
+
+    Returns:
+        List of ADR dictionaries with id, title, decision, violation_symptoms, etc.
+        Returns empty list if Graphiti is unavailable (graceful degradation).
+
+    Example:
+        adrs = await load_critical_adrs()
+        for adr in adrs:
+            print(f"ADR {adr['id']}: {adr['title']}")
+    """
+    graphiti = get_graphiti()
+
+    # Graceful degradation: return empty list if Graphiti unavailable
+    if graphiti is None:
+        logger.debug("Graphiti client is None, returning empty list for critical ADRs")
+        return []
+
+    if not graphiti.enabled:
+        logger.debug("Graphiti is disabled, returning empty list for critical ADRs")
+        return []
+
+    try:
+        results = await graphiti.search(
+            query="architecture_decision feature-build ADR",
+            group_ids=["architecture_decisions"],
+            num_results=10
+        )
+
+        if not results:
+            logger.debug("No critical ADRs found in Graphiti")
+            return []
+
+        # Extract body fields from results
+        adrs = []
+        for result in results:
+            body = result.get("body", {})
+            if isinstance(body, dict) and body:
+                adrs.append(body)
+
+        return adrs
+
+    except Exception as e:
+        logger.warning(f"Error loading critical ADRs: {e}")
+        return []
+
+
 async def load_role_context(role: str, context: str = "feature-build") -> Optional[str]:
     """Load role constraints for injection into session.
 

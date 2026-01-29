@@ -103,6 +103,7 @@ from guardkit.knowledge.context_loader import (
     load_critical_context,
     load_feature_overview,
     load_role_context,
+    load_critical_adrs,
 )
 
 from guardkit.knowledge.context_formatter import (
@@ -166,6 +167,11 @@ from guardkit.knowledge.seed_feature_overviews import (
 
 from guardkit.knowledge.seed_role_constraints import (
     seed_role_constraints,
+)
+
+from guardkit.knowledge.seed_feature_build_adrs import (
+    FEATURE_BUILD_ADRS,
+    seed_feature_build_adrs,
 )
 
 from guardkit.knowledge.facts.role_constraint import (
@@ -246,4 +252,8 @@ __all__ = [
     "PLAYER_CONSTRAINTS",
     "COACH_CONSTRAINTS",
     "seed_role_constraints",
+    # Feature-build ADRs (TASK-GE-007)
+    "FEATURE_BUILD_ADRS",
+    "seed_feature_build_adrs",
+    "load_critical_adrs",
 ]
