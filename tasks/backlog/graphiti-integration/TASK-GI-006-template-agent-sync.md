@@ -1,10 +1,10 @@
 ---
 id: TASK-GI-006
 title: Template/Agent Sync to Graphiti
-status: backlog
+status: in_review
 priority: 3
 task_type: feature
-created_at: 2026-01-24T00:00:00Z
+created_at: 2026-01-24 00:00:00+00:00
 parent_review: TASK-REV-GI01
 feature_id: FEAT-GI
 implementation_mode: task-work
@@ -13,13 +13,28 @@ conductor_workspace: wave5-1
 complexity: 4
 estimated_minutes: 120
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
 tags:
-  - graphiti
-  - templates
-  - agents
-  - sync
-  - medium-priority
+- graphiti
+- templates
+- agents
+- sync
+- medium-priority
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
+  base_branch: main
+  started_at: '2026-01-28T23:15:42.802743'
+  last_updated: '2026-01-28T23:24:29.783469'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T23:15:42.802743'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GI-006: Template/Agent Sync to Graphiti

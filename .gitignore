@@ -52,6 +52,9 @@ venv-*/
 env-*/
 ENV/
 .env/
+
+# Environment variables file (contains secrets)
+.env
 # Ignore root lib directories (but not source code lib folders)
 /lib/
 /lib64/

@@ -1,0 +1,88 @@
+id: FEAT-GE
+name: Graphiti Enhancements
+description: |
+  Enhancements to the Graphiti integration based on lessons learned from the AutoBuild/feature-build
+  development journey (TASK-REV-7549). Adds Feature Overview entities, Turn State episodes for
+  cross-turn learning, Role Constraint facts, Failed Approach episodes, Quality Gate configuration,
+  and immediate ADR seeding.
+
+created: '2026-01-29T00:00:00Z'
+status: pending
+complexity: 32
+estimated_tasks: 7
+tasks:
+- id: TASK-GE-001
+  name: Feature Overview Entity
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-001-feature-overview-entity.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+
+- id: TASK-GE-003
+  name: Role Constraint Facts
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-003-role-constraint-facts.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 90
+
+- id: TASK-GE-006
+  name: Feature-Build North Star Document
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-006-feature-build-north-star.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  implementation_mode: direct
+  estimated_minutes: 60
+
+- id: TASK-GE-007
+  name: Immediate ADR Seeding
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-007-immediate-adr-seeding.md
+  complexity: 4
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 90
+
+- id: TASK-GE-002
+  name: Turn State Episodes
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-002-turn-state-episodes.md
+  complexity: 6
+  dependencies:
+  - TASK-GE-001
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 180
+
+- id: TASK-GE-004
+  name: Failed Approach Episodes
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-004-failed-approach-episodes.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+
+- id: TASK-GE-005
+  name: Quality Gate Config Facts
+  file_path: tasks/backlog/graphiti-enhancements/TASK-GE-005-quality-gate-config-facts.md
+  complexity: 5
+  dependencies: []
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 120
+
+orchestration:
+  parallel_groups:
+  - - TASK-GE-001
+    - TASK-GE-003
+    - TASK-GE-006
+    - TASK-GE-007
+  - - TASK-GE-002
+    - TASK-GE-004
+    - TASK-GE-005
+  estimated_duration_minutes: 780
+  recommended_parallel: 4

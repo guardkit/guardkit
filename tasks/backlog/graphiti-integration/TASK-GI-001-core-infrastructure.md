@@ -1,10 +1,10 @@
 ---
 id: TASK-GI-001
 title: Graphiti Core Infrastructure
-status: backlog
+status: in_review
 priority: 1
 task_type: scaffolding
-created_at: 2026-01-24T00:00:00Z
+created_at: 2026-01-24 00:00:00+00:00
 parent_review: TASK-REV-GI01
 feature_id: FEAT-GI
 implementation_mode: task-work
@@ -13,10 +13,33 @@ conductor_workspace: wave1-1
 complexity: 6
 estimated_minutes: 180
 tags:
-  - infrastructure
-  - graphiti
-  - docker
-  - critical-path
+- infrastructure
+- graphiti
+- docker
+- critical-path
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
+  base_branch: main
+  started_at: '2026-01-28T21:03:22.517875'
+  last_updated: '2026-01-28T21:24:20.139160'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-01-28T21:03:22.517875'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T21:18:30.942989'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GI-001: Graphiti Core Infrastructure

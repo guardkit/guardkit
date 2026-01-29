@@ -1,10 +1,10 @@
 ---
 id: TASK-GI-005
 title: Episode Capture (Task Outcomes)
-status: backlog
+status: in_review
 priority: 2
 task_type: feature
-created_at: 2026-01-24T00:00:00Z
+created_at: 2026-01-24 00:00:00+00:00
 parent_review: TASK-REV-GI01
 feature_id: FEAT-GI
 implementation_mode: task-work
@@ -13,12 +13,27 @@ conductor_workspace: wave4-2
 complexity: 5
 estimated_minutes: 180
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
 tags:
-  - graphiti
-  - episode-capture
-  - learning
-  - high-priority
+- graphiti
+- episode-capture
+- learning
+- high-priority
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
+  base_branch: main
+  started_at: '2026-01-28T22:41:00.856799'
+  last_updated: '2026-01-28T22:51:14.249431'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T22:41:00.856799'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GI-005: Episode Capture (Task Outcomes)

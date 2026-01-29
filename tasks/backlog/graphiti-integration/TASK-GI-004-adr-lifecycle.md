@@ -1,10 +1,10 @@
 ---
 id: TASK-GI-004
 title: ADR Lifecycle Management
-status: backlog
+status: in_review
 priority: 2
 task_type: feature
-created_at: 2026-01-24T00:00:00Z
+created_at: 2026-01-24 00:00:00+00:00
 parent_review: TASK-REV-GI01
 feature_id: FEAT-GI
 implementation_mode: task-work
@@ -13,12 +13,49 @@ conductor_workspace: wave4-1
 complexity: 6
 estimated_minutes: 240
 dependencies:
-  - TASK-GI-001
+- TASK-GI-001
 tags:
-  - graphiti
-  - adr
-  - decision-capture
-  - high-priority
+- graphiti
+- adr
+- decision-capture
+- high-priority
+autobuild_state:
+  current_turn: 4
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GI
+  base_branch: main
+  started_at: '2026-01-28T22:41:00.856940'
+  last_updated: '2026-01-28T23:15:42.774058'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-01-28T22:41:00.856940'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-01-28T22:56:03.938832'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 3
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-01-28T23:03:11.791860'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 4
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-28T23:12:57.524695'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GI-004: ADR Lifecycle Management
