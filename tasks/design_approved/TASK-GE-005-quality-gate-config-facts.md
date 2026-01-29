@@ -1,23 +1,23 @@
 ---
-id: TASK-GE-005
-title: Quality Gate Configuration Facts
-status: backlog
-priority: 2
-task_type: feature
-created_at: 2026-01-29T00:00:00Z
-parent_review: TASK-REV-7549
-feature_id: FEAT-GE
-implementation_mode: task-work
-wave: 2
-conductor_workspace: graphiti-enhancements-wave2-3
 complexity: 5
-estimated_minutes: 120
+conductor_workspace: graphiti-enhancements-wave2-3
+created_at: 2026-01-29 00:00:00+00:00
 dependencies: []
+estimated_minutes: 120
+feature_id: FEAT-GE
+id: TASK-GE-005
+implementation_mode: task-work
+parent_review: TASK-REV-7549
+priority: 2
+status: design_approved
 tags:
-  - graphiti
-  - facts
-  - quality-gates
-  - configuration
+- graphiti
+- facts
+- quality-gates
+- configuration
+task_type: feature
+title: Quality Gate Configuration Facts
+wave: 2
 ---
 
 # TASK-GE-005: Quality Gate Configuration Facts

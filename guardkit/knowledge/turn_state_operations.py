@@ -34,9 +34,10 @@ Example:
 
 import json
 import logging
-from typing import Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from guardkit.knowledge.entities.turn_state import TurnStateEntity
+from guardkit.knowledge.entities.turn_state import TurnStateEntity, TurnMode
 from guardkit.knowledge.graphiti_client import get_graphiti
 
 logger = logging.getLogger(__name__)
@@ -242,3 +243,106 @@ async def load_turn_continuation_context(
     except Exception as e:
         logger.warning(f"Error loading turn continuation context: {e}")
         return None
+
+
+def create_turn_state_from_autobuild(
+    feature_id: str,
+    task_id: str,
+    turn_number: int,
+    player_summary: str,
+    player_decision: str,
+    coach_decision: str,
+    coach_feedback: Optional[str] = None,
+    mode: TurnMode = TurnMode.CONTINUING_WORK,
+    blockers_found: Optional[List[str]] = None,
+    progress_summary: str = "",
+    acceptance_criteria_status: Optional[Dict[str, str]] = None,
+    tests_passed: Optional[int] = None,
+    tests_failed: Optional[int] = None,
+    coverage: Optional[float] = None,
+    arch_score: Optional[int] = None,
+    started_at: Optional[datetime] = None,
+    completed_at: Optional[datetime] = None,
+    duration_seconds: Optional[int] = None,
+    lessons_from_turn: Optional[List[str]] = None,
+    what_to_try_next: Optional[str] = None,
+) -> TurnStateEntity:
+    """Create TurnStateEntity from AutoBuild turn data.
+
+    This is a convenience factory function for creating TurnStateEntity
+    instances from AutoBuild orchestrator data. It generates the ID and
+    provides sensible defaults for optional fields.
+
+    Args:
+        feature_id: Feature identifier (e.g., "FEAT-GE")
+        task_id: Task identifier (e.g., "TASK-GE-001")
+        turn_number: Turn number (1-indexed)
+        player_summary: What Player implemented/attempted
+        player_decision: Player's decision ("implemented" | "failed" | "blocked")
+        coach_decision: Coach's decision ("approved" | "feedback" | "rejected")
+        coach_feedback: Specific feedback if not approved
+        mode: Turn mode (default: CONTINUING_WORK)
+        blockers_found: List of blockers (default: empty list)
+        progress_summary: Brief progress description
+        acceptance_criteria_status: AC status dict (default: empty)
+        tests_passed: Number of tests passed
+        tests_failed: Number of tests failed
+        coverage: Test coverage percentage
+        arch_score: Architectural review score
+        started_at: Turn start time (default: now)
+        completed_at: Turn end time (default: now)
+        duration_seconds: Turn duration
+        lessons_from_turn: Lessons learned (default: empty list)
+        what_to_try_next: Suggested next focus
+
+    Returns:
+        TurnStateEntity ready for capture
+
+    Example:
+        from guardkit.knowledge.turn_state_operations import (
+            create_turn_state_from_autobuild,
+            capture_turn_state,
+        )
+        from guardkit.knowledge.entities.turn_state import TurnMode
+        from guardkit.knowledge.graphiti_client import get_graphiti
+
+        # After AutoBuild turn completes
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Implemented OAuth2 authentication",
+            player_decision="implemented",
+            coach_decision="feedback",
+            coach_feedback="Add session caching",
+            mode=TurnMode.FRESH_START,
+        )
+
+        graphiti = get_graphiti()
+        await capture_turn_state(graphiti, entity)
+    """
+    now = datetime.now()
+
+    return TurnStateEntity(
+        id=f"TURN-{feature_id}-{turn_number}",
+        feature_id=feature_id,
+        task_id=task_id,
+        turn_number=turn_number,
+        player_summary=player_summary,
+        player_decision=player_decision,
+        coach_decision=coach_decision,
+        coach_feedback=coach_feedback,
+        mode=mode,
+        blockers_found=blockers_found or [],
+        progress_summary=progress_summary,
+        acceptance_criteria_status=acceptance_criteria_status or {},
+        tests_passed=tests_passed,
+        tests_failed=tests_failed,
+        coverage=coverage,
+        arch_score=arch_score,
+        started_at=started_at or now,
+        completed_at=completed_at or now,
+        duration_seconds=duration_seconds,
+        lessons_from_turn=lessons_from_turn or [],
+        what_to_try_next=what_to_try_next,
+    )
