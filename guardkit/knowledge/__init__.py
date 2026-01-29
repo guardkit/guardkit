@@ -7,6 +7,7 @@ for AI systems. It enables GuardKit to maintain persistent memory of:
 - Command workflows and patterns
 - Architecture decisions and rationale
 - Task outcomes and episodes (TASK-GI-005)
+- Feature overviews for context preservation (TASK-GE-001)
 
 All components are designed for graceful degradation - the system continues
 to function normally when Graphiti is unavailable.
@@ -21,6 +22,7 @@ Public API:
     get_config_path: Get the path to the config file
     CriticalContext: Dataclass for session context (TASK-GI-003)
     load_critical_context: Load context at session/command start
+    load_feature_overview: Load feature overview for context injection (TASK-GE-001)
     format_context_for_injection: Format context for prompt injection
     ContextFormatterConfig: Configuration for context formatting
     ADRStatus: ADR lifecycle status enum (TASK-GI-004)
@@ -32,6 +34,10 @@ Public API:
     TaskOutcome: Dataclass for task outcomes (TASK-GI-005)
     capture_task_outcome: Capture task outcomes (TASK-GI-005)
     find_similar_task_outcomes: Search for similar outcomes (TASK-GI-005)
+    FeatureOverviewEntity: Dataclass for feature identity (TASK-GE-001)
+    seed_feature_overview: Seed single feature overview (TASK-GE-001)
+    seed_all_feature_overviews: Seed all feature overviews (TASK-GE-001)
+    FEATURE_BUILD_OVERVIEW: Predefined feature-build overview (TASK-GE-001)
 
 Example:
     from guardkit.knowledge import (
@@ -96,6 +102,7 @@ from guardkit.knowledge.context_loader import (
     CriticalContext,
     load_critical_context,
     load_feature_overview,
+    load_role_context,
 )
 
 from guardkit.knowledge.context_formatter import (
@@ -157,6 +164,16 @@ from guardkit.knowledge.seed_feature_overviews import (
     FEATURE_BUILD_OVERVIEW,
 )
 
+from guardkit.knowledge.seed_role_constraints import (
+    seed_role_constraints,
+)
+
+from guardkit.knowledge.facts.role_constraint import (
+    RoleConstraintFact,
+    PLAYER_CONSTRAINTS,
+    COACH_CONSTRAINTS,
+)
+
 from guardkit.knowledge.outcome_manager import (
     capture_task_outcome,
     OutcomeManager,
@@ -182,6 +199,7 @@ __all__ = [
     "CriticalContext",
     "load_critical_context",
     "load_feature_overview",
+    "load_role_context",
     "format_context_for_injection",
     "ContextFormatterConfig",
     # Seeding - Marker management
@@ -223,4 +241,9 @@ __all__ = [
     "seed_feature_overview",
     "seed_all_feature_overviews",
     "FEATURE_BUILD_OVERVIEW",
+    # Role constraints (TASK-GE-003)
+    "RoleConstraintFact",
+    "PLAYER_CONSTRAINTS",
+    "COACH_CONSTRAINTS",
+    "seed_role_constraints",
 ]

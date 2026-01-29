@@ -402,3 +402,86 @@ async def load_feature_overview(feature_name: str) -> Optional["FeatureOverviewE
     except Exception as e:
         logger.warning(f"Error loading feature overview for {feature_name}: {e}")
         return None
+
+
+async def load_role_context(role: str, context: str = "feature-build") -> Optional[str]:
+    """Load role constraints for injection into session.
+
+    Queries Graphiti for role constraints and formats them as markdown
+    for injection into Player or Coach agent context.
+
+    Args:
+        role: Role name ("player" | "coach")
+        context: Usage context (default: "feature-build")
+
+    Returns:
+        Formatted markdown string with role constraints, or None if
+        Graphiti is unavailable or no results found.
+
+    Example:
+        context = await load_role_context("player", "feature-build")
+        if context:
+            print(context)  # Formatted markdown with MUST DO and MUST NOT DO
+    """
+    graphiti = get_graphiti()
+
+    # Graceful degradation: return None if Graphiti unavailable
+    if graphiti is None:
+        logger.debug("Graphiti client is None, returning None for role context")
+        return None
+
+    if not graphiti.enabled:
+        logger.debug("Graphiti is disabled, returning None for role context")
+        return None
+
+    try:
+        # Query for role constraints
+        results = await graphiti.search(
+            query=f"role_constraint {role} {context}",
+            group_ids=["role_constraints"],
+            num_results=1
+        )
+
+        if not results:
+            logger.debug(f"No role constraints found for: {role} in {context}")
+            return None
+
+        # Get the first result
+        result = results[0]
+
+        # Extract body
+        body = result.get("body", {})
+        if not body or not isinstance(body, dict):
+            logger.debug(f"Malformed role constraint result for: {role}")
+            return None
+
+        # Format as markdown
+        role_upper = role.upper()
+        lines = []
+        lines.append(f"# {role_upper} Role Constraints")
+        lines.append("")
+
+        # Primary responsibility
+        if "primary_responsibility" in body:
+            lines.append(f"**Primary responsibility**: {body['primary_responsibility']}")
+            lines.append("")
+
+        # MUST DO section
+        if "must_do" in body and body["must_do"]:
+            lines.append("## MUST DO")
+            for item in body["must_do"]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        # MUST NOT DO section
+        if "must_not_do" in body and body["must_not_do"]:
+            lines.append("## MUST NOT DO")
+            for item in body["must_not_do"]:
+                lines.append(f"- {item}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        logger.warning(f"Error loading role context for {role}: {e}")
+        return None
