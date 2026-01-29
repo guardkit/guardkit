@@ -315,13 +315,22 @@ class CoachValidator:
                 return None
 
             # Convert QualityGateConfigFact to QualityGateProfile
+            # Note: threshold must be 0 when gate is not required (per QualityGateProfile validation)
+            arch_threshold = config.arch_review_threshold if config.arch_review_required else 0
+            if arch_threshold is None:
+                arch_threshold = 60  # Default when required but not specified
+
+            coverage_threshold = config.coverage_threshold if config.coverage_required else 0.0
+            if coverage_threshold is None:
+                coverage_threshold = 80.0  # Default when required but not specified
+
             profile = QualityGateProfile(
                 tests_required=config.test_pass_required,
                 coverage_required=config.coverage_required,
                 arch_review_required=config.arch_review_required,
                 plan_audit_required=True,  # Always required in current design
-                arch_review_threshold=config.arch_review_threshold or 60,
-                coverage_threshold=config.coverage_threshold or 80.0,
+                arch_review_threshold=arch_threshold,
+                coverage_threshold=coverage_threshold,
             )
 
             logger.info(

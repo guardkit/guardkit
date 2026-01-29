@@ -8,6 +8,7 @@ for AI systems. It enables GuardKit to maintain persistent memory of:
 - Architecture decisions and rationale
 - Task outcomes and episodes (TASK-GI-005)
 - Feature overviews for context preservation (TASK-GE-001)
+- Turn state episodes for cross-turn learning (TASK-GE-002)
 
 All components are designed for graceful degradation - the system continues
 to function normally when Graphiti is unavailable.
@@ -82,6 +83,36 @@ Example:
         task_requirements="Add OAuth2 authentication",
         success=True,
         summary="Successfully implemented"
+    )
+
+    # Turn state capture for cross-turn learning (TASK-GE-002)
+    from guardkit.knowledge import (
+        TurnMode,
+        TurnStateEntity,
+        capture_turn_state,
+        load_turn_continuation_context,
+        create_turn_state_from_autobuild,
+    )
+
+    # Create turn state from AutoBuild results
+    entity = create_turn_state_from_autobuild(
+        feature_id="FEAT-GE",
+        task_id="TASK-GE-001",
+        turn_number=1,
+        player_summary="Implemented feature",
+        player_decision="implemented",
+        coach_decision="approved",
+    )
+
+    # Capture turn state to Graphiti
+    await capture_turn_state(graphiti, entity)
+
+    # Load previous turn context for Turn N
+    context = await load_turn_continuation_context(
+        graphiti,
+        feature_id="FEAT-GE",
+        task_id="TASK-GE-001",
+        current_turn=2
     )
 """
 
@@ -190,6 +221,18 @@ from guardkit.knowledge.outcome_queries import (
     OutcomeQueries,
 )
 
+# Turn state operations (TASK-GE-002)
+from guardkit.knowledge.turn_state_operations import (
+    capture_turn_state,
+    load_turn_continuation_context,
+    create_turn_state_from_autobuild,
+)
+
+from guardkit.knowledge.entities.turn_state import (
+    TurnMode,
+    TurnStateEntity,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -256,4 +299,10 @@ __all__ = [
     "FEATURE_BUILD_ADRS",
     "seed_feature_build_adrs",
     "load_critical_adrs",
+    # Turn state operations (TASK-GE-002)
+    "TurnMode",
+    "TurnStateEntity",
+    "capture_turn_state",
+    "load_turn_continuation_context",
+    "create_turn_state_from_autobuild",
 ]

@@ -1213,3 +1213,191 @@ class TestIntegrationRoundTrip:
             # Should get context from turn 1
             if context:  # May be None if implementation not ready
                 assert "First implementation" in context or context is None
+
+
+# ============================================================================
+# 7. create_turn_state_from_autobuild() Factory Tests (6 tests)
+# ============================================================================
+
+# Import the factory function if available
+try:
+    from guardkit.knowledge.turn_state_operations import (
+        create_turn_state_from_autobuild,
+    )
+    FACTORY_AVAILABLE = True
+except ImportError:
+    FACTORY_AVAILABLE = False
+
+
+@pytest.mark.skipif(
+    not FACTORY_AVAILABLE,
+    reason="create_turn_state_from_autobuild not yet implemented"
+)
+class TestCreateTurnStateFromAutoBuild:
+    """Test create_turn_state_from_autobuild() factory function."""
+
+    def test_create_turn_state_from_autobuild_generates_correct_id(self):
+        """Test factory generates correct TURN-{feature_id}-{turn_number} id."""
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=3,
+            player_summary="Test summary",
+            player_decision="implemented",
+            coach_decision="approved",
+        )
+
+        assert entity.id == "TURN-FEAT-GE-3"
+        assert entity.feature_id == "FEAT-GE"
+        assert entity.task_id == "TASK-GE-001"
+        assert entity.turn_number == 3
+
+    def test_create_turn_state_from_autobuild_minimal_params(self):
+        """Test factory with only required params."""
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-TEST",
+            task_id="TASK-TEST-001",
+            turn_number=1,
+            player_summary="Minimal test",
+            player_decision="implemented",
+            coach_decision="feedback",
+        )
+
+        assert entity.id == "TURN-FEAT-TEST-1"
+        assert entity.mode == TurnMode.CONTINUING_WORK  # default
+        assert entity.blockers_found == []
+        assert entity.acceptance_criteria_status == {}
+        assert entity.lessons_from_turn == []
+
+    def test_create_turn_state_from_autobuild_with_all_params(self):
+        """Test factory with all optional params."""
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=2,
+            player_summary="Full params test",
+            player_decision="implemented",
+            coach_decision="feedback",
+            coach_feedback="Add more tests",
+            mode=TurnMode.RECOVERING_STATE,
+            blockers_found=["Redis not available"],
+            progress_summary="Made good progress",
+            acceptance_criteria_status={"AC-001": "completed"},
+            tests_passed=10,
+            tests_failed=2,
+            coverage=75.0,
+            arch_score=80,
+            started_at=started,
+            completed_at=completed,
+            duration_seconds=900,
+            lessons_from_turn=["Need Redis for sessions"],
+            what_to_try_next="Add Redis dependency",
+        )
+
+        assert entity.id == "TURN-FEAT-GE-2"
+        assert entity.mode == TurnMode.RECOVERING_STATE
+        assert entity.blockers_found == ["Redis not available"]
+        assert entity.progress_summary == "Made good progress"
+        assert entity.acceptance_criteria_status == {"AC-001": "completed"}
+        assert entity.tests_passed == 10
+        assert entity.tests_failed == 2
+        assert entity.coverage == 75.0
+        assert entity.arch_score == 80
+        assert entity.started_at == started
+        assert entity.completed_at == completed
+        assert entity.duration_seconds == 900
+        assert entity.lessons_from_turn == ["Need Redis for sessions"]
+        assert entity.what_to_try_next == "Add Redis dependency"
+
+    def test_create_turn_state_from_autobuild_defaults_timestamps_to_now(self):
+        """Test factory defaults timestamps to current time when not provided."""
+        before = datetime.now()
+
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Time test",
+            player_decision="implemented",
+            coach_decision="approved",
+        )
+
+        after = datetime.now()
+
+        assert before <= entity.started_at <= after
+        assert before <= entity.completed_at <= after
+
+    def test_create_turn_state_from_autobuild_returns_valid_entity(self):
+        """Test factory returns valid TurnStateEntity that can be serialized."""
+        entity = create_turn_state_from_autobuild(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Serialization test",
+            player_decision="implemented",
+            coach_decision="approved",
+        )
+
+        # Should be a TurnStateEntity
+        assert isinstance(entity, TurnStateEntity)
+
+        # Should be serializable
+        episode_body = entity.to_episode_body()
+        assert isinstance(episode_body, dict)
+        assert episode_body["entity_type"] == "turn_state"
+
+        # Should be JSON serializable
+        json_str = json.dumps(episode_body)
+        assert isinstance(json_str, str)
+
+    def test_create_turn_state_from_autobuild_different_modes(self):
+        """Test factory with all TurnMode values."""
+        for mode in [TurnMode.FRESH_START, TurnMode.RECOVERING_STATE, TurnMode.CONTINUING_WORK]:
+            entity = create_turn_state_from_autobuild(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001",
+                turn_number=1,
+                player_summary="Mode test",
+                player_decision="implemented",
+                coach_decision="approved",
+                mode=mode,
+            )
+
+            assert entity.mode == mode
+
+
+# ============================================================================
+# 8. Module Exports Tests (3 tests)
+# ============================================================================
+
+class TestModuleExports:
+    """Test that turn_state_operations module exports are correct."""
+
+    def test_turn_state_entity_exported_from_entities_init(self):
+        """Test TurnStateEntity is exported from entities __init__."""
+        from guardkit.knowledge.entities import TurnStateEntity as EntityFromInit
+        from guardkit.knowledge.entities.turn_state import TurnStateEntity as EntityFromModule
+
+        assert EntityFromInit is EntityFromModule
+
+    def test_turn_mode_exported_from_entities_init(self):
+        """Test TurnMode is exported from entities __init__."""
+        from guardkit.knowledge.entities import TurnMode as ModeFromInit
+        from guardkit.knowledge.entities.turn_state import TurnMode as ModeFromModule
+
+        assert ModeFromInit is ModeFromModule
+
+    def test_operations_functions_importable(self):
+        """Test all operation functions can be imported."""
+        from guardkit.knowledge.turn_state_operations import (
+            capture_turn_state,
+            load_turn_continuation_context,
+            create_turn_state_from_autobuild,
+        )
+
+        assert callable(capture_turn_state)
+        assert callable(load_turn_continuation_context)
+        assert callable(create_turn_state_from_autobuild)

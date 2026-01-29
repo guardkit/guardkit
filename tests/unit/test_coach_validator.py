@@ -1800,6 +1800,232 @@ class TestTaskSpecificTestDetection:
 
 
 # ============================================================================
+# Graphiti Threshold Integration Tests (TASK-GE-005)
+# ============================================================================
+
+
+class TestGraphitiThresholdIntegration:
+    """Test CoachValidator integration with Graphiti quality gate thresholds.
+
+    These tests verify that CoachValidator correctly:
+    - Queries Graphiti for task-type/complexity-based thresholds
+    - Uses Graphiti thresholds when available
+    - Falls back to default profiles when Graphiti unavailable
+    - Logs threshold usage for audit trail
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_graphiti_thresholds_returns_profile_when_config_found(self):
+        """Test that get_graphiti_thresholds returns a profile when Graphiti config exists."""
+        # Import the actual module for patching
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            # Create a mock QualityGateConfigFact
+            mock_config = MagicMock()
+            mock_config.id = "QG-FEATURE-MED"
+            mock_config.test_pass_required = True
+            mock_config.coverage_required = True
+            mock_config.arch_review_required = True
+            mock_config.arch_review_threshold = 50
+            mock_config.coverage_threshold = 75.0
+
+            mock_get_config.return_value = mock_config
+
+            # Call the method
+            profile = await CoachValidator.get_graphiti_thresholds("feature", 5)
+
+            # Verify correct profile returned
+            assert profile is not None
+            assert profile.arch_review_threshold == 50
+            assert profile.coverage_threshold == 75.0
+            assert profile.tests_required is True
+            assert profile.arch_review_required is True
+
+            # Verify Graphiti was queried correctly
+            mock_get_config.assert_called_once_with("feature", 5)
+
+    @pytest.mark.asyncio
+    async def test_get_graphiti_thresholds_returns_none_when_no_config(self):
+        """Test that get_graphiti_thresholds returns None when no config found."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            mock_get_config.return_value = None
+
+            profile = await CoachValidator.get_graphiti_thresholds("unknown_type", 5)
+
+            assert profile is None
+            mock_get_config.assert_called_once_with("unknown_type", 5)
+
+    @pytest.mark.asyncio
+    async def test_get_graphiti_thresholds_returns_none_when_graphiti_disabled(self):
+        """Test graceful handling when Graphiti is disabled."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.GRAPHITI_AVAILABLE", False):
+            profile = await CoachValidator.get_graphiti_thresholds("feature", 5)
+            assert profile is None
+
+    @pytest.mark.asyncio
+    async def test_get_graphiti_thresholds_handles_query_error(self):
+        """Test that query errors are handled gracefully."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            mock_get_config.side_effect = Exception("Graphiti connection error")
+
+            # Should not raise, should return None
+            profile = await CoachValidator.get_graphiti_thresholds("feature", 5)
+            assert profile is None
+
+    @pytest.mark.asyncio
+    async def test_get_graphiti_thresholds_uses_default_threshold_when_none(self):
+        """Test that default values are used when config has None thresholds."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            mock_config = MagicMock()
+            mock_config.id = "QG-SCAFFOLDING-LOW"
+            mock_config.test_pass_required = True
+            mock_config.coverage_required = False
+            mock_config.arch_review_required = False
+            mock_config.arch_review_threshold = None  # None in config
+            mock_config.coverage_threshold = None  # None in config
+
+            mock_get_config.return_value = mock_config
+
+            profile = await CoachValidator.get_graphiti_thresholds("scaffolding", 2)
+
+            # Should use default values when config has None
+            assert profile.arch_review_threshold == 60  # Default
+            assert profile.coverage_threshold == 80.0  # Default
+
+    @pytest.mark.asyncio
+    async def test_validate_async_uses_graphiti_profile(self, tmp_worktree, task_work_results_dir):
+        """Test that validate_async uses Graphiti profile when available."""
+        # Create valid task-work results
+        results = make_task_work_results(
+            tests_passed=True,
+            coverage_met=True,
+            arch_score=60,  # Would fail default 60 threshold but pass 50 threshold
+        )
+        results_file = task_work_results_dir / "task_work_results.json"
+        results_file.write_text(json.dumps(results))
+
+        # Create acceptance criteria file
+        task = {
+            "id": "TASK-001",
+            "task_type": "feature",
+            "complexity": 5,  # Medium complexity
+            "acceptance_criteria": ["Criteria 1", "Criteria 2"],
+        }
+
+        # Patch the Graphiti query to return medium feature profile
+        with patch.object(CoachValidator, "get_graphiti_thresholds") as mock_thresholds:
+            from guardkit.orchestrator.quality_gates.profiles import QualityGateProfile
+
+            mock_thresholds.return_value = QualityGateProfile(
+                tests_required=True,
+                coverage_required=True,
+                arch_review_required=True,
+                plan_audit_required=True,
+                arch_review_threshold=50,  # Lower threshold from Graphiti
+                coverage_threshold=75.0,
+            )
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = await validator.validate_async("TASK-001", 1, task)
+
+            # Verify Graphiti was queried with correct parameters
+            mock_thresholds.assert_called_once_with("feature", 5)
+
+    @pytest.mark.asyncio
+    async def test_validate_async_falls_back_to_default_when_graphiti_unavailable(
+        self, tmp_worktree, task_work_results_dir
+    ):
+        """Test that validate_async falls back to default profile when Graphiti unavailable."""
+        results = make_task_work_results(tests_passed=True, coverage_met=True, arch_score=82)
+        results_file = task_work_results_dir / "task_work_results.json"
+        results_file.write_text(json.dumps(results))
+
+        task = {
+            "id": "TASK-001",
+            "task_type": "feature",
+            "complexity": 5,
+            "acceptance_criteria": ["Criteria 1"],
+        }
+
+        # Patch Graphiti to return None (unavailable)
+        with patch.object(CoachValidator, "get_graphiti_thresholds") as mock_thresholds:
+            mock_thresholds.return_value = None
+
+            validator = CoachValidator(str(tmp_worktree))
+            result = await validator.validate_async("TASK-001", 1, task)
+
+            # Should still complete validation using default profile
+            mock_thresholds.assert_called_once()
+            # Result should reflect default profile being used
+            # (default feature profile is used via _resolve_task_type)
+
+
+class TestQualityGateConfigIntegration:
+    """Integration tests verifying QualityGateConfigFact works with CoachValidator."""
+
+    @pytest.mark.asyncio
+    async def test_scaffolding_task_gets_relaxed_thresholds(self):
+        """Test that scaffolding tasks get relaxed quality gate thresholds."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            # Return scaffolding config
+            mock_config = MagicMock()
+            mock_config.id = "QG-SCAFFOLDING-LOW"
+            mock_config.test_pass_required = True
+            mock_config.coverage_required = False
+            mock_config.arch_review_required = False
+            mock_config.arch_review_threshold = None
+            mock_config.coverage_threshold = None
+
+            mock_get_config.return_value = mock_config
+
+            profile = await CoachValidator.get_graphiti_thresholds("scaffolding", 2)
+
+            assert profile.arch_review_required is False
+            assert profile.coverage_required is False
+
+    @pytest.mark.asyncio
+    async def test_high_complexity_feature_gets_strict_thresholds(self):
+        """Test that high complexity features get strict quality gate thresholds."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            # Return high complexity feature config
+            mock_config = MagicMock()
+            mock_config.id = "QG-FEATURE-HIGH"
+            mock_config.test_pass_required = True
+            mock_config.coverage_required = True
+            mock_config.arch_review_required = True
+            mock_config.arch_review_threshold = 70  # High threshold
+            mock_config.coverage_threshold = 80.0
+
+            mock_get_config.return_value = mock_config
+
+            profile = await CoachValidator.get_graphiti_thresholds("feature", 8)
+
+            assert profile.arch_review_required is True
+            assert profile.arch_review_threshold == 70
+            assert profile.coverage_threshold == 80.0
+
+    @pytest.mark.asyncio
+    async def test_docs_task_bypasses_most_gates(self):
+        """Test that documentation tasks have relaxed quality gates."""
+        with patch("guardkit.orchestrator.quality_gates.coach_validator.get_quality_gate_config") as mock_get_config:
+            # Return docs config
+            mock_config = MagicMock()
+            mock_config.id = "QG-DOCS"
+            mock_config.test_pass_required = False
+            mock_config.coverage_required = False
+            mock_config.arch_review_required = False
+            mock_config.arch_review_threshold = None
+            mock_config.coverage_threshold = None
+
+            mock_get_config.return_value = mock_config
+
+            profile = await CoachValidator.get_graphiti_thresholds("docs", 3)
+
+            assert profile.tests_required is False
+            assert profile.coverage_required is False
+            assert profile.arch_review_required is False
+
+
+# ============================================================================
 # Run Tests
 # ============================================================================
 

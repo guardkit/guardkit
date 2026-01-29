@@ -106,6 +106,14 @@ from guardkit.orchestrator.worktree_checkpoints import (
     Checkpoint,
 )
 
+# Import turn state operations for cross-turn learning (TASK-GE-002)
+from guardkit.knowledge.turn_state_operations import (
+    capture_turn_state,
+    create_turn_state_from_autobuild,
+)
+from guardkit.knowledge.entities.turn_state import TurnMode
+from guardkit.knowledge.graphiti_client import get_graphiti
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
