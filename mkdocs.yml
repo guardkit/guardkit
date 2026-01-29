@@ -109,6 +109,11 @@ nav:
           - Design Patterns Setup: deep-dives/mcp-integration/design-patterns-setup.md
           - MCP Optimization: deep-dives/mcp-integration/mcp-optimization.md
 
+  - Knowledge Graph:
+      - Integration Guide: guides/graphiti-integration-guide.md
+      - Setup: setup/graphiti-setup.md
+      - Architecture: architecture/graphiti-architecture.md
+
 
 # ============================================================================
 # Plugins

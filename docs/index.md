@@ -46,6 +46,12 @@ Analysis and decision-making workflows separate from implementation.
 ### 🔌 [MCP Integration](mcp-integration.md) (Optional)
 Enhance with Model Context Protocol servers for library docs and design patterns.
 
+### 🧠 Knowledge Graph (Graphiti)
+Learn how to integrate Graphiti's temporal knowledge graph for intelligent context management:
+- **[Integration Guide](guides/graphiti-integration-guide.md)** - Add Graphiti to your GuardKit workflow
+- **[Setup](setup/graphiti-setup.md)** - Installation and configuration
+- **[Architecture](architecture/graphiti-architecture.md)** - How Graphiti enhances GuardKit
+
 ### 🛠️ [Troubleshooting](troubleshooting.md)
 Common issues, solutions, and the `/debug` command.
 
