@@ -18,6 +18,7 @@ tags:
 task_type: feature
 title: Feature Overview Entity for Graphiti
 wave: 1
+completed_at: 2026-01-29T12:00:00+00:00
 ---
 
 # TASK-GE-001: Feature Overview Entity
@@ -186,12 +187,12 @@ async def load_feature_overview(feature_name: str) -> Optional[FeatureOverviewEn
 
 ## Acceptance Criteria
 
-- [ ] FeatureOverviewEntity dataclass created with all fields
-- [ ] Feature-build overview content defined and seeded
-- [ ] Query function retrieves overview by feature name
-- [ ] Session context loading includes overview when available
-- [ ] Unit tests for entity serialization/deserialization
-- [ ] Integration test confirms overview appears in context
+- [x] FeatureOverviewEntity dataclass created with all fields
+- [x] Feature-build overview content defined and seeded
+- [x] Query function retrieves overview by feature name
+- [x] Session context loading includes overview when available
+- [x] Unit tests for entity serialization/deserialization
+- [x] Integration test confirms overview appears in context
 
 ## Files to Create/Modify
 
