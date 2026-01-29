@@ -929,6 +929,9 @@ class AutoBuildOrchestrator:
                 turn_history.append(turn_record)
                 self._turn_history = turn_history  # Keep internal copy for state
 
+                # Capture turn state for cross-turn learning (TASK-GE-002)
+                self._capture_turn_state(turn_record, acceptance_criteria)
+
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
 
@@ -1511,6 +1514,188 @@ class AutoBuildOrchestrator:
             )
             return True
         return False
+
+    def _capture_turn_state(
+        self,
+        turn_record: TurnRecord,
+        acceptance_criteria: List[str],
+        start_time: Optional[datetime] = None,
+    ) -> None:
+        """
+        Capture turn state to Graphiti for cross-turn learning (TASK-GE-002).
+
+        This method creates a TurnStateEntity from the completed turn and
+        stores it in Graphiti for retrieval by subsequent turns.
+
+        Parameters
+        ----------
+        turn_record : TurnRecord
+            Completed turn record with Player and Coach results
+        acceptance_criteria : List[str]
+            Acceptance criteria for tracking progress
+        start_time : Optional[datetime]
+            Turn start time (defaults to now - duration if not provided)
+
+        Notes
+        -----
+        This enables cross-turn learning by allowing Turn N to query
+        what happened in Turn N-1, including:
+        - What was attempted and the outcome
+        - Coach feedback for improvement
+        - Blockers encountered
+        - Lessons learned
+
+        The capture is fire-and-forget with graceful degradation - if
+        Graphiti is unavailable, execution continues without blocking.
+        """
+        try:
+            # Extract feature_id from task_id (e.g., TASK-GE-001 -> FEAT-GE)
+            # or use a default if extraction fails
+            feature_id = self._extract_feature_id(self._current_task_id or "unknown")
+
+            # Determine turn mode
+            if turn_record.turn == 1:
+                mode = TurnMode.FRESH_START
+            elif self._recovery_count > 0:
+                mode = TurnMode.RECOVERING_STATE
+            else:
+                mode = TurnMode.CONTINUING_WORK
+
+            # Extract player summary from report
+            player_summary = "Unknown"
+            if turn_record.player_result and turn_record.player_result.report:
+                player_summary = turn_record.player_result.report.get(
+                    "summary", "Implementation attempt"
+                )
+
+            # Extract blockers from Player report
+            blockers_found = []
+            if turn_record.player_result and turn_record.player_result.report:
+                blockers = turn_record.player_result.report.get("blockers", [])
+                if isinstance(blockers, list):
+                    blockers_found = blockers
+
+            # Extract lessons and next steps from Coach feedback
+            lessons = []
+            what_to_try_next = None
+            if turn_record.coach_result and turn_record.coach_result.report:
+                coach_report = turn_record.coach_result.report
+                lessons = coach_report.get("lessons", [])
+                what_to_try_next = coach_report.get("focus_for_next_turn")
+
+            # Build acceptance criteria status
+            ac_status = {}
+            if turn_record.coach_result and turn_record.coach_result.report:
+                verification = turn_record.coach_result.report.get(
+                    "acceptance_criteria_verification", {}
+                )
+                criteria_results = verification.get("criteria_results", [])
+                for result in criteria_results:
+                    criterion_id = result.get("criterion_id", "")
+                    status = result.get("status", "not_started")
+                    if criterion_id:
+                        ac_status[criterion_id] = status
+
+            # Extract test metrics
+            tests_passed = None
+            tests_failed = None
+            coverage = None
+            arch_score = None
+
+            if turn_record.coach_result and turn_record.coach_result.report:
+                validation = turn_record.coach_result.report.get("validation_results", {})
+                if validation.get("tests_passed"):
+                    # Get test counts
+                    tests_passed = self._extract_test_count(turn_record)
+                    tests_failed = 0
+                elif validation.get("test_output_summary"):
+                    # Try to extract from output
+                    tests_passed = self._extract_test_count(turn_record)
+                    tests_failed = 0 if validation.get("tests_passed") else 1
+
+                # Extract architecture score if available
+                arch_review = turn_record.coach_result.report.get("architecture_review", {})
+                arch_score = arch_review.get("overall_score")
+                if arch_score and isinstance(arch_score, (int, float)):
+                    arch_score = int(arch_score)
+                else:
+                    arch_score = None
+
+            # Calculate duration
+            end_time = datetime.now()
+            if start_time:
+                duration_seconds = int((end_time - start_time).total_seconds())
+            else:
+                duration_seconds = None
+
+            # Create turn state entity
+            entity = create_turn_state_from_autobuild(
+                feature_id=feature_id,
+                task_id=self._current_task_id or "unknown",
+                turn_number=turn_record.turn,
+                player_summary=player_summary,
+                player_decision=turn_record.decision if turn_record.decision != "error" else "failed",
+                coach_decision=turn_record.decision,
+                coach_feedback=turn_record.feedback,
+                mode=mode,
+                blockers_found=blockers_found,
+                progress_summary=f"Turn {turn_record.turn}: {turn_record.decision}",
+                acceptance_criteria_status=ac_status,
+                tests_passed=tests_passed,
+                tests_failed=tests_failed,
+                coverage=coverage,
+                arch_score=arch_score,
+                started_at=start_time or end_time,
+                completed_at=end_time,
+                duration_seconds=duration_seconds,
+                lessons_from_turn=lessons if isinstance(lessons, list) else [],
+                what_to_try_next=what_to_try_next,
+            )
+
+            # Capture to Graphiti (async call, fire-and-forget with graceful degradation)
+            graphiti = get_graphiti()
+            if graphiti and graphiti.enabled:
+                # Run async capture in the event loop
+                asyncio.create_task(capture_turn_state(graphiti, entity))
+                logger.debug(f"Turn state capture initiated for turn {turn_record.turn}")
+            else:
+                logger.debug("Graphiti disabled, skipping turn state capture")
+
+        except Exception as e:
+            # Graceful degradation - log and continue
+            logger.warning(f"Error capturing turn state: {e}")
+
+    def _extract_feature_id(self, task_id: str) -> str:
+        """
+        Extract feature ID from task ID.
+
+        Examples:
+            TASK-GE-001 -> FEAT-GE
+            TASK-ABC-123 -> FEAT-ABC
+            TASK-001 -> FEAT-UNKNOWN
+
+        Parameters
+        ----------
+        task_id : str
+            Task identifier
+
+        Returns
+        -------
+        str
+            Extracted feature ID
+        """
+        import re
+
+        # Try to extract prefix from task_id (e.g., TASK-GE-001 -> GE)
+        match = re.match(r"TASK-([A-Z]+)-", task_id.upper())
+        if match:
+            return f"FEAT-{match.group(1)}"
+
+        # Fallback: use self._feature_id if available
+        if hasattr(self, "_feature_id") and self._feature_id:
+            return self._feature_id
+
+        return "FEAT-UNKNOWN"
 
     def _record_honesty(self, turn_record: TurnRecord) -> None:
         """
