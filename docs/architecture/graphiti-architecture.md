@@ -48,8 +48,8 @@ Graphiti provides GuardKit with persistent memory across Claude Code sessions th
 └─────────────────────────────────────────────────────────────────┘
          ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│                       FalkorDB                                  │
-│         (Neo4j-compatible graph database)                       │
+│                         Neo4j                                   │
+│                    (Graph Database)                             │
 └─────────────────────────────────────────────────────────────────┘
 
 Data Flow:

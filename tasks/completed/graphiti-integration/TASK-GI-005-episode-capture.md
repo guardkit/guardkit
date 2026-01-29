@@ -10,7 +10,7 @@ id: TASK-GI-005
 implementation_mode: task-work
 parent_review: TASK-REV-GI01
 priority: 2
-status: in_review
+status: completed
 tags:
 - graphiti
 - episode-capture

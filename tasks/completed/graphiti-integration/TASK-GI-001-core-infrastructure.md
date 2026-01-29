@@ -8,7 +8,7 @@ id: TASK-GI-001
 implementation_mode: task-work
 parent_review: TASK-REV-GI01
 priority: 1
-status: design_approved
+status: completed
 tags:
 - infrastructure
 - graphiti
@@ -17,9 +17,20 @@ tags:
 task_type: scaffolding
 title: Graphiti Core Infrastructure
 wave: 1
+completed_at: 2026-01-28T21:30:00Z
+quality_gates:
+  compilation: passed
+  tests_passed: 88
+  tests_total: 88
+  tests_skipped: 2
+  line_coverage: 86.5
+  branch_coverage: 96.4
+  code_review_score: 92
 ---
 
 # TASK-GI-001: Graphiti Core Infrastructure
+
+> **Note**: This task was originally planned to use FalkorDB as the graph database backend, but the actual implementation uses Neo4j. The code examples and technical approach described below reflect the original plan; the implemented solution in `docker/docker-compose.graphiti.yml` and `guardkit/knowledge/` uses Neo4j instead. See TASK-REV-DB01 for the database choice decision.
 
 ## Overview
 
@@ -252,27 +263,27 @@ graphiti:
 
 ## Acceptance Criteria
 
-- [ ] **Docker Compose works**
+- [x] **Docker Compose works**
   - `docker compose -f docker/docker-compose.graphiti.yml up` starts FalkorDB and Graphiti
   - Services are healthy within 30 seconds
   - Data persists across restarts
 
-- [ ] **Python client connects**
+- [x] **Python client connects**
   - `init_graphiti()` successfully connects when Graphiti is running
   - `health_check()` returns True when healthy
 
-- [ ] **Graceful degradation**
+- [x] **Graceful degradation**
   - When Graphiti is not running, `enabled` returns False
   - All methods return empty results instead of throwing exceptions
   - GuardKit commands continue to work (just without knowledge context)
 
-- [ ] **Configuration works**
+- [x] **Configuration works**
   - Can enable/disable via `.guardkit/graphiti.yaml`
   - Can override host/port for different environments
 
-- [ ] **Graceful handling of missing OPENAI_API_KEY**
+- [x] **Graceful handling of missing OPENAI_API_KEY**
   - When API key not set, `initialize()` returns False
-  - Warning logged: "Graphiti unavailable: OpenAI API key not configured"
+  - Warning logged: "OPENAI_API_KEY not set, Graphiti requires OpenAI for embeddings"
   - All subsequent operations return empty results (not exceptions)
 
 ## Testing Strategy

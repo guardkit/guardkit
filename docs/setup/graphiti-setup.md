@@ -2,7 +2,7 @@
 
 **Purpose**: Set up the Graphiti temporal knowledge graph to provide persistent memory and context across GuardKit sessions.
 
-**Technology**: Graphiti + FalkorDB (temporal knowledge graph with semantic search)
+**Technology**: Graphiti + Neo4j (temporal knowledge graph with semantic search)
 
 ---
 
@@ -46,7 +46,7 @@ docker compose version  # Should show 2.0.0 or later
 
 ### Step 1: Start Graphiti Services
 
-Start the FalkorDB graph database and Graphiti API server using Docker Compose:
+Start the Neo4j graph database and Graphiti API server using Docker Compose:
 
 ```bash
 # From your GuardKit project directory
@@ -57,15 +57,15 @@ docker compose -f docker/docker-compose.graphiti.yml up -d
 ```
 [+] Running 3/3
  ✔ Network guardkit-knowledge      Created
- ✔ Container guardkit-falkordb     Started
+ ✔ Container guardkit-neo4j        Started
  ✔ Container guardkit-graphiti     Started
 ```
 
 **What this does**:
 - Creates `guardkit-knowledge` network for service communication
-- Starts `guardkit-falkordb` on port 6379 (graph database backend)
+- Starts `guardkit-neo4j` on ports 7474 (HTTP) and 7687 (Bolt) (graph database backend)
 - Starts `guardkit-graphiti` on port 8000 (API server)
-- Creates persistent volume for data storage
+- Creates persistent volumes for data storage
 
 **Verify services are running**:
 ```bash
@@ -75,8 +75,8 @@ docker ps
 You should see:
 ```
 CONTAINER ID   IMAGE                      STATUS         PORTS
-abc123def456   getzep/graphiti:latest     Up 30 seconds  0.0.0.0:8000->8000/tcp
-def456ghi789   falkordb/falkordb:latest   Up 31 seconds  0.0.0.0:6379->6379/tcp
+abc123def456   zepai/graphiti:latest      Up 30 seconds  0.0.0.0:8000->8000/tcp
+def456ghi789   neo4j:5.26.0               Up 31 seconds  0.0.0.0:7474->7474/tcp, 0.0.0.0:7687->7687/tcp
 ```
 
 ---
@@ -301,10 +301,11 @@ group_ids:
    docker compose -f docker/docker-compose.graphiti.yml up -d
    ```
 
-2. **Port conflicts** (another service using 6379 or 8000):
+2. **Port conflicts** (another service using 7474, 7687, or 8000):
    ```bash
    # Check what's using the ports
-   lsof -i :6379
+   lsof -i :7474
+   lsof -i :7687
    lsof -i :8000
 
    # Change ports in docker-compose.graphiti.yml
@@ -320,7 +321,7 @@ group_ids:
 
    # Look for error messages
    docker logs guardkit-graphiti
-   docker logs guardkit-falkordb
+   docker logs guardkit-neo4j
    ```
 
 4. **Network issues**:
@@ -449,29 +450,32 @@ group_ids:
 
 The `docker-compose.graphiti.yml` file starts two services:
 
-**1. FalkorDB** (Graph Database):
-- **Image**: `falkordb/falkordb:latest`
-- **Container**: `guardkit-falkordb`
-- **Port**: `6379` (Redis-compatible protocol)
-- **Volume**: `falkordb_data:/data` (persistent storage)
-- **Health Check**: Redis PING every 10s
+**1. Neo4j** (Graph Database):
+- **Image**: `neo4j:5.26.0`
+- **Container**: `guardkit-neo4j`
+- **Ports**: `7474` (HTTP/Browser), `7687` (Bolt protocol)
+- **Volumes**: `neo4j_data:/data`, `neo4j_logs:/logs` (persistent storage)
+- **Health Check**: Cypher shell check every 10s
+- **Browser**: http://localhost:7474
 
 **2. Graphiti API** (Knowledge Graph Server):
-- **Image**: `getzep/graphiti:latest`
+- **Image**: `zepai/graphiti:latest`
 - **Container**: `guardkit-graphiti`
 - **Port**: `8000` (HTTP API)
-- **Dependencies**: Waits for FalkorDB to be healthy
+- **Dependencies**: Waits for Neo4j to be healthy
 - **Environment**:
   - `OPENAI_API_KEY`: Your OpenAI API key (required)
-  - `NEO4J_URI`: Connection to FalkorDB (`bolt://falkordb:6379`)
+  - `NEO4J_URI`: Connection to Neo4j (`bolt://neo4j:7687`)
+  - `NEO4J_USER`: Neo4j username (`neo4j`)
+  - `NEO4J_PASSWORD`: Neo4j password (`password123`)
   - `EMBEDDING_MODEL`: OpenAI embedding model (`text-embedding-3-small`)
-  - `LOG_LEVEL`: Logging verbosity (`INFO`)
 
 ### Port Mappings
 
 | Service | Container Port | Host Port | Purpose |
 |---------|---------------|-----------|---------|
-| FalkorDB | 6379 | 6379 | Graph database (Redis protocol) |
+| Neo4j | 7474 | 7474 | HTTP/Browser interface |
+| Neo4j | 7687 | 7687 | Bolt protocol (database connections) |
 | Graphiti | 8000 | 8000 | HTTP API for knowledge graph |
 
 ### Volume Persistence
@@ -482,16 +486,16 @@ Data is persisted in Docker volumes:
 # View volumes
 docker volume ls
 
-# Inspect FalkorDB data volume
-docker volume inspect guardkit-graphiti_falkordb_data
+# Inspect Neo4j data volume
+docker volume inspect guardkit-graphiti_neo4j_data
 
 # Backup volume (optional)
-docker run --rm -v guardkit-graphiti_falkordb_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/falkordb-backup.tar.gz -C /data .
+docker run --rm -v guardkit-graphiti_neo4j_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/neo4j-backup.tar.gz -C /data .
 
 # Restore volume (optional)
-docker run --rm -v guardkit-graphiti_falkordb_data:/data -v $(pwd):/backup \
-  alpine tar xzf /backup/falkordb-backup.tar.gz -C /data
+docker run --rm -v guardkit-graphiti_neo4j_data:/data -v $(pwd):/backup \
+  alpine tar xzf /backup/neo4j-backup.tar.gz -C /data
 ```
 
 ### Container Management
@@ -503,7 +507,7 @@ docker compose -f docker/docker-compose.graphiti.yml logs -f
 
 # Specific service
 docker logs guardkit-graphiti -f
-docker logs guardkit-falkordb -f
+docker logs guardkit-neo4j -f
 ```
 
 **Stop services** (preserves data):
