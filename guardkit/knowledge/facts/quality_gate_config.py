@@ -1,63 +1,42 @@
----
-id: TASK-GE-005
-title: Quality Gate Configuration Facts
-status: backlog
-priority: 2
-task_type: feature
-created_at: 2026-01-29T00:00:00Z
-parent_review: TASK-REV-7549
-feature_id: FEAT-GE
-implementation_mode: task-work
-wave: 2
-conductor_workspace: graphiti-enhancements-wave2-3
-complexity: 5
-estimated_minutes: 120
-dependencies: []
-tags:
-  - graphiti
-  - facts
-  - quality-gates
-  - configuration
----
+"""
+Quality Gate Configuration Facts for task-type and complexity-based thresholds.
 
-# TASK-GE-005: Quality Gate Configuration Facts
+This module defines versioned, queryable quality gate configurations that
+can be stored in Graphiti and retrieved based on task type and complexity.
 
-## Overview
-
-**Priority**: High (Enables configurable thresholds)
-**Dependencies**: None (uses existing Graphiti infrastructure)
-
-## Problem Statement
-
-From TASK-REV-7549 analysis: "Quality Gate Threshold Drift" was a recurring problem:
-- Fixed arch_review_threshold=60 for ALL feature tasks regardless of complexity
-- Simple tasks (complexity 2-3) held to same standards as complex tasks
-- Thresholds changed unpredictably across turns
-- No versioning or audit trail for threshold changes
-
-Quality gate thresholds are hardcoded, not queryable, and not task-type sensitive.
-
-## Goals
-
-1. Create QualityGateConfigFact for versioned, queryable thresholds
-2. Define configurations for different task types and complexity levels
-3. Integrate with CoachValidator to use configured thresholds
-4. Enable threshold queries ("What threshold applies to this task?")
-
-## Technical Approach
-
-### Fact Definition
-
-```python
-# guardkit/knowledge/facts/quality_gate_config.py
+Public API:
+    QualityGateConfigFact: Dataclass for quality gate configurations
+    QUALITY_GATE_CONFIGS: Predefined configurations for all task types
+"""
 
 from dataclasses import dataclass, field
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from datetime import datetime
+
 
 @dataclass
 class QualityGateConfigFact:
-    """Versioned quality gate thresholds."""
+    """Versioned quality gate thresholds.
+
+    This dataclass captures quality gate thresholds that vary based on
+    task type and complexity level. It supports versioning for audit trails.
+
+    Attributes:
+        id: Unique identifier (e.g., QG-{task_type}-{complexity_range})
+        name: Human-readable name
+        task_type: Task category ("scaffolding" | "feature" | "testing" | "docs" | "refactoring")
+        complexity_range: (min, max) complexity inclusive
+        arch_review_required: Whether architectural review is needed
+        arch_review_threshold: Minimum score for arch review (None if not required)
+        test_pass_required: Whether tests must pass
+        coverage_required: Whether coverage threshold applies
+        coverage_threshold: Minimum coverage percentage (None if not required)
+        lint_required: Whether linting must pass
+        rationale: Why these thresholds for this profile
+        version: Configuration version (default "1.0.0")
+        effective_from: When this configuration became effective
+        supersedes: Previous version ID (None for initial versions)
+    """
 
     # Identity
     id: str  # QG-{task_type}-{complexity_range}
@@ -84,7 +63,11 @@ class QualityGateConfigFact:
     supersedes: Optional[str] = None  # Previous version ID
 
     def to_episode_body(self) -> dict:
-        """Convert to Graphiti episode body."""
+        """Convert to Graphiti episode body.
+
+        Returns:
+            Dictionary suitable for Graphiti episode storage.
+        """
         return {
             "entity_type": "quality_gate_config",
             "id": self.id,
@@ -102,12 +85,13 @@ class QualityGateConfigFact:
             "effective_from": self.effective_from.isoformat(),
             "supersedes": self.supersedes
         }
-```
 
-### Quality Gate Configurations
 
-```python
-QUALITY_GATE_CONFIGS = [
+# =============================================================================
+# PREDEFINED QUALITY GATE CONFIGURATIONS
+# =============================================================================
+
+QUALITY_GATE_CONFIGS: List[QualityGateConfigFact] = [
     # Scaffolding tasks (complexity 1-3)
     QualityGateConfigFact(
         id="QG-SCAFFOLDING-LOW",
@@ -203,90 +187,3 @@ QUALITY_GATE_CONFIGS = [
         rationale="Documentation tasks don't involve code. No quality gates except manual review."
     )
 ]
-```
-
-### Query Function
-
-```python
-async def get_quality_gate_config(
-    task_type: str,
-    complexity: int
-) -> Optional[QualityGateConfigFact]:
-    """Get quality gate configuration for task type and complexity."""
-
-    graphiti = get_graphiti()
-    if not graphiti.enabled:
-        return None
-
-    results = await graphiti.search(
-        query=f"quality_gate_config {task_type} complexity {complexity}",
-        group_ids=["quality_gate_configs"],
-        num_results=5
-    )
-
-    # Find matching config
-    for result in results:
-        body = result.get('body', {})
-        min_c, max_c = body.get('complexity_range', (0, 10))
-        if body.get('task_type') == task_type and min_c <= complexity <= max_c:
-            return QualityGateConfigFact(**body)
-
-    return None
-```
-
-### Integration with CoachValidator
-
-```python
-# In guardkit/orchestrator/coach_validator.py
-
-async def _get_thresholds(self, task_type: str, complexity: int) -> dict:
-    """Get thresholds from Graphiti config or fall back to defaults."""
-
-    config = await get_quality_gate_config(task_type, complexity)
-
-    if config:
-        return {
-            "arch_review_required": config.arch_review_required,
-            "arch_review_threshold": config.arch_review_threshold,
-            "coverage_required": config.coverage_required,
-            "coverage_threshold": config.coverage_threshold,
-            "test_pass_required": config.test_pass_required
-        }
-
-    # Default fallback (conservative)
-    return {
-        "arch_review_required": True,
-        "arch_review_threshold": 60,
-        "coverage_required": True,
-        "coverage_threshold": 80.0,
-        "test_pass_required": True
-    }
-```
-
-## Acceptance Criteria
-
-- [ ] QualityGateConfigFact dataclass created with all fields
-- [ ] 6 configurations seeded (scaffolding, feature low/med/high, testing, docs)
-- [ ] Query function retrieves config by task type and complexity
-- [ ] CoachValidator uses configured thresholds
-- [ ] Thresholds logged in Coach decisions for audit trail
-- [ ] Unit tests for fact and query functions
-- [ ] Integration test confirms correct config applied
-
-## Files to Create/Modify
-
-### New Files
-- `guardkit/knowledge/facts/quality_gate_config.py`
-- `guardkit/knowledge/seed_quality_gate_configs.py`
-- `guardkit/knowledge/quality_gate_queries.py`
-- `tests/knowledge/test_quality_gate_configs.py`
-
-### Modified Files
-- `guardkit/orchestrator/coach_validator.py` (use Graphiti thresholds)
-- `guardkit/knowledge/seed_system_context.py` (call seed_quality_gate_configs)
-
-## Testing Strategy
-
-1. **Unit tests**: Test fact, seeding, and query functions
-2. **Integration tests**: Seed configs, verify correct one returned for inputs
-3. **E2E test**: Run task-work, verify Coach uses correct thresholds for task type

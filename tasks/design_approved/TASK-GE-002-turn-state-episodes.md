@@ -1,24 +1,24 @@
 ---
-id: TASK-GE-002
-title: Turn State Episodes for Cross-Turn Learning
-status: backlog
-priority: 1
-task_type: feature
-created_at: 2026-01-29T00:00:00Z
-parent_review: TASK-REV-7549
-feature_id: FEAT-GE
-implementation_mode: task-work
-wave: 2
-conductor_workspace: graphiti-enhancements-wave2-1
 complexity: 6
-estimated_minutes: 180
+conductor_workspace: graphiti-enhancements-wave2-1
+created_at: 2026-01-29 00:00:00+00:00
 dependencies:
-  - TASK-GE-001
+- TASK-GE-001
+estimated_minutes: 180
+feature_id: FEAT-GE
+id: TASK-GE-002
+implementation_mode: task-work
+parent_review: TASK-REV-7549
+priority: 1
+status: design_approved
 tags:
-  - graphiti
-  - episodes
-  - learning
-  - feature-build
+- graphiti
+- episodes
+- learning
+- feature-build
+task_type: feature
+title: Turn State Episodes for Cross-Turn Learning
+wave: 2
 ---
 
 # TASK-GE-002: Turn State Episodes for Cross-Turn Learning

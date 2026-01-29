@@ -1,23 +1,23 @@
 ---
-id: TASK-GE-004
-title: Failed Approach Episodes with Prevention Guidance
-status: backlog
-priority: 2
-task_type: feature
-created_at: 2026-01-29T00:00:00Z
-parent_review: TASK-REV-7549
-feature_id: FEAT-GE
-implementation_mode: task-work
-wave: 2
-conductor_workspace: graphiti-enhancements-wave2-2
 complexity: 5
-estimated_minutes: 120
+conductor_workspace: graphiti-enhancements-wave2-2
+created_at: 2026-01-29 00:00:00+00:00
 dependencies: []
+estimated_minutes: 120
+feature_id: FEAT-GE
+id: TASK-GE-004
+implementation_mode: task-work
+parent_review: TASK-REV-7549
+priority: 2
+status: design_approved
 tags:
-  - graphiti
-  - episodes
-  - learning
-  - failure-prevention
+- graphiti
+- episodes
+- learning
+- failure-prevention
+task_type: feature
+title: Failed Approach Episodes with Prevention Guidance
+wave: 2
 ---
 
 # TASK-GE-004: Failed Approach Episodes with Prevention Guidance

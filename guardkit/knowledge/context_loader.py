@@ -25,6 +25,13 @@ Example Usage:
     # Load feature overview
     from guardkit.knowledge.context_loader import load_feature_overview
     overview = await load_feature_overview("feature-build")
+
+    # Load failed approaches for prevention (TASK-GE-004)
+    from guardkit.knowledge.context_loader import load_failed_approaches
+    warnings = await load_failed_approaches("subprocess task-work")
+    for warning in warnings:
+        print(f"Warning: {warning['symptom']}")
+        print(f"Prevention: {warning['prevention']}")
 """
 
 from dataclasses import dataclass
@@ -453,6 +460,39 @@ async def load_critical_adrs() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"Error loading critical ADRs: {e}")
         return []
+
+
+async def load_failed_approaches(
+    query_context: str,
+    limit: int = 5,
+) -> List[Dict[str, Any]]:
+    """Load failed approaches for context injection.
+
+    Queries the failed_approaches group for relevant failures and formats
+    them as warnings for injection into Claude Code sessions. This helps
+    prevent repeating the same mistakes.
+
+    Args:
+        query_context: Context to search for (e.g., "subprocess task-work")
+        limit: Maximum number of results to return (default: 5)
+
+    Returns:
+        List of warning dictionaries with symptom, prevention, and related_adrs.
+        Returns empty list if Graphiti is unavailable (graceful degradation).
+
+    Example:
+        warnings = await load_failed_approaches("subprocess task-work")
+        for warning in warnings:
+            print(f"Warning: {warning['symptom']}")
+            print(f"Prevention: {warning['prevention']}")
+    """
+    # Delegate to the failed_approach_manager
+    from guardkit.knowledge.failed_approach_manager import load_relevant_failures
+
+    return await load_relevant_failures(
+        query_context=query_context,
+        limit=limit,
+    )
 
 
 async def load_role_context(role: str, context: str = "feature-build") -> Optional[str]:

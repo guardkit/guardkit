@@ -20,6 +20,7 @@ Episode Categories:
 - agents: Agent capabilities and boundaries
 - patterns: Design pattern knowledge
 - rules: Rule applicability and code examples
+- failed_approaches: Failed approaches with prevention guidance (TASK-GE-004)
 
 Usage:
     from guardkit.knowledge.seeding import seed_all_system_context
@@ -1127,6 +1128,42 @@ async def seed_rules(client) -> None:
 
 
 # =============================================================================
+# 14. FAILED APPROACHES (TASK-GE-004)
+# =============================================================================
+
+async def seed_quality_gate_configs_wrapper(client) -> None:
+    """Seed quality gate configurations for task-type/complexity-based thresholds.
+
+    This wraps the seed_quality_gate_configs function to match the signature
+    expected by the seed_all_system_context orchestrator.
+
+    Args:
+        client: GraphitiClient instance
+    """
+    if not client or not client.enabled:
+        return
+
+    from guardkit.knowledge.seed_quality_gate_configs import seed_quality_gate_configs
+    await seed_quality_gate_configs(client)
+
+
+async def seed_failed_approaches_wrapper(client) -> None:
+    """Seed initial failed approaches from TASK-REV-7549 findings.
+
+    This wraps the seed_failed_approaches function to match the signature
+    expected by the seed_all_system_context orchestrator.
+
+    Args:
+        client: GraphitiClient instance
+    """
+    if not client or not client.enabled:
+        return
+
+    from guardkit.knowledge.seed_failed_approaches import seed_failed_approaches
+    await seed_failed_approaches(client)
+
+
+# =============================================================================
 # MAIN ORCHESTRATOR
 # =============================================================================
 
@@ -1183,6 +1220,8 @@ async def seed_all_system_context(client, force: bool = False) -> bool:
         ("agents", "seed_agents"),
         ("patterns", "seed_patterns"),
         ("rules", "seed_rules"),
+        ("failed_approaches", "seed_failed_approaches_wrapper"),  # TASK-GE-004
+        ("quality_gate_configs", "seed_quality_gate_configs_wrapper"),  # TASK-GE-005
     ]
 
     for name, fn_name in categories:
