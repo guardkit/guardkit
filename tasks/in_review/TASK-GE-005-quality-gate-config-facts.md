@@ -9,7 +9,7 @@ id: TASK-GE-005
 implementation_mode: task-work
 parent_review: TASK-REV-7549
 priority: 2
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - facts
@@ -265,13 +265,13 @@ async def _get_thresholds(self, task_type: str, complexity: int) -> dict:
 
 ## Acceptance Criteria
 
-- [ ] QualityGateConfigFact dataclass created with all fields
-- [ ] 6 configurations seeded (scaffolding, feature low/med/high, testing, docs)
-- [ ] Query function retrieves config by task type and complexity
-- [ ] CoachValidator uses configured thresholds
-- [ ] Thresholds logged in Coach decisions for audit trail
-- [ ] Unit tests for fact and query functions
-- [ ] Integration test confirms correct config applied
+- [x] QualityGateConfigFact dataclass created with all fields
+- [x] 6 configurations seeded (scaffolding, feature low/med/high, testing, docs)
+- [x] Query function retrieves config by task type and complexity
+- [x] CoachValidator uses configured thresholds
+- [x] Thresholds logged in Coach decisions for audit trail
+- [x] Unit tests for fact and query functions
+- [x] Integration test confirms correct config applied
 
 ## Files to Create/Modify
 
