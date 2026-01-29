@@ -1,13 +1,19 @@
 id: FEAT-GE
 name: Graphiti Enhancements
-description: |
-  Enhancements to the Graphiti integration based on lessons learned from the AutoBuild/feature-build
-  development journey (TASK-REV-7549). Adds Feature Overview entities, Turn State episodes for
-  cross-turn learning, Role Constraint facts, Failed Approach episodes, Quality Gate configuration,
+description: 'Enhancements to the Graphiti integration based on lessons learned from
+  the AutoBuild/feature-build
+
+  development journey (TASK-REV-7549). Adds Feature Overview entities, Turn State
+  episodes for
+
+  cross-turn learning, Role Constraint facts, Failed Approach episodes, Quality Gate
+  configuration,
+
   and immediate ADR seeding.
 
+  '
 created: '2026-01-29T00:00:00Z'
-status: pending
+status: completed
 complexity: 32
 estimated_tasks: 7
 tasks:
@@ -16,65 +22,114 @@ tasks:
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-001-feature-overview-entity.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-
+  result:
+    total_turns: 3
+    final_decision: approved
+    error: null
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-01-29T11:38:35.855435'
+  completed_at: '2026-01-29T12:05:41.552537'
 - id: TASK-GE-003
   name: Role Constraint Facts
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-003-role-constraint-facts.md
   complexity: 4
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 90
-
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-29T11:38:35.858897'
+  completed_at: '2026-01-29T12:05:41.555883'
 - id: TASK-GE-006
   name: Feature-Build North Star Document
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-006-feature-build-north-star.md
   complexity: 3
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 60
-
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-01-29T11:38:35.864016'
+  completed_at: '2026-01-29T12:05:41.558801'
 - id: TASK-GE-007
   name: Immediate ADR Seeding
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-007-immediate-adr-seeding.md
   complexity: 4
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 90
-
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-01-29T11:38:35.869957'
+  completed_at: '2026-01-29T12:05:41.561781'
 - id: TASK-GE-002
   name: Turn State Episodes
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-002-turn-state-episodes.md
   complexity: 6
   dependencies:
   - TASK-GE-001
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-
+  result:
+    total_turns: 6
+    final_decision: approved
+    error: null
+  turns_completed: 6
+  current_turn: 0
+  started_at: '2026-01-29T12:05:41.574325'
+  completed_at: '2026-01-29T13:02:24.159780'
 - id: TASK-GE-004
   name: Failed Approach Episodes
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-004-failed-approach-episodes.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-
+  result:
+    total_turns: 5
+    final_decision: approved
+    error: null
+  turns_completed: 5
+  current_turn: 0
+  started_at: '2026-01-29T12:05:41.577790'
+  completed_at: '2026-01-29T13:02:24.163308'
 - id: TASK-GE-005
   name: Quality Gate Config Facts
   file_path: tasks/backlog/graphiti-enhancements/TASK-GE-005-quality-gate-config-facts.md
   complexity: 5
   dependencies: []
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-
+  result:
+    total_turns: 3
+    final_decision: approved
+    error: null
+  turns_completed: 3
+  current_turn: 0
+  started_at: '2026-01-29T12:05:41.580899'
+  completed_at: '2026-01-29T13:02:24.166317'
 orchestration:
   parallel_groups:
   - - TASK-GE-001
@@ -86,3 +141,17 @@ orchestration:
     - TASK-GE-005
   estimated_duration_minutes: 780
   recommended_parallel: 4
+execution:
+  started_at: '2026-01-29T11:38:35.846454'
+  completed_at: '2026-01-29T13:02:24.174208'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GE
+  total_turns: 21
+  tasks_completed: 7
+  tasks_failed: 0
+  current_wave: 2
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-01-29T13:02:24.169876'
+  archived_at: null
+  archived_to: null

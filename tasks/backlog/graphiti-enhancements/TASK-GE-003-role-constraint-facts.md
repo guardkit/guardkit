@@ -1,10 +1,10 @@
 ---
 id: TASK-GE-003
 title: Role Constraint Facts for Player-Coach Enforcement
-status: backlog
+status: in_review
 priority: 2
 task_type: feature
-created_at: 2026-01-29T00:00:00Z
+created_at: 2026-01-29 00:00:00+00:00
 parent_review: TASK-REV-7549
 feature_id: FEAT-GE
 implementation_mode: task-work
@@ -14,10 +14,25 @@ complexity: 4
 estimated_minutes: 90
 dependencies: []
 tags:
-  - graphiti
-  - facts
-  - player-coach
-  - enforcement
+- graphiti
+- facts
+- player-coach
+- enforcement
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GE
+  base_branch: main
+  started_at: '2026-01-29T11:38:35.890285'
+  last_updated: '2026-01-29T11:47:58.070880'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-29T11:38:35.890285'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GE-003: Role Constraint Facts for Player-Coach Enforcement

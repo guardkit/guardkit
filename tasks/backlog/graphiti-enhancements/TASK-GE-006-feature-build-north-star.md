@@ -1,10 +1,10 @@
 ---
 id: TASK-GE-006
 title: Feature-Build North Star Document
-status: backlog
+status: in_review
 priority: 1
 task_type: feature
-created_at: 2026-01-29T00:00:00Z
+created_at: 2026-01-29 00:00:00+00:00
 parent_review: TASK-REV-7549
 feature_id: FEAT-GE
 implementation_mode: direct
@@ -14,10 +14,31 @@ complexity: 3
 estimated_minutes: 60
 dependencies: []
 tags:
-  - documentation
-  - feature-build
-  - invariants
-  - critical-path
+- documentation
+- feature-build
+- invariants
+- critical-path
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GE
+  base_branch: main
+  started_at: '2026-01-29T11:38:35.894308'
+  last_updated: '2026-01-29T11:43:48.754221'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-29T11:38:35.894308'
+    player_summary: 'Created North Star document at .claude/rules/feature-build-invariants.md
+      (1923 bytes, under 2KB target). Document includes: (1) What You Are section
+      defining autonomous orchestrator identity, (2) What You Are NOT section listing
+      anti-patterns, (3) Six IMMUTABLE invariants from TASK-REV-7549, (4) Player and
+      Coach role constraints with DO/DON''T guidance, (5) ADR quick reference table
+      for FB-001/002/003, (6) When Stuck recovery guidance, (7) Quick Reference paths.
+      Path patterns correctly target gua'
+    player_success: true
+    coach_success: true
 ---
 
 # TASK-GE-006: Feature-Build North Star Document
