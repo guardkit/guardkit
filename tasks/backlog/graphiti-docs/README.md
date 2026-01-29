@@ -50,6 +50,15 @@ Or build individual tasks:
 | 003 | `docs/architecture/graphiti-architecture.md` |
 | 004 | Navigation configuration update |
 
+## Related Features
+
+| Feature | Relationship |
+|---------|--------------|
+| FEAT-GI | Base implementation being documented |
+| FEAT-GE | Enhancements (if merged, include in docs) |
+
+**Note**: If FEAT-GE (Graphiti Enhancements) is implemented before this feature runs, the documentation tasks will include any new capabilities it adds. Tasks are designed to document "what's implemented" rather than a fixed scope.
+
 ## Source Materials
 
 - `docs/research/knowledge-graph-mcp/` - Internal research documents

@@ -85,6 +85,8 @@ Create detailed installation and configuration documentation at `docs/setup/grap
 
 Verify commands against actual CLI implementation in `guardkit/cli/graphiti.py`.
 
+**Note**: The setup guide is less affected by FEAT-GE enhancements since setup steps remain the same. However, if new CLI commands or configuration options were added, include them.
+
 ## Test Requirements
 
 - [ ] Markdown lints without errors

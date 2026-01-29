@@ -92,6 +92,16 @@ Create technical deep-dive documentation at `docs/architecture/graphiti-architec
 
 Extract docstrings and type hints from actual Python code for accuracy. All code examples should be runnable.
 
+**Important**: Document what is actually implemented, not just the original FEAT-GI scope. If FEAT-GE (Graphiti Enhancements) has been merged, include:
+- Feature Overview Entity (GE-001)
+- Turn State Episodes (GE-002)
+- Role Constraint Facts (GE-003)
+- Failed Approach Episodes (GE-004)
+- Quality Gate Config Facts (GE-005)
+- Immediate ADR Seeding (GE-007)
+
+Check `guardkit/knowledge/entities/` and `guardkit/knowledge/seeding.py` for current entity/episode types.
+
 ## Test Requirements
 
 - [ ] Markdown lints without errors

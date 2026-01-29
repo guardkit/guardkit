@@ -95,6 +95,8 @@ Create the main user-facing guide for Graphiti Integration at `docs/guides/graph
 
 This is a documentation task - no code changes required. Content should be adapted from existing research documents, not invented.
 
+**Note**: If FEAT-GE (Graphiti Enhancements) has been implemented before this task runs, include any new knowledge categories or capabilities it adds (e.g., Feature Overview entities, Turn State episodes, Role Constraint facts). Check `guardkit/knowledge/` for the current implementation state.
+
 ## Test Requirements
 
 - [ ] Markdown lints without errors
