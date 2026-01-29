@@ -1,0 +1,14 @@
+{
+  "task_id": "TASK-GI-DOC-002",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "e4335e0e608f91f4f45c03e8be016021399f04f3",
+      "timestamp": "2026-01-29T16:58:35.124411",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-29T16:58:35.124651"
+}
