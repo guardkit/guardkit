@@ -168,7 +168,15 @@
       "tests_passed": false,
       "test_count": 0,
       "message": "[guardkit-checkpoint] Turn 21 complete (tests: fail)"
+    },
+    {
+      "turn": 22,
+      "commit_hash": "f58ec5e78c2c3432cf8e3ec4d162e3005c82201d",
+      "timestamp": "2026-01-30T22:32:52.644749",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 22 complete (tests: fail)"
     }
   ],
-  "last_updated": "2026-01-30T22:32:49.767415"
+  "last_updated": "2026-01-30T22:32:52.644957"
 }
