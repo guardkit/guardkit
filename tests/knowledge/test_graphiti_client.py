@@ -428,10 +428,11 @@ class TestGraphitiClientAddEpisode:
         config = GraphitiConfig(enabled=False)
         client = GraphitiClient(config)
 
+        # Use system group to avoid project_id requirement
         result = await client.add_episode(
             name="Test Episode",
             episode_body="Content",
-            group_id="group1"
+            group_id="role_constraints"
         )
 
         assert result is None
@@ -443,10 +444,11 @@ class TestGraphitiClientAddEpisode:
         client = GraphitiClient(config)
         client._graphiti = None
 
+        # Use system group to avoid project_id requirement
         result = await client.add_episode(
             name="Test Episode",
             episode_body="Content",
-            group_id="group1"
+            group_id="role_constraints"
         )
 
         assert result is None
@@ -473,10 +475,11 @@ class TestGraphitiClientAddEpisode:
         mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}):
+            # Use system group to avoid project_id requirement
             result = await client.add_episode(
                 name="Test Episode",
                 episode_body="This is test content",
-                group_id="group1"
+                group_id="role_constraints"
             )
 
             assert result == "episode-uuid-123"
@@ -484,7 +487,8 @@ class TestGraphitiClientAddEpisode:
             call_kwargs = mock_graphiti.add_episode.call_args[1]
             assert call_kwargs['name'] == "Test Episode"
             assert call_kwargs['episode_body'] == "This is test content"
-            assert call_kwargs['group_id'] == "group1"
+            # System group stays unprefixed
+            assert call_kwargs['group_id'] == "role_constraints"
 
     @pytest.mark.asyncio
     async def test_add_episode_graceful_degradation_on_error(self):
@@ -502,10 +506,11 @@ class TestGraphitiClientAddEpisode:
         mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}):
+            # Use system group to avoid project_id requirement
             result = await client.add_episode(
                 name="Test Episode",
                 episode_body="Content",
-                group_id="group1"
+                group_id="role_constraints"
             )
 
             assert result is None
@@ -526,10 +531,11 @@ class TestGraphitiClientAddEpisode:
         mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}):
+            # Use system group to avoid project_id requirement
             result = await client.add_episode(
                 name="Test Episode",
                 episode_body="Content",
-                group_id="group1"
+                group_id="role_constraints"
             )
 
             assert result is None
@@ -690,7 +696,8 @@ class TestEdgeCases:
         mock_graphiti.search = AsyncMock(return_value=[])
         client._graphiti = mock_graphiti
 
-        results = await client.search(query="", group_ids=["group1"])
+        # Use system group to avoid project_id requirement
+        results = await client.search(query="", group_ids=["role_constraints"])
 
         assert results == []
 
@@ -732,9 +739,10 @@ class TestEdgeCases:
         mock_graphiti.search = AsyncMock(return_value=[])
         client._graphiti = mock_graphiti
 
+        # Use system group to avoid project_id requirement
         results = await client.search(
             query="test",
-            group_ids=["group1"],
+            group_ids=["role_constraints"],
             num_results=10000
         )
 
@@ -763,10 +771,11 @@ class TestEdgeCases:
         mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}):
+            # Use system group to avoid project_id requirement
             result = await client.add_episode(
                 name="Special Chars Test",
                 episode_body=special_content,
-                group_id="group1"
+                group_id="role_constraints"
             )
 
             assert result == "episode-uuid"
@@ -795,10 +804,11 @@ class TestEdgeCases:
         mock_nodes_module = MagicMock(EpisodeType=mock_episode_type)
 
         with patch.dict('sys.modules', {'graphiti_core.nodes': mock_nodes_module}):
+            # Use system group to avoid project_id requirement
             result = await client.add_episode(
                 name="Empty Episode",
                 episode_body="",
-                group_id="group1"
+                group_id="role_constraints"
             )
 
             # Should still attempt to create
@@ -875,14 +885,14 @@ class TestGraphitiClientIntegration:
         healthy = await client.health_check()
         assert healthy is False
 
-        # Search should return empty list
-        results = await client.search(query="test", group_ids=["group1"])
+        # Search should return empty list (use system group to avoid project_id requirement)
+        results = await client.search(query="test", group_ids=["role_constraints"])
         assert results == []
 
-        # Add episode should return None
+        # Add episode should return None (use system group to avoid project_id requirement)
         episode_id = await client.add_episode(
             name="Test",
             episode_body="Test",
-            group_id="group1"
+            group_id="role_constraints"
         )
         assert episode_id is None

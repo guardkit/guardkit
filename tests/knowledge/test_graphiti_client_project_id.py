@@ -467,19 +467,11 @@ class TestProjectIdEdgeCases:
     """Test edge cases and integration scenarios."""
 
     def test_project_id_with_special_characters_normalized(self):
-        """Test that special characters in project_id are handled."""
-        # Client should normalize on initialization
-        config = GraphitiConfig(project_id="my@project#123")
-
-        # Should either normalize or reject
-        # If normalized:
-        try:
-            client = GraphitiClient(config)
-            assert "@" not in client.get_project_id()
-            assert "#" not in client.get_project_id()
-        except ValueError:
-            # If rejected, that's also valid
-            pass
+        """Test that special characters in project_id are rejected."""
+        # Config should validate and reject invalid characters
+        # This is the expected behavior for explicit project_ids
+        with pytest.raises(ValueError, match="invalid characters"):
+            GraphitiConfig(project_id="my@project#123")
 
     def test_very_long_auto_detected_project_id(self):
         """Test that very long auto-detected names are truncated."""
