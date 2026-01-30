@@ -405,3 +405,177 @@ def seed_adrs(force: bool):
     Use --force to re-seed even if ADRs have already been seeded.
     """
     asyncio.run(_cmd_seed_adrs(force))
+
+
+async def _cmd_clear(
+    confirm: bool,
+    system_only: bool,
+    project_only: bool,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Async implementation of clear command."""
+    console.print("[bold blue]Graphiti Knowledge Clear[/bold blue]")
+    console.print()
+
+    # Validate mutual exclusivity
+    if system_only and project_only:
+        console.print("[red]Error: --system-only and --project-only cannot be used together[/red]")
+        raise SystemExit(1)
+
+    # Check confirmation
+    if not confirm and not dry_run:
+        console.print("[red]Error: --confirm flag is required to clear knowledge[/red]")
+        console.print()
+        console.print("This is a destructive operation. Use one of:")
+        console.print("  guardkit graphiti clear --confirm            # Clear all")
+        console.print("  guardkit graphiti clear --system-only --confirm  # Clear system only")
+        console.print("  guardkit graphiti clear --project-only --confirm # Clear project only")
+        console.print("  guardkit graphiti clear --dry-run            # Preview only")
+        raise SystemExit(1)
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("Clear operation skipped.")
+        return
+
+    # Initialize connection
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+            console.print("Clear operation skipped.")
+            return
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Get preview first
+        preview = await client.get_clear_preview(
+            system_only=system_only,
+            project_only=project_only,
+        )
+
+        # Display what would be deleted
+        if dry_run:
+            console.print("[bold]Dry Run - The following would be deleted:[/bold]")
+        else:
+            console.print("[bold]The following will be deleted:[/bold]")
+        console.print()
+
+        if preview.get("system_groups"):
+            console.print("[cyan]System Groups:[/cyan]")
+            for group in preview["system_groups"]:
+                console.print(f"  - {group}")
+            console.print()
+
+        if preview.get("project_groups"):
+            console.print("[cyan]Project Groups:[/cyan]")
+            for group in preview["project_groups"]:
+                console.print(f"  - {group}")
+            console.print()
+
+        console.print(f"Total groups: {preview.get('total_groups', 0)}")
+        console.print(f"Estimated episodes: {preview.get('estimated_episodes', 0)}")
+        console.print()
+
+        # If dry run, stop here
+        if dry_run:
+            console.print("[yellow]Dry run complete. No data was deleted.[/yellow]")
+            return
+
+        # Perform the clear
+        console.print("Clearing knowledge...")
+
+        if system_only:
+            result = await client.clear_system_groups()
+            console.print()
+            console.print("[bold green]System knowledge cleared![/bold green]")
+            console.print(f"Groups cleared: {len(result.get('groups_cleared', []))}")
+            console.print(f"Episodes deleted: {result.get('episodes_deleted', 0)}")
+        elif project_only:
+            result = await client.clear_project_groups()
+            console.print()
+            console.print(f"[bold green]Project '{result.get('project', 'unknown')}' knowledge cleared![/bold green]")
+            console.print(f"Groups cleared: {len(result.get('groups_cleared', []))}")
+            console.print(f"Episodes deleted: {result.get('episodes_deleted', 0)}")
+        else:
+            result = await client.clear_all()
+            console.print()
+            console.print("[bold green]All knowledge cleared![/bold green]")
+            console.print(f"System groups cleared: {result.get('system_groups_cleared', 0)}")
+            console.print(f"Project groups cleared: {result.get('project_groups_cleared', 0)}")
+            console.print(f"Total episodes deleted: {result.get('total_episodes_deleted', 0)}")
+
+        if result.get("error"):
+            console.print(f"[yellow]Warning: {result['error']}[/yellow]")
+
+    finally:
+        await client.close()
+
+
+@graphiti.command()
+@click.option(
+    "--confirm",
+    is_flag=True,
+    help="Required. Confirm deletion.",
+)
+@click.option(
+    "--system-only",
+    is_flag=True,
+    help="Only clear system-level knowledge (not project-specific)",
+)
+@click.option(
+    "--project-only",
+    is_flag=True,
+    help="Only clear current project's knowledge",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be deleted without deleting",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Skip confirmation prompts (for automation)",
+)
+def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, force: bool):
+    """Clear Graphiti knowledge graph data.
+
+    Safely clears Graphiti knowledge with various scope options.
+    Requires --confirm flag for safety (unless using --dry-run).
+
+    \b
+    Examples:
+        guardkit graphiti clear --confirm           # Clear ALL knowledge
+        guardkit graphiti clear --system-only --confirm  # System only
+        guardkit graphiti clear --project-only --confirm # Current project only
+        guardkit graphiti clear --dry-run           # Preview what would be deleted
+
+    \b
+    System Groups (cleared with --system-only):
+        - guardkit_templates, guardkit_patterns, guardkit_workflows
+        - product_knowledge, command_workflows, quality_gate_phases
+        - technology_stack, feature_build_architecture, etc.
+
+    \b
+    Project Groups (cleared with --project-only):
+        - {project}__project_overview
+        - {project}__project_architecture
+        - {project}__feature_specs
+        - {project}__project_decisions
+    """
+    asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))

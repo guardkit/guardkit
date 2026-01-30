@@ -443,6 +443,334 @@ class GraphitiClient:
             logger.warning(f"Graphiti add_episode failed: {e}")
             return None
 
+    # =========================================================================
+    # CLEAR METHODS
+    # =========================================================================
+
+    # System group IDs that are cleared with --system-only
+    SYSTEM_GROUP_IDS = [
+        "guardkit_templates",
+        "guardkit_patterns",
+        "guardkit_workflows",
+        "product_knowledge",
+        "command_workflows",
+        "quality_gate_phases",
+        "technology_stack",
+        "feature_build_architecture",
+        "architecture_decisions",
+        "failure_patterns",
+        "component_status",
+        "integration_points",
+        "templates",
+        "agents",
+        "patterns",
+        "rules",
+        "failed_approaches",
+        "quality_gate_configs",
+    ]
+
+    async def _list_groups(self) -> List[str]:
+        """List all group IDs in the knowledge graph.
+
+        Returns:
+            List of group IDs, empty list on error.
+        """
+        if not self._graphiti or not self._connected:
+            return []
+
+        try:
+            # Query Neo4j for distinct group IDs
+            driver = getattr(self._graphiti, 'driver', None)
+            if not driver:
+                return []
+
+            async with driver.session() as session:
+                result = await session.run(
+                    "MATCH (e:Episode) RETURN DISTINCT e.group_id AS group_id"
+                )
+                records = await result.data()
+                return [r["group_id"] for r in records if r.get("group_id")]
+        except Exception as e:
+            logger.warning(f"Failed to list groups: {e}")
+            return []
+
+    async def _clear_group(self, group_id: str) -> int:
+        """Clear all episodes in a specific group.
+
+        Args:
+            group_id: The group ID to clear.
+
+        Returns:
+            Number of episodes deleted, 0 on error.
+        """
+        if not self._graphiti or not self._connected:
+            return 0
+
+        try:
+            driver = getattr(self._graphiti, 'driver', None)
+            if not driver:
+                return 0
+
+            async with driver.session() as session:
+                # Delete episodes and their relationships in the group
+                result = await session.run(
+                    """
+                    MATCH (e:Episode {group_id: $group_id})
+                    WITH e, count(e) as cnt
+                    DETACH DELETE e
+                    RETURN cnt as count
+                    """,
+                    group_id=group_id
+                )
+                record = await result.single()
+                return record["count"] if record else 0
+        except Exception as e:
+            logger.warning(f"Failed to clear group {group_id}: {e}")
+            return 0
+
+    async def clear_all(self) -> Dict[str, Any]:
+        """Clear all knowledge (system + project groups).
+
+        Returns:
+            Dict with clearing results:
+            - system_groups_cleared: int
+            - project_groups_cleared: int
+            - total_episodes_deleted: int
+        """
+        if not self.config.enabled:
+            return {
+                "system_groups_cleared": 0,
+                "project_groups_cleared": 0,
+                "total_episodes_deleted": 0,
+            }
+
+        if not self._graphiti or not self._connected:
+            return {
+                "system_groups_cleared": 0,
+                "project_groups_cleared": 0,
+                "total_episodes_deleted": 0,
+            }
+
+        try:
+            all_groups = await self._list_groups()
+            system_cleared = 0
+            project_cleared = 0
+            total_deleted = 0
+
+            for group_id in all_groups:
+                deleted = await self._clear_group(group_id)
+                total_deleted += deleted
+
+                if group_id in self.SYSTEM_GROUP_IDS or not "__" in group_id:
+                    system_cleared += 1
+                else:
+                    project_cleared += 1
+
+            return {
+                "system_groups_cleared": system_cleared,
+                "project_groups_cleared": project_cleared,
+                "total_episodes_deleted": total_deleted,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to clear all: {e}")
+            return {
+                "system_groups_cleared": 0,
+                "project_groups_cleared": 0,
+                "total_episodes_deleted": 0,
+                "error": str(e),
+            }
+
+    async def clear_system_groups(self) -> Dict[str, Any]:
+        """Clear only system-level knowledge groups.
+
+        System groups include templates, patterns, workflows, etc.
+        Does NOT clear project-specific knowledge.
+
+        Returns:
+            Dict with clearing results:
+            - groups_cleared: List[str]
+            - episodes_deleted: int
+        """
+        if not self.config.enabled:
+            return {"groups_cleared": [], "episodes_deleted": 0}
+
+        if not self._graphiti or not self._connected:
+            return {"groups_cleared": [], "episodes_deleted": 0}
+
+        try:
+            all_groups = await self._list_groups()
+            cleared = []
+            total_deleted = 0
+
+            for group_id in all_groups:
+                # Only clear system groups (no __ pattern)
+                if group_id in self.SYSTEM_GROUP_IDS or (
+                    not "__" in group_id and group_id.startswith("guardkit")
+                ):
+                    deleted = await self._clear_group(group_id)
+                    total_deleted += deleted
+                    cleared.append(group_id)
+
+            return {
+                "groups_cleared": cleared,
+                "episodes_deleted": total_deleted,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to clear system groups: {e}")
+            return {"groups_cleared": [], "episodes_deleted": 0, "error": str(e)}
+
+    async def clear_project_groups(
+        self, project_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Clear only project-level knowledge groups.
+
+        Project groups follow the pattern: {project}__group_name
+
+        Args:
+            project_name: Project name to clear. If None, auto-detects from cwd.
+
+        Returns:
+            Dict with clearing results:
+            - project: str
+            - groups_cleared: List[str]
+            - episodes_deleted: int
+        """
+        if not self.config.enabled:
+            return {"project": project_name or "", "groups_cleared": [], "episodes_deleted": 0}
+
+        if not self._graphiti or not self._connected:
+            return {"project": project_name or "", "groups_cleared": [], "episodes_deleted": 0}
+
+        try:
+            # Auto-detect project name if not provided
+            if not project_name:
+                project_name = get_current_project_name()
+
+            all_groups = await self._list_groups()
+            cleared = []
+            total_deleted = 0
+            prefix = f"{project_name}__"
+
+            for group_id in all_groups:
+                # Only clear groups matching this project's prefix
+                if group_id.startswith(prefix):
+                    deleted = await self._clear_group(group_id)
+                    total_deleted += deleted
+                    cleared.append(group_id)
+
+            return {
+                "project": project_name,
+                "groups_cleared": cleared,
+                "episodes_deleted": total_deleted,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to clear project groups: {e}")
+            return {
+                "project": project_name or "",
+                "groups_cleared": [],
+                "episodes_deleted": 0,
+                "error": str(e),
+            }
+
+    async def get_clear_preview(
+        self,
+        system_only: bool = False,
+        project_only: bool = False,
+        project_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get a preview of what would be deleted.
+
+        Args:
+            system_only: Only preview system groups.
+            project_only: Only preview project groups.
+            project_name: Project name for project_only. Auto-detects if None.
+
+        Returns:
+            Dict with preview:
+            - system_groups: List[str]
+            - project_groups: List[str]
+            - total_groups: int
+            - estimated_episodes: int
+        """
+        if not self.config.enabled:
+            return {
+                "system_groups": [],
+                "project_groups": [],
+                "total_groups": 0,
+                "estimated_episodes": 0,
+            }
+
+        if not self._graphiti or not self._connected:
+            return {
+                "system_groups": [],
+                "project_groups": [],
+                "total_groups": 0,
+                "estimated_episodes": 0,
+            }
+
+        try:
+            all_groups = await self._list_groups()
+            system_groups = []
+            project_groups = []
+
+            # Auto-detect project name for project_only
+            if project_only and not project_name:
+                project_name = get_current_project_name()
+
+            for group_id in all_groups:
+                is_system = group_id in self.SYSTEM_GROUP_IDS or (
+                    not "__" in group_id and group_id.startswith("guardkit")
+                )
+                is_project = "__" in group_id
+
+                if system_only and is_system:
+                    system_groups.append(group_id)
+                elif project_only and is_project:
+                    if not project_name or group_id.startswith(f"{project_name}__"):
+                        project_groups.append(group_id)
+                elif not system_only and not project_only:
+                    if is_system:
+                        system_groups.append(group_id)
+                    elif is_project:
+                        project_groups.append(group_id)
+
+            # Estimate episode count
+            estimated = 0
+            try:
+                driver = getattr(self._graphiti, 'driver', None)
+                if driver:
+                    async with driver.session() as session:
+                        target_groups = system_groups + project_groups
+                        if target_groups:
+                            result = await session.run(
+                                """
+                                MATCH (e:Episode)
+                                WHERE e.group_id IN $groups
+                                RETURN count(e) as count
+                                """,
+                                groups=target_groups
+                            )
+                            record = await result.single()
+                            estimated = record["count"] if record else 0
+            except Exception:
+                pass  # Estimation is best-effort
+
+            return {
+                "system_groups": system_groups,
+                "project_groups": project_groups,
+                "total_groups": len(system_groups) + len(project_groups),
+                "estimated_episodes": estimated,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to get clear preview: {e}")
+            return {
+                "system_groups": [],
+                "project_groups": [],
+                "total_groups": 0,
+                "estimated_episodes": 0,
+                "error": str(e),
+            }
+
     async def close(self) -> None:
         """Close the Graphiti connection and clean up resources.
 
@@ -456,6 +784,16 @@ class GraphitiClient:
             finally:
                 self._graphiti = None
                 self._connected = False
+
+
+def get_current_project_name() -> str:
+    """Get the current project name from the working directory.
+
+    Returns:
+        Project name derived from the current working directory.
+    """
+    from pathlib import Path
+    return Path.cwd().name
 
 
 # Module-level singleton
