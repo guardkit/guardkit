@@ -1,0 +1,9 @@
+{
+  "turn": 18,
+  "feedback_from_turn": 17,
+  "feedback_summary": "- Task-work results not found at /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP/.guardkit/autobuild/TASK-GR-PRE-003-A/task_work_results.json",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- Task-work results not found at /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP/.guardkit/autobuild/TASK-GR-PRE-003-A/task_work_results.json"
+}
