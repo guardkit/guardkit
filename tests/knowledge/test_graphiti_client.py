@@ -342,9 +342,10 @@ class TestGraphitiClientSearch:
         mock_graphiti.search = AsyncMock(return_value=[mock_edge1, mock_edge2])
         client._graphiti = mock_graphiti
 
+        # Use system group to avoid project_id requirement
         results = await client.search(
             query="test query",
-            group_ids=["group1"],
+            group_ids=["role_constraints"],
             num_results=10
         )
 
@@ -352,8 +353,8 @@ class TestGraphitiClientSearch:
         assert results[0]["fact"] == "Test fact 1"
         assert results[0]["uuid"] == "uuid-1"
         assert results[1]["fact"] == "Test fact 2"
-        # Verify search was called with correct parameters (including group_ids)
-        mock_graphiti.search.assert_called_once_with("test query", group_ids=["group1"], num_results=10)
+        # Verify search was called with correct parameters (system group stays unprefixed)
+        mock_graphiti.search.assert_called_once_with("test query", group_ids=["role_constraints"], num_results=10)
 
     @pytest.mark.asyncio
     async def test_search_empty_results(self):
@@ -365,7 +366,8 @@ class TestGraphitiClientSearch:
         mock_graphiti.search = AsyncMock(return_value=[])
         client._graphiti = mock_graphiti
 
-        results = await client.search(query="nonexistent", group_ids=["group1"])
+        # Use system group to avoid project_id requirement
+        results = await client.search(query="nonexistent", group_ids=["role_constraints"])
 
         assert results == []
 
@@ -379,7 +381,8 @@ class TestGraphitiClientSearch:
         mock_graphiti.search = AsyncMock(side_effect=Exception("Search error"))
         client._graphiti = mock_graphiti
 
-        results = await client.search(query="test", group_ids=["group1"])
+        # Use system group to avoid project_id requirement
+        results = await client.search(query="test", group_ids=["role_constraints"])
 
         assert results == []
 
@@ -393,10 +396,11 @@ class TestGraphitiClientSearch:
         mock_graphiti.search = AsyncMock(return_value=[])
         client._graphiti = mock_graphiti
 
-        await client.search(query="test", group_ids=["group1"])
+        # Use system group to avoid project_id requirement
+        await client.search(query="test", group_ids=["role_constraints"])
 
-        # Verify default num_results (10) is passed along with group_ids
-        mock_graphiti.search.assert_called_once_with("test", group_ids=["group1"], num_results=10)
+        # Verify default num_results (10) is passed along with group_ids (system group stays unprefixed)
+        mock_graphiti.search.assert_called_once_with("test", group_ids=["role_constraints"], num_results=10)
 
     @pytest.mark.asyncio
     async def test_search_with_custom_num_results(self):
@@ -408,9 +412,11 @@ class TestGraphitiClientSearch:
         mock_graphiti.search = AsyncMock(return_value=[])
         client._graphiti = mock_graphiti
 
-        await client.search(query="test", group_ids=["group1"], num_results=5)
+        # Use system group to avoid project_id requirement
+        await client.search(query="test", group_ids=["role_constraints"], num_results=5)
 
-        mock_graphiti.search.assert_called_once_with("test", group_ids=["group1"], num_results=5)
+        # System group stays unprefixed
+        mock_graphiti.search.assert_called_once_with("test", group_ids=["role_constraints"], num_results=5)
 
 
 class TestGraphitiClientAddEpisode:

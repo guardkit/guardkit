@@ -9,7 +9,7 @@ id: TASK-GR-PRE-002-A
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - metadata
@@ -19,6 +19,13 @@ task_type: feature
 title: Define standard metadata fields
 updated: 2026-01-30 00:00:00+00:00
 wave: 3
+implementation:
+  started_at: 2026-01-30T12:00:00Z
+  completed_at: 2026-01-30T12:30:00Z
+  mode: tdd
+  coverage: 93%
+  tests_passed: 31
+  tests_total: 31
 ---
 
 # Task: Define standard metadata fields
@@ -29,11 +36,11 @@ Define the standard metadata fields that will be included in all Graphiti episod
 
 ## Acceptance Criteria
 
-- [ ] Standard metadata schema defined in code
-- [ ] Schema is documented with field descriptions
-- [ ] Schema is versioned for future migrations
-- [ ] Validation rules defined for each field
-- [ ] Schema supports all planned episode types
+- [x] Standard metadata schema defined in code
+- [x] Schema is documented with field descriptions
+- [x] Schema is versioned for future migrations
+- [x] Validation rules defined for each field
+- [x] Schema supports all planned episode types
 
 ## Implementation Notes
 
@@ -72,16 +79,47 @@ class EpisodeMetadata:
 - `domain_term`
 - `constraint`
 
-### Files to Create
+### Files Created
 
-- `src/guardkit/integrations/graphiti/metadata.py` - Schema definition
-- `src/guardkit/integrations/graphiti/constants.py` - Entity types
+- `guardkit/integrations/graphiti/metadata.py` - EpisodeMetadata dataclass and EntityType enum
+- `guardkit/integrations/graphiti/constants.py` - SourceType enum
+- `guardkit/integrations/graphiti/__init__.py` - Package exports
+- `tests/unit/integrations/graphiti/test_episode_metadata.py` - 31 unit tests
 
 ## Test Requirements
 
-- [ ] Unit tests for metadata validation
-- [ ] Unit tests for serialization/deserialization
-- [ ] Test all entity types
+- [x] Unit tests for metadata validation
+- [x] Unit tests for serialization/deserialization
+- [x] Test all entity types
+
+## Implementation Summary
+
+### TDD Workflow Completed
+
+1. **RED Phase**: Created 31 failing tests covering:
+   - EpisodeMetadata creation (6 tests)
+   - Serialization/deserialization (5 tests)
+   - EntityType enum (5 tests)
+   - SourceType enum (4 tests)
+   - Validation logic (5 tests)
+   - Helper methods (4 tests)
+   - Edge cases (2 tests)
+
+2. **GREEN Phase**: Implemented:
+   - `SourceType(str, Enum)` with 3 values
+   - `EntityType(str, Enum)` with 9 values
+   - `EpisodeMetadata` dataclass with:
+     - 4 required fields
+     - 7 optional fields
+     - `__post_init__` validation
+     - `to_dict()` serialization
+     - `from_dict()` deserialization
+     - `create_now()` factory method
+
+3. **Quality Gates**:
+   - Tests: 31/31 passing (100%)
+   - Coverage: 93% (exceeds 80% threshold)
+   - Code Review: APPROVED
 
 ## Notes
 
