@@ -225,6 +225,68 @@ test_results:
 - `blocked` - Cannot proceed
 - `completed` - Done and verified
 
+### library_context Field (Optional)
+
+The `library_context` frontmatter field allows manual specification of library API documentation. This is useful when:
+- Libraries are internal/proprietary and not available in Context7
+- Specific version documentation is needed
+- You want to override or supplement Context7 results
+
+**Field Structure:**
+```yaml
+library_context:
+  - name: graphiti-core                    # Required: library name
+    import: "from graphiti_core import Graphiti"  # Optional: import statement
+    initialization: |                       # Optional: initialization code
+      graphiti = Graphiti(neo4j_uri, neo4j_user, neo4j_password)
+      await graphiti.build_indices()
+    key_methods:                            # Optional: key method documentation
+      - name: search
+        signature: "async def search(query: str, group_ids: List[str], num_results: int) -> List[Edge]"
+        returns: "List of Edge objects with uuid, fact, name, created_at, score"
+      - name: add_episode
+        signature: "async def add_episode(name: str, body: str, group_id: str) -> EpisodeResult"
+```
+
+**Field Schema:**
+```yaml
+library_context:
+  type: array
+  items:
+    type: object
+    required:
+      - name
+    properties:
+      name:
+        type: string
+        description: Library/package name
+      import:
+        type: string
+        description: Import statement(s)
+      initialization:
+        type: string
+        description: Initialization code example
+      key_methods:
+        type: array
+        items:
+          type: object
+          properties:
+            name:
+              type: string
+            signature:
+              type: string
+            returns:
+              type: string
+```
+
+**Precedence Rules:**
+- Manual entries in `library_context` **take precedence** over Context7 results
+- If a library is specified in both manual context and detected by auto-detection, the manual entry is used
+- Libraries not in manual context fall back to Context7 resolution
+
+**Integration with Phase 2:**
+The `library_context` field is parsed in Phase 1.5 (Load Task Context) and merged with Context7 results in Phase 2.1 (Implementation Planning). The merged context is injected into the planning prompt to ensure accurate library API knowledge.
+
 ### Linking Specifications
 ```bash
 # Link requirements during creation

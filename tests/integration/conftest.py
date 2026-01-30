@@ -42,6 +42,12 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "workflow: mark test as workflow integration test"
     )
+    config.addinivalue_line(
+        "markers", "context7: mark test as requiring Context7 MCP"
+    )
+    config.addinivalue_line(
+        "markers", "performance: mark test as performance test"
+    )
 
 
 @pytest.fixture
@@ -224,6 +230,158 @@ def workflow_test_context(
         'task_file': integration_task_file,
         'task_id': integration_task_metadata['id'],
     }
+
+
+@pytest.fixture
+def mock_context7_resolve_success():
+    """
+    Mock Context7 resolve-library-id that returns success for known libraries.
+
+    Returns a callable that simulates Context7 MCP resolve-library-id tool.
+    Provides consistent test results without external dependencies.
+
+    Returns:
+        callable: Mock function with signature (libraryName: str, query: str) -> dict
+
+    Example:
+        >>> resolve = mock_context7_resolve_success()
+        >>> result = resolve(libraryName="fastapi", query="docs")
+        >>> assert result["libraryId"] == "/tiangolo/fastapi"
+    """
+    def _resolve(libraryName: str, query: str) -> Dict[str, str]:
+        known = {
+            "fastapi": "/tiangolo/fastapi",
+            "pydantic": "/pydantic/pydantic",
+            "redis": "/redis/redis-py",
+            "graphiti-core": "/getzep/graphiti",
+            "react": "/facebook/react",
+        }
+        lib_lower = libraryName.lower()
+        if lib_lower in known:
+            return {"libraryId": known[lib_lower]}
+        return None
+    return _resolve
+
+
+@pytest.fixture
+def mock_context7_query_success():
+    """
+    Mock Context7 query-docs that returns documentation.
+
+    Returns a callable that simulates Context7 MCP query-docs tool.
+    Provides realistic documentation snippets for testing.
+
+    Returns:
+        callable: Mock function with signature (libraryId: str, query: str) -> dict
+
+    Example:
+        >>> query = mock_context7_query_success()
+        >>> result = query(libraryId="/tiangolo/fastapi", query="init")
+        >>> assert "FastAPI" in result["content"]
+    """
+    def _query(libraryId: str, query: str) -> Dict[str, str]:
+        if "init" in query.lower() or "setup" in query.lower():
+            return {
+                "content": """
+# Getting Started
+
+```python
+from library import Library
+
+lib = Library()
+```
+
+Initialize your library instance.
+"""
+            }
+        elif "method" in query.lower() or "api" in query.lower():
+            return {
+                "content": """
+# API Methods
+
+- `.get()` - Retrieve data
+- `.post()` - Create data
+- `.put()` - Update data
+"""
+            }
+        return None
+    return _query
+
+
+@pytest.fixture
+def sample_library_data():
+    """
+    Sample library data for integration tests.
+
+    Provides realistic library metadata for testing detection,
+    resolution, and context gathering workflows.
+
+    Returns:
+        Dict[str, Any]: Dictionary with library test data
+
+    Example:
+        >>> data = sample_library_data()
+        >>> assert "fastapi" in data["known_libraries"]
+    """
+    return {
+        "known_libraries": ["fastapi", "pydantic", "redis", "graphiti-core", "react"],
+        "unknown_libraries": ["fake-lib-xyz", "internal-custom", "not-real"],
+        "library_docs": {
+            "fastapi": {
+                "init": "from fastapi import FastAPI\napp = FastAPI()",
+                "methods": ["get", "post", "put", "delete"]
+            },
+            "pydantic": {
+                "init": "from pydantic import BaseModel",
+                "methods": ["model_validate", "model_dump"]
+            }
+        }
+    }
+
+
+@pytest.fixture
+def performance_timer():
+    """
+    Performance timing fixture for integration tests.
+
+    Provides context manager for timing test operations and
+    asserting performance targets.
+
+    Returns:
+        callable: Timer context manager
+
+    Example:
+        >>> timer = performance_timer()
+        >>> with timer.measure("operation") as t:
+        ...     # do work
+        >>> assert t.elapsed < 3.0
+    """
+    import time
+    from contextlib import contextmanager
+
+    class Timer:
+        def __init__(self):
+            self.elapsed = 0.0
+            self.start_time = None
+
+        def start(self):
+            self.start_time = time.time()
+
+        def stop(self):
+            if self.start_time is not None:
+                self.elapsed = time.time() - self.start_time
+                self.start_time = None
+
+        @contextmanager
+        def measure(self, name: str = "operation"):
+            """Context manager for timing operations."""
+            self.start()
+            try:
+                yield self
+            finally:
+                self.stop()
+
+    return Timer()
 
 
 # Pytest configuration for integration tests

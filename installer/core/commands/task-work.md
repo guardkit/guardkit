@@ -113,6 +113,7 @@ ls *.csproj 2>/dev/null || ls package.json 2>/dev/null || ls requirements.txt 2>
 | `--defaults` | Use clarification defaults without prompting |
 | `--answers="..."` | Inline clarification answers for automation |
 | `--reclarify` | Re-run clarification (ignore saved decisions) |
+| `--no-library-context` | Skip Phase 2.1 library context gathering |
 
 ## Documentation Level Control (NEW - TASK-036)
 
@@ -195,6 +196,7 @@ The `--intensity` flag controls the ceremony level and phase execution profile, 
 **Phases Executed**:
 - Phase 1: Load context ✓
 - Phase 2: Planning ✗
+- Phase 2.1: Library Context ✗
 - Phase 2.5A: Pattern MCP ✗
 - Phase 2.5B: Architectural Review ✗
 - Phase 2.7: Complexity Evaluation ✗
@@ -235,6 +237,7 @@ The `--intensity` flag controls the ceremony level and phase execution profile, 
 **Phases Executed**:
 - Phase 1: Load context ✓
 - Phase 2: Planning ✓ (brief, ~5 minutes)
+- Phase 2.1: Library Context ✓ (if libraries detected)
 - Phase 2.5A: Pattern MCP ✗
 - Phase 2.5B: Architectural Review ✗
 - Phase 2.7: Complexity Evaluation ✗
@@ -276,6 +279,7 @@ The `--intensity` flag controls the ceremony level and phase execution profile, 
 **This is the current default behavior. All phases execute with smart decisions**:
 - Phase 1: Load context ✓
 - Phase 2: Planning ✓ (full)
+- Phase 2.1: Library Context ✓ (always, no-op if no libraries)
 - Phase 2.5A: Pattern MCP ✓ (only if pattern need detected)
 - Phase 2.5B: Architectural Review ✓
 - Phase 2.7: Complexity Evaluation ✓
@@ -319,6 +323,7 @@ The `--intensity` flag controls the ceremony level and phase execution profile, 
 **Phases Executed** (maximum rigor):
 - Phase 1: Load context ✓
 - Phase 2: Planning ✓ (detailed)
+- Phase 2.1: Library Context ✓ (always, comprehensive docs fetch)
 - Phase 2.5A: Pattern MCP ✓ (always, comprehensive pattern analysis)
 - Phase 2.5B: Architectural Review ✓ (full with security scan)
 - Phase 2.7: Complexity Evaluation ✓ (detailed)
@@ -596,6 +601,7 @@ The task-work command now supports a `--micro` flag for streamlined execution of
 
 **Phases skipped**:
 - Phase 2: Implementation Planning
+- Phase 2.1: Library Context Gathering
 - Phase 2.5A: Pattern Suggestion
 - Phase 2.5B: Architectural Review
 - Phase 2.6: Human Checkpoint
@@ -703,6 +709,7 @@ The task-work command now supports optional flags for design-first workflow, ena
 **Phases executed**:
 - Phase 1: Load Task Context
 - Phase 2: Implementation Planning
+- Phase 2.1: Library Context Gathering
 - Phase 2.5A: Pattern Suggestion (if Design Patterns MCP available)
 - Phase 2.5B: Architectural Review
 - Phase 2.7: Complexity Evaluation & Plan Persistence
@@ -1928,6 +1935,118 @@ Phase 1.6 is skipped when:
 
 **See**: [Clarifying Questions Feature](../../tasks/backlog/clarifying-questions/) for complete implementation details.
 
+#### Phase 2.1: Library Context Gathering (NEW)
+
+**Purpose**: Proactively fetch library documentation for detected libraries before implementation planning. This prevents stub implementations by ensuring the AI has concrete API knowledge (imports, initialization, method signatures, return types).
+
+**Trigger**: Always execute (detection is fast, no-op if no libraries found)
+
+**Skip Conditions**:
+- `--no-library-context` flag is set
+- `--implement-only` flag is set (uses saved design)
+
+**Workflow**:
+
+**STEP 1: Detect Libraries**
+
+```python
+from installer.core.commands.lib.library_detector import detect_library_mentions
+
+libraries = detect_library_mentions(
+    task_context.get("title", ""),
+    task_context.get("description", "")
+)
+```
+
+**IF** no libraries detected:
+```
+DISPLAY: "📚 No library dependencies detected"
+PROCEED to Phase 2
+```
+
+**STEP 2: Resolve and Fetch**
+
+**IF** libraries detected:
+
+```python
+from installer.core.commands.lib.library_context import gather_library_context
+
+library_context = gather_library_context(libraries)
+task_context["library_context"] = library_context
+```
+
+**DISPLAY**:
+```
+📚 Library Context Gathered:
+  • graphiti-core
+    Import: from graphiti_core import Graphiti
+    Methods: search(), add_episode(), build_indices()
+
+Proceed with planning? [Y/n]:
+```
+
+**WAIT** for user confirmation (default: Yes after 5 seconds)
+
+**STEP 3: Inject into Planning Context**
+
+Add `library_context` to Phase 2 agent prompt. The planning agent receives library documentation to write working code, not stubs.
+
+**ERROR HANDLING**:
+
+If Context7 resolution fails for a library:
+```
+⚠️  Could not resolve: graphiti-core
+    Error: Not found in Context7 registry
+    Proceeding with training data for this library.
+```
+Continue workflow - do not block on resolution failures.
+
+**Example Flow**:
+
+```
+/task-work TASK-a3f8
+
+Phase 1.6: Clarifying Questions (complexity: 5)
+...
+Phase 2.1: Library Context Gathering
+
+📚 Library Context Gathering:
+  Detected: graphiti-core, neo4j
+
+📚 Resolving via Context7...
+  ✓ graphiti-core → /falkordb/graphiti
+  ✓ neo4j → /neo4j/neo4j-python-driver
+
+📚 Fetching documentation...
+  ✓ graphiti-core: initialization, search(), add_episode()
+  ✓ neo4j: driver setup, session management
+
+📚 Library Context Gathered:
+  • graphiti-core
+    Import: from graphiti_core import Graphiti
+    Methods: search(), add_episode(), build_indices()
+  • neo4j
+    Import: from neo4j import GraphDatabase
+    Methods: driver(), session(), run()
+
+Proceed with planning? [Y/n]: Y
+
+Phase 2: Planning implementation with library context...
+```
+
+**Flag: --no-library-context**
+
+Skip Phase 2.1 entirely:
+
+```bash
+/task-work TASK-XXX --no-library-context
+```
+
+Use when:
+- Libraries are well-known (training data sufficient)
+- Context7 is unavailable
+- Faster iteration needed
+
 #### Phase 2: Implementation Planning
 
 **DISPLAY INVOCATION MESSAGE**:
@@ -1947,7 +2066,7 @@ Starting agent execution...
 ═══════════════════════════════════════════════════════
 ```
 
-**INVOKE** Task tool with documentation context and clarification decisions:
+**INVOKE** Task tool with documentation context, clarification decisions, AND library context:
 ```
 subagent_type: "{selected_planning_agent_from_table}"
 description: "Plan implementation for TASK-XXX"
@@ -1959,6 +2078,9 @@ stack: {stack}
 phase: 2
 {if clarification_context:}
 clarification_context: {clarification_context}
+{endif}
+{if library_context:}
+library_context: {list(library_context.keys())}
 {endif}
 </AGENT_CONTEXT>
 
@@ -1979,6 +2101,30 @@ Defaults applied (user did not override):
 {endfor}
 
 Use these clarifications to inform your implementation plan.
+{endif}
+
+{if library_context:}
+LIBRARY CONTEXT (from Phase 2.1):
+The following libraries were detected in this task. Use this documentation
+to write WORKING code, not stubs:
+
+{for lib_name, ctx in library_context.items():}
+### {lib_name}
+Import: `{ctx.import_statement}`
+{if ctx.initialization:}
+Initialization:
+```{stack}
+{ctx.initialization}
+```
+{endif}
+Key Methods: {', '.join(ctx.key_methods)}
+
+{ctx.documentation_snippet}
+
+{endfor}
+
+IMPORTANT: Use the actual API calls shown above. Do NOT write placeholder
+comments like "# In production, this would call..." or stub implementations.
 {endif}
 
 {if mode == 'bdd':}
