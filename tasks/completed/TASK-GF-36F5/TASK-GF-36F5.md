@@ -1,9 +1,10 @@
 ---
 id: TASK-GF-36F5
 title: Fix Graphiti async event loop issue using single event loop pattern
-status: in_review
+status: completed
 created: 2026-01-29T14:35:00Z
-updated: 2026-01-29T14:35:00Z
+updated: 2026-01-30T00:00:00Z
+completed: 2026-01-30T00:00:00Z
 priority: high
 tags: [graphiti, async, neo4j, refactoring, cli]
 complexity: 5
@@ -11,6 +12,7 @@ parent_review: TASK-GV-A8F3
 related_tasks:
   - TASK-GV-A8F3
   - TASK-GC-72AF
+completed_location: tasks/completed/TASK-GF-36F5/
 ---
 
 # Task: Fix Graphiti async event loop issue using single event loop pattern
@@ -61,8 +63,8 @@ def verify(verbose: bool):
 - [x] Refactor `seed-adrs` command to single async pattern
 - [x] Ensure proper resource cleanup with try/finally
 - [x] All existing CLI tests pass
-- [ ] `guardkit graphiti verify` returns search results (not 0 for all queries)
-- [ ] `guardkit graphiti seed --force && guardkit graphiti verify` workflow succeeds
+- [x] `guardkit graphiti verify` returns search results (not 0 for all queries)
+- [x] `guardkit graphiti seed --force && guardkit graphiti verify` workflow succeeds
 
 ## Files to Modify
 
