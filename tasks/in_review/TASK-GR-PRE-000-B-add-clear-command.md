@@ -16,7 +16,7 @@ tags:
 - mvp-phase-0
 task_type: feature
 title: Add guardkit graphiti clear command
-updated: 2026-01-30T12:00:00+00:00
+updated: 2026-01-30T22:30:00+00:00
 wave: 1
 ---
 
