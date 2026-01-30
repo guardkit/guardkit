@@ -10,12 +10,40 @@ Example:
 
 import logging
 import sys
+from pathlib import Path
 
 import click
+from dotenv import load_dotenv
 from rich.console import Console
 
 from guardkit.cli.autobuild import autobuild
 from guardkit.cli.graphiti import graphiti
+
+# Load .env files automatically
+# Priority: .env in current directory, then traverse up to find project root
+def _load_env_files():
+    """Load .env files from current directory and project root."""
+    # Try current directory first
+    cwd = Path.cwd()
+    env_file = cwd / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+        return
+
+    # Traverse up to find project root (directory with .claude/ or .guardkit/)
+    current = cwd
+    for _ in range(10):  # Max 10 levels up
+        if (current / ".claude").is_dir() or (current / ".guardkit").is_dir():
+            env_file = current / ".env"
+            if env_file.exists():
+                load_dotenv(env_file)
+            return
+        parent = current.parent
+        if parent == current:  # Reached filesystem root
+            break
+        current = parent
+
+_load_env_files()
 
 console = Console()
 logger = logging.getLogger(__name__)

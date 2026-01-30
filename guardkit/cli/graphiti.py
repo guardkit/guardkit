@@ -44,29 +44,286 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
     settings = load_graphiti_config()
     config = GraphitiConfig(
         enabled=settings.enabled,
-        host=settings.host,
-        port=settings.port,
+        neo4j_uri=settings.neo4j_uri,
+        neo4j_user=settings.neo4j_user,
+        neo4j_password=settings.neo4j_password,
         timeout=settings.timeout,
     )
     client = GraphitiClient(config)
     return client, settings
 
 
-def _run_async(coro):
-    """Run an async coroutine synchronously.
+async def _cmd_seed(force: bool) -> None:
+    """Async implementation of seed command."""
+    console.print("[bold blue]Graphiti System Context Seeding[/bold blue]")
+    console.print()
 
-    This handles the case where no event loop exists (e.g., in Click tests)
-    by using asyncio.run() which creates a new event loop.
-    """
+    # Check if already seeded
+    if is_seeded() and not force:
+        console.print("[yellow]System context already seeded.[/yellow]")
+        console.print("Use --force to re-seed.")
+        return
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Initialize connection
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
 
-    if loop is None:
-        return asyncio.run(coro)
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+            console.print("Seeding skipped. Check your Graphiti configuration.")
+            return
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Clear marker if forcing
+        if force and is_seeded():
+            console.print("Clearing previous seeding marker...")
+            clear_seeding_marker()
+
+        # Run seeding
+        console.print("Seeding system context...")
+        console.print()
+
+        try:
+            result = await seed_all_system_context(client, force=force)
+        except Exception as e:
+            console.print(f"[red]Error during seeding: {e}[/red]")
+            logger.exception("Seeding failed")
+            raise SystemExit(1)
+
+        if result:
+            console.print()
+            console.print("[bold green]System context seeding complete![/bold green]")
+            console.print()
+            console.print("Knowledge categories seeded:")
+            categories = [
+                "product_knowledge",
+                "command_workflows",
+                "quality_gate_phases",
+                "technology_stack",
+                "feature_build_architecture",
+                "architecture_decisions",
+                "failure_patterns",
+                "component_status",
+                "integration_points",
+                "templates",
+                "agents",
+                "patterns",
+                "rules",
+            ]
+            for cat in categories:
+                console.print(f"  [green]\u2713[/green] {cat}")
+            console.print()
+            console.print("Run 'guardkit graphiti verify' to test queries.")
+        else:
+            console.print("[yellow]Seeding completed with warnings.[/yellow]")
+    finally:
+        await client.close()
+
+
+async def _cmd_status() -> None:
+    """Async implementation of status command."""
+    console.print("[bold blue]Graphiti Status[/bold blue]")
+    console.print()
+
+    # Load configuration
+    settings = load_graphiti_config()
+
+    # Create status table
+    table = Table(show_header=False, box=None)
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Enabled", "[green]Yes[/green]" if settings.enabled else "[red]No[/red]")
+    table.add_row("Neo4j URI", settings.neo4j_uri)
+    table.add_row("Neo4j User", settings.neo4j_user)
+    table.add_row("Timeout", f"{settings.timeout}s")
+
+    console.print(table)
+    console.print()
+
+    # Check connection
+    if settings.enabled:
+        client, _ = _get_client_and_config()
+
+        console.print("Checking connection...")
+        try:
+            initialized = await client.initialize()
+            try:
+                if initialized and client.enabled:
+                    console.print("[green]Connection: OK[/green]")
+
+                    # Check health
+                    try:
+                        healthy = await client.health_check()
+                        if healthy:
+                            console.print("[green]Health: OK[/green]")
+                        else:
+                            console.print("[yellow]Health: Degraded[/yellow]")
+                    except Exception:
+                        console.print("[yellow]Health: Unknown[/yellow]")
+                else:
+                    console.print("[red]Connection: Failed[/red]")
+            finally:
+                await client.close()
+        except Exception as e:
+            console.print(f"[red]Connection: Error - {e}[/red]")
     else:
-        return loop.run_until_complete(coro)
+        console.print("[yellow]Connection: Skipped (disabled)[/yellow]")
+
+    console.print()
+
+    # Check seeding status
+    if is_seeded():
+        console.print(f"[green]Seeded: Yes (version {SEEDING_VERSION})[/green]")
+    else:
+        console.print("[yellow]Seeded: No[/yellow]")
+        console.print("Run 'guardkit graphiti seed' to seed system context.")
+
+
+async def _cmd_verify(verbose: bool) -> None:
+    """Async implementation of verify command."""
+    console.print("[bold blue]Graphiti Verification[/bold blue]")
+    console.print()
+
+    # Check if seeded
+    if not is_seeded():
+        console.print("[yellow]System context not seeded.[/yellow]")
+        console.print("Run 'guardkit graphiti seed' first.")
+        return
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Initialize connection
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available.[/yellow]")
+            console.print("Cannot verify without active connection.")
+            return
+
+        console.print("[green]Connected[/green]")
+        console.print()
+
+        # Define test queries
+        test_queries = [
+            ("What is GuardKit?", ["product_knowledge"], "guardkit"),
+            ("How to invoke task-work?", ["command_workflows"], "task-work"),
+            ("What are the quality phases?", ["quality_gate_phases"], "phase"),
+            ("What is the Player-Coach pattern?", ["feature_build_architecture"], "player"),
+            ("How to use SDK vs subprocess?", ["architecture_decisions"], "sdk"),
+        ]
+
+        console.print("Running verification queries...")
+        console.print()
+
+        passed = 0
+        failed = 0
+
+        for query, group_ids, expected_term in test_queries:
+            try:
+                results = await client.search(query, group_ids=group_ids, num_results=3)
+
+                if results:
+                    passed += 1
+                    console.print(f"[green]\u2713[/green] {query}")
+
+                    if verbose:
+                        for r in results[:2]:
+                            name = r.get("name", "unknown")
+                            score = r.get("score", 0.0)
+                            console.print(f"    -> {name} (score: {score:.2f})")
+                else:
+                    # Empty results - might be expected if Graphiti returns empty
+                    # but connection works
+                    passed += 1
+                    console.print(f"[yellow]\u2713[/yellow] {query} (no results)")
+            except Exception as e:
+                failed += 1
+                console.print(f"[red]\u2717[/red] {query}")
+                if verbose:
+                    console.print(f"    Error: {e}")
+
+        console.print()
+        console.print(f"Results: {passed} passed, {failed} failed")
+
+        if failed == 0:
+            console.print("[bold green]Verification complete![/bold green]")
+        else:
+            console.print("[yellow]Some queries failed. Check Graphiti connection.[/yellow]")
+    finally:
+        await client.close()
+
+
+async def _cmd_seed_adrs(force: bool) -> None:
+    """Async implementation of seed-adrs command."""
+    console.print("[bold blue]Feature-Build ADR Seeding[/bold blue]")
+    console.print()
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("ADR seeding skipped.")
+        return
+
+    # Initialize connection
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+            console.print("ADR seeding skipped.")
+            return
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Run ADR seeding
+        console.print("Seeding feature-build ADRs...")
+
+        try:
+            await seed_feature_build_adrs(client)
+        except Exception as e:
+            console.print(f"[red]Error during ADR seeding: {e}[/red]")
+            logger.exception("ADR seeding failed")
+            raise SystemExit(1)
+
+        console.print()
+        console.print("[bold green]Feature-build ADR seeding complete![/bold green]")
+        console.print()
+        console.print("ADRs seeded:")
+        console.print("  [green]\u2713[/green] ADR-FB-001: Use SDK query() for task-work invocation")
+        console.print("  [green]\u2713[/green] ADR-FB-002: Use FEAT-XXX paths in feature mode")
+        console.print("  [green]\u2713[/green] ADR-FB-003: Pre-loop must invoke real task-work")
+    finally:
+        await client.close()
 
 
 @click.group()
@@ -95,77 +352,7 @@ def seed(force: bool):
 
     Use --force to re-seed even if seeding has already been completed.
     """
-    console.print("[bold blue]Graphiti System Context Seeding[/bold blue]")
-    console.print()
-
-    # Check if already seeded
-    if is_seeded() and not force:
-        console.print("[yellow]System context already seeded.[/yellow]")
-        console.print("Use --force to re-seed.")
-        return
-
-    # Create client
-    client, settings = _get_client_and_config()
-
-    # Initialize connection
-    console.print(f"Connecting to Graphiti at {settings.host}:{settings.port}...")
-
-    try:
-        initialized = _run_async(client.initialize())
-    except Exception as e:
-        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
-        raise SystemExit(1)
-
-    if not initialized or not client.enabled:
-        console.print("[yellow]Graphiti not available or disabled.[/yellow]")
-        console.print("Seeding skipped. Check your Graphiti configuration.")
-        return
-
-    console.print("[green]Connected to Graphiti[/green]")
-    console.print()
-
-    # Clear marker if forcing
-    if force and is_seeded():
-        console.print("Clearing previous seeding marker...")
-        clear_seeding_marker()
-
-    # Run seeding
-    console.print("Seeding system context...")
-    console.print()
-
-    try:
-        result = _run_async(seed_all_system_context(client, force=force))
-    except Exception as e:
-        console.print(f"[red]Error during seeding: {e}[/red]")
-        logger.exception("Seeding failed")
-        raise SystemExit(1)
-
-    if result:
-        console.print()
-        console.print("[bold green]System context seeding complete![/bold green]")
-        console.print()
-        console.print("Knowledge categories seeded:")
-        categories = [
-            "product_knowledge",
-            "command_workflows",
-            "quality_gate_phases",
-            "technology_stack",
-            "feature_build_architecture",
-            "architecture_decisions",
-            "failure_patterns",
-            "component_status",
-            "integration_points",
-            "templates",
-            "agents",
-            "patterns",
-            "rules",
-        ]
-        for cat in categories:
-            console.print(f"  [green]\u2713[/green] {cat}")
-        console.print()
-        console.print("Run 'guardkit graphiti verify' to test queries.")
-    else:
-        console.print("[yellow]Seeding completed with warnings.[/yellow]")
+    asyncio.run(_cmd_seed(force))
 
 
 @graphiti.command()
@@ -175,59 +362,7 @@ def status():
     Displays information about the Graphiti configuration, connection status,
     and whether system context has been seeded.
     """
-    console.print("[bold blue]Graphiti Status[/bold blue]")
-    console.print()
-
-    # Load configuration
-    settings = load_graphiti_config()
-
-    # Create status table
-    table = Table(show_header=False, box=None)
-    table.add_column("Property", style="cyan")
-    table.add_column("Value")
-
-    table.add_row("Enabled", "[green]Yes[/green]" if settings.enabled else "[red]No[/red]")
-    table.add_row("Host", settings.host)
-    table.add_row("Port", str(settings.port))
-    table.add_row("Timeout", f"{settings.timeout}s")
-
-    console.print(table)
-    console.print()
-
-    # Check connection
-    if settings.enabled:
-        client, _ = _get_client_and_config()
-
-        console.print("Checking connection...")
-        try:
-            initialized = _run_async(client.initialize())
-            if initialized and client.enabled:
-                console.print("[green]Connection: OK[/green]")
-
-                # Check health
-                try:
-                    healthy = _run_async(client.health_check())
-                    if healthy:
-                        console.print("[green]Health: OK[/green]")
-                    else:
-                        console.print("[yellow]Health: Degraded[/yellow]")
-                except Exception:
-                    console.print("[yellow]Health: Unknown[/yellow]")
-            else:
-                console.print("[red]Connection: Failed[/red]")
-        except Exception as e:
-            console.print(f"[red]Connection: Error - {e}[/red]")
-    else:
-        console.print("[yellow]Connection: Skipped (disabled)[/yellow]")
-
-    console.print()
-
-    # Check seeding status
-    if is_seeded():
-        console.print(f"[green]Seeded: Yes (version {SEEDING_VERSION})[/green]")
-    else:
-        console.print("[yellow]Seeded: No[/yellow]")
-        console.print("Run 'guardkit graphiti seed' to seed system context.")
+    asyncio.run(_cmd_status())
 
 
 @graphiti.command()
@@ -245,81 +380,7 @@ def verify(verbose: bool):
 
     Use --verbose to see detailed query results.
     """
-    console.print("[bold blue]Graphiti Verification[/bold blue]")
-    console.print()
-
-    # Check if seeded
-    if not is_seeded():
-        console.print("[yellow]System context not seeded.[/yellow]")
-        console.print("Run 'guardkit graphiti seed' first.")
-        return
-
-    # Create client
-    client, settings = _get_client_and_config()
-
-    # Initialize connection
-    console.print(f"Connecting to Graphiti at {settings.host}:{settings.port}...")
-
-    try:
-        initialized = _run_async(client.initialize())
-    except Exception as e:
-        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
-        raise SystemExit(1)
-
-    if not initialized or not client.enabled:
-        console.print("[yellow]Graphiti not available.[/yellow]")
-        console.print("Cannot verify without active connection.")
-        return
-
-    console.print("[green]Connected[/green]")
-    console.print()
-
-    # Define test queries
-    test_queries = [
-        ("What is GuardKit?", ["product_knowledge"], "guardkit"),
-        ("How to invoke task-work?", ["command_workflows"], "task-work"),
-        ("What are the quality phases?", ["quality_gate_phases"], "phase"),
-        ("What is the Player-Coach pattern?", ["feature_build_architecture"], "player"),
-        ("How to use SDK vs subprocess?", ["architecture_decisions"], "sdk"),
-    ]
-
-    console.print("Running verification queries...")
-    console.print()
-
-    passed = 0
-    failed = 0
-
-    for query, group_ids, expected_term in test_queries:
-        try:
-            results = _run_async(client.search(query, group_ids=group_ids, num_results=3))
-
-            if results:
-                passed += 1
-                console.print(f"[green]\u2713[/green] {query}")
-
-                if verbose:
-                    for r in results[:2]:
-                        name = r.get("name", "unknown")
-                        score = r.get("score", 0.0)
-                        console.print(f"    -> {name} (score: {score:.2f})")
-            else:
-                # Empty results - might be expected if Graphiti returns empty
-                # but connection works
-                passed += 1
-                console.print(f"[yellow]\u2713[/yellow] {query} (no results)")
-        except Exception as e:
-            failed += 1
-            console.print(f"[red]\u2717[/red] {query}")
-            if verbose:
-                console.print(f"    Error: {e}")
-
-    console.print()
-    console.print(f"Results: {passed} passed, {failed} failed")
-
-    if failed == 0:
-        console.print("[bold green]Verification complete![/bold green]")
-    else:
-        console.print("[yellow]Some queries failed. Check Graphiti connection.[/yellow]")
+    asyncio.run(_cmd_verify(verbose))
 
 
 @graphiti.command("seed-adrs")
@@ -343,49 +404,4 @@ def seed_adrs(force: bool):
 
     Use --force to re-seed even if ADRs have already been seeded.
     """
-    console.print("[bold blue]Feature-Build ADR Seeding[/bold blue]")
-    console.print()
-
-    # Create client
-    client, settings = _get_client_and_config()
-
-    # Handle disabled Graphiti
-    if not settings.enabled:
-        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
-        console.print("ADR seeding skipped.")
-        return
-
-    # Initialize connection
-    console.print(f"Connecting to Graphiti at {settings.host}:{settings.port}...")
-
-    try:
-        initialized = _run_async(client.initialize())
-    except Exception as e:
-        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
-        raise SystemExit(1)
-
-    if not initialized or not client.enabled:
-        console.print("[yellow]Graphiti not available or disabled.[/yellow]")
-        console.print("ADR seeding skipped.")
-        return
-
-    console.print("[green]Connected to Graphiti[/green]")
-    console.print()
-
-    # Run ADR seeding
-    console.print("Seeding feature-build ADRs...")
-
-    try:
-        _run_async(seed_feature_build_adrs(client))
-    except Exception as e:
-        console.print(f"[red]Error during ADR seeding: {e}[/red]")
-        logger.exception("ADR seeding failed")
-        raise SystemExit(1)
-
-    console.print()
-    console.print("[bold green]Feature-build ADR seeding complete![/bold green]")
-    console.print()
-    console.print("ADRs seeded:")
-    console.print("  [green]\u2713[/green] ADR-FB-001: Use SDK query() for task-work invocation")
-    console.print("  [green]\u2713[/green] ADR-FB-002: Use FEAT-XXX paths in feature mode")
-    console.print("  [green]\u2713[/green] ADR-FB-003: Pre-loop must invoke real task-work")
+    asyncio.run(_cmd_seed_adrs(force))

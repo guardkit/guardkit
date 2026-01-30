@@ -7,10 +7,15 @@ and sensible defaults for graceful degradation when Graphiti is not available.
 Configuration File: .guardkit/graphiti.yaml
 Environment Variables:
     - GRAPHITI_ENABLED: Enable/disable Graphiti integration
-    - GRAPHITI_HOST: Graphiti server host
-    - GRAPHITI_PORT: Graphiti server port
+    - NEO4J_URI: Neo4j Bolt URI (e.g., 'bolt://localhost:7687')
+    - NEO4J_USER: Neo4j username
+    - NEO4J_PASSWORD: Neo4j password
     - GRAPHITI_TIMEOUT: Connection timeout in seconds
     - GUARDKIT_CONFIG_DIR: Override config directory location
+
+    # Deprecated (kept for backwards compatibility):
+    - GRAPHITI_HOST: Deprecated - use NEO4J_URI instead
+    - GRAPHITI_PORT: Deprecated - use NEO4J_URI instead
 """
 
 from dataclasses import dataclass, field
@@ -36,21 +41,24 @@ class GraphitiSettings:
 
     Attributes:
         enabled: Whether Graphiti integration is enabled
-        host: Graphiti server hostname
-        port: Graphiti server port
+        neo4j_uri: Neo4j Bolt URI (e.g., 'bolt://localhost:7687')
+        neo4j_user: Neo4j username
+        neo4j_password: Neo4j password
         timeout: Connection timeout in seconds
         embedding_model: OpenAI embedding model to use
         group_ids: Default group IDs for knowledge graph organization
+        host: Deprecated - use neo4j_uri instead
+        port: Deprecated - use neo4j_uri instead
 
     Raises:
-        ValueError: If port is out of valid range (1-65535)
         ValueError: If timeout is not positive
-        ValueError: If host is empty
+        ValueError: If neo4j_uri is empty
         TypeError: If values have incorrect types
     """
     enabled: bool = True
-    host: str = "localhost"
-    port: int = 8000
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "password123"
     timeout: float = 30.0
     embedding_model: str = "text-embedding-3-small"
     group_ids: List[str] = field(default_factory=lambda: [
@@ -58,30 +66,39 @@ class GraphitiSettings:
         "command_workflows",
         "architecture_decisions",
     ])
+    # Deprecated fields for backwards compatibility
+    host: str = "localhost"
+    port: int = 8000
 
     def __post_init__(self):
         """Validate settings after initialization."""
         # Type validation
         if not isinstance(self.enabled, bool):
             raise TypeError(f"enabled must be bool, got {type(self.enabled).__name__}")
+        if not isinstance(self.neo4j_uri, str):
+            raise TypeError(f"neo4j_uri must be str, got {type(self.neo4j_uri).__name__}")
+        if not isinstance(self.neo4j_user, str):
+            raise TypeError(f"neo4j_user must be str, got {type(self.neo4j_user).__name__}")
+        if not isinstance(self.neo4j_password, str):
+            raise TypeError(f"neo4j_password must be str, got {type(self.neo4j_password).__name__}")
+        if not isinstance(self.timeout, (int, float)) or isinstance(self.timeout, bool):
+            raise TypeError(f"timeout must be float, got {type(self.timeout).__name__}")
         if not isinstance(self.host, str):
             raise TypeError(f"host must be str, got {type(self.host).__name__}")
         if not isinstance(self.port, int) or isinstance(self.port, bool):
             raise TypeError(f"port must be int, got {type(self.port).__name__}")
-        if not isinstance(self.timeout, (int, float)) or isinstance(self.timeout, bool):
-            raise TypeError(f"timeout must be float, got {type(self.timeout).__name__}")
 
         # Convert timeout to float if int
         if isinstance(self.timeout, int):
             object.__setattr__(self, 'timeout', float(self.timeout))
 
         # Value validation
-        if not self.host:
-            raise ValueError("host cannot be empty")
-        if self.port < 1 or self.port > 65535:
-            raise ValueError(f"port must be between 1 and 65535, got {self.port}")
+        if not self.neo4j_uri:
+            raise ValueError("neo4j_uri cannot be empty")
         if self.timeout <= 0:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
+        if self.port < 1 or self.port > 65535:
+            raise ValueError(f"port must be between 1 and 65535, got {self.port}")
 
 
 def get_config_path(base_dir: Optional[Path] = None) -> Path:
@@ -187,7 +204,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
     """Load Graphiti configuration from YAML file.
 
     Configuration priority (highest to lowest):
-    1. Environment variables (GRAPHITI_ENABLED, GRAPHITI_HOST, etc.)
+    1. Environment variables (NEO4J_URI, NEO4J_USER, etc.)
     2. YAML configuration file
     3. Default values
 
@@ -210,9 +227,12 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
     # Start with default values
     config_data = {
         'enabled': True,
-        'host': 'localhost',
-        'port': 8000,
+        'neo4j_uri': 'bolt://localhost:7687',
+        'neo4j_user': 'neo4j',
+        'neo4j_password': 'password123',
         'timeout': 30.0,
+        'host': 'localhost',  # Deprecated
+        'port': 8000,  # Deprecated
     }
 
     # Try to load from YAML file
@@ -223,17 +243,19 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
 
             if yaml_data and isinstance(yaml_data, dict):
                 # Merge YAML data, handling type coercion
-                for key in ['enabled', 'host', 'port', 'timeout']:
+                field_types = {
+                    'enabled': bool,
+                    'neo4j_uri': str,
+                    'neo4j_user': str,
+                    'neo4j_password': str,
+                    'timeout': float,
+                    'host': str,
+                    'port': int,
+                }
+                for key, target_type in field_types.items():
                     if key in yaml_data and yaml_data[key] is not None:
                         try:
-                            if key == 'enabled':
-                                config_data[key] = _coerce_type(yaml_data[key], bool, key)
-                            elif key == 'host':
-                                config_data[key] = _coerce_type(yaml_data[key], str, key)
-                            elif key == 'port':
-                                config_data[key] = _coerce_type(yaml_data[key], int, key)
-                            elif key == 'timeout':
-                                config_data[key] = _coerce_type(yaml_data[key], float, key)
+                            config_data[key] = _coerce_type(yaml_data[key], target_type, key)
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Invalid value for {key} in config file: {e}")
                             # Keep default value
@@ -250,9 +272,13 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
     # Apply environment variable overrides
     env_overrides = {
         'GRAPHITI_ENABLED': ('enabled', bool),
+        'NEO4J_URI': ('neo4j_uri', str),
+        'NEO4J_USER': ('neo4j_user', str),
+        'NEO4J_PASSWORD': ('neo4j_password', str),
+        'GRAPHITI_TIMEOUT': ('timeout', float),
+        # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),
-        'GRAPHITI_TIMEOUT': ('timeout', float),
     }
 
     for env_var, (config_key, config_type) in env_overrides.items():

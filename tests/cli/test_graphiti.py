@@ -46,6 +46,7 @@ class TestGraphitiSeedCommand:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_seed.return_value = True
 
@@ -65,6 +66,7 @@ class TestGraphitiSeedCommand:
             mock_client = MagicMock()
             mock_client.enabled = True
             mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
             mock_seed.return_value = True
 
@@ -83,6 +85,7 @@ class TestGraphitiSeedCommand:
             mock_client = MagicMock()
             mock_client.enabled = False
             mock_client.initialize = AsyncMock(return_value=False)
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = runner.invoke(cli, ["graphiti", "seed"])
@@ -127,6 +130,7 @@ class TestGraphitiStatusCommand:
             mock_client.enabled = True
             mock_client.initialize = AsyncMock(return_value=True)
             mock_client.health_check = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = runner.invoke(cli, ["graphiti", "status"])
@@ -158,6 +162,7 @@ class TestGraphitiVerifyCommand:
             mock_client.search = AsyncMock(return_value=[
                 {"name": "guardkit_overview", "score": 0.95}
             ])
+            mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = runner.invoke(cli, ["graphiti", "verify"])

@@ -319,6 +319,69 @@ check_prerequisites() {
                     print_success "pydantic already installed"
                 fi
 
+                # Check and install python-dotenv (required for .env file loading)
+                print_info "Checking for python-dotenv..."
+                set +e  # Temporarily allow errors for package checks
+                python3 -c "import dotenv" </dev/null 2>&1 >/dev/null
+                dotenv_status=$?
+                set -e  # Re-enable exit on error
+                print_info "python-dotenv check completed (status: $dotenv_status)"
+
+                if [ $dotenv_status -ne 0 ]; then
+                    print_info "Installing python-dotenv (required for .env file loading)..."
+                    print_info "This may take a moment, please wait..."
+                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
+                    set +e  # Temporarily allow errors
+                    pip3 install --break-system-packages python-dotenv 2>&1
+                    if [ $? -ne 0 ]; then
+                        # Fallback to user install if --break-system-packages not supported
+                        print_info "Retrying with --user flag..."
+                        pip3 install --user python-dotenv 2>&1
+                        if [ $? -ne 0 ]; then
+                            print_warning "Failed to install python-dotenv - install manually with: pip3 install --user python-dotenv"
+                        else
+                            print_success "python-dotenv installed successfully (user mode)"
+                        fi
+                    else
+                        print_success "python-dotenv installed successfully"
+                    fi
+                    set -e  # Re-enable exit on error
+                else
+                    print_success "python-dotenv already installed"
+                fi
+
+                # Check and install graphiti-core (required for knowledge graph integration)
+                print_info "Checking for graphiti-core..."
+                set +e  # Temporarily allow errors for package checks
+                python3 -c "from graphiti_core import Graphiti" </dev/null 2>&1 >/dev/null
+                graphiti_status=$?
+                set -e  # Re-enable exit on error
+                print_info "graphiti-core check completed (status: $graphiti_status)"
+
+                if [ $graphiti_status -ne 0 ]; then
+                    print_info "Installing graphiti-core (required for knowledge graph integration)..."
+                    print_info "This may take a moment, please wait..."
+                    # Try with --break-system-packages for PEP 668 compatibility (Python 3.11+)
+                    # Use python3 -m pip for reliability with multiple Python installations
+                    set +e  # Temporarily allow errors
+                    python3 -m pip install --break-system-packages graphiti-core 2>&1
+                    if [ $? -ne 0 ]; then
+                        # Fallback to user install if --break-system-packages not supported
+                        print_info "Retrying with --user flag..."
+                        python3 -m pip install --user graphiti-core 2>&1
+                        if [ $? -ne 0 ]; then
+                            print_warning "Failed to install graphiti-core - install manually with: python3 -m pip install --user graphiti-core"
+                        else
+                            print_success "graphiti-core installed successfully (user mode)"
+                        fi
+                    else
+                        print_success "graphiti-core installed successfully"
+                    fi
+                    set -e  # Re-enable exit on error
+                else
+                    print_success "graphiti-core already installed"
+                fi
+
                 print_success "Python dependency checks complete"
             fi
         fi
@@ -837,6 +900,7 @@ print_help() {
     echo "Commands:"
     echo "  init [template]     Initialize GuardKit in current directory"
     echo "  autobuild <cmd>     Autonomous task implementation (Player-Coach)"
+    echo "  graphiti <cmd>      Knowledge graph management"
     echo "  doctor              Check system health and configuration"
     echo "  version             Show version information"
     echo "  help                Show this help message"
@@ -845,11 +909,18 @@ print_help() {
     echo "  autobuild task TASK-XXX     Execute Player-Coach loop for a task"
     echo "  autobuild status TASK-XXX   Check worktree status"
     echo ""
+    echo "Graphiti Commands:"
+    echo "  graphiti status             Show connection and seeding status"
+    echo "  graphiti seed [--force]     Seed system context into Graphiti"
+    echo "  graphiti verify [--verbose] Verify seeded knowledge with test queries"
+    echo "  graphiti seed-adrs          Seed feature-build ADRs"
+    echo ""
     echo "Examples:"
     echo "  guardkit init                      # Interactive initialization"
     echo "  guardkit init react-typescript     # Initialize with React template"
     echo "  guardkit init fastapi-python       # Initialize with FastAPI template"
     echo "  guardkit autobuild task TASK-001   # Autonomous task implementation"
+    echo "  guardkit graphiti status           # Check Graphiti connection"
     echo "  guardkit doctor                    # Check installation health"
 }
 
@@ -914,6 +985,39 @@ case "$1" in
             echo "Example:"
             echo "  /feature-build TASK-XXX"
             echo "  /feature-build FEAT-XXX"
+            exit 1
+        fi
+        ;;
+    graphiti)
+        # Find guardkit-py CLI - same logic as autobuild
+        GUARDKIT_PY=""
+        if command -v guardkit-py &> /dev/null; then
+            GUARDKIT_PY="$(command -v guardkit-py)"
+        elif [ -x "/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/Library/Frameworks/Python.framework/Versions/Current/bin/guardkit-py"
+        elif [ -x "$HOME/.local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="$HOME/.local/bin/guardkit-py"
+        elif [ -x "/usr/local/bin/guardkit-py" ]; then
+            GUARDKIT_PY="/usr/local/bin/guardkit-py"
+        else
+            # Try to find it via Python
+            GUARDKIT_PY=$(python3 -c "import shutil; p=shutil.which('guardkit-py'); print(p if p else '')" 2>/dev/null)
+        fi
+
+        if [ -n "$GUARDKIT_PY" ] && [ -x "$GUARDKIT_PY" ]; then
+            shift  # Remove 'graphiti' from args
+            exec "$GUARDKIT_PY" graphiti "$@"
+        else
+            # Python CLI not installed - show guidance
+            echo -e "${YELLOW}Graphiti CLI requires guardkit-py package${NC}"
+            echo ""
+            echo "The guardkit graphiti command requires the guardkit Python package."
+            echo ""
+            echo "To install:"
+            echo "  pip install -e /path/to/guardkit[autobuild]  # From guardkit repository"
+            echo ""
+            echo "Or install directly:"
+            echo "  pip install guardkit-py[autobuild]"
             exit 1
         fi
         ;;

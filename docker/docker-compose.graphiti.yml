@@ -1,8 +1,11 @@
-# Docker Compose configuration for Graphiti knowledge graph services
+# Docker Compose configuration for Neo4j knowledge graph backend
 #
 # Services:
-#   - neo4j: Graph database backend
-#   - graphiti: Temporal knowledge graph API server
+#   - neo4j: Graph database backend for Graphiti knowledge graph
+#
+# Note: The graphiti-core Python library is used directly instead of
+# the Docker REST API (zepai/graphiti). This provides better control,
+# error handling, and avoids token limit issues in the Docker image.
 #
 # Usage:
 #   # Start services
@@ -19,24 +22,30 @@
 #
 # Requirements:
 #   - Docker and Docker Compose installed
-#   - OPENAI_API_KEY environment variable set (for embeddings)
+#   - OPENAI_API_KEY environment variable set (for graphiti-core embeddings)
 #
 # Access:
-#   - Graphiti API: http://localhost:8000
-#   - Graphiti Docs: http://localhost:8000/docs
 #   - Neo4j Browser: http://localhost:7474
+#   - Neo4j Bolt: bolt://localhost:7687
 #
-# Note: The zepai/graphiti:latest image may be outdated. If you encounter issues,
-# consider using the Python library directly instead of the Docker image.
-# See: https://github.com/getzep/graphiti/issues/1030
+# Python Usage:
+#   from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
+#
+#   config = GraphitiConfig(
+#       neo4j_uri="bolt://localhost:7687",
+#       neo4j_user="neo4j",
+#       neo4j_password="password123"
+#   )
+#   client = GraphitiClient(config)
+#   await client.initialize()
 
 services:
   neo4j:
     image: neo4j:5.26.0
     container_name: guardkit-neo4j
     ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
+      - "7474:7474"  # HTTP (Neo4j Browser)
+      - "7687:7687"  # Bolt (graphiti-core connection)
     environment:
       - NEO4J_AUTH=neo4j/password123
       - NEO4J_PLUGINS=["apoc"]
@@ -52,30 +61,14 @@ services:
     networks:
       - guardkit-knowledge
 
-  graphiti:
-    image: zepai/graphiti:latest
-    container_name: guardkit-graphiti
-    ports:
-      - "8000:8000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=password123
-      - MODEL_NAME=gpt-4o-mini
-      - EMBEDDING_MODEL=text-embedding-3-small
-    depends_on:
-      neo4j:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    restart: unless-stopped
-    networks:
-      - guardkit-knowledge
+  # NOTE: zepai/graphiti Docker REST API has been removed.
+  # We now use the graphiti-core Python library directly for:
+  # - Better error handling and debugging
+  # - Full control over LLM token limits
+  # - Direct Neo4j communication without middleware
+  # - More actively maintained library
+  #
+  # See: https://github.com/getzep/graphiti for graphiti-core documentation
 
 volumes:
   neo4j_data:
