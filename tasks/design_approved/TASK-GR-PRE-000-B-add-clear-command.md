@@ -1,19 +1,23 @@
 ---
-id: TASK-GR-PRE-000-B
-title: Add guardkit graphiti clear command
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, cli, clear-command, mvp-phase-0]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 1
-conductor_workspace: gr-mvp-wave1-clear
 complexity: 3
+conductor_workspace: gr-mvp-wave1-clear
+created: 2026-01-30 00:00:00+00:00
 depends_on: []
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-000-B
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- cli
+- clear-command
+- mvp-phase-0
+task_type: feature
+title: Add guardkit graphiti clear command
+updated: 2026-01-30 00:00:00+00:00
+wave: 1
 ---
 
 # Task: Add guardkit graphiti clear command
