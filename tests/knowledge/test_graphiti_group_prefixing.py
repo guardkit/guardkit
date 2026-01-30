@@ -604,11 +604,11 @@ class TestEdgeCases:
     def test_client_initialization_without_project_id(self):
         """Test client can be created without project_id initially."""
         config = GraphitiConfig()
-        client = GraphitiClient(config)
+        client = GraphitiClient(config, auto_detect_project=False)
 
         # Should initialize successfully
         assert client is not None
-        assert client.project_id is None  # Not set yet
+        assert client.project_id is None  # Not set when auto_detect_project=False
 
     def test_set_project_id_after_initialization(self):
         """Test setting project_id after client creation."""
@@ -625,8 +625,8 @@ class TestEdgeCases:
     async def test_add_episode_without_project_id_set(self):
         """Test add_episode fails gracefully without project_id."""
         config = GraphitiConfig(enabled=True)
-        client = GraphitiClient(config)
-        # project_id not set
+        client = GraphitiClient(config, auto_detect_project=False)
+        # project_id not set (auto_detect_project=False prevents auto-detection)
 
         mock_graphiti = MagicMock()
         client._graphiti = mock_graphiti
