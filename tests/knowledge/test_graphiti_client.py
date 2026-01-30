@@ -308,7 +308,7 @@ class TestGraphitiClientSearch:
         config = GraphitiConfig(enabled=False)
         client = GraphitiClient(config)
 
-        results = await client.search(query="test", group_ids=["group1"])
+        results = await client.search(query="test", group_ids=["role_constraints"])
 
         assert results == []
 
@@ -319,7 +319,7 @@ class TestGraphitiClientSearch:
         client = GraphitiClient(config)
         client._graphiti = None
 
-        results = await client.search(query="test", group_ids=["group1"])
+        results = await client.search(query="test", group_ids=["role_constraints"])
 
         assert results == []
 

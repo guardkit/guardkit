@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,44 @@ def _check_graphiti_core() -> bool:
     return _graphiti_core_available
 
 
+def normalize_project_id(name: str) -> str:
+    """Normalize project ID to valid format.
+
+    Rules:
+    - Convert to lowercase
+    - Replace spaces with hyphens
+    - Remove non-alphanumeric characters (except hyphens)
+    - Truncate to max 50 characters
+    - Handle empty strings (return empty string)
+
+    Args:
+        name: The name to normalize
+
+    Returns:
+        Normalized project ID string
+    """
+    if not name or not name.strip():
+        return ""
+
+    # Convert to lowercase
+    result = name.lower()
+
+    # Replace spaces and underscores with hyphens
+    result = result.replace(" ", "-").replace("_", "-")
+
+    # Remove non-alphanumeric characters (except hyphens)
+    result = re.sub(r'[^a-z0-9-]', '', result)
+
+    # Collapse multiple consecutive hyphens
+    result = re.sub(r'-+', '-', result)
+
+    # Remove leading/trailing hyphens
+    result = result.strip('-')
+
+    # Truncate to max 50 characters
+    return result[:50]
+
+
 @dataclass(frozen=True)
 class GraphitiConfig:
     """Configuration for Graphiti connection via graphiti-core.
@@ -63,11 +102,13 @@ class GraphitiConfig:
         neo4j_user: Neo4j username
         neo4j_password: Neo4j password
         timeout: Connection timeout in seconds
+        project_id: Project ID for namespace prefixing (optional)
         host: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
         port: Deprecated - use neo4j_uri instead (kept for backwards compatibility)
 
     Raises:
         ValueError: If timeout is not positive
+        ValueError: If project_id is invalid (>50 chars or invalid characters)
 
     Example:
         config = GraphitiConfig(
@@ -75,7 +116,8 @@ class GraphitiConfig:
             neo4j_uri="bolt://graphiti.example.com:7687",
             neo4j_user="neo4j",
             neo4j_password="password123",
-            timeout=60.0
+            timeout=60.0,
+            project_id="my-project"
         )
     """
     enabled: bool = True
@@ -83,14 +125,35 @@ class GraphitiConfig:
     neo4j_user: str = "neo4j"
     neo4j_password: str = "password123"
     timeout: float = 30.0
+    project_id: Optional[str] = None  # Project ID for namespace prefixing
     # Deprecated fields for backwards compatibility
     host: str = "localhost"
     port: int = 8000
 
     def __post_init__(self):
-        """Validate configuration values."""
+        """Validate and normalize configuration values."""
         if self.timeout <= 0:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
+
+        # Validate and normalize project_id if provided
+        if self.project_id is not None:
+            # First check for invalid characters that should be rejected (not normalized)
+            invalid_chars = set('@#$%^&*()+=[]{}|\\;:\'",.<>?/~`')
+            found_invalid = [c for c in self.project_id if c in invalid_chars]
+            if found_invalid:
+                raise ValueError(f"project_id contains invalid characters: {found_invalid}")
+
+            # Check length before normalization
+            if len(self.project_id) > 50:
+                raise ValueError(f"project_id must be <= 50 characters, got {len(self.project_id)}")
+
+            # Normalize valid project_id (frozen dataclass requires object.__setattr__)
+            normalized = normalize_project_id(self.project_id)
+            # Empty string after normalization means it was all invalid characters
+            if normalized == "":
+                object.__setattr__(self, 'project_id', None)
+            else:
+                object.__setattr__(self, 'project_id', normalized)
 
 
 class GraphitiClient:
@@ -103,6 +166,7 @@ class GraphitiClient:
     Attributes:
         config: GraphitiConfig instance
         enabled: True only if config enabled AND successfully connected
+        project_id: Optional project ID for namespace prefixing
 
     Example:
         client = GraphitiClient()
@@ -114,15 +178,184 @@ class GraphitiClient:
         await client.close()
     """
 
-    def __init__(self, config: Optional[GraphitiConfig] = None):
+    # Project-level groups that require project_id prefixing
+    PROJECT_GROUP_NAMES = [
+        "project_overview",
+        "project_architecture",
+        "feature_specs",
+        "project_decisions",
+        "project_constraints",
+        "domain_knowledge",
+    ]
+
+    def __init__(self, config: Optional[GraphitiConfig] = None, auto_detect_project: bool = True):
         """Initialize GraphitiClient.
 
         Args:
             config: GraphitiConfig instance. Uses defaults if None.
+            auto_detect_project: If True and project_id not set, auto-detect from cwd.
+                                Defaults to True to enable automatic project detection.
         """
         self.config = config or GraphitiConfig()
         self._graphiti = None  # Will hold the Graphiti instance
         self._connected = False
+        self._auto_detect_project = auto_detect_project
+
+        # Determine project_id: explicit > auto-detect
+        if self.config.project_id is not None:
+            self._project_id = self.config.project_id
+        elif auto_detect_project:
+            self._project_id = normalize_project_id(get_current_project_name())
+        else:
+            self._project_id = None
+
+    @property
+    def project_id(self) -> Optional[str]:
+        """Get the project ID for namespace prefixing.
+
+        Returns:
+            Project ID string or None for system/global scope.
+        """
+        return self.get_project_id()
+
+    @project_id.setter
+    def project_id(self, value: Optional[str]) -> None:
+        """Set the project ID for namespace prefixing.
+
+        Args:
+            value: Project ID string or None for system/global scope.
+        """
+        self._project_id = value
+
+    def get_project_id(self, auto_detect: Optional[bool] = None) -> Optional[str]:
+        """Get the project ID for namespace prefixing.
+
+        Args:
+            auto_detect: If True, auto-detect from cwd when project_id is None.
+                        If False, return None when project_id is not set.
+                        If None (default), uses the auto_detect_project setting from __init__.
+
+        Returns:
+            Project ID string or None for system/global scope.
+        """
+        # If explicit project_id is set, always return it
+        if self.config.project_id is not None:
+            return self.config.project_id
+
+        # Determine whether to auto-detect
+        should_auto_detect = auto_detect if auto_detect is not None else self._auto_detect_project
+
+        if should_auto_detect:
+            return normalize_project_id(get_current_project_name())
+        else:
+            return None
+
+    def is_project_group(self, group_name: str) -> bool:
+        """Check if group name is a project-level group (needs prefixing).
+
+        Args:
+            group_name: The group name to check
+
+        Returns:
+            True if it's a project group, False if system group
+
+        Raises:
+            ValueError: If group_name is empty
+        """
+        if not group_name:
+            raise ValueError("group name cannot be empty")
+
+        # System groups: in SYSTEM_GROUP_IDS or starts with guardkit_
+        if group_name in self.SYSTEM_GROUP_IDS:
+            return False
+        if group_name.startswith("guardkit_"):
+            return False
+
+        # Known project groups
+        if group_name in self.PROJECT_GROUP_NAMES:
+            return True
+
+        # Unknown groups default to project scope for safety
+        return True
+
+    def _is_already_prefixed(self, group_id: str) -> bool:
+        """Check if group_id already has a project prefix.
+
+        Args:
+            group_id: The group ID to check
+
+        Returns:
+            True if already prefixed (contains __), False otherwise
+        """
+        return "__" in group_id
+
+    def get_group_id(self, group_name: str, scope: Optional[str] = None) -> str:
+        """Get correctly prefixed group ID.
+
+        Args:
+            group_name: Base group name
+            scope: "project" or "system". Defaults to auto-detection.
+
+        Returns:
+            Prefixed group ID for project scope, unprefixed for system scope.
+
+        Raises:
+            ValueError: If scope is invalid, project_id required but not set,
+                       or project_id is empty.
+        """
+        # Validate scope
+        if scope is not None and scope not in ("project", "system"):
+            raise ValueError("scope must be 'project' or 'system'")
+
+        # Auto-detect scope if not specified
+        if scope is None:
+            scope = "project" if self.is_project_group(group_name) else "system"
+
+        # System scope: return unprefixed
+        if scope == "system":
+            return group_name
+
+        # Project scope: requires project_id
+        if self._project_id is None:
+            raise ValueError("project_id must be set for project scope")
+        if self._project_id == "":
+            raise ValueError("project_id cannot be empty for project scope")
+
+        return f"{self._project_id}__{group_name}"
+
+    def _apply_group_prefix(self, group_id: str, scope: Optional[str] = None) -> str:
+        """Apply prefix to a group_id if needed.
+
+        Args:
+            group_id: The group ID to potentially prefix
+            scope: "project", "system", or None for auto-detection
+
+        Returns:
+            Prefixed or unprefixed group_id
+        """
+        # Already prefixed - don't double-prefix
+        if self._is_already_prefixed(group_id):
+            return group_id
+
+        # Explicit scope overrides auto-detection
+        if scope == "system":
+            return group_id
+        if scope == "project":
+            if self._project_id is None:
+                raise ValueError("project_id must be set for project scope")
+            if self._project_id == "":
+                raise ValueError("project_id cannot be empty for project scope")
+            return f"{self._project_id}__{group_id}"
+
+        # Auto-detect based on group name
+        if self.is_project_group(group_id):
+            if self._project_id is None:
+                raise ValueError("project_id must be set for project scope")
+            if self._project_id == "":
+                raise ValueError("project_id cannot be empty for project scope")
+            return f"{self._project_id}__{group_id}"
+
+        return group_id
 
     @property
     def enabled(self) -> bool:
@@ -316,7 +549,8 @@ class GraphitiClient:
         self,
         query: str,
         group_ids: Optional[List[str]] = None,
-        num_results: int = 10
+        num_results: int = 10,
+        scope: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Search Graphiti with graceful degradation.
 
@@ -328,6 +562,8 @@ class GraphitiClient:
             group_ids: Optional list of group IDs to search in.
                        If None, searches all groups.
             num_results: Maximum number of results (default: 10)
+            scope: Optional scope override ("project" or "system").
+                   If None, auto-detects based on group names.
 
         Returns:
             List of search results as dictionaries.
@@ -347,9 +583,16 @@ class GraphitiClient:
             return []
 
         try:
+            # Apply prefixing to group_ids if provided
+            prefixed_group_ids = None
+            if group_ids is not None:
+                prefixed_group_ids = [
+                    self._apply_group_prefix(gid, scope) for gid in group_ids
+                ]
+
             return await self._execute_search(
                 query=query,
-                group_ids=group_ids,
+                group_ids=prefixed_group_ids,
                 num_results=num_results
             )
         except Exception as e:
@@ -405,7 +648,8 @@ class GraphitiClient:
         self,
         name: str,
         episode_body: str,
-        group_id: str
+        group_id: str,
+        scope: Optional[str] = None
     ) -> Optional[str]:
         """Add episode with graceful degradation.
 
@@ -416,6 +660,8 @@ class GraphitiClient:
             name: Episode name/title
             episode_body: Episode content (can be empty)
             group_id: Group ID for organization
+            scope: Optional scope override ("project" or "system").
+                   If None, auto-detects based on group name.
 
         Returns:
             Episode UUID if successful, None if:
@@ -433,11 +679,14 @@ class GraphitiClient:
         if not self.config.enabled:
             return None
 
+        # Apply prefixing to group_id (may raise ValueError if project_id not set)
+        prefixed_group_id = self._apply_group_prefix(group_id, scope)
+
         try:
             return await self._create_episode(
                 name=name,
                 episode_body=episode_body,
-                group_id=group_id
+                group_id=prefixed_group_id
             )
         except Exception as e:
             logger.warning(f"Graphiti add_episode failed: {e}")
@@ -467,6 +716,8 @@ class GraphitiClient:
         "rules",
         "failed_approaches",
         "quality_gate_configs",
+        "role_constraints",
+        "implementation_modes",
     ]
 
     async def _list_groups(self) -> List[str]:
