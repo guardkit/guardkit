@@ -1,20 +1,24 @@
 ---
-id: TASK-GR-PRE-002-A
-title: Define standard metadata fields
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, metadata, schema, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 3
-conductor_workspace: gr-mvp-wave3-metadata
 complexity: 3
+conductor_workspace: gr-mvp-wave3-metadata
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-002-A
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- metadata
+- schema
+- mvp-phase-1
+task_type: feature
+title: Define standard metadata fields
+updated: 2026-01-30 00:00:00+00:00
+wave: 3
 ---
 
 # Task: Define standard metadata fields

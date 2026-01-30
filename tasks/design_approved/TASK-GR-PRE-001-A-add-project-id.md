@@ -1,20 +1,24 @@
 ---
-id: TASK-GR-PRE-001-A
-title: Add project_id to GraphitiClient
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, project-namespace, client, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 3
-conductor_workspace: gr-mvp-wave3-namespace
 complexity: 3
+conductor_workspace: gr-mvp-wave3-namespace
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-001-A
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- project-namespace
+- client
+- mvp-phase-1
+task_type: feature
+title: Add project_id to GraphitiClient
+updated: 2026-01-30 00:00:00+00:00
+wave: 3
 ---
 
 # Task: Add project_id to GraphitiClient

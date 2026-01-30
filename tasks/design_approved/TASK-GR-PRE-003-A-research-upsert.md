@@ -1,20 +1,24 @@
 ---
-id: TASK-GR-PRE-003-A
-title: Research graphiti-core upsert capabilities
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, research, upsert, mvp-phase-1]
-task_type: documentation
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: manual
-wave: 3
-conductor_workspace: gr-mvp-wave3-research
 complexity: 3
+conductor_workspace: gr-mvp-wave3-research
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-003-A
+implementation_mode: manual
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- research
+- upsert
+- mvp-phase-1
+task_type: documentation
+title: Research graphiti-core upsert capabilities
+updated: 2026-01-30 00:00:00+00:00
+wave: 3
 ---
 
 # Task: Research graphiti-core upsert capabilities
