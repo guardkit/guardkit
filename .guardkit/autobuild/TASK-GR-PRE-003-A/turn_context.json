@@ -1,8 +1,8 @@
 {
   "task_id": "TASK-GR-PRE-003-A",
-  "turn": 9,
+  "turn": 10,
   "max_turns": 25,
-  "turns_remaining": 16,
+  "turns_remaining": 15,
   "approaching_limit": false,
   "escape_hatch_active": false,
   "instructions": "If approaching_limit is true and you cannot complete the task, include a 'blocked_report' field in your player report JSON. See autobuild-player.md for the blocked_report schema."
