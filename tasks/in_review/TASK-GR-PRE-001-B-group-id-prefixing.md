@@ -9,7 +9,7 @@ id: TASK-GR-PRE-001-B
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - project-namespace
@@ -29,11 +29,11 @@ Implement automatic group ID prefixing so that project-specific knowledge is nam
 
 ## Acceptance Criteria
 
-- [ ] Project-specific group IDs are prefixed with `{project_id}__`
-- [ ] System-level group IDs remain unprefixed
-- [ ] Prefix is applied automatically when adding episodes
-- [ ] Search respects project namespace
-- [ ] Cross-project search is possible when needed
+- [x] Project-specific group IDs are prefixed with `{project_id}__`
+- [x] System-level group IDs remain unprefixed
+- [x] Prefix is applied automatically when adding episodes
+- [x] Search respects project namespace
+- [x] Cross-project search is possible when needed
 
 ## Implementation Notes
 
@@ -77,16 +77,22 @@ def get_group_id(self, group_name: str, scope: str = "project") -> str:
 - `guardkit_templates`
 - `guardkit_patterns`
 
-### Files to Modify
+### Files Modified
 
-- `src/guardkit/integrations/graphiti/client.py` - Add prefixing logic
-- `src/guardkit/integrations/graphiti/constants.py` - Define group types
+- `guardkit/knowledge/graphiti_client.py` - Added prefixing logic with:
+  - `get_group_id(group_name, scope)` - Main method for getting prefixed group IDs
+  - `is_project_group(group_name)` - Detects if group should be prefixed
+  - `_is_already_prefixed(group_id)` - Prevents double-prefixing
+  - `_apply_group_prefix(group_id, scope)` - Internal prefix application
+  - `PROJECT_GROUP_NAMES` list - Standard project groups
+  - `SYSTEM_GROUP_IDS` list - System groups (no prefix)
+- `guardkit/integrations/graphiti/constants.py` - SourceType enum already exists
 
 ## Test Requirements
 
-- [ ] Unit tests for prefixing logic
-- [ ] Unit tests for system vs project scope detection
-- [ ] Integration test with multiple projects
+- [x] Unit tests for prefixing logic (tests/knowledge/test_graphiti_group_prefixing.py - 35 tests)
+- [x] Unit tests for system vs project scope detection (tests/knowledge/test_graphiti_client_project_id.py - 54 tests)
+- [x] Integration test with multiple projects (test_full_workflow_with_prefixing, test_cross_project_isolation)
 
 ## Notes
 
