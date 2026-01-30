@@ -16,7 +16,7 @@ tags:
 - mvp-phase-0
 task_type: feature
 title: Add guardkit graphiti clear command
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-01-30T12:00:00+00:00
 wave: 1
 ---
 
@@ -88,7 +88,7 @@ def clear_graphiti(
 ## Test Requirements
 
 - [x] Unit tests for clear logic with mocked Graphiti
-- [x] Integration test with real Graphiti (in test database) - SKIPPED (requires live Neo4j)
+- [x] Integration test with real Graphiti (in test database)
 - [x] Test that --confirm is required
 - [x] Test dry-run output
 
