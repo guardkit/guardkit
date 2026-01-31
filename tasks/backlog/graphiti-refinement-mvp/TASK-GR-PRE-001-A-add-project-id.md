@@ -1,11 +1,15 @@
 ---
 id: TASK-GR-PRE-001-A
 title: Add project_id to GraphitiClient
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
+status: in_review
+created: 2026-01-30 00:00:00+00:00
+updated: 2026-01-30 00:00:00+00:00
 priority: high
-tags: [graphiti, project-namespace, client, mvp-phase-1]
+tags:
+- graphiti
+- project-namespace
+- client
+- mvp-phase-1
 task_type: feature
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
@@ -14,7 +18,37 @@ wave: 3
 conductor_workspace: gr-mvp-wave3-namespace
 complexity: 3
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+autobuild_state:
+  current_turn: 3
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
+  base_branch: main
+  started_at: '2026-01-30T22:31:36.548818'
+  last_updated: '2026-01-30T22:51:41.985664'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-01-30T22:31:36.548818'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-01-30T22:46:39.551979'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 3
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-30T22:49:42.040245'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Add project_id to GraphitiClient

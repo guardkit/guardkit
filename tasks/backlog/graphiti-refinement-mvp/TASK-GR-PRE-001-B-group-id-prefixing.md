@@ -1,11 +1,15 @@
 ---
 id: TASK-GR-PRE-001-B
 title: Implement group ID prefixing
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
+status: in_review
+created: 2026-01-30 00:00:00+00:00
+updated: 2026-01-30 00:00:00+00:00
 priority: high
-tags: [graphiti, project-namespace, group-id, mvp-phase-1]
+tags:
+- graphiti
+- project-namespace
+- group-id
+- mvp-phase-1
 task_type: feature
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
@@ -14,7 +18,29 @@ wave: 3
 conductor_workspace: gr-mvp-wave3-namespace
 complexity: 4
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+autobuild_state:
+  current_turn: 2
+  max_turns: 25
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
+  base_branch: main
+  started_at: '2026-01-30T22:31:36.545851'
+  last_updated: '2026-01-30T22:48:26.305902'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-01-30T22:31:36.545851'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-30T22:44:09.408105'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement group ID prefixing

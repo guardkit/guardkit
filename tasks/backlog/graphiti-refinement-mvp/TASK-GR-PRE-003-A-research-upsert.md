@@ -3,13 +3,17 @@ id: TASK-GR-PRE-003-A
 title: Research graphiti-core upsert capabilities
 status: backlog
 created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
+updated: 2026-01-31T15:00:00Z
 priority: high
-tags: [graphiti, research, upsert, mvp-phase-1]
+tags:
+  - graphiti
+  - research
+  - upsert
+  - mvp-phase-1
 task_type: documentation
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
-implementation_mode: manual
+implementation_mode: task-work
 wave: 3
 conductor_workspace: gr-mvp-wave3-research
 complexity: 3
@@ -22,6 +26,8 @@ depends_on:
 ## Description
 
 Research graphiti-core's native capabilities for episode update/upsert operations. This determines the implementation strategy for PRE-003-B and PRE-003-C.
+
+**Note**: Changed from `implementation_mode: manual` to `task-work` per TASK-GR-REV-001 findings. AI can research graphiti-core docs/source and create ADR output.
 
 ## Acceptance Criteria
 
@@ -81,11 +87,11 @@ Create ADR document at:
 
 ## Test Requirements
 
-- [ ] N/A - research task
+- [ ] N/A - research task outputs documentation only
 
 ## Notes
 
-This is a manual research task, not implementation. Output informs PRE-003-B and PRE-003-C.
+Output informs PRE-003-B and PRE-003-C implementation decisions.
 
 ## References
 
