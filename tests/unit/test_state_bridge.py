@@ -477,17 +477,22 @@ autobuild_state:
         assert stub_path is not None
         assert stub_path.exists()
 
-    def test_stub_not_created_for_manual_task(self, temp_repo):
-        """Test stub is NOT created for task without autobuild/task-work config."""
+    def test_stub_not_created_for_unknown_mode(self, temp_repo):
+        """Test stub is NOT created for task with unknown/invalid implementation mode.
+
+        Note: 'manual' was a deprecated mode removed in TASK-RMM-001.
+        This test verifies backward compatibility: tasks with unrecognized
+        implementation_mode values don't get stubs created.
+        """
         task_content = """---
 id: TASK-001
-title: Manual task
+title: Unknown mode task
 status: design_approved
-implementation_mode: manual
+implementation_mode: unknown
 ---
-# Manual Task
+# Unknown Mode Task
 
-This task should be implemented manually.
+This task has an unrecognized implementation mode.
 """
         task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
         task_path.write_text(task_content)
