@@ -486,7 +486,9 @@ class TestGraphitiClientAddEpisode:
             mock_graphiti.add_episode.assert_called_once()
             call_kwargs = mock_graphiti.add_episode.call_args[1]
             assert call_kwargs['name'] == "Test Episode"
-            assert call_kwargs['episode_body'] == "This is test content"
+            # Content includes original text plus auto-generated metadata
+            assert "This is test content" in call_kwargs['episode_body']
+            assert "_metadata" in call_kwargs['episode_body']
             # System group stays unprefixed
             assert call_kwargs['group_id'] == "role_constraints"
 
@@ -779,9 +781,10 @@ class TestEdgeCases:
             )
 
             assert result == "episode-uuid"
-            # Verify content was passed correctly
+            # Verify content was passed correctly (includes original + metadata)
             call_kwargs = mock_graphiti.add_episode.call_args[1]
-            assert call_kwargs['episode_body'] == special_content
+            assert special_content in call_kwargs['episode_body']
+            assert "_metadata" in call_kwargs['episode_body']
 
     @pytest.mark.asyncio
     async def test_add_episode_with_empty_body(self):
