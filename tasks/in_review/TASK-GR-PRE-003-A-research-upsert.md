@@ -6,10 +6,10 @@ depends_on:
 - TASK-GR-PRE-000-C
 feature_id: FEAT-GR-MVP
 id: TASK-GR-PRE-003-A
-implementation_mode: manual
+implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - research
@@ -17,8 +17,11 @@ tags:
 - mvp-phase-1
 task_type: documentation
 title: Research graphiti-core upsert capabilities
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-01-31T21:10:00+00:00
 wave: 3
+previous_state: in_progress
+state_transition_reason: "All acceptance criteria met - documentation complete"
+completed_at: 2026-01-31T21:10:00+00:00
 ---
 
 # Task: Research graphiti-core upsert capabilities
@@ -29,11 +32,11 @@ Research graphiti-core's native capabilities for episode update/upsert operation
 
 ## Acceptance Criteria
 
-- [ ] Document graphiti-core's native upsert capabilities
-- [ ] Identify if temporal versioning (valid_at/invalid_at) can be used
-- [ ] Document API for invalidating old episodes
-- [ ] Propose implementation strategy based on findings
-- [ ] Create ADR for upsert approach
+- [x] Document graphiti-core's native upsert capabilities
+- [x] Identify if temporal versioning (valid_at/invalid_at) can be used
+- [x] Document API for invalidating old episodes
+- [x] Propose implementation strategy based on findings
+- [x] Create ADR for upsert approach
 
 ## Research Questions
 
@@ -85,11 +88,30 @@ Create ADR document at:
 
 ## Test Requirements
 
-- [ ] N/A - research task
+- [x] N/A - research task (documentation validated)
 
 ## Notes
 
 This is a manual research task, not implementation. Output informs PRE-003-B and PRE-003-C.
+
+## Deliverables
+
+1. **ADR Document**: `docs/adr/ADR-GR-001-upsert-strategy.md`
+   - Status: Accepted
+   - Decision: Invalidate + Create pattern
+   - Implementation details for PRE-003-B and PRE-003-C
+
+2. **Research Document**: `docs/research/graphiti-refinement/RESEARCH-GR-PRE-003-A-upsert-capabilities.md`
+   - Complete API reference
+   - Temporal versioning analysis
+   - Implementation recommendations
+
+## Key Findings Summary
+
+1. **No Native Upsert**: graphiti-core does not provide built-in upsert
+2. **Limited Temporal**: valid_at exists but no invalid_at mechanism
+3. **Deletion Available**: Neo4j DETACH DELETE can remove episodes
+4. **Recommended Strategy**: Invalidate + Create with metadata-based identity matching
 
 ## References
 
