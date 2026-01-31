@@ -10,7 +10,7 @@ id: TASK-GR-PRE-002-C
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - metadata
@@ -18,7 +18,7 @@ tags:
 - mvp-phase-1
 task_type: feature
 title: Update add_episode to include metadata
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-01-31T00:00:00+00:00
 wave: 4
 ---
 
@@ -30,11 +30,11 @@ Modify the GraphitiClient.add_episode() method to automatically include standard
 
 ## Acceptance Criteria
 
-- [ ] add_episode() accepts optional EpisodeMetadata parameter
-- [ ] Metadata is auto-generated if not provided
-- [ ] Metadata is merged into episode content correctly
-- [ ] Existing callers continue to work (backward compatible)
-- [ ] Metadata is stored in `_metadata` key of episode
+- [x] add_episode() accepts optional EpisodeMetadata parameter
+- [x] Metadata is auto-generated if not provided
+- [x] Metadata is merged into episode content correctly
+- [x] Existing callers continue to work (backward compatible)
+- [x] Metadata is stored in `_metadata` key of episode
 
 ## Implementation Notes
 
@@ -86,9 +86,9 @@ def _inject_metadata(self, content: str, metadata: EpisodeMetadata) -> str:
 
 ## Test Requirements
 
-- [ ] Unit tests for metadata injection
-- [ ] Unit tests for auto-generation
-- [ ] Integration test with Graphiti
+- [x] Unit tests for metadata injection
+- [x] Unit tests for auto-generation
+- [x] Integration test with Graphiti (skipped - requires Neo4j)
 
 ## Notes
 
