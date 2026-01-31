@@ -30,6 +30,7 @@ from typing import Optional, List, Dict, Any
 import logging
 import os
 import re
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -644,12 +645,29 @@ class GraphitiClient:
             logger.warning(f"Episode creation request failed: {e}")
             return None
 
+    def _inject_metadata(self, content: str, metadata: "EpisodeMetadata") -> str:
+        """Inject metadata block into episode content.
+
+        Args:
+            content: Original episode content
+            metadata: EpisodeMetadata to inject
+
+        Returns:
+            Content with metadata block appended
+        """
+        metadata_json = json.dumps(metadata.to_dict(), indent=2)
+        metadata_block = f"\n\n---\n_metadata:\n```json\n{metadata_json}\n```"
+        return content + metadata_block
+
     async def add_episode(
         self,
         name: str,
         episode_body: str,
         group_id: str,
-        scope: Optional[str] = None
+        scope: Optional[str] = None,
+        metadata: Optional["EpisodeMetadata"] = None,
+        source: str = "user_added",
+        entity_type: str = "generic",
     ) -> Optional[str]:
         """Add episode with graceful degradation.
 
@@ -662,6 +680,9 @@ class GraphitiClient:
             group_id: Group ID for organization
             scope: Optional scope override ("project" or "system").
                    If None, auto-detects based on group name.
+            metadata: Optional EpisodeMetadata to inject. If None, auto-generates.
+            source: Source of the episode (default: "user_added").
+            entity_type: Type of entity (default: "generic").
 
         Returns:
             Episode UUID if successful, None if:
@@ -679,18 +700,192 @@ class GraphitiClient:
         if not self.config.enabled:
             return None
 
+        # Import EpisodeMetadata here to avoid circular imports
+        from guardkit.integrations.graphiti.metadata import EpisodeMetadata
+
+        # Auto-generate metadata if not provided
+        if metadata is None:
+            metadata = EpisodeMetadata.create_now(
+                source=source,
+                entity_type=entity_type,
+                project_id=self.project_id
+            )
+
+        # Inject metadata into episode_body
+        episode_body_with_metadata = self._inject_metadata(episode_body, metadata)
+
         # Apply prefixing to group_id (may raise ValueError if project_id not set)
         prefixed_group_id = self._apply_group_prefix(group_id, scope)
 
         try:
             return await self._create_episode(
                 name=name,
-                episode_body=episode_body,
+                episode_body=episode_body_with_metadata,
                 group_id=prefixed_group_id
             )
         except Exception as e:
             logger.warning(f"Graphiti add_episode failed: {e}")
             return None
+
+    # =========================================================================
+    # EPISODE EXISTS METHOD
+    # =========================================================================
+
+    def _parse_episode_metadata(self, fact: str) -> Optional[Dict[str, Any]]:
+        """Parse metadata from episode fact/body.
+
+        Episodes may contain JSON metadata at the start of the body,
+        separated from content by double newline.
+
+        Args:
+            fact: The episode fact/body content.
+
+        Returns:
+            Parsed metadata dict or None if no valid JSON metadata found.
+        """
+        import json
+
+        if not fact:
+            return None
+
+        # Try to parse JSON from the beginning of the fact
+        try:
+            # Check if fact starts with '{'
+            stripped = fact.strip()
+            if not stripped.startswith('{'):
+                return None
+
+            # Find the end of JSON - either at newline separator or end
+            # Try to find double newline separator
+            separator_idx = stripped.find('\n\n')
+            if separator_idx > 0:
+                json_str = stripped[:separator_idx]
+            else:
+                # Try to parse entire string as JSON
+                json_str = stripped
+
+            return json.loads(json_str)
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+    async def episode_exists(
+        self,
+        entity_id: str,
+        group_id: str,
+        source_hash: Optional[str] = None
+    ) -> "ExistsResult":
+        """Check if episode exists in Graphiti.
+
+        Searches for an episode with matching entity_id in the metadata.
+        If source_hash is provided, also checks for exact content match.
+
+        Args:
+            entity_id: Stable identifier for the episode.
+            group_id: Group to search in (will be prefixed if project group).
+            source_hash: Optional content hash for exact match verification.
+
+        Returns:
+            ExistsResult with exists flag and episode info if found.
+            Returns ExistsResult.not_found() on any error (graceful degradation).
+
+        Example:
+            result = await client.episode_exists(
+                entity_id="project-overview-001",
+                group_id="project_overview",
+                source_hash="abc123..."
+            )
+            if result.exists:
+                if result.exact_match:
+                    print("Episode exists with same content")
+                else:
+                    print("Episode exists but content changed")
+        """
+        # Import here to avoid circular imports
+        from guardkit.integrations.graphiti.exists_result import ExistsResult
+
+        # Graceful degradation: return not found if disabled
+        if not self.config.enabled:
+            return ExistsResult.not_found()
+
+        # Graceful degradation: return not found if not initialized
+        if not self._graphiti:
+            logger.warning("Graphiti not initialized, episode_exists unavailable")
+            return ExistsResult.not_found()
+
+        try:
+            # Apply prefixing to group_id
+            prefixed_group_id = self._apply_group_prefix(group_id)
+
+            # Search for episodes in the group
+            # We search with a broad query and filter results by entity_id
+            results = await self._graphiti.search(
+                f"entity_id {entity_id}",
+                group_ids=[prefixed_group_id],
+                num_results=50  # Get enough results to find matches
+            )
+
+            if not results:
+                return ExistsResult.not_found()
+
+            # Variables to track best match
+            exact_match_episode = None
+            entity_match_episode = None
+
+            # Iterate through results to find matching entity_id
+            for edge in results:
+                # Get the fact/body content
+                fact = getattr(edge, 'fact', None)
+                if not fact:
+                    continue
+
+                # Parse metadata from the fact
+                metadata = self._parse_episode_metadata(fact)
+                if not metadata:
+                    continue
+
+                # Check if entity_id matches
+                episode_entity_id = metadata.get('entity_id')
+                if episode_entity_id != entity_id:
+                    continue
+
+                # Found matching entity_id
+                episode_data = {
+                    "uuid": getattr(edge, 'uuid', None),
+                    "fact": fact,
+                    "name": getattr(edge, 'name', None),
+                    "created_at": str(getattr(edge, 'created_at', None)) if hasattr(edge, 'created_at') else None,
+                    "valid_at": str(getattr(edge, 'valid_at', None)) if hasattr(edge, 'valid_at') else None,
+                    "metadata": metadata,
+                }
+
+                # If source_hash provided, check for exact match
+                if source_hash:
+                    episode_hash = metadata.get('source_hash')
+                    if episode_hash == source_hash:
+                        # Found exact match - return immediately
+                        return ExistsResult.found(
+                            episode=episode_data,
+                            exact_match=True,
+                            uuid=episode_data["uuid"]
+                        )
+
+                # Track this as a potential match
+                if entity_match_episode is None:
+                    entity_match_episode = episode_data
+
+            # Return best match found
+            if entity_match_episode:
+                return ExistsResult.found(
+                    episode=entity_match_episode,
+                    exact_match=False,  # No exact hash match found
+                    uuid=entity_match_episode["uuid"]
+                )
+
+            return ExistsResult.not_found()
+
+        except Exception as e:
+            logger.warning(f"Graphiti episode_exists failed: {e}")
+            return ExistsResult.not_found()
 
     # =========================================================================
     # CLEAR METHODS
