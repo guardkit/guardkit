@@ -1,21 +1,25 @@
 ---
-id: TASK-GR-PRE-003-B
-title: Implement episode_exists method
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, upsert, deduplication, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 4
-conductor_workspace: gr-mvp-wave4-init
 complexity: 3
+conductor_workspace: gr-mvp-wave4-init
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-003-A
-  - TASK-GR-PRE-002-A
+- TASK-GR-PRE-003-A
+- TASK-GR-PRE-002-A
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-003-B
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- upsert
+- deduplication
+- mvp-phase-1
+task_type: feature
+title: Implement episode_exists method
+updated: 2026-01-30 00:00:00+00:00
+wave: 4
 ---
 
 # Task: Implement episode_exists method

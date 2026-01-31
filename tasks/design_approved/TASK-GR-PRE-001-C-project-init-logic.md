@@ -1,21 +1,25 @@
 ---
-id: TASK-GR-PRE-001-C
-title: Add project initialization logic
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, project-namespace, initialization, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 4
-conductor_workspace: gr-mvp-wave4-init
 complexity: 4
+conductor_workspace: gr-mvp-wave4-init
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-001-A
-  - TASK-GR-PRE-001-B
+- TASK-GR-PRE-001-A
+- TASK-GR-PRE-001-B
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-001-C
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- project-namespace
+- initialization
+- mvp-phase-1
+task_type: feature
+title: Add project initialization logic
+updated: 2026-01-30 00:00:00+00:00
+wave: 4
 ---
 
 # Task: Add project initialization logic

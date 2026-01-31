@@ -1,21 +1,25 @@
 ---
-id: TASK-GR-PRE-002-C
-title: Update add_episode to include metadata
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, metadata, client, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 4
-conductor_workspace: gr-mvp-wave4-episode
 complexity: 3
+conductor_workspace: gr-mvp-wave4-episode
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-002-A
-  - TASK-GR-PRE-002-B
+- TASK-GR-PRE-002-A
+- TASK-GR-PRE-002-B
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-002-C
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- metadata
+- client
+- mvp-phase-1
+task_type: feature
+title: Update add_episode to include metadata
+updated: 2026-01-30 00:00:00+00:00
+wave: 4
 ---
 
 # Task: Update add_episode to include metadata
