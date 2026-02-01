@@ -462,6 +462,12 @@ class AutoBuildOrchestrator:
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
         self.recovery_count: int = 0  # Track number of state recovery attempts
 
+        # Context retrieval settings (TASK-GR6-006)
+        self.enable_context = enable_context
+        self.verbose = verbose
+        self._context_loader = context_loader
+        self._feature_id: Optional[str] = None  # Set during orchestration from task metadata
+
         # Log warning if ablation mode is active
         if self.ablation_mode:
             logger.warning(
@@ -489,7 +495,9 @@ class AutoBuildOrchestrator:
             f"enable_checkpoints={self.enable_checkpoints}, "
             f"rollback_on_pollution={self.rollback_on_pollution}, "
             f"ablation_mode={self.ablation_mode}, "
-            f"existing_worktree={'provided' if existing_worktree else 'None'}"
+            f"existing_worktree={'provided' if existing_worktree else 'None'}, "
+            f"enable_context={self.enable_context}, "
+            f"verbose={self.verbose}"
         )
 
     def orchestrate(
@@ -1952,6 +1960,11 @@ class AutoBuildOrchestrator:
         in the result's error field.
 
         Passes max_turns to enable escape hatch pattern when approaching limit.
+
+        Context Retrieval (TASK-GR6-006):
+        When enable_context=True, retrieves job-specific context from Graphiti
+        including role_constraints, quality_gates, turn_states, and more.
+        Context is formatted as prompt text and passed to the Player agent.
         """
         try:
             # AgentInvoker.invoke_player is actually synchronous despite the
@@ -1965,6 +1978,37 @@ class AutoBuildOrchestrator:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
+            # Retrieve job-specific context if enabled (TASK-GR6-006)
+            context_prompt = ""
+            if self.enable_context and self._context_loader is not None:
+                try:
+                    context_result = loop.run_until_complete(
+                        self._context_loader.get_player_context(
+                            task_id=task_id,
+                            feature_id=self._feature_id or "",
+                            turn_number=turn,
+                            description=requirements,
+                            tech_stack="python",  # TODO: Detect from task
+                            complexity=5,  # TODO: Get from task metadata
+                            previous_feedback=feedback,
+                        )
+                    )
+                    context_prompt = context_result.prompt_text
+
+                    # Log verbose details if enabled
+                    if self.verbose and context_result.verbose_details:
+                        logger.info(f"Context retrieval details:\n{context_result.verbose_details}")
+
+                    logger.debug(
+                        f"Retrieved Player context for {task_id} turn {turn}: "
+                        f"{context_result.budget_used}/{context_result.budget_total} tokens, "
+                        f"{len(context_result.categories_populated)} categories"
+                    )
+                except Exception as e:
+                    # Graceful degradation - continue without context
+                    logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
+                    context_prompt = ""
+
             result = loop.run_until_complete(
                 self._agent_invoker.invoke_player(
                     task_id=task_id,
@@ -1972,6 +2016,7 @@ class AutoBuildOrchestrator:
                     requirements=requirements,
                     feedback=feedback,
                     max_turns=self.max_turns,  # Enable escape hatch pattern
+                    context=context_prompt,  # Pass job-specific context (TASK-GR6-006)
                 )
             )
             return result
@@ -2074,10 +2119,53 @@ class AutoBuildOrchestrator:
         - Runs independent test verification (trust but verify)
         - Validates requirements satisfaction
         - Provides approve/feedback decision
+
+        Context Retrieval (TASK-GR6-006):
+        When enable_context=True, retrieves quality_gate_configs and turn_states
+        from Graphiti to inform Coach validation decisions.
         """
         import time
+        import asyncio
 
         start_time = time.time()
+
+        # Retrieve job-specific context for Coach if enabled (TASK-GR6-006)
+        context_prompt = ""
+        if self.enable_context and self._context_loader is not None:
+            try:
+                # Create event loop if needed
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                context_result = loop.run_until_complete(
+                    self._context_loader.get_coach_context(
+                        task_id=task_id,
+                        feature_id=self._feature_id or "",
+                        turn_number=turn,
+                        description=requirements,
+                        tech_stack="python",  # TODO: Detect from task
+                        complexity=5,  # TODO: Get from task metadata
+                        player_report=player_report,
+                    )
+                )
+                context_prompt = context_result.prompt_text
+
+                # Log verbose details if enabled
+                if self.verbose and context_result.verbose_details:
+                    logger.info(f"Coach context retrieval details:\n{context_result.verbose_details}")
+
+                logger.debug(
+                    f"Retrieved Coach context for {task_id} turn {turn}: "
+                    f"{context_result.budget_used}/{context_result.budget_total} tokens, "
+                    f"{len(context_result.categories_populated)} categories"
+                )
+            except Exception as e:
+                # Graceful degradation - continue without context
+                logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")
+                context_prompt = ""
 
         # Try lightweight CoachValidator first (Option D architecture)
         try:
