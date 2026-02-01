@@ -1160,3 +1160,359 @@ class TestIntegration:
         # Verify prompt includes AutoBuild context
         prompt = result.to_prompt()
         assert isinstance(prompt, str)
+
+
+# ============================================================================
+# 11. Emoji Markers Tests (NEW - TDD RED PHASE for TASK-GR6-004)
+# ============================================================================
+
+class TestEmojiMarkers:
+    """Test emoji markers in prompt output.
+
+    These tests verify that section headers include emoji markers to
+    visually differentiate section types as per TASK-GR6-004 acceptance criteria.
+
+    Expected emojis:
+    - 📋 Feature Context
+    - ✅ Similar Outcomes
+    - 🎨 Relevant Patterns
+    - 🏗️ Architecture Context
+    - ⚠️ Warnings
+    - 📚 Domain Knowledge
+    - 🎭 Role Constraints (AutoBuild)
+    - 🎯 Quality Gate Configs (AutoBuild)
+    - 🔄 Turn States (AutoBuild)
+    - 🛠️ Implementation Modes (AutoBuild)
+
+    TDD RED PHASE: These tests will FAIL initially because the current
+    implementation doesn't include emoji markers in section headers.
+    """
+
+    def test_feature_context_has_emoji(self):
+        """Test that Feature Context section header includes 📋 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[{"name": "Feature A", "content": "Test feature"}],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "📋" in prompt, "Feature Context section missing 📋 emoji"
+        assert "### 📋 Feature Context" in prompt or "📋 Feature Context" in prompt
+
+    def test_similar_outcomes_has_emoji(self):
+        """Test that Similar Outcomes section header includes ✅ emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[{"outcome": "Success", "content": "Implemented OAuth2"}],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "✅" in prompt, "Similar Outcomes section missing ✅ emoji"
+        assert "### ✅" in prompt or "✅ Similar" in prompt or "✅ What Worked" in prompt
+
+    def test_relevant_patterns_has_emoji(self):
+        """Test that Relevant Patterns section header includes 🎨 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[{"pattern": "Repository", "content": "Repository pattern"}],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🎨" in prompt, "Relevant Patterns section missing 🎨 emoji"
+        assert "### 🎨" in prompt or "🎨 Patterns" in prompt or "🎨 Relevant" in prompt
+
+    def test_architecture_context_has_emoji(self):
+        """Test that Architecture Context section header includes 🏗️ emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[{"component": "API", "content": "REST API"}],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🏗️" in prompt, "Architecture Context section missing 🏗️ emoji"
+        assert "### 🏗️" in prompt or "🏗️ Architecture" in prompt
+
+    def test_warnings_has_emoji(self):
+        """Test that Warnings section header includes ⚠️ emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[{"warning": "Memory leak", "content": "Watch for memory leaks"}],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "⚠️" in prompt, "Warnings section missing ⚠️ emoji"
+        assert "### ⚠️" in prompt or "⚠️ Warnings" in prompt
+
+    def test_domain_knowledge_has_emoji(self):
+        """Test that Domain Knowledge section header includes 📚 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[{"concept": "OAuth", "content": "OAuth 2.0 protocol"}],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "📚" in prompt, "Domain Knowledge section missing 📚 emoji"
+        assert "### 📚" in prompt or "📚 Domain" in prompt
+
+    def test_role_constraints_has_emoji(self):
+        """Test that Role Constraints section header includes 🎭 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[{"role": "player", "constraint": "Must ask before schema changes"}],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🎭" in prompt, "Role Constraints section missing 🎭 emoji"
+        assert "### 🎭" in prompt or "🎭 Role" in prompt
+
+    def test_quality_gate_configs_has_emoji(self):
+        """Test that Quality Gate Configs section header includes 🎯 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[{"gate": "coverage", "threshold": "85%"}],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🎯" in prompt, "Quality Gate Configs section missing 🎯 emoji"
+        assert "### 🎯" in prompt or "🎯 Quality" in prompt
+
+    def test_turn_states_has_emoji(self):
+        """Test that Turn States section header includes 🔄 emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[{"turn": 1, "status": "APPROVED"}],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🔄" in prompt, "Turn States section missing 🔄 emoji"
+        assert "### 🔄" in prompt or "🔄 Turn" in prompt
+
+    def test_implementation_modes_has_emoji(self):
+        """Test that Implementation Modes section header includes 🛠️ emoji."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[{"mode": "tdd", "preference": "use for business logic"}],
+        )
+
+        prompt = context.to_prompt()
+
+        # Should have emoji in section header
+        assert "🛠️" in prompt, "Implementation Modes section missing 🛠️ emoji"
+        assert "### 🛠️" in prompt or "🛠️ Implementation" in prompt
+
+    def test_all_emojis_present_in_full_context(self):
+        """Test that all emoji markers appear when all sections populated."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[{"name": "Feature A"}],
+            similar_outcomes=[{"outcome": "Success"}],
+            relevant_patterns=[{"pattern": "Repository"}],
+            architecture_context=[{"component": "API"}],
+            warnings=[{"warning": "Memory leak"}],
+            domain_knowledge=[{"concept": "OAuth"}],
+            role_constraints=[{"role": "player"}],
+            quality_gate_configs=[{"gate": "coverage"}],
+            turn_states=[{"turn": 1}],
+            implementation_modes=[{"mode": "tdd"}],
+        )
+
+        prompt = context.to_prompt()
+
+        # All emojis should be present
+        assert "📋" in prompt, "Missing 📋 emoji"
+        assert "✅" in prompt, "Missing ✅ emoji"
+        assert "🎨" in prompt, "Missing 🎨 emoji"
+        assert "🏗️" in prompt, "Missing 🏗️ emoji"
+        assert "⚠️" in prompt, "Missing ⚠️ emoji"
+        assert "📚" in prompt, "Missing 📚 emoji"
+        assert "🎭" in prompt, "Missing 🎭 emoji"
+        assert "🎯" in prompt, "Missing 🎯 emoji"
+        assert "🔄" in prompt, "Missing 🔄 emoji"
+        assert "🛠️" in prompt, "Missing 🛠️ emoji"
+
+    def test_emojis_only_in_headers_not_content(self):
+        """Test that emojis appear in section headers, not in item content."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[{"name": "Feature A", "content": "Test feature"}],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        # Emoji should appear before "Feature Context" header
+        lines = prompt.split("\n")
+
+        found_emoji_header = False
+        for line in lines:
+            if "Feature Context" in line and "###" in line:
+                # This should be the header line
+                assert "📋" in line, "Emoji should be in header line"
+                found_emoji_header = True
+                break
+
+        assert found_emoji_header, "Could not find Feature Context header line"

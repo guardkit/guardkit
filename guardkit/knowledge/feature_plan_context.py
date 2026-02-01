@@ -190,6 +190,11 @@ Entry Points: {', '.join(arch.get('entry_points', []))}"""
         Formats Player and Coach role constraints to prevent role reversal
         where Player makes decisions or Coach implements.
 
+        Uses emoji markers:
+        - ✓ for must_do items
+        - ✗ for must_not_do items
+        - ❓ for ask_before items (TASK-GR6-007)
+
         Returns:
             Formatted role constraints
         """
@@ -198,11 +203,14 @@ Entry Points: {', '.join(arch.get('entry_points', []))}"""
             role = constraint.get('role', 'unknown')
             must_do = constraint.get('must_do', [])
             must_not_do = constraint.get('must_not_do', [])
+            ask_before = constraint.get('ask_before', [])
             lines.append(f"**{role.title()}**:")
             for item in must_do[:3]:
                 lines.append(f"  ✓ {item}")
             for item in must_not_do[:3]:
                 lines.append(f"  ✗ {item}")
+            for item in ask_before[:3]:
+                lines.append(f"  ❓ {item}")
         return '\n'.join(lines)
 
     def _format_quality_gates(self) -> str:

@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-007
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Add role_constraints retrieval and formatting
@@ -22,11 +22,11 @@ Add retrieval and formatting for role_constraints context, addressing TASK-REV-7
 
 ## Acceptance Criteria
 
-- [ ] Queries `role_constraints` group
-- [ ] Filters by current_actor (player/coach)
-- [ ] Formats must_do, must_not_do, ask_before lists
-- [ ] Emoji markers for boundaries (✓/✗/❓)
-- [ ] Emphasized in AutoBuild contexts
+- [x] Queries `role_constraints` group
+- [x] Filters by current_actor (player/coach)
+- [x] Formats must_do, must_not_do, ask_before lists
+- [x] Emoji markers for boundaries (✓/✗/❓)
+- [x] Emphasized in AutoBuild contexts
 
 ## Technical Details
 

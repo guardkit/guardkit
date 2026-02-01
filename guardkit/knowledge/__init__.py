@@ -59,6 +59,7 @@ Public API:
     DynamicBudgetCalculator: Budget calculator based on task characteristics (TASK-GR6-002)
     RetrievedContext: Dataclass for retrieved context data (TASK-GR6-003)
     JobContextRetriever: Retrieves job-specific context from Graphiti (TASK-GR6-003)
+    format_quality_gates: Format quality gate configs for prompts (TASK-GR6-008)
 
 Example:
     from guardkit.knowledge import (
@@ -307,6 +308,11 @@ from guardkit.knowledge.job_context_retriever import (
     JobContextRetriever,
 )
 
+# Quality gate formatting (TASK-GR6-008)
+from guardkit.knowledge.quality_gate_formatter import (
+    format_quality_gates,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -410,4 +416,6 @@ __all__ = [
     # Job context retrieval (TASK-GR6-003)
     "RetrievedContext",
     "JobContextRetriever",
+    # Quality gate formatting (TASK-GR6-008)
+    "format_quality_gates",
 ]

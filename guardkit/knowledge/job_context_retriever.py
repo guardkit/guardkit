@@ -109,64 +109,107 @@ class RetrievedContext:
 
         # Standard categories
         if self.feature_context:
-            lines.append("### Feature Context")
+            lines.append("### 📋 Feature Context")
             for item in self.feature_context:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.similar_outcomes:
-            lines.append("### Similar Outcomes")
+            lines.append("### ✅ Similar Outcomes")
             for item in self.similar_outcomes:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.relevant_patterns:
-            lines.append("### Relevant Patterns")
+            lines.append("### 🎨 Relevant Patterns")
             for item in self.relevant_patterns:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.architecture_context:
-            lines.append("### Architecture Context")
+            lines.append("### 🏗️ Architecture Context")
             for item in self.architecture_context:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.warnings:
-            lines.append("### Warnings")
+            lines.append("### ⚠️ Warnings")
             for item in self.warnings:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.domain_knowledge:
-            lines.append("### Domain Knowledge")
+            lines.append("### 📚 Domain Knowledge")
             for item in self.domain_knowledge:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         # AutoBuild categories
         if self.role_constraints:
-            lines.append("### Role Constraints")
+            lines.append("### 🎭 Role Constraints")
             for item in self.role_constraints:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
         if self.quality_gate_configs:
-            lines.append("### Quality Gate Configs")
-            for item in self.quality_gate_configs:
-                lines.append(f"- {self._format_item(item)}")
-            lines.append("")
+            # Use dedicated formatter for quality gates with enhanced formatting
+            from .quality_gate_formatter import format_quality_gates
+            quality_gates_section = format_quality_gates(self.quality_gate_configs)
+            if quality_gates_section:
+                lines.append(quality_gates_section)
 
         if self.turn_states:
-            lines.append("### Turn States")
-            for item in self.turn_states:
+            # Use dedicated formatter for turn states with cross-turn learning format
+            turn_states_section = self._format_turn_states()
+            if turn_states_section:
+                lines.append(turn_states_section)
+
+        if self.implementation_modes:
+            lines.append("### 🛠️ Implementation Modes")
+            for item in self.implementation_modes:
                 lines.append(f"- {self._format_item(item)}")
             lines.append("")
 
-        if self.implementation_modes:
-            lines.append("### Implementation Modes")
-            for item in self.implementation_modes:
-                lines.append(f"- {self._format_item(item)}")
+        return "\n".join(lines)
+
+    def _format_turn_states(self) -> str:
+        """Format turn states for cross-turn learning.
+
+        Returns formatted string with:
+        - Header: "### Previous Turn Context"
+        - Guidance: "Learn from previous turns - don't repeat mistakes"
+        - Per-turn format: "**Turn N**: DECISION\\n  Progress: summary"
+        - REJECTED turns get warning emphasis with feedback
+
+        Returns:
+            Formatted string for turn states section
+        """
+        if not self.turn_states:
+            return ""
+
+        lines = []
+        lines.append("### 🔄 Turn States")
+        lines.append("*Learn from previous turns - don't repeat mistakes*")
+        lines.append("")
+
+        for turn in self.turn_states:
+            turn_number = turn.get("turn_number", "?")
+            decision = turn.get("coach_decision", "?")
+            progress = turn.get("progress_summary", "")
+
+            # Format turn header with decision
+            lines.append(f"**Turn {turn_number}**: {decision}")
+
+            # Add progress summary
+            if progress:
+                lines.append(f"  Progress: {progress}")
+
+            # Emphasize REJECTED turns with warning and feedback
+            if decision == "REJECTED":
+                feedback = turn.get("feedback_summary", "")
+                if feedback:
+                    lines.append(f"  ⚠️ Feedback: \"{feedback}\"")
+
             lines.append("")
 
         return "\n".join(lines)
@@ -387,9 +430,12 @@ class JobContextRetriever:
             )
             budget_used += tokens
 
-            turn_states, tokens = await self._query_category(
-                query=description,
-                group_ids=["turn_states"],
+            # Query turn_states with feature_id/task_id format for cross-turn learning
+            feature_id = task.get("feature_id", "")
+            task_id = task.get("id", "")
+            turn_states, tokens = await self._query_turn_states(
+                feature_id=feature_id,
+                task_id=task_id,
                 budget_allocation=budget.get_allocation("turn_states"),
                 threshold=threshold,
             )
@@ -456,6 +502,65 @@ class JobContextRetriever:
                 score = item.get("score", 1.0)  # Default to 1.0 if no score
                 if score >= threshold:
                     filtered.append(item)
+
+            # Trim to fit budget allocation
+            trimmed, tokens_used = self._trim_to_budget(filtered, budget_allocation)
+
+            return trimmed, tokens_used
+
+        except Exception:
+            # Graceful degradation - return empty on error
+            return [], 0
+
+    async def _query_turn_states(
+        self,
+        feature_id: str,
+        task_id: str,
+        budget_allocation: int,
+        threshold: float,
+    ) -> tuple[List[Dict[str, Any]], int]:
+        """Query turn_states for cross-turn learning.
+
+        Uses 'turn {feature_id} {task_id}' format and returns last 5 turns
+        sorted by turn_number ascending.
+
+        Args:
+            feature_id: Feature identifier (e.g., "FEAT-GR6")
+            task_id: Task identifier (e.g., "TASK-GR6-001")
+            budget_allocation: Maximum token budget for this category
+            threshold: Minimum relevance score to include
+
+        Returns:
+            Tuple of (filtered_results, tokens_used)
+        """
+        try:
+            # Build query with feature_id and task_id format
+            query = f"turn {feature_id} {task_id}"
+
+            # Query Graphiti with num_results=5 for last 5 turns
+            results = await self.graphiti.search(
+                query,
+                group_ids=["turn_states"],
+                num_results=5,
+            )
+
+            # Handle None or empty results
+            if not results:
+                return [], 0
+
+            # Filter by relevance threshold
+            filtered = []
+            for item in results:
+                score = item.get("score", 1.0)  # Default to 1.0 if no score
+                if score >= threshold:
+                    filtered.append(item)
+
+            # Sort by turn_number ascending
+            filtered.sort(key=lambda x: x.get("turn_number", 0))
+
+            # Limit to last 5 turns (take the most recent ones)
+            if len(filtered) > 5:
+                filtered = filtered[-5:]
 
             # Trim to fit budget allocation
             trimmed, tokens_used = self._trim_to_budget(filtered, budget_allocation)

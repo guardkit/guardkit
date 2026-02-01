@@ -401,6 +401,8 @@ class DynamicBudgetCalculator:
         """Adjust allocation for AutoBuild-specific context.
 
         Emphasizes different context based on current actor and turn number.
+        For later turns (turn_number > 1), allocates 15-20% to turn_states
+        for cross-turn learning.
 
         Args:
             allocation: Base AutoBuild allocation
@@ -417,15 +419,19 @@ class DynamicBudgetCalculator:
             allocation["role_constraints"] = 0.12
             allocation["quality_gate_configs"] = 0.15  # Coach needs gate thresholds
 
-        # Emphasize turn states for later turns
+        # Emphasize turn states for later turns (TASK-GR6-009: 15-20% allocation)
         if char.turn_number > 1:
-            allocation["turn_states"] = 0.15  # More previous turn context
-            allocation["similar_outcomes"] = 0.10  # Less general context
+            # Set turn_states to 17.5% pre-normalization (middle of 15-20% range)
+            # Reduce other categories proportionally to maintain sum near 1.0
+            allocation["turn_states"] = 0.175  # Target 15-20% after normalization
+            allocation["similar_outcomes"] = 0.08  # Reduce from default
+            allocation["feature_context"] = 0.08  # Reduce from default
 
-        # After rejection (refinement), emphasize what went wrong
+        # After rejection (refinement), emphasize what went wrong even more
         if char.is_refinement:
-            allocation["turn_states"] = 0.20  # Load rejection feedback
+            allocation["turn_states"] = 0.20  # Load rejection feedback (top of 15-20%)
             allocation["warnings"] = 0.15
+            allocation["similar_outcomes"] = 0.08  # Further reduced
 
         # Normalize to sum to 1.0
         total = sum(allocation.values())
