@@ -892,6 +892,92 @@ class TestEdgeCases:
     """Test edge cases and error handling."""
 
     @pytest.mark.asyncio
+    async def test_task_type_mismatch_skips_result(self):
+        """Test that mismatched task_type results are skipped."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        # Return result with wrong task_type
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'entity_type': 'quality_gate_config',
+                    'id': 'QG-TESTING',
+                    'name': 'Testing Task',
+                    'task_type': 'testing',  # Wrong type - looking for 'feature'
+                    'complexity_range': [1, 10],
+                    'arch_review_required': False,
+                    'arch_review_threshold': None,
+                    'test_pass_required': True,
+                    'coverage_required': False,
+                    'coverage_threshold': None,
+                    'lint_required': True,
+                    'rationale': 'Test.',
+                    'version': '1.0.0',
+                    'effective_from': '2025-01-01T00:00:00',
+                    'supersedes': None
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.quality_gate_queries.get_graphiti', return_value=mock_graphiti):
+            # Search for 'feature' but result is 'testing' - should return None
+            result = await get_quality_gate_config("feature", 5)
+
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_search_exception_returns_none(self):
+        """Test that search exceptions are handled gracefully."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        # Simulate an exception during search
+        mock_graphiti.search = AsyncMock(side_effect=Exception("Network error"))
+
+        with patch('guardkit.knowledge.quality_gate_queries.get_graphiti', return_value=mock_graphiti):
+            # Should not raise, should return None
+            result = await get_quality_gate_config("feature", 5)
+
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_missing_effective_from_uses_current_datetime(self):
+        """Test that missing effective_from uses current datetime."""
+        from datetime import datetime
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'entity_type': 'quality_gate_config',
+                    'id': 'QG-FEATURE-LOW',
+                    'name': 'Feature (Low Complexity)',
+                    'task_type': 'feature',
+                    'complexity_range': [1, 3],
+                    'arch_review_required': False,
+                    'arch_review_threshold': None,
+                    'test_pass_required': True,
+                    'coverage_required': True,
+                    'coverage_threshold': 60.0,
+                    'lint_required': True,
+                    'rationale': 'Test.',
+                    'version': '1.0.0',
+                    # effective_from is missing (None)
+                    'supersedes': None
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.quality_gate_queries.get_graphiti', return_value=mock_graphiti):
+            before = datetime.now()
+            result = await get_quality_gate_config("feature", 2)
+            after = datetime.now()
+
+            assert result is not None
+            # effective_from should be set to a datetime close to now
+            assert before <= result.effective_from <= after
+
+    @pytest.mark.asyncio
     async def test_complexity_at_boundary_matches_correct_range(self):
         """Test that complexity at boundary (e.g., 3) matches the correct range."""
         mock_graphiti = AsyncMock()

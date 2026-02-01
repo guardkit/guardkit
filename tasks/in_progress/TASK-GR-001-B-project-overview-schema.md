@@ -1,20 +1,24 @@
 ---
-id: TASK-GR-001-B
-title: Create ProjectOverviewEpisode schema
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, project-seeding, schema, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 6
-conductor_workspace: gr-mvp-wave6-schemas
 complexity: 3
+conductor_workspace: gr-mvp-wave6-schemas
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-003-D
+- TASK-GR-PRE-003-D
+feature_id: FEAT-GR-MVP
+id: TASK-GR-001-B
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: in_progress
+tags:
+- graphiti
+- project-seeding
+- schema
+- mvp-phase-2
+task_type: feature
+title: Create ProjectOverviewEpisode schema
+updated: 2026-01-30 00:00:00+00:00
+wave: 6
 ---
 
 # Task: Create ProjectOverviewEpisode schema

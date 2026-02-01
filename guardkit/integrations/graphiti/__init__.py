@@ -18,6 +18,7 @@ from guardkit.integrations.graphiti.project import (
     update_project_access_time,
     PROJECT_METADATA_GROUP,
 )
+from guardkit.integrations.graphiti.episodes import ProjectArchitectureEpisode
 
 __all__ = [
     # Metadata
@@ -34,4 +35,6 @@ __all__ = [
     "project_exists",
     "update_project_access_time",
     "PROJECT_METADATA_GROUP",
+    # Episode schemas
+    "ProjectArchitectureEpisode",
 ]

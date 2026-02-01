@@ -1,20 +1,25 @@
 ---
-id: TASK-GR-001-F
-title: Create ImplementationModeEpisode and seed defaults
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, project-seeding, autobuild, implementation-modes, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 6
-conductor_workspace: gr-mvp-wave6-schemas
 complexity: 2
+conductor_workspace: gr-mvp-wave6-schemas
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-003-D
+- TASK-GR-PRE-003-D
+feature_id: FEAT-GR-MVP
+id: TASK-GR-001-F
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- project-seeding
+- autobuild
+- implementation-modes
+- mvp-phase-2
+task_type: feature
+title: Create ImplementationModeEpisode and seed defaults
+updated: 2026-01-30 00:00:00+00:00
+wave: 6
 ---
 
 # Task: Create ImplementationModeEpisode and seed defaults
