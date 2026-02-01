@@ -7,11 +7,12 @@ feature_id: FEAT-0F4A
 id: TASK-GR5-007
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-005
 task_type: feature
 title: Add turn state capture to feature-build
 wave: 2
+completed_at: 2026-02-01
 ---
 
 # Add turn state capture to feature-build
@@ -22,11 +23,11 @@ Integrate turn state capture into the feature-build workflow to enable cross-tur
 
 ## Acceptance Criteria
 
-- [ ] `capture_turn_state()` called at end of each Player turn
-- [ ] Captures player decision, coach decision, feedback
-- [ ] Tracks blockers, progress, files modified
-- [ ] Saves to `turn_states` group in Graphiti
-- [ ] Episode name: `turn_{feature_id}_{task_id}_turn{N}`
+- [x] `capture_turn_state()` called at end of each Player turn
+- [x] Captures player decision, coach decision, feedback
+- [x] Tracks blockers, progress, files modified
+- [x] Saves to `turn_states` group in Graphiti
+- [x] Episode name: `turn_{feature_id}_{task_id}_turn{N}`
 
 ## Technical Details
 

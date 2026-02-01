@@ -944,7 +944,7 @@ class AutoBuildOrchestrator:
                 self._turn_history = turn_history  # Keep internal copy for state
 
                 # Capture turn state for cross-turn learning (TASK-GE-002)
-                self._capture_turn_state(turn_record, acceptance_criteria)
+                self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
 
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
@@ -1556,6 +1556,7 @@ class AutoBuildOrchestrator:
         turn_record: TurnRecord,
         acceptance_criteria: List[str],
         start_time: Optional[datetime] = None,
+        task_id: Optional[str] = None,
     ) -> None:
         """
         Capture turn state to Graphiti for cross-turn learning (TASK-GE-002).
@@ -1571,6 +1572,8 @@ class AutoBuildOrchestrator:
             Acceptance criteria for tracking progress
         start_time : Optional[datetime]
             Turn start time (defaults to now - duration if not provided)
+        task_id : Optional[str]
+            Task identifier for this turn (TASK-GR5-007)
 
         Notes
         -----
@@ -1585,9 +1588,11 @@ class AutoBuildOrchestrator:
         Graphiti is unavailable, execution continues without blocking.
         """
         try:
+            # Use passed task_id or default to "unknown"
+            current_task_id = task_id or "unknown"
             # Extract feature_id from task_id (e.g., TASK-GE-001 -> FEAT-GE)
             # or use a default if extraction fails
-            feature_id = self._extract_feature_id(self._current_task_id or "unknown")
+            feature_id = self._extract_feature_id(current_task_id)
 
             # Determine turn mode
             if turn_record.turn == 1:
@@ -1678,7 +1683,7 @@ class AutoBuildOrchestrator:
             # Create turn state entity
             entity = create_turn_state_from_autobuild(
                 feature_id=feature_id,
-                task_id=self._current_task_id or "unknown",
+                task_id=current_task_id,
                 turn_number=turn_record.turn,
                 player_summary=player_summary,
                 player_decision=turn_record.decision if turn_record.decision != "error" else "failed",
