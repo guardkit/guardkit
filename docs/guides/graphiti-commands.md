@@ -244,6 +244,90 @@ Total episodes deleted: 150
 
 ---
 
+### `guardkit graphiti add-context`
+
+Adds context from markdown files to the Graphiti knowledge graph.
+
+**Usage:**
+```bash
+guardkit graphiti add-context <PATH> [OPTIONS]
+```
+
+**Arguments:**
+- `PATH`: File or directory to add (required)
+
+**Options:**
+- `--type TEXT`: Force specific parser type (adr, feature-spec, project-overview, project-doc)
+- `--force`, `-f`: Overwrite existing context
+- `--dry-run`: Preview what would be added without actually adding
+- `--pattern TEXT`: Glob pattern for directories (default: `**/*.md`)
+- `--verbose`, `-v`: Show detailed processing output
+- `--quiet`, `-q`: Suppress non-error output
+
+**What it does:**
+- Automatically detects document type (ADR, feature spec, project overview, etc.)
+- Extracts structured metadata from documents
+- Creates searchable episodes in Graphiti knowledge graph
+- Supports single files or bulk directory operations
+
+**Examples:**
+
+```bash
+# Add a single Architecture Decision Record
+guardkit graphiti add-context docs/architecture/ADR-001-use-graphiti.md
+
+# Add all ADRs from directory
+guardkit graphiti add-context docs/architecture/ --pattern "ADR-*.md"
+
+# Add a feature specification
+guardkit graphiti add-context docs/features/FEATURE-SPEC-authentication.md
+
+# Preview what would be added (dry run)
+guardkit graphiti add-context docs/ --dry-run
+
+# Force specific parser type
+guardkit graphiti add-context custom-doc.md --type adr
+
+# Verbose output for debugging
+guardkit graphiti add-context docs/ --verbose
+
+# Quiet mode for automation
+guardkit graphiti add-context docs/ --quiet
+```
+
+**Supported document types:**
+- **ADR** (Architecture Decision Records): `ADR-*.md` files or content with Status/Context/Decision sections
+- **Feature Specs**: `FEATURE-SPEC-*.md` files with YAML frontmatter
+- **Project Overview**: `CLAUDE.md`, `README.md` files
+- **Project Docs**: Any other markdown documentation
+
+**Output:**
+```
+Graphiti Add Context
+
+Connected to Graphiti
+
+  ✓ docs/architecture/ADR-001.md (adr)
+  ✓ docs/features/FEATURE-SPEC-auth.md (feature-spec)
+  ✓ CLAUDE.md (project-overview)
+
+Summary:
+  Added 3 files, 8 episodes
+```
+
+**When to use:**
+- **Initial setup**: Add core project documentation to Graphiti
+- **After creating docs**: Add new ADRs, feature specs immediately
+- **After updates**: Use `--force` to update existing episodes
+- **Bulk operations**: Add all documentation from a directory
+
+**See also:**
+- [Graphiti Add Context Guide](graphiti-add-context.md) - Detailed command reference
+- [Graphiti Parsers Guide](graphiti-parsers.md) - Parser types and detection
+- [Context Addition Deep-Dive](../deep-dives/graphiti/context-addition.md) - Architecture details
+
+---
+
 ### `guardkit graphiti seed-adrs`
 
 Seeds feature-build Architecture Decision Records (ADRs).
