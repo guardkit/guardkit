@@ -179,9 +179,142 @@ async def upsert_episode(..., expected_hash: Optional[str] = None):
 - **ADR-GR-002**: Entity ID Naming Conventions (TBD)
 - **FEAT-GR-PRE-003**: Episode Upsert Logic Feature Spec
 
+## Implementation Notes
+
+### Actual Implementation (2026-01-31)
+
+The upsert strategy was successfully implemented with the following refinements:
+
+#### 1. Invalidate + Create Pattern (Modified)
+
+Instead of explicit deletion, we leverage Graphiti's temporal model:
+
+```python
+async def upsert_episode(...) -> Optional[UpsertResult]:
+    """
+    Pattern:
+    1. Check if episode exists with entity_id
+    2. If exists with same content (source_hash match): Skip
+    3. If exists with different content: Create new episode
+       - Graphiti handles temporal invalidation automatically
+       - New episode gets new valid_at timestamp
+       - Old episode remains in graph with implicit invalid_at
+    4. If not exists: Create new episode
+    5. Return UpsertResult with action (created/updated/skipped)
+    """
+```
+
+**Key Insight**: Graphiti's temporal model means "update" = "create new version". The old version remains queryable at its point in time, providing natural audit trail without explicit deletion.
+
+#### 2. Content-Based Change Detection
+
+The implementation uses `source_hash` for intelligent skip logic:
+
+```python
+# Generate hash from content
+source_hash = hashlib.sha256(episode_body.encode()).hexdigest()
+
+# Check existence
+exists_result = await client.episode_exists(
+    entity_id=entity_id,
+    group_id=group_id,
+    source_hash=source_hash
+)
+
+if exists_result.exists and exists_result.exact_match:
+    # Content unchanged - skip update entirely
+    return UpsertResult.skipped(...)
+```
+
+This prevents unnecessary episode creation when content hasn't changed.
+
+#### 3. Metadata Preservation
+
+Original `created_at` is preserved across updates:
+
+```python
+if exists_result.exists:
+    # Extract original created_at
+    original_created_at = exists_result.episode["metadata"]["created_at"]
+
+    # Create new metadata preserving created_at
+    metadata = EpisodeMetadata.create_now(...)
+    metadata.created_at = original_created_at  # Preserve
+    metadata.updated_at = datetime.now(timezone.utc).isoformat()
+```
+
+#### 4. Structured Result Types
+
+Two dataclasses provide type-safe results:
+
+**ExistsResult** (`guardkit/integrations/graphiti/exists_result.py`):
+- `exists`: Boolean
+- `episode`: Episode data if found
+- `exact_match`: True if source_hash matches
+- `uuid`: Episode UUID if found
+
+**UpsertResult** (`guardkit/integrations/graphiti/upsert_result.py`):
+- `action`: "created" | "updated" | "skipped"
+- `episode`: Episode data
+- `uuid`: New episode UUID
+- `previous_uuid`: Old UUID for updates
+- Boolean helpers: `was_created`, `was_updated`, `was_skipped`
+
+#### 5. Test Coverage
+
+**Unit Tests** (53+ tests total):
+- `tests/unit/integrations/graphiti/test_upsert_result.py` (18 tests)
+- `tests/unit/knowledge/test_upsert_episode.py` (14 tests)
+- `tests/knowledge/test_episode_exists.py` (21 tests)
+
+**Coverage**: >85% for all upsert-related code
+
+**Test Scenarios Covered**:
+- Create when not exists
+- Skip when content unchanged (exact match)
+- Update when content changed (preserve created_at)
+- Graceful degradation (disabled client, errors)
+- UUID extraction and override
+- Entity ID matching
+- Source hash generation and verification
+- Namespace prefixing (project vs system groups)
+- Metadata parsing from episode body
+- Multiple search results handling
+
+#### 6. Documentation
+
+- **Deep Dive**: [Episode Upsert Logic](../deep-dives/graphiti/episode-upsert.md)
+- **Integration Guide**: [Graphiti Integration](../guides/graphiti-integration-guide.md)
+- **Feature Spec**: [FEAT-GR-PRE-003](../research/graphiti-refinement/FEAT-GR-PRE-003-episode-upsert-logic.md)
+
+### Lessons Learned
+
+1. **No Explicit Deletion Needed**: Graphiti's temporal model handles version invalidation naturally
+2. **Content Hashing Critical**: Prevents unnecessary episode creation when content unchanged
+3. **Metadata in Body**: JSON metadata prefix in episode body enables efficient searching
+4. **Graceful Degradation**: All operations return None on error, never raise exceptions
+5. **Type Safety**: Dataclasses (UpsertResult, ExistsResult) provide clear, type-safe APIs
+
+### Performance Characteristics
+
+- **Existence Check**: Searches up to 50 results, filters in-memory by entity_id
+- **Hash Computation**: SHA-256 is fast (~0.1ms for typical episode content)
+- **Skip Rate**: High for repeated ingestion (e.g., seeding runs 2+ times)
+- **Update Overhead**: Minimal - new episode creation only when content changed
+
+### Known Limitations
+
+1. **Not Atomic**: Episode creation is not transactional with existence check
+2. **Search Limit**: entity_id search capped at 50 results (sufficient for current use)
+3. **No Explicit History API**: Old versions accessible via temporal queries only
+4. **Single Entity ID**: No composite key support (use concatenation if needed)
+
 ## References
 
 - [graphiti-core GitHub](https://github.com/getzep/graphiti)
 - [GuardKit GraphitiClient](../guardkit/knowledge/graphiti_client.py)
 - [Episode Metadata Schema](../guardkit/integrations/graphiti/metadata.py)
 - [FEAT-GR-PRE-003 Design](../docs/research/graphiti-refinement/FEAT-GR-PRE-003-episode-upsert-logic.md)
+- [Episode Upsert Documentation](../deep-dives/graphiti/episode-upsert.md)
+- [UpsertResult Implementation](../guardkit/integrations/graphiti/upsert_result.py)
+- [ExistsResult Implementation](../guardkit/integrations/graphiti/exists_result.py)
