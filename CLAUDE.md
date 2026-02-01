@@ -787,6 +787,119 @@ See `tasks/backlog/design-url-integration/` for implementation details.
 
 **For detailed usage guidelines**: [MCP Optimization Guide](docs/deep-dives/mcp-integration/mcp-optimization.md)
 
+## Graphiti Knowledge Capture
+
+GuardKit integrates with Graphiti to provide persistent knowledge capture across sessions. Use interactive knowledge capture to build comprehensive project understanding through guided Q&A.
+
+### Interactive Knowledge Capture
+
+```bash
+# Start interactive knowledge capture session
+guardkit graphiti capture --interactive
+
+# Focus on specific knowledge category
+guardkit graphiti capture --interactive --focus project-overview
+guardkit graphiti capture --interactive --focus architecture
+guardkit graphiti capture --interactive --focus role-customization
+
+# Limit number of questions
+guardkit graphiti capture --interactive --max-questions 5
+```
+
+### Focus Categories
+
+**Project Knowledge:**
+- **project-overview**: Project purpose, target users, goals, problem statement
+- **architecture**: High-level architecture, components, services, data flow
+- **domain**: Domain-specific terminology, business rules
+- **constraints**: Technical/business constraints, technologies to avoid
+- **decisions**: Technology choices, rationale, trade-offs
+- **goals**: Key objectives and success criteria
+
+**AutoBuild Customization (NEW - FEAT-GR-004):**
+- **role-customization**: Define what AI Player should ask about before implementing, what AI Coach should escalate to humans
+- **quality-gates**: Customize coverage thresholds, architectural review scores
+- **workflow-preferences**: Implementation mode preferences, autonomous turn limits
+
+### Session Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Interactive Knowledge Capture                        │
+│                                                                         │
+│  1. Analyze existing knowledge (what we already know)                  │
+│         ↓                                                               │
+│  2. Identify gaps (what's missing or unclear)                          │
+│         ↓                                                               │
+│  3. Ask targeted questions                                              │
+│         ↓                                                               │
+│  4. Parse and structure answers                                         │
+│         ↓                                                               │
+│  5. Seed episodes to Graphiti                                          │
+│         ↓                                                               │
+│  6. Summarize what was learned                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### AutoBuild Customization Examples
+
+**Role Customization:**
+```bash
+$ guardkit graphiti capture --interactive --focus role-customization
+
+[1/3] ROLE_CUSTOMIZATION
+Context: Prevents autonomous changes to sensitive areas
+
+What tasks should the AI Player ALWAYS ask about before implementing?
+Your answer: Database schema changes, auth/security changes, deployment configs
+
+✓ Captured:
+  - Player ask_before: Database schema changes...
+  - Player ask_before: auth/security changes...
+  - Player ask_before: deployment configs...
+```
+
+**Quality Gate Customization:**
+```bash
+$ guardkit graphiti capture --interactive --focus quality-gates
+
+[1/2] QUALITY_GATES
+Context: Customizes quality gate thresholds
+
+What test coverage threshold is acceptable for this project?
+Your answer: 85% for core business logic, 70% for utilities, 60% for scaffolding
+
+✓ Captured:
+  - Quality gate: coverage 85% for core business logic
+  - Quality gate: coverage 70% for utilities
+  - Quality gate: coverage 60% for scaffolding
+```
+
+**Workflow Preferences:**
+```bash
+$ guardkit graphiti capture --interactive --focus workflow-preferences
+
+[1/2] WORKFLOW_PREFERENCES
+Context: Clarifies implementation mode preferences
+
+Should complex tasks use task-work mode or direct implementation?
+Your answer: Use task-work for anything touching auth or payments, direct for UI changes
+
+✓ Captured:
+  - Workflow: task-work for auth and payment changes
+  - Workflow: direct implementation for UI changes
+```
+
+### Benefits
+
+1. **Persistent Memory**: Knowledge persists across Claude sessions
+2. **AutoBuild Optimization**: Captured role constraints and quality gates guide autonomous workflows
+3. **Reduced Ambiguity**: Fewer clarifying questions during task execution
+4. **Team Knowledge**: Share project understanding across team members
+5. **Context-Aware Planning**: `/feature-plan` queries Graphiti for related features and constraints
+
+**See**: [FEAT-GR-004: Interactive Knowledge Capture](docs/research/graphiti-refinement/FEAT-GR-004-interactive-knowledge-capture.md) for complete technical details.
+
 ## Development Best Practices
 
 **Quality Standards:**
