@@ -4,12 +4,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Literal, Optional, Tuple, Union
 
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
@@ -18,6 +19,7 @@ from guardkit.orchestrator.exceptions import (
     PlanNotFoundError,
     PlayerReportInvalidError,
     PlayerReportNotFoundError,
+    RateLimitExceededError,
     SDKTimeoutError,
     TaskStateError,
     TaskWorkResult,
@@ -2276,6 +2278,35 @@ Follow the decision format specified in your agent definition.
 
         return "\n".join(lines)
 
+
+def detect_rate_limit(error_text: str) -> Tuple[bool, Optional[str]]:
+    """Detect if error is a rate limit error.
+
+    Args:
+        error_text: Error message or output text to check
+
+    Returns:
+        Tuple of (is_rate_limit, reset_time)
+        reset_time is None if not parseable
+    """
+    patterns = [
+        (r"hit your limit.*resets?\s+(\d+(?::\d+)?(?:\s*(?:am|pm))?(?:\s*\([^)]+\))?)", True),
+        (r"rate limit", False),
+        (r"too many requests", False),
+        (r"429", False),
+        (r"quota exceeded", False),
+    ]
+
+    text_lower = error_text.lower()
+    for pattern, has_reset_time in patterns:
+        match = re.search(pattern, text_lower, re.IGNORECASE)
+        if match:
+            reset_time = match.group(1) if has_reset_time and match.lastindex else None
+            return True, reset_time
+
+    return False, None
+
+
     async def _invoke_task_work_implement(
         self,
         task_id: str,
@@ -2475,6 +2506,26 @@ Follow the decision format specified in your agent definition.
             )
 
         except Exception as e:
+            error_msg = str(e)
+
+            # Check for rate limit in error message
+            is_rate_limit, reset_time = detect_rate_limit(error_msg)
+
+            # Also check collected output for rate limit messages
+            if not is_rate_limit and collected_output:
+                last_output = " ".join(collected_output)[-500:]
+                is_rate_limit, reset_time = detect_rate_limit(last_output)
+
+            if is_rate_limit:
+                logger.error(f"[{task_id}] RATE LIMIT EXCEEDED")
+                if reset_time:
+                    logger.error(f"[{task_id}] Estimated reset: {reset_time}")
+                raise RateLimitExceededError(
+                    f"API rate limit exceeded. Reset: {reset_time or 'unknown'}",
+                    reset_time=reset_time
+                )
+
+            # Original generic error handling continues...
             error_msg = f"Unexpected error executing task-work: {str(e)}"
             logger.error(f"[{task_id}] SDK UNEXPECTED ERROR: {type(e).__name__}")
             logger.error(f"[{task_id}] Error message: {str(e)}")

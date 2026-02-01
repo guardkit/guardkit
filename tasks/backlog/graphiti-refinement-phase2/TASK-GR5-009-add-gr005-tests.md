@@ -1,7 +1,7 @@
 ---
 id: TASK-GR5-009
 title: Add GR-005 tests
-status: backlog
+status: in_review
 task_type: testing
 parent_review: TASK-REV-0CD7
 feature_id: FEAT-0F4A
@@ -11,7 +11,22 @@ implementation_mode: task-work
 complexity: 4
 estimate_hours: 2
 dependencies:
-  - TASK-GR5-008
+- TASK-GR5-008
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0F4A
+  base_branch: main
+  started_at: '2026-02-01T14:52:49.694907'
+  last_updated: '2026-02-01T14:59:20.446487'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-01T14:52:49.694907'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Add GR-005 tests

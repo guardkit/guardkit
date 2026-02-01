@@ -1,7 +1,7 @@
 ---
 id: TASK-GR3-005
 title: Add --context CLI option to feature-plan
-status: backlog
+status: in_review
 task_type: feature
 parent_review: TASK-REV-0CD7
 feature_id: FEAT-0F4A
@@ -12,7 +12,26 @@ implementation_mode: direct
 complexity: 2
 estimate_hours: 1
 dependencies:
-  - TASK-GR3-004
+- TASK-GR3-004
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0F4A
+  base_branch: main
+  started_at: '2026-02-01T13:22:18.046773'
+  last_updated: '2026-02-01T13:26:33.259309'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-01T13:22:18.046773'
+    player_summary: Added --context CLI option to /feature-plan command. The implementation
+      leverages existing context_files parameter in FeaturePlanIntegration.build_enriched_prompt().
+      Updated feature-plan.md documentation with new flag, usage examples, and dedicated
+      section explaining the --context option. Created comprehensive test suite covering
+      all acceptance criteria.
+    player_success: true
+    coach_success: true
 ---
 
 # Add --context CLI option to feature-plan

@@ -66,6 +66,7 @@ from guardkit.orchestrator.exceptions import (
     BlockedReport,
     CoachDecisionInvalidError,
     PlanNotFoundError,
+    RateLimitExceededError,
     SDKTimeoutError,
     StateValidationError,
 )
@@ -129,6 +130,7 @@ logger = logging.getLogger(__name__)
 UNRECOVERABLE_ERRORS = (
     PlanNotFoundError,
     StateValidationError,
+    RateLimitExceededError,  # NEW: Stop immediately on rate limit
 )
 
 
@@ -255,7 +257,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"]
+    final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked", "rate_limited"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -669,6 +671,21 @@ class AutoBuildOrchestrator:
 
             return result
 
+        except RateLimitExceededError as e:
+            logger.error(f"Rate limit exceeded for {task_id}: {e}")
+            return OrchestrationResult(
+                task_id=task_id,
+                success=False,
+                total_turns=len(turn_history),
+                final_decision="rate_limited",
+                turn_history=turn_history,
+                worktree=worktree,
+                error=(
+                    f"Rate limit exceeded. Reset time: {e.reset_time or 'unknown'}. "
+                    f"Worktree preserved at: {worktree.path}\n"
+                    f"Resume with: guardkit autobuild task {task_id} --resume"
+                ),
+            )
         except SetupPhaseError:
             # Setup errors should propagate (can't proceed without worktree)
             raise

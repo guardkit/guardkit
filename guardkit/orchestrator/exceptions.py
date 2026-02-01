@@ -247,6 +247,18 @@ class SDKTimeoutError(AgentInvokerError):
     pass
 
 
+class RateLimitExceededError(AgentInvokerError):
+    """Raised when API rate limit is exceeded.
+
+    Attributes:
+        reset_time: Optional estimated reset time from error message
+    """
+
+    def __init__(self, message: str, reset_time: Optional[str] = None):
+        super().__init__(message)
+        self.reset_time = reset_time
+
+
 # ============================================================================
 # Orchestration Exceptions
 # ============================================================================
