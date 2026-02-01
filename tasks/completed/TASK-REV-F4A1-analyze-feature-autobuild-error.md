@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-F4A1
 title: Analyze feature autobuild error and fix FEAT-0F4A setup
-status: review_complete
+status: completed
 review_results:
   mode: decision
   depth: standard
