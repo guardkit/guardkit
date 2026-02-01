@@ -1,0 +1,27 @@
+{
+  "task_id": "TASK-GR3-002",
+  "turn": 1,
+  "files_modified": [],
+  "files_created": [
+    "guardkit/knowledge/feature_plan_context.py",
+    "tests/test_feature_plan_context.py"
+  ],
+  "tests_written": [
+    "tests/test_feature_plan_context.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "All 26 tests passed successfully. Tests cover dataclass initialization, prompt formatting, budget-aware formatting, and all helper methods for formatting different context sections including AutoBuild support fields.",
+  "implementation_notes": "Implemented FeaturePlanContext dataclass with all required fields including AutoBuild support fields (role_constraints, quality_gate_configs, implementation_modes). The to_prompt_context() method implements budget-aware formatting with prioritized sections (40% feature spec, 20% architecture, 15% related features, 15% patterns, 10% warnings, plus AutoBuild sections). All formatting helper methods include proper truncation limits and handle missing data gracefully. The implementation follows the specification from FEAT-GR-003-feature-spec-integration.md exactly.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Dataclass with all fields from specification",
+    "to_prompt_context(budget_tokens: int) method formats for prompt injection",
+    "AutoBuild fields: role_constraints, quality_gate_configs, implementation_modes",
+    "Budget-aware formatting that respects token limits",
+    "Formatting helpers for each section type"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "success": true
+}
