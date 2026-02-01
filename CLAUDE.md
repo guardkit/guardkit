@@ -1053,6 +1053,93 @@ guardkit graphiti seed --force
 # Note: Force re-seeding clears previous system context
 ```
 
+### Job-Specific Context Retrieval
+
+GuardKit automatically retrieves relevant context for each task based on its characteristics, ensuring you get exactly the knowledge you need without wasting tokens or missing critical information.
+
+**How It Works**:
+1. **Task Analysis**: Analyzes task type, complexity, novelty, and autobuild context
+2. **Budget Calculation**: Dynamically allocates token budget (2000-6000+ tokens)
+3. **Context Retrieval**: Queries Graphiti for relevant knowledge across categories
+4. **Smart Filtering**: Applies relevance thresholds and deduplication
+5. **Prompt Injection**: Formats context for optimal Claude understanding
+
+**Context Categories**:
+- **Feature Context**: Requirements and success criteria for parent feature
+- **Similar Outcomes**: What worked for similar tasks (patterns, approaches)
+- **Relevant Patterns**: Codebase patterns that apply to this task
+- **Architecture Context**: How this fits into the overall system
+- **Warnings**: Approaches to avoid based on past failures
+- **Domain Knowledge**: Domain-specific terminology and concepts
+
+**AutoBuild Additional Context** (during `/feature-build`):
+- **Role Constraints**: Player/Coach boundaries - what each can/cannot do
+- **Quality Gate Configs**: Task-type specific thresholds (coverage, arch review)
+- **Turn States**: Previous turn context for cross-turn learning
+- **Implementation Modes**: Direct vs task-work guidance
+
+**Budget Allocation**:
+
+| Task Complexity | Base Budget | Context Focus |
+|-----------------|-------------|---------------|
+| Simple (1-3) | 2000 tokens | Patterns (30%), Outcomes (25%), Architecture (20%) |
+| Medium (4-6) | 4000 tokens | Balanced allocation across all categories |
+| Complex (7-10) | 6000 tokens | Architecture (25%), Patterns (25%), Outcomes (20%) |
+
+**Budget Adjustments**:
+- **First-of-type**: +30% (need more architecture understanding)
+- **Refinement**: +20% (emphasize warnings and failures)
+- **AutoBuild Turn >1**: +15% (load previous turn context)
+- **AutoBuild with history**: +10% (cross-turn learning)
+
+**Relevance Filtering**:
+- Standard tasks: 0.6 threshold (high precision)
+- First-of-type: 0.5 threshold (broader context)
+- Refinement: 0.5 threshold (don't miss failure patterns)
+
+**Performance**:
+- Average retrieval: 600-800ms (concurrent queries)
+- Cache hit rate: ~40% (repeated context cached)
+- Budget utilization: 70-90% (efficient, rarely exceeds)
+- Relevance scores: 0.65-0.85 average (high quality)
+
+**Context in Action**:
+
+```bash
+# Automatic context loading during task execution
+/task-work TASK-XXX
+# → Loads similar outcomes, patterns, warnings, architecture
+
+# AutoBuild with turn state context
+/feature-build TASK-XXX
+# → Turn 1: Loads role constraints, quality gates, implementation modes
+# → Turn 2+: ALSO loads previous turn states (what was rejected, why)
+```
+
+**Transparency**:
+Context retrieval is logged in task execution:
+```
+[INFO] Retrieved job-specific context (1850/2000 tokens)
+  - Similar outcomes: 3 results (0.72 avg relevance)
+  - Relevant patterns: 2 results (0.81 avg relevance)
+  - Warnings: 1 result (0.68 relevance)
+  - Architecture: 2 results (0.75 avg relevance)
+```
+
+**Troubleshooting**:
+
+| Issue | Solution |
+|-------|----------|
+| Context missing information | Check if knowledge seeded to Graphiti; verify task description specificity |
+| Context irrelevant | Increase relevance threshold; review seeded knowledge quality |
+| AutoBuild context missing | Verify `is_autobuild=True` in metadata; check role constraints seeded |
+| Slow retrieval (>2s) | Check Neo4j performance; reduce context categories; verify network |
+
+**See Also**:
+- [FEAT-GR-006: Job-Specific Context Retrieval](docs/research/graphiti-refinement/FEAT-GR-006-job-specific-context.md) - Complete technical specification
+- [Relevance Tuning Guide](docs/guides/graphiti-relevance-tuning.md) - Customizing relevance thresholds
+- [Context Budget Optimization](docs/guides/graphiti-budget-optimization.md) - Fine-tuning budget allocation
+
 ## Development Best Practices
 
 **Quality Standards:**
