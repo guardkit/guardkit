@@ -7,11 +7,12 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-007
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Add role_constraints retrieval and formatting
 wave: 3
+completed_at: 2026-02-01T17:45:00Z
 ---
 
 # Add role_constraints retrieval and formatting

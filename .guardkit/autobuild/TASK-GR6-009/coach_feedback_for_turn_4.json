@@ -1,0 +1,9 @@
+{
+  "turn": 4,
+  "feedback_from_turn": 3,
+  "feedback_summary": "- Tests did not pass during task-work execution",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- Tests did not pass during task-work execution"
+}
