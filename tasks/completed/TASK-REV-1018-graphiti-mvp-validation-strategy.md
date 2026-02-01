@@ -1,7 +1,7 @@
 ---
 id: TASK-REV-1018
 title: Graphiti MVP Validation Strategy
-status: review_complete
+status: completed
 task_type: review
 created: 2025-02-01T10:00:00Z
 updated: 2026-02-01T10:00:00Z
