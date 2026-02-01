@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 from guardkit.integrations.graphiti.episodes.implementation_mode import (
     IMPLEMENTATION_MODE_DEFAULTS,
 )
+from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
 from guardkit.knowledge.seed_quality_gate_configs import seed_quality_gate_configs
 from guardkit.knowledge.seed_role_constraints import seed_role_constraints
@@ -292,16 +293,78 @@ async def _seed_quality_gate_configs_wrapper(client: Any) -> SeedComponentResult
         )
 
 
+async def seed_project_overview_from_episode(
+    project_name: str,
+    client: Any,
+    episode: ProjectOverviewEpisode,
+) -> SeedComponentResult:
+    """Seed project overview from a ProjectOverviewEpisode.
+
+    Seeds the provided ProjectOverviewEpisode directly to Graphiti
+    without parsing documentation files.
+
+    Args:
+        project_name: Name of the project.
+        client: GraphitiClient instance.
+        episode: ProjectOverviewEpisode to seed.
+
+    Returns:
+        SeedComponentResult indicating success/failure.
+    """
+    if client is None or not client.enabled:
+        return SeedComponentResult(
+            component="project_overview",
+            success=True,
+            message="Skipped (Graphiti unavailable)",
+        )
+
+    try:
+        episode_content = episode.to_episode_content()
+        episode_body = json.dumps(
+            {
+                "entity_type": episode.entity_type,
+                "project_name": episode.project_name,
+                "purpose": episode.purpose,
+                "primary_language": episode.primary_language,
+                "frameworks": episode.frameworks,
+                "key_goals": episode.key_goals,
+                "content": episode_content,
+            }
+        )
+
+        await client.add_episode(
+            name=f"project_overview_{project_name}",
+            episode_body=episode_body,
+            group_id="project_overview",
+        )
+
+        return SeedComponentResult(
+            component="project_overview",
+            success=True,
+            message="Seeded from interactive setup",
+            episodes_created=1,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to seed project overview episode: {e}")
+        return SeedComponentResult(
+            component="project_overview",
+            success=True,  # Graceful degradation
+            message=f"Error: {e}",
+            episodes_created=0,
+        )
+
+
 async def seed_project_knowledge(
     project_name: str,
     client: Any,
     skip_overview: bool = False,
     project_dir: Optional[Path] = None,
+    project_overview_episode: Optional[ProjectOverviewEpisode] = None,
 ) -> SeedResult:
     """Seed all project knowledge to Graphiti.
 
     Orchestrates seeding of:
-    1. Project overview (from CLAUDE.md or README.md)
+    1. Project overview (from CLAUDE.md or README.md, or from provided episode)
     2. Role constraints (Player/Coach defaults)
     3. Quality gate configurations (defaults)
     4. Implementation modes (defaults)
@@ -315,6 +378,8 @@ async def seed_project_knowledge(
         client: GraphitiClient instance (optional, handles None gracefully).
         skip_overview: If True, skip project overview seeding.
         project_dir: Project directory (defaults to cwd).
+        project_overview_episode: Optional ProjectOverviewEpisode from interactive setup.
+            If provided, this is used instead of parsing CLAUDE.md/README.md.
 
     Returns:
         SeedResult with success status and per-component results.
@@ -331,13 +396,22 @@ async def seed_project_knowledge(
     """
     result = SeedResult(success=True, project_name=project_name)
 
-    # 1. Seed project overview from CLAUDE.md or README.md
+    # 1. Seed project overview
     if not skip_overview:
-        overview_result = await seed_project_overview(
-            project_name=project_name,
-            client=client,
-            project_dir=project_dir,
-        )
+        if project_overview_episode is not None:
+            # Use the provided episode from interactive setup
+            overview_result = await seed_project_overview_from_episode(
+                project_name=project_name,
+                client=client,
+                episode=project_overview_episode,
+            )
+        else:
+            # Parse from CLAUDE.md or README.md
+            overview_result = await seed_project_overview(
+                project_name=project_name,
+                client=client,
+                project_dir=project_dir,
+            )
         result.add_result(overview_result)
         result.project_overview_seeded = overview_result.episodes_created > 0
 

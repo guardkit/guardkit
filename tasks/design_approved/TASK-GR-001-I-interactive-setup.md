@@ -1,20 +1,24 @@
 ---
-id: TASK-GR-001-I
-title: Implement optional interactive setup
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: medium
-tags: [graphiti, project-seeding, interactive, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 8
-conductor_workspace: gr-mvp-wave8-cli
 complexity: 3
+conductor_workspace: gr-mvp-wave8-cli
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-001-H
+- TASK-GR-001-H
+feature_id: FEAT-GR-MVP
+id: TASK-GR-001-I
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: medium
+status: design_approved
+tags:
+- graphiti
+- project-seeding
+- interactive
+- mvp-phase-2
+task_type: feature
+title: Implement optional interactive setup
+updated: 2026-01-30 00:00:00+00:00
+wave: 8
 ---
 
 # Task: Implement optional interactive setup

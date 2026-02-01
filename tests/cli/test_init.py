@@ -7,9 +7,10 @@ Test Coverage:
 - Graceful degradation when Graphiti unavailable
 - --skip-graphiti flag behavior
 - Template initialization
+- Interactive setup (--interactive flag)
 
 Coverage Target: >=85%
-Test Count: 12+ tests
+Test Count: 20+ tests
 """
 
 import pytest
@@ -440,3 +441,488 @@ class TestProjectSeedingModule:
 
         # Should succeed (graceful degradation)
         assert result.success is True
+
+
+# ============================================================================
+# 7. Interactive Setup Tests (NEW - TASK-GR-001-I)
+# ============================================================================
+
+
+class TestInteractiveSetup:
+    """Test interactive setup functionality (--interactive flag)."""
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_function_exists(self):
+        """Test that interactive_setup function exists in guardkit.cli.init."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.fail("interactive_setup function does not exist in guardkit.cli.init")
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_returns_project_overview_episode(self):
+        """Test that interactive_setup returns ProjectOverviewEpisode."""
+        try:
+            from guardkit.cli.init import interactive_setup
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            # Mock user inputs
+            mock_prompt.side_effect = [
+                "A test project",  # purpose
+                "python",  # primary_language
+                "fastapi,pytest",  # frameworks
+                "",  # first goal (empty to finish)
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should return ProjectOverviewEpisode
+            assert isinstance(result, ProjectOverviewEpisode)
+            assert result.project_name == "test-project"
+            assert result.purpose == "A test project"
+            assert result.primary_language == "python"
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_prompts_for_purpose(self):
+        """Test that interactive_setup prompts for project purpose."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose text",
+                "python",
+                "",  # frameworks
+                "",  # goals
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Verify Prompt.ask was called with purpose question
+            calls = [str(call) for call in mock_prompt.call_args_list]
+            assert any("purpose" in str(call).lower() for call in calls)
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_prompts_for_primary_language(self):
+        """Test that interactive_setup prompts for primary language with choices."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose",
+                "typescript",  # primary_language
+                "",  # frameworks
+                "",  # goals
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Verify language choices offered
+            calls = mock_prompt.call_args_list
+            # Should have called with choices parameter
+            assert any('choices' in str(call) for call in calls)
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_prompts_for_frameworks(self):
+        """Test that interactive_setup prompts for frameworks."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose",
+                "python",
+                "fastapi,sqlalchemy,pydantic",  # frameworks
+                "",  # goals
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should have parsed frameworks
+            assert "fastapi" in result.frameworks
+            assert "sqlalchemy" in result.frameworks
+            assert "pydantic" in result.frameworks
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_prompts_for_key_goals(self):
+        """Test that interactive_setup prompts for key goals (multi-line)."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose",
+                "python",
+                "",  # frameworks
+                "Goal 1",
+                "Goal 2",
+                "Goal 3",
+                "",  # empty to finish
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should have captured multiple goals
+            assert len(result.key_goals) == 3
+            assert "Goal 1" in result.key_goals
+            assert "Goal 2" in result.key_goals
+            assert "Goal 3" in result.key_goals
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_handles_empty_frameworks(self):
+        """Test that interactive_setup handles empty frameworks gracefully."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose",
+                "python",
+                "",  # empty frameworks
+                "",  # no goals
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should have empty frameworks list
+            assert result.frameworks == []
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_handles_empty_goals(self):
+        """Test that interactive_setup handles empty goals gracefully."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            mock_prompt.side_effect = [
+                "Purpose",
+                "python",
+                "",  # frameworks
+                "",  # no goals (immediately empty)
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should have empty goals list
+            assert result.key_goals == []
+
+    @pytest.mark.asyncio
+    async def test_interactive_setup_uses_defaults(self):
+        """Test that interactive_setup provides sensible defaults."""
+        try:
+            from guardkit.cli.init import interactive_setup
+        except ImportError:
+            pytest.skip("interactive_setup not yet implemented")
+
+        with patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+            # User accepts all defaults (empty inputs)
+            mock_prompt.side_effect = [
+                "",  # purpose (use default)
+                "",  # language (use default)
+                "",  # frameworks
+                "",  # goals
+            ]
+
+            result = await interactive_setup("test-project")
+
+            # Should still have valid data (defaults used)
+            assert result.project_name == "test-project"
+            # Purpose should have default value
+            assert result.purpose != ""
+
+
+class TestInitWithInteractiveFlag:
+    """Test --interactive flag integration with init command."""
+
+    def test_init_interactive_flag_exists(self, tmp_path, monkeypatch):
+        """Test that --interactive flag is recognized."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        result = runner.invoke(cli, ["init", "--help"])
+
+        # Should show --interactive in help
+        assert "--interactive" in result.output.lower() or "-i" in result.output.lower()
+
+    def test_init_interactive_triggers_interactive_setup(self, tmp_path, monkeypatch):
+        """Test that --interactive flag triggers interactive_setup."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Prompt.ask') as mock_prompt:
+
+            # Mock interactive inputs
+            mock_prompt.side_effect = [
+                "Test purpose",
+                "python",
+                "",
+                "",
+            ]
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            # Mock ProjectOverviewEpisode
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Test purpose",
+                primary_language="python"
+            )
+            mock_interactive.return_value = mock_episode
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Should have called interactive_setup
+            assert mock_interactive.called
+
+    def test_init_non_interactive_is_default(self, tmp_path, monkeypatch):
+        """Test that non-interactive mode is the default."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init"])
+
+            # Should NOT call interactive_setup (default is non-interactive)
+            assert not mock_interactive.called
+            # Should still call seed_project_knowledge (with parsed data)
+            assert mock_seed.called
+
+    def test_init_interactive_creates_project_overview_episode(self, tmp_path, monkeypatch):
+        """Test that interactive mode creates ProjectOverviewEpisode."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class:
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Interactive purpose",
+                primary_language="typescript",
+                frameworks=["react", "vite"],
+                key_goals=["Build fast UI", "Maintain quality"]
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Should have passed episode to seed_project_knowledge
+            assert mock_seed.called
+            call_kwargs = mock_seed.call_args.kwargs
+            # Should include project_overview_episode parameter
+            assert 'project_overview_episode' in call_kwargs or \
+                   call_kwargs.get('project_overview') == mock_episode
+
+
+class TestInteractiveCLAUDEmdGeneration:
+    """Test CLAUDE.md generation from interactive answers."""
+
+    def test_interactive_generates_claudemd_if_requested(self, tmp_path, monkeypatch):
+        """Test that interactive mode can generate CLAUDE.md."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask') as mock_confirm:
+
+            # User confirms CLAUDE.md generation
+            mock_confirm.return_value = True
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Test purpose",
+                primary_language="python"
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Should have asked about CLAUDE.md generation
+            assert mock_confirm.called
+
+    def test_interactive_claudemd_includes_purpose(self, tmp_path, monkeypatch):
+        """Test that generated CLAUDE.md includes project purpose."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Build an awesome CLI tool",
+                primary_language="python"
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Check if CLAUDE.md was created
+            claude_md = tmp_path / "CLAUDE.md"
+            if claude_md.exists():
+                content = claude_md.read_text()
+                assert "awesome CLI tool" in content
+
+    def test_interactive_claudemd_includes_tech_stack(self, tmp_path, monkeypatch):
+        """Test that generated CLAUDE.md includes tech stack."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Test",
+                primary_language="typescript",
+                frameworks=["react", "tailwind"]
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Check if CLAUDE.md was created with stack info
+            claude_md = tmp_path / "CLAUDE.md"
+            if claude_md.exists():
+                content = claude_md.read_text()
+                assert "typescript" in content.lower()
+                assert "react" in content.lower()
+
+    def test_interactive_claudemd_includes_goals(self, tmp_path, monkeypatch):
+        """Test that generated CLAUDE.md includes key goals."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=True):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Test",
+                primary_language="python",
+                key_goals=["Achieve 100% test coverage", "Deploy to production"]
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # Check if CLAUDE.md was created with goals
+            claude_md = tmp_path / "CLAUDE.md"
+            if claude_md.exists():
+                content = claude_md.read_text()
+                assert "100% test coverage" in content
+
+    def test_interactive_skips_claudemd_if_declined(self, tmp_path, monkeypatch):
+        """Test that CLAUDE.md is not created if user declines."""
+        runner = CliRunner()
+        monkeypatch.chdir(tmp_path)
+
+        with patch('guardkit.cli.init.interactive_setup', new_callable=AsyncMock) as mock_interactive, \
+             patch('guardkit.cli.init.seed_project_knowledge', new_callable=AsyncMock) as mock_seed, \
+             patch('guardkit.cli.init.GraphitiClient') as mock_client_class, \
+             patch('guardkit.cli.init.Confirm.ask', return_value=False):
+
+            mock_client = MagicMock()
+            mock_client.enabled = True
+            mock_client.initialize = AsyncMock(return_value=True)
+            mock_client.close = AsyncMock()
+            mock_client_class.return_value = mock_client
+
+            from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
+            mock_episode = ProjectOverviewEpisode(
+                project_name="test-project",
+                purpose="Test",
+                primary_language="python"
+            )
+            mock_interactive.return_value = mock_episode
+            mock_seed.return_value = MagicMock(success=True)
+
+            result = runner.invoke(cli, ["init", "--interactive"])
+
+            # CLAUDE.md should NOT be created
+            claude_md = tmp_path / "CLAUDE.md"
+            assert not claude_md.exists()
