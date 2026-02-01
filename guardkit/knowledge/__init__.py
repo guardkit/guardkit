@@ -313,6 +313,12 @@ from guardkit.knowledge.quality_gate_formatter import (
     format_quality_gates,
 )
 
+# Role constraint formatting (TASK-GR6-007)
+from guardkit.knowledge.role_constraint_formatter import (
+    format_role_constraints,
+    format_role_constraints_for_actor,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -418,4 +424,7 @@ __all__ = [
     "JobContextRetriever",
     # Quality gate formatting (TASK-GR6-008)
     "format_quality_gates",
+    # Role constraint formatting (TASK-GR6-007)
+    "format_role_constraints",
+    "format_role_constraints_for_actor",
 ]
