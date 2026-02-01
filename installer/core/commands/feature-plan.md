@@ -18,6 +18,7 @@ Both accept natural language descriptions, but they serve different purposes in 
 
 | Flag | Description |
 |------|-------------|
+| `--context path/to/file.md` | Explicitly specify context files (can be used multiple times) |
 | `--no-questions` | Skip all clarification (review scope + implementation prefs) |
 | `--with-questions` | Force clarification even for simple features |
 | `--defaults` | Use clarification defaults throughout workflow |

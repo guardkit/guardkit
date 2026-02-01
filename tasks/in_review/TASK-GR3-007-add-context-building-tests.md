@@ -1,18 +1,18 @@
 ---
-id: TASK-GR3-007
-title: Add tests for context building
-status: backlog
-task_type: testing
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-003
-wave: 1
-parallel_group: wave1-gr003
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies:
-  - TASK-GR3-006
+- TASK-GR3-006
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR3-007
+implementation_mode: task-work
+parallel_group: wave1-gr003
+parent_review: TASK-REV-0CD7
+status: in_review
+sub_feature: GR-003
+task_type: testing
+title: Add tests for context building
+wave: 1
 ---
 
 # Add tests for context building
@@ -23,12 +23,12 @@ Add comprehensive unit and integration tests for the feature spec integration co
 
 ## Acceptance Criteria
 
-- [ ] Unit tests for FeatureDetector pattern matching
-- [ ] Unit tests for FeaturePlanContext formatting
-- [ ] Integration tests for FeaturePlanContextBuilder
-- [ ] Tests for AutoBuild context (role_constraints, quality_gates)
-- [ ] Tests for graceful degradation when Graphiti unavailable
-- [ ] Coverage >= 80%
+- [x] Unit tests for FeatureDetector pattern matching
+- [x] Unit tests for FeaturePlanContext formatting
+- [x] Integration tests for FeaturePlanContextBuilder
+- [x] Tests for AutoBuild context (role_constraints, quality_gates)
+- [x] Tests for graceful degradation when Graphiti unavailable
+- [x] Coverage >= 80%
 
 ## Test Cases
 
