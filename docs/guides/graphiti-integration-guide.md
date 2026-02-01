@@ -555,8 +555,86 @@ guardkit graphiti seed-adrs --force
 
 ---
 
+## Multi-Project Support (Project Namespaces)
+
+**New in v1.0**: Graphiti supports multiple projects sharing a single instance through **project namespaces**.
+
+### The Problem
+
+Without namespacing, multiple projects sharing a Graphiti instance contaminate each other's knowledge:
+
+```
+Project A: "Use JWT authentication"
+Project B: Searches for "authentication"
+Project B: Incorrectly retrieves Project A's decision
+```
+
+### The Solution
+
+**Project Namespaces** automatically prefix project-specific knowledge:
+
+```python
+# Project A
+project_id = "project-a"
+group = "project-a__architecture"  # Prefixed
+
+# Project B
+project_id = "project-b"
+group = "project-b__architecture"  # Different prefix
+
+# System-level (shared)
+group = "role_constraints"  # No prefix
+```
+
+### Quick Start
+
+**Auto-detection (Recommended)**:
+```python
+# Uses current directory name as project_id
+await init_graphiti()
+
+client = get_graphiti()
+print(client.project_id)  # e.g., "guardkit"
+```
+
+**Explicit configuration**:
+```yaml
+# .guardkit/graphiti.yaml
+project_id: my-project-name
+```
+
+**Environment override**:
+```bash
+export GUARDKIT_PROJECT_ID=production-deployment
+```
+
+### How It Works
+
+**Project Groups** (auto-prefixed):
+- `project_overview` → `{project_id}__project_overview`
+- `project_architecture` → `{project_id}__project_architecture`
+- `feature_specs` → `{project_id}__feature_specs`
+
+**System Groups** (never prefixed):
+- `role_constraints` - Shared quality gates
+- `guardkit_templates` - Shared templates
+- `guardkit_patterns` - Shared design patterns
+
+### For More Details
+
+See the complete **[Project Namespaces Guide](graphiti-project-namespaces.md)** for:
+- Configuration priority (parameter > env > YAML > auto-detect)
+- Project ID normalization rules
+- Cross-project search
+- Migration strategies
+- Best practices
+
+---
+
 ## See Also
 
+- **[Graphiti Testing and Validation](graphiti-testing-validation.md)** - E2E tests and validation procedures
+- **[Graphiti Project Namespaces](graphiti-project-namespaces.md)** - Multi-project isolation guide
 - [Graphiti Setup Guide](../setup/graphiti-setup.md) - Detailed installation and configuration
 - [Graphiti Architecture](../architecture/graphiti-architecture.md) - Technical deep-dive for developers
 - [GuardKit Workflow](guardkit-workflow.md) - How Graphiti integrates with the workflow

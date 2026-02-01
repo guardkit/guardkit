@@ -46,6 +46,7 @@ class GraphitiSettings:
         neo4j_password: Neo4j password
         timeout: Connection timeout in seconds
         embedding_model: OpenAI embedding model to use
+        project_id: Project ID for namespace prefixing (optional)
         group_ids: Default group IDs for knowledge graph organization
         host: Deprecated - use neo4j_uri instead
         port: Deprecated - use neo4j_uri instead
@@ -53,6 +54,7 @@ class GraphitiSettings:
     Raises:
         ValueError: If timeout is not positive
         ValueError: If neo4j_uri is empty
+        ValueError: If project_id is invalid (>50 chars)
         TypeError: If values have incorrect types
     """
     enabled: bool = True
@@ -61,6 +63,7 @@ class GraphitiSettings:
     neo4j_password: str = "password123"
     timeout: float = 30.0
     embedding_model: str = "text-embedding-3-small"
+    project_id: Optional[str] = None  # Project ID for namespace prefixing
     group_ids: List[str] = field(default_factory=lambda: [
         "product_knowledge",
         "command_workflows",
@@ -99,6 +102,18 @@ class GraphitiSettings:
             raise ValueError(f"timeout must be positive, got {self.timeout}")
         if self.port < 1 or self.port > 65535:
             raise ValueError(f"port must be between 1 and 65535, got {self.port}")
+
+        # Validate project_id if provided
+        if self.project_id is not None and self.project_id != "":
+            if not isinstance(self.project_id, str):
+                raise TypeError(f"project_id must be str, got {type(self.project_id).__name__}")
+            if len(self.project_id) > 50:
+                raise ValueError(f"project_id must be <= 50 characters, got {len(self.project_id)}")
+            # Validate format - only allow characters that normalize_project_id can handle
+            # Reject characters that would be completely stripped (like @, #, etc.)
+            import re
+            if re.search(r'[@#$%^&*()+=\[\]{}|\\;:\'",.<>?/~`]', self.project_id):
+                raise ValueError(f"project_id contains invalid characters: '{self.project_id}'")
 
 
 def get_config_path(base_dir: Optional[Path] = None) -> Path:
@@ -231,6 +246,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'neo4j_user': 'neo4j',
         'neo4j_password': 'password123',
         'timeout': 30.0,
+        'project_id': None,  # Project ID for namespace prefixing
         'host': 'localhost',  # Deprecated
         'port': 8000,  # Deprecated
     }
@@ -249,13 +265,18 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
                     'neo4j_user': str,
                     'neo4j_password': str,
                     'timeout': float,
+                    'project_id': str,  # Project ID for namespace prefixing
                     'host': str,
                     'port': int,
                 }
                 for key, target_type in field_types.items():
                     if key in yaml_data and yaml_data[key] is not None:
                         try:
-                            config_data[key] = _coerce_type(yaml_data[key], target_type, key)
+                            value = _coerce_type(yaml_data[key], target_type, key)
+                            # Treat empty string as None for project_id
+                            if key == 'project_id' and value == '':
+                                value = None
+                            config_data[key] = value
                         except (ValueError, TypeError) as e:
                             logger.warning(f"Invalid value for {key} in config file: {e}")
                             # Keep default value
@@ -276,6 +297,7 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         'NEO4J_USER': ('neo4j_user', str),
         'NEO4J_PASSWORD': ('neo4j_password', str),
         'GRAPHITI_TIMEOUT': ('timeout', float),
+        'GUARDKIT_PROJECT_ID': ('project_id', str),  # Project ID for namespace prefixing
         # Deprecated env vars (kept for backwards compatibility)
         'GRAPHITI_HOST': ('host', str),
         'GRAPHITI_PORT': ('port', int),
@@ -285,14 +307,15 @@ def load_graphiti_config(config_path: Optional[Path] = None) -> GraphitiSettings
         env_value = os.environ.get(env_var)
         if env_value is not None:
             try:
-                config_data[config_key] = _coerce_type(env_value, config_type, config_key)
+                value = _coerce_type(env_value, config_type, config_key)
+                # Treat empty string as None for project_id
+                if config_key == 'project_id' and value == '':
+                    value = None
+                config_data[config_key] = value
             except (ValueError, TypeError) as e:
                 logger.warning(f"Invalid environment variable {env_var}={env_value}: {e}")
                 # Keep previous value (from file or default)
 
     # Create and return settings
-    try:
-        return GraphitiSettings(**config_data)
-    except (ValueError, TypeError) as e:
-        logger.warning(f"Invalid configuration, using defaults: {e}")
-        return GraphitiSettings()
+    # Let ValueError propagate for truly invalid configuration (like invalid project_id)
+    return GraphitiSettings(**config_data)

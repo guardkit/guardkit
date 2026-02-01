@@ -1,0 +1,54 @@
+{
+  "task_id": "TASK-GR-PRE-000-B",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "71f8ecfb9bbd83353f40ba7e28de5585d5a84727",
+      "timestamp": "2026-01-30T22:09:18.517652",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "342fd9f3586ab371a504162a6804f1f66d0ce7e5",
+      "timestamp": "2026-01-30T22:10:49.061702",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)"
+    },
+    {
+      "turn": 3,
+      "commit_hash": "b2537d428a2673d3ecb133c118acf64feb5f239c",
+      "timestamp": "2026-01-30T22:12:07.086422",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 3 complete (tests: fail)"
+    },
+    {
+      "turn": 4,
+      "commit_hash": "ebd12d516851be86e5d39df9fd49d0640bb397a0",
+      "timestamp": "2026-01-30T22:14:27.978205",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 4 complete (tests: fail)"
+    },
+    {
+      "turn": 5,
+      "commit_hash": "82f3dd01ceed9208a7e1a706cb047c2087beb9b8",
+      "timestamp": "2026-01-30T22:18:21.925488",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 5 complete (tests: fail)"
+    },
+    {
+      "turn": 6,
+      "commit_hash": "4cd510086941846642d5baa342634127304905b3",
+      "timestamp": "2026-01-30T22:23:19.459568",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 6 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-30T22:23:19.459727"
+}

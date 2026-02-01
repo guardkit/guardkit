@@ -1,0 +1,14 @@
+{
+  "task_id": "TASK-GR-PRE-003-B",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "51668665a6ddaf9fa63e5fe9973543fd84e7dd0b",
+      "timestamp": "2026-01-31T20:59:07.042235",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-01-31T20:59:07.042406"
+}
