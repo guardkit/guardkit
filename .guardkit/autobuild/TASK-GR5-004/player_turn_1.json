@@ -23,56 +23,6 @@
     "Colored status indicators (green/yellow/red)"
   ],
   "requirements_remaining": [],
-  "completion_promises": [
-    {
-      "criterion_id": "AC-001",
-      "criterion_text": "Shows enabled/disabled status",
-      "status": "complete",
-      "evidence": "Status command displays 'ENABLED' in green bold or 'DISABLED' in red bold at the top of the output. Returns early if disabled with helpful message.",
-      "test_file": "tests/unit/cli/test_graphiti_status.py",
-      "implementation_files": [
-        "guardkit/cli/graphiti.py"
-      ]
-    },
-    {
-      "criterion_id": "AC-002",
-      "criterion_text": "Counts episodes per category (System, Project, Decisions, Learning)",
-      "status": "complete",
-      "evidence": "Implementation queries Graphiti for each group within the four categories and displays counts. Categories include: System Knowledge (4 groups), Project Knowledge (3 groups), Decisions (2 groups), and Learning (3 groups). Each group's count is displayed using client.search('*', [group], 100).",
-      "test_file": "tests/unit/cli/test_graphiti_status.py",
-      "implementation_files": [
-        "guardkit/cli/graphiti.py"
-      ]
-    },
-    {
-      "criterion_id": "AC-003",
-      "criterion_text": "--verbose shows all groups even if empty",
-      "status": "complete",
-      "evidence": "Added --verbose/-v flag to status command. When enabled, all groups are shown regardless of count. Default behavior hides groups with 0 episodes. Test cases verify both behaviors.",
-      "test_file": "tests/unit/cli/test_graphiti_status.py",
-      "implementation_files": [
-        "guardkit/cli/graphiti.py"
-      ]
-    },
-    {
-      "criterion_id": "AC-004",
-      "criterion_text": "Total episode count",
-      "status": "complete",
-      "evidence": "Status command sums all episode counts across all categories and displays 'Total Episodes: N' at the bottom of the output. Running total is accumulated as groups are counted.",
-      "test_file": "tests/unit/cli/test_graphiti_status.py",
-      "implementation_files": [
-        "guardkit/cli/graphiti.py"
-      ]
-    },
-    {
-      "criterion_id": "AC-005",
-      "criterion_text": "Colored status indicators (green/yellow/red)",
-      "status": "complete",
-      "evidence": "Implemented colored output using Rich library: [green] for ENABLED status and non-zero counts, [red] for DISABLED, [yellow] for degraded health and zero counts in verbose mode. Tests verify color usage patterns.",
-      "test_file": "tests/unit/cli/test_graphiti_status.py",
-      "implementation_files": [
-        "guardkit/cli/graphiti.py"
-      ]
-    }
-  ]
+  "implementation_mode": "direct",
+  "success": true
 }
