@@ -1,11 +1,14 @@
 ---
 id: TASK-GR-PRE-003-C
 title: Implement upsert_episode logic
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
+status: in_review
+created: 2026-01-30 00:00:00+00:00
+updated: 2026-01-30 00:00:00+00:00
 priority: high
-tags: [graphiti, upsert, mvp-phase-1]
+tags:
+- graphiti
+- upsert
+- mvp-phase-1
 task_type: feature
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
@@ -14,7 +17,22 @@ wave: 5
 conductor_workspace: gr-mvp-wave5-upsert
 complexity: 5
 depends_on:
-  - TASK-GR-PRE-003-B
+- TASK-GR-PRE-003-B
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
+  base_branch: main
+  started_at: '2026-02-01T07:04:52.062266'
+  last_updated: '2026-02-01T07:15:03.546237'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-01T07:04:52.062266'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Implement upsert_episode logic

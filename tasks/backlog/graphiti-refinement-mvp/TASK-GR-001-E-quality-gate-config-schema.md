@@ -1,11 +1,16 @@
 ---
 id: TASK-GR-001-E
 title: Create QualityGateConfigEpisode and seed defaults
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
+status: in_review
+created: 2026-01-30 00:00:00+00:00
+updated: 2026-01-30 00:00:00+00:00
 priority: high
-tags: [graphiti, project-seeding, autobuild, quality-gates, mvp-phase-2]
+tags:
+- graphiti
+- project-seeding
+- autobuild
+- quality-gates
+- mvp-phase-2
 task_type: feature
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
@@ -14,7 +19,29 @@ wave: 6
 conductor_workspace: gr-mvp-wave6-schemas
 complexity: 3
 depends_on:
-  - TASK-GR-PRE-003-D
+- TASK-GR-PRE-003-D
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
+  base_branch: main
+  started_at: '2026-02-01T07:19:31.558068'
+  last_updated: '2026-02-01T07:30:15.300932'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-02-01T07:19:31.558068'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-01T07:25:17.005106'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Create QualityGateConfigEpisode and seed defaults

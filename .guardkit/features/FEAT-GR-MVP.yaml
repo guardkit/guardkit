@@ -3,7 +3,7 @@ name: Graphiti Refinement MVP
 description: Enhance Graphiti integration to support project-specific knowledge seeding,
   job-specific context retrieval, and cross-session learning from AutoBuild lessons
 created: '2026-01-30T00:00:00Z'
-status: failed
+status: completed
 complexity: 7
 estimated_tasks: 30
 tasks:
@@ -238,112 +238,136 @@ tasks:
   complexity: 5
   dependencies:
   - TASK-GR-PRE-003-B
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 240
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:04:52.046373'
+  completed_at: '2026-02-01T07:15:03.548055'
 - id: TASK-GR-PRE-003-D
   name: Tests and documentation for upsert
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-003-D-upsert-tests-docs.md
   complexity: 3
   dependencies:
   - TASK-GR-PRE-003-C
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:15:03.582309'
+  completed_at: '2026-02-01T07:19:31.401283'
 - id: TASK-GR-001-A
   name: Add project-specific group IDs to config
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-A-project-group-ids.md
   complexity: 2
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.435185'
+  completed_at: '2026-02-01T07:30:15.302978'
 - id: TASK-GR-001-B
   name: Create ProjectOverviewEpisode schema
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-B-project-overview-schema.md
   complexity: 3
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.445987'
+  completed_at: '2026-02-01T07:30:15.314001'
 - id: TASK-GR-001-C
   name: Create ProjectArchitectureEpisode schema
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-C-architecture-schema.md
   complexity: 2
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.456905'
+  completed_at: '2026-02-01T07:30:15.324874'
 - id: TASK-GR-001-D
   name: Create RoleConstraintsEpisode and seed defaults
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-D-role-constraints-schema.md
   complexity: 3
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.467710'
+  completed_at: '2026-02-01T07:30:15.335898'
 - id: TASK-GR-001-E
   name: Create QualityGateConfigEpisode and seed defaults
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-E-quality-gate-config-schema.md
   complexity: 3
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.478764'
+  completed_at: '2026-02-01T07:30:15.347093'
 - id: TASK-GR-001-F
   name: Create ImplementationModeEpisode and seed defaults
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-F-implementation-mode-schema.md
   complexity: 2
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 60
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.489991'
+  completed_at: '2026-02-01T07:30:15.358017'
 - id: TASK-GR-001-G
   name: Implement CLAUDE.md/README.md parsing
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-G-claude-md-parsing.md
@@ -351,14 +375,17 @@ tasks:
   dependencies:
   - TASK-GR-001-B
   - TASK-GR-001-C
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:30:15.406656'
+  completed_at: '2026-02-01T07:39:45.401716'
 - id: TASK-GR-001-H
   name: Add project seeding to guardkit init
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-H-project-seeding-init.md
@@ -368,84 +395,102 @@ tasks:
   - TASK-GR-001-E
   - TASK-GR-001-F
   - TASK-GR-001-G
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:39:45.474388'
+  completed_at: '2026-02-01T07:55:27.912604'
 - id: TASK-GR-001-I
   name: Implement optional interactive setup
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-001-I-interactive-setup.md
   complexity: 3
   dependencies:
   - TASK-GR-001-H
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:55:27.962281'
+  completed_at: '2026-02-01T08:07:04.607545'
 - id: TASK-GR-002-A
   name: Create parser registry infrastructure
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-A-parser-registry.md
   complexity: 4
   dependencies:
   - TASK-GR-PRE-003-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:19:31.500656'
+  completed_at: '2026-02-01T07:30:15.369241'
 - id: TASK-GR-002-B
   name: Implement FeatureSpecParser
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-B-feature-spec-parser.md
   complexity: 4
   dependencies:
   - TASK-GR-002-A
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:30:15.417968'
+  completed_at: '2026-02-01T07:39:45.413690'
 - id: TASK-GR-002-C
   name: Implement ADRParser
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-C-adr-parser.md
   complexity: 3
   dependencies:
   - TASK-GR-002-A
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:30:15.429073'
+  completed_at: '2026-02-01T07:39:45.425224'
 - id: TASK-GR-002-D
   name: Implement ProjectOverviewParser
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-D-project-overview-parser.md
   complexity: 3
   dependencies:
   - TASK-GR-002-A
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:30:15.440682'
+  completed_at: '2026-02-01T07:39:45.436750'
 - id: TASK-GR-002-E
   name: Add guardkit graphiti add-context CLI command
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-E-add-context-command.md
@@ -454,70 +499,85 @@ tasks:
   - TASK-GR-002-B
   - TASK-GR-002-C
   - TASK-GR-002-D
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:39:45.485752'
+  completed_at: '2026-02-01T07:55:27.925266'
 - id: TASK-GR-002-F
   name: Add --type, --force, --dry-run flags
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-F-cli-flags.md
   complexity: 3
   dependencies:
   - TASK-GR-002-E
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T07:55:27.974215'
+  completed_at: '2026-02-01T08:07:04.619361'
 - id: TASK-GR-002-G
   name: Tests for parsers
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-G-parser-tests.md
   complexity: 4
   dependencies:
   - TASK-GR-002-F
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T08:07:04.657919'
+  completed_at: '2026-02-01T08:16:11.743264'
 - id: TASK-GR-002-H
   name: Tests for CLI command
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-H-cli-tests.md
   complexity: 3
   dependencies:
   - TASK-GR-002-F
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T08:07:04.669190'
+  completed_at: '2026-02-01T08:16:11.755455'
 - id: TASK-GR-002-I
   name: Documentation for context addition
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-002-I-documentation.md
   complexity: 3
   dependencies:
   - TASK-GR-002-F
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-02-01T08:07:04.680560'
+  completed_at: '2026-02-01T08:16:11.767316'
 orchestration:
   parallel_groups:
   - - TASK-GR-PRE-000-A
@@ -543,12 +603,12 @@ orchestration:
     - TASK-GR-001-F
     - TASK-GR-002-A
   - - TASK-GR-001-G
-    - TASK-GR-001-H
     - TASK-GR-002-B
     - TASK-GR-002-C
     - TASK-GR-002-D
-  - - TASK-GR-001-I
+  - - TASK-GR-001-H
     - TASK-GR-002-E
+  - - TASK-GR-001-I
     - TASK-GR-002-F
   - - TASK-GR-002-G
     - TASK-GR-002-H
@@ -557,17 +617,24 @@ orchestration:
   recommended_parallel: 3
 execution:
   started_at: '2026-01-30T22:01:13.655051'
-  completed_at: '2026-01-30T22:51:42.038970'
+  completed_at: '2026-02-01T08:16:11.792447'
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
-  total_turns: 40
-  tasks_completed: 13
+  total_turns: 46
+  tasks_completed: 33
   tasks_failed: 0
-  current_wave: 4
+  current_wave: 11
   completed_waves:
   - 1
   - 2
   - 3
   - 4
-  last_updated: '2026-01-31T21:05:47.671726'
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+  - 11
+  last_updated: '2026-02-01T08:16:11.779685'
   archived_at: null
   archived_to: null
