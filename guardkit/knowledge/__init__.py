@@ -46,6 +46,9 @@ Public API:
     load_relevant_failures: Load failures relevant to context (TASK-GE-004)
     FailedApproachManager: Manager class for failure operations (TASK-GE-004)
     load_failed_approaches: Context loader for failed approaches (TASK-GE-004)
+    KnowledgeCategory: Enum for knowledge categories (TASK-GR4-001)
+    KnowledgeGap: Dataclass for knowledge gaps (TASK-GR4-001)
+    KnowledgeGapAnalyzer: Analyzer for identifying knowledge gaps (TASK-GR4-001)
 
 Example:
     from guardkit.knowledge import (
@@ -263,6 +266,12 @@ from guardkit.knowledge.feature_detector import (
     FeatureDetector,
 )
 
+from guardkit.knowledge.gap_analyzer import (
+    KnowledgeCategory,
+    KnowledgeGap,
+    KnowledgeGapAnalyzer,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -348,4 +357,8 @@ __all__ = [
     "load_failed_approaches",
     # Feature detection (TASK-GR3-001)
     "FeatureDetector",
+    # Knowledge gap analysis (TASK-GR4-001)
+    "KnowledgeCategory",
+    "KnowledgeGap",
+    "KnowledgeGapAnalyzer",
 ]

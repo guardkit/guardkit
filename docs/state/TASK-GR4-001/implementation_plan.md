@@ -22,12 +22,12 @@ Create the `KnowledgeGapAnalyzer` class that analyzes existing knowledge in Grap
    - Export new classes: `KnowledgeCategory`, `KnowledgeGap`, `KnowledgeGapAnalyzer`
 
 ### Acceptance Criteria
-- [ ] `analyze_gaps(focus, max_questions)` returns `List[KnowledgeGap]`
-- [ ] Queries Graphiti for existing knowledge
-- [ ] Compares against question templates to find gaps
-- [ ] Supports focus filtering by category
-- [ ] Sorts by importance (high/medium/low)
-- [ ] Includes AutoBuild categories (role_customization, quality_gates, workflow_preferences)
+- [x] `analyze_gaps(focus, max_questions)` returns `List[KnowledgeGap]`
+- [x] Queries Graphiti for existing knowledge
+- [x] Compares against question templates to find gaps
+- [x] Supports focus filtering by category
+- [x] Sorts by importance (high/medium/low)
+- [x] Includes AutoBuild categories (role_customization, quality_gates, workflow_preferences)
 
 ### Knowledge Categories
 - `project_overview`, `architecture`, `domain`, `constraints`, `decisions`, `goals`
