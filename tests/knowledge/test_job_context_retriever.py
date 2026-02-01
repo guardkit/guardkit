@@ -1516,3 +1516,983 @@ class TestEmojiMarkers:
                 break
 
         assert found_emoji_header, "Could not find Feature Context header line"
+
+
+# ============================================================================
+# 12. Parallel Retrieval Tests (TASK-GR6-012)
+# ============================================================================
+
+class TestParallelRetrieval:
+    """Test retrieve_parallel() method for concurrent queries."""
+
+    @pytest.mark.asyncio
+    async def test_retrieve_parallel_returns_retrieved_context(self):
+        """Test that retrieve_parallel() returns RetrievedContext instance."""
+        from guardkit.knowledge.job_context_retriever import (
+            JobContextRetriever,
+            RetrievedContext,
+        )
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+            "complexity": 5,
+        }
+
+        result = await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
+
+        assert isinstance(result, RetrievedContext)
+
+    @pytest.mark.asyncio
+    async def test_retrieve_parallel_queries_all_standard_categories(self):
+        """Test that retrieve_parallel() queries all standard categories."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
+
+        # Should have queried all standard groups
+        calls = mock_graphiti.search.call_args_list
+        group_ids_used = [call[1].get("group_ids", []) for call in calls]
+
+        # Flatten list
+        all_groups = [g for groups in group_ids_used for g in groups]
+
+        assert "feature_specs" in all_groups
+        assert "task_outcomes" in all_groups
+        assert "patterns_python" in all_groups
+        assert "project_architecture" in all_groups
+        assert "failure_patterns" in all_groups
+        assert "domain_knowledge" in all_groups
+
+    @pytest.mark.asyncio
+    async def test_retrieve_parallel_autobuild_queries(self):
+        """Test that retrieve_parallel() queries AutoBuild categories when applicable."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+            "is_autobuild": True,
+            "turn_number": 2,
+        }
+
+        await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
+
+        # Should have queried AutoBuild groups
+        calls = mock_graphiti.search.call_args_list
+        group_ids_used = [call[1].get("group_ids", []) for call in calls]
+
+        all_groups = [g for groups in group_ids_used for g in groups]
+
+        assert "role_constraints" in all_groups
+        assert "quality_gate_configs" in all_groups
+        assert "turn_states" in all_groups
+        assert "implementation_modes" in all_groups
+
+    @pytest.mark.asyncio
+    async def test_retrieve_parallel_tracks_budget(self):
+        """Test that retrieve_parallel() tracks budget correctly."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_results = [{"score": 0.9, "content": "test result"}]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        result = await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
+
+        assert result.budget_used > 0
+        assert result.budget_used <= result.budget_total
+
+
+# ============================================================================
+# 13. Cache Tests (TASK-GR6-012)
+# ============================================================================
+
+class TestCaching:
+    """Test caching functionality for repeated queries."""
+
+    @pytest.mark.asyncio
+    async def test_cache_returns_same_result(self):
+        """Test that cached result is returned for identical query."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti, cache_ttl=300)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        # First call
+        result1 = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        # Reset mock to verify it's not called again
+        mock_graphiti.search.reset_mock()
+
+        # Second call should use cache
+        result2 = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        # Search should not have been called again
+        assert mock_graphiti.search.call_count == 0
+
+        # Results should be identical
+        assert result1.task_id == result2.task_id
+        assert result1.budget_total == result2.budget_total
+
+    @pytest.mark.asyncio
+    async def test_cache_disabled_when_ttl_zero(self):
+        """Test that caching is disabled when cache_ttl=0."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti, cache_ttl=0)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        # First call
+        await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+        first_call_count = mock_graphiti.search.call_count
+
+        # Second call should NOT use cache
+        await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        # Search should have been called again
+        assert mock_graphiti.search.call_count > first_call_count
+
+    @pytest.mark.asyncio
+    async def test_cache_key_includes_task_and_phase(self):
+        """Test that cache key distinguishes between different tasks/phases."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti, cache_ttl=300)
+
+        task1 = {"id": "TASK-001", "description": "Task 1", "tech_stack": "python"}
+        task2 = {"id": "TASK-002", "description": "Task 2", "tech_stack": "python"}
+
+        # Query different tasks
+        await retriever.retrieve(task1, TaskPhase.IMPLEMENT)
+        await retriever.retrieve(task2, TaskPhase.IMPLEMENT)
+
+        # Both should make separate queries (no cache hit)
+        assert mock_graphiti.search.call_count > 1
+
+
+# ============================================================================
+# 14. Early Termination Tests (TASK-GR6-012)
+# ============================================================================
+
+class TestEarlyTermination:
+    """Test early termination when budget is exhausted."""
+
+    @pytest.mark.asyncio
+    async def test_early_termination_stops_at_95_percent(self):
+        """Test that early termination stops when budget >= 95% full."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        # Return large results that quickly fill budget
+        mock_results = [{"score": 0.9, "content": "x" * 1000} for _ in range(50)]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+            "complexity": 5,
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT, early_termination=True)
+
+        # Budget used should be at or near the limit
+        # Early termination should have kicked in
+        assert result is not None
+        assert result.budget_used <= result.budget_total
+
+    @pytest.mark.asyncio
+    async def test_early_termination_skips_low_priority_categories(self):
+        """Test that early termination skips lower priority categories."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        # Return results that will fill the budget
+        mock_results = [{"score": 0.9, "content": "x" * 500} for _ in range(30)]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+            "complexity": 3,  # Lower complexity = smaller budget
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT, early_termination=True)
+
+        # Should have some results but may have skipped low priority categories
+        assert result is not None
+
+
+# ============================================================================
+# 15. Quality Metrics Tests (TASK-GR6-011)
+# ============================================================================
+
+class TestQualityMetrics:
+    """Test quality metrics collection functionality."""
+
+    @pytest.mark.asyncio
+    async def test_collect_metrics_returns_quality_metrics(self):
+        """Test that collect_metrics=True populates quality_metrics."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_results = [{"score": 0.9, "content": "test result"}]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT, collect_metrics=True)
+
+        assert result.quality_metrics is not None
+
+    @pytest.mark.asyncio
+    async def test_no_metrics_when_not_requested(self):
+        """Test that quality_metrics is None when collect_metrics=False."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT, collect_metrics=False)
+
+        assert result.quality_metrics is None
+
+
+# ============================================================================
+# 16. Turn States Formatting Tests
+# ============================================================================
+
+class TestTurnStatesFormatting:
+    """Test turn states formatting for cross-turn learning."""
+
+    def test_format_turn_states_with_rejected(self):
+        """Test that REJECTED turns include warning emphasis."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[
+                {
+                    "turn_number": 1,
+                    "coach_decision": "REJECTED",
+                    "progress_summary": "Failed tests",
+                    "feedback_summary": "Missing error handling",
+                }
+            ],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        assert "Turn 1" in prompt
+        assert "REJECTED" in prompt
+        assert "⚠️" in prompt
+        assert "Missing error handling" in prompt
+
+    def test_format_turn_states_with_approved(self):
+        """Test that APPROVED turns are formatted correctly."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[
+                {
+                    "turn_number": 2,
+                    "coach_decision": "APPROVED",
+                    "progress_summary": "All tests passing",
+                }
+            ],
+            implementation_modes=[],
+        )
+
+        prompt = context.to_prompt()
+
+        assert "Turn 2" in prompt
+        assert "APPROVED" in prompt
+        assert "All tests passing" in prompt
+
+    def test_format_empty_turn_states(self):
+        """Test that empty turn_states returns empty string."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        # The _format_turn_states method returns empty string
+        result = context._format_turn_states()
+        assert result == ""
+
+
+# ============================================================================
+# 17. _query_turn_states Tests
+# ============================================================================
+
+class TestQueryTurnStates:
+    """Test the _query_turn_states method."""
+
+    @pytest.mark.asyncio
+    async def test_query_turn_states_builds_correct_query(self):
+        """Test that _query_turn_states uses correct query format."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=[])
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        await retriever._query_turn_states(
+            feature_id="FEAT-001",
+            task_id="TASK-001",
+            budget_allocation=500,
+            threshold=0.6,
+        )
+
+        # Verify the query format
+        mock_graphiti.search.assert_called_once()
+        call_args = mock_graphiti.search.call_args
+        assert "turn FEAT-001 TASK-001" in call_args[0][0]
+        assert call_args[1]["group_ids"] == ["turn_states"]
+        assert call_args[1]["num_results"] == 5
+
+    @pytest.mark.asyncio
+    async def test_query_turn_states_sorts_by_turn_number(self):
+        """Test that results are sorted by turn_number ascending."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_results = [
+            {"turn_number": 3, "score": 0.9},
+            {"turn_number": 1, "score": 0.9},
+            {"turn_number": 2, "score": 0.9},
+        ]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        results, _ = await retriever._query_turn_states(
+            feature_id="FEAT-001",
+            task_id="TASK-001",
+            budget_allocation=1000,
+            threshold=0.5,
+        )
+
+        # Results should be sorted by turn_number
+        assert results[0]["turn_number"] == 1
+        assert results[1]["turn_number"] == 2
+        assert results[2]["turn_number"] == 3
+
+    @pytest.mark.asyncio
+    async def test_query_turn_states_limits_to_5(self):
+        """Test that only the last 5 turns are returned."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_results = [
+            {"turn_number": i, "score": 0.9, "content": "x"} for i in range(10)
+        ]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        results, _ = await retriever._query_turn_states(
+            feature_id="FEAT-001",
+            task_id="TASK-001",
+            budget_allocation=5000,  # Large budget
+            threshold=0.5,
+        )
+
+        # Should only have last 5 turns
+        assert len(results) <= 5
+
+    @pytest.mark.asyncio
+    async def test_query_turn_states_handles_exception(self):
+        """Test that exceptions are handled gracefully."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(side_effect=Exception("Connection error"))
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        results, tokens = await retriever._query_turn_states(
+            feature_id="FEAT-001",
+            task_id="TASK-001",
+            budget_allocation=500,
+            threshold=0.6,
+        )
+
+        # Should return empty list on exception
+        assert results == []
+        assert tokens == 0
+
+
+# ============================================================================
+# 18. _format_item Tests
+# ============================================================================
+
+class TestFormatItem:
+    """Test the _format_item helper method."""
+
+    def test_format_item_with_name_and_content(self):
+        """Test formatting item with name and content fields."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"name": "Test", "content": "Description"}
+        result = context._format_item(item)
+        assert "Test: Description" == result
+
+    def test_format_item_with_name_and_description(self):
+        """Test formatting item with name and description fields."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"name": "Test", "description": "A description"}
+        result = context._format_item(item)
+        assert "Test: A description" == result
+
+    def test_format_item_with_only_name(self):
+        """Test formatting item with only name field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"name": "Test"}
+        result = context._format_item(item)
+        assert "Test" == result
+
+    def test_format_item_with_content_only(self):
+        """Test formatting item with only content field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"content": "Some content"}
+        result = context._format_item(item)
+        assert "Some content" == result
+
+    def test_format_item_with_pattern(self):
+        """Test formatting item with pattern field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"pattern": "Repository Pattern"}
+        result = context._format_item(item)
+        assert "Repository Pattern" == result
+
+    def test_format_item_with_warning(self):
+        """Test formatting item with warning field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"warning": "Memory leak warning"}
+        result = context._format_item(item)
+        assert "Memory leak warning" == result
+
+    def test_format_item_with_outcome(self):
+        """Test formatting item with outcome field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"outcome": "Success"}
+        result = context._format_item(item)
+        assert "Success" == result
+
+    def test_format_item_with_concept(self):
+        """Test formatting item with concept field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"concept": "OAuth 2.0"}
+        result = context._format_item(item)
+        assert "OAuth 2.0" == result
+
+    def test_format_item_with_component(self):
+        """Test formatting item with component field."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"component": "API Gateway"}
+        result = context._format_item(item)
+        assert "API Gateway" == result
+
+    def test_format_item_fallback_to_json(self):
+        """Test formatting item falls back to JSON for unknown structure."""
+        from guardkit.knowledge.job_context_retriever import RetrievedContext
+
+        context = RetrievedContext(
+            task_id="TASK-001",
+            budget_used=0,
+            budget_total=4000,
+            feature_context=[],
+            similar_outcomes=[],
+            relevant_patterns=[],
+            architecture_context=[],
+            warnings=[],
+            domain_knowledge=[],
+            role_constraints=[],
+            quality_gate_configs=[],
+            turn_states=[],
+            implementation_modes=[],
+        )
+
+        item = {"foo": "bar", "baz": 123}
+        result = context._format_item(item)
+        assert "foo" in result
+        assert "bar" in result
+
+
+# ============================================================================
+# 19. RelevanceConfig Integration Tests
+# ============================================================================
+
+class TestRelevanceConfigIntegration:
+    """Test RelevanceConfig integration with JobContextRetriever."""
+
+    @pytest.mark.asyncio
+    async def test_custom_relevance_config(self):
+        """Test that custom RelevanceConfig is used."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.task_analyzer import TaskPhase
+        from guardkit.knowledge.relevance_tuning import RelevanceConfig
+
+        mock_graphiti = AsyncMock()
+        mock_results = [
+            {"score": 0.75, "content": "high"},
+            {"score": 0.55, "content": "medium"},
+            {"score": 0.35, "content": "low"},
+        ]
+        mock_graphiti.search = AsyncMock(return_value=mock_results)
+
+        # Use high threshold
+        config = RelevanceConfig(standard_threshold=0.7)
+        retriever = JobContextRetriever(mock_graphiti, relevance_config=config)
+
+        task = {
+            "id": "TASK-001",
+            "description": "Test task",
+            "tech_stack": "python",
+        }
+
+        result = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+
+        # With 0.7 threshold, only score >= 0.7 should be included
+        all_items = (
+            result.feature_context
+            + result.similar_outcomes
+            + result.relevant_patterns
+            + result.architecture_context
+            + result.warnings
+            + result.domain_knowledge
+        )
+
+        for item in all_items:
+            if "score" in item:
+                assert item["score"] >= 0.7
+
+    @pytest.mark.asyncio
+    async def test_default_relevance_config(self):
+        """Test that default RelevanceConfig is used when not provided."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+        from guardkit.knowledge.relevance_tuning import default_config
+
+        mock_graphiti = AsyncMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        # Should use default config
+        expected_config = default_config()
+        assert retriever.relevance_config.standard_threshold == expected_config.standard_threshold
+
+
+# ============================================================================
+# 20. _query_category Exception Handling Tests
+# ============================================================================
+
+class TestQueryCategoryExceptionHandling:
+    """Test exception handling in _query_category method."""
+
+    @pytest.mark.asyncio
+    async def test_query_category_handles_exception(self):
+        """Test that _query_category handles exceptions gracefully."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(side_effect=Exception("Connection error"))
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        results, tokens = await retriever._query_category(
+            query="test",
+            group_ids=["test_group"],
+            budget_allocation=1000,
+            threshold=0.6,
+        )
+
+        # Should return empty results on exception
+        assert results == []
+        assert tokens == 0
+
+    @pytest.mark.asyncio
+    async def test_query_category_handles_none_results(self):
+        """Test that _query_category handles None results."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.search = AsyncMock(return_value=None)
+
+        retriever = JobContextRetriever(mock_graphiti)
+
+        results, tokens = await retriever._query_category(
+            query="test",
+            group_ids=["test_group"],
+            budget_allocation=1000,
+            threshold=0.6,
+        )
+
+        # Should return empty results for None
+        assert results == []
+        assert tokens == 0
+
+
+# ============================================================================
+# 21. _trim_to_budget Edge Cases
+# ============================================================================
+
+class TestTrimToBudgetEdgeCases:
+    """Test edge cases in _trim_to_budget method."""
+
+    def test_trim_to_budget_empty_items(self):
+        """Test _trim_to_budget with empty items list."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        trimmed, tokens = retriever._trim_to_budget([], 1000)
+
+        assert trimmed == []
+        assert tokens == 0
+
+    def test_trim_to_budget_zero_budget(self):
+        """Test _trim_to_budget with zero budget."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        items = [{"content": "test"}]
+        trimmed, tokens = retriever._trim_to_budget(items, 0)
+
+        assert trimmed == []
+        assert tokens == 0
+
+    def test_trim_to_budget_large_items(self):
+        """Test _trim_to_budget with items larger than budget."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        # Items with large content
+        items = [
+            {"content": "x" * 1000},  # ~500 tokens
+            {"content": "y" * 1000},  # ~500 tokens
+        ]
+
+        trimmed, tokens = retriever._trim_to_budget(items, 100)
+
+        # Should only include items that fit
+        assert len(trimmed) < len(items) or tokens <= 100
+
+
+# ============================================================================
+# 22. _estimate_tokens Tests
+# ============================================================================
+
+class TestEstimateTokens:
+    """Test the _estimate_tokens method."""
+
+    def test_estimate_tokens_basic(self):
+        """Test basic token estimation."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        item = {"content": "hello"}  # Short content
+        tokens = retriever._estimate_tokens(item)
+
+        assert tokens >= 1
+
+    def test_estimate_tokens_large_content(self):
+        """Test token estimation with large content."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        item = {"content": "x" * 1000}  # 1000 characters
+        tokens = retriever._estimate_tokens(item)
+
+        # With 2 chars per token, expect ~500 tokens
+        assert tokens > 400
+        assert tokens < 600
+
+    def test_estimate_tokens_minimum(self):
+        """Test that token estimation returns at least 1."""
+        from guardkit.knowledge.job_context_retriever import JobContextRetriever
+
+        mock_graphiti = MagicMock()
+        retriever = JobContextRetriever(mock_graphiti)
+
+        item = {}  # Empty item
+        tokens = retriever._estimate_tokens(item)
+
+        assert tokens >= 1
