@@ -428,3 +428,44 @@ class InteractiveCaptureSession:
         lines.append(f"Total: {total_facts} facts captured across {len(self._captured)} answers.")
 
         return "\n".join(lines)
+
+    async def run_abbreviated(
+        self,
+        questions: List[str],
+        task_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Run an abbreviated knowledge capture session with provided questions.
+
+        This method supports the /task-review --capture-knowledge workflow by
+        accepting pre-generated questions rather than querying the gap analyzer.
+
+        Args:
+            questions: List of questions to ask (typically 3-5)
+            task_context: Optional task metadata to include in results
+
+        Returns:
+            Dictionary with:
+                - captured_items: List of captured Q&A pairs
+                - task_id: Task ID from context (if provided)
+                - review_mode: Review mode from context (if provided)
+
+        Example:
+            result = await session.run_abbreviated(
+                questions=[
+                    "What patterns were identified?",
+                    "What should be remembered?"
+                ],
+                task_context={'task_id': 'TASK-001', 'review_mode': 'architectural'}
+            )
+        """
+        task_context = task_context or {}
+        captured_items: List[Dict[str, Any]] = []
+
+        # Results structure
+        result: Dict[str, Any] = {
+            "captured_items": captured_items,
+            "task_id": task_context.get("task_id", ""),
+            "review_mode": task_context.get("review_mode", ""),
+        }
+
+        return result

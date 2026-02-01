@@ -686,6 +686,229 @@ Tasks generated include implementation mode metadata:
 
 ---
 
+## Troubleshooting
+
+### Feature Spec Not Auto-Detected
+
+**Problem**: Feature ID in description but spec file not found
+
+```bash
+/feature-plan "implement FEAT-SKEL-001"
+# [Graphiti] No feature spec found for FEAT-SKEL-001
+```
+
+**Solutions**:
+
+1. **Check spec file location** - Must be in standard paths:
+   ```bash
+   docs/features/FEAT-SKEL-001*.md
+   .guardkit/features/FEAT-SKEL-001*.md
+   features/FEAT-SKEL-001*.md
+   ```
+
+2. **Use explicit context**:
+   ```bash
+   /feature-plan "implement FEAT-SKEL-001" --context path/to/spec.md
+   ```
+
+3. **Verify filename pattern** - File must contain feature ID:
+   ```bash
+   # ✅ Good
+   docs/features/FEAT-SKEL-001-walking-skeleton.md
+
+   # ❌ Bad (ID not in filename)
+   docs/features/walking-skeleton.md
+   ```
+
+### Graphiti Context Query Fails
+
+**Problem**: Context queries return empty results
+
+```bash
+[Graphiti] Found 0 related features
+[Graphiti] Found 0 relevant patterns
+```
+
+**Causes**:
+
+1. **First-time usage** - Knowledge graph is empty
+2. **Graphiti not seeded** - No context has been added yet
+3. **Query mismatch** - Description doesn't match stored content
+
+**Solutions**:
+
+1. **Seed initial context** using `/add-context`:
+   ```bash
+   /add-context docs/features/ --context-type feature
+   /add-context docs/patterns/ --context-type pattern
+   ```
+
+2. **Use explicit context files** to bootstrap:
+   ```bash
+   /feature-plan "implement X" --context docs/architecture.md
+   ```
+
+3. **Check Graphiti status**:
+   ```bash
+   /knowledge-query --status
+   ```
+
+### Context Budget Exceeded
+
+**Problem**: Too much context, tokens exceeded
+
+```bash
+[Graphiti] Warning: Context truncated (exceeded 4000 token budget)
+```
+
+**Solutions**:
+
+1. **Context is auto-truncated** - This is informational, not an error
+2. **Priority items preserved** - Feature spec (40%) and architecture (20%) always included
+3. **Lower-priority items dropped** - Warnings and patterns may be truncated
+
+**What's Preserved**:
+- Feature spec (highest priority)
+- Project architecture
+- Role constraints
+- Quality gate configs
+
+**What's Truncated** (when needed):
+- Related features (reduced from 5 to 2)
+- Design patterns (reduced from 5 to 2)
+- Warnings (reduced from 3 to 1)
+
+### AutoBuild Context Missing
+
+**Problem**: Role constraints or quality gates not in planning context
+
+```bash
+# Generated tasks missing task_type field or wrong quality thresholds
+```
+
+**Solutions**:
+
+1. **Seed AutoBuild context** to Graphiti:
+   ```bash
+   /add-context .claude/rules/autobuild.md --context-type role-constraints
+   /add-context installer/core/lib/quality_gates.py --context-type quality-gate-configs
+   ```
+
+2. **Check group IDs**:
+   ```python
+   # Verify these groups exist in Graphiti
+   await graphiti.search(query="", group_ids=["role_constraints"])
+   await graphiti.search(query="", group_ids=["quality_gate_configs"])
+   ```
+
+3. **Manual override** - Add fields to task frontmatter after generation:
+   ```yaml
+   ---
+   id: TASK-001
+   task_type: scaffolding  # Add this manually if missing
+   ---
+   ```
+
+### Context Not Persisting to Subtasks
+
+**Problem**: Subtasks don't reference parent feature context
+
+```bash
+# Subtask file missing parent_review or feature_id fields
+```
+
+**Solutions**:
+
+1. **Check provenance fields** in generated tasks:
+   ```yaml
+   ---
+   id: TASK-XXX-001
+   parent_review: TASK-REV-xxxx  # Must be present
+   feature_id: FEAT-xxxx          # Must be present
+   ---
+   ```
+
+2. **Regenerate subtasks** if fields missing:
+   ```bash
+   # Delete incomplete subtasks
+   rm tasks/backlog/feature-name/*.md
+
+   # Re-run [I]mplement from review checkpoint
+   /task-review TASK-REV-xxxx
+   # Choose [I]mplement
+   ```
+
+3. **Manual field addition** if only a few tasks affected:
+   ```bash
+   # Add to frontmatter of each subtask
+   parent_review: TASK-REV-a3f8
+   feature_id: FEAT-a3f8
+   ```
+
+### Graphiti Performance Issues
+
+**Problem**: Context queries take >5 seconds
+
+**Solutions**:
+
+1. **Check episode count**:
+   ```bash
+   /knowledge-query --status
+   # If >10,000 episodes, consider cleanup
+   ```
+
+2. **Use more specific feature IDs**:
+   ```bash
+   # ✅ Specific - faster query
+   /feature-plan "implement FEAT-GR-003"
+
+   # ❌ Generic - slower query
+   /feature-plan "implement feature integration"
+   ```
+
+3. **Limit context files**:
+   ```bash
+   # ❌ Too many files - slow
+   /feature-plan "X" --context docs/*.md
+
+   # ✅ Specific files - faster
+   /feature-plan "X" --context docs/feature-spec.md
+   ```
+
+### File Path Errors in Feature YAML
+
+**Problem**: Generated YAML missing `file_path` field, FeatureLoader fails
+
+```bash
+# Error: Task TASK-001 missing required field 'file_path'
+```
+
+**Solutions**:
+
+1. **Check task YAML structure**:
+   ```yaml
+   tasks:
+     - id: TASK-001
+       name: "Task name"
+       file_path: "tasks/backlog/feature/TASK-001.md"  # ← REQUIRED
+   ```
+
+2. **Regenerate feature YAML** if corrupted:
+   ```bash
+   python3 ~/.agentecflow/bin/generate-feature-yaml \
+       --name "Feature name" \
+       --task "TASK-001:Name:tasks/backlog/feature/TASK-001.md:5:" \
+       --base-path "."
+   ```
+
+3. **Verify task files exist** before generating YAML:
+   ```bash
+   ls tasks/backlog/feature-name/TASK-*.md
+   # All tasks should be created BEFORE running generate-feature-yaml
+   ```
+
+---
+
 ## Future Enhancements
 
 1. **Feature dependency graphs** - Query Graphiti for feature dependencies
@@ -693,3 +916,5 @@ Tasks generated include implementation mode metadata:
 3. **Risk assessment** - Identify risks based on similar feature warnings
 4. **Auto-suggest related tasks** - Based on similar feature implementations
 5. **Turn state integration** - Load previous turn context when resuming feature work
+6. **Context caching** - Cache frequently-queried context to improve performance
+7. **Smart truncation** - ML-based prioritization of context items when budget exceeded
