@@ -9,7 +9,7 @@ id: TASK-GR-001-F
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - project-seeding
@@ -30,11 +30,11 @@ Create the ImplementationModeEpisode dataclass and seed default mode description
 
 ## Acceptance Criteria
 
-- [ ] ImplementationModeEpisode dataclass implemented
-- [ ] Default modes: direct, task-work, manual
-- [ ] Modes seeded during project init
-- [ ] When-to-use guidance captured
-- [ ] Pitfalls documented for each mode
+- [x] ImplementationModeEpisode dataclass implemented
+- [x] Default modes: direct, task-work, manual
+- [x] Modes seeded during project init
+- [x] When-to-use guidance captured
+- [x] Pitfalls documented for each mode
 
 ## Implementation Notes
 
@@ -136,8 +136,8 @@ IMPLEMENTATION_MODE_DEFAULTS = {
 
 ## Test Requirements
 
-- [ ] Unit tests for schema
-- [ ] Unit tests for default modes
+- [x] Unit tests for schema (50 tests)
+- [x] Unit tests for default modes
 
 ## Notes
 
