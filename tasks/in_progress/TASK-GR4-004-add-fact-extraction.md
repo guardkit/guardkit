@@ -1,18 +1,18 @@
 ---
-id: TASK-GR4-004
-title: Add fact extraction logic
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-004
-wave: 1
-parallel_group: wave1-gr004
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies:
-  - TASK-GR4-002
+- TASK-GR4-002
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR4-004
+implementation_mode: task-work
+parallel_group: wave1-gr004
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-004
+task_type: feature
+title: Add fact extraction logic
+wave: 1
 ---
 
 # Add fact extraction logic

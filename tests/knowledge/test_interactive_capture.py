@@ -11,7 +11,7 @@ Tests the interactive knowledge capture session including:
 - UI callback event handling
 
 Coverage Target: >=85%
-Test Count: 52 tests
+Test Count: 55 tests
 """
 
 import pytest
@@ -821,7 +821,7 @@ class TestProcessAnswer:
 
 
 # ============================================================================
-# 8. _extract_facts() Tests (6 tests)
+# 8. _extract_facts() Tests (9 tests)
 # ============================================================================
 
 class TestExtractFacts:
@@ -925,6 +925,69 @@ class TestExtractFacts:
 
             assert isinstance(result, list)
             assert len(result) == 0
+
+    def test_extract_facts_handles_multiline_answer(self):
+        """Test that _extract_facts handles multi-line answers with newlines."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_get.return_value = MagicMock()
+            session = InteractiveCaptureSession()
+
+            multiline_answer = "This is the first sentence.\nThis is the second sentence on a new line.\nThis is the third sentence."
+
+            result = session._extract_facts(multiline_answer, KnowledgeCategory.PROJECT_OVERVIEW)
+
+            # Should extract facts from all lines
+            assert isinstance(result, list)
+            assert len(result) >= 1
+            # All facts should be non-empty after stripping
+            for fact in result:
+                assert len(fact.strip()) > 0
+
+    def test_extract_facts_handles_sentence_across_lines(self):
+        """Test that _extract_facts handles sentences spanning multiple lines."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_get.return_value = MagicMock()
+            session = InteractiveCaptureSession()
+
+            # Sentence split across lines without period until end
+            answer = "This is a long sentence that\nspans multiple lines\nand ends here."
+
+            result = session._extract_facts(answer, KnowledgeCategory.ARCHITECTURE)
+
+            # Should process the complete text
+            assert isinstance(result, list)
+            # Should have at least one fact extracted
+            assert len(result) >= 1
+
+    def test_extract_facts_handles_bullet_points(self):
+        """Test that _extract_facts handles bullet-pointed answers."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_get.return_value = MagicMock()
+            session = InteractiveCaptureSession()
+
+            # Common bullet-point format in knowledge capture
+            bullet_answer = """- First key point about the system.
+- Second important detail here.
+- Third consideration to note."""
+
+            result = session._extract_facts(bullet_answer, KnowledgeCategory.DOMAIN)
+
+            # Should extract facts from bullet points
+            assert isinstance(result, list)
+            # Should have extracted multiple facts
+            assert len(result) >= 1
+            # Facts should be non-empty
+            for fact in result:
+                assert len(fact.strip()) > 0
 
 
 # ============================================================================

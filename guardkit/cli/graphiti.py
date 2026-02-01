@@ -640,6 +640,108 @@ async def _cmd_add_context(
         await client.close()
 
 
+async def _cmd_capture(focus: Optional[str], max_questions: int) -> None:
+    """Async implementation of capture command."""
+    from guardkit.knowledge.interactive_capture import (
+        InteractiveCaptureSession,
+        KnowledgeCategory,
+    )
+
+    console.print("[bold blue]Interactive Knowledge Capture[/bold blue]")
+    console.print()
+
+    # Check if Graphiti is enabled
+    settings = load_graphiti_config()
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("Knowledge capture requires Graphiti to be enabled.")
+        return
+
+    # Create client and verify connection
+    client, _ = _get_client_and_config()
+
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Map focus string to enum
+        focus_enum = None
+        if focus:
+            # Convert hyphenated lowercase to enum (e.g., "project-overview" -> KnowledgeCategory.PROJECT_OVERVIEW)
+            focus_key = focus.replace("-", "_").upper()
+            focus_enum = getattr(KnowledgeCategory, focus_key)
+
+        # Create UI callback for rich console output
+        def ui_callback(event: str, data=None):
+            """Handle UI events with colored output."""
+            if event == "info":
+                console.print(f"[blue]{data}[/blue]")
+            elif event == "intro":
+                console.print(data)
+            elif event == "question":
+                console.print()
+                console.print(
+                    f"[cyan bold][{data['number']}/{data['total']}] "
+                    f"{data['category'].upper()}[/cyan bold]"
+                )
+                console.print(f"[dim]Context: {data['context']}[/dim]")
+                console.print()
+                console.print(f"[yellow bold]{data['question']}[/yellow bold]")
+            elif event == "get_input":
+                answer = console.input("[white]Your answer[/white]: ")
+                return answer
+            elif event == "captured":
+                console.print("[green]✓ Captured:[/green]")
+                for fact in data["facts"][:3]:  # Show first 3 facts
+                    display_fact = fact[:80] + "..." if len(fact) > 80 else fact
+                    console.print(f"  [dim]- {display_fact}[/dim]")
+            elif event == "summary":
+                console.print(f"[green bold]{data}[/green bold]")
+
+        # Run the capture session
+        session = InteractiveCaptureSession()
+
+        try:
+            captured = await session.run_session(
+                focus=focus_enum,
+                max_questions=max_questions,
+                ui_callback=ui_callback,
+            )
+
+            if captured:
+                console.print()
+                console.print(
+                    f"[bold green]Successfully captured {len(captured)} "
+                    f"knowledge items![/bold green]"
+                )
+            else:
+                console.print()
+                console.print(
+                    "[yellow]No knowledge captured. "
+                    "Session ended or no gaps identified.[/yellow]"
+                )
+
+        except Exception as e:
+            console.print(f"[red]Error during capture session: {e}[/red]")
+            logger.exception("Capture session failed")
+            raise SystemExit(1)
+
+    finally:
+        await client.close()
+
+
 async def _cmd_clear(
     confirm: bool,
     system_only: bool,
@@ -756,6 +858,70 @@ async def _cmd_clear(
 
     finally:
         await client.close()
+
+
+@graphiti.command()
+@click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Run interactive Q&A session",
+)
+@click.option(
+    "--focus",
+    type=click.Choice([
+        "project-overview",
+        "architecture",
+        "domain",
+        "constraints",
+        "decisions",
+        "goals",
+        "role-customization",
+        "quality-gates",
+        "workflow-preferences",
+    ]),
+    help="Focus on specific knowledge category",
+)
+@click.option(
+    "--max-questions",
+    type=int,
+    default=10,
+    help="Maximum questions to ask (default: 10)",
+)
+def capture(interactive: bool, focus: Optional[str], max_questions: int):
+    """Capture project knowledge through interactive Q&A.
+
+    Launches an interactive session that identifies knowledge gaps and captures
+    missing project information through guided questions. Supports all focus areas
+    including AutoBuild workflow customization.
+
+    \b
+    Examples:
+        guardkit graphiti capture --interactive
+        guardkit graphiti capture --interactive --focus architecture
+        guardkit graphiti capture --interactive --focus role-customization
+        guardkit graphiti capture --interactive --focus quality-gates
+        guardkit graphiti capture --interactive --max-questions 5
+
+    \b
+    Focus Areas:
+        - project-overview: Project purpose, users, goals
+        - architecture: Components, services, data flow
+        - domain: Terminology, business rules
+        - constraints: Technical/business constraints, avoid list
+        - decisions: Technology choices, rationale
+        - goals: Project objectives
+        - role-customization: AutoBuild role boundaries (what AI should ask about)
+        - quality-gates: Coverage thresholds, review scores
+        - workflow-preferences: Implementation modes, autonomous turn limits
+    """
+    if not interactive:
+        console.print("[yellow]Use --interactive flag to start a capture session[/yellow]")
+        console.print()
+        console.print("Example: guardkit graphiti capture --interactive")
+        return
+
+    asyncio.run(_cmd_capture(focus, max_questions))
 
 
 @graphiti.command()

@@ -1,18 +1,18 @@
 ---
-id: TASK-GR3-004
-title: Integrate with /feature-plan command
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-003
-wave: 1
-parallel_group: wave1-gr003
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies:
-  - TASK-GR3-003
+- TASK-GR3-003
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR3-004
+implementation_mode: task-work
+parallel_group: wave1-gr003
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-003
+task_type: feature
+title: Integrate with /feature-plan command
+wave: 1
 ---
 
 # Integrate with /feature-plan command
