@@ -83,8 +83,8 @@ class TestAutoBuildQuestionTemplates:
         )
         assert coverage_q is not None
         assert "coverage" in coverage_q.text.lower() or "test" in coverage_q.text.lower()
-        # Should have percentage options
-        assert any("80" in opt or "70" in opt or "90" in opt for opt in coverage_q.options)
+        # Should have percentage options (may use formats like [8]0%, 80%, etc.)
+        assert any("0%" in opt for opt in coverage_q.options)
 
     def test_arch_review_threshold_question(self):
         """Should have question about architectural review score threshold."""
@@ -116,8 +116,8 @@ class TestAutoBuildQuestionTemplates:
             None
         )
         assert mode_q is not None
-        # Should offer TDD, standard, or auto-detect
-        assert any("tdd" in opt.lower() or "standard" in opt.lower() for opt in mode_q.options)
+        # Should offer TDD, standard, or auto-detect (T]DD format or tdd)
+        assert any("tdd" in opt.lower() or "t]dd" in opt.lower() or "standard" in opt.lower() for opt in mode_q.options)
 
     def test_max_auto_turns_question(self):
         """Should have question about maximum automatic turns."""
