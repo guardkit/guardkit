@@ -1,17 +1,17 @@
 ---
-id: TASK-GR6-006
-title: Integrate with /feature-build
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-006
-wave: 3
-implementation_mode: task-work
 complexity: 5
-estimate_hours: 2
 dependencies:
-  - TASK-GR6-005
+- TASK-GR6-005
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR6-006
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-006
+task_type: feature
+title: Integrate with /feature-build
+wave: 3
 ---
 
 # Integrate with /feature-build

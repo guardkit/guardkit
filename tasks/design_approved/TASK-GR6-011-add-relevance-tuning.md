@@ -1,17 +1,17 @@
 ---
-id: TASK-GR6-011
-title: Relevance tuning and testing
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-006
-wave: 3
-implementation_mode: task-work
 complexity: 5
-estimate_hours: 3
 dependencies:
-  - TASK-GR6-009
+- TASK-GR6-009
+estimate_hours: 3
+feature_id: FEAT-0F4A
+id: TASK-GR6-011
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-006
+task_type: feature
+title: Relevance tuning and testing
+wave: 3
 ---
 
 # Relevance tuning and testing
