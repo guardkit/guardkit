@@ -1,4 +1,5 @@
 ---
+completed_at: 2026-02-01
 complexity: 5
 dependencies:
 - TASK-GR5-006
@@ -12,7 +13,6 @@ sub_feature: GR-005
 task_type: feature
 title: Add turn state capture to feature-build
 wave: 2
-completed_at: 2026-02-01
 ---
 
 # Add turn state capture to feature-build
