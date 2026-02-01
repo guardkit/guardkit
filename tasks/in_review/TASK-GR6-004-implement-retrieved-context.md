@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-004
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Implement RetrievedContext formatting
@@ -22,11 +22,11 @@ Create the `RetrievedContext` dataclass with comprehensive formatting for prompt
 
 ## Acceptance Criteria
 
-- [ ] `to_prompt()` returns formatted context string
-- [ ] Sections for each context category
-- [ ] Budget usage displayed (used/total)
-- [ ] AutoBuild sections: Role Constraints, Quality Gates, Turn States, Implementation Modes
-- [ ] Emoji markers for different section types
+- [x] `to_prompt()` returns formatted context string
+- [x] Sections for each context category
+- [x] Budget usage displayed (used/total)
+- [x] AutoBuild sections: Role Constraints, Quality Gates, Turn States, Implementation Modes
+- [x] Emoji markers for different section types
 
 ## Technical Details
 
