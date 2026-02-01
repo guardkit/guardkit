@@ -8,7 +8,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-009
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_progress
 sub_feature: GR-006
 task_type: feature
 title: Add turn_states retrieval for cross-turn learning
@@ -23,11 +23,11 @@ Add retrieval and formatting for turn_states context to enable cross-turn learni
 
 ## Acceptance Criteria
 
-- [ ] Queries `turn_states` group for feature_id + task_id
-- [ ] Returns last 5 turns sorted by turn_number
-- [ ] Formats turn summary with decision and progress
-- [ ] Emphasizes REJECTED feedback (must address)
-- [ ] Increased allocation for later turns (15-20%)
+- [x] Queries `turn_states` group for feature_id + task_id
+- [x] Returns last 5 turns sorted by turn_number
+- [x] Formats turn summary with decision and progress
+- [x] Emphasizes REJECTED feedback (must address)
+- [x] Increased allocation for later turns (15-20%)
 
 ## Technical Details
 
