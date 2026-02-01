@@ -53,3 +53,27 @@ AUTOBUILD_ALLOCATION = {
 ```
 
 **Reference**: See FEAT-GR-006 DynamicBudgetCalculator section.
+
+## Implementation Summary
+
+### Files Created/Modified
+- `guardkit/knowledge/budget_calculator.py` - Main implementation (433 lines)
+- `tests/knowledge/test_budget_calculator.py` - Comprehensive test suite (1704 lines, 65 tests)
+
+### Test Results
+- **Tests**: 65 passed (100%)
+- **Coverage**: 99% on `budget_calculator.py` module
+- **Execution time**: 1.75s
+
+### Key Implementation Details
+
+1. **ContextBudget dataclass**: Contains total_tokens and allocation percentages for all categories
+2. **BASE_BUDGETS**: Maps complexity ranges to base budgets (2000/4000/6000 tokens)
+3. **Budget adjustments**:
+   - Novelty: +30% for first-of-type, +15% for few similar tasks (<3)
+   - Refinement: +20% bonus
+   - AutoBuild: +15% for later turns, +10% for previous turn history
+4. **Allocation strategies**:
+   - DEFAULT_ALLOCATION for standard tasks (sums to 1.0)
+   - AUTOBUILD_ALLOCATION with role_constraints, quality_gate_configs, turn_states
+   - Dynamic adjustments based on task_type, phase, actor, and refinement status
