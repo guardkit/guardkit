@@ -1,9 +1,9 @@
 {
   "turn": 2,
   "feedback_from_turn": 1,
-  "feedback_summary": "- Unexpected error executing task-work: Command failed with exit code 1 (exit code: 1)\nError output: Check stderr output for details",
+  "feedback_summary": "- Tests did not pass during task-work execution",
   "must_fix": [],
   "should_fix": [],
   "validation_results": {},
-  "raw_feedback": "- Unexpected error executing task-work: Command failed with exit code 1 (exit code: 1)\nError output: Check stderr output for details"
+  "raw_feedback": "- Tests did not pass during task-work execution"
 }

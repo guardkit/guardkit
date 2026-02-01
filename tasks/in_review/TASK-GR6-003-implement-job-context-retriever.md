@@ -12,6 +12,12 @@ sub_feature: GR-006
 task_type: feature
 title: Implement JobContextRetriever
 wave: 3
+completed_at: 2026-02-01T16:30:00Z
+tests_passed: 40
+tests_total: 40
+quality_gates:
+  tests_pass: true
+  all_acceptance_criteria_met: true
 ---
 
 # Implement JobContextRetriever
