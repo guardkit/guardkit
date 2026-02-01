@@ -49,6 +49,8 @@ Public API:
     KnowledgeCategory: Enum for knowledge categories (TASK-GR4-001)
     KnowledgeGap: Dataclass for knowledge gaps (TASK-GR4-001)
     KnowledgeGapAnalyzer: Analyzer for identifying knowledge gaps (TASK-GR4-001)
+    CapturedKnowledge: Dataclass for captured knowledge (TASK-GR4-002)
+    InteractiveCaptureSession: Interactive knowledge capture session (TASK-GR4-002)
 
 Example:
     from guardkit.knowledge import (
@@ -272,6 +274,11 @@ from guardkit.knowledge.gap_analyzer import (
     KnowledgeGapAnalyzer,
 )
 
+from guardkit.knowledge.interactive_capture import (
+    CapturedKnowledge,
+    InteractiveCaptureSession,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -361,4 +368,7 @@ __all__ = [
     "KnowledgeCategory",
     "KnowledgeGap",
     "KnowledgeGapAnalyzer",
+    # Interactive knowledge capture (TASK-GR4-002)
+    "CapturedKnowledge",
+    "InteractiveCaptureSession",
 ]
