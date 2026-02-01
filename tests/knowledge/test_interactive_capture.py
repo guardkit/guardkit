@@ -11,13 +11,14 @@ Tests the interactive knowledge capture session including:
 - UI callback event handling
 
 Coverage Target: >=85%
-Test Count: 55 tests
+Test Count: 60 tests
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from typing import List, Optional, Callable
 from dataclasses import is_dataclass, fields
+from datetime import datetime
 
 
 # ============================================================================
@@ -1129,6 +1130,184 @@ class TestSaveCapturedKnowledge:
 
             # Should not call add_episode when nothing to save
             mock_graphiti.add_episode.assert_not_called()
+
+
+# ============================================================================
+# 9B. _save_captured_knowledge() Metadata Tests (5 tests) - NEW FOR TDD RED
+# ============================================================================
+
+class TestSaveCapturedKnowledgeMetadata:
+    """Test metadata functionality in _save_captured_knowledge() method.
+
+    These tests verify that episodes include proper timestamp and source metadata
+    as specified in TASK-GR4-005 acceptance criteria.
+    """
+
+    @pytest.mark.asyncio
+    async def test_save_includes_source_description_parameter(self):
+        """Test that add_episode is called with source_description='interactive_capture'."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession, CapturedKnowledge
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_graphiti = AsyncMock()
+            mock_graphiti.add_episode = AsyncMock(return_value="episode-123")
+            mock_get.return_value = mock_graphiti
+
+            session = InteractiveCaptureSession()
+            session._captured = [
+                CapturedKnowledge(
+                    category=KnowledgeCategory.PROJECT_OVERVIEW,
+                    question="What is the purpose?",
+                    answer="Build AI systems.",
+                    extracted_facts=["Project: Build AI systems"],
+                )
+            ]
+
+            await session._save_captured_knowledge()
+
+            # Verify add_episode was called with source_description
+            mock_graphiti.add_episode.assert_called()
+            call_kwargs = mock_graphiti.add_episode.call_args.kwargs
+            assert 'source_description' in call_kwargs
+            assert call_kwargs['source_description'] == 'interactive_capture'
+
+    @pytest.mark.asyncio
+    async def test_save_includes_timestamp_in_iso_format(self):
+        """Test that episode includes captured_at timestamp in ISO format."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession, CapturedKnowledge
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_graphiti = AsyncMock()
+            mock_graphiti.add_episode = AsyncMock(return_value="episode-123")
+            mock_get.return_value = mock_graphiti
+
+            session = InteractiveCaptureSession()
+            session._captured = [
+                CapturedKnowledge(
+                    category=KnowledgeCategory.ARCHITECTURE,
+                    question="What is the architecture?",
+                    answer="Microservices.",
+                    extracted_facts=["Architecture: Microservices"],
+                )
+            ]
+
+            await session._save_captured_knowledge()
+
+            # Verify episode_body or metadata contains timestamp
+            call_kwargs = mock_graphiti.add_episode.call_args.kwargs
+            episode_body = call_kwargs.get('episode_body', '')
+
+            # Check for ISO timestamp format (YYYY-MM-DDTHH:MM:SS)
+            # ISO format regex pattern: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}
+            import re
+            iso_pattern = r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
+            assert re.search(iso_pattern, episode_body), \
+                f"Expected ISO timestamp in episode_body, got: {episode_body}"
+
+    @pytest.mark.asyncio
+    async def test_save_includes_structured_metadata_in_episode(self):
+        """Test that episode body includes entity_type, category, facts, and qa_pairs."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession, CapturedKnowledge
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_graphiti = AsyncMock()
+            mock_graphiti.add_episode = AsyncMock(return_value="episode-123")
+            mock_get.return_value = mock_graphiti
+
+            session = InteractiveCaptureSession()
+            session._captured = [
+                CapturedKnowledge(
+                    category=KnowledgeCategory.DOMAIN,
+                    question="What are domain terms?",
+                    answer="Users, Orders, Products.",
+                    extracted_facts=["Domain: Users", "Domain: Orders"],
+                )
+            ]
+
+            await session._save_captured_knowledge()
+
+            call_kwargs = mock_graphiti.add_episode.call_args.kwargs
+            episode_body = call_kwargs.get('episode_body', '')
+
+            # Verify structured metadata fields are present
+            assert 'entity_type' in episode_body or 'captured_knowledge' in episode_body
+            assert 'category' in episode_body or 'domain' in episode_body.lower()
+            assert 'facts' in episode_body.lower()
+            # QA pairs should be present (question and answer)
+            assert 'What are domain terms?' in episode_body
+            assert 'Users, Orders, Products.' in episode_body
+
+    @pytest.mark.asyncio
+    async def test_save_metadata_includes_all_facts_from_category(self):
+        """Test that metadata includes all facts from captured knowledge."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession, CapturedKnowledge
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_graphiti = AsyncMock()
+            mock_graphiti.add_episode = AsyncMock(return_value="episode-123")
+            mock_get.return_value = mock_graphiti
+
+            session = InteractiveCaptureSession()
+            session._captured = [
+                CapturedKnowledge(
+                    category=KnowledgeCategory.PROJECT_OVERVIEW,
+                    question="Q1?",
+                    answer="A1",
+                    extracted_facts=["Fact 1", "Fact 2", "Fact 3"],
+                )
+            ]
+
+            await session._save_captured_knowledge()
+
+            call_kwargs = mock_graphiti.add_episode.call_args.kwargs
+            episode_body = call_kwargs.get('episode_body', '')
+
+            # All facts should be included in episode
+            assert 'Fact 1' in episode_body
+            assert 'Fact 2' in episode_body
+            assert 'Fact 3' in episode_body
+
+    @pytest.mark.asyncio
+    async def test_save_metadata_preserves_qa_pairs_structure(self):
+        """Test that QA pairs are preserved in structured format."""
+        from guardkit.knowledge.interactive_capture import InteractiveCaptureSession, CapturedKnowledge
+        from guardkit.knowledge.gap_analyzer import KnowledgeCategory
+
+        with patch('guardkit.knowledge.interactive_capture.get_graphiti') as mock_get:
+            mock_graphiti = AsyncMock()
+            mock_graphiti.add_episode = AsyncMock(return_value="episode-123")
+            mock_get.return_value = mock_graphiti
+
+            session = InteractiveCaptureSession()
+            session._captured = [
+                CapturedKnowledge(
+                    category=KnowledgeCategory.CONSTRAINTS,
+                    question="What constraints exist?",
+                    answer="Budget and timeline constraints.",
+                    extracted_facts=["Constraint: Budget", "Constraint: Timeline"],
+                ),
+                CapturedKnowledge(
+                    category=KnowledgeCategory.CONSTRAINTS,
+                    question="Are there technical constraints?",
+                    answer="Must use Python 3.10+.",
+                    extracted_facts=["Constraint: Python 3.10+"],
+                )
+            ]
+
+            await session._save_captured_knowledge()
+
+            call_kwargs = mock_graphiti.add_episode.call_args.kwargs
+            episode_body = call_kwargs.get('episode_body', '')
+
+            # Verify both QA pairs are present
+            assert 'What constraints exist?' in episode_body
+            assert 'Budget and timeline constraints.' in episode_body
+            assert 'Are there technical constraints?' in episode_body
+            assert 'Must use Python 3.10+.' in episode_body
 
 
 # ============================================================================

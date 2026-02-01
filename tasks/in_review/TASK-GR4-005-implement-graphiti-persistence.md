@@ -8,11 +8,15 @@ id: TASK-GR4-005
 implementation_mode: task-work
 parallel_group: wave1-gr004
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-004
 task_type: feature
 title: Implement Graphiti persistence
 wave: 1
+completed_at: 2026-02-01
+code_review_score: 92
+test_coverage_line: 95.35
+test_coverage_branch: 88.5
 ---
 
 # Implement Graphiti persistence
@@ -23,11 +27,11 @@ Implement the persistence layer that saves captured knowledge to Graphiti as epi
 
 ## Acceptance Criteria
 
-- [ ] `_save_captured_knowledge()` groups facts by category
-- [ ] Creates episodes with correct group_ids
-- [ ] Maps categories to group_ids (including AutoBuild categories)
-- [ ] Includes timestamp and source metadata
-- [ ] Handles Graphiti errors gracefully
+- [x] `_save_captured_knowledge()` groups facts by category
+- [x] Creates episodes with correct group_ids
+- [x] Maps categories to group_ids (including AutoBuild categories)
+- [x] Includes timestamp and source metadata
+- [x] Handles Graphiti errors gracefully
 
 ## Technical Details
 

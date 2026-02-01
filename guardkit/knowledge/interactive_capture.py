@@ -22,6 +22,7 @@ Example Usage:
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import List, Dict, Optional, Callable, Any
 
 from .graphiti_client import get_graphiti
@@ -314,16 +315,32 @@ class InteractiveCaptureSession:
         for category, items in by_category.items():
             group_id = self._category_to_group_id(category)
 
-            # Build episode body from all items in this category
-            body_parts = []
+            # Generate ISO timestamp
+            captured_at = datetime.now(timezone.utc).isoformat()
+
+            # Build episode body with structured metadata header
+            body_parts = [
+                f"entity_type: captured_knowledge",
+                f"category: {category.value}",
+                f"source: interactive_capture",
+                f"captured_at: {captured_at}",
+                "",  # Blank line after metadata header
+            ]
+
+            # Add QA pairs section
+            body_parts.append("QA Pairs:")
             for item in items:
                 body_parts.append(f"Q: {item.question}")
                 body_parts.append(f"A: {item.answer}")
+
+            body_parts.append("")  # Blank line before facts
+
+            # Add facts section
+            body_parts.append("Facts:")
+            for item in items:
                 if item.extracted_facts:
-                    body_parts.append("Facts:")
                     for fact in item.extracted_facts:
-                        body_parts.append(f"  - {fact}")
-                body_parts.append("")  # Blank line between items
+                        body_parts.append(f"- {fact}")
 
             episode_body = "\n".join(body_parts)
             episode_name = f"Interactive Capture - {category.value}"
@@ -332,7 +349,8 @@ class InteractiveCaptureSession:
                 await self._graphiti.add_episode(
                     name=episode_name,
                     episode_body=episode_body,
-                    group_id=group_id
+                    group_id=group_id,
+                    source_description="interactive_capture"
                 )
             except Exception:
                 # Graceful degradation - silently continue on failure
