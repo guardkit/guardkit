@@ -55,6 +55,10 @@ Public API:
     TaskPhase: Enum for execution phases (TASK-GR6-001)
     TaskCharacteristics: Dataclass for analyzed task properties (TASK-GR6-001)
     TaskAnalyzer: Analyzer for task characteristics (TASK-GR6-001)
+    ContextBudget: Budget allocation dataclass (TASK-GR6-002)
+    DynamicBudgetCalculator: Budget calculator based on task characteristics (TASK-GR6-002)
+    RetrievedContext: Dataclass for retrieved context data (TASK-GR6-003)
+    JobContextRetriever: Retrieves job-specific context from Graphiti (TASK-GR6-003)
 
 Example:
     from guardkit.knowledge import (
@@ -291,6 +295,18 @@ from guardkit.knowledge.task_analyzer import (
     TaskAnalyzer,
 )
 
+# Budget calculation (TASK-GR6-002)
+from guardkit.knowledge.budget_calculator import (
+    ContextBudget,
+    DynamicBudgetCalculator,
+)
+
+# Job context retrieval (TASK-GR6-003)
+from guardkit.knowledge.job_context_retriever import (
+    RetrievedContext,
+    JobContextRetriever,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -388,4 +404,10 @@ __all__ = [
     "TaskPhase",
     "TaskCharacteristics",
     "TaskAnalyzer",
+    # Budget calculation (TASK-GR6-002)
+    "ContextBudget",
+    "DynamicBudgetCalculator",
+    # Job context retrieval (TASK-GR6-003)
+    "RetrievedContext",
+    "JobContextRetriever",
 ]

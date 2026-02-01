@@ -3,16 +3,26 @@
   "turn": 1,
   "decision": "feedback",
   "validation_results": {
-    "quality_gates": null,
+    "quality_gates": {
+      "tests_passed": null,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": false
+    },
     "independent_tests": null,
     "requirements": null
   },
   "issues": [
     {
       "severity": "must_fix",
-      "category": "missing_results",
-      "description": "Unexpected error executing task-work: Command failed with exit code 1 (exit code: 1)\nError output: Check stderr output for details"
+      "category": "test_failure",
+      "description": "Tests did not pass during task-work execution",
+      "details": {
+        "failed_count": 0,
+        "total_count": 40
+      }
     }
   ],
-  "rationale": "Task-work quality gate results not found"
+  "rationale": "1 quality gate(s) failed"
 }

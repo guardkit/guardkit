@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-003
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Implement JobContextRetriever
@@ -22,12 +22,12 @@ Create the `JobContextRetriever` class that retrieves job-specific context from 
 
 ## Acceptance Criteria
 
-- [ ] `retrieve(task, phase)` returns `RetrievedContext`
-- [ ] Uses TaskAnalyzer and DynamicBudgetCalculator
-- [ ] Queries Graphiti for each context category within budget
-- [ ] Filters by relevance threshold (0.5-0.6)
-- [ ] Trims results to fit budget allocation
-- [ ] Includes AutoBuild context when applicable
+- [x] `retrieve(task, phase)` returns `RetrievedContext`
+- [x] Uses TaskAnalyzer and DynamicBudgetCalculator
+- [x] Queries Graphiti for each context category within budget
+- [x] Filters by relevance threshold (0.5-0.6)
+- [x] Trims results to fit budget allocation
+- [x] Includes AutoBuild context when applicable
 
 ## Technical Details
 
