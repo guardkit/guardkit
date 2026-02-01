@@ -9,7 +9,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-009
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Add turn_states retrieval for cross-turn learning
