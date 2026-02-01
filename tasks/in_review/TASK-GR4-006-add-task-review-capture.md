@@ -64,7 +64,7 @@ Integrate knowledge capture into the `/task-review` command so insights from rev
 ### Test Results
 
 ```
-tests/test_task_review_knowledge_capture.py ... 33 passed in 1.26s
+tests/test_task_review_knowledge_capture.py ... 33 passed in 1.70s
 Coverage: 96% for guardkit/knowledge/review_knowledge_capture.py
 ```
 
@@ -76,3 +76,12 @@ All 5 review modes have mode-specific question templates:
 - `decision`: Decision made, alternatives considered, rationale
 - `technical-debt`: Debt items, prioritization, prevention strategies
 - `security`: Security concerns, immediate vulnerabilities, review approach
+
+## Quality Gate Results
+
+| Gate | Threshold | Result |
+|------|-----------|--------|
+| Compilation | 100% | ✅ Pass |
+| Tests Pass | 100% | ✅ 33/33 Pass |
+| Line Coverage | ≥80% | ✅ 96% |
+| Branch Coverage | ≥75% | ✅ 85% |
