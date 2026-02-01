@@ -308,6 +308,12 @@ from guardkit.knowledge.job_context_retriever import (
     JobContextRetriever,
 )
 
+# AutoBuild context loader (TASK-GR6-006)
+from guardkit.knowledge.autobuild_context_loader import (
+    AutoBuildContextLoader,
+    AutoBuildContextResult,
+)
+
 # Quality gate formatting (TASK-GR6-008)
 from guardkit.knowledge.quality_gate_formatter import (
     format_quality_gates,
@@ -422,6 +428,9 @@ __all__ = [
     # Job context retrieval (TASK-GR6-003)
     "RetrievedContext",
     "JobContextRetriever",
+    # AutoBuild context loader (TASK-GR6-006)
+    "AutoBuildContextLoader",
+    "AutoBuildContextResult",
     # Quality gate formatting (TASK-GR6-008)
     "format_quality_gates",
     # Role constraint formatting (TASK-GR6-007)

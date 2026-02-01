@@ -116,6 +116,9 @@ from guardkit.knowledge.turn_state_operations import (
 from guardkit.knowledge.entities.turn_state import TurnMode
 from guardkit.knowledge.graphiti_client import get_graphiti
 
+# Import AutoBuild context loader for job-specific context (TASK-GR6-006)
+from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -353,6 +356,9 @@ class AutoBuildOrchestrator:
         enable_checkpoints: bool = True,
         rollback_on_pollution: bool = True,
         ablation_mode: bool = False,
+        enable_context: bool = True,
+        verbose: bool = False,
+        context_loader: Optional[AutoBuildContextLoader] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -403,6 +409,15 @@ class AutoBuildOrchestrator:
         rollback_on_pollution : bool, optional
             Automatically rollback when context pollution detected (default: True).
             Triggers on 2+ consecutive test failures.
+        enable_context : bool, optional
+            Enable job-specific context retrieval from Graphiti (default: True).
+            When enabled, retrieves role_constraints, quality_gates, and turn_states
+            for Player and Coach turns (TASK-GR6-006).
+        verbose : bool, optional
+            Include detailed context information in output (default: False).
+            When enabled, shows budget usage and category details.
+        context_loader : Optional[AutoBuildContextLoader], optional
+            Optional AutoBuildContextLoader for DI/testing.
 
         Raises
         ------
