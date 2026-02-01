@@ -900,6 +900,159 @@ Your answer: Use task-work for anything touching auth or payments, direct for UI
 
 **See**: [FEAT-GR-004: Interactive Knowledge Capture](docs/research/graphiti-refinement/FEAT-GR-004-interactive-knowledge-capture.md) for complete technical details.
 
+### Knowledge Query Commands
+
+Query and inspect knowledge stored in Graphiti using CLI commands:
+
+```bash
+# Show specific knowledge by ID
+guardkit graphiti show FEAT-SKEL-001
+guardkit graphiti show ADR-001
+
+# Search for knowledge
+guardkit graphiti search "authentication patterns"
+guardkit graphiti search "error handling" --group patterns --limit 20
+
+# List all knowledge in a category
+guardkit graphiti list features
+guardkit graphiti list adrs
+guardkit graphiti list patterns
+
+# View knowledge graph status
+guardkit graphiti status
+guardkit graphiti status --verbose
+```
+
+**Command Details:**
+
+**`show <knowledge_id>`** - Display detailed information about specific knowledge:
+- Auto-detects knowledge type from ID (FEAT-*, ADR-*, etc.)
+- Shows structured fields (title, description, status, etc.)
+- Displays relevance score and metadata
+- Example: `guardkit graphiti show FEAT-GR-005`
+
+**`search <query>`** - Search across all knowledge:
+- Full-text search with relevance scoring
+- Optional `--group` filter (e.g., `--group feature_specs`)
+- Optional `--limit` for result count (default: 10)
+- Color-coded by relevance (green >0.8, yellow >0.5)
+- Example: `guardkit graphiti search "authentication" --group patterns`
+
+**`list <category>`** - List all items in a category:
+- Categories: `features`, `adrs`, `patterns`, `constraints`, `all`
+- Shows IDs and titles for all items
+- Example: `guardkit graphiti list features`
+
+**`status`** - Show knowledge graph health and statistics:
+- Connection status (enabled/disabled)
+- Episode counts by category
+- Total knowledge count
+- Use `--verbose` to show all groups (including empty)
+- Example: `guardkit graphiti status --verbose`
+
+**Knowledge Groups:**
+- **System Knowledge**: product_knowledge, command_workflows, patterns, agents
+- **Project Knowledge**: project_overview, project_architecture, feature_specs
+- **Decisions**: project_decisions, architecture_decisions
+- **Learning**: task_outcomes, failure_patterns, successful_fixes
+- **Turn States**: turn_states (AutoBuild turn tracking)
+
+### Turn State Tracking (AutoBuild)
+
+GuardKit captures turn states during `/feature-build` workflows for cross-turn learning:
+
+**What Gets Captured:**
+- Player decisions and actions
+- Coach feedback and approval status
+- Files modified during turn
+- Acceptance criteria status
+- Blockers encountered
+- Progress summary
+
+**Query Turn States:**
+```bash
+# View all recent turns
+guardkit graphiti search "turn FEAT-XXX" --group turn_states
+
+# View specific task turns
+guardkit graphiti search "turn TASK-XXX" --group turn_states --limit 5
+```
+
+**Turn State Schema:**
+- `feature_id`: FEAT-XXX identifier
+- `task_id`: TASK-XXX being worked on
+- `turn_number`: Sequential turn number
+- `player_decision`: What Player implemented
+- `coach_decision`: APPROVED | REJECTED | FEEDBACK
+- `feedback_summary`: Key feedback points
+- `blockers_found`: List of blockers encountered
+- `files_modified`: List of changed files
+- `acceptance_criteria_status`: {criterion: verified|pending|rejected}
+- `mode`: FRESH_START | RECOVERING_STATE | CONTINUING_WORK
+
+**Benefits:**
+- Turn N+1 knows what Turn N learned
+- Prevents repeated mistakes
+- Tracks progress across autonomous sessions
+- Provides audit trail for feature development
+
+**See**: [FEAT-GR-005: Knowledge Query Command](docs/research/graphiti-refinement/FEAT-GR-005-knowledge-query-command.md) for complete technical details.
+
+### Troubleshooting Graphiti
+
+**Command not found:**
+```bash
+# Verify Graphiti is enabled
+guardkit graphiti status
+
+# Check configuration
+cat config/graphiti.yaml
+```
+
+**Connection errors:**
+```bash
+# Check Neo4j is running
+docker ps | grep neo4j
+
+# Verify connection settings in config/graphiti.yaml
+# Default: neo4j://localhost:7687
+```
+
+**No results from queries:**
+```bash
+# Check if system context is seeded
+guardkit graphiti status
+
+# Seed system context if needed
+guardkit graphiti seed
+
+# Verify with test query
+guardkit graphiti search "guardkit" --limit 5
+```
+
+**Empty turn states:**
+```bash
+# Turn states are only captured during /feature-build
+# Run a feature-build task to generate turn states
+guardkit autobuild task TASK-XXX
+
+# Then query turn states
+guardkit graphiti search "turn" --group turn_states
+```
+
+**Slow queries:**
+- Reduce `--limit` value (default: 10)
+- Use specific `--group` filters instead of searching all groups
+- Check Neo4j resource allocation
+
+**Stale knowledge:**
+```bash
+# Re-seed system context to update knowledge
+guardkit graphiti seed --force
+
+# Note: Force re-seeding clears previous system context
+```
+
 ## Development Best Practices
 
 **Quality Standards:**
