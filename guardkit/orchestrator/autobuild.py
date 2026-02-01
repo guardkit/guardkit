@@ -1611,6 +1611,17 @@ class AutoBuildOrchestrator:
                 if isinstance(blockers, list):
                     blockers_found = blockers
 
+            # Extract files_modified from Player report (TASK-GR5-007)
+            files_modified = []
+            if turn_record.player_result and turn_record.player_result.report:
+                modified = turn_record.player_result.report.get("files_modified", [])
+                created = turn_record.player_result.report.get("files_created", [])
+                # Combine both modified and created files
+                if isinstance(modified, list):
+                    files_modified.extend(modified)
+                if isinstance(created, list):
+                    files_modified.extend(created)
+
             # Extract lessons and next steps from Coach feedback
             lessons = []
             what_to_try_next = None
@@ -1677,6 +1688,7 @@ class AutoBuildOrchestrator:
                 blockers_found=blockers_found,
                 progress_summary=f"Turn {turn_record.turn}: {turn_record.decision}",
                 acceptance_criteria_status=ac_status,
+                files_modified=files_modified,  # TASK-GR5-007: Track files modified
                 tests_passed=tests_passed,
                 tests_failed=tests_failed,
                 coverage=coverage,
