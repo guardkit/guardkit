@@ -39,3 +39,40 @@ Integrate knowledge capture into the `/task-review` command so insights from rev
 - "Are there any warnings for similar future tasks?"
 
 **Reference**: See FEAT-GR-004 task-review integration section.
+
+## Implementation Summary
+
+### Files Implemented/Updated
+
+1. **`guardkit/knowledge/review_knowledge_capture.py`** - Core implementation
+   - `ReviewCaptureConfig`: Flag parsing with `from_args()` method
+   - `generate_review_questions()`: Context-specific question generation for all 5 review modes
+   - `ReviewKnowledgeCapture`: Class interface for review capture integration
+   - `run_review_capture()`: Main entry point for command integration
+
+2. **`installer/core/commands/task-review.md`** - Command documentation
+   - Added `--capture-knowledge` to command syntax
+   - Added flag to Available Flags table
+   - Added dedicated `### --capture-knowledge` section with full documentation
+   - Added `### Phase 4.5: Knowledge Capture` workflow section
+   - Updated Flag Priority list
+
+3. **`tests/test_task_review_knowledge_capture.py`** - Test coverage
+   - 33 comprehensive tests covering all acceptance criteria
+   - 96% code coverage
+
+### Test Results
+
+```
+tests/test_task_review_knowledge_capture.py ... 33 passed in 1.26s
+Coverage: 96% for guardkit/knowledge/review_knowledge_capture.py
+```
+
+### Review Modes Supported
+
+All 5 review modes have mode-specific question templates:
+- `architectural`: SOLID/DRY/YAGNI patterns, violations, decisions
+- `code-quality`: Quality issues, refactoring opportunities, future handling
+- `decision`: Decision made, alternatives considered, rationale
+- `technical-debt`: Debt items, prioritization, prevention strategies
+- `security`: Security concerns, immediate vulnerabilities, review approach
