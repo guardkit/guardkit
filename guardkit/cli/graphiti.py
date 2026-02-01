@@ -978,3 +978,130 @@ def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, f
         - {project}__project_decisions
     """
     asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))
+
+
+async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
+    """Async implementation of search command."""
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use search.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        # Determine groups to search
+        if group:
+            group_ids = [group]
+        else:
+            # Search across all common groups
+            group_ids = [
+                "feature_specs",
+                "project_overview",
+                "project_architecture",
+                "project_decisions",
+                "project_constraints",
+                "domain_knowledge",
+                "patterns",
+                "agents",
+                "task_outcomes",
+                "failure_patterns",
+                "product_knowledge",
+                "command_workflows",
+                "quality_gate_phases",
+                "technology_stack",
+                "feature_build_architecture",
+                "architecture_decisions",
+            ]
+
+        # Execute search
+        try:
+            results = await client.search(
+                query=query,
+                group_ids=group_ids,
+                num_results=limit,
+            )
+        except Exception as e:
+            console.print(f"[red]Error during search: {e}[/red]")
+            raise SystemExit(1)
+
+        # Display results
+        if not results:
+            console.print(f"No results found for: {query}")
+            return
+
+        console.print(f"\nFound {len(results)} results for '{query}':\n")
+
+        for i, result in enumerate(results, 1):
+            score = result.get("score", 0.0)
+            fact = result.get("fact", str(result))
+
+            # Truncate long facts with "..."
+            max_fact_length = 100
+            if len(fact) > max_fact_length:
+                fact = fact[:max_fact_length] + "..."
+
+            # Color code by relevance score
+            if score > 0.8:
+                score_color = "green"
+            elif score > 0.5:
+                score_color = "yellow"
+            else:
+                score_color = "white"
+
+            # Format output: "N. [score] fact..."
+            console.print(
+                f"[cyan]{i}.[/cyan] "
+                f"[{score_color}][{score:.2f}][/{score_color}] "
+                f"{fact}"
+            )
+
+    finally:
+        await client.close()
+
+
+@graphiti.command("search")
+@click.argument("query")
+@click.option(
+    "--group",
+    "-g",
+    default=None,
+    help="Limit search to specific group (e.g., patterns, feature_specs)",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=10,
+    help="Maximum number of results (default: 10)",
+)
+def search(query: str, group: Optional[str], limit: int):
+    """Search for knowledge across all categories.
+
+    Searches the Graphiti knowledge graph for relevant information.
+    Results are sorted by relevance score, with color coding:
+    - Green (>0.8): High relevance
+    - Yellow (>0.5): Medium relevance
+    - White: Lower relevance
+
+    \b
+    Examples:
+        guardkit graphiti search "authentication"
+        guardkit graphiti search "error handling" --group patterns
+        guardkit graphiti search "walking skeleton" --limit 5
+        guardkit graphiti search "JWT" -g architecture_decisions -n 3
+    """
+    asyncio.run(_cmd_search(query, group, limit))

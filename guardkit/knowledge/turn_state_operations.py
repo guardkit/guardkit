@@ -257,6 +257,7 @@ def create_turn_state_from_autobuild(
     blockers_found: Optional[List[str]] = None,
     progress_summary: str = "",
     acceptance_criteria_status: Optional[Dict[str, str]] = None,
+    files_modified: Optional[List[str]] = None,
     tests_passed: Optional[int] = None,
     tests_failed: Optional[int] = None,
     coverage: Optional[float] = None,
@@ -285,6 +286,7 @@ def create_turn_state_from_autobuild(
         blockers_found: List of blockers (default: empty list)
         progress_summary: Brief progress description
         acceptance_criteria_status: AC status dict (default: empty)
+        files_modified: List of files created/modified (default: empty list)
         tests_passed: Number of tests passed
         tests_failed: Number of tests failed
         coverage: Test coverage percentage
@@ -336,6 +338,7 @@ def create_turn_state_from_autobuild(
         blockers_found=blockers_found or [],
         progress_summary=progress_summary,
         acceptance_criteria_status=acceptance_criteria_status or {},
+        files_modified=files_modified or [],
         tests_passed=tests_passed,
         tests_failed=tests_failed,
         coverage=coverage,

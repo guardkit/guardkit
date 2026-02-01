@@ -382,6 +382,57 @@ class TestTurnStateEntityDataclass:
         assert len(entity.lessons_from_turn) == 3
         assert entity.lessons_from_turn == lessons
 
+    def test_turn_state_entity_with_files_modified(self):
+        """Test TurnStateEntity with files_modified field."""
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        files = [
+            "src/auth/login.py",
+            "src/auth/session.py",
+            "tests/test_auth.py"
+        ]
+
+        entity = TurnStateEntity(
+            id="TURN-FEAT-GE-1",
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Summary",
+            player_decision="implemented",
+            coach_decision="approved",
+            coach_feedback=None,
+            mode=TurnMode.FRESH_START,
+            files_modified=files,
+            started_at=started,
+            completed_at=completed
+        )
+
+        assert len(entity.files_modified) == 3
+        assert entity.files_modified == files
+
+    def test_turn_state_entity_default_files_modified(self):
+        """Test TurnStateEntity default empty files_modified list."""
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        entity = TurnStateEntity(
+            id="TURN-FEAT-GE-1",
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Summary",
+            player_decision="implemented",
+            coach_decision="approved",
+            coach_feedback=None,
+            mode=TurnMode.FRESH_START,
+            started_at=started,
+            completed_at=completed
+        )
+
+        # Should have default empty list
+        assert entity.files_modified == []
+
 
 # ============================================================================
 # 3. TurnStateEntity.to_episode_body() Tests (8 tests)
@@ -486,6 +537,7 @@ class TestTurnStateEntitySerialization:
             blockers_found=["Blocker 1"],
             progress_summary="Progress made",
             acceptance_criteria_status={"AC-001": "completed"},
+            files_modified=["src/main.py", "tests/test_main.py"],
             tests_passed=10,
             tests_failed=0,
             coverage=85.0,
@@ -502,6 +554,7 @@ class TestTurnStateEntitySerialization:
         assert episode_body["blockers_found"] == ["Blocker 1"]
         assert episode_body["progress_summary"] == "Progress made"
         assert episode_body["acceptance_criteria_status"] == {"AC-001": "completed"}
+        assert episode_body["files_modified"] == ["src/main.py", "tests/test_main.py"]
         assert episode_body["tests_passed"] == 10
         assert episode_body["tests_failed"] == 0
         assert episode_body["coverage"] == 85.0
@@ -1267,6 +1320,7 @@ class TestCreateTurnStateFromAutoBuild:
         assert entity.mode == TurnMode.CONTINUING_WORK  # default
         assert entity.blockers_found == []
         assert entity.acceptance_criteria_status == {}
+        assert entity.files_modified == []
         assert entity.lessons_from_turn == []
 
     def test_create_turn_state_from_autobuild_with_all_params(self):
@@ -1286,6 +1340,7 @@ class TestCreateTurnStateFromAutoBuild:
             blockers_found=["Redis not available"],
             progress_summary="Made good progress",
             acceptance_criteria_status={"AC-001": "completed"},
+            files_modified=["src/auth.py", "tests/test_auth.py"],
             tests_passed=10,
             tests_failed=2,
             coverage=75.0,
@@ -1302,6 +1357,7 @@ class TestCreateTurnStateFromAutoBuild:
         assert entity.blockers_found == ["Redis not available"]
         assert entity.progress_summary == "Made good progress"
         assert entity.acceptance_criteria_status == {"AC-001": "completed"}
+        assert entity.files_modified == ["src/auth.py", "tests/test_auth.py"]
         assert entity.tests_passed == 10
         assert entity.tests_failed == 2
         assert entity.coverage == 75.0

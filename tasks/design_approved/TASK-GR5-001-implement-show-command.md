@@ -1,16 +1,16 @@
 ---
-id: TASK-GR5-001
-title: Implement `show` command
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-005
-wave: 2
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies: []
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR5-001
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-005
+task_type: feature
+title: Implement `show` command
+wave: 2
 ---
 
 # Implement `show` command
