@@ -372,7 +372,7 @@ class TestGraphitiShowCommand:
     def test_show_help_output(self):
         """Test that show command help is informative."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["graphkit", "show", "--help"])
+        result = runner.invoke(cli, ["graphiti", "show", "--help"])
 
         assert result.exit_code == 0
         # Help should mention supported knowledge types

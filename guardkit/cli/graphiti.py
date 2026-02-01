@@ -980,6 +980,189 @@ def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, f
     asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))
 
 
+async def _cmd_show(knowledge_id: str) -> None:
+    """Async implementation of show command.
+
+    Detects knowledge type from ID format and routes to correct group:
+    - FEAT-* -> feature_specs
+    - ADR-* -> architecture_decisions, project_decisions
+    - project-overview -> project_overview
+    - *-pattern -> patterns
+    - *-constraint -> project_constraints
+    - *-guide -> project_knowledge
+    - Other -> search all groups
+    """
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use show.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            console.print("[yellow]Graphiti not available.[/yellow]")
+            raise SystemExit(1)
+
+        # Detect knowledge type and determine group_ids
+        group_ids = _detect_group_ids(knowledge_id)
+
+        # Execute search
+        try:
+            results = await client.search(
+                knowledge_id,  # Query as positional arg for test compatibility
+                group_ids=group_ids,
+                num_results=5,
+            )
+        except Exception as e:
+            console.print(f"[red]Error during search: {e}[/red]")
+            raise SystemExit(1)
+
+        # Display results
+        if not results:
+            console.print(f"[yellow]Not found: {knowledge_id}[/yellow]")
+            console.print("No results found for the specified knowledge ID.")
+            return
+
+        # Format and display the results
+        _format_show_output(results, knowledge_id)
+
+    finally:
+        await client.close()
+
+
+def _detect_group_ids(knowledge_id: str) -> list[str]:
+    """Detect knowledge type from ID format and return appropriate group_ids.
+
+    Args:
+        knowledge_id: The knowledge ID to analyze
+
+    Returns:
+        List of group_ids to search
+    """
+    knowledge_id_lower = knowledge_id.lower()
+
+    # FEAT-* -> feature_specs
+    if knowledge_id.upper().startswith("FEAT-"):
+        return ["feature_specs"]
+
+    # ADR-* -> architecture_decisions and project_decisions
+    if knowledge_id.upper().startswith("ADR-"):
+        return ["architecture_decisions", "project_decisions"]
+
+    # project-overview -> project_overview
+    if knowledge_id_lower == "project-overview":
+        return ["project_overview"]
+
+    # *-pattern or pattern* -> patterns
+    if "pattern" in knowledge_id_lower:
+        return ["patterns"]
+
+    # *-constraint or constraint* -> project_constraints
+    if "constraint" in knowledge_id_lower:
+        return ["project_constraints"]
+
+    # *-guide or guide* -> project_knowledge
+    if "guide" in knowledge_id_lower:
+        return ["project_knowledge"]
+
+    # Default: search across all common groups
+    return [
+        "feature_specs",
+        "project_overview",
+        "project_architecture",
+        "project_decisions",
+        "project_constraints",
+        "domain_knowledge",
+        "patterns",
+        "agents",
+        "task_outcomes",
+        "failure_patterns",
+        "product_knowledge",
+        "command_workflows",
+        "quality_gate_phases",
+        "technology_stack",
+        "feature_build_architecture",
+        "architecture_decisions",
+    ]
+
+
+def _format_show_output(results: list[dict], knowledge_id: str) -> None:
+    """Format and display show command output using Rich.
+
+    Args:
+        results: Search results from Graphiti
+        knowledge_id: The knowledge ID that was searched
+    """
+    console.print()
+    console.print("[cyan]" + "=" * 60 + "[/cyan]")
+
+    for result in results:
+        name = result.get("name", knowledge_id)
+        fact = result.get("fact", str(result))
+        uuid = result.get("uuid", "")
+        score = result.get("score", 0.0)
+        created_at = result.get("created_at", "")
+        valid_at = result.get("valid_at", "")
+
+        # Display name/title
+        console.print(f"[yellow bold]  {name}[/yellow bold]")
+        console.print("[cyan]" + "=" * 60 + "[/cyan]")
+
+        # Try to parse fact as structured data
+        try:
+            import json
+            if isinstance(fact, str) and fact.startswith("{"):
+                data = json.loads(fact)
+
+                # Display key fields
+                for key in ["id", "description", "purpose", "status"]:
+                    if key in data and data[key]:
+                        console.print(f"  [cyan]{key.title()}:[/cyan] {data[key]}")
+
+                # Display lists
+                for key in ["success_criteria", "goals", "constraints", "requirements"]:
+                    if key in data and data[key]:
+                        console.print()
+                        console.print(f"  [cyan]{key.replace('_', ' ').title()}:[/cyan]")
+                        for item in data[key][:5]:  # Limit to 5 items
+                            console.print(f"    [dim]-[/dim] {item}")
+            else:
+                # Display as plain text
+                console.print(f"  {fact}")
+        except (json.JSONDecodeError, TypeError):
+            # Fallback to raw output
+            console.print(f"  {fact}")
+
+        # Display metadata if available
+        if uuid:
+            console.print()
+            console.print(f"  [dim]UUID: {uuid}[/dim]")
+        if score > 0:
+            # Color code by relevance score
+            if score > 0.8:
+                score_color = "green"
+            elif score > 0.5:
+                score_color = "yellow"
+            else:
+                score_color = "white"
+            console.print(f"  [dim]Score: [{score_color}]{score:.2f}[/{score_color}][/dim]")
+        if created_at:
+            console.print(f"  [dim]Created: {created_at}[/dim]")
+
+        console.print()
+
+
 async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
     """Async implementation of search command."""
     # Create client
@@ -1071,6 +1254,35 @@ async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
 
     finally:
         await client.close()
+
+
+@graphiti.command("show")
+@click.argument("knowledge_id")
+def show(knowledge_id: str):
+    """Show details of specific knowledge by ID.
+
+    Detects knowledge type from ID format and displays detailed information.
+    Supports feature specs, ADRs, project overview, patterns, constraints, and guides.
+
+    \b
+    ID Format Detection:
+        - FEAT-* -> Feature specifications
+        - ADR-* -> Architecture Decision Records
+        - project-overview -> Project overview
+        - *-pattern -> Patterns
+        - *-constraint -> Project constraints
+        - *-guide -> Guides
+
+    \b
+    Examples:
+        guardkit graphiti show FEAT-GR-001
+        guardkit graphiti show ADR-001
+        guardkit graphiti show project-overview
+        guardkit graphiti show singleton-pattern
+        guardkit graphiti show no-graphql-constraint
+        guardkit graphiti show testing-guide
+    """
+    asyncio.run(_cmd_show(knowledge_id))
 
 
 @graphiti.command("search")
