@@ -1,20 +1,25 @@
 ---
-id: TASK-GR-002-G
-title: Tests for parsers
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, context-addition, testing, parsers, mvp-phase-2]
-task_type: testing
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 9
-conductor_workspace: gr-mvp-wave9-tests
 complexity: 4
+conductor_workspace: gr-mvp-wave9-tests
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-002-F
+- TASK-GR-002-F
+feature_id: FEAT-GR-MVP
+id: TASK-GR-002-G
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- context-addition
+- testing
+- parsers
+- mvp-phase-2
+task_type: testing
+title: Tests for parsers
+updated: 2026-01-30 00:00:00+00:00
+wave: 9
 ---
 
 # Task: Tests for parsers
