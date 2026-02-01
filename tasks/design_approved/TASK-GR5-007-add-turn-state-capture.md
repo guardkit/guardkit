@@ -1,17 +1,17 @@
 ---
-id: TASK-GR5-007
-title: Add turn state capture to feature-build
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-005
-wave: 2
-implementation_mode: task-work
 complexity: 5
-estimate_hours: 2
 dependencies:
-  - TASK-GR5-006
+- TASK-GR5-006
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR5-007
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-005
+task_type: feature
+title: Add turn state capture to feature-build
+wave: 2
 ---
 
 # Add turn state capture to feature-build
