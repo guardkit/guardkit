@@ -259,6 +259,10 @@ from guardkit.knowledge.seed_failed_approaches import (
     get_initial_failed_approaches,
 )
 
+from guardkit.knowledge.feature_detector import (
+    FeatureDetector,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -342,4 +346,6 @@ __all__ = [
     "seed_failed_approaches",
     "get_initial_failed_approaches",
     "load_failed_approaches",
+    # Feature detection (TASK-GR3-001)
+    "FeatureDetector",
 ]
