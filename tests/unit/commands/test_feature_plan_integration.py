@@ -205,11 +205,13 @@ async def test_build_enriched_prompt_calls_context_builder(integration):
 
     await integration.build_enriched_prompt(description)
 
-    integration.context_builder.build_context.assert_called_once_with(
-        description=description,
-        context_files=None,
-        tech_stack="python"
-    )
+    # Verify context builder was called with correct arguments
+    integration.context_builder.build_context.assert_called_once()
+    call_args = integration.context_builder.build_context.call_args
+    # Check positional arg (description) and keyword args (context_files, tech_stack)
+    assert call_args[0][0] == description
+    assert call_args[1]["context_files"] is None
+    assert call_args[1]["tech_stack"] == "python"
 
 
 @pytest.mark.asyncio

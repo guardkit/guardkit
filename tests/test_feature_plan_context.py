@@ -406,6 +406,7 @@ class TestFeaturePlanContext:
         # Should not include AutoBuild sections if empty
         assert "## Role Constraints" not in result
         assert "## Quality Gate Thresholds" not in result
+        assert "## Implementation Modes" not in result
 
     def test_to_prompt_context_includes_autobuild_sections(self, full_context):
         """Test AutoBuild sections are included when populated."""
@@ -414,3 +415,73 @@ class TestFeaturePlanContext:
         # Should include AutoBuild sections
         assert "## Role Constraints (Player/Coach)" in result
         assert "## Quality Gate Thresholds" in result
+
+    # ============================================================================
+    # Implementation Modes Tests (AutoBuild Context - TASK-GR3-006)
+    # ============================================================================
+
+    def test_format_implementation_modes(self, full_context):
+        """Test that _format_implementation_modes() returns properly formatted string."""
+        result = full_context._format_implementation_modes()
+
+        # Should include mode names
+        assert "**direct**:" in result
+        assert "**task-work**:" in result
+
+        # Should include pattern info
+        assert "inline" in result
+        assert "worktree" in result
+
+    def test_format_implementation_modes_limit(self):
+        """Test that implementation modes are limited to 3 modes max."""
+        context = FeaturePlanContext(
+            feature_spec={},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            implementation_modes=[
+                {"mode": f"mode{i}", "pattern": f"pattern{i}"}
+                for i in range(5)
+            ]
+        )
+
+        result = context._format_implementation_modes()
+        lines = result.split('\n')
+        # Should only have 3 modes
+        assert len(lines) == 3
+
+    def test_format_implementation_modes_with_description(self):
+        """Test that implementation modes include description field if present."""
+        context = FeaturePlanContext(
+            feature_spec={},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            implementation_modes=[
+                {
+                    "mode": "direct",
+                    "pattern": "inline",
+                    "description": "Quick changes without worktree"
+                }
+            ]
+        )
+
+        result = context._format_implementation_modes()
+
+        # Should include description
+        assert "**direct**:" in result
+        assert "inline" in result
+        assert "Quick changes without worktree" in result
+
+    def test_to_prompt_context_includes_implementation_modes(self, full_context):
+        """Test that to_prompt_context() includes Implementation Modes section."""
+        result = full_context.to_prompt_context()
+
+        # This test should FAIL - section not yet implemented
+        assert "## Implementation Modes" in result
+        assert "**direct**:" in result
+        assert "**task-work**:" in result

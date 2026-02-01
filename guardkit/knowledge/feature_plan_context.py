@@ -106,6 +106,11 @@ class FeaturePlanContext:
             gate_text = self._format_quality_gates()
             sections.append(f"## Quality Gate Thresholds\n\n{gate_text}")
 
+        # 8. Implementation modes (AutoBuild support)
+        if self.implementation_modes:
+            modes_text = self._format_implementation_modes()
+            sections.append(f"## Implementation Modes\n\n{modes_text}")
+
         return "\n\n".join(sections)
 
     def _format_feature_spec(self) -> str:
@@ -215,6 +220,26 @@ Entry Points: {', '.join(arch.get('entry_points', []))}"""
             coverage = config.get('coverage_threshold', 0.8)
             arch_threshold = config.get('arch_review_threshold', 60)
             lines.append(f"**{task_type}**: coverage≥{coverage*100:.0f}%, arch≥{arch_threshold}")
+        return '\n'.join(lines)
+
+    def _format_implementation_modes(self) -> str:
+        """Format implementation modes for prompt (AutoBuild support).
+
+        Formats implementation mode guidance to clarify direct vs task-work
+        patterns and prevent file location errors.
+
+        Returns:
+            Formatted implementation modes
+        """
+        lines = []
+        for mode_config in self.implementation_modes[:3]:  # Limit to 3 modes
+            mode = mode_config.get('mode', 'unknown')
+            pattern = mode_config.get('pattern', '')
+            description = mode_config.get('description', '')
+            if description:
+                lines.append(f"**{mode}**: {pattern} ({description})")
+            else:
+                lines.append(f"**{mode}**: {pattern}")
         return '\n'.join(lines)
 
 
