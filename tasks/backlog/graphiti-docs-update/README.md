@@ -4,7 +4,7 @@
 > **Parent Review**: TASK-REV-BBE7
 > **Created**: 2026-02-01
 > **Status**: In Progress
-> **Progress**: 2/8 tasks (25%)
+> **Progress**: 3/8 tasks (37.5%)
 
 ## Problem Statement
 
@@ -26,7 +26,7 @@ Additionally, CLAUDE.md contains ~350 lines of Graphiti documentation which shou
 | TASK-GDU-001 | Create graphiti-knowledge-capture.md | 1 | direct | ✅ Completed |
 | TASK-GDU-002 | Create graphiti-query-commands.md | 1 | direct | ✅ Completed |
 | TASK-GDU-003 | Create graphiti-job-context.md | 1 | direct | Pending |
-| TASK-GDU-004 | Update mkdocs.yml navigation | 2 | direct | Pending |
+| TASK-GDU-004 | Update mkdocs.yml navigation | 2 | direct | ✅ Completed |
 | TASK-GDU-005 | Update graphiti-architecture.md | 2 | direct | Pending |
 | TASK-GDU-006 | Create graphiti-turn-states.md | 3 | direct | Pending |
 | TASK-GDU-007 | Update graphiti-integration-guide.md | 3 | direct | Pending |
@@ -54,7 +54,7 @@ Additionally, CLAUDE.md contains ~350 lines of Graphiti documentation which shou
 ## Success Criteria
 
 - [ ] All Phase 2 features documented publicly
-- [ ] mkdocs.yml includes all Graphiti guides
+- [x] mkdocs.yml includes all Graphiti guides
 - [ ] Architecture docs include Phase 2 APIs
 - [ ] CLAUDE.md Graphiti content uses progressive disclosure (<100 lines in core)
 - [ ] GitHub Pages site builds successfully

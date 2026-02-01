@@ -110,9 +110,23 @@ nav:
           - MCP Optimization: deep-dives/mcp-integration/mcp-optimization.md
 
   - Knowledge Graph:
-      - Integration Guide: guides/graphiti-integration-guide.md
+      - Overview: guides/graphiti-integration-guide.md
       - Setup: setup/graphiti-setup.md
       - Architecture: architecture/graphiti-architecture.md
+      - Commands:
+          - CLI Reference: guides/graphiti-commands.md
+          - Add Context: guides/graphiti-add-context.md
+          - Query Commands: guides/graphiti-query-commands.md
+      - Features:
+          - Interactive Capture: guides/graphiti-knowledge-capture.md
+          - Job-Specific Context: guides/graphiti-job-context.md
+          - Project Namespaces: guides/graphiti-project-namespaces.md
+      - Reference:
+          - Parsers: guides/graphiti-parsers.md
+          - Turn State Tracking: guides/graphiti-turn-states.md
+          - Relevance Tuning: guides/relevance-tuning-testing.md
+          - Testing & Validation: guides/graphiti-testing-validation.md
+          - Troubleshooting: guides/graphiti-context-troubleshooting.md
 
 
 # ============================================================================
