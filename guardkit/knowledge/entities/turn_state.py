@@ -88,6 +88,8 @@ class TurnStateEntity:
         acceptance_criteria_status: Status of each acceptance criterion
             Format: {"criterion_1": "completed", "criterion_2": "in_progress"}
 
+        files_modified: List of files created or modified during this turn
+
         tests_passed: Number of tests that passed
         tests_failed: Number of tests that failed
         coverage: Test coverage percentage (0-100)
@@ -148,6 +150,9 @@ class TurnStateEntity:
     acceptance_criteria_status: Dict[str, str] = field(default_factory=dict)
     # Format: {"criterion_1": "completed", "criterion_2": "in_progress", "criterion_3": "not_started"}
 
+    # Files modified during this turn
+    files_modified: List[str] = field(default_factory=list)
+
     # Quality metrics (optional)
     tests_passed: Optional[int] = None
     tests_failed: Optional[int] = None
@@ -188,6 +193,7 @@ class TurnStateEntity:
             "blockers_found": self.blockers_found,
             "progress_summary": self.progress_summary,
             "acceptance_criteria_status": self.acceptance_criteria_status,
+            "files_modified": self.files_modified,
             "tests_passed": self.tests_passed,
             "tests_failed": self.tests_failed,
             "coverage": self.coverage,

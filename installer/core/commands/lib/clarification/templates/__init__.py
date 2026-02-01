@@ -4,6 +4,7 @@ This package contains question templates for different clarification contexts:
 - review_scope: Questions for task-review scope clarification (Context A)
 - implementation_prefs: Questions for implementation preferences (Context B)
 - implementation_planning: Templates for implementation planning (Context C)
+- autobuild_workflow: Questions for AutoBuild workflow customization (Context D)
 """
 
 from .review_scope import (
@@ -28,6 +29,12 @@ from .implementation_planning import (
     TRADEOFF_QUESTIONS,
     EDGE_CASE_QUESTIONS,
 )
+from .autobuild_workflow import (
+    ROLE_CUSTOMIZATION_QUESTIONS,
+    QUALITY_GATE_QUESTIONS,
+    WORKFLOW_PREFERENCE_QUESTIONS,
+    get_group_id_for_category,
+)
 
 __all__ = [
     # Context A: Review Scope
@@ -49,4 +56,9 @@ __all__ = [
     "INTEGRATION_QUESTIONS",
     "TRADEOFF_QUESTIONS",
     "EDGE_CASE_QUESTIONS",
+    # Context D: AutoBuild Workflow Customization
+    "ROLE_CUSTOMIZATION_QUESTIONS",
+    "QUALITY_GATE_QUESTIONS",
+    "WORKFLOW_PREFERENCE_QUESTIONS",
+    "get_group_id_for_category",
 ]

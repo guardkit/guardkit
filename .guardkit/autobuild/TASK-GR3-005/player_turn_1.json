@@ -1,0 +1,30 @@
+{
+  "task_id": "TASK-GR3-005",
+  "turn": 1,
+  "files_modified": [
+    "installer/core/commands/feature-plan.md"
+  ],
+  "files_created": [
+    "tests/unit/commands/test_feature_plan_cli_context.py",
+    "tests/integration/test_feature_plan_context_option.py",
+    "docs/features/feature-plan-context-option.md"
+  ],
+  "tests_written": [
+    "tests/unit/commands/test_feature_plan_cli_context.py",
+    "tests/integration/test_feature_plan_context_option.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "All 35 tests passed (14 new CLI context tests + 20 existing integration tests + 1 E2E test). Coverage: 100% for feature_plan_integration.py",
+  "implementation_notes": "Added --context CLI option to /feature-plan command. The implementation leverages existing context_files parameter in FeaturePlanIntegration.build_enriched_prompt(). Updated feature-plan.md documentation with new flag, usage examples, and dedicated section explaining the --context option. Created comprehensive test suite covering all acceptance criteria.",
+  "concerns": [],
+  "requirements_addressed": [
+    "AC-001: --context path/to/spec.md seeds specified file",
+    "AC-002: Multiple --context flags supported",
+    "AC-003: Works alongside auto-detection",
+    "AC-004: Help text documents usage"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "success": true
+}

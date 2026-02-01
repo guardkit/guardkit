@@ -7,6 +7,7 @@ Modules:
 - review_generator: Generates questions for task-review scope clarification (Context A)
 - implement_generator: Generates questions for implementation preferences (Context B)
 - planning_generator: Generates questions for implementation planning (Context C)
+- autobuild_generator: Generates questions for AutoBuild workflow customization (Context D)
 """
 
 from .review_generator import (
@@ -21,6 +22,10 @@ from .implement_generator import (
     customize_question_text,
 )
 from .planning_generator import generate_planning_questions
+from .autobuild_generator import (
+    generate_autobuild_questions,
+    detect_autobuild_context,
+)
 
 __all__ = [
     # Context A: Review Scope
@@ -34,4 +39,7 @@ __all__ = [
     "customize_question_text",
     # Context C: Implementation Planning
     "generate_planning_questions",
+    # Context D: AutoBuild Workflow Customization
+    "generate_autobuild_questions",
+    "detect_autobuild_context",
 ]

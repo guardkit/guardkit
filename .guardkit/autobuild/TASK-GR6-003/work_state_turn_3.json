@@ -1,0 +1,38 @@
+{
+  "turn_number": 3,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-GR6-003/checkpoints.json",
+    ".guardkit/autobuild/TASK-GR6-003/task_work_results.json",
+    ".guardkit/autobuild/TASK-GR6-003/turn_context.json"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-02-01T15:43:22.451684",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [
+      ".guardkit/autobuild/TASK-GR6-003/checkpoints.json",
+      ".guardkit/autobuild/TASK-GR6-003/task_work_results.json",
+      ".guardkit/autobuild/TASK-GR6-003/turn_context.json"
+    ],
+    "files_added": [],
+    "files_deleted": [],
+    "diff_stats": ".guardkit/autobuild/TASK-GR6-003/checkpoints.json       | 10 +++++++++-\n .guardkit/autobuild/TASK-GR6-003/task_work_results.json |  2 +-\n .guardkit/autobuild/TASK-GR6-003/turn_context.json      |  4 ++--\n 3 files changed, 12 insertions(+), 4 deletions(-)",
+    "insertions": 12,
+    "deletions": 4,
+    "timestamp": "2026-02-01T15:43:19.481184"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0F4A\nconfigfile: pytest.ini\ntestpaths: tests\nplugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 8679 items / 14 errors\n\n===============",
+    "timestamp": "2026-02-01T15:43:22.451328",
+    "error": null
+  },
+  "player_report_available": false
+}

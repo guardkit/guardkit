@@ -1,0 +1,28 @@
+{
+  "task_id": "TASK-GR5-004",
+  "turn": 1,
+  "files_modified": [
+    "guardkit/cli/graphiti.py"
+  ],
+  "files_created": [
+    "tests/unit/cli/test_graphiti_status.py"
+  ],
+  "tests_written": [
+    "tests/unit/cli/test_graphiti_status.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "All 13 tests passed successfully. Test coverage includes: disabled status display, enabled status with episode counts, verbose mode, error handling (connection failure, health check failure, search exceptions), colored indicators, and end-to-end integration tests.",
+  "implementation_notes": "Enhanced the existing `guardkit graphiti status` command to show knowledge graph health and statistics. The implementation includes:\n\n1. **Enhanced CLI Command**: Updated the `status` command to accept a `--verbose` flag that shows all groups even if empty.\n\n2. **Knowledge Graph Statistics**: Modified `_cmd_status()` to query Graphiti for episode counts across four main categories:\n   - System Knowledge (product_knowledge, command_workflows, patterns, agents)\n   - Project Knowledge (project_overview, project_architecture, feature_specs)\n   - Decisions (project_decisions, architecture_decisions)\n   - Learning (task_outcomes, failure_patterns, successful_fixes)\n\n3. **Colored Status Indicators**: Implemented color-coded output:\n   - Green for ENABLED status and groups with episodes (count > 0)\n   - Red for DISABLED status\n   - Yellow for degraded health and empty groups (count = 0 in verbose mode)\n\n4. **Verbose Mode**: By default, only groups with episodes are shown. With `--verbose`, all groups are displayed including empty ones.\n\n5. **Error Handling**: Graceful degradation for:\n   - Graphiti disabled\n   - Connection failures\n   - Health check failures\n   - Search exceptions\n\n6. **Output Format**: Followed the spec from FEAT-GR-005 with a boxed header and organized category sections showing episode counts.\n\nThe implementation reuses the existing GraphitiClient.search() method with a wildcard query to count episodes per group.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Shows enabled/disabled status",
+    "Counts episodes per category (System, Project, Decisions, Learning)",
+    "--verbose shows all groups even if empty",
+    "Total episode count",
+    "Colored status indicators (green/yellow/red)"
+  ],
+  "requirements_remaining": [],
+  "implementation_mode": "direct",
+  "success": true
+}

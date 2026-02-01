@@ -546,29 +546,45 @@ async def load_role_context(role: str, context: str = "feature-build") -> Option
             logger.debug(f"Malformed role constraint result for: {role}")
             return None
 
-        # Format as markdown
+        # Format as markdown with emoji markers
         role_upper = role.upper()
         lines = []
-        lines.append(f"# {role_upper} Role Constraints")
+
+        # Add emphasis for AutoBuild contexts
+        is_autobuild = context == "autobuild"
+        if is_autobuild:
+            lines.append(f"# ⚠️ {role_upper} Role Constraints (CRITICAL)")
+        else:
+            lines.append(f"# {role_upper} Role Constraints")
         lines.append("")
 
         # Primary responsibility
         if "primary_responsibility" in body:
-            lines.append(f"**Primary responsibility**: {body['primary_responsibility']}")
+            if is_autobuild:
+                lines.append(f"**Primary responsibility**: **{body['primary_responsibility']}**")
+            else:
+                lines.append(f"**Primary responsibility**: {body['primary_responsibility']}")
             lines.append("")
 
-        # MUST DO section
+        # MUST DO section with ✓ emoji
         if "must_do" in body and body["must_do"]:
             lines.append("## MUST DO")
             for item in body["must_do"]:
-                lines.append(f"- {item}")
+                lines.append(f"✓ {item}")
             lines.append("")
 
-        # MUST NOT DO section
+        # MUST NOT DO section with ✗ emoji
         if "must_not_do" in body and body["must_not_do"]:
             lines.append("## MUST NOT DO")
             for item in body["must_not_do"]:
-                lines.append(f"- {item}")
+                lines.append(f"✗ {item}")
+            lines.append("")
+
+        # ASK BEFORE section with ❓ emoji (TASK-GR6-007)
+        if "ask_before" in body and body["ask_before"]:
+            lines.append("## ASK BEFORE")
+            for item in body["ask_before"]:
+                lines.append(f"❓ {item}")
             lines.append("")
 
         return "\n".join(lines)

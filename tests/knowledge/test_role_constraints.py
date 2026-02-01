@@ -832,3 +832,360 @@ class TestEdgeCases:
         # This tests that the dataclass structure is sensible
         assert fact1.role == fact2.role
         assert fact1.context == fact2.context
+
+
+# ============================================================================
+# 7. Enhanced Role Constraints Formatting Tests (TASK-GR6-007)
+# ============================================================================
+
+class TestEnhancedRoleConstraintsFormatting:
+    """Test enhanced formatting with emoji markers and AutoBuild emphasis."""
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_includes_emoji_markers_must_do(self):
+        """Test that must_do items have ✓ emoji markers."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code', 'Create tests'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Add dependencies']
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Must_do items should have ✓ emoji
+            assert "✓ Write code" in result or "✓" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_includes_emoji_markers_must_not_do(self):
+        """Test that must_not_do items have ✗ emoji markers."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work', 'Skip tests'],
+                    'ask_before': ['Add dependencies']
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Must_not_do items should have ✗ emoji
+            assert "✗ Approve work" in result or "✗" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_includes_ask_before_section(self):
+        """Test that ask_before section is included in output."""
+        ask_before = ['Schema changes', 'Auth changes', 'Scope changes']
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ask_before
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Ask_before section should be present
+            assert "ASK BEFORE" in result or "Ask before" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_includes_emoji_markers_ask_before(self):
+        """Test that ask_before items have ❓ emoji markers."""
+        ask_before = ['Schema changes', 'Auth changes']
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ask_before
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Ask_before items should have ❓ emoji
+            assert "❓ Schema changes" in result or "❓" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_all_ask_before_items_included(self):
+        """Test that all ask_before items are included in output."""
+        ask_before = ['Schema changes', 'Auth changes', 'Scope changes']
+
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ask_before
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # All items should be present
+            for item in ask_before:
+                assert item in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_autobuild_emphasis(self):
+        """Test that AutoBuild context has emphasis indicators."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Add dependencies']
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            # When context is autobuild, should have emphasis
+            result = await load_role_context("player", "autobuild")
+
+            # Should include emphasis indicator for autobuild
+            assert result is not None
+            # AutoBuild contexts should have stronger emphasis (⚠️ or bold)
+            assert "⚠️" in result or "**" in result or "CRITICAL" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_feature_build_no_extra_emphasis(self):
+        """Test that feature-build context has standard formatting."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Add dependencies']
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            # feature-build is standard, should have normal formatting
+            result = await load_role_context("player", "feature-build")
+
+            assert result is not None
+            # Should have role constraints header
+            assert "PLAYER Role Constraints" in result
+
+    @pytest.mark.asyncio
+    async def test_load_role_context_empty_ask_before_no_section(self):
+        """Test that empty ask_before list doesn't produce empty section."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': []  # Empty list
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Empty ask_before should not produce ASK BEFORE header with no items
+            if "ASK BEFORE" in result:
+                # If header exists, there should be items after it
+                lines = result.split('\n')
+                for i, line in enumerate(lines):
+                    if "ASK BEFORE" in line:
+                        # Next non-empty line should have ❓
+                        for next_line in lines[i+1:]:
+                            if next_line.strip():
+                                assert "❓" in next_line or next_line.startswith("#")
+                                break
+
+    @pytest.mark.asyncio
+    async def test_format_role_constraints_expected_output_format(self):
+        """Test that output matches the expected format from acceptance criteria."""
+        mock_graphiti = AsyncMock()
+        mock_graphiti.enabled = True
+        mock_graphiti.search = AsyncMock(return_value=[
+            {
+                'body': {
+                    'role': 'player',
+                    'primary_responsibility': 'Implement code',
+                    'must_do': ['Implement code', 'Write tests'],
+                    'must_not_do': ['Validate quality gates', 'Make architectural decisions'],
+                    'ask_before': ['Schema changes', 'Auth changes']
+                }
+            }
+        ])
+
+        with patch('guardkit.knowledge.context_loader.get_graphiti', return_value=mock_graphiti):
+            result = await load_role_context("player", "feature-build")
+
+            # Verify structure matches acceptance criteria format:
+            # ### Role Constraints
+            # **Player**:
+            #   Must do:
+            #     ✓ Implement code
+            #     ✓ Write tests
+            #   Must NOT do:
+            #     ✗ Validate quality gates
+            #     ✗ Make architectural decisions
+            #   Ask before:
+            #     ❓ Schema changes
+            #     ❓ Auth changes
+
+            assert "Role Constraints" in result or "PLAYER Role Constraints" in result
+            assert "✓" in result
+            assert "✗" in result
+            assert "❓" in result
+
+
+# ============================================================================
+# 8. FeaturePlanContext Enhanced Formatting Tests (TASK-GR6-007)
+# ============================================================================
+
+class TestFeaturePlanContextEnhancedFormatting:
+    """Test FeaturePlanContext._format_role_constraints() enhancement."""
+
+    def test_format_role_constraints_includes_ask_before(self):
+        """Test that _format_role_constraints includes ask_before items."""
+        from guardkit.knowledge.feature_plan_context import FeaturePlanContext
+
+        context = FeaturePlanContext(
+            feature_spec={"id": "FEAT-001"},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            role_constraints=[
+                {
+                    'role': 'player',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Schema changes', 'Auth changes']
+                }
+            ]
+        )
+
+        result = context._format_role_constraints()
+
+        # Should include ask_before items
+        assert "Schema changes" in result
+        assert "Auth changes" in result
+
+    def test_format_role_constraints_ask_before_has_emoji(self):
+        """Test that ask_before items have ❓ emoji in FeaturePlanContext."""
+        from guardkit.knowledge.feature_plan_context import FeaturePlanContext
+
+        context = FeaturePlanContext(
+            feature_spec={"id": "FEAT-001"},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            role_constraints=[
+                {
+                    'role': 'player',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Schema changes']
+                }
+            ]
+        )
+
+        result = context._format_role_constraints()
+
+        # Should have ❓ emoji for ask_before
+        assert "❓" in result
+
+    def test_format_role_constraints_all_emojis_present(self):
+        """Test that all three emoji types are present in formatted output."""
+        from guardkit.knowledge.feature_plan_context import FeaturePlanContext
+
+        context = FeaturePlanContext(
+            feature_spec={"id": "FEAT-001"},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            role_constraints=[
+                {
+                    'role': 'player',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work'],
+                    'ask_before': ['Schema changes']
+                }
+            ]
+        )
+
+        result = context._format_role_constraints()
+
+        # All three emoji types should be present
+        assert "✓" in result, "Missing ✓ emoji for must_do"
+        assert "✗" in result, "Missing ✗ emoji for must_not_do"
+        assert "❓" in result, "Missing ❓ emoji for ask_before"
+
+    def test_format_role_constraints_handles_missing_ask_before(self):
+        """Test that missing ask_before key is handled gracefully."""
+        from guardkit.knowledge.feature_plan_context import FeaturePlanContext
+
+        context = FeaturePlanContext(
+            feature_spec={"id": "FEAT-001"},
+            related_features=[],
+            relevant_patterns=[],
+            similar_implementations=[],
+            project_architecture={},
+            warnings=[],
+            role_constraints=[
+                {
+                    'role': 'player',
+                    'must_do': ['Write code'],
+                    'must_not_do': ['Approve work']
+                    # No ask_before key
+                }
+            ]
+        )
+
+        # Should not raise exception
+        result = context._format_role_constraints()
+        assert isinstance(result, str)

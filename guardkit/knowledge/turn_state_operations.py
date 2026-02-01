@@ -9,6 +9,7 @@ structured turn data from Graphiti.
 Public API:
     capture_turn_state: Store turn state in Graphiti
     load_turn_continuation_context: Load previous turn summary for context
+    load_turn_context: Load context from previous turns for cross-turn learning
 
 Example:
     from guardkit.knowledge.turn_state_operations import (
@@ -99,8 +100,9 @@ async def capture_turn_state(
         episode_body = entity.to_episode_body()
         content = json.dumps(episode_body)
 
-        # Generate episode name with task_id and turn number
-        episode_name = f"turn_state_{entity.task_id}_turn_{entity.turn_number}"
+        # Generate episode name matching acceptance criteria format:
+        # turn_{feature_id}_{task_id}_turn{N}
+        episode_name = f"turn_{entity.feature_id}_{entity.task_id}_turn{entity.turn_number}"
 
         # Add episode to Graphiti
         await graphiti_client.add_episode(
@@ -245,6 +247,91 @@ async def load_turn_continuation_context(
         return None
 
 
+async def load_turn_context(feature_id: str, task_id: str) -> str:
+    """Load context from previous turns for cross-turn learning.
+
+    Queries Graphiti for the last 5 turns and formats them as context
+    for the current turn. Emphasizes feedback from the last turn if it
+    was REJECTED, to ensure the Player addresses the Coach's concerns.
+
+    Args:
+        feature_id: Feature identifier (e.g., "FEAT-GE")
+        task_id: Task identifier (e.g., "TASK-GE-001")
+
+    Returns:
+        Formatted string with previous turn summary, or
+        "First turn - no previous context." if:
+        - No previous turns exist
+        - Graphiti is unavailable or disabled
+        - An error occurs during retrieval
+
+    Example:
+        from guardkit.knowledge.turn_state_operations import load_turn_context
+
+        context = await load_turn_context(
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001"
+        )
+
+        # Result (if previous turns exist):
+        # Previous Turn Summary:
+        #   Turn 1: FEEDBACK - Initial implementation incomplete
+        #   Turn 2: REJECTED - Tests failing, coverage at 65%
+        #
+        # Last Turn Feedback (MUST ADDRESS):
+        # Missing error handling and validation logic
+    """
+    # Get Graphiti client
+    graphiti_client = get_graphiti()
+
+    # Graceful degradation: return first turn message if client is None
+    if graphiti_client is None:
+        logger.debug("Graphiti client is None, returning first turn message")
+        return "First turn - no previous context."
+
+    # Graceful degradation: return first turn message if client is disabled
+    if not graphiti_client.enabled:
+        logger.debug("Graphiti is disabled, returning first turn message")
+        return "First turn - no previous context."
+
+    try:
+        # Query for last 5 turns
+        query = f"turn {feature_id} {task_id}"
+
+        results = await graphiti_client.search(
+            query=query,
+            group_ids=["turn_states"],
+            num_results=5
+        )
+
+        if not results:
+            return "First turn - no previous context."
+
+        # Sort results by turn_number
+        sorted_results = sorted(results, key=lambda r: r.get("turn_number", 0))
+
+        # Format as context string
+        context_lines = ["Previous Turn Summary:"]
+        for turn in sorted_results:
+            turn_num = turn.get("turn_number", "?")
+            decision = turn.get("coach_decision", "?")
+            summary = turn.get("progress_summary", "")[:100]  # Truncate to 100 chars
+            context_lines.append(f"  Turn {turn_num}: {decision} - {summary}")
+
+        # Include last turn's feedback if rejected
+        last_turn = sorted_results[-1]
+        if last_turn.get("coach_decision") == "REJECTED":
+            feedback = last_turn.get("feedback_summary", "")
+            if feedback:
+                context_lines.append(f"\nLast Turn Feedback (MUST ADDRESS):\n{feedback}")
+
+        return "\n".join(context_lines)
+
+    except Exception as e:
+        logger.warning(f"Error loading turn context: {e}")
+        return "First turn - no previous context."
+
+
 def create_turn_state_from_autobuild(
     feature_id: str,
     task_id: str,
@@ -257,6 +344,7 @@ def create_turn_state_from_autobuild(
     blockers_found: Optional[List[str]] = None,
     progress_summary: str = "",
     acceptance_criteria_status: Optional[Dict[str, str]] = None,
+    files_modified: Optional[List[str]] = None,
     tests_passed: Optional[int] = None,
     tests_failed: Optional[int] = None,
     coverage: Optional[float] = None,
@@ -285,6 +373,7 @@ def create_turn_state_from_autobuild(
         blockers_found: List of blockers (default: empty list)
         progress_summary: Brief progress description
         acceptance_criteria_status: AC status dict (default: empty)
+        files_modified: List of files created/modified (default: empty list)
         tests_passed: Number of tests passed
         tests_failed: Number of tests failed
         coverage: Test coverage percentage
@@ -336,6 +425,7 @@ def create_turn_state_from_autobuild(
         blockers_found=blockers_found or [],
         progress_summary=progress_summary,
         acceptance_criteria_status=acceptance_criteria_status or {},
+        files_modified=files_modified or [],
         tests_passed=tests_passed,
         tests_failed=tests_failed,
         coverage=coverage,

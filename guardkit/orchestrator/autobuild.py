@@ -117,6 +117,9 @@ from guardkit.knowledge.turn_state_operations import (
 from guardkit.knowledge.entities.turn_state import TurnMode
 from guardkit.knowledge.graphiti_client import get_graphiti
 
+# Import AutoBuild context loader for job-specific context (TASK-GR6-006)
+from guardkit.knowledge.autobuild_context_loader import AutoBuildContextLoader
+
 # Setup logging
 logger = logging.getLogger(__name__)
 
@@ -355,6 +358,9 @@ class AutoBuildOrchestrator:
         enable_checkpoints: bool = True,
         rollback_on_pollution: bool = True,
         ablation_mode: bool = False,
+        enable_context: bool = True,
+        verbose: bool = False,
+        context_loader: Optional[AutoBuildContextLoader] = None,
     ):
         """
         Initialize AutoBuildOrchestrator.
@@ -405,6 +411,15 @@ class AutoBuildOrchestrator:
         rollback_on_pollution : bool, optional
             Automatically rollback when context pollution detected (default: True).
             Triggers on 2+ consecutive test failures.
+        enable_context : bool, optional
+            Enable job-specific context retrieval from Graphiti (default: True).
+            When enabled, retrieves role_constraints, quality_gates, and turn_states
+            for Player and Coach turns (TASK-GR6-006).
+        verbose : bool, optional
+            Include detailed context information in output (default: False).
+            When enabled, shows budget usage and category details.
+        context_loader : Optional[AutoBuildContextLoader], optional
+            Optional AutoBuildContextLoader for DI/testing.
 
         Raises
         ------
@@ -449,6 +464,12 @@ class AutoBuildOrchestrator:
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
         self.recovery_count: int = 0  # Track number of state recovery attempts
 
+        # Context retrieval settings (TASK-GR6-006)
+        self.enable_context = enable_context
+        self.verbose = verbose
+        self._context_loader = context_loader
+        self._feature_id: Optional[str] = None  # Set during orchestration from task metadata
+
         # Log warning if ablation mode is active
         if self.ablation_mode:
             logger.warning(
@@ -476,7 +497,9 @@ class AutoBuildOrchestrator:
             f"enable_checkpoints={self.enable_checkpoints}, "
             f"rollback_on_pollution={self.rollback_on_pollution}, "
             f"ablation_mode={self.ablation_mode}, "
-            f"existing_worktree={'provided' if existing_worktree else 'None'}"
+            f"existing_worktree={'provided' if existing_worktree else 'None'}, "
+            f"enable_context={self.enable_context}, "
+            f"verbose={self.verbose}"
         )
 
     def orchestrate(
@@ -961,7 +984,7 @@ class AutoBuildOrchestrator:
                 self._turn_history = turn_history  # Keep internal copy for state
 
                 # Capture turn state for cross-turn learning (TASK-GE-002)
-                self._capture_turn_state(turn_record, acceptance_criteria)
+                self._capture_turn_state(turn_record, acceptance_criteria, task_id=task_id)
 
                 # Record honesty score from Coach's verification
                 self._record_honesty(turn_record)
@@ -1573,6 +1596,7 @@ class AutoBuildOrchestrator:
         turn_record: TurnRecord,
         acceptance_criteria: List[str],
         start_time: Optional[datetime] = None,
+        task_id: Optional[str] = None,
     ) -> None:
         """
         Capture turn state to Graphiti for cross-turn learning (TASK-GE-002).
@@ -1588,6 +1612,8 @@ class AutoBuildOrchestrator:
             Acceptance criteria for tracking progress
         start_time : Optional[datetime]
             Turn start time (defaults to now - duration if not provided)
+        task_id : Optional[str]
+            Task identifier for this turn (TASK-GR5-007)
 
         Notes
         -----
@@ -1602,9 +1628,11 @@ class AutoBuildOrchestrator:
         Graphiti is unavailable, execution continues without blocking.
         """
         try:
+            # Use passed task_id or default to "unknown"
+            current_task_id = task_id or "unknown"
             # Extract feature_id from task_id (e.g., TASK-GE-001 -> FEAT-GE)
             # or use a default if extraction fails
-            feature_id = self._extract_feature_id(self._current_task_id or "unknown")
+            feature_id = self._extract_feature_id(current_task_id)
 
             # Determine turn mode
             if turn_record.turn == 1:
@@ -1627,6 +1655,17 @@ class AutoBuildOrchestrator:
                 blockers = turn_record.player_result.report.get("blockers", [])
                 if isinstance(blockers, list):
                     blockers_found = blockers
+
+            # Extract files_modified from Player report (TASK-GR5-007)
+            files_modified = []
+            if turn_record.player_result and turn_record.player_result.report:
+                modified = turn_record.player_result.report.get("files_modified", [])
+                created = turn_record.player_result.report.get("files_created", [])
+                # Combine both modified and created files
+                if isinstance(modified, list):
+                    files_modified.extend(modified)
+                if isinstance(created, list):
+                    files_modified.extend(created)
 
             # Extract lessons and next steps from Coach feedback
             lessons = []
@@ -1684,7 +1723,7 @@ class AutoBuildOrchestrator:
             # Create turn state entity
             entity = create_turn_state_from_autobuild(
                 feature_id=feature_id,
-                task_id=self._current_task_id or "unknown",
+                task_id=current_task_id,
                 turn_number=turn_record.turn,
                 player_summary=player_summary,
                 player_decision=turn_record.decision if turn_record.decision != "error" else "failed",
@@ -1694,6 +1733,7 @@ class AutoBuildOrchestrator:
                 blockers_found=blockers_found,
                 progress_summary=f"Turn {turn_record.turn}: {turn_record.decision}",
                 acceptance_criteria_status=ac_status,
+                files_modified=files_modified,  # TASK-GR5-007: Track files modified
                 tests_passed=tests_passed,
                 tests_failed=tests_failed,
                 coverage=coverage,
@@ -1937,6 +1977,11 @@ class AutoBuildOrchestrator:
         in the result's error field.
 
         Passes max_turns to enable escape hatch pattern when approaching limit.
+
+        Context Retrieval (TASK-GR6-006):
+        When enable_context=True, retrieves job-specific context from Graphiti
+        including role_constraints, quality_gates, turn_states, and more.
+        Context is formatted as prompt text and passed to the Player agent.
         """
         try:
             # AgentInvoker.invoke_player is actually synchronous despite the
@@ -1950,6 +1995,37 @@ class AutoBuildOrchestrator:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
+            # Retrieve job-specific context if enabled (TASK-GR6-006)
+            context_prompt = ""
+            if self.enable_context and self._context_loader is not None:
+                try:
+                    context_result = loop.run_until_complete(
+                        self._context_loader.get_player_context(
+                            task_id=task_id,
+                            feature_id=self._feature_id or "",
+                            turn_number=turn,
+                            description=requirements,
+                            tech_stack="python",  # TODO: Detect from task
+                            complexity=5,  # TODO: Get from task metadata
+                            previous_feedback=feedback,
+                        )
+                    )
+                    context_prompt = context_result.prompt_text
+
+                    # Log verbose details if enabled
+                    if self.verbose and context_result.verbose_details:
+                        logger.info(f"Context retrieval details:\n{context_result.verbose_details}")
+
+                    logger.debug(
+                        f"Retrieved Player context for {task_id} turn {turn}: "
+                        f"{context_result.budget_used}/{context_result.budget_total} tokens, "
+                        f"{len(context_result.categories_populated)} categories"
+                    )
+                except Exception as e:
+                    # Graceful degradation - continue without context
+                    logger.warning(f"Failed to retrieve Player context for {task_id}: {e}")
+                    context_prompt = ""
+
             result = loop.run_until_complete(
                 self._agent_invoker.invoke_player(
                     task_id=task_id,
@@ -1957,6 +2033,7 @@ class AutoBuildOrchestrator:
                     requirements=requirements,
                     feedback=feedback,
                     max_turns=self.max_turns,  # Enable escape hatch pattern
+                    context=context_prompt,  # Pass job-specific context (TASK-GR6-006)
                 )
             )
             return result
@@ -2059,10 +2136,53 @@ class AutoBuildOrchestrator:
         - Runs independent test verification (trust but verify)
         - Validates requirements satisfaction
         - Provides approve/feedback decision
+
+        Context Retrieval (TASK-GR6-006):
+        When enable_context=True, retrieves quality_gate_configs and turn_states
+        from Graphiti to inform Coach validation decisions.
         """
         import time
+        import asyncio
 
         start_time = time.time()
+
+        # Retrieve job-specific context for Coach if enabled (TASK-GR6-006)
+        context_prompt = ""
+        if self.enable_context and self._context_loader is not None:
+            try:
+                # Create event loop if needed
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+
+                context_result = loop.run_until_complete(
+                    self._context_loader.get_coach_context(
+                        task_id=task_id,
+                        feature_id=self._feature_id or "",
+                        turn_number=turn,
+                        description=requirements,
+                        tech_stack="python",  # TODO: Detect from task
+                        complexity=5,  # TODO: Get from task metadata
+                        player_report=player_report,
+                    )
+                )
+                context_prompt = context_result.prompt_text
+
+                # Log verbose details if enabled
+                if self.verbose and context_result.verbose_details:
+                    logger.info(f"Coach context retrieval details:\n{context_result.verbose_details}")
+
+                logger.debug(
+                    f"Retrieved Coach context for {task_id} turn {turn}: "
+                    f"{context_result.budget_used}/{context_result.budget_total} tokens, "
+                    f"{len(context_result.categories_populated)} categories"
+                )
+            except Exception as e:
+                # Graceful degradation - continue without context
+                logger.warning(f"Failed to retrieve Coach context for {task_id}: {e}")
+                context_prompt = ""
 
         # Try lightweight CoachValidator first (Option D architecture)
         try:
