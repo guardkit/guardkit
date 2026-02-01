@@ -1,22 +1,26 @@
 ---
-id: TASK-GR-002-E
-title: Add guardkit graphiti add-context CLI command
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, context-addition, cli, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 8
-conductor_workspace: gr-mvp-wave8-cli
 complexity: 4
+conductor_workspace: gr-mvp-wave8-cli
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-002-B
-  - TASK-GR-002-C
-  - TASK-GR-002-D
+- TASK-GR-002-B
+- TASK-GR-002-C
+- TASK-GR-002-D
+feature_id: FEAT-GR-MVP
+id: TASK-GR-002-E
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- context-addition
+- cli
+- mvp-phase-2
+task_type: feature
+title: Add guardkit graphiti add-context CLI command
+updated: 2026-01-30 00:00:00+00:00
+wave: 8
 ---
 
 # Task: Add guardkit graphiti add-context CLI command

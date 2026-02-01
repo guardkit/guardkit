@@ -5,16 +5,19 @@ Commands:
 - graphiti seed: Seed system context into Graphiti
 - graphiti status: Show Graphiti connection and seeding status
 - graphiti verify: Run test queries to verify seeded knowledge
+- graphiti add-context: Add context from files to Graphiti
 
 Example:
     $ guardkit graphiti seed
     $ guardkit graphiti seed --force
     $ guardkit graphiti status
     $ guardkit graphiti verify
+    $ guardkit graphiti add-context docs/architecture/
 """
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -30,6 +33,7 @@ from guardkit.knowledge.seeding import (
     SEEDING_VERSION,
 )
 from guardkit.knowledge.seed_feature_build_adrs import seed_feature_build_adrs
+from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -405,6 +409,202 @@ def seed_adrs(force: bool):
     Use --force to re-seed even if ADRs have already been seeded.
     """
     asyncio.run(_cmd_seed_adrs(force))
+
+
+@graphiti.command("add-context")
+@click.argument("path")
+@click.option(
+    "--type",
+    "parser_type",
+    default=None,
+    help="Force parser type (adr, feature-spec, project-overview)",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Overwrite existing context",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be added without adding",
+)
+@click.option(
+    "--pattern",
+    default="**/*.md",
+    help="Glob pattern for directory (default: **/*.md)",
+)
+def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str):
+    """Add context from files to Graphiti.
+
+    Adds content from markdown files to the Graphiti knowledge graph.
+    Supports single files or directories with glob patterns.
+
+    \b
+    Examples:
+        guardkit graphiti add-context docs/ADR-001.md
+        guardkit graphiti add-context docs/architecture/
+        guardkit graphiti add-context docs/ --pattern "**/*.md"
+        guardkit graphiti add-context docs/ADR-001.md --type adr
+        guardkit graphiti add-context docs/ --dry-run
+
+    \b
+    Supported parser types:
+        - adr: Architecture Decision Records
+        - feature-spec: Feature specifications
+        - project-overview: Project overview documents
+        - project-doc: General project documentation
+    """
+    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern))
+
+
+async def _cmd_add_context(
+    path: str,
+    parser_type: Optional[str],
+    force: bool,
+    dry_run: bool,
+    pattern: str,
+) -> None:
+    """Async implementation of add-context command."""
+    console.print("[bold blue]Graphiti Add Context[/bold blue]")
+    console.print()
+
+    # Check if path exists
+    target_path = Path(path)
+    if not target_path.exists():
+        console.print(f"[red]Error: Path does not exist: {path}[/red]")
+        raise SystemExit(1)
+
+    # Create client
+    client = GraphitiClient()
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        await client.close()
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Create parser registry
+        registry = ParserRegistry()
+
+        # Collect files to process
+        files_to_process: list[str] = []
+
+        if target_path.is_file():
+            # Use the original path string for single files
+            files_to_process.append(path)
+        elif target_path.is_dir():
+            # Use glob pattern to find files
+            for file_path in target_path.glob(pattern):
+                if file_path.is_file():
+                    files_to_process.append(str(file_path))
+
+        if not files_to_process:
+            console.print(f"[yellow]No files found matching pattern: {pattern}[/yellow]")
+            return
+
+        # Track results
+        total_files = len(files_to_process)
+        files_processed = 0
+        episodes_added = 0
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # Process each file
+        for file_path_str in files_to_process:
+            try:
+                # Read file content
+                with open(file_path_str, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Detect or use specified parser
+                if parser_type:
+                    parser = registry.get_parser(parser_type)
+                    if not parser:
+                        console.print(f"[yellow]No parser for type: {parser_type}[/yellow]")
+                        continue
+                else:
+                    parser = registry.detect_parser(file_path_str, content)
+                    if not parser:
+                        console.print(f"[yellow]No parser found for: {file_path_str} (unsupported)[/yellow]")
+                        continue
+
+                # Parse the file
+                result = parser.parse(content, file_path_str)
+
+                if not result.success:
+                    errors.append(f"{file_path_str}: Parse failed")
+                    for warn in result.warnings:
+                        warnings.append(f"{file_path_str}: {warn}")
+                    continue
+
+                # Add warnings from parsing
+                for warn in result.warnings:
+                    warnings.append(f"{file_path_str}: {warn}")
+
+                # Add episodes to Graphiti (unless dry run)
+                if not dry_run:
+                    for episode in result.episodes:
+                        try:
+                            await client.add_episode(
+                                name=episode.entity_id,
+                                episode_body=episode.content,
+                                group_id=episode.group_id,
+                                metadata=episode.metadata,
+                            )
+                            episodes_added += 1
+                        except Exception as e:
+                            errors.append(f"{file_path_str}: Error adding episode - {e}")
+                else:
+                    # In dry run, just count the episodes that would be added
+                    episodes_added += len(result.episodes)
+
+                files_processed += 1
+                console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
+
+            except Exception as e:
+                errors.append(f"{file_path_str}: Error - {e}")
+
+        console.print()
+
+        # Display summary
+        file_word = "file" if files_processed == 1 else "files"
+        episode_word = "episode" if episodes_added == 1 else "episodes"
+
+        if dry_run:
+            console.print("[bold]Dry run complete - Would add:[/bold]")
+            console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
+        else:
+            console.print("[bold]Summary:[/bold]")
+            console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
+
+        # Display warnings
+        if warnings:
+            console.print()
+            console.print("[yellow]Warnings:[/yellow]")
+            for warn in warnings:
+                console.print(f"  Warning: {warn}")
+
+        # Display errors
+        if errors:
+            console.print()
+            console.print("[red]Errors:[/red]")
+            for err in errors:
+                console.print(f"  Error: {err}")
+
+    finally:
+        await client.close()
 
 
 async def _cmd_clear(
