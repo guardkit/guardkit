@@ -16,27 +16,47 @@ Example:
         RetrievedContext,
     )
     from guardkit.knowledge.task_analyzer import TaskPhase
+    from guardkit.knowledge.relevance_tuning import RelevanceConfig
 
+    # Use default thresholds
     retriever = JobContextRetriever(graphiti_client)
+
+    # Or with custom relevance config
+    config = RelevanceConfig(standard_threshold=0.7)
+    retriever = JobContextRetriever(graphiti_client, relevance_config=config)
+
     context = await retriever.retrieve(
         task={"id": "TASK-001", "description": "Implement auth"},
-        phase=TaskPhase.IMPLEMENT
+        phase=TaskPhase.IMPLEMENT,
+        collect_metrics=True,  # Optional: collect quality metrics
     )
 
     # Use context in prompt
     prompt_text = context.to_prompt()
 
+    # Check quality metrics (if collected)
+    if context.quality_metrics:
+        if context.quality_metrics.is_quality_acceptable():
+            print("Good quality context retrieved")
+
 References:
     - TASK-GR6-003: Implement JobContextRetriever
+    - TASK-GR6-011: Add relevance tuning
     - FEAT-GR-006: Job-Specific Context Retrieval
 """
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from .task_analyzer import TaskAnalyzer, TaskPhase, TaskCharacteristics
 from .budget_calculator import DynamicBudgetCalculator, ContextBudget
+from .relevance_tuning import (
+    RelevanceConfig,
+    ContextQualityMetrics,
+    MetricsCollector,
+    default_config,
+)
 
 
 @dataclass
@@ -44,7 +64,7 @@ class RetrievedContext:
     """Retrieved context data from Graphiti.
 
     Contains task-specific context organized by category, along with
-    budget tracking information.
+    budget tracking information and optional quality metrics.
 
     Attributes:
         task_id: Task identifier
@@ -60,6 +80,7 @@ class RetrievedContext:
         quality_gate_configs: AutoBuild quality gate config items
         turn_states: AutoBuild turn state items
         implementation_modes: AutoBuild implementation mode items
+        quality_metrics: Optional quality metrics for the retrieval (TASK-GR6-011)
 
     Example:
         context = RetrievedContext(
@@ -75,6 +96,11 @@ class RetrievedContext:
         )
 
         prompt = context.to_prompt()
+
+        # Check quality metrics if collected
+        if context.quality_metrics:
+            if context.quality_metrics.is_quality_acceptable():
+                print("Good quality context")
     """
 
     task_id: str
@@ -90,6 +116,7 @@ class RetrievedContext:
     quality_gate_configs: List[Dict[str, Any]] = field(default_factory=list)
     turn_states: List[Dict[str, Any]] = field(default_factory=list)
     implementation_modes: List[Dict[str, Any]] = field(default_factory=list)
+    quality_metrics: Optional[ContextQualityMetrics] = None
 
     def to_prompt(self) -> str:
         """Format retrieved context as a prompt string.
@@ -262,16 +289,27 @@ class JobContextRetriever:
     It then queries Graphiti for each context category, filters by relevance,
     and trims results to fit the budget.
 
+    Supports configurable relevance thresholds via RelevanceConfig (TASK-GR6-011)
+    and optional quality metrics collection.
+
     Attributes:
         graphiti: GraphitiClient instance for querying knowledge graph
+        relevance_config: Configuration for relevance thresholds (optional)
 
     Example:
         from guardkit.knowledge import get_graphiti
         from guardkit.knowledge.job_context_retriever import JobContextRetriever
         from guardkit.knowledge.task_analyzer import TaskPhase
+        from guardkit.knowledge.relevance_tuning import RelevanceConfig
 
         graphiti = await get_graphiti()
+
+        # Default thresholds
         retriever = JobContextRetriever(graphiti)
+
+        # Custom thresholds
+        config = RelevanceConfig(standard_threshold=0.7)
+        retriever = JobContextRetriever(graphiti, relevance_config=config)
 
         task = {
             "id": "TASK-001",
@@ -280,31 +318,46 @@ class JobContextRetriever:
             "complexity": 6,
         }
 
-        context = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
+        context = await retriever.retrieve(
+            task,
+            TaskPhase.IMPLEMENT,
+            collect_metrics=True,
+        )
 
         if context.feature_context:
             print(f"Found {len(context.feature_context)} feature items")
+
+        if context.quality_metrics:
+            print(f"Quality: {context.quality_metrics.is_quality_acceptable()}")
     """
 
-    # Relevance thresholds
+    # Legacy relevance thresholds (kept for backwards compatibility)
     FIRST_OF_TYPE_THRESHOLD = 0.5
     STANDARD_THRESHOLD = 0.6
 
     # Characters per token estimation (conservative estimate for JSON structures)
     CHARS_PER_TOKEN = 2
 
-    def __init__(self, graphiti: Any) -> None:
+    def __init__(
+        self,
+        graphiti: Any,
+        relevance_config: Optional[RelevanceConfig] = None,
+    ) -> None:
         """Initialize JobContextRetriever with Graphiti client.
 
         Args:
             graphiti: GraphitiClient instance for knowledge graph queries
+            relevance_config: Optional RelevanceConfig for custom thresholds.
+                If not provided, default thresholds are used.
         """
         self.graphiti = graphiti
+        self.relevance_config = relevance_config or default_config()
 
     async def retrieve(
         self,
         task: Dict[str, Any],
         phase: TaskPhase,
+        collect_metrics: bool = False,
     ) -> RetrievedContext:
         """Retrieve job-specific context for a task.
 
@@ -315,13 +368,22 @@ class JobContextRetriever:
         Args:
             task: Task dictionary with fields like id, description, tech_stack
             phase: Current execution phase (TaskPhase enum)
+            collect_metrics: If True, collect quality metrics (TASK-GR6-011)
 
         Returns:
-            RetrievedContext with all retrieved context organized by category
+            RetrievedContext with all retrieved context organized by category.
+            If collect_metrics=True, includes quality_metrics attribute.
 
         Example:
             context = await retriever.retrieve(task, TaskPhase.IMPLEMENT)
             print(f"Retrieved {context.budget_used} tokens of context")
+
+            # With quality metrics
+            context = await retriever.retrieve(
+                task, TaskPhase.IMPLEMENT, collect_metrics=True
+            )
+            if context.quality_metrics.is_quality_acceptable():
+                print("Good quality context")
         """
         # Analyze task characteristics
         analyzer = TaskAnalyzer(self.graphiti)
@@ -332,7 +394,6 @@ class JobContextRetriever:
         try:
             budget = calculator.calculate(characteristics)
             # Access characteristics fields (validates they're real)
-            is_first = characteristics.is_first_of_type
             description = characteristics.description
             tech_stack = characteristics.tech_stack
         except (TypeError, AttributeError):
@@ -347,16 +408,31 @@ class JobContextRetriever:
                 warnings=0.15,
                 domain_knowledge=0.05,
             )
-            is_first = False
             description = task.get("description", "")
             tech_stack = task.get("tech_stack", "python")
 
-        # Determine relevance threshold
-        threshold = (
-            self.FIRST_OF_TYPE_THRESHOLD
-            if is_first
-            else self.STANDARD_THRESHOLD
-        )
+        # Determine relevance threshold using RelevanceConfig (TASK-GR6-011)
+        try:
+            threshold = self.relevance_config.get_threshold(characteristics)
+        except (TypeError, AttributeError):
+            # Fallback for mocked characteristics
+            threshold = self.relevance_config.standard_threshold
+
+        # Initialize metrics collector if requested
+        metrics_collector: Optional[MetricsCollector] = None
+        if collect_metrics:
+            metrics_collector = MetricsCollector(
+                threshold=threshold,
+                total_budget=budget.total_tokens,
+                budget_per_category={
+                    "feature_context": budget.get_allocation("feature_context"),
+                    "similar_outcomes": budget.get_allocation("similar_outcomes"),
+                    "relevant_patterns": budget.get_allocation("relevant_patterns"),
+                    "architecture_context": budget.get_allocation("architecture_context"),
+                    "warnings": budget.get_allocation("warnings"),
+                    "domain_knowledge": budget.get_allocation("domain_knowledge"),
+                },
+            )
 
         # Track total budget used
         budget_used = 0
@@ -367,6 +443,8 @@ class JobContextRetriever:
             group_ids=["feature_specs"],
             budget_allocation=budget.get_allocation("feature_context"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="feature_context",
         )
         budget_used += tokens
 
@@ -375,6 +453,8 @@ class JobContextRetriever:
             group_ids=["task_outcomes"],
             budget_allocation=budget.get_allocation("similar_outcomes"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="similar_outcomes",
         )
         budget_used += tokens
 
@@ -383,6 +463,8 @@ class JobContextRetriever:
             group_ids=[f"patterns_{tech_stack}"],
             budget_allocation=budget.get_allocation("relevant_patterns"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="relevant_patterns",
         )
         budget_used += tokens
 
@@ -391,6 +473,8 @@ class JobContextRetriever:
             group_ids=["project_architecture"],
             budget_allocation=budget.get_allocation("architecture_context"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="architecture_context",
         )
         budget_used += tokens
 
@@ -399,6 +483,8 @@ class JobContextRetriever:
             group_ids=["failure_patterns"],
             budget_allocation=budget.get_allocation("warnings"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="warnings",
         )
         budget_used += tokens
 
@@ -407,6 +493,8 @@ class JobContextRetriever:
             group_ids=["domain_knowledge"],
             budget_allocation=budget.get_allocation("domain_knowledge"),
             threshold=threshold,
+            metrics_collector=metrics_collector,
+            category="domain_knowledge",
         )
         budget_used += tokens
 
@@ -419,6 +507,8 @@ class JobContextRetriever:
                 group_ids=["role_constraints"],
                 budget_allocation=budget.get_allocation("role_constraints"),
                 threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="role_constraints",
             )
             budget_used += tokens
 
@@ -427,6 +517,8 @@ class JobContextRetriever:
                 group_ids=["quality_gate_configs"],
                 budget_allocation=budget.get_allocation("quality_gate_configs"),
                 threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="quality_gate_configs",
             )
             budget_used += tokens
 
@@ -438,6 +530,7 @@ class JobContextRetriever:
                 task_id=task_id,
                 budget_allocation=budget.get_allocation("turn_states"),
                 threshold=threshold,
+                metrics_collector=metrics_collector,
             )
             budget_used += tokens
 
@@ -446,6 +539,8 @@ class JobContextRetriever:
                 group_ids=["implementation_modes"],
                 budget_allocation=budget.get_allocation("implementation_modes"),
                 threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="implementation_modes",
             )
             budget_used += tokens
         else:
@@ -453,6 +548,12 @@ class JobContextRetriever:
             quality_gate_configs = []
             turn_states = []
             implementation_modes = []
+
+        # Collect final quality metrics if requested
+        quality_metrics: Optional[ContextQualityMetrics] = None
+        if metrics_collector is not None:
+            metrics_collector.add_budget_usage(budget_used)
+            quality_metrics = metrics_collector.get_metrics()
 
         return RetrievedContext(
             task_id=task.get("id", ""),
@@ -468,6 +569,7 @@ class JobContextRetriever:
             quality_gate_configs=quality_gate_configs,
             turn_states=turn_states,
             implementation_modes=implementation_modes,
+            quality_metrics=quality_metrics,
         )
 
     async def _query_category(
@@ -476,6 +578,8 @@ class JobContextRetriever:
         group_ids: List[str],
         budget_allocation: int,
         threshold: float,
+        metrics_collector: Optional[MetricsCollector] = None,
+        category: str = "",
     ) -> tuple[List[Dict[str, Any]], int]:
         """Query a single context category from Graphiti.
 
@@ -484,6 +588,8 @@ class JobContextRetriever:
             group_ids: Graphiti group IDs to search
             budget_allocation: Maximum token budget for this category
             threshold: Minimum relevance score to include
+            metrics_collector: Optional MetricsCollector for tracking quality
+            category: Category name for metrics tracking
 
         Returns:
             Tuple of (filtered_results, tokens_used)
@@ -496,10 +602,15 @@ class JobContextRetriever:
             if not results:
                 return [], 0
 
-            # Filter by relevance threshold
+            # Filter by relevance threshold and collect metrics
             filtered = []
             for item in results:
                 score = item.get("score", 1.0)  # Default to 1.0 if no score
+
+                # Add to metrics collector (before filtering)
+                if metrics_collector is not None:
+                    metrics_collector.add_result(item, category=category)
+
                 if score >= threshold:
                     filtered.append(item)
 
@@ -518,6 +629,7 @@ class JobContextRetriever:
         task_id: str,
         budget_allocation: int,
         threshold: float,
+        metrics_collector: Optional[MetricsCollector] = None,
     ) -> tuple[List[Dict[str, Any]], int]:
         """Query turn_states for cross-turn learning.
 
@@ -529,6 +641,7 @@ class JobContextRetriever:
             task_id: Task identifier (e.g., "TASK-GR6-001")
             budget_allocation: Maximum token budget for this category
             threshold: Minimum relevance score to include
+            metrics_collector: Optional MetricsCollector for tracking quality
 
         Returns:
             Tuple of (filtered_results, tokens_used)
@@ -548,10 +661,15 @@ class JobContextRetriever:
             if not results:
                 return [], 0
 
-            # Filter by relevance threshold
+            # Filter by relevance threshold and collect metrics
             filtered = []
             for item in results:
                 score = item.get("score", 1.0)  # Default to 1.0 if no score
+
+                # Add to metrics collector (before filtering)
+                if metrics_collector is not None:
+                    metrics_collector.add_result(item, category="turn_states")
+
                 if score >= threshold:
                     filtered.append(item)
 

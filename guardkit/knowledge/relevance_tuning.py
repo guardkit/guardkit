@@ -295,6 +295,11 @@ class MetricsCollector:
         """
         total_items = len(self._results)
 
+        # Calculate budget utilization (always, even with no items)
+        budget_utilization = 0.0
+        if self.total_budget > 0:
+            budget_utilization = self._budget_used / self.total_budget
+
         if total_items == 0:
             return ContextQualityMetrics(
                 avg_relevance_score=0.0,
@@ -302,7 +307,7 @@ class MetricsCollector:
                 items_above_threshold=0,
                 items_below_threshold=0,
                 category_coverage={},
-                budget_utilization=0.0,
+                budget_utilization=budget_utilization,
             )
 
         # Calculate scores
@@ -318,11 +323,6 @@ class MetricsCollector:
         for category, count in self._category_counts.items():
             if category in self.budget_per_category and self.budget_per_category[category] > 0:
                 category_coverage[category] = count / self.budget_per_category[category]
-
-        # Calculate budget utilization
-        budget_utilization = 0.0
-        if self.total_budget > 0:
-            budget_utilization = self._budget_used / self.total_budget
 
         return ContextQualityMetrics(
             avg_relevance_score=avg_score,
