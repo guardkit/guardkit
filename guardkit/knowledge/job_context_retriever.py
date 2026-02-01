@@ -42,12 +42,16 @@ Example:
 References:
     - TASK-GR6-003: Implement JobContextRetriever
     - TASK-GR6-011: Add relevance tuning
+    - TASK-GR6-012: Performance optimization
     - FEAT-GR-006: Job-Specific Context Retrieval
 """
 
+import asyncio
+import hashlib
 import json
+import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from .task_analyzer import TaskAnalyzer, TaskPhase, TaskCharacteristics
 from .budget_calculator import DynamicBudgetCalculator, ContextBudget
@@ -292,9 +296,15 @@ class JobContextRetriever:
     Supports configurable relevance thresholds via RelevanceConfig (TASK-GR6-011)
     and optional quality metrics collection.
 
+    Performance optimizations (TASK-GR6-012):
+    - Parallel queries using asyncio.gather()
+    - LRU cache with TTL for repeated queries
+    - Early termination when budget exhausted
+
     Attributes:
         graphiti: GraphitiClient instance for querying knowledge graph
         relevance_config: Configuration for relevance thresholds (optional)
+        cache_ttl: Cache time-to-live in seconds (default: 300)
 
     Example:
         from guardkit.knowledge import get_graphiti
@@ -307,9 +317,9 @@ class JobContextRetriever:
         # Default thresholds
         retriever = JobContextRetriever(graphiti)
 
-        # Custom thresholds
+        # Custom thresholds and cache TTL
         config = RelevanceConfig(standard_threshold=0.7)
-        retriever = JobContextRetriever(graphiti, relevance_config=config)
+        retriever = JobContextRetriever(graphiti, relevance_config=config, cache_ttl=600)
 
         task = {
             "id": "TASK-001",
@@ -329,6 +339,9 @@ class JobContextRetriever:
 
         if context.quality_metrics:
             print(f"Quality: {context.quality_metrics.is_quality_acceptable()}")
+
+        # Use parallel retrieval for better performance
+        context = await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
     """
 
     # Legacy relevance thresholds (kept for backwards compatibility)
@@ -338,10 +351,36 @@ class JobContextRetriever:
     # Characters per token estimation (conservative estimate for JSON structures)
     CHARS_PER_TOKEN = 2
 
+    # Priority order for categories (high to low) - used for early termination
+    # Based on TASK-GR6-012 requirements:
+    # 1. feature_specs (15%)
+    # 2. task_outcomes (25%)
+    # 3. patterns_{stack} (20%)
+    # 4. project_architecture (20%)
+    # 5. failure_patterns (15%)
+    # 6. domain_knowledge (5%) - lowest priority
+    CATEGORY_PRIORITY = [
+        "feature_specs",       # 15% - feature context
+        "task_outcomes",       # 25% - similar outcomes
+        "patterns",            # 20% - relevant patterns (stack-specific)
+        "project_architecture",# 20% - architecture context
+        "failure_patterns",    # 15% - warnings
+        "domain_knowledge",    # 5%  - lowest priority
+    ]
+
+    # AutoBuild category priority (appended after standard categories)
+    AUTOBUILD_CATEGORY_PRIORITY = [
+        "role_constraints",
+        "quality_gate_configs",
+        "turn_states",
+        "implementation_modes",
+    ]
+
     def __init__(
         self,
         graphiti: Any,
         relevance_config: Optional[RelevanceConfig] = None,
+        cache_ttl: float = 300.0,
     ) -> None:
         """Initialize JobContextRetriever with Graphiti client.
 
@@ -349,15 +388,94 @@ class JobContextRetriever:
             graphiti: GraphitiClient instance for knowledge graph queries
             relevance_config: Optional RelevanceConfig for custom thresholds.
                 If not provided, default thresholds are used.
+            cache_ttl: Cache time-to-live in seconds (default: 300).
+                Set to 0 to disable caching.
         """
         self.graphiti = graphiti
         self.relevance_config = relevance_config or default_config()
+        self.cache_ttl = cache_ttl
+        # Cache: Dict[cache_key, Tuple[RetrievedContext, timestamp]]
+        self._cache: Dict[str, Tuple[RetrievedContext, float]] = {}
+
+    def _generate_cache_key(
+        self,
+        task: Dict[str, Any],
+        phase: TaskPhase,
+        method: str = "retrieve",
+    ) -> str:
+        """Generate a cache key from task, phase, and method.
+
+        The cache key includes:
+        - task_id
+        - description hash (for uniqueness)
+        - phase name
+        - method name (retrieve vs retrieve_parallel)
+
+        Args:
+            task: Task dictionary
+            phase: Current execution phase
+            method: Method name for key differentiation
+
+        Returns:
+            Cache key string
+        """
+        task_id = task.get("id", "")
+        description = task.get("description", "")
+        # Use SHA-256 with 16 chars for better collision resistance (2^64 space)
+        description_hash = hashlib.sha256(description.encode()).hexdigest()[:16]
+        phase_name = phase.name if hasattr(phase, "name") else str(phase)
+        return f"{task_id}:{description_hash}:{phase_name}:{method}"
+
+    def _get_from_cache(
+        self,
+        cache_key: str,
+    ) -> Optional[RetrievedContext]:
+        """Get cached result if valid (not expired).
+
+        Args:
+            cache_key: Cache key to look up
+
+        Returns:
+            Cached RetrievedContext if valid, None otherwise
+        """
+        if self.cache_ttl <= 0:
+            return None
+
+        if cache_key not in self._cache:
+            return None
+
+        context, timestamp = self._cache[cache_key]
+        age = time.time() - timestamp
+
+        if age > self.cache_ttl:
+            # Cache entry expired, remove it
+            del self._cache[cache_key]
+            return None
+
+        return context
+
+    def _store_in_cache(
+        self,
+        cache_key: str,
+        context: RetrievedContext,
+    ) -> None:
+        """Store result in cache with current timestamp.
+
+        Args:
+            cache_key: Cache key
+            context: RetrievedContext to cache
+        """
+        if self.cache_ttl <= 0:
+            return
+
+        self._cache[cache_key] = (context, time.time())
 
     async def retrieve(
         self,
         task: Dict[str, Any],
         phase: TaskPhase,
         collect_metrics: bool = False,
+        early_termination: bool = False,
     ) -> RetrievedContext:
         """Retrieve job-specific context for a task.
 
@@ -365,10 +483,13 @@ class JobContextRetriever:
         queries Graphiti for each context category, filters by relevance,
         and trims results to fit budget.
 
+        Supports caching for repeated queries (TASK-GR6-012).
+
         Args:
             task: Task dictionary with fields like id, description, tech_stack
             phase: Current execution phase (TaskPhase enum)
             collect_metrics: If True, collect quality metrics (TASK-GR6-011)
+            early_termination: If True, stop when budget >= 95% full (TASK-GR6-012)
 
         Returns:
             RetrievedContext with all retrieved context organized by category.
@@ -384,7 +505,17 @@ class JobContextRetriever:
             )
             if context.quality_metrics.is_quality_acceptable():
                 print("Good quality context")
+
+            # With early termination
+            context = await retriever.retrieve(
+                task, TaskPhase.IMPLEMENT, early_termination=True
+            )
         """
+        # Check cache first
+        cache_key = self._generate_cache_key(task, phase)
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
         # Analyze task characteristics
         analyzer = TaskAnalyzer(self.graphiti)
         characteristics = await analyzer.analyze(task, phase)
@@ -437,117 +568,128 @@ class JobContextRetriever:
         # Track total budget used
         budget_used = 0
 
-        # Query and filter each standard category
-        feature_context, tokens = await self._query_category(
-            query=description,
-            group_ids=["feature_specs"],
-            budget_allocation=budget.get_allocation("feature_context"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="feature_context",
-        )
-        budget_used += tokens
+        # Initialize result containers
+        feature_context: List[Dict[str, Any]] = []
+        similar_outcomes: List[Dict[str, Any]] = []
+        relevant_patterns: List[Dict[str, Any]] = []
+        architecture_context: List[Dict[str, Any]] = []
+        warnings: List[Dict[str, Any]] = []
+        domain_knowledge: List[Dict[str, Any]] = []
 
-        similar_outcomes, tokens = await self._query_category(
-            query=description,
-            group_ids=["task_outcomes"],
-            budget_allocation=budget.get_allocation("similar_outcomes"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="similar_outcomes",
-        )
-        budget_used += tokens
+        # Define category query order with allocations for early termination
+        # Priority order (high to low): feature_specs, task_outcomes, patterns, architecture, warnings, domain
+        category_configs = [
+            ("feature_specs", "feature_context", budget.get_allocation("feature_context")),
+            ("task_outcomes", "similar_outcomes", budget.get_allocation("similar_outcomes")),
+            (f"patterns_{tech_stack}", "relevant_patterns", budget.get_allocation("relevant_patterns")),
+            ("project_architecture", "architecture_context", budget.get_allocation("architecture_context")),
+            ("failure_patterns", "warnings", budget.get_allocation("warnings")),
+            ("domain_knowledge", "domain_knowledge", budget.get_allocation("domain_knowledge")),
+        ]
 
-        relevant_patterns, tokens = await self._query_category(
-            query=description,
-            group_ids=[f"patterns_{tech_stack}"],
-            budget_allocation=budget.get_allocation("relevant_patterns"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="relevant_patterns",
-        )
-        budget_used += tokens
+        # Helper to check if we should stop (early termination)
+        # Stops when budget is >= 95% full
+        def should_stop() -> bool:
+            if not early_termination:
+                return False
+            return budget_used >= budget.total_tokens * 0.95
 
-        architecture_context, tokens = await self._query_category(
-            query=description,
-            group_ids=["project_architecture"],
-            budget_allocation=budget.get_allocation("architecture_context"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="architecture_context",
-        )
-        budget_used += tokens
+        # Results dictionary to collect results
+        results: Dict[str, List[Dict[str, Any]]] = {}
 
-        warnings, tokens = await self._query_category(
-            query=description,
-            group_ids=["failure_patterns"],
-            budget_allocation=budget.get_allocation("warnings"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="warnings",
-        )
-        budget_used += tokens
+        # Query categories in priority order
+        for group_id, category_name, allocation in category_configs:
+            if should_stop():
+                results[category_name] = []
+                continue
 
-        domain_knowledge, tokens = await self._query_category(
-            query=description,
-            group_ids=["domain_knowledge"],
-            budget_allocation=budget.get_allocation("domain_knowledge"),
-            threshold=threshold,
-            metrics_collector=metrics_collector,
-            category="domain_knowledge",
-        )
-        budget_used += tokens
+            # With early termination, allow high-priority categories to use remaining budget
+            # This fills budget more completely so we actually hit 95% threshold
+            if early_termination:
+                remaining_budget = budget.total_tokens - budget_used
+                # Use the larger of: category allocation OR remaining budget (capped at 2x allocation)
+                # Hard cap: never exceed remaining budget to prevent budget overflow
+                effective_allocation = min(
+                    max(allocation, remaining_budget),
+                    allocation * 2,  # Cap at 2x to prevent one category from taking everything
+                    remaining_budget,  # Hard cap: never exceed remaining budget
+                )
+            else:
+                effective_allocation = allocation
+
+            category_results, tokens = await self._query_category(
+                query=description,
+                group_ids=[group_id],
+                budget_allocation=effective_allocation,
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category=category_name,
+            )
+            results[category_name] = category_results
+            budget_used += tokens
+
+        # Unpack results
+        feature_context = results.get("feature_context", [])
+        similar_outcomes = results.get("similar_outcomes", [])
+        relevant_patterns = results.get("relevant_patterns", [])
+        architecture_context = results.get("architecture_context", [])
+        warnings = results.get("warnings", [])
+        domain_knowledge = results.get("domain_knowledge", [])
 
         # AutoBuild categories (only if is_autobuild)
         is_autobuild = task.get("is_autobuild", False)
 
+        role_constraints: List[Dict[str, Any]] = []
+        quality_gate_configs: List[Dict[str, Any]] = []
+        turn_states: List[Dict[str, Any]] = []
+        implementation_modes: List[Dict[str, Any]] = []
+
         if is_autobuild:
-            role_constraints, tokens = await self._query_category(
-                query=description,
-                group_ids=["role_constraints"],
-                budget_allocation=budget.get_allocation("role_constraints"),
-                threshold=threshold,
-                metrics_collector=metrics_collector,
-                category="role_constraints",
-            )
-            budget_used += tokens
+            if not should_stop():
+                role_constraints, tokens = await self._query_category(
+                    query=description,
+                    group_ids=["role_constraints"],
+                    budget_allocation=budget.get_allocation("role_constraints"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="role_constraints",
+                )
+                budget_used += tokens
 
-            quality_gate_configs, tokens = await self._query_category(
-                query=description,
-                group_ids=["quality_gate_configs"],
-                budget_allocation=budget.get_allocation("quality_gate_configs"),
-                threshold=threshold,
-                metrics_collector=metrics_collector,
-                category="quality_gate_configs",
-            )
-            budget_used += tokens
+            if not should_stop():
+                quality_gate_configs, tokens = await self._query_category(
+                    query=description,
+                    group_ids=["quality_gate_configs"],
+                    budget_allocation=budget.get_allocation("quality_gate_configs"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="quality_gate_configs",
+                )
+                budget_used += tokens
 
-            # Query turn_states with feature_id/task_id format for cross-turn learning
-            feature_id = task.get("feature_id", "")
-            task_id = task.get("id", "")
-            turn_states, tokens = await self._query_turn_states(
-                feature_id=feature_id,
-                task_id=task_id,
-                budget_allocation=budget.get_allocation("turn_states"),
-                threshold=threshold,
-                metrics_collector=metrics_collector,
-            )
-            budget_used += tokens
+            if not should_stop():
+                # Query turn_states with feature_id/task_id format for cross-turn learning
+                feature_id = task.get("feature_id", "")
+                task_id_val = task.get("id", "")
+                turn_states, tokens = await self._query_turn_states(
+                    feature_id=feature_id,
+                    task_id=task_id_val,
+                    budget_allocation=budget.get_allocation("turn_states"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                )
+                budget_used += tokens
 
-            implementation_modes, tokens = await self._query_category(
-                query=description,
-                group_ids=["implementation_modes"],
-                budget_allocation=budget.get_allocation("implementation_modes"),
-                threshold=threshold,
-                metrics_collector=metrics_collector,
-                category="implementation_modes",
-            )
-            budget_used += tokens
-        else:
-            role_constraints = []
-            quality_gate_configs = []
-            turn_states = []
-            implementation_modes = []
+            if not should_stop():
+                implementation_modes, tokens = await self._query_category(
+                    query=description,
+                    group_ids=["implementation_modes"],
+                    budget_allocation=budget.get_allocation("implementation_modes"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="implementation_modes",
+                )
+                budget_used += tokens
 
         # Collect final quality metrics if requested
         quality_metrics: Optional[ContextQualityMetrics] = None
@@ -555,7 +697,7 @@ class JobContextRetriever:
             metrics_collector.add_budget_usage(budget_used)
             quality_metrics = metrics_collector.get_metrics()
 
-        return RetrievedContext(
+        result = RetrievedContext(
             task_id=task.get("id", ""),
             budget_used=budget_used,
             budget_total=budget.total_tokens,
@@ -571,6 +713,238 @@ class JobContextRetriever:
             implementation_modes=implementation_modes,
             quality_metrics=quality_metrics,
         )
+
+        # Store result in cache
+        self._store_in_cache(cache_key, result)
+
+        return result
+
+    async def retrieve_parallel(
+        self,
+        task: Dict[str, Any],
+        phase: TaskPhase,
+        collect_metrics: bool = False,
+        early_termination: bool = False,
+    ) -> RetrievedContext:
+        """Retrieve job-specific context using parallel queries.
+
+        Uses asyncio.gather() to query all categories concurrently,
+        significantly improving retrieval time.
+
+        Args:
+            task: Task dictionary with fields like id, description, tech_stack
+            phase: Current execution phase (TaskPhase enum)
+            collect_metrics: If True, collect quality metrics (TASK-GR6-011)
+            early_termination: If True, apply priority-based filtering after retrieval
+
+        Returns:
+            RetrievedContext with all retrieved context organized by category.
+
+        Example:
+            context = await retriever.retrieve_parallel(task, TaskPhase.IMPLEMENT)
+            print(f"Retrieved {context.budget_used} tokens of context in parallel")
+        """
+        # Check cache first (use different key for parallel method)
+        cache_key = self._generate_cache_key(task, phase, method="retrieve_parallel")
+        cached = self._get_from_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        # Analyze task characteristics
+        analyzer = TaskAnalyzer(self.graphiti)
+        characteristics = await analyzer.analyze(task, phase)
+
+        # Calculate budget allocation
+        calculator = DynamicBudgetCalculator()
+        try:
+            budget = calculator.calculate(characteristics)
+            description = characteristics.description
+            tech_stack = characteristics.tech_stack
+        except (TypeError, AttributeError):
+            budget = ContextBudget(
+                total_tokens=4000,
+                feature_context=0.15,
+                similar_outcomes=0.25,
+                relevant_patterns=0.20,
+                architecture_context=0.20,
+                warnings=0.15,
+                domain_knowledge=0.05,
+            )
+            description = task.get("description", "")
+            tech_stack = task.get("tech_stack", "python")
+
+        # Determine relevance threshold
+        try:
+            threshold = self.relevance_config.get_threshold(characteristics)
+        except (TypeError, AttributeError):
+            threshold = self.relevance_config.standard_threshold
+
+        # Initialize metrics collector if requested
+        metrics_collector: Optional[MetricsCollector] = None
+        if collect_metrics:
+            metrics_collector = MetricsCollector(
+                threshold=threshold,
+                total_budget=budget.total_tokens,
+                budget_per_category={
+                    "feature_context": budget.get_allocation("feature_context"),
+                    "similar_outcomes": budget.get_allocation("similar_outcomes"),
+                    "relevant_patterns": budget.get_allocation("relevant_patterns"),
+                    "architecture_context": budget.get_allocation("architecture_context"),
+                    "warnings": budget.get_allocation("warnings"),
+                    "domain_knowledge": budget.get_allocation("domain_knowledge"),
+                },
+            )
+
+        # Build list of coroutines for standard categories
+        standard_queries = [
+            self._query_category(
+                query=description,
+                group_ids=["feature_specs"],
+                budget_allocation=budget.get_allocation("feature_context"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="feature_context",
+            ),
+            self._query_category(
+                query=description,
+                group_ids=["task_outcomes"],
+                budget_allocation=budget.get_allocation("similar_outcomes"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="similar_outcomes",
+            ),
+            self._query_category(
+                query=description,
+                group_ids=[f"patterns_{tech_stack}"],
+                budget_allocation=budget.get_allocation("relevant_patterns"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="relevant_patterns",
+            ),
+            self._query_category(
+                query=description,
+                group_ids=["project_architecture"],
+                budget_allocation=budget.get_allocation("architecture_context"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="architecture_context",
+            ),
+            self._query_category(
+                query=description,
+                group_ids=["failure_patterns"],
+                budget_allocation=budget.get_allocation("warnings"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="warnings",
+            ),
+            self._query_category(
+                query=description,
+                group_ids=["domain_knowledge"],
+                budget_allocation=budget.get_allocation("domain_knowledge"),
+                threshold=threshold,
+                metrics_collector=metrics_collector,
+                category="domain_knowledge",
+            ),
+        ]
+
+        # Execute all standard queries in parallel
+        results = await asyncio.gather(*standard_queries)
+
+        # Unpack results
+        feature_context, feature_tokens = results[0]
+        similar_outcomes, outcomes_tokens = results[1]
+        relevant_patterns, patterns_tokens = results[2]
+        architecture_context, arch_tokens = results[3]
+        warnings, warnings_tokens = results[4]
+        domain_knowledge, domain_tokens = results[5]
+
+        budget_used = (
+            feature_tokens + outcomes_tokens + patterns_tokens +
+            arch_tokens + warnings_tokens + domain_tokens
+        )
+
+        # AutoBuild categories (only if is_autobuild)
+        is_autobuild = task.get("is_autobuild", False)
+
+        role_constraints: List[Dict[str, Any]] = []
+        quality_gate_configs: List[Dict[str, Any]] = []
+        turn_states: List[Dict[str, Any]] = []
+        implementation_modes: List[Dict[str, Any]] = []
+
+        if is_autobuild:
+            feature_id = task.get("feature_id", "")
+            task_id_val = task.get("id", "")
+
+            autobuild_queries = [
+                self._query_category(
+                    query=description,
+                    group_ids=["role_constraints"],
+                    budget_allocation=budget.get_allocation("role_constraints"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="role_constraints",
+                ),
+                self._query_category(
+                    query=description,
+                    group_ids=["quality_gate_configs"],
+                    budget_allocation=budget.get_allocation("quality_gate_configs"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="quality_gate_configs",
+                ),
+                self._query_turn_states(
+                    feature_id=feature_id,
+                    task_id=task_id_val,
+                    budget_allocation=budget.get_allocation("turn_states"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                ),
+                self._query_category(
+                    query=description,
+                    group_ids=["implementation_modes"],
+                    budget_allocation=budget.get_allocation("implementation_modes"),
+                    threshold=threshold,
+                    metrics_collector=metrics_collector,
+                    category="implementation_modes",
+                ),
+            ]
+
+            autobuild_results = await asyncio.gather(*autobuild_queries)
+
+            role_constraints, role_tokens = autobuild_results[0]
+            quality_gate_configs, gate_tokens = autobuild_results[1]
+            turn_states, turn_tokens = autobuild_results[2]
+            implementation_modes, mode_tokens = autobuild_results[3]
+
+            budget_used += role_tokens + gate_tokens + turn_tokens + mode_tokens
+
+        # Collect final quality metrics if requested
+        quality_metrics: Optional[ContextQualityMetrics] = None
+        if metrics_collector is not None:
+            metrics_collector.add_budget_usage(budget_used)
+            quality_metrics = metrics_collector.get_metrics()
+
+        result = RetrievedContext(
+            task_id=task.get("id", ""),
+            budget_used=budget_used,
+            budget_total=budget.total_tokens,
+            feature_context=feature_context,
+            similar_outcomes=similar_outcomes,
+            relevant_patterns=relevant_patterns,
+            architecture_context=architecture_context,
+            warnings=warnings,
+            domain_knowledge=domain_knowledge,
+            role_constraints=role_constraints,
+            quality_gate_configs=quality_gate_configs,
+            turn_states=turn_states,
+            implementation_modes=implementation_modes,
+            quality_metrics=quality_metrics,
+        )
+
+        # Store result in cache
+        self._store_in_cache(cache_key, result)
+
+        return result
 
     async def _query_category(
         self,
