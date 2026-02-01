@@ -1,4 +1,5 @@
 ---
+completed_at: 2025-02-01 00:00:00+00:00
 complexity: 4
 dependencies:
 - TASK-GR4-005
@@ -8,14 +9,13 @@ id: TASK-GR4-007
 implementation_mode: task-work
 parallel_group: wave1-gr004
 parent_review: TASK-REV-0CD7
-status: in_review
+status: design_approved
 sub_feature: GR-004
 task_type: feature
-title: Add AutoBuild workflow customization questions
-wave: 1
-completed_at: 2025-02-01T00:00:00Z
 tests_passed: 128
 tests_total: 128
+title: Add AutoBuild workflow customization questions
+wave: 1
 ---
 
 # Add AutoBuild workflow customization questions
