@@ -7,11 +7,12 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-011
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Relevance tuning and testing
 wave: 3
+updated: 2026-02-01T18:30:00Z
 ---
 
 # Relevance tuning and testing
