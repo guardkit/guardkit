@@ -1,0 +1,68 @@
+{
+  "turn_number": 1,
+  "files_modified": [],
+  "files_created": [
+    ".claude/task-plans/TASK-GR-PRE-001-A-implementation-plan.md",
+    ".claude/task-plans/TASK-GR-PRE-001-B-implementation-plan.md",
+    ".claude/task-plans/TASK-GR-PRE-002-A-implementation-plan.md",
+    ".claude/task-plans/TASK-GR-PRE-002-B-implementation-plan.md",
+    ".guardkit/autobuild/TASK-GR-PRE-000-C/checkpoints.json",
+    ".guardkit/autobuild/TASK-GR-PRE-001-A/",
+    ".guardkit/autobuild/TASK-GR-PRE-001-B/",
+    ".guardkit/autobuild/TASK-GR-PRE-002-A/",
+    ".guardkit/autobuild/TASK-GR-PRE-002-B/",
+    ".guardkit/autobuild/TASK-GR-PRE-003-A/",
+    "tasks/design_approved/TASK-GR-PRE-001-A-add-project-id.md",
+    "tasks/design_approved/TASK-GR-PRE-001-B-group-id-prefixing.md",
+    "tasks/design_approved/TASK-GR-PRE-002-A-define-metadata-fields.md",
+    "tasks/design_approved/TASK-GR-PRE-002-B-episode-metadata-dataclass.md",
+    "tasks/design_approved/TASK-GR-PRE-003-A-research-upsert.md"
+  ],
+  "tests_written": [],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-01-30T22:31:49.854409",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [],
+    "files_added": [
+      ".claude/task-plans/TASK-GR-PRE-001-A-implementation-plan.md",
+      ".claude/task-plans/TASK-GR-PRE-001-B-implementation-plan.md",
+      ".claude/task-plans/TASK-GR-PRE-002-A-implementation-plan.md",
+      ".claude/task-plans/TASK-GR-PRE-002-B-implementation-plan.md",
+      ".guardkit/autobuild/TASK-GR-PRE-000-C/checkpoints.json",
+      ".guardkit/autobuild/TASK-GR-PRE-001-A/",
+      ".guardkit/autobuild/TASK-GR-PRE-001-B/",
+      ".guardkit/autobuild/TASK-GR-PRE-002-A/",
+      ".guardkit/autobuild/TASK-GR-PRE-002-B/",
+      ".guardkit/autobuild/TASK-GR-PRE-003-A/",
+      "tasks/design_approved/TASK-GR-PRE-001-A-add-project-id.md",
+      "tasks/design_approved/TASK-GR-PRE-001-B-group-id-prefixing.md",
+      "tasks/design_approved/TASK-GR-PRE-002-A-define-metadata-fields.md",
+      "tasks/design_approved/TASK-GR-PRE-002-B-episode-metadata-dataclass.md",
+      "tasks/design_approved/TASK-GR-PRE-003-A-research-upsert.md"
+    ],
+    "files_deleted": [
+      "tasks/backlog/TASK-GR-PRE-001-A-add-project-id.md",
+      "tasks/backlog/TASK-GR-PRE-001-B-group-id-prefixing.md",
+      "tasks/backlog/TASK-GR-PRE-002-A-define-metadata-fields.md",
+      "tasks/backlog/TASK-GR-PRE-002-B-episode-metadata-dataclass.md",
+      "tasks/backlog/TASK-GR-PRE-003-A-research-upsert.md"
+    ],
+    "diff_stats": "tasks/backlog/TASK-GR-PRE-001-A-add-project-id.md  |  79 ---------------\n .../TASK-GR-PRE-001-B-group-id-prefixing.md        |  93 -----------------\n .../TASK-GR-PRE-002-A-define-metadata-fields.md    |  88 -----------------\n ...TASK-GR-PRE-002-B-episode-metadata-dataclass.md | 110 ---------------------\n tasks/backlog/TASK-GR-PRE-003-A-research-upsert.md |  94 ------------------\n 5 files changed, 464 deletions(-)",
+    "insertions": 0,
+    "deletions": 464,
+    "timestamp": "2026-01-30T22:31:36.698341"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP\nconfigfile: pytest.ini\ntestpaths: tests\nplugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 7312 items / 12 errors\n\n=============",
+    "timestamp": "2026-01-30T22:31:49.854089",
+    "error": null
+  },
+  "player_report_available": false
+}

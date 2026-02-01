@@ -99,6 +99,9 @@ def clear_seeding_marker() -> None:
 async def _add_episodes(client, episodes: list, group_id: str, category_name: str) -> None:
     """Add multiple episodes to Graphiti with error handling.
 
+    Automatically injects _metadata block into each episode body for tracking
+    and deduplication purposes.
+
     Args:
         client: GraphitiClient instance
         episodes: List of (name, body_dict) tuples
@@ -111,9 +114,22 @@ async def _add_episodes(client, episodes: list, group_id: str, category_name: st
 
     for name, body in episodes:
         try:
+            # Inject metadata block into body (TASK-GR-PRE-000-A)
+            timestamp = datetime.now(timezone.utc).isoformat()
+            body_with_metadata = {
+                **body,
+                "_metadata": {
+                    "source": "guardkit_seeding",
+                    "version": SEEDING_VERSION,
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                    "source_hash": None,  # Generated content, not file-based
+                    "entity_id": name,  # Use episode name as unique ID
+                }
+            }
             await client.add_episode(
                 name=name,
-                episode_body=json.dumps(body),
+                episode_body=json.dumps(body_with_metadata),
                 group_id=group_id
             )
         except Exception as e:

@@ -13,6 +13,7 @@ Test Coverage:
 - Content format validation
 - Graceful degradation when Graphiti disabled
 - Error handling and resilience
+- Metadata block validation (TASK-GR-PRE-000-A)
 
 Coverage Target: >=85%
 Test Count: 30+ tests
@@ -23,6 +24,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock, call
 from typing import Optional, List, Dict
 from pathlib import Path
 import json
+from datetime import datetime
 
 # Import will fail initially - this is expected in RED phase
 try:
@@ -44,6 +46,7 @@ try:
         is_seeded,
         mark_seeded,
         clear_seeding_marker,
+        SEEDING_VERSION,
     )
     IMPORTS_AVAILABLE = True
 except ImportError:
@@ -784,3 +787,268 @@ class TestSeedingIntegration:
 
             # Should skip seeding
             mock_seed.assert_not_called()
+
+
+# ============================================================================
+# 7. Metadata Block Tests (TASK-GR-PRE-000-A) - TDD RED PHASE
+# ============================================================================
+
+class TestMetadataBlock:
+    """
+    Test metadata block validation for seeding episodes.
+
+    These tests verify that all seeding functions include proper _metadata
+    blocks in their episode bodies. Tests are written in TDD RED phase and
+    should FAIL initially because metadata is not yet added to seeding.py.
+
+    Metadata Schema (from TASK-GR-PRE-000-A):
+    {
+        "_metadata": {
+            "source": "guardkit_seeding",
+            "version": "1.0.0",
+            "created_at": "2025-01-30T12:00:00Z",
+            "updated_at": "2025-01-30T12:00:00Z",
+            "source_hash": null,
+            "entity_id": "unique_identifier"
+        }
+    }
+    """
+
+    @pytest.mark.asyncio
+    async def test_episodes_include_metadata_block(self):
+        """Test that all episodes include _metadata block."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        # Test with product_knowledge as representative
+        await seed_product_knowledge(mock_client)
+
+        # All episodes should have _metadata
+        for body in captured_bodies:
+            data = json.loads(body)
+            assert "_metadata" in data, f"Episode missing _metadata: {data}"
+
+    @pytest.mark.asyncio
+    async def test_metadata_has_required_fields(self):
+        """Test that _metadata contains all required fields."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        required_fields = ["source", "version", "created_at", "updated_at", "source_hash", "entity_id"]
+
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data.get("_metadata", {})
+
+            for field in required_fields:
+                assert field in metadata, f"Metadata missing required field '{field}': {metadata}"
+
+    @pytest.mark.asyncio
+    async def test_metadata_source_is_guardkit_seeding(self):
+        """Test that metadata source is 'guardkit_seeding'."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data["_metadata"]
+            assert metadata["source"] == "guardkit_seeding", \
+                f"Expected source='guardkit_seeding', got '{metadata['source']}'"
+
+    @pytest.mark.asyncio
+    async def test_metadata_version_matches_seeding_version(self):
+        """Test that metadata version matches SEEDING_VERSION constant."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data["_metadata"]
+            assert metadata["version"] == SEEDING_VERSION, \
+                f"Expected version='{SEEDING_VERSION}', got '{metadata['version']}'"
+
+    @pytest.mark.asyncio
+    async def test_metadata_timestamps_are_valid_iso_format(self):
+        """Test that created_at and updated_at are valid ISO timestamps."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data["_metadata"]
+
+            # Test created_at is valid ISO format
+            try:
+                datetime.fromisoformat(metadata["created_at"].replace('Z', '+00:00'))
+            except (ValueError, AttributeError) as e:
+                pytest.fail(f"Invalid created_at timestamp: {metadata['created_at']} - {e}")
+
+            # Test updated_at is valid ISO format
+            try:
+                datetime.fromisoformat(metadata["updated_at"].replace('Z', '+00:00'))
+            except (ValueError, AttributeError) as e:
+                pytest.fail(f"Invalid updated_at timestamp: {metadata['updated_at']} - {e}")
+
+    @pytest.mark.asyncio
+    async def test_metadata_entity_id_is_unique_per_episode(self):
+        """Test that entity_id is unique for each episode."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        entity_ids = []
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data["_metadata"]
+            entity_id = metadata["entity_id"]
+
+            assert entity_id is not None, "entity_id should not be None"
+            assert entity_id not in entity_ids, f"Duplicate entity_id found: {entity_id}"
+            entity_ids.append(entity_id)
+
+    @pytest.mark.asyncio
+    async def test_metadata_source_hash_is_none_for_generated_content(self):
+        """Test that source_hash is None for generated content (not file-based)."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        for body in captured_bodies:
+            data = json.loads(body)
+            metadata = data["_metadata"]
+            # For generated seeding content, source_hash should be None
+            assert metadata["source_hash"] is None, \
+                f"Expected source_hash=None for generated content, got {metadata['source_hash']}"
+
+    @pytest.mark.asyncio
+    async def test_all_seeding_functions_include_metadata(self):
+        """Test that ALL seeding functions include metadata in their episodes."""
+        seeding_functions = [
+            seed_product_knowledge,
+            seed_command_workflows,
+            seed_quality_gate_phases,
+            seed_technology_stack,
+            seed_feature_build_architecture,
+            seed_architecture_decisions,
+            seed_failure_patterns,
+            seed_component_status,
+            seed_integration_points,
+            seed_templates,
+            seed_agents,
+            seed_patterns,
+            seed_rules,
+        ]
+
+        for seed_fn in seeding_functions:
+            mock_client = AsyncMock()
+            mock_client.enabled = True
+
+            captured_bodies = []
+
+            async def capture_episode(name, episode_body, group_id):
+                captured_bodies.append(episode_body)
+                return "episode_id"
+
+            mock_client.add_episode = capture_episode
+
+            await seed_fn(mock_client)
+
+            # Verify all episodes from this function have metadata
+            assert len(captured_bodies) > 0, f"Function {seed_fn.__name__} created no episodes"
+
+            for body in captured_bodies:
+                data = json.loads(body)
+                assert "_metadata" in data, \
+                    f"Function {seed_fn.__name__} missing _metadata in episode: {data}"
+
+    @pytest.mark.asyncio
+    async def test_metadata_preserves_original_episode_structure(self):
+        """Test that adding _metadata doesn't break existing episode structure."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+
+        captured_bodies = []
+
+        async def capture_episode(name, episode_body, group_id):
+            captured_bodies.append(episode_body)
+            return "episode_id"
+
+        mock_client.add_episode = capture_episode
+
+        await seed_product_knowledge(mock_client)
+
+        for body in captured_bodies:
+            data = json.loads(body)
+
+            # Should have _metadata
+            assert "_metadata" in data
+
+            # Should still have original fields (e.g., entity_type for product_knowledge)
+            # At minimum, should have more than just _metadata
+            assert len(data) > 1, "Episode should have content fields in addition to _metadata"

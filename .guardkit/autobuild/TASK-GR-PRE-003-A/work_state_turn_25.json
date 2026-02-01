@@ -1,0 +1,40 @@
+{
+  "turn_number": 25,
+  "files_modified": [
+    ".guardkit/autobuild/TASK-GR-PRE-003-A/checkpoints.json",
+    ".guardkit/autobuild/TASK-GR-PRE-003-A/turn_context.json"
+  ],
+  "files_created": [
+    ".guardkit/autobuild/TASK-GR-PRE-003-A/coach_feedback_for_turn_25.json"
+  ],
+  "tests_written": [],
+  "tests_passed": false,
+  "test_count": 0,
+  "timestamp": "2026-01-30T22:33:01.125687",
+  "detection_method": "git_only",
+  "git_changes": {
+    "files_modified": [
+      ".guardkit/autobuild/TASK-GR-PRE-003-A/checkpoints.json",
+      ".guardkit/autobuild/TASK-GR-PRE-003-A/turn_context.json"
+    ],
+    "files_added": [
+      ".guardkit/autobuild/TASK-GR-PRE-003-A/coach_feedback_for_turn_25.json"
+    ],
+    "files_deleted": [],
+    "diff_stats": ".guardkit/autobuild/TASK-GR-PRE-003-A/checkpoints.json  | 10 +++++++++-\n .guardkit/autobuild/TASK-GR-PRE-003-A/turn_context.json |  4 ++--\n 2 files changed, 11 insertions(+), 3 deletions(-)",
+    "insertions": 11,
+    "deletions": 3,
+    "timestamp": "2026-01-30T22:32:58.613538"
+  },
+  "test_results": {
+    "tests_run": false,
+    "tests_passed": false,
+    "test_count": 0,
+    "passed_count": 0,
+    "failed_count": 1,
+    "output_summary": "============================= test session starts ==============================\nplatform darwin -- Python 3.14.2, pytest-8.4.2, pluggy-1.6.0\nrootdir: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP\nconfigfile: pytest.ini\ntestpaths: tests\nplugins: anyio-4.12.1, asyncio-1.3.0, cov-7.0.0\nasyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function\ncollected 7312 items / 12 errors\n\n=============",
+    "timestamp": "2026-01-30T22:33:01.125485",
+    "error": null
+  },
+  "player_report_available": false
+}

@@ -1,0 +1,19 @@
+{
+  "task_id": "TASK-GR-PRE-002-A",
+  "turn": 1,
+  "files_modified": [
+    "tasks/design_approved/TASK-GR-PRE-002-A-define-metadata-fields.md",
+    "tests/knowledge/test_graphiti_client.py"
+  ],
+  "files_created": [
+    "1."
+  ],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": false,
+  "test_output_summary": "",
+  "implementation_notes": "Implementation via task-work delegation",
+  "concerns": [],
+  "requirements_addressed": [],
+  "requirements_remaining": []
+}

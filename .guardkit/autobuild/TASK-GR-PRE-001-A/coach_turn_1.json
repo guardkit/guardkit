@@ -1,0 +1,18 @@
+{
+  "task_id": "TASK-GR-PRE-001-A",
+  "turn": 1,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": null,
+    "independent_tests": null,
+    "requirements": null
+  },
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "missing_results",
+      "description": "task-work execution exceeded 900s timeout"
+    }
+  ],
+  "rationale": "Task-work quality gate results not found"
+}

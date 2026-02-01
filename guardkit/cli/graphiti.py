@@ -5,16 +5,19 @@ Commands:
 - graphiti seed: Seed system context into Graphiti
 - graphiti status: Show Graphiti connection and seeding status
 - graphiti verify: Run test queries to verify seeded knowledge
+- graphiti add-context: Add context from files to Graphiti
 
 Example:
     $ guardkit graphiti seed
     $ guardkit graphiti seed --force
     $ guardkit graphiti status
     $ guardkit graphiti verify
+    $ guardkit graphiti add-context docs/architecture/
 """
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -30,6 +33,7 @@ from guardkit.knowledge.seeding import (
     SEEDING_VERSION,
 )
 from guardkit.knowledge.seed_feature_build_adrs import seed_feature_build_adrs
+from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -405,3 +409,406 @@ def seed_adrs(force: bool):
     Use --force to re-seed even if ADRs have already been seeded.
     """
     asyncio.run(_cmd_seed_adrs(force))
+
+
+@graphiti.command("add-context")
+@click.argument("path")
+@click.option(
+    "--type",
+    "parser_type",
+    default=None,
+    help="Force parser type (adr, feature-spec, project-overview)",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Overwrite existing context",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be added without adding",
+)
+@click.option(
+    "--pattern",
+    default="**/*.md",
+    help="Glob pattern for directory (default: **/*.md)",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show detailed processing output",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Suppress non-error output",
+)
+def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool):
+    """Add context from files to Graphiti.
+
+    Adds content from markdown files to the Graphiti knowledge graph.
+    Supports single files or directories with glob patterns.
+
+    \b
+    Examples:
+        guardkit graphiti add-context docs/ADR-001.md
+        guardkit graphiti add-context docs/architecture/
+        guardkit graphiti add-context docs/ --pattern "**/*.md"
+        guardkit graphiti add-context docs/ADR-001.md --type adr
+        guardkit graphiti add-context docs/ --dry-run
+
+    \b
+    Supported parser types:
+        - adr: Architecture Decision Records
+        - feature-spec: Feature specifications
+        - project-overview: Project overview documents
+        - project-doc: General project documentation
+    """
+    # Check mutual exclusivity of --verbose and --quiet
+    if verbose and quiet:
+        raise click.UsageError("Options --verbose and --quiet are mutually exclusive")
+
+    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet))
+
+
+async def _cmd_add_context(
+    path: str,
+    parser_type: Optional[str],
+    force: bool,
+    dry_run: bool,
+    pattern: str,
+    verbose: bool = False,
+    quiet: bool = False,
+) -> None:
+    """Async implementation of add-context command."""
+    if not quiet:
+        console.print("[bold blue]Graphiti Add Context[/bold blue]")
+        console.print()
+
+    # Check if path exists
+    target_path = Path(path)
+    if not target_path.exists():
+        console.print(f"[red]Error: Path does not exist: {path}[/red]")
+        raise SystemExit(1)
+
+    # Create client
+    client = GraphitiClient()
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        await client.close()
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        if not quiet:
+            console.print("[green]Connected to Graphiti[/green]")
+            console.print()
+
+        # Create parser registry
+        registry = ParserRegistry()
+
+        # Collect files to process
+        files_to_process: list[str] = []
+
+        if target_path.is_file():
+            # Use the original path string for single files
+            files_to_process.append(path)
+        elif target_path.is_dir():
+            # Use glob pattern to find files
+            for file_path in target_path.glob(pattern):
+                if file_path.is_file():
+                    files_to_process.append(str(file_path))
+
+        if not files_to_process:
+            console.print(f"[yellow]No files found matching pattern: {pattern}[/yellow]")
+            return
+
+        # Track results
+        total_files = len(files_to_process)
+        files_processed = 0
+        episodes_added = 0
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        # Process each file
+        for file_path_str in files_to_process:
+            try:
+                # Read file content
+                with open(file_path_str, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # Detect or use specified parser
+                if parser_type:
+                    parser = registry.get_parser(parser_type)
+                    if not parser:
+                        console.print(f"[yellow]No parser for type: {parser_type}[/yellow]")
+                        continue
+                else:
+                    parser = registry.detect_parser(file_path_str, content)
+                    if not parser:
+                        console.print(f"[yellow]No parser found for: {file_path_str} (unsupported)[/yellow]")
+                        continue
+
+                # Verbose: show parsing info
+                if verbose:
+                    console.print(f"Parsing {file_path_str} with {parser.parser_type}")
+
+                # Parse the file
+                result = parser.parse(content, file_path_str)
+
+                if not result.success:
+                    errors.append(f"{file_path_str}: Parse failed")
+                    for warn in result.warnings:
+                        warnings.append(f"{file_path_str}: {warn}")
+                    continue
+
+                # Verbose: show episode count
+                if verbose:
+                    console.print(f"  Found {len(result.episodes)} episodes")
+                    # Show individual episodes
+                    for ep in result.episodes:
+                        console.print(f"    - {ep.entity_id} ({ep.entity_type})")
+
+                # Add warnings from parsing
+                for warn in result.warnings:
+                    warnings.append(f"{file_path_str}: {warn}")
+
+                # Add episodes to Graphiti (unless dry run)
+                if not dry_run:
+                    for episode in result.episodes:
+                        try:
+                            await client.add_episode(
+                                name=episode.entity_id,
+                                episode_body=episode.content,
+                                group_id=episode.group_id,
+                                metadata=episode.metadata,
+                            )
+                            episodes_added += 1
+                        except Exception as e:
+                            errors.append(f"{file_path_str}: Error adding episode - {e}")
+                else:
+                    # In dry run, just count the episodes that would be added
+                    episodes_added += len(result.episodes)
+
+                files_processed += 1
+                if not quiet:
+                    console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
+
+            except Exception as e:
+                errors.append(f"{file_path_str}: Error - {e}")
+
+        if not quiet:
+            console.print()
+
+            # Display summary
+            file_word = "file" if files_processed == 1 else "files"
+            episode_word = "episode" if episodes_added == 1 else "episodes"
+
+            if dry_run:
+                console.print("[bold]Dry run complete - Would add:[/bold]")
+                console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
+            else:
+                console.print("[bold]Summary:[/bold]")
+                console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
+
+        # Display warnings (always shown, even in quiet mode)
+        if warnings:
+            console.print()
+            console.print("[yellow]Warnings:[/yellow]")
+            for warn in warnings:
+                console.print(f"  Warning: {warn}")
+
+        # Display errors
+        if errors:
+            console.print()
+            console.print("[red]Errors:[/red]")
+            for err in errors:
+                console.print(f"  Error: {err}")
+
+    finally:
+        await client.close()
+
+
+async def _cmd_clear(
+    confirm: bool,
+    system_only: bool,
+    project_only: bool,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Async implementation of clear command."""
+    console.print("[bold blue]Graphiti Knowledge Clear[/bold blue]")
+    console.print()
+
+    # Validate mutual exclusivity
+    if system_only and project_only:
+        console.print("[red]Error: --system-only and --project-only cannot be used together[/red]")
+        raise SystemExit(1)
+
+    # Check confirmation
+    if not confirm and not dry_run:
+        console.print("[red]Error: --confirm flag is required to clear knowledge[/red]")
+        console.print()
+        console.print("This is a destructive operation. Use one of:")
+        console.print("  guardkit graphiti clear --confirm            # Clear all")
+        console.print("  guardkit graphiti clear --system-only --confirm  # Clear system only")
+        console.print("  guardkit graphiti clear --project-only --confirm # Clear project only")
+        console.print("  guardkit graphiti clear --dry-run            # Preview only")
+        raise SystemExit(1)
+
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("Clear operation skipped.")
+        return
+
+    # Initialize connection
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[yellow]Graphiti not available or disabled.[/yellow]")
+            console.print("Clear operation skipped.")
+            return
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Get preview first
+        preview = await client.get_clear_preview(
+            system_only=system_only,
+            project_only=project_only,
+        )
+
+        # Display what would be deleted
+        if dry_run:
+            console.print("[bold]Dry Run - The following would be deleted:[/bold]")
+        else:
+            console.print("[bold]The following will be deleted:[/bold]")
+        console.print()
+
+        if preview.get("system_groups"):
+            console.print("[cyan]System Groups:[/cyan]")
+            for group in preview["system_groups"]:
+                console.print(f"  - {group}")
+            console.print()
+
+        if preview.get("project_groups"):
+            console.print("[cyan]Project Groups:[/cyan]")
+            for group in preview["project_groups"]:
+                console.print(f"  - {group}")
+            console.print()
+
+        console.print(f"Total groups: {preview.get('total_groups', 0)}")
+        console.print(f"Estimated episodes: {preview.get('estimated_episodes', 0)}")
+        console.print()
+
+        # If dry run, stop here
+        if dry_run:
+            console.print("[yellow]Dry run complete. No data was deleted.[/yellow]")
+            return
+
+        # Perform the clear
+        console.print("Clearing knowledge...")
+
+        if system_only:
+            result = await client.clear_system_groups()
+            console.print()
+            console.print("[bold green]System knowledge cleared![/bold green]")
+            console.print(f"Groups cleared: {len(result.get('groups_cleared', []))}")
+            console.print(f"Episodes deleted: {result.get('episodes_deleted', 0)}")
+        elif project_only:
+            result = await client.clear_project_groups()
+            console.print()
+            console.print(f"[bold green]Project '{result.get('project', 'unknown')}' knowledge cleared![/bold green]")
+            console.print(f"Groups cleared: {len(result.get('groups_cleared', []))}")
+            console.print(f"Episodes deleted: {result.get('episodes_deleted', 0)}")
+        else:
+            result = await client.clear_all()
+            console.print()
+            console.print("[bold green]All knowledge cleared![/bold green]")
+            console.print(f"System groups cleared: {result.get('system_groups_cleared', 0)}")
+            console.print(f"Project groups cleared: {result.get('project_groups_cleared', 0)}")
+            console.print(f"Total episodes deleted: {result.get('total_episodes_deleted', 0)}")
+
+        if result.get("error"):
+            console.print(f"[yellow]Warning: {result['error']}[/yellow]")
+
+    finally:
+        await client.close()
+
+
+@graphiti.command()
+@click.option(
+    "--confirm",
+    is_flag=True,
+    help="Required. Confirm deletion.",
+)
+@click.option(
+    "--system-only",
+    is_flag=True,
+    help="Only clear system-level knowledge (not project-specific)",
+)
+@click.option(
+    "--project-only",
+    is_flag=True,
+    help="Only clear current project's knowledge",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Show what would be deleted without deleting",
+)
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Skip confirmation prompts (for automation)",
+)
+def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, force: bool):
+    """Clear Graphiti knowledge graph data.
+
+    Safely clears Graphiti knowledge with various scope options.
+    Requires --confirm flag for safety (unless using --dry-run).
+
+    \b
+    Examples:
+        guardkit graphiti clear --confirm           # Clear ALL knowledge
+        guardkit graphiti clear --system-only --confirm  # System only
+        guardkit graphiti clear --project-only --confirm # Current project only
+        guardkit graphiti clear --dry-run           # Preview what would be deleted
+
+    \b
+    System Groups (cleared with --system-only):
+        - guardkit_templates, guardkit_patterns, guardkit_workflows
+        - product_knowledge, command_workflows, quality_gate_phases
+        - technology_stack, feature_build_architecture, etc.
+
+    \b
+    Project Groups (cleared with --project-only):
+        - {project}__project_overview
+        - {project}__project_architecture
+        - {project}__feature_specs
+        - {project}__project_decisions
+    """
+    asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))
