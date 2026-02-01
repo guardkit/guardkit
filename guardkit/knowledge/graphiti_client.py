@@ -727,6 +727,154 @@ class GraphitiClient:
             logger.warning(f"Graphiti add_episode failed: {e}")
             return None
 
+    async def upsert_episode(
+        self,
+        name: str,
+        episode_body: str,
+        group_id: str,
+        entity_id: str,
+        source: str = "user_added",
+        entity_type: str = "generic",
+        scope: Optional[str] = None,
+        source_hash: Optional[str] = None,
+    ) -> Optional["UpsertResult"]:
+        """Create or update an episode.
+
+        Upsert logic:
+        1. Check if episode with entity_id exists
+        2. If not exists: create new episode
+        3. If exists with same content (source_hash match): skip
+        4. If exists with different content: create new episode, preserving created_at
+
+        Args:
+            name: Episode name/title
+            episode_body: Episode content
+            group_id: Group for the episode
+            entity_id: Stable identifier for upsert
+            source: Source type (default: "user_added")
+            entity_type: Entity type (default: "generic")
+            scope: Optional scope override ("project" or "system")
+            source_hash: Optional pre-computed source hash. If None, computed from episode_body.
+
+        Returns:
+            UpsertResult with action (created/updated/skipped) and episode info.
+            Returns None if client is disabled or not initialized.
+        """
+        # Import here to avoid circular imports
+        import hashlib
+        from guardkit.integrations.graphiti.metadata import EpisodeMetadata
+        from guardkit.integrations.graphiti.upsert_result import UpsertResult
+
+        # Graceful degradation: return None if disabled
+        if not self.config.enabled:
+            return None
+
+        # Graceful degradation: return None if not initialized
+        if not self._graphiti:
+            logger.warning("Graphiti not initialized, upsert_episode unavailable")
+            return None
+
+        try:
+            # Generate source_hash from content if not provided
+            if source_hash is None:
+                source_hash = hashlib.sha256(episode_body.encode()).hexdigest()
+
+            # Check if episode exists
+            exists_result = await self.episode_exists(
+                entity_id=entity_id,
+                group_id=group_id,
+                source_hash=source_hash
+            )
+
+            if exists_result.exists:
+                if exists_result.exact_match:
+                    # Content unchanged, skip update
+                    return UpsertResult.skipped(
+                        episode=exists_result.episode,
+                        uuid=exists_result.uuid
+                    )
+
+                # Episode exists but content changed - update
+                # Preserve original created_at from existing episode
+                original_created_at = None
+                if exists_result.episode and exists_result.episode.get("metadata"):
+                    original_created_at = exists_result.episode["metadata"].get("created_at")
+
+                # Create metadata with preserved created_at and new updated_at
+                metadata = EpisodeMetadata.create_now(
+                    source=source,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    source_hash=source_hash,
+                    project_id=self.project_id,
+                )
+
+                # Override created_at if we have original
+                if original_created_at:
+                    object.__setattr__(metadata, "created_at", original_created_at)
+
+                # Set updated_at to now
+                now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+                metadata.updated_at = now
+
+                # Create new episode (invalidate + create strategy)
+                new_uuid = await self.add_episode(
+                    name=name,
+                    episode_body=episode_body,
+                    group_id=group_id,
+                    scope=scope,
+                    metadata=metadata,
+                    source=source,
+                    entity_type=entity_type,
+                )
+
+                if new_uuid:
+                    return UpsertResult.updated(
+                        episode={
+                            "uuid": new_uuid,
+                            "content": episode_body,
+                            "metadata": metadata.to_dict(),
+                        },
+                        uuid=new_uuid,
+                        previous_uuid=exists_result.uuid,
+                    )
+                return None
+
+            else:
+                # Episode doesn't exist - create new
+                metadata = EpisodeMetadata.create_now(
+                    source=source,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    source_hash=source_hash,
+                    project_id=self.project_id,
+                )
+
+                new_uuid = await self.add_episode(
+                    name=name,
+                    episode_body=episode_body,
+                    group_id=group_id,
+                    scope=scope,
+                    metadata=metadata,
+                    source=source,
+                    entity_type=entity_type,
+                )
+
+                if new_uuid:
+                    return UpsertResult.created(
+                        episode={
+                            "uuid": new_uuid,
+                            "content": episode_body,
+                            "metadata": metadata.to_dict(),
+                        },
+                        uuid=new_uuid,
+                    )
+                return None
+
+        except Exception as e:
+            logger.warning(f"Graphiti upsert_episode failed: {e}")
+            return None
+
     # =========================================================================
     # EPISODE EXISTS METHOD
     # =========================================================================

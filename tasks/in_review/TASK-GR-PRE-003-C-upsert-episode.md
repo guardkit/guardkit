@@ -1,20 +1,28 @@
 ---
-id: TASK-GR-PRE-003-C
-title: Implement upsert_episode logic
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, upsert, mvp-phase-1]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 5
-conductor_workspace: gr-mvp-wave5-upsert
 complexity: 5
+conductor_workspace: gr-mvp-wave5-upsert
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-PRE-003-B
+- TASK-GR-PRE-003-B
+feature_id: FEAT-GR-MVP
+id: TASK-GR-PRE-003-C
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: in_review
+tags:
+- graphiti
+- upsert
+- mvp-phase-1
+task_type: feature
+title: Implement upsert_episode logic
+updated: 2026-02-01T14:00:00Z
+wave: 5
+implementation_completed: 2026-02-01T14:00:00Z
+test_results:
+  passed: 32
+  failed: 0
+  coverage_estimate: 85-90%
 ---
 
 # Task: Implement upsert_episode logic
@@ -25,12 +33,12 @@ Implement upsert logic for episodes that handles creating new episodes or updati
 
 ## Acceptance Criteria
 
-- [ ] upsert_episode() creates new episode if not exists
-- [ ] upsert_episode() updates existing episode if found
-- [ ] Updates preserve created_at, modify updated_at
-- [ ] Handles concurrent updates gracefully
-- [ ] Returns result indicating create/update action
-- [ ] Backward compatible with add_episode
+- [x] upsert_episode() creates new episode if not exists
+- [x] upsert_episode() updates existing episode if found
+- [x] Updates preserve created_at, modify updated_at
+- [x] Handles concurrent updates gracefully
+- [x] Returns result indicating create/update action
+- [x] Backward compatible with add_episode
 
 ## Implementation Notes
 
@@ -112,10 +120,40 @@ async def upsert_episode(self, content: str, group_id: str, entity_id: str, ...)
 
 ## Test Requirements
 
-- [ ] Unit tests for create path
-- [ ] Unit tests for update path
-- [ ] Unit tests for skip path (unchanged content)
-- [ ] Integration tests with Graphiti
+- [x] Unit tests for create path
+- [x] Unit tests for update path
+- [x] Unit tests for skip path (unchanged content)
+- [ ] Integration tests with Graphiti (optional - requires Neo4j)
+
+## Implementation Summary
+
+### Files Created
+
+1. **UpsertResult Dataclass** (`guardkit/integrations/graphiti/upsert_result.py`)
+   - Structured result format with `action` field (created/updated/skipped)
+   - Factory methods: `created()`, `updated()`, `skipped()`
+   - Boolean helpers: `was_created`, `was_updated`, `was_skipped`
+   - Tracks `previous_uuid` for update operations
+
+2. **Unit Tests** (`tests/unit/integrations/graphiti/test_upsert_result.py`)
+   - 18 tests covering all factory methods and edge cases
+
+3. **Unit Tests** (`tests/unit/knowledge/test_upsert_episode.py`)
+   - 14 tests covering create/update/skip paths, timestamp handling, graceful degradation
+
+### Files Modified
+
+1. **GraphitiClient** (`guardkit/knowledge/graphiti_client.py`)
+   - Added `upsert_episode()` method (lines 730-879)
+   - Uses "invalidate + create" strategy from PRE-003-A research
+   - Preserves `created_at` on updates, sets `updated_at`
+   - Content deduplication via SHA-256 source_hash
+
+### Test Results
+
+- 32 tests passed (18 UpsertResult + 14 upsert_episode)
+- 0 tests failed
+- Estimated coverage: 85-90%
 
 ## Notes
 

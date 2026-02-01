@@ -373,10 +373,11 @@ orchestration:
       - TASK-GR-PRE-002-C
       - TASK-GR-PRE-002-D
       - TASK-GR-PRE-003-B
-    # Wave 5: Phase 1 final
+    # Wave 5: Upsert implementation
     - - TASK-GR-PRE-003-C
-      - TASK-GR-PRE-003-D
-    # Wave 6: Phase 2 schemas + parser registry
+    # Wave 6: Upsert tests (depends on wave 5)
+    - - TASK-GR-PRE-003-D
+    # Wave 7: Phase 2 schemas + parser registry
     - - TASK-GR-001-A
       - TASK-GR-001-B
       - TASK-GR-001-C
@@ -384,15 +385,16 @@ orchestration:
       - TASK-GR-001-E
       - TASK-GR-001-F
       - TASK-GR-002-A
-    # Wave 7: Phase 2 parsers + seeding
+    # Wave 8: Phase 2 parsers
     - - TASK-GR-001-G
-      - TASK-GR-001-H
       - TASK-GR-002-B
       - TASK-GR-002-C
       - TASK-GR-002-D
-    # Wave 8: Phase 2 CLI
-    - - TASK-GR-001-I
+    # Wave 9: Phase 2 seeding (H depends on G)
+    - - TASK-GR-001-H
       - TASK-GR-002-E
+    # Wave 10: Phase 2 CLI flags (F depends on E, I depends on H)
+    - - TASK-GR-001-I
       - TASK-GR-002-F
     # Wave 9: Phase 2 final
     - - TASK-GR-002-G
