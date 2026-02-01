@@ -633,6 +633,7 @@ See the complete **[Project Namespaces Guide](graphiti-project-namespaces.md)** 
 
 ## See Also
 
+- **[Graphiti Testing and Validation](graphiti-testing-validation.md)** - E2E tests and validation procedures
 - **[Graphiti Project Namespaces](graphiti-project-namespaces.md)** - Multi-project isolation guide
 - [Graphiti Setup Guide](../setup/graphiti-setup.md) - Detailed installation and configuration
 - [Graphiti Architecture](../architecture/graphiti-architecture.md) - Technical deep-dive for developers
