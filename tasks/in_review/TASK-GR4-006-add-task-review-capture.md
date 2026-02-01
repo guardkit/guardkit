@@ -8,7 +8,7 @@ id: TASK-GR4-006
 implementation_mode: task-work
 parallel_group: wave1-gr004
 parent_review: TASK-REV-0CD7
-status: in_progress
+status: in_review
 sub_feature: GR-004
 task_type: feature
 title: Add /task-review --capture-knowledge integration
@@ -23,11 +23,11 @@ Integrate knowledge capture into the `/task-review` command so insights from rev
 
 ## Acceptance Criteria
 
-- [ ] `--capture-knowledge` flag triggers post-review capture
-- [ ] Context-specific questions based on review findings
-- [ ] Abbreviated session (3-5 questions max)
-- [ ] Captured decisions/warnings linked to task context
-- [ ] Works with all review modes
+- [x] `--capture-knowledge` flag triggers post-review capture
+- [x] Context-specific questions based on review findings
+- [x] Abbreviated session (3-5 questions max)
+- [x] Captured decisions/warnings linked to task context
+- [x] Works with all review modes
 
 ## Technical Details
 
