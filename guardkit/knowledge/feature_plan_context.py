@@ -216,3 +216,242 @@ Entry Points: {', '.join(arch.get('entry_points', []))}"""
             arch_threshold = config.get('arch_review_threshold', 60)
             lines.append(f"**{task_type}**: coverage≥{coverage*100:.0f}%, arch≥{arch_threshold}")
         return '\n'.join(lines)
+
+
+# =============================================================================
+# FeaturePlanContextBuilder - Builds rich context for feature planning
+# =============================================================================
+
+from pathlib import Path
+from typing import List, Optional
+
+
+class FeaturePlanContextBuilder:
+    """Builds rich context for feature planning.
+
+    This class gathers comprehensive context from Graphiti and local feature
+    specifications to support feature planning. It provides graceful degradation
+    when Graphiti is unavailable or queries fail.
+
+    Attributes:
+        project_root: Path to the project root directory
+        feature_detector: FeatureDetector instance for finding feature specs
+        graphiti_client: GraphitiClient instance for knowledge queries
+
+    Example:
+        builder = FeaturePlanContextBuilder(project_root=Path("/path/to/project"))
+        context = await builder.build_context(
+            description="Implement FEAT-GR-003 for enhanced context",
+            context_files=[],
+            tech_stack="python"
+        )
+    """
+
+    def __init__(self, project_root: Path):
+        """Initialize the builder.
+
+        Args:
+            project_root: Path to the project root directory
+
+        Raises:
+            TypeError: If project_root is None
+        """
+        if project_root is None:
+            raise TypeError("project_root cannot be None")
+        self.project_root = project_root
+
+        # Import here to avoid circular imports
+        from .feature_detector import FeatureDetector
+        from .graphiti_client import get_graphiti
+
+        self.feature_detector = FeatureDetector(project_root)
+        self.graphiti_client = get_graphiti()
+
+    async def build_context(
+        self,
+        description: str,
+        context_files: Optional[List[Path]] = None,
+        tech_stack: str = "python"
+    ) -> FeaturePlanContext:
+        """Build comprehensive context for feature planning.
+
+        Gathers context from:
+        - Feature specification files (via FeatureDetector)
+        - Related features from Graphiti
+        - Relevant patterns for the tech stack
+        - Warnings from past failed approaches
+        - Role constraints (AutoBuild support)
+        - Quality gate configs (AutoBuild support)
+        - Implementation modes (AutoBuild support)
+        - Project architecture context
+        - Similar implementations
+
+        Args:
+            description: Feature description (may contain FEAT-XXX-NNN ID)
+            context_files: Optional list of context files to include
+            tech_stack: Technology stack for pattern queries (default: python)
+
+        Returns:
+            FeaturePlanContext with all gathered context
+        """
+        # Initialize with empty/default values
+        feature_spec: Dict[str, Any] = {}
+        related_features: List[Dict[str, Any]] = []
+        relevant_patterns: List[Dict[str, Any]] = []
+        similar_implementations: List[Dict[str, Any]] = []
+        project_architecture: Dict[str, Any] = {}
+        warnings: List[Dict[str, Any]] = []
+        role_constraints: List[Dict[str, Any]] = []
+        quality_gate_configs: List[Dict[str, Any]] = []
+        implementation_modes: List[Dict[str, Any]] = []
+
+        # Handle None context_files
+        if context_files is None:
+            context_files = []
+
+        # Step 1: Detect feature ID from description
+        feature_id = self.feature_detector.detect_feature_id(description)
+
+        # Step 2: Find feature spec file if feature ID detected
+        if feature_id:
+            feature_spec_path = self.feature_detector.find_feature_spec(feature_id)
+            if feature_spec_path and feature_spec_path.exists():
+                feature_spec = self._parse_feature_spec(feature_spec_path)
+                if not feature_spec.get("id"):
+                    feature_spec["id"] = feature_id
+
+        # Step 3: Query Graphiti for enrichment (with graceful degradation)
+        if self.graphiti_client is not None and self.graphiti_client.enabled:
+            # Query related features
+            related_features = await self._safe_search(
+                query=f"features related to {description}",
+                group_ids=["feature_specs"]
+            )
+
+            # Query relevant patterns (tech-stack specific)
+            relevant_patterns = await self._safe_search(
+                query=f"patterns for {description}",
+                group_ids=[f"patterns_{tech_stack}", "patterns"]
+            )
+
+            # Query warnings from past failed approaches
+            warnings = await self._safe_search(
+                query=f"warnings failure patterns for {description}",
+                group_ids=["failure_patterns", "failed_approaches"]
+            )
+
+            # Query role constraints (AutoBuild support)
+            role_constraints = await self._safe_search(
+                query=f"role constraints for implementation",
+                group_ids=["role_constraints"]
+            )
+
+            # Query quality gate configs (AutoBuild support)
+            quality_gate_configs = await self._safe_search(
+                query=f"quality gate thresholds configuration",
+                group_ids=["quality_gate_configs"]
+            )
+
+            # Query implementation modes (AutoBuild support)
+            implementation_modes = await self._safe_search(
+                query=f"implementation modes for {description}",
+                group_ids=["implementation_modes"]
+            )
+
+            # Query project architecture
+            arch_results = await self._safe_search(
+                query=f"project architecture overview",
+                group_ids=["project_overview", "project_architecture"]
+            )
+            if arch_results:
+                project_architecture = arch_results[0] if arch_results else {}
+
+            # Query similar implementations
+            similar_implementations = await self._safe_search(
+                query=f"similar implementations to {description}",
+                group_ids=["task_outcomes", "feature_completions"]
+            )
+
+        return FeaturePlanContext(
+            feature_spec=feature_spec,
+            related_features=related_features,
+            relevant_patterns=relevant_patterns,
+            similar_implementations=similar_implementations,
+            project_architecture=project_architecture,
+            warnings=warnings,
+            role_constraints=role_constraints,
+            quality_gate_configs=quality_gate_configs,
+            implementation_modes=implementation_modes,
+        )
+
+    async def _safe_search(
+        self,
+        query: str,
+        group_ids: List[str],
+        num_results: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Safely search Graphiti with error handling.
+
+        Wraps Graphiti search with try/except to ensure graceful degradation.
+
+        Args:
+            query: Search query string
+            group_ids: Group IDs to search in
+            num_results: Maximum number of results
+
+        Returns:
+            List of search results, empty list on any error
+        """
+        if self.graphiti_client is None:
+            return []
+
+        try:
+            results = await self.graphiti_client.search(
+                query=query,
+                group_ids=group_ids,
+                num_results=num_results
+            )
+            return results if results else []
+        except Exception:
+            # Log would go here in production
+            return []
+
+    def _parse_feature_spec(self, spec_path: Path) -> Dict[str, Any]:
+        """Parse a feature specification file.
+
+        Reads the feature spec markdown file and extracts frontmatter
+        and content into a dictionary.
+
+        Args:
+            spec_path: Path to the feature specification file
+
+        Returns:
+            Dictionary with feature spec data
+        """
+        try:
+            if not spec_path.exists():
+                return {}
+
+            content = spec_path.read_text()
+
+            # Parse YAML frontmatter if present
+            spec: Dict[str, Any] = {}
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    import yaml
+                    try:
+                        frontmatter = yaml.safe_load(parts[1])
+                        if isinstance(frontmatter, dict):
+                            spec.update(frontmatter)
+                        spec["content"] = parts[2].strip()
+                    except Exception:
+                        spec["content"] = content
+                else:
+                    spec["content"] = content
+            else:
+                spec["content"] = content
+
+            return spec
+        except Exception:
+            return {}
