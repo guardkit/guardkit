@@ -8,11 +8,12 @@ id: TASK-GR4-004
 implementation_mode: task-work
 parallel_group: wave1-gr004
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-004
 task_type: feature
 title: Add fact extraction logic
 wave: 1
+completed_at: 2026-02-01T14:15:00Z
 ---
 
 # Add fact extraction logic
@@ -23,11 +24,11 @@ Implement the fact extraction logic that parses user answers and extracts struct
 
 ## Acceptance Criteria
 
-- [ ] `_extract_facts(answer, category)` returns `List[str]`
-- [ ] Splits answers by sentences
-- [ ] Prefixes facts with category context
-- [ ] Handles multi-line answers
-- [ ] Filters out short/noise sentences
+- [x] `_extract_facts(answer, category)` returns `List[str]`
+- [x] Splits answers by sentences
+- [x] Prefixes facts with category context
+- [x] Handles multi-line answers
+- [x] Filters out short/noise sentences
 
 ## Technical Details
 

@@ -57,7 +57,7 @@ class FeaturePlanIntegration:
 
         # Build context using the context builder
         context = await self.context_builder.build_context(
-            description=description,
+            description,
             context_files=context_files,
             tech_stack=tech_stack
         )
