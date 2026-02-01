@@ -10,10 +10,12 @@
 
 - [The Problem It Solves](#the-problem-it-solves)
 - [Quick Start (5-Minute Setup)](#quick-start-5-minute-setup)
+- [What's New in Phase 2](#whats-new-in-phase-2)
 - [Core Concepts](#core-concepts)
 - [Using Graphiti with GuardKit Commands](#using-graphiti-with-guardkit-commands)
 - [Configuration](#configuration)
 - [FAQ](#faq)
+- [Multi-Project Support](#multi-project-support-project-namespaces)
 - [See Also](#see-also)
 
 ---
@@ -138,6 +140,80 @@ Verification complete!
 
 ---
 
+## What's New in Phase 2
+
+Phase 2 of Graphiti integration brings powerful new capabilities for knowledge management and context-aware development:
+
+### Interactive Knowledge Capture
+
+Capture project knowledge through guided Q&A sessions:
+
+```bash
+# Start interactive knowledge capture
+guardkit graphiti capture --interactive
+
+# Focus on specific category
+guardkit graphiti capture --interactive --focus architecture
+guardkit graphiti capture --interactive --focus role-customization
+```
+
+**Focus Categories:**
+- **Project knowledge**: project-overview, architecture, domain, constraints, decisions, goals
+- **AutoBuild customization**: role-customization, quality-gates, workflow-preferences
+
+**See**: [Interactive Knowledge Capture Guide](graphiti-knowledge-capture.md)
+
+### Knowledge Query Commands
+
+Query and inspect stored knowledge:
+
+```bash
+# Show specific knowledge
+guardkit graphiti show FEAT-SKEL-001
+
+# Search for knowledge
+guardkit graphiti search "authentication patterns" --group patterns
+
+# List all in category
+guardkit graphiti list features
+```
+
+**See**: [Knowledge Query Commands Guide](graphiti-query-commands.md)
+
+### Job-Specific Context Retrieval
+
+Each task receives precisely the knowledge it needs based on:
+- **Task complexity** (simple: 2000 tokens, complex: 6000 tokens)
+- **Task type** (first-of-type gets +30% budget)
+- **Context phase** (planning vs implementation)
+- **AutoBuild mode** (role constraints, quality gates, turn history)
+
+**Context Categories:**
+- Feature context, similar outcomes, relevant patterns
+- Architecture context, warnings, domain knowledge
+- AutoBuild: role constraints, quality gate configs, previous turn states
+
+**See**: [Job-Specific Context Retrieval Guide](graphiti-job-context.md)
+
+### Turn State Tracking
+
+AutoBuild captures turn states for cross-turn learning:
+
+```bash
+# Query turn history
+guardkit graphiti search "turn FEAT-XXX" --group turn_states
+```
+
+**Captured per turn:**
+- Player decisions and Coach feedback
+- Files modified, blockers encountered
+- Acceptance criteria status
+- Mode (FRESH_START, RECOVERING_STATE, CONTINUING_WORK)
+
+**See**: [Turn State Tracking Guide](graphiti-turn-states.md)
+
+---
+
 ## Core Concepts
 
 ### Knowledge Categories
@@ -159,10 +235,46 @@ Graphiti organizes knowledge into semantic groups called **group IDs**:
 | **templates** | Template metadata | "react-typescript uses Vite + Vitest + Playwright" |
 | **agents** | Agent capabilities | "architectural-reviewer scores SOLID/DRY/YAGNI" |
 | **patterns** | Design patterns | "Repository pattern for data access" |
+| **turn_states** | AutoBuild turn history | "Turn 3: Player implemented OAuth, Coach approved" |
+
+### Job-Specific Context (Phase 2)
+
+Rather than loading all knowledge or none, GuardKit now dynamically retrieves **job-specific context** based on task characteristics:
+
+| Factor | Impact |
+|--------|--------|
+| **Complexity** | Simple (2K tokens) → Complex (6K tokens) |
+| **Task type** | First-of-type gets +30% budget for exploration |
+| **Refinement** | Failed attempts get +20% for warnings/patterns |
+| **AutoBuild** | Includes role constraints, turn history, quality gates |
+
+**See**: [Job-Specific Context Retrieval](graphiti-job-context.md)
+
+### Interactive Capture (Phase 2)
+
+Project knowledge is captured through guided Q&A sessions:
+
+```bash
+guardkit graphiti capture --interactive --focus architecture
+```
+
+This captures implicit knowledge (decisions, constraints, goals) and persists it for future sessions.
+
+**See**: [Interactive Knowledge Capture](graphiti-knowledge-capture.md)
+
+### Turn States for AutoBuild (Phase 2)
+
+Each `/feature-build` turn is tracked, enabling cross-turn learning:
+
+- Turn N+1 knows what Turn N learned
+- Coach feedback persisted across sessions
+- Prevents repeated mistakes
+
+**See**: [Turn State Tracking](graphiti-turn-states.md)
 
 ### How Context Loading Works
 
-When you run GuardKit commands, the system follows this flow:
+When you run GuardKit commands, the system uses **job-specific context retrieval**:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -170,33 +282,55 @@ When you run GuardKit commands, the system follows this flow:
 └──────────────────────────────────────────────────────────────┘
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ 2. Load Critical Context from Graphiti                       │
-│    - Query: "guardkit task workflow phases"                  │
-│    - Group IDs: product_knowledge, command_workflows         │
-│    - Results: Top 10 relevant episodes                       │
+│ 2. Analyze Task Characteristics                              │
+│    - Complexity: 6 (medium)                                  │
+│    - Type: first-of-type? No                                 │
+│    - Refinement? No                                          │
+│    - AutoBuild? No                                           │
 └──────────────────────────────────────────────────────────────┘
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ 3. Format for Session Injection                              │
+│ 3. Calculate Context Budget                                  │
+│    Base: 4000 tokens (medium complexity)                     │
+│    Adjustments: None                                         │
+│    Final: 4000 tokens                                        │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│ 4. Query Graphiti (concurrent, filtered by relevance)        │
+│    ├─ Similar outcomes (30%): 3 results, 0.72 avg relevance  │
+│    ├─ Relevant patterns (25%): 2 results, 0.81 avg relevance │
+│    ├─ Architecture (20%): 2 results, 0.75 avg relevance      │
+│    ├─ Warnings (15%): 1 result, 0.68 relevance               │
+│    └─ Domain (10%): 1 result, 0.70 relevance                 │
+└──────────────────────────────────────────────────────────────┘
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│ 5. Format and Inject Context                                 │
+│    [INFO] Retrieved job-specific context (3850/4000 tokens)  │
+│                                                              │
 │    === SYSTEM CONTEXT ===                                    │
-│    GuardKit is a lightweight task workflow system...         │
-│    /task-work executes Phases 2-5.5 automatically...         │
-│    WARNING: TaskWorkInterface.execute_design_phase is stub   │
+│    Similar tasks succeeded with: Repository pattern...       │
+│    Relevant patterns: Clean Architecture layers...           │
+│    WARNING: Avoid direct DB access in handlers               │
 └──────────────────────────────────────────────────────────────┘
                            ↓
 ┌──────────────────────────────────────────────────────────────┐
-│ 4. Claude Receives Context + Task                            │
-│    - Knows what GuardKit is                                  │
-│    - Knows how task-work flows                               │
-│    - Knows what to avoid                                     │
+│ 6. Claude Receives Precisely Relevant Context                │
+│    ✓ Knows what worked before on similar tasks               │
+│    ✓ Knows patterns that apply to this work                  │
+│    ✓ Knows what approaches to avoid                          │
+│    ✓ Has domain context without token waste                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 **Key Benefits:**
-- ✅ Consistent understanding of GuardKit's identity
-- ✅ Awareness of past failures to avoid
-- ✅ Knowledge of correct integration patterns
-- ✅ Context about incomplete implementations
+- ✅ **Precision**: Context matched to task characteristics
+- ✅ **Efficiency**: Budget respected, no wasted tokens
+- ✅ **Learning**: Past successes and failures inform current work
+- ✅ **Transparency**: Context retrieval logged for debugging
+
+**See**: [Job-Specific Context Retrieval](graphiti-job-context.md) for budget details and tuning
 
 ### ADR Lifecycle
 
@@ -237,52 +371,94 @@ Architecture Decision Records (ADRs) are captured automatically:
 
 ### `/task-work` Integration
 
-Context is **automatically loaded** before Phase 2 planning:
+Job-specific context is **automatically loaded** before Phase 2 planning:
 
-**What Gets Loaded:**
+**What Gets Loaded (Phase 2):**
 ```python
-context = await load_critical_context(command="task-work")
+context = await get_job_specific_context(
+    task_id="TASK-XXX",
+    complexity=task.complexity,
+    is_first_of_type=is_first_of_type(task),
+    is_refinement=is_refinement(task)
+)
 
-# Returns:
-# - Product knowledge (what GuardKit is)
-# - Command workflow (how phases flow)
-# - Quality gate phases (what to expect)
-# - Relevant architecture decisions
-# - Failure patterns to avoid
+# Returns (budget-aware, relevance-filtered):
+# - Similar outcomes: What worked on similar tasks
+# - Relevant patterns: Codebase patterns that apply
+# - Architecture: How this fits into the system
+# - Warnings: Approaches to avoid
+# - Domain knowledge: Domain-specific context
 ```
 
 **When It Helps:**
-- ✅ Phase 2: Planning with knowledge of system architecture
+- ✅ Phase 2: Planning with similar task insights
 - ✅ Phase 2.5: Architectural review against known patterns
-- ✅ Phase 3: Implementation following established decisions
-- ✅ Phase 4: Testing with awareness of common pitfalls
+- ✅ Phase 3: Implementation following validated approaches
+- ✅ Phase 4: Testing aware of common pitfalls
+
+### `/feature-plan` Integration (Phase 2)
+
+Feature planning now queries Graphiti for enriched context:
+
+```bash
+/feature-plan "implement dark mode"
+
+# System automatically:
+# ✅ Auto-detects feature spec (if FEAT-XXX in description)
+# ✅ Queries Graphiti for enriched context:
+#    - Related features
+#    - Relevant patterns
+#    - Role constraints (Player/Coach boundaries)
+#    - Quality gate configs
+```
+
+**Context Loading:**
+- **Auto-detection**: Searches `docs/features/` for matching FEAT-XXX specs
+- **Graphiti queries**: Related features, patterns, AutoBuild constraints
+- **Budget-aware**: Smart token allocation for optimal context
 
 ### `/feature-build` Integration
 
-The Player-Coach workflow benefits from **feature-specific context**:
+The Player-Coach workflow benefits from **job-specific and turn state context**:
 
 **Pre-Loop Context:**
 ```python
-context = await pre_feature_build_context(feature_id="FEAT-AUTH-001")
+context = await get_job_specific_context(
+    task_id="TASK-AUTH-001",
+    is_autobuild=True,
+    turn_number=1
+)
 
-# Returns:
-# - Feature-build architecture (Player-Coach pattern)
-# - Previous attempts on this feature
-# - Similar feature patterns
-# - Integration points (autobuild → task-work)
-# - Component status (stubs vs implemented)
+# AutoBuild-specific context:
+# - Role constraints: What Player should ask about, what Coach escalates
+# - Quality gate configs: Coverage thresholds, arch review scores
+# - Implementation modes: Direct vs task-work guidance
 ```
 
-**During Execution:**
-- **Player** receives:
-  - Architecture decisions (SDK not subprocess)
-  - Integration patterns (how to invoke task-work)
-  - Failure patterns (what to avoid)
+**Turn State Tracking (Phase 2):**
 
-- **Coach** validates against:
-  - Known architectural patterns
-  - Quality gate requirements
-  - Component implementation status
+Each turn captures state for cross-turn learning:
+
+```python
+await capture_turn_state(
+    feature_id="FEAT-AUTH-001",
+    task_id="TASK-AUTH-001",
+    turn_number=2,
+    player_decision="Implemented OAuth2 token refresh",
+    coach_decision="APPROVED",
+    files_modified=["src/auth/oauth.py", "tests/test_oauth.py"],
+    blockers_found=[],
+    acceptance_criteria_status={"token_refresh": "verified"}
+)
+```
+
+**Turn N+1 receives:**
+- Previous turn context (what was implemented)
+- Coach feedback history (what was rejected and why)
+- Blockers encountered (to avoid repeating)
+- Progress against acceptance criteria
+
+**See**: [Turn State Tracking Guide](graphiti-turn-states.md)
 
 **Post-Execution:**
 ```python
@@ -320,6 +496,37 @@ Template creation **automatically seeds** template knowledge:
 "How does my-template handle authentication?"
 → Returns: "Uses OAuth2 with JWT tokens (from agent analysis)"
 ```
+
+### Query Commands (Phase 2)
+
+New CLI commands for querying and inspecting stored knowledge:
+
+```bash
+# Show specific knowledge by ID
+guardkit graphiti show FEAT-SKEL-001    # Feature spec
+guardkit graphiti show ADR-001          # Architecture decision
+
+# Search for knowledge
+guardkit graphiti search "authentication patterns"
+guardkit graphiti search "error handling" --group patterns --limit 20
+
+# List all knowledge in a category
+guardkit graphiti list features
+guardkit graphiti list adrs
+guardkit graphiti list patterns
+
+# View knowledge graph status
+guardkit graphiti status
+guardkit graphiti status --verbose
+```
+
+**Use Cases:**
+- ✅ Verify knowledge was captured correctly
+- ✅ Debug context loading issues
+- ✅ Explore stored patterns and decisions
+- ✅ Audit knowledge graph health
+
+**See**: [Knowledge Query Commands Guide](graphiti-query-commands.md)
 
 ---
 
@@ -553,6 +760,92 @@ guardkit graphiti seed-adrs --force
 
 **Note:** Re-seeding does NOT delete task outcomes or custom ADRs captured during development. It only updates the **system context** categories.
 
+### How do I capture project knowledge interactively?
+
+Use the interactive capture command:
+
+```bash
+# Start interactive session
+guardkit graphiti capture --interactive
+
+# Focus on specific category
+guardkit graphiti capture --interactive --focus architecture
+guardkit graphiti capture --interactive --focus role-customization
+
+# Limit questions
+guardkit graphiti capture --interactive --max-questions 5
+```
+
+**Focus Categories:**
+- **Project knowledge**: project-overview, architecture, domain, constraints, decisions, goals
+- **AutoBuild customization**: role-customization, quality-gates, workflow-preferences
+
+**See**: [Interactive Knowledge Capture Guide](graphiti-knowledge-capture.md)
+
+### How do I query stored knowledge?
+
+Use the query commands:
+
+```bash
+# Show specific knowledge by ID
+guardkit graphiti show FEAT-SKEL-001
+guardkit graphiti show ADR-001
+
+# Search for knowledge
+guardkit graphiti search "authentication patterns"
+guardkit graphiti search "error handling" --group patterns --limit 20
+
+# List all in category
+guardkit graphiti list features
+guardkit graphiti list adrs
+
+# Check status
+guardkit graphiti status --verbose
+```
+
+**See**: [Knowledge Query Commands Guide](graphiti-query-commands.md)
+
+### What is job-specific context?
+
+Job-specific context is a Phase 2 feature that provides each task with precisely the knowledge it needs:
+
+| Task Type | Context Loaded |
+|-----------|----------------|
+| **Simple (1-3)** | 2000 tokens: patterns (30%), outcomes (25%), architecture (20%) |
+| **Medium (4-6)** | 4000 tokens: balanced across categories |
+| **Complex (7-10)** | 6000 tokens: architecture (25%), patterns (25%), outcomes (20%) |
+
+**Budget adjustments:**
+- First-of-type: +30%
+- Refinement: +20%
+- AutoBuild Turn >1: +15%
+
+**See**: [Job-Specific Context Retrieval Guide](graphiti-job-context.md)
+
+### How do turn states work in AutoBuild?
+
+Each `/feature-build` turn captures state for cross-turn learning:
+
+**Captured per turn:**
+- Player decisions and actions
+- Coach feedback and approval status
+- Files modified during turn
+- Acceptance criteria status (verified/pending/rejected)
+- Blockers encountered
+
+**Benefits:**
+- Turn N+1 knows what Turn N learned
+- Prevents repeated mistakes
+- Tracks progress against acceptance criteria
+- Provides audit trail for feature development
+
+**Query turn states:**
+```bash
+guardkit graphiti search "turn FEAT-XXX" --group turn_states
+```
+
+**See**: [Turn State Tracking Guide](graphiti-turn-states.md)
+
 ---
 
 ## Multi-Project Support (Project Namespaces)
@@ -633,6 +926,15 @@ See the complete **[Project Namespaces Guide](graphiti-project-namespaces.md)** 
 
 ## See Also
 
+### Phase 2 Guides
+
+- **[Interactive Knowledge Capture](graphiti-knowledge-capture.md)** - Capture project knowledge through Q&A sessions
+- **[Knowledge Query Commands](graphiti-query-commands.md)** - Query and inspect stored knowledge
+- **[Job-Specific Context Retrieval](graphiti-job-context.md)** - Budget-aware, precision context loading
+- **[Turn State Tracking](graphiti-turn-states.md)** - Cross-turn learning for AutoBuild
+
+### Core Guides
+
 - **[Graphiti Testing and Validation](graphiti-testing-validation.md)** - E2E tests and validation procedures
 - **[Graphiti Project Namespaces](graphiti-project-namespaces.md)** - Multi-project isolation guide
 - [Graphiti Setup Guide](../setup/graphiti-setup.md) - Detailed installation and configuration
@@ -649,6 +951,9 @@ See the complete **[Project Namespaces Guide](graphiti-project-namespaces.md)** 
 - ✅ Automatic capture of architecture decisions
 - ✅ Learning from past mistakes
 - ✅ Consistent system context
+- ✅ Job-specific context retrieval (Phase 2)
+- ✅ Interactive knowledge capture (Phase 2)
+- ✅ Turn state tracking for AutoBuild (Phase 2)
 
 **Key Commands:**
 ```bash
@@ -660,6 +965,15 @@ guardkit graphiti seed
 # Verify
 guardkit graphiti status
 guardkit graphiti verify
+
+# Query (Phase 2)
+guardkit graphiti show FEAT-XXX        # Show specific knowledge
+guardkit graphiti search "pattern"     # Search knowledge
+guardkit graphiti list features        # List by category
+
+# Capture (Phase 2)
+guardkit graphiti capture --interactive              # Full session
+guardkit graphiti capture --interactive --focus architecture
 
 # Manage
 guardkit graphiti seed-adrs          # Seed feature-build ADRs
@@ -676,4 +990,5 @@ guardkit graphiti seed --force       # Re-seed system context
 1. Follow [Quick Start](#quick-start-5-minute-setup) to enable Graphiti
 2. Run `guardkit graphiti verify` to test
 3. Use GuardKit commands as normal - context is automatic
-4. See [Setup Guide](../setup/graphiti-setup.md) for advanced configuration
+4. Explore Phase 2 features: [Interactive Capture](graphiti-knowledge-capture.md), [Query Commands](graphiti-query-commands.md)
+5. See [Setup Guide](../setup/graphiti-setup.md) for advanced configuration
