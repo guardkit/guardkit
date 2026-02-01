@@ -1,17 +1,17 @@
 ---
-id: TASK-GR6-002
-title: Implement DynamicBudgetCalculator
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-006
-wave: 3
-implementation_mode: task-work
 complexity: 6
-estimate_hours: 4
 dependencies:
-  - TASK-GR6-001
+- TASK-GR6-001
+estimate_hours: 4
+feature_id: FEAT-0F4A
+id: TASK-GR6-002
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: in_review
+sub_feature: GR-006
+task_type: feature
+title: Implement DynamicBudgetCalculator
+wave: 3
 ---
 
 # Implement DynamicBudgetCalculator
@@ -22,11 +22,11 @@ Create the `DynamicBudgetCalculator` class that calculates context budget and al
 
 ## Acceptance Criteria
 
-- [ ] `calculate(characteristics)` returns `ContextBudget`
-- [ ] Base budget by complexity: 2000 (simple), 4000 (medium), 6000 (complex)
-- [ ] Adjustments for novelty (+30%), refinement (+20%), AutoBuild (+15-25%)
-- [ ] DEFAULT_ALLOCATION for standard tasks
-- [ ] AUTOBUILD_ALLOCATION with role_constraints, quality_gate_configs, turn_states
+- [x] `calculate(characteristics)` returns `ContextBudget`
+- [x] Base budget by complexity: 2000 (simple), 4000 (medium), 6000 (complex)
+- [x] Adjustments for novelty (+30%), refinement (+20%), AutoBuild (+15-25%)
+- [x] DEFAULT_ALLOCATION for standard tasks
+- [x] AUTOBUILD_ALLOCATION with role_constraints, quality_gate_configs, turn_states
 
 ## Technical Details
 
