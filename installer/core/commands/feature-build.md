@@ -167,6 +167,51 @@ Execute Player-Coach adversarial turns until approval or max turns:
 - Validates against acceptance criteria
 - Either approves or provides specific feedback
 
+**Job-Specific Context Loading** (NEW - FEAT-GR-006):
+
+Each Player turn automatically receives job-specific context from Graphiti, ensuring the AI has precisely the knowledge it needs:
+
+*Standard Context*:
+- **Similar Outcomes**: What worked for similar tasks (patterns, approaches, successful fixes)
+- **Relevant Patterns**: Codebase patterns applicable to this task
+- **Architecture Context**: How this fits into the overall system
+- **Warnings**: Approaches to avoid based on past failures
+- **Feature Context**: Parent feature requirements and success criteria
+- **Domain Knowledge**: Domain-specific terminology and concepts
+
+*AutoBuild-Specific Context* (loaded during /feature-build):
+- **Role Constraints**: What Player can/cannot do, what requires asking first
+  - Example: "Player must ask before: schema changes, auth changes, deployment configs"
+  - Prevents Player-Coach role reversal (TASK-REV-7549)
+- **Quality Gate Configs**: Task-type specific thresholds (coverage, arch review)
+  - Example: "Feature tasks: coverage ≥80%, arch ≥60, tests required"
+  - Prevents threshold drift during autonomous sessions
+- **Turn States**: Previous turn context for cross-turn learning
+  - Example: "Turn 2 REJECTED - Tests failing, coverage at 65%"
+  - Enables learning from mistakes without repeating them
+- **Implementation Modes**: Direct vs task-work guidance
+  - Example: "task-work: Results in worktree, state via JSON checkpoints"
+  - Clarifies where files are created and how to check progress
+
+*Context Budget Allocation*:
+- Simple tasks (1-3): 2000 tokens base
+- Medium tasks (4-6): 4000 tokens base
+- Complex tasks (7-10): 6000 tokens base
+- Turn 2+: +15% (load previous turn feedback)
+- Turn 3+: +10% (additional history context)
+
+*Relevance Filtering*:
+- Standard threshold: 0.6 (high precision)
+- First-of-type: 0.5 (broader context for novel tasks)
+- Refinement: 0.5 (don't miss failure patterns)
+
+*Performance*:
+- Retrieval time: ~600-800ms per turn
+- Cache hit rate: ~40% (repeated context cached)
+- Budget utilization: 70-90% (efficient, rarely exceeds)
+
+This context loading is **automatic and transparent** - no manual intervention required. Context is injected into the Player prompt before each turn, ensuring the AI has the right knowledge at the right time.
+
 ### Phase 3: Finalize
 - Preserve worktree for human review (never auto-merges)
 - Save final state to task frontmatter

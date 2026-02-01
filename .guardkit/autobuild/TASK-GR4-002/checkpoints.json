@@ -1,0 +1,22 @@
+{
+  "task_id": "TASK-GR4-002",
+  "checkpoints": [
+    {
+      "turn": 1,
+      "commit_hash": "c8702b0c34283baa1b120e51bbb8fa29a900054c",
+      "timestamp": "2026-02-01T13:06:19.547669",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 1 complete (tests: fail)"
+    },
+    {
+      "turn": 2,
+      "commit_hash": "dff2f83230760b8ee48a2a5437579664cdc9abbc",
+      "timestamp": "2026-02-01T13:09:05.592143",
+      "tests_passed": false,
+      "test_count": 0,
+      "message": "[guardkit-checkpoint] Turn 2 complete (tests: fail)"
+    }
+  ],
+  "last_updated": "2026-02-01T13:09:05.592255"
+}

@@ -130,14 +130,16 @@ class TestGraphitiStatusCommand:
             mock_client.enabled = True
             mock_client.initialize = AsyncMock(return_value=True)
             mock_client.health_check = AsyncMock(return_value=True)
+            mock_client.search = AsyncMock(return_value=[])
             mock_client.close = AsyncMock()
             mock_client_class.return_value = mock_client
 
             result = runner.invoke(cli, ["graphiti", "status"])
 
             assert result.exit_code == 0
-            # Should indicate seeded status
-            assert "seeded" in result.output.lower()
+            # Should show enabled status and episode counts
+            assert "enabled" in result.output.lower()
+            assert "total episodes" in result.output.lower()
 
 
 class TestGraphitiVerifyCommand:

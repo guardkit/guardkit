@@ -46,6 +46,20 @@ Public API:
     load_relevant_failures: Load failures relevant to context (TASK-GE-004)
     FailedApproachManager: Manager class for failure operations (TASK-GE-004)
     load_failed_approaches: Context loader for failed approaches (TASK-GE-004)
+    KnowledgeCategory: Enum for knowledge categories (TASK-GR4-001)
+    KnowledgeGap: Dataclass for knowledge gaps (TASK-GR4-001)
+    KnowledgeGapAnalyzer: Analyzer for identifying knowledge gaps (TASK-GR4-001)
+    CapturedKnowledge: Dataclass for captured knowledge (TASK-GR4-002)
+    InteractiveCaptureSession: Interactive knowledge capture session (TASK-GR4-002)
+    TaskType: Enum for task classification (TASK-GR6-001)
+    TaskPhase: Enum for execution phases (TASK-GR6-001)
+    TaskCharacteristics: Dataclass for analyzed task properties (TASK-GR6-001)
+    TaskAnalyzer: Analyzer for task characteristics (TASK-GR6-001)
+    ContextBudget: Budget allocation dataclass (TASK-GR6-002)
+    DynamicBudgetCalculator: Budget calculator based on task characteristics (TASK-GR6-002)
+    RetrievedContext: Dataclass for retrieved context data (TASK-GR6-003)
+    JobContextRetriever: Retrieves job-specific context from Graphiti (TASK-GR6-003)
+    format_quality_gates: Format quality gate configs for prompts (TASK-GR6-008)
 
 Example:
     from guardkit.knowledge import (
@@ -259,6 +273,58 @@ from guardkit.knowledge.seed_failed_approaches import (
     get_initial_failed_approaches,
 )
 
+from guardkit.knowledge.feature_detector import (
+    FeatureDetector,
+)
+
+from guardkit.knowledge.gap_analyzer import (
+    KnowledgeCategory,
+    KnowledgeGap,
+    KnowledgeGapAnalyzer,
+)
+
+from guardkit.knowledge.interactive_capture import (
+    CapturedKnowledge,
+    InteractiveCaptureSession,
+)
+
+# Task analysis (TASK-GR6-001)
+from guardkit.knowledge.task_analyzer import (
+    TaskType,
+    TaskPhase,
+    TaskCharacteristics,
+    TaskAnalyzer,
+)
+
+# Budget calculation (TASK-GR6-002)
+from guardkit.knowledge.budget_calculator import (
+    ContextBudget,
+    DynamicBudgetCalculator,
+)
+
+# Job context retrieval (TASK-GR6-003)
+from guardkit.knowledge.job_context_retriever import (
+    RetrievedContext,
+    JobContextRetriever,
+)
+
+# AutoBuild context loader (TASK-GR6-006)
+from guardkit.knowledge.autobuild_context_loader import (
+    AutoBuildContextLoader,
+    AutoBuildContextResult,
+)
+
+# Quality gate formatting (TASK-GR6-008)
+from guardkit.knowledge.quality_gate_formatter import (
+    format_quality_gates,
+)
+
+# Role constraint formatting (TASK-GR6-007)
+from guardkit.knowledge.role_constraint_formatter import (
+    format_role_constraints,
+    format_role_constraints_for_actor,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -342,4 +408,32 @@ __all__ = [
     "seed_failed_approaches",
     "get_initial_failed_approaches",
     "load_failed_approaches",
+    # Feature detection (TASK-GR3-001)
+    "FeatureDetector",
+    # Knowledge gap analysis (TASK-GR4-001)
+    "KnowledgeCategory",
+    "KnowledgeGap",
+    "KnowledgeGapAnalyzer",
+    # Interactive knowledge capture (TASK-GR4-002)
+    "CapturedKnowledge",
+    "InteractiveCaptureSession",
+    # Task analysis (TASK-GR6-001)
+    "TaskType",
+    "TaskPhase",
+    "TaskCharacteristics",
+    "TaskAnalyzer",
+    # Budget calculation (TASK-GR6-002)
+    "ContextBudget",
+    "DynamicBudgetCalculator",
+    # Job context retrieval (TASK-GR6-003)
+    "RetrievedContext",
+    "JobContextRetriever",
+    # AutoBuild context loader (TASK-GR6-006)
+    "AutoBuildContextLoader",
+    "AutoBuildContextResult",
+    # Quality gate formatting (TASK-GR6-008)
+    "format_quality_gates",
+    # Role constraint formatting (TASK-GR6-007)
+    "format_role_constraints",
+    "format_role_constraints_for_actor",
 ]

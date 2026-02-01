@@ -10,11 +10,12 @@ Test Coverage:
 - TurnMode enum values
 - capture_turn_state() with mocked Graphiti client
 - load_turn_continuation_context() query functionality
+- load_turn_context() for cross-turn learning
 - Graceful degradation when Graphiti disabled
 - Integration tests (capture then load round trip)
 
 Coverage Target: >=80%
-Test Count: 30+ tests
+Test Count: 40+ tests
 """
 
 import pytest
@@ -32,6 +33,7 @@ try:
     from guardkit.knowledge.turn_state_operations import (
         capture_turn_state,
         load_turn_continuation_context,
+        load_turn_context,
     )
     IMPORTS_AVAILABLE = True
 except ImportError as e:
@@ -382,6 +384,57 @@ class TestTurnStateEntityDataclass:
         assert len(entity.lessons_from_turn) == 3
         assert entity.lessons_from_turn == lessons
 
+    def test_turn_state_entity_with_files_modified(self):
+        """Test TurnStateEntity with files_modified field."""
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        files = [
+            "src/auth/login.py",
+            "src/auth/session.py",
+            "tests/test_auth.py"
+        ]
+
+        entity = TurnStateEntity(
+            id="TURN-FEAT-GE-1",
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Summary",
+            player_decision="implemented",
+            coach_decision="approved",
+            coach_feedback=None,
+            mode=TurnMode.FRESH_START,
+            files_modified=files,
+            started_at=started,
+            completed_at=completed
+        )
+
+        assert len(entity.files_modified) == 3
+        assert entity.files_modified == files
+
+    def test_turn_state_entity_default_files_modified(self):
+        """Test TurnStateEntity default empty files_modified list."""
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        entity = TurnStateEntity(
+            id="TURN-FEAT-GE-1",
+            feature_id="FEAT-GE",
+            task_id="TASK-GE-001",
+            turn_number=1,
+            player_summary="Summary",
+            player_decision="implemented",
+            coach_decision="approved",
+            coach_feedback=None,
+            mode=TurnMode.FRESH_START,
+            started_at=started,
+            completed_at=completed
+        )
+
+        # Should have default empty list
+        assert entity.files_modified == []
+
 
 # ============================================================================
 # 3. TurnStateEntity.to_episode_body() Tests (8 tests)
@@ -486,6 +539,7 @@ class TestTurnStateEntitySerialization:
             blockers_found=["Blocker 1"],
             progress_summary="Progress made",
             acceptance_criteria_status={"AC-001": "completed"},
+            files_modified=["src/main.py", "tests/test_main.py"],
             tests_passed=10,
             tests_failed=0,
             coverage=85.0,
@@ -502,6 +556,7 @@ class TestTurnStateEntitySerialization:
         assert episode_body["blockers_found"] == ["Blocker 1"]
         assert episode_body["progress_summary"] == "Progress made"
         assert episode_body["acceptance_criteria_status"] == {"AC-001": "completed"}
+        assert episode_body["files_modified"] == ["src/main.py", "tests/test_main.py"]
         assert episode_body["tests_passed"] == 10
         assert episode_body["tests_failed"] == 0
         assert episode_body["coverage"] == 85.0
@@ -683,7 +738,11 @@ class TestCaptureTurnState:
 
     @pytest.mark.asyncio
     async def test_capture_turn_state_correct_episode_name(self):
-        """Test capture creates correct episode name."""
+        """Test capture creates correct episode name matching acceptance criteria format.
+
+        Acceptance Criteria: Episode name must be `turn_{feature_id}_{task_id}_turn{N}`
+        Example: turn_FEAT-GE_TASK-GE-001_turn1
+        """
         mock_client = AsyncMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
@@ -710,9 +769,46 @@ class TestCaptureTurnState:
         call_args = mock_client.add_episode.call_args
         episode_name = call_args[1]["name"]
 
-        # Name should include task_id and turn number
-        assert "TASK-GE-001" in episode_name
-        assert "turn" in episode_name.lower()
+        # Episode name MUST match the acceptance criteria format exactly:
+        # turn_{feature_id}_{task_id}_turn{N}
+        expected_name = "turn_FEAT-GE_TASK-GE-001_turn1"
+        assert episode_name == expected_name, f"Expected '{expected_name}', got '{episode_name}'"
+
+    @pytest.mark.asyncio
+    async def test_capture_turn_state_episode_name_format_various_turns(self):
+        """Test episode name format for various turn numbers."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_123")
+
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        for turn_num in [1, 2, 5, 10]:
+            mock_client.add_episode.reset_mock()
+
+            entity = TurnStateEntity(
+                id=f"TURN-FEAT-TEST-{turn_num}",
+                feature_id="FEAT-TEST",
+                task_id="TASK-TEST-042",
+                turn_number=turn_num,
+                player_summary="Summary",
+                player_decision="implemented",
+                coach_decision="approved",
+                coach_feedback=None,
+                mode=TurnMode.CONTINUING_WORK,
+                started_at=started,
+                completed_at=completed
+            )
+
+            await capture_turn_state(mock_client, entity)
+
+            call_args = mock_client.add_episode.call_args
+            episode_name = call_args[1]["name"]
+
+            # Format: turn_{feature_id}_{task_id}_turn{N}
+            expected_name = f"turn_FEAT-TEST_TASK-TEST-042_turn{turn_num}"
+            assert episode_name == expected_name, f"Turn {turn_num}: Expected '{expected_name}', got '{episode_name}'"
 
     @pytest.mark.asyncio
     async def test_capture_turn_state_disabled_client(self):
@@ -1051,7 +1147,260 @@ class TestLoadTurnContinuationContext:
 
 
 # ============================================================================
-# 6. Integration Tests (3 tests)
+# 6. load_turn_context() Tests (11 tests)
+# ============================================================================
+
+class TestLoadTurnContext:
+    """Test load_turn_context() cross-turn learning function."""
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_no_history_returns_first_turn_message(self):
+        """Test returns first turn message when no history."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=[])
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert result == "First turn - no previous context."
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_single_turn_returns_summary(self):
+        """Test formats single turn correctly."""
+        mock_result = {
+            "turn_number": 1,
+            "coach_decision": "APPROVED",
+            "progress_summary": "Implemented authentication successfully"
+        }
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=[mock_result])
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert "Previous Turn Summary:" in result
+            assert "Turn 1: APPROVED - Implemented authentication successfully" in result
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_multiple_turns_formats_correctly(self):
+        """Test formats multiple turns correctly."""
+        mock_results = [
+            {
+                "turn_number": 1,
+                "coach_decision": "REJECTED",
+                "progress_summary": "Initial implementation"
+            },
+            {
+                "turn_number": 2,
+                "coach_decision": "FEEDBACK",
+                "progress_summary": "Added tests"
+            },
+            {
+                "turn_number": 3,
+                "coach_decision": "APPROVED",
+                "progress_summary": "Final version"
+            }
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=mock_results)
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert "Previous Turn Summary:" in result
+            assert "Turn 1: REJECTED" in result
+            assert "Turn 2: FEEDBACK" in result
+            assert "Turn 3: APPROVED" in result
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_sorts_by_turn_number(self):
+        """Test results are sorted by turn number."""
+        mock_results = [
+            {
+                "turn_number": 3,
+                "coach_decision": "APPROVED",
+                "progress_summary": "Third turn"
+            },
+            {
+                "turn_number": 1,
+                "coach_decision": "REJECTED",
+                "progress_summary": "First turn"
+            },
+            {
+                "turn_number": 2,
+                "coach_decision": "FEEDBACK",
+                "progress_summary": "Second turn"
+            }
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=mock_results)
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            # Should be sorted by turn number
+            lines = result.split('\n')
+            turn_lines = [l for l in lines if l.strip().startswith('Turn')]
+            assert "Turn 1" in turn_lines[0]
+            assert "Turn 2" in turn_lines[1]
+            assert "Turn 3" in turn_lines[2]
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_limits_to_5_turns(self):
+        """Test only returns last 5 turns."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=[])
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            # Verify search was called with num_results=5
+            call_args = mock_client.search.call_args
+            assert call_args[1]["num_results"] == 5
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_rejected_turn_includes_feedback_emphasis(self):
+        """Test REJECTED turn includes emphasized feedback."""
+        mock_results = [
+            {
+                "turn_number": 1,
+                "coach_decision": "REJECTED",
+                "progress_summary": "Initial attempt",
+                "feedback_summary": "Missing error handling and validation logic"
+            }
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=mock_results)
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert "Last Turn Feedback (MUST ADDRESS):" in result
+            assert "Missing error handling and validation logic" in result
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_approved_turn_no_feedback_emphasis(self):
+        """Test APPROVED turn does not emphasize feedback."""
+        mock_results = [
+            {
+                "turn_number": 1,
+                "coach_decision": "APPROVED",
+                "progress_summary": "Successful implementation",
+                "feedback_summary": "Good work"
+            }
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=mock_results)
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert "MUST ADDRESS" not in result
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_truncates_long_progress_summary(self):
+        """Test truncates progress summary to 100 chars."""
+        long_summary = "A" * 150  # 150 character summary
+
+        mock_results = [
+            {
+                "turn_number": 1,
+                "coach_decision": "APPROVED",
+                "progress_summary": long_summary
+            }
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(return_value=mock_results)
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            # Should only contain first 100 chars
+            assert "A" * 100 in result
+            assert "A" * 101 not in result
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_graceful_degradation_disabled_client(self):
+        """Test graceful degradation when Graphiti disabled."""
+        mock_client = AsyncMock()
+        mock_client.enabled = False
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert result == "First turn - no previous context."
+            mock_client.search.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_graceful_degradation_none_client(self):
+        """Test graceful degradation when client is None."""
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=None):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert result == "First turn - no previous context."
+
+    @pytest.mark.asyncio
+    async def test_load_turn_context_graceful_degradation_search_error(self):
+        """Test graceful degradation when search fails."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.search = AsyncMock(side_effect=Exception("Search error"))
+
+        with patch('guardkit.knowledge.turn_state_operations.get_graphiti', return_value=mock_client):
+            result = await load_turn_context(
+                feature_id="FEAT-GE",
+                task_id="TASK-GE-001"
+            )
+
+            assert result == "First turn - no previous context."
+
+
+# ============================================================================
+# 7. Integration Tests (3 tests)
 # ============================================================================
 
 class TestIntegrationRoundTrip:
@@ -1216,7 +1565,7 @@ class TestIntegrationRoundTrip:
 
 
 # ============================================================================
-# 7. create_turn_state_from_autobuild() Factory Tests (6 tests)
+# 8. create_turn_state_from_autobuild() Factory Tests (6 tests)
 # ============================================================================
 
 # Import the factory function if available
@@ -1267,6 +1616,7 @@ class TestCreateTurnStateFromAutoBuild:
         assert entity.mode == TurnMode.CONTINUING_WORK  # default
         assert entity.blockers_found == []
         assert entity.acceptance_criteria_status == {}
+        assert entity.files_modified == []
         assert entity.lessons_from_turn == []
 
     def test_create_turn_state_from_autobuild_with_all_params(self):
@@ -1286,6 +1636,7 @@ class TestCreateTurnStateFromAutoBuild:
             blockers_found=["Redis not available"],
             progress_summary="Made good progress",
             acceptance_criteria_status={"AC-001": "completed"},
+            files_modified=["src/auth.py", "tests/test_auth.py"],
             tests_passed=10,
             tests_failed=2,
             coverage=75.0,
@@ -1302,6 +1653,7 @@ class TestCreateTurnStateFromAutoBuild:
         assert entity.blockers_found == ["Redis not available"]
         assert entity.progress_summary == "Made good progress"
         assert entity.acceptance_criteria_status == {"AC-001": "completed"}
+        assert entity.files_modified == ["src/auth.py", "tests/test_auth.py"]
         assert entity.tests_passed == 10
         assert entity.tests_failed == 2
         assert entity.coverage == 75.0
@@ -1370,7 +1722,7 @@ class TestCreateTurnStateFromAutoBuild:
 
 
 # ============================================================================
-# 8. Module Exports Tests (3 tests)
+# 9. Module Exports Tests (3 tests)
 # ============================================================================
 
 class TestModuleExports:
@@ -1395,9 +1747,11 @@ class TestModuleExports:
         from guardkit.knowledge.turn_state_operations import (
             capture_turn_state,
             load_turn_continuation_context,
+            load_turn_context,
             create_turn_state_from_autobuild,
         )
 
         assert callable(capture_turn_state)
         assert callable(load_turn_continuation_context)
+        assert callable(load_turn_context)
         assert callable(create_turn_state_from_autobuild)

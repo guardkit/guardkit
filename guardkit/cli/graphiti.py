@@ -135,64 +135,99 @@ async def _cmd_seed(force: bool) -> None:
         await client.close()
 
 
-async def _cmd_status() -> None:
-    """Async implementation of status command."""
-    console.print("[bold blue]Graphiti Status[/bold blue]")
+async def _cmd_status(verbose: bool = False) -> None:
+    """Async implementation of status command.
+
+    Args:
+        verbose: Show all groups even if empty
+    """
+    console.print()
+    console.print("[bold cyan]╔════════════════════════════════════════╗[/bold cyan]")
+    console.print("[bold cyan]║       Graphiti Knowledge Status        ║[/bold cyan]")
+    console.print("[bold cyan]╚════════════════════════════════════════╝[/bold cyan]")
     console.print()
 
     # Load configuration
     settings = load_graphiti_config()
 
-    # Create status table
-    table = Table(show_header=False, box=None)
-    table.add_column("Property", style="cyan")
-    table.add_column("Value")
-
-    table.add_row("Enabled", "[green]Yes[/green]" if settings.enabled else "[red]No[/red]")
-    table.add_row("Neo4j URI", settings.neo4j_uri)
-    table.add_row("Neo4j User", settings.neo4j_user)
-    table.add_row("Timeout", f"{settings.timeout}s")
-
-    console.print(table)
-    console.print()
+    # Show enabled/disabled status
+    if settings.enabled:
+        console.print("  [bold]Status:[/bold] [green bold]ENABLED[/green bold]")
+    else:
+        console.print("  [bold]Status:[/bold] [red bold]DISABLED[/red bold]")
+        console.print("  [dim]Enable in config/graphiti.yaml[/dim]")
+        console.print()
+        return
 
     # Check connection
-    if settings.enabled:
-        client, _ = _get_client_and_config()
+    client, _ = _get_client_and_config()
 
-        console.print("Checking connection...")
+    try:
+        initialized = await client.initialize()
         try:
-            initialized = await client.initialize()
+            if not initialized or not client.enabled:
+                console.print("  [yellow]Connection: Failed[/yellow]")
+                console.print("  [dim]Check Neo4j configuration[/dim]")
+                console.print()
+                return
+
+            # Check health
             try:
-                if initialized and client.enabled:
-                    console.print("[green]Connection: OK[/green]")
+                healthy = await client.health_check()
+                if not healthy:
+                    console.print("  [yellow]Health: Degraded[/yellow]")
+                    console.print()
+                    return
+            except Exception:
+                console.print("  [yellow]Health: Unknown[/yellow]")
+                console.print()
+                return
 
-                    # Check health
-                    try:
-                        healthy = await client.health_check()
-                        if healthy:
-                            console.print("[green]Health: OK[/green]")
+            # Count episodes by category
+            categories = {
+                "System Knowledge": ["product_knowledge", "command_workflows", "patterns", "agents"],
+                "Project Knowledge": ["project_overview", "project_architecture", "feature_specs"],
+                "Decisions": ["project_decisions", "architecture_decisions"],
+                "Learning": ["task_outcomes", "failure_patterns", "successful_fixes"]
+            }
+
+            total = 0
+            console.print()
+
+            for section, groups in categories.items():
+                console.print(f"  [bold]{section}:[/bold]")
+                section_total = 0
+
+                for group in groups:
+                    # Search with wildcard to get all episodes in this group
+                    results = await client.search("*", [group], 100)
+                    count = len(results)
+                    section_total += count
+
+                    if verbose or count > 0:
+                        # Color code based on count
+                        if count > 0:
+                            status_color = "green"
                         else:
-                            console.print("[yellow]Health: Degraded[/yellow]")
-                    except Exception:
-                        console.print("[yellow]Health: Unknown[/yellow]")
-                else:
-                    console.print("[red]Connection: Failed[/red]")
-            finally:
-                await client.close()
-        except Exception as e:
-            console.print(f"[red]Connection: Error - {e}[/red]")
-    else:
-        console.print("[yellow]Connection: Skipped (disabled)[/yellow]")
+                            status_color = "yellow"
 
-    console.print()
+                        console.print(
+                            f"    [white]• {group}:[/white] [{status_color}]{count}[/{status_color}]"
+                        )
 
-    # Check seeding status
-    if is_seeded():
-        console.print(f"[green]Seeded: Yes (version {SEEDING_VERSION})[/green]")
-    else:
-        console.print("[yellow]Seeded: No[/yellow]")
-        console.print("Run 'guardkit graphiti seed' to seed system context.")
+                total += section_total
+
+            console.print()
+            console.print(f"  [bold]Total Episodes:[/bold] {total}")
+            console.print()
+
+        finally:
+            await client.close()
+
+    except Exception as e:
+        console.print(f"  [red]Error: {e}[/red]")
+        console.print()
+        return
 
 
 async def _cmd_verify(verbose: bool) -> None:
@@ -360,13 +395,21 @@ def seed(force: bool):
 
 
 @graphiti.command()
-def status():
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all groups even if empty",
+)
+def status(verbose: bool):
     """Show Graphiti connection and seeding status.
 
     Displays information about the Graphiti configuration, connection status,
-    and whether system context has been seeded.
+    knowledge graph statistics, and episode counts per category.
+
+    Use --verbose to show all groups even if empty.
     """
-    asyncio.run(_cmd_status())
+    asyncio.run(_cmd_status(verbose))
 
 
 @graphiti.command()
@@ -640,6 +683,108 @@ async def _cmd_add_context(
         await client.close()
 
 
+async def _cmd_capture(focus: Optional[str], max_questions: int) -> None:
+    """Async implementation of capture command."""
+    from guardkit.knowledge.interactive_capture import (
+        InteractiveCaptureSession,
+        KnowledgeCategory,
+    )
+
+    console.print("[bold blue]Interactive Knowledge Capture[/bold blue]")
+    console.print()
+
+    # Check if Graphiti is enabled
+    settings = load_graphiti_config()
+    if not settings.enabled:
+        console.print("[yellow]Graphiti is disabled in configuration.[/yellow]")
+        console.print("Knowledge capture requires Graphiti to be enabled.")
+        return
+
+    # Create client and verify connection
+    client, _ = _get_client_and_config()
+
+    console.print(f"Connecting to Neo4j at {settings.neo4j_uri}...")
+
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        console.print("[green]Connected to Graphiti[/green]")
+        console.print()
+
+        # Map focus string to enum
+        focus_enum = None
+        if focus:
+            # Convert hyphenated lowercase to enum (e.g., "project-overview" -> KnowledgeCategory.PROJECT_OVERVIEW)
+            focus_key = focus.replace("-", "_").upper()
+            focus_enum = getattr(KnowledgeCategory, focus_key)
+
+        # Create UI callback for rich console output
+        def ui_callback(event: str, data=None):
+            """Handle UI events with colored output."""
+            if event == "info":
+                console.print(f"[blue]{data}[/blue]")
+            elif event == "intro":
+                console.print(data)
+            elif event == "question":
+                console.print()
+                console.print(
+                    f"[cyan bold][{data['number']}/{data['total']}] "
+                    f"{data['category'].upper()}[/cyan bold]"
+                )
+                console.print(f"[dim]Context: {data['context']}[/dim]")
+                console.print()
+                console.print(f"[yellow bold]{data['question']}[/yellow bold]")
+            elif event == "get_input":
+                answer = console.input("[white]Your answer[/white]: ")
+                return answer
+            elif event == "captured":
+                console.print("[green]✓ Captured:[/green]")
+                for fact in data["facts"][:3]:  # Show first 3 facts
+                    display_fact = fact[:80] + "..." if len(fact) > 80 else fact
+                    console.print(f"  [dim]- {display_fact}[/dim]")
+            elif event == "summary":
+                console.print(f"[green bold]{data}[/green bold]")
+
+        # Run the capture session
+        session = InteractiveCaptureSession()
+
+        try:
+            captured = await session.run_session(
+                focus=focus_enum,
+                max_questions=max_questions,
+                ui_callback=ui_callback,
+            )
+
+            if captured:
+                console.print()
+                console.print(
+                    f"[bold green]Successfully captured {len(captured)} "
+                    f"knowledge items![/bold green]"
+                )
+            else:
+                console.print()
+                console.print(
+                    "[yellow]No knowledge captured. "
+                    "Session ended or no gaps identified.[/yellow]"
+                )
+
+        except Exception as e:
+            console.print(f"[red]Error during capture session: {e}[/red]")
+            logger.exception("Capture session failed")
+            raise SystemExit(1)
+
+    finally:
+        await client.close()
+
+
 async def _cmd_clear(
     confirm: bool,
     system_only: bool,
@@ -760,6 +905,70 @@ async def _cmd_clear(
 
 @graphiti.command()
 @click.option(
+    "--interactive",
+    "-i",
+    is_flag=True,
+    help="Run interactive Q&A session",
+)
+@click.option(
+    "--focus",
+    type=click.Choice([
+        "project-overview",
+        "architecture",
+        "domain",
+        "constraints",
+        "decisions",
+        "goals",
+        "role-customization",
+        "quality-gates",
+        "workflow-preferences",
+    ]),
+    help="Focus on specific knowledge category",
+)
+@click.option(
+    "--max-questions",
+    type=int,
+    default=10,
+    help="Maximum questions to ask (default: 10)",
+)
+def capture(interactive: bool, focus: Optional[str], max_questions: int):
+    """Capture project knowledge through interactive Q&A.
+
+    Launches an interactive session that identifies knowledge gaps and captures
+    missing project information through guided questions. Supports all focus areas
+    including AutoBuild workflow customization.
+
+    \b
+    Examples:
+        guardkit graphiti capture --interactive
+        guardkit graphiti capture --interactive --focus architecture
+        guardkit graphiti capture --interactive --focus role-customization
+        guardkit graphiti capture --interactive --focus quality-gates
+        guardkit graphiti capture --interactive --max-questions 5
+
+    \b
+    Focus Areas:
+        - project-overview: Project purpose, users, goals
+        - architecture: Components, services, data flow
+        - domain: Terminology, business rules
+        - constraints: Technical/business constraints, avoid list
+        - decisions: Technology choices, rationale
+        - goals: Project objectives
+        - role-customization: AutoBuild role boundaries (what AI should ask about)
+        - quality-gates: Coverage thresholds, review scores
+        - workflow-preferences: Implementation modes, autonomous turn limits
+    """
+    if not interactive:
+        console.print("[yellow]Use --interactive flag to start a capture session[/yellow]")
+        console.print()
+        console.print("Example: guardkit graphiti capture --interactive")
+        return
+
+    asyncio.run(_cmd_capture(focus, max_questions))
+
+
+@graphiti.command()
+@click.option(
     "--confirm",
     is_flag=True,
     help="Required. Confirm deletion.",
@@ -812,3 +1021,469 @@ def clear(confirm: bool, system_only: bool, project_only: bool, dry_run: bool, f
         - {project}__project_decisions
     """
     asyncio.run(_cmd_clear(confirm, system_only, project_only, dry_run, force))
+
+
+async def _cmd_show(knowledge_id: str) -> None:
+    """Async implementation of show command.
+
+    Detects knowledge type from ID format and routes to correct group:
+    - FEAT-* -> feature_specs
+    - ADR-* -> architecture_decisions, project_decisions
+    - project-overview -> project_overview
+    - *-pattern -> patterns
+    - *-constraint -> project_constraints
+    - *-guide -> project_knowledge
+    - Other -> search all groups
+    """
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use show.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            console.print("[yellow]Graphiti not available.[/yellow]")
+            raise SystemExit(1)
+
+        # Detect knowledge type and determine group_ids
+        group_ids = _detect_group_ids(knowledge_id)
+
+        # Execute search
+        try:
+            results = await client.search(
+                knowledge_id,  # Query as positional arg for test compatibility
+                group_ids=group_ids,
+                num_results=5,
+            )
+        except Exception as e:
+            console.print(f"[red]Error during search: {e}[/red]")
+            raise SystemExit(1)
+
+        # Display results
+        if not results:
+            console.print(f"[yellow]Not found: {knowledge_id}[/yellow]")
+            console.print("No results found for the specified knowledge ID.")
+            return
+
+        # Format and display the results
+        _format_show_output(results, knowledge_id)
+
+    finally:
+        await client.close()
+
+
+def _detect_group_ids(knowledge_id: str) -> list[str]:
+    """Detect knowledge type from ID format and return appropriate group_ids.
+
+    Args:
+        knowledge_id: The knowledge ID to analyze
+
+    Returns:
+        List of group_ids to search
+    """
+    knowledge_id_lower = knowledge_id.lower()
+
+    # FEAT-* -> feature_specs
+    if knowledge_id.upper().startswith("FEAT-"):
+        return ["feature_specs"]
+
+    # ADR-* -> architecture_decisions and project_decisions
+    if knowledge_id.upper().startswith("ADR-"):
+        return ["architecture_decisions", "project_decisions"]
+
+    # project-overview -> project_overview
+    if knowledge_id_lower == "project-overview":
+        return ["project_overview"]
+
+    # *-pattern or pattern* -> patterns
+    if "pattern" in knowledge_id_lower:
+        return ["patterns"]
+
+    # *-constraint or constraint* -> project_constraints
+    if "constraint" in knowledge_id_lower:
+        return ["project_constraints"]
+
+    # *-guide or guide* -> project_knowledge
+    if "guide" in knowledge_id_lower:
+        return ["project_knowledge"]
+
+    # Default: search across all common groups
+    return [
+        "feature_specs",
+        "project_overview",
+        "project_architecture",
+        "project_decisions",
+        "project_constraints",
+        "domain_knowledge",
+        "patterns",
+        "agents",
+        "task_outcomes",
+        "failure_patterns",
+        "product_knowledge",
+        "command_workflows",
+        "quality_gate_phases",
+        "technology_stack",
+        "feature_build_architecture",
+        "architecture_decisions",
+    ]
+
+
+def _format_show_output(results: list[dict], knowledge_id: str) -> None:
+    """Format and display show command output using Rich.
+
+    Args:
+        results: Search results from Graphiti
+        knowledge_id: The knowledge ID that was searched
+    """
+    console.print()
+    console.print("[cyan]" + "=" * 60 + "[/cyan]")
+
+    for result in results:
+        name = result.get("name", knowledge_id)
+        fact = result.get("fact", str(result))
+        uuid = result.get("uuid", "")
+        score = result.get("score", 0.0)
+        created_at = result.get("created_at", "")
+        valid_at = result.get("valid_at", "")
+
+        # Display name/title
+        console.print(f"[yellow bold]  {name}[/yellow bold]")
+        console.print("[cyan]" + "=" * 60 + "[/cyan]")
+
+        # Try to parse fact as structured data
+        try:
+            import json
+            if isinstance(fact, str) and fact.startswith("{"):
+                data = json.loads(fact)
+
+                # Display key fields
+                for key in ["id", "description", "purpose", "status"]:
+                    if key in data and data[key]:
+                        console.print(f"  [cyan]{key.title()}:[/cyan] {data[key]}")
+
+                # Display lists
+                for key in ["success_criteria", "goals", "constraints", "requirements"]:
+                    if key in data and data[key]:
+                        console.print()
+                        console.print(f"  [cyan]{key.replace('_', ' ').title()}:[/cyan]")
+                        for item in data[key][:5]:  # Limit to 5 items
+                            console.print(f"    [dim]-[/dim] {item}")
+            else:
+                # Display as plain text
+                console.print(f"  {fact}")
+        except (json.JSONDecodeError, TypeError):
+            # Fallback to raw output
+            console.print(f"  {fact}")
+
+        # Display metadata if available
+        if uuid:
+            console.print()
+            console.print(f"  [dim]UUID: {uuid}[/dim]")
+        if score > 0:
+            # Color code by relevance score
+            if score > 0.8:
+                score_color = "green"
+            elif score > 0.5:
+                score_color = "yellow"
+            else:
+                score_color = "white"
+            console.print(f"  [dim]Score: [{score_color}]{score:.2f}[/{score_color}][/dim]")
+        if created_at:
+            console.print(f"  [dim]Created: {created_at}[/dim]")
+
+        console.print()
+
+
+async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
+    """Async implementation of search command."""
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use search.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        # Determine groups to search
+        if group:
+            group_ids = [group]
+        else:
+            # Search across all common groups
+            group_ids = [
+                "feature_specs",
+                "project_overview",
+                "project_architecture",
+                "project_decisions",
+                "project_constraints",
+                "domain_knowledge",
+                "patterns",
+                "agents",
+                "task_outcomes",
+                "failure_patterns",
+                "product_knowledge",
+                "command_workflows",
+                "quality_gate_phases",
+                "technology_stack",
+                "feature_build_architecture",
+                "architecture_decisions",
+            ]
+
+        # Execute search
+        try:
+            results = await client.search(
+                query=query,
+                group_ids=group_ids,
+                num_results=limit,
+            )
+        except Exception as e:
+            console.print(f"[red]Error during search: {e}[/red]")
+            raise SystemExit(1)
+
+        # Display results
+        if not results:
+            console.print(f"No results found for: {query}")
+            return
+
+        console.print(f"\nFound {len(results)} results for '{query}':\n")
+
+        for i, result in enumerate(results, 1):
+            score = result.get("score", 0.0)
+            fact = result.get("fact", str(result))
+
+            # Truncate long facts with "..."
+            max_fact_length = 100
+            if len(fact) > max_fact_length:
+                fact = fact[:max_fact_length] + "..."
+
+            # Color code by relevance score
+            if score > 0.8:
+                score_color = "green"
+            elif score > 0.5:
+                score_color = "yellow"
+            else:
+                score_color = "white"
+
+            # Format output: "N. [score] fact..."
+            console.print(
+                f"[cyan]{i}.[/cyan] "
+                f"[{score_color}][{score:.2f}][/{score_color}] "
+                f"{fact}"
+            )
+
+    finally:
+        await client.close()
+
+
+@graphiti.command("show")
+@click.argument("knowledge_id")
+def show(knowledge_id: str):
+    """Show details of specific knowledge by ID.
+
+    Detects knowledge type from ID format and displays detailed information.
+    Supports feature specs, ADRs, project overview, patterns, constraints, and guides.
+
+    \b
+    ID Format Detection:
+        - FEAT-* -> Feature specifications
+        - ADR-* -> Architecture Decision Records
+        - project-overview -> Project overview
+        - *-pattern -> Patterns
+        - *-constraint -> Project constraints
+        - *-guide -> Guides
+
+    \b
+    Examples:
+        guardkit graphiti show FEAT-GR-001
+        guardkit graphiti show ADR-001
+        guardkit graphiti show project-overview
+        guardkit graphiti show singleton-pattern
+        guardkit graphiti show no-graphql-constraint
+        guardkit graphiti show testing-guide
+    """
+    asyncio.run(_cmd_show(knowledge_id))
+
+
+@graphiti.command("search")
+@click.argument("query")
+@click.option(
+    "--group",
+    "-g",
+    default=None,
+    help="Limit search to specific group (e.g., patterns, feature_specs)",
+)
+@click.option(
+    "--limit",
+    "-n",
+    type=int,
+    default=10,
+    help="Maximum number of results (default: 10)",
+)
+def search(query: str, group: Optional[str], limit: int):
+    """Search for knowledge across all categories.
+
+    Searches the Graphiti knowledge graph for relevant information.
+    Results are sorted by relevance score, with color coding:
+    - Green (>0.8): High relevance
+    - Yellow (>0.5): Medium relevance
+    - White: Lower relevance
+
+    \b
+    Examples:
+        guardkit graphiti search "authentication"
+        guardkit graphiti search "error handling" --group patterns
+        guardkit graphiti search "walking skeleton" --limit 5
+        guardkit graphiti search "JWT" -g architecture_decisions -n 3
+    """
+    asyncio.run(_cmd_search(query, group, limit))
+
+
+async def _cmd_list(category: str) -> None:
+    """Async implementation of list command."""
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use list.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        # Map categories to groups
+        category_map = {
+            "features": ("feature_specs", "Feature Specifications"),
+            "adrs": ("architecture_decisions", "Architecture Decision Records"),
+            "patterns": ("patterns", "Patterns"),
+            "constraints": ("project_constraints", "Project Constraints"),
+        }
+
+        if category == "all":
+            # List all categories
+            for cat_key, (group, title) in category_map.items():
+                await _list_single_category(client, group, title)
+        else:
+            # List specific category
+            group, title = category_map[category]
+            await _list_single_category(client, group, title)
+
+    finally:
+        await client.close()
+
+
+async def _list_single_category(client: GraphitiClient, group: str, title: str) -> None:
+    """List items in a single category.
+
+    Args:
+        client: GraphitiClient instance
+        group: Group ID to search
+        title: Display title for the category
+    """
+    # Search for all items in the group
+    try:
+        results = await client.search(
+            query="*",
+            group_ids=[group],
+            num_results=50,
+        )
+    except Exception as e:
+        console.print(f"[red]Error searching {group}: {e}[/red]")
+        return
+
+    # Display header
+    console.print()
+    console.print(f"[bold cyan]{title}[/bold cyan] [dim]({len(results)} items)[/dim]")
+    console.print("-" * 40)
+
+    if not results:
+        console.print("  [dim](empty)[/dim]")
+        return
+
+    # Display each item
+    for result in results:
+        fact = result.get("fact", str(result))
+        name = result.get("name", "")
+
+        # Try to extract ID and title from fact
+        try:
+            import json
+            if isinstance(fact, str) and fact.startswith("{"):
+                data = json.loads(fact)
+                item_id = data.get("id", "")
+                item_title = data.get("title", data.get("name", fact[:40]))
+
+                if item_id:
+                    console.print(f"  [cyan]•[/cyan] {item_id}: {item_title}")
+                else:
+                    console.print(f"  [cyan]•[/cyan] {item_title}")
+            else:
+                # Use name from result or truncated fact
+                display_text = name if name else fact[:60]
+                console.print(f"  [cyan]•[/cyan] {display_text}...")
+        except (json.JSONDecodeError, TypeError):
+            # Fallback to truncated fact
+            display_text = name if name else fact[:60]
+            console.print(f"  [cyan]•[/cyan] {display_text}...")
+
+
+@graphiti.command("list")
+@click.argument(
+    "category",
+    type=click.Choice(["features", "adrs", "patterns", "constraints", "all"]),
+)
+def list_knowledge(category: str):
+    """List all knowledge in a category.
+
+    Lists all items stored in Graphiti for a specific knowledge category.
+    Shows item IDs and titles when available.
+
+    \b
+    Categories:
+        - features: Feature specifications
+        - adrs: Architecture Decision Records
+        - patterns: Design patterns
+        - constraints: Project constraints
+        - all: All categories
+
+    \b
+    Examples:
+        guardkit graphiti list features
+        guardkit graphiti list adrs
+        guardkit graphiti list all
+    """
+    asyncio.run(_cmd_list(category))

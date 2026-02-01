@@ -1,0 +1,28 @@
+{
+  "task_id": "TASK-GR6-002",
+  "turn": 1,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": null,
+      "coverage_met": true,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": false
+    },
+    "independent_tests": null,
+    "requirements": null
+  },
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "test_failure",
+      "description": "Tests did not pass during task-work execution",
+      "details": {
+        "failed_count": 1,
+        "total_count": 65
+      }
+    }
+  ],
+  "rationale": "1 quality gate(s) failed"
+}

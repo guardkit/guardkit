@@ -5,7 +5,7 @@ Execute structured review and analysis workflows for tasks that require assessme
 ## Command Syntax
 
 ```bash
-/task-review TASK-XXX [--mode=MODE] [--depth=DEPTH] [--output=FORMAT]
+/task-review TASK-XXX [--mode=MODE] [--depth=DEPTH] [--output=FORMAT] [--capture-knowledge]
 ```
 
 ## Available Flags
@@ -18,6 +18,7 @@ Execute structured review and analysis workflows for tasks that require assessme
 | `--no-questions` | Skip review scope clarification |
 | `--with-questions` | Force clarification even for simple reviews |
 | `--defaults` | Use clarification defaults without prompting |
+| `--capture-knowledge` | Trigger knowledge capture session after review completion (3-5 context-specific questions) |
 
 ## Overview
 
@@ -511,6 +512,50 @@ Uses default answers for all clarification questions without prompting.
 /task-review TASK-XXX --mode=decision --defaults
 ```
 
+### --capture-knowledge
+
+Triggers a knowledge capture session after review completion. This captures insights and decisions from the review for future reference.
+
+**When to Use**:
+- Reviews with significant findings worth documenting
+- Decision reviews where rationale should be preserved
+- Architectural reviews with important patterns identified
+- Security reviews with lessons learned
+
+**Behavior**:
+- Triggered after review completion, before decision checkpoint
+- Generates 3-5 context-specific questions based on review findings
+- Questions tailored to review mode (architectural, security, decision, etc.)
+- Captured knowledge linked to task context for searchability
+- Works with all review modes
+
+**Context-Specific Questions**:
+Questions are generated based on review mode and findings:
+- *Architectural*: "What architectural patterns were identified?" "Which SOLID violations should be addressed?"
+- *Security*: "What security concerns were identified?" "Which vulnerabilities should be addressed immediately?"
+- *Decision*: "What decision was made?" "What alternatives were considered?"
+- *Code-quality*: "What code quality issues were most significant?" "What refactoring opportunities were identified?"
+- *Technical-debt*: "What technical debt items were identified?" "How can similar debt be prevented?"
+
+**Examples**:
+```bash
+# Capture knowledge after architectural review
+/task-review TASK-XXX --mode=architectural --capture-knowledge
+
+# Capture knowledge after security audit
+/task-review TASK-XXX --mode=security --depth=comprehensive --capture-knowledge
+
+# Combine with decision mode for important decisions
+/task-review TASK-XXX --mode=decision --capture-knowledge
+```
+
+**Short Flag**: `-ck` is equivalent to `--capture-knowledge`
+
+```bash
+# Using short flag
+/task-review TASK-XXX --mode=architectural -ck
+```
+
 ### Flag Combinations
 
 **Common Patterns**:
@@ -525,6 +570,9 @@ Uses default answers for all clarification questions without prompting.
 # Semi-automated (apply defaults without prompts)
 /task-review TASK-XXX --defaults
 
+# Review with knowledge capture
+/task-review TASK-XXX --mode=architectural --capture-knowledge
+
 # Invalid: contradictory flags (--no-questions wins)
 /task-review TASK-XXX --no-questions --with-questions
 ```
@@ -533,7 +581,8 @@ Uses default answers for all clarification questions without prompting.
 1. `--no-questions` (highest priority - disables all clarification)
 2. `--defaults` (auto-applies defaults without prompts)
 3. `--with-questions` (forces clarification to be presented)
-4. Complexity-based gating (default behavior if no flags)
+4. `--capture-knowledge` (independent - can combine with any other flags)
+5. Complexity-based gating (default behavior if no flags)
 
 ## Workflow Phases
 
@@ -640,6 +689,59 @@ Prioritize analysis based on these preferences.
 - Document findings with evidence
 - Provide recommendations with rationale
 - Attach supporting artifacts (diagrams, metrics)
+
+### Phase 4.5: Knowledge Capture (Optional - `--capture-knowledge` flag)
+
+**IF** `--capture-knowledge` flag is set:
+
+**INVOKE** review knowledge capture session:
+```python
+from guardkit.knowledge.review_knowledge_capture import run_review_capture
+
+result = await run_review_capture(
+    task_context=task_context,
+    review_findings=review_findings,
+    capture_knowledge=True
+)
+```
+
+**DISPLAY** knowledge capture prompt:
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 KNOWLEDGE CAPTURE SESSION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Based on this {review_mode} review, let me capture any insights.
+
+[1/3] ARCHITECTURAL PATTERN
+Context: Helps remember patterns identified during reviews
+
+What architectural patterns were identified during this review?
+Your answer: _
+
+[2/3] DECISIONS
+Context: Captures decisions for future reference
+
+Were there any decisions made that should be remembered?
+Your answer: _
+
+[3/3] WARNINGS
+Context: Helps avoid similar issues in future tasks
+
+Are there any warnings for similar future tasks?
+Your answer: _
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Knowledge captured and linked to {task_id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Features**:
+- Questions are context-specific based on review mode
+- Abbreviated session (3-5 questions max)
+- Captured knowledge linked to task_id for searchability
+- Supports all review modes (architectural, security, decision, code-quality, technical-debt)
+- Graceful degradation if Graphiti unavailable
 
 ### Phase 5: Human Decision Checkpoint (with Optional Implementation Preferences)
 Present findings to user with decision options:
