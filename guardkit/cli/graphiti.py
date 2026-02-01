@@ -135,64 +135,99 @@ async def _cmd_seed(force: bool) -> None:
         await client.close()
 
 
-async def _cmd_status() -> None:
-    """Async implementation of status command."""
-    console.print("[bold blue]Graphiti Status[/bold blue]")
+async def _cmd_status(verbose: bool = False) -> None:
+    """Async implementation of status command.
+
+    Args:
+        verbose: Show all groups even if empty
+    """
+    console.print()
+    console.print("[bold cyan]╔════════════════════════════════════════╗[/bold cyan]")
+    console.print("[bold cyan]║       Graphiti Knowledge Status        ║[/bold cyan]")
+    console.print("[bold cyan]╚════════════════════════════════════════╝[/bold cyan]")
     console.print()
 
     # Load configuration
     settings = load_graphiti_config()
 
-    # Create status table
-    table = Table(show_header=False, box=None)
-    table.add_column("Property", style="cyan")
-    table.add_column("Value")
-
-    table.add_row("Enabled", "[green]Yes[/green]" if settings.enabled else "[red]No[/red]")
-    table.add_row("Neo4j URI", settings.neo4j_uri)
-    table.add_row("Neo4j User", settings.neo4j_user)
-    table.add_row("Timeout", f"{settings.timeout}s")
-
-    console.print(table)
-    console.print()
+    # Show enabled/disabled status
+    if settings.enabled:
+        console.print("  [bold]Status:[/bold] [green bold]ENABLED[/green bold]")
+    else:
+        console.print("  [bold]Status:[/bold] [red bold]DISABLED[/red bold]")
+        console.print("  [dim]Enable in config/graphiti.yaml[/dim]")
+        console.print()
+        return
 
     # Check connection
-    if settings.enabled:
-        client, _ = _get_client_and_config()
+    client, _ = _get_client_and_config()
 
-        console.print("Checking connection...")
+    try:
+        initialized = await client.initialize()
         try:
-            initialized = await client.initialize()
+            if not initialized or not client.enabled:
+                console.print("  [yellow]Connection: Failed[/yellow]")
+                console.print("  [dim]Check Neo4j configuration[/dim]")
+                console.print()
+                return
+
+            # Check health
             try:
-                if initialized and client.enabled:
-                    console.print("[green]Connection: OK[/green]")
+                healthy = await client.health_check()
+                if not healthy:
+                    console.print("  [yellow]Health: Degraded[/yellow]")
+                    console.print()
+                    return
+            except Exception:
+                console.print("  [yellow]Health: Unknown[/yellow]")
+                console.print()
+                return
 
-                    # Check health
-                    try:
-                        healthy = await client.health_check()
-                        if healthy:
-                            console.print("[green]Health: OK[/green]")
+            # Count episodes by category
+            categories = {
+                "System Knowledge": ["product_knowledge", "command_workflows", "patterns", "agents"],
+                "Project Knowledge": ["project_overview", "project_architecture", "feature_specs"],
+                "Decisions": ["project_decisions", "architecture_decisions"],
+                "Learning": ["task_outcomes", "failure_patterns", "successful_fixes"]
+            }
+
+            total = 0
+            console.print()
+
+            for section, groups in categories.items():
+                console.print(f"  [bold]{section}:[/bold]")
+                section_total = 0
+
+                for group in groups:
+                    # Search with wildcard to get all episodes in this group
+                    results = await client.search("*", [group], 100)
+                    count = len(results)
+                    section_total += count
+
+                    if verbose or count > 0:
+                        # Color code based on count
+                        if count > 0:
+                            status_color = "green"
                         else:
-                            console.print("[yellow]Health: Degraded[/yellow]")
-                    except Exception:
-                        console.print("[yellow]Health: Unknown[/yellow]")
-                else:
-                    console.print("[red]Connection: Failed[/red]")
-            finally:
-                await client.close()
-        except Exception as e:
-            console.print(f"[red]Connection: Error - {e}[/red]")
-    else:
-        console.print("[yellow]Connection: Skipped (disabled)[/yellow]")
+                            status_color = "yellow"
 
-    console.print()
+                        console.print(
+                            f"    [white]• {group}:[/white] [{status_color}]{count}[/{status_color}]"
+                        )
 
-    # Check seeding status
-    if is_seeded():
-        console.print(f"[green]Seeded: Yes (version {SEEDING_VERSION})[/green]")
-    else:
-        console.print("[yellow]Seeded: No[/yellow]")
-        console.print("Run 'guardkit graphiti seed' to seed system context.")
+                total += section_total
+
+            console.print()
+            console.print(f"  [bold]Total Episodes:[/bold] {total}")
+            console.print()
+
+        finally:
+            await client.close()
+
+    except Exception as e:
+        console.print(f"  [red]Error: {e}[/red]")
+        console.print()
+        return
 
 
 async def _cmd_verify(verbose: bool) -> None:
@@ -360,13 +395,21 @@ def seed(force: bool):
 
 
 @graphiti.command()
-def status():
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show all groups even if empty",
+)
+def status(verbose: bool):
     """Show Graphiti connection and seeding status.
 
     Displays information about the Graphiti configuration, connection status,
-    and whether system context has been seeded.
+    knowledge graph statistics, and episode counts per category.
+
+    Use --verbose to show all groups even if empty.
     """
-    asyncio.run(_cmd_status())
+    asyncio.run(_cmd_status(verbose))
 
 
 @graphiti.command()
@@ -1317,3 +1360,130 @@ def search(query: str, group: Optional[str], limit: int):
         guardkit graphiti search "JWT" -g architecture_decisions -n 3
     """
     asyncio.run(_cmd_search(query, group, limit))
+
+
+async def _cmd_list(category: str) -> None:
+    """Async implementation of list command."""
+    # Create client
+    client, settings = _get_client_and_config()
+
+    # Handle disabled Graphiti
+    if not settings.enabled:
+        console.print("[red]Graphiti is not enabled[/red]")
+        console.print("Enable Graphiti in configuration to use list.")
+        return
+
+    # Initialize connection
+    try:
+        initialized = await client.initialize()
+    except Exception as e:
+        console.print(f"[red]Error connecting to Graphiti: {e}[/red]")
+        raise SystemExit(1)
+
+    try:
+        if not initialized or not client.enabled:
+            console.print("[red]Graphiti connection failed or disabled.[/red]")
+            raise SystemExit(1)
+
+        # Map categories to groups
+        category_map = {
+            "features": ("feature_specs", "Feature Specifications"),
+            "adrs": ("architecture_decisions", "Architecture Decision Records"),
+            "patterns": ("patterns", "Patterns"),
+            "constraints": ("project_constraints", "Project Constraints"),
+        }
+
+        if category == "all":
+            # List all categories
+            for cat_key, (group, title) in category_map.items():
+                await _list_single_category(client, group, title)
+        else:
+            # List specific category
+            group, title = category_map[category]
+            await _list_single_category(client, group, title)
+
+    finally:
+        await client.close()
+
+
+async def _list_single_category(client: GraphitiClient, group: str, title: str) -> None:
+    """List items in a single category.
+
+    Args:
+        client: GraphitiClient instance
+        group: Group ID to search
+        title: Display title for the category
+    """
+    # Search for all items in the group
+    try:
+        results = await client.search(
+            query="*",
+            group_ids=[group],
+            num_results=50,
+        )
+    except Exception as e:
+        console.print(f"[red]Error searching {group}: {e}[/red]")
+        return
+
+    # Display header
+    console.print()
+    console.print(f"[bold cyan]{title}[/bold cyan] [dim]({len(results)} items)[/dim]")
+    console.print("-" * 40)
+
+    if not results:
+        console.print("  [dim](empty)[/dim]")
+        return
+
+    # Display each item
+    for result in results:
+        fact = result.get("fact", str(result))
+        name = result.get("name", "")
+
+        # Try to extract ID and title from fact
+        try:
+            import json
+            if isinstance(fact, str) and fact.startswith("{"):
+                data = json.loads(fact)
+                item_id = data.get("id", "")
+                item_title = data.get("title", data.get("name", fact[:40]))
+
+                if item_id:
+                    console.print(f"  [cyan]•[/cyan] {item_id}: {item_title}")
+                else:
+                    console.print(f"  [cyan]•[/cyan] {item_title}")
+            else:
+                # Use name from result or truncated fact
+                display_text = name if name else fact[:60]
+                console.print(f"  [cyan]•[/cyan] {display_text}...")
+        except (json.JSONDecodeError, TypeError):
+            # Fallback to truncated fact
+            display_text = name if name else fact[:60]
+            console.print(f"  [cyan]•[/cyan] {display_text}...")
+
+
+@graphiti.command("list")
+@click.argument(
+    "category",
+    type=click.Choice(["features", "adrs", "patterns", "constraints", "all"]),
+)
+def list_knowledge(category: str):
+    """List all knowledge in a category.
+
+    Lists all items stored in Graphiti for a specific knowledge category.
+    Shows item IDs and titles when available.
+
+    \b
+    Categories:
+        - features: Feature specifications
+        - adrs: Architecture Decision Records
+        - patterns: Design patterns
+        - constraints: Project constraints
+        - all: All categories
+
+    \b
+    Examples:
+        guardkit graphiti list features
+        guardkit graphiti list adrs
+        guardkit graphiti list all
+    """
+    asyncio.run(_cmd_list(category))

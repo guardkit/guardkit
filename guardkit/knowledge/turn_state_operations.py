@@ -99,8 +99,9 @@ async def capture_turn_state(
         episode_body = entity.to_episode_body()
         content = json.dumps(episode_body)
 
-        # Generate episode name with task_id and turn number
-        episode_name = f"turn_state_{entity.task_id}_turn_{entity.turn_number}"
+        # Generate episode name matching acceptance criteria format:
+        # turn_{feature_id}_{task_id}_turn{N}
+        episode_name = f"turn_{entity.feature_id}_{entity.task_id}_turn{entity.turn_number}"
 
         # Add episode to Graphiti
         await graphiti_client.add_episode(

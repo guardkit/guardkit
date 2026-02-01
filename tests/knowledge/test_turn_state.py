@@ -736,7 +736,11 @@ class TestCaptureTurnState:
 
     @pytest.mark.asyncio
     async def test_capture_turn_state_correct_episode_name(self):
-        """Test capture creates correct episode name."""
+        """Test capture creates correct episode name matching acceptance criteria format.
+
+        Acceptance Criteria: Episode name must be `turn_{feature_id}_{task_id}_turn{N}`
+        Example: turn_FEAT-GE_TASK-GE-001_turn1
+        """
         mock_client = AsyncMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock(return_value="episode_123")
@@ -763,9 +767,46 @@ class TestCaptureTurnState:
         call_args = mock_client.add_episode.call_args
         episode_name = call_args[1]["name"]
 
-        # Name should include task_id and turn number
-        assert "TASK-GE-001" in episode_name
-        assert "turn" in episode_name.lower()
+        # Episode name MUST match the acceptance criteria format exactly:
+        # turn_{feature_id}_{task_id}_turn{N}
+        expected_name = "turn_FEAT-GE_TASK-GE-001_turn1"
+        assert episode_name == expected_name, f"Expected '{expected_name}', got '{episode_name}'"
+
+    @pytest.mark.asyncio
+    async def test_capture_turn_state_episode_name_format_various_turns(self):
+        """Test episode name format for various turn numbers."""
+        mock_client = AsyncMock()
+        mock_client.enabled = True
+        mock_client.add_episode = AsyncMock(return_value="episode_123")
+
+        started = datetime(2025, 1, 29, 10, 0, 0)
+        completed = datetime(2025, 1, 29, 10, 15, 0)
+
+        for turn_num in [1, 2, 5, 10]:
+            mock_client.add_episode.reset_mock()
+
+            entity = TurnStateEntity(
+                id=f"TURN-FEAT-TEST-{turn_num}",
+                feature_id="FEAT-TEST",
+                task_id="TASK-TEST-042",
+                turn_number=turn_num,
+                player_summary="Summary",
+                player_decision="implemented",
+                coach_decision="approved",
+                coach_feedback=None,
+                mode=TurnMode.CONTINUING_WORK,
+                started_at=started,
+                completed_at=completed
+            )
+
+            await capture_turn_state(mock_client, entity)
+
+            call_args = mock_client.add_episode.call_args
+            episode_name = call_args[1]["name"]
+
+            # Format: turn_{feature_id}_{task_id}_turn{N}
+            expected_name = f"turn_FEAT-TEST_TASK-TEST-042_turn{turn_num}"
+            assert episode_name == expected_name, f"Turn {turn_num}: Expected '{expected_name}', got '{episode_name}'"
 
     @pytest.mark.asyncio
     async def test_capture_turn_state_disabled_client(self):
