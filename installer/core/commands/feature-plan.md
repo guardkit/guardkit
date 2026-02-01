@@ -66,6 +66,38 @@ This enables integration with `/feature-build` for autonomous implementation:
 
 **Note**: Both the traditional task markdown files AND the structured YAML feature file are created by default. This maintains compatibility with `/task-work` while enabling `/feature-build` integration. Use `--no-structured` to skip YAML generation.
 
+### Explicit Context Files (--context)
+
+By default, `/feature-plan` automatically detects and loads context from:
+- Feature specification files (`docs/features/FEAT-*.md`)
+- CLAUDE.md project files
+- Related architecture documentation
+
+Use `--context` when auto-detection isn't sufficient or you want to explicitly seed specific context:
+
+```bash
+# Single context file
+/feature-plan "implement OAuth" --context docs/auth-design.md
+
+# Multiple context files (processed in order)
+/feature-plan "add API" --context docs/api-spec.md --context docs/security-requirements.md
+
+# Works alongside auto-detection (explicit files loaded first)
+/feature-plan "implement FEAT-GR-003" --context additional-context.md
+```
+
+**When to use --context:**
+- Feature spec not in standard location (`docs/features/`)
+- Need to include additional architectural context
+- Want to override auto-detection with specific files
+- Testing or automation scenarios requiring explicit context
+
+**Context file requirements:**
+- Must be readable markdown files
+- Can include frontmatter metadata
+- Paths can be relative (to project root) or absolute
+- Nonexistent files are handled gracefully (warning logged)
+
 ### Feature YAML Schema Reference
 
 The generated feature YAML file must conform to the `FeatureLoader` schema. This section documents the **required** structure for `/feature-build` compatibility.
@@ -576,6 +608,15 @@ This is a **quick win** command that provides a superior user experience by elim
 
 # Plan security enhancement
 /feature-plan "implement OAuth2 authentication"
+
+# Explicit context file (when auto-detection isn't sufficient)
+/feature-plan "implement feature" --context docs/features/FEAT-XXX.md
+
+# Multiple context sources
+/feature-plan "implement feature" --context spec.md --context CLAUDE.md
+
+# Context with clarification
+/feature-plan "add API gateway" --context docs/architecture.md --with-questions
 ```
 
 ## Execution Flow
