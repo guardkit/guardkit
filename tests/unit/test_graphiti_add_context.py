@@ -917,3 +917,333 @@ def test_add_context_end_to_end_workflow(
     assert mock_graphiti_client.add_episode.call_count == 3
     assert mock_graphiti_client.initialize.call_count == 1
     assert mock_graphiti_client.close.call_count == 1
+
+
+# ============================================================================
+# TEST 12: --VERBOSE FLAG SHOWS DETAILED OUTPUT
+# ============================================================================
+
+
+def test_add_context_verbose_flag_shows_detailed_output(
+    cli_runner,
+    mock_graphiti_client,
+    mock_parser_registry,
+    sample_parse_result,
+):
+    """Test --verbose flag shows detailed processing output.
+
+    Expected behavior:
+    1. Show "Parsing {file_path} with {parser_type}"
+    2. Show "  Found {count} episodes"
+    3. For each episode: "    - {entity_id} ({entity_type})"
+    4. Show summary at end
+    """
+    registry, adr_parser, _ = mock_parser_registry
+
+    # Create result with multiple episodes for verbose output
+    verbose_result = ParseResult(
+        episodes=[
+            EpisodeData(
+                content="Episode 1 content",
+                group_id="test_group",
+                entity_type="adr",
+                entity_id="adr-001",
+                metadata={"source": "test"},
+            ),
+            EpisodeData(
+                content="Episode 2 content",
+                group_id="test_group",
+                entity_type="adr",
+                entity_id="adr-002",
+                metadata={"source": "test"},
+            ),
+        ],
+        warnings=[],
+        success=True,
+    )
+
+    adr_parser.parse.return_value = verbose_result
+
+    test_file = "docs/ADR-001.md"
+    test_content = "# ADR-001: Test Decision"
+
+    with patch("guardkit.cli.graphiti.Path") as mock_path_cls:
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_path.is_file.return_value = True
+        mock_path_cls.return_value = mock_path
+
+        with patch("guardkit.cli.graphiti.open", mock_open(read_data=test_content)):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=registry):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", test_file, "--verbose"],
+                    )
+
+    # Assertions for verbose output
+    assert result.exit_code == 0
+
+    # Should show parsing message
+    assert "Parsing" in result.output
+    assert test_file in result.output
+    assert "adr" in result.output.lower()  # Parser type
+
+    # Should show episode count
+    assert "Found 2 episodes" in result.output or "2 episodes" in result.output
+
+    # Should show individual episodes
+    assert "adr-001" in result.output
+    assert "adr-002" in result.output
+
+    # Should still show summary
+    assert "Added" in result.output or "Success" in result.output
+
+
+def test_add_context_verbose_with_directory_processing(
+    cli_runner,
+    mock_graphiti_client,
+    mock_parser_registry,
+    sample_parse_result,
+):
+    """Test --verbose flag with directory processing shows details for each file.
+
+    Expected behavior:
+    1. Show parsing message for EACH file
+    2. Show episode details for EACH file
+    3. Show final summary
+    """
+    registry, adr_parser, _ = mock_parser_registry
+    adr_parser.parse.return_value = sample_parse_result
+
+    test_dir = "docs/architecture"
+    test_files = [
+        "docs/architecture/ADR-001.md",
+        "docs/architecture/ADR-002.md",
+    ]
+
+    with patch("guardkit.cli.graphiti.Path") as mock_path_cls:
+        mock_dir = Mock()
+        mock_dir.exists.return_value = True
+        mock_dir.is_file.return_value = False
+        mock_dir.is_dir.return_value = True
+
+        mock_file_paths = [Mock(spec=Path) for _ in test_files]
+        for i, mock_file in enumerate(mock_file_paths):
+            mock_file.__str__ = Mock(return_value=test_files[i])
+            mock_file.is_file.return_value = True
+
+        mock_dir.glob.return_value = mock_file_paths
+        mock_path_cls.return_value = mock_dir
+
+        test_content = "# Test content"
+
+        with patch("guardkit.cli.graphiti.open", mock_open(read_data=test_content)):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=registry):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", test_dir, "--verbose"],
+                    )
+
+    # Assertions
+    assert result.exit_code == 0
+
+    # Should show parsing for each file
+    assert result.output.count("Parsing") == 2 or "ADR-001" in result.output
+    assert result.output.count("ADR-002") >= 1
+
+    # Should show episode details multiple times
+    assert "Found" in result.output or "episodes" in result.output
+
+    # Should show final summary
+    assert "2 files" in result.output or "2 episodes" in result.output
+
+
+# ============================================================================
+# TEST 13: --QUIET FLAG SUPPRESSES NON-ERROR OUTPUT
+# ============================================================================
+
+
+def test_add_context_quiet_flag_suppresses_non_error_output(
+    cli_runner,
+    mock_graphiti_client,
+    mock_parser_registry,
+    sample_parse_result,
+):
+    """Test --quiet flag suppresses informational output.
+
+    Expected behavior:
+    1. NO "Parsing..." messages
+    2. NO "Found X episodes" messages
+    3. NO success summary (unless error)
+    4. Only show errors if present
+    """
+    registry, adr_parser, _ = mock_parser_registry
+    adr_parser.parse.return_value = sample_parse_result
+
+    test_file = "docs/ADR-001.md"
+    test_content = "# ADR-001: Test Decision"
+
+    with patch("guardkit.cli.graphiti.Path") as mock_path_cls:
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_path.is_file.return_value = True
+        mock_path_cls.return_value = mock_path
+
+        with patch("guardkit.cli.graphiti.open", mock_open(read_data=test_content)):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=registry):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", test_file, "--quiet"],
+                    )
+
+    # Assertions for quiet mode
+    assert result.exit_code == 0
+
+    # Should NOT show verbose parsing messages
+    assert "Parsing" not in result.output
+    assert "Found" not in result.output
+
+    # Output should be minimal (either empty or just brief status)
+    # Allow for minimal output but no detailed messages
+    assert len(result.output.strip()) < 100 or result.output.strip() == ""
+
+
+def test_add_context_quiet_with_errors_still_shown(
+    cli_runner,
+    mock_graphiti_client,
+    mock_parser_registry,
+):
+    """Test --quiet flag still shows error messages.
+
+    Expected behavior:
+    1. Suppress success messages
+    2. SHOW error messages
+    3. SHOW warnings (important information)
+    4. Exit with error code on failure
+    """
+    registry, adr_parser, _ = mock_parser_registry
+
+    # Create result with errors
+    error_result = ParseResult(
+        episodes=[],
+        warnings=["Parse error: Invalid format"],
+        success=False,
+    )
+
+    adr_parser.parse.return_value = error_result
+
+    test_file = "docs/BAD-FILE.md"
+    test_content = "Invalid content"
+
+    with patch("guardkit.cli.graphiti.Path") as mock_path_cls:
+        mock_path = Mock()
+        mock_path.exists.return_value = True
+        mock_path.is_file.return_value = True
+        mock_path_cls.return_value = mock_path
+
+        with patch("guardkit.cli.graphiti.open", mock_open(read_data=test_content)):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=registry):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", test_file, "--quiet"],
+                    )
+
+    # Assertions
+    # Should show error/warning even in quiet mode
+    assert "error" in result.output.lower() or "warning" in result.output.lower()
+    assert "Invalid format" in result.output or "Parse error" in result.output
+
+
+# ============================================================================
+# TEST 14: --VERBOSE AND --QUIET MUTUAL EXCLUSIVITY
+# ============================================================================
+
+
+def test_add_context_verbose_and_quiet_mutual_exclusivity(
+    cli_runner,
+):
+    """Test that --verbose and --quiet cannot be used together.
+
+    Expected behavior:
+    1. Exit with error code
+    2. Display clear error message
+    3. Do not attempt to process files
+    """
+    test_file = "docs/ADR-001.md"
+
+    result = cli_runner.invoke(
+        graphiti,
+        ["add-context", test_file, "--verbose", "--quiet"],
+    )
+
+    # Should exit with error
+    assert result.exit_code != 0
+
+    # Should show error about mutual exclusivity
+    assert "mutually exclusive" in result.output.lower() or \
+           "cannot be used together" in result.output.lower() or \
+           "conflicting" in result.output.lower()
+
+
+def test_add_context_quiet_flag_with_multiple_files(
+    cli_runner,
+    mock_graphiti_client,
+    mock_parser_registry,
+    sample_parse_result,
+):
+    """Test --quiet flag with directory processing.
+
+    Expected behavior:
+    1. Process all files silently
+    2. No per-file output
+    3. Minimal or no summary
+    4. Only show errors if present
+    """
+    registry, adr_parser, _ = mock_parser_registry
+    adr_parser.parse.return_value = sample_parse_result
+
+    test_dir = "docs/architecture"
+    test_files = [
+        "docs/architecture/ADR-001.md",
+        "docs/architecture/ADR-002.md",
+        "docs/architecture/ADR-003.md",
+    ]
+
+    with patch("guardkit.cli.graphiti.Path") as mock_path_cls:
+        mock_dir = Mock()
+        mock_dir.exists.return_value = True
+        mock_dir.is_file.return_value = False
+        mock_dir.is_dir.return_value = True
+
+        mock_file_paths = [Mock(spec=Path) for _ in test_files]
+        for i, mock_file in enumerate(mock_file_paths):
+            mock_file.__str__ = Mock(return_value=test_files[i])
+            mock_file.is_file.return_value = True
+
+        mock_dir.glob.return_value = mock_file_paths
+        mock_path_cls.return_value = mock_dir
+
+        test_content = "# Test content"
+
+        with patch("guardkit.cli.graphiti.open", mock_open(read_data=test_content)):
+            with patch("guardkit.cli.graphiti.GraphitiClient", return_value=mock_graphiti_client):
+                with patch("guardkit.cli.graphiti.ParserRegistry", return_value=registry):
+                    result = cli_runner.invoke(
+                        graphiti,
+                        ["add-context", test_dir, "--quiet"],
+                    )
+
+    # Assertions
+    assert result.exit_code == 0
+
+    # Should have minimal output (no per-file messages)
+    assert "Parsing" not in result.output
+    assert "Found" not in result.output
+
+    # Verify all files were processed (by checking mock calls)
+    assert adr_parser.parse.call_count == 3
+    assert mock_graphiti_client.add_episode.call_count == 3

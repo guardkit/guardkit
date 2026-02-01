@@ -435,7 +435,19 @@ def seed_adrs(force: bool):
     default="**/*.md",
     help="Glob pattern for directory (default: **/*.md)",
 )
-def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str):
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Show detailed processing output",
+)
+@click.option(
+    "--quiet",
+    "-q",
+    is_flag=True,
+    help="Suppress non-error output",
+)
+def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: bool, pattern: str, verbose: bool, quiet: bool):
     """Add context from files to Graphiti.
 
     Adds content from markdown files to the Graphiti knowledge graph.
@@ -456,7 +468,11 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
         - project-overview: Project overview documents
         - project-doc: General project documentation
     """
-    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern))
+    # Check mutual exclusivity of --verbose and --quiet
+    if verbose and quiet:
+        raise click.UsageError("Options --verbose and --quiet are mutually exclusive")
+
+    asyncio.run(_cmd_add_context(path, parser_type, force, dry_run, pattern, verbose, quiet))
 
 
 async def _cmd_add_context(
@@ -465,10 +481,13 @@ async def _cmd_add_context(
     force: bool,
     dry_run: bool,
     pattern: str,
+    verbose: bool = False,
+    quiet: bool = False,
 ) -> None:
     """Async implementation of add-context command."""
-    console.print("[bold blue]Graphiti Add Context[/bold blue]")
-    console.print()
+    if not quiet:
+        console.print("[bold blue]Graphiti Add Context[/bold blue]")
+        console.print()
 
     # Check if path exists
     target_path = Path(path)
@@ -492,8 +511,9 @@ async def _cmd_add_context(
             console.print("[red]Graphiti connection failed or disabled.[/red]")
             raise SystemExit(1)
 
-        console.print("[green]Connected to Graphiti[/green]")
-        console.print()
+        if not quiet:
+            console.print("[green]Connected to Graphiti[/green]")
+            console.print()
 
         # Create parser registry
         registry = ParserRegistry()
@@ -540,6 +560,10 @@ async def _cmd_add_context(
                         console.print(f"[yellow]No parser found for: {file_path_str} (unsupported)[/yellow]")
                         continue
 
+                # Verbose: show parsing info
+                if verbose:
+                    console.print(f"Parsing {file_path_str} with {parser.parser_type}")
+
                 # Parse the file
                 result = parser.parse(content, file_path_str)
 
@@ -548,6 +572,13 @@ async def _cmd_add_context(
                     for warn in result.warnings:
                         warnings.append(f"{file_path_str}: {warn}")
                     continue
+
+                # Verbose: show episode count
+                if verbose:
+                    console.print(f"  Found {len(result.episodes)} episodes")
+                    # Show individual episodes
+                    for ep in result.episodes:
+                        console.print(f"    - {ep.entity_id} ({ep.entity_type})")
 
                 # Add warnings from parsing
                 for warn in result.warnings:
@@ -571,25 +602,27 @@ async def _cmd_add_context(
                     episodes_added += len(result.episodes)
 
                 files_processed += 1
-                console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
+                if not quiet:
+                    console.print(f"  [green]\u2713[/green] {file_path_str} ({parser.parser_type})")
 
             except Exception as e:
                 errors.append(f"{file_path_str}: Error - {e}")
 
-        console.print()
+        if not quiet:
+            console.print()
 
-        # Display summary
-        file_word = "file" if files_processed == 1 else "files"
-        episode_word = "episode" if episodes_added == 1 else "episodes"
+            # Display summary
+            file_word = "file" if files_processed == 1 else "files"
+            episode_word = "episode" if episodes_added == 1 else "episodes"
 
-        if dry_run:
-            console.print("[bold]Dry run complete - Would add:[/bold]")
-            console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
-        else:
-            console.print("[bold]Summary:[/bold]")
-            console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
+            if dry_run:
+                console.print("[bold]Dry run complete - Would add:[/bold]")
+                console.print(f"  {files_processed} {file_word}, {episodes_added} {episode_word}")
+            else:
+                console.print("[bold]Summary:[/bold]")
+                console.print(f"  Added {files_processed} {file_word}, {episodes_added} {episode_word}")
 
-        # Display warnings
+        # Display warnings (always shown, even in quiet mode)
         if warnings:
             console.print()
             console.print("[yellow]Warnings:[/yellow]")
