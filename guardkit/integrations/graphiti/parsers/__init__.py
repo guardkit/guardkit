@@ -9,11 +9,15 @@ from guardkit.integrations.graphiti.parsers.base import (
     EpisodeData,
     ParseResult,
 )
+from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
+from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
 from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
 
 __all__ = [
     "BaseParser",
     "EpisodeData",
+    "FeatureSpecParser",
     "ParseResult",
     "ParserRegistry",
+    "ProjectDocParser",
 ]

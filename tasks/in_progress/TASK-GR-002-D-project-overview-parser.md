@@ -1,20 +1,25 @@
 ---
-id: TASK-GR-002-D
-title: Implement ProjectOverviewParser
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, context-addition, parser, project-overview, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 7
-conductor_workspace: gr-mvp-wave7-parsers
 complexity: 3
+conductor_workspace: gr-mvp-wave7-parsers
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-002-A
+- TASK-GR-002-A
+feature_id: FEAT-GR-MVP
+id: TASK-GR-002-D
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- context-addition
+- parser
+- project-overview
+- mvp-phase-2
+task_type: feature
+title: Implement ProjectOverviewParser
+updated: 2026-01-30 00:00:00+00:00
+wave: 7
 ---
 
 # Task: Implement ProjectOverviewParser

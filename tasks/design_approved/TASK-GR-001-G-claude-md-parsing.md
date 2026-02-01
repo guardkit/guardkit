@@ -1,21 +1,25 @@
 ---
-id: TASK-GR-001-G
-title: Implement CLAUDE.md/README.md parsing
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-30T00:00:00Z
-priority: high
-tags: [graphiti, project-seeding, parsing, mvp-phase-2]
-task_type: feature
-parent_review: TASK-REV-1505
-feature_id: FEAT-GR-MVP
-implementation_mode: task-work
-wave: 7
-conductor_workspace: gr-mvp-wave7-seeding
 complexity: 4
+conductor_workspace: gr-mvp-wave7-seeding
+created: 2026-01-30 00:00:00+00:00
 depends_on:
-  - TASK-GR-001-B
-  - TASK-GR-001-C
+- TASK-GR-001-B
+- TASK-GR-001-C
+feature_id: FEAT-GR-MVP
+id: TASK-GR-001-G
+implementation_mode: task-work
+parent_review: TASK-REV-1505
+priority: high
+status: design_approved
+tags:
+- graphiti
+- project-seeding
+- parsing
+- mvp-phase-2
+task_type: feature
+title: Implement CLAUDE.md/README.md parsing
+updated: 2026-01-30 00:00:00+00:00
+wave: 7
 ---
 
 # Task: Implement CLAUDE.md/README.md parsing
