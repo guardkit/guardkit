@@ -30,11 +30,11 @@ Create the QualityGateConfigEpisode dataclass and seed default task-type specifi
 
 ## Acceptance Criteria
 
-- [ ] QualityGateConfigEpisode dataclass implemented
-- [ ] Default configs for: scaffolding, feature, testing, documentation
-- [ ] Configs seeded during project init
-- [ ] Configs accessible during task-work/feature-build
-- [ ] Entity ID for upsert (allows customization)
+- [x] QualityGateConfigEpisode dataclass implemented (as `QualityGateConfigFact` in `guardkit/knowledge/facts/quality_gate_config.py`)
+- [x] Default configs for: scaffolding, feature, testing, documentation (see `QUALITY_GATE_CONFIGS` list)
+- [x] Configs seeded during project init (via `seed_quality_gate_configs()` in `guardkit/knowledge/seed_quality_gate_configs.py`)
+- [x] Configs accessible during task-work/feature-build (via `get_quality_gate_config()` in `guardkit/knowledge/quality_gate_queries.py`)
+- [x] Entity ID for upsert (allows customization) (uses `id` field, e.g., `QG-FEATURE-LOW`)
 
 ## Implementation Notes
 
