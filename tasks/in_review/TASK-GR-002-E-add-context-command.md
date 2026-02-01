@@ -11,7 +11,7 @@ id: TASK-GR-002-E
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - context-addition
@@ -31,11 +31,11 @@ Implement the `guardkit graphiti add-context` CLI command that allows users to e
 
 ## Acceptance Criteria
 
-- [ ] `guardkit graphiti add-context <file>` adds single file
-- [ ] `guardkit graphiti add-context <dir>` adds directory (with patterns)
-- [ ] Auto-detects file type and uses appropriate parser
-- [ ] Shows summary of what was added
-- [ ] Graceful error handling for unsupported files
+- [x] `guardkit graphiti add-context <file>` adds single file
+- [x] `guardkit graphiti add-context <dir>` adds directory (with patterns)
+- [x] Auto-detects file type and uses appropriate parser
+- [x] Shows summary of what was added
+- [x] Graceful error handling for unsupported files
 
 ## Implementation Notes
 
@@ -127,10 +127,10 @@ async def add_context(
 
 ## Test Requirements
 
-- [ ] Unit tests for command logic
-- [ ] Integration test with real files
-- [ ] Test --dry-run output
-- [ ] Test unsupported file handling
+- [x] Unit tests for command logic
+- [x] Integration test with real files
+- [x] Test --dry-run output
+- [x] Test unsupported file handling
 
 ## Notes
 
