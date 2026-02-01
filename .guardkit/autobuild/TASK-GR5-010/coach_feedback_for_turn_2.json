@@ -1,0 +1,9 @@
+{
+  "turn": 2,
+  "feedback_from_turn": 1,
+  "feedback_summary": "- Player report not found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0F4A/.guardkit/autobuild/TASK-GR5-010/player_turn_1.json",
+  "must_fix": [],
+  "should_fix": [],
+  "validation_results": {},
+  "raw_feedback": "- Player report not found: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-0F4A/.guardkit/autobuild/TASK-GR5-010/player_turn_1.json"
+}
