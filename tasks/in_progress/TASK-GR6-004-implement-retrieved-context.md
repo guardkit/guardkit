@@ -1,17 +1,17 @@
 ---
-id: TASK-GR6-004
-title: Implement RetrievedContext formatting
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-006
-wave: 3
-implementation_mode: task-work
 complexity: 5
-estimate_hours: 3
 dependencies:
-  - TASK-GR6-003
+- TASK-GR6-003
+estimate_hours: 3
+feature_id: FEAT-0F4A
+id: TASK-GR6-004
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-006
+task_type: feature
+title: Implement RetrievedContext formatting
+wave: 3
 ---
 
 # Implement RetrievedContext formatting

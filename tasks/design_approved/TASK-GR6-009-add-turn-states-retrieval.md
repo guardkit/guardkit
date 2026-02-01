@@ -1,18 +1,18 @@
 ---
-id: TASK-GR6-009
-title: Add turn_states retrieval for cross-turn learning
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-006
-wave: 3
-implementation_mode: task-work
 complexity: 5
-estimate_hours: 3
 dependencies:
-  - TASK-GR6-003
-  - TASK-GR5-007
+- TASK-GR6-003
+- TASK-GR5-007
+estimate_hours: 3
+feature_id: FEAT-0F4A
+id: TASK-GR6-009
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: design_approved
+sub_feature: GR-006
+task_type: feature
+title: Add turn_states retrieval for cross-turn learning
+wave: 3
 ---
 
 # Add turn_states retrieval for cross-turn learning
