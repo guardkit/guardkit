@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-006
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: in_review
+status: design_approved
 sub_feature: GR-006
 task_type: feature
 title: Integrate with /feature-build
