@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-006
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Integrate with /feature-build
@@ -22,11 +22,11 @@ Integrate the `JobContextRetriever` into the `/feature-build` command with AutoB
 
 ## Acceptance Criteria
 
-- [ ] Context retrieved for each Player turn
-- [ ] AutoBuild context included (role_constraints, quality_gates, turn_states)
-- [ ] Refinement attempts get emphasized warnings
-- [ ] Coach receives appropriate subset of context
-- [ ] `--verbose` flag shows context retrieval details
+- [x] Context retrieved for each Player turn
+- [x] AutoBuild context included (role_constraints, quality_gates, turn_states)
+- [x] Refinement attempts get emphasized warnings
+- [x] Coach receives appropriate subset of context
+- [x] `--verbose` flag shows context retrieval details
 
 ## Technical Details
 
