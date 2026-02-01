@@ -11,7 +11,6 @@ sub_feature: GR-005
 task_type: feature
 title: Implement `show` command
 wave: 2
-completed_at: 2026-02-01T14:30:00Z
 ---
 
 # Implement `show` command
@@ -38,35 +37,3 @@ guardkit graphiti show project-overview
 ```
 
 **Reference**: See FEAT-GR-005-knowledge-query-command.md for output format.
-
-## Implementation Summary
-
-### TDD Workflow Completed
-
-**RED Phase**: Created 16 failing tests in `tests/cli/test_graphiti_show.py`:
-- Command registration and argument validation
-- Feature spec display (FEAT-XXX routing)
-- ADR display (ADR-XXX routing)
-- Project overview display
-- Pattern, constraint, and guide display
-- "Not found" error handling
-- Disabled Graphiti handling
-- Connection error handling
-- Group ID routing verification
-- Formatted output verification
-
-**GREEN Phase**: Implemented show command in `guardkit/cli/graphiti.py`:
-- `@graphiti.command("show")` with `knowledge_id` argument
-- `_detect_group_ids()` for smart routing based on ID prefix
-- `_format_show_output()` for Rich console colored output
-- Async implementation with proper error handling
-
-### Test Results
-
-- **16/16** show command tests pass
-- **73/73** total graphiti CLI tests pass (no regressions)
-
-### Files Modified
-
-1. `guardkit/cli/graphiti.py` - Added show command implementation
-2. `tests/cli/test_graphiti_show.py` - Created comprehensive test suite
