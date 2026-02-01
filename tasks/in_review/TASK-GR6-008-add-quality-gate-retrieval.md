@@ -7,7 +7,7 @@ feature_id: FEAT-0F4A
 id: TASK-GR6-008
 implementation_mode: task-work
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-006
 task_type: feature
 title: Add quality_gate_configs retrieval and formatting
@@ -22,11 +22,11 @@ Add retrieval and formatting for quality_gate_configs context, addressing TASK-R
 
 ## Acceptance Criteria
 
-- [ ] Queries `quality_gate_configs` group
-- [ ] Filters by task_type (scaffolding, feature, testing, documentation)
-- [ ] Formats coverage_threshold, arch_review_threshold, tests_required
-- [ ] Clear "do NOT adjust" messaging
-- [ ] Emphasized in AutoBuild contexts
+- [x] Queries `quality_gate_configs` group
+- [x] Filters by task_type (scaffolding, feature, testing, documentation)
+- [x] Formats coverage_threshold, arch_review_threshold, tests_required
+- [x] Clear "do NOT adjust" messaging
+- [x] Emphasized in AutoBuild contexts
 
 ## Technical Details
 
