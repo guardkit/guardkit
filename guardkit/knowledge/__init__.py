@@ -51,6 +51,10 @@ Public API:
     KnowledgeGapAnalyzer: Analyzer for identifying knowledge gaps (TASK-GR4-001)
     CapturedKnowledge: Dataclass for captured knowledge (TASK-GR4-002)
     InteractiveCaptureSession: Interactive knowledge capture session (TASK-GR4-002)
+    TaskType: Enum for task classification (TASK-GR6-001)
+    TaskPhase: Enum for execution phases (TASK-GR6-001)
+    TaskCharacteristics: Dataclass for analyzed task properties (TASK-GR6-001)
+    TaskAnalyzer: Analyzer for task characteristics (TASK-GR6-001)
 
 Example:
     from guardkit.knowledge import (
@@ -279,6 +283,14 @@ from guardkit.knowledge.interactive_capture import (
     InteractiveCaptureSession,
 )
 
+# Task analysis (TASK-GR6-001)
+from guardkit.knowledge.task_analyzer import (
+    TaskType,
+    TaskPhase,
+    TaskCharacteristics,
+    TaskAnalyzer,
+)
+
 __all__ = [
     # Client classes
     "GraphitiConfig",
@@ -371,4 +383,9 @@ __all__ = [
     # Interactive knowledge capture (TASK-GR4-002)
     "CapturedKnowledge",
     "InteractiveCaptureSession",
+    # Task analysis (TASK-GR6-001)
+    "TaskType",
+    "TaskPhase",
+    "TaskCharacteristics",
+    "TaskAnalyzer",
 ]
