@@ -81,7 +81,7 @@ class TaskStateBridge:
     Path('/path/to/repo/.claude/task-plans/TASK-001-implementation-plan.md')
     """
 
-    def __init__(self, task_id: str, repo_root: Path):
+    def __init__(self, task_id: str, repo_root: Path, in_autobuild_context: bool = False):
         """
         Initialize TaskStateBridge.
 
@@ -91,9 +91,15 @@ class TaskStateBridge:
             Task identifier (e.g., "TASK-001")
         repo_root : Path
             Path to the repository root
+        in_autobuild_context : bool, optional
+            If True, always create stub plans regardless of task metadata.
+            Used by AutoBuild to avoid race condition where autobuild_state
+            hasn't been written yet when stub creation check runs.
+            Default: False
         """
         self.task_id = task_id
         self.repo_root = Path(repo_root)
+        self.in_autobuild_context = in_autobuild_context
         self.logger = logging.getLogger(f"{__name__}.{task_id}")
 
     def ensure_design_approved_state(self) -> bool:
@@ -387,14 +393,20 @@ class TaskStateBridge:
         has_autobuild_state = isinstance(autobuild_state, dict) and autobuild_state
         is_task_work_mode = implementation_mode == "task-work"
 
-        should_create_stub = has_autobuild_config or has_autobuild_state or is_task_work_mode
+        should_create_stub = (
+            has_autobuild_config
+            or has_autobuild_state
+            or is_task_work_mode
+            or self.in_autobuild_context  # Fix race condition: always create stub in AutoBuild context
+        )
 
         if not should_create_stub:
             self.logger.debug(
                 f"Task {self.task_id} not configured for stub creation "
                 f"(autobuild_config={bool(has_autobuild_config)}, "
                 f"autobuild_state={bool(has_autobuild_state)}, "
-                f"implementation_mode={implementation_mode})"
+                f"implementation_mode={implementation_mode}, "
+                f"in_autobuild_context={self.in_autobuild_context})"
             )
             return None
 

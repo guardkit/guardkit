@@ -2067,3 +2067,630 @@ class TestFeatureLoaderEdgeCases:
         # Should not raise RecursionError
         cycle = FeatureLoader._detect_circular_dependencies(feature)
         assert cycle is None  # Linear chain has no cycles
+
+
+# ============================================================================
+# Test: Intra-Wave Dependency Validation (TASK-VAL-WAVE-001)
+# ============================================================================
+
+
+class TestIntraWaveDependencyValidation:
+    """Tests for validate_parallel_groups() - detecting tasks depending on others in same wave."""
+
+    def test_validate_parallel_groups_valid_configuration(self):
+        """All tasks correctly distributed across waves, no intra-wave dependencies."""
+        feature = Feature(
+            id="FEAT-VALID-WAVES",
+            name="Valid Wave Configuration",
+            description="Tasks properly sequenced across waves",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=4,
+            tasks=[
+                FeatureTask(
+                    id="TASK-W-001",
+                    name="Foundation task",
+                    file_path=Path("tasks/w1.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-W-002",
+                    name="Second wave task A",
+                    file_path=Path("tasks/w2a.md"),
+                    complexity=3,
+                    dependencies=["TASK-W-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-W-003",
+                    name="Second wave task B",
+                    file_path=Path("tasks/w2b.md"),
+                    complexity=3,
+                    dependencies=["TASK-W-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-W-004",
+                    name="Final task",
+                    file_path=Path("tasks/w3.md"),
+                    complexity=3,
+                    dependencies=["TASK-W-002", "TASK-W-003"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-W-001"],           # Wave 1
+                    ["TASK-W-002", "TASK-W-003"],  # Wave 2 (parallel)
+                    ["TASK-W-004"],           # Wave 3
+                ],
+                estimated_duration_minutes=90,
+                recommended_parallel=2,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert errors == []
+
+    def test_validate_parallel_groups_single_conflict(self):
+        """One task depends on another in same wave."""
+        feature = Feature(
+            id="FEAT-SINGLE-CONFLICT",
+            name="Single Intra-Wave Conflict",
+            description="Task B depends on Task A but both in Wave 1",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=2,
+            tasks=[
+                FeatureTask(
+                    id="TASK-SC-001",
+                    name="Task A",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-SC-002",
+                    name="Task B depends on A",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-SC-001"],  # Depends on task in same wave
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-SC-001", "TASK-SC-002"],  # Both in same wave - ERROR!
+                ],
+                estimated_duration_minutes=30,
+                recommended_parallel=2,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert len(errors) == 1
+        assert "Wave 1" in errors[0]
+        assert "TASK-SC-002" in errors[0]
+        assert "depends on" in errors[0]
+        assert "TASK-SC-001" in errors[0]
+        assert "same parallel group" in errors[0]
+        assert "Move TASK-SC-002 to a later wave" in errors[0]
+
+    def test_validate_parallel_groups_multiple_conflicts_same_wave(self):
+        """Multiple dependency conflicts in the same wave."""
+        feature = Feature(
+            id="FEAT-MULTI-SAME-WAVE",
+            name="Multiple Conflicts Same Wave",
+            description="Wave 2 has A->B and C->D conflicts",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=5,
+            tasks=[
+                FeatureTask(
+                    id="TASK-MS-001",
+                    name="Foundation",
+                    file_path=Path("tasks/foundation.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MS-002",
+                    name="Task A",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=["TASK-MS-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MS-003",
+                    name="Task B depends on A",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-MS-002"],  # Depends on MS-002 in same wave
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MS-004",
+                    name="Task C",
+                    file_path=Path("tasks/c.md"),
+                    complexity=3,
+                    dependencies=["TASK-MS-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MS-005",
+                    name="Task D depends on C",
+                    file_path=Path("tasks/d.md"),
+                    complexity=3,
+                    dependencies=["TASK-MS-004"],  # Depends on MS-004 in same wave
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-MS-001"],
+                    # Wave 2: MS-002, MS-003 conflict AND MS-004, MS-005 conflict
+                    ["TASK-MS-002", "TASK-MS-003", "TASK-MS-004", "TASK-MS-005"],
+                ],
+                estimated_duration_minutes=60,
+                recommended_parallel=4,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert len(errors) == 2
+
+        # Verify both conflicts are reported
+        error_text = " ".join(errors)
+        assert "TASK-MS-003" in error_text
+        assert "TASK-MS-002" in error_text
+        assert "TASK-MS-005" in error_text
+        assert "TASK-MS-004" in error_text
+
+        # Both should reference Wave 2
+        for error in errors:
+            assert "Wave 2" in error
+
+    def test_validate_parallel_groups_conflicts_different_waves(self):
+        """Conflicts in multiple different waves."""
+        feature = Feature(
+            id="FEAT-MULTI-WAVE-CONFLICT",
+            name="Conflicts in Different Waves",
+            description="Wave 1 and Wave 3 each have conflicts",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=4,
+            tasks=[
+                FeatureTask(
+                    id="TASK-MW-001",
+                    name="Task A",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MW-002",
+                    name="Task B depends on A",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-MW-001"],  # Conflict in Wave 1
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MW-003",
+                    name="Task C",
+                    file_path=Path("tasks/c.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-MW-004",
+                    name="Task D depends on C",
+                    file_path=Path("tasks/d.md"),
+                    complexity=3,
+                    dependencies=["TASK-MW-003"],  # Conflict in Wave 3
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-MW-001", "TASK-MW-002"],  # Wave 1: conflict
+                    [],  # Wave 2: empty (unusual but valid)
+                    ["TASK-MW-003", "TASK-MW-004"],  # Wave 3: conflict
+                ],
+                estimated_duration_minutes=60,
+                recommended_parallel=2,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert len(errors) == 2
+
+        # Verify Wave 1 error
+        wave1_errors = [e for e in errors if "Wave 1" in e]
+        assert len(wave1_errors) == 1
+        assert "TASK-MW-002" in wave1_errors[0]
+        assert "TASK-MW-001" in wave1_errors[0]
+
+        # Verify Wave 3 error
+        wave3_errors = [e for e in errors if "Wave 3" in e]
+        assert len(wave3_errors) == 1
+        assert "TASK-MW-004" in wave3_errors[0]
+        assert "TASK-MW-003" in wave3_errors[0]
+
+    def test_validate_parallel_groups_empty_orchestration(self):
+        """Empty parallel_groups list (no errors)."""
+        feature = Feature(
+            id="FEAT-EMPTY-ORCH",
+            name="Empty Orchestration",
+            description="No parallel groups defined",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=1,
+            tasks=[
+                FeatureTask(
+                    id="TASK-EO-001",
+                    name="Solo task",
+                    file_path=Path("tasks/solo.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[],  # Empty - no waves defined
+                estimated_duration_minutes=30,
+                recommended_parallel=1,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert errors == []
+
+    def test_validate_parallel_groups_single_task_per_wave(self):
+        """Single task per wave (no conflicts possible)."""
+        feature = Feature(
+            id="FEAT-SEQUENTIAL",
+            name="Sequential Execution",
+            description="Each wave has exactly one task",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=3,
+            tasks=[
+                FeatureTask(
+                    id="TASK-SEQ-001",
+                    name="First",
+                    file_path=Path("tasks/first.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-SEQ-002",
+                    name="Second",
+                    file_path=Path("tasks/second.md"),
+                    complexity=3,
+                    dependencies=["TASK-SEQ-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-SEQ-003",
+                    name="Third",
+                    file_path=Path("tasks/third.md"),
+                    complexity=3,
+                    dependencies=["TASK-SEQ-002"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-SEQ-001"],
+                    ["TASK-SEQ-002"],
+                    ["TASK-SEQ-003"],
+                ],
+                estimated_duration_minutes=90,
+                recommended_parallel=1,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert errors == []
+
+    def test_validate_parallel_groups_unknown_task_ignored(self):
+        """Task ID in wave that doesn't exist (find_task returns None) - no crash."""
+        feature = Feature(
+            id="FEAT-UNKNOWN-TASK",
+            name="Unknown Task in Wave",
+            description="Orchestration references non-existent task",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=1,
+            tasks=[
+                FeatureTask(
+                    id="TASK-UK-001",
+                    name="Real task",
+                    file_path=Path("tasks/real.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-UK-001", "TASK-NONEXISTENT"],  # TASK-NONEXISTENT doesn't exist
+                ],
+                estimated_duration_minutes=30,
+                recommended_parallel=2,
+            ),
+        )
+
+        # Should not raise an exception - just skip the unknown task
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        # No intra-wave dependency errors (unknown task has no dependencies)
+        assert errors == []
+
+    def test_validate_feature_includes_wave_errors(self):
+        """Integration test: validate_feature() includes intra-wave errors."""
+        feature = Feature(
+            id="FEAT-INTEGRATION",
+            name="Integration Test",
+            description="Full validation includes wave errors",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=2,
+            tasks=[
+                FeatureTask(
+                    id="TASK-INT-001",
+                    name="Task A",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-INT-002",
+                    name="Task B depends on A",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-INT-001"],  # Same wave dependency
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-INT-001", "TASK-INT-002"],  # Both in same wave
+                ],
+                estimated_duration_minutes=30,
+                recommended_parallel=2,
+            ),
+        )
+
+        # Create temp files so file existence check passes
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_root = Path(tmpdir)
+            for task in feature.tasks:
+                task_file = repo_root / task.file_path
+                task_file.parent.mkdir(parents=True, exist_ok=True)
+                task_file.write_text(f"# {task.name}\n")
+
+            errors = FeatureLoader.validate_feature(feature, repo_root=repo_root)
+
+            # Should include the intra-wave dependency error
+            wave_errors = [e for e in errors if "same parallel group" in e]
+            assert len(wave_errors) == 1
+            assert "Wave 1" in wave_errors[0]
+            assert "TASK-INT-002" in wave_errors[0]
+            assert "TASK-INT-001" in wave_errors[0]
+
+    def test_validate_parallel_groups_multiple_dependencies_one_in_wave(self):
+        """Task has multiple dependencies, only one is in same wave."""
+        feature = Feature(
+            id="FEAT-PARTIAL-DEP",
+            name="Partial Dependency Conflict",
+            description="Task C depends on A (wave 1) and B (same wave)",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=3,
+            tasks=[
+                FeatureTask(
+                    id="TASK-PD-001",
+                    name="Task A (Wave 1)",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-PD-002",
+                    name="Task B (Wave 2)",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-PD-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-PD-003",
+                    name="Task C depends on A and B",
+                    file_path=Path("tasks/c.md"),
+                    complexity=3,
+                    dependencies=["TASK-PD-001", "TASK-PD-002"],  # B is in same wave
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-PD-001"],
+                    ["TASK-PD-002", "TASK-PD-003"],  # C and B in same wave - conflict!
+                ],
+                estimated_duration_minutes=60,
+                recommended_parallel=2,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert len(errors) == 1
+        assert "TASK-PD-003" in errors[0]
+        assert "TASK-PD-002" in errors[0]
+        # Dependency on TASK-PD-001 should NOT cause error (different wave)
+        assert "TASK-PD-001" not in errors[0]
+
+    def test_validate_parallel_groups_bidirectional_conflict(self):
+        """Two tasks in same wave depend on each other (reports both)."""
+        feature = Feature(
+            id="FEAT-BIDIRECT",
+            name="Bidirectional Dependency",
+            description="A depends on B, B depends on A, same wave",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=2,
+            tasks=[
+                FeatureTask(
+                    id="TASK-BD-001",
+                    name="Task A depends on B",
+                    file_path=Path("tasks/a.md"),
+                    complexity=3,
+                    dependencies=["TASK-BD-002"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-BD-002",
+                    name="Task B depends on A",
+                    file_path=Path("tasks/b.md"),
+                    complexity=3,
+                    dependencies=["TASK-BD-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-BD-001", "TASK-BD-002"],  # Circular in same wave
+                ],
+                estimated_duration_minutes=30,
+                recommended_parallel=2,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        # Should report both directions
+        assert len(errors) == 2
+
+        error_messages = " ".join(errors)
+        # A depends on B
+        assert "TASK-BD-001" in error_messages
+        assert "TASK-BD-002" in error_messages
+
+    def test_validate_parallel_groups_empty_waves_skipped(self):
+        """Empty waves in parallel_groups are skipped gracefully."""
+        feature = Feature(
+            id="FEAT-EMPTY-WAVES",
+            name="Feature with Empty Waves",
+            description="Some waves have no tasks",
+            created="2026-01-31",
+            status="planned",
+            complexity=5,
+            estimated_tasks=2,
+            tasks=[
+                FeatureTask(
+                    id="TASK-EW-001",
+                    name="Task in Wave 1",
+                    file_path=Path("tasks/w1.md"),
+                    complexity=3,
+                    dependencies=[],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+                FeatureTask(
+                    id="TASK-EW-002",
+                    name="Task in Wave 3",
+                    file_path=Path("tasks/w3.md"),
+                    complexity=3,
+                    dependencies=["TASK-EW-001"],
+                    status="pending",
+                    implementation_mode="task-work",
+                    estimated_minutes=30,
+                ),
+            ],
+            orchestration=FeatureOrchestration(
+                parallel_groups=[
+                    ["TASK-EW-001"],  # Wave 1
+                    [],               # Wave 2 empty
+                    ["TASK-EW-002"],  # Wave 3
+                ],
+                estimated_duration_minutes=60,
+                recommended_parallel=1,
+            ),
+        )
+
+        errors = FeatureLoader.validate_parallel_groups(feature)
+        assert errors == []

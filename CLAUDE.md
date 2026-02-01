@@ -60,7 +60,7 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 # ✅ Analyzes feature requirements
 # ✅ Detects feature slug: "dark-mode"
 # ✅ Extracts 7 subtasks from recommendations
-# ✅ Assigns implementation modes (task-work/direct/manual)
+# ✅ Assigns implementation modes (task-work/direct)
 # ✅ Detects 3 parallel waves
 # ✅ Creates tasks/backlog/dark-mode/ with:
 #    ├── README.md (feature documentation)
@@ -72,7 +72,7 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 
 **Benefits**:
 - **Zero manual task creation** - All subtasks auto-generated from review
-- **Smart mode assignment** - Automatic task-work/direct/manual tagging
+- **Smart mode assignment** - Automatic task-work/direct tagging
 - **Parallel execution ready** - Conductor workspace names included
 - **Complete documentation** - README + Implementation Guide generated
 - **95% time savings** - <1 minute vs 15-30 minutes manual setup

@@ -365,8 +365,13 @@ status: design_approved
         # Should not raise
         invoker._ensure_design_approved_state("TASK-001")
 
-    def test_ensure_design_approved_state_missing_plan(self, temp_repo):
-        """Test _ensure_design_approved_state fails with missing plan."""
+    def test_ensure_design_approved_state_missing_plan_creates_stub(self, temp_repo):
+        """Test _ensure_design_approved_state creates stub when plan missing.
+
+        After TASK-AB-FIX-001 fix: AgentInvoker passes in_autobuild_context=True
+        to TaskStateBridge, so stub plan is created automatically even without
+        explicit autobuild configuration in the task. This fixes the race condition.
+        """
         from guardkit.orchestrator.agent_invoker import AgentInvoker
 
         # Create task in design_approved but no plan
@@ -381,8 +386,12 @@ status: design_approved
 
         invoker = AgentInvoker(worktree_path=temp_repo)
 
-        with pytest.raises(PlanNotFoundError):
-            invoker._ensure_design_approved_state("TASK-001")
+        # Should NOT raise - stub is created because AgentInvoker passes in_autobuild_context=True
+        invoker._ensure_design_approved_state("TASK-001")
+
+        # Verify stub was created
+        stub_path = temp_repo / ".claude" / "task-plans" / "TASK-001-implementation-plan.md"
+        assert stub_path.exists(), "Stub plan should be created by AgentInvoker in AutoBuild context"
 
     def test_ensure_design_approved_state_task_not_found(self, temp_repo):
         """Test _ensure_design_approved_state fails with missing task."""
@@ -477,17 +486,22 @@ autobuild_state:
         assert stub_path is not None
         assert stub_path.exists()
 
-    def test_stub_not_created_for_manual_task(self, temp_repo):
-        """Test stub is NOT created for task without autobuild/task-work config."""
+    def test_stub_not_created_for_unknown_mode(self, temp_repo):
+        """Test stub is NOT created for task with unknown/invalid implementation mode.
+
+        Note: 'manual' was a deprecated mode removed in TASK-RMM-001.
+        This test verifies backward compatibility: tasks with unrecognized
+        implementation_mode values don't get stubs created.
+        """
         task_content = """---
 id: TASK-001
-title: Manual task
+title: Unknown mode task
 status: design_approved
-implementation_mode: manual
+implementation_mode: unknown
 ---
-# Manual Task
+# Unknown Mode Task
 
-This task should be implemented manually.
+This task has an unrecognized implementation mode.
 """
         task_path = temp_repo / "tasks" / "design_approved" / "TASK-001.md"
         task_path.write_text(task_content)
@@ -575,3 +589,83 @@ implementation_mode: task-work
 
         content = stub_path.read_text()
         assert "Create authentication module" in content
+
+    def test_stub_creation_with_autobuild_context_flag(self, temp_repo):
+        """Test stub creation when in_autobuild_context=True fixes race condition.
+
+        This test verifies the fix for TASK-AB-FIX-001: When AutoBuild calls
+        TaskStateBridge before autobuild_state has been written to the task file,
+        the in_autobuild_context=True flag ensures stub is still created.
+        """
+        # Create task WITHOUT any autobuild config or implementation_mode
+        # This simulates the race condition where autobuild_state hasn't been written yet
+        task_content = """---
+id: TASK-RACE-001
+title: Task without autobuild metadata
+status: design_approved
+---
+# Task
+
+A task that would normally not get a stub plan.
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-RACE-001.md"
+        task_path.write_text(task_content)
+
+        # Without the flag, stub should NOT be created
+        bridge_without_flag = TaskStateBridge("TASK-RACE-001", temp_repo, in_autobuild_context=False)
+        stub_path = bridge_without_flag._create_stub_implementation_plan()
+        assert stub_path is None, "Stub should NOT be created without autobuild context"
+
+        # With the flag, stub SHOULD be created (fixes race condition)
+        bridge_with_flag = TaskStateBridge("TASK-RACE-001", temp_repo, in_autobuild_context=True)
+        stub_path = bridge_with_flag._create_stub_implementation_plan()
+
+        assert stub_path is not None, "Stub should be created with in_autobuild_context=True"
+        assert stub_path.exists()
+        content = stub_path.read_text()
+        assert "Implementation Plan" in content
+        assert "TASK-RACE-001" in content
+
+    def test_stub_creation_autobuild_context_with_verify(self, temp_repo):
+        """Test verify_implementation_plan_exists creates stub with autobuild context.
+
+        Verifies the full flow: when calling verify_implementation_plan_exists()
+        from AutoBuild context, a stub plan is created even without task metadata.
+        """
+        task_content = """---
+id: TASK-VERIFY-001
+title: Task for verify flow
+status: design_approved
+---
+# Task for verify
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-VERIFY-001.md"
+        task_path.write_text(task_content)
+
+        # With in_autobuild_context=True, verify_implementation_plan_exists should succeed
+        bridge = TaskStateBridge("TASK-VERIFY-001", temp_repo, in_autobuild_context=True)
+        plan_path = bridge.verify_implementation_plan_exists()
+
+        assert plan_path.exists()
+        assert "Implementation Plan" in plan_path.read_text()
+
+    def test_stub_creation_autobuild_context_backward_compatible(self, temp_repo):
+        """Test that default in_autobuild_context=False maintains backward compatibility."""
+        # Create task with implementation_mode=task-work (existing trigger)
+        task_content = """---
+id: TASK-BC-001
+title: Backward compatible task
+status: design_approved
+implementation_mode: task-work
+---
+# Task
+"""
+        task_path = temp_repo / "tasks" / "design_approved" / "TASK-BC-001.md"
+        task_path.write_text(task_content)
+
+        # Default behavior (no flag passed) should still work with existing triggers
+        bridge = TaskStateBridge("TASK-BC-001", temp_repo)  # Note: no in_autobuild_context
+        stub_path = bridge._create_stub_implementation_plan()
+
+        assert stub_path is not None
+        assert stub_path.exists()

@@ -1867,11 +1867,12 @@ Follow the decision format specified in your agent definition.
             task_id: Task identifier (e.g., "TASK-001")
 
         Returns:
-            Implementation mode: "direct", "task-work", or "task-work" (default)
+            Implementation mode: "direct" or "task-work" (default for all other values)
 
         Note:
             Import is inside method to avoid circular dependency with TaskLoader.
             Errors are logged but don't fail - defaults to "task-work" behavior.
+            Unknown modes (including legacy "manual" mode) are normalized to "task-work".
         """
         try:
             from guardkit.tasks.task_loader import TaskLoader, TaskNotFoundError
@@ -1879,11 +1880,17 @@ Follow the decision format specified in your agent definition.
             task_data = TaskLoader.load_task(task_id, self.worktree_path)
             impl_mode = task_data.get("frontmatter", {}).get("implementation_mode")
 
-            if impl_mode:
-                logger.debug(f"[{task_id}] Detected implementation_mode: {impl_mode}")
-                return impl_mode
+            if impl_mode == "direct":
+                logger.debug(f"[{task_id}] Detected implementation_mode: direct")
+                return "direct"
 
-            logger.debug(f"[{task_id}] No implementation_mode set, defaulting to task-work")
+            if impl_mode and impl_mode != "task-work":
+                logger.debug(
+                    f"[{task_id}] Unknown implementation_mode '{impl_mode}', "
+                    "normalizing to task-work"
+                )
+
+            logger.debug(f"[{task_id}] Using implementation_mode: task-work")
             return "task-work"
 
         except Exception as e:
@@ -2758,7 +2765,13 @@ Follow the decision format specified in your agent definition.
         logger.info(f"Ensuring task {task_id} is in design_approved state")
 
         try:
-            bridge = TaskStateBridge(task_id, self.worktree_path)
+            # Pass in_autobuild_context=True to fix race condition where
+            # autobuild_state hasn't been written yet when stub creation check runs
+            bridge = TaskStateBridge(
+                task_id,
+                self.worktree_path,
+                in_autobuild_context=True,
+            )
             bridge.ensure_design_approved_state()
             logger.info(f"Task {task_id} state verified: design_approved")
 

@@ -1,0 +1,87 @@
+{
+  "task_id": "TASK-AB-FIX-003",
+  "turn": 1,
+  "files_modified": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+  ],
+  "files_created": [],
+  "tests_written": [
+    "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py"
+  ],
+  "tests_run": true,
+  "tests_passed": true,
+  "test_output_summary": "3 passed in 1.41s (TestUnrecoverableErrors)",
+  "implementation_notes": "Added unrecoverable error check in _execute_turn method at line 1095-1115. The check happens BEFORE is_missing_report check and BEFORE _attempt_state_recovery. When player_result.report.get('unrecoverable', False) is True, the method logs the error, displays it to user, and returns TurnRecord with decision='error' and coach_result=None. This prevents futile state recovery attempts for errors like PlanNotFoundError and StateValidationError that were classified as unrecoverable in TASK-AB-FIX-002.",
+  "concerns": [],
+  "requirements_addressed": [
+    "Add unrecoverable error check after player invocation in _execute_turn",
+    "Return TurnRecord with decision='error' when unrecoverable detected",
+    "Log clear message about unrecoverable error",
+    "Skip state recovery attempt for unrecoverable errors",
+    "Add unit tests for unrecoverable error handling",
+    "Verify normal retry behavior still works for recoverable errors"
+  ],
+  "requirements_remaining": [],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Add unrecoverable error check after player invocation in _execute_turn",
+      "status": "complete",
+      "evidence": "Added check at line 1095-1096 that reads player_result.report.get('unrecoverable', False) immediately after the player success check fails",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Return TurnRecord with decision='error' when unrecoverable detected",
+      "status": "complete",
+      "evidence": "Lines 1108-1115 return TurnRecord with decision='error' and coach_result=None when is_unrecoverable is True",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "Log clear message about unrecoverable error",
+      "status": "complete",
+      "evidence": "Lines 1100-1102 use logger.error() to log the unrecoverable error with task_id, turn, and error message",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "Skip state recovery attempt for unrecoverable errors",
+      "status": "complete",
+      "evidence": "The unrecoverable check returns immediately (line 1108) before reaching the _attempt_state_recovery call at line 1143. Test test_execute_turn_skips_state_recovery_for_unrecoverable verifies _attempt_state_recovery is NOT called.",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/guardkit/orchestrator/autobuild.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "Add unit tests for unrecoverable error handling",
+      "status": "complete",
+      "evidence": "Added TestUnrecoverableErrors class with 3 tests: test_execute_turn_handles_unrecoverable_error, test_execute_turn_skips_state_recovery_for_unrecoverable, test_execute_turn_uses_state_recovery_for_recoverable. All 3 tests pass.",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "Verify normal retry behavior still works for recoverable errors",
+      "status": "complete",
+      "evidence": "Test test_execute_turn_uses_state_recovery_for_recoverable explicitly verifies that when unrecoverable=False, the _attempt_state_recovery method IS called, preserving existing retry behavior",
+      "test_file": "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py",
+      "implementation_files": [
+        "/Users/richardwoollcott/Projects/appmilla_github/guardkit/tests/unit/test_autobuild_orchestrator.py"
+      ]
+    }
+  ]
+}

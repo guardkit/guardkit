@@ -65,7 +65,9 @@ from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     BlockedReport,
     CoachDecisionInvalidError,
+    PlanNotFoundError,
     SDKTimeoutError,
+    StateValidationError,
 )
 from guardkit.orchestrator.schemas import (
     CompletionPromise,
@@ -116,6 +118,18 @@ from guardkit.knowledge.graphiti_client import get_graphiti
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Error Classification
+# ============================================================================
+
+# Unrecoverable errors that should fail immediately without retrying.
+# These indicate fundamental issues that cannot be resolved by the Player.
+UNRECOVERABLE_ERRORS = (
+    PlanNotFoundError,
+    StateValidationError,
+)
 
 
 # ============================================================================
@@ -1078,6 +1092,28 @@ class AutoBuildOrchestrator:
             summary = self._build_player_summary(player_result.report)
             self._progress_display.complete_turn("success", summary)
         else:
+            # Check for unrecoverable error first - exit immediately without retry (TASK-AB-FIX-003)
+            is_unrecoverable = player_result.report.get("unrecoverable", False)
+
+            if is_unrecoverable:
+                # Unrecoverable error - fail immediately without state recovery
+                logger.error(
+                    f"Unrecoverable error detected for {task_id} turn {turn}: {player_result.error}"
+                )
+                self._progress_display.complete_turn(
+                    "error",
+                    f"Unrecoverable error: {player_result.error}",
+                    error=player_result.error,
+                )
+                return TurnRecord(
+                    turn=turn,
+                    player_result=player_result,
+                    coach_result=None,
+                    decision="error",
+                    feedback=None,
+                    timestamp=timestamp,
+                )
+
             # Distinguish between missing report and actual failure
             is_missing_report = (
                 player_result.error and
@@ -1920,16 +1956,29 @@ class AutoBuildOrchestrator:
                 duration_seconds=0.0,
                 error="SDK integration pending",
             )
-        except Exception as e:
-            logger.error(f"Player invocation failed: {e}", exc_info=True)
+        except UNRECOVERABLE_ERRORS as e:
+            # Unrecoverable errors - fail immediately without retrying
+            logger.error(f"Unrecoverable error for {task_id}: {e}")
             return AgentInvocationResult(
                 task_id=task_id,
                 turn=turn,
                 agent_type="player",
                 success=False,
-                report={},
+                report={"unrecoverable": True},
                 duration_seconds=0.0,
-                error=f"Unexpected error: {str(e)}",
+                error=f"Unrecoverable: {str(e)}",
+            )
+        except Exception as e:
+            # Recoverable errors - may succeed on retry
+            logger.warning(f"Recoverable error for {task_id}: {e}", exc_info=True)
+            return AgentInvocationResult(
+                task_id=task_id,
+                turn=turn,
+                agent_type="player",
+                success=False,
+                report={"unrecoverable": False},
+                duration_seconds=0.0,
+                error=f"Recoverable: {str(e)}",
             )
 
     def _invoke_coach_safely(

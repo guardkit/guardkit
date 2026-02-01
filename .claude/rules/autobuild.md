@@ -116,7 +116,7 @@ The pre-loop executes `/task-work --design-only` (Phases 1.6-2.8) before the Pla
 Tasks created via `/feature-plan` are already "pre-designed":
 - Detailed requirements extracted from review analysis
 - Acceptance criteria generated from recommendations
-- Implementation mode assignments (task-work/direct/manual)
+- Implementation mode assignments (task-work/direct)
 - Wave groupings for parallel execution
 
 Running pre-loop (Phases 1.6-2.8) would duplicate this design work, adding 60-90 minutes per task without additional value.

@@ -98,14 +98,17 @@ tasks:
   dependencies:
   - TASK-GR-PRE-001-A
   - TASK-GR-PRE-001-B
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 180
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-01-31T20:48:07.986492'
+  completed_at: '2026-01-31T21:05:47.619315'
 - id: TASK-GR-PRE-001-D
   name: Tests and documentation for project namespace
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-001-D-namespace-tests-docs.md
@@ -113,14 +116,17 @@ tasks:
   dependencies:
   - TASK-GR-PRE-001-A
   - TASK-GR-PRE-001-B
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-01-31T20:48:07.996887'
+  completed_at: '2026-01-31T21:05:47.629709'
 - id: TASK-GR-PRE-002-A
   name: Define standard metadata fields
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-002-A-define-metadata-fields.md
@@ -162,14 +168,17 @@ tasks:
   dependencies:
   - TASK-GR-PRE-002-A
   - TASK-GR-PRE-002-B
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-01-31T20:48:08.007507'
+  completed_at: '2026-01-31T21:05:47.639963'
 - id: TASK-GR-PRE-002-D
   name: Tests and documentation for episode metadata
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-002-D-metadata-tests-docs.md
@@ -177,29 +186,34 @@ tasks:
   dependencies:
   - TASK-GR-PRE-002-A
   - TASK-GR-PRE-002-B
-  status: pending
+  status: completed
   implementation_mode: direct
   estimated_minutes: 60
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-01-31T20:48:08.017736'
+  completed_at: '2026-01-31T21:05:47.650219'
 - id: TASK-GR-PRE-003-A
   name: Research graphiti-core upsert capabilities
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-003-A-research-upsert.md
   complexity: 3
   dependencies:
   - TASK-GR-PRE-000-C
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  # Note: Changed from manual to task-work per TASK-GR-REV-001
-  turns_completed: 25
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: '2026-01-30T22:31:36.516987'
-  completed_at: '2026-01-30T22:51:42.026978'
+  started_at: '2026-01-31T20:43:03.695844'
+  completed_at: '2026-01-31T20:48:07.953118'
 - id: TASK-GR-PRE-003-B
   name: Implement episode_exists method
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-003-B-episode-exists.md
@@ -207,14 +221,17 @@ tasks:
   dependencies:
   - TASK-GR-PRE-003-A
   - TASK-GR-PRE-002-A
-  status: pending
+  status: completed
   implementation_mode: task-work
   estimated_minutes: 120
-  result: null
-  turns_completed: 0
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
   current_turn: 0
-  started_at: null
-  completed_at: null
+  started_at: '2026-01-31T20:48:08.028350'
+  completed_at: '2026-01-31T21:05:47.660533'
 - id: TASK-GR-PRE-003-C
   name: Implement upsert_episode logic
   file_path: tasks/backlog/graphiti-refinement-mvp/TASK-GR-PRE-003-C-upsert-episode.md
@@ -517,7 +534,7 @@ orchestration:
     - TASK-GR-PRE-002-D
     - TASK-GR-PRE-003-B
   - - TASK-GR-PRE-003-C
-    - TASK-GR-PRE-003-D
+  - - TASK-GR-PRE-003-D
   - - TASK-GR-001-A
     - TASK-GR-001-B
     - TASK-GR-001-C
@@ -543,12 +560,14 @@ execution:
   completed_at: '2026-01-30T22:51:42.038970'
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
   total_turns: 40
-  tasks_completed: 7
-  tasks_failed: 1
-  current_wave: 3
+  tasks_completed: 13
+  tasks_failed: 0
+  current_wave: 4
   completed_waves:
   - 1
   - 2
-  last_updated: '2026-01-30T22:51:42.026982'
+  - 3
+  - 4
+  last_updated: '2026-01-31T21:05:47.671726'
   archived_at: null
   archived_to: null

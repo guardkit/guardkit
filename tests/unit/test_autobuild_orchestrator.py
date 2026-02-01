@@ -37,7 +37,9 @@ from guardkit.orchestrator.agent_invoker import AgentInvocationResult
 from guardkit.orchestrator.exceptions import (
     AgentInvocationError,
     CoachDecisionInvalidError,
+    PlanNotFoundError,
     SDKTimeoutError,
+    StateValidationError,
 )
 
 # Import worktree components from guardkit package
@@ -674,6 +676,156 @@ class TestLoopPhase:
         turn_record = turn_history[0]
         with pytest.raises(Exception):  # FrozenInstanceError
             turn_record.decision = "feedback"
+
+
+# ============================================================================
+# Test Unrecoverable Error Handling (TASK-AB-FIX-003)
+# ============================================================================
+
+
+class TestUnrecoverableErrors:
+    """
+    Test unrecoverable error handling in _execute_turn.
+
+    This test class verifies the feature added in TASK-AB-FIX-003.
+    When the Player returns report={"unrecoverable": True}, the orchestrator
+    should exit immediately without attempting state recovery.
+    """
+
+    def test_execute_turn_handles_unrecoverable_error(
+        self,
+        orchestrator_with_mocks,
+        mock_worktree,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that unrecoverable errors return immediately without state recovery.
+
+        When Player returns report={"unrecoverable": True}, the orchestrator should:
+        - Return TurnRecord with decision="error"
+        - Set coach_result=None (Coach not invoked)
+        - Log the unrecoverable error
+        - Display error to user
+        - NOT attempt state recovery
+        """
+        # Mock Player with unrecoverable error
+        player_result = make_player_result(
+            success=False,
+            error="Unrecoverable: Implementation plan not found",
+        )
+        # Set unrecoverable flag in report
+        player_result.report["unrecoverable"] = True
+
+        mock_agent_invoker.invoke_player.return_value = player_result
+
+        # Execute turn
+        turn_record = orchestrator_with_mocks._execute_turn(
+            turn=1,
+            task_id="TASK-AB-001",
+            requirements="Test requirements",
+            worktree=mock_worktree,
+            previous_feedback=None,
+        )
+
+        # Verify immediate exit without Coach invocation
+        assert turn_record.decision == "error"
+        assert turn_record.coach_result is None
+        assert turn_record.player_result.success is False
+        assert turn_record.player_result.report.get("unrecoverable") is True
+
+        # Verify progress display called with error
+        mock_progress_display.complete_turn.assert_called()
+        call_args = mock_progress_display.complete_turn.call_args
+        assert call_args[0][0] == "error"
+        assert "Unrecoverable error" in call_args[0][1]
+
+    def test_execute_turn_skips_state_recovery_for_unrecoverable(
+        self,
+        orchestrator_with_mocks,
+        mock_worktree,
+        mock_agent_invoker,
+    ):
+        """Test that state recovery is NOT attempted for unrecoverable errors.
+
+        When unrecoverable=True, the orchestrator should skip the
+        _attempt_state_recovery call and return immediately.
+        """
+        # Mock Player with unrecoverable error
+        player_result = make_player_result(
+            success=False,
+            error="Unrecoverable: StateValidationError",
+        )
+        player_result.report["unrecoverable"] = True
+
+        mock_agent_invoker.invoke_player.return_value = player_result
+
+        # Patch _attempt_state_recovery to verify it's NOT called
+        with patch.object(
+            orchestrator_with_mocks,
+            "_attempt_state_recovery",
+        ) as mock_recovery:
+            # Execute turn
+            turn_record = orchestrator_with_mocks._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="Test requirements",
+                worktree=mock_worktree,
+                previous_feedback=None,
+            )
+
+            # Verify state recovery was NOT called
+            mock_recovery.assert_not_called()
+
+            # Verify error exit
+            assert turn_record.decision == "error"
+            assert turn_record.coach_result is None
+
+    def test_execute_turn_uses_state_recovery_for_recoverable(
+        self,
+        orchestrator_with_mocks,
+        mock_worktree,
+        mock_agent_invoker,
+    ):
+        """Test that recoverable errors still attempt state recovery.
+
+        When unrecoverable=False (or not set), the orchestrator should
+        attempt state recovery as before.
+        """
+        # Mock Player with recoverable error (missing report)
+        player_result = make_player_result(
+            success=False,
+            error="Player report not found at /path/to/report.json",
+        )
+        # Explicitly set unrecoverable=False
+        player_result.report["unrecoverable"] = False
+
+        mock_agent_invoker.invoke_player.return_value = player_result
+
+        # Mock state recovery to return None (recovery failed)
+        with patch.object(
+            orchestrator_with_mocks,
+            "_attempt_state_recovery",
+            return_value=None,
+        ) as mock_recovery:
+            # Execute turn
+            turn_record = orchestrator_with_mocks._execute_turn(
+                turn=1,
+                task_id="TASK-AB-001",
+                requirements="Test requirements",
+                worktree=mock_worktree,
+                previous_feedback=None,
+            )
+
+            # Verify state recovery WAS called
+            mock_recovery.assert_called_once()
+            call_kwargs = mock_recovery.call_args[1]
+            assert call_kwargs["task_id"] == "TASK-AB-001"
+            assert call_kwargs["turn"] == 1
+            assert call_kwargs["worktree"] == mock_worktree
+
+            # Verify error exit (recovery failed)
+            assert turn_record.decision == "error"
+            assert turn_record.coach_result is None
 
 
 # ============================================================================
@@ -1951,6 +2103,181 @@ class TestExtractFeedback:
 
         feedback = orchestrator._extract_feedback(coach_report)
         assert feedback == "Implementation looks good"
+
+
+# ============================================================================
+# Test Error Classification in _invoke_player_safely (TASK-AB-FIX-002)
+# ============================================================================
+
+
+class TestPlayerErrorClassification:
+    """Test error classification in _invoke_player_safely method.
+
+    This test class verifies the error classification feature added in
+    TASK-AB-FIX-002. The Player invocation now distinguishes between:
+    - Unrecoverable errors (PlanNotFoundError, StateValidationError)
+    - Recoverable errors (all other exceptions)
+    """
+
+    def test_invoke_player_safely_unrecoverable_error(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that unrecoverable errors are classified correctly.
+
+        Unrecoverable errors should:
+        - Return success=False
+        - Set report={"unrecoverable": True}
+        - Prefix error message with "Unrecoverable:"
+        """
+        from guardkit.orchestrator.exceptions import PlanNotFoundError
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Make invoke_player raise PlanNotFoundError
+        mock_agent_invoker.invoke_player.side_effect = PlanNotFoundError(
+            "Implementation plan not found"
+        )
+
+        result = orchestrator._invoke_player_safely(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        assert result.success is False
+        assert result.report.get("unrecoverable") is True
+        assert result.error.startswith("Unrecoverable:")
+        assert "Implementation plan not found" in result.error
+
+    def test_invoke_player_safely_recoverable_error(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that recoverable errors are classified correctly.
+
+        Recoverable errors should:
+        - Return success=False
+        - Set report={"unrecoverable": False}
+        - Prefix error message with "Recoverable:"
+        """
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # Make invoke_player raise a generic exception
+        mock_agent_invoker.invoke_player.side_effect = RuntimeError(
+            "Temporary network failure"
+        )
+
+        result = orchestrator._invoke_player_safely(
+            task_id="TASK-001",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        assert result.success is False
+        assert result.report.get("unrecoverable") is False
+        assert result.error.startswith("Recoverable:")
+        assert "Temporary network failure" in result.error
+
+    def test_invoke_player_safely_plan_not_found_is_unrecoverable(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that PlanNotFoundError is treated as unrecoverable.
+
+        PlanNotFoundError indicates a missing implementation plan,
+        which cannot be resolved by retrying the Player invocation.
+        """
+        from guardkit.orchestrator.exceptions import PlanNotFoundError
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # PlanNotFoundError with plan_path
+        mock_agent_invoker.invoke_player.side_effect = PlanNotFoundError(
+            "Plan not found at /path/to/plan.md",
+            plan_path="/path/to/plan.md",
+        )
+
+        result = orchestrator._invoke_player_safely(
+            task_id="TASK-002",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        assert result.success is False
+        assert result.report.get("unrecoverable") is True
+        assert "Unrecoverable:" in result.error
+        assert result.agent_type == "player"
+        assert result.turn == 1
+
+    def test_invoke_player_safely_state_validation_error_is_unrecoverable(
+        self,
+        mock_worktree_manager,
+        mock_agent_invoker,
+        mock_progress_display,
+    ):
+        """Test that StateValidationError is treated as unrecoverable.
+
+        StateValidationError indicates task state doesn't match expected
+        requirements (e.g., implement-only requires design_approved).
+        This cannot be resolved by retrying.
+        """
+        from guardkit.orchestrator.exceptions import StateValidationError
+
+        orchestrator = AutoBuildOrchestrator(
+            repo_root=Path("/tmp/test"),
+            max_turns=5,
+            worktree_manager=mock_worktree_manager,
+            agent_invoker=mock_agent_invoker,
+            progress_display=mock_progress_display,
+        )
+
+        # StateValidationError with state details
+        mock_agent_invoker.invoke_player.side_effect = StateValidationError(
+            "Task must be in design_approved state for implement-only mode",
+            task_id="TASK-003",
+            current_state="in_progress",
+            expected_state="design_approved",
+        )
+
+        result = orchestrator._invoke_player_safely(
+            task_id="TASK-003",
+            turn=1,
+            requirements="Test requirements",
+            feedback=None,
+        )
+
+        assert result.success is False
+        assert result.report.get("unrecoverable") is True
+        assert "Unrecoverable:" in result.error
+        assert "design_approved" in result.error
 
 
 # ============================================================================

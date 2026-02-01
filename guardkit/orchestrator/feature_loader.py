@@ -681,6 +681,10 @@ class FeatureLoader:
         if circular:
             errors.append(f"Circular dependency detected: {' -> '.join(circular)}")
 
+        # Check for intra-wave dependencies (tasks depending on others in same wave)
+        wave_errors = FeatureLoader.validate_parallel_groups(feature)
+        errors.extend(wave_errors)
+
         return errors
 
     @staticmethod
@@ -729,6 +733,39 @@ class FeatureLoader:
                     return path
 
         return None
+
+    @staticmethod
+    def validate_parallel_groups(feature: Feature) -> List[str]:
+        """
+        Validate that no task depends on another task in the same parallel group (wave).
+
+        Tasks in the same wave execute in parallel and cannot wait for each other.
+        If task A depends on task B, they must be in different waves with B in an earlier wave.
+
+        Parameters
+        ----------
+        feature : Feature
+            Feature to validate
+
+        Returns
+        -------
+        List[str]
+            List of validation errors (empty if valid)
+        """
+        errors = []
+        for wave_num, task_ids in enumerate(feature.orchestration.parallel_groups, 1):
+            wave_set = set(task_ids)
+            for task_id in task_ids:
+                task = FeatureLoader.find_task(feature, task_id)
+                if task:
+                    for dep_id in task.dependencies:
+                        if dep_id in wave_set:
+                            errors.append(
+                                f"Wave {wave_num}: {task_id} depends on {dep_id} "
+                                f"but both are in the same parallel group. "
+                                f"Move {task_id} to a later wave."
+                            )
+        return errors
 
     @staticmethod
     def save_feature(

@@ -219,7 +219,6 @@ class ImplementOrchestrator:
         print(f"\n   Implementation modes:")
         print(f"     • /task-work: {mode_summary['task-work']} tasks")
         print(f"     • Direct: {mode_summary['direct']} tasks")
-        print(f"     • Manual: {mode_summary['manual']} tasks")
         print("="*80 + "\n")
 
     def create_subfolder(self) -> None:
@@ -473,12 +472,9 @@ Auto-generated from {self.review_task['id']} recommendations.
             steps.append("3. Write unit tests for new functionality")
             steps.append("4. Run tests and verify all pass")
             steps.append("5. Review code quality and architecture compliance")
-        elif implementation_mode == "direct":
+        else:  # direct
             steps.append("3. Verify changes work as expected")
             steps.append("4. Run existing tests to ensure no regressions")
-        else:  # manual
-            steps.append("3. Manually verify implementation")
-            steps.append("4. Document any manual steps required")
 
         return '\n'.join(steps)
 
@@ -489,14 +485,10 @@ Auto-generated from {self.review_task['id']} recommendations.
 - Integration tests if multiple components affected
 - Ensure 80%+ code coverage for new code
 - Run full test suite to verify no regressions"""
-        elif implementation_mode == "direct":
+        else:  # direct
             return """- Run existing tests to verify no regressions
 - Manual verification of changes
 - Spot-check edge cases"""
-        else:  # manual
-            return """- Manual verification required
-- Document test results
-- Peer review recommended"""
 
     def _estimate_loc(self, complexity: int, file_count: int) -> int:
         """Estimate lines of code based on complexity and file count."""
@@ -607,8 +599,7 @@ Auto-generated from {self.review_task['id']} recommendations.
         """Get implementation guidance based on mode."""
         guidance = {
             "task-work": "Execute with `/task-work {task_id}` for full quality gates (architecture review, tests, code review).",
-            "direct": "Implement directly with Claude Code. Changes are straightforward with clear acceptance criteria.",
-            "manual": "Execute manually. Review output and verify correctness before proceeding."
+            "direct": "Implement directly with Claude Code. Changes are straightforward with clear acceptance criteria."
         }
         return guidance.get(mode, "See IMPLEMENTATION-GUIDE.md for details.")
 
@@ -692,7 +683,7 @@ async def handle_implement_option(review_task: Dict, review_report_path: str) ->
     print("\nStep 3/10: Assigning implementation modes...")
     orchestrator.assign_modes()
     mode_summary = get_mode_summary(orchestrator.subtasks)
-    print(f"   ✓ /task-work: {mode_summary['task-work']}, Direct: {mode_summary['direct']}, Manual: {mode_summary['manual']}")
+    print(f"   ✓ /task-work: {mode_summary['task-work']}, Direct: {mode_summary['direct']}")
 
     # Step 4: Detect parallelism
     print("\nStep 4/10: Detecting parallel execution groups...")

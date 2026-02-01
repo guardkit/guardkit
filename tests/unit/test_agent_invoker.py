@@ -4961,6 +4961,32 @@ status: backlog
         mode = agent_invoker._get_implementation_mode("TASK-NONEXISTENT-001")
         assert mode == "task-work"
 
+    def test_get_implementation_mode_unknown_normalized_to_task_work(
+        self, agent_invoker, worktree_path
+    ):
+        """_get_implementation_mode normalizes unknown modes (like 'manual') to 'task-work'."""
+        # Create task file with legacy 'manual' mode (now deprecated)
+        tasks_dir = worktree_path / "tasks" / "backlog"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+
+        task_file = tasks_dir / "TASK-MANUAL-001-test.md"
+        task_file.write_text("""---
+id: TASK-MANUAL-001
+title: Task with legacy manual mode
+status: backlog
+implementation_mode: manual
+---
+
+# Test Task
+
+## Description
+Task with deprecated manual mode - should be normalized to task-work.
+""")
+
+        mode = agent_invoker._get_implementation_mode("TASK-MANUAL-001")
+        # Unknown modes (including legacy 'manual') should be normalized to task-work
+        assert mode == "task-work"
+
     @pytest.mark.asyncio
     async def test_direct_mode_bypasses_task_work_delegation(
         self, agent_invoker, worktree_path, direct_mode_task_file, sample_player_report

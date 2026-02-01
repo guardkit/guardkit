@@ -1,15 +1,15 @@
 ---
 id: TASK-GR-PRE-003-A
 title: Research graphiti-core upsert capabilities
-status: backlog
-created: 2026-01-30T00:00:00Z
-updated: 2026-01-31T15:00:00Z
+status: in_review
+created: 2026-01-30 00:00:00+00:00
+updated: 2026-01-31 15:00:00+00:00
 priority: high
 tags:
-  - graphiti
-  - research
-  - upsert
-  - mvp-phase-1
+- graphiti
+- research
+- upsert
+- mvp-phase-1
 task_type: documentation
 parent_review: TASK-REV-1505
 feature_id: FEAT-GR-MVP
@@ -18,7 +18,22 @@ wave: 3
 conductor_workspace: gr-mvp-wave3-research
 complexity: 3
 depends_on:
-  - TASK-GR-PRE-000-C
+- TASK-GR-PRE-000-C
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-GR-MVP
+  base_branch: main
+  started_at: '2026-01-31T20:43:03.711593'
+  last_updated: '2026-01-31T20:48:07.951472'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-01-31T20:43:03.711593'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Task: Research graphiti-core upsert capabilities

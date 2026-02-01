@@ -1,7 +1,7 @@
 """
 Implementation Mode Analyzer for Subtask Auto-Tagging
 
-Automatically assigns implementation mode (task-work, direct, manual) to subtasks
+Automatically assigns implementation mode (task-work, direct) to subtasks
 based on complexity and risk analysis.
 
 Core Capabilities:
@@ -33,20 +33,6 @@ import re
 
 class ImplementationModeAnalyzer:
     """Analyzes subtasks and assigns appropriate implementation modes."""
-
-    # Keywords that indicate manual execution is needed
-    MANUAL_KEYWORDS = [
-        "run script",
-        "execute script",
-        "bulk operation",
-        "bulk",
-        "migration script",
-        "manual execution",
-        "run command",
-        "execute command",
-        "execute bulk",
-        "run migration",
-    ]
 
     # Keywords that indicate high risk/complexity
     HIGH_RISK_KEYWORDS = [
@@ -163,28 +149,6 @@ class ImplementationModeAnalyzer:
 
         return min(10, max(1, base_complexity))
 
-    def is_manual_task(self, subtask: Dict) -> bool:
-        """
-        Check if subtask should be executed manually.
-
-        Manual tasks typically involve:
-        - Running scripts
-        - Database migrations
-        - Bulk operations
-        - Commands that need human oversight
-
-        Args:
-            subtask: Subtask dictionary
-
-        Returns:
-            True if task should be manual
-        """
-        title = subtask.get("title", "").lower()
-        description = subtask.get("description", "").lower()
-        combined_text = f"{title} {description}"
-
-        return any(keyword in combined_text for keyword in self.MANUAL_KEYWORDS)
-
     def is_high_risk(self, subtask: Dict) -> bool:
         """
         Check if subtask involves high-risk operations.
@@ -220,10 +184,9 @@ class ImplementationModeAnalyzer:
         Assign implementation mode to a subtask.
 
         Decision matrix:
-        1. Check for manual indicators → "manual"
-        2. Check complexity >= 6 or high-risk → "task-work"
-        3. Check complexity <= 3 → "direct"
-        4. Medium complexity (4-5):
+        1. Check complexity >= 6 or high-risk → "task-work"
+        2. Check complexity <= 3 → "direct"
+        3. Medium complexity (4-5):
            - >3 files → "task-work"
            - ≤3 files → "direct"
 
@@ -231,12 +194,8 @@ class ImplementationModeAnalyzer:
             subtask: Subtask dictionary
 
         Returns:
-            Implementation mode: "task-work" | "direct" | "manual"
+            Implementation mode: "task-work" | "direct"
         """
-        # Check for manual execution
-        if self.is_manual_task(subtask):
-            return "manual"
-
         # Analyze complexity
         complexity = self.analyze_complexity(subtask)
         is_high_risk = self.is_high_risk(subtask)
@@ -261,7 +220,7 @@ class ImplementationModeAnalyzer:
         Assign implementation modes to all subtasks.
 
         Updates each subtask dict in place with:
-        - implementation_mode: "task-work" | "direct" | "manual"
+        - implementation_mode: "task-work" | "direct"
         - complexity_analyzed: analyzed complexity score
         - risk_level: "high" | "medium" | "low"
 
@@ -272,7 +231,7 @@ class ImplementationModeAnalyzer:
             Updated list of subtasks with modes assigned
         """
         for subtask in subtasks:
-            # Skip if mode already set (manual override)
+            # Skip if mode already set (explicit override)
             if subtask.get("implementation_mode"):
                 continue
 
@@ -312,7 +271,7 @@ def assign_implementation_modes(subtasks: List[Dict]) -> List[Dict]:
         ...     print(f"{subtask['id']}: {subtask['implementation_mode']}")
         TASK-FW-001: direct
         TASK-FW-002: task-work
-        TASK-FW-003: manual
+        TASK-FW-003: task-work
     """
     analyzer = ImplementationModeAnalyzer()
     return analyzer.assign_modes_to_subtasks(subtasks)
@@ -326,12 +285,11 @@ def get_mode_summary(subtasks: List[Dict]) -> Dict[str, int]:
         subtasks: List of subtasks with modes assigned
 
     Returns:
-        Dictionary with mode counts: {"task-work": 5, "direct": 3, "manual": 1}
+        Dictionary with mode counts: {"task-work": 5, "direct": 3}
     """
     summary = {
         "task-work": 0,
-        "direct": 0,
-        "manual": 0
+        "direct": 0
     }
 
     for subtask in subtasks:

@@ -932,7 +932,7 @@ When you choose [I]mplement, the system automatically:
 
 1. **Extracts feature slug** from review title (e.g., "Authentication Refactor" → "authentication-refactor")
 2. **Parses subtasks** from review recommendations section
-3. **Assigns implementation modes** (task-work/direct/manual) based on complexity and risk
+3. **Assigns implementation modes** (task-work/direct) based on complexity and risk
 4. **Detects parallel groups** by analyzing file conflicts between tasks
 5. **Generates workspace names** for Conductor parallel execution
 6. **Creates subfolder** at `tasks/backlog/{feature-slug}/`
@@ -956,7 +956,7 @@ When you choose [I]mplement, the system automatically:
 
 **After (Auto-Detection)**:
 - Zero manual task creation
-- Smart mode assignment (task-work/direct/manual)
+- Smart mode assignment (task-work/direct)
 - Automatic parallel group detection
 - Complete documentation generated
 - Conductor-ready workspace names

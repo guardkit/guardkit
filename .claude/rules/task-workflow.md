@@ -46,7 +46,7 @@ depends_on:
 - `parent_task`: Parent task ID for subtasks
 - `parent_review`: Review task ID that generated this task (format: TASK-REV-{hash})
 - `feature_id`: Feature ID for multi-task features (format: FEAT-{hash})
-- `implementation_mode`: task-work, direct, manual
+- `implementation_mode`: task-work, direct
 - `wave`: Parallel execution wave number
 - `conductor_workspace`: Workspace name for parallel development
 - `complexity`: 1-10 complexity score

@@ -167,7 +167,7 @@ orchestration:
 | `complexity` | int | No | Complexity score 1-10 (default: 5) |
 | `dependencies` | array | No | List of dependency task IDs |
 | `status` | string | No | "pending", "in_progress", "completed", "failed", "skipped" |
-| `implementation_mode` | string | No | "direct", "task-work", "manual" |
+| `implementation_mode` | string | No | "direct", "task-work" |
 | `estimated_minutes` | int | No | Estimated duration (default: 30) |
 
 **Orchestration fields:**
@@ -844,7 +844,7 @@ Step 2/10: Parsing subtasks from review recommendations...
    ✓ Found 5 subtasks
 
 Step 3/10: Assigning implementation modes...
-   ✓ /task-work: 2, Direct: 3, Manual: 0
+   ✓ task-work: 2, direct: 3
 
 Step 4/10: Detecting parallel execution groups...
    ✓ Organized into 2 waves
@@ -868,9 +868,8 @@ Step 6/10: Displaying auto-detected configuration...
      • Testing: Standard mode (from Q3)
 
    Implementation modes:
-     • /task-work: 2 tasks
-     • Direct: 3 tasks
-     • Manual: 0 tasks
+     • task-work: 2 tasks
+     • direct: 3 tasks
 ================================================================================
 
 Step 7/10: Creating subfolder structure...
@@ -930,7 +929,7 @@ Original review: TASK-REV-A3F2 (marked completed)
 
 **What Makes This Enhanced**:
 - ✅ **Context-driven decisions** - Uses Context A (review scope) and Context B (implementation prefs)
-- ✅ **Smart mode assignment** - Complexity-based task-work/direct/manual
+- ✅ **Smart mode assignment** - Complexity-based task-work/direct
 - ✅ **Parallel group detection** - File conflict analysis for waves
 - ✅ **Conductor integration** - Workspace names for parallel execution (from Context B)
 - ✅ **Complete documentation** - README + Implementation Guide auto-generated
