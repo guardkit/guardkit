@@ -98,6 +98,131 @@ Use `--context` when auto-detection isn't sufficient or you want to explicitly s
 - Paths can be relative (to project root) or absolute
 - Nonexistent files are handled gracefully (warning logged)
 
+### Graphiti Context Integration (FEAT-GR-003)
+
+When `/feature-plan` executes with context (auto-detected or explicit), it queries Graphiti's knowledge graph to enrich planning with:
+
+**1. Feature-Related Context:**
+- Related features and their outcomes
+- Relevant design patterns for the tech stack
+- Similar past implementations and lessons learned
+- Project architecture and key components
+
+**2. AutoBuild Support Context:**
+- **Role constraints**: Player/Coach boundaries to prevent role reversal
+- **Quality gate configs**: Task-type specific thresholds (scaffolding vs feature)
+- **Implementation modes**: Direct vs task-work patterns and file locations
+
+**Example Context Query Flow:**
+
+```bash
+/feature-plan "implement FEAT-GR-003 feature spec integration" --context docs/research/graphiti-refinement/FEAT-GR-003.md
+
+# Internal Graphiti queries:
+# 1. Seed feature spec to knowledge graph
+# 2. Query related features: FEAT-GR-002, FEAT-GR-004
+# 3. Query relevant patterns: "repository pattern", "context builder pattern"
+# 4. Query role constraints: player_must_implement, coach_must_validate
+# 5. Query quality gates: scaffolding_threshold=skip_arch, feature_threshold=60
+# 6. Query implementation modes: task-work (>= complexity 4), direct (< complexity 4)
+#
+# Planning prompt enriched with:
+# - Feature spec details (success criteria, technical requirements)
+# - 2 related features with similar patterns
+# - 3 relevant design patterns
+# - Player/Coach role boundaries
+# - Quality gate thresholds per task type
+# - File location patterns for direct mode
+```
+
+**What This Prevents:**
+
+| Issue | How Context Helps |
+|-------|------------------|
+| Role reversal | Player knows implementation boundaries, Coach knows validation scope |
+| Threshold drift | Quality gates consistent across all generated subtasks |
+| File location errors | Direct mode tasks know to create files inline, not in worktrees |
+| Pattern inconsistency | Planning references proven patterns from past features |
+| Knowledge loss | Related features inform current implementation approach |
+
+**Queried Group IDs:**
+
+```python
+# Feature context
+"feature_specs"          # Seeded feature specifications
+"feature_completions"    # Past feature outcomes
+"task_outcomes"          # Individual task learnings
+
+# Pattern context
+"patterns_{tech_stack}"  # Stack-specific patterns (e.g., patterns_python)
+"patterns"               # Generic design patterns
+
+# AutoBuild context
+"role_constraints"       # Player/Coach responsibilities
+"quality_gate_configs"   # Task-type quality thresholds
+"implementation_modes"   # Direct vs task-work guidance
+
+# Architecture context
+"project_overview"       # CLAUDE.md insights
+"project_architecture"   # Key components, entry points
+"failure_patterns"       # Things that failed before
+```
+
+**Token Budget Allocation:**
+
+```
+Total budget: ~4000 tokens
+
+1. Feature spec (40%):         ~1600 tokens - Highest priority
+2. Project architecture (20%): ~800 tokens  - Context setting
+3. Related features (15%):     ~600 tokens  - Similar patterns
+4. Design patterns (15%):      ~600 tokens  - Implementation guidance
+5. Warnings (10%):             ~400 tokens  - Past failures
+6. Role constraints:           ~200 tokens  - AutoBuild boundaries
+7. Quality gates:              ~200 tokens  - Threshold configs
+```
+
+**Example: Planning with Full Context**
+
+```bash
+$ /feature-plan "implement FEAT-SKEL-001 walking skeleton" --context docs/features/FEAT-SKEL-001.md
+
+[Graphiti] Found feature spec: docs/features/FEAT-SKEL-001-walking-skeleton.md
+[Graphiti] Seeded feature spec to knowledge graph
+[Graphiti] Querying for enriched context...
+
+[Graphiti] Context loaded:
+  ✓ Related features: 2 (FEAT-SETUP-001, FEAT-PING-002)
+  ✓ Relevant patterns: 3 (mcp-tool-pattern, docker-setup, healthcheck-pattern)
+  ✓ Role constraints: 2 (player, coach)
+  ✓ Quality gates: 4 (scaffolding, feature, testing, documentation)
+  ✓ Implementation modes: 2 (direct, task-work)
+  ✓ Warnings: 0
+
+[Review] Planning with enriched context (4200 tokens)...
+
+TECHNICAL OPTIONS ANALYSIS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1: FastAPI + MCP SDK (Recommended)
+  Based on: mcp-tool-pattern (from Graphiti)
+  Complexity: Low (3/10)
+  Effort: 2-3 hours
+  Quality gate: scaffolding (architectural review skipped)
+  Implementation mode: direct (inline file creation)
+  ...
+
+[Continue with normal feature planning flow]
+```
+
+**Benefits:**
+
+✅ **Context continuity** - Feature specs persist across planning → implementation → completion
+✅ **Pattern reuse** - Proven approaches from past features inform new work
+✅ **Consistent workflows** - AutoBuild constraints prevent common mistakes
+✅ **Knowledge accumulation** - Each feature enriches the knowledge graph
+✅ **Reduced rework** - Warnings from past failures prevent repeated errors
+
 ### Feature YAML Schema Reference
 
 The generated feature YAML file must conform to the `FeatureLoader` schema. This section documents the **required** structure for `/feature-build` compatibility.

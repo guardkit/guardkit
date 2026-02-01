@@ -1,18 +1,18 @@
 ---
-id: TASK-GR4-006
-title: Add /task-review --capture-knowledge integration
-status: backlog
-task_type: feature
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-004
-wave: 1
-parallel_group: wave1-gr004
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies:
-  - TASK-GR4-005
+- TASK-GR4-005
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR4-006
+implementation_mode: task-work
+parallel_group: wave1-gr004
+parent_review: TASK-REV-0CD7
+status: in_progress
+sub_feature: GR-004
+task_type: feature
+title: Add /task-review --capture-knowledge integration
+wave: 1
 ---
 
 # Add /task-review --capture-knowledge integration

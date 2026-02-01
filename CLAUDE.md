@@ -41,15 +41,26 @@ This is the **GuardKit** project - a lightweight, pragmatic task workflow system
 ### Feature Planning Workflow (NEW - TASK-FW-001)
 ```bash
 /feature-plan "feature description"  # Single command - auto-detects everything!
+
+# Optional flags:
+/feature-plan "feature description" --context docs/features/FEAT-XXX.md
+/feature-plan "feature description" --context spec.md --context CLAUDE.md
 ```
 
-The `/feature-plan` command provides a streamlined, single-command experience for planning new features with automatic subtask generation.
+The `/feature-plan` command provides a streamlined, single-command experience for planning new features with automatic subtask generation and intelligent context loading.
 
 **What it does**:
 1. Creates review task automatically
-2. Executes architectural review
-3. On [I]mplement: Auto-creates complete feature structure
-4. Generates all documentation and subtasks
+2. Loads feature context (auto-detected or explicit via `--context`)
+3. Executes architectural review with Graphiti-enhanced context
+4. On [I]mplement: Auto-creates complete feature structure
+5. Generates all documentation and subtasks
+
+**Context Loading** (NEW - FEAT-GR-003):
+- **Auto-detection**: Searches `docs/features/` for matching FEAT-XXX specs
+- **Explicit context**: Use `--context` to specify additional context files
+- **Graphiti integration**: Queries related features, patterns, and AutoBuild constraints
+- **Budget-aware**: Smart token allocation for optimal context
 
 **Example**:
 ```bash
@@ -57,7 +68,13 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 
 # System automatically:
 # ✅ Creates review task
-# ✅ Analyzes feature requirements
+# ✅ Auto-detects feature spec (if FEAT-XXX in description)
+# ✅ Queries Graphiti for enriched context:
+#    - Related features
+#    - Relevant patterns
+#    - Role constraints (Player/Coach boundaries)
+#    - Quality gate configs
+# ✅ Analyzes feature requirements with full context
 # ✅ Detects feature slug: "dark-mode"
 # ✅ Extracts 7 subtasks from recommendations
 # ✅ Assigns implementation modes (task-work/direct)
@@ -70,11 +87,25 @@ The `/feature-plan` command provides a streamlined, single-command experience fo
 #    └── ... (5 more subtasks)
 ```
 
+**Context Options**:
+```bash
+# Explicit feature spec (overrides auto-detection)
+/feature-plan "implement OAuth" --context docs/features/FEAT-AUTH-001.md
+
+# Multiple context sources
+/feature-plan "add API" --context docs/api-spec.md --context CLAUDE.md
+
+# Works with feature ID in description (auto-detection)
+/feature-plan "implement FEAT-GR-003" --context additional-notes.md
+```
+
 **Benefits**:
 - **Zero manual task creation** - All subtasks auto-generated from review
 - **Smart mode assignment** - Automatic task-work/direct tagging
 - **Parallel execution ready** - Conductor workspace names included
 - **Complete documentation** - README + Implementation Guide generated
+- **Context-aware planning** - Graphiti provides related features, patterns, constraints
+- **AutoBuild ready** - Role constraints and quality gates included in planning
 - **95% time savings** - <1 minute vs 15-30 minutes manual setup
 
 **See**: `installer/core/commands/feature-plan.md` for complete documentation
