@@ -6,6 +6,7 @@ that can be stored in the Graphiti knowledge graph.
 Episode Types:
 - ProjectArchitectureEpisode: Captures system architecture patterns
 - ProjectOverviewEpisode: Captures project overview for North Star context
+- ImplementationModeEpisode: Captures implementation mode patterns and guidance
 """
 
 from guardkit.integrations.graphiti.episodes.project_architecture import (
@@ -14,8 +15,14 @@ from guardkit.integrations.graphiti.episodes.project_architecture import (
 from guardkit.integrations.graphiti.episodes.project_overview import (
     ProjectOverviewEpisode,
 )
+from guardkit.integrations.graphiti.episodes.implementation_mode import (
+    ImplementationModeEpisode,
+    IMPLEMENTATION_MODE_DEFAULTS,
+)
 
 __all__ = [
     "ProjectArchitectureEpisode",
     "ProjectOverviewEpisode",
+    "ImplementationModeEpisode",
+    "IMPLEMENTATION_MODE_DEFAULTS",
 ]

@@ -9,7 +9,7 @@ id: TASK-GR-001-E
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - project-seeding
@@ -18,7 +18,7 @@ tags:
 - mvp-phase-2
 task_type: feature
 title: Create QualityGateConfigEpisode and seed defaults
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-02-01T09:30:00+00:00
 wave: 6
 ---
 
