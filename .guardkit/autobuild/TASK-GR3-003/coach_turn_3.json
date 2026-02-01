@@ -1,0 +1,37 @@
+{
+  "task_id": "TASK-GR3-003",
+  "turn": 3,
+  "decision": "feedback",
+  "validation_results": {
+    "quality_gates": {
+      "tests_passed": null,
+      "coverage_met": false,
+      "arch_review_passed": true,
+      "plan_audit_passed": true,
+      "all_gates_passed": false
+    },
+    "independent_tests": null,
+    "requirements": null
+  },
+  "issues": [
+    {
+      "severity": "must_fix",
+      "category": "test_failure",
+      "description": "Tests did not pass during task-work execution",
+      "details": {
+        "failed_count": 0,
+        "total_count": 25
+      }
+    },
+    {
+      "severity": "must_fix",
+      "category": "coverage",
+      "description": "Coverage threshold not met",
+      "details": {
+        "line_coverage": 41.0,
+        "branch_coverage": 0
+      }
+    }
+  ],
+  "rationale": "2 quality gate(s) failed"
+}
