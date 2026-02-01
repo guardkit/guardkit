@@ -11,7 +11,7 @@ id: TASK-GR3-003
 implementation_mode: task-work
 parallel_group: wave1-gr003
 parent_review: TASK-REV-0CD7
-status: design_approved
+status: in_review
 sub_feature: GR-003
 task_type: feature
 tests_passed: 25

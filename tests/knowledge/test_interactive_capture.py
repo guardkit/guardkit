@@ -203,7 +203,7 @@ class TestRunSessionBasic:
 
             with patch.object(
                 InteractiveCaptureSession, '_get_gaps',
-                return_value=[]
+                new=AsyncMock(return_value=[])
             ) as mock_gaps:
                 session = InteractiveCaptureSession()
 
@@ -227,7 +227,7 @@ class TestRunSessionBasic:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]) as mock_analyze:
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])) as mock_analyze:
                 def mock_callback(event, data=None):
                     pass
 
@@ -251,7 +251,7 @@ class TestRunSessionBasic:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]) as mock_analyze:
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])) as mock_analyze:
                 def mock_callback(event, data=None):
                     pass
 
@@ -274,7 +274,7 @@ class TestRunSessionBasic:
             session = InteractiveCaptureSession()
 
             # Should raise error or work with callback - test both behaviors
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 # Either requires callback or has default behavior
                 try:
                     result = await session.run_session(ui_callback=None)
@@ -295,7 +295,7 @@ class TestRunSessionBasic:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 def mock_callback(event, data=None):
                     pass
 
@@ -489,7 +489,7 @@ class TestRunSessionUICallback:
             session = InteractiveCaptureSession()
             callback_events = []
 
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 def mock_callback(event, data=None):
                     callback_events.append((event, data))
 
@@ -1244,7 +1244,7 @@ class TestEdgeCasesAndErrorHandling:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 def mock_callback(event, data=None):
                     pass
 
@@ -1314,7 +1314,7 @@ class TestEdgeCasesAndErrorHandling:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 def mock_callback(event, data=None):
                     pass
 
@@ -1334,7 +1334,7 @@ class TestEdgeCasesAndErrorHandling:
 
             session = InteractiveCaptureSession()
 
-            with patch.object(session, '_get_gaps', return_value=[]):
+            with patch.object(session, '_get_gaps', new=AsyncMock(return_value=[])):
                 def mock_callback(event, data=None):
                     pass
 

@@ -91,6 +91,9 @@ class InteractiveCaptureSession:
         KnowledgeCategory.WORKFLOW_PREFERENCES: "Workflow: ",
     }
 
+    # Minimum length for a sentence to be considered a meaningful fact
+    _MIN_FACT_LENGTH = 10
+
     def __init__(self):
         """Initialize the InteractiveCaptureSession."""
         self._graphiti = get_graphiti()
@@ -106,15 +109,14 @@ class InteractiveCaptureSession:
         """
         return self._captured
 
-    def _get_gaps(
+    async def _get_gaps(
         self,
         focus: Optional[KnowledgeCategory] = None,
         max_questions: int = 10
     ) -> List[KnowledgeGap]:
         """Get knowledge gaps for the session.
 
-        This is a helper method that wraps the async analyze_gaps call
-        for easier testing.
+        Delegates to the KnowledgeGapAnalyzer to identify gaps in project knowledge.
 
         Args:
             focus: Optional category to focus on
@@ -123,23 +125,7 @@ class InteractiveCaptureSession:
         Returns:
             List of KnowledgeGap objects
         """
-        import asyncio
-
-        # Run the async analyze_gaps synchronously
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # If we're already in an async context, create a new task
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(
-                    asyncio.run,
-                    self._analyzer.analyze_gaps(focus, max_questions)
-                )
-                return future.result()
-        else:
-            return loop.run_until_complete(
-                self._analyzer.analyze_gaps(focus, max_questions)
-            )
+        return await self._analyzer.analyze_gaps(focus, max_questions)
 
     async def run_session(
         self,
@@ -182,7 +168,7 @@ class InteractiveCaptureSession:
         self._captured = []
 
         # Get knowledge gaps
-        gaps = self._get_gaps(focus, max_questions)
+        gaps = await self._get_gaps(focus, max_questions)
 
         # Handle no gaps case
         if not gaps:
@@ -293,8 +279,8 @@ class InteractiveCaptureSession:
             # Clean up the sentence
             sentence = sentence.strip()
 
-            # Filter out sentences shorter than 10 characters
-            if len(sentence) < 10:
+            # Filter out sentences shorter than minimum fact length
+            if len(sentence) < self._MIN_FACT_LENGTH:
                 continue
 
             # Add prefix and append
