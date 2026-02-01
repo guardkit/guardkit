@@ -29,11 +29,11 @@ Create the ProjectOverviewEpisode dataclass that captures high-level project inf
 
 ## Acceptance Criteria
 
-- [ ] ProjectOverviewEpisode dataclass implemented
-- [ ] Captures project purpose, goals, tech stack
-- [ ] Serializable to Graphiti episode format
-- [ ] Entity ID generation for upsert support
-- [ ] Validation for required fields
+- [x] ProjectOverviewEpisode dataclass implemented
+- [x] Captures project purpose, goals, tech stack
+- [x] Serializable to Graphiti episode format
+- [x] Entity ID generation for upsert support
+- [x] Validation for required fields
 
 ## Implementation Notes
 
@@ -99,9 +99,9 @@ class ProjectOverviewEpisode:
 
 ## Test Requirements
 
-- [ ] Unit tests for schema
-- [ ] Unit tests for to_episode_content
-- [ ] Unit tests for entity_id generation
+- [x] Unit tests for schema
+- [x] Unit tests for to_episode_content
+- [x] Unit tests for entity_id generation
 
 ## Notes
 
