@@ -1,17 +1,17 @@
 ---
-id: TASK-GR5-009
-title: Add GR-005 tests
-status: backlog
-task_type: testing
-parent_review: TASK-REV-0CD7
-feature_id: FEAT-0F4A
-sub_feature: GR-005
-wave: 2
-implementation_mode: task-work
 complexity: 4
-estimate_hours: 2
 dependencies:
-  - TASK-GR5-008
+- TASK-GR5-008
+estimate_hours: 2
+feature_id: FEAT-0F4A
+id: TASK-GR5-009
+implementation_mode: task-work
+parent_review: TASK-REV-0CD7
+status: in_review
+sub_feature: GR-005
+task_type: testing
+title: Add GR-005 tests
+wave: 2
 ---
 
 # Add GR-005 tests
@@ -22,12 +22,12 @@ Add comprehensive tests for knowledge query commands and turn state functionalit
 
 ## Acceptance Criteria
 
-- [ ] Unit tests for show, search, list, status commands
-- [ ] Unit tests for TurnStateEpisode serialization
-- [ ] Integration tests for turn state capture
-- [ ] Integration tests for turn context loading
-- [ ] Tests for "not found" and empty cases
-- [ ] Coverage >= 80%
+- [x] Unit tests for show, search, list, status commands
+- [x] Unit tests for TurnStateEpisode serialization
+- [x] Integration tests for turn state capture
+- [x] Integration tests for turn context loading
+- [x] Tests for "not found" and empty cases
+- [x] Coverage >= 80%
 
 ## Test Cases
 
