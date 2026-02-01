@@ -6,7 +6,11 @@ namespace management.
 """
 
 from guardkit.integrations.graphiti.metadata import EpisodeMetadata, EntityType
-from guardkit.integrations.graphiti.constants import SourceType
+from guardkit.integrations.graphiti.constants import (
+    SourceType,
+    PROJECT_GROUPS,
+    SYSTEM_GROUPS,
+)
 from guardkit.integrations.graphiti.exists_result import ExistsResult
 from guardkit.integrations.graphiti.project import (
     ProjectInfo,
@@ -19,12 +23,20 @@ from guardkit.integrations.graphiti.project import (
     PROJECT_METADATA_GROUP,
 )
 from guardkit.integrations.graphiti.episodes import ProjectArchitectureEpisode
+from guardkit.integrations.graphiti.parsers import (
+    BaseParser,
+    EpisodeData,
+    ParseResult,
+    ParserRegistry,
+)
 
 __all__ = [
     # Metadata
     "EpisodeMetadata",
     "EntityType",
     "SourceType",
+    "PROJECT_GROUPS",
+    "SYSTEM_GROUPS",
     "ExistsResult",
     # Project management
     "ProjectInfo",
@@ -37,4 +49,9 @@ __all__ = [
     "PROJECT_METADATA_GROUP",
     # Episode schemas
     "ProjectArchitectureEpisode",
+    # Parser infrastructure
+    "BaseParser",
+    "EpisodeData",
+    "ParseResult",
+    "ParserRegistry",
 ]
