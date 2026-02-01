@@ -11,6 +11,7 @@ from guardkit.integrations.graphiti.parsers.base import (
 )
 from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
+from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
 from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "ParseResult",
     "ParserRegistry",
     "ProjectDocParser",
+    "ProjectOverviewParser",
 ]

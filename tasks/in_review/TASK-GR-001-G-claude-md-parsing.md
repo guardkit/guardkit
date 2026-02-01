@@ -10,7 +10,7 @@ id: TASK-GR-001-G
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - project-seeding
@@ -18,8 +18,20 @@ tags:
 - mvp-phase-2
 task_type: feature
 title: Implement CLAUDE.md/README.md parsing
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-02-01 00:00:00+00:00
 wave: 7
+implementation:
+  completed_at: 2026-02-01
+  mode: tdd
+  files_created:
+    - guardkit/integrations/graphiti/parsers/project_doc_parser.py
+    - tests/integrations/graphiti/parsers/test_project_doc_parser.py
+  test_results:
+    total: 44
+    passed: 44
+    failed: 0
+    coverage: 100%
+  code_review: APPROVED
 ---
 
 # Task: Implement CLAUDE.md/README.md parsing
@@ -30,11 +42,11 @@ Implement parsing of CLAUDE.md and README.md files to extract project overview a
 
 ## Acceptance Criteria
 
-- [ ] Parse CLAUDE.md to extract project overview
-- [ ] Parse README.md as fallback
-- [ ] Extract: purpose, tech stack, key patterns
-- [ ] Handle various markdown formats
-- [ ] Provide helpful errors for unparseable content
+- [x] Parse CLAUDE.md to extract project overview
+- [x] Parse README.md as fallback
+- [x] Extract: purpose, tech stack, key patterns
+- [x] Handle various markdown formats
+- [x] Provide helpful errors for unparseable content
 
 ## Implementation Notes
 
@@ -86,16 +98,31 @@ ARCH_HEADERS = [
 ]
 ```
 
-### Files to Create
+### Files Created
 
-- `src/guardkit/integrations/graphiti/parsers/project_doc_parser.py`
+- `guardkit/integrations/graphiti/parsers/project_doc_parser.py` (282 lines)
+- `tests/integrations/graphiti/parsers/test_project_doc_parser.py` (735 lines)
 
 ## Test Requirements
 
-- [ ] Unit tests with sample CLAUDE.md
-- [ ] Unit tests with sample README.md
-- [ ] Test various markdown formats
-- [ ] Test missing sections handling
+- [x] Unit tests with sample CLAUDE.md
+- [x] Unit tests with sample README.md
+- [x] Test various markdown formats
+- [x] Test missing sections handling
+
+## Implementation Summary
+
+**TDD Workflow Completed:**
+1. RED: 44 failing tests written covering all acceptance criteria
+2. GREEN: Implementation created to pass all tests
+3. Tests: 44/44 passed with 100% coverage
+
+**Key Features:**
+- Parses YAML frontmatter using python-frontmatter library
+- Extracts sections by case-insensitive header matching
+- Generates EpisodeData for purpose, tech_stack, and architecture sections
+- Handles missing sections with helpful warnings
+- Supports both .md and .markdown extensions
 
 ## Notes
 

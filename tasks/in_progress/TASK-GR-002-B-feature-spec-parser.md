@@ -9,7 +9,7 @@ id: TASK-GR-002-B
 implementation_mode: task-work
 parent_review: TASK-REV-1505
 priority: high
-status: design_approved
+status: in_review
 tags:
 - graphiti
 - context-addition
@@ -18,7 +18,7 @@ tags:
 - mvp-phase-2
 task_type: feature
 title: Implement FeatureSpecParser
-updated: 2026-01-30 00:00:00+00:00
+updated: 2026-02-01 00:00:00+00:00
 wave: 7
 ---
 
@@ -30,11 +30,11 @@ Implement a parser for feature specification files (FEATURE-SPEC-*.md) that extr
 
 ## Acceptance Criteria
 
-- [ ] Parse feature spec frontmatter
-- [ ] Extract: feature name, description, tasks, dependencies
-- [ ] Create episodes for feature overview and tasks
-- [ ] Handle various feature spec formats
-- [ ] Provide helpful errors for malformed specs
+- [x] Parse feature spec frontmatter
+- [x] Extract: feature name, description, tasks, dependencies
+- [x] Create episodes for feature overview and tasks
+- [x] Handle various feature spec formats
+- [x] Provide helpful errors for malformed specs
 
 ## Implementation Notes
 
@@ -114,10 +114,10 @@ phases:
 
 ## Test Requirements
 
-- [ ] Unit tests with sample feature specs
-- [ ] Test frontmatter parsing
-- [ ] Test task extraction
-- [ ] Test malformed spec handling
+- [x] Unit tests with sample feature specs
+- [x] Test frontmatter parsing
+- [x] Test task extraction
+- [x] Test malformed spec handling
 
 ## Notes
 
