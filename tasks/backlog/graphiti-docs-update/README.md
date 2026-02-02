@@ -4,7 +4,7 @@
 > **Parent Review**: TASK-REV-BBE7
 > **Created**: 2026-02-01
 > **Status**: In Progress
-> **Progress**: 4/8 tasks (50%)
+> **Progress**: 5/9 tasks (56%)
 
 ## Problem Statement
 
@@ -29,8 +29,9 @@ Additionally, CLAUDE.md contains ~350 lines of Graphiti documentation which shou
 | TASK-GDU-004 | Update mkdocs.yml navigation | 2 | direct | ✅ Completed |
 | TASK-GDU-005 | Update graphiti-architecture.md | 2 | direct | ✅ Completed |
 | TASK-GDU-006 | Create graphiti-turn-states.md | 3 | direct | Pending |
-| TASK-GDU-007 | Update graphiti-integration-guide.md | 3 | direct | Pending |
+| TASK-GDU-007 | Update graphiti-integration-guide.md | 3 | direct | ✅ Completed |
 | TASK-GDU-008 | Refactor CLAUDE.md Graphiti to progressive disclosure | 3 | task-work | Pending |
+| TASK-GDU-009 | Document guardkit init Graphiti seeding workflow | 3 | direct | Pending |
 
 ## Execution Strategy
 
@@ -45,11 +46,11 @@ Additionally, CLAUDE.md contains ~350 lines of Graphiti documentation which shou
 - Estimated: 2 hours total
 
 ### Wave 3: Additional Docs & Refactoring (Parallel)
-- TASK-GDU-006, TASK-GDU-007, TASK-GDU-008
+- TASK-GDU-006, TASK-GDU-008, TASK-GDU-009
 - Can be executed in parallel
-- Estimated: 4 hours total
+- Estimated: 4.5 hours total
 
-**Total Estimated Effort**: 12 hours
+**Total Estimated Effort**: 12.5 hours
 
 ## Success Criteria
 
@@ -58,3 +59,4 @@ Additionally, CLAUDE.md contains ~350 lines of Graphiti documentation which shou
 - [x] Architecture docs include Phase 2 APIs
 - [ ] CLAUDE.md Graphiti content uses progressive disclosure (<100 lines in core)
 - [ ] GitHub Pages site builds successfully
+- [ ] `guardkit init` Graphiti seeding workflow documented publicly

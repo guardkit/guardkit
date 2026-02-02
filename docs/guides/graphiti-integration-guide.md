@@ -10,6 +10,7 @@
 
 - [The Problem It Solves](#the-problem-it-solves)
 - [Quick Start (5-Minute Setup)](#quick-start-5-minute-setup)
+- [Init Seeding Workflow](#init-seeding-workflow)
 - [What's New in Phase 2](#whats-new-in-phase-2)
 - [Core Concepts](#core-concepts)
 - [Using Graphiti with GuardKit Commands](#using-graphiti-with-guardkit-commands)
@@ -137,6 +138,185 @@ Verification complete!
 ```
 
 **Done!** Graphiti is now providing persistent memory to your GuardKit sessions.
+
+---
+
+## Init Seeding Workflow
+
+When you run `guardkit init`, project knowledge is **automatically seeded to Graphiti** by default. This ensures your project context is immediately available for AI-assisted development.
+
+### What Gets Seeded
+
+The init command seeds four knowledge components:
+
+| Component | Group ID | Description |
+|-----------|----------|-------------|
+| **Project Overview** | `project_overview` | Parsed from CLAUDE.md or README.md - project purpose, tech stack, key goals |
+| **Role Constraints** | `role_constraints` | Player/Coach behavior boundaries - what AI should ask about before implementing |
+| **Quality Gate Configs** | `quality_gate_configs` | Test coverage thresholds, architectural review scores |
+| **Implementation Modes** | `implementation_modes` | Guidance on when to use task-work vs direct implementation |
+
+### CLI Options
+
+```bash
+# Standard init (seeds to Graphiti by default)
+guardkit init fastapi-python
+
+# Interactive mode - prompts for project information
+guardkit init --interactive
+guardkit init fastapi-python -i
+
+# Skip Graphiti seeding (faster initialization)
+guardkit init --skip-graphiti
+
+# Custom project name (overrides directory name)
+guardkit init -n my-custom-project-name
+guardkit init fastapi-python --project-name my-app
+
+# Combined options
+guardkit init react-typescript -i -n frontend-app
+```
+
+### Interactive Setup
+
+Interactive mode (`-i` or `--interactive`) prompts you for project information:
+
+```
+$ guardkit init --interactive
+
+What is the purpose of this project?
+> An e-commerce API for processing orders and payments
+
+What is the primary programming language?
+> python
+
+What frameworks are you using? (comma-separated)
+> FastAPI, SQLAlchemy, Celery
+
+Enter key goals (empty line to finish):
+Goal: High availability (99.9% uptime)
+Goal: Sub-100ms response times
+Goal: PCI compliance for payment processing
+Goal:
+
+Save this information to CLAUDE.md? [Y/n]
+```
+
+The captured information is:
+1. Saved to CLAUDE.md (if approved)
+2. Seeded directly to Graphiti as a `ProjectOverviewEpisode`
+
+### Refining Project Knowledge
+
+After initial seeding, you may need to refine or update your project knowledge. Three methods are available:
+
+#### Method 1: Interactive Knowledge Capture (Recommended)
+
+The most comprehensive refinement method - captures all knowledge categories through guided Q&A:
+
+```bash
+# Full interactive session (all categories)
+guardkit graphiti capture --interactive
+
+# Focus on specific categories
+guardkit graphiti capture --interactive --focus project-overview
+guardkit graphiti capture --interactive --focus role-customization
+guardkit graphiti capture --interactive --focus quality-gates
+guardkit graphiti capture --interactive --focus workflow-preferences
+```
+
+**See**: [Interactive Knowledge Capture Guide](graphiti-knowledge-capture.md) for detailed usage.
+
+#### Method 2: Add Context from Documents
+
+Re-parse and seed from an updated CLAUDE.md or other documentation:
+
+```bash
+# Re-seed from updated CLAUDE.md
+guardkit graphiti add-context CLAUDE.md --force
+
+# Add context from other documentation
+guardkit graphiti add-context docs/architecture.md
+```
+
+**See**: [Add Context Guide](graphiti-add-context.md) for detailed usage.
+
+#### Method 3: Re-run Interactive Init
+
+Run interactive init again to update project overview:
+
+```bash
+# Re-run interactive setup
+guardkit init --interactive
+```
+
+This will prompt for project information again and update the Graphiti knowledge.
+
+### Refinement Method Comparison
+
+| Method | Project Overview | Role Constraints | Quality Gates | Implementation Modes |
+|--------|------------------|------------------|---------------|---------------------|
+| **Interactive Capture** | ✅ All categories | ✅ `--focus role-customization` | ✅ `--focus quality-gates` | ✅ `--focus workflow-preferences` |
+| **Add Context** | ✅ Re-parses doc | ❌ Not affected | ❌ Not affected | ❌ Not affected |
+| **Interactive Init** | ✅ Prompts again | ❌ Not affected | ❌ Not affected | ❌ Not affected |
+
+**Recommendation**: Use `guardkit graphiti capture --interactive` for the most comprehensive refinement, especially when you need to update role constraints, quality gates, or workflow preferences.
+
+### Seeding Output
+
+When init runs with Graphiti enabled, you'll see output like:
+
+```
+Initializing GuardKit in /path/to/project
+  Project: my-project
+  Template: fastapi-python
+
+Step 1: Applying template...
+  Applied template: fastapi-python
+
+Step 2: Seeding project knowledge to Graphiti...
+  Project knowledge seeded successfully
+    OK project_overview: Seeded from CLAUDE.md
+    OK role_constraints: Seeded Player and Coach constraints
+    OK quality_gate_configs: Seeded quality gate configurations
+    OK implementation_modes: Seeded 2 modes
+
+GuardKit initialized successfully!
+```
+
+### Graceful Degradation
+
+If Graphiti is unavailable (Docker not running, connection failed, or disabled), init continues normally:
+
+```
+Step 2: Seeding project knowledge to Graphiti...
+  Warning: Graphiti unavailable, skipping seeding
+```
+
+All core GuardKit functionality works without Graphiti - it's an enhancement, not a requirement.
+
+### Best Practices
+
+1. **Run interactive init for new projects** - Capture rich project context from the start:
+   ```bash
+   guardkit init fastapi-python --interactive
+   ```
+
+2. **Update after major changes** - When architecture or goals change significantly:
+   ```bash
+   guardkit graphiti capture --interactive --focus architecture
+   ```
+
+3. **Set role constraints early** - Before running AutoBuild workflows:
+   ```bash
+   guardkit graphiti capture --interactive --focus role-customization
+   ```
+
+4. **Verify seeding worked** - Check Graphiti status:
+   ```bash
+   guardkit graphiti status
+   guardkit graphiti search "project overview"
+   ```
 
 ---
 

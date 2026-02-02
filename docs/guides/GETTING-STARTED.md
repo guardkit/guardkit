@@ -318,11 +318,16 @@ guardkit init nextjs-fullstack       # Next.js App Router (full-stack)
 # Language-agnostic template (8+/10 quality)
 guardkit init default                # Go, Rust, Ruby, Elixir, PHP, etc.
 
+# Interactive mode (captures project knowledge)
+guardkit init fastapi-python --interactive
+
 # For production: Create from your codebase
 cd your-production-codebase
 /template-create
 guardkit init your-custom-template
 ```
+
+> **Graphiti Integration**: The `guardkit init` command automatically seeds project knowledge to Graphiti when available. Use `--interactive` to capture rich project context, or `--skip-graphiti` to skip seeding. See: [Init Seeding Workflow](graphiti-integration-guide.md#init-seeding-workflow)
 
 ## Key Benefits
 

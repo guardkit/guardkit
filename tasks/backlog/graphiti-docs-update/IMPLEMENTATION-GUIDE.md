@@ -48,14 +48,24 @@ conductor spawn graphiti-docs-wave1-3 "/task-work TASK-GDU-003"
 | Task | Document/Action | Workspace | Mode | Estimate |
 |------|-----------------|-----------|------|----------|
 | TASK-GDU-006 | `guides/graphiti-turn-states.md` | graphiti-docs-wave3-1 | direct | 1h |
-| TASK-GDU-007 | Update integration guide | graphiti-docs-wave3-2 | direct | 1h |
-| TASK-GDU-008 | Refactor CLAUDE.md | graphiti-docs-wave3-3 | task-work | 2h |
+| TASK-GDU-008 | Refactor CLAUDE.md | graphiti-docs-wave3-2 | task-work | 2h |
+| TASK-GDU-009 | Document init seeding workflow | graphiti-docs-wave3-3 | direct | 1.5h |
+
+**TASK-GDU-009 Scope** (new task):
+- Document `guardkit init` automatic Graphiti seeding
+- Explain what gets seeded: project overview, role constraints, quality gates, implementation modes
+- Document refinement methods:
+  1. Interactive Knowledge Capture (`guardkit graphiti capture --interactive`)
+  2. Add Context from Documents (`guardkit graphiti add-context CLAUDE.md --force`)
+  3. Re-run Interactive Init (`guardkit init --interactive`)
+- Include CLI options: `--skip-graphiti`, `--interactive`, `--project-name`
+- Include comparison table showing what each refinement method updates
 
 **Commands**:
 ```bash
 conductor spawn graphiti-docs-wave3-1 "/task-work TASK-GDU-006"
-conductor spawn graphiti-docs-wave3-2 "/task-work TASK-GDU-007"
-conductor spawn graphiti-docs-wave3-3 "/task-work TASK-GDU-008"
+conductor spawn graphiti-docs-wave3-2 "/task-work TASK-GDU-008"
+conductor spawn graphiti-docs-wave3-3 "/task-work TASK-GDU-009"
 ```
 
 ---
@@ -66,11 +76,11 @@ conductor spawn graphiti-docs-wave3-3 "/task-work TASK-GDU-008"
 |------|-------|---------------|-----------------|
 | Wave 1 | 3 | 2h | 6h |
 | Wave 2 | 2 | 2h | 2h |
-| Wave 3 | 3 | 2h | 4h |
-| **Total** | **8** | **6h** | **12h** |
+| Wave 3 | 3 | 2h | 4.5h |
+| **Total** | **9** | **6.5h** | **12.5h** |
 
-**With Conductor**: ~6 hours
-**Sequential**: ~12 hours
+**With Conductor**: ~6.5 hours
+**Sequential**: ~12.5 hours
 
 ---
 
@@ -85,6 +95,7 @@ After all tasks complete:
 - [ ] CLAUDE.md Graphiti section is <100 lines
 - [ ] `.claude/rules/graphiti-knowledge.md` exists with full content
 - [ ] GitHub Pages deploys successfully
+- [x] `guardkit init` Graphiti seeding workflow documented in integration guide
 
 ---
 
