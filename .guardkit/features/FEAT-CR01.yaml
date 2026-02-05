@@ -1,0 +1,208 @@
+id: FEAT-CR01
+name: Context Reduction via Graphiti Migration
+description: 'Reduce always-loaded static context from ~15,800 tokens to ~8,000 tokens
+  (49% reduction) through editorial trimming, path-gating, and selective Graphiti
+  migration. Three-wave approach: trim always-loaded files first, seed Graphiti gaps,
+  then trim path-gated files.
+
+  '
+created: '2026-02-05T14:00:00Z'
+status: failed
+complexity: 6
+estimated_tasks: 10
+tasks:
+- id: TASK-CR-001
+  name: Trim root CLAUDE.md to lean version
+  file_path: tasks/backlog/context-reduction/TASK-CR-001-trim-root-claude-md.md
+  complexity: 5
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 45
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-02-05T17:14:31.075874'
+  completed_at: '2026-02-05T17:27:40.716563'
+- id: TASK-CR-002
+  name: Trim .claude/CLAUDE.md remove duplicates
+  file_path: tasks/backlog/context-reduction/TASK-CR-002-trim-inner-claude-md.md
+  complexity: 2
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 15
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-05T17:14:31.080694'
+  completed_at: '2026-02-05T17:27:40.720740'
+- id: TASK-CR-003
+  name: Add path gate to graphiti-knowledge.md
+  file_path: tasks/backlog/context-reduction/TASK-CR-003-pathgate-graphiti-knowledge.md
+  complexity: 1
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 5
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-05T17:14:31.084660'
+  completed_at: '2026-02-05T17:27:40.724596'
+- id: TASK-CR-004
+  name: Trim graphiti-knowledge.md content
+  file_path: tasks/backlog/context-reduction/TASK-CR-004-trim-graphiti-knowledge.md
+  complexity: 3
+  dependencies:
+  - TASK-CR-003
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-05T17:27:40.737749'
+  completed_at: '2026-02-05T17:34:41.503442'
+- id: TASK-CR-005
+  name: Seed Graphiti project_overview and project_architecture groups
+  file_path: tasks/backlog/context-reduction/TASK-CR-005-seed-graphiti-project-knowledge.md
+  complexity: 3
+  dependencies:
+  - TASK-CR-001
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 30
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-05T17:27:40.741904'
+  completed_at: '2026-02-05T17:34:41.507850'
+- id: TASK-CR-006
+  name: Seed Graphiti patterns group with code examples
+  file_path: tasks/backlog/context-reduction/TASK-CR-006-seed-graphiti-pattern-examples.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: direct
+  estimated_minutes: 45
+  result:
+    total_turns: 1
+    final_decision: approved
+    error: null
+  turns_completed: 1
+  current_turn: 0
+  started_at: '2026-02-05T17:27:40.746270'
+  completed_at: '2026-02-05T17:34:41.511795'
+- id: TASK-CR-007
+  name: Trim orchestrators.md after Graphiti verification
+  file_path: tasks/backlog/context-reduction/TASK-CR-007-trim-orchestrators-md.md
+  complexity: 3
+  dependencies:
+  - TASK-CR-006
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 25
+    final_decision: max_turns_exceeded
+    error: Maximum turns (25) exceeded without approval
+  turns_completed: 25
+  current_turn: 0
+  started_at: '2026-02-05T17:50:14.200872'
+  completed_at: '2026-02-05T18:11:40.944877'
+- id: TASK-CR-008
+  name: Trim dataclasses.md and pydantic-models.md after Graphiti verification
+  file_path: tasks/backlog/context-reduction/TASK-CR-008-trim-dataclass-pydantic-patterns.md
+  complexity: 3
+  dependencies:
+  - TASK-CR-006
+  status: failed
+  implementation_mode: task-work
+  estimated_minutes: 30
+  result:
+    total_turns: 25
+    final_decision: max_turns_exceeded
+    error: Maximum turns (25) exceeded without approval
+  turns_completed: 25
+  current_turn: 0
+  started_at: '2026-02-05T17:50:14.205399'
+  completed_at: '2026-02-05T18:11:40.950010'
+- id: TASK-CR-009
+  name: Trim remaining path-gated files
+  file_path: tasks/backlog/context-reduction/TASK-CR-009-trim-remaining-pathgated-files.md
+  complexity: 4
+  dependencies: []
+  status: completed
+  implementation_mode: task-work
+  estimated_minutes: 60
+  result:
+    total_turns: 2
+    final_decision: approved
+    error: null
+  turns_completed: 2
+  current_turn: 0
+  started_at: '2026-02-05T17:34:41.532993'
+  completed_at: '2026-02-05T17:47:01.261026'
+- id: TASK-CR-010
+  name: Regression test core workflows
+  file_path: tasks/backlog/context-reduction/TASK-CR-010-regression-test-workflows.md
+  complexity: 4
+  dependencies:
+  - TASK-CR-001
+  - TASK-CR-002
+  - TASK-CR-004
+  - TASK-CR-007
+  - TASK-CR-008
+  - TASK-CR-009
+  status: pending
+  implementation_mode: task-work
+  estimated_minutes: 45
+  result: null
+  turns_completed: 0
+  current_turn: 0
+  started_at: null
+  completed_at: null
+orchestration:
+  parallel_groups:
+  - - TASK-CR-001
+    - TASK-CR-002
+    - TASK-CR-003
+  - - TASK-CR-004
+    - TASK-CR-005
+    - TASK-CR-006
+  - - TASK-CR-007
+    - TASK-CR-008
+    - TASK-CR-009
+  - - TASK-CR-010
+  estimated_duration_minutes: 335
+  recommended_parallel: 3
+execution:
+  started_at: '2026-02-05T17:14:31.067230'
+  completed_at: '2026-02-05T18:11:40.955257'
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-CR01
+  total_turns: 59
+  tasks_completed: 7
+  tasks_failed: 2
+  current_wave: 3
+  completed_waves:
+  - 1
+  - 2
+  last_updated: '2026-02-05T18:11:40.950016'
+  archived_at: null
+  archived_to: null

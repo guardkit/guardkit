@@ -41,6 +41,7 @@ Example:
 """
 
 import asyncio
+import hashlib
 import logging
 import sys
 from dataclasses import dataclass
@@ -260,7 +261,7 @@ class OrchestrationResult:
     task_id: str
     success: bool
     total_turns: int
-    final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked", "rate_limited"]
+    final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked", "rate_limited"]
     turn_history: List[TurnRecord]
     worktree: Worktree
     error: Optional[str] = None
@@ -463,6 +464,8 @@ class AutoBuildOrchestrator:
         self._honesty_history: List[float] = []  # Track honesty scores across turns
         self._checkpoint_manager: Optional[WorktreeCheckpointManager] = None  # Initialized lazily
         self.recovery_count: int = 0  # Track number of state recovery attempts
+        # Stall detection: track (feedback_signature, criteria_passed_count) per turn (TASK-AB-SD01)
+        self._feedback_history: List[Tuple[str, int]] = []
 
         # Context retrieval settings (TASK-GR6-006)
         self.enable_context = enable_context
@@ -895,7 +898,7 @@ class AutoBuildOrchestrator:
         task_file_path: Optional[Path] = None,
         implementation_plan: Optional[Dict[str, Any]] = None,
         task_type: Optional[str] = None,
-    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "error"]]:
+    ) -> Tuple[List[TurnRecord], Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error"]]:
         """
         Phase 3: Execute Player↔Coach adversarial loop.
 
@@ -1035,6 +1038,26 @@ class AutoBuildOrchestrator:
                                     f"after rollback"
                                 )
                                 continue
+                            else:
+                                # UNRECOVERABLE: No passing checkpoint ever existed (TASK-AB-SD01)
+                                logger.error(
+                                    f"Unrecoverable stall detected for {task_id}: "
+                                    f"context pollution detected but no passing checkpoint exists. "
+                                    f"Exiting loop early to avoid wasting turns."
+                                )
+                                return turn_history, "unrecoverable_stall"
+
+                # Check for repeated feedback stall (TASK-AB-SD01 Mechanism 2)
+                if turn_record.decision == "feedback" and turn_record.feedback:
+                    criteria_passed = self._count_criteria_passed(turn_record)
+                    if self._is_feedback_stalled(turn_record.feedback, criteria_passed):
+                        logger.error(
+                            f"Feedback stall detected for {task_id}: "
+                            f"identical feedback for 3 consecutive turns "
+                            f"with 0% criteria progress. "
+                            f"Exiting loop early."
+                        )
+                        return turn_history, "unrecoverable_stall"
 
                 # Check decision
                 if turn_record.decision == "approve":
@@ -1299,7 +1322,7 @@ class AutoBuildOrchestrator:
     def _finalize_phase(
         self,
         worktree: Worktree,
-        final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
         turn_history: List[TurnRecord],
     ) -> None:
         """
@@ -1591,6 +1614,86 @@ class AutoBuildOrchestrator:
             return True
         return False
 
+    def _is_feedback_stalled(
+        self,
+        feedback: str,
+        criteria_passed_count: int,
+        threshold: int = 3,
+    ) -> bool:
+        """
+        Detect repeated identical feedback with zero criteria progress (TASK-AB-SD01).
+
+        Tracks Coach feedback signatures across turns and returns True when
+        the same feedback repeats for ``threshold`` consecutive turns with
+        no change in the number of passing acceptance criteria.
+
+        Parameters
+        ----------
+        feedback : str
+            Current Coach feedback text
+        criteria_passed_count : int
+            Number of acceptance criteria currently passing
+        threshold : int, optional
+            Number of consecutive identical turns before stall (default: 3)
+
+        Returns
+        -------
+        bool
+            True if feedback stall detected, False otherwise
+        """
+        feedback_sig = hashlib.md5(
+            feedback.strip().lower().encode()
+        ).hexdigest()[:8]
+
+        self._feedback_history.append((feedback_sig, criteria_passed_count))
+
+        if len(self._feedback_history) < threshold:
+            return False
+
+        recent = self._feedback_history[-threshold:]
+
+        # All same feedback signature?
+        sigs = {sig for sig, _ in recent}
+        if len(sigs) != 1:
+            return False
+
+        # Zero criteria progress across all recent turns?
+        counts = [count for _, count in recent]
+        if all(c == counts[0] for c in counts):
+            logger.warning(
+                f"Feedback stall: identical feedback (sig={feedback_sig}) "
+                f"for {threshold} turns with {counts[0]} criteria passing"
+            )
+            return True
+
+        return False
+
+    def _count_criteria_passed(self, turn_record: TurnRecord) -> int:
+        """
+        Count acceptance criteria verified as passing from Coach report (TASK-AB-SD01).
+
+        Parameters
+        ----------
+        turn_record : TurnRecord
+            Completed turn record
+
+        Returns
+        -------
+        int
+            Number of criteria with 'verified' status
+        """
+        if not turn_record.coach_result or not turn_record.coach_result.report:
+            return 0
+
+        verification = turn_record.coach_result.report.get(
+            "acceptance_criteria_verification", {}
+        )
+        criteria_results = verification.get("criteria_results", [])
+        return sum(
+            1 for r in criteria_results
+            if r.get("status") == "verified"
+        )
+
     def _capture_turn_state(
         self,
         turn_record: TurnRecord,
@@ -1637,7 +1740,7 @@ class AutoBuildOrchestrator:
             # Determine turn mode
             if turn_record.turn == 1:
                 mode = TurnMode.FRESH_START
-            elif self._recovery_count > 0:
+            elif self.recovery_count > 0:
                 mode = TurnMode.RECOVERING_STATE
             else:
                 mode = TurnMode.CONTINUING_WORK
@@ -2334,7 +2437,7 @@ class AutoBuildOrchestrator:
     def _build_summary_details(
         self,
         turn_history: List[TurnRecord],
-        final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
     ) -> str:
         """
         Build detailed summary text for final report.
@@ -2365,6 +2468,14 @@ class AutoBuildOrchestrator:
                 f"Review implementation and provide manual guidance."
             )
 
+        elif final_decision == "unrecoverable_stall":
+            return (
+                f"Unrecoverable stall detected after {len(turn_history)} turn(s).\n"
+                f"AutoBuild cannot make forward progress.\n"
+                f"Worktree preserved for inspection.\n"
+                f"Suggested action: Review task_type classification and acceptance criteria."
+            )
+
         elif final_decision == "pre_loop_blocked":
             return (
                 f"Pre-loop quality gates blocked execution.\n"
@@ -2392,7 +2503,7 @@ class AutoBuildOrchestrator:
 
     def _build_error_message(
         self,
-        final_decision: Literal["approved", "max_turns_exceeded", "error", "pre_loop_blocked"],
+        final_decision: Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error", "pre_loop_blocked"],
         turn_history: List[TurnRecord],
     ) -> str:
         """
@@ -2412,6 +2523,12 @@ class AutoBuildOrchestrator:
         """
         if final_decision == "max_turns_exceeded":
             return f"Maximum turns ({self.max_turns}) exceeded without approval"
+
+        elif final_decision == "unrecoverable_stall":
+            return (
+                f"Unrecoverable stall detected after {len(turn_history)} turn(s). "
+                f"AutoBuild cannot make forward progress."
+            )
 
         elif final_decision == "pre_loop_blocked":
             return "Pre-loop quality gates blocked execution"

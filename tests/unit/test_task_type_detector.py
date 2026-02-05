@@ -77,6 +77,14 @@ class TestDocumentationDetection:
         assert detect_task_type("Update CHANGELOG") == TaskType.DOCUMENTATION
         assert detect_task_type("Add release notes") == TaskType.DOCUMENTATION
 
+    def test_content_reduction_keywords(self):
+        """Test content reduction keywords (TASK-REV-D4B1)."""
+        assert detect_task_type("Trim orchestrators.md") == TaskType.DOCUMENTATION
+        assert detect_task_type("Reduce dataclass patterns doc") == TaskType.DOCUMENTATION
+        assert detect_task_type("Compress verbose documentation") == TaskType.DOCUMENTATION
+        assert detect_task_type("Condense API reference") == TaskType.DOCUMENTATION
+        assert detect_task_type("Shorten installation guide") == TaskType.DOCUMENTATION
+
     def test_case_insensitive(self):
         """Test case-insensitive matching for documentation."""
         assert detect_task_type("UPDATE README") == TaskType.DOCUMENTATION
