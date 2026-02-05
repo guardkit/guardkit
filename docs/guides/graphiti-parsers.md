@@ -6,6 +6,16 @@ Complete reference for content parsers used by `guardkit graphiti add-context`.
 
 Parsers extract structured information from markdown files and convert them into episodes for the Graphiti knowledge graph. Each parser is specialized for a specific document type and extracts relevant metadata, relationships, and content.
 
+GuardKit includes **5 parsers**:
+
+| Parser | Type Identifier | Auto-Detect | Use Case |
+|--------|----------------|-------------|----------|
+| [ADR Parser](#adr-parser-adr) | `adr` | Yes | Architecture Decision Records |
+| [Feature Spec Parser](#feature-spec-parser-feature-spec) | `feature-spec` | Yes | Feature specifications |
+| [Project Overview Parser](#project-overview-parser-project_overview) | `project_overview` | Yes | High-level project information |
+| [Project Doc Parser](#project-doc-parser-project_doc) | `project_doc` | Yes (CLAUDE.md/README.md only) | Section extraction from project docs |
+| [Full Document Parser](#full-document-parser-full_doc) | `full_doc` | No (explicit only) | Complete markdown document capture |
+
 ## Available Parsers
 
 ### ADR Parser (`adr`)
@@ -222,7 +232,7 @@ guardkit graphiti add-context docs/ --pattern "FEATURE-SPEC-*.md"
 
 ---
 
-### Project Overview Parser (`project-overview`)
+### Project Overview Parser (`project_overview`)
 
 Parses project overview documents to extract high-level project information, tech stack, and architecture.
 
@@ -231,8 +241,6 @@ Parses project overview documents to extract high-level project information, tec
 **Filename patterns**:
 - `CLAUDE.md`
 - `README.md`
-- `PROJECT.md`
-- `OVERVIEW.md`
 
 **Content-based detection**:
 - Contains project context markers
@@ -240,11 +248,15 @@ Parses project overview documents to extract high-level project information, tec
 
 #### Episodes Created
 
-**1 episode per document**:
-- **Entity ID**: `{project}_overview`
-- **Entity Type**: `project-overview`
-- **Group ID**: `{project}__project_overview`
-- **Content**: Full project overview with all sections
+**1-2 episodes per document**:
+- **Main episode**:
+  - **Entity ID**: `{project}_overview`
+  - **Entity Type**: `project`
+  - **Group ID**: `{project}__project_overview`
+  - **Content**: Full project overview with all sections
+- **Architecture episode** (if architecture section > 500 chars):
+  - **Entity Type**: `architecture`
+  - **Group ID**: `{project}__project_architecture`
 
 #### Extracted Metadata
 
@@ -255,7 +267,7 @@ Parses project overview documents to extract high-level project information, tec
   "tech_stack": ["Python", "Click", "Neo4j", "Graphiti"],
   "architecture": "CLI-based with plugin architecture",
   "core_principles": ["Quality First", "Pragmatic Approach"],
-  "entity_type": "project-overview",
+  "entity_type": "project",
   "source_file": "CLAUDE.md"
 }
 ```
@@ -301,8 +313,8 @@ The system will detect your project's technology stack:
 # Add project overview
 guardkit graphiti add-context CLAUDE.md
 
-# Force project-overview parser
-guardkit graphiti add-context overview.md --type project-overview
+# Force project_overview parser
+guardkit graphiti add-context overview.md --type project_overview
 
 # Add README as project overview
 guardkit graphiti add-context README.md
@@ -310,54 +322,156 @@ guardkit graphiti add-context README.md
 
 ---
 
-### Project Doc Parser (`project-doc`)
+### Project Doc Parser (`project_doc`)
 
-Generic parser for general project documentation that doesn't match other specialized parsers.
+Extracts specific sections (purpose, tech stack, architecture) from `CLAUDE.md` and `README.md` files.
+
+**Note**: This parser is **not** a fallback for general markdown files. It only handles `CLAUDE.md` and `README.md` and creates separate episodes for each recognized section. For capturing entire documents, use the [Full Document Parser](#full-document-parser-full_doc) with `--type full_doc`.
 
 #### Detection Criteria
 
-**Fallback parser**:
-- Used when no other parser matches
-- Any `.md` file not matching ADR, feature-spec, or project-overview patterns
+**Filename patterns** (case-insensitive):
+- `CLAUDE.md` / `CLAUDE.markdown`
+- `README.md` / `README.markdown`
 
-**Filename patterns**:
-- Any markdown file: `*.md`
-- Guides: `*-guide.md`
-- Tutorials: `*-tutorial.md`
-- How-tos: `*-howto.md`
+**Not a fallback**: Does **not** match arbitrary markdown files. Only parses the two filenames above.
 
 #### Episodes Created
 
-**1 episode per document**:
-- **Entity ID**: Filename (e.g., `getting-started`)
-- **Entity Type**: `project-doc`
-- **Group ID**: `{project}__project_docs`
-- **Content**: Full document content
+**Multiple episodes per document** (1 per recognized section):
+
+1. **Purpose episode** (if purpose/overview section found):
+   - **Entity Type**: `project_doc`
+   - **Group ID**: `{project}__project_purpose`
+   - **Content**: Purpose/overview section content
+
+2. **Tech Stack episode** (if tech stack section found):
+   - **Entity Type**: `project_doc`
+   - **Group ID**: `{project}__project_tech_stack`
+   - **Content**: Technology stack section content
+
+3. **Architecture episode** (if architecture section found):
+   - **Entity Type**: `project_doc`
+   - **Group ID**: `{project}__project_architecture`
+   - **Content**: Architecture/patterns section content
+
+#### Section Detection
+
+The parser looks for these header patterns (case-insensitive):
+
+| Section | Header Patterns |
+|---------|----------------|
+| **Purpose** | overview, purpose, about, description, what is this, project overview |
+| **Tech Stack** | tech stack, technologies, stack, built with, technology stack, dependencies |
+| **Architecture** | architecture, patterns, structure, design, system design, project structure |
 
 #### Extracted Metadata
 
 ```json
 {
-  "title": "Getting Started Guide",
-  "doc_type": "guide",
-  "sections": ["Installation", "Configuration", "Usage"],
-  "entity_type": "project-doc",
-  "source_file": "docs/guides/getting-started.md"
+  "section_type": "purpose",
+  "frontmatter": {},
+  "entity_type": "project_doc",
+  "source_file": "CLAUDE.md"
 }
 ```
 
 #### Example Usage
 
 ```bash
-# Auto-detect as project-doc (no other parser matches)
-guardkit graphiti add-context docs/guides/troubleshooting.md
+# Auto-detect from CLAUDE.md
+guardkit graphiti add-context CLAUDE.md
 
-# Explicit project-doc parser
-guardkit graphiti add-context custom-doc.md --type project-doc
+# Explicit project_doc parser
+guardkit graphiti add-context CLAUDE.md --type project_doc
 
-# Add all general docs
-guardkit graphiti add-context docs/guides/
+# Add README
+guardkit graphiti add-context README.md
 ```
+
+---
+
+### Full Document Parser (`full_doc`)
+
+Captures the entire content of a markdown document as a single episode (or multiple episodes for large documents). This is an **explicit-only** parser - it will not auto-detect files. You must specify `--type full_doc` to use it.
+
+Unlike the [Project Doc Parser](#project-doc-parser-project_doc) which extracts only specific sections from CLAUDE.md/README.md, this parser preserves the **entire document content** and works with **any markdown file**.
+
+#### Detection Criteria
+
+**Explicit-only**: `can_parse()` always returns `False`.
+- Must use `--type full_doc` flag
+- Will not be selected by auto-detection
+
+**Supported extensions**: `.md`, `.markdown`
+
+#### Episodes Created
+
+**Small documents** (< 10KB):
+- **1 episode** containing the full document
+- **Entity ID**: File path
+- **Entity Type**: `full_doc`
+- **Group ID**: `{project}__project_knowledge`
+
+**Large documents** (>= 10KB):
+- **Multiple episodes** (chunked by `##` headers)
+- Each chunk becomes a separate episode
+- Entity IDs include chunk suffix (e.g., `path/to/file.md_chunk_0`)
+- Chunk metadata includes `chunk_index`, `chunk_total`, `chunk_title`
+
+#### Chunking Behavior
+
+Documents larger than the chunk threshold (default: 10KB) are split by `##` (h2) headers:
+
+1. Content before the first `##` header becomes an "Introduction" chunk
+2. Each `##` section becomes a separate chunk
+3. If no `##` headers exist, the document remains a single episode
+
+```
+Large Document (15KB)
+├── Chunk 0: "Document Title - Introduction" (content before first ##)
+├── Chunk 1: "Document Title - Overview" (## Overview section)
+├── Chunk 2: "Document Title - Architecture" (## Architecture section)
+└── Chunk 3: "Document Title - Implementation" (## Implementation section)
+```
+
+#### Extracted Metadata
+
+```json
+{
+  "file_path": "docs/research/GRAPHITI-KNOWLEDGE.md",
+  "file_size": 15360,
+  "title": "Graphiti Knowledge Capture",
+  "frontmatter": {},
+  "chunk_index": 0,
+  "chunk_total": 4,
+  "chunk_title": "Graphiti Knowledge Capture - Introduction"
+}
+```
+
+#### Example Usage
+
+```bash
+# Capture entire document content
+guardkit graphiti add-context docs/research/GRAPHITI-KNOWLEDGE.md --type full_doc
+
+# Capture and overwrite existing
+guardkit graphiti add-context docs/design/architecture-overview.md --type full_doc --force
+
+# Preview what would be captured
+guardkit graphiti add-context docs/guides/workflow.md --type full_doc --dry-run --verbose
+```
+
+#### When to Use full_doc vs Other Parsers
+
+| Scenario | Recommended Parser |
+|----------|-------------------|
+| Architecture Decision Records | `adr` (auto-detected) |
+| Feature specifications | `feature-spec` (auto-detected) |
+| CLAUDE.md/README.md section extraction | `project_doc` (auto-detected) |
+| CLAUDE.md/README.md full project overview | `project_overview` (auto-detected) |
+| Research documents, design docs, guides | `full_doc` (explicit: `--type full_doc`) |
+| Any markdown file - full capture | `full_doc` (explicit: `--type full_doc`) |
 
 ---
 
@@ -369,6 +483,7 @@ The `add-context` command uses this selection strategy:
 
 ```bash
 guardkit graphiti add-context file.md --type adr
+guardkit graphiti add-context docs/research/doc.md --type full_doc
 ```
 
 **Behavior**:
@@ -377,18 +492,23 @@ guardkit graphiti add-context file.md --type adr
 - Parser must be registered
 - Fails if parser doesn't exist
 
+**Available type values**: `adr`, `feature-spec`, `project_overview`, `project_doc`, `full_doc`
+
 ### 2. Filename Pattern Matching
 
 **Priority order**:
 1. **ADR**: `ADR-*.md`, `adr-*.md`
 2. **Feature Spec**: `FEATURE-SPEC-*.md`, `*-feature-spec.md`
-3. **Project Overview**: `CLAUDE.md`, `README.md`, `PROJECT.md`
+3. **Project Overview**: `CLAUDE.md`, `README.md`
+4. **Project Doc**: `CLAUDE.md`, `README.md` (section extraction)
 
 **Behavior**:
 - Checks filename against known patterns
 - If match found, uses corresponding parser
 - Validates with `can_parse()` method
 - Falls through if validation fails
+
+**Note**: `full_doc` is **never auto-detected** - it must be specified with `--type full_doc`.
 
 ### 3. Content-Based Detection
 
@@ -400,14 +520,18 @@ guardkit graphiti add-context file.md --type adr
 **Detection criteria examples**:
 - **ADR**: Has `## Status`, `## Context`, `## Decision`
 - **Feature Spec**: Has YAML frontmatter with `feature_id`
-- **Project Overview**: Has project context markers
+- **Project Overview**: CLAUDE.md or README.md with project context markers
+- **Project Doc**: CLAUDE.md or README.md (extracts purpose/tech_stack/architecture sections)
+- **Full Doc**: Never auto-detected (`can_parse()` always returns `False`)
 
-### 4. Fallback to project-doc
+### 4. No Fallback
 
-**Behavior**:
-- If no specialized parser matches
-- Uses generic `project-doc` parser
-- Creates episode with basic metadata
+If no parser matches a file and no `--type` is specified, the file is skipped with a warning:
+```
+No parser found for: file.md (unsupported)
+```
+
+To capture general markdown files, use `--type full_doc` explicitly.
 
 ---
 
@@ -446,8 +570,8 @@ registry.register(CustomParser())
 When multiple parsers match:
 
 1. **Filename pattern** (highest priority)
-2. **Content-based detection** (tries all parsers)
-3. **Fallback** (project-doc, lowest priority)
+2. **Content-based detection** (tries all parsers via `can_parse()`)
+3. **No match**: File is skipped with a warning (there is no fallback parser)
 
 ---
 
@@ -602,7 +726,7 @@ guardkit graphiti add-context docs/ --dry-run --verbose
 # Review what would be added
 # Fix any warnings or unsupported files
 # Then add for real
-guardkit graphkit graphiti add-context docs/
+guardkit graphiti add-context docs/
 ```
 
 ---

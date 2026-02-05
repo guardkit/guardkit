@@ -10,6 +10,7 @@ from guardkit.integrations.graphiti.parsers.base import (
     ParseResult,
 )
 from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
+from guardkit.integrations.graphiti.parsers.full_doc_parser import FullDocParser
 from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
 from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
 from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
@@ -18,6 +19,7 @@ __all__ = [
     "BaseParser",
     "EpisodeData",
     "FeatureSpecParser",
+    "FullDocParser",
     "ParseResult",
     "ParserRegistry",
     "ProjectDocParser",

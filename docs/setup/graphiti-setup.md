@@ -234,6 +234,19 @@ Verification complete!
 
 ## Configuration File Reference
 
+### Automatic Creation
+
+The `.guardkit/graphiti.yaml` file is **automatically created** when you run `guardkit init`:
+
+```bash
+guardkit init fastapi-python
+# Creates .guardkit/graphiti.yaml with default settings
+```
+
+The file includes a `project_id` field that is auto-generated from the current directory name. This ID is used for [project namespace prefixing](../guides/graphiti-project-namespaces.md) to isolate knowledge between projects sharing a Graphiti instance.
+
+### Configuration Reference
+
 The complete `.guardkit/graphiti.yaml` configuration file:
 
 ```yaml
@@ -244,12 +257,18 @@ The complete `.guardkit/graphiti.yaml` configuration file:
 #   - GRAPHITI_HOST: Server hostname
 #   - GRAPHITI_PORT: Server port
 #   - GRAPHITI_TIMEOUT: Connection timeout in seconds
+#   - GUARDKIT_PROJECT_ID: Override project_id
 #
 # To start Graphiti services:
 #   docker compose -f docker/docker-compose.graphiti.yml up -d
 
 # Enable Graphiti integration (set to false to disable)
 enabled: true
+
+# Project identifier for namespace prefixing
+# Auto-generated from directory name during 'guardkit init'
+# Used to isolate project knowledge in shared Graphiti instances
+project_id: my-project
 
 # Graphiti server connection settings
 host: localhost
@@ -428,6 +447,37 @@ group_ids:
    ```bash
    guardkit graphiti seed --force
    ```
+
+---
+
+### Missing `.guardkit/graphiti.yaml`
+
+**Symptom**: Graphiti commands fail or use defaults because configuration file is missing.
+
+**Cause**: The `.guardkit/graphiti.yaml` file is created by `guardkit init`. If you set up your project manually or used an older version of GuardKit, this file may not exist.
+
+**Solution**:
+
+1. **Run `guardkit init`** (recommended):
+   ```bash
+   guardkit init
+   # Creates .guardkit/graphiti.yaml with project_id from directory name
+   ```
+
+2. **Create manually**:
+   ```bash
+   mkdir -p .guardkit
+   cat > .guardkit/graphiti.yaml << 'EOF'
+   enabled: true
+   project_id: my-project-name
+   host: localhost
+   port: 8000
+   timeout: 30.0
+   embedding_model: text-embedding-3-small
+   EOF
+   ```
+
+**Project ID**: The `project_id` is auto-generated from the directory name (e.g., directory `my-app` produces `project_id: my-app`). This ID prefixes project-specific group IDs in Graphiti to enable multi-project isolation.
 
 ---
 

@@ -167,6 +167,9 @@ guardkit graphiti clear --confirm --force
 **Project Groups** (cleared with `--project-only` or default):
 - `{project}__project_overview` - Project-specific overview
 - `{project}__project_architecture` - Project architecture
+- `{project}__project_purpose` - Project purpose (from project_doc parser)
+- `{project}__project_tech_stack` - Technology stack (from project_doc parser)
+- `{project}__project_knowledge` - Full document content (from full_doc parser)
 - `{project}__feature_specs` - Feature specifications
 - `{project}__project_decisions` - Project-specific decisions
 
@@ -257,7 +260,7 @@ guardkit graphiti add-context <PATH> [OPTIONS]
 - `PATH`: File or directory to add (required)
 
 **Options:**
-- `--type TEXT`: Force specific parser type (adr, feature-spec, project-overview, project-doc)
+- `--type TEXT`: Force specific parser type (`adr`, `feature-spec`, `project_overview`, `project_doc`, `full_doc`)
 - `--force`, `-f`: Overwrite existing context
 - `--dry-run`: Preview what would be added without actually adding
 - `--pattern TEXT`: Glob pattern for directories (default: `**/*.md`)
@@ -265,10 +268,11 @@ guardkit graphiti add-context <PATH> [OPTIONS]
 - `--quiet`, `-q`: Suppress non-error output
 
 **What it does:**
-- Automatically detects document type (ADR, feature spec, project overview, etc.)
+- Automatically detects document type (ADR, feature spec, project overview, project doc)
 - Extracts structured metadata from documents
 - Creates searchable episodes in Graphiti knowledge graph
 - Supports single files or bulk directory operations
+- Supports full document capture with `--type full_doc` for any markdown file
 
 **Examples:**
 
@@ -295,11 +299,12 @@ guardkit graphiti add-context docs/ --verbose
 guardkit graphiti add-context docs/ --quiet
 ```
 
-**Supported document types:**
-- **ADR** (Architecture Decision Records): `ADR-*.md` files or content with Status/Context/Decision sections
-- **Feature Specs**: `FEATURE-SPEC-*.md` files with YAML frontmatter
-- **Project Overview**: `CLAUDE.md`, `README.md` files
-- **Project Docs**: Any other markdown documentation
+**Supported document types (5 parsers):**
+- **ADR** (`adr`): `ADR-*.md` files or content with Status/Context/Decision sections
+- **Feature Specs** (`feature-spec`): `FEATURE-SPEC-*.md` files with YAML frontmatter
+- **Project Overview** (`project_overview`): `CLAUDE.md`, `README.md` files (full overview)
+- **Project Doc** (`project_doc`): `CLAUDE.md`, `README.md` (section extraction: purpose, tech stack, architecture)
+- **Full Document** (`full_doc`): Any markdown file (explicit only - use `--type full_doc`)
 
 **Output:**
 ```
@@ -309,7 +314,7 @@ Connected to Graphiti
 
   ✓ docs/architecture/ADR-001.md (adr)
   ✓ docs/features/FEATURE-SPEC-auth.md (feature-spec)
-  ✓ CLAUDE.md (project-overview)
+  ✓ CLAUDE.md (project_overview)
 
 Summary:
   Added 3 files, 8 episodes

@@ -207,6 +207,10 @@ class GraphitiClient:
             self._project_id = self.config.project_id
         elif auto_detect_project:
             self._project_id = normalize_project_id(get_current_project_name())
+            logger.warning(
+                f"No explicit project_id in config, auto-detected '{self._project_id}' from cwd. "
+                "Set project_id in .guardkit/graphiti.yaml for consistent behavior."
+            )
         else:
             self._project_id = None
 

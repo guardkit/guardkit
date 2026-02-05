@@ -274,7 +274,7 @@ class ProjectDocParser(BaseParser):
 
         return EpisodeData(
             content=content,
-            group_id=f"project-{section_type}",
+            group_id=f"project_{section_type}",
             entity_type="project_doc",
             entity_id=file_path,
             metadata=metadata,

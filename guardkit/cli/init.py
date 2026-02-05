@@ -35,11 +35,65 @@ from rich.console import Console
 from rich.prompt import Confirm, Prompt
 
 from guardkit.integrations.graphiti.episodes.project_overview import ProjectOverviewEpisode
-from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig
+from guardkit.knowledge.graphiti_client import GraphitiClient, GraphitiConfig, normalize_project_id
 from guardkit.knowledge.project_seeding import seed_project_knowledge
 
 console = Console()
 logger = logging.getLogger(__name__)
+
+
+def write_graphiti_config(project_name: str, target_dir: Path) -> bool:
+    """Write project_id to .guardkit/graphiti.yaml configuration file.
+
+    Creates or updates the graphiti.yaml file with the project_id field.
+    This ensures explicit project_id is used instead of auto-detection.
+
+    Args:
+        project_name: The project name to normalize and write as project_id.
+        target_dir: Target directory containing .guardkit folder.
+
+    Returns:
+        True if config written successfully, False otherwise.
+    """
+    try:
+        # Import yaml here to handle optional dependency
+        try:
+            import yaml
+        except ImportError:
+            logger.warning("PyYAML not installed, cannot write graphiti.yaml")
+            return False
+
+        config_dir = target_dir / ".guardkit"
+        config_file = config_dir / "graphiti.yaml"
+
+        # Normalize project_id using the same logic as GraphitiClient
+        project_id = normalize_project_id(project_name)
+
+        # Load existing config if present
+        config_data = {}
+        if config_file.exists():
+            try:
+                with open(config_file, 'r') as f:
+                    existing_data = yaml.safe_load(f)
+                    if existing_data and isinstance(existing_data, dict):
+                        config_data = existing_data
+            except Exception as e:
+                logger.debug(f"Could not load existing graphiti.yaml: {e}")
+
+        # Update project_id
+        config_data['project_id'] = project_id
+
+        # Write config file
+        config_dir.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        logger.info(f"Written project_id '{project_id}' to {config_file}")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Failed to write graphiti.yaml: {e}")
+        return False
 
 
 def apply_template(template_name: str, target_dir: Optional[Path] = None) -> bool:
@@ -190,6 +244,12 @@ async def _cmd_init(
         console.print(f"  [green]Applied template: {template}[/green]")
     else:
         console.print(f"  [yellow]Warning: Template '{template}' not found, using defaults[/yellow]")
+
+    # Step 1.1: Write Graphiti config with project_id
+    if write_graphiti_config(project_name, project_dir):
+        console.print(f"  [green]Written project_id to .guardkit/graphiti.yaml[/green]")
+    else:
+        console.print(f"  [yellow]Warning: Could not write .guardkit/graphiti.yaml[/yellow]")
 
     # Step 1.5: Interactive setup (if requested)
     project_overview_episode = None

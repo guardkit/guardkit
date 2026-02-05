@@ -65,11 +65,17 @@ guardkit graphiti add-context docs/ --pattern "**/FEATURE-SPEC-*.md"
 # Treat file as ADR even if filename doesn't match pattern
 guardkit graphiti add-context custom-decision.md --type adr
 
-# Force project-overview parser
-guardkit graphiti add-context overview.md --type project-overview
+# Force project_overview parser
+guardkit graphiti add-context overview.md --type project_overview
 
 # Force feature-spec parser
 guardkit graphiti add-context spec.md --type feature-spec
+
+# Capture entire document with full_doc parser
+guardkit graphiti add-context docs/research/GRAPHITI-KNOWLEDGE.md --type full_doc
+
+# Capture and overwrite existing
+guardkit graphiti add-context docs/design/overview.md --type full_doc --force
 ```
 
 ### Preview Mode (Dry Run)
@@ -129,7 +135,7 @@ Connected to Graphiti
 
   ✓ docs/architecture/ADR-001.md (adr)
   ✓ docs/features/FEATURE-SPEC-auth.md (feature-spec)
-  ✓ CLAUDE.md (project-overview)
+  ✓ CLAUDE.md (project_overview)
 
 Summary:
   Added 3 files, 8 episodes
@@ -191,24 +197,30 @@ The command automatically detects the appropriate parser based on:
 1. **Filename patterns** (primary):
    - `ADR-*.md` → ADR parser
    - `FEATURE-SPEC-*.md`, `*-feature-spec.md` → Feature spec parser
-   - `CLAUDE.md`, `README.md` → Project overview parser
-   - Other `.md` files → Project doc parser
+   - `CLAUDE.md`, `README.md` → Project overview parser or Project doc parser
 
 2. **Content structure** (fallback):
    - Presence of ADR sections (Status, Context, Decision)
    - Feature spec structure (Tasks, Phases, Dependencies)
    - Project overview markers
 
+3. **No fallback**: Files that don't match any parser are skipped with a warning.
+
+**Note**: The `full_doc` parser is never auto-detected. Use `--type full_doc` to capture general markdown files.
+
 Use `--type` to override auto-detection.
 
 ## Supported Parser Types
 
-| Type | Description | Use `--type` |
-|------|-------------|--------------|
-| `adr` | Architecture Decision Records | `--type adr` |
-| `feature-spec` | Feature specifications | `--type feature-spec` |
-| `project-overview` | Project overview documents | `--type project-overview` |
-| `project-doc` | General project documentation | `--type project-doc` |
+| Type | Description | Auto-Detect | Use `--type` |
+|------|-------------|-------------|--------------|
+| `adr` | Architecture Decision Records | Yes | `--type adr` |
+| `feature-spec` | Feature specifications | Yes | `--type feature-spec` |
+| `project_overview` | Project overview documents | Yes | `--type project_overview` |
+| `project_doc` | Section extraction from CLAUDE.md/README.md | Yes | `--type project_doc` |
+| `full_doc` | Full document capture (entire markdown content) | **No** (explicit only) | `--type full_doc` |
+
+**Note**: The `full_doc` parser is explicit-only and will never be auto-detected. You must specify `--type full_doc` to use it.
 
 For detailed parser information, see [Graphiti Parsers Guide](graphiti-parsers.md).
 
@@ -230,15 +242,41 @@ The command creates episodes in Graphiti based on the parser type:
 - **Metadata**: Dependencies, priorities, phases
 
 ### Project Overview Parser
-- **1 episode**: Project overview
-- **Group ID**: `{project}__project_overview`
-- **Entity Type**: `project-overview`
+- **1-2 episodes**: Project overview + architecture (if rich)
+- **Group IDs**: `{project}__project_overview`, `{project}__project_architecture`
+- **Entity Types**: `project`, `architecture`
 - **Metadata**: Tech stack, architecture, purpose
 
 ### Project Doc Parser
-- **1 episode per document**: General documentation
-- **Group ID**: `{project}__project_docs`
-- **Entity Type**: `project-doc`
+- **Multiple episodes per document**: One per recognized section (purpose, tech_stack, architecture)
+- **Group IDs**: `{project}__project_purpose`, `{project}__project_tech_stack`, `{project}__project_architecture`
+- **Entity Type**: `project_doc`
+- **Only parses**: CLAUDE.md and README.md
+
+### Full Document Parser
+- **1 episode** for documents < 10KB, **multiple episodes** for larger documents (chunked by `##` headers)
+- **Group ID**: `{project}__project_knowledge`
+- **Entity Type**: `full_doc`
+- **Metadata**: File path, file size, title, frontmatter, chunk information
+- **Explicit only**: Must use `--type full_doc`
+
+#### Chunking Behavior
+
+Documents larger than 10KB are automatically split by `##` (h2) headers:
+
+- Content before the first `##` becomes an "Introduction" chunk
+- Each `##` section becomes a separate episode
+- If no `##` headers exist, the document remains a single episode
+- Chunk metadata includes `chunk_index`, `chunk_total`, and `chunk_title`
+
+```bash
+# Example: Large research document gets chunked
+guardkit graphiti add-context docs/research/GRAPHITI-KNOWLEDGE.md --type full_doc --verbose
+
+# Output:
+#   Large document (15360 bytes) split into 4 chunks
+#   ✓ docs/research/GRAPHITI-KNOWLEDGE.md (full_doc) - 4 episodes
+```
 
 ## When to Use add-context
 

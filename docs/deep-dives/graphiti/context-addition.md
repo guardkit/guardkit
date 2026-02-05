@@ -207,9 +207,11 @@ class ParserRegistry:
 Parser selection follows this priority order:
 
 1. **Explicit `--type` flag**: Use specified parser directly
-2. **Filename pattern**: Match against known patterns (ADR-\*, FEATURE-SPEC-\*)
+2. **Filename pattern**: Match against known patterns (ADR-\*, FEATURE-SPEC-\*, CLAUDE.md, README.md)
 3. **Content analysis**: Call `can_parse()` on all parsers
-4. **Fallback**: Use generic `project-doc` parser
+4. **No match**: File is skipped with a warning (there is no fallback parser)
+
+**Note**: The `full_doc` parser is never auto-detected. Use `--type full_doc` to capture any markdown file's full content.
 
 **Example - ADR Detection**:
 
@@ -368,7 +370,7 @@ All episodes include these standard fields:
 ```python
 {
     "entity_id": "unique-identifier",
-    "entity_type": "adr | feature-spec | task | project-overview | project-doc",
+    "entity_type": "adr | feature-spec | task | project | project_doc | full_doc",
     "source_file": "relative/path/to/file.md",
     "_metadata": {
         "source": "add_context",

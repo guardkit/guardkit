@@ -16,6 +16,7 @@ Example:
 """
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -34,6 +35,11 @@ from guardkit.knowledge.seeding import (
 )
 from guardkit.knowledge.seed_feature_build_adrs import seed_feature_build_adrs
 from guardkit.integrations.graphiti.parsers.registry import ParserRegistry
+from guardkit.integrations.graphiti.parsers.adr import ADRParser
+from guardkit.integrations.graphiti.parsers.feature_spec import FeatureSpecParser
+from guardkit.integrations.graphiti.parsers.full_doc_parser import FullDocParser
+from guardkit.integrations.graphiti.parsers.project_doc_parser import ProjectDocParser
+from guardkit.integrations.graphiti.parsers.project_overview import ProjectOverviewParser
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -52,6 +58,7 @@ def _get_client_and_config() -> tuple[GraphitiClient, GraphitiSettings]:
         neo4j_user=settings.neo4j_user,
         neo4j_password=settings.neo4j_password,
         timeout=settings.timeout,
+        project_id=settings.project_id,
     )
     client = GraphitiClient(config)
     return client, settings
@@ -507,9 +514,10 @@ def add_context(path: str, parser_type: Optional[str], force: bool, dry_run: boo
     \b
     Supported parser types:
         - adr: Architecture Decision Records
-        - feature-spec: Feature specifications
-        - project-overview: Project overview documents
-        - project-doc: General project documentation
+        - feature_spec: Feature specifications
+        - full_doc: Full document capture (entire markdown content)
+        - project_overview: Project overview documents
+        - project_doc: General project documentation (CLAUDE.md, README.md)
     """
     # Check mutual exclusivity of --verbose and --quiet
     if verbose and quiet:
@@ -558,8 +566,13 @@ async def _cmd_add_context(
             console.print("[green]Connected to Graphiti[/green]")
             console.print()
 
-        # Create parser registry
+        # Create parser registry and register all available parsers
         registry = ParserRegistry()
+        registry.register(ADRParser())
+        registry.register(FeatureSpecParser())
+        registry.register(FullDocParser())
+        registry.register(ProjectDocParser())
+        registry.register(ProjectOverviewParser())
 
         # Collect files to process
         files_to_process: list[str] = []
@@ -631,11 +644,21 @@ async def _cmd_add_context(
                 if not dry_run:
                     for episode in result.episodes:
                         try:
+                            # Include parser metadata in episode content for context
+                            # Note: add_episode expects EpisodeMetadata object or None,
+                            # not a dict. Let it auto-generate metadata and include
+                            # parser metadata in the content body instead.
+                            episode_content = episode.content
+                            if episode.metadata:
+                                metadata_str = json.dumps(episode.metadata, indent=2)
+                                episode_content = f"{episode.content}\n\n---\nParser metadata:\n```json\n{metadata_str}\n```"
+
                             await client.add_episode(
                                 name=episode.entity_id,
-                                episode_body=episode.content,
+                                episode_body=episode_content,
                                 group_id=episode.group_id,
-                                metadata=episode.metadata,
+                                entity_type=episode.entity_type,
+                                source="add_context_cli",
                             )
                             episodes_added += 1
                         except Exception as e:
@@ -1137,6 +1160,7 @@ def _detect_group_ids(knowledge_id: str) -> list[str]:
         "technology_stack",
         "feature_build_architecture",
         "architecture_decisions",
+        "project_knowledge",
     ]
 
 
@@ -1251,10 +1275,19 @@ async def _cmd_search(query: str, group: Optional[str], limit: int) -> None:
                 "technology_stack",
                 "feature_build_architecture",
                 "architecture_decisions",
+                # Groups from project_doc parser
+                "project_purpose",
+                "project_tech_stack",
+                # Group from full_doc parser
+                "project_knowledge",
             ]
 
         # Execute search
         try:
+            # Log project_id and groups being searched for debugging
+            logger.debug(f"Search project_id: {client.project_id}")
+            logger.debug(f"Search groups: {group_ids}")
+
             results = await client.search(
                 query=query,
                 group_ids=group_ids,

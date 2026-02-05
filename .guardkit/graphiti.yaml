@@ -10,6 +10,10 @@
 # To start Graphiti services:
 #   docker compose -f docker/docker-compose.graphiti.yml up -d
 
+# Project ID for namespace prefixing
+# This ensures knowledge persists across directory moves/renames
+project_id: guardkit
+
 # Enable Graphiti integration (set to false to disable)
 enabled: true
 

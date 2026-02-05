@@ -237,9 +237,14 @@ guardkit graphiti add-context CLAUDE.md --force
 
 # Add context from other documentation
 guardkit graphiti add-context docs/architecture.md
+
+# Capture full document content (any markdown file)
+guardkit graphiti add-context docs/research/notes.md --type full_doc
 ```
 
-**See**: [Add Context Guide](graphiti-add-context.md) for detailed usage.
+Five parser types are available: `adr`, `feature-spec`, `project_overview`, `project_doc`, and `full_doc`. The first four are auto-detected from filename and content; `full_doc` must be specified explicitly with `--type full_doc`.
+
+**See**: [Add Context Guide](graphiti-add-context.md) for detailed usage and [Parsers Guide](graphiti-parsers.md) for parser detection rules.
 
 #### Method 3: Re-run Interactive Init
 
@@ -1086,6 +1091,10 @@ export GUARDKIT_PROJECT_ID=production-deployment
 **Project Groups** (auto-prefixed):
 - `project_overview` → `{project_id}__project_overview`
 - `project_architecture` → `{project_id}__project_architecture`
+- `project_purpose` → `{project_id}__project_purpose`
+- `project_tech_stack` → `{project_id}__project_tech_stack`
+- `project_knowledge` → `{project_id}__project_knowledge`
+- `project_decisions` → `{project_id}__project_decisions`
 - `feature_specs` → `{project_id}__feature_specs`
 
 **System Groups** (never prefixed):
