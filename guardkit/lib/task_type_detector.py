@@ -94,6 +94,12 @@ KEYWORD_MAPPINGS = {
         # Changelog and notes
         "changelog",
         "release notes",
+        # Content reduction (TASK-REV-D4B1)
+        "trim",
+        "reduce",
+        "compress",
+        "condense",
+        "shorten",
     ],
     TaskType.TESTING: [
         # Test frameworks

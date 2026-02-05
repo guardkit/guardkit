@@ -598,6 +598,7 @@ class AgentInvoker:
         mode: Optional[str] = None,
         max_turns: int = 5,
         documentation_level: str = "minimal",
+        context: str = "",
     ) -> AgentInvocationResult:
         """Invoke Player agent via task-work delegation or Claude Agents SDK.
 
@@ -624,6 +625,9 @@ class AgentInvoker:
                 Used to calculate approaching_limit flag for escape hatch pattern.
             documentation_level: Documentation level for file count constraint validation
                 ("minimal", "standard", or "comprehensive"). Default: "minimal" for AutoBuild.
+            context: Job-specific context from Graphiti (role constraints, quality gates,
+                turn states). Included in Player prompt but kept separate from requirements.
+                Default: "" (empty string, no context).
 
         Returns:
             AgentInvocationResult with Player's report
@@ -663,6 +667,7 @@ class AgentInvoker:
                     requirements=requirements,
                     feedback=feedback,
                     max_turns=max_turns,
+                    context=context,
                 )
 
             # Choose invocation method based on feature flag (task-work or legacy modes)
@@ -718,7 +723,9 @@ class AgentInvoker:
                     f"Invoking Player via direct SDK for {task_id} (turn {turn})"
                 )
                 # Build prompt for Player
-                prompt = self._build_player_prompt(task_id, turn, requirements, feedback)
+                prompt = self._build_player_prompt(
+                    task_id, turn, requirements, feedback, context=context
+                )
 
                 # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
                 await self._invoke_with_role(
@@ -893,6 +900,7 @@ class AgentInvoker:
         requirements: str,
         feedback: Optional[str],
         acceptance_criteria: Optional[List[Dict[str, str]]] = None,
+        context: str = "",
     ) -> str:
         """Build prompt for Player agent invocation with acceptance criteria.
 
@@ -902,6 +910,8 @@ class AgentInvoker:
             requirements: Task requirements
             feedback: Optional feedback from previous Coach turn
             acceptance_criteria: Optional list of acceptance criteria with id and text
+            context: Job-specific context from Graphiti (role constraints, quality gates,
+                turn states). Included before requirements for prompt context.
 
         Returns:
             Formatted prompt string for Player agent
@@ -914,6 +924,15 @@ class AgentInvoker:
 {feedback}
 
 Please address all feedback points in this turn.
+"""
+
+        # Build context section if provided (Graphiti job-specific context)
+        context_section = ""
+        if context:
+            context_section = f"""
+## Job-Specific Context
+
+{context}
 """
 
         # Build acceptance criteria section if provided
@@ -948,7 +967,7 @@ Please address all feedback points in this turn.
 
 Task ID: {task_id}
 Turn: {turn}
-
+{context_section}
 ## Requirements
 
 {requirements}
@@ -1913,6 +1932,7 @@ Follow the decision format specified in your agent definition.
         requirements: str,
         feedback: Optional[Union[str, Dict[str, Any]]] = None,
         max_turns: int = 5,
+        context: str = "",
     ) -> AgentInvocationResult:
         """Invoke Player directly via SDK for direct mode tasks.
 
@@ -1929,6 +1949,7 @@ Follow the decision format specified in your agent definition.
             requirements: Task requirements from markdown
             feedback: Optional Coach feedback from previous turn
             max_turns: Maximum turns allowed
+            context: Job-specific context from Graphiti
 
         Returns:
             AgentInvocationResult with Player's report
@@ -1944,7 +1965,9 @@ Follow the decision format specified in your agent definition.
             logger.info(f"Invoking Player via direct SDK for {task_id} (turn {turn})")
 
             # Build prompt for Player
-            prompt = self._build_player_prompt(task_id, turn, requirements, feedback)
+            prompt = self._build_player_prompt(
+                task_id, turn, requirements, feedback, context=context
+            )
 
             # Invoke SDK with Player permissions (Read, Write, Edit, Bash)
             await self._invoke_with_role(
@@ -2278,34 +2301,9 @@ Follow the decision format specified in your agent definition.
 
         return "\n".join(lines)
 
-
-def detect_rate_limit(error_text: str) -> Tuple[bool, Optional[str]]:
-    """Detect if error is a rate limit error.
-
-    Args:
-        error_text: Error message or output text to check
-
-    Returns:
-        Tuple of (is_rate_limit, reset_time)
-        reset_time is None if not parseable
-    """
-    patterns = [
-        (r"hit your limit.*resets?\s+(\d+(?::\d+)?(?:\s*(?:am|pm))?(?:\s*\([^)]+\))?)", True),
-        (r"rate limit", False),
-        (r"too many requests", False),
-        (r"429", False),
-        (r"quota exceeded", False),
-    ]
-
-    text_lower = error_text.lower()
-    for pattern, has_reset_time in patterns:
-        match = re.search(pattern, text_lower, re.IGNORECASE)
-        if match:
-            reset_time = match.group(1) if has_reset_time and match.lastindex else None
-            return True, reset_time
-
-    return False, None
-
+    # =========================================================================
+    # Task-Work Delegation Methods
+    # =========================================================================
 
     async def _invoke_task_work_implement(
         self,
@@ -3236,3 +3234,36 @@ def detect_rate_limit(error_text: str) -> Tuple[bool, Optional[str]]:
                 f"created {actual_count} files, max allowed {max_files} "
                 f"for {documentation_level} level. Files: {files_preview}{suffix}"
             )
+
+
+# =========================================================================
+# Module-level utility functions
+# =========================================================================
+
+
+def detect_rate_limit(error_text: str) -> Tuple[bool, Optional[str]]:
+    """Detect if error is a rate limit error.
+
+    Args:
+        error_text: Error message or output text to check
+
+    Returns:
+        Tuple of (is_rate_limit, reset_time)
+        reset_time is None if not parseable
+    """
+    patterns = [
+        (r"hit your limit.*resets?\s+(\d+(?::\d+)?(?:\s*(?:am|pm))?(?:\s*\([^)]+\))?)", True),
+        (r"rate limit", False),
+        (r"too many requests", False),
+        (r"429", False),
+        (r"quota exceeded", False),
+    ]
+
+    text_lower = error_text.lower()
+    for pattern, has_reset_time in patterns:
+        match = re.search(pattern, text_lower, re.IGNORECASE)
+        if match:
+            reset_time = match.group(1) if has_reset_time and match.lastindex else None
+            return True, reset_time
+
+    return False, None

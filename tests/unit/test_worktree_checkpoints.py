@@ -15,7 +15,7 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 from unittest.mock import MagicMock, Mock, call, patch
 
 import pytest
@@ -627,3 +627,245 @@ def test_subprocess_git_executor_failure():
             ["git", "invalid-command"],
             cwd=Path("/tmp"),
         )
+
+
+# ============================================================================
+# Concurrency / Lock Tests
+# ============================================================================
+
+
+def test_concurrent_checkpoints_same_worktree(tmp_path):
+    """Test that concurrent checkpoints on the same worktree are serialized.
+
+    Simulates the feature-mode scenario where TASK-001 and TASK-002 share the
+    same worktree and create checkpoints at the same time.  The file-based lock
+    must ensure git operations never overlap.
+    """
+    import threading
+
+    worktree_path = tmp_path / "shared_worktree"
+    worktree_path.mkdir()
+    (worktree_path / ".guardkit" / "autobuild" / "TASK-001").mkdir(parents=True)
+    (worktree_path / ".guardkit" / "autobuild" / "TASK-002").mkdir(parents=True)
+
+    # Track the order in which git commands execute
+    call_log: List[tuple] = []  # (task_id, command_type, timestamp)
+    call_lock = threading.Lock()
+
+    import time
+
+    def make_executor(task_id: str) -> Mock:
+        """Create a mock git executor that records call order."""
+        executor = Mock(spec=GitCommandExecutor)
+        call_counter = {"n": 0}
+
+        def side_effect(command, cwd, check=True):
+            cmd_type = command[1] if len(command) > 1 else command[0]
+            with call_lock:
+                call_log.append((task_id, cmd_type, time.monotonic()))
+
+            # Simulate git taking some time (enough for race conditions)
+            time.sleep(0.01)
+
+            return Mock(
+                returncode=0,
+                stdout=f"commit-{task_id}\n",
+                stderr="",
+            )
+
+        executor.execute.side_effect = side_effect
+        return executor
+
+    executor_1 = make_executor("TASK-001")
+    executor_2 = make_executor("TASK-002")
+
+    manager_1 = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-001",
+        git_executor=executor_1,
+    )
+    manager_2 = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-002",
+        git_executor=executor_2,
+    )
+
+    errors: List[Exception] = []
+
+    def create_cp(manager, turn):
+        try:
+            manager.create_checkpoint(turn=turn, tests_passed=True, test_count=5)
+        except Exception as e:
+            errors.append(e)
+
+    t1 = threading.Thread(target=create_cp, args=(manager_1, 1))
+    t2 = threading.Thread(target=create_cp, args=(manager_2, 1))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    # No errors should have occurred
+    assert errors == [], f"Unexpected errors during concurrent checkpoints: {errors}"
+
+    # Both managers should have one checkpoint each
+    assert len(manager_1.checkpoints) == 1
+    assert len(manager_2.checkpoints) == 1
+
+    # The call log should show serialized execution:
+    # All 3 git commands for one task should complete before the other starts.
+    # Extract runs: group consecutive calls by task_id
+    task_runs = []
+    current_task = None
+    for task_id, cmd, ts in call_log:
+        if task_id != current_task:
+            task_runs.append(task_id)
+            current_task = task_id
+
+    # There should be exactly 2 contiguous blocks (one per task)
+    # e.g. ['TASK-001', 'TASK-002'] or ['TASK-002', 'TASK-001']
+    assert len(task_runs) == 2, (
+        f"Expected 2 contiguous task blocks, got {len(task_runs)}: {task_runs}. "
+        f"Full log: {call_log}"
+    )
+
+
+def test_concurrent_checkpoints_different_worktrees(tmp_path):
+    """Test that checkpoints on different worktrees run independently.
+
+    Two managers with different worktree paths should NOT block each other.
+    """
+    import threading
+    import time
+
+    wt_a = tmp_path / "worktree_a"
+    wt_b = tmp_path / "worktree_b"
+    wt_a.mkdir()
+    wt_b.mkdir()
+    (wt_a / ".guardkit" / "autobuild" / "TASK-A").mkdir(parents=True)
+    (wt_b / ".guardkit" / "autobuild" / "TASK-B").mkdir(parents=True)
+
+    execution_times: Dict[str, list] = {"A": [], "B": []}
+    times_lock = threading.Lock()
+
+    def make_executor(label: str) -> Mock:
+        executor = Mock(spec=GitCommandExecutor)
+
+        def side_effect(command, cwd, check=True):
+            with times_lock:
+                execution_times[label].append(time.monotonic())
+            time.sleep(0.02)
+            return Mock(returncode=0, stdout=f"commit-{label}\n", stderr="")
+
+        executor.execute.side_effect = side_effect
+        return executor
+
+    mgr_a = WorktreeCheckpointManager(
+        worktree_path=wt_a, task_id="TASK-A", git_executor=make_executor("A")
+    )
+    mgr_b = WorktreeCheckpointManager(
+        worktree_path=wt_b, task_id="TASK-B", git_executor=make_executor("B")
+    )
+
+    errors: List[Exception] = []
+
+    def create_cp(mgr, turn):
+        try:
+            mgr.create_checkpoint(turn=turn, tests_passed=True, test_count=3)
+        except Exception as e:
+            errors.append(e)
+
+    t1 = threading.Thread(target=create_cp, args=(mgr_a, 1))
+    t2 = threading.Thread(target=create_cp, args=(mgr_b, 1))
+
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert errors == []
+    assert len(mgr_a.checkpoints) == 1
+    assert len(mgr_b.checkpoints) == 1
+
+    # Both should have executed (they run on different lock files)
+    assert len(execution_times["A"]) == 3  # add, commit, rev-parse
+    assert len(execution_times["B"]) == 3
+
+
+def test_lock_file_created_in_worktree(tmp_path):
+    """Test that the lock file is created under .guardkit-git.lock."""
+    worktree_path = tmp_path / "worktree"
+    worktree_path.mkdir()
+    (worktree_path / ".guardkit" / "autobuild" / "TASK-001").mkdir(parents=True)
+
+    executor = Mock(spec=GitCommandExecutor)
+    executor.execute.return_value = Mock(
+        returncode=0, stdout="abc123\n", stderr=""
+    )
+
+    manager = WorktreeCheckpointManager(
+        worktree_path=worktree_path,
+        task_id="TASK-001",
+        git_executor=executor,
+    )
+
+    manager.create_checkpoint(turn=1, tests_passed=True, test_count=5)
+
+    # Lock file should exist after checkpoint creation
+    lock_file = worktree_path / ".guardkit-git.lock"
+    assert lock_file.exists()
+
+
+def test_single_task_checkpoint_still_works(checkpoint_manager, mock_git_executor):
+    """Test that single-task AutoBuild is unchanged by the locking mechanism.
+
+    This verifies backward compatibility: a single manager creating
+    checkpoints should work exactly as before.
+    """
+    checkpoint = checkpoint_manager.create_checkpoint(
+        turn=1, tests_passed=True, test_count=10
+    )
+
+    # Verify the same git commands are issued
+    assert mock_git_executor.execute.call_count == 3
+
+    add_call = mock_git_executor.execute.call_args_list[0]
+    assert add_call[0][0] == ["git", "add", "-A"]
+
+    commit_call = mock_git_executor.execute.call_args_list[1]
+    assert "git" == commit_call[0][0][0]
+    assert "commit" == commit_call[0][0][1]
+
+    revparse_call = mock_git_executor.execute.call_args_list[2]
+    assert revparse_call[0][0] == ["git", "rev-parse", "HEAD"]
+
+    assert checkpoint.turn == 1
+    assert checkpoint.tests_passed is True
+    assert len(checkpoint_manager.checkpoints) == 1
+
+
+def test_thread_lock_shared_across_managers(tmp_path):
+    """Test that managers for the same worktree share a thread lock."""
+    worktree_path = tmp_path / "shared"
+    worktree_path.mkdir()
+    (worktree_path / ".guardkit" / "autobuild" / "TASK-A").mkdir(parents=True)
+    (worktree_path / ".guardkit" / "autobuild" / "TASK-B").mkdir(parents=True)
+
+    executor = Mock(spec=GitCommandExecutor)
+    executor.execute.return_value = Mock(
+        returncode=0, stdout="commit\n", stderr=""
+    )
+
+    mgr_a = WorktreeCheckpointManager(
+        worktree_path=worktree_path, task_id="TASK-A", git_executor=executor
+    )
+    mgr_b = WorktreeCheckpointManager(
+        worktree_path=worktree_path, task_id="TASK-B", git_executor=executor
+    )
+
+    lock_a = mgr_a._get_thread_lock()
+    lock_b = mgr_b._get_thread_lock()
+
+    # Same worktree path => same thread lock object
+    assert lock_a is lock_b

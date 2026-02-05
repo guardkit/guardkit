@@ -43,14 +43,16 @@ Example:
     ...         manager.rollback_to(target_turn)
 """
 
+import fcntl
 import json
 import logging
 import subprocess
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Protocol
+from typing import ClassVar, Dict, List, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +209,11 @@ class WorktreeCheckpointManager:
         - Rollback: git reset --hard to previous commit
         - Detection: Analyze test failure patterns
         - Persistence: JSON file for checkpoint history
+        - Concurrency: File-based locking for shared worktrees
+
+    When multiple tasks share a worktree (feature mode), git operations in
+    create_checkpoint() are serialized using a file-based lock to prevent
+    index.lock conflicts.
 
     Attributes:
         worktree_path: Path to git worktree
@@ -234,6 +241,11 @@ class WorktreeCheckpointManager:
         ...         manager.rollback_to(target)
     """
 
+    # Class-level thread locks keyed by resolved worktree path.
+    # Ensures threads coordinate before acquiring the file lock.
+    _thread_locks: ClassVar[Dict[str, threading.Lock]] = {}
+    _thread_locks_guard: ClassVar[threading.Lock] = threading.Lock()
+
     def __init__(
         self,
         worktree_path: Path,
@@ -258,6 +270,9 @@ class WorktreeCheckpointManager:
         )
         self._checkpoints_file = self._autobuild_dir / "checkpoints.json"
 
+        # Git lock file path for serializing git operations across tasks
+        self._git_lock_path = self.worktree_path / ".guardkit-git.lock"
+
         # Load existing checkpoints if available
         self._load_checkpoints()
 
@@ -271,6 +286,10 @@ class WorktreeCheckpointManager:
 
         This method stages all changes and creates a git commit with a
         standardized checkpoint message. The commit serves as a rollback point.
+
+        Git operations (add, commit, rev-parse) are serialized using a
+        file-based lock to prevent index.lock conflicts when multiple tasks
+        share the same worktree in feature mode.
 
         Args:
             turn: Turn number (1-indexed)
@@ -288,6 +307,93 @@ class WorktreeCheckpointManager:
             f"(tests: {'pass' if tests_passed else 'fail'}, count: {test_count})"
         )
 
+        # Serialize git operations to prevent index.lock conflicts
+        # when multiple tasks share the same worktree.
+        checkpoint = self._create_checkpoint_locked(turn, tests_passed, test_count)
+
+        self.checkpoints.append(checkpoint)
+        self._save_checkpoints()
+
+        logger.info(
+            f"Created checkpoint: {checkpoint.commit_hash[:8]} for turn {turn} "
+            f"({len(self.checkpoints)} total)"
+        )
+
+        return checkpoint
+
+    def _get_thread_lock(self) -> threading.Lock:
+        """Get or create a thread lock for this worktree path.
+
+        Returns a threading.Lock shared by all managers with the same
+        resolved worktree path, ensuring threads coordinate before
+        acquiring the file lock.
+
+        Returns:
+            threading.Lock for this worktree path
+        """
+        key = str(self.worktree_path.resolve())
+        with self._thread_locks_guard:
+            if key not in self._thread_locks:
+                self._thread_locks[key] = threading.Lock()
+            return self._thread_locks[key]
+
+    def _create_checkpoint_locked(
+        self,
+        turn: int,
+        tests_passed: bool,
+        test_count: int,
+    ) -> Checkpoint:
+        """Execute git checkpoint operations under a file-based lock.
+
+        Uses a two-level locking strategy:
+        1. threading.Lock - coordinates threads in the same process
+        2. fcntl.flock - coordinates across processes (if needed)
+
+        Args:
+            turn: Turn number (1-indexed)
+            tests_passed: Whether tests passed at this turn
+            test_count: Number of tests run
+
+        Returns:
+            Checkpoint record with commit hash
+
+        Raises:
+            subprocess.CalledProcessError: If git commands fail
+        """
+        thread_lock = self._get_thread_lock()
+
+        with thread_lock:
+            # Ensure lock file parent directory exists
+            self._git_lock_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(self._git_lock_path, "w") as lock_file:
+                fcntl.flock(lock_file, fcntl.LOCK_EX)
+                try:
+                    return self._execute_git_checkpoint(
+                        turn, tests_passed, test_count
+                    )
+                finally:
+                    fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+    def _execute_git_checkpoint(
+        self,
+        turn: int,
+        tests_passed: bool,
+        test_count: int,
+    ) -> Checkpoint:
+        """Execute the git add/commit/rev-parse sequence.
+
+        This method contains the actual git operations, extracted for clarity.
+        It must only be called while holding the worktree git lock.
+
+        Args:
+            turn: Turn number (1-indexed)
+            tests_passed: Whether tests passed at this turn
+            test_count: Number of tests run
+
+        Returns:
+            Checkpoint record with commit hash
+        """
         # Stage all changes (including untracked files)
         self.git_executor.execute(
             ["git", "add", "-A"],
@@ -311,8 +417,7 @@ class WorktreeCheckpointManager:
         )
         commit_hash = result.stdout.strip()
 
-        # Create checkpoint record
-        checkpoint = Checkpoint(
+        return Checkpoint(
             turn=turn,
             commit_hash=commit_hash,
             timestamp=datetime.now().isoformat(),
@@ -320,16 +425,6 @@ class WorktreeCheckpointManager:
             test_count=test_count,
             message=message,
         )
-
-        self.checkpoints.append(checkpoint)
-        self._save_checkpoints()
-
-        logger.info(
-            f"Created checkpoint: {commit_hash[:8]} for turn {turn} "
-            f"({len(self.checkpoints)} total)"
-        )
-
-        return checkpoint
 
     def rollback_to(self, turn: int) -> bool:
         """Rollback worktree to checkpoint at specified turn.

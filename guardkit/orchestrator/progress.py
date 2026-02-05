@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Type aliases
 TurnStatus = Literal["in_progress", "success", "feedback", "error"]
-FinalStatus = Literal["approved", "max_turns_exceeded", "error"]
+FinalStatus = Literal["approved", "max_turns_exceeded", "unrecoverable_stall", "error"]
 
 
 def _handle_display_error(func):
@@ -416,6 +416,7 @@ class ProgressDisplay:
         status_colors = {
             "approved": "green",
             "max_turns_exceeded": "yellow",
+            "unrecoverable_stall": "red",
             "error": "red"
         }
         color = status_colors.get(final_status, "white")

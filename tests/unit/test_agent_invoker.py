@@ -5487,3 +5487,70 @@ class TestRetryMechanism:
 
         assert 0.09 <= delay_1_2 <= 0.15  # ~100ms
         assert 0.18 <= delay_2_3 <= 0.25  # ~200ms
+
+
+# ==================== Class Integrity Tests ====================
+
+
+class TestAgentInvokerClassIntegrity:
+    """Verify AgentInvoker class has all expected methods.
+
+    Guards against regression where module-level function insertions
+    accidentally break the class scope (see TASK-REV-AB04).
+    """
+
+    def test_all_critical_methods_exist_on_class(self):
+        """All critical methods must be attributes of AgentInvoker class."""
+        critical_methods = [
+            "_ensure_design_approved_state",
+            "_invoke_task_work_implement",
+            "_write_task_work_results",
+            "_write_failure_results",
+            "_read_json_artifact",
+            "_generate_summary",
+            "_validate_file_count_constraint",
+            "extract_acceptance_criteria",
+            "parse_completion_promises",
+            "parse_criteria_verifications",
+        ]
+        for method_name in critical_methods:
+            assert hasattr(AgentInvoker, method_name), (
+                f"AgentInvoker missing method '{method_name}'. "
+                f"This may indicate a class scope break caused by a "
+                f"module-level function inserted in the class body."
+            )
+
+    def test_class_method_count_not_degraded(self):
+        """AgentInvoker should have at least 38 methods (guard against scope breaks)."""
+        import ast
+        from pathlib import Path
+
+        source = Path("guardkit/orchestrator/agent_invoker.py").read_text()
+        tree = ast.parse(source)
+
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.ClassDef) and node.name == "AgentInvoker":
+                methods = [
+                    c
+                    for c in ast.iter_child_nodes(node)
+                    if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))
+                ]
+                assert len(methods) >= 38, (
+                    f"AgentInvoker has only {len(methods)} methods, expected 38+. "
+                    f"Methods may have been orphaned by a module-level function "
+                    f"insertion breaking the class scope."
+                )
+                break
+        else:
+            pytest.fail("AgentInvoker class not found in source file")
+
+    def test_detect_rate_limit_is_module_level(self):
+        """detect_rate_limit should be a module-level function, not nested."""
+        from guardkit.orchestrator.agent_invoker import detect_rate_limit
+
+        assert callable(detect_rate_limit)
+        # Verify it works
+        is_rate_limit, _ = detect_rate_limit("rate limit exceeded")
+        assert is_rate_limit is True
+        is_rate_limit, _ = detect_rate_limit("normal error message")
+        assert is_rate_limit is False
