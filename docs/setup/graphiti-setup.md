@@ -498,65 +498,47 @@ group_ids:
 
 ### Services Started
 
-The `docker-compose.graphiti.yml` file starts two services:
+The `docker-compose.graphiti.yml` file starts one service:
 
-**1. Neo4j** (Graph Database):
+**Neo4j** (Graph Database):
 - **Image**: `neo4j:5.26.0`
 - **Container**: `guardkit-neo4j`
 - **Ports**: `7474` (HTTP/Browser), `7687` (Bolt protocol)
 - **Volumes**: `neo4j_data:/data`, `neo4j_logs:/logs` (persistent storage)
+- **Plugins**: APOC (utility procedures)
 - **Health Check**: Cypher shell check every 10s
 - **Browser**: http://localhost:7474
 
-**2. Graphiti API** (Knowledge Graph Server):
-- **Image**: `zepai/graphiti:latest`
-- **Container**: `guardkit-graphiti`
-- **Port**: `8000` (HTTP API)
-- **Dependencies**: Waits for Neo4j to be healthy
-- **Environment**:
-  - `OPENAI_API_KEY`: Your OpenAI API key (required)
-  - `NEO4J_URI`: Connection to Neo4j (`bolt://neo4j:7687`)
-  - `NEO4J_USER`: Neo4j username (`neo4j`)
-  - `NEO4J_PASSWORD`: Neo4j password (`password123`)
-  - `EMBEDDING_MODEL`: OpenAI embedding model (`text-embedding-3-small`)
+**Note**: The `zepai/graphiti` Docker REST API has been removed. GuardKit now uses the `graphiti-core` Python library directly for better error handling, full control over LLM token limits, and direct Neo4j communication without middleware.
 
 ### Port Mappings
 
 | Service | Container Port | Host Port | Purpose |
 |---------|---------------|-----------|---------|
 | Neo4j | 7474 | 7474 | HTTP/Browser interface |
-| Neo4j | 7687 | 7687 | Bolt protocol (database connections) |
-| Graphiti | 8000 | 8000 | HTTP API for knowledge graph |
+| Neo4j | 7687 | 7687 | Bolt protocol (graphiti-core connection) |
 
 ### Volume Persistence
 
-Data is persisted in Docker volumes:
+Data is persisted in Docker named volumes, which survive container stops and restarts:
 
 ```bash
 # View volumes
-docker volume ls
+docker volume ls | grep neo4j
 
 # Inspect Neo4j data volume
-docker volume inspect guardkit-graphiti_neo4j_data
-
-# Backup volume (optional)
-docker run --rm -v guardkit-graphiti_neo4j_data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/neo4j-backup.tar.gz -C /data .
-
-# Restore volume (optional)
-docker run --rm -v guardkit-graphiti_neo4j_data:/data -v $(pwd):/backup \
-  alpine tar xzf /backup/neo4j-backup.tar.gz -C /data
+docker volume inspect docker_neo4j_data
 ```
+
+**Volume names**: Docker Compose prefixes volume names with the project directory name (e.g., `docker_neo4j_data` when run from the `docker/` directory). Use `docker volume ls | grep neo4j` to find the exact name.
+
+For backup and restore procedures, see [Backup & Restore](#backup--restore) below.
 
 ### Container Management
 
 **View logs**:
 ```bash
-# All services
 docker compose -f docker/docker-compose.graphiti.yml logs -f
-
-# Specific service
-docker logs guardkit-graphiti -f
 docker logs guardkit-neo4j -f
 ```
 
@@ -573,6 +555,151 @@ docker compose -f docker/docker-compose.graphiti.yml down -v
 **Restart services**:
 ```bash
 docker compose -f docker/docker-compose.graphiti.yml restart
+```
+
+---
+
+## Backup & Restore
+
+GuardKit includes a backup script for Neo4j data at `scripts/graphiti-backup.sh`.
+
+### Backup Methods
+
+| Method | Command | Best For | Cross-Version |
+|--------|---------|----------|---------------|
+| Volume backup | `backup` / `restore` | Local backups, same-machine restore | No (same Neo4j version) |
+| Database dump | `dump` / `load` | Migration to another server | Yes (across Neo4j 5.x) |
+
+### Quick Backup
+
+```bash
+# Volume backup (fast, for local use)
+./scripts/graphiti-backup.sh backup
+
+# Portable dump (for migration)
+./scripts/graphiti-backup.sh dump
+```
+
+Backups are saved to `./backups/graphiti/` by default. Override with `--output DIR` or the `BACKUP_DIR` environment variable.
+
+### Restore
+
+```bash
+# Restore from volume backup
+./scripts/graphiti-backup.sh restore backups/graphiti/neo4j-backup-20250205_120000.tar.gz
+
+# Load from portable dump
+./scripts/graphiti-backup.sh load backups/graphiti/neo4j-dump-20250205_120000.dump
+
+# Verify after restore
+./scripts/graphiti-backup.sh verify
+```
+
+### List Backups
+
+```bash
+./scripts/graphiti-backup.sh list
+```
+
+### Verify Database
+
+```bash
+# Check Neo4j connectivity and node count
+./scripts/graphiti-backup.sh verify
+
+# Full GuardKit verification
+guardkit graphiti status
+guardkit graphiti verify --verbose
+```
+
+### Important Notes
+
+- The script automatically stops and restarts Neo4j as needed for consistent backups
+- Always run `verify` after a restore or load operation
+- Volume backups require the same Neo4j version; use `dump`/`load` for cross-version migration
+- After restoring on a new machine, you may need to re-seed system knowledge: `guardkit graphiti seed --force`
+
+---
+
+## Migration Guide
+
+### Local to Remote Server (AWS, etc.)
+
+To migrate your Neo4j knowledge graph to a remote server:
+
+**1. Create a portable dump on your local machine:**
+```bash
+./scripts/graphiti-backup.sh dump
+```
+
+**2. Copy the dump file to the remote server:**
+```bash
+scp backups/graphiti/neo4j-dump-*.dump user@remote-server:/path/to/guardkit/backups/graphiti/
+```
+
+**3. On the remote server, set up Neo4j:**
+```bash
+# Clone/copy the GuardKit project
+git clone <repo-url> guardkit
+cd guardkit
+
+# Start Neo4j
+docker compose -f docker/docker-compose.graphiti.yml up -d
+
+# Load the dump
+./scripts/graphiti-backup.sh load backups/graphiti/neo4j-dump-*.dump
+
+# Verify
+./scripts/graphiti-backup.sh verify
+```
+
+**4. Update GuardKit configuration on the remote server:**
+
+Edit `.guardkit/graphiti.yaml` or set environment variables:
+```bash
+export GRAPHITI_HOST=localhost   # Or the server's address if connecting remotely
+export GRAPHITI_PORT=8000       # Not applicable if using graphiti-core directly
+```
+
+### Alternative: Re-seed Instead of Migrate
+
+For system knowledge (GuardKit workflows, patterns, etc.), re-seeding is often simpler than migrating:
+
+```bash
+# On the new server
+docker compose -f docker/docker-compose.graphiti.yml up -d
+guardkit graphiti seed
+guardkit graphiti verify
+```
+
+Re-seeding only recreates system knowledge. Project-specific context (ADRs, feature specs) would need to be re-added:
+
+```bash
+# Re-add project documentation
+guardkit graphiti add-context CLAUDE.md
+guardkit graphiti add-context docs/architecture/ --pattern "ADR-*.md"
+guardkit graphiti add-context docs/features/ --pattern "FEATURE-SPEC-*.md"
+```
+
+### Production Considerations
+
+**Security:**
+- Change the default Neo4j password (`password123`) in `docker-compose.graphiti.yml`
+- Update the password in `.guardkit/graphiti.yaml` or via `NEO4J_PASSWORD` environment variable
+- Restrict Neo4j ports (7474, 7687) to trusted networks using firewall rules
+- Consider using Neo4j's built-in SSL/TLS for encrypted connections
+
+**Neo4j Aura (Managed Service):**
+For production deployments, consider [Neo4j Aura](https://neo4j.com/cloud/aura/) instead of self-hosted Docker:
+- Managed backups and scaling
+- No Docker management overhead
+- Update `neo4j_uri` in config to point to your Aura instance
+
+**Automated Backups:**
+```bash
+# Add to crontab for daily backups at 2am
+# crontab -e
+0 2 * * * cd /path/to/guardkit && ./scripts/graphiti-backup.sh dump --output /path/to/backup/dir
 ```
 
 ---
