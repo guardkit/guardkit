@@ -116,32 +116,8 @@ def estimate_duration(complexity: int) -> int:
     return int(base_minutes * (scaling ** (complexity - 1)))
 
 
-def slugify_task_name(name: str) -> str:
-    """
-    Convert task name to URL-friendly slug for filename suffix.
-
-    Args:
-        name: Task name (e.g., "Create auth service")
-
-    Returns:
-        Slugified name (e.g., "create-auth-service")
-
-    Examples:
-        >>> slugify_task_name("Create auth service")
-        'create-auth-service'
-        >>> slugify_task_name("Add OAuth 2.0 Provider")
-        'add-oauth-2-0-provider'
-    """
-    import re
-    # Convert to lowercase
-    slug = name.lower()
-    # Replace non-alphanumeric characters with hyphens
-    slug = re.sub(r'[^a-z0-9]+', '-', slug)
-    # Remove leading/trailing hyphens
-    slug = slug.strip('-')
-    # Collapse multiple hyphens
-    slug = re.sub(r'-+', '-', slug)
-    return slug
+# Import shared slug utility - re-exported for backward compatibility
+from installer.core.lib.slug_utils import slugify_task_name  # noqa: F401
 
 
 def build_task_file_path(
@@ -181,6 +157,10 @@ def build_task_file_path(
         filename = f"{task_id}.md"
 
     if feature_slug:
+        # Guard: don't double the slug if base_path already ends with it
+        stripped = base_path.rstrip('/')
+        if stripped.endswith(f"/{feature_slug}") or stripped == feature_slug:
+            return f"{base_path}/{filename}"
         return f"{base_path}/{feature_slug}/{filename}"
     else:
         return f"{base_path}/{filename}"
@@ -267,6 +247,31 @@ def build_parallel_groups(tasks: List[TaskSpec]) -> List[List[str]]:
         scheduled.update(available)
 
     return groups
+
+
+def validate_task_paths(feature: FeatureFile, base_dir: Path) -> List[str]:
+    """
+    Validate that all task file_path values resolve to actual files on disk.
+
+    Called after YAML generation to catch path errors early, before
+    feature-build runs.
+
+    Args:
+        feature: The generated feature file with task specs
+        base_dir: Project root directory to resolve relative paths against
+
+    Returns:
+        List of error strings (empty if all paths are valid)
+    """
+    errors = []
+    for task in feature.tasks:
+        if task.file_path:
+            full_path = base_dir / task.file_path
+            if not full_path.exists():
+                errors.append(
+                    f"Task {task.id}: file not found at {task.file_path}"
+                )
+    return errors
 
 
 def write_yaml(feature: FeatureFile, output_path: Path) -> None:
@@ -465,6 +470,19 @@ def main():
             json.dump(feature.to_dict(), f, indent=2, default=str)
     else:
         write_yaml(feature, output_path)
+
+    # Validate task paths against disk
+    base_dir = Path(args.base_path)
+    path_errors = validate_task_paths(feature, base_dir)
+    if path_errors:
+        print(f"\n⚠️  Path validation warnings ({len(path_errors)}):", file=sys.stderr)
+        for err in path_errors:
+            print(f"   {err}", file=sys.stderr)
+        print(
+            "\n   Task files may not exist yet if they will be created later.",
+            file=sys.stderr,
+        )
+        print()
 
     # Output summary
     if not args.quiet:

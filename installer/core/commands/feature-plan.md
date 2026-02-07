@@ -1589,23 +1589,23 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     **Execute via Bash tool:**
     ```bash
     # Build task arguments from subtasks
-    # Format: --task "ID:NAME:FILE_PATH:COMPLEXITY:DEPS" for each subtask
-    # FILE_PATH is required - path to task markdown file (relative to repo root)
+    # Format: --task "ID:NAME:COMPLEXITY:DEPS" for each subtask
+    # Note: Task file paths are derived automatically from --feature-slug.
+    # Do not include FILE_PATH in the --task argument.
     # DEPS is comma-separated list of dependency task IDs (or empty)
 
     python3 ~/.agentecflow/bin/generate-feature-yaml \
         --name "{feature_name}" \
         --description "{review_findings_summary}" \
-        --task "TASK-001:First task name:tasks/backlog/feature-name/TASK-001.md:5:" \
-        --task "TASK-002:Second task name:tasks/backlog/feature-name/TASK-002.md:6:TASK-001" \
-        --task "TASK-003:Third task name:tasks/backlog/feature-name/TASK-003.md:3:TASK-001,TASK-002" \
+        --task "TASK-001:First task name:5:" \
+        --task "TASK-002:Second task name:6:TASK-001" \
+        --task "TASK-003:Third task name:3:TASK-001,TASK-002" \
         --base-path "."
     ```
 
-    **Task argument format:** `ID:NAME:FILE_PATH:COMPLEXITY:DEPS`
+    **Task argument format:** `ID:NAME:COMPLEXITY:DEPS`
     - ID: The task ID (e.g., TASK-OAUTH-001)
     - NAME: The task name/title
-    - FILE_PATH: **Required** - Path to task markdown file (relative to repo root)
     - COMPLEXITY: Complexity score 1-10 (use 5 if unknown)
     - DEPS: Comma-separated dependency task IDs (empty if none)
 
@@ -1614,11 +1614,11 @@ When the user runs `/feature-plan "description"`, you MUST follow these steps **
     python3 ~/.agentecflow/bin/generate-feature-yaml \
         --name "Implement OAuth2 authentication" \
         --description "Add OAuth2 authentication with multiple providers" \
-        --task "TASK-OAUTH-001:Create auth infrastructure:tasks/backlog/oauth-auth/TASK-OAUTH-001.md:5:" \
-        --task "TASK-OAUTH-002:Implement local JWT auth:tasks/backlog/oauth-auth/TASK-OAUTH-002.md:6:TASK-OAUTH-001" \
-        --task "TASK-OAUTH-003:Add database migrations:tasks/backlog/oauth-auth/TASK-OAUTH-003.md:4:TASK-OAUTH-001" \
-        --task "TASK-OAUTH-004:Implement social OAuth2:tasks/backlog/oauth-auth/TASK-OAUTH-004.md:7:TASK-OAUTH-002,TASK-OAUTH-003" \
-        --task "TASK-OAUTH-005:Add auth tests:tasks/backlog/oauth-auth/TASK-OAUTH-005.md:3:TASK-OAUTH-004" \
+        --task "TASK-OAUTH-001:Create auth infrastructure:5:" \
+        --task "TASK-OAUTH-002:Implement local JWT auth:6:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-003:Add database migrations:4:TASK-OAUTH-001" \
+        --task "TASK-OAUTH-004:Implement social OAuth2:7:TASK-OAUTH-002,TASK-OAUTH-003" \
+        --task "TASK-OAUTH-005:Add auth tests:3:TASK-OAUTH-004" \
         --base-path "."
     ```
 

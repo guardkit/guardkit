@@ -48,6 +48,9 @@ from lib.readme_generator import generate_feature_readme
 # Import task type detection
 from guardkit.lib.task_type_detector import detect_task_type
 
+# Import shared slug utility
+from installer.core.lib.slug_utils import slugify_task_name
+
 
 def extract_feature_slug(title: str) -> str:
     """
@@ -257,7 +260,7 @@ class ImplementOrchestrator:
             task_type = detect_task_type(title, description)
 
             # Generate filename
-            slug = self._slugify(title)
+            slug = slugify_task_name(title)
             filename = f"{task_id}-{slug}.md"
             filepath = os.path.join(self.subfolder_path, filename)
 
@@ -565,24 +568,6 @@ Auto-generated from {self.review_task['id']} recommendations.
             print(f"4. Use Conductor for parallel Wave 1 execution")
         print("="*80 + "\n")
 
-    def _slugify(self, text: str) -> str:
-        """Convert text to URL-friendly slug."""
-        # Convert to lowercase
-        slug = text.lower()
-        # Replace spaces and special chars with hyphens
-        slug = slug.replace(' ', '-').replace('/', '-').replace('_', '-')
-        # Remove non-alphanumeric except hyphens
-        slug = ''.join(c for c in slug if c.isalnum() or c == '-')
-        # Remove multiple consecutive hyphens
-        while '--' in slug:
-            slug = slug.replace('--', '-')
-        # Trim hyphens from ends
-        slug = slug.strip('-')
-        # Limit length
-        if len(slug) > 50:
-            slug = slug[:50].rstrip('-')
-        return slug
-
     def _format_files_list(self, files: List[str]) -> str:
         """Format files list for markdown."""
         if not files:
@@ -609,7 +594,7 @@ Auto-generated from {self.review_task['id']} recommendations.
         for idx, subtask in enumerate(self.subtasks):
             task_id = subtask["id"]
             title = subtask["title"]
-            slug = self._slugify(title)
+            slug = slugify_task_name(title)
             filename = f"{task_id}-{slug}.md"
 
             # Determine tree character

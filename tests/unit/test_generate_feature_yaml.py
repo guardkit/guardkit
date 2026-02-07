@@ -28,7 +28,8 @@ from generate_feature_yaml import (
     estimate_duration,
     generate_feature_id,
     build_task_file_path,  # Helper function for path construction
-    slugify_task_name,  # NEW: Task name slug generation
+    validate_task_paths,  # Post-creation path validation
+    slugify_task_name,  # Re-exported from installer.core.lib.slug_utils
 )
 
 
@@ -190,6 +191,48 @@ class TestBuildTaskFilePath:
             task_name=""
         )
         assert path == "tasks/backlog/oauth2/TASK-001.md"
+
+    def test_build_task_file_path_no_doubling(self):
+        """Regression: base_path already containing feature_slug should not double it."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="my-feature",
+            base_path="tasks/backlog/my-feature",
+            task_name="Create service"
+        )
+        assert path == "tasks/backlog/my-feature/TASK-001-create-service.md"
+        assert "my-feature/my-feature" not in path
+
+    def test_build_task_file_path_no_doubling_without_task_name(self):
+        """Regression: no doubling even without task name."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="my-feature",
+            base_path="tasks/backlog/my-feature"
+        )
+        assert path == "tasks/backlog/my-feature/TASK-001.md"
+        assert "my-feature/my-feature" not in path
+
+    def test_build_task_file_path_no_doubling_with_trailing_slash(self):
+        """Regression: no doubling even with trailing slash on base_path."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="my-feature",
+            base_path="tasks/backlog/my-feature/",
+            task_name="Create service"
+        )
+        assert "my-feature/my-feature" not in path
+
+    def test_build_task_file_path_slug_equals_base_path(self):
+        """Edge case: base_path is just the feature_slug itself."""
+        path = build_task_file_path(
+            task_id="TASK-001",
+            feature_slug="my-feature",
+            base_path="my-feature",
+            task_name="Create service"
+        )
+        assert path == "my-feature/TASK-001-create-service.md"
+        assert "my-feature/my-feature" not in path
 
 
 # ============================================================================
@@ -562,3 +605,130 @@ class TestBackwardCompatibility:
         # to_dict still works
         result = task.to_dict()
         assert result["file_path"] == ""
+
+
+# ============================================================================
+# 9. Post-Creation Path Validation Tests
+# ============================================================================
+
+class TestValidateTaskPaths:
+    """Tests for post-creation path validation."""
+
+    def test_validate_all_paths_exist(self, tmp_path):
+        """Test validation passes when all task files exist."""
+        # Create task files on disk
+        task_dir = tmp_path / "tasks" / "backlog" / "oauth2"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-auth-service.md").write_text("# Task 1")
+        (task_dir / "TASK-002-oauth-provider.md").write_text("# Task 2")
+
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[
+                TaskSpec(
+                    id="TASK-001", name="Auth service", complexity=5,
+                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
+                ),
+                TaskSpec(
+                    id="TASK-002", name="OAuth provider", complexity=6,
+                    file_path="tasks/backlog/oauth2/TASK-002-oauth-provider.md"
+                ),
+            ],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert errors == []
+
+    def test_validate_missing_paths(self, tmp_path):
+        """Test validation reports missing task files."""
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[
+                TaskSpec(
+                    id="TASK-001", name="Auth service", complexity=5,
+                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
+                ),
+            ],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert len(errors) == 1
+        assert "TASK-001" in errors[0]
+        assert "file not found" in errors[0]
+
+    def test_validate_partial_missing(self, tmp_path):
+        """Test validation reports only missing files, not existing ones."""
+        task_dir = tmp_path / "tasks" / "backlog" / "oauth2"
+        task_dir.mkdir(parents=True)
+        (task_dir / "TASK-001-auth-service.md").write_text("# Task 1")
+
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[
+                TaskSpec(
+                    id="TASK-001", name="Auth service", complexity=5,
+                    file_path="tasks/backlog/oauth2/TASK-001-auth-service.md"
+                ),
+                TaskSpec(
+                    id="TASK-002", name="OAuth provider", complexity=6,
+                    file_path="tasks/backlog/oauth2/TASK-002-oauth-provider.md"
+                ),
+            ],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert len(errors) == 1
+        assert "TASK-002" in errors[0]
+
+    def test_validate_empty_file_path_skipped(self, tmp_path):
+        """Test that tasks with empty file_path are skipped (no false positive)."""
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[
+                TaskSpec(
+                    id="TASK-001", name="Auth service", complexity=5,
+                    file_path=""
+                ),
+            ],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert errors == []
+
+    def test_validate_no_tasks(self, tmp_path):
+        """Test validation with no tasks returns empty list."""
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert errors == []
+
+    def test_validate_error_message_includes_path(self, tmp_path):
+        """Test error message includes the expected file path."""
+        feature = FeatureFile(
+            id="FEAT-TEST",
+            name="Test Feature",
+            description="",
+            tasks=[
+                TaskSpec(
+                    id="TASK-XYZ", name="Missing task", complexity=3,
+                    file_path="tasks/backlog/my-feature/TASK-XYZ-missing-task.md"
+                ),
+            ],
+        )
+
+        errors = validate_task_paths(feature, tmp_path)
+        assert len(errors) == 1
+        assert "tasks/backlog/my-feature/TASK-XYZ-missing-task.md" in errors[0]
