@@ -57,11 +57,13 @@ class RoleConstraintFact:
     def to_episode_body(self) -> dict:
         """Convert to Graphiti episode body.
 
+        Returns only domain data; metadata fields like entity_type
+        and created_at are injected by GraphitiClient.
+
         Returns:
             Dictionary suitable for Graphiti episode storage.
         """
         return {
-            "entity_type": "role_constraint",
             "role": self.role,
             "context": self.context,
             "primary_responsibility": self.primary_responsibility,
@@ -69,8 +71,7 @@ class RoleConstraintFact:
             "must_not_do": self.must_not_do,
             "ask_before": self.ask_before,
             "good_examples": self.good_examples,
-            "bad_examples": self.bad_examples,
-            "created_at": self.created_at.isoformat()
+            "bad_examples": self.bad_examples
         }
 
 

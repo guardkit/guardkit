@@ -65,56 +65,8 @@ export const dynamic = 'force-dynamic'
 ```
 
 **3. Server Actions (Create, Update, Delete)**
-```typescript
-// app/actions/users.ts
-'use server'
 
-import { db } from '@/lib/db'
-import { revalidatePath } from 'next/cache'
-
-export async function createUser(formData: FormData) {
-  try {
-    const email = formData.get('email') as string
-    const name = formData.get('name') as string
-
-    const user = await db.user.create({
-      data: { email, name }
-    })
-
-    revalidatePath('/users')
-    return { success: true, data: user }
-  } catch (error) {
-    return { success: false, error: 'Failed to create user' }
-  }
-}
-
-export async function updateUser(id: string, formData: FormData) {
-  try {
-    const user = await db.user.update({
-      where: { id },
-      data: {
-        name: formData.get('name') as string
-      }
-    })
-
-    revalidatePath('/users')
-    revalidatePath(`/users/${id}`)
-    return { success: true, data: user }
-  } catch (error) {
-    return { success: false, error: 'Failed to update user' }
-  }
-}
-
-export async function deleteUser(id: string) {
-  try {
-    await db.user.delete({ where: { id } })
-    revalidatePath('/users')
-    return { success: true }
-  } catch (error) {
-    return { success: false, error: 'Failed to delete user' }
-  }
-}
-```
+**Server Action Pattern**: See [nextjs-server-actions-specialist-ext.md](nextjs-server-actions-specialist-ext.md) for complete CRUD examples (`createUser`, `updateUser`, `deleteUser`) with validation, error handling, and revalidation patterns.
 
 **4. Client Component (UI + Mutations)**
 ```typescript

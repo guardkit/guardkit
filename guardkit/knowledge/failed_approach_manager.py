@@ -170,6 +170,8 @@ async def capture_failed_approach(
             name=episode_name,
             episode_body=json.dumps(episode_body),
             group_id=FAILED_APPROACHES_GROUP_ID,
+            source="auto_captured",
+            entity_type="failed_approach"
         )
         logger.info(f"Captured failed approach {failure_id}")
     except Exception as e:
@@ -343,6 +345,8 @@ async def increment_occurrence(failure_id: str) -> Optional[FailedApproachEpisod
             name=episode_name,
             episode_body=json.dumps(episode_body),
             group_id=FAILED_APPROACHES_GROUP_ID,
+            source="auto_captured",
+            entity_type="failed_approach"
         )
 
         logger.info(f"Incremented occurrence for {failure_id} to {updated_failure.occurrences}")

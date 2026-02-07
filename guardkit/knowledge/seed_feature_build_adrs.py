@@ -192,17 +192,16 @@ async def seed_feature_build_adrs(client) -> None:
         # ADR-FB-001 -> adr_fb_001
         episode_name = adr["id"].lower().replace("-", "_")
 
-        # Create episode body with entity_type marker
-        episode_body = {
-            "entity_type": "architecture_decision",
-            **adr,
-        }
+        # Create episode body (metadata injected by client)
+        episode_body = adr
 
         try:
             await client.add_episode(
                 name=episode_name,
                 episode_body=json.dumps(episode_body),
                 group_id="architecture_decisions",
+                source="guardkit_seeding",
+                entity_type="architecture_decision"
             )
             logger.info(f"Seeded feature-build ADR: {adr['id']}")
         except Exception as e:

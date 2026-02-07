@@ -244,7 +244,7 @@ Unique identifier for this episode entity, used for deduplication.
 
 ## Metadata Injection
 
-Metadata is automatically injected by the `_add_episodes()` function in `guardkit/knowledge/seeding.py`:
+Metadata is automatically injected by the `_add_episodes()` function in `guardkit/knowledge/seed_helpers.py`:
 
 ```python
 async def _add_episodes(client, episodes: list, group_id: str, category_name: str) -> None:
@@ -580,5 +580,6 @@ def validate_version(version: str) -> bool:
 
 - [Graphiti Commands Guide](../../guides/graphiti-commands.md) - CLI command reference
 - [Graphiti Integration Guide](../../guides/graphiti-integration-guide.md) - Overall architecture
-- [Seeding Module](../../../guardkit/knowledge/seeding.py) - Implementation details
+- [Seeding Orchestrator](../../../guardkit/knowledge/seeding.py) - Orchestration logic
+- [Seed Helpers](../../../guardkit/knowledge/seed_helpers.py) - `_add_episodes()` implementation
 - [TASK-GR-PRE-000-A](../../../tasks/in_review/TASK-GR-PRE-000-A-add-metadata-to-seeding.md) - Metadata implementation task

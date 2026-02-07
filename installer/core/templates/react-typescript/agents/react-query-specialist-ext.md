@@ -11,21 +11,8 @@ cat agents/react-query-specialist-ext.md
 ## Code Patterns
 
 ### Query Options Factory Pattern
-```typescript
-export const getEntityQueryOptions = (id: string) => {
-  return queryOptions({
-    queryKey: ['entity', id],
-    queryFn: () => getEntity({ id }),
-  });
-};
 
-export const useEntity = ({ id, queryConfig }: UseEntityOptions) => {
-  return useQuery({
-    ...getEntityQueryOptions(id),
-    ...queryConfig,
-  });
-};
-```
+See [Query Options Factory](#query-options-factory-pattern-1) below for the complete pattern with detailed explanation.
 
 ### Mutation with Cache Invalidation
 ```typescript
@@ -47,18 +34,8 @@ export const useCreateEntity = ({ mutationConfig }: Options = {}) => {
 ```
 
 ### Prefetching Pattern
-```typescript
-const queryClient = useQueryClient();
 
-<Link
-  onMouseEnter={() => {
-    queryClient.prefetchQuery(getEntityQueryOptions(id));
-  }}
-  to={paths.entity.getHref(id)}
->
-  View
-</Link>
-```
+See [Prefetch on Hover for Performance](#-do-prefetch-on-hover-for-performance) below for the complete pattern with detailed explanation.
 
 
 ## Anti-Patterns to Avoid
@@ -448,20 +425,6 @@ const mutation = useMutation({
 ```
 
 **Fix**: Invalidate broader key or use updater function with current state.
-
-
-## Extended Documentation
-
-For detailed examples, patterns, and implementation guides, load the extended documentation:
-
-```bash
-cat react-query-specialist-ext.md
-```
-
-Or in Claude Code:
-```
-Please read react-query-specialist-ext.md for detailed examples.
-```
 
 
 ## Extended Documentation

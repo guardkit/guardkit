@@ -649,17 +649,3 @@ Or in Claude Code:
 ```
 Please read feature-architecture-specialist-ext.md for detailed examples.
 ```
-
-
-## Extended Documentation
-
-For detailed examples, patterns, and implementation guides, load the extended documentation:
-
-```bash
-cat feature-architecture-specialist-ext.md
-```
-
-Or in Claude Code:
-```
-Please read feature-architecture-specialist-ext.md for detailed examples.
-```

@@ -30,6 +30,7 @@ class IssueCategory(Enum):
     TESTING = "testing"
     PRODUCTION = "production"
     QUALITY = "quality"
+    PATH_GATING = "path_gating"
 
 
 @dataclass

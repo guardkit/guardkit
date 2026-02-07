@@ -302,17 +302,3 @@ Or in Claude Code:
 ```
 Please read react-state-specialist-ext.md for detailed examples.
 ```
-
-
-## Extended Documentation
-
-For detailed examples, patterns, and implementation guides, load the extended documentation:
-
-```bash
-cat react-state-specialist-ext.md
-```
-
-Or in Claude Code:
-```
-Please read react-state-specialist-ext.md for detailed examples.
-```

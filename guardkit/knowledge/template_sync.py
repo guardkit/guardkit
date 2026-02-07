@@ -204,7 +204,9 @@ async def sync_template_to_graphiti(template_path: Path) -> bool:
         await client.add_episode(
             name=f"template_{template_id}",
             episode_body=json.dumps(template_body),
-            group_id="templates"
+            group_id="templates",
+            source="template_sync",
+            entity_type="template"
         )
         logger.info(f"Synced template '{template_id}' to Graphiti")
     except Exception as e:
@@ -310,7 +312,9 @@ async def sync_agent_to_graphiti(agent_path: Path, template_id: str) -> bool:
         await client.add_episode(
             name=f"agent_{template_id}_{agent_name}",
             episode_body=json.dumps(agent_body),
-            group_id="agents"
+            group_id="agents",
+            source="template_sync",
+            entity_type="agent"
         )
         logger.info(f"Synced agent '{agent_name}' to Graphiti")
         return True
@@ -403,7 +407,9 @@ async def sync_rule_to_graphiti(rule_path: Path, template_id: str) -> bool:
         await client.add_episode(
             name=f"rule_{template_id}_{rule_name}",
             episode_body=json.dumps(rule_body),
-            group_id="rules"
+            group_id="rules",
+            source="template_sync",
+            entity_type="rule"
         )
         logger.info(f"Synced rule '{rule_name}' to Graphiti")
         return True

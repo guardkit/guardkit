@@ -1,7 +1,8 @@
 ---
 id: TASK-CR-006
 title: Seed Graphiti patterns group with code examples
-status: in_review
+status: cancelled
+cancellation_reason: "Graphiti code retrieval fidelity insufficient - extracts semantic facts, not verbatim code blocks. See TASK-REV-CROPT decision."
 created: 2026-02-05 14:00:00+00:00
 updated: 2026-02-05 14:00:00+00:00
 priority: medium

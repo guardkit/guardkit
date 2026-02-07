@@ -1,78 +1,204 @@
-# Implementation Guide: Context Reduction via Graphiti Migration
+# FEAT-CR01 Implementation Guide
 
 ## Overview
 
-Reduce always-loaded static context from ~15,800 tokens to ~8,000 tokens (49% reduction) through editorial trimming, path-gating, and selective Graphiti migration.
+This guide details the execution strategy for the Context Reduction feature after the TASK-REV-CROPT decision to pivot from Graphiti-dependent migration to Graphiti-independent trimming and path-gating.
+
+**Total Tasks:** 12 active (3 cancelled, 1 completed)
+**Total Waves:** 5
+**Target Savings:** ~13,400 tokens (40% overall)
 
 ## Wave Breakdown
 
-### Wave 1: Quick Wins (No Graphiti Dependency)
+### Wave 1: Core CLAUDE.md Trimming + Path-Gating
 
-**Estimated savings: ~4,400 tokens always-loaded**
+**Purpose:** Immediate high-value wins with zero Graphiti dependency
+**Token Savings:** ~3,400 tokens
+**Parallel Execution:** Yes (all 3 tasks independent)
 
-Execute in parallel where possible. No external dependencies.
+| Task | Type | Conductor Workspace | Notes |
+|------|------|---------------------|-------|
+| TASK-CR-001 | task-work | context-reduction-wave1-1 | Root CLAUDE.md: 996 → 300 lines |
+| TASK-CR-002 | task-work | context-reduction-wave1-2 | .claude/CLAUDE.md: 113 → 30 lines |
+| TASK-CR-003 | direct | - | Add `paths:` frontmatter |
 
-| Task | Title | Mode | Est. Savings |
-|------|-------|------|-------------|
-| TASK-CR-001 | Trim root CLAUDE.md | task-work | 2,380 tokens |
-| TASK-CR-002 | Trim .claude/CLAUDE.md | task-work | 310 tokens |
-| TASK-CR-003 | Add path gate to graphiti-knowledge.md | direct | 1,508 tokens (conditional) |
-| TASK-CR-004 | Trim graphiti-knowledge.md content | task-work | 1,168 tokens |
+**Execution:**
+```bash
+# Start Wave 1 tasks (can run in parallel with Conductor)
+/task-work TASK-CR-001
+/task-work TASK-CR-002
+# TASK-CR-003: Direct edit to graphiti-knowledge.md frontmatter
+```
 
-**Parallel Groups:**
-- TASK-CR-001, TASK-CR-002, TASK-CR-003 can run in parallel (independent files)
-- TASK-CR-004 depends on TASK-CR-003 (needs path gate first)
+**Validation:** After Wave 1, verify core workflows still function:
+- `/task-create` creates valid task
+- Quality gates reference correct thresholds
+- Task states documented
 
-**Conductor Workspaces:**
-- `context-reduction-wave1-1` (TASK-CR-001)
-- `context-reduction-wave1-2` (TASK-CR-002)
-- `context-reduction-wave1-3` (TASK-CR-003 + TASK-CR-004 sequential)
+---
 
-### Wave 2: Seed Graphiti Gaps
+### Wave 2: Trim Remaining Rules Files
 
-**Prerequisite: Wave 1 complete (content identified for migration)**
+**Purpose:** Trim additional rules files without Graphiti dependency
+**Token Savings:** ~2,000 tokens
+**Parallel Execution:** Partial (CR-004 depends on CR-003)
 
-| Task | Title | Mode | Purpose |
-|------|-------|------|---------|
-| TASK-CR-005 | Seed project_overview + project_architecture | direct | Enable Wave 3 trimming |
-| TASK-CR-006 | Seed pattern code examples | direct | Enable Wave 3 pattern trimming |
+| Task | Type | Conductor Workspace | Notes |
+|------|------|---------------------|-------|
+| TASK-CR-004 | task-work | context-reduction-wave2-1 | Trim graphiti-knowledge.md content |
+| TASK-CR-005 | direct | - | Seed project overview (optional) |
+| TASK-CR-009 | task-work | context-reduction-wave2-2 | Trim autobuild.md, task-workflow.md, etc. |
 
-**Parallel Groups:**
-- TASK-CR-005, TASK-CR-006 can run in parallel (independent Graphiti groups)
-- TASK-CR-005 depends on TASK-CR-001 (needs to know what was removed)
+**Execution:**
+```bash
+# After Wave 1 completes
+/task-work TASK-CR-004
+/task-work TASK-CR-009
+# TASK-CR-005: Direct seeding via guardkit graphiti capture
+```
 
-**Important**: TASK-CR-006 is a gate for Wave 3 pattern tasks. If code example retrieval fidelity is poor, Wave 3 pattern tasks (CR-007, CR-008) should be cancelled.
+**Validation:** After Wave 2, verify:
+- Graphiti commands still work
+- Path-gated files load correctly when editing relevant files
 
-### Wave 3: Trim After Verification
+---
 
-**Prerequisite: Wave 2 complete, Graphiti retrieval verified**
+### Wave 3: Template FastAPI + Validation
 
-| Task | Title | Mode | Est. Savings | Depends On |
-|------|-------|------|-------------|------------|
-| TASK-CR-007 | Trim orchestrators.md | task-work | 1,220 tokens | CR-006 |
-| TASK-CR-008 | Trim dataclasses + pydantic patterns | task-work | 624 tokens | CR-006 |
-| TASK-CR-009 | Trim 5 remaining path-gated files | task-work | 2,088 tokens | None |
-| TASK-CR-010 | Regression test workflows | task-work | 0 | CR-001, CR-002, CR-004 |
+**Purpose:** Establish template optimization pattern + prevent regressions
+**Token Savings:** ~2,400 tokens
+**Parallel Execution:** Yes (both tasks independent)
 
-**Parallel Groups:**
-- TASK-CR-007, TASK-CR-008 can run in parallel (independent files, same dependency)
-- TASK-CR-009 is independent (no Graphiti dependency, just editorial)
-- TASK-CR-010 runs last (verification)
+| Task | Type | Conductor Workspace | Notes |
+|------|------|---------------------|-------|
+| TASK-CR-T01 | task-work | context-reduction-wave3-1 | FastAPI CLAUDE.md: 1,056 → 450 lines |
+| TASK-CR-T05 | direct | context-reduction-wave3-2 | Add paths: validation to /template-validate |
 
-**Abort Criteria**: If TASK-CR-006 reveals poor code retrieval fidelity in Graphiti, cancel TASK-CR-007 and TASK-CR-008. The pattern files are already path-gated, so the savings are conditional anyway.
+**Execution:**
+```bash
+# Start Wave 3 tasks
+/task-work TASK-CR-T01
+# TASK-CR-T05: Direct implementation of validation check
+```
+
+**Validation:** After Wave 3, verify:
+- FastAPI template passes `/template-validate`
+- Validation now catches missing `paths:` frontmatter
+
+---
+
+### Wave 4: Template Deduplication
+
+**Purpose:** Consolidate duplicated examples across all 7 templates
+**Token Savings:** ~5,600 tokens
+**Parallel Execution:** Partial (TASK-CR-T02 should complete first to establish pattern)
+
+| Task | Type | Conductor Workspace | Notes |
+|------|------|---------------------|-------|
+| TASK-CR-T02 | task-work | context-reduction-wave4-1 | Consolidate duplicated examples |
+| TASK-CR-T03 | task-work | context-reduction-wave4-2 | Trim 5 oversized agent-ext files |
+| TASK-CR-T04 | task-work | context-reduction-wave4-3 | Standardize 32 agent role sections |
+
+**Execution:**
+```bash
+# Start TASK-CR-T02 first (establishes consolidation pattern)
+/task-work TASK-CR-T02
+
+# After T02 completes, run T03 and T04 in parallel
+/task-work TASK-CR-T03
+/task-work TASK-CR-T04
+```
+
+**Validation:** After Wave 4, verify:
+- All 7 templates pass `/template-validate`
+- No broken links in templates
+- Agent files follow consistent structure
+
+---
+
+### Wave 5: Regression Testing
+
+**Purpose:** Comprehensive verification of all changes
+**Token Savings:** 0 (verification only)
+**Parallel Execution:** N/A (single task)
+
+| Task | Type | Conductor Workspace | Notes |
+|------|------|---------------------|-------|
+| TASK-CR-010 | task-work | context-reduction-wave5-1 | Full regression suite |
+
+**Execution:**
+```bash
+# After all previous waves complete
+/task-work TASK-CR-010
+```
+
+**Test Suite:**
+1. Core commands: /task-create, /task-work, /task-review, /task-complete
+2. Feature commands: /feature-plan, /feature-build, /feature-complete
+3. Template commands: /template-validate, /template-create (on test codebase)
+4. Path-gating: Verify rules load when editing relevant files
+
+---
+
+## Cancelled Tasks
+
+These tasks were cancelled due to Graphiti code retrieval fidelity issues:
+
+| Task | Original Purpose | Cancellation Reason |
+|------|-----------------|---------------------|
+| TASK-CR-006 | Seed pattern code examples | Graphiti extracts facts, not verbatim code |
+| TASK-CR-007 | Trim orchestrators.md | Depended on Graphiti code retrieval |
+| TASK-CR-008 | Trim dataclasses/pydantic | Depended on Graphiti code retrieval |
+
+**Pattern files remain as-is:** Already path-gated, contain valuable code examples that Graphiti cannot preserve.
+
+---
 
 ## Risk Mitigation
 
-1. **Wave 1 is risk-free**: Pure editorial work with no Graphiti dependency
-2. **Wave 2 is verification**: Seed and test before committing to Wave 3
-3. **Wave 3 has abort gates**: Pattern migration can be cancelled if fidelity is poor
-4. **Regression testing**: TASK-CR-010 catches any workflow breakage
+### Risk 1: Breaking Core Workflows
+**Mitigation:** Wave 1 focuses on non-critical content removal. Quality gates, task states, and command syntax preserved.
 
-## Success Metrics
+### Risk 2: Template Degradation
+**Mitigation:** `/template-validate` run after each modification. TASK-CR-T05 adds validation guard.
 
-| Metric | Target | Measurement |
-|--------|--------|-------------|
-| Always-loaded tokens | <8,000 | Count tokens in CLAUDE.md files |
-| Graphiti retrieval | >0.6 relevance | `guardkit graphiti search` queries |
-| Workflow regression | 0 | TASK-CR-010 manual verification |
-| Weekly token usage | Meaningful reduction | Monitor over 2 weeks post-implementation |
+### Risk 3: Lost Functionality
+**Mitigation:** No code examples removed without verifying they exist in agent-ext files.
+
+### Risk 4: Regression Failures
+**Mitigation:** Wave 5 dedicated to comprehensive testing before feature completion.
+
+---
+
+## Progress Tracking
+
+After completing each task, update its status in the task file:
+```yaml
+status: completed
+```
+
+After completing each wave, verify with:
+```bash
+# Check task statuses
+ls tasks/backlog/context-reduction/*.md | xargs grep "status:"
+```
+
+---
+
+## Feature Completion
+
+After Wave 5 passes:
+
+1. Update review task TASK-REV-CROPT:
+   - Mark acceptance criteria as checked
+   - Update status to `completed`
+
+2. Archive completed tasks:
+   ```bash
+   mv tasks/backlog/context-reduction/TASK-CR-*.md tasks/completed/
+   ```
+
+3. Create feature completion summary:
+   - Actual token savings measured
+   - Any deviations from plan
+   - Lessons learned for future features

@@ -1,9 +1,10 @@
 ---
 id: TASK-CR-001
 title: Trim root CLAUDE.md to lean version
-status: in_review
+status: completed
 created: 2026-02-05 14:00:00+00:00
-updated: 2026-02-05 14:00:00+00:00
+updated: 2026-02-06 00:00:00+00:00
+completed: 2026-02-06 00:00:00+00:00
 priority: high
 tags:
 - context-optimization
@@ -46,25 +47,20 @@ Reduce root CLAUDE.md from ~996 lines (~3,980 tokens) to ~300 lines (~1,600 toke
 
 ## Acceptance Criteria
 
-- [ ] Root CLAUDE.md reduced to ~300 lines
-- [ ] Retained sections: Core Features, Core Principles, Essential Commands (syntax only), Task Workflow Phases, Quality Gates table, Task States & Transitions, Testing by Stack, Project Structure
-- [ ] Removed/condensed sections: /feature-plan verbose example, /feature-build details, /feature-complete details, Review vs Implementation verbose table, Review Modes/Depth/Examples, Installation & Setup, Conductor Integration, Template Philosophy/Quality, Progressive Disclosure, Rules Structure, MCP Integration, Graphiti Knowledge section, Troubleshooting, Known Limitations, When to Use GuardKit
-- [ ] All removed content is either already in path-gated rules files or command specs
-- [ ] No workflow regressions: /task-work, /feature-build, /feature-plan still function correctly
+- [x] Root CLAUDE.md reduced to ~300 lines (achieved: 203 lines)
+- [x] Retained sections: Core Features, Core Principles, Essential Commands (syntax only), Task Workflow Phases, Quality Gates table, Task States & Transitions, Testing by Stack, Project Structure
+- [x] Removed/condensed sections: /feature-plan verbose example, /feature-build details, /feature-complete details, Review vs Implementation verbose table, Review Modes/Depth/Examples, Installation & Setup, Conductor Integration, Template Philosophy/Quality, Progressive Disclosure, Rules Structure, MCP Integration, Graphiti Knowledge section, Troubleshooting, Known Limitations, When to Use GuardKit
+- [x] All removed content is either already in path-gated rules files or command specs
+- [x] No workflow regressions: /task-work, /feature-build, /feature-plan still function correctly
 
 ## Implementation Notes
 
 Key principle: CLAUDE.md should be a **quick reference card**, not comprehensive documentation. Command specs (`installer/core/commands/*.md`) and rules files already contain the detail.
 
-Sections to keep (compress where possible):
-- Core Features + Principles (~80 tokens)
-- Essential Commands - syntax only, no examples (~200 tokens)
-- Task Workflow Phases (~140 tokens)
-- Quality Gates table (~120 tokens)
-- Task States & Transitions (~160 tokens)
-- Project Structure (~80 tokens)
-- Testing by Stack (~60 tokens)
-- Complexity Evaluation - table only (~80 tokens)
-- Design-First Workflow - 1-liner reference (~20 tokens)
+## Completion Summary
 
-Estimated savings: ~2,380 tokens
+- **Before**: 997 lines (~3,980 tokens)
+- **After**: 203 lines (~1,200 tokens)
+- **Savings**: 794 lines (~2,780 tokens, 70% reduction)
+- **All removed content verified** to exist in external docs (31 command specs, 14 rules files, 30+ guides, 15+ workflows)
+- `.claude/CLAUDE.md` also trimmed from 113 lines to 23 lines

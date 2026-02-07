@@ -168,19 +168,17 @@ class TurnStateEntity:
         """Convert to Graphiti episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body.
+        in Graphiti as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by GraphitiClient.
 
         Returns:
-            Dictionary containing all turn state fields with
-            'entity_type' set to 'turn_state'.
+            Dictionary containing all turn state fields.
 
         Example:
             body = turn_state.to_episode_body()
-            assert body["entity_type"] == "turn_state"
             assert body["mode"] == "fresh_start"  # enum serialized as string
         """
         return {
-            "entity_type": "turn_state",
             "id": self.id,
             "feature_id": self.feature_id,
             "task_id": self.task_id,

@@ -1,9 +1,10 @@
 ---
 id: TASK-CR-006-FIX
 title: Wire seed_pattern_examples.py into CLI and verify retrieval fidelity
-status: backlog
+status: completed
+completion_note: "Completed as investigation task. Wiring works correctly but revealed Graphiti code retrieval fidelity issue. Findings documented in docs/reviews/graphiti_enhancement/graphiti_code_retrieval_fidelity.md"
 created: 2026-02-05T20:05:00+00:00
-updated: 2026-02-05T20:05:00+00:00
+updated: 2026-02-05T20:50:00+00:00
 priority: high
 tags:
 - context-optimization

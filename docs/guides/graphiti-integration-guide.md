@@ -111,13 +111,13 @@ export OPENAI_API_KEY=sk-your-key-here
 guardkit graphiti seed
 ```
 
-This seeds ~67 episodes across 13 knowledge categories:
+This seeds episodes across 18 knowledge categories:
 - `product_knowledge` - What GuardKit is
 - `command_workflows` - How commands work together
 - `quality_gate_phases` - The 5-phase structure
 - `architecture_decisions` - Critical design choices
 - `failure_patterns` - What NOT to do
-- And 8 more categories...
+- And 13 more categories (templates, agents, patterns, rules, project overview, etc.)
 
 #### 4. Verify Setup
 
@@ -841,7 +841,7 @@ $ /template-create           # ✓ Works (without template seeding)
 
 ### What gets seeded during `guardkit graphiti seed`?
 
-**System Context Seeding** seeds 13 knowledge categories with ~67 episodes:
+**System Context Seeding** seeds 18 knowledge categories:
 
 | Category | Episodes | Content |
 |----------|----------|---------|
@@ -850,14 +850,21 @@ $ /template-create           # ✓ Works (without template seeding)
 | quality_gate_phases | ~6 | Phase 2-5.5 details, thresholds, gates |
 | technology_stack | ~4 | Python, Claude Code, SDK, async patterns |
 | feature_build_architecture | ~5 | Player-Coach, worktrees, delegation |
+| architecture_decisions | ~3 | Initial ADRs (SDK vs subprocess, etc.) |
+| failure_patterns | ~3 | Known failures and fixes |
+| component_status | ~5 | Component completion state |
+| integration_points | ~8 | How components connect |
 | templates | ~10 | Template metadata for 5 core templates |
 | agents | ~12 | Agent capabilities (architectural-reviewer, etc.) |
 | patterns | ~6 | Design patterns (repository, service, etc.) |
 | rules | ~5 | Code style, testing, architecture rules |
-| architecture_decisions | ~3 | Initial ADRs (SDK vs subprocess, etc.) |
-| failure_patterns | ~3 | Known failures and fixes |
-| component_status | 0 | Populated during development |
-| task_outcomes | 0 | Populated as tasks complete |
+| project_overview | Variable | Project purpose and scope |
+| project_architecture | Variable | Project structure |
+| failed_approaches | ~5 | Initial failed approach episodes |
+| quality_gate_configs | ~6 | Per-task-type quality thresholds |
+| pattern_examples | Variable | Pattern code example episodes |
+
+Each category lives in its own `seed_*.py` module. The `seeding.py` orchestrator (194 lines) dispatches to these modules.
 
 **Feature-Build ADRs** (via `guardkit graphiti seed-adrs`):
 - ADR-FB-001: Use SDK query() for task-work invocation

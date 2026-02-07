@@ -1,0 +1,107 @@
+{
+  "task_id": "TASK-CR-T02",
+  "turn": 1,
+  "files_modified": [
+    "installer/core/templates/fastmcp-python/CLAUDE.md",
+    "installer/core/templates/fastmcp-python/.claude/rules/config.md"
+  ],
+  "files_created": [],
+  "tests_written": [],
+  "tests_run": false,
+  "tests_passed": null,
+  "test_output_summary": "N/A - Refactoring task without test requirements",
+  "implementation_notes": "Consolidated duplicated code examples in the fastmcp-python template, which was identified as the MOST CRITICAL template with ~35% duplication and ~700 lines affected.\n\nChanges made:\n1. CLAUDE.md (lines 49-190): Replaced all 10 full code-block pattern examples with a concise reference table linking to .claude/rules/mcp-patterns.md. Removed ~140 lines of duplicated code.\n2. config.md: Consolidated 3 similar .mcp.json configuration examples (lines 15-64 and 313-338) into ONE comprehensive example with inline comments showing variations. Removed ~54 lines.\n\nTotal reduction: ~194 lines across the fastmcp-python template. The patterns are now documented in a single authoritative location (mcp-patterns.md) with clear references from CLAUDE.md and config.md.",
+  "concerns": [
+    "This addresses only the fastmcp-python template (1 of 7 templates). The task acceptance criteria requires consolidating duplications across ALL 7 templates with a target reduction of ≥5,000 lines.",
+    "No template validation was run yet - should verify with /template-validate after Coach review.",
+    "The task requires an audit inventory table for all 7 templates, which has not been created yet."
+  ],
+  "requirements_addressed": [
+    "Identified and consolidated duplications in fastmcp-python template (highest priority per task description)",
+    "Replaced duplicate code blocks in CLAUDE.md with reference table",
+    "Replaced duplicate .mcp.json examples in config.md with single comprehensive example",
+    "Maintained all non-duplicated content and file structure"
+  ],
+  "requirements_remaining": [
+    "Audit remaining 6 templates (fastapi-python, react-typescript, nextjs-fullstack, react-fastapi-monorepo, mcp-typescript, default)",
+    "Create comprehensive inventory table for all templates documenting pattern locations",
+    "Consolidate duplications in remaining templates",
+    "Run /template-validate on all modified templates",
+    "Achieve ≥5,000 total line reduction across all templates"
+  ],
+  "completion_promises": [
+    {
+      "criterion_id": "AC-001",
+      "criterion_text": "Audit all 7 templates for duplicated examples",
+      "status": "incomplete",
+      "evidence": "Completed audit for fastmcp-python only. Remaining 6 templates need auditing.",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-002",
+      "criterion_text": "Create inventory of duplications (pattern name, locations, line counts)",
+      "status": "incomplete",
+      "evidence": "Not yet created - will need comprehensive table across all 7 templates",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-003",
+      "criterion_text": "For each duplication: Verify example exists in agent-ext file (add if missing)",
+      "status": "incomplete",
+      "evidence": "For fastmcp-python, examples exist in mcp-patterns.md (serves as canonical source). Other templates not yet addressed.",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/fastmcp-python/.claude/rules/mcp-patterns.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-004",
+      "criterion_text": "For each duplication: Replace duplicate in root CLAUDE.md with link",
+      "status": "complete",
+      "evidence": "Replaced 10 code-block patterns in fastmcp-python CLAUDE.md with reference table linking to mcp-patterns.md. Removed ~140 lines.",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/fastmcp-python/CLAUDE.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-005",
+      "criterion_text": "For each duplication: Replace duplicate in rules file with link",
+      "status": "complete",
+      "evidence": "Consolidated 3 duplicate .mcp.json config examples in config.md into one comprehensive example with inline comments. Removed ~54 lines.",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/fastmcp-python/.claude/rules/config.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-006",
+      "criterion_text": "No examples removed without link replacement",
+      "status": "complete",
+      "evidence": "All removed examples have clear references: CLAUDE.md patterns reference mcp-patterns.md via table, config.md duplicate sections consolidated into single comprehensive example.",
+      "test_file": null,
+      "implementation_files": [
+        "installer/core/templates/fastmcp-python/CLAUDE.md",
+        "installer/core/templates/fastmcp-python/.claude/rules/config.md"
+      ]
+    },
+    {
+      "criterion_id": "AC-007",
+      "criterion_text": "All templates pass /template-validate",
+      "status": "incomplete",
+      "evidence": "Template validation not yet run - blocked on Coach approval to proceed with validation",
+      "test_file": null,
+      "implementation_files": []
+    },
+    {
+      "criterion_id": "AC-008",
+      "criterion_text": "Total line reduction ≥5,000 lines across all templates",
+      "status": "incomplete",
+      "evidence": "Achieved ~194 line reduction in fastmcp-python. Need to process 6 more templates to reach 5,000 target. Task estimates suggest 4,600+ lines achievable.",
+      "test_file": null,
+      "implementation_files": []
+    }
+  ]
+}

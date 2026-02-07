@@ -59,77 +59,11 @@ console.log("This will corrupt stdout!"); // NEVER USE THIS
 
 ## Streaming Two-Layer Architecture
 
-MCP supports both simple text streaming and SSE (Server-Sent Events) streaming:
+**Pattern**: Separate implementation (async generator) from MCP wrapper (collects output). Implementation yields events, wrapper accumulates and returns as structured content.
 
-### Simple Text Streaming
-```typescript
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  return {
-    content: [{
-      type: "text",
-      text: "Streaming response..."
-    }]
-  };
-});
-```
+**Error Handling**: Wrap async generators with try/catch/finally. Log errors to stderr, re-throw for proper async semantics, return `isError: true` in tool responses.
 
-### SSE Streaming (for long-running operations)
-```typescript
-import { EventEmitter } from "events";
-
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const emitter = new EventEmitter();
-
-  // Stream events
-  setTimeout(() => {
-    emitter.emit("message", { data: "chunk1" });
-    emitter.emit("message", { data: "chunk2" });
-    emitter.emit("done");
-  }, 0);
-
-  return {
-    content: [{
-      type: "text",
-      text: "[Streaming]"
-    }],
-    _meta: {
-      stream: emitter
-    }
-  };
-});
-```
-
-## Error Handling for Streaming
-
-Always handle streaming errors properly:
-
-```typescript
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  try {
-    const emitter = new EventEmitter();
-
-    emitter.on("error", (err) => {
-      console.error("[Streaming] Error:", err);
-    });
-
-    // Streaming logic...
-
-    return {
-      content: [{ type: "text", text: "Success" }],
-      _meta: { stream: emitter }
-    };
-  } catch (error) {
-    console.error("[Tool] Error:", error);
-    return {
-      content: [{
-        type: "text",
-        text: `Error: ${error.message}`
-      }],
-      isError: true
-    };
-  }
-});
-```
+**See**: `agents/mcp-typescript-specialist-ext.md` (lines 137-221) for complete streaming implementation with event generation, MCP wrapper integration, and error handling patterns.
 
 ## Zod Schema Validation
 

@@ -98,14 +98,14 @@ class FeatureOverviewEntity:
         """Convert to Graphiti episode body.
 
         Creates a dictionary representation suitable for storage
-        in Graphiti as an episode body.
+        in Graphiti as an episode body. Returns only domain data;
+        metadata fields like entity_type, created_at, and updated_at
+        are injected by GraphitiClient.
 
         Returns:
-            Dictionary containing all feature overview fields with
-            'entity_type' set to 'feature_overview'.
+            Dictionary containing all feature overview fields.
         """
         return {
-            "entity_type": "feature_overview",
             "id": self.id,
             "name": self.name,
             "tagline": self.tagline,
@@ -115,7 +115,5 @@ class FeatureOverviewEntity:
             "invariants": self.invariants,
             "architecture_summary": self.architecture_summary,
             "key_components": self.key_components,
-            "key_decisions": self.key_decisions,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat()
+            "key_decisions": self.key_decisions
         }

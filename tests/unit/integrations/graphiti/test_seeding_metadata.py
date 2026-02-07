@@ -29,96 +29,99 @@ class TestMetadataSchemaValidation:
     """Test metadata schema validation."""
 
     @pytest.mark.asyncio
-    async def test_metadata_injected_into_episode_body(self):
-        """Test that _add_episodes injects _metadata block into episode body."""
+    async def test_metadata_passed_via_parameters(self):
+        """Test that _add_episodes passes metadata via add_episode parameters."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
         episode_body = {
-            "entity_type": "test",
             "name": "Test Episode",
             "description": "Test description"
         }
 
         episodes = [("test_episode", episode_body)]
 
-        await _add_episodes(mock_client, episodes, "test_group", "test_category")
+        await _add_episodes(mock_client, episodes, "test_group", "test_category", entity_type="test_entity")
 
-        # Verify add_episode was called
+        # Verify add_episode was called with correct parameters
         assert mock_client.add_episode.called
         call_args = mock_client.add_episode.call_args
+
+        # Verify source parameter
+        assert call_args.kwargs["source"] == "guardkit_seeding"
+
+        # Verify entity_type parameter
+        assert call_args.kwargs["entity_type"] == "test_entity"
 
         # Parse the episode_body argument (it's JSON string)
         episode_body_arg = json.loads(call_args.kwargs["episode_body"])
 
-        # Verify metadata block exists
-        assert "_metadata" in episode_body_arg
-        metadata = episode_body_arg["_metadata"]
+        # Verify body does NOT contain _metadata (injected by client)
+        assert "_metadata" not in episode_body_arg
 
-        # Verify metadata fields
-        assert "source" in metadata
-        assert "version" in metadata
-        assert "created_at" in metadata
-        assert "updated_at" in metadata
-        assert "source_hash" in metadata
-        assert "entity_id" in metadata
+        # Verify body contains original data
+        assert episode_body_arg["name"] == "Test Episode"
+        assert episode_body_arg["description"] == "Test description"
 
     @pytest.mark.asyncio
-    async def test_metadata_contains_correct_values(self):
-        """Test that metadata contains correct values."""
+    async def test_metadata_parameters_have_correct_values(self):
+        """Test that metadata parameters have correct values."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        episode_body = {"entity_type": "test"}
+        episode_body = {"data": "test"}
         episodes = [("test_episode_001", episode_body)]
 
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
-        episode_body_arg = json.loads(call_args.kwargs["episode_body"])
-        metadata = episode_body_arg["_metadata"]
 
-        # Verify specific values
-        assert metadata["source"] == "guardkit_seeding"
-        assert metadata["version"] == SEEDING_VERSION
-        assert metadata["entity_id"] == "test_episode_001"
-        assert metadata["source_hash"] is None  # Generated content
+        # Verify metadata passed via parameters
+        assert call_args.kwargs["source"] == "guardkit_seeding"
+        assert call_args.kwargs["entity_type"] == "test_type"
+        assert call_args.kwargs["name"] == "test_episode_001"
+
+        # Verify body is clean (no metadata fields)
+        episode_body_arg = json.loads(call_args.kwargs["episode_body"])
+        assert "_metadata" not in episode_body_arg
+        assert "entity_type" not in episode_body_arg
 
     @pytest.mark.asyncio
-    async def test_metadata_timestamps_are_iso_format(self):
-        """Test that metadata timestamps are in ISO format."""
+    async def test_metadata_injection_handled_by_client(self):
+        """Test that metadata injection is delegated to GraphitiClient."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        episode_body = {"entity_type": "test"}
+        episode_body = {"data": "test"}
         episodes = [("test_episode", episode_body)]
 
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
+
+        # Verify client receives source parameter for metadata injection
+        assert "source" in call_args.kwargs
+        assert call_args.kwargs["source"] == "guardkit_seeding"
+
+        # Verify client receives entity_type for metadata injection
+        assert "entity_type" in call_args.kwargs
+        assert call_args.kwargs["entity_type"] == "test_type"
+
+        # Verify episode body is clean (client will inject metadata)
         episode_body_arg = json.loads(call_args.kwargs["episode_body"])
-        metadata = episode_body_arg["_metadata"]
-
-        # Verify timestamps can be parsed as ISO format
-        created_at = datetime.fromisoformat(metadata["created_at"])
-        updated_at = datetime.fromisoformat(metadata["updated_at"])
-
-        # Verify they are UTC
-        assert created_at.tzinfo is not None
-        assert updated_at.tzinfo is not None
+        assert "_metadata" not in episode_body_arg
 
     @pytest.mark.asyncio
-    async def test_metadata_preserves_original_body_content(self):
-        """Test that metadata injection preserves original episode body content."""
+    async def test_clean_body_preserves_original_content(self):
+        """Test that episode body preserves original content without metadata."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
         episode_body = {
-            "entity_type": "test",
             "name": "Test Episode",
             "description": "Test description",
             "custom_field": "custom_value"
@@ -126,38 +129,38 @@ class TestMetadataSchemaValidation:
 
         episodes = [("test_episode", episode_body)]
 
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
         episode_body_arg = json.loads(call_args.kwargs["episode_body"])
 
         # Verify original fields are preserved
-        assert episode_body_arg["entity_type"] == "test"
         assert episode_body_arg["name"] == "Test Episode"
         assert episode_body_arg["description"] == "Test description"
         assert episode_body_arg["custom_field"] == "custom_value"
 
-        # And metadata is added
-        assert "_metadata" in episode_body_arg
+        # Verify no metadata in body (client will inject)
+        assert "_metadata" not in episode_body_arg
+        assert "entity_type" not in episode_body_arg
 
 
 class TestMetadataVersionTracking:
     """Test version tracking in metadata."""
 
     @pytest.mark.asyncio
-    async def test_metadata_includes_seeding_version(self):
-        """Test that metadata includes the seeding version."""
+    async def test_source_parameter_identifies_seeding(self):
+        """Test that source parameter identifies guardkit seeding."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        episodes = [("test_episode", {"entity_type": "test"})]
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        episodes = [("test_episode", {"data": "test"})]
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
-        episode_body_arg = json.loads(call_args.kwargs["episode_body"])
 
-        assert episode_body_arg["_metadata"]["version"] == SEEDING_VERSION
+        # Verify source parameter is passed correctly
+        assert call_args.kwargs["source"] == "guardkit_seeding"
 
     def test_marker_file_contains_version(self, tmp_path, monkeypatch):
         """Test that seeding marker file contains version."""
@@ -183,35 +186,34 @@ class TestMetadataEntityIDUniqueness:
     """Test entity ID uniqueness in metadata."""
 
     @pytest.mark.asyncio
-    async def test_each_episode_has_unique_entity_id(self):
-        """Test that each episode gets a unique entity_id based on name."""
+    async def test_each_episode_has_unique_name(self):
+        """Test that each episode gets a unique name parameter."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
         episodes = [
-            ("episode_001", {"entity_type": "test"}),
-            ("episode_002", {"entity_type": "test"}),
-            ("episode_003", {"entity_type": "test"}),
+            ("episode_001", {"data": "test1"}),
+            ("episode_002", {"data": "test2"}),
+            ("episode_003", {"data": "test3"}),
         ]
 
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         # Get all calls to add_episode
         calls = mock_client.add_episode.call_args_list
 
-        # Extract entity_ids from all calls
-        entity_ids = []
+        # Extract names from all calls
+        names = []
         for call in calls:
-            episode_body_arg = json.loads(call.kwargs["episode_body"])
-            entity_ids.append(episode_body_arg["_metadata"]["entity_id"])
+            names.append(call.kwargs["name"])
 
         # Verify uniqueness
-        assert len(entity_ids) == 3
-        assert len(set(entity_ids)) == 3
-        assert "episode_001" in entity_ids
-        assert "episode_002" in entity_ids
-        assert "episode_003" in entity_ids
+        assert len(names) == 3
+        assert len(set(names)) == 3
+        assert "episode_001" in names
+        assert "episode_002" in names
+        assert "episode_003" in names
 
 
 class TestMetadataErrorHandling:
@@ -259,51 +261,45 @@ class TestMetadataSchemaCompleteness:
     """Test that metadata schema is complete and consistent."""
 
     @pytest.mark.asyncio
-    async def test_all_required_metadata_fields_present(self):
-        """Test that all required metadata fields are present."""
+    async def test_all_required_parameters_present(self):
+        """Test that all required parameters are passed to add_episode."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        episodes = [("test_episode", {"entity_type": "test"})]
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        episodes = [("test_episode", {"data": "test"})]
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
-        episode_body_arg = json.loads(call_args.kwargs["episode_body"])
-        metadata = episode_body_arg["_metadata"]
 
-        # Define required fields
-        required_fields = [
+        # Define required parameters for metadata injection
+        required_params = [
+            "name",
+            "episode_body",
+            "group_id",
             "source",
-            "version",
-            "created_at",
-            "updated_at",
-            "source_hash",
-            "entity_id"
+            "entity_type"
         ]
 
-        # Verify all required fields are present
-        for field in required_fields:
-            assert field in metadata, f"Required field '{field}' missing from metadata"
+        # Verify all required parameters are present
+        for param in required_params:
+            assert param in call_args.kwargs, f"Required parameter '{param}' missing from add_episode call"
 
     @pytest.mark.asyncio
-    async def test_metadata_field_types_are_correct(self):
-        """Test that metadata field types are correct."""
+    async def test_parameter_types_are_correct(self):
+        """Test that parameter types passed to add_episode are correct."""
         mock_client = MagicMock()
         mock_client.enabled = True
         mock_client.add_episode = AsyncMock()
 
-        episodes = [("test_episode", {"entity_type": "test"})]
-        await _add_episodes(mock_client, episodes, "test_group", "test")
+        episodes = [("test_episode", {"data": "test"})]
+        await _add_episodes(mock_client, episodes, "test_group", "test", entity_type="test_type")
 
         call_args = mock_client.add_episode.call_args
-        episode_body_arg = json.loads(call_args.kwargs["episode_body"])
-        metadata = episode_body_arg["_metadata"]
 
-        # Verify types
-        assert isinstance(metadata["source"], str)
-        assert isinstance(metadata["version"], str)
-        assert isinstance(metadata["created_at"], str)
-        assert isinstance(metadata["updated_at"], str)
-        assert metadata["source_hash"] is None or isinstance(metadata["source_hash"], str)
-        assert isinstance(metadata["entity_id"], str)
+        # Verify parameter types
+        assert isinstance(call_args.kwargs["name"], str)
+        assert isinstance(call_args.kwargs["episode_body"], str)  # JSON string
+        assert isinstance(call_args.kwargs["group_id"], str)
+        assert isinstance(call_args.kwargs["source"], str)
+        assert isinstance(call_args.kwargs["entity_type"], str)

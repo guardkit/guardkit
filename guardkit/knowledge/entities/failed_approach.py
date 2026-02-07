@@ -133,13 +133,13 @@ class FailedApproachEpisode:
         """Convert failed approach to episode body dictionary.
 
         Creates a structured dictionary representation suitable for
-        storage in Graphiti as an episode body.
+        storage in Graphiti as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by GraphitiClient.
 
         Returns:
             Dictionary with all failure fields suitable for JSON serialization
         """
         return {
-            "entity_type": "failed_approach",
             "id": self.id,
             "approach": self.approach,
             "symptom": self.symptom,

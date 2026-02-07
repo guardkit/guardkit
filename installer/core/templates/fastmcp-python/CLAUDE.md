@@ -43,151 +43,22 @@ This is a **production-ready FastMCP server template** for building MCP (Model C
 
 ## The 10 Critical Patterns
 
-### 1. Tool Registration in __main__.py
-Tools MUST be registered at module level in `__main__.py` for proper MCP discovery.
+These patterns prevent common MCP failures and ensure protocol compliance. Each pattern is essential for production-ready MCP servers.
 
-```python
-# src/__main__.py - CORRECT
-from mcp.server.fastmcp import FastMCP
+| # | Pattern | Critical Rule | Details |
+|---|---------|--------------|---------|
+| 1 | Tool Registration | Register at module level in `__main__.py` (never in functions) | See `.claude/rules/mcp-patterns.md` |
+| 2 | Logging to stderr | ALL logging to `stream=sys.stderr` (stdout breaks protocol) | See `.claude/rules/mcp-patterns.md` |
+| 3 | Streaming Two-Layer | Inner `_impl()` generator + outer tool wrapper | See `.claude/rules/mcp-patterns.md` |
+| 4 | CancelledError Handling | Always catch, log, and re-raise `asyncio.CancelledError` | See `.claude/rules/mcp-patterns.md` |
+| 5 | String Parameter Conversion | MCP sends all params as strings - convert explicitly | See `.claude/rules/mcp-patterns.md` |
+| 6 | DateTime with UTC | Use `datetime.now(timezone.utc)` not deprecated `utcnow()` | See `.claude/rules/mcp-patterns.md` |
+| 7 | FastMCP Not Custom | Use `FastMCP()` framework, never custom `Server()` classes | See `.claude/rules/mcp-patterns.md` |
+| 8 | Error Propagation Boundaries | Catch at tool boundary, return structured error dict | See `.claude/rules/mcp-patterns.md` |
+| 9 | Resource URI Patterns | Use `@mcp.resource()` with proper URI schemes (`data://`, `config://`) | See `.claude/rules/mcp-patterns.md` |
+| 10 | Async Context Injection | Use `@asynccontextmanager` for resource lifespan management | See `.claude/rules/mcp-patterns.md` |
 
-mcp = FastMCP(name="my-server", version="1.0.0")
-
-# Tools at module level (CORRECT)
-@mcp.tool()
-async def my_tool(param: str) -> dict:
-    """Tool description for LLM."""
-    return {"result": param}
-
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
-```
-
-### 2. Logging to stderr
-stdout is reserved for MCP protocol. ALL logging goes to stderr.
-
-```python
-import sys
-import logging
-
-logging.basicConfig(
-    stream=sys.stderr,  # CRITICAL
-    level=logging.INFO
-)
-```
-
-### 3. Streaming Two-Layer Architecture
-```python
-async def _stream_inner():
-    for item in data:
-        yield item
-        await asyncio.sleep(0)  # Allow cancellation
-
-@mcp.tool()
-async def stream_data() -> list:
-    results = []
-    async for item in _stream_inner():
-        results.append(item)
-    return results
-```
-
-### 4. CancelledError Handling
-```python
-@mcp.tool()
-async def long_task(data: str) -> dict:
-    try:
-        return await process(data)
-    except asyncio.CancelledError:
-        logger.info("Cancelled")
-        raise  # MUST re-raise
-```
-
-### 5. String Parameter Conversion
-```python
-@mcp.tool()
-async def process_items(
-    count: str,    # MCP sends "10" not 10
-    price: str     # MCP sends "99.99" not 99.99
-) -> dict:
-    count_int = int(count)
-    price_float = float(price)
-    return {"count": count_int, "price": price_float}
-```
-
-### 6. DateTime with UTC
-```python
-from datetime import datetime, timezone
-
-# CORRECT - timezone-aware
-timestamp = datetime.now(timezone.utc)
-
-# WRONG - deprecated
-timestamp = datetime.utcnow()  # Don't use!
-```
-
-### 7. FastMCP Not Custom
-```python
-# CORRECT - use FastMCP
-from mcp.server.fastmcp import FastMCP
-mcp = FastMCP(name="my-server")
-
-# WRONG - custom Server class
-from mcp.server import Server
-class MyServer(Server):  # Don't do this!
-    pass
-```
-
-### 8. Error Propagation Boundaries
-```python
-from enum import Enum
-
-class ErrorCategory(Enum):
-    CLIENT_ERROR = "client_error"
-    SERVER_ERROR = "server_error"
-    EXTERNAL_ERROR = "external_error"
-
-@mcp.tool()
-async def risky_op(data: str) -> dict:
-    try:
-        return {"result": await process(data)}
-    except ValidationError as e:
-        return {
-            "error": {
-                "category": "client_error",
-                "message": str(e)
-            }
-        }
-```
-
-### 9. Resource URI Patterns
-```python
-@mcp.resource("data://{id}")
-async def get_data(id: str) -> str:
-    return await fetch_data(id)
-
-# Use meaningful URI schemes:
-# data:// - for data records
-# config:// - for configuration
-# file:// - for file resources
-# cache:// - for cached data
-```
-
-### 10. Async Context Injection
-```python
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def get_connection():
-    conn = await create()
-    try:
-        yield conn
-    finally:
-        await conn.close()
-
-@mcp.tool()
-async def query(sql: str) -> dict:
-    async with get_connection() as conn:
-        return await conn.execute(sql)
-```
+**Quick Reference**: The patterns file (`.claude/rules/mcp-patterns.md`) contains complete code examples, anti-patterns, and detailed explanations for each of these critical patterns.
 
 ## Detailed Pattern Documentation
 

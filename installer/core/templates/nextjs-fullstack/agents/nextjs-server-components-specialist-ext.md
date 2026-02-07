@@ -317,7 +317,7 @@ export function ProductList() {
 
 ---
 
-### Example 3: Prisma Singleton Pattern for Development
+### Example 3: Prisma Singleton Pattern for Development {#prisma-singleton-pattern}
 
 ✅ **DO: Use singleton pattern to prevent connection pool exhaustion**
 
@@ -564,11 +564,11 @@ export async function deleteProduct(id: string) {
 
 ❌ **Creating new PrismaClient per file**
 ```typescript
-// ❌ Multiple instances exhaust connections
+// ❌ Multiple instances exhaust connections (see Example 3 for detailed explanation)
 import { PrismaClient } from '@prisma/client'
 export const db = new PrismaClient()
 ```
-**Fix**: Use singleton pattern from `templates/lib/db.ts.template`.
+**Fix**: Use singleton pattern from [Example 3: Prisma Singleton Pattern](#prisma-singleton-pattern).
 
 ❌ **Not closing Prisma connections in serverless**
 ```typescript

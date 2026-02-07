@@ -1390,10 +1390,13 @@ async def seed_my_category(client: GraphitiClient) -> None:
 3. **Add to orchestrator (optional):**
 
 ```python
-# In guardkit/knowledge/seeding.py
-async def seed_all_system_context(client: GraphitiClient) -> None:
-    # ... existing seeding
-    await seed_my_category(client)
+# Create a new seed_*.py module (e.g., seed_my_category.py)
+# Then register in seeding.py's categories list:
+categories = [
+    # ... existing categories
+    ("my_category", "seed_my_category"),
+]
+# The orchestrator uses getattr() dispatch for testability
 ```
 
 ### Creating Custom Entities
@@ -1401,7 +1404,7 @@ async def seed_all_system_context(client: GraphitiClient) -> None:
 1. **Define entity dataclass:**
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List
 
@@ -1413,12 +1416,17 @@ class MyCustomEntity:
     tags: List[str]
     created_at: datetime = field(default_factory=datetime.now)
 
-    def to_episode_body(self) -> str:
-        """Convert to episode body for Graphiti."""
-        import json
-        from dataclasses import asdict
-        return json.dumps(asdict(self), default=str)
+    def to_episode_body(self) -> dict:
+        """Return domain data only. GraphitiClient injects _metadata."""
+        return {
+            "id": self.id,
+            "title": self.title,
+            "content": self.content,
+            "tags": self.tags,
+        }
 ```
+
+> **Convention (TASK-GBF-001)**: `to_episode_body()` returns **domain data only** as a dict. The `_metadata` block is injected by `GraphitiClient`, not by the entity.
 
 2. **Create manager class:**
 
@@ -1525,4 +1533,4 @@ python seed_my_knowledge.py
 
 ---
 
-**Note**: This architecture documentation reflects the current implementation as of the completion of FEAT-GI (Graphiti Integration) and FEAT-GE (Graphiti Enhancements). For setup instructions, see `docs/setup/graphiti-setup.md`. For usage guidance, see `docs/guides/graphiti-integration-guide.md`.
+**Note**: This architecture documentation reflects the current implementation as of the completion of FEAT-GI (Graphiti Integration), FEAT-GE (Graphiti Enhancements), and FEAT-GBF (Graphiti Baseline Fixes - unified serialization, seeding extraction). For setup instructions, see `docs/setup/graphiti-setup.md`. For usage guidance, see `docs/guides/graphiti-integration-guide.md`.

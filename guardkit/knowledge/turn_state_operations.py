@@ -98,7 +98,7 @@ async def capture_turn_state(
     try:
         # Serialize entity to JSON
         episode_body = entity.to_episode_body()
-        content = json.dumps(episode_body)
+        episode_body_json = json.dumps(episode_body)
 
         # Generate episode name matching acceptance criteria format:
         # turn_{feature_id}_{task_id}_turn{N}
@@ -107,9 +107,10 @@ async def capture_turn_state(
         # Add episode to Graphiti
         await graphiti_client.add_episode(
             name=episode_name,
-            content=content,
+            episode_body=episode_body_json,
             group_id="turn_states",
-            source_description=f"Turn state capture for {entity.task_id} turn {entity.turn_number}"
+            source="auto_captured",
+            entity_type="turn_state"
         )
 
         logger.info(f"Captured turn state: {entity.id}")

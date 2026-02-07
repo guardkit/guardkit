@@ -1,7 +1,8 @@
 ---
 id: TASK-CR-008
 title: Trim dataclasses.md and pydantic-models.md after Graphiti verification
-status: blocked
+status: cancelled
+cancellation_reason: "Depends on Graphiti code retrieval which has insufficient fidelity. Pattern files to remain as-is (already path-gated). See TASK-REV-CROPT decision."
 created: 2026-02-05 14:00:00+00:00
 updated: 2026-02-05 14:00:00+00:00
 priority: medium

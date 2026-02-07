@@ -1,7 +1,9 @@
 ---
 id: TASK-CR-004
 title: Trim graphiti-knowledge.md content
-status: in_review
+status: completed
+completed: 2026-02-06T00:00:00Z
+scope_modified: "Removed Graphiti migration dependency per TASK-REV-CROPT decision. Trim without relying on Graphiti retrieval."
 created: 2026-02-05 14:00:00+00:00
 updated: 2026-02-05 14:00:00+00:00
 priority: medium
@@ -41,10 +43,10 @@ Reduce graphiti-knowledge.md from ~377 lines (~1,508 tokens) to ~85 lines (~340 
 
 ## Acceptance Criteria
 
-- [ ] File reduced to ~85 lines
-- [ ] Retained: Interactive Capture overview (condensed), Focus Categories table, Knowledge Query Commands (syntax only)
-- [ ] Removed/migrated: AutoBuild Customization examples, Session Flow diagram, Turn State Tracking detail, Turn State Schema, Job-Specific Context Retrieval, Budget Allocation tables, Troubleshooting
-- [ ] All guardkit graphiti commands still documented with syntax
+- [x] File reduced to ~85 lines (actual: 80 lines, down from 382)
+- [x] Retained: Interactive Capture overview (condensed), Focus Categories table, Knowledge Query Commands (syntax only)
+- [x] Removed/migrated: AutoBuild Customization examples, Session Flow diagram, Turn State Tracking detail, Turn State Schema, Job-Specific Context Retrieval, Budget Allocation tables, Troubleshooting
+- [x] All guardkit graphiti commands still documented with syntax (capture, show, search, list, status, seed)
 
 ## Implementation Notes
 

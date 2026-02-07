@@ -17,24 +17,18 @@ cat agents/monorepo-type-safety-specialist-ext.md
 from pydantic import BaseModel, Field
 
 class UserCreate(BaseModel):
-    """Schema for creating a user"""  # Appears in OpenAPI
+    """Schema for creating a user"""
     email: str = Field(..., description="User email address")
     full_name: str = Field(..., min_length=1, max_length=100)
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "email": "user@example.com",
-                "full_name": "John Doe"
-            }
+            "example": {"email": "user@example.com", "full_name": "John Doe"}
         }
 ```
 
 **Generated TypeScript**:
 ```typescript
-/**
- * Schema for creating a user
- */
 export interface UserCreate {
   /** User email address */
   email: string
@@ -44,8 +38,8 @@ export interface UserCreate {
 
 ### 2. Type Generation Script
 
-**packages/shared-types/scripts/generate-types.js**:
 ```javascript
+// packages/shared-types/scripts/generate-types.js
 import { exec } from 'child_process'
 
 const OPENAPI_URL = process.env.VITE_API_URL || 'http://localhost:8000'
@@ -54,37 +48,31 @@ const command = `npx @hey-api/openapi-ts \
   -o ./src/generated \
   -c axios`
 
-exec(command, (error, stdout, stderr) => {
+exec(command, (error) => {
   if (error) {
-    console.error('Type generation failed')
-    console.error('Ensure backend is running at', OPENAPI_URL)
+    console.error('Type generation failed. Ensure backend is running at', OPENAPI_URL)
     process.exit(1)
   }
-  console.log('✓ Types generated successfully')
+  console.log('Types generated successfully')
 })
 ```
 
 ### 3. Type-Safe API Client
 
-**API Client Configuration**:
 ```typescript
 // packages/shared-types/src/index.ts
 import axios from 'axios'
 
 export const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: { 'Content-Type': 'application/json' },
 })
 
-// Export generated types
 export * from './generated'
 ```
 
-**Usage in Frontend**:
+**Usage**:
 ```typescript
-// apps/frontend/src/features/users/hooks/use-users.ts
 import { useQuery } from '@tanstack/react-query'
 import { api, User } from 'shared-types'
 
@@ -92,7 +80,6 @@ export function useUsers() {
   return useQuery({
     queryKey: ['users'],
     queryFn: async () => {
-      // Fully typed response!
       const response = await api.get<User[]>('/users')
       return response.data  // Type: User[]
     },
@@ -100,65 +87,16 @@ export function useUsers() {
 }
 ```
 
-### 4. Handling Optional Fields
-
-**Backend Schema**:
-```python
-from typing import Optional
-
-class UserUpdate(BaseModel):
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-```
-
-**Generated Type**:
-```typescript
-export interface UserUpdate {
-  email?: string
-  full_name?: string
-}
-```
-
-**Frontend Usage**:
-```typescript
-const { mutate: updateUser } = useMutation({
-  mutationFn: async (data: UserUpdate) => {
-    const response = await api.put<User>(`/users/${id}`, data)
-    return response.data
-  }
-})
-
-// TypeScript ensures only optional fields are provided
-updateUser({ email: "new@example.com" })  // ✅
-updateUser({ unknown: "field" })          // ❌ Compile error
-```
-
 
 ## Common Patterns
 
-### 1. CRUD Type Pattern
+### CRUD Type Pattern
 
-**Backend**:
-```python
-class ItemBase(BaseModel):
-    name: str
-    description: str
-
-class ItemCreate(ItemBase):
-    pass
-
-class ItemUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-
-class ItemPublic(ItemBase):
-    id: int
-    created_at: datetime
-```
+**Backend**: See "Type-Safe Schema Hierarchy" section below for the complete pattern with Field constraints and validation.
 
 **Frontend Hook**:
 ```typescript
-import { Item, ItemCreate, ItemUpdate } from 'shared-types'
+import { Item, ItemCreate } from 'shared-types'
 
 export function useCreateItem() {
   return useMutation({
@@ -170,315 +108,71 @@ export function useCreateItem() {
 }
 ```
 
-### 2. Error Handling Pattern
+### Error Handling Pattern
 
-**Backend**:
-```python
-from fastapi import HTTPException
-
-class ErrorResponse(BaseModel):
-    detail: str
-
-@router.get("/{id}", response_model=ItemPublic)
-def get_item(id: int):
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return item
-```
+**Backend**: Define `ErrorResponse(BaseModel)` with `detail: str` field, use `HTTPException`.
 
 **Frontend**:
 ```typescript
 import { AxiosError } from 'axios'
 import { ErrorResponse } from 'shared-types'
 
-const { data, error } = useQuery({
-  queryKey: ['item', id],
-  queryFn: async () => {
-    try {
-      const response = await api.get<Item>(`/items/${id}`)
-      return response.data
-    } catch (err) {
-      const axiosError = err as AxiosError<ErrorResponse>
-      if (axiosError.response?.status === 404) {
-        throw new Error(axiosError.response.data.detail)
-      }
-      throw err
-    }
-  }
-})
-```
-
-### 3. Pagination Pattern
-
-**Backend**:
-```python
-class PaginatedResponse(BaseModel, Generic[T]):
-    data: List[T]
-    total: int
-    page: int
-    page_size: int
-
-@router.get("/", response_model=PaginatedResponse[ItemPublic])
-def list_items(page: int = 1, page_size: int = 10):
-    ...
-```
-
-**Frontend**:
-```typescript
-import { PaginatedResponse, Item } from 'shared-types'
-
-const { data } = useQuery({
-  queryKey: ['items', page],
-  queryFn: async () => {
-    const response = await api.get<PaginatedResponse<Item>>('/items', {
-      params: { page, page_size: 10 }
-    })
-    return response.data
-  }
-})
-```
-
-
-## Anti-Patterns to Avoid
-
-### 1. Manual Type Definitions
-```typescript
-// ❌ BAD: Manually defining types
-interface User {
-  id: number
-  email: string
+const axiosError = err as AxiosError<ErrorResponse>
+if (axiosError.response?.status === 404) {
+  throw new Error(axiosError.response.data.detail)
 }
-
-// ✅ GOOD: Using generated types
-import { User } from 'shared-types'
 ```
 
-### 2. Type Assertions
-```typescript
-// ❌ BAD: Type assertions
-const data = response.data as User
+### Pagination Pattern
 
-// ✅ GOOD: Proper typing
-const response = await api.get<User>('/users/1')
-const data = response.data  // Type: User
-```
-
-### 3. Ignoring Optional Fields
-```typescript
-// ❌ BAD: Assuming field exists
-const email = user.email.toLowerCase()
-
-// ✅ GOOD: Handling optional fields
-const email = user.email?.toLowerCase() ?? ''
-```
-
-### 4. Outdated Types
-```bash
-
-# ❌ BAD: Forgetting to regenerate types
-
-# Backend schema changed, but frontend still using old types
-
-# ✅ GOOD: Regenerate after backend changes
-pnpm generate-types
-```
-
-### Types Are Stale
-```bash
-
-# Regenerate types
-pnpm generate-types
-
-# Force Turborepo to rebuild
-turbo run build --force --filter=frontend
-```
-
-### Type Generation Fails
-1. Check backend is running
-2. Verify OpenAPI spec is valid JSON
-3. Check network connectivity
-4. Review @hey-api/openapi-ts logs
-
-### Type Mismatch Errors
-1. Regenerate types: `pnpm generate-types`
-2. Check if backend schema changed
-3. Clear node_modules and reinstall
-4. Verify shared-types package version
-
-### Import Resolution Issues
-```typescript
-// ❌ BAD: Relative import
-import { User } from '../../../packages/shared-types/src'
-
-// ✅ GOOD: Package import
-import { User } from 'shared-types'
-```
-
-### 1. Always Regenerate Types
-After any backend schema change, regenerate types immediately.
-
-### 2. Use TypeScript Strict Mode
-Enable strict mode in `tsconfig.json` for maximum type safety.
-
-### 3. Validate API Responses
-Consider using Zod or similar for runtime validation of API responses.
-
-### 4. Document Breaking Changes
-When making breaking changes to backend schemas, document migration path.
-
-### 5. Version API Endpoints
-Use API versioning (`/api/v1/`, `/api/v2/`) for breaking changes.
+**Backend**: `PaginatedResponse(BaseModel, Generic[T])` with `data`, `total`, `page`, `page_size`.
+**Frontend**: `api.get<PaginatedResponse<Item>>('/items', { params: { page, page_size: 10 } })`
 
 
 ## Related Templates
 
 ### Backend Type Definition
-- **templates/apps/backend/schema.py.template** - Pydantic schema hierarchy (Base/Create/Update/Public) with Field validation for accurate OpenAPI generation
-- **templates/apps/backend/router.py.template** - FastAPI routes with `response_model` declarations that drive TypeScript codegen
-- **templates/apps/backend/model.py.template** - SQLAlchemy models with types that map cleanly to Pydantic/TypeScript
+- **templates/apps/backend/schema.py.template** - Pydantic schema hierarchy (Base/Create/Update/Public)
+- **templates/apps/backend/router.py.template** - FastAPI routes with `response_model` for codegen
+- **templates/apps/backend/model.py.template** - SQLAlchemy models mapping to Pydantic/TypeScript
 
 ### Frontend Type Usage
-- **templates/apps/frontend/api-hook.ts.template** - TanStack Query hooks with proper generic typing from `shared-types`
-- **templates/apps/frontend/component.tsx.template** - React components consuming typed hooks with full IntelliSense
+- **templates/apps/frontend/api-hook.ts.template** - TanStack Query hooks with typed `shared-types`
+- **templates/apps/frontend/component.tsx.template** - Components consuming typed hooks
 
 ### Type Bridge
-- **templates/apps/backend/crud.py.template** - CRUD operations using `model_dump()` for Pydantic v2 type conversions
+- **templates/apps/backend/crud.py.template** - CRUD with `model_dump()` for Pydantic v2
 
 
-## Code Examples from Templates
+## Code Examples
 
-### Example 1: Type-Safe Schema Hierarchy
+### Type-Safe Schema Hierarchy
 
-**DO** - Use consistent field types across schema variants:
 ```python
-
-# apps/backend/app/schemas/item.py
-from pydantic import BaseModel, Field
-from datetime import datetime
-
 class ItemBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(None, max_length=500)
     price: float = Field(..., gt=0)
 
 class ItemCreate(ItemBase):
-    """Schema for POST requests - only user-provided fields"""
     pass
 
 class ItemUpdate(BaseModel):
-    """Schema for PATCH requests - all fields optional for partial updates"""
     name: str | None = Field(None, min_length=1, max_length=100)
     description: str | None = Field(None, max_length=500)
     price: float | None = Field(None, gt=0)
 
 class ItemPublic(ItemBase):
-    """Schema for responses - includes server-generated fields"""
     id: int
     created_at: datetime
     updated_at: datetime
-
     model_config = {"from_attributes": True}
 ```
 
-**Generated TypeScript**:
+### Type-Safe Frontend Hook
+
 ```typescript
-// apps/frontend/src/types/shared-types.ts (auto-generated)
-export interface ItemCreate {
-  name: string; // min 1, max 100 chars
-  description?: string | null; // max 500 chars
-  price: number; // > 0
-}
-
-export interface ItemUpdate {
-  name?: string | null;
-  description?: string | null;
-  price?: number | null;
-}
-
-export interface ItemPublic {
-  name: string;
-  description?: string | null;
-  price: number;
-  id: number;
-  created_at: string; // ISO 8601 datetime
-  updated_at: string;
-}
-```
-
-**DON'T** - Inconsistent types break TypeScript generation:
-```python
-class ItemBase(BaseModel):
-    name: str
-    price: float
-
-class ItemPublic(BaseModel):  # ❌ Doesn't inherit Base
-    name: str
-    price: int  # ❌ Type changed from float to int
-    id: str  # ❌ ID should be int for consistency
-```
-
-### Example 2: Type-Safe API Route Definition
-
-**DO** - Explicit `response_model` enables accurate codegen:
-```python
-
-# apps/backend/app/routers/items.py
-from fastapi import APIRouter, HTTPException, status
-from app.schemas.item import ItemCreate, ItemUpdate, ItemPublic
-from app.crud.item import item_crud
-from app.database import get_db
-
-router = APIRouter(prefix="/items", tags=["items"])
-
-@router.post(
-    "/",
-    response_model=ItemPublic,  # ✅ OpenAPI knows exact response shape
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_item(item_in: ItemCreate, db: Session = Depends(get_db)):
-    """Creates new item - frontend gets full ItemPublic type safety"""
-    item = item_crud.create(db, obj_in=item_in)
-    return item  # Pydantic validates response matches ItemPublic
-
-@router.get(
-    "/",
-    response_model=list[ItemPublic],  # ✅ Array type preserved in TypeScript
-)
-async def list_items(db: Session = Depends(get_db)):
-    """Lists all items - frontend gets ItemPublic[] type"""
-    return item_crud.get_multi(db)
-
-@router.patch(
-    "/{item_id}",
-    response_model=ItemPublic,  # ✅ PATCH returns full updated object
-)
-async def update_item(
-    item_id: int,
-    item_in: ItemUpdate,
-    db: Session = Depends(get_db),
-):
-    """Partial update - ItemUpdate has all optional fields"""
-    item = item_crud.get(db, id=item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return item_crud.update(db, db_obj=item, obj_in=item_in)
-```
-
-**DON'T** - Missing response_model loses type safety:
-```python
-@router.post("/")  # ❌ No response_model
-async def create_item(item_in: ItemCreate):
-    return item_crud.create(db, obj_in=item_in)
-    # OpenAPI shows generic response, TypeScript gets 'unknown'
-```
-
-### Example 3: Type-Safe Frontend Hook
-
-**DO** - Generic types from shared-types enable full IntelliSense:
-```typescript
-// apps/frontend/src/hooks/useItems.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api-client';
 import type { ItemPublic, ItemCreate, ItemUpdate } from '../types/shared-types';
 
 export const useItems = () => {
@@ -486,32 +180,17 @@ export const useItems = () => {
     queryKey: ['items'],
     queryFn: async () => {
       const { data } = await api.get<ItemPublic[]>('/items');
-      return data; // ✅ Type: ItemPublic[]
+      return data;
     },
   });
 };
 
 export const useCreateItem = () => {
   const queryClient = useQueryClient();
-
   return useMutation({
     mutationFn: async (newItem: ItemCreate) => {
       const { data } = await api.post<ItemPublic>('/items', newItem);
-      return data; // ✅ Type: ItemPublic
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['items'] });
-    },
-  });
-};
-
-export const useUpdateItem = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, updates }: { id: number; updates: ItemUpdate }) => {
-      const { data } = await api.patch<ItemPublic>(`/items/${id}`, updates);
-      return data; // ✅ Type: ItemPublic
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['items'] });
@@ -520,268 +199,60 @@ export const useUpdateItem = () => {
 };
 ```
 
-**Usage in Component**:
+
+## Anti-Patterns to Avoid
+
+### 1. Manual Type Duplication
 ```typescript
-// apps/frontend/src/components/ItemForm.tsx
-import { useCreateItem } from '../hooks/useItems';
+// BAD: manually defined types drift from backend
+interface User { id: number; email: string }
 
-const ItemForm = () => {
-  const createItem = useCreateItem();
-
-  const handleSubmit = (formData: ItemCreate) => {
-    createItem.mutate(formData, {
-      onSuccess: (data) => {
-        console.log(data.id); // ✅ TypeScript knows 'id' exists and is number
-        console.log(data.created_at); // ✅ TypeScript knows datetime string
-        console.log(data.invalid); // ❌ Compile error: Property doesn't exist
-      },
-    });
-  };
-
-  return <form onSubmit={handleSubmit}>...</form>;
-};
+// GOOD: use generated types
+import { User } from 'shared-types'
 ```
 
-**DON'T** - Untyped API calls lose all safety:
+### 2. Type Assertions Instead of Generics
 ```typescript
-export const useItems = () => {
-  return useQuery({
-    queryKey: ['items'],
-    queryFn: async () => {
-      const { data } = await api.get('/items'); // ❌ No generic, data is 'any'
-      return data; // No IntelliSense, no compile-time checks
-    },
-  });
-};
+// BAD
+const data = response.data as User
+
+// GOOD
+const response = await api.get<User>('/users/1')
 ```
 
-### Example 4: Type-Safe CRUD with Partial Updates
-
-**DO** - Use `exclude_unset=True` for PATCH semantics:
+### 3. Missing response_model
 ```python
-
-# apps/backend/app/crud/item.py
-from sqlalchemy.orm import Session
-from app.models.item import Item
-from app.schemas.item import ItemCreate, ItemUpdate
-
-def create(db: Session, *, obj_in: ItemCreate) -> Item:
-    """Type-safe create - only accepts ItemCreate fields"""
-    db_obj = Item(**obj_in.model_dump())
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
-
-def update(db: Session, *, db_obj: Item, obj_in: ItemUpdate) -> Item:
-    """Partial update - only sets fields user provided"""
-    update_data = obj_in.model_dump(exclude_unset=True)  # ✅ Only changed fields
-    for field, value in update_data.items():
-        setattr(db_obj, field, value)
-    db.add(db_obj)
-    db.commit()
-    db.refresh(db_obj)
-    return db_obj
-```
-
-**Frontend Usage**:
-```typescript
-// User only wants to update price, not name/description
-const updateItem = useUpdateItem();
-
-updateItem.mutate({
-  id: 123,
-  updates: { price: 29.99 }, // ✅ TypeScript allows partial ItemUpdate
-});
-// Backend only updates price field, leaves others unchanged
-```
-
-**DON'T** - `exclude_unset=False` forces full object updates:
-```python
-def update(db: Session, *, db_obj: Item, obj_in: ItemUpdate) -> Item:
-    update_data = obj_in.model_dump()  # ❌ Includes all fields, even unset
-    # Sets name=None, description=None if not provided
-```
-
-
-## Additional Anti-Patterns to Avoid
-
-### ❌ Anti-Pattern 1: Manual Type Duplication
-```typescript
-// apps/frontend/src/types/manual-types.ts
-export interface Task {  // ❌ Manually defined
-  id: number;
-  title: string;
-  completed: boolean;
-}
-```
-**Problem**: Backend changes `title` max_length but frontend type unchanged → runtime validation errors.
-
-**✅ Fix**: Always use generated types:
-```typescript
-import type { TaskPublic } from './shared-types';  // ✅ Auto-synced
-```
-
-### ❌ Anti-Pattern 2: Missing response_model
-```python
+# BAD: TypeScript generator gets 'unknown'
 @router.get("/tasks")
-async def list_tasks():
-    return task_crud.get_multi(db)  # ❌ OpenAPI shows generic response
-```
-**Problem**: TypeScript generator can't infer response type, frontend gets `unknown`.
+async def list_tasks(): ...
 
-**✅ Fix**:
-```python
+# GOOD: explicit response type (see "Type-Safe Schema Hierarchy" for schema patterns)
 @router.get("/tasks", response_model=list[TaskPublic])
-async def list_tasks():
-    return task_crud.get_multi(db)
+async def list_tasks(): ...
 ```
 
-### ❌ Anti-Pattern 3: Inconsistent Optional Fields
-```python
-class TaskBase(BaseModel):
-    description: str  # ❌ Required in base
-
-class TaskUpdate(BaseModel):
-    description: str | None = None  # ❌ Optional in update, inconsistent
-```
-**Problem**: Frontend confused about when description is required.
-
-**✅ Fix**:
-```python
-class TaskBase(BaseModel):
-    description: str | None = None  # ✅ Consistent: optional everywhere
-
-class TaskUpdate(BaseModel):
-    description: str | None = None  # ✅ Matches base
-```
-
-### ❌ Anti-Pattern 4: Using `any` with API Responses
+### 4. Using `any` with API Responses
 ```typescript
-const { data } = await api.get<any>('/tasks');  // ❌ Defeats type safety
-data.forEach((task: any) => {  // ❌ No IntelliSense
-  console.log(task.titel);  // ❌ Typo not caught (should be 'title')
-});
+// BAD: defeats type safety
+const { data } = await api.get<any>('/tasks');
+
+// GOOD: typed
+const { data } = await api.get<TaskPublic[]>('/tasks');
 ```
 
-**✅ Fix**:
+### 5. Relative Imports Across Workspaces
 ```typescript
-const { data } = await api.get<TaskPublic[]>('/tasks');  // ✅ Typed
-data.forEach((task) => {  // ✅ task is TaskPublic
-  console.log(task.title);  // ✅ Autocomplete + compile-time check
-});
+// BAD: brittle path
+import { Product } from '../../../packages/shared-types/index.ts'
+
+// GOOD: package import
+import { Product } from 'shared-types'
 ```
 
 
-## Type Generation Workflow
+## Troubleshooting
 
-### Step 1: Define Backend Schema
-```python
-
-# apps/backend/app/schemas/new_entity.py
-from pydantic import BaseModel, Field
-
-class NewEntityBase(BaseModel):
-    name: str = Field(..., min_length=1)
-
-class NewEntityCreate(NewEntityBase):
-    pass
-
-class NewEntityPublic(NewEntityBase):
-    id: int
-    model_config = {"from_attributes": True}
-```
-
-### Step 2: Create Routes with response_model
-```python
-
-# apps/backend/app/routers/new_entity.py
-@router.post("/new-entities", response_model=NewEntityPublic)
-async def create_new_entity(entity: NewEntityCreate):
-    ...
-```
-
-### Step 3: Verify OpenAPI Spec
-```bash
-
-# Start backend
-cd apps/backend && uvicorn app.main:app --reload
-
-# Check OpenAPI includes new schema
-curl http://localhost:8000/openapi.json | jq '.components.schemas.NewEntityPublic'
-```
-
-### Step 4: Generate TypeScript Types
-```bash
-cd apps/frontend && npm run generate-api
-```
-
-This runs `@hey-api/openapi-ts` which:
-1. Fetches `/openapi.json` from backend
-2. Generates TypeScript interfaces in `src/types/shared-types.ts`
-3. Creates typed API client functions
-
-### Step 5: Use Generated Types in Frontend
-```typescript
-// apps/frontend/src/hooks/useNewEntity.ts
-import type { NewEntityPublic, NewEntityCreate } from '../types/shared-types';
-import { api } from '../lib/api-client';
-
-export const useCreateNewEntity = () => {
-  return useMutation({
-    mutationFn: async (entity: NewEntityCreate) => {
-      const { data } = await api.post<NewEntityPublic>('/new-entities', entity);
-      return data;  // ✅ Fully typed
-    },
-  });
-};
-```
-
-### Step 6: Validate Type Safety
-```bash
-
-# Backend type checking
-cd apps/backend && mypy .
-
-# Frontend type checking
-cd apps/frontend && tsc --noEmit
-
-# Both should pass with no errors
-```
-
-### Step 7: Commit with Types
-```bash
-git add apps/backend/app/schemas/new_entity.py
-git add apps/backend/app/routers/new_entity.py
-git add apps/frontend/src/types/shared-types.ts  # Generated types
-git add apps/frontend/src/hooks/useNewEntity.ts
-git commit -m "feat: add NewEntity with full type safety"
-```
-
-
-## Extended Documentation
-
-For detailed examples, patterns, and implementation guides, load the extended documentation:
-
-```bash
-cat monorepo-type-safety-specialist-ext.md
-```
-
-Or in Claude Code:
-```
-Please read monorepo-type-safety-specialist-ext.md for detailed examples.
-```
-
-
-## Extended Documentation
-
-For detailed examples, patterns, and implementation guides, load the extended documentation:
-
-```bash
-cat monorepo-type-safety-specialist-ext.md
-```
-
-Or in Claude Code:
-```
-Please read monorepo-type-safety-specialist-ext.md for detailed examples.
-```
+- **Types stale**: `pnpm generate-types` then `turbo run build --force --filter=frontend`
+- **Type generation fails**: Check backend running, OpenAPI spec valid, network connectivity
+- **Type mismatch**: Regenerate types, check backend schema, clear node_modules
+- **Import resolution**: Use package imports (`shared-types`), not relative paths

@@ -47,40 +47,4 @@ GuardKit uses hash-based task IDs to prevent duplicates and support concurrent c
 # Created: TASK-E01-b2c4.1
 ```
 
-## PM Tool Integration
-
-GuardKit automatically maps internal hash IDs to external sequential IDs:
-
-**Internal ID**: `TASK-E01-b2c4`
-
-**External IDs** (automatic):
-- JIRA: `PROJ-456`
-- Azure DevOps: `#1234`
-- Linear: `TEAM-789`
-- GitHub: `#234`
-
-This mapping is:
-- Automatic when tasks are exported
-- Bidirectional (internal <-> external)
-- Persistent across sessions
-- Transparent to users
-
-## For Developers
-
-If you're implementing the hash-based ID system:
-- **Implementation Guide**: [Implementation Tasks Summary](docs/research/implementation-tasks-summary.md) - Wave-based execution plan
-- **Parallel Development**: [Conductor.build Workflow](docs/guides/hash-id-parallel-development.md) - 20-33% faster completion
-- **PM Tool Integration**: [External ID Mapping](docs/guides/hash-id-pm-tools.md) - Integration patterns
-- **Technical Details**: [Strategy Analysis](docs/research/task-id-strategy-analysis.md) - Architecture and design decisions
-- **Decision Rationale**: [Decision Guide](docs/research/task-id-decision-guide.md) - Why hash-based IDs?
-
-## FAQ
-
-**Q: Why hash-based instead of sequential?**
-A: Prevents duplicates in concurrent and distributed workflows. Critical for Conductor.build support and parallel development.
-
-**Q: Will users hate typing TASK-a3f8?**
-A: Users rarely type IDs manually. Shell completion, copy/paste, and IDE integration handle this automatically.
-
-**Q: What about parallel development?**
-A: Hash-based IDs enable safe concurrent task creation across multiple Conductor.build worktrees with zero collision risk.
+PM tool integration (JIRA, Azure DevOps, Linear, GitHub) automatically maps hash IDs to external sequential IDs bidirectionally.

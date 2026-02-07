@@ -1,9 +1,10 @@
 ---
 id: TASK-CR-003
 title: Add path gate to graphiti-knowledge.md
-status: in_review
+status: completed
 created: 2026-02-05 14:00:00+00:00
-updated: 2026-02-05 14:00:00+00:00
+updated: 2026-02-06T00:00:00Z
+completed: 2026-02-06T00:00:00Z
 priority: high
 tags:
 - context-optimization
@@ -45,9 +46,9 @@ Add `paths:` frontmatter to `rules/graphiti-knowledge.md` so it only loads when 
 
 ## Acceptance Criteria
 
-- [ ] `paths:` frontmatter added to graphiti-knowledge.md
-- [ ] Paths include: `config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*`
-- [ ] File no longer loads in non-Graphiti conversations
+- [x] `paths:` frontmatter added to graphiti-knowledge.md
+- [x] Paths include: `config/graphiti.yaml, guardkit/graphiti/**/*.py, docs/**/graphiti*`
+- [x] File no longer loads in non-Graphiti conversations
 
 ## Implementation Notes
 

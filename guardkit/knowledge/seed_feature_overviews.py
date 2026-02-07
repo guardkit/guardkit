@@ -123,7 +123,9 @@ async def seed_feature_overview(
         await client.add_episode(
             name=episode_name,
             episode_body=episode_body,
-            group_id="feature_overviews"
+            group_id="feature_overviews",
+            source="guardkit_seeding",
+            entity_type="feature_overview"
         )
 
         logger.info(f"Seeded feature overview: {overview.id}")

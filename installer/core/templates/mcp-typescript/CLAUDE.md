@@ -52,47 +52,9 @@ tests/
 
 ## Adding a New Tool
 
-1. Create a new file in `src/tools/`:
+**Tool Registration**: Register tools using `server.tool()` with Zod schema validation before calling `server.connect()`. Tools must include input schema, handler function, and return content array format.
 
-```typescript
-// src/tools/my-tool.ts
-import { z } from 'zod';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-
-const MyToolSchema = z.object({
-  input: z.string().describe('Input parameter'),
-});
-
-export function registerMyTool(server: McpServer) {
-  server.tool(
-    'my_tool',
-    'Description of what this tool does',
-    MyToolSchema.shape,
-    async ({ input }) => {
-      // Implementation
-      return {
-        content: [{ type: 'text', text: `Result: ${input}` }],
-      };
-    }
-  );
-}
-```
-
-2. Register in `src/index.ts` before `server.connect()`:
-
-```typescript
-import { registerMyTool } from './tools/my-tool.js';
-
-// Register tools
-registerMyTool(server);
-
-// Connect AFTER all registrations
-await server.connect(transport);
-```
-
-3. Add unit test in `tests/unit/my-tool.test.ts`
-
-4. Verify with protocol test
+**See**: `.claude/rules/mcp-patterns.md` for registration patterns and `agents/mcp-typescript-specialist-ext.md` for complete examples with Zod validation, resource registration, and streaming patterns.
 
 ## Quality Gates
 

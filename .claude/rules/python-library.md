@@ -104,39 +104,6 @@ def validate_task_id(task_id: str) -> bool:
     return bool(_TASK_ID_PATTERN.match(task_id))
 ```
 
-## Thread-Safe Caching
-
-Use threading locks for shared state:
-
-```python
-import threading
-from typing import Optional, Set
-
-# Module-level cache
-_id_registry_cache: Optional[Set[str]] = None
-_cache_timestamp: Optional[float] = None
-_registry_lock = threading.Lock()
-CACHE_TTL = 5.0  # seconds
-
-def get_id_registry(force_refresh: bool = False) -> Set[str]:
-    """Get ID registry with caching."""
-    global _id_registry_cache, _cache_timestamp
-
-    with _registry_lock:
-        now = time.time()
-        cache_valid = (
-            _id_registry_cache is not None and
-            _cache_timestamp is not None and
-            (now - _cache_timestamp) < CACHE_TTL
-        )
-
-        if force_refresh or not cache_valid:
-            _id_registry_cache = build_id_registry()
-            _cache_timestamp = now
-
-        return _id_registry_cache.copy()  # Return copy
-```
-
 ## Type Hints
 
 Use comprehensive typing:
@@ -167,25 +134,6 @@ class ManifestValidationError(Exception):
 def validate_manifest(data: dict) -> None:
     if not data.get('name'):
         raise ManifestValidationError("Missing required field: name")
-```
-
-## Logging Setup
-
-Use standard logging:
-
-```python
-import logging
-
-logger = logging.getLogger(__name__)
-
-def process_item(item: str) -> None:
-    logger.info(f"Processing: {item}")
-    try:
-        # ... processing logic
-        logger.debug(f"Successfully processed {item}")
-    except Exception as e:
-        logger.error(f"Failed to process {item}: {e}")
-        raise
 ```
 
 ## Path Operations

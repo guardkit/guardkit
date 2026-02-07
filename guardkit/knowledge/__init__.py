@@ -184,6 +184,9 @@ from guardkit.knowledge.seeding import (
     seed_agents,
     seed_patterns,
     seed_rules,
+    # Project-level seeding (TASK-CR-005)
+    seed_project_overview,
+    seed_project_architecture,
     # Orchestrator
     seed_all_system_context,
 )
@@ -271,6 +274,10 @@ from guardkit.knowledge.failed_approach_manager import (
 from guardkit.knowledge.seed_failed_approaches import (
     seed_failed_approaches,
     get_initial_failed_approaches,
+)
+
+from guardkit.knowledge.seed_pattern_examples import (
+    seed_pattern_examples,
 )
 
 from guardkit.knowledge.feature_detector import (
@@ -408,6 +415,8 @@ __all__ = [
     "seed_failed_approaches",
     "get_initial_failed_approaches",
     "load_failed_approaches",
+    # Pattern code examples (TASK-CR-006-FIX)
+    "seed_pattern_examples",
     # Feature detection (TASK-GR3-001)
     "FeatureDetector",
     # Knowledge gap analysis (TASK-GR4-001)

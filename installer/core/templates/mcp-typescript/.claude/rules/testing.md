@@ -6,40 +6,9 @@ paths: ["tests/**/*.ts", "**/*.test.ts"]
 
 ## Unit Testing with Vitest
 
-Use Vitest for unit testing MCP server logic:
+**Pattern**: Test tool implementation functions separately from MCP wrapper. Use `describe`/`it` structure with `beforeEach` setup. Test success cases, validation errors, and edge cases.
 
-```typescript
-import { describe, it, expect, beforeEach } from "vitest";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-
-describe("MCP Server", () => {
-  let server: McpServer;
-
-  beforeEach(() => {
-    server = new McpServer({
-      name: "test-server",
-      version: "1.0.0"
-    });
-  });
-
-  it("should register tools correctly", async () => {
-    let toolsList: any[] = [];
-
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [{ name: "test", description: "Test tool", inputSchema: {} }]
-    }));
-
-    // Test tool registration
-    const response = await server.request({
-      method: "tools/list",
-      params: {}
-    });
-
-    expect(response.tools).toHaveLength(1);
-    expect(response.tools[0].name).toBe("test");
-  });
-});
-```
+**See**: `agents/mcp-testing-specialist-ext.md` for complete Vitest configuration (lines 36-98), parametrized tests, mocking patterns, and coverage requirements.
 
 ### Test Fixtures
 

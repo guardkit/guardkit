@@ -12,52 +12,60 @@ MCP configuration MUST use absolute paths. Relative paths cause server startup f
 
 ### Claude Desktop Configuration (.mcp.json)
 
+**Single comprehensive example with variations:**
+
 ```json
 {
   "mcpServers": {
     "my-server": {
-      "command": "/absolute/path/to/.venv/bin/python",
+      // CRITICAL: All paths must be absolute
+      "command": "/absolute/path/to/.venv/bin/python",  // Never use "python" or "./venv/..."
       "args": ["-m", "src"],
-      "cwd": "/absolute/path/to/project",
+      "cwd": "/absolute/path/to/project",  // Never use "./project"
+
+      // REQUIRED: Always set PYTHONPATH to project root
       "env": {
         "PYTHONPATH": "/absolute/path/to/project",
-        "LOG_LEVEL": "INFO"
+        "LOG_LEVEL": "INFO"  // Options: DEBUG, INFO, WARNING, ERROR
       }
-    }
-  }
-}
-```
+    },
 
-### WRONG - Relative Paths
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "python",
-      "args": ["-m", "src"],
-      "cwd": "./project"
-    }
-  }
-}
-```
-
-## PYTHONPATH Configuration
-
-Always set PYTHONPATH to ensure module imports work correctly.
-
-### In .mcp.json
-
-```json
-{
-  "mcpServers": {
-    "my-server": {
+    // Multi-environment example (optional):
+    "my-server-dev": {
       "command": "/Users/user/project/.venv/bin/python",
       "args": ["-m", "src"],
       "cwd": "/Users/user/project",
       "env": {
-        "PYTHONPATH": "/Users/user/project"
+        "PYTHONPATH": "/Users/user/project",
+        "ENVIRONMENT": "development",
+        "LOG_LEVEL": "DEBUG"  // Verbose logging for dev
       }
+    },
+
+    "my-server-prod": {
+      "command": "/opt/mcp/my-server/.venv/bin/python",
+      "args": ["-m", "src"],
+      "cwd": "/opt/mcp/my-server",
+      "env": {
+        "PYTHONPATH": "/opt/mcp/my-server",
+        "ENVIRONMENT": "production",
+        "LOG_LEVEL": "WARNING"  // Minimal logging for prod
+      }
+    }
+  }
+}
+```
+
+**Anti-Pattern - NEVER DO THIS:**
+
+```json
+{
+  "mcpServers": {
+    "broken-server": {
+      "command": "python",           // ❌ WRONG: Not absolute path
+      "args": ["-m", "src"],
+      "cwd": "./project"             // ❌ WRONG: Relative path
+      // ❌ WRONG: Missing PYTHONPATH in env
     }
   }
 }
@@ -308,34 +316,7 @@ def get_config():
 config = get_config()
 ```
 
-### Environment-Specific .mcp.json
-
-```json
-{
-  "mcpServers": {
-    "my-server-dev": {
-      "command": "/Users/user/project/.venv/bin/python",
-      "args": ["-m", "src"],
-      "cwd": "/Users/user/project",
-      "env": {
-        "PYTHONPATH": "/Users/user/project",
-        "ENVIRONMENT": "development",
-        "LOG_LEVEL": "DEBUG"
-      }
-    },
-    "my-server-prod": {
-      "command": "/opt/mcp/my-server/.venv/bin/python",
-      "args": ["-m", "src"],
-      "cwd": "/opt/mcp/my-server",
-      "env": {
-        "PYTHONPATH": "/opt/mcp/my-server",
-        "ENVIRONMENT": "production",
-        "LOG_LEVEL": "WARNING"
-      }
-    }
-  }
-}
-```
+**Note**: See the comprehensive `.mcp.json` example above for environment-specific server configurations (dev/prod).
 
 ## Secrets Management
 

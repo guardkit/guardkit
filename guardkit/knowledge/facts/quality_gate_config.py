@@ -65,11 +65,13 @@ class QualityGateConfigFact:
     def to_episode_body(self) -> dict:
         """Convert to Graphiti episode body.
 
+        Returns only domain data; metadata fields like entity_type
+        are injected by GraphitiClient.
+
         Returns:
             Dictionary suitable for Graphiti episode storage.
         """
         return {
-            "entity_type": "quality_gate_config",
             "id": self.id,
             "name": self.name,
             "task_type": self.task_type,

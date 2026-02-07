@@ -1,3 +1,7 @@
+---
+paths: tasks/**/*
+---
+
 # GuardKit Workflow
 
 ## Phase Execution

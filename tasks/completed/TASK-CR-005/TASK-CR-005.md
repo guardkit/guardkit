@@ -1,7 +1,8 @@
 ---
 id: TASK-CR-005
 title: Seed Graphiti project_overview and project_architecture groups
-status: in_review
+status: completed
+completed: 2026-02-06T00:00:00Z
 created: 2026-02-05 14:00:00+00:00
 updated: 2026-02-05 14:00:00+00:00
 priority: medium
@@ -47,10 +48,10 @@ Seed the empty `project_overview` and `project_architecture` Graphiti groups wit
 
 ## Acceptance Criteria
 
-- [ ] project_overview group seeded with: project purpose, core principles, when to use GuardKit, target users
-- [ ] project_architecture group seeded with: project structure, conductor integration, installation/setup
-- [ ] All seeded episodes retrievable with >0.6 relevance score
-- [ ] Verified via: `guardkit graphiti search "project purpose" --group project_overview`
+- [x] project_overview group seeded with: project purpose, core principles, when to use GuardKit, target users
+- [x] project_architecture group seeded with: project structure, conductor integration, installation/setup
+- [x] All seeded episodes retrievable with >0.6 relevance score
+- [x] Verified via: `guardkit graphiti search "project purpose" --group project_overview`
 
 ## Implementation Notes
 

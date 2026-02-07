@@ -260,7 +260,9 @@ class ADRService:
             await self.client.add_episode(
                 name=f"adr_{adr.id}",
                 episode_body=episode_body,
-                group_id="adrs"
+                group_id="adrs",
+                source="user_added",
+                entity_type="architecture_decision"
             )
 
             logger.info(f"Created ADR: {adr.id}")

@@ -153,6 +153,8 @@ async def seed_failed_approaches(client, force: bool = False) -> bool:
                 name=episode_name,
                 episode_body=json.dumps(episode_body),
                 group_id=FAILED_APPROACHES_GROUP_ID,
+                source="guardkit_seeding",
+                entity_type="failed_approach"
             )
 
             success_count += 1

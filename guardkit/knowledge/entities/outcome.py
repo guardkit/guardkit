@@ -98,94 +98,34 @@ class TaskOutcome:
     feature_id: Optional[str] = None
     related_adr_ids: Optional[List[str]] = None
 
-    def to_episode_body(self) -> str:
-        """Convert outcome to human-readable episode body.
+    def to_episode_body(self) -> dict:
+        """Convert outcome to episode body dictionary.
 
-        Creates a structured text representation suitable for
-        storage in Graphiti as an episode body.
+        Creates a structured dictionary representation suitable for
+        storage in Graphiti as an episode body. Returns only domain data;
+        metadata fields like entity_type are injected by GraphitiClient.
 
         Returns:
-            Human-readable string representation of the outcome
+            Dictionary with all outcome fields suitable for JSON serialization
         """
-        lines = []
-
-        # Header section
-        lines.append(f"Outcome ID: {self.id}")
-        lines.append(f"Outcome Type: {self.outcome_type.value}")
-        lines.append(f"Task ID: {self.task_id}")
-        lines.append(f"Task Title: {self.task_title}")
-        lines.append(f"Success: {self.success}")
-        lines.append("")
-
-        # Requirements section
-        lines.append("Requirements:")
-        lines.append(self.task_requirements)
-        lines.append("")
-
-        # Summary section
-        lines.append("Summary:")
-        lines.append(self.summary)
-        lines.append("")
-
-        # Approach section (if provided)
-        if self.approach_used:
-            lines.append("Approach Used:")
-            lines.append(self.approach_used)
-            lines.append("")
-
-        # Patterns section (if provided)
-        if self.patterns_used:
-            lines.append("Patterns Used:")
-            for pattern in self.patterns_used:
-                lines.append(f"  - {pattern}")
-            lines.append("")
-
-        # Problems section (if provided)
-        if self.problems_encountered:
-            lines.append("Problems Encountered:")
-            for problem in self.problems_encountered:
-                lines.append(f"  - {problem}")
-            lines.append("")
-
-        # Lessons section (if provided)
-        if self.lessons_learned:
-            lines.append("Lessons Learned:")
-            for lesson in self.lessons_learned:
-                lines.append(f"  - {lesson}")
-            lines.append("")
-
-        # Metrics section (if any metrics provided)
-        metrics_lines = []
-        if self.tests_written is not None:
-            metrics_lines.append(f"  tests_written: {self.tests_written}")
-        if self.test_coverage is not None:
-            metrics_lines.append(f"  test_coverage: {self.test_coverage}")
-        if self.review_cycles is not None:
-            metrics_lines.append(f"  review_cycles: {self.review_cycles}")
-        if self.duration_minutes is not None:
-            metrics_lines.append(f"  duration_minutes: {self.duration_minutes}")
-
-        if metrics_lines:
-            lines.append("Metrics:")
-            lines.extend(metrics_lines)
-            lines.append("")
-
-        # Timestamps section (if provided)
-        if self.started_at or self.completed_at:
-            lines.append("Timestamps:")
-            if self.started_at:
-                lines.append(f"  started_at: {self.started_at.isoformat()}")
-            if self.completed_at:
-                lines.append(f"  completed_at: {self.completed_at.isoformat()}")
-            lines.append("")
-
-        # References section (if provided)
-        if self.feature_id or self.related_adr_ids:
-            lines.append("References:")
-            if self.feature_id:
-                lines.append(f"  feature_id: {self.feature_id}")
-            if self.related_adr_ids:
-                lines.append(f"  related_adrs: {', '.join(self.related_adr_ids)}")
-            lines.append("")
-
-        return "\n".join(lines)
+        return {
+            "id": self.id,
+            "outcome_type": self.outcome_type.value,
+            "task_id": self.task_id,
+            "task_title": self.task_title,
+            "task_requirements": self.task_requirements,
+            "success": self.success,
+            "summary": self.summary,
+            "approach_used": self.approach_used,
+            "patterns_used": self.patterns_used,
+            "problems_encountered": self.problems_encountered,
+            "lessons_learned": self.lessons_learned,
+            "tests_written": self.tests_written,
+            "test_coverage": self.test_coverage,
+            "review_cycles": self.review_cycles,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "duration_minutes": self.duration_minutes,
+            "feature_id": self.feature_id,
+            "related_adr_ids": self.related_adr_ids
+        }

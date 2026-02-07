@@ -63,3 +63,26 @@ New rate_limited decision type with clear user messaging
 Comprehensive tests
 When implemented, AutoBuild will stop on the first rate limit detection instead of wasting 14 turns retrying. The error message will include the reset time (if parseable) and a resume command.
 
+
+App Infrastructure with health endpoint
+
+/feature-plan lets create the app with a health endpoint, no auth functionality yet
+
+API Documentation & OpenAPI Enhancement
+
+/feature-plan "Add comprehensive API documentation with Swagger UI, ReDoc, and OpenAPI schema customization including API versioning headers and response examples"
+
+
+Structured Logging & Request Tracing
+
+/feature-plan "Implement structured JSON logging with request correlation IDs, middleware for request/response logging, and configurable log levels per environment"
+
+
+Database Integration with SQLAlchemy
+
+/feature-plan "Add PostgreSQL database integration using SQLAlchemy async with connection pooling, health check integration, and a sample users table with CRUD endpoints"
+
+
+guardkit autobuild feature FEAT-A96D --verbose --max-turns 15
+
+GUARDKIT_LOG_LEVEL=DEBUG guardkit autobuild feature FEAT-A96D --verbose --max-turns 15

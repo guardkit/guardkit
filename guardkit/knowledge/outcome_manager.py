@@ -23,6 +23,7 @@ Example:
     )
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -151,8 +152,10 @@ async def capture_task_outcome(
     try:
         await client.add_episode(
             name=episode_name,
-            episode_body=episode_body,
+            episode_body=json.dumps(episode_body),
             group_id=TASK_OUTCOMES_GROUP_ID,
+            source="auto_captured",
+            entity_type="task_outcome"
         )
         logger.info(f"Captured task outcome {outcome_id} for {task_id}")
     except Exception as e:

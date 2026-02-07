@@ -1,3 +1,7 @@
+---
+paths: "**/*.py", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"
+---
+
 # Code Style Guidelines
 
 ## Language-Agnostic Conventions
