@@ -1,0 +1,103 @@
+id: FEAT-D4CE
+name: Design mode for Player-Coach loops
+description: Add design mode to Player-Coach adversarial loops for design-to-code
+  implementation with MCP extraction, visual verification, and prohibition checklists
+created: '2026-02-07T17:45:34.211336'
+status: planned
+complexity: 7
+estimated_tasks: 8
+tasks:
+- id: TASK-DM-001
+  name: Extend task frontmatter for design URLs
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-001-extend-task-frontmatter-for-design-urls.md
+  complexity: 3
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: direct
+  estimated_minutes: 33
+- id: TASK-DM-002
+  name: Implement MCP facade for design extraction
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-002-implement-mcp-facade-for-design-extraction.md
+  complexity: 6
+  dependencies: []
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-DM-003
+  name: Implement Phase 0 design extraction in autobuild
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-003-implement-phase-0-design-extraction-in-autobuild.md
+  complexity: 7
+  dependencies:
+  - TASK-DM-001
+  - TASK-DM-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 170
+- id: TASK-DM-004
+  name: Generate prohibition checklist from design data
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-004-generate-prohibition-checklist-from-design-data.md
+  complexity: 5
+  dependencies:
+  - TASK-DM-002
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-DM-005
+  name: Implement BrowserVerifier abstraction
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-005-implement-browserverifier-abstraction.md
+  complexity: 6
+  dependencies:
+  - TASK-DM-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-DM-006
+  name: Implement SSIM comparison pipeline
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-006-implement-ssim-comparison-pipeline.md
+  complexity: 5
+  dependencies:
+  - TASK-DM-005
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+- id: TASK-DM-007
+  name: Integrate design context into Player-Coach prompts
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-007-integrate-design-context-into-player-coach-prompts.md
+  complexity: 6
+  dependencies:
+  - TASK-DM-003
+  - TASK-DM-004
+  - TASK-DM-005
+  - TASK-DM-006
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 113
+- id: TASK-DM-008
+  name: Add design change detection and state-aware handling
+  file_path: tasks/backlog/design-mode-player-coach/design-mode-player-coach/TASK-DM-008-add-design-change-detection-and-state-aware-handling.md
+  complexity: 5
+  dependencies:
+  - TASK-DM-003
+  status: pending
+  description: ''
+  implementation_mode: task-work
+  estimated_minutes: 75
+orchestration:
+  parallel_groups:
+  - - TASK-DM-001
+    - TASK-DM-002
+  - - TASK-DM-003
+    - TASK-DM-004
+  - - TASK-DM-005
+    - TASK-DM-008
+  - - TASK-DM-006
+  - - TASK-DM-007
+  estimated_duration_minutes: 767
+  recommended_parallel: 2
