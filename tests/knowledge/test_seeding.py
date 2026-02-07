@@ -987,8 +987,8 @@ class TestMetadataBlock:
                 f"Expected source_hash=None for generated content, got {metadata['source_hash']}"
 
     @pytest.mark.asyncio
-    async def test_all_seeding_functions_include_metadata(self):
-        """Test that ALL seeding functions include metadata in their episodes."""
+    async def test_all_seeding_functions_delegate_metadata_to_client(self):
+        """Test that ALL seeding functions pass metadata kwargs to add_episode."""
         seeding_functions = [
             seed_product_knowledge,
             seed_command_workflows,
@@ -1008,24 +1008,25 @@ class TestMetadataBlock:
         for seed_fn in seeding_functions:
             mock_client = AsyncMock()
             mock_client.enabled = True
-
-            captured_bodies = []
-
-            async def capture_episode(name, episode_body, group_id):
-                captured_bodies.append(episode_body)
-                return "episode_id"
-
-            mock_client.add_episode = capture_episode
+            mock_client.add_episode = AsyncMock(return_value="episode_id")
 
             await seed_fn(mock_client)
 
-            # Verify all episodes from this function have metadata
-            assert len(captured_bodies) > 0, f"Function {seed_fn.__name__} created no episodes"
+            # Verify episodes were created
+            assert mock_client.add_episode.call_count > 0, \
+                f"Function {seed_fn.__name__} created no episodes"
 
-            for body in captured_bodies:
-                data = json.loads(body)
-                assert "_metadata" in data, \
-                    f"Function {seed_fn.__name__} missing _metadata in episode: {data}"
+            # Verify metadata is delegated via kwargs (not embedded in body)
+            for call_obj in mock_client.add_episode.call_args_list:
+                kwargs = call_obj.kwargs
+                assert kwargs.get("source") == "guardkit_seeding", \
+                    f"Function {seed_fn.__name__} missing source='guardkit_seeding'"
+                assert "entity_type" in kwargs, \
+                    f"Function {seed_fn.__name__} missing entity_type kwarg"
+                # Body should NOT contain _metadata (client handles injection)
+                body = json.loads(kwargs["episode_body"])
+                assert "_metadata" not in body, \
+                    f"Function {seed_fn.__name__} should not embed _metadata in body"
 
     @pytest.mark.asyncio
     async def test_metadata_preserves_original_episode_structure(self):

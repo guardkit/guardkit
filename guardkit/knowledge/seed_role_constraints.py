@@ -61,7 +61,9 @@ async def seed_role_constraints(graphiti) -> None:
             await graphiti.add_episode(
                 name=name,
                 episode_body=json.dumps(body_dict),
-                group_id="role_constraints"
+                group_id="role_constraints",
+                source="guardkit_seeding",
+                entity_type="role_constraint"
             )
             logger.info(f"Seeded role constraint: {name}")
         except Exception as e:

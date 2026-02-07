@@ -3,8 +3,8 @@ id: TASK-GBF-001
 title: Unify episode serialization pattern across entities
 status: completed
 created: 2026-02-07T12:00:00Z
-updated: 2026-02-07T15:30:00Z
-completed: 2026-02-07T15:30:00Z
+updated: 2026-02-07T18:00:00Z
+completed: 2026-02-07T18:00:00Z
 priority: medium
 tags: [graphiti, refactoring, consistency]
 parent_review: TASK-REV-C632
@@ -16,9 +16,12 @@ dependencies: []
 test_results:
   status: passed
   coverage: null
-  last_run: 2026-02-07T15:30:00Z
-previous_state: in_review
-state_transition_reason: "Task completed - 34 tests passing, all acceptance criteria met"
+  last_run: 2026-02-07T18:00:00Z
+  tests_passed: 186
+  tests_skipped: 2
+  tests_failed: 0
+previous_state: in_progress
+state_transition_reason: "Task completed - 186 tests passing, all acceptance criteria met"
 completed_location: tasks/completed/TASK-GBF-001/
 ---
 
@@ -35,11 +38,11 @@ This creates subtle inconsistency - some episodes get metadata from the entity, 
 
 ## Objectives
 
-- [ ] Audit all entity `to_episode_body()` implementations for metadata field consistency
-- [ ] Audit all `add_episode()` / `upsert_episode()` call sites for metadata injection patterns
-- [ ] Define a single canonical pattern (either entity-level OR client-level, not both)
-- [ ] Refactor to use the canonical pattern consistently
-- [ ] Ensure all episodes include the standard metadata fields: `entity_id`, `source`, `source_hash`, `entity_type`, `created_at`, `updated_at`
+- [x] Audit all entity `to_episode_body()` implementations for metadata field consistency
+- [x] Audit all `add_episode()` / `upsert_episode()` call sites for metadata injection patterns
+- [x] Define a single canonical pattern (either entity-level OR client-level, not both)
+- [x] Refactor to use the canonical pattern consistently
+- [x] Ensure all episodes include the standard metadata fields: `entity_id`, `source`, `source_hash`, `entity_type`, `created_at`, `updated_at`
 
 ## Scope
 
@@ -55,7 +58,7 @@ This creates subtle inconsistency - some episodes get metadata from the entity, 
 
 ## Acceptance Criteria
 
-1. All episodes use a single, documented serialization pattern
-2. No episode is missing any standard metadata field
-3. Existing tests continue to pass
-4. New test verifying metadata consistency across entity types
+1. [x] All episodes use a single, documented serialization pattern — client-level injection via `add_episode()` kwargs
+2. [x] No episode is missing any standard metadata field — all callers pass `source` and `entity_type`
+3. [x] Existing tests continue to pass — 186 passed, 2 skipped
+4. [x] New test verifying metadata consistency across entity types — `test_episode_serialization.py` (23 tests) + `test_seeding_metadata.py` (9 tests)
