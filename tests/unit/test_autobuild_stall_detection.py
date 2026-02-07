@@ -417,8 +417,15 @@ class TestNoPassingCheckpointStall:
         mock_coach_validator,
         mock_checkpoint_manager,
     ):
-        """When should_rollback=True and checkpoint exists, rollback normally (no stall)."""
-        # First call: should_rollback=True with passing checkpoint, second: no rollback
+        """When should_rollback=True and checkpoint exists, rollback normally (no stall).
+
+        Updated for TASK-FIX-CKPT: approval is now checked before stall detection,
+        so the test uses feedback on turn 1 (where rollback triggers) and approve
+        on the subsequent turn after rollback.
+        """
+        # Turn 1: should_rollback=True with passing checkpoint → rollback
+        # After rollback, loop continues from rollback point
+        # Turn 2 (post-rollback): should_rollback=False
         mock_checkpoint_manager.should_rollback.side_effect = [True, False, False, False, False]
         mock_checkpoint_manager.find_last_passing_checkpoint.return_value = 1
         mock_checkpoint_manager.rollback_to.return_value = True
@@ -435,12 +442,13 @@ class TestNoPassingCheckpointStall:
         )
         orchestrator._checkpoint_manager = mock_checkpoint_manager
 
-        # Player and Coach produce approve on the last turn
         player_result = make_player_result(tests_passed=True)
+        # Turn 1: feedback (rollback triggers), Turn 2: approve (after rollback)
+        coach_feedback = make_coach_result(decision="feedback", feedback_text="Fix issues")
         coach_approve = make_coach_result(decision="approve")
 
         mock_agent_invoker.invoke_player.return_value = player_result
-        mock_agent_invoker.invoke_coach.return_value = coach_approve
+        mock_agent_invoker.invoke_coach.side_effect = [coach_feedback, coach_approve]
 
         turn_history, final_decision = orchestrator._loop_phase(
             task_id="TASK-SD-001",
@@ -451,6 +459,7 @@ class TestNoPassingCheckpointStall:
 
         # Should NOT be unrecoverable_stall since rollback succeeded
         assert final_decision != "unrecoverable_stall"
+        assert final_decision == "approved"
         mock_checkpoint_manager.rollback_to.assert_called_once_with(1)
 
 

@@ -1,9 +1,9 @@
 ---
 id: TASK-DM-002
-title: "Implement MCP facade for design extraction"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
+title: Implement MCP facade for design extraction
+status: blocked
+created: 2026-02-07 10:00:00+00:00
+updated: 2026-02-07 10:00:00+00:00
 priority: high
 task_type: feature
 parent_review: TASK-REV-D3E0
@@ -12,11 +12,38 @@ wave: 1
 implementation_mode: task-work
 complexity: 6
 dependencies: []
-tags: [design-mode, mcp, figma, zeplin, facade]
+tags:
+- design-mode
+- mcp
+- figma
+- zeplin
+- facade
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 2
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
+  base_branch: main
+  started_at: '2026-02-07T20:21:40.575627'
+  last_updated: '2026-02-07T20:35:37.578272'
+  turns:
+  - turn: 1
+    decision: feedback
+    feedback: '- Tests did not pass during task-work execution'
+    timestamp: '2026-02-07T20:21:40.575627'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
+  - turn: 2
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-07T20:32:36.593420'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Implement MCP Facade for Design Extraction

@@ -999,6 +999,29 @@ class AutoBuildOrchestrator:
                 if task_file_path:
                     self._save_state(task_file_path, worktree, "in_progress")
 
+                # Check decision BEFORE stall detection (TASK-FIX-CKPT)
+                # Coach approval takes precedence over stall detection
+                if turn_record.decision == "approve":
+                    logger.info(f"Coach approved on turn {turn}")
+                    # Still create checkpoint for approved turn (record-keeping)
+                    if self.enable_checkpoints and self._checkpoint_manager:
+                        tests_passed = self._extract_tests_passed(turn_record)
+                        test_count = self._extract_test_count(turn_record)
+                        checkpoint = self._checkpoint_manager.create_checkpoint(
+                            turn=turn,
+                            tests_passed=tests_passed,
+                            test_count=test_count,
+                        )
+                        logger.info(
+                            f"Checkpoint created: {checkpoint.commit_hash[:8]} "
+                            f"for turn {turn}"
+                        )
+                    return turn_history, "approved"
+
+                elif turn_record.decision == "error":
+                    logger.error(f"Critical error on turn {turn}")
+                    return turn_history, "error"
+
                 # Create checkpoint after turn completes (if enabled)
                 if self.enable_checkpoints and self._checkpoint_manager:
                     tests_passed = self._extract_tests_passed(turn_record)
@@ -1059,16 +1082,8 @@ class AutoBuildOrchestrator:
                         )
                         return turn_history, "unrecoverable_stall"
 
-                # Check decision
-                if turn_record.decision == "approve":
-                    logger.info(f"Coach approved on turn {turn}")
-                    return turn_history, "approved"
-
-                elif turn_record.decision == "error":
-                    logger.error(f"Critical error on turn {turn}")
-                    return turn_history, "error"
-
-                elif turn_record.decision == "feedback":
+                # Handle feedback decision
+                if turn_record.decision == "feedback":
                     logger.info(f"Coach provided feedback on turn {turn}")
                     previous_feedback = turn_record.feedback
                     # Continue to next turn
@@ -2823,6 +2838,11 @@ class AutoBuildOrchestrator:
             return False
 
         validation = turn_record.coach_result.report.get("validation_results", {})
+        # Primary path: quality_gates.tests_passed (Coach stores results here)
+        quality_gates = validation.get("quality_gates", {})
+        if "tests_passed" in quality_gates:
+            return quality_gates.get("tests_passed", False)
+        # Fallback: top-level tests_passed (backward compatibility)
         return validation.get("tests_passed", False)
 
     def _extract_test_count(self, turn_record: TurnRecord) -> int:

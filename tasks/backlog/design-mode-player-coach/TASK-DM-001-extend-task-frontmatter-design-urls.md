@@ -1,9 +1,9 @@
 ---
 id: TASK-DM-001
-title: "Extend task frontmatter for design URLs"
-status: backlog
-created: 2026-02-07T10:00:00Z
-updated: 2026-02-07T10:00:00Z
+title: Extend task frontmatter for design URLs
+status: in_review
+created: 2026-02-07 10:00:00+00:00
+updated: 2026-02-07 10:00:00+00:00
 priority: high
 task_type: scaffolding
 parent_review: TASK-REV-D3E0
@@ -12,11 +12,29 @@ wave: 1
 implementation_mode: task-work
 complexity: 3
 dependencies: []
-tags: [design-mode, frontmatter, task-create]
+tags:
+- design-mode
+- frontmatter
+- task-create
 test_results:
   status: pending
   coverage: null
   last_run: null
+autobuild_state:
+  current_turn: 1
+  max_turns: 15
+  worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
+  base_branch: main
+  started_at: '2026-02-07T20:21:40.576851'
+  last_updated: '2026-02-07T20:29:58.104782'
+  turns:
+  - turn: 1
+    decision: approve
+    feedback: null
+    timestamp: '2026-02-07T20:21:40.576851'
+    player_summary: Implementation via task-work delegation
+    player_success: true
+    coach_success: true
 ---
 
 # Extend Task Frontmatter for Design URLs
