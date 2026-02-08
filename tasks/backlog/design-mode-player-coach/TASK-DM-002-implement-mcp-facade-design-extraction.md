@@ -1,7 +1,7 @@
 ---
 id: TASK-DM-002
 title: Implement MCP facade for design extraction
-status: blocked
+status: in_progress
 created: 2026-02-07 10:00:00+00:00
 updated: 2026-02-07 10:00:00+00:00
 priority: high
@@ -23,25 +23,19 @@ test_results:
   coverage: null
   last_run: null
 autobuild_state:
-  current_turn: 2
+  current_turn: 1
   max_turns: 15
   worktree_path: /Users/richardwoollcott/Projects/appmilla_github/guardkit/.guardkit/worktrees/FEAT-D4CE
   base_branch: main
-  started_at: '2026-02-07T20:21:40.575627'
-  last_updated: '2026-02-07T20:35:37.578272'
+  started_at: '2026-02-07T21:29:48.103380'
+  last_updated: '2026-02-07T22:28:13.526735'
   turns:
   - turn: 1
     decision: feedback
-    feedback: '- Tests did not pass during task-work execution'
-    timestamp: '2026-02-07T20:21:40.575627'
-    player_summary: Implementation via task-work delegation
-    player_success: true
-    coach_success: true
-  - turn: 2
-    decision: approve
-    feedback: null
-    timestamp: '2026-02-07T20:32:36.593420'
-    player_summary: Implementation via task-work delegation
+    feedback: '- task-work execution exceeded 900s timeout'
+    timestamp: '2026-02-07T21:29:48.103380'
+    player_summary: '[RECOVERED via git_only] Original error: SDK timeout after 900s:
+      task-work execution exceeded 900s timeout'
     player_success: true
     coach_success: true
 ---

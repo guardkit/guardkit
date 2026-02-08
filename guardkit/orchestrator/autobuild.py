@@ -353,7 +353,7 @@ class AutoBuildOrchestrator:
         progress_display: Optional[ProgressDisplay] = None,
         pre_loop_gates: Optional[PreLoopQualityGates] = None,
         development_mode: str = "tdd",
-        sdk_timeout: int = 900,
+        sdk_timeout: int = 1200,
         skip_arch_review: bool = False,
         enable_perspective_reset: bool = True,
         enable_checkpoints: bool = True,
@@ -396,7 +396,7 @@ class AutoBuildOrchestrator:
             Development mode for implementation (default: "tdd").
             Valid values: "standard", "tdd", "bdd"
         sdk_timeout : int, optional
-            SDK timeout in seconds for agent invocations (default: 600).
+            SDK timeout in seconds for agent invocations (default: 1200).
             Valid range: 60-3600 seconds.
         skip_arch_review : bool, optional
             Skip architectural review quality gate (default: False).
@@ -2839,7 +2839,7 @@ class AutoBuildOrchestrator:
 
         validation = turn_record.coach_result.report.get("validation_results", {})
         # Primary path: quality_gates.tests_passed (Coach stores results here)
-        quality_gates = validation.get("quality_gates", {})
+        quality_gates = validation.get("quality_gates") or {}
         if "tests_passed" in quality_gates:
             return quality_gates.get("tests_passed", False)
         # Fallback: top-level tests_passed (backward compatibility)

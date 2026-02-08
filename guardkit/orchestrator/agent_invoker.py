@@ -93,10 +93,10 @@ async def async_heartbeat(
 # instead of direct SDK invocation
 USE_TASK_WORK_DELEGATION = os.environ.get("GUARDKIT_USE_TASK_WORK_DELEGATION", "false").lower() == "true"
 
-# SDK timeout in seconds (default: 900s/15min, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
-# With pre-loop disabled for feature-build (TASK-FB-FIX-015), the loop phase needs ~600-900s.
-# A 900s default aligns with orchestrator defaults and provides adequate headroom.
-DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "900"))
+# SDK timeout in seconds (default: 1200s/20min, can be overridden via GUARDKIT_SDK_TIMEOUT env var)
+# Complexity-6+ tasks with full Phase 3-5 pipeline (implementation, testing, code review)
+# need ~900-1200s. 1200s provides adequate headroom for most tasks.
+DEFAULT_SDK_TIMEOUT = int(os.environ.get("GUARDKIT_SDK_TIMEOUT", "1200"))
 
 # TASK-REV-BB80: SDK max_turns for task-work invocation (separate from adversarial turns)
 # /task-work runs multiple phases internally (planning, review, implementation, testing)
@@ -572,7 +572,7 @@ class AgentInvoker:
             max_turns_per_agent: Maximum turns per agent invocation (default: 30)
             player_model: Model to use for Player agent (default: claude-sonnet-4-5)
             coach_model: Model to use for Coach agent (default: claude-sonnet-4-5)
-            sdk_timeout_seconds: Timeout for SDK invocations (default: 900s)
+            sdk_timeout_seconds: Timeout for SDK invocations (default: 1200s)
             use_task_work_delegation: If True, delegate Player to task-work instead of
                 direct SDK. Defaults to USE_TASK_WORK_DELEGATION env var.
             development_mode: Development mode for implementation (default: "tdd").

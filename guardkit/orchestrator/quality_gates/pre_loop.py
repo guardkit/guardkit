@@ -140,7 +140,7 @@ class PreLoopQualityGates:
         self,
         worktree_path: str,
         interface: Optional[TaskWorkInterface] = None,
-        sdk_timeout: int = 900,
+        sdk_timeout: int = 1200,
         skip_arch_review: bool = False,
     ):
         """
